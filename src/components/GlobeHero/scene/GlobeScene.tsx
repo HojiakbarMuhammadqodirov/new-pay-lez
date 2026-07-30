@@ -8,6 +8,7 @@ import { useGlobeTransition } from '../hooks/useGlobeTransition';
 import { useRotation } from '../hooks/useRotation';
 import { useCenteredCountry } from '../hooks/useCenteredCountry';
 import type { FocusStore } from '../state/focusStore';
+import type { GlobeTone } from '../types';
 import { CountryBorders } from './CountryBorders';
 import { GlobeSurface } from './GlobeSurface';
 import { Routes } from './Routes';
@@ -16,6 +17,7 @@ interface GlobeSceneProps {
   rotationSpeed: number;
   primaryColor: string;
   backgroundColor: string;
+  tone: GlobeTone;
   showRoutes: boolean;
   showLabels: boolean;
   routeCount: number;
@@ -46,6 +48,7 @@ export function GlobeScene({
   rotationSpeed,
   primaryColor,
   backgroundColor,
+  tone,
   showRoutes,
   showLabels,
   routeCount,
@@ -85,12 +88,17 @@ export function GlobeScene({
   return (
     <group ref={frameRef}>
       <group ref={globeRef}>
-        <GlobeSurface primaryColor={primaryColor} backgroundColor={backgroundColor} />
+        <GlobeSurface
+          primaryColor={primaryColor}
+          backgroundColor={backgroundColor}
+          tone={tone}
+        />
 
         {atlas && (
           <CountryBorders
             positions={atlas.borderPositions}
             primaryColor={primaryColor}
+            tone={tone}
           />
         )}
 
@@ -99,6 +107,7 @@ export function GlobeScene({
             features={atlas.features}
             count={routes}
             primaryColor={primaryColor}
+            tone={tone}
             paused={paused}
           />
         )}

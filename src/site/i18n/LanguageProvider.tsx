@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
+  LANGUAGE_ORDER,
   LANGUAGES,
   LanguageContext,
   type LanguageCode,
@@ -8,8 +9,9 @@ import {
 
 const STORAGE_KEY = 'paylez-language';
 
+/** Derived from `LANGUAGE_ORDER`, so adding a language cannot miss this guard. */
 function isLanguage(value: string | null): value is LanguageCode {
-  return value === 'en' || value === 'ru' || value === 'uz';
+  return LANGUAGE_ORDER.includes(value as LanguageCode);
 }
 
 /**

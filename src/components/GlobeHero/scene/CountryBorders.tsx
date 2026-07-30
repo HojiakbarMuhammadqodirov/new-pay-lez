@@ -1,10 +1,12 @@
 import { memo, useEffect, useMemo } from 'react';
 import { BufferAttribute, BufferGeometry } from 'three';
-import { GLOBE } from '../config';
+import { TONE } from '../config';
+import type { GlobeTone } from '../types';
 
 interface CountryBordersProps {
   positions: Float32Array;
   primaryColor: string;
+  tone: GlobeTone;
 }
 
 /**
@@ -18,6 +20,7 @@ interface CountryBordersProps {
 export const CountryBorders = memo(function CountryBorders({
   positions,
   primaryColor,
+  tone,
 }: CountryBordersProps) {
   const geometry = useMemo(() => {
     const g = new BufferGeometry();
@@ -33,7 +36,7 @@ export const CountryBorders = memo(function CountryBorders({
       <lineBasicMaterial
         color={primaryColor}
         transparent
-        opacity={GLOBE.borderOpacity}
+        opacity={TONE[tone].borderOpacity}
         depthWrite={false}
         toneMapped={false}
       />

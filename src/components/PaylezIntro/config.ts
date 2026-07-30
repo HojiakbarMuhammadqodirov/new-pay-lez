@@ -27,4 +27,7 @@ export const INTRO = {
 
   /** Final width of the name, in `ch` units — drives how far the mark travels. */
   nameWidthCh: 7.4,
+
+  /** Default ink for the brand mark, against the dark theme's mint accent. */
+  onPrimary: '#05201c',
 } as const;

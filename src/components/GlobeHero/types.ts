@@ -2,6 +2,15 @@
  * Public type surface for <GlobeHero />.
  */
 
+/**
+ * How the accent is composited over the background.
+ *
+ * `glow` — additive neon, for a dark page. `ink` — alpha-blended, for a light
+ * one, where addition has no headroom left above white. See the `TONE` block in
+ * `config.ts`.
+ */
+export type GlobeTone = 'glow' | 'ink';
+
 export interface GlobeHeroProps {
   /**
    * Rotation rate in **revolutions per second**.
@@ -14,6 +23,15 @@ export interface GlobeHeroProps {
 
   /** Scene / page background colour. */
   backgroundColor?: string;
+
+  /**
+   * Compositing mode for the accent. Default `'glow'`.
+   *
+   * Set `'ink'` whenever `backgroundColor` is light: `'glow'` would render an
+   * almost invisible globe, since additive blending cannot darken. `'ink'` also
+   * forces bloom off — see `glowStrength`.
+   */
+  tone?: GlobeTone;
 
   /** Render the animated great-circle routes. */
   showRoutes?: boolean;

@@ -5,6 +5,23 @@
    rebuilt in the globe's two-colour system: neon #58e9d4 on near-black.
    The original's teal (#5EEBD8) was already within a few points of it, so the
    translation is a tightening rather than a re-skin.
+
+   ── Theming ──────────────────────────────────────────────────────────────
+   Every colour in this file comes from a token below. Nothing else names a
+   colour, so the light theme is the second block and not a second stylesheet.
+
+   Two tokens carry the accent, because one cannot:
+
+     --accent      the accent as a *fill* — button faces, the brand mark, dots.
+     --accent-ink  the accent as *marks* — text, icons, hairlines, focus rings.
+
+   On black they are the same mint. On paper they cannot be: mint text on white
+   is about 1.3:1, which is not text, it is a suggestion of text. So the light
+   theme keeps a bright mint for fills (dark ink on it reads at 7:1) and drops
+   to a deep teal for anything drawn thin (5.5:1 against the page).
+
+   The `-rgb` triplets exist so translucent surfaces can be built with one
+   `rgba(var(--x-rgb), a)` per use instead of a token per alpha.
    ════════════════════════════════════════════════════════════════════════ */
 
 @import '@fontsource/poppins/latin-500.css';
@@ -14,18 +31,45 @@
 @import '@fontsource/manrope/latin-700.css';
 
 :root {
+  /* ── dark: the native theme ─────────────────────────────────────────── */
   --bg: #0d0d0e;
   --bg-2: #101314;
-  --surface: rgba(88, 233, 212, 0.035);
-  --surface-2: rgba(88, 233, 212, 0.06);
-  --border: rgba(88, 233, 212, 0.13);
-  --border-2: rgba(88, 233, 212, 0.26);
+
+  /* Tint behind every translucent surface and hairline. */
+  --accent-rgb: 88, 233, 212;
+  /* Sheet colour for glass panels: header, footer, cards, menus. */
+  --panel-rgb: 13, 13, 14;
+
+  --surface: rgba(var(--accent-rgb), 0.035);
+  --surface-2: rgba(var(--accent-rgb), 0.06);
+  --border: rgba(var(--accent-rgb), 0.13);
+  --border-2: rgba(var(--accent-rgb), 0.26);
 
   --accent: #58e9d4;
+  --accent-ink: var(--accent);
+  /*
+   * The accent held back, for controls at rest — the language trigger, the
+   * theme toggle, the eyebrows. Diluting toward the page is free on black,
+   * where the accent starts at 11:1 against it. On paper it is not: the deep
+   * teal only has ~5.5:1 to spend, and 72% of it lands at 3.2:1, so the light
+   * theme keeps nearly all of it and lets hover carry the state change through
+   * border colour instead.
+   */
+  --accent-soft: color-mix(in srgb, var(--accent-ink) 72%, transparent);
+  --on-accent: #05201c;
+
   --text: #e6f6f3;
   --text-mut: rgba(230, 246, 243, 0.62);
   --text-fnt: rgba(230, 246, 243, 0.4);
-  --on-accent: #05201c;
+
+  /*
+   * Glow. On black these are light being emitted; on paper the same shapes can
+   * only be shadows, so the light theme keeps the geometry and pulls the alpha
+   * down with `--glow-k` rather than restating every shadow.
+   */
+  --glow-rgb: var(--accent-rgb);
+  --glow-k: 1;
+  --shadow: rgba(0, 0, 0, 0.85);
 
   --maxw: 1200px;
   --r-sm: 12px;
@@ -38,6 +82,55 @@
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
+}
+
+/*
+ * Light.
+ *
+ * Not an inversion — an inverted neon palette is a grey page with mint text on
+ * it, and mint on white is unreadable. This is the same design as ink on paper:
+ * a near-white ground with the faintest green cast so it belongs to the same
+ * family as the accent, deep teal for everything drawn thin, and the bright
+ * mint held back for solid fills where it still has contrast to spend.
+ *
+ * The canvases cannot read these; their side of the palette is `THEMES` in
+ * `site/theme/context.ts`, and the comments there say which token each mirrors.
+ */
+:root[data-theme='light'] {
+  --bg: #f4f7f6;
+  --bg-2: #eaefed;
+
+  /* The deep teal, so a 3.5% wash is still visible against the page. */
+  --accent-rgb: 10, 114, 102;
+  --panel-rgb: 255, 255, 255;
+
+  --surface: rgba(var(--accent-rgb), 0.05);
+  --surface-2: rgba(var(--accent-rgb), 0.09);
+  --border: rgba(var(--accent-rgb), 0.16);
+  --border-2: rgba(var(--accent-rgb), 0.32);
+
+  --accent: #16bda5;
+  --accent-ink: #0a7266;
+  --accent-soft: color-mix(in srgb, var(--accent-ink) 92%, transparent);
+  --on-accent: #04231e;
+
+  /* 6.0:1 and 4.9:1 against the page — both clear AA for body-sized text. */
+  --text: #0b1a18;
+  --text-mut: rgba(11, 26, 24, 0.68);
+  --text-fnt: rgba(11, 26, 24, 0.62);
+
+  --glow-k: 0.4;
+  --shadow: rgba(9, 32, 28, 0.18);
+
+  color-scheme: light;
+}
+
+/*
+ * The root element, not just the body: overscroll on iOS and the area behind a
+ * short page both paint <html>, and a black band there would undo the theme.
+ */
+html {
+  background: var(--bg);
 }
 
 /* ─────────────────────────────────────────────────────────────── base ── */
@@ -110,15 +203,15 @@ button {
 }
 
 .accent-text {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 ::selection {
-  background: rgba(88, 233, 212, 0.28);
+  background: rgba(var(--accent-rgb), 0.28);
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--accent-ink);
   outline-offset: 3px;
   border-radius: 6px;
 }
@@ -174,12 +267,12 @@ button {
 .btn-solid {
   background: var(--accent);
   color: var(--on-accent);
-  box-shadow: 0 14px 40px -18px rgba(88, 233, 212, 0.75);
+  box-shadow: 0 14px 40px -18px rgba(var(--glow-rgb), calc(0.75 * var(--glow-k)));
 }
 
 .btn-solid:hover {
   transform: translateY(-2px);
-  box-shadow: 0 20px 52px -18px rgba(88, 233, 212, 0.9);
+  box-shadow: 0 20px 52px -18px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
 }
 
 .btn-ghost {
@@ -190,7 +283,7 @@ button {
 
 .btn-ghost:hover {
   background: var(--surface-2);
-  border-color: var(--accent);
+  border-color: var(--accent-ink);
   transform: translateY(-2px);
 }
 
@@ -208,7 +301,7 @@ button {
 }
 
 .site-header[data-scrolled='true'] {
-  background: rgba(13, 13, 14, 0.72);
+  background: rgba(var(--panel-rgb), 0.72);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border-bottom-color: var(--border);
@@ -250,7 +343,7 @@ button {
   font-weight: 600;
   font-size: 1rem;
   line-height: 1;
-  box-shadow: 0 8px 24px -10px rgba(88, 233, 212, 0.8);
+  box-shadow: 0 8px 24px -10px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
 }
 
 .brand-mark span {
@@ -345,7 +438,7 @@ button {
 
 .nav-link:hover,
 .nav-link[data-active='true'] {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 /* The glass block itself: a distinct surface, not the page showing through. */
@@ -360,17 +453,17 @@ button {
   pointer-events: none;
   overflow: hidden;
 
-  background: rgba(88, 233, 212, 0.035);
+  background: rgba(var(--accent-rgb), 0.035);
   backdrop-filter: blur(10px) saturate(140%);
   -webkit-backdrop-filter: blur(10px) saturate(140%);
-  box-shadow: inset 0 0 0 1px rgba(88, 233, 212, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.1);
 
   opacity: var(--gate);
 }
 
 .nav-glass polygon {
-  fill: rgba(88, 233, 212, 0.022);
-  stroke: var(--accent);
+  fill: rgba(var(--accent-rgb), 0.022);
+  stroke: var(--accent-ink);
   /* Non-scaling stroke keeps every edge a true hairline despite the
      non-uniform stretch that fits the mesh to the pill. Sub-pixel width is the
      point: at 1px the mesh reads as a cage rather than cracks. */
@@ -424,7 +517,7 @@ button {
   font-family: var(--font-body);
   font-size: 0.8125rem;
   line-height: 1;
-  color: color-mix(in srgb, var(--accent) 72%, transparent);
+  color: var(--accent-soft);
   transition:
     color 200ms var(--ease),
     border-color 200ms var(--ease);
@@ -433,8 +526,8 @@ button {
 .lang-trigger:hover,
 .lang-trigger[aria-expanded='true'] {
   background: transparent;
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--accent-ink);
+  border-color: var(--accent-ink);
 }
 
 .lang-trigger .sep {
@@ -443,7 +536,7 @@ button {
 
 .lang-trigger b {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .lang-caret {
@@ -466,10 +559,10 @@ button {
 
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: rgba(13, 13, 14, 0.92);
+  background: rgba(var(--panel-rgb), 0.92);
   backdrop-filter: blur(18px) saturate(150%);
   -webkit-backdrop-filter: blur(18px) saturate(150%);
-  box-shadow: 0 24px 50px -24px rgba(0, 0, 0, 0.85);
+  box-shadow: 0 24px 50px -24px var(--shadow);
 }
 
 .lang-option {
@@ -482,17 +575,17 @@ button {
   font-family: var(--font-body);
   font-size: 0.875rem;
   text-align: left;
-  color: color-mix(in srgb, var(--accent) 62%, transparent);
+  color: var(--accent-soft);
   transition: background 180ms var(--ease), color 180ms var(--ease);
 }
 
 .lang-option:hover {
   background: var(--surface-2);
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .lang-option[data-on='true'] {
-  color: var(--accent);
+  color: var(--accent-ink);
   background: var(--surface);
 }
 
@@ -504,12 +597,66 @@ button {
   opacity: 0.75;
 }
 
+/* ── theme toggle ─────────────────────────────────────────────────────────
+ * Same outline treatment and corner as the language trigger, sized square so
+ * the two read as one pair of controls.
+ *
+ * Both glyphs are stacked in the same grid cell and cross-faded, so the swap
+ * costs no layout and neither icon can arrive a frame after the other.
+ */
+
+.theme-toggle {
+  display: grid;
+  place-items: center;
+  width: 2.55rem;
+  height: 2.55rem;
+  padding: 0;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--accent-soft);
+  transition: color 200ms var(--ease), border-color 200ms var(--ease);
+}
+
+.theme-toggle:hover {
+  color: var(--accent-ink);
+  border-color: var(--accent-ink);
+}
+
+.theme-ico {
+  grid-area: 1 / 1;
+  display: grid;
+  place-items: center;
+  transition:
+    opacity 260ms var(--ease),
+    transform 260ms var(--ease);
+}
+
+/* Dark theme shows the sun — the button offers light, it does not report dark. */
+.theme-toggle[data-theme='dark'] .theme-ico:last-child,
+.theme-toggle[data-theme='light'] .theme-ico:first-child {
+  opacity: 0;
+  transform: rotate(-70deg) scale(0.5);
+}
+
+.theme-toggle[data-theme='dark'] .theme-ico:first-child,
+.theme-toggle[data-theme='light'] .theme-ico:last-child {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-ico {
+    transition: none;
+  }
+}
+
 .sign-in {
   padding: 0.82rem 1.25rem;
   border-radius: 4px;
   border: 1px solid var(--border-2);
   background: var(--surface);
-  color: var(--accent);
+  color: var(--accent-ink);
   font-family: var(--font-body);
   font-size: 0.8125rem;
   font-weight: 700;
@@ -523,7 +670,7 @@ button {
 
 .sign-in:hover {
   background: var(--surface-2);
-  border-color: var(--accent);
+  border-color: var(--accent-ink);
   transform: translateY(-1px);
 }
 
@@ -540,12 +687,12 @@ button {
   width: 3.5rem;
   height: 3.5rem;
   border-radius: 50%;
-  border: 1px solid rgba(88, 233, 212, 0.35);
-  background: rgba(13, 13, 14, 0.82);
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--panel-rgb), 0.82);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  color: var(--accent);
-  box-shadow: 0 10px 34px -12px rgba(88, 233, 212, 0.7);
+  color: var(--accent-ink);
+  box-shadow: 0 10px 34px -12px rgba(var(--glow-rgb), calc(0.7 * var(--glow-k)));
 
   transition: transform 240ms var(--ease), box-shadow 240ms var(--ease),
     background 240ms var(--ease);
@@ -553,8 +700,8 @@ button {
 
 .assistant-fab:hover {
   transform: translateY(-2px) scale(1.06);
-  background: rgba(88, 233, 212, 0.14);
-  box-shadow: 0 16px 44px -12px rgba(88, 233, 212, 0.95);
+  background: rgba(var(--accent-rgb), 0.14);
+  box-shadow: 0 16px 44px -12px rgba(var(--glow-rgb), calc(0.95 * var(--glow-k)));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -623,7 +770,7 @@ button {
   font-size: 1.5rem;
   font-weight: 600;
   letter-spacing: -0.03em;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .hero-stat span {
@@ -647,7 +794,7 @@ button {
 .proof {
   padding-block: clamp(2rem, 5vh, 3.5rem);
   border-block: 1px solid var(--border);
-  background: rgba(13, 13, 14, 0.55);
+  background: rgba(var(--panel-rgb), 0.55);
   backdrop-filter: blur(10px);
   -webkit-backdrop-filter: blur(10px);
 }
@@ -736,8 +883,7 @@ button {
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--accent);
-  opacity: 0.75;
+  color: var(--accent-soft);
   margin-bottom: 0.9rem;
 }
 
@@ -819,13 +965,13 @@ button {
   width: 62px;
   height: 62px;
   border-radius: 18px;
-  background: rgba(88, 233, 212, 0.08);
-  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
   transition: box-shadow 520ms var(--ease);
 }
 
 .cat-card[data-state='active'] .cat-ico {
-  box-shadow: 0 0 40px -6px rgba(88, 233, 212, 0.55);
+  box-shadow: 0 0 40px -6px rgba(var(--glow-rgb), calc(0.55 * var(--glow-k)));
 }
 
 .cat-tx b {
@@ -834,7 +980,7 @@ button {
   font-size: 1.45rem;
   font-weight: 600;
   letter-spacing: -0.025em;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .cat-tx span {
@@ -928,14 +1074,14 @@ button {
 .controller-3d canvas {
   display: block;
   background: transparent;
-  filter: drop-shadow(0 0 16px rgba(88, 233, 212, 0.38))
-    drop-shadow(0 0 46px rgba(88, 233, 212, 0.16));
+  filter: drop-shadow(0 0 16px rgba(var(--glow-rgb), calc(0.38 * var(--glow-k))))
+    drop-shadow(0 0 46px rgba(var(--glow-rgb), calc(0.16 * var(--glow-k))));
   transition: filter 0.25s ease;
 }
 
 .controller-3d:hover canvas {
-  filter: drop-shadow(0 0 22px rgba(88, 233, 212, 0.55))
-    drop-shadow(0 0 62px rgba(88, 233, 212, 0.24));
+  filter: drop-shadow(0 0 22px rgba(var(--glow-rgb), calc(0.55 * var(--glow-k))))
+    drop-shadow(0 0 62px rgba(var(--glow-rgb), calc(0.24 * var(--glow-k))));
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -988,13 +1134,13 @@ button {
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  background: rgba(88, 233, 212, 0.08);
-  color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
   transition: box-shadow 320ms var(--ease);
 }
 
 .feature-item:hover .feature-ico {
-  box-shadow: 0 0 34px -6px rgba(88, 233, 212, 0.6);
+  box-shadow: 0 0 34px -6px rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
 }
 
 .feature-stat {
@@ -1030,10 +1176,10 @@ button {
   padding: 1.5rem;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
-  background: rgba(13, 13, 14, 0.7);
+  background: rgba(var(--panel-rgb), 0.7);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  box-shadow: 0 30px 90px -50px rgba(88, 233, 212, 0.6);
+  box-shadow: 0 30px 90px -50px rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
 }
 
 .pv-merch {
@@ -1071,7 +1217,7 @@ button {
   height: 8.5rem;
   border-radius: var(--r);
   border: 1px solid var(--border);
-  background: rgba(88, 233, 212, 0.08);
+  background: rgba(var(--accent-rgb), 0.08);
   margin-bottom: 1.2rem;
 }
 
@@ -1080,7 +1226,7 @@ button {
   font-weight: 600;
   font-size: 2rem;
   letter-spacing: -0.03em;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .pv-title {
@@ -1103,7 +1249,7 @@ button {
   font-family: var(--font-display);
   font-size: 1.3rem;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .pv-save {
@@ -1146,7 +1292,7 @@ button {
   border-radius: 50%;
   border: 1px solid var(--border-2);
   background: var(--surface);
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .benefit h4 {
@@ -1182,7 +1328,7 @@ button {
 }
 
 .tstars {
-  color: var(--accent);
+  color: var(--accent-ink);
   letter-spacing: 0.18em;
   font-size: 0.8rem;
   margin-bottom: 0.9rem;
@@ -1208,7 +1354,7 @@ button {
   border-radius: 50%;
   border: 1px solid var(--border-2);
   background: var(--surface-2);
-  color: var(--accent);
+  color: var(--accent-ink);
   font-family: var(--font-display);
   font-weight: 600;
   font-size: 0.95rem;
@@ -1232,7 +1378,7 @@ button {
   padding: clamp(3rem, 8vw, 5rem) clamp(1.5rem, 5vw, 4rem);
   border-radius: var(--r-lg);
   border: 1px solid var(--border-2);
-  background: rgba(88, 233, 212, 0.05);
+  background: rgba(var(--accent-rgb), 0.05);
   overflow: hidden;
 }
 
@@ -1265,7 +1411,7 @@ button {
 .site-footer {
   border-top: 1px solid var(--border);
   padding-block: clamp(3rem, 7vh, 4.5rem) 2rem;
-  background: rgba(13, 13, 14, 0.8);
+  background: rgba(var(--panel-rgb), 0.8);
 }
 
 .footer-grid {
@@ -1282,7 +1428,7 @@ button {
 }
 
 .footer-contact a:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .footer-social {
@@ -1304,7 +1450,7 @@ button {
 }
 
 .fsoc:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
   border-color: var(--border-2);
 }
 
@@ -1331,7 +1477,7 @@ button {
 }
 
 .footer-col a:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .news p {
@@ -1363,7 +1509,7 @@ button {
 
 .news-form input:focus {
   outline: none;
-  border-color: var(--accent);
+  border-color: var(--accent-ink);
 }
 
 .news-form button {
@@ -1384,7 +1530,7 @@ button {
 .news-ok {
   margin-top: 0.7rem;
   font-size: 0.82rem;
-  color: var(--accent);
+  color: var(--accent-ink);
   opacity: 0;
   transition: opacity 320ms var(--ease);
 }
@@ -1406,7 +1552,7 @@ button {
 }
 
 .footer-bottom a:hover {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 /* ────────────────────────────────────────────────────────── responsive ── */

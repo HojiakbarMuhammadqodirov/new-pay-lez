@@ -32,9 +32,44 @@ import {
  */
 const VIEW_ANGLE: [number, number, number] = [-0.46, 0.5, -0.1];
 
-/** Shell tint: near-black with just enough teal to sit in the palette. */
-const SHELL_COLOR = '#0f1618';
-const CONTROL_COLOR = '#182225';
+/**
+ * Body palette, per theme.
+ *
+ * On the dark page the shell is near-black with just enough teal to sit in the
+ * palette. On the light one it inverts to a pale moulding — a black object on
+ * paper reads as a hole punched in the page, and the neon rim light it was lit
+ * with has nothing to separate it from.
+ *
+ * `metalness` is a *multiplier* on each material's own value rather than a flat
+ * override: there is no environment map here, so a metallic surface reflects
+ * only the rig's direct lights and otherwise goes black. That is exactly what
+ * gives the dark shell its depth, and exactly what would turn the pale one to
+ * mud, so the light tone dials it back instead of restating every material.
+ */
+const TONE = {
+  glow: {
+    shell: '#0f1618',
+    control: '#182225',
+    well: '#0a1113',
+    touchpad: '#0c1416',
+    metalness: 1,
+    ambient: 0.55,
+    key: 2.4,
+    rim: 2.8,
+  },
+  ink: {
+    shell: '#dde7e4',
+    control: '#c3d3cf',
+    well: '#adbfbb',
+    touchpad: '#c9d7d4',
+    metalness: 0.3,
+    ambient: 0.72,
+    key: 1.7,
+    rim: 1.6,
+  },
+} as const;
+
+type ControllerTone = keyof typeof TONE;
 
 /**
  * Radius of a sphere enclosing the whole model — half the diagonal of its
@@ -74,10 +109,12 @@ function FitCamera() {
 
 interface SceneProps {
   primaryColor: string;
+  tone: ControllerTone;
 }
 
-function ControllerModel({ primaryColor }: SceneProps) {
+function ControllerModel({ primaryColor, tone }: SceneProps) {
   const group = useRef<Group>(null);
+  const skin = TONE[tone];
 
   const parts = useMemo(
     () => ({
@@ -118,37 +155,65 @@ function ControllerModel({ primaryColor }: SceneProps) {
     <group ref={group} rotation={VIEW_ANGLE}>
       {/* Shell and grips share a material so the body reads as one moulding. */}
       <mesh geometry={parts.shell}>
-        <meshStandardMaterial color={SHELL_COLOR} metalness={0.42} roughness={0.3} />
+        <meshStandardMaterial
+          color={skin.shell}
+          metalness={0.42 * skin.metalness}
+          roughness={0.3}
+        />
       </mesh>
       <mesh geometry={parts.grips}>
-        <meshStandardMaterial color={SHELL_COLOR} metalness={0.42} roughness={0.34} />
+        <meshStandardMaterial
+          color={skin.shell}
+          metalness={0.42 * skin.metalness}
+          roughness={0.34}
+        />
       </mesh>
       <mesh geometry={parts.triggers}>
-        <meshStandardMaterial color={SHELL_COLOR} metalness={0.5} roughness={0.26} />
+        <meshStandardMaterial
+          color={skin.shell}
+          metalness={0.5 * skin.metalness}
+          roughness={0.26}
+        />
       </mesh>
 
-      {/* Controls: darker and slightly rougher, so they read as inset parts
-          rather than more of the same shell. */}
+      {/* Controls: a step deeper than the shell and slightly rougher, so they
+          read as inset parts rather than more of the same moulding. */}
       <mesh geometry={parts.wells}>
-        <meshStandardMaterial color="#0a1113" metalness={0.3} roughness={0.55} />
+        <meshStandardMaterial
+          color={skin.well}
+          metalness={0.3 * skin.metalness}
+          roughness={0.55}
+        />
       </mesh>
       <mesh geometry={parts.sticks}>
-        <meshStandardMaterial color={CONTROL_COLOR} metalness={0.35} roughness={0.42} />
+        <meshStandardMaterial
+          color={skin.control}
+          metalness={0.35 * skin.metalness}
+          roughness={0.42}
+        />
       </mesh>
       <mesh geometry={parts.dpad}>
-        <meshStandardMaterial color={CONTROL_COLOR} metalness={0.4} roughness={0.34} />
+        <meshStandardMaterial
+          color={skin.control}
+          metalness={0.4 * skin.metalness}
+          roughness={0.34}
+        />
       </mesh>
       <mesh geometry={parts.buttons}>
         <meshStandardMaterial
-          color={CONTROL_COLOR}
-          metalness={0.45}
+          color={skin.control}
+          metalness={0.45 * skin.metalness}
           roughness={0.22}
           emissive={primaryColor}
           emissiveIntensity={0.5}
         />
       </mesh>
       <mesh geometry={parts.touchpad}>
-        <meshStandardMaterial color="#0c1416" metalness={0.55} roughness={0.18} />
+        <meshStandardMaterial
+          color={skin.touchpad}
+          metalness={0.55 * skin.metalness}
+          roughness={0.18}
+        />
       </mesh>
 
       {/* Emissive: pure light, picked up by bloom. */}
@@ -171,13 +236,24 @@ function ControllerModel({ primaryColor }: SceneProps) {
  * teal rim from behind to separate it from the background, and a soft teal
  * bounce from below so the underside of the grips never goes solid black.
  */
-function Rig({ primaryColor }: SceneProps) {
+function Rig({ primaryColor, tone }: SceneProps) {
+  const skin = TONE[tone];
+
   return (
     <>
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[4, 5.5, 4]} intensity={2.4} />
-      <directionalLight position={[-3, 1.5, -4]} intensity={2.8} color={primaryColor} />
-      <pointLight position={[0, -3, 2.5]} intensity={14} distance={12} color={primaryColor} />
+      <ambientLight intensity={skin.ambient} />
+      <directionalLight position={[4, 5.5, 4]} intensity={skin.key} />
+      <directionalLight
+        position={[-3, 1.5, -4]}
+        intensity={skin.rim}
+        color={primaryColor}
+      />
+      <pointLight
+        position={[0, -3, 2.5]}
+        intensity={14 * skin.metalness}
+        distance={12}
+        color={primaryColor}
+      />
       <pointLight position={[3.5, 1, 3]} intensity={8} distance={11} color="#ffffff" />
     </>
   );
@@ -185,6 +261,8 @@ function Rig({ primaryColor }: SceneProps) {
 
 interface Controller3DProps {
   primaryColor?: string;
+  /** Body palette and rig. `'ink'` for a light page. */
+  tone?: ControllerTone;
 }
 
 /**
@@ -203,6 +281,7 @@ interface Controller3DProps {
  */
 export const Controller3D = memo(function Controller3D({
   primaryColor = COLORS.primary,
+  tone = 'glow',
 }: Controller3DProps) {
   const host = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -238,8 +317,8 @@ export const Controller3D = memo(function Controller3D({
         onCreated={({ gl }) => gl.setClearAlpha(0)}
       >
         <FitCamera />
-        <Rig primaryColor={primaryColor} />
-        <ControllerModel primaryColor={primaryColor} />
+        <Rig primaryColor={primaryColor} tone={tone} />
+        <ControllerModel primaryColor={primaryColor} tone={tone} />
       </Canvas>
     </div>
   );

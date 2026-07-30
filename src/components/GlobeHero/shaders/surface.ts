@@ -41,11 +41,19 @@ export const surfaceFragmentShader = /* glsl */ `
     // Soft ambient: half-lambert, never fully dark, never a hard terminator.
     float wrapped = dot(N, L) * 0.5 + 0.5;
 
-    vec3 color = uBackground
-               + uPrimary * uAmbient * wrapped
-               + uPrimary * uRimStrength * fresnel;
+    /*
+     * Lerp toward the accent rather than adding it to the background.
+     *
+     * Addition can only ever brighten, which is the right model on near-black
+     * and useless on paper — every layer would wash out to white. The mix is
+     * the same picture on a dark page (where uBackground is ~0, so it *is*
+     * addition) and darkens correctly on a light one: one shader, both themes.
+     *
+     * (No backticks in here — the whole shader is a template literal.)
+     */
+    float amount = clamp(uAmbient * wrapped + uRimStrength * fresnel, 0.0, 1.0);
 
-    gl_FragColor = vec4(color, 1.0);
+    gl_FragColor = vec4(mix(uBackground, uPrimary, amount), 1.0);
 
     #include <colorspace_fragment>
   }

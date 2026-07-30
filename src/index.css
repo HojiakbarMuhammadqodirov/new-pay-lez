@@ -10,11 +10,15 @@ body,
   height: 100%;
 }
 
+/*
+ * Themed via the tokens in `site/site.css`; the fallbacks are the dark values,
+ * so this file still stands alone if the site stylesheet is ever not loaded.
+ * `color-scheme` is set with the tokens, not here — it has to flip with them.
+ */
 body {
   margin: 0;
-  background: #0d0d0e;
-  color: #58e9d4;
-  color-scheme: dark;
+  background: var(--bg, #0d0d0e);
+  color: var(--text, #e6f6f3);
   font-family:
     ui-sans-serif, -apple-system, 'Segoe UI', Inter, Roboto, Helvetica, Arial,
     sans-serif;

@@ -11,6 +11,11 @@ export const uz: Dictionary = {
   signIn: 'Kirish',
   assistant: 'AI yordamchini ochish',
   languageMenu: "Tilni o'zgartirish",
+  theme: {
+    label: 'Mavzu',
+    toLight: "Yorug' rejimga o'tish",
+    toDark: "Qorong'i rejimga o'tish",
+  },
 
   hero: {
     lines: ["O'yna va ishla.", 'Eksklyuziv takliflar.'],

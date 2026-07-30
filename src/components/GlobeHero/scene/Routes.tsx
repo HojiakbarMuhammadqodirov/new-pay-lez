@@ -1,8 +1,14 @@
 import { memo, useEffect, useMemo, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { AdditiveBlending, Color, DoubleSide, ShaderMaterial } from 'three';
+import {
+  AdditiveBlending,
+  Color,
+  DoubleSide,
+  NormalBlending,
+  ShaderMaterial,
+} from 'three';
 import { MOTION, ROUTES } from '../config';
-import type { CountryFeature } from '../types';
+import type { CountryFeature, GlobeTone } from '../types';
 import { buildRouteGeometry } from '../geo/routeGeometry';
 import { routesFragmentShader, routesVertexShader } from '../shaders/routes';
 
@@ -10,6 +16,7 @@ interface RoutesProps {
   features: CountryFeature[];
   count: number;
   primaryColor: string;
+  tone: GlobeTone;
   paused: boolean;
 }
 
@@ -26,8 +33,11 @@ export const Routes = memo(function Routes({
   features,
   count,
   primaryColor,
+  tone,
   paused,
 }: RoutesProps) {
+  const ink = tone === 'ink';
+
   const materialRef = useRef<ShaderMaterial>(null);
   const time = useRef(0);
 
@@ -51,8 +61,11 @@ export const Routes = memo(function Routes({
       uTrailIntensity: { value: ROUTES.trailIntensity },
       uBaseOpacity: { value: ROUTES.baseOpacity },
       uOpacity: { value: 1 },
+      // Must agree with the material's blend mode below: the shader writes
+      // pre-multiplied colour for additive and colour-plus-alpha for normal.
+      uInk: { value: ink ? 1 : 0 },
     }),
-    [primaryColor],
+    [primaryColor, ink],
   );
 
   useFrame((_, delta) => {
@@ -69,7 +82,7 @@ export const Routes = memo(function Routes({
         vertexShader={routesVertexShader}
         fragmentShader={routesFragmentShader}
         uniforms={uniforms}
-        blending={AdditiveBlending}
+        blending={ink ? NormalBlending : AdditiveBlending}
         transparent
         depthWrite={false}
         // The ribbon flips its facing as an arc curves around the globe.

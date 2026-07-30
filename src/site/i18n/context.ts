@@ -6,14 +6,22 @@
  */
 import { createContext, useContext } from 'react';
 import { en, type Dictionary } from './en';
+import { pl } from './pl';
 import { ru } from './ru';
+import { uk } from './uk';
 import { uz } from './uz';
 
-export type LanguageCode = 'en' | 'ru' | 'uz';
+export type LanguageCode = 'en' | 'pl' | 'uz' | 'ru' | 'uk';
 
-/** Ordered as the brief asks: English first, then Russian, then Uzbek. */
-export const LANGUAGES: Record<LanguageCode, Dictionary> = { en, ru, uz };
-export const LANGUAGE_ORDER: LanguageCode[] = ['en', 'ru', 'uz'];
+/**
+ * Ordered as the brief asks: English, Polish, Uzbek, Russian, Ukrainian.
+ *
+ * `LANGUAGE_ORDER` is the single source of truth for both the menu order and
+ * the runtime guard in `LanguageProvider` — a language is added here and
+ * nowhere else.
+ */
+export const LANGUAGE_ORDER: LanguageCode[] = ['en', 'pl', 'uz', 'ru', 'uk'];
+export const LANGUAGES: Record<LanguageCode, Dictionary> = { en, pl, uz, ru, uk };
 
 export interface LanguageValue {
   language: LanguageCode;

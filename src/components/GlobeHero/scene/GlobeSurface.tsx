@@ -1,11 +1,13 @@
 import { memo, useMemo } from 'react';
 import { Color, SphereGeometry, Vector3 } from 'three';
-import { GLOBE } from '../config';
+import { GLOBE, TONE } from '../config';
+import type { GlobeTone } from '../types';
 import { surfaceFragmentShader, surfaceVertexShader } from '../shaders/surface';
 
 interface GlobeSurfaceProps {
   primaryColor: string;
   backgroundColor: string;
+  tone: GlobeTone;
 }
 
 /**
@@ -17,6 +19,7 @@ interface GlobeSurfaceProps {
 export const GlobeSurface = memo(function GlobeSurface({
   primaryColor,
   backgroundColor,
+  tone,
 }: GlobeSurfaceProps) {
   const geometry = useMemo(
     () =>
@@ -30,12 +33,12 @@ export const GlobeSurface = memo(function GlobeSurface({
       uPrimary: { value: new Color(primaryColor) },
       uLightDirection: { value: new Vector3(...GLOBE.lightDirection).normalize() },
       uRimPower: { value: GLOBE.rimPower },
-      uRimStrength: { value: GLOBE.rimStrength },
-      uAmbient: { value: GLOBE.ambientStrength },
+      uRimStrength: { value: TONE[tone].rimStrength },
+      uAmbient: { value: TONE[tone].ambientStrength },
     }),
     // Colours are cheap to rebuild and change rarely; a fresh uniforms object
     // forces the material to recompile only when the palette actually changes.
-    [primaryColor, backgroundColor],
+    [primaryColor, backgroundColor, tone],
   );
 
   return (

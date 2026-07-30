@@ -26,6 +26,7 @@ export const DEFAULTS = {
   offsetX: 0.12, // +12% of viewport width
   heightCoverage: 0.8, // globe diameter = 80% of viewport height
   scrollTransition: true,
+  tone: 'glow' as 'glow' | 'ink',
 } as const;
 
 /* -------------------------------------------------------------------- globe */
@@ -101,6 +102,34 @@ export const ROUTES = {
   maxArcDegrees: 150,
   /** Deterministic seed — keeps routes identical across re-mounts. */
   seed: 0x5eed_1234,
+} as const;
+
+/* --------------------------------------------------------------------- tone */
+
+/**
+ * How the accent meets the background.
+ *
+ * `glow` is the original: emissive neon on near-black, additive, carried by
+ * bloom. `ink` is the same geometry drawn on a light page — alpha-blended, so
+ * every layer *darkens* the ground instead of lighting it. Addition has no
+ * headroom above white, which is why the light theme needs its own entry here
+ * rather than just a different pair of colours.
+ *
+ * The differences are only ever a matter of degree: ink needs a little more
+ * body tint to read as a sphere at all, and a little less border weight,
+ * because a dark hairline on paper is already louder than a lit one on black.
+ */
+export const TONE = {
+  glow: {
+    ambientStrength: GLOBE.ambientStrength,
+    rimStrength: GLOBE.rimStrength,
+    borderOpacity: GLOBE.borderOpacity,
+  },
+  ink: {
+    ambientStrength: 0.1,
+    rimStrength: 0.5,
+    borderOpacity: 0.42,
+  },
 } as const;
 
 /* --------------------------------------------------------------------- post */

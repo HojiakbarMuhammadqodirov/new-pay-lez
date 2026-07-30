@@ -11,6 +11,7 @@ import {
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
+import { usePalette } from './theme/context';
 
 /* ────────────────────────────────────────────────────────────────── hero ── */
 
@@ -201,6 +202,7 @@ export function Guide() {
  */
 export function Features() {
   const copy = useCopy();
+  const palette = usePalette();
 
   return (
     <section className="section features" id="features">
@@ -246,7 +248,7 @@ export function Features() {
             </ul>
           ))}
 
-          <Controller3D />
+          <Controller3D primaryColor={palette.primary} tone={palette.tone} />
         </div>
       </div>
     </section>

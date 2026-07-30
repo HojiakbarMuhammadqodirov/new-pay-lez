@@ -34,6 +34,7 @@ export const GlobeHero = memo(function GlobeHero({
   rotationSpeed = DEFAULTS.rotationSpeed,
   primaryColor = DEFAULTS.primaryColor,
   backgroundColor = DEFAULTS.backgroundColor,
+  tone = DEFAULTS.tone,
   showRoutes = DEFAULTS.showRoutes,
   showLabels = DEFAULTS.showLabels,
   routeCount = DEFAULTS.routeCount,
@@ -47,6 +48,13 @@ export const GlobeHero = memo(function GlobeHero({
 }: GlobeHeroProps) {
   const reducedMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement>(null);
+
+  /*
+   * Bloom is additive light, and a light page has no headroom left above it:
+   * every flare would clip to flat white and take the borders with it. So the
+   * ink tone forbids it rather than trusting each caller to pass 0.
+   */
+  const glow = tone === 'ink' ? 0 : glowStrength;
 
   // One store per instance; created once and never re-created.
   const focusStore = useMemo(() => createFocusStore(), []);
@@ -102,7 +110,7 @@ export const GlobeHero = memo(function GlobeHero({
         gl={{
           // With bloom on, the composer does its own MSAA — a second AA pass
           // on the default framebuffer would be paid for and thrown away.
-          antialias: glowStrength <= 0,
+          antialias: glow <= 0,
           alpha: false,
           powerPreference: 'high-performance',
           // Exact brand hue: any tone mapping would desaturate the accent.
@@ -120,6 +128,7 @@ export const GlobeHero = memo(function GlobeHero({
           rotationSpeed={rotationSpeed}
           primaryColor={primaryColor}
           backgroundColor={backgroundColor}
+          tone={tone}
           showRoutes={showRoutes}
           showLabels={showLabels}
           routeCount={routeCount}
@@ -132,7 +141,7 @@ export const GlobeHero = memo(function GlobeHero({
           onSilhouette={publishSilhouette}
         />
 
-        {glowStrength > 0 && <Effects glowStrength={glowStrength} />}
+        {glow > 0 && <Effects glowStrength={glow} />}
       </Canvas>
 
       {showLabels && <CountryCard store={focusStore} />}

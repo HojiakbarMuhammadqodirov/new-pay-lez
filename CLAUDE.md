@@ -47,9 +47,10 @@ src/
   site/                     the landing page
     Site.tsx                composition: intro → globe layer → header → sections → footer
     sections.tsx            every page section (Hero, Proof, Guide, Features, Value, Voices, FinalCta, SiteFooter)
-    Header.tsx              nav + language switcher
+    Header.tsx              nav + language switcher + theme toggle
     content.ts              structure only — icons, anchors, stat numbers. No copy.
-    i18n/                   en · ru · uz dictionaries, context, provider
+    i18n/                   en · pl · uz · ru · uk dictionaries, context, provider
+    theme/                  dark/light context, provider, and the 3D palettes
     icons.tsx               inline SVG icon set
     site.css                all page styling; design tokens at the top
     useReveal.ts            shared IntersectionObserver reveal + count-up
@@ -79,11 +80,34 @@ site, and don't wire them into the build.
 
 ## Conventions
 
-**Two colours, everywhere.** `#58e9d4` on `#0d0d0e`. The palette is declared
-once in `src/components/GlobeHero/config.ts` (`COLORS`) and mirrored as CSS
-custom properties at the top of `src/site/site.css`. Flag emoji are the one
-sanctioned exception. Don't introduce a third hue; derive tints from the accent
-with alpha the way `--surface` / `--border` do.
+**Two colours, everywhere.** One accent on one ground — `#58e9d4` on `#0d0d0e`
+in dark, a deep teal on near-white in light. Flag emoji are the one sanctioned
+exception. Don't introduce a third hue; derive tints from the accent with alpha
+the way `--surface` / `--border` do.
+
+**Theming is two parallel palettes, and they must agree.**
+
+- CSS: every colour comes from a token in the `:root` / `:root[data-theme='light']`
+  blocks at the top of `src/site/site.css`. Nothing below those blocks names a
+  colour — if you are typing a hex or an `rgba(` literal into a rule, stop and
+  add a token. Translucent surfaces use `rgba(var(--accent-rgb), a)` and
+  `rgba(var(--panel-rgb), a)`; glows use `rgba(var(--glow-rgb), calc(a * var(--glow-k)))`
+  so the light theme can damp them all at once.
+- WebGL: canvases cannot read CSS custom properties, so the handful of colours
+  they need is duplicated in `THEMES` in `src/site/theme/context.ts` and passed
+  down as props. That file is the *only* place the two systems have to be kept
+  in sync.
+
+`--accent` (fills) and `--accent-ink` (text, icons, hairlines) are deliberately
+different tokens: they are the same mint on black, but mint text on white is
+~1.3:1, so the light theme has to split them. Use `--accent-ink` for anything
+drawn thin and `--accent` for anything filled solid.
+
+**The globe has a `tone`, not just colours.** `'glow'` composites the accent
+additively (the neon original); `'ink'` alpha-blends it so it *darkens* a light
+page — additive blending has no headroom above white and renders an almost
+invisible globe. `tone='ink'` also forces bloom off. See the `TONE` block in
+`GlobeHero/config.ts`.
 
 **Constants live in config files, not inline.** Every tunable for the globe is
 in `GlobeHero/config.ts`; the intro's timings are in `PaylezIntro/config.ts`.
@@ -91,11 +115,17 @@ If you find yourself typing a magic number into a component, it probably
 belongs in one of those, and the surrounding comment probably explains why the
 current value is what it is.
 
-**Copy lives in `i18n/`, structure lives in `content.ts`.** The arrays in
-`content.ts` are index-aligned with their dictionary counterparts, so adding a
-service or feature means adding one entry in `content.ts` and one in each of
-`en.ts`, `ru.ts`, `uz.ts` — the compiler catches the half-done version. Never
-hardcode user-visible strings in `sections.tsx`.
+**Copy lives in `i18n/`, structure lives in `content.ts`.** Five languages, in
+menu order: English, Polish, Uzbek, Russian, Ukrainian. `en.ts` is the source —
+its shape *is* the `Dictionary` type, so a missing or misspelt key in any other
+language is a build error. The arrays in `content.ts` are index-aligned with
+their dictionary counterparts, so adding a service or feature means one entry in
+`content.ts` and one in each of the five dictionaries. Never hardcode
+user-visible strings in `sections.tsx`.
+
+Adding a language: create the dictionary, then add it to `LANGUAGE_ORDER` and
+`LANGUAGES` in `i18n/context.ts` — nothing else. The provider's runtime guard is
+derived from `LANGUAGE_ORDER` precisely so it cannot be forgotten.
 
 **Per-frame work does not go through React state.** This is the load-bearing
 rule of the codebase. Scroll position is written to a ref by a passive listener
@@ -139,5 +169,11 @@ bundled, the flag font copied into `public/`), geometry comes from the
 - Bloom does the perceived brightness, not saturation. Emissive intensities
   clamp to 1.0 in the shaders and tone mapping is disabled, both deliberately.
   If you change `primaryColor`, scale `POST.bloomThreshold` with its luminance.
+- The shaders are template literals. **A backtick inside a GLSL comment ends the
+  string** and produces a baffling TypeScript syntax error a few lines later.
+- The theme is resolved twice: by an inline script in `index.html` before first
+  paint, and by `ThemeProvider` once React mounts. Both read the same
+  `paylez-theme` localStorage key — change one and you must change the other, or
+  light-theme visitors get a black flash on load.
 - `dist/` and `node_modules/` are gitignored; `public/fonts/` is generated but
   committed.

@@ -9,6 +9,8 @@ export interface PaylezIntroProps {
   onComplete?: () => void;
   primaryColor?: string;
   backgroundColor?: string;
+  /** Ink for the brand mark, which is filled with `primaryColor`. */
+  onPrimaryColor?: string;
   /**
    * Play only on the first visit of a browser session. Off by default so the
    * sequence is easy to iterate on; turn it on for production.
@@ -32,6 +34,7 @@ export const PaylezIntro = memo(function PaylezIntro({
   onComplete,
   primaryColor = COLORS.primary,
   backgroundColor = COLORS.background,
+  onPrimaryColor = INTRO.onPrimary,
   oncePerSession = false,
   skippable = true,
 }: PaylezIntroProps) {
@@ -102,6 +105,7 @@ export const PaylezIntro = memo(function PaylezIntro({
         {
           background: backgroundColor,
           '--pz-accent': primaryColor,
+          '--pz-on-accent': onPrimaryColor,
           '--pz-name-w': `${INTRO.nameWidthCh}ch`,
           '--pz-mark-in': `${INTRO.markIn.duration}ms`,
           '--pz-mark-delay': `${INTRO.markIn.delay}ms`,

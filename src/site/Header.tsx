@@ -10,6 +10,7 @@ import { NAV_ITEMS } from './content';
 import { GLASS_MESH } from './glassMesh';
 import { Icon, type IconName } from './icons';
 import { LANGUAGE_ORDER, LANGUAGES, useCopy, useLanguage } from './i18n/context';
+import { useTheme } from './theme/context';
 
 /**
  * One nav item: a glass pane that fractures around the pointer.
@@ -156,6 +157,38 @@ function LanguageMenu() {
   );
 }
 
+/**
+ * Dark/light switch.
+ *
+ * Both glyphs are always mounted and the pair is cross-faded, so the swap is
+ * transform and opacity only — no layout, and no icon popping in a frame late.
+ * The button reports its *destination* rather than its current state, which is
+ * what a screen reader needs to know before pressing it.
+ */
+function ThemeToggle() {
+  const copy = useCopy();
+  const { theme, toggle } = useTheme();
+  const dark = theme === 'dark';
+
+  return (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={toggle}
+      aria-label={dark ? copy.theme.toLight : copy.theme.toDark}
+      title={dark ? copy.theme.toLight : copy.theme.toDark}
+      data-theme={theme}
+    >
+      <span className="theme-ico">
+        <Icon name="sun" size={16} strokeWidth={1.9} />
+      </span>
+      <span className="theme-ico">
+        <Icon name="moon" size={16} strokeWidth={1.9} />
+      </span>
+    </button>
+  );
+}
+
 export function Header() {
   const copy = useCopy();
   const [scrolled, setScrolled] = useState(false);
@@ -193,6 +226,7 @@ export function Header() {
         </nav>
 
         <div className="header-actions">
+          <ThemeToggle />
           <LanguageMenu />
           <button type="button" className="sign-in">
             {copy.signIn}

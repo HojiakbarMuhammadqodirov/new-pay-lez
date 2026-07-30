@@ -1,9 +1,15 @@
 export { GlobeHero } from './GlobeHero';
-export type { GlobeHeroProps, CountryFeature, FocusedCountry } from './types';
+export type {
+  GlobeHeroProps,
+  GlobeTone,
+  CountryFeature,
+  FocusedCountry,
+} from './types';
 export {
   COLORS,
   DEFAULTS,
   GLOBE,
+  TONE,
   ROUTES,
   POST,
   SCROLL,

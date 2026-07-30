@@ -25,6 +25,7 @@ import { GlobeHero } from './components/GlobeHero';
 | `rotationSpeed`   | `number`        | `1 / 5`   | **Revolutions per second.** `1/5` = one turn every 5 s.      |
 | `primaryColor`    | `string`        | `#58e9d4` | The only accent in the scene.                                |
 | `backgroundColor` | `string`        | `#0d0d0e` | Scene + page background.                                     |
+| `tone`            | `'glow'｜'ink'` | `'glow'`  | How the accent meets the background. See below.              |
 | `showRoutes`      | `boolean`       | `true`    | Animated great-circle arcs.                                  |
 | `showLabels`      | `boolean`       | `true`    | Country card overlay (also gates the detection loop).        |
 | `routeCount`      | `number`        | `16`      | Clamped to `ROUTES.maxCount` (48).                           |
@@ -76,6 +77,23 @@ drift the colour toward white, so bloom — not saturation — supplies the
 perceived brightness. Tone mapping is disabled for the same reason. If you
 change `primaryColor`, scale `POST.bloomThreshold` with its luminance so
 borders stay crisp and only route heads flare.
+
+**Glow and ink.** `tone` decides how the accent is composited, and it exists
+because the neon treatment is not a colour choice — it is an *additive* one.
+Under `'glow'` the surface shader adds the accent to the background and the
+route ribbons blend additively, which is exactly right on near-black and
+useless on paper: addition has no headroom above white, so a light page would
+render an almost invisible globe. `'ink'` keeps every pixel of the geometry and
+changes only the operator — the surface lerps toward the accent instead of
+adding to it, and the ribbons switch to normal blending with intensity carried
+as alpha, so a brighter trail becomes a *darker* line. It also forces
+`glowStrength` to 0, because bloom is more added light. The two tones differ in
+nothing else; the small tuning gap between them (a touch more body tint, a
+touch less border weight, since a dark hairline on paper is already louder than
+a lit one on black) is the `TONE` block in `config.ts`.
+
+Set `tone="ink"` whenever `backgroundColor` is light. The rest of the scene
+needs no other change.
 
 **Routes are ribbons, not lines.** WebGL ignores `LineBasicMaterial.linewidth`,
 so thickness has to be built into the geometry. Each sampled arc point emits two

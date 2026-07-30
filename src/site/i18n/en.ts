@@ -17,6 +17,11 @@ export const en = {
   signIn: 'Sign in',
   assistant: 'Open the AI assistant',
   languageMenu: 'Change language',
+  theme: {
+    label: 'Theme',
+    toLight: 'Switch to light theme',
+    toDark: 'Switch to dark theme',
+  },
 
   hero: {
     lines: ['Play & Earn.', 'Exclusive deals.'],

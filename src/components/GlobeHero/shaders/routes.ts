@@ -56,6 +56,8 @@ export const routesFragmentShader = /* glsl */ `
   uniform float uBaseOpacity;
   uniform float uOpacity;
   uniform float uEdgeSoftness;
+  /** 0 = additive glow (dark page), 1 = alpha-blended ink (light page). */
+  uniform float uInk;
 
   varying float vT;
   varying float vHead;
@@ -84,7 +86,21 @@ export const routesFragmentShader = /* glsl */ `
     // Clamp keeps the accent hue exact; bloom provides the flare.
     intensity = clamp(intensity, 0.0, 1.0) * uOpacity;
 
-    gl_FragColor = vec4(uPrimary * intensity, 1.0);
+    /*
+     * Two ways to put the same ribbon on the page, chosen by the material's
+     * blend mode:
+     *
+     *   glow (uInk 0) — additive. The colour is pre-multiplied by intensity and
+     *     alpha is ignored, so a brighter trail adds more light.
+     *   ink  (uInk 1) — normal blending. The colour stays the flat accent and
+     *     intensity becomes alpha, so a stronger trail is a *darker* line.
+     *
+     * Additive on a light page is invisible: there is no headroom above white.
+     */
+    gl_FragColor = vec4(
+      uPrimary * mix(intensity, 1.0, uInk),
+      mix(1.0, intensity, uInk)
+    );
 
     #include <colorspace_fragment>
   }
