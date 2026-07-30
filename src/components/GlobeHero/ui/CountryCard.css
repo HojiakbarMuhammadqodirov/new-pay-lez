@@ -1,0 +1,161 @@
+/*
+ * Country reveal card.
+ *
+ * Two colours only: the accent (--gh-primary) on the page background
+ * (--gh-background). Everything else is opacity of the accent — except the
+ * flag, which is inherently multi-colour.
+ *
+ * Motion note: every animated property is transform / opacity / filter, so the
+ * whole card lives on the compositor and never touches layout — it cannot cost
+ * the 3D layer a frame.
+ */
+
+@import './flagFont.css';
+
+/*
+ * The card sits beside the globe, not at a fixed corner. --gh-globe-left and
+ * --gh-globe-right are the silhouette edges in page pixels, published by the
+ * scene on resize, so the card tracks the globe at any viewport or offset.
+ */
+.gh-label {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 0;
+  pointer-events: none;
+
+  /*
+   * Retire the card as the globe leaves its hero pose. `--gh-scroll` is written
+   * straight to the DOM by the scroll listener, so this costs no React render
+   * and no JS per frame.
+   */
+  opacity: clamp(0, calc(1 - var(--gh-scroll, 0) / 0.45), 1);
+  transition: opacity 240ms linear;
+}
+
+.gh-card {
+  position: absolute;
+  top: 0;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+
+  will-change: transform, opacity, filter;
+  /* Very fast, with a little overshoot so each reveal lands with a snap. */
+  transition:
+    opacity 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    transform 150ms cubic-bezier(0.34, 1.56, 0.64, 1),
+    filter 150ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* Anchored just outside the globe's silhouette, vertically centred on it. */
+.gh-card[data-side='left'] {
+  right: calc(100% - var(--gh-globe-left, 30%) + clamp(1rem, 2.5vw, 2.25rem));
+}
+
+.gh-card[data-side='right'] {
+  left: calc(var(--gh-globe-right, 70%) + clamp(1rem, 2.5vw, 2.25rem));
+}
+
+/*
+ * The -50% keeps the card centred on the globe's equator; the extra offsets are
+ * the pop. Both sides push away from the globe as they enter.
+ */
+.gh-card[data-state='enter'],
+.gh-card[data-state='exit'] {
+  opacity: 0;
+  filter: blur(4px);
+}
+
+.gh-card[data-side='left'][data-state='enter'],
+.gh-card[data-side='left'][data-state='exit'] {
+  transform: translate3d(-14px, -50%, 0) scale(0.72);
+}
+
+.gh-card[data-side='right'][data-state='enter'],
+.gh-card[data-side='right'][data-state='exit'] {
+  transform: translate3d(14px, -50%, 0) scale(0.72);
+}
+
+.gh-card[data-state='active'] {
+  opacity: 1;
+  transform: translate3d(0, -50%, 0) scale(1);
+  filter: blur(0);
+}
+
+.gh-flag {
+  font-family: 'GH Country Flags', 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+  font-size: clamp(2rem, 3.6vw, 3rem);
+  line-height: 1;
+  /* Staggered a beat behind the card so the flag lands last. */
+  transition: inherit;
+  transition-delay: 40ms;
+}
+
+.gh-flag[data-render='mono'] {
+  filter: grayscale(1) brightness(1.6) sepia(1) hue-rotate(130deg) saturate(5);
+}
+
+.gh-name {
+  font-size: clamp(0.6875rem, 1vw, 0.875rem);
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--gh-primary);
+  transition: inherit;
+  transition-delay: 70ms;
+}
+
+/*
+ * Portrait: the globe shrinks and re-centres, and the side gutters go with it,
+ * so the card moves below the globe instead.
+ */
+@media (max-aspect-ratio: 1/1) {
+  .gh-label {
+    top: auto;
+    bottom: clamp(1.25rem, 4vh, 2.5rem);
+    height: auto;
+  }
+
+  .gh-card,
+  .gh-card[data-side='left'],
+  .gh-card[data-side='right'] {
+    left: 50%;
+    right: auto;
+    top: auto;
+  }
+
+  .gh-card[data-state='enter'],
+  .gh-card[data-state='exit'] {
+    transform: translate3d(-50%, 10px, 0) scale(0.72);
+  }
+
+  .gh-card[data-side='left'][data-state='enter'],
+  .gh-card[data-side='left'][data-state='exit'],
+  .gh-card[data-side='right'][data-state='enter'],
+  .gh-card[data-side='right'][data-state='exit'] {
+    transform: translate3d(-50%, 10px, 0) scale(0.72);
+  }
+
+  .gh-card[data-state='active'] {
+    transform: translate3d(-50%, 0, 0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gh-card,
+  .gh-flag,
+  .gh-name {
+    transition-duration: 1ms;
+    transition-delay: 0ms;
+  }
+  .gh-card[data-state='enter'],
+  .gh-card[data-state='exit'] {
+    filter: none;
+  }
+}

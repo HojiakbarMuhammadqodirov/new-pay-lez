@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Paylez — Marketplace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;0,6..72,700;1,6..72,400;1,6..72,500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Schibsted+Grotesk:wght@500;600;700;800;900&family=Manrope:wght@400;500;600;700;800&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root {
+  /* ── Type ── */
+  --font-display: "Newsreader", Georgia, "Times New Roman", serif;
+  --font-body: "Plus Jakarta Sans", system-ui, sans-serif;
+  --display-weight: 600;
+  --fs: 16px;
+
+  /* ── Brand ── */
+  --rose: #8C2F3D;
+  --rose-600: #73262F;
+  --violet: #9C7B3F;
+  --brand-grad: linear-gradient(135deg, #8C2F3D 0%, #5E2230 100%);
+
+  /* ── Semantic (light) ── */
+  --primary: var(--rose);
+  --primary-hover: var(--rose-600);
+  --on-primary: #fff;
+  --accent: var(--violet);
+
+  --bg: #F6F3EE;
+  --surface: #FFFFFF;
+  --surface-2: #F0ECE3;
+  --surface-3: #E6E0D5;
+  --text: #221C17;
+  --text-muted: #6E665C;
+  --text-faint: #9B9388;
+  --border: #E8E2D6;
+  --border-strong: #D7CFC1;
+
+  --success: #3F7A5C;
+  --success-bg: #EAF1EC;
+  --star: #BE8E2E;
+
+  --r: 9px;        /* base radius (tweakable) */
+  --r-sm: calc(var(--r) * 0.55);
+  --r-lg: calc(var(--r) * 1.5);
+  --r-pill: 999px;
+
+  /* ── Density (tweakable via body class) ── */
+  --gap: 24px;
+  --card-pad: 18px;
+  --section-y: 64px;
+
+  --shadow-sm: 0 1px 2px rgba(38,28,20,.05), 0 1px 1px rgba(38,28,20,.04);
+  --shadow-md: 0 8px 24px -10px rgba(38,28,20,.12), 0 2px 6px rgba(38,28,20,.05);
+  --shadow-lg: 0 28px 64px -24px rgba(38,28,20,.22);
+  --maxw: 1240px;
+  --header-h: 70px;
+}
+
+[data-theme="dark"] {
+  --primary: #E08494;
+  --primary-hover: #EC97A5;
+  --on-primary: #2A1014;
+  --accent: #CBAA6C;
+  --bg: #16120E;
+  --surface: #211C16;
+  --surface-2: #2A241D;
+  --surface-3: #342D24;
+  --text: #F3EFE7;
+  --text-muted: #ABA293;
+  --text-faint: #7C7464;
+  --border: #322B22;
+  --border-strong: #43392D;
+  --success: #5FB089;
+  --success-bg: #15241C;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-md: 0 6px 20px rgba(0,0,0,.45);
+  --shadow-lg: 0 20px 55px -12px rgba(0,0,0,.65);
+}
+
+body.density-compact { --gap: 14px; --card-pad: 12px; --section-y: 40px; }
+body.density-comfy   { --gap: 30px; --card-pad: 22px; --section-y: 72px; }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-body);
+  font-size: var(--fs);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  transition: background .3s ease, color .3s ease;
+}
+h1,h2,h3,h4,h5 { font-family: var(--font-display); font-weight: var(--display-weight); line-height: 1.12; letter-spacing: -0.01em; color: var(--text); }
+a { color: inherit; text-decoration: none; }
+button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+img { display: block; max-width: 100%; }
+input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+::selection { background: color-mix(in oklab, var(--primary) 28%, transparent); }
+
+/* scrollbar */
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 999px; border: 2px solid var(--bg); }
+*::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+
+.wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+
+/* ── Buttons ── */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-weight: 700; font-size: .95rem; padding: 0 18px; height: 44px; border-radius: var(--r);
+  transition: transform .12s ease, background .18s ease, box-shadow .18s ease, border-color .18s; white-space: nowrap; }
+.btn:active { transform: translateY(1px) scale(.99); }
+.btn-primary { background: var(--primary); color: var(--on-primary); box-shadow: var(--shadow-sm); }
+.btn-primary:hover { background: var(--primary-hover); box-shadow: var(--shadow-md); }
+.btn-grad { background: var(--brand-grad); color: #fff; box-shadow: 0 6px 18px -6px rgba(225,29,94,.5); }
+.btn-grad:hover { filter: brightness(1.04); box-shadow: 0 10px 26px -6px rgba(225,29,94,.55); }
+.btn-ghost { background: var(--surface-2); color: var(--text); }
+.btn-ghost:hover { background: var(--surface-3); }
+.btn-outline { background: transparent; border: 1.5px solid var(--border-strong); color: var(--text); }
+.btn-outline:hover { border-color: var(--text); }
+.btn-sm { height: 38px; padding: 0 14px; font-size: .875rem; border-radius: var(--r-sm); }
+.btn-lg { height: 54px; padding: 0 28px; font-size: 1.05rem; }
+.btn-block { width: 100%; }
+
+/* ── Chips / badges ── */
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 38px; padding: 0 16px;
+  border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--border);
+  font-weight: 600; font-size: .9rem; color: var(--text-muted); white-space: nowrap;
+  transition: all .15s ease; cursor: pointer; }
+.chip:hover { border-color: var(--border-strong); color: var(--text); }
+.chip.active { background: var(--text); border-color: var(--text); color: var(--bg); }
+.badge { display: inline-flex; align-items: center; gap: 5px; font-size: .72rem; font-weight: 800;
+  letter-spacing: .03em; text-transform: uppercase; padding: 4px 9px; border-radius: var(--r-sm); }
+.badge-deal { background: var(--brand-grad); color: #fff; }
+.badge-soft { background: var(--surface-2); color: var(--text-muted); }
+.badge-save { background: var(--success-bg); color: var(--success); }
+
+.discount-pill { font-weight: 800; font-size: .8rem; color: #fff; background: var(--primary);
+  padding: 4px 9px; border-radius: var(--r-sm); letter-spacing: -.01em; }
+
+/* star rating */
+.stars { display: inline-flex; align-items: center; gap: 3px; }
+.muted { color: var(--text-muted); }
+.faint { color: var(--text-faint); }
+
+/* utility animations */
+@keyframes fadeUp { from { transform: translateY(16px); } to { transform: none; } }
+@keyframes fadeIn { from { opacity: .35; } to { opacity: 1; } }
+@keyframes shimmer { 0% { background-position: -480px 0; } 100% { background-position: 480px 0; } }
+.fade-up { animation: fadeUp .5s cubic-bezier(.2,.7,.2,1) both; opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .fade-up, .fade-in { animation: none !important; } }
+.skeleton { background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 37%, var(--surface-2) 63%);
+  background-size: 960px 100%; animation: shimmer 1.4s linear infinite; }
+
+#root { min-height: 100%; }
+
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.app-main { flex: 1; padding-bottom: 40px; }
+
+/* mobile bottom nav hidden by default */
+.bottom-nav { display: none; }
+
+@media (max-width: 860px) {
+  :root { --header-h: 60px; }
+  .wrap { padding: 0 16px; }
+  .hide-mobile { display: none !important; }
+  .bottom-nav { display: flex; }
+  .app-main { padding-bottom: 84px; }
+}
+.hide-desktop { display: none; }
+@media (max-width: 860px) { .hide-desktop { display: initial; } }
+
+/* ── Deal card ── */
+.deal-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  overflow: hidden; cursor: pointer; display: flex; flex-direction: column;
+  transition: transform .18s cubic-bezier(.2,.7,.2,1), box-shadow .18s ease, border-color .18s; }
+.deal-card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); border-color: transparent; }
+.deal-card-img { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--surface-2); }
+.deal-card-img img { width: 100%; height: 100%; object-fit: cover; transition: transform .5s cubic-bezier(.2,.7,.2,1); }
+.deal-card:hover .deal-card-img img { transform: scale(1.06); }
+.deal-card-disc { position: absolute; top: 12px; left: 12px; box-shadow: var(--shadow-sm); }
+.deal-card-badge { position: absolute; bottom: 12px; left: 12px; box-shadow: var(--shadow-md); }
+.save-btn { position: absolute; top: 10px; right: 10px; width: 38px; height: 38px; border-radius: 50%;
+  background: color-mix(in oklab, var(--surface) 80%, transparent); backdrop-filter: blur(8px);
+  display: grid; place-items: center; color: var(--text); transition: all .15s ease; box-shadow: var(--shadow-sm); }
+.save-btn:hover { background: var(--surface); transform: scale(1.08); }
+.save-btn.saved { color: var(--primary); }
+.deal-card-body { padding: var(--card-pad); display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.deal-card-merch { display: inline-flex; align-items: center; gap: 5px; font-size: .8rem; font-weight: 600;
+  color: var(--text-muted); width: fit-content; }
+.deal-card-merch:hover { color: var(--text); }
+.deal-card-merch span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+.deal-card-title { font-family: var(--font-body); font-weight: 700; font-size: .98rem; line-height: 1.3;
+  letter-spacing: -.01em; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; text-wrap: pretty; min-height: 2.55em; }
+.deal-card-meta { display: flex; align-items: center; gap: 4px; font-size: .8rem; flex-wrap: wrap; }
+.deal-card-sold { font-weight: 500; }
+.deal-card-price { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 6px; flex-wrap: wrap; }
+.price-now { font-family: var(--font-display); font-weight: 600; font-size: 1.35rem; color: var(--text); letter-spacing: -.01em; }
+.price-was { text-decoration: line-through; color: var(--text-faint); font-weight: 500; font-size: .95rem; }
+.price-save { margin-left: auto; }
+.deal-card.compact .deal-card-img { aspect-ratio: 16 / 10; }
+
+/* ── Section head ── */
+.section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.section-title { font-size: 1.7rem; }
+.section-sub { font-size: .95rem; margin-top: 4px; }
+.link-action { display: inline-flex; align-items: center; gap: 5px; font-weight: 700; font-size: .92rem;
+  color: var(--primary); white-space: nowrap; transition: gap .15s ease; }
+.link-action:hover { gap: 9px; }
+
+/* ── Empty + toast ── */
+.empty-state { text-align: center; padding: 72px 24px; }
+.empty-ico { width: 64px; height: 64px; border-radius: 50%; background: var(--surface-2); color: var(--text-muted);
+  display: inline-grid; place-items: center; margin-bottom: 16px; }
+.empty-state h3 { font-size: 1.25rem; margin-bottom: 6px; }
+.toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); z-index: 200;
+  background: var(--text); color: var(--bg); padding: 12px 20px; border-radius: var(--r-pill);
+  font-weight: 600; font-size: .92rem; display: flex; align-items: center; gap: 8px; box-shadow: var(--shadow-lg); }
+@media (max-width: 860px) { .toast { bottom: 96px; } }
+</style>
+<link rel="stylesheet" href="app.css" />
+</head>
+<body class="density-regular">
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="data.js"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="components.jsx"></script>
+<script type="text/babel" src="screens-browse.jsx"></script>
+<script type="text/babel" src="screens-detail.jsx"></script>
+<script type="text/babel" src="screens-account.jsx"></script>
+<script type="text/babel" src="app.jsx"></script>
+</body>
+</html>

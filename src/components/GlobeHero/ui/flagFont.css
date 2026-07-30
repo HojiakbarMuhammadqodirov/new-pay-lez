@@ -1,0 +1,16 @@
+/*
+ * Self-hosted Twemoji flag subset.
+ *
+ * Chromium on Windows ships no glyphs for regional-indicator pairs, so 🇺🇸
+ * would render as the letters "US". Kept in its own file because both the
+ * globe's country card and the intro's spotlight badge need it — a duplicated
+ * @font-face in two component stylesheets would be two things to keep in sync.
+ *
+ * The file itself is copied into public/ by `npm run assets`.
+ */
+@font-face {
+  font-family: 'GH Country Flags';
+  src: url('/fonts/TwemojiCountryFlags.woff2') format('woff2');
+  font-display: swap;
+  unicode-range: U+1F1E6-1F1FF;
+}
