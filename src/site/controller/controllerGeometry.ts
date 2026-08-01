@@ -177,8 +177,19 @@ export function buildDpad(): BufferGeometry {
 }
 
 /** Four action buttons in the usual diamond, each domed. */
-export function buildButtons(): BufferGeometry {
-  const parts: BufferGeometry[] = [];
+/**
+ * The four face buttons, **one geometry each**, clockwise from the top.
+ *
+ * Not merged, unlike every other group here, because on a light page each one
+ * takes its own colour — see `BUTTON_COLORS` in `Controller3D.tsx`. Four draw
+ * calls instead of one is nothing next to the shell, and merging them would
+ * mean a vertex-colour attribute and a custom material to read it, which is a
+ * lot of machinery for four spheres.
+ *
+ * The order is the order the colours are assigned in, so it is part of the
+ * contract: **top, right, bottom, left.**
+ */
+export function buildButtons(): BufferGeometry[] {
   const centre = { x: 1.12, y: 0.5 };
   const offsets: Array<[number, number]> = [
     [0, 0.26],
@@ -187,19 +198,17 @@ export function buildButtons(): BufferGeometry {
     [-0.26, 0],
   ];
 
-  for (const [dx, dy] of offsets) {
+  return offsets.map(([dx, dy]) => {
     const barrel = new CylinderGeometry(0.125, 0.125, 0.1, 20);
     barrel.rotateX(Math.PI / 2);
     barrel.translate(centre.x + dx, centre.y + dy, FACE_Z + 0.03);
-    parts.push(barrel);
 
     const dome = new SphereGeometry(0.125, 20, 14);
     dome.scale(1, 1, 0.42);
     dome.translate(centre.x + dx, centre.y + dy, FACE_Z + 0.08);
-    parts.push(dome);
-  }
 
-  return mergeGeometries(parts, false)!;
+    return mergeGeometries([barrel, dome], false)!;
+  });
 }
 
 /** Touchpad slab between the shoulders. */

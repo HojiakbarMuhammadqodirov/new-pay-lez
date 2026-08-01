@@ -61,16 +61,25 @@ export const THEMES: Record<ThemeName, ThemePalette> = {
   },
   light: {
     /*
-     * `--accent-ink`, not `--accent`. The canvases draw the globe's coastlines,
-     * the node web's links and the market tape's line as hairlines, and in `ink`
-     * tone those are alpha-blended *onto* near-white paper — the brand mint is
-     * 2.8:1 there and a one-pixel stroke of it all but vanishes. This is the
-     * same hue two stops darker, which holds 4.7:1 and keeps the country label
-     * readable at its small uppercase size.
+     * `--accent-lit` — the middle step of the light ramp, and the same hex.
+     *
+     * These layers are shapes, so they want `--accent`, not the text ink — but
+     * `tone: 'ink'` alpha-blends them onto near-white, and the globe is mostly
+     * one-pixel coastlines. At the full `#2af3d1` (1.3:1 against the page) the
+     * sphere survives as a pale disc and every coastline, route and link
+     * disappears: not a softer globe, an empty one. So it lands on exactly the
+     * step CSS uses for its own strokes — every icon on the page and every line
+     * on the globe are then literally one colour, which is the point.
+     *
+     * The globe's country label is a word, not a shape, and is handled where it
+     * belongs: `CountryCard.css` colours it from `--accent-ink` and falls back
+     * to this only when the site stylesheet is absent.
      */
-    primary: '#0b7f6b',
+    primary: '#089b99',
     background: '#f5f9f8',
-    onPrimary: '#f5f9f8',
+    /* Near-black, not the page: the mark is *filled* with `primary` now, and a
+       page-coloured letter on neon is 1.3:1. Mirrors `--on-accent`. */
+    onPrimary: '#04201f',
     tone: 'ink',
     glow: 0,
   },

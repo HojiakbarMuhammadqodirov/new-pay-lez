@@ -52,13 +52,28 @@
    */
   --glass: rgba(var(--panel-rgb), 0.74);
 
-  --surface: rgba(var(--accent-rgb), 0.035);
-  --surface-2: rgba(var(--accent-rgb), 0.06);
+  /*
+   * Tint for filled washes, separate from `--accent-rgb` (hairlines and
+   * borders) because on paper the two want opposite ends of the ramp: a wash is
+   * a large area and can be the neon itself, a 1px line at 16% alpha cannot be
+   * anything but the deep step. Here they are the same colour, so dark is
+   * unaffected by the split.
+   */
+  --tint-rgb: var(--accent-rgb);
+
+  --surface: rgba(var(--tint-rgb), 0.035);
+  --surface-2: rgba(var(--tint-rgb), 0.06);
   --border: rgba(var(--accent-rgb), 0.13);
   --border-2: rgba(var(--accent-rgb), 0.26);
 
   --accent: #58e9d4;
   --accent-ink: var(--accent);
+  /*
+   * The middle of the ramp: icon strokes, focus rings and large accented type.
+   * On black there is no middle to need — the accent clears everything at 11:1 —
+   * so all three steps are the same mint here, and the token exists for light.
+   */
+  --accent-lit: var(--accent-ink);
   /*
    * The accent held back, for controls at rest — the language trigger, the
    * theme toggle, the eyebrows. Diluting toward the page is free on black,
@@ -109,16 +124,27 @@
  * `site/theme/context.ts`, and the comments there say which token each mirrors.
  */
 :root[data-theme='light'] {
+  /* `--bg` is the hex you specified and is left exactly as given; it is neutral
+     to within one channel anyway. `--bg-2` is derived, so it takes the cyan cast
+     the rest of the theme has — same lightness, blue ahead of green. */
   --bg: #f5f9f8;
-  --bg-2: #eaf0ee;
+  --bg-2: #e9f1f1;
 
   /*
    * The tint behind every wash and hairline, and deliberately the *ink* teal
-   * rather than the mint fill above it. `--surface` is 5% and `--border` 16%;
-   * at those alphas the mint disappears into near-white paper and the cards
-   * lose their edges, where the darker teal still draws a line you can see.
+   * rather than the neon fill above it. `--surface` is 5% and `--border` 16%;
+   * at those alphas the neon disappears into near-white paper and the cards
+   * lose their edges, where the deep teal still draws a line you can see.
    */
-  --accent-rgb: 11, 127, 107;
+  --accent-rgb: 0, 122, 120;
+  /*
+   * Washes take the neon itself, not the hairline cyan. A 16% neon over white is
+   * a pale aqua; the same alpha of the deep step is a grey wash, which is what
+   * made the light theme read as a different colour family from the buttons
+   * sitting on top of it. Alphas are raised to match: the neon is lighter, so it
+   * needs more of itself to tint by the same amount.
+   */
+  --tint-rgb: 19, 239, 242;
   --panel-rgb: 255, 255, 255;
   /*
    * Higher than dark's. The sheet is white and the page is near-white, so the
@@ -130,50 +156,76 @@
    */
   --glass: rgba(var(--panel-rgb), 0.84);
 
-  --surface: rgba(var(--accent-rgb), 0.05);
-  --surface-2: rgba(var(--accent-rgb), 0.09);
+  --surface: rgba(var(--tint-rgb), 0.16);
+  --surface-2: rgba(var(--tint-rgb), 0.28);
   --border: rgba(var(--accent-rgb), 0.16);
   --border-2: rgba(var(--accent-rgb), 0.32);
 
   /*
-   * The brand mint, and the one place the two accent tokens genuinely have to
+   * The neon, and the one place the two accent tokens genuinely have to
    * disagree.
    *
    * `--accent` is only ever a *fill* — buttons, chips, bars, the brand mark, the
    * chart columns; grep confirms nothing anywhere sets `color: var(--accent)`.
-   * A fill carries its own ink, and `--on-accent` on this mint is 5.8:1, so the
-   * mint can be exactly the brand colour without costing anything legible.
+   * A fill carries its own ink rather than borrowing the page's, and `--on-accent`
+   * on this neon is 12:1, so the fill can be the brand colour exactly. What a
+   * pale fill *cannot* do on paper is hold its own silhouette — 1.3:1 against the
+   * page — so the light theme rings solid buttons in `--accent-ink` (see
+   * `.btn-solid` below). Ring, not a duller colour: the edge was the only thing
+   * missing.
    *
    * `--accent-ink` is the opposite job: eyebrows, hairlines, icon strokes, small
-   * accented words — thin marks read *against* the page. The same mint there is
-   * 2.8:1, which is below AA for body text and visibly weak at the 0.72rem
-   * uppercase the eyebrows use. So it takes the same hue (hsl 170°) darkened to
-   * 4.7:1 and nothing else changes: the page still reads as one colour, because
-   * it is one colour at two lightnesses.
+   * accented words — thin marks read *against* the page, and no amount of ringing
+   * helps a letterform. The neon there is 1.3:1, which is not text. So it takes
+   * the same hue at full saturation and the darkest lightness that still looks
+   * lit rather than muddy: 4.9:1, pure cyan with no red in it at all.
+   *
+   * The hue is 179°, a hair to the *green* side of true cyan — which is where
+   * the brand wants to sit, and where 170° was trying to be before every dark
+   * step of it turned bottle green. That happens because green is where the eye
+   * is most sensitive and blue falls out of a dark mix first, so a hue that
+   * reads turquoise at full brightness reads green at a quarter of it. Sitting
+   * just under 180° keeps green a shade ahead of blue at every step without
+   * letting it run away: the dark steps lead by two points, not twenty.
    */
-  --accent: #0fa98f;
-  --accent-ink: #0b7f6b;
+  --accent: #13eff2;
+  --accent-ink: #007a78;
+  /*
+   * The middle step, and the one that does most of the work of making this page
+   * look like the neon rather than like a green cousin of it.
+   *
+   * Same hue (179°), 3.2:1 — which is the WCAG bar for non-text marks and for
+   * large type, and both of those are most of the accent on the page: every icon
+   * stroke, the focus ring, and every display figure from the hero stats to the
+   * pricing. Small accented text is the only thing that still needs 4.5:1 and
+   * the only thing left on `--accent-ink`. Anything misjudged between the two
+   * ends up duller than it could be, never illegible — which is the right way
+   * round for a mistake to fall.
+   */
+  --accent-lit: #089b99;
   --accent-soft: color-mix(in srgb, var(--accent-ink) 92%, transparent);
   /*
-   * 5.8:1 on `--accent`, and back to near-black — the same arrangement dark uses,
-   * because light's fill is a bright mint again. It went to the page colour only
-   * while that fill was a deep teal.
+   * 11.9:1 on `--accent`, and near-black — the same arrangement dark uses,
+   * because light's fill is a bright neon again. Cooled into the accent's own
+   * hue (179°) rather than a neutral black, so the darkest thing on the page and
+   * the brightest belong to one family.
    */
-  --on-accent: #0b1f1c;
+  --on-accent: #04201f;
 
-  /* 16.1:1 against the page, and the muted pair well clear of AA. */
-  --text: #0b1f1c;
-  --text-mut: rgba(11, 31, 28, 0.68);
-  --text-fnt: rgba(11, 31, 28, 0.62);
+  /* 16:1 against the page, and the muted pair well clear of AA. */
+  --text: #04201f;
+  --text-mut: rgba(4, 32, 31, 0.68);
+  --text-fnt: rgba(4, 32, 31, 0.62);
 
-  /* Glows take the mint rather than the ink: they are light spilling off a fill,
-     and the fill is mint. `--glow-k` damps them all to 40% regardless. */
-  --glow-rgb: 15, 169, 143;
+  /* Glows take the neon rather than the ink: they are light spilling off a fill,
+     and the fill is neon. `--glow-k` damps them all to 40% regardless. */
+  --glow-rgb: 19, 239, 242;
   --glow-k: 0.4;
-  --shadow: rgba(11, 31, 28, 0.18);
+  --shadow: rgba(4, 32, 31, 0.18);
 
   color-scheme: light;
 }
+
 
 /*
  * The root element, not just the body: overscroll on iOS and the area behind a
@@ -355,7 +407,7 @@ button {
 }
 
 .accent-text {
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 ::selection {
@@ -363,7 +415,7 @@ button {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent-ink);
+  outline: 2px solid var(--accent-lit);
   outline-offset: 3px;
   border-radius: 6px;
 }
@@ -416,6 +468,13 @@ button {
   font-size: 1rem;
 }
 
+/*
+ * No outline on the fill, in either theme.
+ *
+ * A hairline round a neon pill does put an edge on a shape the page cannot
+ * separate on its own — and it looks like a mistake, a sticker with a keyline.
+ * The glow and the near-black label carry it instead.
+ */
 .btn-solid {
   background: var(--accent);
   color: var(--on-accent);
@@ -646,7 +705,7 @@ button {
 
 .nav-glass polygon {
   fill: rgba(var(--accent-rgb), 0.022);
-  stroke: var(--accent-ink);
+  stroke: var(--accent-lit);
   /* Non-scaling stroke keeps every edge a true hairline despite the
      non-uniform stretch that fits the mesh to the pill. Sub-pixel width is the
      point: at 1px the mesh reads as a cage rather than cracks. */
@@ -953,7 +1012,7 @@ button {
   font-size: 1.5rem;
   font-weight: 600;
   letter-spacing: -0.03em;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .hero-stat span {
@@ -1149,7 +1208,7 @@ button {
   height: 62px;
   border-radius: 18px;
   background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   transition: box-shadow 520ms var(--ease);
 }
 
@@ -1318,7 +1377,7 @@ button {
   height: 44px;
   border-radius: 14px;
   background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   transition: box-shadow 320ms var(--ease);
 }
 
@@ -1409,7 +1468,7 @@ button {
   font-weight: 600;
   font-size: 2rem;
   letter-spacing: -0.03em;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .pv-title {
@@ -1432,7 +1491,7 @@ button {
   font-family: var(--font-display);
   font-size: 1.3rem;
   font-weight: 600;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .pv-save {
@@ -1511,7 +1570,7 @@ button {
 }
 
 .tstars {
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   letter-spacing: 0.18em;
   font-size: 0.8rem;
   margin-bottom: 0.9rem;
@@ -1886,7 +1945,7 @@ button {
   border-radius: 14px;
   border: 1px solid var(--border);
   background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .step-n {
@@ -1958,7 +2017,7 @@ button {
   border-radius: 16px;
   border: 1px solid var(--border-2);
   background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .game h3 {
@@ -2314,7 +2373,7 @@ button {
   width: 2px;
   height: 1.05em;
   margin-left: -0.25rem;
-  background: var(--accent-ink);
+  background: var(--accent-lit);
   animation: svc-blink 1.15s steps(1, end) infinite;
 }
 
@@ -2359,7 +2418,7 @@ button {
   border-radius: 12px;
   border: 1px solid var(--border);
   background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .kpi b {
@@ -2502,7 +2561,7 @@ button {
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2605,7 +2664,7 @@ button {
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   /* The count-up runs through every digit width on the way to the total; without
      this the whole console reflows for a second on reveal. */
   font-variant-numeric: tabular-nums;
@@ -2962,7 +3021,7 @@ button {
   font-size: 1.2em;
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   font-variant-numeric: tabular-nums;
 }
 
@@ -2995,7 +3054,7 @@ button {
   height: 26px;
   border-radius: 8px;
   background: var(--surface-2);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .dash-tile b {
@@ -3253,7 +3312,7 @@ button {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface-2);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .dash-row-main {
@@ -3338,7 +3397,7 @@ button {
 .dash-note svg {
   flex: 0 0 auto;
   margin-top: 0.3rem;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .dash-note b {
@@ -3489,7 +3548,7 @@ button {
 .pillar-list svg {
   flex: 0 0 auto;
   margin-top: 0.3rem;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .pillar-more {
@@ -3580,7 +3639,7 @@ button {
   font-weight: 600;
   letter-spacing: -0.03em;
   line-height: 1;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .tier-price span {
@@ -3622,7 +3681,7 @@ button {
 .tier-list svg {
   flex: 0 0 auto;
   margin-top: 0.25rem;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 /* Pushed to the bottom so the three buttons share a baseline across bodies of
@@ -3692,7 +3751,7 @@ button {
   border-radius: 10px;
   border: 1px solid var(--border);
   background: var(--surface-2);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 /*
@@ -3870,7 +3929,7 @@ button {
 .wallet-note svg {
   flex: 0 0 auto;
   margin-top: 0.25rem;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 /* ── the catalogue ────────────────────────────────────────────────────── */
@@ -3964,7 +4023,7 @@ button {
   font-size: 1.25rem;
   font-weight: 600;
   letter-spacing: -0.02em;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 /* Three rules, not four — the `.b2b-why-grid` four-up would leave a hole. */
@@ -4048,7 +4107,7 @@ button {
 }
 
 .rate-row[data-out='true'] b {
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 /* Between the two rows and rotated a quarter turn: the arrow in the icon set
@@ -4063,7 +4122,7 @@ button {
   border-radius: 50%;
   border: 1px solid var(--border);
   background: var(--bg-2);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
   transform: rotate(90deg);
 }
 
@@ -4155,7 +4214,7 @@ button {
   border-radius: 12px;
   border: 1px solid var(--border-2);
   background: rgba(var(--accent-rgb), 0.08);
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .topic > div {
@@ -4256,7 +4315,7 @@ button {
 
 .ask-field svg {
   flex: 0 0 auto;
-  color: var(--accent-ink);
+  color: var(--accent-lit);
 }
 
 .ask-go {

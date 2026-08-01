@@ -106,7 +106,16 @@
   letter-spacing: 0.14em;
   text-transform: uppercase;
   white-space: nowrap;
-  color: var(--gh-primary);
+  /*
+   * The one piece of the globe that is a *word* rather than a shape.
+   *
+   * `--gh-primary` is the accent the geometry is drawn in, and on a light page
+   * that is now a neon — 1.3:1 against paper, which is not text at any size, let
+   * alone this one. So the label prefers the site's readable ink and falls back
+   * to the component's own prop when this stylesheet is used without the site's.
+   * In dark the two are the same colour, so nothing changes there.
+   */
+  color: var(--accent-ink, var(--gh-primary));
   transition: inherit;
   transition-delay: 70ms;
 }

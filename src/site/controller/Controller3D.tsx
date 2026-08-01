@@ -50,6 +50,20 @@ const VIEW_ANGLE: Record<ControllerFacing, [number, number, number]> = {
  * gives the dark shell its depth, and exactly what would turn the pale one to
  * mud, so the light tone dials it back instead of restating every material.
  */
+/**
+ * The four face buttons on a light page, clockwise from the top.
+ *
+ * The one place on the site that is deliberately not two colours. Everywhere
+ * else a third hue is a bug (see CLAUDE.md); here the four-colour face is what a
+ * gamepad *is* — it is the reason anyone recognises the silhouette — and on a
+ * pale moulding under white light it is the only colour on the object. The
+ * order matches `buildButtons()`: top, right, bottom, left.
+ *
+ * Deep rather than primary: saturated at this size on a light shell reads as
+ * plastic tat, and these still have to sit on a page whose own accent is a cyan.
+ */
+const BUTTON_COLORS = ['#e0a800', '#d4453f', '#2f9e5f', '#3560c9'] as const;
+
 const TONE = {
   glow: {
     shell: '#0f1618',
@@ -60,6 +74,17 @@ const TONE = {
     ambient: 0.55,
     key: 2.4,
     rim: 2.8,
+    /**
+     * `null` means "use `primaryColor`".
+     *
+     * `lightColor` tints the rim and bounce lamps; `trim` is the light bar and
+     * the rings round the sticks. On black both are the accent and that is the
+     * whole look — a dark moulding separated from a dark page by its own neon.
+     */
+    lightColor: null,
+    trim: null,
+    /** Face buttons: one shared colour, lit by the accent. */
+    buttons: null,
   },
   ink: {
     shell: '#dde7e4',
@@ -67,9 +92,19 @@ const TONE = {
     well: '#adbfbb',
     touchpad: '#c9d7d4',
     metalness: 0.3,
-    ambient: 0.72,
-    key: 1.7,
-    rim: 1.6,
+    ambient: 0.78,
+    key: 1.9,
+    rim: 1.5,
+    /*
+     * Neutral on paper, and this is the fix for what the accent was doing here.
+     * A cyan rim light and a cyan bounce lamp on a pale grey moulding do not
+     * read as neon — they read as a colour cast, a photograph with the white
+     * balance wrong. The object goes back to being lit by white light, and the
+     * colour on it comes from the buttons instead.
+     */
+    lightColor: '#ffffff',
+    trim: '#9aa8ab',
+    buttons: BUTTON_COLORS,
   },
 } as const;
 
@@ -153,10 +188,17 @@ function ControllerModel({
     [],
   );
 
+  // `buttons` is an array and everything else is a single geometry, so this
+  // flattens before disposing — without it the four face buttons would leak,
+  // and a cast would have hidden that rather than caught it.
   useEffect(
     () => () => {
-      for (const geometry of Object.values(parts) as BufferGeometry[]) {
-        geometry.dispose();
+      for (const part of Object.values(parts) as Array<
+        BufferGeometry | BufferGeometry[]
+      >) {
+        for (const geometry of Array.isArray(part) ? part : [part]) {
+          geometry.dispose();
+        }
       }
     },
     [parts],
@@ -220,15 +262,25 @@ function ControllerModel({
           roughness={0.34}
         />
       </mesh>
-      <mesh geometry={parts.buttons}>
-        <meshStandardMaterial
-          color={skin.control}
-          metalness={0.45 * skin.metalness}
-          roughness={0.22}
-          emissive={primaryColor}
-          emissiveIntensity={0.5}
-        />
-      </mesh>
+      {/* One mesh per button so each can take its own colour. On the dark page
+          they all share the shell's control grey and are lit by the accent; on
+          paper they are the four-colour face a gamepad is known by, and the
+          only colour on the object. */}
+      {parts.buttons.map((geometry, i) => (
+        <mesh geometry={geometry} key={i}>
+          <meshStandardMaterial
+            color={skin.buttons ? skin.buttons[i] : skin.control}
+            metalness={0.45 * skin.metalness}
+            roughness={0.22}
+            emissive={skin.buttons ? skin.buttons[i] : primaryColor}
+            /* Barely lit on paper — enough to keep the colour from going muddy
+               in the shaded half, not so much that four dots start glowing on a
+               white page. The dark page has bloom to catch it, so it can afford
+               more. */
+            emissiveIntensity={skin.buttons ? 0.12 : 0.5}
+          />
+        </mesh>
+      ))}
       <mesh geometry={parts.touchpad}>
         <meshStandardMaterial
           color={skin.touchpad}
@@ -237,12 +289,14 @@ function ControllerModel({
         />
       </mesh>
 
-      {/* Emissive: pure light, picked up by bloom. */}
+      {/* On black these are pure light, picked up by bloom. On paper there is no
+          bloom and nothing to glow against, so they become unlit trim — the
+          moulding line a real controller has, rather than a strip of cyan. */}
       <mesh geometry={parts.lightBar}>
-        <meshBasicMaterial color={primaryColor} toneMapped={false} />
+        <meshBasicMaterial color={skin.trim ?? primaryColor} toneMapped={false} />
       </mesh>
       <mesh geometry={parts.stickRings}>
-        <meshBasicMaterial color={primaryColor} toneMapped={false} />
+        <meshBasicMaterial color={skin.trim ?? primaryColor} toneMapped={false} />
       </mesh>
     </group>
   );
@@ -259,21 +313,26 @@ function ControllerModel({
  */
 function Rig({ primaryColor, tone }: SceneProps) {
   const skin = TONE[tone];
+  // Neutral on paper: see the `lightColor` note in `TONE`. On black it is the
+  // accent, which is what separates a dark object from a dark page.
+  const lamp = skin.lightColor ?? primaryColor;
 
   return (
     <>
       <ambientLight intensity={skin.ambient} />
       <directionalLight position={[4, 5.5, 4]} intensity={skin.key} />
-      <directionalLight
-        position={[-3, 1.5, -4]}
-        intensity={skin.rim}
-        color={primaryColor}
-      />
+      <directionalLight position={[-3, 1.5, -4]} intensity={skin.rim} color={lamp} />
       <pointLight
         position={[0, -3, 2.5]}
+        /*
+         * The bounce off the ground. Scaled by `metalness` so it only really
+         * exists on the dark shell, which is metal and needs something to
+         * reflect; on the pale one it is a fill light, and 14 × 0.3 is about
+         * right for keeping the underside of the grips off pure grey.
+         */
         intensity={14 * skin.metalness}
         distance={12}
-        color={primaryColor}
+        color={lamp}
       />
       <pointLight position={[3.5, 1, 3]} intensity={8} distance={11} color="#ffffff" />
     </>

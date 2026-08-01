@@ -98,9 +98,17 @@ discarded, they are what an English reader sees.
 ## Conventions
 
 **Two colours, everywhere.** One accent on one ground — `#58e9d4` on `#0d0d0e`
-in dark, a deep teal on near-white in light. Flag emoji are the one sanctioned
-exception. Don't introduce a third hue; derive tints from the accent with alpha
-the way `--surface` / `--border` do.
+in dark, a cyan on near-white in light. Don't introduce a third hue; derive
+tints from the accent with alpha the way `--surface` / `--border` do.
+
+There are exactly two sanctioned exceptions, and both are cases where the thing
+depicted *is* its colours: flag emoji, and the controller's four face buttons on
+the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`). The second is
+new and worth the words: on black the controller is a dark moulding lit by the
+accent, which is the whole look. On paper that same accent became a colour cast
+on pale grey plastic — a photo with the white balance wrong — so light mode
+lights it with white and puts the colour where a gamepad actually keeps it. Do
+not read either exception as licence for a third hue anywhere else.
 
 **Theming is two parallel palettes, and they must agree.**
 
@@ -115,17 +123,51 @@ the way `--surface` / `--border` do.
   down as props. That file is the *only* place the two systems have to be kept
   in sync.
 
-`--accent` (fills) and `--accent-ink` (text, icons, hairlines) are deliberately
-different tokens, and light is where they part company. Light's fill is the
-brand mint `#0fa98f`; a fill carries its own ink, and `--on-accent` (`#0b1f1c`)
-is 5.8:1 on it, so the mint can be exactly the brand colour. The same mint drawn
-*thin* against the page is 2.8:1 — under AA for body text and visibly weak at the
-0.72rem uppercase the eyebrows use — so `--accent-ink` is the same hue (170°)
-darkened to `#0b7f6b`, 4.7:1. One colour at two lightnesses, not two colours.
+**The light theme is one hue at three lightnesses, and the hue is cyan.**
+Everything accented on that page is 179°; only the step changes, and the step is
+chosen by what the mark *is*, because paper sets a different bar for each:
 
-So: `--accent-ink` for anything drawn thin, `--accent` for anything filled
-solid, and never a raw mint on a light ground. Nothing in `site.css` sets
+    --accent      #13eff2  the neon. Fills only — buttons, the brand mark,
+                           chips, bars, chart columns. 11.9:1 against its ink.
+    --accent-lit  #089b99  3.2:1. Icon strokes, focus rings and large type,
+                           which is the WCAG bar for both. Most of the accent
+                           you see on the page is this.
+    --accent-ink  #007a78  4.9:1. Small accented text, and nothing else.
+
+179° and not the 170° of the dark mint, and that is not a whim: 170° reads as a
+turquoise while it is *bright*, but every step down in lightness at that hue
+reads greener, because green is where the eye is most sensitive and blue falls
+out of a dark mix first. Sitting just under 180° keeps green a shade ahead of
+blue — the brand leans green, not blue — without letting it run: the dark steps
+lead by two points, not twenty. Dark keeps 171° because it never goes dark; it
+only ever has the bright step.
+
+Dark has no middle to need — the mint clears everything at 11:1 — so all three
+are `#58e9d4` there and the ramp costs nothing.
+
+`--on-accent` and `--text` are `#04201f`, the same hue taken to near-black, so
+the darkest thing on the page and the brightest belong to one family. `--bg-2`
+carries the cyan cast too; `--bg` is a specified brand value and is left alone.
+
+Getting the step wrong makes a mark duller than it could be; it never makes one
+illegible, because `--accent-ink` is the default and `--accent-lit` is applied
+deliberately. Keep it that way round. Nothing in `site.css` sets
 `color: var(--accent)`, and nothing should start.
+
+One more token exists because a colour cannot do both jobs on paper:
+
+- **`--tint-rgb`** — the neon in light, `--accent-rgb` in dark. Filled washes
+  (`--surface`, `--surface-2`) are large areas and can be the neon itself; a 1px
+  border at 16% cannot be anything but the deep step, so `--border` keeps
+  `--accent-rgb`. Light raises the wash alphas to match — the neon is lighter, so
+  it needs more of itself to tint by the same amount.
+
+The canvases take `--accent-lit` (`THEMES.light.primary`, same hex — the globe,
+the controller, the node web, the market tape): they are
+shapes, but `tone: 'ink'` alpha-blends them onto paper and the globe is mostly
+one-pixel coastlines — at the full neon it renders as an empty disc. The globe's
+country label is the one *word* in that layer, and `CountryCard.css` colours it
+from `--accent-ink` with the prop as a fallback.
 
 **Glass opacity is one token, `--glass`.** Every card that floats over a
 backdrop — the voucher preview, the streak card, the game cards, the board —
