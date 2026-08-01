@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Paylez for Business — Turn every visit into a habit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: #FBFDFC; }
+  body { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  * { box-sizing: border-box; }
+  a { color: #0B7F63; text-decoration: none; }
+  a:hover { color: #096B54; }
+  ::selection { background: #5FE9C4; color: #04120D; }
+  @keyframes plzFloat { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
+  @keyframes plzPulse { 0%,100% { opacity: .4; } 50% { opacity: .9; } }
+</style>
+</helmet>
+
+<div style="background:#FBFDFC;color:#061512;min-height:100vh;overflow-x:hidden;position:relative">
+
+  <div style="position:absolute;top:-340px;left:50%;transform:translateX(-50%);width:1200px;height:720px;background:radial-gradient(50% 50% at 50% 50%, rgba(95,233,196,0.34) 0%, rgba(95,233,196,0) 70%);pointer-events:none;filter:blur(20px)"></div>
+
+  <header style="position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rgba(251,253,252,0.78);border-bottom:1px solid rgba(6,21,18,0.08)">
+    <nav style="max-width:1240px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:36px">
+      <a href="#top" style="display:flex;align-items:center;gap:10px;color:#061512">
+        <span style="width:34px;height:34px;border-radius:11px;background:#061512;color:#5FE9C4;font-weight:800;font-size:19px;display:flex;align-items:center;justify-content:center">p</span>
+        <span style="font-size:21px;font-weight:800;letter-spacing:-0.02em">paylez</span>
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.12em;color:#0B7F63;border:1px solid rgba(11,127,99,0.28);border-radius:6px;padding:3px 7px;margin-left:2px">B2B</span>
+      </a>
+      <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;align-items:center;gap:28px;font-size:15px;font-weight:500;color:#5A6763;margin-left:8px;white-space:nowrap">
+          <a href="#top" style="color:#061512;font-weight:600">Platform</a>
+          <a href="#features" style="color:#5A6763" style-hover="color:#061512">Features</a>
+          <a href="#pricing" style="color:#5A6763" style-hover="color:#061512">Pricing</a>
+          <a href="#proof" style="color:#5A6763" style-hover="color:#061512">Case studies</a>
+          <a href="#cta" style="color:#5A6763" style-hover="color:#061512">Contact</a>
+        </div>
+      </sc-if>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+          <button onClick="{{ toggleMenu }}" style="display:flex;flex-direction:column;gap:4px;justify-content:center;align-items:center;width:42px;height:42px;border-radius:12px;border:1px solid rgba(6,21,18,0.14);background:#FFFFFF;cursor:pointer" style-hover="border-color:#0B7F63">
+            <span style="width:16px;height:2px;border-radius:2px;background:#061512;display:block"></span>
+            <span style="width:16px;height:2px;border-radius:2px;background:#061512;display:block"></span>
+          </button>
+        </sc-if>
+        <a href="Paylez%20Business.dc.html" title="Switch to dark mode" style="width:42px;height:42px;border-radius:12px;border:1px solid rgba(6,21,18,0.14);background:#FFFFFF;display:flex;align-items:center;justify-content:center;flex:0 0 42px" style-hover="border-color:#0B7F63;background:rgba(95,233,196,0.12)">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0B7F63" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+          </svg>
+        </a>
+        <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+          <a href="#cta" style="font-size:15px;font-weight:600;color:#061512;padding:10px 16px;border-radius:999px;border:1px solid rgba(6,21,18,0.14);white-space:nowrap" style-hover="border-color:#0B7F63;color:#0B7F63">Sign in</a>
+        </sc-if>
+        <a href="#cta" style="font-size:15px;font-weight:700;color:#04120D;background:#5FE9C4;padding:11px 20px;border-radius:999px;white-space:nowrap;box-shadow:0 8px 22px rgba(95,233,196,0.5)" style-hover="background:#3EDDB2;box-shadow:0 10px 30px rgba(95,233,196,0.7)">{{ ctaLabel }}</a>
+      </div>
+    </nav>
+    <sc-if value="{{ menuOpen }}" hint-placeholder-val="{{ false }}">
+      <div style="border-top:1px solid rgba(6,21,18,0.08);background:#FFFFFF;padding:14px 28px 20px;display:flex;flex-direction:column;gap:2px">
+        <a href="#top" onClick="{{ closeMenu }}" style="font-size:16px;font-weight:600;color:#061512;padding:11px 0">Platform</a>
+        <a href="#features" onClick="{{ closeMenu }}" style="font-size:16px;font-weight:500;color:#5A6763;padding:11px 0">Features</a>
+        <a href="#pricing" onClick="{{ closeMenu }}" style="font-size:16px;font-weight:500;color:#5A6763;padding:11px 0">Pricing</a>
+        <a href="#proof" onClick="{{ closeMenu }}" style="font-size:16px;font-weight:500;color:#5A6763;padding:11px 0">Case studies</a>
+        <a href="#cta" onClick="{{ closeMenu }}" style="font-size:16px;font-weight:500;color:#5A6763;padding:11px 0">Contact</a>
+        <a href="#cta" onClick="{{ closeMenu }}" style="font-size:16px;font-weight:600;color:#0B7F63;padding:11px 0;border-top:1px solid rgba(6,21,18,0.08);margin-top:6px">Sign in</a>
+      </div>
+    </sc-if>
+  </header>
+
+  <section id="top" style="max-width:1240px;margin:0 auto;padding:96px 28px 72px;display:flex;gap:56px;align-items:center;flex-wrap:wrap;position:relative">
+    <div style="flex:1 1 460px;min-width:340px">
+      <div style="display:inline-flex;align-items:center;gap:9px;padding:7px 14px 7px 10px;border-radius:999px;border:1px solid rgba(11,127,99,0.24);background:rgba(95,233,196,0.16);font-size:13px;font-weight:600;color:#0B7F63;margin-bottom:28px">
+        <span style="width:7px;height:7px;border-radius:50%;background:#0B7F63"></span>
+        Play-to-earn rewards, vouchers &amp; CRM in one platform
+      </div>
+      <h1 style="margin:0 0 30px;font-size:clamp(42px,5.4vw,76px);line-height:0.98;letter-spacing:-0.035em;font-weight:800;color:#061512;text-wrap:balance">
+        Turn every visit<br>into a habit.
+        <span style="display:block;color:#0B7F63">Own your customers.</span>
+      </h1>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:52px">
+        <a href="#cta" style="display:inline-flex;align-items:center;gap:10px;background:#5FE9C4;color:#04120D;font-size:17px;font-weight:700;padding:17px 30px;border-radius:999px;box-shadow:0 14px 36px rgba(95,233,196,0.55)" style-hover="background:#3EDDB2;transform:translateY(-1px)">
+          <span style="font-size:18px">→</span> {{ ctaLabel }}
+        </a>
+        <a href="#features" style="display:inline-flex;align-items:center;gap:10px;color:#061512;font-size:17px;font-weight:600;padding:17px 30px;border-radius:999px;border:1px solid rgba(6,21,18,0.16);background:#FFFFFF" style-hover="border-color:#0B7F63;color:#0B7F63">See how it works</a>
+      </div>
+      <div style="display:flex;gap:0;flex-wrap:wrap">
+        <div style="padding-right:34px">
+          <div style="font-size:30px;font-weight:800;color:#0B7F63;letter-spacing:-0.02em">3×</div>
+          <div style="font-size:14px;color:#5A6763;margin-top:4px">Repeat visit uplift</div>
+        </div>
+        <div style="padding:0 34px;border-left:1px solid rgba(6,21,18,0.1)">
+          <div style="font-size:30px;font-weight:800;color:#0B7F63;letter-spacing:-0.02em">£0</div>
+          <div style="font-size:14px;color:#5A6763;margin-top:4px">Cost until redemption</div>
+        </div>
+        <div style="padding-left:34px;border-left:1px solid rgba(6,21,18,0.1)">
+          <div style="font-size:30px;font-weight:800;color:#0B7F63;letter-spacing:-0.02em">48h</div>
+          <div style="font-size:14px;color:#5A6763;margin-top:4px">From signup to live</div>
+        </div>
+      </div>
+    </div>
+    <div style="flex:1 1 440px;min-width:340px;display:flex;justify-content:center;position:relative">
+      {{ heroArt }}
+    </div>
+  </section>
+
+  <section style="border-top:1px solid rgba(6,21,18,0.08);border-bottom:1px solid rgba(6,21,18,0.08);background:#FFFFFF">
+    
+  </section>
+
+  <section id="features" data-reveal="1" style="max-width:1240px;margin:0 auto;padding:104px 28px 40px">
+    <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;color:#0B7F63;margin-bottom:18px">WHY OPERATORS SWITCH</div>
+    <h2 style="margin:0 0 20px;font-size:clamp(34px,3.8vw,52px);line-height:1.04;letter-spacing:-0.03em;font-weight:800;max-width:720px;text-wrap:balance">Everything you need to grow revenue from the customers you already have.</h2>
+    <p style="margin:0 0 52px;font-size:18px;line-height:1.6;color:#5A6763;max-width:600px">Four systems most venues buy separately — running off one customer record.</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:20px">
+      <sc-for list="{{ benefits }}" as="b" hint-placeholder-count="4">
+        <div style="padding:30px 28px 32px;border-radius:20px;border:1px solid rgba(6,21,18,0.08);background:#FFFFFF;box-shadow:0 2px 8px rgba(6,21,18,0.03);transition:border-color .25s, transform .25s, box-shadow .25s" style-hover="border-color:rgba(11,127,99,0.4);transform:translateY(-4px);box-shadow:0 18px 44px rgba(6,21,18,0.1)">
+          <div style="width:46px;height:46px;border-radius:14px;background:rgba(95,233,196,0.2);border:1px solid rgba(11,127,99,0.2);display:flex;align-items:center;justify-content:center;margin-bottom:22px">{{ b.icon }}</div>
+          <h3 style="margin:0 0 10px;font-size:19px;font-weight:700;letter-spacing:-0.015em;color:#061512">{{ b.title }}</h3>
+          <p style="margin:0 0 16px;font-size:15px;line-height:1.62;color:#5A6763;text-wrap:pretty">{{ b.body }}</p>
+          <div style="font-size:14px;font-weight:700;color:#0B7F63">{{ b.stat }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section style="max-width:1240px;margin:0 auto;padding:80px 28px 0">
+    <div data-reveal="1" style="display:flex;gap:64px;align-items:center;flex-wrap:wrap;padding:36px 0">
+      <div style="flex:1 1 420px;min-width:320px">
+        <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;color:#0B7F63;margin-bottom:16px">PAYLEZ PORTAL</div>
+        <h3 style="margin:0 0 18px;font-size:clamp(30px,3.2vw,44px);line-height:1.06;letter-spacing:-0.03em;font-weight:800;text-wrap:balance">One dashboard for every site you run.</h3>
+        <p style="margin:0 0 26px;font-size:17px;line-height:1.65;color:#5A6763;max-width:500px;text-wrap:pretty">Spend, plays, redemptions and returning-customer share across all locations — filtered by site, channel or date.</p>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:32px">
+          <sc-for list="{{ portalPoints }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <span style="flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:rgba(95,233,196,0.25);border:1px solid rgba(11,127,99,0.25);color:#0B7F63;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px">✓</span>
+              <div>
+                <div style="font-size:16px;font-weight:700;color:#061512;margin-bottom:3px">{{ p.title }}</div>
+                <div style="font-size:15px;line-height:1.6;color:#5A6763">{{ p.body }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <a href="#cta" style="display:inline-flex;align-items:center;gap:8px;font-size:16px;font-weight:700;color:#0B7F63">Explore the portal <span>→</span></a>
+      </div>
+      <div style="flex:1 1 460px;min-width:320px">{{ portalMock }}</div>
+    </div>
+
+    <div data-reveal="1" style="display:flex;gap:64px;align-items:center;flex-wrap:wrap-reverse;padding:72px 0">
+      <div style="flex:1 1 460px;min-width:320px">{{ gameMock }}</div>
+      <div style="flex:1 1 420px;min-width:320px">
+        <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;color:#0B7F63;margin-bottom:16px">PLAY &amp; EARN</div>
+        <h3 style="margin:0 0 18px;font-size:clamp(30px,3.2vw,44px);line-height:1.06;letter-spacing:-0.03em;font-weight:800;text-wrap:balance">Your offer, inside a game they open every day.</h3>
+        <p style="margin:0 0 26px;font-size:17px;line-height:1.65;color:#5A6763;max-width:500px;text-wrap:pretty">Customers answer quick questions, build streaks and earn points — then spend those points on a voucher they can only redeem with you.</p>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:32px">
+          <sc-for list="{{ gamePoints }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <span style="flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:rgba(95,233,196,0.25);border:1px solid rgba(11,127,99,0.25);color:#0B7F63;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px">✓</span>
+              <div>
+                <div style="font-size:16px;font-weight:700;color:#061512;margin-bottom:3px">{{ p.title }}</div>
+                <div style="font-size:15px;line-height:1.6;color:#5A6763">{{ p.body }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <a href="#cta" style="display:inline-flex;align-items:center;gap:8px;font-size:16px;font-weight:700;color:#0B7F63">See how Play &amp; Earn works <span>→</span></a>
+      </div>
+    </div>
+
+    <div data-reveal="1" style="display:flex;gap:64px;align-items:center;flex-wrap:wrap;padding:36px 0 24px">
+      <div style="flex:1 1 420px;min-width:320px">
+        <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;color:#0B7F63;margin-bottom:16px">DATA &amp; MARKETING</div>
+        <h3 style="margin:0 0 18px;font-size:clamp(30px,3.2vw,44px);line-height:1.06;letter-spacing:-0.03em;font-weight:800;text-wrap:balance">Win back quiet customers in ten minutes a month.</h3>
+        <p style="margin:0 0 26px;font-size:17px;line-height:1.65;color:#5A6763;max-width:500px;text-wrap:pretty">Segment by spend, frequency or lapsed days, then send a push, offer or promo code — and see the revenue it brought back.</p>
+        <div style="display:flex;flex-direction:column;gap:16px;margin-bottom:32px">
+          <sc-for list="{{ dataPoints }}" as="p" hint-placeholder-count="3">
+            <div style="display:flex;gap:14px;align-items:flex-start">
+              <span style="flex:0 0 22px;width:22px;height:22px;border-radius:50%;background:rgba(95,233,196,0.25);border:1px solid rgba(11,127,99,0.25);color:#0B7F63;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:2px">✓</span>
+              <div>
+                <div style="font-size:16px;font-weight:700;color:#061512;margin-bottom:3px">{{ p.title }}</div>
+                <div style="font-size:15px;line-height:1.6;color:#5A6763">{{ p.body }}</div>
+              </div>
+            </div>
+          </sc-for>
+        </div>
+        <a href="#cta" style="display:inline-flex;align-items:center;gap:8px;font-size:16px;font-weight:700;color:#0B7F63">Browse the toolkit <span>→</span></a>
+      </div>
+      <div style="flex:1 1 460px;min-width:320px">{{ dataMock }}</div>
+    </div>
+  </section>
+
+  <section id="proof" data-reveal="1" style="max-width:1240px;margin:0 auto;padding:96px 28px">
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:40px">
+      <div>
+        <div style="font-size:13px;font-weight:700;letter-spacing:0.16em;color:#0B7F63;margin-bottom:16px">OPERATORS ON PAYLEZ</div>
+        <h2 style="margin:0;font-size:clamp(32px,3.6vw,48px);line-height:1.05;letter-spacing:-0.03em;font-weight:800;max-width:600px;text-wrap:balance">The people running the venues, not the software.</h2>
+      </div>
+      <div style="display:flex;gap:10px">
+        <button onClick="{{ prev }}" style="width:48px;height:48px;border-radius:50%;border:1px solid rgba(6,21,18,0.14);background:#FFFFFF;color:#061512;font-size:18px;cursor:pointer;font-family:inherit" style-hover="border-color:#0B7F63;color:#0B7F63">←</button>
+        <button onClick="{{ next }}" style="width:48px;height:48px;border-radius:50%;border:1px solid rgba(6,21,18,0.14);background:#FFFFFF;color:#061512;font-size:18px;cursor:pointer;font-family:inherit" style-hover="border-color:#0B7F63;color:#0B7F63">→</button>
+      </div>
+    </div>
+    <div style="overflow:hidden;border-radius:24px">
+      {{ track }}
+    </div>
+    <div style="display:flex;gap:8px;margin-top:26px;justify-content:center">{{ dots }}</div>
+  </section>
+
+  <section id="pricing" data-reveal="1" style="max-width:1240px;margin:0 auto;padding:0 28px 96px">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px">
+      <sc-for list="{{ tiers }}" as="t" hint-placeholder-count="3">
+        <div style="padding:30px 26px;border-radius:20px;border:1px solid rgba(6,21,18,0.08);background:#FFFFFF;box-shadow:0 2px 8px rgba(6,21,18,0.03);transition:border-color .25s" style-hover="border-color:rgba(11,127,99,0.4)">
+          <div style="font-size:15px;font-weight:700;color:#061512;margin-bottom:8px">{{ t.name }}</div>
+          <div style="font-size:30px;font-weight:800;letter-spacing:-0.025em;color:#0B7F63;margin-bottom:6px">{{ t.price }}</div>
+          <div style="font-size:14px;line-height:1.55;color:#5A6763">{{ t.note }}</div>
+        </div>
+      </sc-for>
+    </div>
+  </section>
+
+  <section id="cta" data-reveal="1" style="max-width:1240px;margin:0 auto;padding:0 28px 96px">
+    <div style="position:relative;overflow:hidden;border-radius:32px;border:1px solid rgba(11,127,99,0.18);background:radial-gradient(120% 150% at 6% 0%, rgba(95,233,196,0.55) 0%, rgba(95,233,196,0.18) 45%, rgba(251,253,252,0.4) 80%), linear-gradient(160deg,#EFFBF7 0%,#FFFFFF 70%);padding:72px 56px">
+      <div style="position:absolute;right:-120px;top:-120px;width:420px;height:420px;border-radius:50%;background:radial-gradient(50% 50% at 50% 50%, rgba(95,233,196,0.4) 0%, rgba(95,233,196,0) 70%)"></div>
+      <div style="position:relative;max-width:680px">
+        <h2 style="margin:0 0 20px;font-size:clamp(34px,4.2vw,58px);line-height:1.02;letter-spacing:-0.035em;font-weight:800;color:#061512;text-wrap:balance">See what your regulars are worth.</h2>
+        <p style="margin:0 0 34px;font-size:19px;line-height:1.6;color:#3F4E49;max-width:520px;text-wrap:pretty">A 20-minute call, your numbers, and a plain forecast of the repeat revenue Paylez would unlock. No contract to start.</p>
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:28px">
+          <a href="#cta" style="display:inline-flex;align-items:center;gap:10px;background:#061512;color:#5FE9C4;font-size:17px;font-weight:700;padding:17px 32px;border-radius:999px;box-shadow:0 14px 36px rgba(6,21,18,0.22)" style-hover="background:#0B2A23;transform:translateY(-1px)"><span style="font-size:18px">→</span> {{ ctaLabel }}</a>
+          <a href="#cta" style="display:inline-flex;align-items:center;color:#061512;font-size:17px;font-weight:600;padding:17px 30px;border-radius:999px;border:1px solid rgba(6,21,18,0.2);background:rgba(255,255,255,0.6)" style-hover="border-color:#061512">Talk to sales</a>
+        </div>
+        <div style="font-size:14px;color:#3F4E49">Multi-site group? Ask about rollout support and POS integration.</div>
+      </div>
+    </div>
+  </section>
+
+  <footer style="border-top:1px solid rgba(6,21,18,0.08);background:#F4F8F7">
+    <div style="max-width:1240px;margin:0 auto;padding:64px 28px 32px;display:flex;gap:56px;flex-wrap:wrap;justify-content:space-between">
+      <div style="flex:0 1 300px">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+          <span style="width:32px;height:32px;border-radius:10px;background:#061512;color:#5FE9C4;font-weight:800;font-size:18px;display:flex;align-items:center;justify-content:center">p</span>
+          <span style="font-size:20px;font-weight:800;letter-spacing:-0.02em;color:#061512">paylez</span>
+        </div>
+        <p style="margin:0 0 22px;font-size:15px;line-height:1.6;color:#5A6763;max-width:280px">Play-to-earn rewards, vouchers and customer data for hospitality operators who'd rather own the relationship.</p>
+        <div style="display:flex;gap:10px">
+          <sc-for list="{{ socials }}" as="s" hint-placeholder-count="4">
+            <a href="#cta" style="width:38px;height:38px;border-radius:12px;border:1px solid rgba(6,21,18,0.1);background:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#5A6763" style-hover="border-color:#0B7F63;color:#0B7F63">{{ s }}</a>
+          </sc-for>
+        </div>
+      </div>
+      <sc-for list="{{ footerCols }}" as="col" hint-placeholder-count="3">
+        <div style="flex:0 1 160px">
+          <div style="font-size:13px;font-weight:700;letter-spacing:0.12em;color:#061512;margin-bottom:18px">{{ col.title }}</div>
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <sc-for list="{{ col.links }}" as="l" hint-placeholder-count="4">
+              <a href="#top" style="font-size:15px;color:#5A6763" style-hover="color:#0B7F63">{{ l }}</a>
+            </sc-for>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+    <div style="max-width:1240px;margin:0 auto;padding:24px 28px 48px;border-top:1px solid rgba(6,21,18,0.08);display:flex;gap:20px;flex-wrap:wrap;justify-content:space-between;font-size:14px;color:#6F7A75">
+      <div>© 2026 Paylez Ltd. Registered in England &amp; Wales.</div>
+      <div style="display:flex;gap:22px">
+        <a href="#top" style="color:#6F7A75" style-hover="color:#0B7F63">Privacy Policy</a>
+        <a href="#top" style="color:#6F7A75" style-hover="color:#0B7F63">Terms of Service</a>
+        <a href="#top" style="color:#6F7A75" style-hover="color:#0B7F63">Cookies</a>
+      </div>
+    </div>
+  </footer>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;ctaLabel&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Book a demo&quot;,&quot;Get started&quot;,&quot;Talk to sales&quot;,&quot;Get a quote&quot;],&quot;default&quot;:&quot;Book a demo&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;motion&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behaviour&quot;},&quot;autoplay&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behaviour&quot;}}">
+const MINT = '#5FE9C4';
+const DEEP = '#0B7F63';
+const INK = '#061512';
+const MUTED = '#5A6763';
+const LINE = 'rgba(6,21,18,0.08)';
+const h = React.createElement;
+
+function icon(paths) {
+  return h('svg', { width: 22, height: 22, viewBox: '0 0 24 24', fill: 'none', stroke: DEEP, strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' },
+    paths.map((d, i) => h('path', { key: i, d })));
+}
+
+class Component extends DCLogic {
+  state = { i: 0, wide: true, menuOpen: false };
+
+  componentDidMount() {
+    this.onResize = () => {
+      const wide = window.innerWidth >= 1000;
+      if (wide !== this.state.wide) this.setState({ wide: wide, menuOpen: false });
+    };
+    this.onResize();
+    window.addEventListener('resize', this.onResize);
+    this.io = new IntersectionObserver((es) => {
+      es.forEach((e) => {
+        if (e.isIntersecting) {
+          e.target.style.opacity = '1';
+          e.target.style.transform = 'none';
+          this.io.unobserve(e.target);
+        }
+      });
+    }, { threshold: 0.12 });
+    const motion = this.props.motion !== false;
+    document.querySelectorAll('[data-reveal]').forEach((el) => {
+      if (!motion) return;
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(26px)';
+      el.style.transition = 'opacity .7s cubic-bezier(.4,0,.2,1), transform .7s cubic-bezier(.4,0,.2,1)';
+      this.io.observe(el);
+    });
+    this.timer = setInterval(() => {
+      if (this.props.autoplay === false) return;
+      this.setState((s) => ({ i: (s.i + 1) % this.quotes().length }));
+    }, 6500);
+  }
+
+  componentWillUnmount() {
+    if (this.io) this.io.disconnect();
+    window.removeEventListener('resize', this.onResize);
+    clearInterval(this.timer);
+  }
+
+  quotes() {
+    return [
+      { q: 'We stopped renting our customers from delivery apps. Our voucher sits in a game thousands of people open every morning, and the redemptions walk through the door.', name: 'Priya Raman', role: 'Owner, Sable & Steam — 4 sites, London' },
+      { q: 'Ten minutes on a Monday. One push to everyone who has not been in for three weeks. That single message pays for the platform several times over.', name: 'Tom Kerrigan', role: 'Operations Director, Hermanos Coffee — 11 sites' },
+      { q: 'Our first voucher was live in the game the same week we signed. Staff scan a QR at the till — that is the whole workflow, which is why it actually stuck across all sites.', name: 'Aisha Bello', role: 'Founder, Poke Yard — 6 sites, Manchester' },
+      { q: 'Being able to see basket spend by returning versus first-time customers changed how we price. That report alone justified the switch.', name: 'Daniel Osei', role: 'MD, Northline Bakehouse — 9 sites' }
+    ];
+  }
+
+  card(t, idx) {
+    return h('div', { key: idx, style: { flex: '0 0 100%', padding: '48px 52px', background: '#FFFFFF', border: '1px solid ' + LINE, borderRadius: 24, boxSizing: 'border-box', boxShadow: '0 2px 10px rgba(6,21,18,0.03)' } },
+      h('div', { style: { fontSize: 40, color: DEEP, lineHeight: 1, marginBottom: 18, fontWeight: 800 } }, '\u201C'),
+      h('p', { style: { margin: '0 0 32px', fontSize: 'clamp(20px,2.1vw,27px)', lineHeight: 1.45, letterSpacing: '-0.018em', fontWeight: 600, color: INK, textWrap: 'pretty' } }, t.q),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 14 } },
+        h('div', { style: { width: 44, height: 44, borderRadius: '50%', background: 'rgba(95,233,196,0.25)', border: '1px solid rgba(11,127,99,0.2)', color: DEEP, fontWeight: 800, fontSize: 15, display: 'flex', alignItems: 'center', justifyContent: 'center' } }, t.name.split(' ').map((w) => w[0]).join('')),
+        h('div', null,
+          h('div', { style: { fontSize: 16, fontWeight: 700, color: INK } }, t.name),
+          h('div', { style: { fontSize: 14, color: MUTED, marginTop: 2 } }, t.role))));
+  }
+
+  statTile(label, value, sub, accent) {
+    return h('div', { style: { padding: '16px 18px', borderRadius: 14, background: '#F7FAF9', border: '1px solid ' + LINE, flex: '1 1 0' } },
+      h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#8B968F', marginBottom: 8 } }, label),
+      h('div', { style: { fontSize: 22, fontWeight: 800, letterSpacing: '-0.02em', color: INK } }, value),
+      h('div', { style: { fontSize: 12, color: accent ? DEEP : '#8B968F', marginTop: 4, fontWeight: accent ? 700 : 400 } }, sub));
+  }
+
+  portalMock() {
+    const bars = [38, 52, 44, 68, 58, 88, 74];
+    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    return h('div', { style: { borderRadius: 22, border: '1px solid ' + LINE, background: '#FFFFFF', boxShadow: '0 30px 70px rgba(6,21,18,0.12)', overflow: 'hidden' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, padding: '13px 16px', borderBottom: '1px solid ' + LINE, background: '#F7FAF9' } },
+        h('span', { style: { width: 9, height: 9, borderRadius: '50%', background: 'rgba(6,21,18,0.14)' } }),
+        h('span', { style: { width: 9, height: 9, borderRadius: '50%', background: 'rgba(6,21,18,0.14)' } }),
+        h('span', { style: { width: 9, height: 9, borderRadius: '50%', background: 'rgba(6,21,18,0.14)' } }),
+        h('span', { style: { marginLeft: 12, fontSize: 12, color: '#8B968F', fontWeight: 600 } }, 'portal.paylez.com/dashboard')),
+      h('div', { style: { display: 'flex' } },
+        h('div', { style: { flex: '0 0 132px', borderRight: '1px solid ' + LINE, padding: '18px 12px', display: 'flex', flexDirection: 'column', gap: 4 } },
+          ['Dashboard', 'Customers', 'Marketing', 'Vouchers', 'Reports', 'Settings'].map((l, n) => h('div', { key: l, style: { fontSize: 12.5, fontWeight: n === 0 ? 700 : 500, color: n === 0 ? INK : '#8B968F', background: n === 0 ? MINT : 'transparent', padding: '8px 10px', borderRadius: 9 } }, l))),
+        h('div', { style: { flex: 1, padding: '18px 18px 20px' } },
+          h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 } },
+            h('div', { style: { fontSize: 15, fontWeight: 800, color: INK, letterSpacing: '-0.01em' } }, 'All sites · This month'),
+            h('div', { style: { fontSize: 11, fontWeight: 700, color: DEEP, border: '1px solid rgba(11,127,99,0.25)', borderRadius: 999, padding: '4px 10px' } }, '11 sites')),
+          h('div', { style: { display: 'flex', gap: 10, marginBottom: 12 } },
+            this.statTile('SPEND', '£298,400', '+18% vs last', true),
+            this.statTile('GAMES PLAYED', '243,456', '45,680 returning')),
+          h('div', { style: { display: 'flex', gap: 10, marginBottom: 14 } },
+            this.statTile('VOUCHERS REDEEMED', '15,842', '£4.10 avg basket lift', true),
+            this.statTile('RETURNING', '44%', 'of all customers')),
+          h('div', { style: { padding: '16px 18px 12px', borderRadius: 14, background: '#F7FAF9', border: '1px solid ' + LINE } },
+            h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', color: '#8B968F', marginBottom: 14 } }, 'REPEAT VISITS BY DAY'),
+            h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: 8, height: 74 } },
+              bars.map((b, n) => h('div', { key: n, style: { flex: 1, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', gap: 6 } },
+                h('div', { style: { width: '100%', height: Math.round(b / 100 * 54) + 'px', borderRadius: 5, background: n === 5 ? MINT : 'rgba(95,233,196,0.4)' } }),
+                h('div', { style: { fontSize: 10, color: '#8B968F', fontWeight: 600 } }, days[n]))))))));
+  }
+
+  gameMock() {
+    return h('div', { style: { display: 'flex', gap: 20, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap' } },
+      h('div', { style: { width: 258, borderRadius: 34, border: '1px solid rgba(6,21,18,0.12)', background: '#FFFFFF', padding: 11, boxShadow: '0 30px 70px rgba(6,21,18,0.16)' } },
+        h('div', { style: { borderRadius: 26, background: '#F7FAF9', overflow: 'hidden', border: '1px solid ' + LINE } },
+          h('div', { style: { display: 'flex', justifyContent: 'space-between', padding: '12px 16px 8px', fontSize: 11, color: '#8B968F', fontWeight: 700 } }, h('span', null, '9:41'), h('span', null, '••• ⌁ ▮')),
+          h('div', { style: { padding: '4px 14px 16px' } },
+            h('div', { style: { borderRadius: 18, background: 'linear-gradient(150deg,' + MINT + ' 0%, #3EDDB2 100%)', padding: '16px 16px 18px', color: '#04120D' } },
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, fontWeight: 800, letterSpacing: '0.08em', marginBottom: 12 } },
+                h('span', null, 'PLAY & EARN'),
+                h('span', { style: { opacity: 0.7 } }, 'STREAK 6')),
+              h('div', { style: { fontSize: 14, fontWeight: 700, lineHeight: 1.35, marginBottom: 14 } }, 'Correct! You earned points.'),
+              h('div', { style: { display: 'flex', alignItems: 'flex-end', gap: 8, marginBottom: 14 } },
+                h('div', { style: { fontSize: 38, fontWeight: 800, lineHeight: 0.9, letterSpacing: '-0.03em' } }, '+25'),
+                h('div', { style: { fontSize: 14, fontWeight: 700, opacity: 0.7, paddingBottom: 4 } }, 'pts')),
+              h('div', { style: { display: 'flex', gap: 5 } },
+                [1, 2, 3, 4, 5].map((n) => h('div', { key: n, style: { flex: 1, height: 6, borderRadius: 3, background: n <= 3 ? '#04120D' : 'rgba(4,18,13,0.18)' } }))),
+              h('div', { style: { fontSize: 11, fontWeight: 700, marginTop: 8, opacity: 0.7 } }, 'Question 3 of 5')),
+            h('div', { style: { marginTop: 12, padding: '12px 14px', borderRadius: 14, background: '#FFFFFF', border: '1px solid ' + LINE } },
+              h('div', { style: { fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', color: '#8B968F', marginBottom: 6 } }, 'VOUCHER UNLOCKED'),
+              h('div', { style: { fontSize: 15, fontWeight: 700, color: INK, marginBottom: 2 } }, '£5 off at Sable & Steam'),
+              h('div', { style: { fontSize: 12, color: MUTED, marginBottom: 10 } }, '500 pts · valid 14 days'),
+              h('div', { style: { textAlign: 'center', padding: '9px 0', borderRadius: 999, background: INK, color: MINT, fontSize: 13, fontWeight: 800 } }, 'Redeem in store')),
+            h('div', { style: { display: 'flex', gap: 8, marginTop: 10 } },
+              h('div', { style: { flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 999, border: '1px solid rgba(6,21,18,0.12)', fontSize: 12, fontWeight: 700, color: INK, background: '#FFFFFF' } }, 'Play again'),
+              h('div', { style: { flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 999, border: '1px solid rgba(6,21,18,0.12)', fontSize: 12, fontWeight: 700, color: INK, background: '#FFFFFF' } }, 'My vouchers'))))),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 12, width: 210 } },
+        [['Your offer in the game', 'Players chase it daily — no ad spend.'], ['Pay only on redemption', 'Points cost you nothing until a voucher is used.'], ['One scan at the till', 'QR redemption. No hardware, no training.']].map((r, n) => h('div', { key: n, style: { padding: '14px 16px', borderRadius: 14, border: '1px solid ' + LINE, background: '#FFFFFF' } },
+          h('div', { style: { fontSize: 13.5, fontWeight: 700, color: INK, marginBottom: 4 } }, r[0]),
+          h('div', { style: { fontSize: 12.5, lineHeight: 1.5, color: MUTED } }, r[1])))));
+  }
+
+  dataMock() {
+    const segs = [['Weekly regulars', '42.2%', MINT], ['Monthly', '24.0%', '#3EDDB2'], ['Lapsed 30d+', '21.3%', 'rgba(11,127,99,0.55)'], ['First-time', '12.5%', 'rgba(11,127,99,0.25)']];
+    return h('div', { style: { borderRadius: 22, border: '1px solid ' + LINE, background: '#FFFFFF', padding: 24, boxShadow: '0 30px 70px rgba(6,21,18,0.12)' } },
+      h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 } },
+        h('div', { style: { fontSize: 15, fontWeight: 800, color: INK } }, 'Customer segments'),
+        h('div', { style: { fontSize: 11, fontWeight: 700, color: DEEP, border: '1px solid rgba(11,127,99,0.25)', borderRadius: 999, padding: '4px 10px' } }, 'Live')),
+      h('div', { style: { display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' } },
+        h('div', { style: { position: 'relative', width: 132, height: 132, flex: '0 0 132px', borderRadius: '50%', background: 'conic-gradient(' + MINT + ' 0 42.2%, #3EDDB2 42.2% 66.2%, rgba(11,127,99,0.55) 66.2% 87.5%, rgba(11,127,99,0.25) 87.5% 100%)' } },
+          h('div', { style: { position: 'absolute', inset: 22, borderRadius: '50%', background: '#FFFFFF', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' } },
+            h('div', { style: { fontSize: 20, fontWeight: 800, color: INK, letterSpacing: '-0.02em' } }, '18,562'),
+            h('div', { style: { fontSize: 10, color: '#8B968F', fontWeight: 600 } }, 'profiles'))),
+        h('div', { style: { flex: '1 1 180px', display: 'flex', flexDirection: 'column', gap: 11 } },
+          segs.map((s) => h('div', { key: s[0], style: { display: 'flex', alignItems: 'center', gap: 10 } },
+            h('span', { style: { width: 9, height: 9, borderRadius: 3, background: s[2] } }),
+            h('span', { style: { fontSize: 13.5, color: MUTED, flex: 1 } }, s[0]),
+            h('span', { style: { fontSize: 13.5, fontWeight: 800, color: INK } }, s[1]))))),
+      h('div', { style: { marginTop: 20, padding: '16px 18px', borderRadius: 16, border: '1px solid rgba(11,127,99,0.2)', background: 'rgba(95,233,196,0.14)' } },
+        h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: DEEP, marginBottom: 8 } }, 'SUGGESTED CAMPAIGN'),
+        h('div', { style: { fontSize: 14.5, fontWeight: 700, color: INK, marginBottom: 4 } }, '3,952 lapsed customers · 30+ days'),
+        h('div', { style: { fontSize: 13, color: MUTED, marginBottom: 14, lineHeight: 1.5 } }, 'Send a 20% off next visit push. Est. £11,400 recovered spend.'),
+        h('div', { style: { display: 'inline-block', padding: '9px 18px', borderRadius: 999, background: INK, color: MINT, fontSize: 13, fontWeight: 800 } }, 'Send campaign')));
+  }
+
+  heroArt() {
+    const motion = this.props.motion !== false;
+    return h('div', { style: { position: 'relative', width: '100%', maxWidth: 480, display: 'flex', justifyContent: 'center' } },
+      h('div', { style: { position: 'absolute', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(50% 50% at 50% 50%, rgba(95,233,196,0.4) 0%, rgba(95,233,196,0) 70%)', top: 20, animation: motion ? 'plzPulse 6s ease-in-out infinite' : 'none' } }),
+      h('div', { style: { position: 'relative', animation: motion ? 'plzFloat 7s ease-in-out infinite' : 'none', width: '100%' } }, this.portalMock()),
+      h('div', { style: { position: 'absolute', bottom: -26, left: -14, padding: '14px 18px', borderRadius: 16, background: '#FFFFFF', border: '1px solid rgba(11,127,99,0.2)', boxShadow: '0 20px 44px rgba(6,21,18,0.14)', animation: motion ? 'plzFloat 5.5s ease-in-out infinite' : 'none' } },
+        h('div', { style: { fontSize: 11, fontWeight: 700, letterSpacing: '0.1em', color: '#8B968F', marginBottom: 5 } }, 'REPEAT REVENUE'),
+        h('div', { style: { fontSize: 21, fontWeight: 800, color: DEEP, letterSpacing: '-0.02em' } }, '+£11,400 / mo')));
+  }
+
+  renderVals() {
+    const qs = this.quotes();
+    const i = this.state.i;
+    return {
+      ctaLabel: this.props.ctaLabel ?? 'Book a demo',
+      wide: this.state.wide,
+      narrow: !this.state.wide,
+      menuOpen: this.state.menuOpen,
+      toggleMenu: () => this.setState((s) => ({ menuOpen: !s.menuOpen })),
+      closeMenu: () => this.setState({ menuOpen: false }),
+      logos: ['Hermanos', 'Poke Yard', 'Sable & Steam', 'Northline', 'Alma Cafè', 'Hoxton Bake'],
+      benefits: [
+        { icon: icon(['M12 3v18', 'M18 8H9.5a2.5 2.5 0 0 0 0 5h5a2.5 2.5 0 0 1 0 5H6']), title: 'Footfall you only pay for', body: 'Your voucher goes out to thousands of players. You fund it only when someone walks in and redeems.', stat: 'No upfront ad spend' },
+        { icon: icon(['M20 21v-2a4 4 0 0 0-3-3.87', 'M4 21v-2a4 4 0 0 1 3-3.87', 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z']), title: 'Customers you own', body: 'Every play, redemption and visit builds a profile you can contact directly — not a metric locked inside someone else\u2019s app.', stat: 'Full data export, always' },
+        { icon: icon(['M3 3v18h18', 'M7 15l4-5 3 3 4-6']), title: 'Insight you can act on', body: '40+ live reports on spend, frequency, basket and site performance. Filter by channel, location or segment in a click.', stat: 'Updated in real time' },
+        { icon: icon(['M12 2 3 7v6c0 5 3.8 8.4 9 9 5.2-.6 9-4 9-9V7l-9-5Z', 'm9 12 2 2 4-4']), title: 'Setup you can survive', body: 'POS integration where you want it, standalone where you don\u2019t. Staff learn it in one shift; you go live in 48 hours.', stat: 'No hardware to buy' }
+      ],
+      portalPoints: [
+        { title: 'Every site, one view', body: 'Group totals with per-site drill-down and channel filters.' },
+        { title: 'Returning vs. first-time', body: 'See which cohort is carrying your revenue this month.' },
+        { title: 'Roles for your team', body: 'Managers see their site, not group numbers.' }
+      ],
+      gamePoints: [
+        { title: 'Your reward, inside the game', body: 'Your voucher sits in the pool players compete for every day.' },
+        { title: 'You set the value and the rules', body: 'Point cost, discount, expiry and how many go out per week.' },
+        { title: 'Redeemed in your venue', body: 'One QR scan at the till. No hardware, no staff training.' }
+      ],
+      dataPoints: [
+        { title: 'Six direct channels', body: 'Push, offers, promo codes, gift cards, email and bonus-point drops.' },
+        { title: 'Built-in segments', body: 'Lapsed, high-spend, new and site-specific, ready to use.' },
+        { title: 'Attributed results', body: 'Redemptions and revenue per campaign, not per guess.' }
+      ],
+      tiers: [
+        { name: 'Starter', price: '£49/mo', note: 'Single site. Play & Earn placement, vouchers and core reports.' },
+        { name: 'Growth', price: '£129/mo', note: 'Up to 5 sites. Full marketing toolkit and bonus-point drops.' },
+        { name: 'Group', price: 'Custom', note: 'Multi-site rollout, POS integration, dedicated support.' }
+      ],
+      socials: ['in', 'X', 'ig', 'yt'],
+      footerCols: [
+        { title: 'PLATFORM', links: ['Overview', 'Play & Earn', 'Vouchers', 'Portal CRM', 'Integrations'] },
+        { title: 'COMPANY', links: ['Pricing', 'Case studies', 'Book a demo', 'Contact sales', 'Careers'] },
+        { title: 'RESOURCES', links: ['Help centre', 'Onboarding guide', 'API docs', 'Status', 'FAQ'] }
+      ],
+      prev: () => this.setState({ i: (i - 1 + qs.length) % qs.length }),
+      next: () => this.setState({ i: (i + 1) % qs.length }),
+      track: h('div', { style: { display: 'flex', width: '100%', transform: 'translateX(-' + i * 100 + '%)', transition: 'transform .55s cubic-bezier(.4,0,.2,1)' } }, qs.map((t, n) => this.card(t, n))),
+      dots: qs.map((t, n) => h('button', { key: n, onClick: () => this.setState({ i: n }), style: { width: n === i ? 28 : 8, height: 8, borderRadius: 999, border: 'none', cursor: 'pointer', padding: 0, background: n === i ? DEEP : 'rgba(6,21,18,0.14)', transition: 'width .3s, background .3s' } })),
+      heroArt: this.heroArt(),
+      portalMock: this.portalMock(),
+      gameMock: this.gameMock(),
+      dataMock: this.dataMock()
+    };
+  }
+}
+
+</script>
+</body>
+</html>

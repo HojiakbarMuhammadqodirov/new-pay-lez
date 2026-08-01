@@ -10,7 +10,8 @@ import {
 } from './content';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
-import { useCopy } from './i18n/context';
+import { useCopy, useMoney } from './i18n/context';
+import { fill } from './i18n/currency';
 import { usePalette } from './theme/context';
 
 /* ────────────────────────────────────────────────────────────────── hero ── */
@@ -259,6 +260,7 @@ export function Features() {
 
 export function Value() {
   const copy = useCopy();
+  const money = useMoney();
   const [revealed, setRevealed] = useState(false);
 
   return (
@@ -270,7 +272,8 @@ export function Value() {
               <span className="pv-logo">{VALUE_CARD.logo}</span>
               <div>
                 <b>{copy.value.card.merchant}</b>
-                <span>{copy.value.card.meta}</span>
+                {/* The voucher's face value is quoted in whatever the language prices in. */}
+                <span>{fill(copy.value.card.meta, { amount: money(25) })}</span>
               </div>
             </div>
             <div className="pv-img">

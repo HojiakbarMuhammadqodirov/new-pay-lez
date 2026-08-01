@@ -31,9 +31,15 @@ export interface ThemePalette {
   background: string;
   /**
    * Legible against `primary`, for the few places something sits *on* the
-   * accent — the intro's brand mark, for one. Note this is not the CSS
-   * `--on-accent`: that pairs with `--accent`, the bright fill, and this pairs
-   * with the deeper `primary` the canvases draw with.
+   * accent — the intro's brand mark, for one.
+   *
+   * The counterpart of CSS `--on-accent`, but **not a copy of it**, and this is
+   * the field where that matters: `--on-accent` pairs with `--accent`, the mint
+   * fill, and is near-black on it. This one pairs with `primary` above, which is
+   * `--accent-ink` — the darker teal the canvases need — and is the page colour
+   * on it. The two are opposite in light for the same reason both are correct:
+   * they sit on different colours. Kept as its own field precisely so nobody
+   * "fixes" one to match the other.
    */
   onPrimary: string;
   tone: GlobeTone;
@@ -54,11 +60,17 @@ export const THEMES: Record<ThemeName, ThemePalette> = {
     glow: 1,
   },
   light: {
-    // Deep enough to hold 5.4:1 against the light page, so the country label
-    // over the globe stays readable at its small uppercase size.
-    primary: '#0a7266',
-    background: '#f4f7f6',
-    onPrimary: '#f4f7f6',
+    /*
+     * `--accent-ink`, not `--accent`. The canvases draw the globe's coastlines,
+     * the node web's links and the market tape's line as hairlines, and in `ink`
+     * tone those are alpha-blended *onto* near-white paper — the brand mint is
+     * 2.8:1 there and a one-pixel stroke of it all but vanishes. This is the
+     * same hue two stops darker, which holds 4.7:1 and keeps the country label
+     * readable at its small uppercase size.
+     */
+    primary: '#0b7f6b',
+    background: '#f5f9f8',
+    onPrimary: '#f5f9f8',
     tone: 'ink',
     glow: 0,
   },

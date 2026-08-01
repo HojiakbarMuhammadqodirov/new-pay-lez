@@ -15,10 +15,13 @@
      --accent      the accent as a *fill* — button faces, the brand mark, dots.
      --accent-ink  the accent as *marks* — text, icons, hairlines, focus rings.
 
-   On black they are the same mint. On paper they cannot be: mint text on white
-   is about 1.3:1, which is not text, it is a suggestion of text. So the light
-   theme keeps a bright mint for fills (dark ink on it reads at 7:1) and drops
-   to a deep teal for anything drawn thin (5.5:1 against the page).
+   On black they are the same mint. On paper only one of them can be. A mint
+   *fill* is fine — it carries its own ink, and near-black on it reads at 5.8:1 —
+   so `--accent` stays the brand mint in both themes. Mint *marks* are not: a
+   hairline or a word of it against near-white paper is 2.8:1, under AA for body
+   text, so `--accent-ink` drops to the same hue two stops darker. One colour at
+   two lightnesses. That is the whole reason there are two tokens; a rule that
+   reaches for the wrong one is legible in dark and quietly broken in light.
 
    The `-rgb` triplets exist so translucent surfaces can be built with one
    `rgba(var(--x-rgb), a)` per use instead of a token per alpha.
@@ -39,6 +42,15 @@
   --accent-rgb: 88, 233, 212;
   /* Sheet colour for glass panels: header, footer, cards, menus. */
   --panel-rgb: 13, 13, 14;
+  /*
+   * How much page a glass card is allowed to let through. One token rather than
+   * a number per card, because the constraint is the same everywhere: the globe
+   * and the node web both live *behind* the page, and a card that reads as
+   * beautiful glass over an empty stretch of backdrop is the same card that
+   * makes its own paragraph unreadable when a bright knot of the web drifts
+   * under it. Text wins.
+   */
+  --glass: rgba(var(--panel-rgb), 0.74);
 
   --surface: rgba(var(--accent-rgb), 0.035);
   --surface-2: rgba(var(--accent-rgb), 0.06);
@@ -97,30 +109,68 @@
  * `site/theme/context.ts`, and the comments there say which token each mirrors.
  */
 :root[data-theme='light'] {
-  --bg: #f4f7f6;
-  --bg-2: #eaefed;
+  --bg: #f5f9f8;
+  --bg-2: #eaf0ee;
 
-  /* The deep teal, so a 3.5% wash is still visible against the page. */
-  --accent-rgb: 10, 114, 102;
+  /*
+   * The tint behind every wash and hairline, and deliberately the *ink* teal
+   * rather than the mint fill above it. `--surface` is 5% and `--border` 16%;
+   * at those alphas the mint disappears into near-white paper and the cards
+   * lose their edges, where the darker teal still draws a line you can see.
+   */
+  --accent-rgb: 11, 127, 107;
   --panel-rgb: 255, 255, 255;
+  /*
+   * Higher than dark's. The sheet is white and the page is near-white, so the
+   * card has almost no colour difference to separate itself with — the only
+   * thing distinguishing it from the backdrop is how much of the backdrop it
+   * stops. And it has more to stop: `ink` draws the web as dark marks on paper,
+   * which is the high-contrast direction, where `glow` only ever adds light to
+   * black.
+   */
+  --glass: rgba(var(--panel-rgb), 0.84);
 
   --surface: rgba(var(--accent-rgb), 0.05);
   --surface-2: rgba(var(--accent-rgb), 0.09);
   --border: rgba(var(--accent-rgb), 0.16);
   --border-2: rgba(var(--accent-rgb), 0.32);
 
-  --accent: #16bda5;
-  --accent-ink: #0a7266;
+  /*
+   * The brand mint, and the one place the two accent tokens genuinely have to
+   * disagree.
+   *
+   * `--accent` is only ever a *fill* — buttons, chips, bars, the brand mark, the
+   * chart columns; grep confirms nothing anywhere sets `color: var(--accent)`.
+   * A fill carries its own ink, and `--on-accent` on this mint is 5.8:1, so the
+   * mint can be exactly the brand colour without costing anything legible.
+   *
+   * `--accent-ink` is the opposite job: eyebrows, hairlines, icon strokes, small
+   * accented words — thin marks read *against* the page. The same mint there is
+   * 2.8:1, which is below AA for body text and visibly weak at the 0.72rem
+   * uppercase the eyebrows use. So it takes the same hue (hsl 170°) darkened to
+   * 4.7:1 and nothing else changes: the page still reads as one colour, because
+   * it is one colour at two lightnesses.
+   */
+  --accent: #0fa98f;
+  --accent-ink: #0b7f6b;
   --accent-soft: color-mix(in srgb, var(--accent-ink) 92%, transparent);
-  --on-accent: #04231e;
+  /*
+   * 5.8:1 on `--accent`, and back to near-black — the same arrangement dark uses,
+   * because light's fill is a bright mint again. It went to the page colour only
+   * while that fill was a deep teal.
+   */
+  --on-accent: #0b1f1c;
 
-  /* 6.0:1 and 4.9:1 against the page — both clear AA for body-sized text. */
-  --text: #0b1a18;
-  --text-mut: rgba(11, 26, 24, 0.68);
-  --text-fnt: rgba(11, 26, 24, 0.62);
+  /* 16.1:1 against the page, and the muted pair well clear of AA. */
+  --text: #0b1f1c;
+  --text-mut: rgba(11, 31, 28, 0.68);
+  --text-fnt: rgba(11, 31, 28, 0.62);
 
+  /* Glows take the mint rather than the ink: they are light spilling off a fill,
+     and the fill is mint. `--glow-k` damps them all to 40% regardless. */
+  --glow-rgb: 15, 169, 143;
   --glow-k: 0.4;
-  --shadow: rgba(9, 32, 28, 0.18);
+  --shadow: rgba(11, 31, 28, 0.18);
 
   color-scheme: light;
 }
@@ -131,6 +181,20 @@
  */
 html {
   background: var(--bg);
+
+  /*
+   * The header is sticky, so an untreated `#anchor` jump parks the section
+   * title underneath it. Every in-page landing point clears the bar plus a
+   * little air.
+   */
+  scroll-padding-top: calc(var(--header-h) + 1rem);
+}
+
+/* Nav links are plain hash anchors; this is what makes them glide. */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 /* ─────────────────────────────────────────────────────────────── base ── */
@@ -155,7 +219,95 @@ html {
   pointer-events: none;
 }
 
-.site > header,
+/*
+ * L-Earn's backdrop takes the same slot. Transparent, unlike the globe — the
+ * canvas draws lines and dots and lets `html`'s background be the page, which
+ * is also what lets a theme change repaint it without touching the field.
+ *
+ * `pointer-events: none` is not a caveat for the pointer highlight: the effect
+ * listens on `window`, so it sees the cursor wherever it is over the page,
+ * including over the copy on top of it.
+ */
+.site__web {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+/*
+ * Analytics' backdrop: plot paper.
+ *
+ * Two gradients and a mask rather than a third canvas. The page is a dashboard
+ * brochure whose own charts are the thing to look at, so the backdrop's job is
+ * to say "graph" once and then stay out of the way — and the cheapest way to do
+ * that is also the only one that needs no context, no loop and no teardown when
+ * the route changes.
+ *
+ * The mask is what keeps it from reading as a spreadsheet: the grid is at full
+ * (already very low) strength at the top of the viewport and gone by the bottom,
+ * so it behaves like the faint rule under a chart rather than a tiled wallpaper.
+ */
+.site__grid {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 74px 74px;
+  -webkit-mask-image: linear-gradient(to bottom, black, transparent 88%);
+  mask-image: linear-gradient(to bottom, black, transparent 88%);
+  opacity: 0.55;
+}
+
+/*
+ * Vouchers' backdrop: perforation.
+ *
+ * One repeating radial gradient — a dot every 13px down, in columns 212px
+ * apart — which reads as the tear line down a row of ticket stubs. It is the
+ * cheapest backdrop on the site and it is the right one twice over: the page is
+ * about a thing you tear off and hand over, and the fifth and sixth pages had
+ * no context left to spend. Only the globe is WebGL and only one page at a time
+ * runs a canvas at all; see the backdrop note in CLAUDE.md.
+ *
+ * Static, deliberately. The other backdrops move because what they depict does —
+ * a player base, repeat custom, the planet. A perforation does not, and a
+ * scrolling one would be a texture pretending to be an idea.
+ */
+.site__stubs {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    circle at center,
+    var(--accent) 0 1.1px,
+    transparent 1.6px
+  );
+  background-size: 212px 13px;
+  /* Faded from both ends: a perforation that runs into the header or off the
+     bottom of the page reads as a rendering artefact rather than as a stub. */
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent,
+    black 18%,
+    black 82%,
+    transparent
+  );
+  mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+  opacity: 0.22;
+}
+
+/*
+ * Lift the page off the globe layer. The header is deliberately *not* in this
+ * list: `.site > header` (0,1,1) out-specifies `.site-header` (0,1,0), so
+ * including it here replaces `position: sticky` with `relative` and the bar
+ * silently scrolls away. It sets its own position and z-index instead.
+ */
 .site > main,
 .site > footer {
   position: relative;
@@ -296,15 +448,46 @@ button {
   height: var(--header-h);
   display: flex;
   align-items: center;
-  transition: background 300ms var(--ease), border-color 300ms var(--ease);
-  border-bottom: 1px solid transparent;
 }
 
-.site-header[data-scrolled='true'] {
+/*
+ * The glass is a layer, not a set of properties on the header.
+ *
+ * `backdrop-filter` cannot be interpolated: declaring it only at the scrolled
+ * threshold snaps the blur in over a single frame, which is the pop this used
+ * to have. Mounting the filter permanently and animating *one* compositor
+ * property — the layer's opacity — is the only way the strip can actually fade.
+ *
+ * `z-index: -1` keeps it behind the nav content while staying inside the
+ * header's own stacking context. Note there is no `isolation: isolate` here:
+ * that would make the header a backdrop root and leave the blur with nothing
+ * behind it to sample.
+ */
+.site-header::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+
   background: rgba(var(--panel-rgb), 0.72);
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border-bottom-color: var(--border);
+  border-bottom: 1px solid var(--border);
+  /* Lets the strip end in a fade rather than on a hard line. */
+  box-shadow: 0 18px 44px -30px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
+
+  opacity: 0;
+  transition: opacity 420ms var(--ease);
+}
+
+.site-header[data-scrolled='true']::before {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-header::before {
+    transition: none;
+  }
 }
 
 .header-inner {
@@ -1176,7 +1359,7 @@ button {
   padding: 1.5rem;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
-  background: rgba(var(--panel-rgb), 0.7);
+  background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   box-shadow: 0 30px 90px -50px rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
@@ -1555,6 +1738,2546 @@ button {
   color: var(--accent-ink);
 }
 
+/* ═══════════════════════════════════════════════════════════════ l-earn ══
+   The L-Earn page.
+
+   It reuses `.hero`, `.section`, `.section-head`, `.split`, `.benefits`,
+   `.tavatar` and `.cta-banner` wholesale — the two pages are one design, not a
+   design and a variation on it. What follows is only the four things the
+   landing page has no equivalent of: the step rail, the game cards, the streak
+   card and the board.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* FAQ answers are one column of prose; `--maxw` would set them at a line
+   length nobody reads to the end of. */
+.wrap-narrow {
+  width: min(100% - 2.5rem, 52rem);
+  margin-inline: auto;
+}
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+
+/*
+ * The visual column takes the larger share here, which the landing page's
+ * 1 : 0.9 cannot give it. It costs the copy nothing: `.hero-copy` is capped at
+ * 34rem, and at the page's full width the smaller column is still wider than
+ * that — so every pixel moved across comes out of slack, not out of the text.
+ */
+.learn-hero .hero-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+}
+
+/*
+ * The hero's right-hand column.
+ *
+ * On the landing page the same column is empty air with the globe rendering
+ * behind it; here it holds the controller, so it is a real container that
+ * centres its one child rather than a spacer.
+ */
+.learn-visual {
+  display: grid;
+  /*
+   * Definite, not auto. An auto track is sized by its content, and the content
+   * here is a canvas whose own CSS width is written by the renderer from the
+   * width it measures — so an auto track takes its size from the canvas while
+   * the canvas takes its size from the track. Anything that nudges either one
+   * (see the `resize` note in `Controller3D`) then compounds instead of
+   * settling, and the canvas walks off the side of the page.
+   */
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  min-height: min(66vh, 38rem);
+}
+
+/*
+ * The base class is written for the features stage — it claims column 2 of that
+ * three-column grid and takes its height from it. Neither applies in a hero
+ * column, so both are restated.
+ *
+ * The camera fits to whichever axis is *tighter*, so this height only makes the
+ * model bigger while it is the tighter one. Past roughly the column's own width
+ * the extra goes into empty air above and below instead, which is why the two
+ * are sized to stay close to square.
+ */
+.controller-3d--hero {
+  grid-column: auto;
+  width: 100%;
+  height: min(38rem, 66vh);
+}
+
+/*
+ * No hover zoom on this one.
+ *
+ * It sits hard against the right edge of the wrap, where scaling it up reaches
+ * past the gutter and gives the whole page a horizontal scrollbar. In the
+ * features stage the same canvas has gutters either side and is something the
+ * eye is invited to poke at; here it is the hero image. The glow on the canvas
+ * still answers the pointer.
+ */
+.controller-3d--hero:hover {
+  transform: none;
+}
+
+.learn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.6rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+  transition: color 240ms var(--ease), gap 240ms var(--ease);
+}
+
+/* One arrow in the set, pointed the other way — a second path would be the
+   same glyph twice. */
+.learn-back svg {
+  transform: rotate(180deg);
+}
+
+.learn-back:hover {
+  color: var(--accent-ink);
+  gap: 0.7rem;
+}
+
+/* The landing hero leads with the headline; this one is a named product, so
+   the eyebrow carries the name and needs its own line. */
+.learn-eyebrow {
+  display: block;
+  margin-bottom: 0.8rem;
+}
+
+/* ── steps: the rail ──────────────────────────────────────────────────── */
+
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2.5rem 1.75rem;
+}
+
+.step {
+  position: relative;
+}
+
+/*
+ * The rail: one hairline threading the four icons rather than four separate
+ * underlines. It runs from the edge of each icon into the gap, and fades out
+ * so it never arrives at the next icon as a hard stop. The last step has
+ * nothing to its right.
+ */
+.step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  top: 21px;
+  left: 3.5rem;
+  right: -1.75rem;
+  height: 1px;
+  background: linear-gradient(to right, var(--border-2), transparent);
+}
+
+.step-ico {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
+}
+
+.step-n {
+  display: block;
+  margin-top: 1.5rem;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  color: var(--accent-soft);
+}
+
+.step h3 {
+  margin-top: 0.5rem;
+  font-size: 1.05rem;
+}
+
+.step p {
+  margin-top: 0.6rem;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+}
+
+/* ── games ────────────────────────────────────────────────────────────── */
+
+.games {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+/*
+ * Glass, not the bare `--surface` wash the landing page's cards use. Those sit
+ * over the globe, which is one large slow shape and mostly empty sky; these sit
+ * over the node web, which is high-frequency, in motion, and brightest exactly
+ * where it is most distracting — a drifting knot of lines under a 3.5% tint
+ * lands behind the blurb and the blurb loses.
+ */
+.game {
+  display: flex;
+  flex-direction: column;
+  padding: 1.85rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition:
+    border-color 320ms var(--ease),
+    box-shadow 320ms var(--ease),
+    transform 320ms var(--ease);
+}
+
+/* Hover lifts with light rather than by darkening the sheet: the card is
+   already as opaque as it needs to be, and taking it further would make the
+   web appear to switch off under the cursor. */
+.game:hover {
+  border-color: var(--border-2);
+  transform: translateY(-3px);
+  box-shadow: 0 24px 60px -40px rgba(var(--glow-rgb), calc(0.7 * var(--glow-k)));
+}
+
+.game-ico {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: 1.3rem;
+  border-radius: 16px;
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
+}
+
+.game h3 {
+  font-size: 1.15rem;
+}
+
+.game p {
+  margin-top: 0.65rem;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+}
+
+/* Pushed down rather than spaced: it keeps the meta lines flush across three
+   cards whose blurbs are three different lengths in five languages. */
+.game-meta {
+  margin-top: auto;
+  padding-top: 1.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-soft);
+}
+
+/* ── streak card ──────────────────────────────────────────────────────── */
+
+/* The globe's arc passes behind this one, so it is glass for the same reason
+   the voucher preview on the landing page is. */
+.streak-card {
+  padding: 1.75rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 30px 90px -50px rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
+}
+
+.streak-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.streak-head > span {
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.streak-head b {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-family: var(--font-display);
+  font-size: 2.4rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-ink);
+}
+
+.streak-head i {
+  font-size: 0.78rem;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-fnt);
+}
+
+.streak-pips {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin-top: 1.5rem;
+}
+
+/*
+ * Square-ish rather than round: seven circles in a row read as a progress dot
+ * strip, which is a thing that fills continuously. These are days, and days
+ * are discrete.
+ */
+.pip {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: transparent;
+}
+
+.pip[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.streak-reward {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* ── board ────────────────────────────────────────────────────────────── */
+
+/* Glass for the same reason `.game` is — and more so: the rows are hairline
+   separated, so anything showing through reads as a stray row rule. */
+.board {
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  /* Clips the first and last rows to the corner radius. */
+  overflow: hidden;
+}
+
+.board table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.board th {
+  padding: 1rem 1.5rem;
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+  border-bottom: 1px solid var(--border);
+}
+
+.board td {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.board tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.board tbody tr {
+  transition: background 260ms var(--ease);
+}
+
+.board tbody tr:hover {
+  background: var(--surface-2);
+}
+
+.board-rank {
+  width: 3.5rem;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+/* The prize pool stops at three, so the accent stops at three too — the badge
+   is the rule, not decoration. */
+.board tr[data-top='true'] .board-rank {
+  color: var(--accent-ink);
+}
+
+.board-player {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.board-player .tavatar {
+  width: 34px;
+  height: 34px;
+  font-size: 0.85rem;
+}
+
+.board-points {
+  text-align: right;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.board th:last-child {
+  text-align: right;
+}
+
+.board-note {
+  margin-top: 1.1rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+/* ── faq ──────────────────────────────────────────────────────────────── */
+
+.faq {
+  border-top: 1px solid var(--border);
+}
+
+.faq-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.faq-item h3 {
+  margin: 0;
+  font-size: inherit;
+  letter-spacing: normal;
+}
+
+.faq-q {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  width: 100%;
+  padding: 1.4rem 0;
+  text-align: left;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  transition: color 240ms var(--ease);
+}
+
+.faq-q:hover,
+.faq-item[data-open='true'] .faq-q {
+  color: var(--accent-ink);
+}
+
+.faq-q svg {
+  flex: 0 0 auto;
+  color: var(--accent-soft);
+  transition: transform 420ms var(--ease);
+}
+
+.faq-item[data-open='true'] .faq-q svg {
+  transform: rotate(180deg);
+}
+
+/*
+ * `0fr → 1fr` rather than a measured pixel height: the answers are translated
+ * five ways and every one of them is a different number of lines, so anything
+ * needing the height up front would be wrong in four languages. `visibility`
+ * does the work `hidden` would have done — out of the tab order and the a11y
+ * tree — but held back until the row has finished collapsing.
+ */
+.faq-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  visibility: hidden;
+  transition:
+    grid-template-rows 420ms var(--ease),
+    visibility 0s linear 420ms;
+}
+
+.faq-panel > div {
+  overflow: hidden;
+}
+
+.faq-item[data-open='true'] .faq-panel {
+  grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows 420ms var(--ease),
+    visibility 0s;
+}
+
+.faq-panel p {
+  padding-bottom: 1.5rem;
+  font-size: 0.95rem;
+  color: var(--text-mut);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .faq-panel,
+  .faq-item[data-open='true'] .faq-panel,
+  .faq-q svg {
+    transition: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════ analytics ══ */
+
+/* The Service ID panel stands in for the hero visual the other two pages give
+   to a canvas. Glass, because it floats over the plot grid. */
+.analytics-visual {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+.svc-card {
+  width: min(100%, 26rem);
+  padding: 1.6rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 30px 90px -50px rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
+}
+
+.svc-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.35rem;
+}
+
+.svc-head b {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.svc-head span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.svc-field {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-ink);
+}
+
+.svc-id {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text);
+}
+
+/* The caret is the only thing that moves in the panel — enough to read as a
+   live field rather than a picture of one, and cheap enough to be honest. */
+.svc-caret {
+  width: 2px;
+  height: 1.05em;
+  margin-left: -0.25rem;
+  background: var(--accent-ink);
+  animation: svc-blink 1.15s steps(1, end) infinite;
+}
+
+@keyframes svc-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* A `span`, not a button: there is nothing on a marketing page for it to
+   submit to. It borrows `.btn-solid`'s face and gives back the interaction. */
+.svc-go {
+  width: 100%;
+  margin-top: 1.1rem;
+  justify-content: center;
+  cursor: default;
+}
+
+/* ── kpis ─────────────────────────────────────────────────────────────── */
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.kpi {
+  padding: 1.5rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.kpi-ico {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 1.1rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
+}
+
+.kpi b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  /* Tabular figures, or the count-up jitters the card's whole layout as digits
+     of different widths cycle through it. */
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-name {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.kpi-delta {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/*
+ * A fall is drawn with the caret and with weight, never with a second hue: the
+ * palette is one accent on one ground, and "add red for bad" is exactly the
+ * third colour the rest of the site spends its effort avoiding.
+ */
+.kpi-delta[data-dir='up'] svg {
+  transform: rotate(180deg);
+}
+
+.kpi-delta[data-dir='down'] {
+  color: var(--text-mut);
+  font-weight: 500;
+}
+
+.kpi-delta i {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-fnt);
+}
+
+/* ── funnel ───────────────────────────────────────────────────────────── */
+
+.funnel {
+  display: grid;
+  gap: 1.6rem;
+  padding: 1.75rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.funnel-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.6rem;
+}
+
+.funnel-label b {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+}
+
+.funnel-label span {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.funnel-bar {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  /*
+   * Grown from the left rather than animated on `width`: a transform is
+   * composited, a width is a layout pass on every frame of three bars at once.
+   * The reveal is what starts it — see `[data-shown]` below.
+   */
+  transform: scaleX(0);
+  transform-origin: left;
+  width: var(--share);
+  transition: transform 900ms var(--ease);
+}
+
+[data-shown='true'] .funnel-bar {
+  transform: scaleX(1);
+}
+
+.funnel-row p {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+/* ── week chart ───────────────────────────────────────────────────────── */
+
+.chart-card {
+  padding: 1.75rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.chart-meta {
+  display: flex;
+  gap: 2.5rem;
+  margin-bottom: 1.75rem;
+}
+
+.chart-meta span {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.chart-meta b {
+  display: block;
+  margin-top: 0.3rem;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.75rem;
+  height: 190px;
+}
+
+.chart-col {
+  display: grid;
+  /* The bar takes the row that stretches and the label the one that does not,
+     so every bar shares one baseline no matter how long the day name is. */
+  grid-template-rows: 1fr auto;
+  gap: 0.7rem;
+  align-items: end;
+}
+
+.chart-bar {
+  height: var(--h);
+  border-radius: 8px 8px 4px 4px;
+  background: rgba(var(--accent-rgb), 0.22);
+  border: 1px solid var(--border-2);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 800ms var(--ease);
+}
+
+[data-shown='true'] .chart-bar {
+  transform: scaleY(1);
+}
+
+.chart-bar[data-peak='true'] {
+  background: var(--accent);
+  border-color: transparent;
+  box-shadow: 0 0 30px -6px rgba(var(--glow-rgb), calc(0.7 * var(--glow-k)));
+}
+
+.chart-col span {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .funnel-bar,
+  .chart-bar {
+    transform: none;
+    transition: none;
+  }
+
+  .svc-caret {
+    animation: none;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════════ b2b ══ */
+
+/*
+ * The consoles.
+ *
+ * One base class, three sizes of the same object: they are product mocks, and a
+ * platform whose portal, campaign builder and game pool were three different
+ * shapes would be advertising three products. `--glass` because they float over
+ * the venue pulse.
+ */
+.console {
+  padding: 1.6rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 30px 90px -50px rgba(var(--glow-rgb), calc(0.6 * var(--glow-k)));
+}
+
+.console-sm {
+  padding: 1.35rem;
+}
+
+.console-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.console-head span {
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.console-head b {
+  display: block;
+  margin-top: 0.35rem;
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-ink);
+  /* The count-up runs through every digit width on the way to the total; without
+     this the whole console reflows for a second on reveal. */
+  font-variant-numeric: tabular-nums;
+}
+
+.console-tag {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.72rem;
+}
+
+.console-label {
+  display: block;
+  margin-bottom: 0.9rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.console-cols {
+  display: flex;
+  justify-content: space-between;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.console-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.console-rows > .console-row:last-child {
+  border-bottom: 0;
+}
+
+.console-site,
+.console-row b {
+  position: relative;
+  font-size: 0.88rem;
+}
+
+.console-row b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The spend bar lives *behind* the row rather than in a column of its own: four
+ * rows do not justify a third column, and as a background it doubles as the
+ * row's fill. Inset from the bottom so it never covers the hairline.
+ */
+.console-bar {
+  position: absolute;
+  inset: 0.35rem auto 0.35rem 0;
+  width: var(--share);
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.1);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 900ms var(--ease);
+}
+
+[data-shown='true'] .console-bar {
+  transform: scaleX(1);
+}
+
+/* ── cohort split ─────────────────────────────────────────────────────── */
+
+.cohort {
+  height: 14px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.cohort-fill {
+  height: 100%;
+  width: var(--share);
+  border-radius: 999px;
+  background: var(--accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 900ms var(--ease);
+}
+
+[data-shown='true'] .cohort-fill {
+  transform: scaleX(1);
+}
+
+.cohort-keys {
+  display: flex;
+  gap: 1.75rem;
+  margin-top: 1.1rem;
+}
+
+.cohort-keys > div {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  color: var(--text-mut);
+}
+
+.cohort-keys i {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--accent);
+}
+
+/* The second cohort is drawn as the *absence* of the first, which is what the
+   track already is — so its key is the track colour, not a second hue. */
+.cohort-keys i[data-muted='true'] {
+  background: rgba(var(--accent-rgb), 0.22);
+}
+
+.cohort-keys b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── game pool ────────────────────────────────────────────────────────── */
+
+.game-hit {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 1.35rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.08);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.pool-card {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.pool-card b {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.pool-card > div > span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-soft);
+}
+
+/* ── campaign builder ─────────────────────────────────────────────────── */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  color: var(--text-mut);
+}
+
+.chip i {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+  font-variant-numeric: tabular-nums;
+}
+
+.chip[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.chip[data-on='true'] i {
+  color: var(--on-accent);
+  opacity: 0.75;
+}
+
+.send-row {
+  margin-top: 1.1rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.send-row b {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.send-row span {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* ── the owner's dashboard ─────────────────────────────────────────────────
+ *
+ * One mock, at two sizes: a slice of it stands in for the hero visual and the
+ * whole of it is the middle of the page. Same classes for both — an operator
+ * who recognises the hero card when they reach the full screen has been told
+ * they are looking at one product, and two different-looking mocks would have
+ * told them the opposite.
+ *
+ * All DOM, no canvas and no screenshot, for the reasons at the top of `b2b.tsx`:
+ * it follows the theme, it translates, and it prices itself in the reader's
+ * currency. None of which an image does.
+ */
+
+.dash {
+  display: grid;
+  gap: 1rem;
+  padding: 1.1rem;
+}
+
+.dash-full {
+  gap: 1.15rem;
+  padding: 1.35rem;
+}
+
+/* ── toolbar ──────────────────────────────────────────────────────────── */
+
+/*
+ * The cheapest line in the mock and the one that does the most work: without it
+ * the panels below are three charts, and with it they are a screen someone is
+ * logged into.
+ */
+.dash-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.dash-brand {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.dash-crumb,
+.dash-screen {
+  color: var(--text-fnt);
+}
+
+/* Pushed right, and the first thing after it is the account — the two controls
+   every dashboard puts in that corner. */
+.dash-range {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-left: auto;
+  padding: 0.28rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.74rem;
+  color: var(--text-mut);
+}
+
+.dash-user {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* ── the sentence ─────────────────────────────────────────────────────── */
+
+/*
+ * The one panel that is prose. It is first because it answers the question an
+ * owner actually opens the dashboard with; the charts answer the second one.
+ */
+.dash-head {
+  padding: 1rem 1.1rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.dash-kicker {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.dash-head p {
+  margin-top: 0.6rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* The two figures inside the sentence. Display face and a size step up, so they
+   read as data set into prose rather than as bolded words. */
+.dash-head b {
+  font-family: var(--font-display);
+  font-size: 1.2em;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── tiles ────────────────────────────────────────────────────────────── */
+
+.dash-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.7rem;
+}
+
+/* The hero's card is half the width, so its four tiles go two-up and drop the
+   sparklines — at that size a seven-bar spark is seven dots. */
+.dash-tiles[data-compact='true'] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.dash-tile {
+  position: relative;
+  padding: 0.85rem 0.9rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dash-tile-ico {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+.dash-tile b {
+  display: block;
+  margin-top: 0.6rem;
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text);
+  /* The count-up runs through every digit width on the way to the total; without
+     this the whole row reflows for a second on reveal. */
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-tile-name {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.76rem;
+  color: var(--text-mut);
+}
+
+.dash-tile-note {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.7rem;
+  color: var(--text-fnt);
+}
+
+/*
+ * The delta sits in the tile's top-right corner rather than under the figure:
+ * four tiles in a row have to be scannable as a row, and a change that moves up
+ * and down with the label length underneath it is not.
+ */
+.dash-delta {
+  position: absolute;
+  top: 0.85rem;
+  right: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Direction is carried by the caret, not by a second hue: the palette is two
+   colours, so a fall is drawn by rotating the chevron. */
+.dash-delta[data-dir='up'] svg {
+  transform: rotate(180deg);
+}
+
+.dash-delta[data-dir='down'] {
+  color: var(--text-fnt);
+}
+
+/* ── sparklines ───────────────────────────────────────────────────────── */
+
+/*
+ * Seven days, no scale and no labels. Nobody reads a value off one of these —
+ * it is here so a number that moved has something showing *how* it moved, and
+ * an axis would be claiming otherwise.
+ */
+.spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 22px;
+  margin-top: 0.7rem;
+}
+
+.spark i {
+  flex: 1;
+  height: var(--h);
+  min-height: 2px;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.3);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 600ms var(--ease);
+}
+
+.spark i:last-child {
+  background: var(--accent);
+}
+
+[data-shown='true'] .spark i {
+  transform: scaleY(1);
+}
+
+/* ── panels ───────────────────────────────────────────────────────────── */
+
+.dash-panel {
+  padding: 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.dash-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.1rem;
+}
+
+.dash-panel-head b {
+  display: block;
+  font-size: 0.92rem;
+}
+
+.dash-panel-head span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  color: var(--text-fnt);
+  text-wrap: pretty;
+}
+
+.dash-keys {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.9rem;
+}
+
+.dash-keys > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0;
+  font-size: 0.72rem;
+  color: var(--text-mut);
+}
+
+.dash-keys i {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.28);
+}
+
+.dash-keys i[data-solid='true'] {
+  background: var(--accent);
+}
+
+/* ── the fortnight ────────────────────────────────────────────────────── */
+
+.dash-chart {
+  display: flex;
+  align-items: flex-end;
+  gap: clamp(3px, 0.8vw, 7px);
+  height: 150px;
+}
+
+/*
+ * Redemptions are drawn *inside* the visit column, not beside it: a redemption
+ * is a subset of the visits, and two columns per day would say the two series
+ * were independent. What is left above the inner bar is the gap the insight
+ * panel underneath is about.
+ */
+.dash-col {
+  position: relative;
+  flex: 1;
+  height: var(--h);
+  border-radius: 5px;
+  background: rgba(var(--accent-rgb), 0.16);
+  transform: scaleY(0);
+  transform-origin: bottom;
+  transition: transform 700ms var(--ease);
+  transition-delay: calc(var(--i) * 28ms);
+}
+
+.dash-col i {
+  position: absolute;
+  inset: auto 0 0;
+  height: var(--h);
+  border-radius: 5px;
+  background: var(--accent);
+}
+
+[data-shown='true'] .dash-col {
+  transform: scaleY(1);
+}
+
+/* ── the insight ──────────────────────────────────────────────────────── */
+
+/* The dashboard reading its own chart back. Bordered rather than filled, so it
+   reads as a note pinned to the screen and not as a fifth panel of data. */
+.dash-insight {
+  padding: 1rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border-2);
+  background: rgba(var(--accent-rgb), 0.04);
+}
+
+.dash-insight p {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+.dash-insight-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+}
+
+/* Spans, not buttons: there is nothing on a marketing page for them to do. They
+   are drawn as controls because the mock is a picture of a screen. */
+.dash-act {
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.dash-act[data-solid='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ── what is live ─────────────────────────────────────────────────────── */
+
+.dash-rows {
+  display: grid;
+}
+
+.dash-row {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.85rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.dash-rows > .dash-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.dash-row-ico {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+.dash-row-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.dash-row-kind {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.dash-row-main b {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.88rem;
+}
+
+.dash-row-rule {
+  display: block;
+  font-size: 0.74rem;
+  color: var(--text-fnt);
+}
+
+.dash-row-stat {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.dash-row-stat b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.dash-row-stat span {
+  font-size: 0.7rem;
+  color: var(--text-fnt);
+}
+
+/* The paused row is the default state and the live one is the exception: three
+   green rows is a product screenshot, and one paused row is a screen someone
+   actually works in. */
+.dash-state {
+  flex: 0 0 auto;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+}
+
+.dash-state[data-on='true'] {
+  border-color: transparent;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-ink);
+}
+
+/* ── the copy around it ───────────────────────────────────────────────── */
+
+.dash-notes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.5rem;
+  margin-top: 2.5rem;
+}
+
+.dash-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.dash-note svg {
+  flex: 0 0 auto;
+  margin-top: 0.3rem;
+  color: var(--accent-ink);
+}
+
+.dash-note b {
+  font-size: 0.95rem;
+}
+
+.dash-note p {
+  margin-top: 0.3rem;
+  font-size: 0.87rem;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+.dash-cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 2.25rem;
+}
+
+/* ── hero ─────────────────────────────────────────────────────────────── */
+
+/* The console is a card, not a canvas: it wants a column it can fill rather
+   than the wider one the globe and the controller need. */
+.b2b-hero .hero-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+  align-items: center;
+}
+
+.b2b-visual {
+  display: grid;
+  place-items: center;
+  min-height: 0;
+}
+
+/* Wider than the pillar consoles: this one carries a toolbar, a sentence and
+   four tiles, and at 30rem the sentence runs to five lines. */
+.b2b-visual .console {
+  width: min(100%, 34rem);
+}
+
+.b2b-trust {
+  margin-top: 1.75rem;
+  font-size: 0.85rem;
+  color: var(--text-fnt);
+}
+
+/* Four claims, four cards. `.games` is three across, and a fourth card wrapping
+   onto its own row under three would read as an afterthought rather than as one
+   of a set — which is the opposite of "four systems, one record". */
+.b2b-why-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+/* A closing line under a section that has just made a claim with numbers in it.
+   Centred and faint: it is a footnote, not a conclusion. */
+.b2b-note {
+  margin: 2.25rem auto 0;
+  max-width: 46rem;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-fnt);
+  text-wrap: pretty;
+}
+
+/* ── pillars ──────────────────────────────────────────────────────────── */
+
+.pillars {
+  display: grid;
+  gap: clamp(3.5rem, 7vw, 6rem);
+}
+
+.pillar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
+  gap: clamp(2.5rem, 6vw, 5rem);
+  align-items: center;
+}
+
+/*
+ * Order, not direction. The copy stays first in the DOM on every row — that is
+ * the reading order, and it is what the columns stack into on a phone — so the
+ * alternation is done by moving the visual to column one instead.
+ */
+.pillar[data-flip='true'] .pillar-visual {
+  order: -1;
+}
+
+.pillar-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.pillar-copy h3 {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.4vw, 2rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+}
+
+.pillar-copy > p {
+  margin-top: 0.9rem;
+  color: var(--text-mut);
+}
+
+.pillar-list {
+  list-style: none;
+  margin: 1.6rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.8rem;
+}
+
+/*
+ * Two levels per bullet, as the source design has them: the title is what the
+ * feature does and the body is the constraint it lifts. A single line has to be
+ * one or the other, and the one that gets dropped is always the reason it
+ * matters.
+ */
+.pillar-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+}
+
+.pillar-list b {
+  display: block;
+  color: var(--text);
+}
+
+.pillar-list span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.85rem;
+  text-wrap: pretty;
+}
+
+.pillar-list svg {
+  flex: 0 0 auto;
+  margin-top: 0.3rem;
+  color: var(--accent-ink);
+}
+
+.pillar-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1.6rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  transition: gap 240ms var(--ease);
+}
+
+.pillar-more:hover {
+  gap: 0.8rem;
+}
+
+/* ── pricing ──────────────────────────────────────────────────────────── */
+
+.tiers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.tier {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 1.85rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/*
+ * The chosen tier is marked with a border and a flag, not with a scale
+ * transform. Lifting one card out of a row of three costs the row its shared
+ * baseline, and the flag says the same thing in words that a translator can
+ * carry and a screen reader can read.
+ */
+.tier[data-featured='true'] {
+  border-color: var(--border-2);
+  box-shadow: 0 30px 90px -50px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
+}
+
+.tier-flag {
+  position: absolute;
+  top: -0.7rem;
+  left: 1.85rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.tier h3 {
+  font-size: 1.05rem;
+}
+
+/* Who the tier is for, next to what it is called. The names are marketing and
+   the note is the qualifying fact — an operator with seven sites should be able
+   to skip two cards without reading either body. */
+.tier-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.tier-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0;
+}
+
+.tier-price b {
+  font-family: var(--font-display);
+  font-size: 2.3rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-ink);
+}
+
+.tier-price span {
+  font-size: 0.8rem;
+  color: var(--text-fnt);
+}
+
+.tier-body {
+  margin-top: 0.9rem;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+}
+
+/*
+ * What is actually in the plan.
+ *
+ * The first line of every tier after the first is "everything in <the one
+ * below>", so the list is read as a difference rather than as three
+ * independent inventories — which is how someone choosing between them reads
+ * it anyway.
+ */
+.tier-list {
+  list-style: none;
+  margin: 1.35rem 0 0;
+  padding: 1.35rem 0 0;
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 0.6rem;
+}
+
+.tier-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.tier-list svg {
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+  color: var(--accent-ink);
+}
+
+/* Pushed to the bottom so the three buttons share a baseline across bodies of
+   three different lengths in five languages. */
+.tier .btn {
+  margin-top: auto;
+  padding-top: 0.8rem;
+  padding-bottom: 0.8rem;
+  justify-content: center;
+}
+
+.tier-list + .btn {
+  margin-top: 1.75rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .console-bar,
+  .cohort-fill,
+  .dash-col,
+  .spark i {
+    transform: none;
+    transition: none;
+  }
+
+  .pillar-more {
+    transition: none;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════ vouchers ══ */
+
+/* ── the wallet ───────────────────────────────────────────────────────── */
+
+.wallet {
+  display: grid;
+  gap: 1.1rem;
+  padding: 1.35rem;
+}
+
+.wallet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.wallet-head b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.wallet-head > div > span {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.wallet-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+/*
+ * Two tabs, and they really switch. The section's whole argument is that a spent
+ * voucher moves rather than vanishes, and the only way to show "moves" is to let
+ * someone move it — so these are buttons with state, not a picture of a tab
+ * strip.
+ */
+.wallet-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.wallet-tabs button {
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition:
+    background 220ms var(--ease),
+    color 220ms var(--ease);
+}
+
+.wallet-tabs button[data-on='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ── the voucher itself ───────────────────────────────────────────────── */
+
+.vcard {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 0.9rem;
+  padding: 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.06);
+  transition:
+    border-color 260ms var(--ease),
+    background 260ms var(--ease);
+}
+
+/* A spent voucher is the same object with its code used up, so it is drawn as
+   the same card with the light taken out of it rather than as a different one. */
+.vcard[data-spent='true'] {
+  border-color: var(--border);
+  background: var(--surface);
+}
+
+.vcard-main {
+  min-width: 0;
+}
+
+.vcard-main b {
+  display: block;
+  font-size: 0.98rem;
+}
+
+.vcard-main > span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8rem;
+  color: var(--text-fnt);
+}
+
+/*
+ * The perforation.
+ *
+ * The one place on the site where a dashed border is the correct drawing rather
+ * than a lazy one — it is what the object has. Full width across both columns,
+ * with the notches at either end punched out of the card's own edge.
+ */
+.vcard-tear {
+  grid-column: 1 / -1;
+  position: relative;
+  height: 1px;
+  margin: 0.3rem 0;
+  border-top: 1px dashed var(--border-2);
+}
+
+.vcard-tear::before,
+.vcard-tear::after {
+  content: '';
+  position: absolute;
+  top: -7px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.vcard-tear::before {
+  left: -1.55rem;
+}
+
+.vcard-tear::after {
+  right: -1.55rem;
+}
+
+.vcard-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.vcard-cost {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--accent-ink);
+}
+
+.vcard-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.vcard-code {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-mut);
+}
+
+.vcard-state {
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+}
+
+.vcard-expiry {
+  grid-column: 1 / -1;
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+/* The rule that costs someone a voucher if they meet it at the counter, said
+   once here and twice more down the page. */
+.wallet-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+.wallet-note svg {
+  flex: 0 0 auto;
+  margin-top: 0.25rem;
+  color: var(--accent-ink);
+}
+
+/* ── the catalogue ────────────────────────────────────────────────────── */
+
+.gifts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.gift {
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition:
+    border-color 320ms var(--ease),
+    transform 320ms var(--ease);
+}
+
+.gift:hover {
+  border-color: var(--border-2);
+  transform: translateY(-3px);
+}
+
+.gift-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+/*
+ * Stock as a number *and* a length. The number alone is read as text; the same
+ * number as a bar is read before it is read, which is the whole point of saying
+ * that three of ten are left.
+ */
+.gift-stock {
+  position: relative;
+  padding-bottom: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.gift-stock i {
+  position: absolute;
+  inset: auto 0 0;
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.18);
+}
+
+.gift-stock i::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--share);
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.gift-brand {
+  font-size: 1rem;
+}
+
+.gift-where {
+  margin-top: 0.2rem;
+  font-size: 0.76rem;
+  color: var(--text-fnt);
+}
+
+/* Pushed down so eight cards with brand names of eight different lengths keep
+   their costs on one line. */
+.gift-cost {
+  margin-top: auto;
+  padding-top: 1.1rem;
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.gift-cost b {
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--accent-ink);
+}
+
+/* Three rules, not four — the `.b2b-why-grid` four-up would leave a hole. */
+.rules-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* ════════════════════════════════════════════════════════════ relocate ══ */
+
+/* ── the rate card ────────────────────────────────────────────────────── */
+
+.rate-card {
+  display: grid;
+  gap: 0.9rem;
+  padding: 1.5rem;
+}
+
+.rate-saved {
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.rate-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.rate-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition:
+    border-color 220ms var(--ease),
+    background 220ms var(--ease),
+    color 220ms var(--ease);
+}
+
+.rate-pair[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.rate-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.95rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  color: var(--text-fnt);
+}
+
+/* The line the whole card exists to produce. Accented and heavier, because it
+   is the only number on it anyone came to read. */
+.rate-row[data-out='true'] {
+  border-color: var(--border-2);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.rate-row b {
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-row[data-out='true'] b {
+  color: var(--accent-ink);
+}
+
+/* Between the two rows and rotated a quarter turn: the arrow in the icon set
+   points right, and there is no second path in it for down. */
+.rate-swap {
+  justify-self: center;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin: -0.45rem 0;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--accent-ink);
+  transform: rotate(90deg);
+}
+
+.rate-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-fnt);
+}
+
+.rate-foot b {
+  color: var(--text-mut);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the guide ────────────────────────────────────────────────────────── */
+
+.guide-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 1.5rem;
+}
+
+.guide-bar .console-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-mut);
+}
+
+.guide-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 12rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.82rem;
+  color: var(--text-fnt);
+}
+
+/*
+ * Nine subjects as rows, not cards.
+ *
+ * The app lists them as rows with a chevron, and someone who has used the app
+ * should recognise this as the same list. Three columns divides nine exactly,
+ * which is the one place on this site where the content and the grid agree
+ * without either being bent to fit.
+ */
+.topics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.topic {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition:
+    border-color 300ms var(--ease),
+    transform 300ms var(--ease);
+}
+
+.topic:hover {
+  border-color: var(--border-2);
+  transform: translateX(3px);
+}
+
+.topic-ico {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
+}
+
+.topic > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.topic b {
+  display: block;
+  font-size: 0.95rem;
+}
+
+.topic > div > span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+  text-wrap: pretty;
+}
+
+/* Decorative: these open in the app, and a marketing page cannot honour the
+   click. It is drawn because the row would look truncated without it. */
+.topic-go {
+  flex: 0 0 auto;
+  color: var(--text-fnt);
+  transform: rotate(-90deg);
+}
+
+/* ── the countries ────────────────────────────────────────────────────── */
+
+.flags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.flag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-mut);
+}
+
+/*
+ * The self-hosted Twemoji subset — the same family the globe's country card
+ * uses, declared once in `GlobeHero/ui/flagFont.css` and imported by
+ * `relocate.tsx`. Without it Chromium on Windows draws each flag as the two
+ * regional-indicator letters it is built from, and the strip reads "PL PL".
+ */
+.flag-chip i {
+  font-family: 'GH Country Flags', var(--font-body);
+  font-style: normal;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+/* ── ask ──────────────────────────────────────────────────────────────── */
+
+/*
+ * A picture of an input, not one.
+ *
+ * A real field on a marketing page is a promise to answer, and this page cannot
+ * keep it — the assistant lives in the app. The sample questions underneath
+ * carry what it is for instead.
+ */
+.ask-box {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.5rem 0.5rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.ask-field {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  color: var(--text-fnt);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ask-field svg {
+  flex: 0 0 auto;
+  color: var(--accent-ink);
+}
+
+.ask-go {
+  flex: 0 0 auto;
+  padding: 0.6rem 1.4rem;
+}
+
+.ask-chips {
+  justify-content: center;
+  margin-top: 1.25rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wallet-tabs button,
+  .rate-pair,
+  .gift,
+  .topic {
+    transition: none;
+  }
+}
+
 /* ────────────────────────────────────────────────────────── responsive ── */
 
 /*
@@ -1584,17 +4307,65 @@ button {
   .footer-grid {
     grid-template-columns: 1fr 1fr;
   }
+
+  .steps,
+  .games,
+  .kpis,
+  .tiers,
+  .b2b-why-grid,
+  .dash-notes,
+  .gifts,
+  .topics,
+  .rules-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* The rail only threads a single row. Once the steps wrap it would run off
+     the end of one row and start again mid-sequence, so it goes. */
+  .step:not(:last-child)::before {
+    display: none;
+  }
+
+  /* Four tiles across a narrower card leaves each one about as wide as its own
+     figure, and the delta in the corner starts overlapping it. */
+  .dash-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 820px) {
-  .hero-grid {
+  /* `.learn-hero .hero-grid` out-specifies a bare `.hero-grid`, so each hero
+     that sets its own columns has to be named again or it stays in two on a
+     phone. */
+  .hero-grid,
+  .learn-hero .hero-grid,
+  .b2b-hero .hero-grid {
     grid-template-columns: 1fr;
+  }
+
+  /* Same for the pillars: the copy is already first in the DOM, so all the
+     stacked layout needs is for the flip to stop reordering it. */
+  .pillar {
+    grid-template-columns: 1fr;
+  }
+
+  .pillar[data-flip='true'] .pillar-visual {
+    order: 0;
   }
 
   /* Portrait puts the globe below the copy, so give it room rather than
      letting it sit behind the text. */
   .hero-visual {
     min-height: 46vh;
+  }
+
+  /* Except these two: they are cards, not canvases, and they are already
+     exactly as tall as they need to be. 46vh of reserved air under them is
+     just a gap. */
+  .analytics-visual,
+  .b2b-visual {
+    min-height: 0;
+    margin-top: 2.25rem;
   }
 
   .split {
@@ -1616,6 +4387,13 @@ button {
     grid-column: 1;
     grid-row: 1;
     height: 17rem;
+  }
+
+  /* Stacked under the copy by then, and across the full width — so height is
+     the only axis left that can limit it, and the stage's 17rem would throw
+     away most of the room. */
+  .controller-3d--hero {
+    height: min(52vh, 25rem);
   }
 
   .feature-list[data-side='left'],
@@ -1641,6 +4419,109 @@ button {
   .hero-meta {
     flex-wrap: wrap;
     gap: 1rem;
+  }
+
+  .steps,
+  .games,
+  .tiers,
+  .b2b-why-grid,
+  .dash-notes,
+  .topics,
+  .rules-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* The gift cards stay two-up. They are a *shelf* — the whole point is
+     comparing what each one costs against the others — and a single column of
+     eight is a list you scroll past. */
+  .gifts {
+    gap: 0.75rem;
+  }
+
+  .gift {
+    padding: 1rem;
+  }
+
+  /* The rate card's two amounts are the widest things on the page at this
+     width; letting the labels sit above them buys the digits the whole row. */
+  .rate-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+  }
+
+  .cohort-keys {
+    gap: 1.1rem;
+  }
+
+  /* The dashboard on a phone. The tiles stay two-up for the reason the KPI
+     cards do — they are a row of figures compared against each other, and a
+     single column of four is a list — but the toolbar has to give something up,
+     and the breadcrumb is the part that carries no information. */
+  .dash-crumb,
+  .dash-screen {
+    display: none;
+  }
+
+  .dash,
+  .dash-full {
+    padding: 0.9rem;
+    gap: 0.85rem;
+  }
+
+  .dash-head p {
+    font-size: 0.92rem;
+  }
+
+  .dash-chart {
+    height: 110px;
+  }
+
+  /* Fourteen columns and a stat column on a 360px screen is a row that scrolls
+     sideways. The label goes; the figure beside it says the same thing. */
+  .dash-row-stat span {
+    display: none;
+  }
+
+  /* The board is the one thing here that cannot reflow — it is a table, and
+     the columns mean what they mean. Tighten it instead. */
+  .board th,
+  .board td {
+    padding: 0.85rem 1rem;
+  }
+
+  .board-player .tavatar {
+    display: none;
+  }
+
+  /* Four KPI cards go to two-up rather than one: they are a *row* of figures
+     that get compared to each other, and a single column of four is a list. */
+  .kpis {
+    gap: 0.75rem;
+  }
+
+  .kpi {
+    padding: 1.15rem;
+  }
+
+  .kpi b {
+    font-size: 1.6rem;
+  }
+
+  /* "vs. previous period" doubles the height of every delta line at this
+     width, for a caption nobody reads on a phone. The arrow and the number
+     carry it. */
+  .kpi-delta i {
+    display: none;
+  }
+
+  .chart {
+    height: 150px;
+    gap: 0.4rem;
+  }
+
+  .chart-meta {
+    gap: 1.5rem;
   }
 }
 

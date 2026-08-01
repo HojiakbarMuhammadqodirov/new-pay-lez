@@ -5,6 +5,13 @@
  * file mixing the two breaks React fast refresh.
  */
 import { createContext, useContext } from 'react';
+import {
+  CURRENCIES,
+  money,
+  moneyParts,
+  type Currency,
+  type MoneyRound,
+} from './currency';
 import { en, type Dictionary } from './en';
 import { pl } from './pl';
 import { ru } from './ru';
@@ -48,6 +55,33 @@ export function useCopy(): Dictionary {
 export function useLanguage(): [LanguageCode, (next: LanguageCode) => void] {
   const { language, setLanguage } = useLanguageContext();
   return [language, setLanguage];
+}
+
+/** The active currency. For the few callers that need the symbol on its own —
+ *  the dashboard's currency chip — rather than a formatted amount. */
+export function useCurrency(): Currency {
+  return CURRENCIES[useLanguageContext().language];
+}
+
+/**
+ * Euros in, a finished price in the reader's currency out.
+ *
+ * Every money figure on the site goes through this or through `useMoneyParts`.
+ * See `currency.ts` for why the language picks the currency and why the base
+ * unit is euros everywhere else.
+ */
+export function useMoney(): (eur: number, round?: MoneyRound) => string {
+  const currency = CURRENCIES[useLanguageContext().language];
+  return (eur, round) => money(eur, currency, round);
+}
+
+/** The same conversion, taken apart for `[data-count]` to animate. */
+export function useMoneyParts(): (
+  eur: number,
+  round?: MoneyRound,
+) => ReturnType<typeof moneyParts> {
+  const currency = CURRENCIES[useLanguageContext().language];
+  return (eur, round) => moneyParts(eur, currency, round);
 }
 
 export type { Dictionary };

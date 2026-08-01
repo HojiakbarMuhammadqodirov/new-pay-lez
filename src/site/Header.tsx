@@ -10,6 +10,7 @@ import { NAV_ITEMS } from './content';
 import { GLASS_MESH } from './glassMesh';
 import { Icon, type IconName } from './icons';
 import { LANGUAGE_ORDER, LANGUAGES, useCopy, useLanguage } from './i18n/context';
+import { PATHS, type Route } from './router';
 import { useTheme } from './theme/context';
 
 /**
@@ -189,12 +190,21 @@ function ThemeToggle() {
   );
 }
 
-export function Header() {
+export function Header({ route }: { route: Route }) {
   const copy = useCopy();
   const [scrolled, setScrolled] = useState(false);
 
+  /*
+   * The bar is sticky in CSS; this only decides whether the glass behind it is
+   * showing. Two thresholds rather than one: a single edge sitting exactly
+   * under a trackpad's resting position cross-fades the whole strip in and out
+   * on every stray pixel. Passing the same boolean to `setScrolled` is free —
+   * React bails out before re-rendering — so only a real crossing costs a
+   * render, which keeps this off the per-frame path.
+   */
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 24);
+    const onScroll = () =>
+      setScrolled((on) => (on ? window.scrollY > 8 : window.scrollY > 28));
     onScroll();
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
@@ -206,7 +216,7 @@ export function Header() {
           the nav optically centred regardless of how wide the brand or the
           actions happen to be. */}
       <div className="wrap header-inner">
-        <a className="brand" href="#top" aria-label="paylez home">
+        <a className="brand" href={PATHS.landing} aria-label="paylez home">
           <span className="brand-mark">
             <span>p</span>
           </span>
@@ -220,7 +230,9 @@ export function Header() {
               href={item.href}
               label={copy.nav[index]}
               icon={item.icon}
-              active={index === 0}
+              /* Only the two routes can be "current"; the rest are section
+                 anchors on the landing page, which scroll rather than navigate. */
+              active={item.href === PATHS[route]}
             />
           ))}
         </nav>

@@ -30,6 +30,10 @@ const PATHS = {
   qr: <><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><path d="M14 14h3v3M20 14v3M17 20h4M20.5 17v.01" /></>,
   assistant: <><path d="M12 3a4 4 0 0 1 4 4v1a4 4 0 0 1-8 0V7a4 4 0 0 1 4-4Z" /><path d="M5 21a7 7 0 0 1 14 0" /><path d="M12 3V1M18 6l1-1M6 6 5 5" /></>,
 
+  flag: <><path d="M5 21V4" /><path d="M5 4.5h11l-1.6 3.5L16 11.5H5" /></>,
+  map: <><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4Z" /><path d="M9 4v13M15 7v12.5" /></>,
+  book: <><path d="M4 5a2 2 0 0 1 2-2h5v18H6a2 2 0 0 1-2-2V5Z" /><path d="M20 5a2 2 0 0 0-2-2h-5v18h5a2 2 0 0 0 2-2V5Z" /></>,
+
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   chevron: <><path d="m6 9 6 6 6-6" /></>,
   sun: <><circle cx="12" cy="12" r="4.2" /><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" /></>,

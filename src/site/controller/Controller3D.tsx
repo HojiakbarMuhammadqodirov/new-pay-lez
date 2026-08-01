@@ -22,15 +22,19 @@ import {
 } from './controllerGeometry';
 
 /**
- * Fixed 3/4 view from above, facing right.
+ * Fixed 3/4 views from above, one per facing.
  *
  * `rotation.x` negative tips the top edge away so the face is seen from above.
  * `rotation.y` is what sets which way it points: the face normal starts at +Z,
  * and rotating by +y swings it toward +X, so a positive value aims the
- * controller to the right. (It was negative before, which aimed it left.)
- * The z-roll is mirrored to match.
+ * controller to the right and a negative one to the left. The z-roll mirrors
+ * with it — a roll that leans *into* the turn on one side leans out of it on
+ * the other, and the model looks like it is falling over.
  */
-const VIEW_ANGLE: [number, number, number] = [-0.46, 0.5, -0.1];
+const VIEW_ANGLE: Record<ControllerFacing, [number, number, number]> = {
+  right: [-0.46, 0.5, -0.1],
+  left: [-0.46, -0.5, 0.1],
+};
 
 /**
  * Body palette, per theme.
@@ -71,13 +75,26 @@ const TONE = {
 
 type ControllerTone = keyof typeof TONE;
 
+/** Which way the face of the controller is turned. */
+export type ControllerFacing = 'left' | 'right';
+
 /**
- * Radius of a sphere enclosing the whole model — half the diagonal of its
- * ~3.9 x 2.6 bounding box, which stays valid whatever the fixed rotation is.
+ * Radius of a sphere enclosing the whole model, so it holds at any rotation.
+ *
+ * The geometry spans about x ±1.86, y -0.94..1.14, z -0.68..0.6; the corner of
+ * that box is 2.28 from its centre, and the idle drift moves it another 0.06.
+ * 2.35 is that, rounded up — and it is a *corner*, which no part of the model
+ * actually reaches, so the fit below always has a little slack in hand.
  */
 const MODEL_RADIUS = 2.35;
 
-/** Breathing room around the model, so the glow is never clipped either. */
+/**
+ * Breathing room around the model, as a multiple of the fitted distance.
+ *
+ * The default leaves the controller sitting in air, which is right when it is
+ * one element among three in the features stage. Callers that give the canvas a
+ * column of its own pass something tighter — see the `fitMargin` prop.
+ */
 const FIT_MARGIN = 1.12;
 
 /**
@@ -88,7 +105,7 @@ const FIT_MARGIN = 1.12;
  * what produced the hard vertical edges. Fitting against whichever axis is
  * tighter makes clipping impossible at any size.
  */
-function FitCamera() {
+function FitCamera({ margin }: { margin: number }) {
   const camera = useThree((state) => state.camera) as PerspectiveCamera;
   const width = useThree((state) => state.size.width);
   const height = useThree((state) => state.size.height);
@@ -99,10 +116,10 @@ function FitCamera() {
     const halfHorizontal = Math.atan(Math.tan(halfVertical) * aspect);
     const limiting = Math.min(halfVertical, halfHorizontal);
 
-    camera.position.set(0, 0, (MODEL_RADIUS / Math.sin(limiting)) * FIT_MARGIN);
+    camera.position.set(0, 0, (MODEL_RADIUS / Math.sin(limiting)) * margin);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
-  }, [camera, width, height]);
+  }, [camera, width, height, margin]);
 
   return null;
 }
@@ -112,7 +129,11 @@ interface SceneProps {
   tone: ControllerTone;
 }
 
-function ControllerModel({ primaryColor, tone }: SceneProps) {
+function ControllerModel({
+  primaryColor,
+  tone,
+  facing,
+}: SceneProps & { facing: ControllerFacing }) {
   const group = useRef<Group>(null);
   const skin = TONE[tone];
 
@@ -152,7 +173,7 @@ function ControllerModel({ primaryColor, tone }: SceneProps) {
   });
 
   return (
-    <group ref={group} rotation={VIEW_ANGLE}>
+    <group ref={group} rotation={VIEW_ANGLE[facing]}>
       {/* Shell and grips share a material so the body reads as one moulding. */}
       <mesh geometry={parts.shell}>
         <meshStandardMaterial
@@ -263,6 +284,21 @@ interface Controller3DProps {
   primaryColor?: string;
   /** Body palette and rig. `'ink'` for a light page. */
   tone?: ControllerTone;
+  /**
+   * Which way it turns. On the features stage it faces right, into the page;
+   * in the L-Earn hero it sits on the right of the grid, so it faces left —
+   * back toward the headline it belongs to.
+   */
+  facing?: ControllerFacing;
+  /**
+   * How much air to leave around the model, as a multiple of the fitted camera
+   * distance — so *smaller is bigger*. 1 would put the enclosing sphere exactly
+   * on the frustum, and since that sphere is drawn around a box corner the
+   * silhouette still clears it; below about 0.95 the grips start to crop.
+   */
+  fitMargin?: number;
+  /** Extra class on the host, for callers that place it themselves. */
+  className?: string;
 }
 
 /**
@@ -282,6 +318,9 @@ interface Controller3DProps {
 export const Controller3D = memo(function Controller3D({
   primaryColor = COLORS.primary,
   tone = 'glow',
+  facing = 'right',
+  fitMargin = FIT_MARGIN,
+  className,
 }: Controller3DProps) {
   const host = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
@@ -298,9 +337,27 @@ export const Controller3D = memo(function Controller3D({
   }, []);
 
   return (
-    <div className="controller-3d" ref={host} aria-hidden>
+    <div
+      className={className ? `controller-3d ${className}` : 'controller-3d'}
+      ref={host}
+      aria-hidden
+    >
       <Canvas
         dpr={[1, 1.75]}
+        /*
+         * Measure the *layout* box, not the painted one.
+         *
+         * R3F sizes itself from `getBoundingClientRect()`, which includes CSS
+         * transforms, and re-measures on scroll. The hover `scale(1.08)` below
+         * therefore reads back as a canvas 8% wider than its box — and the
+         * width it writes back is untransformed, so the next measurement finds
+         * 1.08 x that, and the one after 1.08 x again. Scrolling while hovered
+         * walked the canvas off the right of the screen in a few frames.
+         *
+         * `offsetSize` switches the measurement to `offsetWidth/offsetHeight`,
+         * which transforms cannot touch, and the loop has no input.
+         */
+        resize={{ offsetSize: true }}
         gl={{
           antialias: true,
           alpha: true,
@@ -316,9 +373,9 @@ export const Controller3D = memo(function Controller3D({
         // rectangle behind the model.
         onCreated={({ gl }) => gl.setClearAlpha(0)}
       >
-        <FitCamera />
+        <FitCamera margin={fitMargin} />
         <Rig primaryColor={primaryColor} tone={tone} />
-        <ControllerModel primaryColor={primaryColor} tone={tone} />
+        <ControllerModel primaryColor={primaryColor} tone={tone} facing={facing} />
       </Canvas>
     </div>
   );

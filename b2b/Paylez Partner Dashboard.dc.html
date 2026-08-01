@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Paylez — Partner dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #F7F8F8; }
+  body { font-family: 'IBM Plex Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; color: #0C0C10; }
+  * { box-sizing: border-box; }
+  a { color: #0ABFBC; text-decoration: none; }
+  a:hover { color: #089A97; }
+  ::selection { background: #4DDCC8; color: #0C0C10; }
+  input, textarea, select, button { font-family: inherit; }
+  @keyframes plzFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  @keyframes plzSlide { from { transform: translateX(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+  @keyframes plzShim { 0% { background-position: -420px 0; } 100% { background-position: 420px 0; } }
+</style>
+</helmet>
+
+<div style="display:flex;min-height:100vh;background:#F7F8F8">
+
+  <aside style="{{ railStyle }}">
+    <div style="padding:20px 18px 16px;display:flex;align-items:center;gap:10px">
+      <span style="width:30px;height:30px;flex:0 0 30px;border-radius:9px;background:#4DDCC8;color:#0C0C10;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;display:flex;align-items:center;justify-content:center">P</span>
+      <span style="{{ wordmarkStyle }}">paylez</span>
+    </div>
+
+    <div style="{{ workspaceStyle }}">
+      <div style="font-family:'Space Grotesk',sans-serif;font-size:14px;font-weight:600;color:#FFFFFF;margin-bottom:3px">{{ bizName }}</div>
+      <div style="font-size:12px;color:#6B6B7B">{{ bizCategory }} · Kraków</div>
+    </div>
+
+    <nav style="padding:14px 10px;flex:1;display:flex;flex-direction:column;gap:3px">
+      <sc-for list="{{ nav }}" as="n" hint-placeholder-count="6">
+        <button onClick="{{ n.go }}" title="{{ n.label }}" style="{{ n.style }}">
+          <span style="flex:0 0 18px;display:flex;align-items:center;justify-content:center">{{ n.icon }}</span>
+          <span style="{{ n.labelStyle }}">{{ n.label }}</span>
+          <span style="{{ n.countStyle }}">{{ n.count }}</span>
+        </button>
+      </sc-for>
+    </nav>
+
+    <div style="padding:12px 10px 16px;display:flex;flex-direction:column;gap:3px;border-top:1px solid rgba(255,255,255,0.07)">
+      <div style="{{ planStyle }}">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <span style="font-size:11px;font-weight:600;letter-spacing:0.08em;color:#6B6B7B">YOUR PLAN</span>
+          <span style="font-size:10.5px;font-weight:700;color:#0C0C10;background:#4DDCC8;border-radius:5px;padding:2px 6px">GROWTH</span>
+        </div>
+        <div style="font-size:12px;color:#9A9AAA;line-height:1.5">Renews 24 August · 1 894 zł / mo</div>
+      </div>
+      <button onClick="{{ goProfile }}" style="{{ accountStyle }}">
+        <span style="flex:0 0 24px;width:24px;height:24px;border-radius:50%;background:rgba(77,220,200,0.18);color:#4DDCC8;font-size:10.5px;font-weight:700;display:flex;align-items:center;justify-content:center">MK</span>
+        <span style="{{ accountLabelStyle }}">Marta Kowal</span>
+      </button>
+      <a href="#help" style="{{ helpStyle }}">
+        <span style="flex:0 0 18px;display:flex;align-items:center;justify-content:center">{{ helpIcon }}</span>
+        <span style="{{ accountLabelStyle }}">Help and guides</span>
+      </a>
+      <button onClick="{{ toggleRail }}" style="{{ collapseStyle }}">
+        <span style="flex:0 0 18px;display:flex;align-items:center;justify-content:center">{{ collapseIcon }}</span>
+        <span style="{{ accountLabelStyle }}">Collapse menu</span>
+      </button>
+    </div>
+  </aside>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+    <header style="position:sticky;top:0;z-index:30;background:rgba(247,248,248,0.92);backdrop-filter:blur(10px);border-bottom:1px solid #E4E6E6;padding:0 32px;min-height:68px;display:flex;align-items:center;gap:20px;flex-wrap:wrap">
+      <div style="min-width:0;padding:14px 0">
+        <h1 style="margin:0;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:600;letter-spacing:-0.01em">{{ screenTitle }}</h1>
+      </div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:10px;padding:8px 0">
+        <div style="display:flex;padding:3px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;gap:2px">
+          <sc-for list="{{ ranges }}" as="r" hint-placeholder-count="4">
+            <button onClick="{{ r.go }}" style="{{ r.style }}">{{ r.label }}</button>
+          </sc-for>
+        </div>
+        <button title="Notifications" style="position:relative;width:38px;height:38px;flex:0 0 38px;border-radius:10px;border:1px solid #E4E6E6;background:#FFFFFF;cursor:pointer;display:flex;align-items:center;justify-content:center" style-hover="border-color:#0ABFBC">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0C0C10" stroke-width="1.7" stroke-linecap="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"></path><path d="M13.7 21a2 2 0 0 1-3.4 0"></path></svg>
+          <span style="position:absolute;top:8px;right:9px;width:7px;height:7px;border-radius:50%;background:#0ABFBC;border:1.5px solid #F7F8F8"></span>
+        </button>
+        <button onClick="{{ primaryAction }}" style="{{ primaryStyle }}">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
+          {{ primaryLabel }}
+        </button>
+      </div>
+    </header>
+
+    <main style="padding:28px 32px 56px;display:flex;flex-direction:column;gap:20px;max-width:1360px;width:100%">
+
+      <sc-if value="{{ showOverview }}" hint-placeholder-val="{{ true }}">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:plzFade .32s ease">
+
+          <section style="background:#0C0C10;border-radius:18px;padding:34px 36px;display:flex;gap:40px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:1 1 460px;min-width:320px">
+              <div style="font-size:11.5px;font-weight:600;letter-spacing:0.1em;color:#6B6B7B;margin-bottom:18px">WHAT PAYLEZ DID FOR YOU · {{ rangeLabel }}</div>
+              <p style="margin:0 0 22px;font-family:'Space Grotesk',sans-serif;font-size:29px;font-weight:500;line-height:1.34;letter-spacing:-0.015em;color:#FFFFFF;text-wrap:pretty">We brought <span style="color:#4DDCC8;font-weight:600">{{ newCustomers }} new customers</span> through your door, and they spent about</p>
+              <div style="display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap">
+                <div style="font-size:56px;font-weight:600;letter-spacing:-0.035em;color:#FFFFFF;line-height:1;font-variant-numeric:tabular-nums">{{ attributedRevenue }}</div>
+                <div style="font-size:13.5px;color:#9A9AAA;padding-bottom:8px">estimated sales from Paylez visits</div>
+              </div>
+            </div>
+            <div style="flex:0 1 320px;min-width:260px;display:flex;flex-direction:column;gap:1px;background:rgba(255,255,255,0.07);border-radius:12px;overflow:hidden">
+              <sc-for list="{{ thesisRows }}" as="t" hint-placeholder-count="3">
+                <div style="background:#16161C;padding:15px 18px;display:flex;align-items:baseline;justify-content:space-between;gap:14px">
+                  <span style="font-size:12.5px;color:#9A9AAA">{{ t.label }}</span>
+                  <span style="font-size:16px;font-weight:600;color:#FFFFFF;font-variant-numeric:tabular-nums">{{ t.value }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(232px,1fr));gap:14px">
+            <sc-for list="{{ metrics }}" as="m" hint-placeholder-count="4">
+              <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:14px;padding:18px 20px 16px">
+                <div style="font-size:12px;font-weight:600;color:#6B6B7B;margin-bottom:14px">{{ m.label }}</div>
+                <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px">
+                  <div>
+                    <div style="font-size:27px;font-weight:600;letter-spacing:-0.025em;line-height:1.05;margin-bottom:9px;font-variant-numeric:tabular-nums">{{ m.value }}</div>
+                    <div style="display:flex;align-items:center;gap:7px">
+                      <span style="{{ m.deltaStyle }}">{{ m.delta }}</span>
+                      <span style="font-size:11.5px;color:#9A9AAA">{{ m.deltaNote }}</span>
+                    </div>
+                  </div>
+                  <div style="flex:0 0 auto;padding-bottom:2px">{{ m.spark }}</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <section style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;padding:24px 26px">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-bottom:22px">
+              <div>
+                <h2 style="margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600">Visits and voucher redemptions</h2>
+                <p style="margin:0;font-size:13px;color:#6B6B7B">Every QR scan at the counter, against the vouchers customers actually spent</p>
+              </div>
+              <div style="display:flex;gap:18px">
+                <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:#6B6B7B"><span style="width:16px;height:3px;border-radius:2px;background:#0ABFBC"></span>Visits</div>
+                <div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:500;color:#6B6B7B"><span style="width:16px;height:3px;border-radius:2px;background:#0C0C10"></span>Vouchers redeemed</div>
+              </div>
+            </div>
+            {{ mainChart }}
+          </section>
+
+          <sc-if value="{{ showInsight }}" hint-placeholder-val="{{ true }}">
+            <section style="background:#16161C;border-radius:16px;padding:26px 28px;display:flex;gap:26px;flex-wrap:wrap;align-items:center">
+              <div style="flex:1 1 480px;min-width:300px">
+                <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
+                  <span style="width:6px;height:6px;border-radius:50%;background:#4DDCC8"></span>
+                  <span style="font-size:11px;font-weight:600;letter-spacing:0.12em;color:#4DDCC8">WHAT WE NOTICED</span>
+                </div>
+                <p style="margin:0;font-family:'Space Grotesk',sans-serif;font-size:19px;font-weight:500;line-height:1.5;letter-spacing:-0.01em;color:#FFFFFF;text-wrap:pretty">{{ insightText }}</p>
+                <p style="margin:12px 0 0;font-size:13.5px;color:#9A9AAA;line-height:1.6;max-width:620px">{{ insightDetail }}</p>
+              </div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap">
+                <button onClick="{{ goVouchers }}" style="padding:12px 18px;border-radius:10px;border:none;background:#4DDCC8;color:#0C0C10;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:#0ABFBC">Change the 10% tier</button>
+                <button style="padding:12px 18px;border-radius:10px;border:1px solid rgba(255,255,255,0.16);background:transparent;color:#FFFFFF;font-size:13.5px;font-weight:500;cursor:pointer" style-hover="border-color:#4DDCC8;color:#4DDCC8">Not now</button>
+              </div>
+            </section>
+          </sc-if>
+
+          <section style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;overflow:hidden">
+            <div style="padding:20px 24px;border-bottom:1px solid #EFF1F1;display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap">
+              <div>
+                <h2 style="margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600">Running right now</h2>
+                <p style="margin:0;font-size:13px;color:#6B6B7B">Everything customers can see or earn in your venue today</p>
+              </div>
+            </div>
+            <sc-for list="{{ activeItems }}" as="a" hint-placeholder-count="4">
+              <div style="padding:16px 24px;border-bottom:1px solid #EFF1F1;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+                <span style="{{ a.kindStyle }}">{{ a.kind }}</span>
+                <div style="flex:1 1 220px;min-width:180px">
+                  <div style="font-size:14px;font-weight:600;margin-bottom:3px">{{ a.name }}</div>
+                  <div style="font-size:12.5px;color:#6B6B7B">{{ a.rule }}</div>
+                </div>
+                <div style="flex:0 0 auto;text-align:right;min-width:104px">
+                  <div style="font-size:15px;font-weight:600;font-variant-numeric:tabular-nums">{{ a.stat }}</div>
+                  <div style="font-size:11.5px;color:#9A9AAA">{{ a.statLabel }}</div>
+                </div>
+                <div style="display:flex;gap:8px">
+                  <button onClick="{{ a.edit }}" style="padding:8px 13px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:12.5px;font-weight:500;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Edit</button>
+                  <button style="padding:8px 13px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:12.5px;font-weight:500;color:#6B6B7B;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Pause</button>
+                </div>
+              </div>
+            </sc-for>
+          </section>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showDeals }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;overflow:hidden;animation:plzFade .32s ease">
+          <div style="padding:18px 24px;border-bottom:1px solid #EFF1F1;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <div style="display:flex;align-items:center;gap:9px;padding:9px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#F7F8F8;flex:1 1 240px;max-width:320px">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#9A9AAA" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+              <input value="{{ search }}" onInput="{{ onSearch }}" placeholder="Search your deals" style="border:none;background:transparent;outline:none;font-size:13.5px;color:#0C0C10;width:100%" />
+            </div>
+            <div style="display:flex;padding:3px;border:1px solid #E4E6E6;border-radius:10px;background:#F7F8F8;gap:2px">
+              <sc-for list="{{ dealFilters }}" as="f" hint-placeholder-count="4">
+                <button onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
+              </sc-for>
+            </div>
+            <div style="flex:1"></div>
+            <div style="font-size:13px;color:#6B6B7B">{{ dealCount }}</div>
+          </div>
+
+          <sc-if value="{{ hasDeals }}" hint-placeholder-val="{{ true }}">
+            <div style="overflow-x:auto">
+              <table style="width:100%;border-collapse:collapse;min-width:920px">
+                <thead>
+                  <tr>
+                    <sc-for list="{{ dealCols }}" as="c" hint-placeholder-count="6">
+                      <th onClick="{{ c.sort }}" style="{{ c.style }}">
+                        <span style="display:inline-flex;align-items:center;gap:6px">{{ c.label }}<span style="color:#0ABFBC;font-size:9px">{{ c.arrow }}</span></span>
+                      </th>
+                    </sc-for>
+                  </tr>
+                </thead>
+                <tbody>
+                  <sc-for list="{{ deals }}" as="d" hint-placeholder-count="5">
+                    <tr style="{{ d.rowStyle }}" style-hover="background:#F7F8F8">
+                      <td style="padding:16px 24px">
+                        <div style="display:flex;align-items:center;gap:12px">
+                          <span style="{{ d.badgeStyle }}">{{ d.badge }}</span>
+                          <div style="min-width:0">
+                            <div style="font-size:14px;font-weight:600;margin-bottom:3px">{{ d.name }}</div>
+                            <div style="font-size:12px;color:#9A9AAA">{{ d.window }}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style="padding:16px 16px"><span style="{{ d.pillStyle }}">{{ d.state }}</span></td>
+                      <td style="padding:16px 16px;text-align:right;font-size:14px;font-weight:500;font-variant-numeric:tabular-nums">{{ d.impressions }}</td>
+                      <td style="padding:16px 16px;text-align:right;font-size:14px;font-weight:500;font-variant-numeric:tabular-nums">{{ d.clicks }}</td>
+                      <td style="padding:16px 16px;text-align:right;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums">{{ d.ctr }}</td>
+                      <td style="padding:16px 16px">{{ d.trend }}</td>
+                      <td style="padding:16px 24px;text-align:right;white-space:nowrap">
+                        <button onClick="{{ openDeal }}" style="padding:8px 13px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:12.5px;font-weight:500;color:#0C0C10;cursor:pointer;margin-right:6px" style-hover="border-color:#0ABFBC;color:#0ABFBC">Edit</button>
+                        <button style="padding:8px 13px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:12.5px;font-weight:500;color:#6B6B7B;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">{{ d.action }}</button>
+                      </td>
+                    </tr>
+                  </sc-for>
+                </tbody>
+              </table>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ noDeals }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:72px 24px;display:flex;flex-direction:column;align-items:center;text-align:center">
+              <div style="width:52px;height:52px;border-radius:15px;background:#F7F8F8;border:1px solid #E4E6E6;display:flex;align-items:center;justify-content:center;margin-bottom:18px">
+                <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#9A9AAA" stroke-width="1.8" stroke-linecap="round"><path d="M20.6 13.6 13.6 20.6a2 2 0 0 1-2.8 0l-7.4-7.4V4h9.2l8 8a2 2 0 0 1 0 1.6Z"></path><path d="M7.5 7.5h.01"></path></svg>
+              </div>
+              <div style="font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:600;margin-bottom:8px">{{ emptyTitle }}</div>
+              <p style="margin:0 0 20px;font-size:13.5px;color:#6B6B7B;max-width:360px;line-height:1.6">{{ emptyBody }}</p>
+              <div style="display:flex;gap:10px">
+                <button onClick="{{ openDeal }}" style="padding:12px 18px;border-radius:10px;border:none;background:#0C0C10;color:#4DDCC8;font-size:13.5px;font-weight:600;cursor:pointer">Create hot deal</button>
+                <button onClick="{{ resetDealFilters }}" style="{{ resetFilterStyle }}">Clear filters</button>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showCampaigns }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:18px;animation:plzFade .32s ease">
+          <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:14px;padding:20px 24px;display:flex;gap:32px;flex-wrap:wrap;align-items:center">
+            <div style="flex:1 1 300px;min-width:260px">
+              <h2 style="margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600">The gap is the number to watch</h2>
+              <p style="margin:0;font-size:13.5px;color:#6B6B7B;line-height:1.6;max-width:520px">A reward that was earned but never used means a customer qualified and did not come back. {{ gapSentence }}</p>
+            </div>
+            <div style="display:flex;gap:1px;background:#E4E6E6;border-radius:12px;overflow:hidden">
+              <sc-for list="{{ campaignTotals }}" as="t" hint-placeholder-count="3">
+                <div style="background:#FFFFFF;padding:14px 20px;min-width:118px">
+                  <div style="font-size:11.5px;color:#6B6B7B;margin-bottom:6px">{{ t.label }}</div>
+                  <div style="font-size:21px;font-weight:600;letter-spacing:-0.02em;font-variant-numeric:tabular-nums;color:{{ t.color }}">{{ t.value }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(348px,1fr));gap:16px">
+            <sc-for list="{{ campaigns }}" as="c" hint-placeholder-count="4">
+              <div style="{{ c.cardStyle }}">
+                <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:16px">
+                  <div style="min-width:0">
+                    <div style="font-family:'Space Grotesk',sans-serif;font-size:16.5px;font-weight:600;letter-spacing:-0.01em;margin-bottom:7px">{{ c.name }}</div>
+                    <div style="font-size:13.5px;color:#0C0C10;font-weight:500">{{ c.rule }}</div>
+                  </div>
+                  <span style="{{ c.pillStyle }}">{{ c.status }}</span>
+                </div>
+
+                <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+                  <span style="font-size:11.5px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B">EARNED</span>
+                  <span style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.02em">{{ c.earned }}</span>
+                  <span style="font-size:11.5px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;margin-left:6px">USED</span>
+                  <span style="font-size:22px;font-weight:600;font-variant-numeric:tabular-nums;letter-spacing:-0.02em">{{ c.redeemed }}</span>
+                </div>
+
+                <div style="position:relative;height:12px;border-radius:99px;background:#EFF1F1;overflow:hidden;margin-bottom:10px">
+                  <div style="{{ c.earnedBar }}"></div>
+                  <div style="{{ c.usedBar }}"></div>
+                </div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px">
+                  <span style="{{ c.gapStyle }}">{{ c.gapText }}</span>
+                  <span style="font-size:12.5px;color:#6B6B7B;font-variant-numeric:tabular-nums">{{ c.rate }} used</span>
+                </div>
+
+                <div style="display:flex;align-items:center;gap:10px;padding-top:16px;border-top:1px solid #EFF1F1">
+                  <span style="font-size:12px;color:#6B6B7B">Priority {{ c.priority }}</span>
+                  <span style="width:1px;height:12px;background:#E4E6E6"></span>
+                  <span style="font-size:12px;color:#6B6B7B">{{ c.since }}</span>
+                  <div style="flex:1"></div>
+                  <button onClick="{{ openCampaign }}" style="padding:8px 13px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:12.5px;font-weight:500;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Edit</button>
+                  <button style="padding:8px 13px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:12.5px;font-weight:500;color:#6B6B7B;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">{{ c.action }}</button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showVouchers }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-direction:column;gap:18px;animation:plzFade .32s ease">
+
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px">
+            <sc-for list="{{ strategyCards }}" as="s" hint-placeholder-count="2">
+              <button onClick="{{ s.go }}" style="{{ s.style }}">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px">
+                  <span style="font-family:'Space Grotesk',sans-serif;font-size:16.5px;font-weight:600;letter-spacing:-0.01em">{{ s.title }}</span>
+                  <span style="{{ s.markStyle }}">{{ s.mark }}</span>
+                </div>
+                <p style="margin:0 0 14px;font-size:13px;line-height:1.6;color:#6B6B7B;text-align:left">{{ s.body }}</p>
+                <div style="{{ s.footStyle }}">{{ s.foot }}</div>
+              </button>
+            </sc-for>
+          </div>
+
+          <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;padding:24px 26px">
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:20px">
+              <div>
+                <h2 style="margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600">Your three discount tiers</h2>
+                <p style="margin:0;font-size:13px;color:#6B6B7B">{{ tierHint }}</p>
+              </div>
+              <div style="font-size:12.5px;color:#9A9AAA">Changes save when you leave the field</div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px">
+              <sc-for list="{{ tierCards }}" as="t" hint-placeholder-count="3">
+                <div style="{{ t.cardStyle }}">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px">
+                    <span style="{{ t.chipStyle }}">{{ t.label }}</span>
+                    <span style="font-size:12px;color:#6B6B7B">{{ t.tierNote }}</span>
+                  </div>
+                  <label style="display:block;font-size:12px;font-weight:600;color:#6B6B7B;margin-bottom:7px">Points needed</label>
+                  <div style="display:flex;align-items:center;gap:7px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;padding:9px 12px;margin-bottom:14px">
+                    <input type="number" value="{{ t.points }}" onInput="{{ t.onPoints }}" style="border:none;outline:none;background:transparent;font-size:14px;font-weight:600;color:#0C0C10;width:100%;font-variant-numeric:tabular-nums" />
+                    <span style="font-size:12px;color:#9A9AAA;font-weight:500">points</span>
+                  </div>
+                  <label style="display:block;font-size:12px;font-weight:600;color:#6B6B7B;margin-bottom:7px">{{ t.capLabel }}</label>
+                  <div style="display:flex;align-items:center;gap:7px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;padding:9px 12px;margin-bottom:18px">
+                    <span style="{{ t.capPrefixStyle }}">zł</span>
+                    <input type="number" value="{{ t.cap }}" onInput="{{ t.onCap }}" style="border:none;outline:none;background:transparent;font-size:14px;font-weight:600;color:#0C0C10;width:100%;font-variant-numeric:tabular-nums" />
+                    <span style="font-size:12px;color:#9A9AAA;font-weight:500">{{ t.capUnit }}</span>
+                  </div>
+                  <div style="display:flex;gap:1px;background:#E4E6E6;border-radius:10px;overflow:hidden;margin-bottom:14px">
+                    <div style="flex:1;background:#FFFFFF;padding:11px 13px">
+                      <div style="font-size:11.5px;color:#6B6B7B;margin-bottom:4px">Given out</div>
+                      <div style="font-size:16px;font-weight:600;font-variant-numeric:tabular-nums">{{ t.issued }}</div>
+                    </div>
+                    <div style="flex:1;background:#FFFFFF;padding:11px 13px">
+                      <div style="font-size:11.5px;color:#6B6B7B;margin-bottom:4px">Used</div>
+                      <div style="font-size:16px;font-weight:600;font-variant-numeric:tabular-nums">{{ t.redeemed }}</div>
+                    </div>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <div style="flex:1;height:7px;border-radius:99px;background:#EFF1F1;overflow:hidden"><div style="{{ t.poolBar }}"></div></div>
+                    <span style="font-size:12px;font-weight:600;color:#6B6B7B;font-variant-numeric:tabular-nums">{{ t.poolPct }}</span>
+                  </div>
+                  <div style="{{ t.warnStyle }}">{{ t.warn }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <sc-if value="{{ isBudgetMode }}" hint-placeholder-val="{{ true }}">
+            <section style="background:#0C0C10;border-radius:16px;padding:28px 30px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:26px">
+                <div>
+                  <h2 style="margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#FFFFFF">Discount money spent</h2>
+                  <p style="margin:0;font-size:13px;color:#9A9AAA">Real złoty given away as discounts this month, counted when a customer used the voucher</p>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:34px;font-weight:600;letter-spacing:-0.03em;color:#FFFFFF;font-variant-numeric:tabular-nums;line-height:1.1">{{ spendUsed }}</div>
+                  <div style="font-size:13px;color:#9A9AAA">of {{ spendTotal }} set aside</div>
+                </div>
+              </div>
+              <div style="height:16px;border-radius:99px;background:rgba(255,255,255,0.09);overflow:hidden;margin-bottom:14px;position:relative">
+                <div style="{{ spendBar }}"></div>
+                <div style="{{ spendPaceStyle }}"></div>
+              </div>
+              <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:center">
+                <div style="font-size:13px;color:#FFFFFF;font-weight:500">{{ spendRemaining }} left</div>
+                <div style="width:1px;height:14px;background:rgba(255,255,255,0.16)"></div>
+                <div style="font-size:13px;color:#9A9AAA">{{ spendPace }}</div>
+                <div style="flex:1"></div>
+                <div style="{{ runwayStyle }}">{{ runway }}</div>
+              </div>
+              <div style="margin-top:24px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.09);display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end">
+                <div style="flex:1 1 300px;min-width:260px">
+                  <label style="display:block;font-size:12px;font-weight:600;color:#9A9AAA;margin-bottom:12px">Money set aside for discounts this month</label>
+                  <input type="range" min="1500" max="12000" step="100" value="{{ budgetCap }}" onInput="{{ onBudgetCap }}" style="width:100%;accent-color:#4DDCC8" />
+                </div>
+                <div style="font-size:22px;font-weight:600;color:#FFFFFF;font-variant-numeric:tabular-nums;letter-spacing:-0.02em">{{ spendTotal }}</div>
+              </div>
+            </section>
+          </sc-if>
+
+          <sc-if value="{{ isVolumeMode }}" hint-placeholder-val="{{ false }}">
+            <section style="background:#0C0C10;border-radius:16px;padding:28px 30px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:26px">
+                <div>
+                  <h2 style="margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#FFFFFF">Vouchers given out</h2>
+                  <p style="margin:0;font-size:13px;color:#9A9AAA">Counted the moment a customer unlocks a voucher, across all three tiers</p>
+                </div>
+                <div style="text-align:right">
+                  <div style="font-size:34px;font-weight:600;letter-spacing:-0.03em;color:#FFFFFF;font-variant-numeric:tabular-nums;line-height:1.1">{{ volUsed }}</div>
+                  <div style="font-size:13px;color:#9A9AAA">of {{ volTotal }} allowed this month</div>
+                </div>
+              </div>
+              <div style="height:16px;border-radius:99px;background:rgba(255,255,255,0.09);overflow:hidden;margin-bottom:14px">
+                <div style="{{ volBar }}"></div>
+              </div>
+              <div style="display:flex;gap:26px;flex-wrap:wrap;align-items:center">
+                <div style="font-size:13px;color:#FFFFFF;font-weight:500">{{ volRemaining }} still available</div>
+                <div style="width:1px;height:14px;background:rgba(255,255,255,0.16)"></div>
+                <div style="font-size:13px;color:#9A9AAA">{{ volPace }}</div>
+                <div style="flex:1"></div>
+                <div style="{{ volRunwayStyle }}">{{ volRunway }}</div>
+              </div>
+              <div style="margin-top:24px;padding-top:22px;border-top:1px solid rgba(255,255,255,0.09);display:flex;gap:26px;flex-wrap:wrap;align-items:flex-end">
+                <div style="flex:1 1 300px;min-width:260px">
+                  <label style="display:block;font-size:12px;font-weight:600;color:#9A9AAA;margin-bottom:12px">Most vouchers you will give out in a month</label>
+                  <input type="range" min="200" max="1600" step="20" value="{{ volumeCap }}" onInput="{{ onVolumeCap }}" style="width:100%;accent-color:#4DDCC8" />
+                </div>
+                <div style="font-size:22px;font-weight:600;color:#FFFFFF;font-variant-numeric:tabular-nums;letter-spacing:-0.02em">{{ volTotal }}</div>
+              </div>
+            </section>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showScans }}" hint-placeholder-val="{{ false }}">
+        <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;overflow:hidden;animation:plzFade .32s ease">
+          <div style="padding:18px 24px;border-bottom:1px solid #EFF1F1;display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+            <div style="display:flex;padding:3px;border:1px solid #E4E6E6;border-radius:10px;background:#F7F8F8;gap:2px">
+              <sc-for list="{{ scanFilters }}" as="f" hint-placeholder-count="3">
+                <button onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#6B6B7B" stroke-width="1.7" stroke-linecap="round"><rect x="3" y="4" width="18" height="17" rx="3"></rect><path d="M8 2v4M16 2v4M3 10h18"></path></svg>
+              <span style="font-size:13px;font-weight:500;color:#0C0C10">{{ rangeLabel }}</span>
+            </div>
+            <div style="flex:1"></div>
+            <div style="font-size:13px;color:#6B6B7B">{{ scanCount }}</div>
+            <button style="display:flex;align-items:center;gap:8px;padding:10px 15px;border-radius:10px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:13px;font-weight:500;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M12 3v12M7 11l5 5 5-5M4 20h16"></path></svg>
+              Download CSV
+            </button>
+          </div>
+          <div style="overflow-x:auto">
+            <table style="width:100%;border-collapse:collapse;min-width:820px">
+              <thead>
+                <tr>
+                  <th style="padding:11px 24px;text-align:left;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;background:#F7F8F8">WHEN</th>
+                  <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;background:#F7F8F8">CUSTOMER</th>
+                  <th style="padding:11px 16px;text-align:left;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;background:#F7F8F8">FIRST VISIT?</th>
+                  <th style="padding:11px 16px;text-align:right;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;background:#F7F8F8">SPENT</th>
+                  <th style="padding:11px 16px;text-align:right;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;background:#F7F8F8">POINTS GIVEN</th>
+                  <th style="padding:11px 24px;text-align:left;font-size:11px;font-weight:600;letter-spacing:0.06em;color:#6B6B7B;background:#F7F8F8">COUNTED TOWARD</th>
+                </tr>
+              </thead>
+              <tbody>
+                <sc-for list="{{ scanRows }}" as="r" hint-placeholder-count="10">
+                  <tr style="border-top:1px solid #EFF1F1" style-hover="background:#F7F8F8">
+                    <td style="padding:11px 24px;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap">{{ r.when }}</td>
+                    <td style="padding:11px 16px;font-size:13px;color:#6B6B7B;font-family:ui-monospace,monospace">{{ r.customer }}</td>
+                    <td style="padding:11px 16px"><span style="{{ r.typeStyle }}">{{ r.type }}</span></td>
+                    <td style="padding:11px 16px;font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums">{{ r.spent }}</td>
+                    <td style="padding:11px 16px;font-size:13px;font-weight:600;text-align:right;font-variant-numeric:tabular-nums;color:#0ABFBC">{{ r.points }}</td>
+                    <td style="padding:11px 24px;font-size:13px;color:#6B6B7B">{{ r.campaign }}</td>
+                  </tr>
+                </sc-for>
+              </tbody>
+            </table>
+          </div>
+          <div style="padding:16px 24px;border-top:1px solid #EFF1F1;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+            <div style="font-size:13px;color:#6B6B7B">{{ pageLabel }}</div>
+            <div style="display:flex;gap:8px">
+              <button onClick="{{ prevPage }}" style="padding:9px 15px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:13px;font-weight:500;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Previous</button>
+              <button onClick="{{ nextPage }}" style="padding:9px 15px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:13px;font-weight:500;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Next</button>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ showProfile }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;gap:18px;flex-wrap:wrap;animation:plzFade .32s ease">
+          <div style="flex:1 1 480px;min-width:340px;background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;padding:24px 26px">
+            <h2 style="margin:0 0 6px;font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600">What customers see</h2>
+            <p style="margin:0 0 22px;font-size:13px;color:#6B6B7B;line-height:1.6">This is your listing in the Paylez app. Keep the description short and say which languages your staff speak.</p>
+
+            <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Business name</label>
+            <input value="{{ bizName }}" onInput="{{ onBizName }}" style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none;margin-bottom:16px" style-focus="border-color:#0ABFBC" />
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px">
+              <div>
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Category</label>
+                <select value="{{ bizCategory }}" onChange="{{ onBizCategory }}" style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;font-weight:500;color:#0C0C10;outline:none;cursor:pointer">
+                  <option value="Café">Café</option>
+                  <option value="Restaurant">Restaurant</option>
+                  <option value="Barbershop">Barbershop</option>
+                  <option value="Dental clinic">Dental clinic</option>
+                  <option value="Language school">Language school</option>
+                </select>
+              </div>
+              <div>
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Address</label>
+                <input value="{{ bizAddress }}" onInput="{{ onBizAddress }}" style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none" style-focus="border-color:#0ABFBC" />
+              </div>
+            </div>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:11px">
+              <label style="font-size:12.5px;font-weight:600">Description</label>
+              <span style="font-size:12px;color:#6B6B7B">{{ profileLangNote }}</span>
+            </div>
+            <div style="display:flex;gap:5px;padding:4px;background:#F7F8F8;border:1px solid #E4E6E6;border-radius:10px;margin-bottom:12px">
+              <sc-for list="{{ profileLangTabs }}" as="l" hint-placeholder-count="5">
+                <button onClick="{{ l.go }}" style="{{ l.style }}">
+                  <span>{{ l.code }}</span>
+                  <span style="{{ l.dotStyle }}"></span>
+                </button>
+              </sc-for>
+            </div>
+            <textarea value="{{ bizDesc }}" onInput="{{ onBizDesc }}" rows="4" placeholder="{{ bizDescPlaceholder }}" style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none;resize:vertical;line-height:1.6;margin-bottom:20px" style-focus="border-color:#0ABFBC"></textarea>
+
+            <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:9px">Languages your staff speak</label>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px">
+              <sc-for list="{{ spokenLangs }}" as="s" hint-placeholder-count="6">
+                <button onClick="{{ s.go }}" style="{{ s.style }}">{{ s.label }}</button>
+              </sc-for>
+            </div>
+
+            <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:9px">Opening hours</label>
+            <div style="border:1px solid #E4E6E6;border-radius:12px;overflow:hidden">
+              <sc-for list="{{ hours }}" as="h" hint-placeholder-count="3">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 15px;border-bottom:1px solid #EFF1F1">
+                  <span style="font-size:13px;font-weight:500">{{ h.day }}</span>
+                  <span style="font-size:13px;color:#6B6B7B;font-variant-numeric:tabular-nums">{{ h.time }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="flex:0 1 360px;min-width:300px;display:flex;flex-direction:column;gap:14px">
+            <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;padding:22px">
+              <div style="font-size:11px;font-weight:600;letter-spacing:0.1em;color:#6B6B7B;margin-bottom:16px">HOW IT LOOKS IN THE APP</div>
+              <div style="background:#0C0C10;border-radius:22px;padding:14px;box-shadow:0 18px 40px rgba(12,12,16,0.16)">
+                <div style="background:#16161C;border-radius:16px;overflow:hidden">
+                  <div style="height:120px;background:linear-gradient(150deg,#1E1E26,#0C0C10);display:flex;align-items:center;justify-content:center;font-size:11.5px;color:#6B6B7B">Cover photo</div>
+                  <div style="padding:16px">
+                    <div style="font-family:'Space Grotesk',sans-serif;font-size:16px;font-weight:600;color:#FFFFFF;margin-bottom:5px">{{ previewBizName }}</div>
+                    <div style="font-size:12px;color:#6B6B7B;margin-bottom:12px">{{ bizCategory }} · {{ bizAddress }}</div>
+                    <p style="margin:0 0 14px;font-size:12.5px;color:#C9C9D2;line-height:1.6">{{ previewBizDesc }}</p>
+                    <div style="display:flex;gap:6px;flex-wrap:wrap">
+                      <sc-for list="{{ previewLangChips }}" as="c" hint-placeholder-count="3">
+                        <span style="font-size:10.5px;font-weight:600;color:#4DDCC8;background:rgba(77,220,200,0.14);border-radius:6px;padding:4px 8px">{{ c.label }}</span>
+                      </sc-for>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div style="background:#FFFFFF;border:1px solid #E4E6E6;border-radius:16px;padding:22px">
+              <div style="font-size:13px;font-weight:600;margin-bottom:8px">Photos</div>
+              <p style="margin:0 0 14px;font-size:12.5px;color:#6B6B7B;line-height:1.6">Three photos is enough: the front of the shop, the room inside, and your best-selling item.</p>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">
+                <sc-for list="{{ photoSlots }}" as="p" hint-placeholder-count="3">
+                  <div style="{{ p.style }}">{{ p.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+    </main>
+  </div>
+
+  <sc-if value="{{ drawerOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;inset:0;z-index:80;display:flex;justify-content:flex-end">
+      <div onClick="{{ closeDrawer }}" style="position:absolute;inset:0;background:rgba(12,12,16,0.46)"></div>
+      <section style="position:relative;width:640px;max-width:100%;height:100%;background:#FFFFFF;display:flex;flex-direction:column;box-shadow:-26px 0 60px rgba(12,12,16,0.2);animation:plzSlide .26s ease">
+
+        <header style="padding:22px 26px;border-bottom:1px solid #EFF1F1;display:flex;align-items:flex-start;gap:16px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;font-weight:600;letter-spacing:0.11em;color:#0ABFBC;margin-bottom:7px">{{ drawerKicker }}</div>
+            <h2 style="margin:0 0 5px;font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600;letter-spacing:-0.015em">{{ drawerTitle }}</h2>
+            <p style="margin:0;font-size:13px;color:#6B6B7B;line-height:1.55">{{ drawerSub }}</p>
+          </div>
+          <button onClick="{{ closeDrawer }}" title="Close" style="width:34px;height:34px;flex:0 0 34px;border-radius:9px;border:1px solid #E4E6E6;background:#FFFFFF;cursor:pointer;display:flex;align-items:center;justify-content:center" style-hover="border-color:#0ABFBC">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0C0C10" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+          </button>
+        </header>
+
+        <div style="flex:1;overflow-y:auto;padding:24px 26px">
+
+          <sc-if value="{{ isDealDrawer }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:26px">
+
+              <div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px">
+                  <span style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B">TITLE AND DESCRIPTION</span>
+                  <span style="font-size:12px;color:#6B6B7B">{{ langProgress }}</span>
+                </div>
+                <div style="display:flex;gap:5px;padding:4px;background:#F7F8F8;border:1px solid #E4E6E6;border-radius:11px;margin-bottom:16px">
+                  <sc-for list="{{ langTabs }}" as="l" hint-placeholder-count="5">
+                    <button onClick="{{ l.go }}" title="{{ l.name }}" style="{{ l.style }}">
+                      <span>{{ l.code }}</span>
+                      <span style="{{ l.dotStyle }}"></span>
+                    </button>
+                  </sc-for>
+                </div>
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Deal title in {{ langName }}</label>
+                <input value="{{ dealTitle }}" onInput="{{ onDealTitle }}" placeholder="{{ titlePlaceholder }}" style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none;margin-bottom:16px" style-focus="border-color:#0ABFBC" />
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Description in {{ langName }}</label>
+                <textarea value="{{ dealDesc }}" onInput="{{ onDealDesc }}" rows="3" placeholder="Say what the customer gets, in one or two short lines." style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none;resize:vertical;line-height:1.6" style-focus="border-color:#0ABFBC"></textarea>
+                <div style="{{ copyErrStyle }}">{{ copyErr }}</div>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">DISCOUNT AND DATES</div>
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Discount text</label>
+                <input value="{{ dealBadge }}" onInput="{{ onDealBadge }}" maxlength="14" placeholder="20% OFF" style="width:100%;max-width:240px;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;font-weight:600;color:#0C0C10;outline:none" style-focus="border-color:#0ABFBC" />
+                <div style="font-size:12px;color:#9A9AAA;margin-top:6px;margin-bottom:16px">Short and clear. Customers see this first. 14 characters at most.</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+                  <div>
+                    <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Starts</label>
+                    <input type="date" value="{{ dealFrom }}" onInput="{{ onDealFrom }}" style="width:100%;padding:10px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none" style-focus="border-color:#0ABFBC" />
+                  </div>
+                  <div>
+                    <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Ends</label>
+                    <input type="date" value="{{ dealTo }}" onInput="{{ onDealTo }}" style="width:100%;padding:10px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none" style-focus="border-color:#0ABFBC" />
+                  </div>
+                </div>
+                <div style="{{ windowNoteStyle }}">{{ windowNote }}</div>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">HOW MANY TIMES IT CAN BE CLAIMED</div>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 16px;border:1px solid #E4E6E6;border-radius:12px;background:#F7F8F8">
+                  <div style="min-width:0">
+                    <div style="font-size:13px;font-weight:600;margin-bottom:3px">Limit the number of claims</div>
+                    <div style="font-size:12px;color:#6B6B7B">Leave this off and the deal runs until the end date.</div>
+                  </div>
+                  <button onClick="{{ toggleCap }}" style="{{ capToggleStyle }}"><span style="{{ capKnobStyle }}"></span></button>
+                </div>
+                <div style="{{ capFieldStyle }}">
+                  <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Most claims allowed</label>
+                  <div style="display:flex;align-items:center;gap:7px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;padding:10px 13px;max-width:220px">
+                    <input type="number" value="{{ dealLimit }}" onInput="{{ onDealLimit }}" style="border:none;outline:none;background:transparent;font-size:13.5px;font-weight:600;color:#0C0C10;width:100%;font-variant-numeric:tabular-nums" />
+                    <span style="font-size:12px;color:#9A9AAA;font-weight:500">claims</span>
+                  </div>
+                </div>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">RULES FOR USING THE DEAL</div>
+                <textarea value="{{ dealTerms }}" onInput="{{ onDealTerms }}" rows="4" placeholder="One claim per visit. Not valid with other deals." style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none;resize:vertical;line-height:1.6" style-focus="border-color:#0ABFBC"></textarea>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">HOW CUSTOMERS WILL SEE IT</div>
+                <div style="display:flex;justify-content:center">
+                  <div style="width:290px;background:#0C0C10;border-radius:30px;padding:12px;box-shadow:0 20px 44px rgba(12,12,16,0.22)">
+                    <div style="display:flex;justify-content:center;margin-bottom:10px"><span style="width:56px;height:4px;border-radius:99px;background:rgba(255,255,255,0.18)"></span></div>
+                    <div style="background:#16161C;border-radius:20px;overflow:hidden">
+                      <div style="height:106px;background:linear-gradient(150deg,#1E1E26,#0C0C10);position:relative;display:flex;align-items:flex-end;padding:12px">
+                        <span style="{{ previewBadgeStyle }}">{{ previewBadge }}</span>
+                      </div>
+                      <div style="padding:15px">
+                        <div style="font-size:11px;color:#6B6B7B;margin-bottom:6px">{{ bizName }} · {{ bizCategory }}</div>
+                        <div style="font-family:'Space Grotesk',sans-serif;font-size:15.5px;font-weight:600;color:#FFFFFF;line-height:1.35;margin-bottom:7px">{{ previewTitle }}</div>
+                        <p style="margin:0 0 14px;font-size:12.5px;color:#9A9AAA;line-height:1.55">{{ previewDesc }}</p>
+                        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding-top:12px;border-top:1px solid rgba(255,255,255,0.08)">
+                          <span style="font-size:11px;color:#6B6B7B">{{ previewDates }}</span>
+                          <span style="font-size:11.5px;font-weight:600;color:#0C0C10;background:#4DDCC8;border-radius:7px;padding:6px 11px">Claim deal</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div style="text-align:center;font-size:12px;color:#9A9AAA;margin-top:12px">{{ previewLimit }}</div>
+              </div>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{ isCampaignDrawer }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:26px">
+              <div>
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">Campaign name</label>
+                <input value="{{ campName }}" onInput="{{ onCampName }}" placeholder="Coffee streak" style="width:100%;padding:11px 13px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;font-size:13.5px;color:#0C0C10;outline:none" style-focus="border-color:#0ABFBC" />
+                <div style="{{ nameErrStyle }}">{{ nameErr }}</div>
+                <div style="font-size:12px;color:#9A9AAA;margin-top:6px">Only you see this name. Customers see the reward.</div>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">WHAT THE CUSTOMER HAS TO DO</div>
+                <div style="display:flex;gap:12px;margin-bottom:18px;flex-wrap:wrap">
+                  <sc-for list="{{ thresholdTypes }}" as="t" hint-placeholder-count="2">
+                    <button onClick="{{ t.go }}" style="{{ t.style }}">
+                      <span style="display:block;font-size:13.5px;font-weight:600;margin-bottom:6px">{{ t.label }}</span>
+                      <span style="display:block;font-size:12px;line-height:1.5;color:#6B6B7B">{{ t.note }}</span>
+                    </button>
+                  </sc-for>
+                </div>
+                <label style="display:block;font-size:12.5px;font-weight:600;margin-bottom:7px">{{ thresholdLabel }}</label>
+                <div style="display:flex;align-items:center;gap:8px">
+                  <button onClick="{{ decThreshold }}" style="width:38px;height:38px;flex:0 0 38px;border-radius:10px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:17px;font-weight:600;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">−</button>
+                  <div style="display:flex;align-items:center;gap:7px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;padding:10px 13px;flex:1;max-width:190px">
+                    <input type="number" value="{{ campThreshold }}" onInput="{{ onCampThreshold }}" style="border:none;outline:none;background:transparent;font-size:13.5px;font-weight:600;color:#0C0C10;width:100%;font-variant-numeric:tabular-nums" />
+                    <span style="font-size:12px;color:#9A9AAA;font-weight:500">{{ thresholdUnit }}</span>
+                  </div>
+                  <button onClick="{{ incThreshold }}" style="width:38px;height:38px;flex:0 0 38px;border-radius:10px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:17px;font-weight:600;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">+</button>
+                </div>
+                <div style="font-size:12px;color:#9A9AAA;margin-top:8px">{{ thresholdHelp }}</div>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">WHAT THEY GET</div>
+                <div style="display:flex;padding:3px;border:1px solid #E4E6E6;border-radius:10px;background:#F7F8F8;gap:2px;width:fit-content;margin-bottom:16px">
+                  <sc-for list="{{ rewardTypes }}" as="r" hint-placeholder-count="2">
+                    <button onClick="{{ r.go }}" style="{{ r.style }}">{{ r.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="display:flex;align-items:center;gap:7px;border:1px solid #E4E6E6;border-radius:10px;background:#FFFFFF;padding:10px 13px;max-width:220px">
+                  <span style="{{ rewardPrefixStyle }}">zł</span>
+                  <input type="number" value="{{ campReward }}" onInput="{{ onCampReward }}" style="border:none;outline:none;background:transparent;font-size:13.5px;font-weight:600;color:#0C0C10;width:100%;font-variant-numeric:tabular-nums" />
+                  <span style="font-size:12px;color:#9A9AAA;font-weight:500">{{ rewardUnit }}</span>
+                </div>
+                <div style="{{ rewardErrStyle }}">{{ rewardErr }}</div>
+              </div>
+
+              <div style="height:1px;background:#EFF1F1"></div>
+
+              <div>
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.09em;color:#6B6B7B;margin-bottom:14px">WHEN TWO CAMPAIGNS MATCH THE SAME VISIT</div>
+                <p style="margin:0 0 14px;font-size:13px;color:#6B6B7B;line-height:1.6;max-width:520px">A customer can qualify for more than one campaign at the same visit. Only one reward is given: the one with the lower priority number.</p>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <sc-for list="{{ priorities }}" as="p" hint-placeholder-count="5">
+                    <button onClick="{{ p.go }}" style="{{ p.style }}">{{ p.label }}</button>
+                  </sc-for>
+                </div>
+                <div style="font-size:12px;color:#9A9AAA;margin-top:10px">{{ priorityHelp }}</div>
+              </div>
+
+              <div style="padding:20px 22px;border-radius:14px;background:#0C0C10">
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.1em;color:#4DDCC8;margin-bottom:12px">YOUR CAMPAIGN IN ONE LINE</div>
+                <div style="font-family:'Space Grotesk',sans-serif;font-size:18px;font-weight:500;line-height:1.5;color:#FFFFFF">{{ campSummary }}</div>
+                <div style="font-size:12.5px;color:#9A9AAA;margin-top:10px;line-height:1.6">{{ campSummaryNote }}</div>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+
+        <footer style="padding:16px 26px;border-top:1px solid #EFF1F1;display:flex;flex-direction:column;align-items:stretch;gap:12px">
+          <div style="{{ validStyle }}">{{ validNote }}</div>
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:10px">
+          <button onClick="{{ closeDrawer }}" style="padding:11px 16px;border-radius:10px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:13.5px;font-weight:500;color:#0C0C10;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Cancel</button>
+          <button onClick="{{ closeDrawer }}" style="padding:11px 16px;border-radius:10px;border:1px solid #E4E6E6;background:#FFFFFF;font-size:13.5px;font-weight:500;color:#6B6B7B;cursor:pointer" style-hover="border-color:#0ABFBC;color:#0ABFBC">Save and finish later</button>
+          <button onClick="{{ submitDrawer }}" style="{{ publishStyle }}">{{ publishLabel }}</button>
+          </div>
+        </footer>
+      </section>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ toastOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="position:fixed;bottom:26px;left:50%;transform:translateX(-50%);z-index:90;display:flex;align-items:center;gap:12px;background:#0C0C10;color:#FFFFFF;border-radius:12px;padding:14px 20px;box-shadow:0 18px 40px rgba(12,12,16,0.28);animation:plzFade .2s ease">
+      <span style="width:20px;height:20px;flex:0 0 20px;border-radius:50%;background:#4DDCC8;display:flex;align-items:center;justify-content:center">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0C0C10" stroke-width="3" stroke-linecap="round"><path d="m5 13 4 4L19 7"></path></svg>
+      </span>
+      <span style="font-size:13.5px;font-weight:500">{{ toastText }}</span>
+    </div>
+  </sc-if>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1440,&quot;height&quot;:1000},&quot;showInsight&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Overview&quot;},&quot;startScreen&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;overview&quot;,&quot;deals&quot;,&quot;campaigns&quot;,&quot;vouchers&quot;,&quot;scans&quot;,&quot;profile&quot;],&quot;default&quot;:&quot;overview&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Demo&quot;}}">
+const INK = '#0C0C10';
+const RAISED = '#16161C';
+const TEAL = '#4DDCC8';
+const TEALD = '#0ABFBC';
+const BONE = '#F7F8F8';
+const SLATE = '#6B6B7B';
+const LINE = '#E4E6E6';
+const SOFT = '#EFF1F1';
+const DOWN = '#C2543C';
+const WARN = '#B07D2B';
+const h = React.createElement;
+
+const LANGS = [['EN', 'English'], ['RU', 'Russian'], ['UZ', 'Uzbek'], ['TR', 'Turkish'], ['AZ', 'Azerbaijani']];
+
+function ic(paths, color, size) {
+  return h('svg', { width: size || 17, height: size || 17, viewBox: '0 0 24 24', fill: 'none', stroke: color || SLATE, strokeWidth: 1.7, strokeLinecap: 'round', strokeLinejoin: 'round' },
+    paths.map((d, i) => h('path', { key: i, d: d })));
+}
+
+class Component extends DCLogic {
+  state = {
+    screen: (this.props && this.props.startScreen) || 'overview', range: '30', rail: false, page: 0,
+    drawer: null, lang: 'EN', toast: '',
+    search: '', dealFilter: 'all', sort: 'impressions', dir: 'desc',
+    scanFilter: 'all', strategy: 'budget', budgetCap: 4800, volumeCap: 700,
+    tiers: [{ pct: 5, points: 250, cap: 380, budget: 1400 }, { pct: 10, points: 600, cap: 240, budget: 1750 }, { pct: 15, points: 1200, cap: 90, budget: 1150 }],
+    deal: {
+      title: { EN: 'Morning flat white, 20% off', RU: 'Флэт уайт по утрам со скидкой 20%', UZ: '', TR: '', AZ: '' },
+      desc: { EN: 'Any flat white or filter coffee before 11am, every weekday.', RU: 'Любой флэт уайт или фильтр до 11:00, по будням.', UZ: '', TR: '', AZ: '' },
+      badge: '20% OFF', from: '2026-08-03', to: '2026-08-31',
+      terms: 'One claim per visit. Not valid with other deals or on public holidays.',
+      capped: true, limit: 420
+    },
+    camp: { name: '', type: 'scans', threshold: 10, rewardType: 'percent', reward: 10, priority: '2' },
+    biz: {
+      name: 'Café Bratysławska', category: 'Café', address: 'Bratysławska 6, Kraków',
+      desc: {
+        EN: 'A small neighbourhood café near Nowy Kleparz. Filter coffee, Polish bakes, and a quiet room to work in.',
+        RU: 'Небольшая кофейня рядом с Новым Клепажем. Фильтр-кофе, польская выпечка и тихий зал для работы.',
+        UZ: '', TR: '', AZ: ''
+      },
+      spoken: ['Polish', 'English', 'Ukrainian'],
+      profileLang: 'EN'
+    }
+  };
+
+  componentWillUnmount() { clearTimeout(this.tt); }
+
+  go(screen) { this.setState({ screen: screen, page: 0 }); }
+  openDrawer(kind) { this.setState({ drawer: kind, lang: 'EN' }); }
+  closeDrawer() { this.setState({ drawer: null }); }
+  toast(text) {
+    this.setState({ toast: text });
+    clearTimeout(this.tt);
+    this.tt = setTimeout(() => this.setState({ toast: '' }), 3200);
+  }
+  upd(group, k, v) { this.setState((s) => ({ [group]: Object.assign({}, s[group], { [k]: v }) })); }
+  updLang(group, k, langKey, v) {
+    this.setState((s) => {
+      const next = Object.assign({}, s[group][k]); next[langKey] = v;
+      return { [group]: Object.assign({}, s[group], { [k]: next }) };
+    });
+  }
+  updTier(i, k, v) { this.setState((s) => ({ tiers: s.tiers.map((t, j) => (j === i ? Object.assign({}, t, { [k]: v }) : t)) })); }
+
+  zl(n, decimals) {
+    const v = decimals ? n.toFixed(2) : Math.round(n).toLocaleString('en-US').replace(/,/g, ' ');
+    return v + ' zł';
+  }
+  num(n) { return n.toLocaleString('en-US').replace(/,/g, ' '); }
+
+  days() { return parseInt(this.state.range, 10); }
+
+  series() {
+    const n = Math.min(this.days(), 45);
+    const visits = [], reds = [];
+    for (let i = 0; i < n; i++) {
+      const w = 1 + 0.3 * Math.sin(i / 2.4) + 0.14 * Math.sin(i / 6.1);
+      visits.push(Math.round(38 * w) + (i % 5 === 0 ? 4 : 0));
+      reds.push(Math.round(8 * w * (0.82 + 0.2 * Math.sin(i / 3.1))));
+    }
+    return { visits: visits, reds: reds };
+  }
+
+  totals() {
+    const s = this.series();
+    const visits = s.visits.reduce((a, b) => a + b, 0);
+    const reds = s.reds.reduce((a, b) => a + b, 0);
+    const claims = Math.round(visits * 0.34);
+    return { visits: visits, reds: reds, claims: claims, rate: reds / claims * 100 };
+  }
+
+  spark(arr, color) {
+    const W = 76, H = 30;
+    const max = Math.max.apply(null, arr) || 1;
+    const min = Math.min.apply(null, arr);
+    const x = (i) => (i * W) / (arr.length - 1);
+    const y = (v) => H - 2 - ((v - min) / Math.max(max - min, 1)) * (H - 6);
+    const d = arr.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+    return h('svg', { width: W, height: H, viewBox: '0 0 ' + W + ' ' + H, style: { display: 'block', overflow: 'visible' } },
+      h('path', { d: d + ' L' + W + ' ' + H + ' L0 ' + H + ' Z', fill: color, opacity: 0.1 }),
+      h('path', { d: d, fill: 'none', stroke: color, strokeWidth: 1.6, strokeLinejoin: 'round' }));
+  }
+
+  mainChart() {
+    const s = this.series();
+    const W = 1000, H = 260, PB = 30, PL = 42;
+    const n = s.visits.length;
+    const max = Math.max.apply(null, s.visits) * 1.18;
+    const x = (i) => PL + (i * (W - PL - 8)) / (n - 1);
+    const y = (v) => H - PB - (v / max) * (H - PB - 16);
+    const line = (arr) => arr.map((v, i) => (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join(' ');
+    const ticks = [0, 0.5, 1];
+    const label = (i) => {
+      const d = new Date(2026, 6, 31 - (n - 1 - i));
+      return d.getDate() + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()];
+    };
+    const step = n <= 10 ? 1 : Math.ceil(n / 8);
+    return h('svg', { viewBox: '0 0 ' + W + ' ' + H, style: { width: '100%', height: 'auto', display: 'block', overflow: 'visible' } },
+      h('defs', null, h('linearGradient', { id: 'plzVisits', x1: 0, y1: 0, x2: 0, y2: 1 },
+        h('stop', { offset: '0%', stopColor: TEALD, stopOpacity: 0.24 }),
+        h('stop', { offset: '100%', stopColor: TEALD, stopOpacity: 0 }))),
+      ticks.map((f, i) => {
+        const gy = H - PB - f * (H - PB - 16);
+        return h('g', { key: i },
+          h('line', { x1: PL, x2: W - 8, y1: gy, y2: gy, stroke: i === 0 ? '#DDE0E0' : SOFT, strokeWidth: 1 }),
+          h('text', { x: PL - 10, y: gy + 4, textAnchor: 'end', fontSize: 11, fill: '#9A9AAA', fontWeight: 500 }, Math.round(max * f)));
+      }),
+      h('path', { d: line(s.visits) + ' L' + x(n - 1) + ' ' + (H - PB) + ' L' + PL + ' ' + (H - PB) + ' Z', fill: 'url(#plzVisits)' }),
+      h('path', { d: line(s.visits), fill: 'none', stroke: TEALD, strokeWidth: 2.2, strokeLinejoin: 'round' }),
+      h('path', { d: line(s.reds), fill: 'none', stroke: INK, strokeWidth: 2.2, strokeLinejoin: 'round', strokeDasharray: '1 0' }),
+      s.visits.map((v, i) => (i % step === 0 || i === n - 1)
+        ? h('text', { key: 'l' + i, x: x(i), y: H - 8, textAnchor: 'middle', fontSize: 11, fill: '#9A9AAA', fontWeight: 500 }, label(i))
+        : null));
+  }
+
+  rawDeals() {
+    return [
+      { name: 'Morning flat white, 20% off', badge: '20% OFF', state: 'Live', from: '3 Aug', to: '31 Aug', impressions: 8412, clicks: 612, trend: [22, 26, 24, 31, 38, 34, 42] },
+      { name: 'Student Tuesdays', badge: '15% OFF', state: 'Live', from: '1 Jul', to: '30 Sep', impressions: 6134, clicks: 548, trend: [31, 28, 34, 30, 36, 41, 44] },
+      { name: 'Free filter with any bake', badge: 'FREE FILTER', state: 'Live', from: '12 Jul', to: '12 Aug', impressions: 4798, clicks: 291, trend: [18, 21, 19, 17, 22, 20, 24] },
+      { name: 'Rainy day double points', badge: '2× POINTS', state: 'Scheduled', from: '15 Aug', to: '15 Oct', impressions: 0, clicks: 0, trend: [0, 0, 0, 0, 0, 0, 0] },
+      { name: 'Lunch bundle, 5% off', badge: '5% OFF', state: 'Expired', from: '2 Jun', to: '30 Jun', impressions: 9211, clicks: 402, trend: [26, 22, 19, 16, 12, 9, 6] },
+      { name: 'Neighbour discount, 10% off', badge: '10% OFF', state: 'Paused', from: '5 Jul', to: '5 Sep', impressions: 3164, clicks: 187, trend: [14, 16, 13, 11, 12, 10, 9] }
+    ];
+  }
+
+  rawCampaigns() {
+    return [
+      { name: 'Coffee streak', type: 'scans', threshold: 10, reward: '10% off', earned: 184, redeemed: 131, priority: 1, status: 'Live', since: 'Running since 4 April' },
+      { name: 'Regulars’ reward', type: 'scans', threshold: 4, reward: 'a free filter coffee', earned: 312, redeemed: 268, priority: 2, status: 'Live', since: 'Running since 12 January' },
+      { name: 'Big spender', type: 'points', threshold: 5000, reward: '15% off', earned: 64, redeemed: 21, priority: 3, status: 'Live', since: 'Running since 2 June' },
+      { name: 'Winter comeback', type: 'scans', threshold: 6, reward: '20% off', earned: 41, redeemed: 9, priority: 4, status: 'Paused', since: 'Paused on 28 March' }
+    ];
+  }
+
+  issuance() { return [{ issued: 318, redeemed: 241 }, { issued: 196, redeemed: 158 }, { issued: 88, redeemed: 61 }]; }
+
+  tierSpend(i) {
+    const AVG_BASKET = 82;
+    return Math.round(this.issuance()[i].redeemed * AVG_BASKET * (this.state.tiers[i].pct / 100));
+  }
+  totalSpend() { return this.state.tiers.reduce((a, t, i) => a + this.tierSpend(i), 0); }
+  totalIssued() { return this.issuance().reduce((a, r) => a + r.issued, 0); }
+
+  scanRows() {
+    const rows = [];
+    const camps = ['Coffee streak', 'Regulars’ reward', '—', 'Big spender', '—', 'Coffee streak'];
+    for (let i = 0; i < 48; i++) {
+      const hh = 18 - Math.floor(i / 4), mm = (9 + i * 17) % 60;
+      const spent = 1780 + ((i * 6421) % 4900);
+      const isNew = i % 5 === 0;
+      rows.push({
+        when: (31 - Math.floor(i / 6)) + ' Jul, ' + String(Math.max(hh, 7)).padStart(2, '0') + ':' + String(mm).padStart(2, '0'),
+        customer: 'cust_' + (48210 + i * 37).toString().slice(-5),
+        isNew: isNew,
+        spent: this.zl(spent / 100),
+        points: '+' + (9 + (i % 7) * 4),
+        campaign: camps[i % camps.length]
+      });
+    }
+    return rows;
+  }
+
+  renderVals() {
+    const st = this.state;
+    const collapsed = st.rail;
+    const t = this.totals();
+    const rangeLabel = st.range === '7' ? 'last 7 days' : st.range === '30' ? 'last 30 days' : st.range === '90' ? 'last 90 days' : 'custom range';
+    const screens = {
+      overview: ['Overview', 'Create hot deal', () => this.openDrawer('deal')],
+      deals: ['Hot deals', 'Create hot deal', () => this.openDrawer('deal')],
+      campaigns: ['Loyalty campaigns', 'Create campaign', () => this.openDrawer('campaign')],
+      vouchers: ['Vouchers', 'Create hot deal', () => this.openDrawer('deal')],
+      scans: ['Scan activity', 'Create campaign', () => this.openDrawer('campaign')],
+      profile: ['Business profile', 'Save changes', () => this.toast('Profile saved. Customers see it now.')]
+    };
+    const sc = screens[st.screen] || screens.overview;
+
+    const navBtn = (active) => 'display:flex;align-items:center;gap:11px;width:100%;padding:10px;border:none;border-radius:9px;font-size:13.5px;font-weight:500;cursor:pointer;text-align:left;transition:background .15s,color .15s;'
+      + (active ? 'background:' + RAISED + ';color:#FFFFFF;' : 'background:transparent;color:#9A9AAA;');
+    const mkNav = (id, label, paths, count) => ({
+      label: label, go: () => this.go(id), icon: ic(paths, st.screen === id ? TEAL : SLATE, 17),
+      style: navBtn(st.screen === id),
+      labelStyle: collapsed ? 'display:none;' : 'flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
+      count: count || '',
+      countStyle: (count && !collapsed) ? 'font-size:11px;font-weight:600;color:' + TEAL + ';background:rgba(77,220,200,0.14);border-radius:6px;padding:2px 6px;' : 'display:none;'
+    });
+
+    const metricDefs = [
+      { label: 'Customers who visited', value: this.num(t.visits), delta: 12.4, up: true, note: 'vs previous period', series: this.series().visits.slice(-14), color: TEALD },
+      { label: 'Deals claimed', value: this.num(t.claims), delta: 8.1, up: true, note: 'vs previous period', series: this.series().visits.map((v) => Math.round(v * 0.34)).slice(-14), color: TEALD },
+      { label: 'Vouchers used', value: this.num(t.reds), delta: -3.6, up: false, note: 'vs previous period', series: this.series().reds.slice(-14), color: INK },
+      { label: 'Claims that got used', value: t.rate.toFixed(1) + '%', delta: -2.2, up: false, note: 'points, vs previous period', series: this.series().reds.map((v, i) => v / Math.max(this.series().visits[i] * 0.34, 1) * 100).slice(-14), color: INK }
+    ];
+
+    let deals = this.rawDeals();
+    const q = st.search.trim().toLowerCase();
+    if (q) deals = deals.filter((d) => (d.name + ' ' + d.badge + ' ' + d.state).toLowerCase().indexOf(q) >= 0);
+    if (st.dealFilter !== 'all') deals = deals.filter((d) => d.state.toLowerCase() === st.dealFilter);
+    deals = deals.slice().sort((a, b) => {
+      const k = st.sort;
+      const va = k === 'name' || k === 'state' ? String(a[k]).toLowerCase() : (k === 'ctr' ? (a.impressions ? a.clicks / a.impressions : 0) : a[k]);
+      const vb = k === 'name' || k === 'state' ? String(b[k]).toLowerCase() : (k === 'ctr' ? (b.impressions ? b.clicks / b.impressions : 0) : b[k]);
+      if (va === vb) return 0;
+      return (va > vb ? 1 : -1) * (st.dir === 'asc' ? 1 : -1);
+    });
+    const pill = { Live: [TEALD, 'rgba(10,191,188,0.12)'], Scheduled: ['#3F6B8A', 'rgba(63,107,138,0.12)'], Expired: [SLATE, SOFT], Paused: [WARN, 'rgba(176,125,43,0.13)'], Draft: [SLATE, SOFT] };
+
+    const camps = this.rawCampaigns();
+    const earnedAll = camps.reduce((a, c) => a + c.earned, 0);
+    const usedAll = camps.reduce((a, c) => a + c.redeemed, 0);
+    const worstCamp = camps.slice().sort((a, b) => (a.redeemed / a.earned) - (b.redeemed / b.earned))[0];
+
+    const budgetMode = st.strategy === 'budget';
+    const spend = this.totalSpend();
+    const perDay = spend / this.days();
+    const daysLeft = perDay > 0 ? (st.budgetCap - spend) / perDay : 999;
+    const volIssued = this.totalIssued();
+    const volPerDay = volIssued / this.days();
+    const volDaysLeft = volPerDay > 0 ? (st.volumeCap - volIssued) / volPerDay : 999;
+
+    const allScans = this.scanRows().filter((r) => st.scanFilter === 'all' || (st.scanFilter === 'new' ? r.isNew : !r.isNew));
+    const perPage = 12;
+    const pages = Math.max(1, Math.ceil(allScans.length / perPage));
+    const page = Math.min(st.page, pages - 1);
+
+    const d = st.deal, c = st.camp, biz = st.biz;
+    const isDeal = st.drawer === 'deal', isCamp = st.drawer === 'campaign';
+    const langDone = LANGS.filter((l) => (d.title[l[0]] || '').trim()).length;
+    const badDates = !!(d.from && d.to && d.to < d.from);
+    const dealValid = !!(d.title.EN || '').trim() && !!d.badge.trim() && !badDates;
+    const campValid = !!c.name.trim() && c.threshold > 0 && c.reward > 0;
+    const ok = isDeal ? dealValid : campValid;
+    const rewardPct = c.rewardType === 'percent';
+    const fmt = (s) => {
+      if (!s) return '';
+      const p = s.split('-');
+      return parseInt(p[2], 10) + ' ' + ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][parseInt(p[1], 10) - 1];
+    };
+    const dayCount = (d.from && d.to && !badDates) ? Math.round((new Date(d.to) - new Date(d.from)) / 86400000) + 1 : 0;
+    const profileLangs = LANGS;
+
+    const segBtn = (on) => 'padding:7px 13px;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;transition:background .15s,color .15s;'
+      + (on ? 'background:' + INK + ';color:' + TEAL + ';' : 'background:transparent;color:' + SLATE + ';');
+    const langBtn = (on, filled) => 'flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 6px;border:none;border-radius:8px;font-size:12.5px;font-weight:600;cursor:pointer;'
+      + (on ? 'background:#FFFFFF;color:' + INK + ';box-shadow:0 1px 3px rgba(12,12,16,0.1);' : 'background:transparent;color:' + SLATE + ';');
+
+    return {
+      bizName: biz.name, bizCategory: biz.category, bizAddress: biz.address,
+      railStyle: 'flex:0 0 ' + (collapsed ? '76px' : '248px') + ';width:' + (collapsed ? '76px' : '248px') + ';background:' + INK
+        + ';display:flex;flex-direction:column;position:sticky;top:0;height:100vh;transition:flex-basis .2s,width .2s;',
+      wordmarkStyle: collapsed ? 'display:none;' : 'font-family:\'Space Grotesk\',sans-serif;font-size:18px;font-weight:600;color:#FFFFFF;letter-spacing:-0.01em;',
+      workspaceStyle: collapsed ? 'display:none;' : 'margin:0 14px 6px;padding:13px 14px;border-radius:11px;background:' + RAISED + ';',
+      nav: [
+        mkNav('overview', 'Overview', ['M3 3v18h18', 'M7 15l4-5 3 3 4-6']),
+        mkNav('deals', 'Hot deals', ['M20.6 13.6 13.6 20.6a2 2 0 0 1-2.8 0l-7.4-7.4V4h9.2l8 8a2 2 0 0 1 0 1.6Z', 'M7.5 7.5h.01'], '3'),
+        mkNav('campaigns', 'Loyalty campaigns', ['M12 3l2.6 5.6 6.1.8-4.5 4.2 1.2 6-5.4-3-5.4 3 1.2-6L3.3 9.4l6.1-.8L12 3Z'], '3'),
+        mkNav('vouchers', 'Vouchers', ['M4 7h16v4a2 2 0 0 0 0 4v3H4v-3a2 2 0 0 0 0-4V7Z', 'M12 7v10']),
+        mkNav('scans', 'Scan activity', ['M3 7V5a2 2 0 0 1 2-2h2', 'M17 3h2a2 2 0 0 1 2 2v2', 'M21 17v2a2 2 0 0 1-2 2h-2', 'M7 21H5a2 2 0 0 1-2-2v-2', 'M7 12h10']),
+        mkNav('profile', 'Business profile', ['M3 21V9l9-6 9 6v12', 'M9 21v-7h6v7'])
+      ],
+      planStyle: collapsed ? 'display:none;' : 'margin:0 0 8px;padding:13px 14px;border-radius:11px;background:' + RAISED + ';',
+      goProfile: () => this.go('profile'),
+      accountStyle: navBtn(false),
+      accountLabelStyle: collapsed ? 'display:none;' : 'flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;',
+      helpStyle: navBtn(false) + 'text-decoration:none;',
+      helpIcon: ic(['M12 17h.01', 'M12 13.5a2.5 2.5 0 1 0-2.5-3', 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z'], SLATE, 17),
+      toggleRail: () => this.setState({ rail: !collapsed }),
+      collapseStyle: navBtn(false),
+      collapseIcon: ic(collapsed ? ['M9 6l6 6-6 6'] : ['M15 6l-6 6 6 6'], SLATE, 17),
+
+      screenTitle: sc[0],
+      primaryLabel: sc[1],
+      primaryAction: sc[2],
+      primaryStyle: 'display:flex;align-items:center;gap:8px;padding:11px 17px;border-radius:10px;border:none;background:' + INK + ';color:' + TEAL + ';font-size:13.5px;font-weight:600;cursor:pointer;white-space:nowrap;',
+      ranges: [['7', '7 days'], ['30', '30 days'], ['90', '90 days'], ['custom', 'Custom']].map((r) => ({
+        label: r[1], go: () => this.setState({ range: r[0], page: 0 }), style: segBtn(st.range === r[0])
+      })),
+      rangeLabel: rangeLabel,
+
+      showOverview: st.screen === 'overview',
+      showDeals: st.screen === 'deals',
+      showCampaigns: st.screen === 'campaigns',
+      showVouchers: st.screen === 'vouchers',
+      showScans: st.screen === 'scans',
+      showProfile: st.screen === 'profile',
+
+      newCustomers: this.num(Math.round(t.visits * 0.23)),
+      attributedRevenue: this.zl(t.visits * 34.1),
+      thesisRows: [
+        { label: 'Visits through Paylez', value: this.num(t.visits) },
+        { label: 'Average spend per visit', value: this.zl(34.1, true) },
+        { label: 'You paid us this month', value: this.zl(1894) }
+      ],
+      metrics: metricDefs.map((m) => ({
+        label: m.label, value: m.value,
+        delta: (m.up ? '↑ ' : '↓ ') + Math.abs(m.delta) + '%',
+        deltaNote: m.note,
+        deltaStyle: 'font-size:11.5px;font-weight:600;border-radius:6px;padding:3px 7px;'
+          + (m.up ? 'color:' + TEALD + ';background:rgba(10,191,188,0.12);' : 'color:' + DOWN + ';background:rgba(194,84,60,0.1);'),
+        spark: this.spark(m.series, m.color)
+      })),
+      mainChart: this.mainChart(),
+      showInsight: this.props.showInsight !== false,
+      insightText: 'Visits are up 12% but voucher use is down 4%. People are coming in — the rewards are not pulling them back.',
+      insightDetail: 'Only 27 customers reached the 10% tier this month because it needs 600 points. At 450 points, 61 more of your regulars would have qualified.',
+      goVouchers: () => this.go('vouchers'),
+
+      activeItems: [
+        { kind: 'HOT DEAL', name: 'Morning flat white, 20% off', rule: 'Weekdays before 11am · ends 31 August', stat: '612', statLabel: 'clicks', edit: () => this.openDrawer('deal') },
+        { kind: 'HOT DEAL', name: 'Student Tuesdays', rule: '15% off with a student card · ends 30 September', stat: '548', statLabel: 'clicks', edit: () => this.openDrawer('deal') },
+        { kind: 'CAMPAIGN', name: 'Coffee streak', rule: '10 visits → 10% off · priority 1', stat: '131 / 184', statLabel: 'used / earned', edit: () => this.openDrawer('campaign') },
+        { kind: 'VOUCHERS', name: 'Three point tiers', rule: '5% · 10% · 15% off, budget capped', stat: this.zl(spend), statLabel: 'given away', edit: () => this.go('vouchers') }
+      ].map((a) => ({
+        kind: a.kind, name: a.name, rule: a.rule, stat: a.stat, statLabel: a.statLabel, edit: a.edit,
+        kindStyle: 'flex:0 0 auto;font-size:10.5px;font-weight:600;letter-spacing:0.07em;border-radius:6px;padding:5px 8px;color:'
+          + (a.kind === 'CAMPAIGN' ? TEALD : a.kind === 'VOUCHERS' ? WARN : INK) + ';background:'
+          + (a.kind === 'CAMPAIGN' ? 'rgba(10,191,188,0.12)' : a.kind === 'VOUCHERS' ? 'rgba(176,125,43,0.13)' : SOFT) + ';'
+      })),
+
+      search: st.search,
+      onSearch: (e) => this.setState({ search: e.target.value }),
+      dealFilters: [['all', 'All'], ['live', 'Live'], ['scheduled', 'Scheduled'], ['paused', 'Paused'], ['expired', 'Expired']].map((f) => ({
+        label: f[1], go: () => this.setState({ dealFilter: f[0] }), style: segBtn(st.dealFilter === f[0])
+      })),
+      dealCount: deals.length + ' of ' + this.rawDeals().length + ' deals',
+      hasDeals: deals.length > 0,
+      noDeals: deals.length === 0,
+      emptyTitle: q ? 'Nothing matches “' + st.search + '”' : 'No ' + st.dealFilter + ' deals right now',
+      emptyBody: q
+        ? 'Check the spelling, or clear the search to see all ' + this.rawDeals().length + ' of your deals.'
+        : 'Create a deal and it appears in the Paylez app the moment you publish it. Most cafés start with a morning discount.',
+      resetDealFilters: () => this.setState({ search: '', dealFilter: 'all' }),
+      resetFilterStyle: 'padding:12px 18px;border-radius:10px;border:1px solid ' + LINE + ';background:#FFFFFF;font-size:13.5px;font-weight:500;color:' + INK + ';cursor:pointer;',
+      dealCols: [['name', 'DEAL', 'left', 24], ['state', 'STATE', 'left', 16], ['impressions', 'SEEN', 'right', 16], ['clicks', 'OPENED', 'right', 16], ['ctr', 'OPEN RATE', 'right', 16], ['', 'LAST 7 DAYS', 'left', 16], ['', '', 'right', 24]].map((col) => ({
+        label: col[1],
+        arrow: st.sort === col[0] && col[0] ? (st.dir === 'asc' ? '▲' : '▼') : '',
+        sort: col[0] ? () => this.setState({ sort: col[0], dir: st.sort === col[0] && st.dir === 'desc' ? 'asc' : 'desc' }) : () => {},
+        style: 'padding:11px ' + col[3] + 'px;text-align:' + col[2] + ';font-size:11px;font-weight:600;letter-spacing:0.06em;color:' + SLATE
+          + ';background:' + BONE + ';white-space:nowrap;' + (col[0] ? 'cursor:pointer;user-select:none;' : '')
+      })),
+      deals: deals.map((dl) => {
+        const ctr = dl.impressions ? dl.clicks / dl.impressions * 100 : 0;
+        const dim = dl.state === 'Expired';
+        return {
+          name: dl.name, window: dl.from + ' – ' + dl.to, state: dl.state,
+          rowStyle: 'border-top:1px solid ' + SOFT + ';transition:background .15s;' + (dim ? 'opacity:0.62;' : ''),
+          badge: dl.badge,
+          badgeStyle: 'flex:0 0 auto;font-size:11px;font-weight:700;letter-spacing:0.02em;border-radius:7px;padding:6px 9px;white-space:nowrap;color:'
+            + (dl.state === 'Live' ? INK : SLATE) + ';background:' + (dl.state === 'Live' ? TEAL : SOFT) + ';',
+          pillStyle: 'display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;border-radius:999px;padding:5px 11px;color:'
+            + pill[dl.state][0] + ';background:' + pill[dl.state][1] + ';',
+          impressions: dl.impressions ? this.num(dl.impressions) : '—',
+          clicks: dl.clicks ? this.num(dl.clicks) : '—',
+          ctr: dl.impressions ? ctr.toFixed(1) + '%' : '—',
+          trend: dl.impressions ? this.spark(dl.trend, dl.state === 'Expired' ? SLATE : TEALD) : h('span', { style: { fontSize: 12, color: '#9A9AAA' } }, 'Not started'),
+          action: dl.state === 'Paused' ? 'Resume' : dl.state === 'Live' ? 'Pause' : 'Copy'
+        };
+      }),
+      openDeal: () => this.openDrawer('deal'),
+      openCampaign: () => this.openDrawer('campaign'),
+
+      gapSentence: worstCamp
+        ? 'Right now “' + worstCamp.name + '” has the widest gap: ' + (worstCamp.earned - worstCamp.redeemed) + ' rewards earned and never used.'
+        : '',
+      campaignTotals: [
+        { label: 'Earned', value: this.num(earnedAll), color: INK },
+        { label: 'Used', value: this.num(usedAll), color: INK },
+        { label: 'Never used', value: this.num(earnedAll - usedAll), color: DOWN }
+      ],
+      campaigns: camps.map((cp) => {
+        const rate = cp.redeemed / cp.earned * 100;
+        const gap = cp.earned - cp.redeemed;
+        const bad = rate < 45;
+        return {
+          name: cp.name,
+          rule: cp.type === 'points'
+            ? 'Spend ' + this.num(cp.threshold) + ' points → ' + cp.reward
+            : cp.threshold + ' visits → ' + cp.reward,
+          status: cp.status,
+          cardStyle: 'background:#FFFFFF;border:1px solid ' + (bad ? 'rgba(194,84,60,0.35)' : LINE) + ';border-radius:16px;padding:22px 24px;',
+          pillStyle: 'flex:0 0 auto;display:inline-flex;align-items:center;font-size:11.5px;font-weight:600;border-radius:999px;padding:5px 11px;color:'
+            + pill[cp.status][0] + ';background:' + pill[cp.status][1] + ';',
+          earned: this.num(cp.earned),
+          redeemed: this.num(cp.redeemed),
+          earnedBar: 'position:absolute;inset:0;width:100%;border-radius:99px;background:' + SOFT + ';',
+          usedBar: 'position:absolute;left:0;top:0;bottom:0;width:' + rate.toFixed(1) + '%;border-radius:99px;background:'
+            + (bad ? DOWN : TEALD) + ';',
+          rate: rate.toFixed(0) + '%',
+          gapText: gap + ' earned but never used',
+          gapStyle: 'font-size:12.5px;font-weight:600;border-radius:7px;padding:4px 9px;color:'
+            + (bad ? DOWN : SLATE) + ';background:' + (bad ? 'rgba(194,84,60,0.1)' : SOFT) + ';',
+          priority: cp.priority,
+          since: cp.since,
+          action: cp.status === 'Paused' ? 'Resume' : 'Pause'
+        };
+      }),
+
+      isBudgetMode: budgetMode,
+      isVolumeMode: !budgetMode,
+      strategyCards: [
+        {
+          key: 'volume', title: 'Cap the number of vouchers',
+          body: 'You decide how many vouchers can be unlocked each month. Simple to plan around, but the cost changes with what people buy.',
+          foot: 'Now: ' + this.num(volIssued) + ' of ' + this.num(st.volumeCap) + ' vouchers used'
+        },
+        {
+          key: 'budget', title: 'Cap the money you give away',
+          body: 'You set an amount in złoty. Vouchers stop being unlocked once discounts reach it, whatever the basket sizes were.',
+          foot: 'Now: ' + this.zl(spend) + ' of ' + this.zl(st.budgetCap) + ' spent'
+        }
+      ].map((s) => {
+        const on = st.strategy === s.key;
+        return {
+          title: s.title, body: s.body, foot: s.foot,
+          go: () => this.setState({ strategy: s.key }),
+          style: 'text-align:left;padding:22px 24px;border-radius:16px;cursor:pointer;transition:border-color .15s,box-shadow .15s;border:1.5px solid '
+            + (on ? INK : LINE) + ';background:#FFFFFF;' + (on ? 'box-shadow:0 6px 20px rgba(12,12,16,0.07);' : ''),
+          mark: on ? 'IN USE' : 'Switch to this',
+          markStyle: 'flex:0 0 auto;font-size:10.5px;font-weight:600;letter-spacing:0.07em;border-radius:6px;padding:5px 9px;color:'
+            + (on ? INK : SLATE) + ';background:' + (on ? TEAL : SOFT) + ';',
+          footStyle: 'font-size:12.5px;font-weight:600;font-variant-numeric:tabular-nums;color:' + (on ? INK : SLATE) + ';text-align:left;'
+        };
+      }),
+      tierHint: budgetMode
+        ? 'Each tier has its own share of the discount money. Raise the points needed to slow a tier down.'
+        : 'Each tier has its own voucher limit for the month. Raise the points needed to slow a tier down.',
+      tierCards: st.tiers.map((tr, i) => {
+        const cap = budgetMode ? tr.budget : tr.cap;
+        const used = budgetMode ? this.tierSpend(i) : this.issuance()[i].issued;
+        const raw = used / Math.max(cap, 1) * 100;
+        const over = raw > 100;
+        const hot = raw > 85;
+        return {
+          label: tr.pct + '% off',
+          cardStyle: 'padding:20px;border-radius:14px;border:1px solid ' + (over ? 'rgba(194,84,60,0.4)' : LINE) + ';background:' + BONE + ';',
+          chipStyle: 'display:inline-flex;align-items:center;white-space:nowrap;font-size:13px;font-weight:700;border-radius:8px;padding:6px 11px;color:'
+            + (tr.pct >= 15 ? '#FFFFFF' : INK) + ';background:' + (tr.pct >= 15 ? INK : tr.pct >= 10 ? TEAL : 'rgba(77,220,200,0.35)') + ';',
+          tierNote: i === 0 ? 'easiest to reach' : i === 2 ? 'your best customers' : 'the middle step',
+          points: tr.points,
+          onPoints: (e) => this.updTier(i, 'points', Math.max(0, parseInt(e.target.value, 10) || 0)),
+          capLabel: budgetMode ? 'Money for this tier' : 'Vouchers allowed',
+          cap: cap,
+          onCap: (e) => this.updTier(i, budgetMode ? 'budget' : 'cap', Math.max(0, parseInt(e.target.value, 10) || 0)),
+          capPrefixStyle: budgetMode ? 'font-size:12.5px;color:' + SLATE + ';font-weight:600;' : 'display:none;',
+          capUnit: budgetMode ? 'this month' : 'this month',
+          issued: this.num(this.issuance()[i].issued),
+          redeemed: this.num(this.issuance()[i].redeemed),
+          poolPct: raw.toFixed(0) + '%',
+          poolBar: 'width:' + Math.min(100, raw).toFixed(0) + '%;height:100%;border-radius:99px;background:'
+            + (over ? DOWN : hot ? WARN : TEALD) + ';',
+          warn: over ? 'Over the limit. This tier has stopped.' : hot ? 'Nearly used up for this month.' : '',
+          warnStyle: (over || hot)
+            ? 'margin-top:12px;font-size:12px;font-weight:600;color:' + (over ? DOWN : WARN) + ';'
+            : 'display:none;'
+        };
+      }),
+      spendUsed: this.zl(spend),
+      spendTotal: this.zl(st.budgetCap),
+      spendRemaining: this.zl(Math.max(0, st.budgetCap - spend)),
+      spendBar: 'height:100%;width:' + Math.min(100, spend / st.budgetCap * 100).toFixed(1) + '%;border-radius:99px;background:'
+        + (spend / st.budgetCap > 0.85 ? WARN : TEAL) + ';',
+      spendPaceStyle: 'position:absolute;top:-4px;bottom:-4px;left:' + Math.min(99, 100 / this.days() * 21).toFixed(1)
+        + '%;width:2px;background:rgba(255,255,255,0.55);',
+      spendPace: this.zl(perDay) + ' a day on average',
+      runway: daysLeft > 60 ? 'Comfortable until the end of the month' : 'At this pace the money runs out in ' + Math.max(0, Math.round(daysLeft)) + ' days',
+      runwayStyle: 'font-size:13px;font-weight:600;border-radius:8px;padding:8px 13px;color:'
+        + (daysLeft < 10 ? '#FFFFFF' : TEAL) + ';background:' + (daysLeft < 10 ? DOWN : 'rgba(77,220,200,0.14)') + ';',
+      budgetCap: st.budgetCap,
+      onBudgetCap: (e) => this.setState({ budgetCap: parseInt(e.target.value, 10) }),
+      volUsed: this.num(volIssued),
+      volTotal: this.num(st.volumeCap),
+      volRemaining: this.num(Math.max(0, st.volumeCap - volIssued)),
+      volBar: 'height:100%;width:' + Math.min(100, volIssued / st.volumeCap * 100).toFixed(1) + '%;border-radius:99px;background:'
+        + (volIssued / st.volumeCap > 0.85 ? WARN : TEAL) + ';',
+      volPace: volPerDay.toFixed(1) + ' vouchers a day on average',
+      volRunway: volDaysLeft > 60 ? 'Comfortable until the end of the month' : 'At this pace you reach the limit in ' + Math.max(0, Math.round(volDaysLeft)) + ' days',
+      volRunwayStyle: 'font-size:13px;font-weight:600;border-radius:8px;padding:8px 13px;color:'
+        + (volDaysLeft < 10 ? '#FFFFFF' : TEAL) + ';background:' + (volDaysLeft < 10 ? DOWN : 'rgba(77,220,200,0.14)') + ';',
+      volumeCap: st.volumeCap,
+      onVolumeCap: (e) => this.setState({ volumeCap: parseInt(e.target.value, 10) }),
+
+      scanFilters: [['all', 'Everyone'], ['new', 'First visit'], ['returning', 'Came back']].map((f) => ({
+        label: f[1], go: () => this.setState({ scanFilter: f[0], page: 0 }), style: segBtn(st.scanFilter === f[0])
+      })),
+      scanCount: this.num(allScans.length) + ' scans',
+      scanRows: allScans.slice(page * perPage, page * perPage + perPage).map((r) => ({
+        when: r.when, customer: r.customer, spent: r.spent, points: r.points, campaign: r.campaign,
+        type: r.isNew ? 'First visit' : 'Came back',
+        typeStyle: 'display:inline-flex;font-size:11.5px;font-weight:600;border-radius:999px;padding:4px 10px;color:'
+          + (r.isNew ? TEALD : SLATE) + ';background:' + (r.isNew ? 'rgba(10,191,188,0.12)' : SOFT) + ';'
+      })),
+      pageLabel: 'Showing ' + this.num(page * perPage + 1) + '–' + this.num(Math.min((page + 1) * perPage, allScans.length)) + ' of ' + this.num(allScans.length),
+      prevPage: () => this.setState({ page: Math.max(0, page - 1) }),
+      nextPage: () => this.setState({ page: Math.min(pages - 1, page + 1) }),
+
+      onBizName: (e) => this.upd('biz', 'name', e.target.value),
+      onBizCategory: (e) => this.upd('biz', 'category', e.target.value),
+      onBizAddress: (e) => this.upd('biz', 'address', e.target.value),
+      profileLangNote: profileLangs.filter((l) => (biz.desc[l[0]] || '').trim()).length + ' of 5 languages written',
+      profileLangTabs: profileLangs.map((l) => ({
+        code: l[0], go: () => this.upd('biz', 'profileLang', l[0]),
+        style: langBtn(biz.profileLang === l[0]),
+        dotStyle: 'width:6px;height:6px;border-radius:50%;background:' + ((biz.desc[l[0]] || '').trim() ? TEALD : '#C9C9D2') + ';'
+      })),
+      bizDesc: biz.desc[biz.profileLang] || '',
+      bizDescPlaceholder: 'Description in ' + (profileLangs.find((l) => l[0] === biz.profileLang) || ['', ''])[1],
+      onBizDesc: (e) => this.updLang('biz', 'desc', biz.profileLang, e.target.value),
+      spokenLangs: ['Polish', 'English', 'Ukrainian', 'Russian', 'Turkish', 'Uzbek'].map((l) => {
+        const on = biz.spoken.indexOf(l) >= 0;
+        return {
+          label: l,
+          go: () => this.upd('biz', 'spoken', on ? biz.spoken.filter((x) => x !== l) : biz.spoken.concat([l])),
+          style: 'padding:9px 14px;border-radius:999px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid '
+            + (on ? INK : LINE) + ';background:' + (on ? INK : '#FFFFFF') + ';color:' + (on ? TEAL : SLATE) + ';'
+        };
+      }),
+      hours: [
+        { day: 'Monday to Friday', time: '07:30 – 19:00' },
+        { day: 'Saturday', time: '08:30 – 18:00' },
+        { day: 'Sunday', time: '09:00 – 16:00' }
+      ],
+      previewBizName: biz.name.trim() || 'Your business name',
+      previewBizDesc: (biz.desc[biz.profileLang] || biz.desc.EN || '').trim() || 'Write a short description so customers know what you do.',
+      previewLangChips: biz.spoken.map((l) => ({ label: l })),
+      photoSlots: [['Shop front', 1], ['Inside', 1], ['Add photo', 0]].map((p) => ({
+        label: p[0],
+        style: 'height:64px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:11px;text-align:center;padding:6px;'
+          + (p[1] ? 'background:linear-gradient(150deg,#EFF1F1,#E4E6E6);color:' + SLATE + ';'
+            : 'border:1px dashed #C9C9D2;color:' + SLATE + ';cursor:pointer;')
+      })),
+
+      drawerOpen: isDeal || isCamp,
+      isDealDrawer: isDeal,
+      isCampaignDrawer: isCamp,
+      closeDrawer: () => this.closeDrawer(),
+      drawerKicker: isCamp ? 'LOYALTY CAMPAIGN' : 'HOT DEAL',
+      drawerTitle: isCamp ? 'Create campaign' : 'Create hot deal',
+      drawerSub: isCamp
+        ? 'A reward that repeats. Customers earn it by coming back.'
+        : 'A deal with a start and end date. It shows in the Paylez app in five languages.',
+      langProgress: langDone + ' of 5 languages written',
+      langName: (LANGS.find((l) => l[0] === st.lang) || ['', ''])[1],
+      langTabs: LANGS.map((l) => ({
+        code: l[0], name: l[1], go: () => this.setState({ lang: l[0] }),
+        style: langBtn(st.lang === l[0]),
+        dotStyle: 'width:6px;height:6px;border-radius:50%;background:' + ((d.title[l[0]] || '').trim() ? TEALD : '#C9C9D2') + ';'
+      })),
+      titlePlaceholder: st.lang === 'EN' ? 'Morning flat white, 20% off' : 'Same title, in ' + (LANGS.find((l) => l[0] === st.lang) || ['', ''])[1],
+      dealTitle: d.title[st.lang] || '',
+      dealDesc: d.desc[st.lang] || '',
+      onDealTitle: (e) => this.updLang('deal', 'title', st.lang, e.target.value),
+      onDealDesc: (e) => this.updLang('deal', 'desc', st.lang, e.target.value),
+      copyErr: (d.title.EN || '').trim() ? '' : 'Write the English title first. The other languages can follow later.',
+      copyErrStyle: (d.title.EN || '').trim() ? 'display:none;' : 'margin-top:11px;font-size:12.5px;font-weight:500;color:' + DOWN + ';',
+      dealBadge: d.badge,
+      onDealBadge: (e) => this.upd('deal', 'badge', e.target.value),
+      dealFrom: d.from, dealTo: d.to,
+      onDealFrom: (e) => this.upd('deal', 'from', e.target.value),
+      onDealTo: (e) => this.upd('deal', 'to', e.target.value),
+      windowNote: badDates
+        ? 'The end date is before the start date. Move the end date later.'
+        : dayCount ? 'Customers will see this deal for ' + dayCount + ' days, from ' + fmt(d.from) + ' to ' + fmt(d.to) + '.' : 'Pick both dates to see the live window.',
+      windowNoteStyle: 'margin-top:11px;font-size:12.5px;border-radius:8px;padding:10px 12px;'
+        + (badDates ? 'font-weight:500;color:' + DOWN + ';background:rgba(194,84,60,0.09);' : 'color:' + SLATE + ';background:' + BONE + ';'),
+      toggleCap: () => this.upd('deal', 'capped', !d.capped),
+      capToggleStyle: 'flex:0 0 46px;width:46px;height:26px;border-radius:99px;border:none;cursor:pointer;padding:3px;display:flex;justify-content:'
+        + (d.capped ? 'flex-end' : 'flex-start') + ';background:' + (d.capped ? TEALD : '#C9C9D2') + ';transition:background .18s;',
+      capKnobStyle: 'width:20px;height:20px;border-radius:50%;background:#FFFFFF;display:block;box-shadow:0 1px 3px rgba(12,12,16,0.25);',
+      capFieldStyle: d.capped ? 'margin-top:14px;' : 'display:none;',
+      dealLimit: d.limit,
+      onDealLimit: (e) => this.upd('deal', 'limit', Math.max(0, parseInt(e.target.value, 10) || 0)),
+      dealTerms: d.terms,
+      onDealTerms: (e) => this.upd('deal', 'terms', e.target.value),
+      previewTitle: (d.title[st.lang] || d.title.EN || '').trim() || 'Your deal title',
+      previewDesc: (d.desc[st.lang] || d.desc.EN || '').trim() || 'Your description appears here.',
+      previewBadge: d.badge.trim() || 'DEAL',
+      previewBadgeStyle: 'font-size:12px;font-weight:700;border-radius:8px;padding:7px 11px;background:' + TEAL + ';color:' + INK + ';',
+      previewDates: badDates ? 'Check your dates' : fmt(d.from) + ' – ' + fmt(d.to),
+      previewLimit: d.capped ? 'Stops after ' + this.num(d.limit) + ' claims' : 'No limit on claims',
+
+      campName: c.name,
+      onCampName: (e) => this.upd('camp', 'name', e.target.value),
+      nameErr: c.name.trim() ? '' : 'Give the campaign a name so you can find it later.',
+      nameErrStyle: c.name.trim() ? 'display:none;' : 'margin-top:8px;font-size:12.5px;font-weight:500;color:' + DOWN + ';',
+      thresholdTypes: [
+        { key: 'scans', label: 'Count visits', note: 'Every scan at the counter counts as one, whatever the customer spends.' },
+        { key: 'points', label: 'Count points', note: 'Points come from what they spend, so bigger baskets get there faster.' }
+      ].map((tt) => ({
+        label: tt.label, note: tt.note, go: () => this.upd('camp', 'type', tt.key),
+        style: 'flex:1 1 220px;text-align:left;padding:15px 16px;border-radius:12px;cursor:pointer;border:1.5px solid '
+          + (c.type === tt.key ? INK : LINE) + ';background:' + (c.type === tt.key ? BONE : '#FFFFFF') + ';'
+      })),
+      thresholdLabel: c.type === 'points' ? 'Points needed' : 'Visits needed',
+      thresholdUnit: c.type === 'points' ? 'points' : 'visits',
+      campThreshold: c.threshold,
+      onCampThreshold: (e) => this.upd('camp', 'threshold', Math.max(1, parseInt(e.target.value, 10) || 1)),
+      incThreshold: () => this.upd('camp', 'threshold', c.threshold + (c.type === 'points' ? 100 : 1)),
+      decThreshold: () => this.upd('camp', 'threshold', Math.max(1, c.threshold - (c.type === 'points' ? 100 : 1))),
+      thresholdHelp: c.type === 'points'
+        ? 'At an average basket of ' + this.zl(34.1, true) + ', that is about ' + Math.max(1, Math.round(c.threshold / 34)) + ' visits.'
+        : 'Your regulars visit about 6 times a month, so they would earn this in ' + Math.max(1, Math.ceil(c.threshold / 6)) + ' month(s).',
+      rewardTypes: [['percent', 'Percent off'], ['fixed', 'Amount off']].map((r) => ({
+        label: r[1], go: () => this.upd('camp', 'rewardType', r[0]), style: segBtn(c.rewardType === r[0])
+      })),
+      campReward: c.reward,
+      onCampReward: (e) => this.upd('camp', 'reward', Math.max(0, parseInt(e.target.value, 10) || 0)),
+      rewardPrefixStyle: rewardPct ? 'display:none;' : 'font-size:12.5px;color:' + SLATE + ';font-weight:600;',
+      rewardUnit: rewardPct ? '% off' : 'off',
+      rewardErr: c.reward > 0 ? '' : 'Set a reward above zero.',
+      rewardErrStyle: c.reward > 0 ? 'display:none;' : 'margin-top:8px;font-size:12.5px;font-weight:500;color:' + DOWN + ';',
+      priorities: ['1', '2', '3', '4', '5'].map((p) => ({
+        label: p === '1' ? '1 — wins first' : p === '5' ? '5 — wins last' : p,
+        go: () => this.upd('camp', 'priority', p),
+        style: 'padding:10px 15px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid '
+          + (c.priority === p ? INK : LINE) + ';background:' + (c.priority === p ? INK : '#FFFFFF') + ';color:' + (c.priority === p ? TEAL : SLATE) + ';'
+      })),
+      priorityHelp: c.priority === '1'
+        ? 'This campaign pays out before every other one you run.'
+        : 'Campaigns with priority 1 to ' + (parseInt(c.priority, 10) - 1) + ' pay out before this one.',
+      campSummary: (c.type === 'points'
+        ? 'Spend ' + this.num(c.threshold) + ' points'
+        : 'Visit ' + c.threshold + (c.threshold === 1 ? ' time' : ' times'))
+        + ' and get ' + (rewardPct ? c.reward + '% off' : this.zl(c.reward) + ' off') + '.',
+      campSummaryNote: 'The voucher lands in the customer’s app straight away and is valid for 30 days.',
+
+      validNote: ok ? '' : (isCamp ? 'Add a name, a threshold and a reward to continue' : badDates ? 'Fix the dates to continue' : 'Add an English title and discount text to continue'),
+      validStyle: ok ? 'display:none;' : 'font-size:12.5px;font-weight:500;color:' + DOWN + ';background:rgba(194,84,60,0.09);border-radius:8px;padding:9px 12px;',
+      publishLabel: isCamp ? 'Start campaign' : 'Publish deal',
+      publishStyle: 'padding:11px 18px;border-radius:10px;border:none;font-size:13.5px;font-weight:600;'
+        + (ok ? 'background:' + INK + ';color:' + TEAL + ';cursor:pointer;' : 'background:' + SOFT + ';color:#B9BCBC;cursor:not-allowed;'),
+      submitDrawer: () => {
+        if (!ok) return;
+        this.closeDrawer();
+        this.toast(isCamp ? 'Campaign started. Customers can earn it now.' : 'Deal published. It is live in the app.');
+      },
+
+      toastOpen: !!st.toast,
+      toastText: st.toast
+    };
+  }
+}
+
+</script>
+</body>
+</html>
