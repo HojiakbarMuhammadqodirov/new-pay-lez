@@ -1,14 +1,14 @@
 import { useMemo, useState, type CSSProperties } from 'react';
 import {
-  RELOCATE_CORRIDORS,
+  RELOCATE_AMOUNT,
   RELOCATE_COUNTRIES,
-  RELOCATE_SEND,
+  RELOCATE_PAIRS,
   RELOCATE_STATS,
   RELOCATE_TOPIC_ICONS,
 } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
-import { CURRENCIES, group } from './i18n/currency';
+import { CURRENCIES, fill, group } from './i18n/currency';
 import { PATHS } from './router';
 /*
  * The flag subset, borrowed from the globe's country card rather than declared
@@ -39,11 +39,16 @@ import '../components/GlobeHero/ui/flagFont.css';
 /* ───────────────────────────────────────────────────────────── the rate ── */
 
 /**
- * The corridor card.
+ * The rate card.
  *
- * Every rate on it is derived from the one table in `i18n/currency.ts` — the
- * same table that prices the rest of the site — so the card cannot drift from
- * the voucher values two pages over. Cross rates go through the base unit:
+ * A converter and nothing more: an amount in, the same amount in another
+ * currency out, at the mid-market rate. Paylez does not send, receive or hold
+ * money — which is why there is no fee row, no arrival time and no list of
+ * providers on it, and why the number it quotes has nothing on top of it.
+ *
+ * Every rate is derived from the one table in `i18n/currency.ts` — the same
+ * table that prices the rest of the site — so the card cannot drift from the
+ * voucher values two pages over. Cross rates go through the base unit:
  * `to.rate / from.rate` is exact for any pair, which is the whole reason the
  * table is anchored to one currency rather than holding a matrix of pairs that
  * would have to agree with each other by hand.
@@ -56,35 +61,100 @@ function RateCard() {
   const [language] = useLanguage();
   const from = CURRENCIES[language];
 
-  const corridors = useMemo(
-    () => RELOCATE_CORRIDORS.filter((code) => code !== language).slice(0, 3),
+  const pairs = useMemo(
+    () => RELOCATE_PAIRS.filter((code) => code !== language).slice(0, 3),
     [language],
   );
 
   const [active, setActive] = useState(0);
   // Clamped rather than reset: the list is rebuilt when the language changes,
   // and an index held from the longer list would read off the end of it.
-  const to = CURRENCIES[corridors[Math.min(active, corridors.length - 1)]];
+  const to = CURRENCIES[pairs[Math.min(active, pairs.length - 1)]];
+
+  /**
+   * What is being converted, as typed.
+   *
+   * A **string**, not a number, and that is the whole trick to a converter that
+   * is pleasant to type in. Holding a number means the field cannot contain
+   * `''` while you clear it, cannot hold a trailing `.` while you reach for the
+   * decimals, and re-formats `1.50` to `1.5` under the cursor. The string is
+   * what the reader typed; `amount` below is what the maths uses.
+   */
+  const [typed, setTyped] = useState(String(RELOCATE_AMOUNT));
+  /** Which side is being typed into — the other one is the answer. */
+  const [edge, setEdge] = useState<'from' | 'to'>('from');
 
   /** One unit of the reader's currency in the destination's. */
   const rate = to.rate / from.rate;
+
+  const amount = Number(typed.replace(',', '.'));
+  const valid = typed.trim() !== '' && Number.isFinite(amount) && amount >= 0;
+  const converted = valid ? (edge === 'from' ? amount * rate : amount / rate) : 0;
 
   const write = (value: number, currency: typeof to) =>
     currency.before
       ? `${currency.symbol}${group(value, currency)}`
       : `${group(value, currency)} ${currency.symbol}`;
 
+  /*
+   * Digits, one separator, nothing else. Filtering on the way in rather than
+   * validating on the way out means the field can never hold something the
+   * arithmetic below would turn into `NaN`.
+   */
+  const onType = (raw: string) => {
+    const cleaned = raw.replace(/[^\d.,]/g, '').replace(/[.,](?=.*[.,])/g, '');
+    setTyped(cleaned);
+  };
+
+  /** The side being read rather than typed, formatted with its symbol. */
+  const answer = write(converted, edge === 'from' ? to : from);
+
+  const field = (side: 'from' | 'to') => {
+    const currency = side === 'from' ? from : to;
+    const mine = edge === side;
+    return (
+      <div className="rate-row" data-out={side === 'to' ? 'true' : undefined}>
+        <span>{side === 'from' ? copy.relocate.rates.send : copy.relocate.rates.gets}</span>
+        <span className="rate-input" data-live={mine ? 'true' : undefined}>
+          {currency.before && <i>{currency.symbol}</i>}
+          <input
+            type="text"
+            inputMode="decimal"
+            /* The typed side shows the raw string; the other shows the answer,
+               already grouped and with its symbol stripped back off so the two
+               fields line up. */
+            value={mine ? typed : group(converted, currency)}
+            aria-label={side === 'from' ? copy.relocate.rates.send : copy.relocate.rates.gets}
+            onChange={(event) => {
+              setEdge(side);
+              onType(event.target.value);
+            }}
+            onFocus={() => {
+              /* Typing into the answer flips the direction and seeds the field
+                 with what it was showing, so the number does not jump. */
+              if (!mine) {
+                setEdge(side);
+                setTyped(String(Math.round(converted * 100) / 100));
+              }
+            }}
+          />
+          {!currency.before && <i>{currency.symbol}</i>}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div className="console rate-card">
       <div className="rate-saved">
         <span className="console-label">{copy.relocate.rates.saved}</span>
         <div className="rate-pairs">
-          {corridors.map((code, i) => (
+          {pairs.map((code, i) => (
             <button
               type="button"
               key={code}
               className="rate-pair"
-              data-on={i === Math.min(active, corridors.length - 1) ? 'true' : undefined}
+              data-on={i === Math.min(active, pairs.length - 1) ? 'true' : undefined}
               onClick={() => setActive(i)}
             >
               {from.symbol} <Icon name="arrow" size={12} strokeWidth={2.4} />{' '}
@@ -94,19 +164,24 @@ function RateCard() {
         </div>
       </div>
 
-      <div className="rate-row">
-        <span>{copy.relocate.rates.send}</span>
-        <b>{write(RELOCATE_SEND, from)}</b>
-      </div>
+      {field('from')}
 
-      <span className="rate-swap" aria-hidden>
+      <button
+        type="button"
+        className="rate-swap"
+        aria-label={copy.relocate.rates.swap}
+        title={copy.relocate.rates.swap}
+        onClick={() => {
+          /* Swapping is just moving which end you are typing at, with the
+             number that was on screen carried across. */
+          setTyped(String(Math.round(converted * 100) / 100));
+          setEdge(edge === 'from' ? 'to' : 'from');
+        }}
+      >
         <Icon name="arrow" size={15} strokeWidth={2.2} />
-      </span>
+      </button>
 
-      <div className="rate-row" data-out="true">
-        <span>{copy.relocate.rates.gets}</span>
-        <b>{write(RELOCATE_SEND * rate, to)}</b>
-      </div>
+      {field('to')}
 
       <div className="rate-foot">
         <span>{copy.relocate.rates.rate}</span>
@@ -116,6 +191,15 @@ function RateCard() {
           {write(1, from)} = {write(rate, to)}
         </b>
       </div>
+
+      <p className="rate-total" aria-live="polite">
+        {valid
+          ? fill(copy.relocate.rates.result, {
+              from: write(amount, edge === 'from' ? from : to),
+              to: answer,
+            })
+          : copy.relocate.rates.enter}
+      </p>
     </div>
   );
 }

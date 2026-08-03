@@ -2,7 +2,24 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <!--
+      The brand mark, and the same two files the header tile uses.
+
+      Two links with a `media` query rather than one: the artwork is a cut, not a
+      shape with a transparent ground, so the mint-on-black version disappears
+      into a light browser chrome and the black-on-mint one into a dark. Chromium
+      and Safari pick per scheme; anything that ignores `media` takes the last
+      one it understood, which is why the dark cut is declared unconditionally
+      first — it is the safer of the two against an unknown tab strip.
+    -->
+    <link rel="icon" type="image/jpeg" href="/logo/logo-dark.jpg" />
+    <link
+      rel="icon"
+      type="image/png"
+      href="/logo/logo-light.png"
+      media="(prefers-color-scheme: light)"
+    />
+    <link rel="apple-touch-icon" href="/logo/logo-dark.jpg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Paylez — Play &amp; Earn</title>
     <!--

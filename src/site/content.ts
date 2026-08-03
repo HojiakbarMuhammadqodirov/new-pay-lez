@@ -8,6 +8,11 @@
  * catches the half-done version.
  */
 
+import type {
+  BusinessCategory,
+  BusinessCountry,
+  SpokenLanguage,
+} from './auth/business';
 import type { IconName } from './icons';
 
 /**
@@ -66,12 +71,544 @@ export const FEATURE_META: Array<{
 
 export const VALUE_CARD = { brand: 'zalando', logo: 'Z' };
 
+/**
+ * The gift card the L-Earn FAQ quotes, in euros like every other amount here.
+ *
+ * The figure the answer was written against is 50 zł — what a Polish reader
+ * sees — and 11.63 is that in the base unit, from which every other language
+ * prices it. Named rather than inlined at the call site precisely because 11.63
+ * is not a number anyone chose; 50 is.
+ */
+export const LEARN_VOUCHER_EUR = 11.63;
+
 export const FOOTER_LINKS: string[][] = [
   ['#value', '#proof', '#guide', '#features'],
-  ['#top', '#top', '#proof', '#guide'],
+  ['#top', '#top', '#proof'],
 ];
 
 export const CONTACT_EMAIL = 'support@paylez.com';
+
+/* ───────────────────────────────────────────────────────────────── games ── */
+
+/**
+ * The four games, rebuilt from the old paylez app
+ * (`landing/screenshots/learn1.png` … `learn3.png`).
+ *
+ * Rules per game rather than one shared rule, because the old app varied them
+ * and the variation is the point: the flag round is quick and worth more, the
+ * Poland round is slower and worth less because it is the one you are meant to
+ * think about. `kind` is what the round generator switches on.
+ *
+ * `perCorrect` is the score per right answer; `allowedMistakes` is how many you
+ * may get wrong and still bank the round.
+ */
+export const GAMES: Array<{
+  id: 'brain' | 'flag' | 'capital' | 'poland';
+  kind: 'text' | 'flag' | 'capital';
+  icon: IconName;
+  questions: number;
+  seconds: number;
+  perCorrect: number;
+  allowedMistakes: number;
+}> = [
+  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 5, allowedMistakes: 1 },
+  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
+  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
+  { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
+];
+
+/**
+ * The countries the flag and capital rounds are drawn from.
+ *
+ * Ten, and structural: the flag emoji and the index are here, the country and
+ * capital *names* are copy (`copy.games.countries` / `copy.games.capitals`,
+ * index-aligned). One list feeds both games — the flag round asks which country
+ * a flag belongs to, the capital round asks for its capital, and neither needs
+ * its own table.
+ */
+export const GAME_COUNTRIES = [
+  '🇵🇱', '🇺🇿', '🇺🇦', '🇩🇪', '🇫🇷', '🇮🇹', '🇪🇸', '🇳🇱', '🇹🇷', '🇬🇧',
+];
+
+/** The board's two orderings, index-aligned with `copy.games.boardTabs`. */
+export const BOARD_TABS = ['correct', 'points'] as const;
+
+/**
+ * The sample leaderboard.
+ *
+ * Player codes rather than names, exactly as the old app showed them — a public
+ * board with real names on it is a different product with a different privacy
+ * question, and the codes are what the screenshots have.
+ */
+export const GAME_BOARD = [
+  { code: 'PY7178', correct: 21, points: 96, streak: 6 },
+  { code: 'PY6722', correct: 17, points: 74, streak: 4 },
+  { code: 'PY6307', correct: 10, points: 61, streak: 2 },
+  { code: 'PY5940', correct: 9, points: 48, streak: 5 },
+  { code: 'PY5511', correct: 7, points: 35, streak: 1 },
+];
+
+/* ─────────────────────────────────────────────────────────────── account ── */
+
+/**
+ * The two account types, in the order the sign-in screen offers them.
+ *
+ * Index-aligned with `copy.auth.types`, the same arrangement `NAV_ITEMS` has
+ * with `copy.nav`: the icon and the id are structure, the name and the sentence
+ * under it are copy.
+ */
+export const ACCOUNT_TYPES: Array<{
+  id: 'individual' | 'business';
+  icon: IconName;
+}> = [
+  { id: 'individual', icon: 'assistant' },
+  { id: 'business', icon: 'briefcase' },
+];
+
+/* ─────────────────────────────────────────────────────────────── console ── */
+
+/**
+ * The platform, as the operator's console sees it.
+ *
+ * Lifted from the original admin panel (`landing/screenshots/admin-b2b*.png`
+ * and `admin-analytics*.png`) rather than invented here — same headline counts,
+ * same service catalogue, same per-venue analytics. Two things are deliberately
+ * *not* carried over: its colours, which are a fourth palette this site does not
+ * have, and its PLN/USD toggle, which the language already decides (see the
+ * money rule).
+ *
+ * Everything here is seed data for one platform-shaped month. The one venue on
+ * the console that is *not* seeded is the listing a real signed-up owner saved —
+ * `admin.tsx` puts it in the same list with no traffic behind it, which is the
+ * state every screenshot in that folder was taken in.
+ */
+export const PLATFORM = { services: 308, active: 220, deals: 14, activeDeals: 10 };
+
+export interface AdminService {
+  /** The hash an owner pastes into the analytics search. */
+  id: string;
+  /** The letter on the tile. Venue names are brands and are never translated. */
+  logo: string;
+  name: string;
+  /** Index into `BUSINESS_CATEGORIES`, and so into `copy.business.categories`. */
+  category: number;
+  city: string;
+  rating: number;
+  vouchers: boolean;
+  active: boolean;
+  /**
+   * How busy this venue is, as a multiple of the base month below.
+   *
+   * One number instead of five hundred: every figure in the analytics view is
+   * derived from it (`adminMetrics.ts`), so a quiet venue is quiet *everywhere*
+   * — its trend, its tables and its country comparison all agree, which five
+   * separately invented data sets would not.
+   */
+  scale: number;
+}
+
+export const ADMIN_SERVICES: AdminService[] = [
+  { id: '6a68a301a5d97e02c4b715c3', logo: 'D', name: 'Dubai Cafe', category: 0, city: 'Kraków', rating: 3.5, vouchers: true, active: true, scale: 1 },
+  { id: '9f21c74e0b3a5d18e6c2470a', logo: 'B', name: 'Bollywood Masala House', category: 1, city: 'Kraków', rating: 4.9, vouchers: true, active: true, scale: 1.45 },
+  { id: '3d0b58fa9c17e4620d8a1f55', logo: 'S', name: 'Sultan Barbers', category: 2, city: 'Warszawa', rating: 4.6, vouchers: true, active: true, scale: 0.62 },
+  { id: 'c48e1207b6d9a35f0e7c9821', logo: 'L', name: 'Lingua Nova', category: 5, city: 'Wrocław', rating: 4.8, vouchers: false, active: true, scale: 0.34 },
+  { id: '71bd3e9c802af5461d0b7e34', logo: 'F', name: 'Forma Fitness', category: 6, city: 'Gdańsk', rating: 4.2, vouchers: true, active: false, scale: 0.79 },
+];
+
+/** Platform-wide offers. `until` is `DD.MM.YYYY`; brands are never translated. */
+export const ADMIN_DEALS: Array<{
+  id: string;
+  logo: string;
+  name: string;
+  kind: 'gift' | 'deal';
+  country: string;
+  until: string;
+  active: boolean;
+}> = [
+  { id: 'flixbus', logo: 'F', name: 'FlixBus Gift Card', kind: 'gift', country: 'PL', until: '31.08.2026', active: true },
+  { id: 'biedronka', logo: 'B', name: 'Biedronka Gift Card', kind: 'gift', country: 'PL', until: '31.08.2026', active: true },
+  { id: 'hebe', logo: 'H', name: 'Hebe Gift Card', kind: 'gift', country: 'PL', until: '31.08.2026', active: true },
+  { id: 'zalando', logo: 'Z', name: 'Zalando Gift Card', kind: 'gift', country: 'PL', until: '30.09.2026', active: true },
+  { id: 'mediaexpert', logo: 'M', name: 'Media Expert Gift Card', kind: 'gift', country: 'PL', until: '30.09.2026', active: false },
+  { id: 'dubai21', logo: '2', name: '2+1 at Dubai Cafe', kind: 'deal', country: 'PL', until: '31.07.2026', active: false },
+];
+
+/**
+ * One month at a venue of `scale: 1`, and the seed everything else is derived
+ * from. Money is euros like everywhere else in this file.
+ *
+ * The four contact counters, the two voucher pairs and the scan count are the
+ * nine figures the original's Dashboard tab shows; `engagement` is not among
+ * them because it is their sum, and computing it (in `adminMetrics.ts`) is what
+ * stops the headline disagreeing with the cards under it.
+ */
+export const ADMIN_BASE = {
+  maps: 1840,
+  website: 962,
+  phone: 314,
+  instagram: 587,
+
+  vouchersUsed: 168,
+  vouchersActive: 74,
+  loyaltyUsed: 96,
+  loyaltyActive: 41,
+  /** Combined discount given, as a percentage of the cheques it was used on. */
+  discount: 12,
+  scans: 1212,
+
+  /** Thirty days of engagement, oldest first. Shape, not noise. */
+  trend: [
+    118, 131, 126, 149, 162, 141, 108, 122, 138, 147,
+    166, 178, 159, 121, 134, 151, 163, 172, 188, 164,
+    129, 143, 157, 169, 181, 196, 174, 138, 152, 167,
+  ],
+  /** Daily QR scans over the same window. */
+  scanTrend: [
+    28, 34, 31, 39, 44, 37, 24, 29, 33, 36,
+    42, 47, 40, 27, 31, 38, 41, 45, 51, 43,
+    30, 35, 39, 44, 48, 53, 46, 32, 37, 42,
+  ],
+  /** Daily cheque total from voucher redemptions, in euros. */
+  salesTrend: [
+    186, 214, 198, 262, 291, 244, 152, 191, 223, 238,
+    276, 312, 268, 174, 205, 251, 274, 298, 341, 286,
+    196, 231, 259, 288, 317, 352, 302, 211, 246, 279,
+  ],
+  /** Six months of cheque value from redemptions, in euros. */
+  monthly: [4_820, 5_640, 6_180, 7_020, 8_460, 9_240],
+
+  loyalty: {
+    perVisit: 5,
+    /** Hours a customer must wait before a second scan counts. */
+    cooldown: 24,
+    active: true,
+    /** Visits needed → percent off. The prototype's two standing rewards. */
+    campaigns: [
+      { visits: 5, reward: 10 },
+      { visits: 10, reward: 20 },
+    ],
+    /** Cheque value from scanned visits, and the average behind it. Euros. */
+    sales: 8_640,
+    avg: 7.1,
+  },
+
+  vouchers: {
+    /** The discount budget this campaign runs against, in euros. */
+    budget: 907,
+    spent: 362,
+    issued: 214,
+    /** Cheque value the redemptions carried, and the basket behind it. Euros. */
+    sales: 12_480,
+    basket: 21.4,
+  },
+
+  /** Percent off, points it costs, how many went out, and the monthly cap. */
+  tiers: [
+    { pct: 5, points: 250, issued: 214, cap: 0 },
+    { pct: 10, points: 600, issued: 96, cap: 400 },
+    { pct: 15, points: 1200, issued: 31, cap: 120 },
+  ],
+
+  /** Where the customers came from. Cities are proper nouns, not copy. */
+  cities: [
+    { name: 'Kraków', n: 428 },
+    { name: 'Warszawa', n: 161 },
+    { name: 'Wrocław', n: 97 },
+    { name: 'Gdańsk', n: 64 },
+    { name: 'Poznań', n: 41 },
+  ],
+  /** Index-aligned with `SPOKEN_LANGUAGES`, so the names come from copy. */
+  languages: [
+    { code: 'pl' as SpokenLanguage, n: 342 },
+    { code: 'uk' as SpokenLanguage, n: 196 },
+    { code: 'ru' as SpokenLanguage, n: 154 },
+    { code: 'en' as SpokenLanguage, n: 89 },
+    { code: 'uz' as SpokenLanguage, n: 32 },
+  ],
+  /** What a similar venue in the same country averages, for the comparison. */
+  country: { maps: 1210, website: 640, phone: 268 },
+};
+
+/**
+ * Sample rows for the three tables, newest first.
+ *
+ * `ago` is days back from today, which is what makes the All time / 7 / 30 / 90
+ * filters do something rather than decorate: the row's date is computed at
+ * render, so the table is never stale and the filter is never a lie. Money is
+ * euros; `points` is what the customer spent or earned.
+ */
+export const ADMIN_REDEMPTIONS: Array<{
+  ago: number;
+  deal: string;
+  user: string;
+  code: string;
+  points: number;
+  discount: number;
+  used: boolean;
+  cheque: number;
+}> = [
+  { ago: 0, deal: '2+1', user: 'PY7178', code: 'PLZ-9F3K', points: 2, discount: 10, used: true, cheque: 18.4 },
+  { ago: 1, deal: '20%', user: 'PY6722', code: 'PLZ-2B7Q', points: 250, discount: 20, used: true, cheque: 31.2 },
+  { ago: 3, deal: 'FREE', user: 'PY6307', code: 'PLZ-7X1M', points: 600, discount: 100, used: true, cheque: 12.8 },
+  { ago: 6, deal: '15%', user: 'PY5940', code: 'PLZ-4K8D', points: 1200, discount: 15, used: false, cheque: 0 },
+  { ago: 12, deal: '20%', user: 'PY5511', code: 'PLZ-8W2N', points: 250, discount: 20, used: true, cheque: 26.5 },
+  { ago: 19, deal: '10%', user: 'PY5203', code: 'PLZ-3T6V', points: 250, discount: 10, used: true, cheque: 22.9 },
+  { ago: 34, deal: '2+1', user: 'PY4988', code: 'PLZ-5R1J', points: 2, discount: 10, used: true, cheque: 16.7 },
+  { ago: 61, deal: '15%', user: 'PY4712', code: 'PLZ-1Z9H', points: 1200, discount: 15, used: true, cheque: 44.1 },
+];
+
+/** `progress` is visits done out of visits needed for the next reward. */
+export const ADMIN_SCAN_ROWS: Array<{
+  ago: number;
+  user: string;
+  points: number;
+  spent: number;
+  receipt: string;
+  city: string;
+  progress: [number, number];
+}> = [
+  { ago: 0, user: 'PY7178', points: 5, spent: 6.4, receipt: '#7F2A', city: 'Kraków', progress: [3, 5] },
+  { ago: 0, user: 'PY6722', points: 5, spent: 9.1, receipt: '#B14C', city: 'Kraków', progress: [1, 5] },
+  { ago: 2, user: 'PY6307', points: 5, spent: 4.8, receipt: '#C903', city: 'Warszawa', progress: [8, 10] },
+  { ago: 5, user: 'PY5940', points: 5, spent: 12.6, receipt: '#2D71', city: 'Kraków', progress: [2, 5] },
+  { ago: 9, user: 'PY5511', points: 5, spent: 7.3, receipt: '#A48E', city: 'Wrocław', progress: [4, 5] },
+  { ago: 21, user: 'PY5203', points: 5, spent: 5.2, receipt: '#66F1', city: 'Kraków', progress: [5, 5] },
+  { ago: 48, user: 'PY4988', points: 5, spent: 8.9, receipt: '#31DA', city: 'Gdańsk', progress: [2, 10] },
+];
+
+/** `pct` is the discount the voucher carried; `loyalty` marks the ones a scan
+ *  earned rather than points bought. */
+export const ADMIN_VOUCHER_ROWS: Array<{
+  ago: number;
+  code: string;
+  loyalty: boolean;
+  user: string;
+  pct: number;
+  points: number;
+  used: boolean;
+  cheque: number;
+}> = [
+  { ago: 0, code: 'PLZ-9F3K', loyalty: false, user: 'PY7178', pct: 5, points: 250, used: true, cheque: 24.6 },
+  { ago: 1, code: 'PLZ-2B7Q', loyalty: true, user: 'PY6722', pct: 10, points: 0, used: true, cheque: 33.8 },
+  { ago: 4, code: 'PLZ-7X1M', loyalty: false, user: 'PY6307', pct: 10, points: 600, used: true, cheque: 19.2 },
+  { ago: 8, code: 'PLZ-4K8D', loyalty: false, user: 'PY5940', pct: 15, points: 1200, used: false, cheque: 0 },
+  { ago: 15, code: 'PLZ-8W2N', loyalty: true, user: 'PY5511', pct: 5, points: 0, used: true, cheque: 28.4 },
+  { ago: 27, code: 'PLZ-3T6V', loyalty: false, user: 'PY5203', pct: 5, points: 250, used: true, cheque: 21.1 },
+  { ago: 55, code: 'PLZ-5R1J', loyalty: false, user: 'PY4712', pct: 15, points: 1200, used: true, cheque: 52.3 },
+];
+
+/** The console's own tabs, and the analytics view's. Icons are structure. */
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant'];
+export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
+
+/** The nine Dashboard cards, in the original's order. */
+export const ADMIN_CARD_ICONS: IconName[] = [
+  'map',
+  'link',
+  'phone',
+  'instagram',
+  'ticket',
+  'gift',
+  'coin',
+  'assistant',
+  'qr',
+];
+
+/* ────────────────────────────────────────────────────────────── business ── */
+
+/**
+ * Business categories and their subcategories, as ids.
+ *
+ * The taxonomy is the partner prototype's. Ids here, names in the dictionaries:
+ * "Café" and "Kawiarnia" are the same category, and a listing that stored the
+ * word would change category when the reader changed language.
+ *
+ * `subs` is a count rather than a list because the subcategory names are copy
+ * too — `copy.business.subcategories[i]` is the array for category `i`, and this
+ * number is what the two are checked against.
+ */
+export const BUSINESS_CATEGORIES: Array<{
+  id: BusinessCategory;
+  subs: number;
+}> = [
+  { id: 'cafe', subs: 4 },
+  { id: 'restaurant', subs: 5 },
+  { id: 'barbershop', subs: 3 },
+  { id: 'beauty', subs: 4 },
+  { id: 'dental', subs: 3 },
+  { id: 'language', subs: 3 },
+  { id: 'fitness', subs: 3 },
+];
+
+/** Index-aligned with `copy.business.countries`. */
+export const BUSINESS_COUNTRIES: BusinessCountry[] = [
+  'pl',
+  'ua',
+  'ge',
+  'tr',
+  'uz',
+  'az',
+];
+
+/**
+ * Languages a venue's staff might speak, index-aligned with
+ * `copy.business.spokenLanguages`.
+ *
+ * Six, where the site itself has five: Turkish is not a language this site is
+ * translated into, but it is one a Kraków barber may well speak, and the
+ * listing describes the venue rather than the reader.
+ */
+export const SPOKEN_LANGUAGES: SpokenLanguage[] = ['pl', 'en', 'uk', 'ru', 'tr', 'uz'];
+
+/**
+ * The opening hours shown on the listing.
+ *
+ * Fixed, and index-aligned with `copy.business.hoursDays`. The prototype does
+ * not make these editable either — an hours editor is a week-shaped control
+ * with holidays and split shifts in it, and stubbing one badly would be worse
+ * than showing the three lines the app actually renders.
+ */
+export const BUSINESS_HOURS = ['07:30 – 19:00', '08:30 – 18:00', '09:00 – 16:00'];
+
+/**
+ * The partner plan's monthly discount budget, in euros like every other amount
+ * in this file. `spent` is what has gone out so far.
+ *
+ * Two numbers rather than a percentage because the rail shows both figures in
+ * the reader's own currency, and a percentage cannot be converted into one.
+ */
+export const PARTNER_BUDGET = { total: 350, spent: 214 };
+
+/* ── the venue's actual figures ─────────────────────────────────────────────
+ *
+ * Lifted from the prototype's seed data (`b2b/Paylez Partner Dashboard v2.dc.html`,
+ * the `DEALS` / `CAMPAIGNS` / `CSCEN` tables) rather than invented, so the
+ * screens show a month that hangs together: the deal claim counts, the campaign
+ * costs and the customer mix all came from the same imaginary café and were
+ * written to agree with each other.
+ *
+ * Money is euros like everything else in this file and is converted at render;
+ * the prototype quotes złoty because it is a Polish venue, and an English
+ * reader sees the same figures in pounds.
+ */
+
+/** Overview headline. `revenue` and `cost` are euros. */
+export const PD_OVERVIEW = {
+  visits: 1240,
+  newCustomers: 286,
+  revenue: 8_640,
+  cost: 1_412,
+  avgSpend: 7.9,
+  /** Visits per month, before joining a campaign and after. */
+  repeatBefore: 1.5,
+  repeatAfter: 2.4,
+  tiles: [
+    { key: 'visits', value: 1240, suffix: '', delta: 12 },
+    { key: 'claims', value: 649, suffix: '', delta: 8 },
+    { key: 'vouchers', value: 168, suffix: '', delta: -4 },
+    { key: 'rewards', value: 212, suffix: '', delta: 6 },
+  ],
+};
+
+/** Index-aligned with `copy.dashboard.deals.rows`. `cost` is euros. */
+export const PD_DEALS: Array<{
+  badge: string;
+  state: 'live' | 'scheduled' | 'paused' | 'expired';
+  seen: number;
+  opened: number;
+  claimed: number;
+  cost: number;
+}> = [
+  { badge: '20%', state: 'live', seen: 8412, opened: 612, claimed: 149, cost: 64 },
+  { badge: '15%', state: 'live', seen: 6134, opened: 548, claimed: 214, cost: 97 },
+  { badge: 'FREE', state: 'live', seen: 4798, opened: 291, claimed: 186, cost: 216 },
+  { badge: '2×', state: 'scheduled', seen: 0, opened: 0, claimed: 0, cost: 0 },
+  { badge: '10%', state: 'paused', seen: 3164, opened: 187, claimed: 61, cost: 33 },
+  { badge: '5%', state: 'expired', seen: 9211, opened: 402, claimed: 38, cost: 17 },
+];
+
+/** Index-aligned with `copy.dashboard.campaigns.rows`. `cost` is euros each. */
+export const PD_CAMPAIGNS: Array<{
+  visits: number;
+  cost: number;
+  earned: number;
+  used: number;
+  live: boolean;
+}> = [
+  { visits: 4, cost: 1.16, earned: 124, used: 95, live: true },
+  { visits: 10, cost: 2.09, earned: 59, used: 45, live: true },
+  { visits: 6, cost: 2.33, earned: 16, used: 12, live: true },
+  { visits: 6, cost: 1.63, earned: 31, used: 8, live: false },
+];
+
+/** The three voucher tiers. `spent` is euros. */
+export const PD_TIERS = [
+  { pct: 5, points: 250, given: 214, used: 168, spent: 121 },
+  { pct: 10, points: 600, given: 96, used: 71, spent: 143 },
+  { pct: 15, points: 1200, given: 31, used: 22, spent: 98 },
+];
+
+/** The month's discount budget, in euros. */
+export const PD_BUDGET = { total: 907, spent: 362, held: 118 };
+
+/**
+ * Who comes in, from the prototype's `CSCEN`.
+ *
+ * Counts rather than percentages for the nationalities, because the smallest
+ * groups are rolled into "other" and a percentage would hide how few that is —
+ * the prototype's own privacy note says groups under ten are never shown alone.
+ */
+export const PD_NATIONS = [244, 135, 71, 58, 45, 89];
+export const PD_LANGS = [42, 24, 19, 11, 4];
+export const PD_COHORTS = [
+  { first: 268, back: 96 },
+  { first: 291, back: 112 },
+  { first: 284, back: 108 },
+  { first: 312, back: 129 },
+];
+
+/** Scan rows. `spent` is euros; `points` is what the scan earned. */
+export const PD_SCANS: Array<{
+  when: string;
+  who: string;
+  first: boolean;
+  spent: number;
+  points: number;
+  code: string;
+  progress: [number, number];
+}> = [
+  { when: '09:14', who: 'OK', first: false, spent: 4.2, points: 12, code: '#7F2A', progress: [3, 4] },
+  { when: '09:02', who: 'MR', first: true, spent: 6.8, points: 20, code: '#B14C', progress: [1, 4] },
+  { when: '08:47', who: 'PS', first: false, spent: 3.1, points: 9, code: '#C903', progress: [8, 10] },
+  { when: '08:31', who: 'EV', first: false, spent: 9.4, points: 28, code: '#2D71', progress: [2, 6] },
+  { when: '08:12', who: 'MD', first: true, spent: 5.5, points: 16, code: '#A48E', progress: [1, 4] },
+  { when: '07:58', who: 'OK', first: false, spent: 4.2, points: 12, code: '#66F1', progress: [4, 4] },
+];
+
+/**
+ * The dashboard's screens, in rail order and index-aligned with
+ * `copy.dashboard.screens`.
+ *
+ * `group` is which heading the rail files it under; `profile` is the only one
+ * with a form behind it, and every other screen shows the empty state at the
+ * matching index of `copy.dashboard.empty` — which is not a placeholder but the
+ * state a venue genuinely starts in. A new partner has run no deals, has no
+ * customers and has had no scans, and the prototype this is rebuilt from says
+ * so screen by screen rather than showing zeroes.
+ */
+export const DASH_SCREENS: Array<{
+  id: string;
+  icon: IconName;
+  group: 'grow' | 'workspace';
+}> = [
+  { id: 'overview', icon: 'bars', group: 'grow' },
+  { id: 'deals', icon: 'ticket', group: 'grow' },
+  { id: 'campaigns', icon: 'trophy', group: 'grow' },
+  { id: 'vouchers', icon: 'gift', group: 'grow' },
+  { id: 'customers', icon: 'assistant', group: 'grow' },
+  { id: 'scans', icon: 'qr', group: 'workspace' },
+  { id: 'profile', icon: 'housing', group: 'workspace' },
+];
 
 /* ─────────────────────────────────────────────────────────────── l-earn ── */
 
@@ -411,7 +948,9 @@ export const RELOCATE_TOPIC_ICONS: IconName[] = [
   'map',
   'card',
   'housing',
-  'halal',
+  /* Healthcare. It borrowed the halal glyph back when that was a shield with a
+     tick on it; now that halal is a crescent, the shield is its own name. */
+  'shield',
   'book',
   'briefcase',
   'leisure',
@@ -420,26 +959,31 @@ export const RELOCATE_TOPIC_ICONS: IconName[] = [
 ];
 
 /**
- * The corridors the rate card offers, as language codes.
+ * The currency pairs the rate card offers, as language codes.
  *
  * Language codes rather than currency codes because the currencies are already
  * defined per language in `i18n/currency.ts`, and every rate here is derived
  * from that one table — the card cannot drift from the prices on the rest of
  * the site. The reader's own currency is filtered out at render: a card
  * offering to convert złoty into złoty is a card nobody asked for.
+ *
+ * Pairs, not corridors: the card converts and nothing else. Paylez does not
+ * send, receive or hold money, so there is no fee, no arrival time and no
+ * provider to compare — which is exactly why it can quote the mid-market rate
+ * with nothing on top of it.
  */
-export const RELOCATE_CORRIDORS = ['uz', 'uk', 'pl', 'ru', 'en'] as const;
+export const RELOCATE_PAIRS = ['uz', 'uk', 'pl', 'ru', 'en'] as const;
 
 /**
  * What the rate card converts.
  *
  * The one amount on the site that is **not** in euros: it is a round hundred of
- * whatever the reader's own currency is. A converter is read as "if I send a
- * hundred, what arrives", and converting 100 EUR into the reader's currency
- * first would put £85 in the send box — a number nobody types, and one that
- * makes the rate underneath harder rather than easier to check.
+ * whatever the reader's own currency is. A converter is read as "if I have a
+ * hundred, what is that worth", and converting 100 EUR into the reader's
+ * currency first would put £85 in the input — a number nobody types, and one
+ * that makes the rate underneath harder rather than easier to check.
  */
-export const RELOCATE_SEND = 100;
+export const RELOCATE_AMOUNT = 100;
 
 /**
  * The countries the app carries local news and guidance for.

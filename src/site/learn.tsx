@@ -4,6 +4,7 @@ import {
   LEARN_GAME_ICONS,
   LEARN_STATS,
   LEARN_STEP_ICONS,
+  LEARN_VOUCHER_EUR,
   STREAK,
 } from './content';
 import { Controller3D } from './controller/Controller3D';
@@ -353,7 +354,7 @@ function LearnFaq() {
                   <div>
                     {/* One answer quotes a voucher value; it is priced in the reader's
                         currency like every other figure on the site. */}
-                    <p>{fill(item.a, { amount: money(25) })}</p>
+                    <p>{fill(item.a, { amount: money(LEARN_VOUCHER_EUR) })}</p>
                   </div>
                 </div>
               </div>

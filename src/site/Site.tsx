@@ -1,9 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { GlobeHero } from '../components/GlobeHero';
 import { PaylezIntro } from '../components/PaylezIntro';
+import { AdminPage } from './admin';
 import { AnalyticsPage } from './analytics';
-import { AssistantButton } from './AssistantButton';
+import { AssistantDock } from './AssistantDock';
+import { AuthProvider } from './auth/AuthProvider';
+import { useAuth, useIsPlayer } from './auth/context';
+import { GamesApp } from './games';
+import { WalletApp } from './wallet';
 import { B2bPage } from './b2b';
+import { BusinessSetupPage } from './business';
+import { DashboardPage } from './dashboard';
 import { Header } from './Header';
 import { useLanguage } from './i18n/context';
 import { LanguageProvider } from './i18n/LanguageProvider';
@@ -11,7 +18,8 @@ import { LearnPage } from './learn';
 import { MarketTape } from './market/MarketTape';
 import { NetworkWeb } from './network/NetworkWeb';
 import { RelocatePage } from './relocate';
-import { useRoute } from './router';
+import { navigate, resolveRoute, useRoute } from './router';
+import { SignInPage } from './signin';
 import { VouchersPage } from './vouchers';
 import { usePalette } from './theme/context';
 import { ThemeProvider } from './theme/ThemeProvider';
@@ -54,8 +62,23 @@ import './site.css';
 function SiteContent() {
   const [introDone, setIntroDone] = useState(false);
   const palette = usePalette();
-  const route = useRoute();
+  const requested = useRoute();
   const [language] = useLanguage();
+  const { account } = useAuth();
+  const isPlayer = useIsPlayer();
+
+  /*
+   * The route the session actually allows. Resolved during render rather than
+   * corrected in an effect, so a page this account may not see is never mounted
+   * for a frame — see `resolveRoute` in `router.ts`.
+   */
+  const route = resolveRoute(requested, account);
+
+  /* The address bar still says otherwise, though, and a refresh would replay
+     the same redirect. Catch it up afterwards, where a navigation is allowed. */
+  useEffect(() => {
+    if (route !== requested) navigate(route);
+  }, [route, requested]);
 
   /*
    * Re-scan on navigation *and* on a language change. Both hooks bind to the
@@ -71,8 +94,42 @@ function SiteContent() {
    * `i18n/currency.ts`), and it writes the digits into `textContent`
    * imperatively, where React cannot see that they went stale.
    */
-  useReveal(`${route}:${language}`);
-  useCountUp(`${route}:${language}`);
+  /*
+   * The account is part of the key for the same reason the language is: signing
+   * in or out swaps whole subtrees — the header's chip, the nav minus two items,
+   * an entire dashboard — and elements mounted after the observer was built
+   * carry no `data-shown`, so they would stay at `opacity: 0` forever.
+   */
+  const scanKey = `${route}:${language}:${account?.type ?? 'anon'}`;
+  useReveal(scanKey);
+  useCountUp(scanKey);
+
+  /*
+   * The two app frames, not pages: no marketing header, no footer, no backdrop.
+   * Returning early keeps them out of the ternary chains below, which are about
+   * the site.
+   *
+   * The console has no assistant dock, and that is the one difference between
+   * the two. The assistant answers out of *your* points, vouchers and city; an
+   * admin has none of those, and a panel that opened onto somebody else's would
+   * be the worst thing on this screen.
+   */
+  if (route === 'dashboard') {
+    return (
+      <div className="site site-app" id="top" data-intro="done">
+        <DashboardPage />
+        <AssistantDock />
+      </div>
+    );
+  }
+
+  if (route === 'admin') {
+    return (
+      <div className="site site-app" id="top" data-intro="done">
+        <AdminPage />
+      </div>
+    );
+  }
 
   return (
     <div className="site" id="top" data-intro={introDone ? 'done' : 'running'}>
@@ -81,6 +138,7 @@ function SiteContent() {
         primaryColor={palette.primary}
         backgroundColor={palette.background}
         onPrimaryColor={palette.onPrimary}
+        markImage={palette.logo}
       />
 
       {/*
@@ -103,7 +161,22 @@ function SiteContent() {
         <div className="site__grid" aria-hidden />
       ) : route === 'vouchers' ? (
         <div className="site__stubs" aria-hidden />
-      ) : route === 'b2b' ? (
+      ) : route === 'relocate' ? (
+        /*
+         * Rings, not the globe.
+         *
+         * The globe was a border being crossed, which was right when this page
+         * was about sending money over one. It is a guide to the place you have
+         * already arrived in and a converter — so the picture is distance from
+         * where you are standing: contour rings spreading out from a point, the
+         * way a map draws "near you". CSS, not a canvas, which also means
+         * Relocate no longer spends the document's one WebGL context.
+         */
+        <div className="site__rings" aria-hidden />
+      ) : route === 'b2b' || route === 'business-setup' ? (
+        /* Business setup takes the market tape, which is already what B2B
+           means: repeat custom compounding into revenue. Describing your venue
+           is the first move in that, and reusing the canvas costs nothing. */
         <MarketTape
           className="site__web"
           primaryColor={palette.primary}
@@ -125,31 +198,57 @@ function SiteContent() {
           offsetX={0.18}
           heightCoverage={0.62}
           routeCount={16}
-          scrollTransition
           /*
-           * Each page anchors the transition to its own *third* section — the
+           * No country label. The flag-and-name card that popped in beside the
+           * globe is off: it was competing with the hero copy it sat next to,
+           * and the globe reads as "a border being crossed" without narrating
+           * which border. Off here rather than deleted — the detection loop and
+           * the card are intact behind this one prop, and turning it back on is
+           * changing `false` to `true`. See `GlobeHero/README.md`.
+           */
+          showLabels={false}
+          /* Sign-in is one screenful with nothing below it, so there is no
+             scroll for the globe to travel through. It stays the hero pose. */
+          scrollTransition={route !== 'signin'}
+          /*
+           * The landing page anchors the transition to its *third* section — the
            * point by which the globe has finished being the hero's right-hand
            * column and has settled into the arc the page rides on. The second
-           * section is too early on both: the globe is still large when the
-           * content arrives, and it ends up behind a card rather than under a
-           * carousel. Renaming either section changes when it settles.
+           * section is too early: the globe is still large when the content
+           * arrives, and it ends up behind a card rather than under a carousel.
+           * Renaming that section changes when it settles.
            */
-          scrollAnchorId={route === 'relocate' ? 'relocate-guide' : 'guide'}
+          scrollAnchorId="guide"
         />
       )}
 
       <Header route={route} />
 
-      {route === 'analytics' ? (
+      {route === 'signin' ? (
+        <SignInPage />
+      ) : route === 'business-setup' ? (
+        <BusinessSetupPage />
+      ) : route === 'analytics' ? (
         <AnalyticsPage />
       ) : route === 'b2b' ? (
         <B2bPage />
       ) : route === 'vouchers' ? (
-        <VouchersPage />
+        /* Signed in as a player, these two stop being pages *about* the product
+           and become the product. A business owner keeps the marketing version —
+           those pages describe their customers' experience, not their own. */
+        isPlayer ? (
+          <WalletApp />
+        ) : (
+          <VouchersPage />
+        )
       ) : route === 'relocate' ? (
         <RelocatePage />
       ) : route === 'learn' ? (
-        <LearnPage />
+        isPlayer ? (
+          <GamesApp />
+        ) : (
+          <LearnPage />
+        )
       ) : (
         <main>
           <Hero />
@@ -162,9 +261,11 @@ function SiteContent() {
         </main>
       )}
 
-      <SiteFooter />
+      {/* Sign-in is one card on an otherwise empty screen; a full sitemap under
+          it turns the front door into a footer with a form on top. */}
+      {route !== 'signin' && <SiteFooter />}
 
-      <AssistantButton />
+      <AssistantDock />
     </div>
   );
 }
@@ -173,7 +274,11 @@ export function Site() {
   return (
     <ThemeProvider>
       <LanguageProvider>
-        <SiteContent />
+        {/* Innermost of the three: the session decides what renders, and both
+            the theme and the language have to be readable while it does. */}
+        <AuthProvider>
+          <SiteContent />
+        </AuthProvider>
       </LanguageProvider>
     </ThemeProvider>
   );

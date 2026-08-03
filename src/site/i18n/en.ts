@@ -23,6 +23,657 @@ export const en = {
     toDark: 'Switch to dark theme',
   },
 
+  /* ─────────────────────────────────────────────────────────────── auth ── */
+
+  auth: {
+    /* Two ways in on one route: sign in if you exist, sign up if you do not. */
+    eyebrow: 'Welcome back',
+    title: 'Sign in to paylez.',
+    lede: 'Your points, your vouchers and your guide, on whichever device you picked up.',
+    email: 'Email address',
+    emailPlaceholder: 'you@email.com',
+    password: 'Password',
+    passwordPlaceholder: 'Your password',
+    submit: 'Sign in',
+    /* The credentials are in the bundle either way — see `auth/users.ts`. One
+       line per demo account; the role is the same word the header chip uses. */
+    demoTitle: 'Demo accounts',
+    demoLine: '{role} — {email} · {password}',
+    errors: {
+      email: 'We do not have an account with that email address.',
+      password: 'That password does not match.',
+      empty: 'Enter your email and password.',
+    },
+
+    /* Sign-up, which is also where the individual-or-business question is
+       asked — before the account exists rather than after. */
+    signUpEyebrow: 'New here',
+    signUpTitle: 'Create your paylez account.',
+    signUpLede:
+      'Two fields and one choice. What you pick decides what the site shows you from the next screen on.',
+    name: 'Full name',
+    namePlaceholder: 'First and last name',
+    newPasswordPlaceholder: 'At least {n} characters',
+    typeQuestion: 'Which are you?',
+    typeNote: 'You can only pick once for now, so pick the one that fits.',
+    signUpSubmit: 'Create account',
+    signUpErrors: {
+      name: 'Tell us your name.',
+      email: 'That does not look like an email address.',
+      taken: 'There is already an account with that email address. Sign in instead.',
+      password: 'Use at least {n} characters.',
+      type: 'Choose whether you are here as a person or as a business.',
+    },
+    noAccount: 'No account yet?',
+    toSignUp: 'Create one',
+    haveAccount: 'Already have an account?',
+    toSignIn: 'Sign in',
+
+    typeEyebrow: 'One more thing',
+    typeTitle: 'How will you use paylez, {name}?',
+    typeLede: 'This decides what you see. You can only pick once for now, so pick the one that fits.',
+    types: [
+      {
+        name: 'Individual',
+        blurb: 'Play, collect points, spend them on vouchers, and read the guide.',
+      },
+      {
+        name: 'Business owner',
+        blurb: 'List your venue, put an offer in front of players, and see what it did.',
+      },
+    ],
+    typeSubmit: 'Continue',
+    typeHint: 'Choose one to continue.',
+
+    signOut: 'Sign out',
+    accountMenu: 'Your account',
+    dashboard: 'Dashboard',
+    roles: { individual: 'User', business: 'Business', admin: 'Admin' },
+  },
+
+  /* ────────────────────────────────────────────────────────────── console ── */
+
+  admin: {
+    tag: 'Console',
+    title: 'The whole platform.',
+    lede: 'Every venue, every offer and every account — and the analytics behind each one.',
+    back: 'Back to paylez',
+    search: 'Search a venue, a service ID, an offer or a person…',
+    noMatch: 'Nothing matches that search.',
+    /* Index-aligned with the six tiles in `admin.tsx`. */
+    kpis: [
+      'Total services',
+      'Active services',
+      'Total deals',
+      'Active deals',
+      'Accounts',
+      'Players',
+    ],
+    /* Index-aligned with `ADMIN_TABS`. */
+    tabs: ['Services', 'Offers', 'People'],
+
+    services: {
+      title: 'Business services',
+      lede: 'Every venue listed on paylez. Open one to read its analytics.',
+      serviceId: 'Service ID',
+      copy: 'Copy',
+      copied: 'Copied',
+      analytics: 'Analytics',
+      active: 'Active',
+      paused: 'Paused',
+      vouchers: 'Vouchers',
+      /* The one venue on this list that a real owner filled in on this device. */
+      live: 'Live listing',
+    },
+
+    deals: {
+      title: 'Offers and gift cards',
+      lede: 'What the app is showing across the country this month.',
+      kinds: { gift: 'Gift card', deal: 'Hot deal' },
+      until: 'Until {date}',
+    },
+
+    people: {
+      title: 'People',
+      lede: 'The three seeded accounts, and everyone who has signed up since.',
+      columns: ['Name', 'Email', 'Role', 'Joined', 'State'],
+    },
+
+    state: {
+      player: '{points} pts · {streak}-day streak',
+      listing: '{percent}% complete',
+      live: 'Live',
+      noListing: 'Setup not started',
+      undecided: 'Not chosen',
+      none: '—',
+    },
+
+    note: 'This directory lives in this browser. There is no server behind it yet, so the console reads rather than edits — see auth/users.ts.',
+
+    /* ── one venue, five tabs ── */
+
+    analytics: {
+      back: 'All services',
+      /* The three figures beside the venue name. */
+      totals: ['Total engagement', 'Total vouchers', 'Total scans'],
+      /* Index-aligned with `ADMIN_VIEW_TABS`. */
+      tabs: ['Dashboard', 'Hot deals', 'Loyalty scans', 'Vouchers', 'Insights'],
+
+      ranges: ['All time', 'Last 7 days', 'Last 30 days', 'Last 90 days'],
+      rangesLabel: 'Time range',
+      search: 'Search user, code, receipt…',
+      records: '{n} records',
+      export: 'Export CSV',
+      noRows: 'Nothing matches those filters.',
+
+      states: { live: 'Active', paused: 'Paused' },
+      status: { used: 'Used', active: 'Unused' },
+
+      columns: {
+        deals: ['Date', 'Deal', 'User', 'Code', 'Points', 'Discount', 'Status', 'Cheque'],
+        scans: ['Date', 'User', 'Points', 'Purchase', 'Receipt', 'Where', 'To next reward'],
+        vouchers: ['Date', 'Code', 'Type', 'User', 'Reward', 'Points', 'Status', 'Cheque'],
+      },
+
+      /* The nine Dashboard cards, index-aligned with `ADMIN_CARD_ICONS`. */
+      cards: [
+        { label: 'Google Maps clicks', note: 'Taps on the directions button' },
+        { label: 'Website clicks', note: 'Visits sent from the listing' },
+        { label: 'Phone clicks', note: 'Call attempts' },
+        { label: 'Instagram clicks', note: 'Profile visits from the app' },
+        { label: 'Total vouchers', note: '{used} used · {active} active' },
+        { label: 'Loyalty vouchers', note: '{used} used · {active} active' },
+        { label: 'Total discount value', note: 'Of the cheques it was used on' },
+        { label: 'Total engagement', note: 'Every interaction, added up' },
+        { label: 'Total scans', note: 'QR scans at the counter' },
+      ],
+
+      trend: {
+        title: 'Engagement trend',
+        lede: 'Last 30 days',
+        empty: 'No trend data yet.',
+      },
+
+      hot: {
+        title: 'Hot deals',
+        lede: 'Time-bound offers this venue is running.',
+        empty: 'This venue has not run an offer yet.',
+        counts: ['Active', 'Redemptions', 'Paused'],
+        points: '{n} pts',
+        expires: 'Expires {date}',
+        redemptions: '{n} redemptions',
+        tableTitle: 'Hot deal redemptions',
+      },
+
+      loyalty: {
+        settingsTitle: 'Loyalty scan settings',
+        settingsLede: 'What a scan at the counter is worth, and how often it counts.',
+        perVisit: 'points per visit',
+        cooldown: 'between scans',
+        hours: '{n}h',
+        campaignsTitle: 'Loyalty voucher campaigns',
+        campaignsLede: 'Automatic rewards for customers who keep coming back.',
+        campaignsEmpty: 'No loyalty campaigns yet.',
+        every: 'Every {n} visits',
+        reward: '{n}% off the next one',
+        tiles: [
+          { label: 'Total scans', note: '{n} points awarded' },
+          { label: 'Scan sales', note: 'from {n} scans' },
+          { label: 'Average purchase', note: 'per scanned visit' },
+        ],
+        tableTitle: 'Loyalty scans',
+        trendTitle: 'Daily scans',
+        trendLede: 'Last 30 days',
+        trendEmpty: 'No scans yet.',
+      },
+
+      vouchers: {
+        campaignTitle: 'Discount voucher campaign',
+        campaignKind: 'Budget-based · {n} issued',
+        usage: 'Budget usage',
+        used: '{used} of {total}',
+        left: '{amount} left',
+        points: 'Points',
+        issued: 'Issued',
+        cap: 'Monthly cap',
+        tiles: [
+          { label: 'Total sales', note: 'from {n} redemptions' },
+          { label: 'Average basket', note: 'per voucher used' },
+        ],
+        tableTitle: 'Vouchers',
+        types: { discount: 'Discount', loyalty: 'Loyalty' },
+        dailyTitle: 'Daily sales trend',
+        dailyLede: 'Last 30 days, cheque totals',
+        dailyEmpty: 'No sales yet — cheque totals appear here once vouchers are used.',
+        monthlyTitle: 'Sales generated',
+        monthlyLede: 'Monthly cheque value from redemptions',
+      },
+
+      insights: {
+        citiesTitle: 'Top cities',
+        citiesLede: 'Where the customers come from',
+        citiesEmpty: 'No city data yet.',
+        langsTitle: 'Customer languages',
+        langsLede: 'What they read the listing in',
+        langsEmpty: 'No language data yet.',
+        compareTitle: 'Against the country average',
+        compareLede: 'How this venue compares to similar services',
+        mine: 'This venue',
+        avg: 'Country average',
+        axis: ['Maps', 'Website', 'Phone'],
+      },
+    },
+  },
+
+  /* ────────────────────────────────────────────────────────── assistant ── */
+
+  assistantPanel: {
+    title: 'AI Assistant',
+    close: 'Close the assistant',
+
+    /* Signed out. */
+    lockedTitle: 'Sign in to ask',
+    lockedBody:
+      'The assistant answers from your own points, vouchers and city. That needs an account.',
+    lockedAction: 'Sign in',
+
+    /* Signed in — the greeting takes the first name only. */
+    greeting: 'Hello, {name}',
+    lede: 'Ask about anything — points, vouchers, paperwork, or where to find something near you.',
+    placeholder: 'Ask anything…',
+    send: 'Send',
+    suggestions: [
+      'How many points do I need for a voucher?',
+      'How do I register my address?',
+      'What is open near me right now?',
+    ],
+    you: 'You',
+    /* Honest rather than a canned answer that pretends to be one. See the
+       note in `AssistantDock.tsx`. */
+    stubReply:
+      'The assistant is not connected to a model in this build, so I cannot answer that yet. Everything around this message — the thread, the composer, your account — is real and working.',
+    stubTag: 'Not connected',
+  },
+
+  /* ────────────────────────────────────────────────────────────── wallet ── */
+
+  wallet: {
+    title: 'Your vouchers',
+    lede: 'Everything you have earned, and everything you have spent.',
+    balance: 'Balance',
+    points: 'pts',
+    /* `{n}` is how many points short the cheapest voucher is. */
+    shortBy: '{n} points from your next voucher',
+    canRedeem: 'Enough for a voucher',
+
+    tabs: ['Active', 'Used'],
+    counts: '{active} active · {used} used',
+
+    valid: 'Valid until {date}',
+    usedOn: 'Used {date}',
+    cost: '{n} pts',
+    show: 'Show QR code',
+    shown: 'Used — the code has been generated',
+
+    emptyActive: 'Nothing in the wallet yet. Play a round and spend the points here.',
+    emptyUsed: 'Nothing spent yet.',
+    play: 'Play a round',
+
+    catalogue: 'What you can get',
+    catalogueLede: 'Refreshed monthly. Each card has a limited allocation.',
+    redeem: 'Redeem',
+    short: 'Not enough points',
+    soldOut: 'Back on the 1st',
+    left: '{left} of {of} left',
+  },
+
+  /* ────────────────────────────────────────────────────────────── games ── */
+
+  games: {
+    title: 'Brain Games',
+    lede: 'Challenge yourself, earn points and convert them into discount vouchers.',
+
+    score: 'Score',
+    streak: 'Streak',
+    lives: 'Lives',
+    answered: 'Answered',
+    correctLabel: 'Correct',
+
+    redeemTitle: 'Turn points into rewards',
+    redeemAction: 'Redeem now',
+
+    /* Index-aligned with `GAMES` in `content.ts`. */
+    names: ['Brain Games', 'Guess the Flag', 'Country & Capital', 'Poland Quiz'],
+    /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
+       game's own row, so a rules line never disagrees with the game it labels. */
+    rule: '{questions} questions · {seconds} sec each',
+    reward: '{mistakes} mistake allowed · +{points} per correct answer',
+    start: 'Start game',
+    noLives: 'Out of lives — come back tomorrow',
+
+    /* In play. */
+    question: 'Question {n} of {total}',
+    whichCountry: 'Which country is this?',
+    whichCapital: 'What is the capital of {country}?',
+    quit: 'Give up',
+    timeUp: 'Time',
+
+    /* The result card. */
+    wonTitle: 'Round won',
+    lostTitle: 'Round over',
+    resultScore: '{correct} of {total} correct',
+    resultPoints: '+{points} points',
+    resultNone: 'No points this round.',
+    resultStreak: 'Streak: {streak} days',
+    again: 'Play again',
+    backToGames: 'Back to the games',
+
+    boardTitle: 'Leaderboard',
+    boardTabs: ['Correct answers', 'Points earned'],
+    boardTop: 'Top 10',
+    boardStreak: '{n} day streak',
+    boardCorrect: 'correct',
+    boardPoints: 'points',
+    boardEmpty: 'No players yet. Be the first!',
+    boardShowAll: 'Show all top 10',
+    boardShowLess: 'Show fewer',
+
+    /* Index-aligned with `GAME_COUNTRIES`. */
+    countries: [
+      'Poland', 'Uzbekistan', 'Ukraine', 'Germany', 'France',
+      'Italy', 'Spain', 'Netherlands', 'Turkey', 'United Kingdom',
+    ],
+    capitals: [
+      'Warsaw', 'Tashkent', 'Kyiv', 'Berlin', 'Paris',
+      'Rome', 'Madrid', 'Amsterdam', 'Ankara', 'London',
+    ],
+
+    /*
+     * The two written rounds. `a` is the index of the right answer inside
+     * `options`, so a translator must keep the options in the same order — which
+     * is why the answer is never the first one everywhere.
+     */
+    brain: [
+      { q: 'Which of these is a prime number?', options: ['91', '87', '83', '99'], a: 2 },
+      { q: 'How many continents are there?', options: ['5', '6', '7', '8'], a: 2 },
+      { q: 'What is the largest ocean?', options: ['Atlantic', 'Indian', 'Arctic', 'Pacific'], a: 3 },
+      { q: 'Which planet is closest to the sun?', options: ['Venus', 'Mercury', 'Mars', 'Earth'], a: 1 },
+      { q: 'How many minutes are in a full day?', options: ['1440', '1240', '960', '1800'], a: 0 },
+    ],
+    poland: [
+      { q: 'What is the currency of Poland?', options: ['Euro', 'Złoty', 'Koruna', 'Forint'], a: 1 },
+      { q: 'How long can you stay on a Schengen visa in 180 days?', options: ['30 days', '60 days', '90 days', '120 days'], a: 2 },
+      { q: 'What is a PESEL number for?', options: ['A bank account', 'Identifying a resident', 'A driving licence', 'A tenancy'], a: 1 },
+      { q: 'Which office registers your address in Poland?', options: ['Urząd Gminy', 'Poczta Polska', 'ZUS', 'NFZ'], a: 0 },
+      { q: 'What does NFZ provide?', options: ['Pensions', 'Public healthcare', 'Tax returns', 'Work permits'], a: 1 },
+    ],
+  },
+
+  /* ─────────────────────────────────────────────────────────── business ── */
+
+  business: {
+    setupEyebrow: 'Set up your venue',
+    setupTitle: 'Tell us about your business.',
+    setupLede:
+      'Everything here goes straight into your listing in the Paylez app. Fields marked with a star are needed before it can go live.',
+
+    screenTitle: 'Business profile',
+    screenLede: 'Your listing in the Paylez app, translated for every customer.',
+
+    sections: {
+      basic: 'Basic information',
+      where: 'Where you are',
+      reach: 'How customers reach you',
+      service: 'Service and hours',
+    },
+
+    fields: {
+      name: 'Business name',
+      namePlaceholder: 'The name above your door',
+      category: 'Category',
+      subcategory: 'Subcategory',
+      description: 'Description',
+      descriptionPlaceholder: 'Two or three lines on what you do and who comes to you.',
+      descriptionHelp: 'Paylez translates this for customers reading in another language.',
+      price: 'Typical price',
+      pricePlaceholder: '25–45 zł',
+      priceHelp: 'What one customer usually spends.',
+      logo: 'Logo',
+      logoHelp: 'Square, at least 512 px.',
+      logoChoose: 'Choose a file',
+
+      country: 'Country',
+      city: 'City',
+      cityPlaceholder: 'Kraków',
+      street: 'Street address',
+      streetPlaceholder: 'Street and building number',
+      maps: 'Google Maps link',
+      mapsHelp: 'The tap-to-navigate button in the app uses this.',
+
+      phone: 'Phone',
+      phonePlaceholder: '+48 123 456 789',
+      email: 'Email',
+      emailPlaceholder: 'contact@business.com',
+      emailError: 'That does not look like an email address.',
+      website: 'Website',
+      instagram: 'Instagram',
+      appStore: 'App Store link',
+      googlePlay: 'Google Play link',
+      appLinksShow: 'Add App Store and Google Play links',
+      appLinksHide: 'Hide app links',
+
+      spoken: 'Languages your staff speak',
+      hours: 'Opening hours',
+    },
+
+    /* Index-aligned with `BUSINESS_CATEGORIES` in `content.ts`. */
+    categories: [
+      'Café',
+      'Restaurant',
+      'Barbershop',
+      'Beauty salon',
+      'Dental clinic',
+      'Language school',
+      'Fitness',
+    ],
+    /* One array per category, in the same order. */
+    subcategories: [
+      ['Specialty coffee', 'Bakery café', 'Brunch spot', 'Tea house'],
+      ['Polish', 'Georgian', 'Turkish', 'Pizza', 'Sushi'],
+      ['Classic barber', 'Beard and shave', 'Kids cuts'],
+      ['Nails', 'Hair', 'Brows and lashes', 'Massage'],
+      ['General dentistry', 'Orthodontics', 'Implants'],
+      ['Polish for foreigners', 'English', 'Exam prep'],
+      ['Gym', 'Yoga studio', 'Boxing club'],
+    ],
+    countries: ['Poland', 'Ukraine', 'Georgia', 'Turkey', 'Uzbekistan', 'Azerbaijan'],
+    spokenLanguages: ['Polish', 'English', 'Ukrainian', 'Russian', 'Turkish', 'Uzbek'],
+    hoursDays: ['Monday to Friday', 'Saturday', 'Sunday'],
+
+    ready: {
+      title: 'Ready to go live',
+      /* `{percent}` is a whole number; the sentence carries the sign. */
+      progress: '{percent}% complete',
+      stillNeeded: 'Still needed:',
+      done: 'Everything required is filled in. Your listing is live in the app.',
+    },
+
+    preview: {
+      title: 'How it looks in the app',
+      cover: 'Cover photo',
+      name: 'Your business name',
+      address: 'Add your address',
+      price: 'Price on request',
+      description: 'Write a short description so customers know what you do.',
+      reviews: '312 reviews',
+      note: 'Your rating and review count come from customers in the app. You cannot edit them here.',
+    },
+
+    save: 'Save and continue',
+    saved: 'Saved.',
+    saveProfile: 'Save changes',
+  },
+
+  /* ────────────────────────────────────────────────────────── dashboard ── */
+
+  dashboard: {
+    tag: 'Partner',
+    groups: { grow: 'Grow', workspace: 'Workspace' },
+    /* Index-aligned with `DASH_SCREENS` in `content.ts`. */
+    screens: [
+      { name: 'Overview', lede: 'What Paylez did for you, and what it cost.' },
+      { name: 'Hot deals', lede: 'Time-bound offers shown in the Paylez app feed.' },
+      { name: 'Loyalty campaigns', lede: 'Recurring rewards your regulars earn by coming back.' },
+      { name: 'Vouchers', lede: 'How points turn into discounts, and what that costs you.' },
+      { name: 'Customers', lede: 'Who comes in, when they come, and whether they come back.' },
+      { name: 'Scan activity', lede: 'Every QR scan at your counter, newest first.' },
+      { name: 'Business profile', lede: 'Your listing in the Paylez app, translated for every customer.' },
+    ],
+    /* Every screen but the profile has nothing in it until a venue starts
+       trading, so each says what would fill it and what to do about it. */
+    empty: [
+      {
+        title: 'Nothing is running in your venue yet',
+        body: 'Customers only see you in the Paylez app once something is live. A hot deal is the quickest start — an open offer with a start and end date, running in the hours you choose.',
+        action: 'Create your first hot deal',
+      },
+      {
+        title: 'Run an offer anyone can use',
+        body: 'A hot deal appears in the app feed for the audience and hours you choose, and stops on the date you set. Nothing is charged until someone claims one.',
+        action: 'Create hot deal',
+      },
+      {
+        title: 'Reward your regulars for coming back',
+        body: 'A campaign counts visits and hands out a reward when someone reaches the number you set. A good first one for a café: four visits, a free filter coffee.',
+        action: 'Set up a campaign',
+      },
+      {
+        title: 'Set a discount budget to start giving vouchers',
+        body: 'A discount budget is the most you will give away in one month. Vouchers stop when it runs out, so you can never spend more than you planned.',
+        action: 'Set a budget',
+      },
+      {
+        title: 'Put your QR code on the counter',
+        body: 'Nothing on this page can fill in until customers start scanning. Print your code, stand it next to the till, and ask staff to point at it with the bill. The first numbers show up the same day.',
+        action: 'Get your QR code',
+      },
+      {
+        title: 'No scans yet',
+        body: 'Every scan at your counter lands here within seconds — who came in, what they spent, and how close they are to a reward.',
+        action: 'Get your QR code',
+      },
+    ],
+    /* One honest line rather than a fake chart behind each button. */
+    notWired: 'Not wired up in this build.',
+
+    /*
+     * The venue's month, in words. Every figure comes from `PD_*` in
+     * `content.ts`, which is the prototype's own seed data — so the sentences
+     * here can be specific without inventing anything.
+     */
+    overview: {
+      kicker: 'What Paylez did for you',
+      /* Both holes are figures: a count and money in the reader's currency. */
+      headline:
+        'We brought {customers} new customers through your door, and they spent about {revenue} with you.',
+      estimate:
+        'An estimate. Every visit through Paylez multiplied by an average spend of {avg}, taken from your own sales.',
+      tiles: ['Visits', 'Deals claimed', 'Vouchers used', 'Rewards used'],
+      since: 'vs. previous 30 days',
+      costTitle: 'What Paylez cost you',
+      costTotal: 'Total this month',
+      roi: '{n}× back for every 1 you spend.',
+      proofTitle: 'The one thing we can prove',
+      proof:
+        'Customers in your loyalty campaigns visit {after} times a month, up from {before} before they joined.',
+      proofNote: 'Counted from your own QR scans, not estimated. No till integration needed.',
+      before: 'Before',
+      now: 'Now',
+    },
+
+    deals: {
+      columns: ['Deal', 'State', 'Seen', 'Opened', 'Claimed', 'Cost'],
+      rows: [
+        'Morning flat white',
+        'Student Tuesdays',
+        'Free filter with any bake',
+        'Rainy day double points',
+        'Neighbour discount',
+        'Lunch bundle',
+      ],
+      states: {
+        live: 'Live',
+        scheduled: 'Scheduled',
+        paused: 'Paused',
+        expired: 'Expired',
+      },
+      insight:
+        'Your free-item deals get 2.4× more claims than your percentage discounts. The 5% lunch bundle underperformed — small discounts rarely move people.',
+      count: '{n} deals',
+    },
+
+    campaigns: {
+      rows: ['Regulars’ reward', 'Coffee streak', 'Lunch club', 'Winter comeback'],
+      rule: '{visits} visits → a reward',
+      each: '{amount} each',
+      earned: 'Earned',
+      used: 'Used',
+      unused: '{n} earned but never used',
+      gapTitle: 'The gap is the number to watch',
+      gap: 'A reward earned but never used means a customer qualified and did not come back. Right now “{name}” has the widest gap: {n} rewards sitting unused.',
+    },
+
+    vouchers: {
+      tiersTitle: 'Who reaches each tier',
+      tiersLede:
+        'Points decide who gets there, so raising a number sends less of the budget that way.',
+      columns: ['Tier', 'Points needed', 'Given out', 'Used', 'Cost so far'],
+      tier: '{n}% off',
+      budgetTitle: 'Discount budget',
+      spent: 'Spent',
+      held: 'Set aside',
+      free: 'Available',
+      heldNote:
+        'Money held for rewards customers have earned but have not used yet. If they expire, it comes back.',
+    },
+
+    customers: {
+      fromTitle: 'Where they are from',
+      nations: ['Ukrainian', 'Polish', 'Belarusian', 'Georgian', 'Turkish', 'Other'],
+      readTitle: 'What they read the app in',
+      langs: ['Russian', 'Ukrainian', 'Polish', 'English', 'Other'],
+      privacy:
+        'Everything here is counted across groups. Paylez never shows you a single person, and groups smaller than ten are rolled into “other”.',
+      backTitle: 'Do they come back',
+      months: ['April', 'May', 'June', 'July'],
+      cohort: '{back} of {first} came back within 30 days',
+      finding:
+        '38% of your customers are Ukrainian and 42% read the app in Russian. None of your live deals is aimed at Russian speakers.',
+    },
+
+    scans: {
+      columns: ['When', 'Customer', 'Spent', 'Points', 'Receipt', 'Progress'],
+      first: 'First visit',
+      again: 'Came back',
+      today: 'Today',
+      count: 'Showing {n} of 48 scans',
+    },
+    collapse: 'Collapse menu',
+    expand: 'Expand menu',
+    backToSite: 'Back to paylez',
+
+    plan: {
+      name: 'Growth plan',
+      state: 'Active',
+      caption: 'Loyalty and voucher budgets this month. Hot deals are not in here.',
+      /* Both halves are money in the reader's currency. */
+      usage: '{used} of {total}',
+    },
+
+    range: 'Last 30 days',
+    notifications: 'Notifications',
+  },
+
   hero: {
     lines: ['Play & Earn.', 'Exclusive deals.'],
     lede: 'Discover, play and get rewarded.',
@@ -72,7 +723,7 @@ export const en = {
       },
       {
         title: 'AI Assistant',
-        body: 'Your digital companion for the move abroad — ask it anything, any time.',
+        body: 'Your digital companion — ask it anything, any time.',
       },
     ],
   },
@@ -80,7 +731,7 @@ export const en = {
   value: {
     eyebrow: 'Play & Earn',
     title: 'Your points are real money.',
-    lede: "No gimmicks, no expiry traps. Play to earn points, then cash them in for gift cards and discounts you'll actually use.",
+    lede: "No gimmicks. Play to earn points, then cash them in for gift cards and discounts you'll actually use.",
     card: {
       merchant: 'Zalando Gift Card',
       // `{amount}` is filled at render in the reader's currency — the language
@@ -152,7 +803,7 @@ export const en = {
     hero: {
       eyebrow: 'L-Earn',
       lines: ['Learn something new.', 'Earn something real.'],
-      lede: 'A few quick questions a day. Points that turn into vouchers at shops you already use. No subscription, no catch.',
+      lede: 'A few quick questions a day. Points that turn into vouchers at shops you already use.',
       primary: 'Start playing',
       secondary: 'See the games',
       stats: ['Per game win', 'Streak bonus', 'Buys a voucher'],
@@ -208,7 +859,7 @@ export const en = {
     streak: {
       eyebrow: 'Streaks',
       title: 'The streak is where the points are.',
-      lede: 'One round a day keeps it alive. Miss a day and it goes back to one — that is the whole rule.',
+      lede: 'One round every 24 hours keeps it alive. Miss that window and the streak — and the points you built with it — go back to zero. That is the whole rule.',
       card: { label: 'Current streak', unit: 'days', reward: '+250 pts on day seven' },
       benefits: [
         {
@@ -229,7 +880,7 @@ export const en = {
     board: {
       eyebrow: 'Paylez Champions',
       title: 'The monthly board.',
-      lede: 'Everyone starts at zero on the first. The top three share the month’s prize pool; everyone else simply keeps their points.',
+      lede: 'Everyone starts at zero on the first. The top three share the month’s prize pool; everyone else starts the next one on the same footing.',
       columns: { rank: '#', player: 'Player', points: 'Points' },
       note: 'Sample board — yours resets on the 1st.',
     },
@@ -240,19 +891,15 @@ export const en = {
       items: [
         {
           q: 'Do points expire?',
-          a: 'No. They stay in your balance until you spend them. There is no expiry date and no monthly reset on the points themselves — only the leaderboard starts over.',
+          a: 'Yes. Play at least one round every 24 hours to keep them — miss that window and your points and your streak both reset to zero.',
         },
         {
           q: 'How many rounds can I play a day?',
-          a: 'Three scoring rounds, one per game. You can keep playing after that for practice; it just will not add points.',
+          a: 'As many as your lives allow. Every round costs a life and lives come back over time, so there is no daily cap — only however many you have left.',
         },
         {
           q: 'What is a voucher actually worth?',
-          a: '500 points is a {amount} gift card at partner stores like Zalando, Douglas and Media Expert. Smaller discounts start at 100 points.',
-        },
-        {
-          q: 'Is it free?',
-          a: 'Yes. No subscription, no entry fee, and nothing to buy before you can play.',
+          a: 'It depends on the type of voucher and on what the partner business decides. A gift card paylez provides itself — for Zalando or Zara, say — costs 100 game points and is worth {amount}.',
         },
         {
           q: 'Which languages are the questions in?',
@@ -680,7 +1327,7 @@ export const en = {
       primary: 'Start earning',
       secondary: 'See what is available',
       stats: ['Partner brands', 'Cheapest voucher', 'Cost to redeem'],
-      trust: 'No subscription · No card details · Points never expire',
+      trust: 'No card details · Free to start · Available across Poland',
     },
 
     wallet: {
@@ -745,8 +1392,8 @@ export const en = {
           body: 'The voucher moves to Used the moment the code exists, whether or not anyone scans it. Have the shop in front of you first.',
         },
         {
-          title: 'Points keep, vouchers expire',
-          body: 'Your balance has no expiry date and no monthly reset. An individual voucher does — the date is on the card before you spend anything.',
+          title: 'Points reset if you stop playing',
+          body: 'Play at least one round every 24 hours and your points and your streak carry on. Miss that window and both go back to zero. Vouchers you have already claimed carry their own expiry date, printed on the card before you spend anything.',
         },
       ],
     },
@@ -757,7 +1404,7 @@ export const en = {
       items: [
         {
           q: 'What does a voucher cost me?',
-          a: 'Points, and nothing else. There is no subscription, no delivery fee and no card on file — you never enter payment details to redeem one.',
+          a: 'Points, and nothing else. There is no delivery fee and no card on file — you never enter payment details to redeem one.',
         },
         {
           q: 'Can I combine a voucher with a shop’s own sale?',
@@ -790,7 +1437,7 @@ export const en = {
     hero: {
       eyebrow: 'The Living Guide',
       lines: ['New country.', 'A hundred questions.', 'One guide.'],
-      lede: 'Where to open an account, how the rent deposit works, which clinic takes your insurance, what the transfer home actually costs. Nine subjects, fourteen countries, written by people who have done it.',
+      lede: 'Where to open an account, how the rent deposit works, which clinic takes your insurance, what your money is actually worth back home. Nine subjects, fourteen countries, written by people who have done it.',
       primary: 'Open the guide',
       secondary: 'Check a rate',
       stats: ['Subjects covered', 'Countries live', 'Markup on our rate'],
@@ -798,27 +1445,29 @@ export const en = {
     },
 
     rates: {
-      eyebrow: 'Money home',
+      eyebrow: 'What your money is worth',
       title: 'Know the real rate before anyone quotes you one.',
-      lede: 'The mid-market rate for the corridors people here actually send along, with no spread of ours on top. Save the pairs you use and they open first.',
-      send: 'You send',
-      gets: 'They get',
+      lede: 'The mid-market rate for the currencies people here actually deal in, with no spread of ours on top. Paylez converts — it does not move money — so there is nothing between you and the number. Save the pairs you check and they open first.',
+      send: 'Amount',
+      gets: 'Converts to',
       rate: 'Rate',
-      action: 'Compare providers',
+      swap: 'Swap the two currencies',
+      result: '{from} = {to}',
+      enter: 'Type an amount to convert.',
       saved: 'Saved pairs',
       savedNote: 'Pinned to the top of the screen, so a rate check is one tap rather than a search.',
       bullets: [
         {
           title: 'The mid-market rate, unmarked',
-          body: 'What the currency is worth, not what a provider will give you for it. The difference between the two is the thing worth shopping for.',
+          body: 'What the currency is worth, not what someone would give you for it. Nothing is sent and nothing is charged here, so there is no spread of ours sitting between the two numbers.',
         },
         {
-          title: 'Providers side by side',
-          body: 'Fee, rate and arrival time for each, on the amount you actually typed rather than on a headline example.',
+          title: 'Both directions, one card',
+          body: 'Every pair converts either way at the same rate, on the amount you actually typed rather than on a headline example.',
         },
         {
-          title: 'Your corridors first',
-          body: 'Pin the pairs you send along and they are at the top every time, with the rate already loaded.',
+          title: 'Your pairs first',
+          body: 'Pin the currencies you check and they are at the top every time, with the rate already loaded.',
         },
       ],
     },
@@ -876,7 +1525,6 @@ export const en = {
     lede: 'Join thousands making a new country feel like home — play games, earn real rewards and get expert help every step of the way. Free to start.',
     primary: 'Play & Earn',
     secondary: 'Explore the Living Guide',
-    note: 'No subscription required · Available across Poland',
   },
 
   footer: {
@@ -890,7 +1538,7 @@ export const en = {
       },
       {
         heading: 'Company',
-        links: ['Support', 'Share Your Feedback', 'Hot Deals', 'Community'],
+        links: ['Support', 'Share Your Feedback', 'Hot Deals'],
       },
     ],
     news: {

@@ -9,8 +9,17 @@ export interface PaylezIntroProps {
   onComplete?: () => void;
   primaryColor?: string;
   backgroundColor?: string;
-  /** Ink for the brand mark, which is filled with `primaryColor`. */
+  /** Ink for the brand mark's letter, used only when `markImage` is absent. */
   onPrimaryColor?: string;
+  /**
+   * The brand mark, as a URL to a square image.
+   *
+   * A prop rather than a CSS token: this component lives under `components/` and
+   * takes its whole appearance from its caller, so it has no business reading the
+   * site's stylesheet. Omit it and the mark falls back to the lettered tile,
+   * which is what keeps the sequence renderable with no assets at all.
+   */
+  markImage?: string;
   /**
    * Play only on the first visit of a browser session. Off by default so the
    * sequence is easy to iterate on; turn it on for production.
@@ -35,6 +44,7 @@ export const PaylezIntro = memo(function PaylezIntro({
   primaryColor = COLORS.primary,
   backgroundColor = COLORS.background,
   onPrimaryColor = INTRO.onPrimary,
+  markImage,
   oncePerSession = false,
   skippable = true,
 }: PaylezIntroProps) {
@@ -106,6 +116,7 @@ export const PaylezIntro = memo(function PaylezIntro({
           background: backgroundColor,
           '--pz-accent': primaryColor,
           '--pz-on-accent': onPrimaryColor,
+          '--pz-mark-image': markImage ? `url('${markImage}')` : 'none',
           '--pz-name-w': `${INTRO.nameWidthCh}ch`,
           '--pz-mark-in': `${INTRO.markIn.duration}ms`,
           '--pz-mark-delay': `${INTRO.markIn.delay}ms`,
@@ -127,7 +138,9 @@ export const PaylezIntro = memo(function PaylezIntro({
         {/* Centred row: the name growing from zero width is what pushes the
             mark to the left. No second animation to keep in sync. */}
         <div className="pz-brand">
-          <span className="pz-mark">
+          {/* The letter is the fallback, not the design: with `markImage` set the
+              image covers the tile and the glyph never shows. */}
+          <span className="pz-mark" data-image={markImage ? 'true' : undefined}>
             <span>p</span>
           </span>
           <span className="pz-name">

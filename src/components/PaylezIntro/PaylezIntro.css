@@ -70,6 +70,22 @@
   transform: translateY(-0.06em);
 }
 
+/*
+ * With a mark image the tile *is* the logo: the file is square and carries its
+ * own ground, so it covers the accent fill rather than sitting on it, and the
+ * fallback letter is taken out rather than hidden under it — a glyph showing
+ * through a half-loaded image is worse than no glyph.
+ */
+.pz-mark[data-image='true'] {
+  background-image: var(--pz-mark-image);
+  background-size: cover;
+  background-position: center;
+}
+
+.pz-mark[data-image='true'] span {
+  display: none;
+}
+
 @keyframes pz-mark {
   from {
     opacity: 0;

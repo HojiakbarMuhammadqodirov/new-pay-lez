@@ -22,6 +22,594 @@ export const pl: Dictionary = {
     toDark: 'Przełącz na ciemny motyw',
   },
 
+  auth: {
+    eyebrow: 'Witaj ponownie',
+    title: 'Zaloguj się do paylez.',
+    lede: 'Twoje punkty, vouchery i przewodnik — na urządzeniu, po które właśnie sięgnąłeś.',
+    email: 'Adres e-mail',
+    emailPlaceholder: 'ty@email.com',
+    password: 'Hasło',
+    passwordPlaceholder: 'Twoje hasło',
+    submit: 'Zaloguj się',
+    demoTitle: 'Konta demo',
+    demoLine: '{role} — {email} · {password}',
+    errors: {
+      email: 'Nie mamy konta z tym adresem e-mail.',
+      password: 'To hasło się nie zgadza.',
+      empty: 'Podaj adres e-mail i hasło.',
+    },
+
+    signUpEyebrow: 'Pierwszy raz?',
+    signUpTitle: 'Załóż konto paylez.',
+    signUpLede:
+      'Dwa pola i jeden wybór. To, co wybierzesz, decyduje o tym, co zobaczysz od następnego ekranu.',
+    name: 'Imię i nazwisko',
+    namePlaceholder: 'Imię i nazwisko',
+    newPasswordPlaceholder: 'Co najmniej {n} znaków',
+    typeQuestion: 'Kim jesteś?',
+    typeNote: 'Na razie wybierasz tylko raz, więc wybierz to, co pasuje.',
+    signUpSubmit: 'Załóż konto',
+    signUpErrors: {
+      name: 'Podaj swoje imię i nazwisko.',
+      email: 'To nie wygląda na adres e-mail.',
+      taken: 'Konto z tym adresem już istnieje. Zaloguj się.',
+      password: 'Użyj co najmniej {n} znaków.',
+      type: 'Wybierz, czy jesteś tu jako osoba, czy jako firma.',
+    },
+    noAccount: 'Nie masz jeszcze konta?',
+    toSignUp: 'Załóż je',
+    haveAccount: 'Masz już konto?',
+    toSignIn: 'Zaloguj się',
+
+    typeEyebrow: 'Jeszcze jedno',
+    typeTitle: 'Jak będziesz korzystać z paylez, {name}?',
+    typeLede: 'To decyduje, co zobaczysz. Na razie wybierasz tylko raz, więc wybierz to, co pasuje.',
+    types: [
+      {
+        name: 'Osoba prywatna',
+        blurb: 'Graj, zbieraj punkty, wymieniaj je na vouchery i czytaj przewodnik.',
+      },
+      {
+        name: 'Właściciel firmy',
+        blurb: 'Dodaj swój lokal, pokaż ofertę graczom i sprawdź, co przyniosła.',
+      },
+    ],
+    typeSubmit: 'Dalej',
+    typeHint: 'Wybierz jedną opcję, aby przejść dalej.',
+
+    signOut: 'Wyloguj się',
+    accountMenu: 'Twoje konto',
+    dashboard: 'Panel',
+    roles: { individual: 'Użytkownik', business: 'Firma', admin: 'Administrator' },
+  },
+
+  admin: {
+    tag: 'Konsola',
+    title: 'Cała platforma.',
+    lede: 'Każdy lokal, każda oferta i każde konto — oraz analityka za każdym z nich.',
+    back: 'Wróć do paylez',
+    search: 'Szukaj lokalu, ID usługi, oferty lub osoby…',
+    noMatch: 'Nic nie pasuje do tego wyszukiwania.',
+    kpis: [
+      'Wszystkie usługi',
+      'Aktywne usługi',
+      'Wszystkie oferty',
+      'Aktywne oferty',
+      'Konta',
+      'Gracze',
+    ],
+    tabs: ['Usługi', 'Oferty', 'Ludzie'],
+
+    services: {
+      title: 'Usługi biznesowe',
+      lede: 'Każdy lokal na paylez. Otwórz jeden, aby zobaczyć jego analitykę.',
+      serviceId: 'ID usługi',
+      copy: 'Kopiuj',
+      copied: 'Skopiowano',
+      analytics: 'Analityka',
+      active: 'Aktywna',
+      paused: 'Wstrzymana',
+      vouchers: 'Vouchery',
+      live: 'Prawdziwa wizytówka',
+    },
+
+    deals: {
+      title: 'Oferty i karty podarunkowe',
+      lede: 'Co aplikacja pokazuje w całym kraju w tym miesiącu.',
+      kinds: { gift: 'Karta podarunkowa', deal: 'Gorąca oferta' },
+      until: 'Do {date}',
+    },
+
+    people: {
+      title: 'Ludzie',
+      lede: 'Trzy konta wbudowane i wszyscy, którzy zarejestrowali się później.',
+      columns: ['Imię i nazwisko', 'E-mail', 'Rola', 'Dołączenie', 'Stan'],
+    },
+
+    state: {
+      player: '{points} pkt · seria {streak} dni',
+      listing: 'ukończono {percent}%',
+      live: 'Aktywna',
+      noListing: 'Nie rozpoczęto',
+      undecided: 'Nie wybrano',
+      none: '—',
+    },
+
+    note: 'Ta baza kont jest w tej przeglądarce. Nie ma jeszcze serwera, więc konsola czyta, a nie edytuje — zobacz auth/users.ts.',
+
+    analytics: {
+      back: 'Wszystkie usługi',
+      totals: ['Łączne zaangażowanie', 'Wszystkie vouchery', 'Wszystkie skany'],
+      tabs: ['Pulpit', 'Gorące oferty', 'Skany lojalnościowe', 'Vouchery', 'Wnioski'],
+
+      ranges: ['Cały czas', 'Ostatnie 7 dni', 'Ostatnie 30 dni', 'Ostatnie 90 dni'],
+      rangesLabel: 'Zakres czasu',
+      search: 'Szukaj użytkownika, kodu, paragonu…',
+      records: '{n} rekordów',
+      export: 'Eksport CSV',
+      noRows: 'Nic nie pasuje do tych filtrów.',
+
+      states: { live: 'Aktywna', paused: 'Wstrzymana' },
+      status: { used: 'Wykorzystany', active: 'Niewykorzystany' },
+
+      columns: {
+        deals: ['Data', 'Oferta', 'Użytkownik', 'Kod', 'Punkty', 'Rabat', 'Status', 'Rachunek'],
+        scans: ['Data', 'Użytkownik', 'Punkty', 'Zakup', 'Paragon', 'Gdzie', 'Do nagrody'],
+        vouchers: ['Data', 'Kod', 'Typ', 'Użytkownik', 'Nagroda', 'Punkty', 'Status', 'Rachunek'],
+      },
+
+      cards: [
+        { label: 'Kliknięcia w Mapy Google', note: 'Kliknięcia przycisku nawigacji' },
+        { label: 'Kliknięcia w stronę', note: 'Wejścia z wizytówki' },
+        { label: 'Kliknięcia w telefon', note: 'Próby połączenia' },
+        { label: 'Kliknięcia w Instagram', note: 'Wejścia na profil z aplikacji' },
+        { label: 'Wszystkie vouchery', note: '{used} wykorzystanych · {active} aktywnych' },
+        { label: 'Vouchery lojalnościowe', note: '{used} wykorzystanych · {active} aktywnych' },
+        { label: 'Łączna wartość rabatu', note: 'Na rachunkach, na których go użyto' },
+        { label: 'Łączne zaangażowanie', note: 'Wszystkie interakcje razem' },
+        { label: 'Wszystkie skany', note: 'Skany QR przy kasie' },
+      ],
+
+      trend: {
+        title: 'Trend zaangażowania',
+        lede: 'Ostatnie 30 dni',
+        empty: 'Brak danych o trendzie.',
+      },
+
+      hot: {
+        title: 'Gorące oferty',
+        lede: 'Oferty czasowe, które prowadzi ten lokal.',
+        empty: 'Ten lokal nie prowadził jeszcze żadnej oferty.',
+        counts: ['Aktywne', 'Realizacje', 'Wstrzymane'],
+        points: '{n} pkt',
+        expires: 'Wygasa {date}',
+        redemptions: '{n} realizacji',
+        tableTitle: 'Realizacje gorących ofert',
+      },
+
+      loyalty: {
+        settingsTitle: 'Ustawienia skanów lojalnościowych',
+        settingsLede: 'Ile wart jest skan przy kasie i jak często się liczy.',
+        perVisit: 'punktów za wizytę',
+        cooldown: 'między skanami',
+        hours: '{n} godz.',
+        campaignsTitle: 'Kampanie voucherów lojalnościowych',
+        campaignsLede: 'Automatyczne nagrody dla klientów, którzy wracają.',
+        campaignsEmpty: 'Brak kampanii lojalnościowych.',
+        every: 'Co {n} wizyt',
+        reward: '{n}% zniżki na kolejną',
+        tiles: [
+          { label: 'Wszystkie skany', note: 'przyznano {n} punktów' },
+          { label: 'Sprzedaż ze skanów', note: 'z {n} skanów' },
+          { label: 'Średni zakup', note: 'na zeskanowaną wizytę' },
+        ],
+        tableTitle: 'Skany lojalnościowe',
+        trendTitle: 'Skany dzienne',
+        trendLede: 'Ostatnie 30 dni',
+        trendEmpty: 'Brak skanów.',
+      },
+
+      vouchers: {
+        campaignTitle: 'Kampania voucherów rabatowych',
+        campaignKind: 'Na budżecie · wydano {n}',
+        usage: 'Wykorzystanie budżetu',
+        used: '{used} z {total}',
+        left: 'zostało {amount}',
+        points: 'Punkty',
+        issued: 'Wydane',
+        cap: 'Limit miesięczny',
+        tiles: [
+          { label: 'Łączna sprzedaż', note: 'z {n} realizacji' },
+          { label: 'Średni koszyk', note: 'na wykorzystany voucher' },
+        ],
+        tableTitle: 'Vouchery',
+        types: { discount: 'Rabat', loyalty: 'Lojalność' },
+        dailyTitle: 'Dzienny trend sprzedaży',
+        dailyLede: 'Ostatnie 30 dni, sumy rachunków',
+        dailyEmpty: 'Brak sprzedaży — sumy rachunków pojawią się po użyciu voucherów.',
+        monthlyTitle: 'Wygenerowana sprzedaż',
+        monthlyLede: 'Miesięczna wartość rachunków z realizacji',
+      },
+
+      insights: {
+        citiesTitle: 'Główne miasta',
+        citiesLede: 'Skąd przychodzą klienci',
+        citiesEmpty: 'Brak danych o miastach.',
+        langsTitle: 'Języki klientów',
+        langsLede: 'W jakim języku czytają wizytówkę',
+        langsEmpty: 'Brak danych o językach.',
+        compareTitle: 'Na tle średniej krajowej',
+        compareLede: 'Jak ten lokal wypada na tle podobnych usług',
+        mine: 'Ten lokal',
+        avg: 'Średnia krajowa',
+        axis: ['Mapy', 'Strona', 'Telefon'],
+      },
+    },
+  },
+
+  assistantPanel: {
+    title: 'Asystent AI',
+    close: 'Zamknij asystenta',
+
+    lockedTitle: 'Zaloguj się, aby zapytać',
+    lockedBody:
+      'Asystent odpowiada na podstawie Twoich punktów, voucherów i miasta. Do tego potrzebne jest konto.',
+    lockedAction: 'Zaloguj się',
+
+    greeting: 'Cześć, {name}',
+    lede: 'Zapytaj o cokolwiek — punkty, vouchery, formalności albo gdzie coś znaleźć w pobliżu.',
+    placeholder: 'Zapytaj o cokolwiek…',
+    send: 'Wyślij',
+    suggestions: [
+      'Ile punktów potrzebuję na voucher?',
+      'Jak zameldować się pod adresem?',
+      'Co jest teraz otwarte w pobliżu?',
+    ],
+    you: 'Ty',
+    stubReply:
+      'W tej wersji asystent nie jest podłączony do modelu, więc nie odpowiem jeszcze na to pytanie. Wszystko dookoła tej wiadomości — rozmowa, pole tekstowe, Twoje konto — działa naprawdę.',
+    stubTag: 'Bez połączenia',
+  },
+
+  wallet: {
+    title: 'Twoje vouchery',
+    lede: 'Wszystko, co zdobyłeś, i wszystko, co wydałeś.',
+    balance: 'Saldo',
+    points: 'pkt',
+    shortBy: 'Do kolejnego vouchera brakuje {n} punktów',
+    canRedeem: 'Wystarczy na voucher',
+
+    tabs: ['Aktywne', 'Wykorzystane'],
+    counts: '{active} aktywnych · {used} wykorzystanych',
+
+    valid: 'Ważny do {date}',
+    usedOn: 'Wykorzystany {date}',
+    cost: '{n} pkt',
+    show: 'Pokaż kod QR',
+    shown: 'Voucher przechodzi do „Wykorzystanych” w chwili wygenerowania kodu — zrób to przy kasie.',
+
+    emptyActive: 'Nic tu jeszcze nie ma. Zagraj rundę i wydaj punkty tutaj.',
+    emptyUsed: 'Nic jeszcze nie wykorzystano.',
+    play: 'Zagraj rundę',
+
+    catalogue: 'Co możesz dostać',
+    catalogueLede: 'Odświeżane co miesiąc. Każda karta ma ograniczoną pulę.',
+    redeem: 'Odbierz',
+    short: 'Za mało punktów',
+    soldOut: 'Wraca 1. dnia miesiąca',
+    left: 'zostało {left} z {of}',
+  },
+
+  games: {
+    title: 'Gry na rozum',
+    lede: 'Sprawdź się, zbieraj punkty i zamieniaj je na vouchery rabatowe.',
+
+    score: 'Wynik',
+    streak: 'Seria',
+    lives: 'Życia',
+    answered: 'Odpowiedzi',
+    correctLabel: 'Poprawnych',
+
+    redeemTitle: 'Zamień punkty na nagrody',
+    redeemAction: 'Odbierz teraz',
+
+    names: ['Gry na rozum', 'Zgadnij flagę', 'Kraj i stolica', 'Quiz o Polsce'],
+    rule: '{questions} pytań · po {seconds} sek.',
+    reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
+    start: 'Zacznij grę',
+    noLives: 'Koniec żyć — wróć jutro',
+
+    question: 'Pytanie {n} z {total}',
+    whichCountry: 'Jaki to kraj?',
+    whichCapital: 'Jaka jest stolica kraju {country}?',
+    quit: 'Poddaj się',
+    timeUp: 'Czas',
+
+    wonTitle: 'Runda wygrana',
+    lostTitle: 'Koniec rundy',
+    resultScore: '{correct} z {total} poprawnie',
+    resultPoints: '+{points} punktów',
+    resultNone: 'W tej rundzie bez punktów.',
+    resultStreak: 'Seria: {streak} dni',
+    again: 'Zagraj jeszcze raz',
+    backToGames: 'Wróć do gier',
+
+    boardTitle: 'Ranking',
+    boardTabs: ['Poprawne odpowiedzi', 'Zdobyte punkty'],
+    boardTop: 'Top 10',
+    boardStreak: 'seria {n} dni',
+    boardCorrect: 'poprawnych',
+    boardPoints: 'punktów',
+    boardEmpty: 'Jeszcze nikt nie gra. Bądź pierwszy!',
+    boardShowAll: 'Pokaż całe top 10',
+    boardShowLess: 'Pokaż mniej',
+
+    countries: [
+      'Polska', 'Uzbekistan', 'Ukraina', 'Niemcy', 'Francja',
+      'Włochy', 'Hiszpania', 'Holandia', 'Turcja', 'Wielka Brytania',
+    ],
+    capitals: [
+      'Warszawa', 'Taszkent', 'Kijów', 'Berlin', 'Paryż',
+      'Rzym', 'Madryt', 'Amsterdam', 'Ankara', 'Londyn',
+    ],
+
+    brain: [
+      { q: 'Która z tych liczb jest pierwsza?', options: ['91', '87', '83', '99'], a: 2 },
+      { q: 'Ile jest kontynentów?', options: ['5', '6', '7', '8'], a: 2 },
+      { q: 'Który ocean jest największy?', options: ['Atlantycki', 'Indyjski', 'Arktyczny', 'Spokojny'], a: 3 },
+      { q: 'Która planeta jest najbliżej Słońca?', options: ['Wenus', 'Merkury', 'Mars', 'Ziemia'], a: 1 },
+      { q: 'Ile minut ma pełna doba?', options: ['1440', '1240', '960', '1800'], a: 0 },
+    ],
+    poland: [
+      { q: 'Jaka jest waluta Polski?', options: ['Euro', 'Złoty', 'Korona', 'Forint'], a: 1 },
+      { q: 'Ile dni w ciągu 180 można zostać na wizie Schengen?', options: ['30 dni', '60 dni', '90 dni', '120 dni'], a: 2 },
+      { q: 'Do czego służy numer PESEL?', options: ['Do konta w banku', 'Do identyfikacji mieszkańca', 'Do prawa jazdy', 'Do najmu'], a: 1 },
+      { q: 'Który urząd rejestruje Twój adres w Polsce?', options: ['Urząd Gminy', 'Poczta Polska', 'ZUS', 'NFZ'], a: 0 },
+      { q: 'Co zapewnia NFZ?', options: ['Emerytury', 'Publiczną opiekę zdrowotną', 'Rozliczenia podatkowe', 'Pozwolenia na pracę'], a: 1 },
+    ],
+  },
+
+  business: {
+    setupEyebrow: 'Skonfiguruj swój lokal',
+    setupTitle: 'Opowiedz nam o swojej firmie.',
+    setupLede:
+      'Wszystko stąd trafia prosto do Twojej wizytówki w aplikacji Paylez. Pola oznaczone gwiazdką są potrzebne, zanim wizytówka będzie widoczna.',
+
+    screenTitle: 'Profil firmy',
+    screenLede: 'Twoja wizytówka w aplikacji Paylez, przetłumaczona dla każdego klienta.',
+
+    sections: {
+      basic: 'Podstawowe informacje',
+      where: 'Gdzie jesteście',
+      reach: 'Jak klienci mogą się skontaktować',
+      service: 'Obsługa i godziny',
+    },
+
+    fields: {
+      name: 'Nazwa firmy',
+      namePlaceholder: 'Nazwa nad Twoimi drzwiami',
+      category: 'Kategoria',
+      subcategory: 'Podkategoria',
+      description: 'Opis',
+      descriptionPlaceholder: 'Dwa albo trzy zdania o tym, co robicie i kto do Was przychodzi.',
+      descriptionHelp: 'Paylez tłumaczy to dla klientów czytających w innym języku.',
+      price: 'Typowa cena',
+      pricePlaceholder: '25–45 zł',
+      priceHelp: 'Ile zwykle wydaje jeden klient.',
+      logo: 'Logo',
+      logoHelp: 'Kwadratowe, co najmniej 512 px.',
+      logoChoose: 'Wybierz plik',
+
+      country: 'Kraj',
+      city: 'Miasto',
+      cityPlaceholder: 'Kraków',
+      street: 'Adres',
+      streetPlaceholder: 'Ulica i numer budynku',
+      maps: 'Link do Map Google',
+      mapsHelp: 'Z tego korzysta przycisk nawigacji w aplikacji.',
+
+      phone: 'Telefon',
+      phonePlaceholder: '+48 123 456 789',
+      email: 'E-mail',
+      emailPlaceholder: 'kontakt@firma.com',
+      emailError: 'To nie wygląda na adres e-mail.',
+      website: 'Strona internetowa',
+      instagram: 'Instagram',
+      appStore: 'Link do App Store',
+      googlePlay: 'Link do Google Play',
+      appLinksShow: 'Dodaj linki do App Store i Google Play',
+      appLinksHide: 'Ukryj linki do aplikacji',
+
+      spoken: 'Języki, którymi mówi Twój zespół',
+      hours: 'Godziny otwarcia',
+    },
+
+    categories: [
+      'Kawiarnia',
+      'Restauracja',
+      'Barbershop',
+      'Salon kosmetyczny',
+      'Gabinet stomatologiczny',
+      'Szkoła językowa',
+      'Fitness',
+    ],
+    subcategories: [
+      ['Kawa specialty', 'Kawiarnia z piekarnią', 'Miejsce na brunch', 'Herbaciarnia'],
+      ['Polska', 'Gruzińska', 'Turecka', 'Pizza', 'Sushi'],
+      ['Klasyczny barber', 'Broda i golenie', 'Strzyżenie dzieci'],
+      ['Paznokcie', 'Włosy', 'Brwi i rzęsy', 'Masaż'],
+      ['Stomatologia ogólna', 'Ortodoncja', 'Implanty'],
+      ['Polski dla obcokrajowców', 'Angielski', 'Przygotowanie do egzaminów'],
+      ['Siłownia', 'Studio jogi', 'Klub bokserski'],
+    ],
+    countries: ['Polska', 'Ukraina', 'Gruzja', 'Turcja', 'Uzbekistan', 'Azerbejdżan'],
+    spokenLanguages: ['Polski', 'Angielski', 'Ukraiński', 'Rosyjski', 'Turecki', 'Uzbecki'],
+    hoursDays: ['Poniedziałek – piątek', 'Sobota', 'Niedziela'],
+
+    ready: {
+      title: 'Gotowe do publikacji',
+      progress: 'Uzupełnione w {percent}%',
+      stillNeeded: 'Jeszcze potrzebne:',
+      done: 'Wszystkie wymagane pola są uzupełnione. Twoja wizytówka jest widoczna w aplikacji.',
+    },
+
+    preview: {
+      title: 'Jak to wygląda w aplikacji',
+      cover: 'Zdjęcie główne',
+      name: 'Nazwa Twojej firmy',
+      address: 'Dodaj swój adres',
+      price: 'Cena na zapytanie',
+      description: 'Napisz krótki opis, żeby klienci wiedzieli, czym się zajmujecie.',
+      reviews: '312 opinii',
+      note: 'Ocena i liczba opinii pochodzą od klientów w aplikacji. Nie można ich tu zmienić.',
+    },
+
+    save: 'Zapisz i przejdź dalej',
+    saved: 'Zapisano.',
+    saveProfile: 'Zapisz zmiany',
+  },
+
+  dashboard: {
+    tag: 'Partner',
+    groups: { grow: 'Rozwój', workspace: 'Obszar roboczy' },
+    screens: [
+      { name: 'Przegląd', lede: 'Co Paylez dla Ciebie zrobił i ile to kosztowało.' },
+      { name: 'Gorące okazje', lede: 'Czasowe oferty pokazywane w kanale aplikacji Paylez.' },
+      { name: 'Kampanie lojalnościowe', lede: 'Powtarzalne nagrody, na które zapracowują stali klienci.' },
+      { name: 'Vouchery', lede: 'Jak punkty zamieniają się w rabaty i ile Cię to kosztuje.' },
+      { name: 'Klienci', lede: 'Kto przychodzi, kiedy przychodzi i czy wraca.' },
+      { name: 'Skanowania', lede: 'Każde skanowanie QR przy Twojej kasie, od najnowszego.' },
+      { name: 'Profil firmy', lede: 'Twoja wizytówka w aplikacji Paylez, przetłumaczona dla każdego klienta.' },
+    ],
+    empty: [
+      {
+        title: 'W Twoim lokalu nic jeszcze nie działa',
+        body: 'Klienci zobaczą Cię w aplikacji Paylez dopiero wtedy, gdy coś będzie aktywne. Najszybszy start to gorąca okazja — otwarta oferta z datą początku i końca, działająca w wybranych godzinach.',
+        action: 'Stwórz pierwszą okazję',
+      },
+      {
+        title: 'Uruchom ofertę dla każdego',
+        body: 'Gorąca okazja pojawia się w kanale aplikacji dla wybranej grupy i godzin, a kończy się w ustalonym dniu. Płacisz dopiero, gdy ktoś ją odbierze.',
+        action: 'Stwórz gorącą okazję',
+      },
+      {
+        title: 'Nagradzaj stałych klientów za powroty',
+        body: 'Kampania liczy wizyty i przyznaje nagrodę po osiągnięciu ustalonej liczby. Dobra pierwsza dla kawiarni: cztery wizyty, kawa z przelewu gratis.',
+        action: 'Skonfiguruj kampanię',
+      },
+      {
+        title: 'Ustaw budżet rabatowy, żeby zacząć dawać vouchery',
+        body: 'Budżet rabatowy to maksimum, jakie oddasz w rabatach w jednym miesiącu. Vouchery kończą się, gdy budżet się wyczerpie, więc nigdy nie wydasz więcej, niż zaplanowałeś.',
+        action: 'Ustaw budżet',
+      },
+      {
+        title: 'Postaw kod QR przy kasie',
+        body: 'Nic na tej stronie nie może się wypełnić, dopóki klienci nie zaczną skanować. Wydrukuj kod, postaw go obok kasy i poproś obsługę, by wskazywała go razem z rachunkiem. Pierwsze liczby pojawią się tego samego dnia.',
+        action: 'Pobierz swój kod QR',
+      },
+      {
+        title: 'Jeszcze żadnych skanowań',
+        body: 'Każde skanowanie przy Twojej kasie pojawia się tutaj w kilka sekund — kto przyszedł, ile wydał i jak blisko jest nagrody.',
+        action: 'Pobierz swój kod QR',
+      },
+    ],
+    notWired: 'Niepodłączone w tej wersji.',
+
+    overview: {
+      kicker: 'Co Paylez dla Ciebie zrobił',
+      headline:
+        'Przyprowadziliśmy do Ciebie {customers} nowych klientów, którzy wydali u Ciebie około {revenue}.',
+      estimate:
+        'Szacunek. Każda wizyta przez Paylez pomnożona przez średni wydatek {avg}, wzięty z Twojej własnej sprzedaży.',
+      tiles: ['Wizyty', 'Odebrane okazje', 'Użyte vouchery', 'Użyte nagrody'],
+      since: 'wobec poprzednich 30 dni',
+      costTitle: 'Ile kosztował Cię Paylez',
+      costTotal: 'Razem w tym miesiącu',
+      roi: '{n}× zwrotu z każdej wydanej złotówki.',
+      proofTitle: 'Jedyna rzecz, którą możemy udowodnić',
+      proof:
+        'Klienci w Twoich kampaniach lojalnościowych przychodzą {after} razy w miesiącu, wobec {before} przed dołączeniem.',
+      proofNote: 'Policzone z Twoich własnych skanów QR, nie oszacowane. Bez integracji z kasą.',
+      before: 'Przedtem',
+      now: 'Teraz',
+    },
+
+    deals: {
+      columns: ['Okazja', 'Stan', 'Wyświetlenia', 'Otwarcia', 'Odebrane', 'Koszt'],
+      rows: [
+        'Poranna flat white',
+        'Studenckie wtorki',
+        'Darmowy przelew do wypieku',
+        'Deszczowe podwójne punkty',
+        'Zniżka sąsiedzka',
+        'Zestaw lunchowy',
+      ],
+      states: { live: 'Aktywna', scheduled: 'Zaplanowana', paused: 'Wstrzymana', expired: 'Zakończona' },
+      insight:
+        'Twoje okazje z darmowym produktem są odbierane 2,4× częściej niż rabaty procentowe. Zestaw lunchowy z 5% wypadł słabo — małe rabaty rzadko kogoś ruszają.',
+      count: '{n} okazji',
+    },
+
+    campaigns: {
+      rows: ['Nagroda dla stałych', 'Kawowa seria', 'Klub lunchowy', 'Zimowy powrót'],
+      rule: '{visits} wizyty → nagroda',
+      each: 'po {amount}',
+      earned: 'Zdobyte',
+      used: 'Wykorzystane',
+      unused: '{n} zdobytych i nigdy nieużytych',
+      gapTitle: 'To różnica jest liczbą, którą warto śledzić',
+      gap: 'Nagroda zdobyta, ale nieużyta, znaczy, że klient się zakwalifikował i nie wrócił. Największą różnicę ma teraz „{name}”: {n} nieużytych nagród.',
+    },
+
+    vouchers: {
+      tiersTitle: 'Kto sięga którego progu',
+      tiersLede: 'O dotarciu decydują punkty, więc podniesienie liczby kieruje tam mniej budżetu.',
+      columns: ['Próg', 'Potrzebne punkty', 'Wydane', 'Użyte', 'Koszt dotąd'],
+      tier: '{n}% rabatu',
+      budgetTitle: 'Budżet rabatowy',
+      spent: 'Wydane',
+      held: 'Zarezerwowane',
+      free: 'Dostępne',
+      heldNote:
+        'Pieniądze odłożone na nagrody, które klienci zdobyli, ale jeszcze nie wykorzystali. Jeśli wygasną, wracają.',
+    },
+
+    customers: {
+      fromTitle: 'Skąd pochodzą',
+      nations: ['Ukraińcy', 'Polacy', 'Białorusini', 'Gruzini', 'Turcy', 'Inni'],
+      readTitle: 'W jakim języku czytają aplikację',
+      langs: ['Rosyjski', 'Ukraiński', 'Polski', 'Angielski', 'Inny'],
+      privacy:
+        'Wszystko tutaj jest liczone na grupach. Paylez nigdy nie pokazuje pojedynczej osoby, a grupy mniejsze niż dziesięć trafiają do „innych”.',
+      backTitle: 'Czy wracają',
+      months: ['Kwiecień', 'Maj', 'Czerwiec', 'Lipiec'],
+      cohort: '{back} z {first} wróciło w ciągu 30 dni',
+      finding:
+        '38% Twoich klientów to Ukraińcy, a 42% czyta aplikację po rosyjsku. Żadna z Twoich aktywnych okazji nie jest kierowana do rosyjskojęzycznych.',
+    },
+
+    scans: {
+      columns: ['Kiedy', 'Klient', 'Wydał', 'Punkty', 'Paragon', 'Postęp'],
+      first: 'Pierwsza wizyta',
+      again: 'Wrócił',
+      today: 'Dziś',
+      count: 'Pokazano {n} z 48 skanowań',
+    },
+    collapse: 'Zwiń menu',
+    expand: 'Rozwiń menu',
+    backToSite: 'Wróć do paylez',
+
+    plan: {
+      name: 'Plan Growth',
+      state: 'Aktywny',
+      caption: 'Budżety na lojalność i vouchery w tym miesiącu. Gorące okazje nie wchodzą w to.',
+      usage: '{used} z {total}',
+    },
+
+    range: 'Ostatnie 30 dni',
+    notifications: 'Powiadomienia',
+  },
+
   hero: {
     lines: ['Graj i zarabiaj.', 'Ekskluzywne oferty.'],
     lede: 'Odkrywaj, graj i zgarniaj nagrody.',
@@ -71,7 +659,7 @@ export const pl: Dictionary = {
       },
       {
         title: 'Asystent AI',
-        body: 'Twój cyfrowy towarzysz w przeprowadzce za granicę — zapytaj o wszystko, o dowolnej porze.',
+        body: 'Twój cyfrowy towarzysz — zapytaj o wszystko, o dowolnej porze.',
       },
     ],
   },
@@ -79,7 +667,7 @@ export const pl: Dictionary = {
   value: {
     eyebrow: 'Graj i zarabiaj',
     title: 'Twoje punkty to prawdziwe pieniądze.',
-    lede: 'Żadnych sztuczek ani pułapek z terminem ważności. Graj, zbieraj punkty i wymieniaj je na karty podarunkowe oraz rabaty, z których naprawdę skorzystasz.',
+    lede: 'Żadnych sztuczek. Graj, zbieraj punkty i wymieniaj je na karty podarunkowe oraz rabaty, z których naprawdę skorzystasz.',
     card: {
       merchant: 'Karta podarunkowa Zalando',
       meta: 'Sklep partnerski · wartość {amount}',
@@ -146,7 +734,7 @@ export const pl: Dictionary = {
     hero: {
       eyebrow: 'L-Earn',
       lines: ['Naucz się czegoś nowego.', 'Zarób coś prawdziwego.'],
-      lede: 'Kilka szybkich pytań dziennie. Punkty, które zamieniają się w vouchery w sklepach, z których i tak korzystasz. Bez abonamentu, bez haczyków.',
+      lede: 'Kilka szybkich pytań dziennie. Punkty, które zamieniają się w vouchery w sklepach, z których i tak korzystasz.',
       primary: 'Zacznij grać',
       secondary: 'Zobacz gry',
       stats: ['Za wygraną w grze', 'Bonus za serię', 'Wystarczy na voucher'],
@@ -202,7 +790,7 @@ export const pl: Dictionary = {
     streak: {
       eyebrow: 'Serie',
       title: 'To w serii są punkty.',
-      lede: 'Jedna runda dziennie utrzymuje ją przy życiu. Opuścisz dzień i wraca do jednego — to cała zasada.',
+      lede: 'Jedna runda co 24 godziny utrzymuje ją przy życiu. Przegapisz to okno, a seria — i punkty, które z nią zbudowałeś — wracają do zera. To cała zasada.',
       card: {
         label: 'Aktualna seria',
         unit: 'dni',
@@ -227,7 +815,7 @@ export const pl: Dictionary = {
     board: {
       eyebrow: 'Paylez Champions',
       title: 'Ranking miesiąca.',
-      lede: 'Pierwszego dnia miesiąca wszyscy zaczynają od zera. Najlepsza trójka dzieli pulę nagród; reszta po prostu zatrzymuje swoje punkty.',
+      lede: 'Pierwszego dnia miesiąca wszyscy zaczynają od zera. Najlepsza trójka dzieli pulę nagród; reszta zaczyna kolejny miesiąc na tych samych zasadach.',
       columns: { rank: '#', player: 'Gracz', points: 'Punkty' },
       note: 'Przykładowy ranking — Twój zeruje się 1. dnia miesiąca.',
     },
@@ -238,19 +826,15 @@ export const pl: Dictionary = {
       items: [
         {
           q: 'Czy punkty tracą ważność?',
-          a: 'Nie. Zostają na Twoim koncie, dopóki ich nie wydasz. Nie mają daty ważności ani miesięcznego resetu — od nowa startuje tylko ranking.',
+          a: 'Tak. Zagraj co najmniej jedną rundę w ciągu 24 godzin, żeby je zachować — przegapisz to okno, a punkty i seria wracają do zera.',
         },
         {
           q: 'Ile rund mogę zagrać dziennie?',
-          a: 'Trzy punktowane rundy, po jednej na grę. Później możesz grać dalej dla treningu, ale to już nie dodaje punktów.',
+          a: 'Tyle, na ile pozwalają Twoje życia. Każda runda kosztuje jedno życie, a życia odnawiają się z czasem — nie ma więc dziennego limitu, jest tylko tyle, ile Ci zostało.',
         },
         {
           q: 'Ile naprawdę wart jest voucher?',
-          a: '500 punktów to karta podarunkowa o wartości {amount} w sklepach partnerskich, takich jak Zalando, Douglas czy Media Expert. Mniejsze rabaty zaczynają się od 100 punktów.',
-        },
-        {
-          q: 'Czy to za darmo?',
-          a: 'Tak. Bez abonamentu, bez opłaty wpisowej i bez niczego, co trzeba kupić, żeby zagrać.',
+          a: 'To zależy od rodzaju vouchera i od tego, co zdecyduje partner. Karta podarunkowa od samego paylez — na przykład do Zalando czy Zary — kosztuje 100 punktów z gry i jest warta {amount}.',
         },
         {
           q: 'W jakich językach są pytania?',
@@ -690,7 +1274,7 @@ export const pl: Dictionary = {
       primary: 'Zacznij zbierać',
       secondary: 'Zobacz, co jest dostępne',
       stats: ['Marek partnerskich', 'Najtańszy voucher', 'Koszt realizacji'],
-      trust: 'Bez abonamentu · Bez danych karty · Punkty nie tracą ważności',
+      trust: 'Bez danych karty · Start za darmo · Dostępne w całej Polsce',
     },
 
     wallet: {
@@ -755,8 +1339,8 @@ export const pl: Dictionary = {
           body: 'Voucher przechodzi do Wykorzystanych w chwili, gdy kod powstaje — niezależnie od tego, czy ktoś go zeskanował. Najpierw stań przy kasie.',
         },
         {
-          title: 'Punkty zostają, vouchery tracą ważność',
-          body: 'Twoje saldo nie ma daty ważności ani miesięcznego resetu. Pojedynczy voucher ma — i data jest na karcie, zanim cokolwiek wydasz.',
+          title: 'Punkty przepadają, jeśli przestaniesz grać',
+          body: 'Zagraj co najmniej jedną rundę w ciągu 24 godzin, a punkty i seria lecą dalej. Przegapisz to okno i oba wracają do zera. Odebrane już vouchery mają własną datę ważności, wypisaną na karcie, zanim cokolwiek wydasz.',
         },
       ],
     },
@@ -767,7 +1351,7 @@ export const pl: Dictionary = {
       items: [
         {
           q: 'Ile kosztuje mnie voucher?',
-          a: 'Punkty i nic poza tym. Nie ma abonamentu, opłaty za dostarczenie ani karty w systemie — przy realizacji nigdy nie podajesz danych płatniczych.',
+          a: 'Punkty i nic poza tym. Nie ma opłaty za dostarczenie ani karty w systemie — przy realizacji nigdy nie podajesz danych płatniczych.',
         },
         {
           q: 'Czy mogę połączyć voucher z promocją sklepu?',
@@ -800,7 +1384,7 @@ export const pl: Dictionary = {
     hero: {
       eyebrow: 'Przewodnik po życiu',
       lines: ['Nowy kraj.', 'Sto pytań.', 'Jeden przewodnik.'],
-      lede: 'Gdzie założyć konto, jak działa kaucja, która przychodnia przyjmie Twoje ubezpieczenie, ile naprawdę kosztuje przelew do domu. Dziewięć tematów, czternaście krajów, pisane przez ludzi, którzy przez to przeszli.',
+      lede: 'Gdzie założyć konto, jak działa kaucja, która przychodnia przyjmie Twoje ubezpieczenie, ile naprawdę są warte Twoje pieniądze w kraju. Dziewięć tematów, czternaście krajów, pisane przez ludzi, którzy przez to przeszli.',
       primary: 'Otwórz przewodnik',
       secondary: 'Sprawdź kurs',
       stats: ['Tematów', 'Krajów', 'Marży na naszym kursie'],
@@ -808,27 +1392,29 @@ export const pl: Dictionary = {
     },
 
     rates: {
-      eyebrow: 'Pieniądze do domu',
+      eyebrow: 'Ile są warte Twoje pieniądze',
       title: 'Poznaj prawdziwy kurs, zanim ktoś Ci go zaproponuje.',
-      lede: 'Kurs międzybankowy dla kierunków, którymi ludzie stąd naprawdę wysyłają — bez naszej marży na wierzchu. Zapisz pary, których używasz, a otworzą się pierwsze.',
-      send: 'Wysyłasz',
-      gets: 'Odbiorca dostaje',
+      lede: 'Kurs międzybankowy dla walut, którymi ludzie stąd naprawdę się posługują, bez naszej marży na wierzchu. Paylez przelicza — nie przesyła pieniędzy — więc między Tobą a tą liczbą nie ma nic. Zapisz pary, które sprawdzasz, a otworzą się pierwsze.',
+      send: 'Kwota',
+      gets: 'To daje',
       rate: 'Kurs',
-      action: 'Porównaj dostawców',
+      swap: 'Zamień waluty miejscami',
+      result: '{from} = {to}',
+      enter: 'Wpisz kwotę do przeliczenia.',
       saved: 'Zapisane pary',
       savedNote: 'Przypięte na górze ekranu, więc sprawdzenie kursu to jedno dotknięcie, a nie wyszukiwanie.',
       bullets: [
         {
           title: 'Kurs międzybankowy, bez narzutu',
-          body: 'Ile waluta jest warta, a nie ile ktoś za nią da. Różnica między jednym a drugim to właśnie to, czego warto szukać.',
+          body: 'Ile waluta jest warta, a nie ile ktoś za nią da. Nic tu nie jest wysyłane i za nic nie pobieramy opłaty, więc między tymi dwiema liczbami nie siedzi żadna nasza marża.',
         },
         {
-          title: 'Dostawcy obok siebie',
-          body: 'Opłata, kurs i czas dotarcia dla każdego — policzone dla kwoty, którą faktycznie wpisałeś, a nie dla przykładu z reklamy.',
+          title: 'W obie strony, na jednej karcie',
+          body: 'Każda para przelicza się w obie strony po tym samym kursie — dla kwoty, którą faktycznie wpisałeś, a nie dla przykładu z reklamy.',
         },
         {
-          title: 'Twoje kierunki na górze',
-          body: 'Przypnij pary, którymi wysyłasz, a za każdym razem będą na górze z już wczytanym kursem.',
+          title: 'Twoje pary na górze',
+          body: 'Przypnij waluty, które sprawdzasz, a za każdym razem będą na górze z już wczytanym kursem.',
         },
       ],
     },
@@ -886,7 +1472,6 @@ export const pl: Dictionary = {
     lede: 'Dołącz do tysięcy osób, dla których nowy kraj stał się domem — graj, zdobywaj prawdziwe nagrody i korzystaj z pomocy ekspertów na każdym kroku. Start jest darmowy.',
     primary: 'Graj i zarabiaj',
     secondary: 'Poznaj Living Guide',
-    note: 'Bez abonamentu · Dostępne w całej Polsce',
   },
 
   footer: {
@@ -900,7 +1485,7 @@ export const pl: Dictionary = {
       },
       {
         heading: 'Firma',
-        links: ['Wsparcie', 'Podziel się opinią', 'Gorące okazje', 'Społeczność'],
+        links: ['Wsparcie', 'Podziel się opinią', 'Gorące okazje'],
       },
     ],
     news: {

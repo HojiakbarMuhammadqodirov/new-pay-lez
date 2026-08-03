@@ -107,6 +107,18 @@
   --font-display: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Manrope', ui-sans-serif, system-ui, sans-serif;
 
+  /*
+   * The brand mark, as a token rather than a rule per theme.
+   *
+   * Both files are square and carry their own ground — mint on black here, the
+   * inverse on paper — so the mark is the whole tile rather than a glyph laid on
+   * `--accent`. Declaring it up here keeps the one theme-conditional thing in the
+   * stylesheet that is not a colour in the same two blocks as the colours, and it
+   * means only the matched theme's file is ever fetched: a background image on an
+   * unmatched selector is never requested.
+   */
+  --logo: url('/logo/logo-dark.jpg');
+
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   color-scheme: dark;
 }
@@ -138,13 +150,28 @@
    */
   --accent-rgb: 0, 122, 120;
   /*
-   * Washes take the neon itself, not the hairline cyan. A 16% neon over white is
-   * a pale aqua; the same alpha of the deep step is a grey wash, which is what
-   * made the light theme read as a different colour family from the buttons
-   * sitting on top of it. Alphas are raised to match: the neon is lighter, so it
-   * needs more of itself to tint by the same amount.
+   * Washes take the **ink** teal, not the neon — reversed from what this used to
+   * be, and the reversal is the point.
+   *
+   * The neon was chosen back when `--accent` was also the neon: a grey wash under
+   * a bright mint button read as two colour families, so the wash was tinted to
+   * match the button. Then the fill moved to `#089b99` and that argument died
+   * with it — a soft grey-teal wash under a deep teal button is one family, which
+   * is what it should have been all along.
+   *
+   * What it fixes is visible at any size above a chip. `rgba(19,239,242,0.16)`
+   * over this page is `#d1f7f7`; at 0.28 it is `#b5f6f7`. On a 12px pill that
+   * reads as a tint, but the app screens are full of large filled panels — the
+   * L-Earn stats bar, the wallet balance, every card in the partner dashboard —
+   * and at that size it is not a tint, it is a slab of aqua. The reference
+   * design (`b2b/Paylez Partner Dashboard v2.dc.html`) makes the same call the
+   * other way round and is right: its surfaces are `#EEF1F0` and `#F6F8F7`,
+   * near-neutral, with the green spent only on things that are *actually* the
+   * accent. The ink teal at the alphas below lands within a point or two of
+   * those, so the light theme now reads like that page instead of like a
+   * different product.
    */
-  --tint-rgb: 19, 239, 242;
+  --tint-rgb: var(--accent-rgb);
   --panel-rgb: 255, 255, 255;
   /*
    * Higher than dark's. The sheet is white and the page is near-white, so the
@@ -156,29 +183,42 @@
    */
   --glass: rgba(var(--panel-rgb), 0.84);
 
-  --surface: rgba(var(--tint-rgb), 0.16);
-  --surface-2: rgba(var(--tint-rgb), 0.28);
+  /*
+   * Down from 0.16 / 0.28, because the tint above is no longer a pale neon that
+   * needed a lot of itself to register. These land on `#e9f3f2` and `#dcebea`,
+   * which are the reference design's `#F6F8F7` / `#EEF1F0` with the brand's own
+   * cast in them rather than a neutral grey.
+   */
+  --surface: rgba(var(--tint-rgb), 0.05);
+  --surface-2: rgba(var(--tint-rgb), 0.11);
   --border: rgba(var(--accent-rgb), 0.16);
   --border-2: rgba(var(--accent-rgb), 0.32);
 
   /*
-   * The neon, and the one place the two accent tokens genuinely have to
-   * disagree.
+   * The fill, and on paper it is the *middle* step of the ramp rather than the
+   * neon at the top of it.
    *
-   * `--accent` is only ever a *fill* — buttons, chips, bars, the brand mark, the
-   * chart columns; grep confirms nothing anywhere sets `color: var(--accent)`.
-   * A fill carries its own ink rather than borrowing the page's, and `--on-accent`
-   * on this neon is 12:1, so the fill can be the brand colour exactly. What a
-   * pale fill *cannot* do on paper is hold its own silhouette — 1.3:1 against the
-   * page — so the light theme rings solid buttons in `--accent-ink` (see
-   * `.btn-solid` below). Ring, not a duller colour: the edge was the only thing
-   * missing.
+   * `--accent` is only ever a fill — buttons, chips, bars, chart columns; grep
+   * confirms nothing anywhere sets `color: var(--accent)`. It used to be the neon
+   * `#13eff2`, on the reasoning that a fill carries its own ink and near-black on
+   * that neon is 12:1. What it could not do is hold its own silhouette: 1.3:1
+   * against near-white paper, so a solid button read as a sticker with nothing
+   * under it, and it sat in the page as a different colour family from the deep
+   * teal every icon and eyebrow beside it was drawn in.
    *
-   * `--accent-ink` is the opposite job: eyebrows, hairlines, icon strokes, small
-   * accented words — thin marks read *against* the page, and no amount of ringing
-   * helps a letterform. The neon there is 1.3:1, which is not text. So it takes
-   * the same hue at full saturation and the darkest lightness that still looks
-   * lit rather than muddy: 4.9:1, pure cyan with no red in it at all.
+   * So the fill is now the same value `.accent-text` uses — light's `--accent-lit`,
+   * hex for hex. The "Play & Earn" pill and the "Exclusive deals." it sits under
+   * are literally one colour, and every other filled mark on the page came along
+   * with them, because they all read from this token.
+   *
+   * The washes did not: `--tint-rgb` above keeps the neon, because a 16% wash of
+   * a dark teal is grey and a 16% wash of the neon is the pale aqua the cards
+   * want. Fill and wash want opposite ends of the ramp on paper; that split is
+   * the whole reason the two tokens exist.
+   *
+   * `--accent-ink` is the third job: eyebrows, hairlines, small accented words —
+   * thin marks read *against* the page and want the darkest step, 4.9:1, pure
+   * cyan with no red in it at all.
    *
    * The hue is 179°, a hair to the *green* side of true cyan — which is where
    * the brand wants to sit, and where 170° was trying to be before every dark
@@ -188,7 +228,7 @@
    * just under 180° keeps green a shade ahead of blue at every step without
    * letting it run away: the dark steps lead by two points, not twenty.
    */
-  --accent: #13eff2;
+  --accent: #089b99;
   --accent-ink: #007a78;
   /*
    * The middle step, and the one that does most of the work of making this page
@@ -205,12 +245,18 @@
   --accent-lit: #089b99;
   --accent-soft: color-mix(in srgb, var(--accent-ink) 92%, transparent);
   /*
-   * 11.9:1 on `--accent`, and near-black — the same arrangement dark uses,
-   * because light's fill is a bright neon again. Cooled into the accent's own
-   * hue (179°) rather than a neutral black, so the darkest thing on the page and
-   * the brightest belong to one family.
+   * White, because the fill is no longer a neon: near-black on `#089b99` is
+   * 4.2:1 and white on it is 3.4:1, and of the two only white reads as a button
+   * rather than as a chip someone forgot to finish. Dark keeps its near-black
+   * ink — the mint there is bright enough to carry it at 11:1.
+   *
+   * The honest caveat: 3.4:1 clears AA for large text and non-text marks but not
+   * for a 15px label, which is what most of these fills carry. Moving this pair
+   * to `--accent-ink` (#007a78) as the fill would put white at 5.25:1 and clear
+   * it outright, at the cost of the fill no longer matching `.accent-text`
+   * exactly. That match is the thing being asked for here, so it wins.
    */
-  --on-accent: #04201f;
+  --on-accent: #ffffff;
 
   /* 16:1 against the page, and the muted pair well clear of AA. */
   --text: #04201f;
@@ -222,6 +268,9 @@
   --glow-rgb: 19, 239, 242;
   --glow-k: 0.4;
   --shadow: rgba(4, 32, 31, 0.18);
+
+  /* The inverse cut: near-black mark on the brand mint. */
+  --logo: url('/logo/logo-light.png');
 
   color-scheme: light;
 }
@@ -287,6 +336,34 @@ html {
   width: 100%;
   height: 100%;
   pointer-events: none;
+}
+
+/*
+ * Relocate's backdrop: distance rings.
+ *
+ * It used to have the globe, on the argument that the page was about a border
+ * being crossed. It is not — it is a guide to the place you have already
+ * arrived in, plus a converter. So the picture is proximity: contour rings
+ * spreading from a point off to one side, the way a map draws "near you". The
+ * rings are wide apart and thin, which is what keeps this from reading as the
+ * even graph paper behind Analytics.
+ *
+ * `repeating-radial-gradient` and a mask, so it costs no context at all — and
+ * the globe's WebGL budget goes back to being spent only on the landing page.
+ */
+.site__rings {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image: repeating-radial-gradient(
+    circle at 78% 26%,
+    transparent 0 78px,
+    var(--border) 78px 79px
+  );
+  -webkit-mask-image: radial-gradient(circle at 78% 26%, black, transparent 72%);
+  mask-image: radial-gradient(circle at 78% 26%, black, transparent 72%);
+  opacity: 0.75;
 }
 
 /*
@@ -471,9 +548,10 @@ button {
 /*
  * No outline on the fill, in either theme.
  *
- * A hairline round a neon pill does put an edge on a shape the page cannot
- * separate on its own — and it looks like a mistake, a sticker with a keyline.
- * The glow and the near-black label carry it instead.
+ * A hairline round the pill looks like a mistake — a sticker with a keyline —
+ * and neither theme needs one: dark's mint reads at 11:1 against the page, and
+ * light's fill is now the same deep teal as the accented type beside it, which
+ * has its own silhouette. The label and the glow carry the shape.
  */
 .btn-solid {
   background: var(--accent);
@@ -573,23 +651,23 @@ button {
   transform: translateY(-0.5px);
 }
 
+/*
+ * The logo, as a tile rather than a glyph.
+ *
+ * Both files in `public/logo/` are square and ship their own ground, so the mark
+ * *is* the image — `--accent` stays underneath only as the colour the tile shows
+ * while the file is in flight, which on a 30px box is one frame at most.
+ * `cover` rather than `contain`: the art is already square and edge-to-edge, and
+ * `contain` would letterbox it against that fallback the moment a re-export
+ * arrives a pixel off.
+ */
 .brand-mark {
-  display: grid;
-  place-items: center;
   flex: 0 0 auto;
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 600;
-  font-size: 1rem;
-  line-height: 1;
+  background: var(--accent) var(--logo) center / cover no-repeat;
   box-shadow: 0 8px 24px -10px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
-}
-
-.brand-mark span {
-  transform: translateY(-0.06em);
 }
 
 /* ── nav: break-glass hover ────────────────────────────────────────────
@@ -893,7 +971,10 @@ button {
   }
 }
 
+/* An anchor now, not a button — it goes to `#/sign-in` like every other
+   navigation on the site. `inline-block` is what the padding needs back. */
 .sign-in {
+  display: inline-block;
   padding: 0.82rem 1.25rem;
   border-radius: 4px;
   border: 1px solid var(--border-2);
@@ -918,9 +999,12 @@ button {
 
 /* ── assistant floating button ────────────────────────────────────────── */
 
+/* Bottom-*left*, and the panel it opens comes out of the same corner, so the
+   button reads as the edge of the thing rather than as a control that summons
+   something from elsewhere. */
 .assistant-fab {
   position: fixed;
-  right: clamp(1rem, 2.5vw, 2rem);
+  left: clamp(1rem, 2.5vw, 2rem);
   bottom: clamp(1rem, 2.5vh, 2rem);
   z-index: 45;
 
@@ -1431,24 +1515,45 @@ button {
   margin-bottom: 1.1rem;
 }
 
+/*
+ * The merchant tile: one letter, centred on the accent.
+ *
+ * `flex: 0 0 auto` because it is a flex item beside a text block that will
+ * happily squeeze it, and an explicit `font-size` because it inherits from a
+ * card whose own size it must not follow.
+ */
 .pv-logo {
   display: grid;
   place-items: center;
+  flex: 0 0 auto;
   width: 40px;
   height: 40px;
   border-radius: 12px;
   background: var(--accent);
   color: var(--on-accent);
   font-family: var(--font-display);
+  font-size: 1.05rem;
   font-weight: 600;
+  line-height: 1;
 }
 
-.pv-merch b {
+/*
+ * Child combinators, not descendants.
+ *
+ * `.pv-merch` and `.svc-head` are both `<span class="pv-logo">` followed by a
+ * `<div>` of text, so a bare `.pv-merch span` also matches the tile — and beats
+ * `.pv-logo` on specificity. That is what was emptying the green box on
+ * Analytics: the letter inside it was being handed the caption's 0.78rem and
+ * `--text-fnt`, and in `.svc-head` a `display: block` on top of that, which
+ * killed the grid centring and parked a faint 12px "M" in the top-left corner.
+ * Scoping both rules to the text `<div>` is the fix; keep them scoped.
+ */
+.pv-merch > div > b {
   display: block;
   font-size: 0.95rem;
 }
 
-.pv-merch span {
+.pv-merch > div > span {
   font-size: 0.78rem;
   color: var(--text-fnt);
 }
@@ -2337,12 +2442,14 @@ button {
   margin-bottom: 1.35rem;
 }
 
-.svc-head b {
+/* Scoped to the text column for the same reason `.pv-merch`'s are — the tile
+   beside it is a `<span>` too. See the note there. */
+.svc-head > div > b {
   display: block;
   font-size: 0.95rem;
 }
 
-.svc-head span {
+.svc-head > div > span {
   display: block;
   margin-top: 0.15rem;
   font-size: 0.78rem;
@@ -4110,8 +4217,69 @@ button {
   color: var(--accent-lit);
 }
 
+/*
+ * The typed amount.
+ *
+ * The input is unstyled and inherits the row's display type, so a number being
+ * edited looks exactly like one being read — the card is a converter, and which
+ * end you are typing at should be a matter of where the caret is rather than of
+ * two different-looking controls. `field-sizing: content` shrinks the box to
+ * the digits where it is supported; the `size` fallback keeps it from being a
+ * full-width bar everywhere else.
+ */
+.rate-input {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  font-family: var(--font-display);
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.rate-input i {
+  font-style: normal;
+  font-size: 0.95rem;
+  color: var(--text-mut);
+}
+
+.rate-input input {
+  width: 100%;
+  max-width: 9ch;
+  field-sizing: content;
+  min-width: 2ch;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  font-variant-numeric: inherit;
+  text-align: right;
+}
+
+.rate-input input:focus-visible {
+  outline: none;
+}
+
+/* Only the side being typed into is accented, so the card always says which
+   number is the question and which is the answer. */
+.rate-row[data-out='true'] .rate-input {
+  color: var(--accent-lit);
+}
+
+.rate-input[data-live='true'] {
+  text-decoration: underline;
+  text-decoration-color: var(--accent-soft);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+
 /* Between the two rows and rotated a quarter turn: the arrow in the icon set
-   points right, and there is no second path in it for down. */
+   points right, and there is no second path in it for down. Now a button —
+   it swaps which end you are converting from. */
 .rate-swap {
   justify-self: center;
   display: grid;
@@ -4124,6 +4292,21 @@ button {
   background: var(--bg-2);
   color: var(--accent-lit);
   transform: rotate(90deg);
+  cursor: pointer;
+  transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+
+.rate-swap:hover {
+  border-color: var(--accent-ink);
+  background: var(--surface-2);
+}
+
+.rate-total {
+  margin-top: 0.2rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  font-variant-numeric: tabular-nums;
 }
 
 .rate-foot {
@@ -4337,6 +4520,2614 @@ button {
   }
 }
 
+/* ════════════════════════════════════════════════════════════════ forms ══
+   The field kit.
+
+   New ground: until the site had a sign-in and a listing to fill in, no rule in
+   this file touched an `input`, a `select`, a `textarea` or a `label`. So this
+   block is the whole vocabulary, and every screen that takes input reuses it
+   rather than styling its own controls.
+
+   Two decisions worth stating. Controls sit on `--surface` with a `--border`
+   hairline rather than on the page: a field has to look like somewhere to put
+   something, and on near-white paper an outline alone does not read as a well.
+   And the focus ring is the same `--accent-lit` the rest of the site focuses
+   with — `:focus-visible` on the control, not `:focus`, so clicking a field does
+   not ring it while typing in it does.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.field-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.field-star {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--accent-ink);
+}
+
+.field-help,
+.field-error {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.field-help {
+  color: var(--text-fnt);
+}
+
+/*
+ * The palette has one accent, so an error cannot be red without introducing a
+ * hue. It is weighted instead: the message is `--text` at 700 rather than the
+ * muted grey a hint gets, and the control it belongs to loses its own tint.
+ * Louder by contrast, not by colour.
+ */
+.field-error {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.field input,
+.field select,
+.field textarea {
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease);
+}
+
+.field textarea {
+  resize: vertical;
+  min-height: 5.5rem;
+}
+
+.field input::placeholder,
+.field textarea::placeholder {
+  color: var(--text-fnt);
+}
+
+.field input:hover,
+.field select:hover,
+.field textarea:hover {
+  border-color: var(--accent-soft);
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 1px;
+  border-color: transparent;
+  background: var(--surface-2);
+}
+
+/* Invalid loses the accent tint entirely, so a bad field reads as *unfinished*
+   rather than as decorated. */
+.field input[aria-invalid='true'] {
+  border-color: var(--text-mut);
+  background: transparent;
+}
+
+/* The arrow the native control draws is the one thing here that cannot be
+   tokenised, so the control keeps it and only the well around it is restyled. */
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.2rem;
+  cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.05rem) calc(50% + 1px),
+    calc(100% - 0.75rem) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--text);
+}
+
+/* Two fields on a line, one per line under ~40rem. `1fr 1fr` and not `auto`:
+   a select sized to its longest option would push its neighbour around every
+   time the language changed. */
+.field-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+/* The real `<input type="file">` is hidden inside the label, which is what lets
+   a styled box open the picker without a click handler. */
+.file-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border-2);
+  background: var(--surface);
+  color: var(--accent-ink);
+  font-size: 0.875rem;
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 200ms var(--ease), background 200ms var(--ease);
+}
+
+.file-pick:hover {
+  border-color: var(--accent-ink);
+  background: var(--surface-2);
+}
+
+.file-pick input {
+  display: none;
+}
+
+.file-pick span {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A control that reads as prose — the disclosure toggles. */
+.link-btn {
+  align-self: flex-start;
+  padding: 0;
+  color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.link-btn:hover {
+  text-decoration-thickness: 2px;
+}
+
+.form-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1.15rem;
+  margin: 0;
+  padding: 1.6rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.form-block legend {
+  padding: 0;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.form-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.hours {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  list-style: none;
+}
+
+.hours li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.hours b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ════════════════════════════════════════════════════════════════ auth ══ */
+
+/* One card on an otherwise empty screen. The globe is still behind it, so the
+   section is centred in the viewport rather than stacked from the top. */
+.auth {
+  min-height: calc(100dvh - var(--header-h));
+  display: grid;
+  place-items: center;
+}
+
+.auth-wrap {
+  display: grid;
+  place-items: center;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  width: min(100%, 27rem);
+  padding: clamp(1.6rem, 4vw, 2.4rem);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 40px 100px -60px rgba(var(--glow-rgb), calc(0.7 * var(--glow-k)));
+}
+
+/* The type step has two cards side by side inside it and needs the room. */
+.auth-card-wide {
+  width: min(100%, 40rem);
+}
+
+.auth-card h1 {
+  font-size: clamp(1.6rem, 3.4vw, 2.1rem);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.auth-lede {
+  margin-top: -0.5rem;
+  color: var(--text-mut);
+  font-size: 0.9375rem;
+}
+
+.auth-submit {
+  justify-content: center;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
+.auth-submit:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.auth-demo {
+  margin-top: -0.4rem;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+/* The demo list: a heading and one line per account. Tabular figures and no
+   wrapping, because these are strings to be typed rather than read — a password
+   broken across two lines is a password nobody gets right first time. */
+.auth-demo ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+  padding: 0;
+  list-style: none;
+}
+
+.auth-demo li {
+  overflow-x: auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mut);
+}
+
+/* The way to the other form. Prose with a control in it, so the line is the
+   muted weight and only the verb carries the accent — see `.link-btn`. */
+.auth-swap {
+  margin-top: -0.35rem;
+  text-align: center;
+  font-size: 0.83rem;
+  color: var(--text-mut);
+}
+
+.auth-swap .link-btn {
+  display: inline;
+  font-size: inherit;
+}
+
+.type-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+.type-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 1.2rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 220ms var(--ease),
+    background 220ms var(--ease),
+    transform 220ms var(--ease);
+}
+
+.type-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-soft);
+}
+
+/* Chosen is a ring plus a wash, not a fill: the card carries body copy, and
+   `--on-accent` on a paragraph is a card shouting its own description. */
+.type-card[data-on='true'] {
+  border-color: var(--accent-ink);
+  background: var(--surface-2);
+}
+
+.type-card b {
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.type-card > span:last-child {
+  font-size: 0.83rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.type-ico {
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent-lit);
+}
+
+.type-card[data-on='true'] .type-ico {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .type-card:hover {
+    transform: none;
+  }
+}
+
+/* ── the header's account chip ─────────────────────────────────────────── */
+
+.account {
+  position: relative;
+}
+
+.account-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.4rem 0.7rem 0.4rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  cursor: pointer;
+  transition: background 200ms var(--ease), border-color 200ms var(--ease);
+}
+
+.account-chip:hover {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+}
+
+.account-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* Name over role, both small — the chip is an identity badge, not a heading. */
+.account-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  line-height: 1.1;
+  text-align: left;
+}
+
+.account-who b {
+  font-size: 0.8125rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.account-who > span {
+  font-size: 0.68rem;
+  color: var(--text-fnt);
+}
+
+.account-menu {
+  position: absolute;
+  top: calc(100% + 0.55rem);
+  right: 0;
+  z-index: 50;
+  min-width: 11rem;
+  padding: 0.35rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 22px 60px -30px var(--shadow);
+}
+
+.account-item {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.55rem 0.65rem;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.account-item:hover {
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+/* ══════════════════════════════════════════════════════ assistant panel ══
+   A screen on the page rather than a page of its own.
+
+   It comes out of the same corner as the button, covers the left edge, and
+   leaves the rest of the site visible behind a scrim — the assistant is
+   consulted *while* reading, and a full-page takeover would lose whatever the
+   question was about.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.ai-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  animation: ai-fade 220ms var(--ease) both;
+}
+
+@keyframes ai-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+.ai-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: 61;
+  width: min(27rem, 100%);
+  display: flex;
+  flex-direction: column;
+
+  border-right: 1px solid var(--border);
+  /* Opaque, not `--glass`: this one has a whole moving page behind it, and a
+     conversation is the last thing that should be read through a backdrop. */
+  background: var(--bg);
+  box-shadow: 30px 0 80px -40px var(--shadow);
+  animation: ai-in 300ms var(--ease) both;
+}
+
+@keyframes ai-in {
+  from {
+    transform: translateX(-100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-scrim,
+  .ai-panel {
+    animation: none;
+  }
+}
+
+.ai-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.15rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-title svg {
+  color: var(--accent-lit);
+}
+
+/* The chevron points down by default; rotated a quarter turn it points back at
+   the edge the panel came from, which is where it is going. */
+.ai-close {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9px;
+  background: none;
+  color: var(--text-mut);
+  cursor: pointer;
+  transform: rotate(90deg);
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.ai-close:hover {
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+.ai-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 1.15rem;
+}
+
+/* ── signed out ── */
+
+.ai-locked {
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  text-align: center;
+}
+
+.ai-lock-ico {
+  display: grid;
+  place-items: center;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-lit);
+}
+
+.ai-locked h2 {
+  font-size: 1.25rem;
+}
+
+.ai-locked p {
+  max-width: 22rem;
+  color: var(--text-mut);
+  font-size: 0.9rem;
+}
+
+/* ── signed in ── */
+
+/* The greeting owns the empty panel and the composer sits under it; once the
+   thread has anything in it the greeting is gone and the composer is the floor. */
+.ai-greet {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.ai-greet h2 {
+  font-size: clamp(1.6rem, 4vw, 2rem);
+  line-height: 1.1;
+  letter-spacing: -0.025em;
+  color: var(--accent-lit);
+}
+
+.ai-greet p {
+  color: var(--text-mut);
+  font-size: 0.9rem;
+}
+
+.ai-thread {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 1rem;
+}
+
+.ai-turn {
+  max-width: 90%;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.ai-turn[data-from='you'] {
+  align-self: flex-end;
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.ai-turn[data-from='bot'] {
+  align-self: flex-start;
+  color: var(--text-mut);
+}
+
+/* Says what it is on every reply. The panel is a working shell and the answers
+   are not real yet; labelling each one is the honest version of that. */
+.ai-tag {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-2);
+  color: var(--accent-ink);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.ai-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-top: 0.85rem;
+}
+
+.ai-composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem 0.5rem 0.85rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  transition: border-color 200ms var(--ease);
+}
+
+.ai-composer:focus-within {
+  border-color: var(--accent-lit);
+}
+
+.ai-composer textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  resize: none;
+  overflow-y: auto;
+}
+
+.ai-composer textarea:focus-visible {
+  outline: none;
+}
+
+.ai-composer textarea::placeholder {
+  color: var(--text-fnt);
+}
+
+.ai-send {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+  transition: opacity 200ms var(--ease), transform 200ms var(--ease);
+}
+
+.ai-send:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.ai-send:not(:disabled):hover {
+  transform: scale(1.06);
+}
+
+.ai-suggestions {
+  gap: 0.4rem;
+}
+
+.ai-suggestions .chip {
+  font-size: 0.78rem;
+}
+
+/* ═══════════════════════════════════════════════════ business + listing ══ */
+
+/* Form on the left, the two things that make filling it in bearable on the
+   right. The rail sticks so the meter and the preview stay in view while the
+   form scrolls past them. */
+.business-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 22rem);
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+  align-items: start;
+}
+
+.business-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.business-rail {
+  position: sticky;
+  top: calc(var(--header-h) + 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.ready-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.ready-pct {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: var(--accent-lit);
+}
+
+.ready-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.ready-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 400ms var(--ease);
+}
+
+.ready-still {
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.ready-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.ready-done {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--accent-ink);
+}
+
+.ready-done svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+}
+
+/* ── the listing, as the app draws it ─────────────────────────────────── */
+
+.preview-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.phone {
+  border-radius: 22px;
+  border: 1px solid var(--border-2);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.phone-cover {
+  display: grid;
+  place-items: center;
+  height: 5.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-fnt);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.phone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.phone-body b {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  line-height: 1.2;
+}
+
+.phone-kind,
+.phone-meta {
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.phone-star {
+  font-style: normal;
+  color: var(--accent-lit);
+}
+
+.phone-dim {
+  color: var(--text-fnt);
+}
+
+.phone-body p {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.phone-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.45rem;
+}
+
+.phone-langs span {
+  padding: 0.15rem 0.5rem;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--accent-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.phone-note {
+  font-size: 0.72rem;
+  line-height: 1.5;
+  color: var(--text-fnt);
+}
+
+/* ═════════════════════════════════════════════════════ partner dashboard ══
+   A working frame, not a page: rail down the left, sticky bar across the top,
+   no marketing header and no footer.
+
+   The layout is the prototype's (`b2b/Paylez Partner Dashboard v2.dc.html`);
+   the colours are this file's, which is what gives the dashboard a dark theme,
+   five languages and the reader's own currency — none of which the prototype
+   has.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* The app frame owns the viewport, so the usual page scroll is off. */
+.site-app {
+  min-height: 100dvh;
+}
+
+.pd-app {
+  display: grid;
+  grid-template-columns: 15rem minmax(0, 1fr);
+  min-height: 100dvh;
+  transition: grid-template-columns 260ms var(--ease);
+}
+
+.pd-app[data-collapsed='true'] {
+  grid-template-columns: 4.6rem minmax(0, 1fr);
+}
+
+/* ── rail ── */
+
+.rail {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-2);
+  overflow: hidden;
+}
+
+.rail-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 1.15rem 1.15rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.rail-word {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.rail-tag {
+  padding: 0.12rem 0.4rem;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.rail-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  padding: 1rem 0.7rem;
+  overflow-y: auto;
+}
+
+.rail-group {
+  padding: 0 0.55rem 0.35rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.rail-link {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  width: 100%;
+  padding: 0.6rem 0.55rem;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.rail-link svg {
+  flex: 0 0 auto;
+}
+
+.rail-link:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* Current is a wash and the accent, not a fill: the rail is a list of names and
+   one of them being a solid block reads as a button among labels. */
+.rail-link[data-on='true'] {
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+.rail-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 0.7rem;
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * The one screen where the assistant does not sit bottom-left.
+ *
+ * Everywhere else that corner is empty page. Here it is the foot of a
+ * navigation rail, and a floating circle on top of the collapse toggle is not a
+ * near miss — reserving space for it pushed the seventh nav item off the bottom
+ * on a laptop. The button keeps its corner on all nine other screens; on this
+ * one it moves to the free corner instead.
+ */
+.site-app .assistant-fab {
+  left: auto;
+  right: clamp(1rem, 2.5vw, 2rem);
+}
+
+.plan-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.plan-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.plan-head b {
+  font-size: 0.85rem;
+}
+
+.plan-state {
+  padding: 0.1rem 0.4rem;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-card p {
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+.plan-bar {
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.plan-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.plan-usage {
+  font-size: 0.75rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mut);
+}
+
+.rail-collapse {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.5rem 0.55rem;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-fnt);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.rail-collapse svg {
+  flex: 0 0 auto;
+  transform: rotate(90deg);
+  transition: transform 260ms var(--ease);
+}
+
+.rail-collapse:hover {
+  background: var(--surface);
+  color: var(--accent-ink);
+}
+
+/* Collapsed: the labels go, the icons stay, and the plan card has nowhere
+   useful to be at 4.6rem so it goes too. */
+.rail[data-collapsed='true'] .rail-word,
+.rail[data-collapsed='true'] .rail-tag,
+.rail[data-collapsed='true'] .rail-group,
+.rail[data-collapsed='true'] .rail-link span,
+.rail[data-collapsed='true'] .plan-card,
+.rail[data-collapsed='true'] .rail-collapse span {
+  display: none;
+}
+
+.rail[data-collapsed='true'] .rail-brand,
+.rail[data-collapsed='true'] .rail-link,
+.rail[data-collapsed='true'] .rail-collapse {
+  justify-content: center;
+}
+
+.rail[data-collapsed='true'] .rail-collapse svg {
+  transform: rotate(-90deg);
+}
+
+/* ── top bar ── */
+
+.pd-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  min-height: 4rem;
+  padding: 0 clamp(1rem, 2.5vw, 1.75rem);
+  border-bottom: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* The crumb is the only thing here allowed to shrink, and it truncates rather
+   than wrapping — a two-line breadcrumb would grow the bar. Everything on the
+   right keeps its intrinsic width, or the user's name gets squeezed until it
+   runs out from under its own avatar. */
+.pd-crumb {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.85rem;
+  color: var(--text-fnt);
+}
+
+.pd-crumb > span,
+.pd-crumb b {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pd-crumb b {
+  color: var(--text);
+}
+
+.pd-crumb-sep {
+  flex: 0 0 auto;
+  transform: rotate(-90deg);
+}
+
+.pd-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.6rem;
+}
+
+.pd-range {
+  padding: 0.4rem 0.7rem;
+  border-radius: 9px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+.pd-icon {
+  display: grid;
+  place-items: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 9px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-lit);
+  cursor: pointer;
+}
+
+.pd-icon:hover {
+  background: var(--surface-2);
+}
+
+.pd-user {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.pd-user i {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+/* ── page ── */
+
+.pd-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pd-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: min(100%, 1400px);
+  padding: clamp(1.25rem, 3vw, 1.9rem) clamp(1rem, 2.5vw, 1.75rem) 3rem;
+}
+
+.pd-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.pd-head h1 {
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
+  letter-spacing: -0.025em;
+}
+
+.pd-head p {
+  margin-top: 0.3rem;
+  color: var(--text-mut);
+  font-size: 0.9rem;
+}
+
+.dash-soon {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.dash-soon p {
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-mut);
+}
+
+.pd-who {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.05rem;
+  line-height: 1.15;
+}
+
+.pd-who b {
+  font-size: 0.8125rem;
+}
+
+.pd-who > span {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+.pd-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: clamp(2rem, 6vw, 3.5rem);
+  text-align: center;
+}
+
+/* ── the screens ───────────────────────────────────────────────────────
+   Everything below draws a number: a bar is a width, a column is a height,
+   a table is a table. No canvas and no images, so every panel inherits the
+   theme, translates into five languages and prices itself in the reader's
+   currency — none of which a screenshot of the prototype would do.
+   ─────────────────────────────────────────────────────────────────────── */
+
+.pd-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.pd-two {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.1rem;
+  align-items: start;
+}
+
+.pd-panel,
+.pd-hero,
+.pd-table-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* The one filled panel per screen, so the sentence everything else supports is
+   the brightest thing on it. */
+.pd-hero {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+
+.pd-headline {
+  font-family: var(--font-display);
+  font-size: clamp(1.1rem, 2.4vw, 1.5rem);
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.02em;
+  text-wrap: pretty;
+}
+
+.pd-fine {
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text-fnt);
+}
+
+.pd-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 1rem;
+}
+
+.pd-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pd-tile > span {
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.pd-tile b {
+  font-family: var(--font-display);
+  font-size: 1.7rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* Signed, not coloured. One accent means a fall cannot be red, and a dashboard
+   that is green whichever way the number went is a brochure. */
+.pd-delta {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.pd-delta[data-dir='down'] {
+  color: var(--text-mut);
+}
+
+.pd-delta i {
+  font-style: normal;
+  font-weight: 400;
+  color: var(--text-fnt);
+}
+
+.pd-rows > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.pd-rows b {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-roi,
+.pd-proof {
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.pd-roi {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* Two columns whose heights are the claim. */
+.pd-columns {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.2rem;
+  height: 6rem;
+  margin: 0.4rem 0;
+}
+
+.pd-columns span {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.35rem;
+  height: 100%;
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+.pd-columns i {
+  display: block;
+  width: 2.6rem;
+  border-radius: 6px 6px 0 0;
+  background: var(--surface-2);
+}
+
+.pd-columns span[data-on='true'] i {
+  background: var(--accent);
+}
+
+.pd-columns span[data-on='true'] {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* ── bars ── */
+
+.pd-bar-row {
+  display: grid;
+  grid-template-columns: minmax(5rem, 8rem) 1fr auto;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.3rem 0;
+  font-size: 0.82rem;
+}
+
+.pd-bar-label {
+  color: var(--text-mut);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pd-bar-track {
+  display: block;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pd-bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.pd-bar-row b {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+/* ── stacked budget bar ── */
+
+.pd-stacked {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pd-stacked i,
+.pd-legend i {
+  display: block;
+  height: 100%;
+}
+
+.pd-stacked i[data-part='spent'] {
+  background: var(--accent);
+}
+
+/* Held-back money is the accent at half strength — it is spoken for but not
+   gone, and a second hue is not available to say so. */
+.pd-stacked i[data-part='held'] {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.55) 0 5px,
+    rgba(var(--accent-rgb), 0.2) 5px 10px
+  );
+}
+
+.pd-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.pd-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pd-legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.pd-legend i[data-part='spent'] {
+  background: var(--accent);
+}
+
+.pd-legend i[data-part='held'] {
+  background: rgba(var(--accent-rgb), 0.4);
+}
+
+.pd-legend i[data-part='free'] {
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+}
+
+.pd-legend b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── tables ── */
+
+.pd-table-wrap {
+  overflow-x: auto;
+}
+
+.pd-table {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.pd-table th {
+  padding: 0 0.6rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.pd-table td {
+  padding: 0.7rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-mut);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pd-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.pd-table tbody tr:hover {
+  background: var(--surface);
+}
+
+.pd-deal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.pd-deal i {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.4rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-style: normal;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+
+/* Live is filled, everything else is outlined — one accent, so the states are
+   told apart by weight rather than by hue. */
+.pd-state {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+.pd-state[data-state='live'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pd-state[data-state='expired'] {
+  opacity: 0.6;
+}
+
+.pd-code {
+  font-family: var(--font-display);
+  letter-spacing: 0.06em;
+}
+
+.pd-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.pd-progress i {
+  display: block;
+  width: 3.5rem;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pd-progress b {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/* ── cards, insights ── */
+
+.pd-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 1rem;
+}
+
+.pd-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pd-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.pd-card-top b {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+}
+
+.pd-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.7rem;
+  margin-top: 0.2rem;
+}
+
+.pd-split span {
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+.pd-split b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text);
+  background: var(--surface-2);
+  border-color: var(--border-2);
+}
+
+.pd-insight svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  color: var(--accent-lit);
+}
+
+.pd-empty-ico {
+  display: grid;
+  place-items: center;
+  width: 3.4rem;
+  height: 3.4rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-lit);
+}
+
+.pd-empty h2 {
+  font-size: clamp(1.2rem, 2.6vw, 1.5rem);
+}
+
+.pd-empty p {
+  max-width: 44ch;
+  color: var(--text-mut);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.pd-note {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.rail-group-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 1.1rem;
+}
+
+/* ════════════════════════════════════════════════════════════════ games ══
+   L-Earn, once you are signed in.
+
+   Rebuilt from the old app in `landing/screenshots/learn1.png`, minus its four
+   gradients: that version told the games apart by colour, and this palette has
+   one accent. Icon, name and rules do the same job, and they are the part a
+   player reads anyway.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.play,
+.wal {
+  padding-top: clamp(2rem, 6vh, 3.5rem);
+}
+
+.app-head {
+  margin-bottom: 1.5rem;
+}
+
+.app-head h1 {
+  font-size: clamp(1.8rem, 4vw, 2.4rem);
+  letter-spacing: -0.03em;
+}
+
+.app-head p {
+  margin-top: 0.4rem;
+  color: var(--text-mut);
+}
+
+/* ── the stats bar ── */
+
+.stat-bar {
+  padding: 1.25rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  /* The one filled panel on the page, so the numbers that matter most are the
+     brightest thing on it — which is what the gradient did in the original. */
+  background: var(--surface-2);
+  margin-bottom: 1rem;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+
+.stat span {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.stat > b {
+  display: block;
+  margin-top: 0.2rem;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-hearts,
+.round-hearts {
+  display: flex;
+  gap: 0.2rem;
+  font-size: 1.15rem;
+  line-height: 1.35;
+  color: var(--accent-lit);
+}
+
+.stat-hearts i,
+.round-hearts span {
+  font-style: normal;
+}
+
+/* Spent lives stay in place at low contrast rather than disappearing — three
+   hearts with one missing reads as damage, two hearts reads as a design. */
+.stat-hearts i[data-spent='true'],
+.round-hearts span[data-spent='true'] {
+  opacity: 0.22;
+}
+
+.stat-sub {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.stat-sub span {
+  font-size: 0.75rem;
+  color: var(--text-mut);
+}
+
+.stat-sub b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── redeem strip ── */
+
+.redeem-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  margin-bottom: 1.5rem;
+  transition: background 220ms var(--ease), transform 220ms var(--ease);
+}
+
+.redeem-strip:hover {
+  background: var(--surface-2);
+  transform: translateY(-1px);
+}
+
+.redeem-ico {
+  display: grid;
+  place-items: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.redeem-strip b {
+  flex: 1;
+  font-size: 0.9375rem;
+}
+
+.redeem-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+/* ── the four cards ── */
+
+.play-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1rem;
+}
+
+.play-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1.5rem 1.25rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  text-align: center;
+}
+
+.play-ico {
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  margin-bottom: 0.4rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-lit);
+}
+
+.play-card b {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+}
+
+.play-rule {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.play-start {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.8rem;
+}
+
+.play-start:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── a round in play ── */
+
+.round {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: clamp(1.4rem, 4vw, 2rem);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.round-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.round-clock {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+}
+
+/* The clock runs out of colour as well as time; there is no red to reach for. */
+.round-clock[data-low='true'] {
+  color: var(--text);
+}
+
+.round-bar {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.round-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  /* Linear, and matched to the tick: an eased countdown lies about how long is
+     left. */
+  transition: width 120ms linear;
+}
+
+.round-glyph {
+  align-self: center;
+  font-family: 'GH Country Flags', var(--font-body);
+  font-size: clamp(3rem, 10vw, 4.5rem);
+  line-height: 1.1;
+}
+
+.round-q {
+  text-align: center;
+  font-size: clamp(1.1rem, 3vw, 1.45rem);
+  line-height: 1.3;
+}
+
+.round-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.round-option {
+  padding: 0.9rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms var(--ease), border-color 160ms var(--ease);
+}
+
+.round-option:not(:disabled):hover {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+}
+
+/*
+ * Right is the accent fill; wrong is the accent *removed* — no border, no
+ * tint, ink at half strength. With one hue that is the only honest pair, and it
+ * reads correctly: the answer lights up and the mistake goes quiet.
+ */
+.round-option[data-state='right'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.round-option[data-state='wrong'] {
+  border-color: var(--border);
+  background: transparent;
+  color: var(--text-fnt);
+  text-decoration: line-through;
+}
+
+.round-option:disabled {
+  cursor: default;
+}
+
+.round-quit {
+  align-self: center;
+  margin-top: 0.3rem;
+}
+
+/* ── the result ── */
+
+.round-result {
+  align-items: center;
+  text-align: center;
+}
+
+.result-ico {
+  display: grid;
+  place-items: center;
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--accent-lit);
+}
+
+.result-ico[data-won='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.round-result h2 {
+  font-size: clamp(1.3rem, 3.4vw, 1.7rem);
+}
+
+.result-score {
+  color: var(--text-mut);
+}
+
+.result-points {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  color: var(--accent-lit);
+}
+
+.result-streak {
+  font-size: 0.85rem;
+  color: var(--text-fnt);
+}
+
+.result-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.6rem;
+}
+
+/* ── the board ── */
+
+.play-board {
+  margin-top: 2rem;
+}
+
+.play-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: 0.3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  margin-bottom: 1rem;
+}
+
+.play-tabs button {
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.play-tabs button[data-on='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.play-board-card {
+  padding: 0;
+  overflow: hidden;
+}
+
+.play-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.95rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.play-board-head > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.play-board-head svg {
+  color: var(--accent-lit);
+}
+
+.play-board-head b {
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+}
+
+.play-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play-rows li {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.8rem 1.1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Your own row is the one you are looking for, so it is the one with a tint. */
+.play-rows li[data-me='true'] {
+  background: var(--surface-2);
+}
+
+.play-rank {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 50%;
+  border: 1px solid var(--border-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.play-rows li[data-me='true'] .play-rank {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.play-who {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.play-who b {
+  font-size: 0.9rem;
+}
+
+.play-who > span {
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+.play-score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+
+.play-score b {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-lit);
+}
+
+.play-score > span {
+  font-size: 0.68rem;
+  color: var(--text-fnt);
+}
+
+.play-board-empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--text-fnt);
+}
+
+.play-more {
+  width: 100%;
+  padding: 0.85rem;
+  background: none;
+  color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.play-more:hover {
+  background: var(--surface);
+}
+
+/* ══════════════════════════════════════════════════════════════ wallet ══ */
+
+.balance {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 1.25rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  margin-bottom: 1.5rem;
+}
+
+.balance > div > span {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.balance b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 2.1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+.balance b i {
+  font-style: normal;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+}
+
+.balance-note {
+  font-size: 0.82rem;
+  color: var(--text-mut);
+}
+
+.wal-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.wal-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.wal-tabs button[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.wal-tabs button i {
+  font-style: normal;
+  font-size: 0.72rem;
+  opacity: 0.7;
+}
+
+.wcards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.wcard {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 1rem 1.15rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* A spent voucher stays in the list at half strength — it is a receipt now, not
+   an offer, and hiding it would lose the only record of it. */
+.wcard[data-spent='true'] {
+  opacity: 0.6;
+}
+
+.wcard-tx {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wcard-tx b {
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.wcard-tx > span {
+  font-size: 0.85rem;
+  color: var(--accent-ink);
+}
+
+.wcard-when {
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+}
+
+.wcard-act {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+}
+
+.wcard-cost {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+}
+
+.wcard-code {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.06em;
+  color: var(--text-mut);
+}
+
+.wcard-show {
+  padding: 0.5rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+.wal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 2.5rem 1.5rem;
+  text-align: center;
+}
+
+.wal-empty p {
+  max-width: 34ch;
+  color: var(--text-mut);
+}
+
+.cat-head {
+  margin-top: 2.5rem;
+  margin-bottom: 1.1rem;
+}
+
+.gift-value {
+  font-size: 0.85rem;
+  color: var(--accent-ink);
+}
+
+.gift-buy {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.7rem;
+  padding: 0.55rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.gift-buy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.wal-rule {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 1.5rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+/* A heading the thread needs for its dialog label but nobody needs to see. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* ────────────────────────────────────────────────────────── responsive ── */
 
 /*
@@ -4357,6 +7148,48 @@ button {
 @media (max-width: 1080px) {
   .main-nav {
     display: none;
+  }
+
+  /*
+   * The listing rail goes under the form rather than beside it, and stops
+   * sticking — a sticky block in a single column pins itself over the fields
+   * you are trying to reach.
+   */
+  .business-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .business-rail {
+    position: static;
+  }
+
+  /* Two cards side by side under a 1fr column, so the meter and the preview
+     still share a line before they finally stack. */
+  .business-rail {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+
+  /* Below the nav breakpoint the rail is only ever the collapsed strip — a
+     15rem sidebar on a tablet is a third of the screen. */
+  .pd-app,
+  .pd-app[data-collapsed='true'] {
+    grid-template-columns: 4.6rem minmax(0, 1fr);
+  }
+
+  .rail .rail-word,
+  .rail .rail-tag,
+  .rail .rail-group,
+  .rail .rail-link span,
+  .rail .plan-card,
+  .rail .rail-collapse {
+    display: none;
+  }
+
+  .rail .rail-brand,
+  .rail .rail-link {
+    justify-content: center;
   }
 
   .tcols {
@@ -4399,6 +7232,58 @@ button {
   .hero-grid,
   .learn-hero .hero-grid,
   .b2b-hero .hero-grid {
+    grid-template-columns: 1fr;
+  }
+
+  /* Paired fields, the account-type cards and the listing rail all stack. */
+  .field-row,
+  .type-grid,
+  .business-rail,
+  .round-options {
+    grid-template-columns: 1fr;
+  }
+
+  /* The three stats keep their row — they are three short numbers and stacking
+     them turns the bar into a column of headings. */
+  .stat > b {
+    font-size: 1.3rem;
+  }
+
+  .wcard {
+    flex-wrap: wrap;
+  }
+
+  .wcard-act {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  /* Full width, because a 27rem drawer on a 24rem phone leaves a sliver of
+     scrim nobody can hit and a panel that is not quite the screen. */
+  .ai-panel {
+    width: 100%;
+  }
+
+  /* The name and role are the chip on a phone; the avatar carries the identity
+     and the two lines of text are what there is no room for. */
+  .account-who {
+    display: none;
+  }
+
+  .account-chip {
+    padding: 0.4rem;
+  }
+
+  /* The crumb's first segment, the date range and the pill's two lines are all
+     things the bar can lose before the screen title has to. */
+  .pd-crumb span:first-child,
+  .pd-range,
+  .pd-who {
+    display: none;
+  }
+
+  /* The dashboard's paired panels stack before the tables have to scroll. */
+  .pd-two {
     grid-template-columns: 1fr;
   }
 
@@ -4581,6 +7466,1065 @@ button {
 
   .chart-meta {
     gap: 1.5rem;
+  }
+}
+
+/* ═════════════════════════════════════════════════════════════ console ══
+   The operator's frame. Third and last of the signed-in screens, and the
+   plainest of the three on purpose: no rail, because there is one page; no
+   charts, because everything here is a fact rather than a trend.
+
+   `adm-` prefixed throughout. This sheet has no scoping and `.dash-*` has
+   already crushed the dashboard's user pill once by sharing a name with the
+   B2B mock — a table on a screen called "admin" is exactly the kind of
+   component that would collide next.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.adm-app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.adm-bar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  min-height: 4rem;
+  padding: 0.6rem clamp(1rem, 2.5vw, 1.75rem);
+  border-bottom: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.adm-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.adm-word {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.05rem;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+/* Same pill the partner rail wears, and deliberately: it is the badge that says
+   which product you are inside, and there are two of them now. */
+.adm-tag {
+  padding: 0.12rem 0.4rem;
+  border-radius: 5px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.adm-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.adm-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8125rem;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.adm-user i {
+  display: grid;
+  place-items: center;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.adm-user > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  line-height: 1.15;
+}
+
+.adm-user b {
+  font-size: 0.8125rem;
+}
+
+.adm-user span span {
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+/* ── page ── */
+
+.adm-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  width: min(100%, 1400px);
+  padding: clamp(1.25rem, 3vw, 1.9rem) clamp(1rem, 2.5vw, 1.75rem) 3rem;
+}
+
+.adm-head h1 {
+  font-size: clamp(1.5rem, 3vw, 1.9rem);
+  letter-spacing: -0.025em;
+}
+
+.adm-head p {
+  margin-top: 0.3rem;
+  color: var(--text-mut);
+  font-size: 0.9rem;
+}
+
+.adm-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 1rem;
+}
+
+.adm-kpi {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.adm-kpi b {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-lit);
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-kpi span {
+  font-size: 0.8rem;
+  color: var(--text-mut);
+}
+
+.adm-block {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: clamp(1.1rem, 3vw, 1.6rem);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.adm-block-head h2 {
+  font-size: 1.15rem;
+  letter-spacing: -0.02em;
+}
+
+.adm-block-head p {
+  margin-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+/* Five columns of addresses do not fit a phone, so the table scrolls inside its
+   own box rather than widening the document. */
+.adm-scroll {
+  overflow-x: auto;
+}
+
+.adm-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.adm-table th {
+  padding: 0 1rem 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.adm-table td {
+  padding: 0.75rem 1rem 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  color: var(--text-mut);
+}
+
+.adm-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.adm-table b {
+  display: block;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.adm-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+}
+
+.adm-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.adm-who i {
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent-ink);
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.adm-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The role chip. Outlined for the two kinds of visitor and filled for the
+ * operator — the one row in the table that is *us* should be findable without
+ * reading it, and a fill is the only weight left once colour is spent.
+ */
+.adm-role {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.adm-role[data-role='admin'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.adm-live {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.adm-meter {
+  display: block;
+  width: 6rem;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.adm-meter i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.adm-dim {
+  color: var(--text-fnt);
+}
+
+.adm-empty {
+  font-size: 0.875rem;
+  color: var(--text-mut);
+}
+
+.adm-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-fnt);
+}
+
+.adm-note svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  color: var(--accent-lit);
+}
+
+/* ── the catalogue ── */
+
+.adm-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.adm-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* The field kit's own well, laid out around an icon. `input[type=search]` keeps
+   the browser's clear button, which is one control this does not have to draw. */
+.adm-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  transition: border-color 200ms var(--ease);
+}
+
+.adm-search:focus-within {
+  border-color: var(--accent-ink);
+}
+
+.adm-search-lg {
+  flex: 1 1 18rem;
+  max-width: 30rem;
+}
+
+.adm-search-ico {
+  flex: 0 0 auto;
+  color: var(--text-fnt);
+}
+
+.adm-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+}
+
+.adm-search input:focus-visible {
+  outline: none;
+}
+
+.adm-search input::placeholder {
+  color: var(--text-fnt);
+}
+
+.adm-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  overflow-x: auto;
+}
+
+.adm-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.adm-tab:hover {
+  color: var(--text);
+}
+
+/* Current is a fill here and a wash in the rail, and the difference is the
+   job: a rail is a list of places, a tab strip is one control with a position. */
+.adm-tab[data-on='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.adm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adm-service {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.adm-logo {
+  display: grid;
+  place-items: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.adm-service-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1 1 16rem;
+  min-width: 0;
+}
+
+.adm-service-body > b {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.adm-service-side {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* The id is the thing an owner pastes into the analytics search, so it is
+   monospaced, selectable and never truncated — a hash with a letter missing is
+   worse than a hash that wraps. */
+.adm-id {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.adm-id code {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 0.75rem;
+  color: var(--text-mut);
+  word-break: break-all;
+}
+
+.adm-id .link-btn {
+  font-size: 0.75rem;
+}
+
+/* Live / paused, used / unused. Outlined by default and filled when it is on,
+   which is the only weight left once colour is spent on the one accent. */
+.adm-state {
+  display: inline-block;
+  padding: 0.15rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.adm-state[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ── one venue ── */
+
+.adm-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  text-decoration: none;
+}
+
+.adm-back:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* The chevron points down everywhere else on the site; here it is the way back. */
+.adm-back-ico {
+  transform: rotate(90deg);
+}
+
+.adm-service-head {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  flex-wrap: wrap;
+  padding: 1.2rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.adm-service-who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+
+.adm-service-who h1 {
+  font-size: clamp(1.35rem, 3vw, 1.75rem);
+  letter-spacing: -0.025em;
+}
+
+.adm-totals {
+  display: flex;
+  gap: clamp(1rem, 3vw, 2.5rem);
+  flex-wrap: wrap;
+}
+
+.adm-totals span {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.1rem;
+}
+
+.adm-totals b {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 3vw, 1.7rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--accent-lit);
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-totals i {
+  font-style: normal;
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+/* Nine cards, then whatever fits. `auto-fit` rather than four columns: this
+   grid also holds two tiles on the vouchers tab and three on loyalty. */
+.adm-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+}
+
+.adm-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.adm-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.adm-card-top i {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--accent-lit);
+}
+
+.adm-card > b {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── charts, all of them divs ── */
+
+.adm-cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 9rem;
+}
+
+.adm-cols span {
+  flex: 1;
+  min-width: 0;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+  opacity: 0.85;
+  transition: opacity 200ms var(--ease);
+}
+
+.adm-cols span:hover {
+  opacity: 1;
+}
+
+.adm-months {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+  height: 9rem;
+}
+
+.adm-months span {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 1;
+  height: 100%;
+}
+
+.adm-months i {
+  display: block;
+  width: 100%;
+  border-radius: 5px 5px 0 0;
+  background: var(--accent);
+}
+
+.adm-months em {
+  font-style: normal;
+  font-size: 0.7rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.adm-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.adm-bar-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 7rem) 1fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.adm-bar-label {
+  color: var(--text-mut);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.adm-bar-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.adm-bar-track i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.adm-bar-row b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * Mine against the average, and the average is grey.
+ *
+ * A second accent would be the third hue this palette does not have, so the
+ * comparison is carried by fill weight instead: the venue is the accent, the
+ * country is the same surface every other inert thing on the page sits on.
+ */
+.adm-compare {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 1rem;
+}
+
+.adm-compare-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+
+/*
+ * A definite height, not a percentage of one.
+ *
+ * The columns size themselves as a percentage of this box, so this box may not
+ * size itself to them — a percentage height against an `auto` parent resolves
+ * to nothing, which is exactly what it did: three pairs of 2px slivers. Every
+ * other chart in this file states its own height for the same reason.
+ */
+.adm-compare-cols {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 0.4rem;
+  width: 100%;
+  height: 9rem;
+}
+
+.adm-compare-cols span {
+  width: clamp(1.25rem, 5vw, 2.5rem);
+  border-radius: 5px 5px 0 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+}
+
+.adm-compare-cols span[data-on='true'] {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+.adm-legend {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.adm-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.adm-legend span::before {
+  content: '';
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 3px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+}
+
+.adm-legend span[data-on='true']::before {
+  background: var(--accent);
+  border-color: transparent;
+}
+
+/* ── deals, settings, tiers ── */
+
+.adm-deals {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adm-deals li {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.adm-deal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.adm-deal-body b {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+/* The discount itself, as a mark. Same shape in a table cell and on a card. */
+.adm-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 2.6rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  color: var(--accent-ink);
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.adm-badge-lg {
+  min-width: 3.4rem;
+  padding: 0.35rem 0.7rem;
+  font-size: 1rem;
+  justify-self: flex-start;
+}
+
+.adm-setting-row {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  font-size: 0.875rem;
+  color: var(--text-mut);
+}
+
+.adm-setting-row > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.adm-setting-row svg {
+  color: var(--accent-lit);
+}
+
+.adm-setting-row b {
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.adm-tiers {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 1rem;
+}
+
+.adm-tier {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.adm-tier-rows {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.adm-tier-rows span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.adm-tier-rows i {
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.adm-tier-rows b {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-budget {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.adm-budget-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.adm-budget-top b {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.adm-meter-wide {
+  width: 100%;
+  height: 8px;
+}
+
+/* ── table tools ── */
+
+.adm-table-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.adm-table-head h3 {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.adm-table-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.adm-export {
+  gap: 0.4rem;
+  font-size: 0.8rem;
+}
+
+.adm-ranges {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.adm-range {
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.adm-range:hover {
+  color: var(--text);
+}
+
+.adm-range[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Two panels side by side where there is room, stacked where there is not. */
+.adm-two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  gap: 1.5rem;
+}
+
+/* The pill is name plus role, which is the least useful thing in the bar when
+   there is no room — there is exactly one person signed in here. */
+@media (max-width: 34rem) {
+  .adm-user {
+    display: none;
+  }
+
+  .adm-totals {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .adm-totals span {
+    align-items: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-cols span,
+  .adm-tab,
+  .adm-range {
+    transition: none;
   }
 }
 

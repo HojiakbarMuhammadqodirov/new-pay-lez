@@ -12,6 +12,7 @@ import { Icon, type IconName } from './icons';
 import { LANGUAGE_ORDER, LANGUAGES, useCopy, useLanguage } from './i18n/context';
 import { PATHS, type Route } from './router';
 import { useTheme } from './theme/context';
+import { initial, useAuth } from './auth/context';
 
 /**
  * One nav item: a glass pane that fractures around the pointer.
@@ -166,7 +167,7 @@ function LanguageMenu() {
  * The button reports its *destination* rather than its current state, which is
  * what a screen reader needs to know before pressing it.
  */
-function ThemeToggle() {
+export function ThemeToggle() {
   const copy = useCopy();
   const { theme, toggle } = useTheme();
   const dark = theme === 'dark';
@@ -190,8 +191,98 @@ function ThemeToggle() {
   );
 }
 
+/**
+ * The signed-in replacement for the sign-in button.
+ *
+ * Avatar, name, and what kind of account it is underneath — enough to know at a
+ * glance who the session belongs to, which matters on a site where that decides
+ * which pages exist. Opening it uses the same outside-click and Escape handling
+ * as `LanguageMenu` above; the two are the only popovers on the page and they
+ * should behave identically.
+ */
+function AccountChip() {
+  const copy = useCopy();
+  const { account, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (!account?.type) return null;
+
+  return (
+    <div className="account" ref={ref}>
+      <button
+        type="button"
+        className="account-chip"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={copy.auth.accountMenu}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="account-avatar" aria-hidden>
+          {initial(account)}
+        </span>
+        <span className="account-who">
+          <b>{account.name}</b>
+          <span>{copy.auth.roles[account.type]}</span>
+        </span>
+      </button>
+
+      {open && (
+        <div className="account-menu" role="menu">
+          {account.type === 'business' && (
+            <a className="account-item" role="menuitem" href={PATHS.dashboard}>
+              <Icon name="bars" size={15} />
+              {copy.auth.dashboard}
+            </a>
+          )}
+          {/* An admin can wander onto the marketing pages like anyone else, so
+              the way back to the console has to be somewhere. This is where the
+              owner's way back to their dashboard already is. */}
+          {account.type === 'admin' && (
+            <a className="account-item" role="menuitem" href={PATHS.admin}>
+              <Icon name="shield" size={15} />
+              {copy.admin.tag}
+            </a>
+          )}
+          <button
+            type="button"
+            className="account-item"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              signOut();
+            }}
+          >
+            <Icon name="send" size={15} />
+            {copy.auth.signOut}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function Header({ route }: { route: Route }) {
   const copy = useCopy();
+  const { account } = useAuth();
   const [scrolled, setScrolled] = useState(false);
 
   /*
@@ -217,32 +308,49 @@ export function Header({ route }: { route: Route }) {
           actions happen to be. */}
       <div className="wrap header-inner">
         <a className="brand" href={PATHS.landing} aria-label="paylez home">
-          <span className="brand-mark">
-            <span>p</span>
-          </span>
+          <span className="brand-mark" aria-hidden />
           <span className="brand-word">paylez</span>
         </a>
 
         <nav className="main-nav" aria-label="Primary">
-          {NAV_ITEMS.map((item, index) => (
-            <NavItem
-              key={copy.nav[index]}
-              href={item.href}
-              label={copy.nav[index]}
-              icon={item.icon}
-              /* Only the two routes can be "current"; the rest are section
-                 anchors on the landing page, which scroll rather than navigate. */
-              active={item.href === PATHS[route]}
-            />
-          ))}
+          {/*
+            Zipped into pairs before filtering, not filtered as two arrays.
+            `NAV_ITEMS` is index-aligned with `copy.nav`, so dropping an entry
+            from one and not the other shears every label after it — B2B would
+            end up captioned "Vouchers".
+
+            An individual has no business with the two pages that sell to a
+            venue. Signed out, everything shows: those pages are still the pitch.
+          */}
+          {NAV_ITEMS.map((item, index) => ({ item, label: copy.nav[index] }))
+            .filter(
+              ({ item }) =>
+                account?.type !== 'individual' ||
+                (item.href !== PATHS.b2b && item.href !== PATHS.analytics),
+            )
+            .map(({ item, label }) => (
+              <NavItem
+                key={label}
+                href={item.href}
+                label={label}
+                icon={item.icon}
+                /* Only the routes can be "current"; the rest are section
+                   anchors on the landing page, which scroll rather than navigate. */
+                active={item.href === PATHS[route]}
+              />
+            ))}
         </nav>
 
         <div className="header-actions">
           <ThemeToggle />
           <LanguageMenu />
-          <button type="button" className="sign-in">
-            {copy.signIn}
-          </button>
+          {account?.type ? (
+            <AccountChip />
+          ) : (
+            <a className="sign-in" href={PATHS.signin}>
+              {copy.signIn}
+            </a>
+          )}
         </div>
       </div>
     </header>

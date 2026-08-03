@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet" />
+<style>
+  body { margin: 0; background: #EEF1F0; font-family: 'Plus Jakarta Sans', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  a { color: #0B7F63; }
+  a:hover { color: #0B1512; }
+</style>
+</helmet>
+
+<div style="padding:32px 16px;background:#EEF1F0;min-height:100%">
+  <div style="max-width:600px;margin:0 auto">
+
+    <div style="font-size:12px;color:#9AA5A0;text-align:center;margin-bottom:18px;line-height:1.5">{{ preheader }}</div>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;background:#FFFFFF;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(11,21,18,0.07)">
+      <tr>
+        <td style="padding:26px 28px 0">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+            <tr>
+              <td style="padding-right:9px">
+                <div style="width:26px;height:26px;border-radius:8px;background:#0B1512;color:#5FE9C4;font-size:14px;font-weight:800;text-align:center;line-height:26px">p</div>
+              </td>
+              <td style="font-size:16px;font-weight:800;letter-spacing:-0.02em;color:#0B1512">paylez</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:22px 28px 6px">
+          <h1 style="margin:0;font-size:25px;font-weight:800;letter-spacing:-0.03em;color:#0B1512;line-height:1.25;text-wrap:pretty">{{ title }}</h1>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:0 28px 24px">
+          <p style="margin:0;font-size:14px;color:#6B7772;line-height:1.6">{{ intro }}</p>
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:0 28px">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;background:#0B1512;border-radius:14px">
+            <tr>
+              <td style="padding:22px 24px">
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.12em;color:#5FE9C4;margin-bottom:12px">NEW CUSTOMERS</div>
+                <div style="font-size:36px;font-weight:800;letter-spacing:-0.035em;color:#FFFFFF;line-height:1;margin-bottom:10px">{{ costPerNew }}</div>
+                <div style="font-size:14px;color:rgba(255,255,255,0.78);line-height:1.6">{{ costLine }}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:16px 28px 0">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;background:#F6F8F7;border-radius:14px">
+            <tr>
+              <td style="padding:20px 22px">
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.12em;color:#0B7F63;margin-bottom:10px">SECOND VISITS</div>
+                <div style="font-size:17px;font-weight:700;color:#0B1512;line-height:1.5;letter-spacing:-0.02em;margin-bottom:7px;text-wrap:pretty">{{ returnLine }}</div>
+                <div style="font-size:13px;color:#6B7772;line-height:1.6">{{ returnNote }}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:14px 28px 0">
+          <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="border-collapse:separate;background:#F6F8F7;border-radius:14px">
+            <tr>
+              <td style="padding:20px 22px">
+                <div style="font-size:10.5px;font-weight:700;letter-spacing:0.12em;color:#0B7F63;margin-bottom:10px">YOUR QUIET HOURS</div>
+                <div style="font-size:17px;font-weight:700;color:#0B1512;line-height:1.5;letter-spacing:-0.02em;margin-bottom:7px;text-wrap:pretty">{{ quietLine }}</div>
+                <div style="font-size:13px;color:#6B7772;line-height:1.6">{{ quietNote }}</div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <tr>
+        <td style="padding:26px 28px 28px" align="center">
+          <a href="#" style="display:inline-block;padding:14px 26px;border-radius:11px;background:#0B1512;color:#5FE9C4;font-size:14.5px;font-weight:700;text-decoration:none">{{ cta }}</a>
+        </td>
+      </tr>
+    </table>
+
+    <div style="padding:20px 24px 0;text-align:center">
+      <p style="margin:0 0 8px;font-size:12px;color:#6B7772;line-height:1.7">{{ footerNote }}</p>
+      <p style="margin:0;font-size:12px;color:#9AA5A0;line-height:1.7">You get this once a month because you run Café Bratysławska on Paylez. <a href="#" style="color:#6B7772">Stop these emails</a></p>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:640,&quot;height&quot;:1120},&quot;title&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Who came to Café Bratysławska in August&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;preheader&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;275 new customers in August, at 17.15 zł each&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;cta&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;See the full picture&quot;,&quot;tsType&quot;:&quot;string&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props || {};
+    return {
+      preheader: p.preheader ?? '275 new customers in August, at 17.15 zł each',
+      title: p.title ?? 'Who came to Café Bratysławska in August',
+      intro: p.intro ?? 'Three things worth a minute of your time. Everything here is counted across groups of customers — we never show you a single person.',
+      costPerNew: p.costPerNew ?? '17.15 zł',
+      costLine: p.costLine ?? 'You spent 4 717 zł in August and gained 275 customers new to your venue. That is 17.15 zł each. The average Kraków café on Paylez pays 24.60 zł.',
+      returnLine: p.returnLine ?? '41% of July’s first-timers came back within 30 days.',
+      returnNote: p.returnNote ?? '312 people visited you for the first time in July and 129 returned. That is up from 38% in June.',
+      quietLine: p.quietLine ?? 'Tuesdays and Wednesdays, 14:00 to 16:00, are your quietest hours.',
+      quietNote: p.quietNote ?? 'About 60% below your weekly average. A deal set to those hours only is the quickest fix, and takes two minutes to make.',
+      cta: p.cta ?? 'See the full picture',
+      footerNote: p.footerNote ?? 'Numbers cover 1 to 31 August. Sales figures are estimates based on your own average spend per visit.'
+    };
+  }
+}
+
+</script>
+</body>
+</html>

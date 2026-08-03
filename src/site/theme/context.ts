@@ -42,6 +42,15 @@ export interface ThemePalette {
    * "fixes" one to match the other.
    */
   onPrimary: string;
+  /**
+   * The brand mark for this theme, as a URL.
+   *
+   * Mirrors the `--logo` token in `site.css` and is here for the same reason
+   * every colour beside it is: `PaylezIntro` lives under `components/` and is
+   * driven entirely by props, so it cannot reach into the site's stylesheet for
+   * one. Change one and change the other.
+   */
+  logo: string;
   tone: GlobeTone;
   /**
    * Bloom multiplier. Zero on light: bloom adds light, and there is no headroom
@@ -56,30 +65,29 @@ export const THEMES: Record<ThemeName, ThemePalette> = {
     primary: '#58e9d4',
     background: '#0d0d0e',
     onPrimary: '#05201c',
+    logo: '/logo/logo-dark.jpg',
     tone: 'glow',
     glow: 1,
   },
   light: {
     /*
-     * `--accent-lit` — the middle step of the light ramp, and the same hex.
+     * `--accent-lit` — the middle step of the light ramp, and now also `--accent`
+     * itself: the fill and the strokes landed on one value.
      *
-     * These layers are shapes, so they want `--accent`, not the text ink — but
-     * `tone: 'ink'` alpha-blends them onto near-white, and the globe is mostly
-     * one-pixel coastlines. At the full `#2af3d1` (1.3:1 against the page) the
-     * sphere survives as a pale disc and every coastline, route and link
-     * disappears: not a softer globe, an empty one. So it lands on exactly the
-     * step CSS uses for its own strokes — every icon on the page and every line
-     * on the globe are then literally one colour, which is the point.
-     *
-     * The globe's country label is a word, not a shape, and is handled where it
-     * belongs: `CountryCard.css` colours it from `--accent-ink` and falls back
-     * to this only when the site stylesheet is absent.
+     * These layers are shapes, so they want the fill — but `tone: 'ink'`
+     * alpha-blends them onto near-white and the globe is mostly one-pixel
+     * coastlines. At the neon the light theme used to fill with (1.3:1 against
+     * the page) the sphere survived as a pale disc and every coastline, route
+     * and link disappeared: not a softer globe, an empty one. At this step every
+     * icon on the page and every line on the globe are literally one colour,
+     * which is the point.
      */
     primary: '#089b99',
     background: '#f5f9f8',
     /* Near-black, not the page: the mark is *filled* with `primary` now, and a
        page-coloured letter on neon is 1.3:1. Mirrors `--on-accent`. */
     onPrimary: '#04201f',
+    logo: '/logo/logo-light.png',
     tone: 'ink',
     glow: 0,
   },

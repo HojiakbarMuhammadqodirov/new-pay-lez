@@ -8,23 +8,12 @@ The **Paylez** landing page: a single-page React site rendered on top of
 `GlobeHero`, a procedural two-colour globe (no textures, no models, no image
 assets) built with Three.js / React Three Fiber.
 
-React 19 · Vite 8 · TypeScript 6 · Three.js 0.185 · oxlint.
-
 `README.md` documents the globe component in depth — props, the maths behind
 the scroll transition, the responsive framing formulas, and the performance
 budget. **Read it before changing anything in `src/components/GlobeHero/`.**
 This file covers the repo as a whole.
 
 ## Commands
-
-```bash
-npm install
-npm run dev       # copies the flag font, then vite dev on :5173
-npm run build     # assets + tsc -b + vite build
-npm run lint      # oxlint
-npm run verify    # headless checks on the geo + motion maths (vite-node)
-npm run preview
-```
 
 There is no test runner. `npm run verify` is the test suite: it exercises the
 pure maths — atlas parsing, projection round-trips, country hit-testing, ribbon
@@ -39,45 +28,10 @@ directly — but a fresh clone has no `public/fonts/` until one of them runs.
 
 ## Layout
 
-```
-src/
-  main.tsx · App.tsx        mount; App renders <Site />
-  index.css                 minimal document reset
-
-  site/                     the site
-    Site.tsx                composition: intro → backdrop layer → header → page → footer
-    router.ts               the whole router: six hash routes, no dependency
-    sections.tsx            every landing section (Hero, Proof, Guide, Features, Value, Voices, FinalCta, SiteFooter)
-    learn.tsx               every L-Earn section (hero, steps, games, streak, board, FAQ, CTA)
-    analytics.tsx           every Partner Analytics section (hero, KPIs, funnel, week chart, reports, CTA)
-    b2b.tsx                 every B2B section (hero, why, the owner dashboard, three pillars, rollout, operators, pricing, CTA) + every mock
-    vouchers.tsx            every Vouchers section (hero + wallet, steps, catalogue, rules, FAQ, CTA)
-    relocate.tsx            every Relocate section (hero, rate card, nine subjects, countries, ask, CTA)
-    Header.tsx              nav + language switcher + theme toggle
-    content.ts              structure only — icons, anchors, stat numbers. No copy.
-    i18n/                   en · pl · uz · ru · uk dictionaries, context, provider, currency
-    theme/                  dark/light context, provider, and the 3D palettes
-    icons.tsx               inline SVG icon set
-    site.css                all page styling; design tokens at the top
-    useReveal.ts            shared IntersectionObserver reveal + count-up
-    glassMesh.ts            glass-surface helper
-    controller/             a small 3D game-controller model (procedural geometry)
-    network/                L-Earn's backdrop: a canvas-2D web of linked neon nodes
-    market/                 B2B's backdrop: a canvas-2D revenue line the venues under it tick up
-    AssistantButton.tsx     floating assistant CTA
-
-  components/
-    GlobeHero/              the globe — see README.md
-    PaylezIntro/            brand cold-open; pure DOM + CSS, one timer
-
-scripts/
-  copy-flag-font.mjs        self-hosts the Twemoji flag subset
-  verify-geo.ts             the headless maths checks
-
-landing/                    ORIGINAL DESIGN SOURCE — not built, not imported
-b2b/                        B2B design source + screenshots — not built, not imported
-public/                     favicon + generated fonts/
-```
+The site is `src/site/` — one file per route, plus `i18n/`, `theme/` and `auth/`,
+and all styling in the single sheet `site.css`. The globe is
+`src/components/GlobeHero/` — see `README.md`. `landing/` and `b2b/` are design
+prototypes, not code.
 
 ### `landing/` and `b2b/` are reference material
 
@@ -123,51 +77,12 @@ not read either exception as licence for a third hue anywhere else.
   down as props. That file is the *only* place the two systems have to be kept
   in sync.
 
-**The light theme is one hue at three lightnesses, and the hue is cyan.**
-Everything accented on that page is 179°; only the step changes, and the step is
-chosen by what the mark *is*, because paper sets a different bar for each:
-
-    --accent      #13eff2  the neon. Fills only — buttons, the brand mark,
-                           chips, bars, chart columns. 11.9:1 against its ink.
-    --accent-lit  #089b99  3.2:1. Icon strokes, focus rings and large type,
-                           which is the WCAG bar for both. Most of the accent
-                           you see on the page is this.
-    --accent-ink  #007a78  4.9:1. Small accented text, and nothing else.
-
-179° and not the 170° of the dark mint, and that is not a whim: 170° reads as a
-turquoise while it is *bright*, but every step down in lightness at that hue
-reads greener, because green is where the eye is most sensitive and blue falls
-out of a dark mix first. Sitting just under 180° keeps green a shade ahead of
-blue — the brand leans green, not blue — without letting it run: the dark steps
-lead by two points, not twenty. Dark keeps 171° because it never goes dark; it
-only ever has the bright step.
-
-Dark has no middle to need — the mint clears everything at 11:1 — so all three
-are `#58e9d4` there and the ramp costs nothing.
-
-`--on-accent` and `--text` are `#04201f`, the same hue taken to near-black, so
-the darkest thing on the page and the brightest belong to one family. `--bg-2`
-carries the cyan cast too; `--bg` is a specified brand value and is left alone.
-
-Getting the step wrong makes a mark duller than it could be; it never makes one
-illegible, because `--accent-ink` is the default and `--accent-lit` is applied
-deliberately. Keep it that way round. Nothing in `site.css` sets
-`color: var(--accent)`, and nothing should start.
-
-One more token exists because a colour cannot do both jobs on paper:
-
-- **`--tint-rgb`** — the neon in light, `--accent-rgb` in dark. Filled washes
-  (`--surface`, `--surface-2`) are large areas and can be the neon itself; a 1px
-  border at 16% cannot be anything but the deep step, so `--border` keeps
-  `--accent-rgb`. Light raises the wash alphas to match — the neon is lighter, so
-  it needs more of itself to tint by the same amount.
-
-The canvases take `--accent-lit` (`THEMES.light.primary`, same hex — the globe,
-the controller, the node web, the market tape): they are
-shapes, but `tone: 'ink'` alpha-blends them onto paper and the globe is mostly
-one-pixel coastlines — at the full neon it renders as an empty disc. The globe's
-country label is the one *word* in that layer, and `CountryCard.css` colours it
-from `--accent-ink` with the prop as a fallback.
+**The light theme is one hue at three lightnesses, and the hue is cyan.** The
+accent is 179° at three steps — `--accent` / `--accent-lit` (both `#089b99`) and
+`--accent-ink` (`#007a78`) — chosen by what the mark *is*, because paper sets a
+different bar for fills, icon strokes and small text. Dark has no middle to need
+and is `#58e9d4` throughout. The full reasoning, and the `--tint-rgb` / `--logo`
+tokens, are in `src/site/CLAUDE.md` — read it before touching a colour token.
 
 **Glass opacity is one token, `--glass`.** Every card that floats over a
 backdrop — the voucher preview, the streak card, the game cards, the board —
@@ -218,6 +133,88 @@ the same order in every language. Prices snap to a step the currency actually
 uses and estimates snap to two significant figures, both in `currency.ts`: a
 price tag reading £126.65 is an exchange rate, and nobody chose it.
 
+**There are three kinds of person, and only two of them are choosable.**
+`admin` sits beside `individual` and `business` in `AccountType` rather than
+being a flag on one of them: it has no venue, no wallet and no marketing funnel,
+it has `#/admin`. Sign-up cannot produce one — `ChoosableType` excludes it at the
+type level, so the form that offers the choice *cannot* offer that one. Seeded
+credentials live in `auth/users.ts`; the two demo accounts are printed on the
+sign-in form and the admin deliberately is not.
+
+**Who is signed in decides what exists, and the rule is one pure function.**
+`resolveRoute(route, account)` in `router.ts` is the whole access policy: an
+individual has no B2B, Analytics, dashboard or setup; an owner with no listing
+goes to setup; an admin's console *replaces* both partner routes and sign-in;
+an account that has not answered the individual-or-business question is held at
+sign-in. `Site` resolves the route *during render*, so a page this account may
+not see never mounts for a frame, and corrects the address bar in an effect
+afterwards.
+
+Three things follow from that, and all three are easy to undo by accident:
+
+- **Never call `navigate` from a handler that also changes the session.** The
+  hash is set synchronously and React re-renders before `hashchange` fires, so
+  the guard runs once against the *new* account and the *old* route and
+  redirects over the top of you. Derive the destination in `resolveRoute`
+  instead — that is why choosing an account type on the sign-in form does not
+  navigate at all.
+- **Every resolution must be a fixed point.** `resolveRoute(resolveRoute(r), a)`
+  has to equal `resolveRoute(r, a)` or the correcting effect navigates in a
+  loop and the tab hangs. `npm run verify` walks the whole account × route
+  matrix checking exactly this; it has already caught one.
+- **`account.business === null` means "has not been through setup".** Do not
+  seed a blank listing when the account type is chosen, or a brand-new owner
+  looks finished and lands on the dashboard.
+
+**Two storage keys, and they are different things.** `paylez-session` is who is
+signed in *on this device*; `paylez-users` (`auth/directory.ts`) is everyone who
+exists — the three seeds plus everyone who has signed up. The session is a
+pointer into that directory, which is what makes the rest work: every change an
+account makes to itself is written back to its row (`commit` in `AuthProvider`),
+so signing out and back in restores a venue's listing and a player's balance, and
+the admin console is reading the same rows the app is writing. A stored session
+whose id is no longer in the directory is dropped rather than honoured — that is
+what a session pointing at a deleted account *is*. Both follow the `theme/` split
+(context in one file, provider in another) and the same lazy-initialiser,
+wrapped-storage construction. **None of it is authentication** — the credentials
+are in the bundle and every sign-up password is written to `localStorage` in
+plain text beside them; `auth/users.ts` says so, and it must be replaced by a
+server before this points at real data.
+
+**Sign-up asks which kind of account it is; sign-in does not.** The question is
+answered *before* the account exists, so nothing new is ever created in the
+undecided state. `ChooseType` on the sign-in route still exists for the sessions
+that predate that — `resolveRoute` sends `type === null` back there from every
+route — and deleting it would sign those visitors out of a tab they never asked
+to be signed out of.
+
+**A signed-in individual gets a different page, not a different section.**
+`useIsPlayer()` swaps L-Earn and Vouchers wholesale: `learn.tsx` → `games.tsx`,
+`vouchers.tsx` → `wallet.tsx`. The marketing pages are untouched and still serve
+everyone else, including business owners — those pages describe the *customer's*
+experience, which an owner is reading about rather than living. The rules that
+decide points, streak, lives and the wallet are pure functions in
+`auth/player.ts`, so `npm run verify` owns them; the components only call them.
+
+**Namespace new component classes, and grep before you name one.** `site.css` is
+one 6,000-line sheet with no scoping, and three separate collisions have already
+shipped bugs here: `.games` / `.game-ico` / `.board-rank` belong to the L-Earn
+marketing page, `.wallet-tabs` to the Vouchers page, and the whole `.dash-*`
+family to the B2B mock — which silently crushed the dashboard's user pill to
+26px. The app screens are prefixed `play-` (games), `wal-` (wallet), `pd-`
+(partner dashboard) and `adm-` (console) for that reason. Reusing an existing
+class is fine when it is
+the *same component* — the wallet's catalogue deliberately keeps `.gift` — but
+sharing a name by accident is not.
+
+**There is one field kit, in the `══ forms ══` block.** Until sign-in existed no
+rule in `site.css` touched an `input`, `select`, `textarea` or `label`. Anything
+that takes input reuses `.field`, `.field-row`, `.field-label`, `.field-help`,
+`.field-error`, `.file-pick`, `.form-block` rather than styling its own
+controls. Note the error style: the palette has one accent, so an error cannot
+be red — it is weighted instead (700 in `--text`, and the control drops its
+tint), which is louder by contrast rather than by hue.
+
 **Per-frame work does not go through React state.** This is the load-bearing
 rule of the codebase. Scroll position is written to a ref by a passive listener
 and read in the render loop; the centred-country result goes through
@@ -250,7 +247,43 @@ bundled, the flag font copied into `public/`), geometry comes from the
 - The globe must be mounted `position: fixed` (`.site__globe`). Its scroll
   transition moves it *within* the viewport, so it needs a stable frame of
   reference. Without that, it will not behave.
-- **The backdrop is per route.** Six routes, three canvases. Landing *and*
+- **The dashboard and the console are frames, not pages.** `#/dashboard` and
+  `#/admin` return early from `SiteContent` with no marketing header, no footer
+  and no backdrop. Both still render a `<main>`, and must: `.site > main` is the
+  only thing given `z-index: 1`, and the intro hand-off keys off
+  `.site[data-intro='running'] main`. A frame in a plain `<div>` sits behind the
+  page background. The console is also the one signed-in screen with **no
+  assistant dock** — the assistant answers out of *your* points, vouchers and
+  city, and an admin has none of those.
+- **The console reports; it does not edit.** There is no server, so every number
+  on `#/admin` is derived by the same pure functions the app uses —
+  `profileCompleteness` decides "live" there exactly as it does on the owner's
+  own dashboard. Adding a control that writes to somebody else's account means
+  deciding what happens when two tabs disagree, which is a server's job.
+- **A venue's analytics come out of one number.** `ADMIN_SERVICES` gives each
+  seeded venue a `scale`, and `adminMetrics.ts` derives the whole month from it —
+  cards, trends, tables, insights and the country comparison. That is what keeps
+  a quiet venue quiet *everywhere*; five separately invented data sets would
+  eventually contradict each other, and the original admin panel's screens agreed
+  with each other. `engagement` is a sum rather than a seeded figure for the same
+  reason — it is shown twice on the screen.
+- **`scale: 0` is not a special case, it is the same arithmetic.** Every count
+  lands on zero, every table empties, and the view falls back to its "nothing
+  yet" states — which is the state every reference screenshot in
+  `landing/screenshots/admin-*` was taken in, and the state a real signed-up
+  owner's listing is genuinely in. That listing is carried into the same service
+  list from the directory, so both are visible side by side.
+- **A chart states its own height.** The columns inside it are percentages, and a
+  percentage height against an `auto` parent resolves to nothing — which is
+  exactly what the country comparison did before `.adm-compare-cols` was given a
+  definite `9rem`. Every chart in `site.css` sets one.
+- **The globe is the landing page's, and only the landing page's.** Relocate had
+  it on the argument that the page was about a border being crossed; it is not —
+  it is a guide to where you have already arrived, plus a currency converter. It
+  now takes `.site__rings`, CSS contour rings that mean distance from where you
+  are standing. One consequence worth knowing: the document's single WebGL
+  context is spent on exactly one route again.
+- **The backdrop is per route.** Six *marketing* routes, three canvases. Landing *and*
   Relocate get the globe, L-Earn gets the node web, B2B gets the market tape
   (the last two canvas-2D, both on `.site__web`); Analytics gets a CSS plot grid
   (`.site__grid`) and Vouchers a CSS perforation (`.site__stubs`). `Site.tsx`
@@ -300,10 +333,18 @@ bundled, the flag font copied into `public/`), geometry comes from the
   grid/flex track (the track sizes to the canvas, the canvas sizes to the
   track). `Controller3D` passes `resize={{ offsetSize: true }}` against the
   first; containers give it a definite track against the second.
+- **The country label is off, and it is off at the call site.** `Site.tsx` passes
+  `showLabels={false}`: the flag-and-name card that popped in beside the globe
+  competed with the hero copy it sat next to. The prop also gates the detection
+  loop, so nothing is running — but `CountryCard`, `useCenteredCountry` and
+  `focusStore` are all intact and `DEFAULTS.showLabels` is still `true`, so
+  turning it back on is one word. `npm run verify` still exercises the
+  hit-testing, which is why none of it was deleted.
 - `DETECTION.spotlight` restricts country labels to `PL UA AZ UZ RU`. An empty
   array means every country. The `intervalMs` / `debounceMs` cadence is tuned
   for that small set — widening the spotlight without retuning them makes the
-  label flicker.
+  label flicker. Moot while `showLabels` is off; it is what you will need if you
+  turn it on.
 - Bloom does the perceived brightness, not saturation. Emissive intensities
   clamp to 1.0 in the shaders and tone mapping is disabled, both deliberately.
   If you change `primaryColor`, scale `POST.bloomThreshold` with its luminance.

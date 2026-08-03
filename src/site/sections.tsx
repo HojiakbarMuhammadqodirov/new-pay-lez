@@ -377,7 +377,6 @@ export function FinalCta() {
               {copy.cta.secondary}
             </a>
           </div>
-          <p className="cta-note">{copy.cta.note}</p>
         </div>
       </div>
     </section>
@@ -397,9 +396,7 @@ export function SiteFooter() {
         <div className="footer-grid">
           <div className="footer-brand">
             <a className="brand" href="#top">
-              <span className="brand-mark">
-                <span>p</span>
-              </span>
+              <span className="brand-mark" aria-hidden />
               <span className="brand-word">paylez</span>
             </a>
             <p>{copy.footer.blurb}</p>

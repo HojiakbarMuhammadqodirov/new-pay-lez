@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { Account } from './auth/context';
 
 /**
  * The whole router.
@@ -6,7 +7,7 @@ import { useEffect, useState } from 'react';
  * Hash-based, and deliberately about forty lines rather than a dependency: the
  * site is a handful of pages on static hosting, where a history router would
  * need a server rewrite to survive a refresh and a hash router needs nothing at
- * all. Six routes have not changed that; the day one of them needs a real URL
+ * all. Ten routes have not changed that; the day one of them needs a real URL
  * for sharing or SEO is the day this is worth replacing, and not before.
  *
  * Routes are the hashes that start with `#/`. Everything else — `#value`,
@@ -16,7 +17,17 @@ import { useEffect, useState } from 'react';
  * special handling at the link.
  */
 
-export type Route = 'landing' | 'learn' | 'analytics' | 'b2b' | 'vouchers' | 'relocate';
+export type Route =
+  | 'landing'
+  | 'learn'
+  | 'analytics'
+  | 'b2b'
+  | 'vouchers'
+  | 'relocate'
+  | 'signin'
+  | 'business-setup'
+  | 'dashboard'
+  | 'admin';
 
 const ROUTES: Record<string, Route> = {
   '#/l-earn': 'learn',
@@ -24,6 +35,10 @@ const ROUTES: Record<string, Route> = {
   '#/b2b': 'b2b',
   '#/vouchers': 'vouchers',
   '#/relocate': 'relocate',
+  '#/sign-in': 'signin',
+  '#/business/setup': 'business-setup',
+  '#/dashboard': 'dashboard',
+  '#/admin': 'admin',
 };
 
 export const PATHS: Record<Route, string> = {
@@ -33,10 +48,121 @@ export const PATHS: Record<Route, string> = {
   b2b: '#/b2b',
   vouchers: '#/vouchers',
   relocate: '#/relocate',
+  signin: '#/sign-in',
+  'business-setup': '#/business/setup',
+  dashboard: '#/dashboard',
+  admin: '#/admin',
 };
+
+/*
+ * `#/business/setup` has a slash in it and still matches, because matching is
+ * whole-string equality rather than a path parse. That is not a nested route —
+ * it is a flat name that happens to read like one, and the day something here
+ * needs a real segment or a parameter is the day the note above applies.
+ */
 
 function readRoute(): Route {
   return ROUTES[window.location.hash] ?? 'landing';
+}
+
+/**
+ * Go somewhere without a link.
+ *
+ * Every navigation on the site until now was an `<a href="#/x">`, which is still
+ * the right thing for anything a visitor clicks. This is for the handful that
+ * are consequences rather than clicks: landing after a successful sign-in,
+ * being sent to setup because the listing is not finished, being bounced off a
+ * page this account cannot see.
+ */
+export function navigate(route: Route): void {
+  window.location.hash = PATHS[route];
+}
+
+/**
+ * The access rule, as one pure function.
+ *
+ * Guarding in an effect would render the forbidden page first and then replace
+ * it — a frame of someone else's dashboard is exactly the frame not to show.
+ * Resolving the route *before* the render means the wrong page never mounts,
+ * and being pure means `npm run verify` can walk the whole account × route
+ * matrix without a browser.
+ *
+ * Returning a different route than it was given is a redirect; the caller is
+ * expected to correct the address bar to match, or the URL and the page
+ * disagree on a refresh.
+ */
+/** The three routes that only exist for somebody in particular. */
+const PRIVATE: Route[] = ['business-setup', 'dashboard', 'admin'];
+
+export function resolveRoute(route: Route, account: Account | null): Route {
+  if (account === null) {
+    return PRIVATE.includes(route) ? 'signin' : route;
+  }
+
+  /*
+   * Signed in but the individual-or-business question is unanswered. The
+   * sign-in route owns that step, so every route resolves to it — including
+   * `signin` itself, and that clause has to come **before** the
+   * already-signed-in redirect below or the two chase each other: `signin`
+   * would send an undecided account to `landing`, which sends it back to
+   * `signin`, and the effect in `Site` navigates between them forever.
+   * `npm run verify` checks that every resolution is a fixed point precisely
+   * because this is easy to reintroduce.
+   */
+  if (account.type === null) return 'signin';
+
+  /*
+   * The operator.
+   *
+   * Handled before everything below because the console *replaces* the two
+   * partner routes for them rather than sitting alongside: an admin has no venue
+   * to set up and no dashboard of their own, so both point at the one screen
+   * that is theirs, and so does signing in. The rest of the site is left exactly
+   * as written — an admin reading the marketing pages should see what everyone
+   * else sees.
+   */
+  if (account.type === 'admin') {
+    return PRIVATE.includes(route) || route === 'signin' ? 'admin' : route;
+  }
+
+  /* Nobody else has a console. Checked before the sign-in clause below so the
+     answer does not depend on which of the two the address bar happens to say. */
+  if (route === 'admin') return 'landing';
+
+  /*
+   * Signing in when you already are. Where that lands is the *whole* of the
+   * post-sign-in routing, on purpose: an owner who has not described their
+   * venue yet goes to setup, everyone else goes home.
+   *
+   * Doing it here rather than calling `navigate` from the sign-in form is what
+   * keeps it correct. A handler that sets the account and navigates in the same
+   * tick sets the hash *before* React has re-rendered, so the guard runs once
+   * against the new account and the old route — reads `signin` for a business
+   * owner, answers `landing`, and stomps on the navigation that was already in
+   * flight. Deriving the destination instead means there is only ever one.
+   */
+  if (route === 'signin') {
+    return account.type === 'business' && account.business === null
+      ? 'business-setup'
+      : 'landing';
+  }
+
+  if (account.type === 'individual') {
+    /*
+     * The consumer site is everything except what belongs to a venue: the two
+     * pages that sell to one, and the two that *are* one. `business-setup` is in
+     * that list now and was not before — an individual who typed the address in
+     * reached the listing form, filled it in, and had it saved onto an account
+     * with no dashboard to show it on.
+     */
+    return route === 'b2b' || route === 'analytics' || PRIVATE.includes(route)
+      ? 'landing'
+      : route;
+  }
+
+  // A dashboard with nothing behind it is a form nobody filled in.
+  if (route === 'dashboard' && account.business === null) return 'business-setup';
+  return route;
 }
 
 export function useRoute(): Route {
