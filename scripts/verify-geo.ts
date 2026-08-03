@@ -41,15 +41,24 @@ import {
 } from '../src/site/auth/users';
 import {
   activeVouchers,
+  awardFlight,
   awardRound,
+  bankableGaps,
   canAfford,
+  flightPoints,
   markUsed,
+  MAX_FLIGHT_GAPS,
   MAX_LIVES,
   redeem,
   refillLives,
   seedPlayer,
   usedVouchers,
 } from '../src/site/auth/player';
+import { FLIGHT } from '../src/site/flight/config';
+import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
+import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
+import { GAMES } from '../src/site/content';
+import { LANGUAGE_ORDER, LANGUAGES } from '../src/site/i18n/context';
 import {
   dayLabel,
   inRange,
@@ -613,6 +622,393 @@ console.log('\nplaying');
   const empty = { ...base, lives: 0, lastPlayed: '2026-08-03' };
   check('lives do not refill on the same day', refillLives(empty, day('2026-08-03')).lives === 0);
   check('lives refill on a new day', refillLives(empty, day('2026-08-04')).lives === MAX_LIVES);
+}
+
+console.log('\nflying — scoring');
+{
+  const day = (iso: string) => new Date(`${iso}T12:00:00`);
+  const base = { ...seedPlayer(), points: 0, streak: 0, answered: 0, correct: 0, lastPlayed: null };
+  const full = { cleared: 12, target: 12, perGap: 2, won: true };
+
+  const cleared = awardFlight(base, full, day('2026-08-03'));
+  check('a cleared flight pays per gap', cleared.points === 24, `${cleared.points} pts`);
+  check('a win costs no life', cleared.lives === MAX_LIVES);
+
+  const crash = awardFlight(base, { ...full, cleared: 3, won: false }, day('2026-08-03'));
+  check('a crash costs exactly one life', crash.lives === MAX_LIVES - 1);
+  check('…and still banks the gaps flown', crash.points === 6, `${crash.points} pts`);
+  check('the whole round is charged to answered', crash.answered === 12, `${crash.answered}`);
+  check('…and only the gaps flown count as correct', crash.correct === 3, `${crash.correct}`);
+
+  /*
+   * The load-bearing one. `awardFlight` delegates to `awardRound`, and this is
+   * what asserts it never stops doing so — the streak window and the lapse are
+   * stated in the FAQ and on the vouchers page, and a second implementation of
+   * them is how one of the three quietly becomes a lie.
+   */
+  const quizArgs = { correct: 12, total: 12, perCorrect: 2, won: true };
+  for (const [label, on] of [
+    ['a fresh account', '2026-08-03'],
+    ['the next day', '2026-08-04'],
+    ['after a missed window', '2026-08-09'],
+  ] as const) {
+    const seeded = { ...base, streak: 4, points: 60, lastPlayed: '2026-08-03' };
+    const byFlight = awardFlight(seeded, full, day(on));
+    const byQuiz = awardRound(seeded, quizArgs, day(on));
+    check(
+      `flight and quiz agree on streak and balance — ${label}`,
+      byFlight.streak === byQuiz.streak && byFlight.points === byQuiz.points,
+      `${byFlight.streak}/${byFlight.points} vs ${byQuiz.streak}/${byQuiz.points}`,
+    );
+  }
+
+  /*
+   * The run is endless, so gaps past the target still pay. `correct` saturates
+   * — 20/12 is not a sensible accuracy — while the balance keeps counting.
+   */
+  const long = awardFlight(base, { ...full, cleared: 20 }, day('2026-08-03'));
+  check('gaps past the target still pay', long.points === 40, `${long.points} pts`);
+  check('…while correct saturates at the target', long.correct === 12, `${long.correct}`);
+  check('…and answered still counts one round', long.answered === 12, `${long.answered}`);
+  check('…and the round is banked, so it costs no life', long.lives === MAX_LIVES);
+
+  check('the payout helper and the balance agree',
+    flightPoints(20, 2) === 40 && bankableGaps(20) === 20);
+
+  /* What `awardFlight` owns on top: a score that arrived from a rAF loop. */
+  const absurd = awardFlight(base, { ...full, cleared: 10_000 }, day('2026-08-03'));
+  check('an impossible score is capped', absurd.points === MAX_FLIGHT_GAPS * 2,
+    `${absurd.points} pts`);
+
+  const fake = awardFlight(base, { ...full, cleared: 4, won: true }, day('2026-08-03'));
+  check('a win that did not reach the target is a loss', fake.lives === MAX_LIVES - 1);
+
+  const fractional = awardFlight(base, { ...full, cleared: 3.9, won: false }, day('2026-08-03'));
+  check('a fractional score floors', fractional.points === 6, `${fractional.points} pts`);
+
+  const negative = awardFlight(base, { ...full, cleared: -2, won: false }, day('2026-08-03'));
+  check('a negative score clamps to nothing', negative.points === 0 && negative.correct === 0);
+
+  /* The shortcut this deliberately avoids: a lapsed streak zeroes the balance
+     before scoring, so the change in balance is not what the round paid. */
+  const lapsedFlight = awardFlight(
+    { ...base, points: 900, streak: 5, lastPlayed: '2026-07-20' },
+    { ...full, cleared: 5, won: false },
+    day('2026-08-03'),
+  );
+  check('a lapsed flight still reports what it earned',
+    lapsedFlight.points === 10 && flightPoints(5, 2) === 10,
+    `balance ${lapsedFlight.points}, earned ${flightPoints(5, 2)}`);
+}
+
+console.log('\nflying — physics');
+{
+  /*
+   * The check that could not be made by playing. With the cheap semi-implicit
+   * integration the apex of a flap depends on the frame rate — a 144Hz monitor
+   * gets a measurably easier game than a throttled phone — and no amount of
+   * testing on one machine would show it.
+   */
+  const apexAt = (hz: number) => {
+    const dt = Math.min(1 / hz, 0.05);
+    let bird = flap({ y: 50, vy: 0 });
+    let peak = bird.y;
+    for (let t = 0; t < 4; t += dt) {
+      bird = stepBird(bird, dt);
+      peak = Math.min(peak, bird.y);
+    }
+    return 50 - peak;
+  };
+
+  const fast = apexAt(240);
+  const slow = apexAt(20);
+  check('the arc does not depend on frame rate', Math.abs(fast - slow) < 0.5,
+    `${fast.toFixed(2)} at 240Hz vs ${slow.toFixed(2)} at 20Hz`);
+
+  const closedForm = (FLIGHT.flap * FLIGHT.flap) / (2 * FLIGHT.gravity);
+  check('…and matches the closed form', Math.abs(fast - closedForm) < 0.1,
+    `${fast.toFixed(3)} vs ${closedForm.toFixed(3)}`);
+
+  let falling = { y: 5, vy: 0 };
+  let fastest = 0;
+  for (let t = 0; t < 10; t += 0.05) {
+    falling = stepBird(falling, 0.05);
+    fastest = Math.max(fastest, falling.vy);
+  }
+  check('terminal velocity is honoured', fastest <= FLIGHT.maxFall, `${fastest.toFixed(1)}`);
+
+  /* One long frame after a tab switch must not skip a column's payout. */
+  let pipe = spawnPipe(FLIGHT.worldHeight, 0.5);
+  let payouts = 0;
+  for (let t = 0; t < 6; t += 0.05) {
+    pipe = { ...pipe, x: pipe.x - FLIGHT.pipe.speed * 0.05 };
+    if (!pipe.scored && crossed(pipe, FLIGHT.bird.x)) {
+      pipe.scored = true;
+      payouts += 1;
+    }
+  }
+  check('a column pays out exactly once at the worst step', payouts === 1, `${payouts}`);
+}
+
+console.log('\nflying — is it playable');
+{
+  /*
+   * The check the first build of this game most needed and did not have.
+   *
+   * Every other test here says the parts are individually correct; none of them
+   * said the thing could be *played*. It shipped with a gap 60% wider than the
+   * original's and pipes 65% faster, and all the unit checks passed, because
+   * "playable" is not a property of any one constant — it is whether a
+   * competent run survives, and that only shows up when the whole loop runs.
+   *
+   * So: run the real loop against a deliberately simple pilot. It sees only
+   * what a player sees — its own height and the centre of the next gap — flaps
+   * when it is sinking below that line, and cannot flap faster than a thumb.
+   * If a rule that crude cannot clear the target, the tuning is wrong.
+   */
+  const play = (seed: number, frames: number) => {
+    let rand = seed;
+    const next = () => {
+      // A small LCG: the pilot must beat a repeatable course, not a lucky one.
+      rand = (rand * 1103515245 + 12345) % 2147483648;
+      return rand / 2147483648;
+    };
+
+    let lastGap = FLIGHT.worldHeight / 2;
+    const spawn = (x: number) => {
+      const pipe = spawnPipe(x, next(), lastGap);
+      lastGap = pipe.gapY;
+      return pipe;
+    };
+
+    let bird = { y: FLIGHT.worldHeight / 2, vy: 0 };
+    let pipes = [spawn(FLIGHT.worldWidth)];
+    let cleared = 0;
+    let spawnClock = 0;
+    let lastFlap = -99;
+    const dt = 1 / 60;
+
+    for (let i = 0; i < frames; i++) {
+      /*
+       * ── the pilot ──
+       *
+       * It aims *half an arc below* the gap's centre, and that offset is the
+       * whole character of the game rather than a fudge in this test. One flap
+       * rises 9.9 units against a gap half-height of 9.5, so a pilot that flaps
+       * on reaching the centre arrives at the ceiling of the hole and clips the
+       * top column — which is exactly what the first version of this check did,
+       * and why it reported the game unplayable when the game was right.
+       *
+       * Flapping late, near the floor of the gap, is the discipline the original
+       * teaches in its first thirty seconds. If the apex/gap ratio ever drifts
+       * away from the band asserted below, this pilot stops working, which is
+       * the point of flying it here.
+       */
+      const ahead = pipes
+        .filter((p) => p.x + FLIGHT.pipe.width > FLIGHT.bird.x - 2)
+        .sort((a, b) => a.x - b.x)[0];
+      const aim = ahead ? ahead.gapY : FLIGHT.worldHeight / 2;
+      const arc = (FLIGHT.flap * FLIGHT.flap) / (2 * FLIGHT.gravity);
+      if (bird.vy > 0 && bird.y > aim + arc / 2 && i - lastFlap >= 6) {
+        bird = flap(bird);
+        lastFlap = i;
+      }
+
+      // ── the world, exactly as `FlightGame` steps it ──
+      bird = stepBird(bird, dt);
+      spawnClock += dt;
+      if (spawnClock >= FLIGHT.pipe.interval) {
+        spawnClock -= FLIGHT.pipe.interval;
+        pipes.push(spawn(FLIGHT.worldWidth));
+      }
+      for (const p of pipes) p.x -= FLIGHT.pipe.speed * dt;
+      for (const p of pipes) {
+        if (p.scored || !crossed(p, FLIGHT.bird.x)) continue;
+        p.scored = true;
+        cleared += 1;
+      }
+      pipes = pipes.filter((p) => p.x + FLIGHT.pipe.width > -1);
+      if (hitsBounds(bird) || pipes.some((p) => hits(FLIGHT.bird.x, bird, p))) {
+        return { cleared, survived: false, frames: i };
+      }
+    }
+    return { cleared, survived: true, frames };
+  };
+
+  // Two minutes of flying on eight different courses.
+  const runs = [1, 7, 42, 1337, 90210, 555, 8675309, 31337].map((seed) => play(seed, 60 * 120));
+  const scores = runs.map((r) => r.cleared).sort((a, b) => a - b);
+  const median = scores[Math.floor(scores.length / 2)];
+  const target = FLIGHT.target;
+  const reached = scores.filter((n) => n >= target).length;
+
+  /*
+   * Both halves matter, and the first build had neither.
+   *
+   * Too easy and there is no game; too hard and the bank line is a life
+   * shredder, because crashing is the whole mechanic and three crashes closes
+   * L-Earn for the day. The original is famously brutal, so the bar is not
+   * "always survives" — it is that a plain rule-following pilot banks a round
+   * most of the time and still, eventually, dies.
+   */
+  check(`a simple pilot banks the ${target}-gap round on most courses`,
+    reached >= Math.ceil(runs.length * 0.6), `${reached} of ${runs.length}: ${scores.join(', ')}`);
+  check('…and its median run is past the bank line', median >= target,
+    `median ${median}`);
+  check('…but it does not fly forever, so the game can still kill',
+    runs.some((r) => !r.survived), `${runs.filter((r) => !r.survived).length} crashed`);
+  check('…and the courses differ, so that is not one lucky seed',
+    new Set(scores).size > 2, scores.join(', '));
+
+  /* The other half of playable: it must be possible to lose. A pilot that never
+     flaps has to hit the floor, or gravity is not doing anything. */
+  let idle = { y: FLIGHT.worldHeight / 2, vy: 0 };
+  let idleFrames = 0;
+  while (!hitsBounds(idle) && idleFrames < 600) {
+    idle = stepBird(idle, 1 / 60);
+    idleFrames++;
+  }
+  const fall = idleFrames / 60;
+  check('a bird that is never flapped hits the floor', hitsBounds(idle), `${fall.toFixed(2)}s`);
+  /* Long enough to react to, short enough to punish inattention — the original
+     gives about a second from mid-screen. */
+  check('…in about a second, as the original does', fall > 0.6 && fall < 1.4,
+    `${fall.toFixed(2)}s`);
+}
+
+console.log('\nflying — geometry');
+{
+  const half = FLIGHT.pipe.gap / 2;
+  const low = FLIGHT.pipe.margin + half;
+  const high = FLIGHT.worldHeight - FLIGHT.pipe.margin - half;
+
+  let outside = 0;
+  for (let i = 0; i <= 10000; i++) {
+    const centre = gapCentre(i / 10000);
+    if (centre < low - 1e-9 || centre > high + 1e-9) outside++;
+  }
+  check('every generated gap clears both rails', outside === 0, `${outside} of 10001 outside`);
+
+  /* The solvability rule: a gap must be reachable from the one before it. Swept
+     across the whole band, from every starting height, at both extremes of the
+     draw — this is the invariant that stopped courses being undealable. */
+  let unreachable = 0;
+  let stillClears = true;
+  for (let p = 0; p <= 100; p++) {
+    const previous = low + ((high - low) * p) / 100;
+    for (let i = 0; i <= 100; i++) {
+      const centre = gapCentre(i / 100, previous);
+      if (Math.abs(centre - previous) > FLIGHT.pipe.maxStep + 1e-9) unreachable++;
+      if (centre < low - 1e-9 || centre > high + 1e-9) stillClears = false;
+    }
+  }
+  check('…and sits within one interval of climb from the last one', unreachable === 0,
+    `${unreachable} of 10201 out of reach`);
+  check('…without the reach limit pushing it into a rail', stillClears);
+
+  /* What `maxStep` is measured against: sustained climb over one interval. */
+  const climbPerFlap = (FLIGHT.flap * FLIGHT.flap) / (2 * FLIGHT.gravity);
+  const flapPeriod = -FLIGHT.flap / FLIGHT.gravity;
+  const reachable = (climbPerFlap / flapPeriod) * FLIGHT.pipe.interval;
+  check('the reach limit leaves climb in hand', FLIGHT.pipe.maxStep < reachable * 0.8,
+    `step ${FLIGHT.pipe.maxStep} vs ${reachable.toFixed(1)} available`);
+
+  const pipe = spawnPipe(FLIGHT.bird.x - FLIGHT.pipe.width / 2, 0.5);
+  check('a bird centred in a gap flies clean through',
+    !hits(FLIGHT.bird.x, { y: pipe.gapY, vy: 0 }, pipe));
+  check('…and one at the gap edge does not',
+    hits(FLIGHT.bird.x, { y: pipe.gapY + half + FLIGHT.bird.radius - 0.5, vy: 0 }, pipe));
+  check('a column already behind the bird is clear',
+    !hits(FLIGHT.bird.x, { y: pipe.gapY + half + FLIGHT.bird.radius - 0.5, vy: 0 },
+      { ...pipe, x: FLIGHT.bird.x + FLIGHT.bird.radius + 1 }));
+
+  check('the ceiling ends a run', hitsBounds({ y: FLIGHT.bird.radius - 0.1, vy: 0 }));
+  check('the floor ends a run',
+    hitsBounds({ y: FLIGHT.worldHeight - FLIGHT.bird.radius + 0.1, vy: 0 }));
+  check('mid-stage does not', !hitsBounds({ y: FLIGHT.worldHeight / 2, vy: 0 }));
+}
+
+console.log('\nflying — tuning');
+{
+  const apex = (FLIGHT.flap * FLIGHT.flap) / (2 * FLIGHT.gravity);
+
+  check('the gap is wider than the bird', FLIGHT.pipe.gap > FLIGHT.bird.size * 2,
+    `${FLIGHT.pipe.gap} vs ${FLIGHT.bird.size * 2}`);
+
+  /*
+   * The ratio that IS the game, and the check this file previously got exactly
+   * backwards.
+   *
+   * It used to assert `apex < 0.6 * gap` as a fairness rule, on the reasoning
+   * that a flap which crosses the whole gap leaves no room to correct. That is
+   * true and it is also the point: in the original, one flap covers a little
+   * over half the hole (390²/(2*1080) = 70px against a 130px gap = 0.54), which
+   * is why the game is a constant correction rather than a glide. Tuned to a
+   * third the whole thing goes floaty, which is what shipped first. A band, not
+   * a ceiling — and the floor is the load-bearing half.
+   */
+  const ratio = apex / FLIGHT.pipe.gap;
+  check('one flap covers about half the gap, as the original does',
+    ratio > 0.45 && ratio < 0.65, `${ratio.toFixed(2)} (original ≈ 0.54)`);
+
+  check('columns never touch',
+    FLIGHT.pipe.interval * FLIGHT.pipe.speed > FLIGHT.pipe.width * 2);
+  check('the gap fits between the rails',
+    FLIGHT.pipe.margin * 2 + FLIGHT.pipe.gap < FLIGHT.worldHeight);
+
+  /* Two columns on screen at once, which is what makes the next gap plannable
+     while the current one is still being flown. */
+  const onScreen = (FLIGHT.worldWidth - FLIGHT.bird.x) / (FLIGHT.pipe.interval * FLIGHT.pipe.speed);
+  check('at least one full column is visible ahead of the bird', onScreen >= 1,
+    `${onScreen.toFixed(2)} columns of track ahead`);
+
+  /* The stage is portrait because the original's constants were tuned in a
+     portrait screen; a landscape playfield silently triples the track. */
+  check('the playfield is portrait',
+    FLIGHT.worldWidth < FLIGHT.worldHeight,
+    `${FLIGHT.worldWidth} x ${FLIGHT.worldHeight}`);
+
+  const flight = GAMES.find((g) => g.kind === 'flight');
+  const richest = Math.max(...GAMES.map((g) => g.questions * g.perCorrect));
+  check('the arcade round exists in the table', flight !== undefined);
+  check('…and is not the biggest payday on the page',
+    flight !== undefined && flight.questions * flight.perCorrect <= richest,
+    `${flight ? flight.questions * flight.perCorrect : 0} vs ${richest}`);
+  /* The row and the config are two statements of the same round; the component
+     reads the row, the tuning checks above read the config. */
+  check('…and its row agrees with the config',
+    flight?.questions === FLIGHT.target && flight?.perCorrect === FLIGHT.perGap,
+    `${flight?.questions}x${flight?.perCorrect} vs ${FLIGHT.target}x${FLIGHT.perGap}`);
+}
+
+console.log('\nflying — the sprite');
+{
+  /* Four style slots, and the two-colour rule is why. A fifth would be a third
+     hue on a site that documents having exactly two. */
+  const stray = PARROT_PARTS.filter((part) => !PART_STYLES.includes(part.style));
+  check('the parrot uses only the sanctioned styles', stray.length === 0, `${stray.length} stray`);
+
+  const escaped = PARROT_PARTS.filter(
+    (p) => p.x < -0.4 || p.y < -0.4 || p.x + p.w > 1.15 || p.y + p.h > 1.15,
+  );
+  check('every part stays inside the sprite box', escaped.length === 0, `${escaped.length} outside`);
+  check('every part has a positive size', PARROT_PARTS.every((p) => p.w > 0 && p.h > 0));
+}
+
+console.log('\nevery game is named in every language');
+{
+  /*
+   * `Dictionary` is `typeof en`, which makes a missing *key* a compile error but
+   * says nothing about a missing array *element* — a fifth game with four names
+   * renders `undefined` on a card and typechecks perfectly. This is the only
+   * thing standing between that and production.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    const names = LANGUAGES[code].games.names;
+    check(`${code} names every game`, names.length === GAMES.length,
+      `${names.length} of ${GAMES.length}`);
+    check(`…and none is blank`, names.every((n) => n.trim().length > 0));
+  }
 }
 
 console.log('\nwallet');

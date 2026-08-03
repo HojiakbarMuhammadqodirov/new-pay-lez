@@ -166,6 +166,91 @@ export function awardRound(state: PlayerState, result: RoundResult, now: Date = 
   };
 }
 
+export interface FlightResult {
+  /** Gaps flown through this attempt. The run is endless, so this is unbounded. */
+  cleared: number;
+  /** Gaps that bank the round, from the game's own row in `GAMES`. */
+  target: number;
+  /** Points one gap pays. */
+  perGap: number;
+  won: boolean;
+}
+
+/**
+ * Most gaps a single flight may bank.
+ *
+ * Not a rule of the game — a flight is endless and nobody is getting near this
+ * — but `cleared` arrives from an animation loop rather than a question index,
+ * and an unbounded number multiplied into a balance is the kind of thing a
+ * server would refuse. Ninety-nine gaps is about four minutes of clean flying.
+ */
+export const MAX_FLIGHT_GAPS = 99;
+
+/**
+ * Gaps a flight may bank, floored and clamped.
+ *
+ * Its own function because the score arrives from an animation loop rather than
+ * a question index, and because two callers need the same answer: `awardFlight`
+ * to move the balance, and the result card to say what was earned. Reading the
+ * payout off the difference between two balances would be the obvious shortcut
+ * and is wrong — a lapsed streak zeroes the balance before scoring, so the
+ * difference can be a large negative number on the round a player earned most.
+ */
+export function bankableGaps(cleared: number): number {
+  return Math.max(0, Math.min(Math.floor(cleared), MAX_FLIGHT_GAPS));
+}
+
+/** What a flight pays, wherever it is asked. */
+export function flightPoints(cleared: number, perGap: number): number {
+  return bankableGaps(cleared) * perGap;
+}
+
+/**
+ * Bank a finished flight.
+ *
+ * Delegates to `awardRound` rather than restating it. The streak window, the
+ * lapse that takes the balance with it, and the life a loss costs are rules the
+ * site states in its own FAQ — a second copy of them is how one of the two
+ * quietly becomes a lie.
+ *
+ * What this function owns is the translation and the clamp. `cleared` arrives
+ * from an animation loop rather than from a question index, so it is floored and
+ * capped at the target, and a `won` that did not actually reach the target is
+ * recorded as the loss it was.
+ *
+ * A gap flown is a gate cleared and a gap hit is a gate failed, so the round is
+ * charged to `answered` in full and only the gaps flown count as `correct` —
+ * exactly what the quiz engine already does when a round ends early on its
+ * mistake allowance. Without that a flight-only player would sit permanently
+ * last on a leaderboard they are actively competing on, which is a worse lie
+ * than a mixed accuracy column.
+ *
+ * Gaps past the target are the one place the two paths genuinely differ. The
+ * flight does not stop at the target — it is endless, and stopping it there
+ * would be the tuning equivalent of ending a quiz because it was going well —
+ * so `correct` saturates at the target while the *points* keep counting. A
+ * fifteen-gap flight is 15/12 of nothing sensible, but it is unarguably 30
+ * points.
+ */
+export function awardFlight(
+  state: PlayerState,
+  result: FlightResult,
+  now: Date = new Date(),
+): PlayerState {
+  const banked = bankableGaps(result.cleared);
+  const counted = Math.min(banked, result.target);
+  const won = result.won && banked >= result.target;
+
+  const base = awardRound(
+    state,
+    { correct: counted, total: result.target, perCorrect: result.perGap, won },
+    now,
+  );
+
+  const surplus = (banked - counted) * result.perGap;
+  return surplus > 0 ? { ...base, points: base.points + surplus } : base;
+}
+
 /** Lives come back with a new day rather than on a timer nobody can see. */
 export function refillLives(state: PlayerState, now: Date = new Date()): PlayerState {
   if (state.lastPlayed === today(now)) return state;

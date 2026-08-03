@@ -55,6 +55,9 @@ const PATHS = {
   flag: <><path d="M5 21V4" /><path d="M5 4.5h11l-1.6 3.5L16 11.5H5" /></>,
   map: <><path d="M9 4 3 6.5v13L9 17l6 2.5 6-2.5v-13L15 7 9 4Z" /><path d="M9 4v13M15 7v12.5" /></>,
   book: <><path d="M4 5a2 2 0 0 1 2-2h5v18H6a2 2 0 0 1-2-2V5Z" /><path d="M20 5a2 2 0 0 0-2-2h-5v18h5a2 2 0 0 0 2-2V5Z" /></>,
+  /* Squawk in profile — crest, beak, tail. Angular on purpose: it labels the
+     one game whose sprite is built out of squares. */
+  bird: <><path d="M14 4.5h2.5V7H21l-3 3.5V14a6.5 6.5 0 0 1-6.5 6.5H6l2-4.5H6.5A3.5 3.5 0 0 1 3 12.5 8 8 0 0 1 11 4.5Z" /><path d="M15.5 9v.01" /></>,
 
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   chevron: <><path d="m6 9 6 6 6-6" /></>,

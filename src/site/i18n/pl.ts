@@ -313,7 +313,7 @@ export const pl: Dictionary = {
     redeemTitle: 'Zamień punkty na nagrody',
     redeemAction: 'Odbierz teraz',
 
-    names: ['Gry na rozum', 'Zgadnij flagę', 'Kraj i stolica', 'Quiz o Polsce'],
+    names: ['Gry na rozum', 'Zgadnij flagę', 'Kraj i stolica', 'Quiz o Polsce', 'Lot Squawka'],
     rule: '{questions} pytań · po {seconds} sek.',
     reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
     start: 'Zacznij grę',
@@ -343,6 +343,22 @@ export const pl: Dictionary = {
     boardEmpty: 'Jeszcze nikt nie gra. Bądź pierwszy!',
     boardShowAll: 'Pokaż całe top 10',
     boardShowLess: 'Pokaż mniej',
+
+    flight: {
+      rule: 'Leć tak daleko, jak zdoła Squawk · {gaps} bram zalicza rundę',
+      reward: 'Jedno zderzenie kończy grę · +{points} za bramę',
+      goal: '{target} zalicza rundę',
+      hint: 'Dotknij ekranu, aby zamachać skrzydłami',
+      resume: 'Dotknij, aby wrócić do gry',
+      aria: 'Gra zręcznościowa. Dotknij planszy, aby zamachać skrzydłami.',
+      crashed: 'Squawk zahaczył o słupek',
+      resultScore: 'Przeleciane bramy: {cleared}',
+      motionTitle: 'Ta gra się porusza',
+      motionBody:
+        'Twoje urządzenie prosi o mniej ruchu, a ta gra to nieprzerwany ruch przez cały ekran — nie ma jej wersji nieruchomej. Pozostałe cztery gry to quizy i stoją w miejscu. Jeśli mimo to wolisz polatać, wszystko poza samą grą pozostanie nieruchome.',
+      motionPlay: 'Zagraj mimo to',
+      motionBack: 'Wróć do gier',
+    },
 
     countries: [
       'Polska', 'Uzbekistan', 'Ukraina', 'Niemcy', 'Francja',

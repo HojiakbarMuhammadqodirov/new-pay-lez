@@ -343,7 +343,7 @@ export const en = {
     redeemAction: 'Redeem now',
 
     /* Index-aligned with `GAMES` in `content.ts`. */
-    names: ['Brain Games', 'Guess the Flag', 'Country & Capital', 'Poland Quiz'],
+    names: ['Brain Games', 'Guess the Flag', 'Country & Capital', 'Poland Quiz', 'Squawk’s Flight'],
     /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
        game's own row, so a rules line never disagrees with the game it labels. */
     rule: '{questions} questions · {seconds} sec each',
@@ -377,6 +377,27 @@ export const en = {
     boardEmpty: 'No players yet. Be the first!',
     boardShowAll: 'Show all top 10',
     boardShowLess: 'Show fewer',
+
+    /*
+     * The arcade round. Nested rather than flat so the other four dictionaries
+     * fail to compile until they carry it — `Dictionary` is `typeof en`, which
+     * catches a missing key but would say nothing about a missing array entry.
+     */
+    flight: {
+      rule: 'Fly as far as Squawk can · {gaps} gaps banks the round',
+      reward: 'One crash ends it · +{points} per gap',
+      goal: '{target} to bank the round',
+      hint: 'Tap the screen to flap',
+      resume: 'Tap to pick up where you left off',
+      aria: 'Flight game. Tap the stage to flap.',
+      crashed: 'Squawk clipped a column',
+      resultScore: '{cleared} gaps flown',
+      motionTitle: 'This one moves',
+      motionBody:
+        'Your device asks for less motion, and this game is continuous movement across the screen — there is no still version of it. The other four games are quizzes, and they stay put. If you would rather fly anyway, everything that is not the game itself will hold still.',
+      motionPlay: 'Play anyway',
+      motionBack: 'Back to the games',
+    },
 
     /* Index-aligned with `GAME_COUNTRIES`. */
     countries: [

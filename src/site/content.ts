@@ -103,8 +103,8 @@ export const CONTACT_EMAIL = 'support@paylez.com';
  * may get wrong and still bank the round.
  */
 export const GAMES: Array<{
-  id: 'brain' | 'flag' | 'capital' | 'poland';
-  kind: 'text' | 'flag' | 'capital';
+  id: 'brain' | 'flag' | 'capital' | 'poland' | 'flight';
+  kind: 'text' | 'flag' | 'capital' | 'flight';
   icon: IconName;
   questions: number;
   seconds: number;
@@ -115,6 +115,20 @@ export const GAMES: Array<{
   { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
   { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
   { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
+  /*
+   * The arcade round, and the only one that is played rather than answered. It
+   * reads the quiz's column names differently rather than making them optional,
+   * so `GAMES` stays one homogeneous table: `questions` is gaps to clear,
+   * `perCorrect` is points per gap, `allowedMistakes` is 0 because one crash
+   * ends it, and `seconds` is unused — the round lasts as long as you do.
+   *
+   * Five gaps to bank, matching the quizzes' five questions, so a round is worth
+   * the same wherever you spend it. Unlike a quiz the run does not stop there —
+   * every gap past five pays another two, so a good flight can out-earn any
+   * round on the page. That is deliberate: it is the only game here where the
+   * ceiling is skill rather than the question count.
+   */
+  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 2, allowedMistakes: 0 },
 ];
 
 /**

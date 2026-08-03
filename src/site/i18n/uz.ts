@@ -308,7 +308,7 @@ export const uz: Dictionary = {
     redeemTitle: 'Ballarni mukofotga almashtiring',
     redeemAction: 'Hoziroq almashtirish',
 
-    names: ['Aql o‘yinlari', 'Bayroqni top', 'Davlat va poytaxt', 'Polsha viktorinasi'],
+    names: ['Aql o‘yinlari', 'Bayroqni top', 'Davlat va poytaxt', 'Polsha viktorinasi', 'Squawk parvozi'],
     rule: '{questions} savol · har biri {seconds} soniya',
     reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
     start: 'O‘yinni boshlash',
@@ -338,6 +338,22 @@ export const uz: Dictionary = {
     boardEmpty: 'Hali o‘yinchi yo‘q. Birinchi bo‘ling!',
     boardShowAll: 'Butun top 10 ni ko‘rsatish',
     boardShowLess: 'Kamroq ko‘rsatish',
+
+    flight: {
+      rule: 'Squawk qancha uchsa, shuncha · {gaps} ta darvoza raundni hisobga oladi',
+      reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza uchun +{points}',
+      goal: '{target} ta raundni hisobga oladi',
+      hint: 'Qanot qoqish uchun ekranga bosing',
+      resume: 'Davom ettirish uchun bosing',
+      aria: 'Uchish o‘yini. Qanot qoqish uchun maydonga bosing.',
+      crashed: 'Squawk ustunga urildi',
+      resultScore: 'O‘tilgan darvozalar: {cleared}',
+      motionTitle: 'Bu o‘yin harakatlanadi',
+      motionBody:
+        'Qurilmangiz kamroq harakat so‘raydi, bu o‘yin esa ekran bo‘ylab uzluksiz harakatdir — uning harakatsiz varianti yo‘q. Qolgan to‘rtta o‘yin viktorina bo‘lib, joyida turadi. Baribir uchishni istasangiz, o‘yinning o‘zidan tashqari hamma narsa qimirlamaydi.',
+      motionPlay: 'Baribir o‘ynash',
+      motionBack: 'O‘yinlarga qaytish',
+    },
 
     countries: [
       'Polsha', 'O‘zbekiston', 'Ukraina', 'Germaniya', 'Fransiya',
