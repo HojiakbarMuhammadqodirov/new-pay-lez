@@ -14,6 +14,28 @@
 /** How many lives a full tank holds, and what a round can cost. */
 export const MAX_LIVES = 3;
 
+/**
+ * Streak freezes.
+ *
+ * A streak that resets to zero because somebody had one bad week is the rule
+ * every streak product eventually softens, and for a good reason: the punishment
+ * lands hardest on the player who has the most to lose, which is exactly the
+ * player you were trying to keep. A freeze is the standard answer — one missed
+ * day is absorbed rather than fatal — and it stays honest because the supply is
+ * capped and earned.
+ *
+ * Earned, not given: one freeze every `FREEZE_EVERY` days of streak, up to
+ * `MAX_FREEZES` held. So a freeze always costs a week of showing up, and a
+ * player cannot bank enough of them to stop the streak meaning anything.
+ *
+ * A freeze absorbs the *lapse*, which means it protects the balance too — see
+ * `awardPoints`, where a lapse zeroes the points as well as the streak. That is
+ * deliberate: those two have always been one rule, and a freeze that saved the
+ * number but not the points would be the confusing half-measure.
+ */
+export const MAX_FREEZES = 2;
+export const FREEZE_EVERY = 7;
+
 /** Points needed for the cheapest voucher, so the wallet can say how far off you are. */
 export const CHEAPEST_VOUCHER = 100;
 
@@ -41,8 +63,18 @@ export interface PlayerState {
   correct: number;
   /** `YYYY-MM-DD` of the last finished round, for the 24-hour streak rule. */
   lastPlayed: string | null;
+  /**
+   * Freezes held. Optional because it postdates the stored shape: a session
+   * saved by an earlier build has no such field, and `freezesOf` below reads a
+   * missing one as zero rather than as a crash.
+   */
+  freezes?: number;
   vouchers: OwnedVoucher[];
 }
+
+/** Freezes held, for a state that may predate the field. */
+export const freezesOf = (state: PlayerState): number =>
+  typeof state.freezes === 'number' ? Math.max(0, state.freezes) : 0;
 
 /**
  * A new player, with something already in the wallet.
@@ -61,6 +93,9 @@ export function seedPlayer(): PlayerState {
     answered: 45,
     correct: 38,
     lastPlayed: null,
+    /* One in hand. A freeze nobody has ever held is a rule nobody has read, and
+       the streak card is where the rule is explained. */
+    freezes: 1,
     vouchers: [
       {
         id: 'v1',
@@ -119,6 +154,85 @@ function yesterday(now: Date = new Date()): string {
   return today(back);
 }
 
+export interface Award {
+  /** Points the round earned, already totalled by whatever scored it. */
+  points: number;
+  /** How many questions, gaps, words or pairs the round put to the player. */
+  answered: number;
+  /** How many of them they got. */
+  correct: number;
+  /** True when the player stayed inside the game's mistake allowance. */
+  won: boolean;
+}
+
+/**
+ * Bank a finished round, whatever scored it.
+ *
+ * **This is the only place the streak, the lapse and the freeze are decided.**
+ * There were two copies of that rule before the arcade round arrived and there
+ * would be four by now — the quizzes, the flight, Word Builder and Memory Match
+ * all score differently and none of them has any business restating what a
+ * streak is. They compute a number; this decides what it does to the account.
+ *
+ * The streak rule is the one the site states in its own FAQ: play inside 24
+ * hours and it continues, miss the window and it — and the points with it — go
+ * back to zero. Playing twice in one day does not advance it twice, which is why
+ * `lastPlayed` is a date rather than a count.
+ *
+ * The one thing that can stand between a missed window and that reset is a
+ * freeze. It is spent here, silently and automatically: a dialog asking "use a
+ * freeze?" would arrive a day late, on the round *after* the one that was
+ * missed, about a decision the player can no longer change.
+ */
+export function awardPoints(
+  state: PlayerState,
+  result: Award,
+  now: Date = new Date(),
+): PlayerState {
+  const day = today(now);
+  const played = state.lastPlayed;
+
+  /* Three cases, and the order matters: already played today, continued inside
+     the window (or never played at all), or lapsed. */
+  const sameDay = played === day;
+  const continued = played === yesterday(now) || played === null;
+  const lapsed = !sameDay && !continued;
+
+  /* A lapse is absorbed if there is a freeze to spend on it. The streak then
+     advances exactly as a normal day would, and the balance survives with it. */
+  const held = freezesOf(state);
+  const frozen = lapsed && held > 0;
+
+  const streak = sameDay ? state.streak : lapsed && !frozen ? 1 : state.streak + 1;
+  const base = lapsed && !frozen ? 0 : state.points;
+
+  /*
+   * Freezes earned, then the one spent.
+   *
+   * Earned off the streak the round just produced rather than the one it
+   * started from, so the seventh day pays for itself. `sameDay` earns nothing
+   * because the streak did not move — otherwise a second round on day seven
+   * would mint a second freeze.
+   */
+  let freezes = held;
+  if (frozen) freezes -= 1;
+  if (!sameDay && streak % FREEZE_EVERY === 0) {
+    freezes = Math.min(MAX_FREEZES, freezes + 1);
+  }
+
+  return {
+    ...state,
+    points: base + result.points,
+    streak,
+    freezes,
+    answered: state.answered + result.answered,
+    correct: state.correct + result.correct,
+    lastPlayed: day,
+    /* A loss costs a life; the tank refills the next day a round is played. */
+    lives: result.won ? state.lives : Math.max(0, state.lives - 1),
+  };
+}
+
 export interface RoundResult {
   correct: number;
   total: number;
@@ -128,42 +242,23 @@ export interface RoundResult {
   won: boolean;
 }
 
-/**
- * Bank a finished round.
- *
- * The streak rule is the one the site now states in its own FAQ: play inside
- * 24 hours and it continues, miss the window and it — and the points with it —
- * go back to zero. Playing twice in one day does not advance it twice, which is
- * why `lastPlayed` is a date rather than a count.
- */
-export function awardRound(state: PlayerState, result: RoundResult, now: Date = new Date()): PlayerState {
-  const day = today(now);
-  const scored = result.correct * result.perCorrect;
-
-  let streak: number;
-  if (state.lastPlayed === day) {
-    streak = state.streak; // already counted today
-  } else if (state.lastPlayed === yesterday(now) || state.lastPlayed === null) {
-    streak = state.streak + 1;
-  } else {
-    /* The window was missed. This is the reset the copy promises — and it takes
-       the balance with it, not just the streak. */
-    streak = 1;
-  }
-
-  const lapsed = state.lastPlayed !== null && state.lastPlayed !== day && state.lastPlayed !== yesterday(now);
-  const base = lapsed ? 0 : state.points;
-
-  return {
-    ...state,
-    points: base + scored,
-    streak,
-    answered: state.answered + result.total,
-    correct: state.correct + result.correct,
-    lastPlayed: day,
-    /* A loss costs a life; the tank refills the next day a round is played. */
-    lives: result.won ? state.lives : Math.max(0, state.lives - 1),
-  };
+/** A quiz round: every right answer is worth the same, and the game says how
+ *  much. Kept as its own name because four callers read better for it. */
+export function awardRound(
+  state: PlayerState,
+  result: RoundResult,
+  now: Date = new Date(),
+): PlayerState {
+  return awardPoints(
+    state,
+    {
+      points: result.correct * result.perCorrect,
+      answered: result.total,
+      correct: result.correct,
+      won: result.won,
+    },
+    now,
+  );
 }
 
 export interface FlightResult {
@@ -249,6 +344,78 @@ export function awardFlight(
 
   const surplus = (banked - counted) * result.perGap;
   return surplus > 0 ? { ...base, points: base.points + surplus } : base;
+}
+
+/* ────────────────────────────────────────────────────── the two new games ── */
+
+/**
+ * What one solved word is worth in Word Builder.
+ *
+ * Straight from the supplied spec, and the shape of it is the point: a flat
+ * points-per-word would pay the same for guessing KAWA and for building
+ * PRZEPRASZAM, so the score is base plus what the player actually did — how hard
+ * the word was, whether they got it first time, and how long it took.
+ *
+ * A hint is not a penalty, it is a ceiling: taking one removes the first-try and
+ * speed bonuses for that word and leaves the base and the tier bonus. Somebody
+ * who needs the hint still earns; they just do not earn the mastery part.
+ *
+ * An unsolved word is worth nothing and is simply not passed here.
+ */
+export interface WordScore {
+  /** 1 easy (3–4 letters), 2 medium (5–6), 3 hard (7+). */
+  tier: number;
+  /** No wrong attempt on this word. */
+  firstTry: boolean;
+  /** A letter was revealed. */
+  hinted: boolean;
+  /** Wall-clock seconds spent on this word. */
+  seconds: number;
+}
+
+/** +0 / +2 / +4 for tiers 1 / 2 / 3. */
+const TIER_BONUS = [0, 2, 4];
+
+export function wordPoints(word: WordScore): number {
+  const base = 5;
+  const tier = TIER_BONUS[Math.min(Math.max(word.tier, 1), 3) - 1];
+  if (word.hinted) return base + tier;
+
+  const first = word.firstTry ? 3 : 0;
+  const speed = word.seconds < 15 ? 3 : word.seconds <= 30 ? 1 : 0;
+  return base + tier + first + speed;
+}
+
+/** Every word first-try. A target to chase rather than an expectation. */
+export const WORD_PERFECT_BONUS = 10;
+
+/**
+ * What a finished Memory Match round is worth.
+ *
+ * The skill in this game is efficiency — fewer flips means better memory — so
+ * that is what the bonus is on. The base is per pair and is guaranteed: there is
+ * no fail state here, and a slow player still earns, just less. That is
+ * deliberate, and it is the reason this round has no clock: the deliberately
+ * accessible one of the set.
+ *
+ * `moves` is completed *pairs* of flips, not individual card taps, so the floor
+ * is `pairs` — one move per pair, every one of them a match.
+ */
+export const MEMORY_PER_PAIR = 6;
+export const MEMORY_FLAWLESS_BONUS = 10;
+
+export function memoryPoints(pairs: number, moves: number): number {
+  const base = pairs * MEMORY_PER_PAIR;
+
+  /* Past sixteen moves on a six-pair board the player is turning cards over at
+     random, and the bonus is zero rather than negative — nobody goes backwards
+     here. */
+  const reasonable = 16;
+  const span = Math.max(1, reasonable - pairs);
+  const efficiency = Math.min(1, Math.max(0, (reasonable - moves) / span));
+
+  const flawless = moves === pairs ? MEMORY_FLAWLESS_BONUS : 0;
+  return base + Math.round(efficiency * 12) + flawless;
 }
 
 /** Lives come back with a new day rather than on a timer nobody can see. */

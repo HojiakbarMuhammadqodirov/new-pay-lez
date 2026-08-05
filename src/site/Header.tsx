@@ -6,9 +6,15 @@ import {
   type CSSProperties,
   type PointerEvent,
 } from 'react';
-import { NAV_ITEMS } from './content';
+import {
+  NAV_HIDDEN_INDIVIDUAL,
+  NAV_HREFS,
+  NAV_ORDER,
+  NAV_ORDER_BUSINESS,
+  type NavKey,
+} from './content';
 import { GLASS_MESH } from './glassMesh';
-import { Icon, type IconName } from './icons';
+import { Icon } from './icons';
 import { LANGUAGE_ORDER, LANGUAGES, useCopy, useLanguage } from './i18n/context';
 import { PATHS, type Route } from './router';
 import { useTheme } from './theme/context';
@@ -29,12 +35,10 @@ import { initial, useAuth } from './auth/context';
 function NavItem({
   href,
   label,
-  icon,
   active,
 }: {
   href: string;
   label: string;
-  icon: IconName;
   active: boolean;
 }) {
   const ref = useRef<HTMLAnchorElement>(null);
@@ -88,7 +92,8 @@ function NavItem({
           />
         ))}
       </svg>
-      <Icon name={icon} size={16} strokeWidth={1.8} className="nav-icon" />
+      {/* Word only. The 16px glyph beside it was a second, weaker way of saying
+          the same thing, and seven of them turned the strip into a toolbar. */}
       <span className="nav-label">{label}</span>
     </a>
   );
@@ -301,44 +306,44 @@ export function Header({ route }: { route: Route }) {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
+  /*
+   * Which items, in which order.
+   *
+   * Three answers, and the account is the whole of what decides between them.
+   * An owner gets their own tools first and no Relocate (see
+   * `NAV_ORDER_BUSINESS`); an individual loses the two pages that sell to a
+   * venue; signed out, everything shows, because those pages are still the
+   * pitch.
+   */
+  const items: NavKey[] =
+    account?.type === 'business'
+      ? NAV_ORDER_BUSINESS
+      : account?.type === 'individual'
+        ? NAV_ORDER.filter((key) => !NAV_HIDDEN_INDIVIDUAL.includes(key))
+        : NAV_ORDER;
+
   return (
     <header className="site-header" data-scrolled={scrolled ? 'true' : 'false'}>
       {/* Three explicit columns rather than space-between: that is what keeps
           the nav optically centred regardless of how wide the brand or the
           actions happen to be. */}
       <div className="wrap header-inner">
+        {/* The word is the mark. No tile beside it — see `.brand` in site.css. */}
         <a className="brand" href={PATHS.landing} aria-label="paylez home">
-          <span className="brand-mark" aria-hidden />
-          <span className="brand-word">paylez</span>
+          paylez
         </a>
 
         <nav className="main-nav" aria-label="Primary">
-          {/*
-            Zipped into pairs before filtering, not filtered as two arrays.
-            `NAV_ITEMS` is index-aligned with `copy.nav`, so dropping an entry
-            from one and not the other shears every label after it — B2B would
-            end up captioned "Vouchers".
-
-            An individual has no business with the two pages that sell to a
-            venue. Signed out, everything shows: those pages are still the pitch.
-          */}
-          {NAV_ITEMS.map((item, index) => ({ item, label: copy.nav[index] }))
-            .filter(
-              ({ item }) =>
-                account?.type !== 'individual' ||
-                (item.href !== PATHS.b2b && item.href !== PATHS.analytics),
-            )
-            .map(({ item, label }) => (
-              <NavItem
-                key={label}
-                href={item.href}
-                label={label}
-                icon={item.icon}
-                /* Only the routes can be "current"; the rest are section
-                   anchors on the landing page, which scroll rather than navigate. */
-                active={item.href === PATHS[route]}
-              />
-            ))}
+          {items.map((key) => (
+            <NavItem
+              key={key}
+              href={NAV_HREFS[key]}
+              label={copy.nav[key]}
+              /* Only the routes can be "current"; `home` is a section anchor,
+                 which scrolls rather than navigates. */
+              active={NAV_HREFS[key] === PATHS[route]}
+            />
+          ))}
         </nav>
 
         <div className="header-actions">

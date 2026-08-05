@@ -9,17 +9,6 @@ export interface PaylezIntroProps {
   onComplete?: () => void;
   primaryColor?: string;
   backgroundColor?: string;
-  /** Ink for the brand mark's letter, used only when `markImage` is absent. */
-  onPrimaryColor?: string;
-  /**
-   * The brand mark, as a URL to a square image.
-   *
-   * A prop rather than a CSS token: this component lives under `components/` and
-   * takes its whole appearance from its caller, so it has no business reading the
-   * site's stylesheet. Omit it and the mark falls back to the lettered tile,
-   * which is what keeps the sequence renderable with no assets at all.
-   */
-  markImage?: string;
   /**
    * Play only on the first visit of a browser session. Off by default so the
    * sequence is easy to iterate on; turn it on for production.
@@ -31,20 +20,29 @@ export interface PaylezIntroProps {
 
 const SESSION_KEY = 'paylez-intro-played';
 
+/** The wordmark, as the letters the sequence animates one at a time. */
+const WORD = [...'paylez'];
+
 /**
- * Brand cold-open: the mark pops in centred, then the name unfolds beside it —
- * pushing the mark left as it grows — with a neon loading bar underneath.
+ * Brand cold-open: the name is written a letter at a time, each one rising out
+ * of focus into focus, with a hairline drawing itself underneath as the last
+ * letters land.
  *
- * Pure DOM and CSS. The whole thing is transform and opacity on five elements,
- * so it runs entirely on the compositor and costs the page no JavaScript per
- * frame; the only timer is the one that ends it.
+ * **No mark.** There used to be one — a square tile that popped in and was then
+ * pushed left by the name growing beside it — and it is gone for the same reason
+ * it is gone from the header, the footer and the dashboard rail: the product has
+ * never shown a tile next to the name, so an intro that opened on one was
+ * introducing a mark the rest of the site does not have. What is left is the
+ * thing the brand actually is, in the face it is actually set in.
+ *
+ * Pure DOM and CSS. Eight elements, all of them animating transform, opacity or
+ * filter, so the whole thing runs on the compositor and costs the page no
+ * JavaScript per frame; the only timer is the one that ends it.
  */
 export const PaylezIntro = memo(function PaylezIntro({
   onComplete,
   primaryColor = COLORS.primary,
   backgroundColor = COLORS.background,
-  onPrimaryColor = INTRO.onPrimary,
-  markImage,
   oncePerSession = false,
   skippable = true,
 }: PaylezIntroProps) {
@@ -115,17 +113,13 @@ export const PaylezIntro = memo(function PaylezIntro({
         {
           background: backgroundColor,
           '--pz-accent': primaryColor,
-          '--pz-on-accent': onPrimaryColor,
-          '--pz-mark-image': markImage ? `url('${markImage}')` : 'none',
-          '--pz-name-w': `${INTRO.nameWidthCh}ch`,
-          '--pz-mark-in': `${INTRO.markIn.duration}ms`,
-          '--pz-mark-delay': `${INTRO.markIn.delay}ms`,
-          '--pz-name-in': `${INTRO.nameOpen.duration}ms`,
-          '--pz-name-delay': `${INTRO.nameOpen.delay}ms`,
-          '--pz-bar-in': `${INTRO.barIn.duration}ms`,
-          '--pz-bar-delay': `${INTRO.barIn.delay}ms`,
-          '--pz-fill-in': `${INTRO.barFill.duration}ms`,
-          '--pz-fill-delay': `${INTRO.barFill.delay}ms`,
+          '--pz-letter-in': `${INTRO.letterIn.duration}ms`,
+          '--pz-letter-delay': `${INTRO.letterIn.delay}ms`,
+          '--pz-stagger': `${INTRO.letterIn.stagger}ms`,
+          '--pz-rule-in': `${INTRO.ruleIn.duration}ms`,
+          '--pz-rule-delay': `${INTRO.ruleIn.delay}ms`,
+          '--pz-settle': `${INTRO.settle.duration}ms`,
+          '--pz-settle-delay': `${INTRO.settle.delay}ms`,
           '--pz-out': `${INTRO.outro.duration}ms`,
           '--pz-out-delay': `${INTRO.outro.delay}ms`,
         } as CSSProperties
@@ -135,22 +129,21 @@ export const PaylezIntro = memo(function PaylezIntro({
       aria-hidden
     >
       <div className="pz-stage">
-        {/* Centred row: the name growing from zero width is what pushes the
-            mark to the left. No second animation to keep in sync. */}
-        <div className="pz-brand">
-          {/* The letter is the fallback, not the design: with `markImage` set the
-              image covers the tile and the glyph never shows. */}
-          <span className="pz-mark" data-image={markImage ? 'true' : undefined}>
-            <span>p</span>
-          </span>
-          <span className="pz-name">
-            <span>paylez</span>
-          </span>
+        {/*
+          One element per letter, each carrying its index. The stagger is done in
+          CSS off `--i` rather than by generating six delays here: the timings
+          then live entirely in `config.ts` and the stylesheet, and adding a
+          letter to the word cannot leave a hardcoded delay behind.
+        */}
+        <div className="pz-word">
+          {WORD.map((letter, index) => (
+            <i key={index} style={{ ['--i' as string]: index }}>
+              {letter}
+            </i>
+          ))}
         </div>
 
-        <div className="pz-bar">
-          <i />
-        </div>
+        <div className="pz-rule" />
       </div>
 
       {skippable && <span className="pz-skip">Skip</span>}

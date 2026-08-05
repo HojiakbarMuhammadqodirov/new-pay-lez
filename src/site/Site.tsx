@@ -10,6 +10,7 @@ import { GamesApp } from './games';
 import { WalletApp } from './wallet';
 import { B2bPage } from './b2b';
 import { BusinessSetupPage } from './business';
+import { ContactPage } from './contact';
 import { DashboardPage } from './dashboard';
 import { Header } from './Header';
 import { useLanguage } from './i18n/context';
@@ -133,12 +134,12 @@ function SiteContent() {
 
   return (
     <div className="site" id="top" data-intro={introDone ? 'done' : 'running'}>
+      {/* Two colours and nothing else: the sequence is the wordmark, so it needs
+          the accent and the ground and has no tile to place ink on. */}
       <PaylezIntro
         onComplete={() => setIntroDone(true)}
         primaryColor={palette.primary}
         backgroundColor={palette.background}
-        onPrimaryColor={palette.onPrimary}
-        markImage={palette.logo}
       />
 
       {/*
@@ -207,18 +208,22 @@ function SiteContent() {
            * changing `false` to `true`. See `GlobeHero/README.md`.
            */
           showLabels={false}
-          /* Sign-in is one screenful with nothing below it, so there is no
-             scroll for the globe to travel through. It stays the hero pose. */
+          /*
+           * Sign-in is one screenful with nothing below it, so there is no
+           * scroll for the globe to travel through and it holds the hero pose.
+           * Contact is not that — it has a channel grid and a form under the
+           * fold, and a pinned globe sits straight on top of them.
+           */
           scrollTransition={route !== 'signin'}
           /*
-           * The landing page anchors the transition to its *third* section — the
-           * point by which the globe has finished being the hero's right-hand
-           * column and has settled into the arc the page rides on. The second
-           * section is too early: the globe is still large when the content
-           * arrives, and it ends up behind a card rather than under a carousel.
-           * Renaming that section changes when it settles.
+           * Anchored to the page's *third* section — the point by which the
+           * globe has finished being the hero's right-hand column and has
+           * settled into the arc the page rides on. The second section is too
+           * early: the globe is still large when the content arrives, and it
+           * ends up behind a card rather than under a carousel. Renaming either
+           * section changes when it settles.
            */
-          scrollAnchorId="guide"
+          scrollAnchorId={route === 'contact' ? 'contact-form' : 'guide'}
         />
       )}
 
@@ -243,6 +248,8 @@ function SiteContent() {
         )
       ) : route === 'relocate' ? (
         <RelocatePage />
+      ) : route === 'contact' ? (
+        <ContactPage />
       ) : route === 'learn' ? (
         isPlayer ? (
           <GamesApp />

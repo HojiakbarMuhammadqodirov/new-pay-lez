@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "assets": "node scripts/copy-flag-font.mjs",
+    "banks": "node scripts/build-question-banks.mjs",
     "dev": "npm run assets && vite",
     "build": "npm run assets && tsc -b && vite build",
     "lint": "oxlint",
@@ -13,6 +14,7 @@
   },
   "dependencies": {
     "@fontsource/manrope": "^5.3.0",
+    "@fontsource/onest": "^5.3.0",
     "@fontsource/poppins": "^5.3.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.6.1",

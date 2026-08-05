@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import {
+  GAMES,
   LEARN_BOARD,
-  LEARN_GAME_ICONS,
   LEARN_STATS,
   LEARN_STEP_ICONS,
   LEARN_VOUCHER_EUR,
   STREAK,
 } from './content';
+import { MAX_FREEZES } from './auth/player';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
@@ -60,7 +61,9 @@ function LearnHero() {
           </p>
 
           <div className="hero-cta" data-reveal>
-            <a href="#learn-games" className="btn btn-solid btn-lg">
+            {/* Both used to point at the catalogue; only the second one says
+                "See the games". */}
+            <a href={PATHS.signin} className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.learn.hero.primary}
             </a>
@@ -145,8 +148,19 @@ function LearnSteps() {
 
 /* ────────────────────────────────────────────────────────────── games ── */
 
+/**
+ * The catalogue, read off `GAMES` rather than described again here.
+ *
+ * This section used to carry its own three cards with their own names and
+ * blurbs in five dictionaries, and it was already wrong: the arcade round
+ * shipped and the page still said three. It now maps the same table the games
+ * screen maps, with the same names and the same per-kind rule lines, so adding
+ * a game to `content.ts` adds it here and the marketing page cannot claim a
+ * catalogue the product does not have.
+ */
 function LearnGames() {
   const copy = useCopy();
+  const games = copy.games;
 
   return (
     <section className="section" id="learn-games">
@@ -158,14 +172,36 @@ function LearnGames() {
         </div>
 
         <div className="games">
-          {copy.learn.games.items.map((game, i) => (
-            <article className="game" key={game.name} data-reveal>
+          {GAMES.map((entry, i) => (
+            <article className="game" key={entry.id} data-reveal>
               <span className="game-ico">
-                <Icon name={LEARN_GAME_ICONS[i]} size={24} />
+                <Icon name={entry.icon} size={24} />
               </span>
-              <h3>{game.name}</h3>
-              <p>{game.blurb}</p>
-              <span className="game-meta">{game.meta}</span>
+              <h3>{games.names[i]}</h3>
+              <p>
+                {entry.kind === 'flight'
+                  ? fill(games.flight.rule, { gaps: String(entry.questions) })
+                  : entry.kind === 'memory'
+                    ? fill(games.memory.rule, { pairs: String(entry.questions) })
+                    : entry.kind === 'word'
+                      ? fill(games.wordGame.rule, { words: String(entry.questions) })
+                      : fill(games.rule, {
+                          questions: String(entry.questions),
+                          seconds: String(entry.seconds),
+                        })}
+              </p>
+              <span className="game-meta">
+                {entry.kind === 'flight'
+                  ? fill(games.flight.reward, { points: String(entry.perCorrect) })
+                  : entry.kind === 'memory'
+                    ? fill(games.memory.reward, { points: String(entry.perCorrect) })
+                    : entry.kind === 'word'
+                      ? games.wordGame.reward
+                      : fill(games.reward, {
+                          mistakes: String(entry.allowedMistakes),
+                          points: String(entry.perCorrect),
+                        })}
+              </span>
             </article>
           ))}
         </div>
@@ -209,6 +245,23 @@ function LearnStreak() {
                   {lit && <Icon name="check" size={13} strokeWidth={3.2} />}
                 </span>
               ))}
+            </div>
+
+            {/*
+              Freezes, on the card that explains the streak.
+              A rule that only shows up on the day it saves you is a rule
+              nobody plans around — the whole value of a freeze is knowing you
+              have one, so it is drawn beside the pips it protects.
+            */}
+            <div className="streak-freeze">
+              <span className="streak-freeze-pips" aria-hidden>
+                {Array.from({ length: MAX_FREEZES }, (_, i) => (
+                  <i key={i}>
+                    <Icon name="freeze" size={13} strokeWidth={2.2} />
+                  </i>
+                ))}
+              </span>
+              <span>{copy.learn.streak.card.freeze}</span>
             </div>
 
             <p className="streak-reward">
@@ -378,7 +431,11 @@ function LearnCta() {
           <h2>{copy.learn.cta.title}</h2>
           <p>{copy.learn.cta.lede}</p>
           <div className="cta-actions">
-            <a href="#learn-games" className="btn btn-solid btn-lg">
+            {/* "Start playing" starts playing. This page is only ever shown to
+                somebody who is not signed in as a player — `useIsPlayer` swaps
+                it for the games themselves — so the way to start is sign-in,
+                not a scroll back up to the catalogue. */}
+            <a href={PATHS.signin} className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.learn.cta.primary}
             </a>

@@ -251,7 +251,6 @@ export function AdminPage() {
     <main className="adm-app">
       <header className="adm-bar">
         <a className="adm-brand" href={PATHS.landing}>
-          <span className="brand-mark" aria-hidden />
           <span className="adm-word">paylez</span>
           <span className="adm-tag">{copy.tag}</span>
         </a>

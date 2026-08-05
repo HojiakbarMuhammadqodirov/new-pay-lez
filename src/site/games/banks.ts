@@ -1,0 +1,170 @@
+import type { LanguageCode } from '../i18n/context';
+
+/**
+ * The question banks, loaded on demand.
+ *
+ * `data/` is generated — see `scripts/build-question-banks.mjs`, which turns the
+ * four CSV exports in `updates/` into one file per bank per language plus a
+ * shared `.meta.json` for the structural half (which option is right, a flag's
+ * ISO code, a country's continent).
+ *
+ * **Nothing here is in the main bundle.** The general bank alone is 2102
+ * questions; the Russian copy of it is 389 kB, and a visitor who never opens
+ * L-Earn should not pay for a byte of that. `import.meta.glob` gives Vite a
+ * static pattern to code-split on, and the loader below fetches exactly one
+ * language file per bank, the first time a round of that game is built.
+ *
+ * `import.meta.glob` rather than a template-literal `import()`: the glob is
+ * typed, Vite resolves it at build time with no module-resolution guessing, and
+ * a missing file is a lookup that returns `undefined` here instead of a runtime
+ * import failure inside a game.
+ */
+
+export type BankId = 'general' | 'poland' | 'flags' | 'capitals';
+
+const TEXT = import.meta.glob('./data/*.json', { import: 'default' }) as Record<
+  string,
+  () => Promise<unknown>
+>;
+
+/* ── the shapes the generator writes ──────────────────────────────────────
+ *
+ * Rows of plain strings rather than objects with named fields, because every
+ * consumer wants the whole row and named keys cost more than the strings do
+ * across two thousand of them. Position is the contract:
+ *
+ *   quiz     [prompt, option, option, option, option]
+ *   flags    [country, option, option, option]   — the prompt is copy, not data
+ *   capitals [country, capital]
+ */
+
+export interface QuizBank {
+  /** One row per question: prompt first, then the four options. */
+  rows: string[][];
+  /** Which option is the right one, index-aligned with `rows`. */
+  answers: number[];
+}
+
+export interface FlagBank {
+  /** Four country names; the first is the right one. */
+  rows: string[][];
+  answers: number[];
+  /** Two-letter ISO codes, index-aligned. The flag emoji is built from these. */
+  codes: string[];
+}
+
+export interface CapitalBank {
+  /** `[country, capital]` per row. */
+  rows: string[][];
+  /** Which continent each row is in, for drawing plausible distractors. */
+  continents: string[];
+}
+
+/* ────────────────────────────────────────────────────────────── loading ── */
+
+/**
+ * One promise per bank+language, kept forever.
+ *
+ * The cache holds the *promise* rather than the result so two rounds started in
+ * the same tick share one fetch. Nothing evicts: a bank is at most 389 kB and
+ * the alternative is re-parsing it every time somebody replays a game.
+ */
+const cache = new Map<string, Promise<unknown>>();
+
+function load(file: string): Promise<unknown> {
+  const cached = cache.get(file);
+  if (cached) return cached;
+
+  const loader = TEXT[file];
+  if (!loader) return Promise.reject(new Error(`No bank at ${file}`));
+
+  const promise = loader();
+  cache.set(file, promise);
+  return promise;
+}
+
+const text = (id: BankId, language: LanguageCode) =>
+  load(`./data/${id}.${language}.json`) as Promise<string[][]>;
+
+const meta = <T>(id: BankId) => load(`./data/${id}.meta.json`) as Promise<T>;
+
+export async function loadQuiz(
+  id: 'general' | 'poland',
+  language: LanguageCode,
+): Promise<QuizBank> {
+  const [rows, { a }] = await Promise.all([
+    text(id, language),
+    meta<{ a: number[] }>(id),
+  ]);
+  return { rows, answers: a };
+}
+
+export async function loadFlags(language: LanguageCode): Promise<FlagBank> {
+  const [rows, { a, code }] = await Promise.all([
+    text('flags', language),
+    meta<{ a: number[]; code: string[] }>('flags'),
+  ]);
+  return { rows, answers: a, codes: code };
+}
+
+export async function loadCapitals(language: LanguageCode): Promise<CapitalBank> {
+  const [rows, { continent }] = await Promise.all([
+    text('capitals', language),
+    meta<{ continent: string[] }>('capitals'),
+  ]);
+  return { rows, continents: continent };
+}
+
+/* ─────────────────────────────────────────────── the two new games' data ── */
+
+/** `[word, hint, tier]`. Tier is 1 easy / 2 medium / 3 hard. */
+export type WordRow = [word: string, hint: string, tier: number];
+
+/**
+ * Word Builder ships two lists and only two.
+ *
+ * It is a *language* game — the thing being learned is the word — so the list is
+ * the language you are practising rather than the language you read the site in,
+ * and the hints are written in English in both files. A Russian speaker learning
+ * Polish wants the Polish list; giving them a Russian one would be giving them
+ * nothing to learn.
+ */
+export type WordList = 'en' | 'pl';
+
+export const loadWords = (list: WordList) =>
+  load(`./data/words.${list}.json`) as Promise<WordRow[]>;
+
+export interface Deck {
+  id: string;
+  /** Ten pairs; a round uses six of them. */
+  pairs: Array<{
+    id: string;
+    /** Emoji placeholder — the spec's own word. Custom art replaces these. */
+    icon: string;
+    /** The Polish name, which is the thing being learned. */
+    label: string;
+    /** …and what it is in English, for everyone who is not learning Polish. */
+    en: string;
+  }>;
+}
+
+export const loadDecks = () => load('./data/decks.json') as Promise<Deck[]>;
+
+/* ───────────────────────────────────────────────────────────────── flags ── */
+
+/**
+ * A two-letter ISO code as its flag emoji.
+ *
+ * `pl` becomes the regional-indicator pair `🇵🇱`. This is why the export's
+ * `flagcdn.com` image URLs are parsed for their code and then thrown away: the
+ * site makes no third-party runtime requests, and the self-hosted Twemoji subset
+ * (`GlobeHero/ui/flagFont.css`) already draws every one of these. Two characters
+ * instead of a network round trip per question.
+ */
+export function flagOf(code: string): string {
+  if (code.length !== 2) return '';
+  // 0x1f1e6 is REGIONAL INDICATOR SYMBOL LETTER A.
+  return String.fromCodePoint(
+    ...[...code.toLowerCase()].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 97),
+  );
+}

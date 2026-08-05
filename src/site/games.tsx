@@ -1,19 +1,33 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BOARD_TABS, GAME_BOARD, GAME_COUNTRIES, GAMES } from './content';
+import { BOARD_TABS, GAME_BOARD, GAMES } from './content';
 import { Icon } from './icons';
-import { useCopy } from './i18n/context';
+import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
   awardFlight,
+  awardPoints,
   awardRound,
+  CHEAPEST_VOUCHER,
   flightPoints,
+  freezesOf,
+  MAX_FREEZES,
   MAX_LIVES,
   refillLives,
   type PlayerState,
 } from './auth/player';
 import { FlightGame } from './flight/FlightGame';
+import type { WordList } from './games/banks';
+import { MemoryMatch } from './games/MemoryMatch';
+import {
+  buildCapitalRound,
+  buildFlagRound,
+  buildQuizRound,
+  type Question,
+} from './games/rounds';
+import { WordBuilder } from './games/WordBuilder';
 import { PATHS } from './router';
+import { useReveal } from './useReveal';
 import '../components/GlobeHero/ui/flagFont.css';
 
 /**
@@ -31,85 +45,20 @@ import '../components/GlobeHero/ui/flagFont.css';
  * question is built (`kind` in `GAMES`) and what it pays, so there is one timer
  * and one scoring path rather than four of each.
  *
- * `flight` is the exception and the only one: an arcade round with no questions
- * to build, which brings its own loop in `flight/FlightGame.tsx`. It rejoins the
- * others at `onDone` — same two arguments, same result card — so everything
- * downstream of a finished round stayed as it was.
+ * Three rounds are not quizzes and each brings its own loop: `flight`
+ * (`flight/FlightGame.tsx`), `memory` and `word` (`games/`). All three rejoin
+ * the others at `onDone` and end on the same result card, so everything
+ * downstream of a finished round is one path.
+ *
+ * **Building a round is asynchronous now.** The questions used to be a handful
+ * of items sitting in the dictionaries; they come from the generated banks in
+ * `games/data/` — 2102 general questions and 196 flags among them — which are
+ * code-split and fetched the first time a game is opened. Hence the `loading`
+ * state on the card that starts one, and hence `useReveal` below.
  */
 
 type GameId = (typeof GAMES)[number]['id'];
 type Game = (typeof GAMES)[number];
-
-interface Question {
-  /** The prompt, already assembled. */
-  prompt: string;
-  /** Shown above the prompt at display size — a flag, or nothing. */
-  glyph?: string;
-  options: string[];
-  answer: number;
-}
-
-/* ─────────────────────────────────────────────────────────── the questions ── */
-
-/** Fisher–Yates on a copy. Rounds must not repeat a question. */
-function shuffled<T>(items: T[]): T[] {
-  const out = [...items];
-  for (let i = out.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [out[i], out[j]] = [out[j], out[i]];
-  }
-  return out;
-}
-
-/**
- * Build one round.
- *
- * The written games read their questions straight from the dictionary; the flag
- * and capital games are *generated* from one ten-country table, which is why
- * adding a country gives both games a new question and costs one line in each
- * language rather than two.
- */
-function buildRound(
-  game: Game,
-  copy: ReturnType<typeof useCopy>['games'],
-): Question[] {
-  /*
-   * The arcade round has no bank to draw from. This guard is structural rather
-   * than defensive: `GAMES` is one array type, not a union of object types, so
-   * `kind === 'text'` below does *not* narrow, and without this an unguarded
-   * caller would fall through and silently build the flight game a round of
-   * capital cities.
-   */
-  if (game.kind === 'flight') return [];
-
-  if (game.kind === 'text') {
-    const bank = game.id === 'brain' ? copy.brain : copy.poland;
-    return shuffled(bank)
-      .slice(0, game.questions)
-      .map((item) => ({ prompt: item.q, options: item.options, answer: item.a }));
-  }
-
-  const picks = shuffled(GAME_COUNTRIES.map((_, index) => index)).slice(0, game.questions);
-
-  return picks.map((index) => {
-    /* Three wrong answers drawn from the same table, so a distractor is always
-       a plausible country rather than obviously filler. */
-    const wrong = shuffled(GAME_COUNTRIES.map((_, i) => i).filter((i) => i !== index)).slice(0, 3);
-    const order = shuffled([index, ...wrong]);
-    const label = (i: number) =>
-      game.kind === 'flag' ? copy.countries[i] : copy.capitals[i];
-
-    return {
-      prompt:
-        game.kind === 'flag'
-          ? copy.whichCountry
-          : fill(copy.whichCapital, { country: copy.countries[index] }),
-      glyph: game.kind === 'flag' ? GAME_COUNTRIES[index] : undefined,
-      options: order.map(label),
-      answer: order.indexOf(index),
-    };
-  });
-}
 
 /* ──────────────────────────────────────────────────────────────── the round ── */
 
@@ -272,6 +221,7 @@ function Result({
   correct,
   total,
   points,
+  balance,
   streak,
   scoreLine,
   onAgain,
@@ -281,6 +231,8 @@ function Result({
   correct: number;
   total: number;
   points: number;
+  /** The balance *after* the round, for the line about what it is worth. */
+  balance: number;
   streak: number;
   /** Replaces the "n / m correct" line for a round that does not ask questions. */
   scoreLine?: string;
@@ -288,6 +240,16 @@ function Result({
   onBack: () => void;
 }) {
   const copy = useCopy().games;
+
+  /*
+   * How far off the cheapest voucher is.
+   *
+   * The supplied games spec is emphatic about this and it is right: a bare score
+   * is a dead end, and "+40 points" means nothing until it is "+40 points, 60
+   * from a discount". This is the line that makes a second round worth playing,
+   * so it is on every result card rather than only on the good ones.
+   */
+  const short = Math.max(0, CHEAPEST_VOUCHER - balance);
 
   return (
     <div className="round round-result">
@@ -301,12 +263,20 @@ function Result({
       <p className="result-points">
         {points > 0 ? fill(copy.resultPoints, { points: String(points) }) : copy.resultNone}
       </p>
+      <p className="result-toward">
+        {short > 0
+          ? fill(copy.resultToward, { points: String(short) })
+          : copy.resultAfford}
+      </p>
       <p className="result-streak">{fill(copy.resultStreak, { streak: String(streak) })}</p>
 
       <div className="result-actions">
         <button type="button" className="btn btn-solid" onClick={onAgain}>
           {copy.again}
         </button>
+        <a className="btn btn-ghost" href={PATHS.vouchers}>
+          {copy.resultSpend}
+        </a>
         <button type="button" className="btn btn-ghost" onClick={onBack}>
           {copy.backToGames}
         </button>
@@ -399,12 +369,21 @@ function Board({ player }: { player: PlayerState }) {
 export function GamesApp() {
   const copy = useCopy();
   const games = copy.games;
+  const [language] = useLanguage();
   const { account, setPlayer } = useAuth();
   const [playing, setPlaying] = useState<GameId | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [result, setResult] = useState<{ won: boolean; correct: number; points: number } | null>(
-    null,
-  );
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<{
+    won: boolean;
+    correct: number;
+    points: number;
+    balance: number;
+  } | null>(null);
+
+  /** Which word list Word Builder is practising. Polish by default: this is a
+   *  site for people who have moved to Poland. */
+  const [wordList, setWordList] = useState<WordList>('pl');
 
   const player = account?.player;
 
@@ -418,22 +397,84 @@ export function GamesApp() {
     if (next !== player) setPlayer(next);
   }, [player, setPlayer]);
 
+  /*
+   * Re-run the reveal scan whenever this screen swaps what it is showing.
+   *
+   * `Site` scans once per route, language and account type — none of which
+   * changes when a round starts or ends. So the game cards, which carry
+   * `data-reveal`, came back from a finished round with no `data-shown` on them
+   * and sat at `opacity: 0` for good: the games vanished the moment you played
+   * one. Everything mounted after the observer was built is invisible to it, and
+   * the fix is the one the root `CLAUDE.md` already prescribes — re-scan on the
+   * thing that replaced the DOM.
+   */
+  const view = playing ?? (result ? 'result' : 'cards');
+  useReveal(`games:${view}:${loading}`);
+
   if (!player) return null;
 
   const game = GAMES.find((g) => g.id === playing);
 
+  /**
+   * Start a round.
+   *
+   * Async because the banks are code-split and fetched on first use. `live`
+   * guards the obvious race: quitting or starting another game before a 389 kB
+   * bank lands would otherwise drop a finished round of the wrong game onto the
+   * screen.
+   */
   const start = (id: GameId) => {
     const chosen = GAMES.find((g) => g.id === id);
-    if (!chosen || player.lives <= 0) return;
-    setQuestions(chosen.kind === 'flight' ? [] : buildRound(chosen, games));
+    if (!chosen || player.lives <= 0 || loading) return;
+
     setResult(null);
-    setPlaying(id);
+
+    /* The three that build their own round need nothing from here. */
+    if (chosen.kind !== 'text' && chosen.kind !== 'flag' && chosen.kind !== 'capital') {
+      setQuestions([]);
+      setPlaying(id);
+      return;
+    }
+
+    setLoading(true);
+    const build =
+      chosen.kind === 'text'
+        ? buildQuizRound(
+            chosen.id === 'brain' ? 'general' : 'poland',
+            language,
+            chosen.questions,
+          )
+        : chosen.kind === 'flag'
+          ? buildFlagRound(language, chosen.questions, games.whichCountry)
+          : buildCapitalRound(language, chosen.questions, (country) =>
+              fill(games.whichCapital, { country }),
+            );
+
+    build
+      .then((built) => {
+        setQuestions(built);
+        setPlaying(id);
+      })
+      .catch(() => {
+        /* A bank that will not load is the one failure with no good screen: the
+           honest thing is to stay on the cards rather than open an empty round. */
+        setPlaying(null);
+      })
+      .finally(() => setLoading(false));
   };
 
+  /** Bank whatever the round scored and show the card. One path for all seven. */
+  const bank = (
+    next: PlayerState,
+    { won, correct, points }: { won: boolean; correct: number; points: number },
+  ) => {
+    setPlayer(next);
+    setResult({ won, correct, points, balance: next.points });
+  };
+
+  /** The quiz and arcade path: the round reports right answers, not points. */
   const finish = (correct: number, won: boolean) => {
     if (!game) return;
-    /* Both paths bank `correct x perCorrect` and charge the whole round to
-       `answered`; `awardFlight` adds only the clamp a real-time score needs. */
     const next =
       game.kind === 'flight'
         ? awardFlight(player, {
@@ -448,10 +489,9 @@ export function GamesApp() {
             perCorrect: game.perCorrect,
             won,
           });
-    setPlayer(next);
     /* A flight past its target pays for gaps that `correct` deliberately does
        not count, so `correct * perCorrect` is no longer the whole story there. */
-    setResult({
+    bank(next, {
       won,
       correct,
       points:
@@ -459,6 +499,23 @@ export function GamesApp() {
           ? flightPoints(correct, game.perCorrect)
           : correct * game.perCorrect,
     });
+  };
+
+  /**
+   * The two that score themselves.
+   *
+   * Word Builder's total is five per-word scores plus a perfect-round bonus and
+   * Memory Match's is a base plus an efficiency curve — neither is
+   * `correct × perCorrect`, so they hand over the number rather than the count.
+   * `awardPoints` still owns everything that happens to the account, which is
+   * why the streak, the lapse and the freeze are not restated in either game.
+   */
+  const finishScored = (points: number, correct: number, won: boolean) => {
+    if (!game) return;
+    bank(
+      awardPoints(player, { points, answered: game.questions, correct, won }),
+      { won, correct, points },
+    );
   };
 
   return (
@@ -500,6 +557,30 @@ export function GamesApp() {
                   ))}
                 </b>
               </div>
+              {/*
+                Freezes held.
+
+                Shown next to the streak it protects rather than tucked into the
+                sub-row, because the whole point of a freeze is knowing you have
+                one *before* the day you need it. Spending is automatic (see
+                `awardPoints`), so this is a reading, not a control.
+              */}
+              <div className="stat">
+                <span>
+                  <Icon name="freeze" size={15} />
+                  {games.freezes}
+                </span>
+                <b
+                  className="stat-hearts"
+                  aria-label={`${freezesOf(player)}/${MAX_FREEZES}`}
+                >
+                  {Array.from({ length: MAX_FREEZES }, (_, i) => (
+                    <i key={i} data-spent={i >= freezesOf(player) ? 'true' : undefined}>
+                      <Icon name="freeze" size={19} strokeWidth={2} />
+                    </i>
+                  ))}
+                </b>
+              </div>
             </div>
 
             <div className="stat-sub">
@@ -510,6 +591,12 @@ export function GamesApp() {
               <div>
                 <span>{games.correctLabel}</span>
                 <b>{player.correct}</b>
+              </div>
+              {/* The reward connection, on the screen rather than only on the
+                  result card: what the balance is actually for. */}
+              <div>
+                <span>{games.toVoucher}</span>
+                <b>{Math.max(0, CHEAPEST_VOUCHER - player.points)}</b>
               </div>
             </div>
           </div>
@@ -533,11 +620,19 @@ export function GamesApp() {
               correct={result.correct}
               total={game.questions}
               points={result.points}
+              balance={result.balance}
               streak={player.streak}
               scoreLine={
                 game.kind === 'flight'
                   ? fill(games.flight.resultScore, { cleared: String(result.correct) })
-                  : undefined
+                  : game.kind === 'memory'
+                    ? fill(games.memory.resultScore, { pairs: String(result.correct) })
+                    : game.kind === 'word'
+                      ? fill(games.wordGame.resultScore, {
+                          solved: String(result.correct),
+                          total: String(game.questions),
+                        })
+                      : undefined
               }
               onAgain={() => start(game.id)}
               onBack={() => {
@@ -547,6 +642,19 @@ export function GamesApp() {
             />
           ) : playing && game && game.kind === 'flight' ? (
             <FlightGame game={game} onDone={finish} onQuit={() => setPlaying(null)} />
+          ) : playing && game && game.kind === 'memory' ? (
+            <MemoryMatch
+              pairs={game.questions}
+              onDone={finishScored}
+              onQuit={() => setPlaying(null)}
+            />
+          ) : playing && game && game.kind === 'word' ? (
+            <WordBuilder
+              words={game.questions}
+              list={wordList}
+              onDone={finishScored}
+              onQuit={() => setPlaying(null)}
+            />
           ) : playing && game ? (
             <Round
               game={game}
@@ -556,40 +664,87 @@ export function GamesApp() {
             />
           ) : (
             <div className="play-grid">
-              {GAMES.map((entry, index) => (
-                <article className="play-card" key={entry.id} data-reveal>
-                  <span className="play-ico">
-                    <Icon name={entry.icon} size={24} />
-                  </span>
-                  <b>{games.names[index]}</b>
-                  {/* A per-question clock means nothing to a round that lasts
-                      as long as you do, so the arcade card states its own. */}
-                  <span className="play-rule">
-                    {entry.kind === 'flight'
-                      ? fill(games.flight.rule, { gaps: String(entry.questions) })
-                      : fill(games.rule, {
-                          questions: String(entry.questions),
-                          seconds: String(entry.seconds),
-                        })}
-                  </span>
-                  <span className="play-rule">
-                    {entry.kind === 'flight'
-                      ? fill(games.flight.reward, { points: String(entry.perCorrect) })
-                      : fill(games.reward, {
-                          mistakes: String(entry.allowedMistakes),
-                          points: String(entry.perCorrect),
-                        })}
-                  </span>
-                  <button
-                    type="button"
-                    className="btn btn-solid play-start"
-                    disabled={player.lives <= 0}
-                    onClick={() => start(entry.id)}
-                  >
-                    {player.lives > 0 ? games.start : games.noLives}
-                  </button>
-                </article>
-              ))}
+              {GAMES.map((entry, index) => {
+                /*
+                 * Each row of `GAMES` reads its own columns (see the table's
+                 * comment), so the two rule lines are per kind rather than one
+                 * sentence with four holes in it. A per-question clock means
+                 * nothing to a round that lasts as long as you do, and "one
+                 * mistake allowed" means nothing to a board you cannot lose.
+                 */
+                const rules =
+                  entry.kind === 'flight'
+                    ? [
+                        fill(games.flight.rule, { gaps: String(entry.questions) }),
+                        fill(games.flight.reward, { points: String(entry.perCorrect) }),
+                      ]
+                    : entry.kind === 'memory'
+                      ? [
+                          fill(games.memory.rule, { pairs: String(entry.questions) }),
+                          fill(games.memory.reward, { points: String(entry.perCorrect) }),
+                        ]
+                      : entry.kind === 'word'
+                        ? [
+                            fill(games.wordGame.rule, { words: String(entry.questions) }),
+                            games.wordGame.reward,
+                          ]
+                        : [
+                            fill(games.rule, {
+                              questions: String(entry.questions),
+                              seconds: String(entry.seconds),
+                            }),
+                            fill(games.reward, {
+                              mistakes: String(entry.allowedMistakes),
+                              points: String(entry.perCorrect),
+                            }),
+                          ];
+
+                return (
+                  <article className="play-card" key={entry.id} data-reveal>
+                    <span className="play-ico">
+                      <Icon name={entry.icon} size={24} />
+                    </span>
+                    <b>{games.names[index]}</b>
+                    {rules.map((rule) => (
+                      <span className="play-rule" key={rule}>
+                        {rule}
+                      </span>
+                    ))}
+
+                    {/* Word Builder picks the language it is teaching, on the
+                        card, before the round starts — the choice belongs to
+                        the game rather than to the site's own switcher, which
+                        decides what you *read*, not what you are learning. */}
+                    {entry.kind === 'word' && (
+                      <div className="play-pick" role="group" aria-label={games.wordGame.list}>
+                        {(['pl', 'en'] as const).map((option) => (
+                          <button
+                            key={option}
+                            type="button"
+                            data-on={wordList === option ? 'true' : undefined}
+                            onClick={() => setWordList(option)}
+                          >
+                            {games.wordGame.lists[option]}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      className="btn btn-solid play-start"
+                      disabled={player.lives <= 0 || loading}
+                      onClick={() => start(entry.id)}
+                    >
+                      {loading
+                        ? games.loading
+                        : player.lives > 0
+                          ? games.start
+                          : games.noLives}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
           )}
 

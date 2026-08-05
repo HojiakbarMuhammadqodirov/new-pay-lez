@@ -1,10 +1,15 @@
 import { useMemo, useState, type CSSProperties } from 'react';
+
 import {
   RELOCATE_AMOUNT,
+  RELOCATE_CITIES,
   RELOCATE_COUNTRIES,
   RELOCATE_PAIRS,
+  RELOCATE_PROVIDERS,
   RELOCATE_STATS,
-  RELOCATE_TOPIC_ICONS,
+  RELOCATE_TOPICS,
+  SPOKEN_LANGUAGES,
+  type RelocateProvider,
 } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
@@ -314,50 +319,152 @@ function RelocateRates() {
 /* ────────────────────────────────────────────────────────────────── guide ── */
 
 /**
- * The nine subjects.
+ * The nine subjects, and the providers behind each one.
  *
- * A grid of rows rather than cards: the app lists them as rows with a chevron,
- * and someone who has used the app should recognise this as the same list. The
- * chevron is decorative here — these open in the app, and a marketing page
- * cannot honour the click.
+ * Three things changed here and they are one change: the rows **open**.
+ *
+ * - They were `<article>`s with a decorative chevron that went nowhere, on the
+ *   argument that a marketing page cannot honour the click. It can now: each
+ *   opens into the providers filed under it, which is the thing a reader came
+ *   for. See `RELOCATE_PROVIDERS` — seed data, replaced by the real directory.
+ * - **The city filter is a filter.** It was a static pill reading "All cities".
+ *   It is a real control, it narrows every open list, and the options are
+ *   derived from the providers so it can never offer a city with nothing in it.
+ * - **The search pill is gone.** It duplicated the assistant two sections down,
+ *   which is a real input against a fake one — and the fake one was above.
+ *
+ * Two subjects lead the list at double width rather than sitting in the nine-up
+ * grid: see the `featured` note in `RELOCATE_TOPICS`.
  */
 function RelocateGuide() {
   const copy = useCopy();
+  const [open, setOpen] = useState<number | null>(null);
+  /** `''` is every city — the filter's own first option. */
+  const [city, setCity] = useState('');
+
+  const guide = copy.relocate.guide;
+
+  /* Grouped once rather than filtered per row: nine rows each scanning the
+     whole table is nine passes for one answer. */
+  const byTopic = useMemo(() => {
+    const out = new Map<number, RelocateProvider[]>();
+    for (const provider of RELOCATE_PROVIDERS) {
+      if (city && provider.city !== city) continue;
+      const group = out.get(provider.topic);
+      if (group) group.push(provider);
+      else out.set(provider.topic, [provider]);
+    }
+    return out;
+  }, [city]);
+
+  const order = RELOCATE_TOPICS.map((topic, i) => ({ topic, i })).sort(
+    (a, b) => Number(Boolean(b.topic.featured)) - Number(Boolean(a.topic.featured)),
+  );
 
   return (
     <section className="section" id="relocate-guide">
       <div className="wrap">
         <div className="section-head" data-reveal>
-          <span className="eyebrow">{copy.relocate.guide.eyebrow}</span>
-          <h2>{copy.relocate.guide.title}</h2>
-          <p>{copy.relocate.guide.lede}</p>
+          <span className="eyebrow">{guide.eyebrow}</span>
+          <h2>{guide.title}</h2>
+          <p>{guide.lede}</p>
         </div>
 
         <div className="guide-bar" data-reveal>
-          <span className="console-tag">
-            <Icon name="map" size={13} />
-            {copy.relocate.guide.cities}
-            <Icon name="chevron" size={12} strokeWidth={2.4} />
-          </span>
-          <span className="guide-search">
-            <Icon name="assistant" size={14} />
-            {copy.relocate.guide.search}
+          <label className="guide-city">
+            <Icon name="map" size={14} />
+            <span className="visually-hidden">{guide.city}</span>
+            <select value={city} onChange={(event) => setCity(event.target.value)}>
+              <option value="">{guide.cities}</option>
+              {RELOCATE_CITIES.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <span className="guide-count">
+            {fill(guide.count, {
+              n: String(
+                city
+                  ? RELOCATE_PROVIDERS.filter((p) => p.city === city).length
+                  : RELOCATE_PROVIDERS.length,
+              ),
+            })}
           </span>
         </div>
 
         <div className="topics">
-          {copy.relocate.guide.items.map((item, i) => (
-            <article className="topic" key={item.name} data-reveal>
-              <span className="topic-ico">
-                <Icon name={RELOCATE_TOPIC_ICONS[i]} size={20} />
-              </span>
-              <div>
-                <b>{item.name}</b>
-                <span>{item.blurb}</span>
-              </div>
-              <Icon name="chevron" size={16} strokeWidth={2.2} className="topic-go" />
-            </article>
-          ))}
+          {order.map(({ topic, i }) => {
+            const item = guide.items[i];
+            const providers = byTopic.get(i) ?? [];
+            const isOpen = open === i;
+
+            return (
+              <article
+                className="topic"
+                key={item.name}
+                data-featured={topic.featured ? 'true' : undefined}
+                data-open={isOpen ? 'true' : undefined}
+                data-reveal
+              >
+                <button
+                  type="button"
+                  className="topic-head"
+                  aria-expanded={isOpen}
+                  aria-controls={`topic-panel-${i}`}
+                  onClick={() => setOpen(isOpen ? null : i)}
+                >
+                  <span className="topic-ico">
+                    <Icon name={topic.icon} size={20} />
+                  </span>
+                  <span className="topic-tx">
+                    <b>{item.name}</b>
+                    <span>{item.blurb}</span>
+                  </span>
+                  <span className="topic-n">{providers.length}</span>
+                  <Icon name="chevron" size={16} strokeWidth={2.2} className="topic-go" />
+                </button>
+
+                {/* Same `0fr → 1fr` grid collapse the FAQ uses: the provider
+                    lists are different lengths in every language, so nothing
+                    here may need a pixel height up front. */}
+                <div className="topic-panel" id={`topic-panel-${i}`} role="region">
+                  <div>
+                    {providers.length === 0 ? (
+                      <p className="topic-empty">
+                        {city ? fill(guide.none, { city }) : guide.soon}
+                      </p>
+                    ) : (
+                      <ul className="topic-list">
+                        {providers.map((provider) => (
+                          <li key={provider.name}>
+                            <b>{provider.name}</b>
+                            <span className="topic-where">
+                              <Icon name="map" size={13} />
+                              {provider.city}
+                            </span>
+                            <span className="topic-langs">
+                              {guide.speaks}{' '}
+                              {provider.languages
+                                .map(
+                                  (code) =>
+                                    copy.business.spokenLanguages[
+                                      SPOKEN_LANGUAGES.indexOf(code)
+                                    ],
+                                )
+                                .join(' · ')}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </div>
     </section>

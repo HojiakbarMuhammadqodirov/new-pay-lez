@@ -59,6 +59,18 @@ const PATHS = {
      one game whose sprite is built out of squares. */
   bird: <><path d="M14 4.5h2.5V7H21l-3 3.5V14a6.5 6.5 0 0 1-6.5 6.5H6l2-4.5H6.5A3.5 3.5 0 0 1 3 12.5 8 8 0 0 1 11 4.5Z" /><path d="M15.5 9v.01" /></>,
 
+  /* Memory Match: two cards, each with its pip at a different height — the
+     glyph has to say "these two are the same", and two identical rectangles say
+     the opposite. */
+  cards: <><rect x="3" y="4" width="8" height="16" rx="2" /><rect x="13" y="4" width="8" height="16" rx="2" /><path d="M7 9.5v.01M17 14.5v.01" /></>,
+  /* Word Builder: three tiles off the letter tray. Marked rather than lettered —
+     a real glyph inside would be a language this set does not get to choose. */
+  letters: <><rect x="2" y="8" width="6" height="8" rx="1.5" /><rect x="9" y="8" width="6" height="8" rx="1.5" /><rect x="16" y="8" width="6" height="8" rx="1.5" /><path d="M5 11.4v1.2M12 11.4v1.2M19 11.4v1.2" /></>,
+  /* Held rather than spent: the streak freeze. A flake, drawn as three crossed
+     strokes with tips, because a snowflake is what "on hold" looks like and the
+     product has one accent to draw it in. */
+  freeze: <><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9" /><path d="M12 6.4 9.9 4.6M12 6.4l2.1-1.8M12 17.6l-2.1 1.8M12 17.6l2.1 1.8" /></>,
+
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   chevron: <><path d="m6 9 6 6 6-6" /></>,
   sun: <><circle cx="12" cy="12" r="4.2" /><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" /></>,

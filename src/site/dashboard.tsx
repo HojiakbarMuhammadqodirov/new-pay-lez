@@ -54,7 +54,6 @@ function Rail({
   return (
     <aside className="rail" data-collapsed={collapsed ? 'true' : undefined}>
       <a className="rail-brand" href={PATHS.landing}>
-        <span className="brand-mark" aria-hidden />
         <span className="rail-word">paylez</span>
         <span className="rail-tag">{copy.dashboard.tag}</span>
       </a>

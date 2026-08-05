@@ -418,7 +418,10 @@ function VouchersCta() {
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.vouchers.cta.primary}
             </a>
-            <a href={PATHS.learn} className="btn btn-ghost btn-lg">
+            {/* "See the games" is the catalogue, not the top of L-Earn — both
+                buttons pointed at the same place. Works from here now that a
+                section anchor carries its own page (see `router.ts`). */}
+            <a href="#learn-games" className="btn btn-ghost btn-lg">
               {copy.vouchers.cta.secondary}
             </a>
           </div>

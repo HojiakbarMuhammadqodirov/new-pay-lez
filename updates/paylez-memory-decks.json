@@ -1,0 +1,91 @@
+{
+  "note": "Each deck is a themed set of pairs. A round picks N pairs (default 6 -> 12 cards, 4x3). icon = emoji placeholder; asset = filename for the real custom illustration to commission. label = the word revealed on match (the L-Earn payload). label_en helps non-Polish users learn.",
+  "decks": [
+    {
+      "id": "krakow_landmarks",
+      "name": "Kraków landmarks",
+      "learn_value": "Recognise the city's famous places",
+      "pairs": [
+        { "id": "wawel", "icon": "🏰", "asset": "wawel.svg", "label": "Wawel", "label_en": "Wawel Castle" },
+        { "id": "dragon", "icon": "🐉", "asset": "smok.svg", "label": "Smok", "label_en": "Wawel Dragon" },
+        { "id": "rynek", "icon": "⛲", "asset": "rynek.svg", "label": "Rynek", "label_en": "Main Square" },
+        { "id": "mariacki", "icon": "⛪", "asset": "mariacki.svg", "label": "Kościół Mariacki", "label_en": "St. Mary's Basilica" },
+        { "id": "sukiennice", "icon": "🏛️", "asset": "sukiennice.svg", "label": "Sukiennice", "label_en": "Cloth Hall" },
+        { "id": "barbakan", "icon": "🏯", "asset": "barbakan.svg", "label": "Barbakan", "label_en": "The Barbican" },
+        { "id": "kazimierz", "icon": "🕍", "asset": "kazimierz.svg", "label": "Kazimierz", "label_en": "Jewish Quarter" },
+        { "id": "wisla", "icon": "🌊", "asset": "wisla.svg", "label": "Wisła", "label_en": "Vistula River" },
+        { "id": "planty", "icon": "🌳", "asset": "planty.svg", "label": "Planty", "label_en": "Park ring" },
+        { "id": "hejnal", "icon": "🎺", "asset": "hejnal.svg", "label": "Hejnał", "label_en": "Trumpet call" }
+      ]
+    },
+    {
+      "id": "polish_food",
+      "name": "Polish food",
+      "learn_value": "Learn the names of dishes you'll see on menus",
+      "pairs": [
+        { "id": "pierogi", "icon": "🥟", "asset": "pierogi.svg", "label": "Pierogi", "label_en": "Dumplings" },
+        { "id": "obwarzanek", "icon": "🥨", "asset": "obwarzanek.svg", "label": "Obwarzanek", "label_en": "Kraków bagel" },
+        { "id": "zurek", "icon": "🍲", "asset": "zurek.svg", "label": "Żurek", "label_en": "Sour rye soup" },
+        { "id": "bigos", "icon": "🥘", "asset": "bigos.svg", "label": "Bigos", "label_en": "Hunter's stew" },
+        { "id": "kielbasa", "icon": "🌭", "asset": "kielbasa.svg", "label": "Kiełbasa", "label_en": "Sausage" },
+        { "id": "kotlet", "icon": "🍖", "asset": "kotlet.svg", "label": "Kotlet schabowy", "label_en": "Pork cutlet" },
+        { "id": "paczek", "icon": "🍩", "asset": "paczek.svg", "label": "Pączek", "label_en": "Filled doughnut" },
+        { "id": "barszcz", "icon": "🥣", "asset": "barszcz.svg", "label": "Barszcz", "label_en": "Beetroot soup" },
+        { "id": "placki", "icon": "🥞", "asset": "placki.svg", "label": "Placki", "label_en": "Potato pancakes" },
+        { "id": "kawa", "icon": "☕", "asset": "kawa.svg", "label": "Kawa", "label_en": "Coffee" }
+      ]
+    },
+    {
+      "id": "getting_around",
+      "name": "Getting around",
+      "learn_value": "Recognise transport and street signs",
+      "pairs": [
+        { "id": "tramwaj", "icon": "🚊", "asset": "tramwaj.svg", "label": "Tramwaj", "label_en": "Tram" },
+        { "id": "autobus", "icon": "🚌", "asset": "autobus.svg", "label": "Autobus", "label_en": "Bus" },
+        { "id": "pociag", "icon": "🚆", "asset": "pociag.svg", "label": "Pociąg", "label_en": "Train" },
+        { "id": "bilet", "icon": "🎫", "asset": "bilet.svg", "label": "Bilet", "label_en": "Ticket" },
+        { "id": "rower", "icon": "🚲", "asset": "rower.svg", "label": "Rower", "label_en": "Bicycle" },
+        { "id": "taksowka", "icon": "🚕", "asset": "taksowka.svg", "label": "Taksówka", "label_en": "Taxi" },
+        { "id": "lotnisko", "icon": "✈️", "asset": "lotnisko.svg", "label": "Lotnisko", "label_en": "Airport" },
+        { "id": "dworzec", "icon": "🚉", "asset": "dworzec.svg", "label": "Dworzec", "label_en": "Station" },
+        { "id": "przystanek", "icon": "🚏", "asset": "przystanek.svg", "label": "Przystanek", "label_en": "Stop" },
+        { "id": "mapa", "icon": "🗺️", "asset": "mapa.svg", "label": "Mapa", "label_en": "Map" }
+      ]
+    },
+    {
+      "id": "everyday_essentials",
+      "name": "Everyday essentials",
+      "learn_value": "Recognise the places you use most",
+      "pairs": [
+        { "id": "sklep", "icon": "🏪", "asset": "sklep.svg", "label": "Sklep", "label_en": "Shop" },
+        { "id": "apteka", "icon": "💊", "asset": "apteka.svg", "label": "Apteka", "label_en": "Pharmacy" },
+        { "id": "bank", "icon": "🏦", "asset": "bank.svg", "label": "Bank", "label_en": "Bank" },
+        { "id": "poczta", "icon": "📮", "asset": "poczta.svg", "label": "Poczta", "label_en": "Post office" },
+        { "id": "szpital", "icon": "🏥", "asset": "szpital.svg", "label": "Szpital", "label_en": "Hospital" },
+        { "id": "restauracja", "icon": "🍽️", "asset": "restauracja.svg", "label": "Restauracja", "label_en": "Restaurant" },
+        { "id": "kawiarnia", "icon": "☕", "asset": "kawiarnia.svg", "label": "Kawiarnia", "label_en": "Café" },
+        { "id": "biblioteka", "icon": "📚", "asset": "biblioteka.svg", "label": "Biblioteka", "label_en": "Library" },
+        { "id": "park", "icon": "🌳", "asset": "park.svg", "label": "Park", "label_en": "Park" },
+        { "id": "kino", "icon": "🎬", "asset": "kino.svg", "label": "Kino", "label_en": "Cinema" }
+      ]
+    },
+    {
+      "id": "flags_neighbours",
+      "name": "Flags",
+      "learn_value": "Recognise flags — politically neutral set only",
+      "note": "Deliberately neutral. Do NOT include regionally contested pairings; this mix is safe for a diaspora audience.",
+      "pairs": [
+        { "id": "poland", "icon": "🇵🇱", "asset": "flag_pl.svg", "label": "Polska", "label_en": "Poland" },
+        { "id": "japan", "icon": "🇯🇵", "asset": "flag_jp.svg", "label": "Japonia", "label_en": "Japan" },
+        { "id": "brazil", "icon": "🇧🇷", "asset": "flag_br.svg", "label": "Brazylia", "label_en": "Brazil" },
+        { "id": "italy", "icon": "🇮🇹", "asset": "flag_it.svg", "label": "Włochy", "label_en": "Italy" },
+        { "id": "canada", "icon": "🇨🇦", "asset": "flag_ca.svg", "label": "Kanada", "label_en": "Canada" },
+        { "id": "sweden", "icon": "🇸🇪", "asset": "flag_se.svg", "label": "Szwecja", "label_en": "Sweden" },
+        { "id": "spain", "icon": "🇪🇸", "asset": "flag_es.svg", "label": "Hiszpania", "label_en": "Spain" },
+        { "id": "portugal", "icon": "🇵🇹", "asset": "flag_pt.svg", "label": "Portugalia", "label_en": "Portugal" },
+        { "id": "australia", "icon": "🇦🇺", "asset": "flag_au.svg", "label": "Australia", "label_en": "Australia" },
+        { "id": "mexico", "icon": "🇲🇽", "asset": "flag_mx.svg", "label": "Meksyk", "label_en": "Mexico" }
+      ]
+    }
+  ]
+}

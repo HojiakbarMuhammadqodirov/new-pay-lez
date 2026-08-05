@@ -27,6 +27,13 @@
    `rgba(var(--x-rgb), a)` per use instead of a token per alpha.
    ════════════════════════════════════════════════════════════════════════ */
 
+/*
+ * Onest 900 is the wordmark and nothing else — one weight, latin only, because
+ * "paylez" is six latin letters and is never translated. Loading the family's
+ * cyrillic subset for a Russian or Ukrainian reader would fetch a face no glyph
+ * on the page can use.
+ */
+@import '@fontsource/onest/latin-900.css';
 @import '@fontsource/poppins/latin-500.css';
 @import '@fontsource/poppins/latin-600.css';
 @import '@fontsource/manrope/latin-400.css';
@@ -106,6 +113,17 @@
 
   --font-display: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Manrope', ui-sans-serif, system-ui, sans-serif;
+  /*
+   * The wordmark, and the one thing on the site that is set in it.
+   *
+   * The app sets the name at `900 21px/1 'Onest'`, and the site now matches it
+   * exactly — the header, the footer, the dashboard rail, the console and the
+   * intro all read `var(--font-brand)` at `--brand-size`, so the name is one
+   * shape in six places rather than six near-misses. The size is a token because
+   * the rail and the intro scale it; the weight and the leading never move.
+   */
+  --font-brand: 'Onest', ui-sans-serif, system-ui, sans-serif;
+  --brand-size: 21px;
 
   /*
    * The brand mark, as a token rather than a rule per theme.
@@ -634,40 +652,49 @@ button {
   gap: 1rem;
 }
 
+/*
+ * The wordmark, and there is nothing beside it.
+ *
+ * The tile that used to sit here (`public/logo/`, one file per theme) is gone
+ * from the header, the footer, the rail and the console: the app has never shown
+ * it next to the name, and a 30px square of art beside six letters was the one
+ * place the site and the product disagreed about what the brand looks like. The
+ * `--logo` token still exists for anything that wants the tile on its own; no
+ * chrome does.
+ *
+ * `900 21px/1 Onest` is the app's own declaration, carried over intact.
+ */
+/*
+ * The mark is accent-coloured, not ink — the same `--accent-lit` that sets
+ * "Exclusive deals." in the hero, in both themes. It was `--text`, which made
+ * the one word on the page that *is* the brand the only prominent thing on it
+ * not wearing the brand's colour.
+ *
+ * `--accent-lit` and not `--accent-ink`: the ramp in `src/site/CLAUDE.md` puts
+ * large type on the middle step, and it is what the hero line beside it uses, so
+ * the two are literally one colour. That step is 3.2:1 on paper, which clears AA
+ * for large text only — meaning the wordmark has a **size floor**. Anything
+ * setting it smaller than ~18.7px bold falls out of the exemption; the rail and
+ * the console scale it to 0.9 rather than lower for exactly that reason.
+ */
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: 0.55rem;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.15rem;
-  letter-spacing: -0.03em;
+  font-family: var(--font-brand);
+  font-weight: 900;
+  font-size: var(--brand-size);
   line-height: 1;
+  /* Onest at 900 is already tight; the display face's -0.03em would close the
+     counters up. Left at zero on purpose. */
+  letter-spacing: 0;
+  color: var(--accent-lit);
+  transition: opacity 200ms var(--ease);
 }
 
-.brand-word {
-  /* Optical: the mark is a filled block, the word is not — nudging the word up
-     lines their visual centres rather than their boxes. */
-  transform: translateY(-0.5px);
-}
-
-/*
- * The logo, as a tile rather than a glyph.
- *
- * Both files in `public/logo/` are square and ship their own ground, so the mark
- * *is* the image — `--accent` stays underneath only as the colour the tile shows
- * while the file is in flight, which on a 30px box is one frame at most.
- * `cover` rather than `contain`: the art is already square and edge-to-edge, and
- * `contain` would letterbox it against that fallback the moment a re-export
- * arrives a pixel off.
- */
-.brand-mark {
-  flex: 0 0 auto;
-  width: 30px;
-  height: 30px;
-  border-radius: 9px;
-  background: var(--accent) var(--logo) center / cover no-repeat;
-  box-shadow: 0 8px 24px -10px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
+/* Dimmed rather than recoloured: in dark all three accent steps are one hex, so
+   a hover that changed step would do nothing there. */
+.brand:hover {
+  opacity: 0.75;
 }
 
 /* ── nav: break-glass hover ────────────────────────────────────────────
@@ -705,10 +732,12 @@ button {
   align-items: center;
   gap: 0.5rem;
   /* Taller, and wide enough to absorb the gap that used to sit between items. */
-  padding: 0.95rem 1.15rem;
+  padding: 0.95rem 1.05rem;
   border-radius: 0;
   font-size: 0.875rem;
-  font-weight: 500;
+  /* Bold, and it has to be: with the icons gone the word is the whole item, and
+     at 500 a seven-item strip read as body copy that happened to be in a row. */
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
   color: var(--text-mut);
@@ -744,16 +773,10 @@ button {
   pointer-events: none;
 }
 
-.nav-icon,
 .nav-label {
   position: relative;
   z-index: 1;
   flex: 0 0 auto;
-}
-
-.nav-icon {
-  /* Optical centring against a lowercase-heavy label. */
-  margin-top: -1px;
 }
 
 .nav-link:hover,
@@ -1817,13 +1840,27 @@ button {
   margin-bottom: 0.35rem;
 }
 
-.footer-col a {
+.footer-col a,
+/* The assistant's entry: a button, because it opens a dock rather than going to
+   a page. Styled identically so the column reads as one list. */
+.footer-link-btn {
   font-size: 0.9rem;
   color: var(--text-mut);
   transition: color 200ms var(--ease);
 }
 
-.footer-col a:hover {
+.footer-link-btn {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.footer-col a:hover,
+.footer-link-btn:hover {
   color: var(--accent-ink);
 }
 
@@ -2216,6 +2253,34 @@ button {
   border-color: transparent;
   background: var(--accent);
   color: var(--on-accent);
+}
+
+/*
+ * Freezes, under the pips they protect.
+ *
+ * Deliberately quieter than the pips: the streak is the thing being tracked and
+ * a freeze is the safety net under it, so this is a footnote at footnote weight
+ * rather than a second row competing with the first.
+ */
+.streak-freeze {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.9rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-mut);
+}
+
+.streak-freeze-pips {
+  display: inline-flex;
+  gap: 0.2rem;
+  flex: 0 0 auto;
+  color: var(--accent-lit);
+}
+
+.streak-freeze-pips i > svg {
+  display: block;
 }
 
 .streak-reward {
@@ -4333,23 +4398,57 @@ button {
   margin-bottom: 1.5rem;
 }
 
-.guide-bar .console-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  color: var(--text-mut);
-}
-
-.guide-search {
+/*
+ * The city filter, which is a real control now.
+ *
+ * It reuses the field kit's `select` styling — the same well, the same drawn
+ * arrow — rather than the flat pill it used to be, because the pill said "All
+ * cities" and did nothing, and a thing that looks like a chip is not offering to
+ * be pressed. The pin sits outside the control so the label and the value read
+ * as one object.
+ *
+ * The search pill that used to sit beside it is gone: it duplicated the
+ * assistant two sections down, which is a real input, and this one was not.
+ */
+.guide-city {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  flex: 1;
-  min-width: 12rem;
-  padding: 0.45rem 0.9rem;
+  padding-left: 0.85rem;
   border-radius: 999px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-2);
   background: var(--surface);
+  color: var(--accent-lit);
+}
+
+.guide-city select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0.5rem 2.1rem 0.5rem 0;
+  border: 0;
+  background: none;
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+
+  /* The same two-gradient caret the field kit draws, so the one control on this
+     page and the twenty on the listing form agree. */
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.05rem) calc(50% + 1px),
+    calc(100% - 0.75rem) calc(50% + 1px);
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.guide-city:focus-within {
+  border-color: var(--accent-lit);
+}
+
+.guide-count {
   font-size: 0.82rem;
   color: var(--text-fnt);
 }
@@ -4358,34 +4457,66 @@ button {
  * Nine subjects as rows, not cards.
  *
  * The app lists them as rows with a chevron, and someone who has used the app
- * should recognise this as the same list. Three columns divides nine exactly,
- * which is the one place on this site where the content and the grid agree
- * without either being bent to fit.
+ * should recognise this as the same list. Three columns divides nine exactly —
+ * and the two featured subjects take two columns each, which is why the first
+ * band is 2 + 2 and the remaining seven fall into threes under it.
  */
 .topics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.75rem;
+  align-items: start;
+  /*
+   * `dense` because two of the nine are double-width.
+   *
+   * Nine equal tiles divided three ways exactly, which is why this grid was
+   * three columns in the first place. Two spanning cards break that: each leaves
+   * a single empty column beside it that nothing after it is narrow enough to
+   * follow into, so the grid grows two holes. Dense backfills them with the next
+   * card that fits. It reorders the visual sequence against the DOM, which is
+   * only acceptable because these are nine independent subjects with no order to
+   * lose — the two that matter are still first.
+   */
+  grid-auto-flow: row dense;
 }
 
 .topic {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 1rem 1.1rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  transition:
-    border-color 300ms var(--ease),
-    transform 300ms var(--ease);
+  transition: border-color 300ms var(--ease);
 }
 
-.topic:hover {
+/* Housing and paperwork: wider, and first. See `RELOCATE_TOPICS`. */
+.topic[data-featured='true'] {
+  grid-column: span 2;
+}
+
+.topic:hover,
+.topic[data-open='true'] {
   border-color: var(--border-2);
-  transform: translateX(3px);
+}
+
+.topic[data-open='true'] {
+  border-color: var(--accent-soft);
+}
+
+/* The row itself is the button now — the whole thing is the target, not a
+   chevron somebody has to aim at. */
+.topic-head {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  width: 100%;
+  padding: 1rem 1.1rem;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
 }
 
 .topic-ico {
@@ -4400,7 +4531,7 @@ button {
   color: var(--accent-lit);
 }
 
-.topic > div {
+.topic-tx {
   min-width: 0;
   flex: 1;
 }
@@ -4410,7 +4541,7 @@ button {
   font-size: 0.95rem;
 }
 
-.topic > div > span {
+.topic-tx > span {
   display: block;
   margin-top: 0.15rem;
   font-size: 0.78rem;
@@ -4418,12 +4549,110 @@ button {
   text-wrap: pretty;
 }
 
-/* Decorative: these open in the app, and a marketing page cannot honour the
-   click. It is drawn because the row would look truncated without it. */
+/* How many places are filed here, under the current city filter — so a subject
+   with nothing in it says so before it is opened. */
+.topic-n {
+  flex: 0 0 auto;
+  min-width: 1.6rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-align: center;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
 .topic-go {
   flex: 0 0 auto;
   color: var(--text-fnt);
-  transform: rotate(-90deg);
+  transition: transform 300ms var(--ease);
+}
+
+.topic[data-open='true'] .topic-go {
+  transform: rotate(180deg);
+}
+
+/*
+ * The panel, collapsed on `grid-template-rows: 0fr → 1fr`.
+ *
+ * The same mechanism the FAQ uses and for the same reason: the provider lists
+ * are different lengths in every language, so anything wanting a pixel height up
+ * front would be wrong in four of them.
+ */
+.topic-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 320ms var(--ease);
+}
+
+.topic[data-open='true'] .topic-panel {
+  grid-template-rows: 1fr;
+}
+
+.topic-panel > div {
+  overflow: hidden;
+}
+
+.topic-list,
+.topic-empty {
+  padding: 0 1.1rem 1rem;
+}
+
+/* No global `ul` reset in this sheet — every list turns its own markers off. */
+.topic-list {
+  list-style: none;
+}
+
+.topic-empty {
+  font-size: 0.82rem;
+  color: var(--text-fnt);
+  text-wrap: pretty;
+}
+
+.topic-list li {
+  padding: 0.65rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.topic-list b {
+  font-size: 0.9rem;
+}
+
+.topic-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  font-size: 0.75rem;
+  color: var(--accent-ink);
+}
+
+.topic-langs {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topic-panel,
+  .topic-go {
+    transition: none;
+  }
+}
+
+@media (max-width: 780px) {
+  .topics {
+    grid-template-columns: 1fr;
+  }
+
+  /* One column: "wider" has nothing left to mean, and a span of two on a
+     single-column grid overflows the track. */
+  .topic[data-featured='true'] {
+    grid-column: auto;
+  }
 }
 
 /* ── the countries ────────────────────────────────────────────────────── */
@@ -4518,6 +4747,129 @@ button {
   .topic {
     transition: none;
   }
+}
+
+/* ═════════════════════════════════════════════════════════════ contact ══
+   Prefixed `ct-`, like every app screen on the site: `site.css` is one sheet
+   with no scoping and three collisions have already shipped bugs here.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Four cards, and they are links — the whole card is the target, so a card
+   whose action is "Email support" does not need the reader to find the words. */
+.ct-channels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.9rem;
+}
+
+.ct-channel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.4rem 1.35rem 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: rgba(var(--panel-rgb), var(--glass));
+  transition:
+    border-color 240ms var(--ease),
+    transform 240ms var(--ease);
+}
+
+.ct-channel:hover {
+  border-color: var(--accent-soft);
+  transform: translateY(-3px);
+}
+
+.ct-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--accent-lit);
+}
+
+.ct-channel h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.ct-channel p {
+  flex: 1;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  color: var(--text-mut);
+}
+
+/* The address itself, at the size an address wants to be read at. */
+.ct-meta {
+  font-size: 0.8125rem;
+  color: var(--text-fnt);
+  word-break: break-word;
+}
+
+.ct-go {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.ct-channel:hover .ct-go svg {
+  transform: translateX(3px);
+}
+
+.ct-go svg {
+  transition: transform 240ms var(--ease);
+}
+
+/* ── the composer ── */
+
+.ct-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+/* The disclosure that this hands off to a mail app rather than posting. Under
+   the button on purpose: it is what the button is about to do. */
+.ct-note {
+  margin: 0;
+}
+
+.ct-hours {
+  margin-top: 1.6rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.ct-hours h4 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin-bottom: 0.4rem;
+}
+
+.ct-hours p {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--text-mut);
+}
+
+.ct-where {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+  color: var(--accent-ink);
 }
 
 /* ════════════════════════════════════════════════════════════════ forms ══
@@ -5530,12 +5882,16 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
+/* The header's wordmark, one step down because the rail is 15rem wide — but not
+   below the size floor `.brand` documents, which is why this is 0.9 and not the
+   0.86 it started at. */
 .rail-word {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.05rem;
-  letter-spacing: -0.03em;
-  color: var(--text);
+  font-family: var(--font-brand);
+  font-weight: 900;
+  font-size: calc(var(--brand-size) * 0.9);
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--accent-lit);
 }
 
 .rail-tag {
@@ -5708,9 +6064,22 @@ button {
   color: var(--accent-ink);
 }
 
+/*
+ * Collapsed, the wordmark keeps its first letter rather than disappearing.
+ *
+ * It used to disappear and leave the logo tile behind; with the tile gone that
+ * would leave the rail's head empty. Clipping to `1ch` is not a second mark — it
+ * is the same glyph in the same face, which is what a collapsed rail should
+ * show.
+ */
+.rail[data-collapsed='true'] .rail-word {
+  width: 1ch;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
 /* Collapsed: the labels go, the icons stay, and the plan card has nowhere
    useful to be at 4.6rem so it goes too. */
-.rail[data-collapsed='true'] .rail-word,
 .rail[data-collapsed='true'] .rail-tag,
 .rail[data-collapsed='true'] .rail-group,
 .rail[data-collapsed='true'] .rail-link span,
@@ -6427,10 +6796,28 @@ button {
   margin-bottom: 1rem;
 }
 
+/* Four now: score, streak, lives and the freezes that protect the streak. */
 .stat-row {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 1rem;
+}
+
+/*
+ * `.stat > b` above sets `display: block` and outranks `.stat-hearts` on
+ * specificity, which was harmless while the pips were ♥ characters — they are
+ * inline text and laid out in a row regardless. Freeze pips are SVGs in block
+ * boxes, and under `display: block` each one took its own line. Qualified to
+ * win, rather than by moving the rule, because the block rule is right for
+ * every other figure in the row.
+ *
+ * `min-height` matches the 1.6rem figure in the other three cells so a row of
+ * pips does not sit shorter than the numbers beside it.
+ */
+.stat > b.stat-hearts {
+  display: flex;
+  align-items: center;
+  min-height: 2.2rem;
 }
 
 .stat span {
@@ -6472,9 +6859,16 @@ button {
   opacity: 0.22;
 }
 
+/* Freeze pips share the hearts' geometry — same row, same spent treatment — but
+   an icon rather than a glyph, so they need the box the ♥ gets for free. */
+.stat-hearts i > svg {
+  display: block;
+}
+
 .stat-sub {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Three now: answered, correct, and how far off the next voucher is. */
+  grid-template-columns: repeat(3, 1fr);
   gap: 1rem;
   margin-top: 1rem;
   padding-top: 0.9rem;
@@ -6748,6 +7142,18 @@ button {
   color: var(--accent-lit);
 }
 
+/*
+ * The reward connection.
+ *
+ * Weighted above the streak line, because it is the sentence that decides
+ * whether there is another round: a score is a dead end, and "60 more and the
+ * first voucher is yours" is not.
+ */
+.result-toward {
+  font-weight: 700;
+  color: var(--text);
+}
+
 .result-streak {
   font-size: 0.85rem;
   color: var(--text-fnt);
@@ -6759,6 +7165,264 @@ button {
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 0.6rem;
+}
+
+/* ── memory match, word builder ───────────────────────────────────────────
+ *
+ * Prefixed `mm-` and `wb-`, like every other app screen here: `site.css` has no
+ * scoping and `.games`, `.game-ico` and `.board-rank` already belong to the
+ * L-Earn marketing page.
+ */
+
+/* Fetching a bank. Same box as a round so the swap does not jump the page. */
+.round-loading {
+  min-height: 12rem;
+  display: grid;
+  place-items: center;
+  color: var(--text-mut);
+}
+
+.mm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+  width: 100%;
+  max-width: 26rem;
+  margin: 0 auto;
+}
+
+/* 3:4 is the shape of a playing card; a square grid reads as a keypad. */
+.mm-card {
+  aspect-ratio: 3 / 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    border-color 180ms var(--ease),
+    background 180ms var(--ease),
+    transform 180ms var(--ease);
+}
+
+.mm-card[data-face='down']:hover {
+  border-color: var(--accent-soft);
+  transform: translateY(-2px);
+}
+
+.mm-card[data-face='up'] {
+  border-color: var(--accent-lit);
+  background: var(--surface-2);
+}
+
+/* Matched cards stay on the board rather than clearing off it: the whole game
+   is remembering where things were, and a board that empties as you go removes
+   the evidence you were building. */
+.mm-card[data-face='matched'] {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.14);
+  cursor: default;
+}
+
+.mm-back {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-2);
+}
+
+.mm-icon {
+  font-size: 1.75rem;
+  line-height: 1;
+}
+
+.mm-label {
+  padding: 0 0.2rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  line-height: 1.15;
+  text-align: center;
+  color: var(--accent-ink);
+}
+
+/* The word the last match taught, which is the point of the game being here. */
+.mm-learned {
+  min-height: 2.6rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.mm-learned b {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--accent-ink);
+}
+
+/* ── word builder ── */
+
+.wb-pips {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.wb-pips i {
+  width: 1.6rem;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-2);
+}
+
+.wb-pips i[data-on='true'] {
+  background: var(--accent);
+}
+
+.wb-hint {
+  font-family: var(--font-display);
+  font-size: clamp(1rem, 2.6vw, 1.2rem);
+  text-align: center;
+}
+
+.wb-slots,
+.wb-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.wb-slot,
+.wb-key {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 3rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  font-weight: 600;
+  transition:
+    border-color 150ms var(--ease),
+    background 150ms var(--ease),
+    color 150ms var(--ease),
+    opacity 150ms var(--ease);
+}
+
+.wb-slots[data-state='right'] .wb-slot {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/*
+ * Wrong is not a colour.
+ *
+ * The palette has one accent, so the miss is drawn the way the field kit draws
+ * an error: the tint comes *off*, the border goes to `--text-mut`, and the row
+ * shakes. Louder by contrast and by motion rather than by hue.
+ */
+.wb-slots[data-state='wrong'] .wb-slot {
+  border-color: var(--text-mut);
+  background: transparent;
+}
+
+.wb-slots[data-shake='true'] {
+  animation: wb-shake 450ms var(--ease);
+}
+
+@keyframes wb-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-6px);
+  }
+  40%,
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wb-slots[data-shake='true'] {
+    animation: none;
+  }
+}
+
+.wb-key {
+  cursor: pointer;
+  border-color: var(--accent-soft);
+}
+
+.wb-key:not(:disabled):hover {
+  background: var(--surface-2);
+  border-color: var(--accent-lit);
+}
+
+/* A spent letter holds its place rather than closing the gap — the tray is a
+   layout the player is reading, and reflowing it on every tap loses them. */
+.wb-key[data-used='true'] {
+  opacity: 0.2;
+  border-color: var(--border);
+  background: transparent;
+  cursor: default;
+}
+
+.wb-controls,
+.wb-done {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.wb-done b {
+  width: 100%;
+  text-align: center;
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  color: var(--accent-lit);
+}
+
+/* The word list Word Builder is practising, chosen on its card. */
+.play-pick {
+  display: flex;
+  gap: 0.3rem;
+  padding: 0.25rem;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.play-pick button {
+  flex: 1;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  cursor: pointer;
+}
+
+.play-pick button[data-on='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 /* ── the board ── */
@@ -7307,17 +7971,27 @@ button {
 /* ────────────────────────────────────────────────────────── responsive ── */
 
 /*
- * The nav strip is now wide enough that Russian and Uzbek labels — routinely
- * 25% longer than English — would push it into the brand and the actions.
- * Drop to icons before that happens rather than letting it collide.
+ * Seven items of bold text, and Russian and Uzbek labels run routinely 25%
+ * longer than English — so the strip has to give somewhere before it reaches
+ * the brand and the actions.
+ *
+ * It gives on padding and type size, not by hiding the word. That is what this
+ * used to do (`.nav-label { display: none }`, falling back to the icon), and it
+ * cannot any more: the icons are gone and the label *is* the item, so hiding it
+ * would leave seven empty boxes. Below 1080px the strip goes entirely rather
+ * than shrinking to unreadable.
  */
 @media (max-width: 1280px) {
-  .nav-label {
-    display: none;
-  }
-
   .nav-link {
-    padding: 0.95rem 1rem;
+    padding: 0.95rem 0.72rem;
+    font-size: 0.8125rem;
+  }
+}
+
+@media (max-width: 1160px) {
+  .nav-link {
+    padding: 0.95rem 0.52rem;
+    font-size: 0.78rem;
   }
 }
 
@@ -7354,7 +8028,13 @@ button {
     grid-template-columns: 4.6rem minmax(0, 1fr);
   }
 
-  .rail .rail-word,
+  /* Same clip as the collapsed rail above, for the same reason. */
+  .rail .rail-word {
+    width: 1ch;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
   .rail .rail-tag,
   .rail .rail-group,
   .rail .rail-link span,
@@ -7686,11 +8366,12 @@ button {
 }
 
 .adm-word {
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: 1.05rem;
-  letter-spacing: -0.03em;
-  color: var(--text);
+  font-family: var(--font-brand);
+  font-weight: 900;
+  font-size: calc(var(--brand-size) * 0.9);
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--accent-lit);
 }
 
 /* Same pill the partner rail wears, and deliberately: it is the badge that says

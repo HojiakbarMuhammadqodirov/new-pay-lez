@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ASSISTANT_OPEN_EVENT,
   CONTACT_EMAIL,
   FEATURE_META,
   FOOTER_LINKS,
   HERO_STATS,
   PARTNERS,
   SERVICE_ICONS,
+  SOCIALS,
   VALUE_CARD,
 } from './content';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
+import { PATHS } from './router';
 import { usePalette } from './theme/context';
 
 /* ────────────────────────────────────────────────────────────────── hero ── */
@@ -39,11 +42,14 @@ export function Hero() {
             {copy.hero.lede}
           </p>
           <div className="hero-cta" data-reveal>
-            <a href="#value" className="btn btn-solid btn-lg">
+            {/* "Play & Earn" is the name of a page, and it now goes to it. It
+                used to scroll to `#value`, which is the voucher section — the
+                thing you spend points *on*, not the thing you earn them in. */}
+            <a href={PATHS.learn} className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.hero.primary}
             </a>
-            <a href="#features" className="btn btn-ghost btn-lg">
+            <a href="#guide" className="btn btn-ghost btn-lg">
               {copy.hero.secondary}
             </a>
           </div>
@@ -369,11 +375,14 @@ export function FinalCta() {
           <h2>{copy.cta.title}</h2>
           <p>{copy.cta.lede}</p>
           <div className="cta-actions">
-            <a href="#value" className="btn btn-solid btn-lg">
+            <a href={PATHS.learn} className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.cta.primary}
             </a>
-            <a href="#guide" className="btn btn-ghost btn-lg">
+            {/* "Explore the Living Guide" is Relocate. It was `#guide`, which is
+                the landing page's service carousel — a different thing that
+                happens to share the word. */}
+            <a href={PATHS.relocate} className="btn btn-ghost btn-lg">
               {copy.cta.secondary}
             </a>
           </div>
@@ -395,9 +404,10 @@ export function SiteFooter() {
       <div className="wrap">
         <div className="footer-grid">
           <div className="footer-brand">
-            <a className="brand" href="#top">
-              <span className="brand-mark" aria-hidden />
-              <span className="brand-word">paylez</span>
+            {/* The header's wordmark, and literally its class — the two are one
+                mark and should never drift apart. */}
+            <a className="brand" href={PATHS.landing}>
+              paylez
             </a>
             <p>{copy.footer.blurb}</p>
             <p className="footer-contact">
@@ -405,12 +415,22 @@ export function SiteFooter() {
               {copy.footer.location}
             </p>
             <div className="footer-social">
-              <a className="fsoc" href="#top" aria-label="paylez on Instagram">
-                <Icon name="instagram" size={19} />
-              </a>
-              <a className="fsoc" href="#top" aria-label="paylez on YouTube">
-                <Icon name="youtube" size={19} />
-              </a>
+              {/* Real destinations, and the only links on the site that leave
+                  it — hence `rel`, which the in-site links have no use for. */}
+              {SOCIALS.map((social) => (
+                <a
+                  className="fsoc"
+                  key={social.id}
+                  href={social.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  aria-label={fill(copy.footer.social, {
+                    channel: social.id === 'youtube' ? 'YouTube' : 'Instagram',
+                  })}
+                >
+                  <Icon name={social.id} size={19} />
+                </a>
+              ))}
             </div>
           </div>
 
@@ -421,11 +441,27 @@ export function SiteFooter() {
               aria-label={column.heading}
             >
               <h5>{column.heading}</h5>
-              {column.links.map((link, linkIndex) => (
-                <a href={FOOTER_LINKS[columnIndex][linkIndex]} key={link}>
-                  {link}
-                </a>
-              ))}
+              {column.links.map((link, linkIndex) => {
+                const href = FOOTER_LINKS[columnIndex][linkIndex];
+                /* `null` is the assistant, which is a dock rather than a page.
+                   A button, so it is not a link that goes nowhere. */
+                return href === null ? (
+                  <button
+                    type="button"
+                    className="footer-link-btn"
+                    key={link}
+                    onClick={() =>
+                      window.dispatchEvent(new Event(ASSISTANT_OPEN_EVENT))
+                    }
+                  >
+                    {link}
+                  </button>
+                ) : (
+                  <a href={href} key={link}>
+                    {link}
+                  </a>
+                );
+              })}
             </nav>
           ))}
 

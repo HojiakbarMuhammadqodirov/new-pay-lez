@@ -7,7 +7,15 @@ export const uz: Dictionary = {
   short: 'UZ',
   region: 'UZ',
 
-  nav: ['Bosh sahifa', 'L-Earn', 'Tahlil', 'B2B', 'Vaucherlar', "Ko‘chish"],
+  nav: {
+    home: 'Bosh sahifa',
+    learn: 'L-Earn',
+    analytics: 'Tahlil',
+    b2b: 'B2B',
+    wallet: 'Hamyon',
+    contact: 'Aloqa',
+    relocate: 'Ko‘chish',
+  },
   signIn: 'Kirish',
   assistant: 'AI yordamchini ochish',
   languageMenu: "Tilni o‘zgartirish",
@@ -302,17 +310,28 @@ export const uz: Dictionary = {
     score: 'Hisob',
     streak: 'Ketma-ketlik',
     lives: 'Jonlar',
+    freezes: 'Muzlatishlar',
     answered: 'Javoblar',
     correctLabel: 'To‘g‘ri',
+    toVoucher: 'Vaucherga',
 
     redeemTitle: 'Ballarni mukofotga almashtiring',
     redeemAction: 'Hoziroq almashtirish',
 
-    names: ['Aql o‘yinlari', 'Bayroqni top', 'Davlat va poytaxt', 'Polsha viktorinasi', 'Squawk parvozi'],
+    names: [
+      'Aql o‘yinlari',
+      'Bayroqni top',
+      'Davlat va poytaxt',
+      'Polsha viktorinasi',
+      'Squawk parvozi',
+      'Juftini top',
+      'So‘z yig‘',
+    ],
     rule: '{questions} savol · har biri {seconds} soniya',
     reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
     start: 'O‘yinni boshlash',
     noLives: 'Jonlar tugadi — ertaga qayting',
+    loading: 'Tarqatilmoqda…',
 
     question: '{total} dan {n}-savol',
     whichCountry: 'Bu qaysi davlat?',
@@ -325,6 +344,9 @@ export const uz: Dictionary = {
     resultScore: '{total} dan {correct} tasi to‘g‘ri',
     resultPoints: '+{points} ball',
     resultNone: 'Bu raundda ball yo‘q.',
+    resultToward: 'Yana {points} ball va birinchi vaucher sizniki.',
+    resultAfford: 'Vaucher uchun yetarli — borib oling.',
+    resultSpend: 'Ballarni sarflash',
     resultStreak: 'Ketma-ketlik: {streak} kun',
     again: 'Yana o‘ynash',
     backToGames: 'O‘yinlarga qaytish',
@@ -350,34 +372,35 @@ export const uz: Dictionary = {
       resultScore: 'O‘tilgan darvozalar: {cleared}',
       motionTitle: 'Bu o‘yin harakatlanadi',
       motionBody:
-        'Qurilmangiz kamroq harakat so‘raydi, bu o‘yin esa ekran bo‘ylab uzluksiz harakatdir — uning harakatsiz varianti yo‘q. Qolgan to‘rtta o‘yin viktorina bo‘lib, joyida turadi. Baribir uchishni istasangiz, o‘yinning o‘zidan tashqari hamma narsa qimirlamaydi.',
+        'Qurilmangiz kamroq harakat so‘raydi, bu o‘yin esa ekran bo‘ylab uzluksiz harakatdir — uning harakatsiz varianti yo‘q. Qolgan o‘yinlar viktorina va boshqotirma bo‘lib, joyida turadi. Baribir uchishni istasangiz, o‘yinning o‘zidan tashqari hamma narsa qimirlamaydi.',
       motionPlay: 'Baribir o‘ynash',
       motionBack: 'O‘yinlarga qaytish',
     },
 
-    countries: [
-      'Polsha', 'O‘zbekiston', 'Ukraina', 'Germaniya', 'Fransiya',
-      'Italiya', 'Ispaniya', 'Niderlandiya', 'Turkiya', 'Buyuk Britaniya',
-    ],
-    capitals: [
-      'Varshava', 'Toshkent', 'Kiyev', 'Berlin', 'Parij',
-      'Rim', 'Madrid', 'Amsterdam', 'Anqara', 'London',
-    ],
+    memory: {
+      rule: '{pairs} juftlik · soatsiz',
+      reward: 'Kamroq harakat — ko‘proq ball · har juftlik uchun +{points}',
+      pairs: 'Juftliklar {found} / {total}',
+      moves: '{n} harakat',
+      facedown: 'Yopiq karta',
+      hint: 'Ikkita kartani ochib ko‘ring. Juftini topsangiz, so‘z sizniki.',
+      resultScore: '{pairs} juftlik topildi',
+    },
 
-    brain: [
-      { q: 'Bu sonlardan qaysi biri tub son?', options: ['91', '87', '83', '99'], a: 2 },
-      { q: 'Yer yuzida nechta qit’a bor?', options: ['5', '6', '7', '8'], a: 2 },
-      { q: 'Eng katta okean qaysi?', options: ['Atlantika', 'Hind', 'Shimoliy Muz', 'Tinch'], a: 3 },
-      { q: 'Quyoshga eng yaqin sayyora qaysi?', options: ['Venera', 'Merkuriy', 'Mars', 'Yer'], a: 1 },
-      { q: 'To‘liq bir kecha-kunduzda necha daqiqa bor?', options: ['1440', '1240', '960', '1800'], a: 0 },
-    ],
-    poland: [
-      { q: 'Polshaning valyutasi qanday?', options: ['Yevro', 'Zlotiy', 'Krona', 'Forint'], a: 1 },
-      { q: '180 kun ichida Shengen vizasi bilan necha kun qolish mumkin?', options: ['30 kun', '60 kun', '90 kun', '120 kun'], a: 2 },
-      { q: 'PESEL raqami nima uchun kerak?', options: ['Bank hisobi uchun', 'Rezidentni aniqlash uchun', 'Haydovchilik guvohnomasi uchun', 'Ijara uchun'], a: 1 },
-      { q: 'Polshada manzilingizni qaysi idora ro‘yxatga oladi?', options: ['Urząd Gminy', 'Poczta Polska', 'ZUS', 'NFZ'], a: 0 },
-      { q: 'NFZ nimani ta’minlaydi?', options: ['Pensiyalarni', 'Davlat tibbiyotini', 'Soliq deklaratsiyalarini', 'Ish ruxsatnomalarini'], a: 1 },
-    ],
+    wordGame: {
+      rule: '{words} so‘z · osondan qiyingacha',
+      reward: 'Birinchi urinishda va tez bo‘lsa ko‘proq · maslahat bonusni oladi',
+      list: 'Mashq qilinadigan til',
+      lists: { pl: 'Polyakcha', en: 'Inglizcha' },
+      tier: '{n}-daraja',
+      undo: 'Orqaga',
+      clear: 'Tozalash',
+      reveal: 'Maslahat',
+      next: 'Keyingi so‘z',
+      finish: 'Natijani ko‘rish',
+      correct: 'To‘g‘ri · +{points} ball',
+      resultScore: '{total} dan {solved} ta so‘z yig‘ildi',
+    },
   },
 
   business: {
@@ -777,40 +800,24 @@ export const uz: Dictionary = {
 
     games: {
       eyebrow: "O‘yinlar",
-      title: "Ball to‘plashning uch yo‘li.",
-      lede: "Uchalasi ham shu saytdagi har bir tilga tarjima qilingan, shuning uchun o‘zingiz xohlamasangiz, hech qachon ikkinchi tilingizda o‘ynamaysiz.",
-      items: [
-        {
-          name: 'Capital Game',
-          blurb: "Poytaxtni ayting. Oson boshlanadi va to‘rtinchi raund atrofida oson bo‘lishdan to‘xtaydi.",
-          meta: "10 savol · 100 ballgacha",
-        },
-        {
-          name: 'Flag Game',
-          blurb: "Bayroqni davlatga moslang. Uchalasidan eng tezkori va navbatda o‘ynaladigani.",
-          meta: '10 savol · 100 ballgacha',
-        },
-        {
-          name: 'Polshadagi hayot',
-          blurb: "Amaliyroq bo‘lgani: hujjatlar, transport, ijara — hech kim aytmaydigan narsalar. Ballga ham, bilishga ham arziydi.",
-          meta: '10 savol · 150 ballgacha',
-        },
-      ],
+      title: "O‘yiningizni tanlang.",
+      lede: "Ularning har biri saytdagi barcha tillarga tarjima qilingan, shuning uchun o‘zingiz xohlamasangiz, hech qachon ikkinchi tilingizda o‘ynamaysiz.",
     },
 
     streak: {
       eyebrow: 'Ketma-ketlik',
       title: 'Ballar aynan ketma-ketlikda.',
-      lede: "Har 24 soatda bitta raund uni tirik saqlaydi. Shu oraliqni o‘tkazib yuborsangiz, ketma-ketlik ham, u bilan yig‘gan ballaringiz ham nolga qaytadi — qoida shu, xolos.",
+      lede: "Har 24 soatda bitta raund uni tirik saqlaydi. Shu oraliqni o‘tkazib yuborsangiz, ketma-ketlik ham, u bilan yig‘gan ballaringiz ham nolga qaytadi — agar muzlatishingiz bo‘lmasa. Muzlatish bitta o‘tkazib yuborilgan kunni qoplaydi, uni har yettinchi kuni olasiz va ikkitagacha saqlab turishingiz mumkin. Qoida shu, xolos.",
       card: {
         label: 'Joriy ketma-ketlik',
         unit: 'kun',
         reward: "Yettinchi kuni +250 ball",
+        freeze: "Zaxiradagi muzlatishlar · har biri bitta kunni qoplaydi",
       },
       benefits: [
         {
           title: 'Uchinchi kun: 1,5×',
-          body: "Yig‘gan har bir ballingiz bir yarim baravar qimmatga aylanadi — uchala o‘yinda ham.",
+          body: "Yig‘gan har bir ballingiz bir yarim baravar qimmatga aylanadi — sahifadagi barcha o‘yinlarda.",
         },
         {
           title: 'Yettinchi kun: 250 ball',
@@ -1399,7 +1406,7 @@ export const uz: Dictionary = {
     hero: {
       eyebrow: 'Hayot bo‘yicha yo‘riqnoma',
       lines: ['Yangi davlat.', 'Yuzta savol.', 'Bitta yo‘riqnoma.'],
-      lede: "Qayerda hisob ochish, kvartira zakalati qanday ishlaydi, qaysi klinika sug‘urtangizni qabul qiladi, pulingiz uyingizda aslida qanchaga arziydi. To‘qqiz mavzu, o‘n to‘rt davlat — buni boshidan kechirganlar yozgan.",
+      lede: "Qayerda hisob ochish, kafolat puli qanday ishlaydi, qaysi klinika sug‘urtangizni qabul qiladi va pulingiz vatanda aslida qancha turadi. To‘qqiz mavzu, o‘n to‘rt davlat.",
       primary: 'Yo‘riqnomani ochish',
       secondary: 'Kursni tekshirish',
       stats: ['Mavzu', 'Davlat', 'Bizning kursimizga ustama'],
@@ -1436,10 +1443,14 @@ export const uz: Dictionary = {
 
     guide: {
       eyebrow: 'Yordam va yo‘l-yo‘riq',
-      title: 'To‘qqiz mavzu, va kerak bo‘lgani doim kutilmagani bo‘lib chiqadi.',
-      lede: "Har biri shahringiz uchun bosqichma-bosqich yo‘riqnomaga ochiladi — qaysi hujjat, qayerda beriladi, qancha turadi va qancha vaqt oladi.",
+      title: "To‘qqiz mavzu. Bittasini oching.",
+      lede: "Uy-joy va hujjatlar birinchi o‘rinda, chunki birinchi oy aynan shular haqida. Har bir mavzu shu ish bilan shug‘ullanadigan joylar ro‘yxatiga ochiladi — shahringiz bo‘yicha filtr bilan.",
       cities: 'Barcha shaharlar',
-      search: 'Yo‘riqnomadan qidirish',
+      city: "Shahar bo‘yicha filtr",
+      count: "Ro‘yxatdagi joylar: {n}",
+      speaks: 'Tillari:',
+      none: "{city} shahrida bu mavzu bo‘yicha hozircha hech nima yo‘q. Barcha shaharlarni sinab ko‘ring.",
+      soon: "Bu mavzu hali yozilmoqda. Shu orada quyidagi yordamchi javob beradi.",
       items: [
         { name: 'Joylar', blurb: "Borishga arziydigan do‘konlar, restoranlar va xizmatlar" },
         { name: 'Bank va moliya', blurb: 'Hisoblar, kartalar, kredit va IBAN nima uchun kerak' },
@@ -1489,10 +1500,72 @@ export const uz: Dictionary = {
     secondary: "Living Guide’ni ko‘rish",
   },
 
+  contact: {
+    back: 'paylezga qaytish',
+    hero: {
+      eyebrow: 'Aloqa',
+      lines: ['Istagan narsani so‘rang.', 'Javobni odam yozadi.'],
+      lede: 'Yordam, hamkorlik, xatolik yoki qo‘llanmadagi noto‘g‘ri ma’lumot — hammasi Krakovdagi bitta kichik jamoaga tushadi. Har bir xabarni ingliz, polyak, ukrain, rus va o‘zbek tillarida o‘qiymiz.',
+      stats: ['Ish kunida javob', 'Javob beriladigan tillar', 'Bog‘lanish yo‘llari'],
+    },
+
+    channels: {
+      eyebrow: 'Bizni qayerdan topasiz',
+      title: 'To‘rtta yo‘l, va ularning hech biri navbat emas.',
+      lede: 'Savolingizga mos keladiganini tanlang. Ikkita pochta qutisi ataylab turli odamlarga boradi: joriy etish haqidagi savol texnik yordam murojaati emas va ikkalasi bir-birini kutib turmasligi kerak.',
+      items: [
+        {
+          name: 'Yordam',
+          blurb: 'Kelmagan ballar, skanerlanmagan voucher, kira olmayotgan hisob. paylezdan foydalanishga oid har qanday narsa.',
+          action: 'Yordamga yozing',
+        },
+        {
+          name: 'Hamkorlik',
+          blurb: 'Sizda joy bor yoki bir nechtasi va paylezni joriy etish qanday kechishini bilmoqchisiz. Narxlar, ishga tushirish, POS savollari.',
+          action: 'Jamoaga yozing',
+        },
+        {
+          name: 'YouTube',
+          blurb: 'O‘yinlar qanday ishlaydi, joy qanday sozlanadi va nima yangilik — o‘qish o‘rniga ko‘rish mumkin bo‘lgan shakldagi o‘sha tushuntirishlar.',
+          action: 'Ko‘rish',
+        },
+        {
+          name: 'Instagram',
+          blurb: 'Yangi joylar, yangi voucherlar va tez tugaydigan takliflar. Shu hafta nima paydo bo‘lganini ko‘rishning eng tez yo‘li.',
+          action: 'Kuzatish',
+        },
+      ],
+    },
+
+    form: {
+      eyebrow: 'Xabar yuborish',
+      title: 'Nima bo‘lganini yozing.',
+      lede: 'Qanchalik aniq bo‘lsa, shunchalik yaxshi — qaysi ekran, nimani kutgansiz va uning o‘rniga nima bo‘ldi. Agar bu hisobga tegishli bo‘lsa, undagi e-pochta manzili bizga bitta yozishmani tejaydi.',
+      topic: 'Bu nima haqida?',
+      topics: ['Yordam', 'Fikr', 'Hamkorlik', 'Boshqa narsa'],
+      name: 'Ismingiz',
+      namePlaceholder: 'Ism va familiya',
+      email: 'E-pochtangiz',
+      emailPlaceholder: 'siz@email.com',
+      message: 'Xabar',
+      messagePlaceholder: 'Nima bo‘ldi va nimani kutgan edingiz.',
+      submit: 'Pochta ilovasida ochish',
+      note: 'Bu sahifada hech narsa saqlanmaydi. Tugma sizning o‘z pochta ilovangizni tayyor va manzillangan xabar bilan ochadi — yuborishni siz bosasiz.',
+      error: 'Ismingizni, e-pochta manzilingizni va xabarni to‘ldiring.',
+    },
+
+    hours: {
+      title: 'Qachon javob beramiz',
+      body: 'Dushanbadan jumagacha, Markaziy Yevropa vaqti bilan 09:00–18:00. Ko‘pchilik xabarlar o‘sha ish kunining o‘zida javob oladi. Dam olish kunlari kelgan xabarlarga dushanba tongida javob beriladi.',
+      address: 'Krakov, Polsha',
+    },
+  },
+
   footer: {
     blurb:
       "O‘yna va yutib ol. Eksklyuziv takliflar. Haqiqiy mukofotlar. Kashf eting, tejang va mukofot oling.",
     location: 'Krakov, Polsha',
+    social: '{channel}dagi paylez',
     columns: [
       {
         heading: 'Mahsulot',

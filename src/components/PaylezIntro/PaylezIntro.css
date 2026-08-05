@@ -4,7 +4,18 @@
  * Every timing is a CSS variable set from `config.ts`, so the sequence is
  * tuned in one place and the stylesheet never disagrees with the timer that
  * ends it.
+ *
+ * The face is the wordmark's own — `900 Onest`, the same declaration the header
+ * carries — imported here rather than inherited, because this component lives
+ * under `components/` and has to render correctly without the site's sheet. The
+ * bundler collapses the duplicate import with the one in `site.css`.
+ *
+ * Everything animated below is transform, opacity or filter on eight elements,
+ * so the whole sequence runs on the compositor and costs the page no JavaScript
+ * per frame.
  */
+
+@import '@fontsource/onest/latin-900.css';
 
 .pz-intro {
   position: fixed;
@@ -13,7 +24,7 @@
   display: grid;
   place-items: center;
   cursor: pointer;
-  font-family: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  font-family: 'Onest', ui-sans-serif, system-ui, sans-serif;
 
   animation: pz-out var(--pz-out) cubic-bezier(0.4, 0, 1, 1) var(--pz-out-delay) both;
 }
@@ -25,167 +36,105 @@
   }
 }
 
+/*
+ * The lockup, easing down from a hair oversize across the whole sequence.
+ *
+ * One slow scale under everything is what binds six separately-timed letters
+ * into a single gesture — they arrive at different moments but on a surface
+ * that is still settling, so the eye reads one event.
+ */
 .pz-stage {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: clamp(1.75rem, 4vh, 2.75rem);
+  gap: clamp(1rem, 2.2vh, 1.6rem);
+
+  animation: pz-settle var(--pz-settle) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--pz-settle-delay) both;
 }
 
-/* ─────────────────────────────────────────────────────────── brand row ── */
+@keyframes pz-settle {
+  from {
+    transform: scale(1.045);
+  }
+  to {
+    transform: scale(1);
+  }
+}
 
-/*
- * Centred, so growing the name pushes the mark left by exactly half the name's
- * final width. One animation, two elements, no coordination needed.
- */
-.pz-brand {
+/* ──────────────────────────────────────────────────────────── the word ── */
+
+.pz-word {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.55rem;
-}
-
-.pz-mark {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: clamp(3rem, 6vw, 4.25rem);
-  height: clamp(3rem, 6vw, 4.25rem);
-  border-radius: clamp(0.9rem, 1.8vw, 1.3rem);
-  background: var(--pz-accent);
-  color: var(--pz-on-accent);
-  font-size: clamp(1.75rem, 3.4vw, 2.5rem);
-  font-weight: 600;
+  /* The word is set solid; the letters carry their own spacing. */
+  font-size: clamp(2.6rem, 9vw, 5.5rem);
+  font-weight: 900;
+  letter-spacing: 0;
   line-height: 1;
-
-  opacity: 0;
-  transform: scale(0.4);
-  box-shadow: 0 18px 60px -18px var(--pz-accent);
-  animation: pz-mark var(--pz-mark-in) cubic-bezier(0.34, 1.56, 0.64, 1)
-    var(--pz-mark-delay) both;
-}
-
-.pz-mark span {
-  /* Optical centring: the lowercase p sits low in its em box. */
-  transform: translateY(-0.06em);
+  color: var(--pz-accent);
 }
 
 /*
- * With a mark image the tile *is* the logo: the file is square and carries its
- * own ground, so it covers the accent fill rather than sitting on it, and the
- * fallback letter is taken out rather than hidden under it — a glyph showing
- * through a half-loaded image is worse than no glyph.
+ * One letter.
+ *
+ * Rises out of focus into focus rather than fading: `blur` is what makes the
+ * arrival feel like a lens finding the word instead of six elements changing
+ * opacity. `will-change` is stated because a filter animation that is not
+ * promoted repaints the glyph every frame.
  */
-.pz-mark[data-image='true'] {
-  background-image: var(--pz-mark-image);
-  background-size: cover;
-  background-position: center;
+.pz-word i {
+  display: inline-block;
+  font-style: normal;
+  will-change: transform, opacity, filter;
+
+  animation: pz-letter var(--pz-letter-in) cubic-bezier(0.16, 1, 0.3, 1)
+    calc(var(--pz-letter-delay) + var(--i) * var(--pz-stagger)) both;
 }
 
-.pz-mark[data-image='true'] span {
-  display: none;
-}
-
-@keyframes pz-mark {
+@keyframes pz-letter {
   from {
     opacity: 0;
-    transform: scale(0.4);
-    filter: blur(6px);
+    transform: translateY(0.36em) scale(0.94);
+    filter: blur(12px);
   }
   to {
     opacity: 1;
-    transform: scale(1);
+    transform: translateY(0) scale(1);
     filter: blur(0);
   }
 }
 
-.pz-name {
-  /*
-   * `max-width` rather than `width`, so the value animates from a hard zero to
-   * a measured cap without ever needing the intrinsic width.
-   */
-  max-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  font-size: clamp(2rem, 4.4vw, 3.25rem);
-  font-weight: 600;
-  letter-spacing: -0.035em;
-  line-height: 1;
-  color: var(--pz-accent);
-  animation: pz-name var(--pz-name-in) cubic-bezier(0.22, 1, 0.36, 1)
-    var(--pz-name-delay) both;
+/* ──────────────────────────────────────────────────────────── the rule ── */
+
+/*
+ * A hairline drawn from the centre out, under the word.
+ *
+ * It replaces the loading bar, and is deliberately not one: it does not fill to
+ * a value, it does not sit still at 100%, and it carries no implication that
+ * anything is being waited for. It is an underline arriving with the word.
+ *
+ * `scaleX` from a centre origin, so it grows both ways at once.
+ */
+.pz-rule {
+  width: clamp(9rem, 26vw, 18rem);
+  height: 1px;
+  border-radius: 999px;
+  background: var(--pz-accent);
+  box-shadow: 0 0 18px var(--pz-accent);
+  transform-origin: 50% 50%;
+  transform: scaleX(0);
+
+  animation: pz-rule var(--pz-rule-in) cubic-bezier(0.16, 1, 0.3, 1)
+    var(--pz-rule-delay) both;
 }
 
-.pz-name span {
-  display: block;
-  /* Slides out from behind the mark rather than simply appearing. */
-  transform: translateX(-0.35em);
-  opacity: 0;
-  animation: pz-name-slide var(--pz-name-in) cubic-bezier(0.22, 1, 0.36, 1)
-    var(--pz-name-delay) both;
-}
-
-@keyframes pz-name {
-  from {
-    max-width: 0;
-  }
-  to {
-    max-width: var(--pz-name-w);
-  }
-}
-
-@keyframes pz-name-slide {
+@keyframes pz-rule {
   from {
     opacity: 0;
-    transform: translateX(-0.35em);
+    transform: scaleX(0);
   }
   to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-/* ───────────────────────────────────────────────────────── loading bar ── */
-
-/* No percentage, no label — just the neon rail filling. */
-.pz-bar {
-  position: relative;
-  width: clamp(9rem, 18vw, 14rem);
-  height: 2px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--pz-accent) 16%, transparent);
-  overflow: hidden;
-
-  opacity: 0;
-  transform: scaleX(0.6);
-  animation: pz-bar var(--pz-bar-in) cubic-bezier(0.22, 1, 0.36, 1)
-    var(--pz-bar-delay) both;
-}
-
-@keyframes pz-bar {
-  to {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-}
-
-.pz-bar i {
-  position: absolute;
-  inset: 0;
-  display: block;
-  border-radius: inherit;
-  background: var(--pz-accent);
-  box-shadow: 0 0 14px var(--pz-accent);
-  transform-origin: 0 50%;
-  transform: scaleX(0);
-  /* Eases out, so the last stretch slows — a bar that slams into 100% reads
-     as fake. */
-  animation: pz-fill var(--pz-fill-in) cubic-bezier(0.32, 0.72, 0.3, 1)
-    var(--pz-fill-delay) both;
-}
-
-@keyframes pz-fill {
-  to {
+    opacity: 0.85;
     transform: scaleX(1);
   }
 }
@@ -196,6 +145,7 @@
   position: absolute;
   right: clamp(1.25rem, 3vw, 2.5rem);
   bottom: clamp(1.25rem, 3vh, 2.5rem);
+  font-family: ui-sans-serif, system-ui, sans-serif;
   font-size: 0.6875rem;
   font-weight: 600;
   letter-spacing: 0.16em;
@@ -209,13 +159,13 @@
   opacity: 0.7;
 }
 
+/* The component skips the sequence outright under reduced motion, so this is
+   belt and braces for the frame before it unmounts. */
 @media (prefers-reduced-motion: reduce) {
   .pz-intro,
-  .pz-mark,
-  .pz-name,
-  .pz-name span,
-  .pz-bar,
-  .pz-bar i {
+  .pz-stage,
+  .pz-word i,
+  .pz-rule {
     animation: none;
   }
 }

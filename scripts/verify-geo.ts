@@ -23,7 +23,15 @@ import {
   SCROLL,
   UI,
 } from '../src/components/GlobeHero/config';
-import { resolveRoute, type Route } from '../src/site/router';
+import {
+  ANCHOR_ROUTES,
+  PATHS,
+  resolveRoute,
+  routeOf,
+  type Route,
+} from '../src/site/router';
+import { draw, shuffledRange } from '../src/site/games/bag';
+import { flagOf } from '../src/site/games/banks';
 import type { Account } from '../src/site/auth/context';
 import {
   blankBusiness,
@@ -46,13 +54,17 @@ import {
   bankableGaps,
   canAfford,
   flightPoints,
+  freezesOf,
   markUsed,
   MAX_FLIGHT_GAPS,
+  MAX_FREEZES,
   MAX_LIVES,
+  memoryPoints,
   redeem,
   refillLives,
   seedPlayer,
   usedVouchers,
+  wordPoints,
 } from '../src/site/auth/player';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
@@ -396,38 +408,46 @@ console.log('\nlanding globe — country reveals');
 console.log('\nintro — brand sequence');
 {
   const t = INTRO_TIMING;
+
+  /*
+   * The sequence is one gesture now, not three: the letters arrive staggered, a
+   * rule draws itself underneath, and the whole lockup eases down from a hair
+   * oversize. There is no mark and no loading bar, so what is checked changed
+   * with them — what has not is that every stage lands before the fade, and that
+   * the fade lands exactly on `duration`, which is when the timer in
+   * `PaylezIntro` fires `onComplete`. A stage that overran it would leave the
+   * site visible underneath a half-finished animation.
+   */
+  const lastLetter =
+    t.letterIn.delay + (t.letters - 1) * t.letterIn.stagger + t.letterIn.duration;
+
   const stages: Array<[string, { delay: number; duration: number }]> = [
-    ['markIn', t.markIn],
-    ['nameOpen', t.nameOpen],
-    ['barIn', t.barIn],
-    ['barFill', t.barFill],
+    ['ruleIn', t.ruleIn],
+    ['settle', t.settle],
     ['outro', t.outro],
   ];
 
   check(
     'every stage fits inside the run time',
-    stages.every(([, s]) => s.delay + s.duration <= t.duration),
+    stages.every(([, stage]) => stage.delay + stage.duration <= t.duration),
     `duration ${t.duration}ms`,
   );
-  // The name has to start opening while the mark is still settling, or the
-  // mark's slide left reads as a separate second move.
   check(
-    'the name opens before the mark has finished landing',
-    t.nameOpen.delay < t.markIn.delay + t.markIn.duration,
-    `mark lands ${t.markIn.delay + t.markIn.duration}ms, name starts ${t.nameOpen.delay}ms`,
+    'the last letter lands before the fade',
+    lastLetter <= t.outro.delay,
+    `last letter ${lastLetter}ms, fade starts ${t.outro.delay}ms`,
+  );
+  // The rule has to start while letters are still arriving, or it reads as a
+  // second event rather than as part of the word being written.
+  check(
+    'the rule starts before the word finishes',
+    t.ruleIn.delay < lastLetter,
+    `rule ${t.ruleIn.delay}ms, word ends ${lastLetter}ms`,
   );
   check(
-    'the mark lands before the name starts',
-    t.nameOpen.delay > t.markIn.delay,
-  );
-  check(
-    'the bar appears before it fills',
-    t.barIn.delay < t.barFill.delay,
-  );
-  check(
-    'the bar finishes filling before the fade',
-    t.barFill.delay + t.barFill.duration <= t.outro.delay,
-    `fill ends ${t.barFill.delay + t.barFill.duration}ms, fade starts ${t.outro.delay}ms`,
+    'the rule finishes drawing before the fade',
+    t.ruleIn.delay + t.ruleIn.duration <= t.outro.delay,
+    `rule ends ${t.ruleIn.delay + t.ruleIn.duration}ms, fade starts ${t.outro.delay}ms`,
   );
   check(
     'the fade completes exactly at the end',
@@ -535,7 +555,7 @@ console.log('\naccess control');
   /* Every redirect must land somewhere that does not itself redirect, or the
      effect in `Site` navigates in a loop. */
   const all: Route[] = [
-    'landing', 'learn', 'analytics', 'b2b', 'vouchers', 'relocate',
+    'landing', 'learn', 'analytics', 'b2b', 'vouchers', 'relocate', 'contact',
     'signin', 'business-setup', 'dashboard', 'admin',
   ];
   const accounts = [anon, undecided, person, ownerNew, ownerSet, admin];
@@ -548,6 +568,126 @@ console.log('\naccess control');
     }
   }
   check('every resolution is a fixed point', unstable === '', unstable || 'no loops');
+
+  /* Contact is for everybody — it is where every "Support" link now lands, and
+     an account type that could not reach it would be an account type with no
+     way to ask for help. */
+  for (const [label, account] of [
+    ['anon', anon],
+    ['an individual', person],
+    ['an owner', ownerSet],
+    ['an admin', admin],
+  ] as const) {
+    check(`${label} reaches contact`, resolveRoute('contact', account) === 'contact');
+  }
+}
+
+console.log('\nrouting — section anchors');
+{
+  /*
+   * The bug this table exists to fix: every hash that is not in `ROUTES` used to
+   * resolve to the landing page, so *every in-page link on every other page*
+   * went Home. "Open the dashboard" on Analytics pointed at `#analytics-reports`
+   * and landed on the marketing front page.
+   */
+  check('the landing page keeps the unprefixed anchors', routeOf('#value') === 'landing');
+  check('…including #top', routeOf('#top') === 'landing');
+  check('…and an anchor nobody declared', routeOf('#nonsense') === 'landing');
+
+  for (const [hash, expected] of [
+    ['#learn-games', 'learn'],
+    ['#games-top', 'learn'],
+    ['#analytics-reports', 'analytics'],
+    ['#b2b-cta', 'b2b'],
+    ['#vouchers-catalogue', 'vouchers'],
+    ['#relocate-guide', 'relocate'],
+    ['#contact-form', 'contact'],
+  ] as const) {
+    check(`${hash} stays on ${expected}`, routeOf(hash) === expected);
+  }
+
+  /* A real route still wins over anything the prefix table would say. */
+  for (const [route, path] of Object.entries(PATHS) as Array<[Route, string]>) {
+    check(`${path} is ${route}`, routeOf(path) === route);
+  }
+
+  /*
+   * Every prefix has to name a route that exists, and no prefix may shadow the
+   * landing page's own anchors — `#value`, `#guide`, `#features` and friends
+   * carry no prefix, so a table entry with an empty or one-character prefix
+   * would swallow them.
+   */
+  for (const [prefix, route] of ANCHOR_ROUTES) {
+    check(`the ${prefix} prefix names a real route`, PATHS[route] !== undefined);
+    check(`…and is specific enough`, prefix.length >= 3 && prefix.endsWith('-'));
+  }
+}
+
+console.log('\nquestions — the no-repeat bag');
+{
+  /*
+   * The property the whole thing exists for: **every index is drawn once before
+   * any of them is drawn twice.** Walked over a pool the size of the smallest
+   * shipped bank, five at a time, which is how a round actually draws.
+   */
+  const size = 100;
+  const perRound = 5;
+  let bag: number[] = [];
+  const seen = new Map<number, number>();
+  let shortRound = 0;
+  let repeatedInRound = 0;
+
+  for (let round = 0; round < size / perRound; round++) {
+    const { picked, rest } = draw(bag, size, perRound);
+    bag = rest;
+    if (picked.length !== perRound) shortRound++;
+    if (new Set(picked).size !== picked.length) repeatedInRound++;
+    for (const index of picked) seen.set(index, (seen.get(index) ?? 0) + 1);
+  }
+
+  check('every round draws a full set', shortRound === 0, `${shortRound} short`);
+  check('no round repeats a question', repeatedInRound === 0, `${repeatedInRound} bad`);
+  check(
+    'nothing repeats before the pool is exhausted',
+    seen.size === size && [...seen.values()].every((n) => n === 1),
+    `${seen.size} distinct of ${size}`,
+  );
+
+  /* Past the end of the pool it refills — and the refill must not hand back
+     something this same draw already took. */
+  const nearlyEmpty = draw([3], 10, 5);
+  check('a refill mid-draw still returns a full set', nearlyEmpty.picked.length === 5);
+  check(
+    '…with no duplicate across the seam',
+    new Set(nearlyEmpty.picked).size === 5,
+    nearlyEmpty.picked.join(','),
+  );
+
+  /* A stored bag from a larger export. Reading past the end of the rows is the
+     failure this drops instead of crashing on. */
+  const stale = draw([99, 100, 2], 5, 2);
+  check('indices past the pool are dropped',
+    stale.picked.every((n) => n >= 0 && n < 5),
+    stale.picked.join(','));
+
+  check('a request larger than the pool is clamped', draw([], 3, 10).picked.length === 3);
+  check('an empty pool draws nothing', draw([], 0, 5).picked.length === 0);
+
+  /* The range itself, which everything above is a permutation of. */
+  const range = shuffledRange(50);
+  check('a shuffle keeps every index exactly once',
+    new Set(range).size === 50 && Math.max(...range) === 49 && Math.min(...range) === 0);
+}
+
+console.log('\nquestions — the flag glyphs');
+{
+  /* The export points at flagcdn.com and this site makes no third-party runtime
+     requests, so the ISO code is turned into a regional-indicator pair the
+     self-hosted font already draws. */
+  check('pl becomes its flag', flagOf('pl') === '🇵🇱', flagOf('pl'));
+  check('uz becomes its flag', flagOf('uz') === '🇺🇿', flagOf('uz'));
+  check('case does not matter', flagOf('GB') === flagOf('gb'));
+  check('a code that is not two letters yields nothing', flagOf('') === '' && flagOf('pol') === '');
 }
 
 console.log('\nbusiness listing');
@@ -592,7 +732,17 @@ console.log('\nbusiness listing');
 console.log('\nplaying');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
-  const base = { ...seedPlayer(), points: 0, streak: 0, answered: 0, correct: 0, lastPlayed: null };
+  const base = {
+    ...seedPlayer(),
+    points: 0,
+    streak: 0,
+    answered: 0,
+    correct: 0,
+    lastPlayed: null,
+    /* No freeze. A seeded player now starts with one, and it would absorb
+       every lapse below — which is the freeze block's business, not this one's. */
+    freezes: 0,
+  };
   const win = { correct: 5, total: 5, perCorrect: 2, won: true };
 
   const first = awardRound(base, win, day('2026-08-03'));
@@ -624,10 +774,96 @@ console.log('\nplaying');
   check('lives refill on a new day', refillLives(empty, day('2026-08-04')).lives === MAX_LIVES);
 }
 
+console.log('\nplaying — streak freezes');
+{
+  const day = (iso: string) => new Date(`${iso}T12:00:00`);
+  const win = { correct: 5, total: 5, perCorrect: 2, won: true };
+  const held = (n: number) => ({
+    ...seedPlayer(),
+    points: 100,
+    streak: 4,
+    answered: 0,
+    correct: 0,
+    lastPlayed: '2026-08-03',
+    freezes: n,
+  });
+
+  /* The rule the streak card states, and the one the FAQ's "goes back to zero"
+     is now an exception to. Both halves are checked, because a freeze that
+     saved the streak but not the balance would be the confusing half-measure —
+     the two have always been one rule. */
+  const saved = awardRound(held(1), win, day('2026-08-09'));
+  check('a freeze absorbs a missed window', saved.streak === 5, `streak ${saved.streak}`);
+  check('…and the balance survives with it', saved.points === 110, `${saved.points} pts`);
+  check('…and the freeze is spent', freezesOf(saved) === 0, `${freezesOf(saved)} held`);
+
+  const unsaved = awardRound(held(0), win, day('2026-08-09'));
+  check('without one, the streak still resets', unsaved.streak === 1);
+  check('…and the balance still clears', unsaved.points === 10, `${unsaved.points} pts`);
+
+  /* Spent only when there is something to spend it on. */
+  const onTime = awardRound(held(1), win, day('2026-08-04'));
+  check('an unbroken streak spends nothing', freezesOf(onTime) === 1);
+
+  /* Earned every seventh day, and capped. Day seven is the round that produces
+     streak 7, so the seventh day pays for itself. */
+  const sixth = { ...held(0), streak: 6, lastPlayed: '2026-08-03' };
+  const seventh = awardRound(sixth, win, day('2026-08-04'));
+  check('day seven earns a freeze', seventh.streak === 7 && freezesOf(seventh) === 1);
+
+  const again = awardRound({ ...seventh, lastPlayed: '2026-08-04' }, win, day('2026-08-04'));
+  check('…and a second round that day does not mint another', freezesOf(again) === 1);
+
+  const rich = awardRound({ ...sixth, freezes: MAX_FREEZES }, win, day('2026-08-04'));
+  check('holdings are capped', freezesOf(rich) === MAX_FREEZES);
+
+  /* A session stored before the field existed. */
+  const old = { ...held(0) } as Record<string, unknown>;
+  delete old.freezes;
+  check('a state with no freezes field reads as zero',
+    freezesOf(old as ReturnType<typeof seedPlayer>) === 0);
+}
+
+console.log('\nplaying — the two scored games');
+{
+  /* Straight off the supplied spec's worked examples. */
+  check('an easy word, first try and fast',
+    wordPoints({ tier: 1, firstTry: true, hinted: false, seconds: 8 }) === 11,
+    `${wordPoints({ tier: 1, firstTry: true, hinted: false, seconds: 8 })} pts`);
+  check('a hard word, first try and fast',
+    wordPoints({ tier: 3, firstTry: true, hinted: false, seconds: 8 }) === 15);
+  check('a medium word, missed once and slow',
+    wordPoints({ tier: 2, firstTry: false, hinted: false, seconds: 40 }) === 7);
+  check('a hint caps it at base plus tier',
+    wordPoints({ tier: 3, firstTry: true, hinted: true, seconds: 1 }) === 9);
+  check('the middle speed band pays one',
+    wordPoints({ tier: 1, firstTry: false, hinted: false, seconds: 20 }) === 6);
+  check('no word is ever worth nothing',
+    wordPoints({ tier: 1, firstTry: false, hinted: true, seconds: 999 }) === 5);
+
+  check('a flawless board pays base, efficiency and the bonus',
+    memoryPoints(6, 6) === 58, `${memoryPoints(6, 6)} pts`);
+  check('ten moves is base plus a partial bonus',
+    memoryPoints(6, 10) === 43, `${memoryPoints(6, 10)} pts`);
+  check('a scrappy board still pays its base',
+    memoryPoints(6, 18) === 36, `${memoryPoints(6, 18)} pts`);
+  check('the bonus never goes negative', memoryPoints(6, 400) === 36);
+  check('the two games land in the same band',
+    memoryPoints(6, 12) >= 35 && memoryPoints(6, 12) <= 70);
+}
+
 console.log('\nflying — scoring');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
-  const base = { ...seedPlayer(), points: 0, streak: 0, answered: 0, correct: 0, lastPlayed: null };
+  const base = {
+    ...seedPlayer(),
+    points: 0,
+    streak: 0,
+    answered: 0,
+    correct: 0,
+    lastPlayed: null,
+    freezes: 0,
+  };
   const full = { cleared: 12, target: 12, perGap: 2, won: true };
 
   const cleared = awardFlight(base, full, day('2026-08-03'));
@@ -692,7 +928,7 @@ console.log('\nflying — scoring');
   /* The shortcut this deliberately avoids: a lapsed streak zeroes the balance
      before scoring, so the change in balance is not what the round paid. */
   const lapsedFlight = awardFlight(
-    { ...base, points: 900, streak: 5, lastPlayed: '2026-07-20' },
+    { ...base, points: 900, streak: 5, lastPlayed: '2026-07-20', freezes: 0 },
     { ...full, cleared: 5, won: false },
     day('2026-08-03'),
   );

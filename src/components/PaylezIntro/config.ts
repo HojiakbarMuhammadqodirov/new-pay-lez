@@ -1,33 +1,49 @@
 /**
  * Intro sequence timings, in milliseconds.
  *
- * The whole sequence is one idea: the mark lands, the name unfolds out of it,
- * and a bar underneath carries the wait. Stages overlap deliberately — the name
- * starts opening while the mark is still settling, which is what makes it read
- * as one move rather than three.
+ * The sequence used to be three moves — a tile popped in, the name unfolded
+ * beside it, a bar filled. It is one move now, because the brand is one thing:
+ * the word. The tile is gone from the whole site (see `.brand` in `site.css`),
+ * and an intro that opened on a logo the header does not have was introducing
+ * the wrong mark.
  *
- * The mark is never explicitly moved left. The brand row is centred and the
- * name grows from zero width beside it, so the mark is *pushed* left by exactly
- * half the name's final width. One animation drives both, and they cannot fall
- * out of sync.
+ * What replaces it is the name arriving a letter at a time — each one rising
+ * out of focus into focus — with a hairline drawing itself underneath as the
+ * last letters land. Nothing pops, nothing bounces, and there is no progress bar
+ * pretending to measure a load that finished before the first frame.
+ *
+ * Stages overlap deliberately: the rule starts while the middle letters are
+ * still arriving, which is what makes it read as one gesture rather than two.
  */
 export const INTRO = {
-  /** Mark pops in. */
-  markIn: { delay: 80, duration: 420 },
-  /** Name unfolds; the mark slides left as it does. */
-  nameOpen: { delay: 420, duration: 720 },
-  /** Loading bar appears, then fills. */
-  barIn: { delay: 780, duration: 260 },
-  barFill: { delay: 900, duration: 1350 },
+  /**
+   * The letters.
+   *
+   * `stagger` is the gap between neighbours, so the last letter starts at
+   * `delay + (letters - 1) * stagger` and the run finishes `duration` later.
+   * Six letters at 62ms is a little over a third of a second of arrival — fast
+   * enough to read as one word, slow enough to see it being written.
+   */
+  letterIn: { delay: 140, duration: 760, stagger: 62 },
+
+  /** The hairline under the name, drawn from the centre out. */
+  ruleIn: { delay: 620, duration: 900 },
+
+  /**
+   * The whole lockup easing down from a hair oversize.
+   *
+   * A single slow scale across the entire sequence, which is what stops six
+   * separately-animated letters from reading as six separate events: they all
+   * sit on one surface that is still moving.
+   */
+  settle: { delay: 0, duration: 1900 },
+
   /** Everything fades out and the site is revealed. */
-  outro: { delay: 2320, duration: 460 },
+  outro: { delay: 2150, duration: 620 },
 
   /** Total run time; `onComplete` fires here. */
-  duration: 2780,
+  duration: 2770,
 
-  /** Final width of the name, in `ch` units — drives how far the mark travels. */
-  nameWidthCh: 7.4,
-
-  /** Default ink for the brand mark, against the dark theme's mint accent. */
-  onPrimary: '#05201c',
+  /** How many letters the word has — the CSS needs it for the last delay. */
+  letters: 6,
 } as const;

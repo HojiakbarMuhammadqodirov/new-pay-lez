@@ -65,11 +65,19 @@ function AnalyticsHero() {
           </p>
 
           <div className="hero-cta" data-reveal>
-            <a href="#analytics-reports" className="btn btn-solid btn-lg">
+            {/*
+              "Open the dashboard" opens the dashboard. It used to scroll to the
+              reports section further down this same page — and before the
+              section-anchor fix in `router.ts` it did not even do that: an
+              unprefixed hash resolved to the landing page, so the button went
+              Home. `resolveRoute` sends a signed-out visitor to sign-in from
+              here, which is the correct answer to "open my dashboard".
+            */}
+            <a href={PATHS.dashboard} className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.analytics.hero.primary}
             </a>
-            <a href="#analytics-reports" className="btn btn-ghost btn-lg">
+            <a href="#analytics-kpis" className="btn btn-ghost btn-lg">
               {copy.analytics.hero.secondary}
             </a>
           </div>
@@ -292,11 +300,13 @@ function AnalyticsCta() {
           <h2>{copy.analytics.cta.title}</h2>
           <p>{copy.analytics.cta.lede}</p>
           <div className="cta-actions">
-            <a href="#analytics-top" className="btn btn-solid btn-lg">
+            <a href={PATHS.dashboard} className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.analytics.cta.primary}
             </a>
-            <a href={PATHS.landing} className="btn btn-ghost btn-lg">
+            {/* "Talk to us about partnering" is a conversation, so it goes where
+                conversations go now — not back to the front page. */}
+            <a href={PATHS.contact} className="btn btn-ghost btn-lg">
               {copy.analytics.cta.secondary}
             </a>
           </div>

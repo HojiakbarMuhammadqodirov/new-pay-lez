@@ -24,6 +24,7 @@ export type Route =
   | 'b2b'
   | 'vouchers'
   | 'relocate'
+  | 'contact'
   | 'signin'
   | 'business-setup'
   | 'dashboard'
@@ -35,6 +36,7 @@ const ROUTES: Record<string, Route> = {
   '#/b2b': 'b2b',
   '#/vouchers': 'vouchers',
   '#/relocate': 'relocate',
+  '#/contact': 'contact',
   '#/sign-in': 'signin',
   '#/business/setup': 'business-setup',
   '#/dashboard': 'dashboard',
@@ -48,6 +50,7 @@ export const PATHS: Record<Route, string> = {
   b2b: '#/b2b',
   vouchers: '#/vouchers',
   relocate: '#/relocate',
+  contact: '#/contact',
   signin: '#/sign-in',
   'business-setup': '#/business/setup',
   dashboard: '#/dashboard',
@@ -61,8 +64,45 @@ export const PATHS: Record<Route, string> = {
  * needs a real segment or a parameter is the day the note above applies.
  */
 
+/**
+ * Which page a bare section anchor belongs to.
+ *
+ * This used to be answered "the landing page, always", and every in-page link on
+ * every other page was broken by it: `#analytics-reports` is not in `ROUTES`, so
+ * following "Open the dashboard" from Analytics read as a miss and dropped the
+ * visitor on Home. Same for `#b2b-cta`, `#learn-games`, `#vouchers-catalogue`
+ * and `#relocate-guide` — six pages' worth of anchors that all went Home.
+ *
+ * Every page already prefixes its section ids with its own name, so the prefix
+ * *is* the answer; the landing page owns the unprefixed ones (`#value`, `#top`)
+ * and stays the fallback, which is what keeps the header's section links working
+ * from anywhere. Add a page, add a prefix here — `npm run verify` walks this
+ * table against `PATHS`.
+ */
+export const ANCHOR_ROUTES: Array<[prefix: string, route: Route]> = [
+  ['learn-', 'learn'],
+  /* The signed-in L-Earn screen is the same route under a different component,
+     so its one anchor files under `learn` too. */
+  ['games-', 'learn'],
+  ['analytics-', 'analytics'],
+  ['b2b-', 'b2b'],
+  ['vouchers-', 'vouchers'],
+  ['relocate-', 'relocate'],
+  ['contact-', 'contact'],
+];
+
+/** The route a hash names, section anchors included. Exported for `verify`. */
+export function routeOf(hash: string): Route {
+  if (hash.startsWith('#/')) return ROUTES[hash] ?? 'landing';
+  const id = hash.slice(1);
+  for (const [prefix, route] of ANCHOR_ROUTES) {
+    if (id.startsWith(prefix)) return route;
+  }
+  return 'landing';
+}
+
 function readRoute(): Route {
-  return ROUTES[window.location.hash] ?? 'landing';
+  return routeOf(window.location.hash);
 }
 
 /**

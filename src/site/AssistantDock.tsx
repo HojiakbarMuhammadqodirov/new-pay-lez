@@ -6,6 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
+import { ASSISTANT_OPEN_EVENT } from './content';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -207,6 +208,14 @@ export function AssistantDock() {
     setOpen(false);
     // Back where they came from, or the tab order restarts at the top of the page.
     triggerRef.current?.focus();
+  }, []);
+
+  /* Opened from somewhere that is not this button — the footer's "AI Assistant"
+     entry, which names the dock rather than a page. See `ASSISTANT_OPEN_EVENT`. */
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener(ASSISTANT_OPEN_EVENT, onOpen);
+    return () => window.removeEventListener(ASSISTANT_OPEN_EVENT, onOpen);
   }, []);
 
   useEffect(() => {

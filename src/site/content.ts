@@ -14,21 +14,70 @@ import type {
   SpokenLanguage,
 } from './auth/business';
 import type { IconName } from './icons';
+import { PATHS } from './router';
 
 /**
- * Assistant is deliberately absent: it is the floating button, not a nav item.
+ * The header's items, keyed rather than indexed.
  *
- * `#/l-earn` is a route (see `router.ts`); every other href is a section on the
- * landing page, which is why they work unchanged from either page.
+ * They used to be an array index-aligned with `copy.nav`, which worked while
+ * every visitor saw the same six in the same order. A business owner now sees a
+ * different set *in a different order* (B2B first, Home fourth, no Relocate),
+ * and index alignment cannot survive that — the first reordering would have
+ * captioned B2B "Vouchers". Keys cost one lookup and cannot shear.
+ *
+ * Assistant is deliberately absent: it is the floating dock, not a nav item.
  */
-export const NAV_ITEMS: Array<{ href: string; icon: IconName }> = [
-  { href: '#top', icon: 'home' },
-  { href: '#/l-earn', icon: 'coin' },
-  { href: '#/analytics', icon: 'bars' },
-  { href: '#/b2b', icon: 'briefcase' },
-  { href: '#/vouchers', icon: 'ticket' },
-  { href: '#/relocate', icon: 'send' },
+export type NavKey =
+  | 'home'
+  | 'learn'
+  | 'analytics'
+  | 'b2b'
+  | 'wallet'
+  | 'contact'
+  | 'relocate';
+
+export const NAV_HREFS: Record<NavKey, string> = {
+  home: PATHS.landing,
+  learn: PATHS.learn,
+  analytics: PATHS.analytics,
+  b2b: PATHS.b2b,
+  /* "Wallet" in the header, `#/vouchers` in the address bar. The page is the
+     same one; the word a visitor reads is what changed. */
+  wallet: PATHS.vouchers,
+  contact: PATHS.contact,
+  relocate: PATHS.relocate,
+};
+
+/** What everyone else sees, in order. */
+export const NAV_ORDER: NavKey[] = [
+  'home',
+  'learn',
+  'analytics',
+  'b2b',
+  'wallet',
+  'contact',
+  'relocate',
 ];
+
+/**
+ * What a signed-in venue owner sees.
+ *
+ * Their own tools first and the consumer site last, which is the order they use
+ * it in — an owner opens the header to reach B2B and Analytics, not to browse.
+ * Relocate is absent rather than reordered: it is a guide for someone who has
+ * just moved country, and an operator running a Kraków café is not that reader.
+ */
+export const NAV_ORDER_BUSINESS: NavKey[] = [
+  'b2b',
+  'analytics',
+  'learn',
+  'home',
+  'wallet',
+  'contact',
+];
+
+/** An individual has no business with the two pages that sell to a venue. */
+export const NAV_HIDDEN_INDIVIDUAL: NavKey[] = ['analytics', 'b2b'];
 
 export const HERO_STATS = [
   { value: 100, suffix: ' pts' },
@@ -81,18 +130,76 @@ export const VALUE_CARD = { brand: 'zalando', logo: 'Z' };
  */
 export const LEARN_VOUCHER_EUR = 11.63;
 
-export const FOOTER_LINKS: string[][] = [
-  ['#value', '#proof', '#guide', '#features'],
-  ['#top', '#top', '#proof'],
+/**
+ * Where the footer's two columns go, index-aligned with
+ * `copy.footer.columns[i].links`.
+ *
+ * Every one of these used to be a landing-page section anchor, which made the
+ * footer a set of six links to the same page under six different names. They
+ * now point at the page each label names: Play & Earn at L-Earn, Discounts and
+ * Hot Deals at the wallet, Support and feedback at Contact.
+ *
+ * The AI Assistant is the exception and cannot be a href — it is a dock that
+ * opens over whatever page you are on, so its entry is `null` and the footer
+ * renders a button that opens it. See `ASSISTANT_OPEN_EVENT`.
+ */
+export const FOOTER_LINKS: Array<Array<string | null>> = [
+  [PATHS.learn, PATHS.vouchers, PATHS.relocate, null],
+  [PATHS.contact, PATHS.contact, PATHS.vouchers],
 ];
 
 export const CONTACT_EMAIL = 'support@paylez.com';
 
+/**
+ * The channels the footer and the Contact page both link to.
+ *
+ * One table rather than two: the pair appears in the footer and again on
+ * `#/contact`, and a social link that is right in one place and stale in the
+ * other is the usual way these rot.
+ */
+export const SOCIALS: Array<{ id: 'youtube' | 'instagram'; href: string; handle: string }> = [
+  { id: 'youtube', href: 'https://www.youtube.com/@paylez', handle: '@paylez' },
+  { id: 'instagram', href: 'https://www.instagram.com/pay_lez', handle: '@pay_lez' },
+];
+
+/**
+ * Opening the assistant from somewhere that is not the dock.
+ *
+ * A window event rather than lifting the dock's `open` into a context: the dock
+ * is mounted once beside `<main>` and the only thing anyone else needs to do to
+ * it is open it. A context for one boolean would put every consumer of it in the
+ * re-render path of a panel that is closed almost all of the time.
+ */
+export const ASSISTANT_OPEN_EVENT = 'paylez:assistant-open';
+
+/* ─────────────────────────────────────────────────────────────── contact ── */
+
+/**
+ * The Contact page's four channels, index-aligned with
+ * `copy.contact.channels.items`.
+ *
+ * Icons only. The two mail destinations are built at render from
+ * `CONTACT_EMAIL` and `SALES_EMAIL`, and the two social ones from `SOCIALS`, so
+ * an address lives in exactly one place on the site.
+ */
+export const CONTACT_CHANNEL_ICONS: IconName[] = [
+  'assistant',
+  'briefcase',
+  'youtube',
+  'instagram',
+];
+
+/** Index-aligned with `copy.contact.hero.stats`. */
+export const CONTACT_STATS = [
+  { value: 1, suffix: ' day' },
+  { value: 5, suffix: '' },
+  { value: 4, suffix: '' },
+];
+
 /* ───────────────────────────────────────────────────────────────── games ── */
 
 /**
- * The four games, rebuilt from the old paylez app
- * (`landing/screenshots/learn1.png` … `learn3.png`).
+ * The seven games, index-aligned with `copy.games.names`.
  *
  * Rules per game rather than one shared rule, because the old app varied them
  * and the variation is the point: the flag round is quick and worth more, the
@@ -101,10 +208,21 @@ export const CONTACT_EMAIL = 'support@paylez.com';
  *
  * `perCorrect` is the score per right answer; `allowedMistakes` is how many you
  * may get wrong and still bank the round.
+ *
+ * **The last three read those columns differently rather than making them
+ * optional**, so this stays one homogeneous table instead of a union of five
+ * object shapes that every consumer would have to narrow. What each column means
+ * per kind is stated on the row.
+ *
+ * Where the questions come from changed with this table: the four quiz rounds no
+ * longer read a handful of hardcoded items out of the dictionaries. They draw
+ * from the generated banks in `games/data/` — 2102 general questions, 98 on
+ * Poland, 196 flags and 196 capitals — through the no-repeat bag in
+ * `games/bag.ts`, so a bank is exhausted before anything in it repeats.
  */
 export const GAMES: Array<{
-  id: 'brain' | 'flag' | 'capital' | 'poland' | 'flight';
-  kind: 'text' | 'flag' | 'capital' | 'flight';
+  id: 'brain' | 'flag' | 'capital' | 'poland' | 'flight' | 'memory' | 'word';
+  kind: 'text' | 'flag' | 'capital' | 'flight' | 'memory' | 'word';
   icon: IconName;
   questions: number;
   seconds: number;
@@ -116,11 +234,10 @@ export const GAMES: Array<{
   { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
   { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
   /*
-   * The arcade round, and the only one that is played rather than answered. It
-   * reads the quiz's column names differently rather than making them optional,
-   * so `GAMES` stays one homogeneous table: `questions` is gaps to clear,
-   * `perCorrect` is points per gap, `allowedMistakes` is 0 because one crash
-   * ends it, and `seconds` is unused — the round lasts as long as you do.
+   * The arcade round, and the only one that is played rather than answered.
+   * `questions` is gaps to clear, `perCorrect` is points per gap,
+   * `allowedMistakes` is 0 because one crash ends it, and `seconds` is unused —
+   * the round lasts as long as you do.
    *
    * Five gaps to bank, matching the quizzes' five questions, so a round is worth
    * the same wherever you spend it. Unlike a quiz the run does not stop there —
@@ -129,19 +246,25 @@ export const GAMES: Array<{
    * ceiling is skill rather than the question count.
    */
   { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 2, allowedMistakes: 0 },
-];
-
-/**
- * The countries the flag and capital rounds are drawn from.
- *
- * Ten, and structural: the flag emoji and the index are here, the country and
- * capital *names* are copy (`copy.games.countries` / `copy.games.capitals`,
- * index-aligned). One list feeds both games — the flag round asks which country
- * a flag belongs to, the capital round asks for its capital, and neither needs
- * its own table.
- */
-export const GAME_COUNTRIES = [
-  '🇵🇱', '🇺🇿', '🇺🇦', '🇩🇪', '🇫🇷', '🇮🇹', '🇪🇸', '🇳🇱', '🇹🇷', '🇬🇧',
+  /*
+   * Memory Match. `questions` is pairs on the board, `perCorrect` is points per
+   * pair found, and both of the other two are zero and mean it: there is no
+   * clock and there is no fail state.
+   *
+   * That is the one accessibility decision in the set and it is deliberate —
+   * every other game here is timed, and a game that rewards patience rather than
+   * speed is the one a non-native reader or an older player can actually win.
+   * The real scoring is `memoryPoints` in `auth/player.ts`: the base is
+   * guaranteed and the bonus is on how few moves it took.
+   */
+  { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6, allowedMistakes: 0 },
+  /*
+   * Word Builder. `questions` is words in the round and `perCorrect` is the base
+   * a solved word pays before its tier, first-try and speed bonuses — see
+   * `wordPoints`. `seconds` is 0 because the clock scores rather than limits:
+   * running long costs the speed bonus and nothing else.
+   */
+  { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
 ];
 
 /** The board's two orderings, index-aligned with `copy.games.boardTabs`. */
@@ -636,14 +759,12 @@ export const LEARN_STATS = [
 /** Index-aligned with `copy.learn.steps.items`. */
 export const LEARN_STEP_ICONS: IconName[] = ['leisure', 'check', 'trophy', 'gift'];
 
-/**
- * Index-aligned with `copy.learn.games.items`.
- *
- * The three games are the ones the product actually ships — Capital Game, Flag
- * Game, and the Poland quiz — so the names are fixed and only their blurbs are
- * translated.
+/*
+ * `LEARN_GAME_ICONS` used to live here, index-aligned with three hand-written
+ * cards in `copy.learn.games.items`. Both are gone: the marketing section reads
+ * `GAMES` directly now, so the page cannot claim a catalogue the product does
+ * not have — which it already did, listing three games after five had shipped.
  */
-export const LEARN_GAME_ICONS: IconName[] = ['map', 'flag', 'book'];
 
 /** Length is the streak the strip draws; `lit` is how much of it is done. */
 export const STREAK = { length: 7, lit: 5 };
@@ -958,19 +1079,99 @@ export const VOUCHER_RULE_ICONS: IconName[] = ['ticket', 'qr', 'coin'];
  * Nine and not eight: this is the list the app ships, and dropping one to make
  * the grid divide evenly would be letting the layout edit the product.
  */
-export const RELOCATE_TOPIC_ICONS: IconName[] = [
-  'map',
-  'card',
-  'housing',
+export const RELOCATE_TOPICS: Array<{ icon: IconName; featured?: true }> = [
+  { icon: 'map' },
+  { icon: 'card' },
+  /*
+   * Housing and Legal & visa are lifted out of the grid and shown first, at
+   * double width.
+   *
+   * Not a layout preference — it is what the first month is actually about. A
+   * nine-up grid of equal tiles says every subject is equally likely to be the
+   * one you came for, and for somebody three weeks into a new country that is
+   * plainly false: they need somewhere to live and permission to stay, and the
+   * other seven can wait a fortnight.
+   */
+  { icon: 'housing', featured: true },
   /* Healthcare. It borrowed the halal glyph back when that was a shield with a
      tick on it; now that halal is a crescent, the shield is its own name. */
-  'shield',
-  'book',
-  'briefcase',
-  'leisure',
-  'send',
-  'assistant',
+  { icon: 'shield' },
+  { icon: 'book', featured: true },
+  { icon: 'briefcase' },
+  { icon: 'leisure' },
+  { icon: 'send' },
+  { icon: 'assistant' },
 ];
+
+/**
+ * The service providers behind each subject.
+ *
+ * **This is seed data and is meant to be replaced.** The real directory is being
+ * supplied separately; what is here is a small fictional set in the same world
+ * as `ADMIN_SERVICES` — invented venues in the cities the rest of the site
+ * already uses — so the interaction, the city filter and the empty states are
+ * all real and exercised. Swapping the rows changes nothing else.
+ *
+ * `languages` is the one attribute that earns its place on a card here, and it
+ * is the reason the shape is this and not a paragraph per provider: on a
+ * relocation guide, "somebody here speaks Ukrainian" is more of what a reader
+ * needs than a sentence of marketing, and it translates for free out of
+ * `copy.business.spokenLanguages` rather than needing a blurb in five languages
+ * per row.
+ */
+export interface RelocateProvider {
+  name: string;
+  /** Index into `RELOCATE_TOPICS`, and so into `copy.relocate.guide.items`. */
+  topic: number;
+  city: string;
+  languages: SpokenLanguage[];
+}
+
+export const RELOCATE_PROVIDERS: RelocateProvider[] = [
+  { name: 'Kazimierz Bazar', topic: 0, city: 'Kraków', languages: ['pl', 'en'] },
+  { name: 'Dubai Cafe', topic: 0, city: 'Kraków', languages: ['pl', 'en', 'tr'] },
+  { name: 'Hala Koszyki', topic: 0, city: 'Warszawa', languages: ['pl', 'en'] },
+
+  { name: 'Wisła Bank — Newcomer Desk', topic: 1, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
+  { name: 'Nowa Kasa', topic: 1, city: 'Warszawa', languages: ['pl', 'en', 'ru'] },
+  { name: 'Odra Credit Union', topic: 1, city: 'Wrocław', languages: ['pl', 'uk'] },
+
+  { name: 'Podgórze Lettings', topic: 2, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
+  { name: 'Mokotów Mieszkania', topic: 2, city: 'Warszawa', languages: ['pl', 'en'] },
+  { name: 'Rynek Rentals', topic: 2, city: 'Wrocław', languages: ['pl', 'en', 'ru'] },
+  { name: 'Wrzeszcz Housing Help', topic: 2, city: 'Gdańsk', languages: ['pl', 'uk'] },
+
+  { name: 'Klinika Zdrowie', topic: 3, city: 'Kraków', languages: ['pl', 'en', 'uk', 'ru'] },
+  { name: 'Centrum Medyczne Wisła', topic: 3, city: 'Warszawa', languages: ['pl', 'en'] },
+  { name: 'Poznań Family Practice', topic: 3, city: 'Poznań', languages: ['pl', 'en'] },
+
+  { name: 'Kancelaria Migracja', topic: 4, city: 'Kraków', languages: ['pl', 'en', 'uk', 'ru'] },
+  { name: 'Warsaw Residency Advisors', topic: 4, city: 'Warszawa', languages: ['pl', 'en', 'uz'] },
+  { name: 'Wrocław Permit Office Help', topic: 4, city: 'Wrocław', languages: ['pl', 'uk'] },
+
+  { name: 'Praca Start', topic: 5, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
+  { name: 'Gdańsk Jobs Point', topic: 5, city: 'Gdańsk', languages: ['pl', 'en'] },
+
+  { name: 'Lingua Nova', topic: 6, city: 'Wrocław', languages: ['pl', 'en', 'ru'] },
+  { name: 'Szkoła Otwarta', topic: 6, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
+
+  { name: 'MPK Info Point', topic: 7, city: 'Kraków', languages: ['pl', 'en'] },
+  { name: 'Poznań Transport Desk', topic: 7, city: 'Poznań', languages: ['pl', 'en', 'uk'] },
+
+  { name: 'Dom Kultury Podgórze', topic: 8, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
+  { name: 'Warszawa Welcome Point', topic: 8, city: 'Warszawa', languages: ['pl', 'en', 'ru', 'uz'] },
+];
+
+/**
+ * The cities the filter offers, in the order it offers them.
+ *
+ * Derived rather than declared: a city in the list with nothing under it is a
+ * filter that silently returns nothing, and a provider in a city the filter
+ * does not offer is a provider nobody can reach. Deriving makes both impossible.
+ */
+export const RELOCATE_CITIES = [
+  ...new Set(RELOCATE_PROVIDERS.map((provider) => provider.city)),
+].sort((a, b) => a.localeCompare(b));
 
 /**
  * The currency pairs the rate card offers, as language codes.

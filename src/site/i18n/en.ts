@@ -13,7 +13,22 @@ export const en = {
   short: 'EN',
   region: 'GB',
 
-  nav: ['Home', 'L-Earn', 'Analytics', 'B2B', 'Vouchers', 'Relocate'],
+  /*
+   * Keyed, not indexed. A business owner sees these in a different order and
+   * without Relocate (see `NAV_ORDER_BUSINESS` in `content.ts`), and an array
+   * cannot survive being reordered — the first swap would caption B2B "Wallet".
+   */
+  nav: {
+    home: 'Home',
+    learn: 'L-Earn',
+    analytics: 'Analytics',
+    b2b: 'B2B',
+    /* The page behind this is still `#/vouchers`; "Wallet" is what it is called
+       now, because that is what a player opens it to look at. */
+    wallet: 'Wallet',
+    contact: 'Contact',
+    relocate: 'Relocate',
+  },
   signIn: 'Sign in',
   assistant: 'Open the AI assistant',
   languageMenu: 'Change language',
@@ -336,20 +351,33 @@ export const en = {
     score: 'Score',
     streak: 'Streak',
     lives: 'Lives',
+    freezes: 'Freezes',
     answered: 'Answered',
     correctLabel: 'Correct',
+    /* The reward connection, in two words: what the balance is for. */
+    toVoucher: 'To a voucher',
 
     redeemTitle: 'Turn points into rewards',
     redeemAction: 'Redeem now',
 
     /* Index-aligned with `GAMES` in `content.ts`. */
-    names: ['Brain Games', 'Guess the Flag', 'Country & Capital', 'Poland Quiz', 'Squawk’s Flight'],
+    names: [
+      'Brain Games',
+      'Guess the Flag',
+      'Country & Capital',
+      'Poland Quiz',
+      'Squawk’s Flight',
+      'Memory Match',
+      'Word Builder',
+    ],
     /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
        game's own row, so a rules line never disagrees with the game it labels. */
     rule: '{questions} questions · {seconds} sec each',
     reward: '{mistakes} mistake allowed · +{points} per correct answer',
     start: 'Start game',
     noLives: 'Out of lives — come back tomorrow',
+    /* The banks are fetched on first play; this is the beat before a round. */
+    loading: 'Dealing…',
 
     /* In play. */
     question: 'Question {n} of {total}',
@@ -364,6 +392,11 @@ export const en = {
     resultScore: '{correct} of {total} correct',
     resultPoints: '+{points} points',
     resultNone: 'No points this round.',
+    /* Never a bare score: what the points are *for* is the reason to play the
+       next round, so the card always says how far off the nearest reward is. */
+    resultToward: '{points} more and the first voucher is yours.',
+    resultAfford: 'You have enough for a voucher — go and spend it.',
+    resultSpend: 'Spend points',
     resultStreak: 'Streak: {streak} days',
     again: 'Play again',
     backToGames: 'Back to the games',
@@ -394,40 +427,52 @@ export const en = {
       resultScore: '{cleared} gaps flown',
       motionTitle: 'This one moves',
       motionBody:
-        'Your device asks for less motion, and this game is continuous movement across the screen — there is no still version of it. The other four games are quizzes, and they stay put. If you would rather fly anyway, everything that is not the game itself will hold still.',
+        'Your device asks for less motion, and this game is continuous movement across the screen — there is no still version of it. The other games are quizzes and puzzles, and they stay put. If you would rather fly anyway, everything that is not the game itself will hold still.',
       motionPlay: 'Play anyway',
       motionBack: 'Back to the games',
     },
 
-    /* Index-aligned with `GAME_COUNTRIES`. */
-    countries: [
-      'Poland', 'Uzbekistan', 'Ukraine', 'Germany', 'France',
-      'Italy', 'Spain', 'Netherlands', 'Turkey', 'United Kingdom',
-    ],
-    capitals: [
-      'Warsaw', 'Tashkent', 'Kyiv', 'Berlin', 'Paris',
-      'Rome', 'Madrid', 'Amsterdam', 'Ankara', 'London',
-    ],
+    /*
+     * Memory Match. Nested for the same reason the flight round is: a missing
+     * key is a build error in the other four dictionaries, a missing array entry
+     * would not be.
+     *
+     * The question banks the four quizzes used to read from are gone from here —
+     * five hardcoded questions each. They now come from the generated banks in
+     * `games/data/`, which is 2102 general questions, 98 on Poland, 196 flags and
+     * 196 capitals, drawn through a bag that exhausts before it repeats.
+     */
+    memory: {
+      rule: '{pairs} pairs · no clock',
+      reward: 'Fewer moves scores higher · +{points} per pair',
+      pairs: 'Pairs {found} / {total}',
+      moves: '{n} moves',
+      facedown: 'Face-down card',
+      hint: 'Turn two cards over. Match them and you keep the word.',
+      resultScore: '{pairs} pairs found',
+    },
 
     /*
-     * The two written rounds. `a` is the index of the right answer inside
-     * `options`, so a translator must keep the options in the same order — which
-     * is why the answer is never the first one everywhere.
+     * Word Builder. `wordGame` and not `word`, because `word` reads like a
+     * string and this is a screen.
+     *
+     * `lists` names the language being *practised*, which is not the language
+     * the site is being read in — hence its own picker on the card.
      */
-    brain: [
-      { q: 'Which of these is a prime number?', options: ['91', '87', '83', '99'], a: 2 },
-      { q: 'How many continents are there?', options: ['5', '6', '7', '8'], a: 2 },
-      { q: 'What is the largest ocean?', options: ['Atlantic', 'Indian', 'Arctic', 'Pacific'], a: 3 },
-      { q: 'Which planet is closest to the sun?', options: ['Venus', 'Mercury', 'Mars', 'Earth'], a: 1 },
-      { q: 'How many minutes are in a full day?', options: ['1440', '1240', '960', '1800'], a: 0 },
-    ],
-    poland: [
-      { q: 'What is the currency of Poland?', options: ['Euro', 'Złoty', 'Koruna', 'Forint'], a: 1 },
-      { q: 'How long can you stay on a Schengen visa in 180 days?', options: ['30 days', '60 days', '90 days', '120 days'], a: 2 },
-      { q: 'What is a PESEL number for?', options: ['A bank account', 'Identifying a resident', 'A driving licence', 'A tenancy'], a: 1 },
-      { q: 'Which office registers your address in Poland?', options: ['Urząd Gminy', 'Poczta Polska', 'ZUS', 'NFZ'], a: 0 },
-      { q: 'What does NFZ provide?', options: ['Pensions', 'Public healthcare', 'Tax returns', 'Work permits'], a: 1 },
-    ],
+    wordGame: {
+      rule: '{words} words · easy to hard',
+      reward: 'First try and quick scores more · hints cost the bonus',
+      list: 'Language to practise',
+      lists: { pl: 'Polish', en: 'English' },
+      tier: 'Level {n}',
+      undo: 'Undo',
+      clear: 'Clear',
+      reveal: 'Hint',
+      next: 'Next word',
+      finish: 'See the result',
+      correct: 'Correct · +{points} points',
+      resultScore: '{solved} of {total} words built',
+    },
   },
 
   /* ─────────────────────────────────────────────────────────── business ── */
@@ -856,36 +901,24 @@ export const en = {
 
     games: {
       eyebrow: 'The games',
-      title: 'Three ways to score.',
-      lede: 'All three are translated into every language on this site, so you are never playing in your second one unless you want to.',
-      items: [
-        {
-          name: 'Capital Game',
-          blurb: 'Name the capital. It starts easy and stops being easy somewhere around round four.',
-          meta: '10 questions · up to 100 pts',
-        },
-        {
-          name: 'Flag Game',
-          blurb: 'Match the flag to the country. The quickest of the three, and the one people play in queues.',
-          meta: '10 questions · up to 100 pts',
-        },
-        {
-          name: 'Life in Poland',
-          blurb: 'The practical one: paperwork, transport, tenancy — the things nobody tells you. Worth points, and worth knowing.',
-          meta: '10 questions · up to 150 pts',
-        },
-      ],
+      title: 'Pick your game.',
+      lede: 'Every one of them is translated into every language on this site, so you are never playing in your second one unless you want to.',
     },
 
     streak: {
       eyebrow: 'Streaks',
       title: 'The streak is where the points are.',
-      lede: 'One round every 24 hours keeps it alive. Miss that window and the streak — and the points you built with it — go back to zero. That is the whole rule.',
-      card: { label: 'Current streak', unit: 'days', reward: '+250 pts on day seven' },
+      lede: 'One round every 24 hours keeps it alive. Miss that window and the streak — and the points you built with it — go back to zero, unless you are holding a freeze. A freeze covers one missed day, you earn one every seventh, and you can hold two. That is the whole rule.',
+      card: {
+        label: 'Current streak',
+        unit: 'days',
+        reward: '+250 pts on day seven',
+        freeze: 'Freezes held · each covers one missed day',
+      },
       benefits: [
         {
           title: 'Day three: 1.5×',
-          body: 'Every point you score is worth half as much again, across all three games.',
+          body: 'Every point you score is worth half as much again, across every game on the page.',
         },
         {
           title: 'Day seven: 250 pts',
@@ -1458,7 +1491,7 @@ export const en = {
     hero: {
       eyebrow: 'The Living Guide',
       lines: ['New country.', 'A hundred questions.', 'One guide.'],
-      lede: 'Where to open an account, how the rent deposit works, which clinic takes your insurance, what your money is actually worth back home. Nine subjects, fourteen countries, written by people who have done it.',
+      lede: 'Where to open an account, how the rent deposit works, which clinic takes your insurance, what your money is actually worth back home. Nine subjects, fourteen countries.',
       primary: 'Open the guide',
       secondary: 'Check a rate',
       stats: ['Subjects covered', 'Countries live', 'Markup on our rate'],
@@ -1495,10 +1528,19 @@ export const en = {
 
     guide: {
       eyebrow: 'Help and guidance',
-      title: 'Nine subjects, and the one you need is never the one you expected.',
-      lede: 'Each opens into step-by-step guidance for your city — the document you need, where it is issued, what it costs and how long it takes.',
+      title: 'Nine subjects. Open one.',
+      lede: 'Housing and paperwork lead, because the first month is about those two. Each opens into the places that handle it, filtered to your city.',
       cities: 'All cities',
-      search: 'Search the guide',
+      /* The filter's own label, read out rather than shown — the map pin and the
+         chosen city are the visible half. */
+      city: 'Filter by city',
+      count: '{n} places listed',
+      speaks: 'Speaks',
+      /* A city with nothing under this subject *yet*, and a subject with nothing
+         under it anywhere. Two different sentences, because "nothing in Gdańsk"
+         and "nothing at all" are different things to be told. */
+      none: 'Nothing under this in {city} yet. Try all cities.',
+      soon: 'This one is still being written. The assistant below can answer in the meantime.',
       items: [
         { name: 'Places', blurb: 'Shops, restaurants and services worth the trip' },
         { name: 'Banking & finance', blurb: 'Accounts, cards, credit and what an IBAN is for' },
@@ -1548,10 +1590,86 @@ export const en = {
     secondary: 'Explore the Living Guide',
   },
 
+  /* ──────────────────────────────────────────────────────────── contact ── */
+
+  /**
+   * The seventh page, and the one every "Support" link on the site now lands
+   * on.
+   *
+   * It is written around the fact that there is no server here: the form does
+   * not post anywhere, it composes a message and hands it to the reader's own
+   * mail app. Saying so in `form.note` is the whole reason the form is allowed
+   * to exist — a contact form that quietly swallows what you typed is worse
+   * than no form at all.
+   */
+  contact: {
+    back: 'Back to paylez',
+    hero: {
+      eyebrow: 'Contact',
+      lines: ['Ask us anything.', 'A person answers.'],
+      lede: 'Support, a partnership, a bug, or something the guide got wrong — all of it reaches the same small team in Kraków. We read every message in English, Polish, Ukrainian, Russian and Uzbek.',
+      stats: ['Working-day reply', 'Languages answered', 'Ways to reach us'],
+    },
+
+    channels: {
+      eyebrow: 'Where to reach us',
+      title: 'Four ways in, and none of them is a ticket queue.',
+      lede: 'Pick whichever suits what you are asking. The two inboxes go to different people on purpose — a rollout question is not a support ticket, and neither should wait behind the other.',
+      items: [
+        {
+          name: 'Support',
+          blurb: 'Points that did not arrive, a voucher that would not scan, an account you cannot get back into. Anything to do with using paylez.',
+          action: 'Email support',
+        },
+        {
+          name: 'Partnerships',
+          blurb: 'You run a venue, or several, and want to know what putting paylez in them looks like. Pricing, rollout, POS questions.',
+          action: 'Email the team',
+        },
+        {
+          name: 'YouTube',
+          blurb: 'How the games work, how a venue sets up, and what is new — the same explanations, in a form you can watch instead of read.',
+          action: 'Watch',
+        },
+        {
+          name: 'Instagram',
+          blurb: 'New venues, new vouchers and the deals that go quickly. The fastest way to see what has landed this week.',
+          action: 'Follow',
+        },
+      ],
+    },
+
+    form: {
+      eyebrow: 'Send a message',
+      title: 'Tell us what happened.',
+      lede: 'The more specific the better — which screen, what you expected, and what it did instead. If it is about an account, the email address on it saves us a round trip.',
+      topic: 'What is this about?',
+      topics: ['Support', 'Feedback', 'Partnership', 'Something else'],
+      name: 'Your name',
+      namePlaceholder: 'First and last name',
+      email: 'Your email',
+      emailPlaceholder: 'you@email.com',
+      message: 'Message',
+      messagePlaceholder: 'What happened, and what you expected instead.',
+      submit: 'Open in your mail app',
+      /* The honest bit. Do not soften this — see the block comment above. */
+      note: 'Nothing is stored on this page. The button opens your own mail app with the message already written and addressed; you press send.',
+      error: 'Fill in your name, your email address and a message.',
+    },
+
+    hours: {
+      title: 'When we answer',
+      body: 'Monday to Friday, 09:00–18:00 Central European Time. Most messages get a reply the same working day. Anything that arrives over the weekend is answered on Monday morning.',
+      address: 'Kraków, Poland',
+    },
+  },
+
   footer: {
     blurb:
       'Play & Earn. Exclusive deals. Real rewards. Discover, save and get rewarded.',
     location: 'Kraków, Poland',
+    /* One string for both channels — the label differs only by the name. */
+    social: 'paylez on {channel}',
     columns: [
       {
         heading: 'Product',

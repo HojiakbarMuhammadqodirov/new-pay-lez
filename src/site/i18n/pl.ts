@@ -12,7 +12,15 @@ export const pl: Dictionary = {
   short: 'PL',
   region: 'PL',
 
-  nav: ['Start', 'L-Earn', 'Analityka', 'B2B', 'Vouchery', 'Przeprowadzka'],
+  nav: {
+    home: 'Start',
+    learn: 'L-Earn',
+    analytics: 'Analityka',
+    b2b: 'B2B',
+    wallet: 'Portfel',
+    contact: 'Kontakt',
+    relocate: 'Przeprowadzka',
+  },
   signIn: 'Zaloguj się',
   assistant: 'Otwórz asystenta AI',
   languageMenu: 'Zmień język',
@@ -307,17 +315,28 @@ export const pl: Dictionary = {
     score: 'Wynik',
     streak: 'Seria',
     lives: 'Życia',
+    freezes: 'Zamrożenia',
     answered: 'Odpowiedzi',
     correctLabel: 'Poprawnych',
+    toVoucher: 'Do vouchera',
 
     redeemTitle: 'Zamień punkty na nagrody',
     redeemAction: 'Odbierz teraz',
 
-    names: ['Gry na rozum', 'Zgadnij flagę', 'Kraj i stolica', 'Quiz o Polsce', 'Lot Squawka'],
+    names: [
+      'Gry na rozum',
+      'Zgadnij flagę',
+      'Kraj i stolica',
+      'Quiz o Polsce',
+      'Lot Squawka',
+      'Znajdź parę',
+      'Ułóż słowo',
+    ],
     rule: '{questions} pytań · po {seconds} sek.',
     reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
     start: 'Zacznij grę',
     noLives: 'Koniec żyć — wróć jutro',
+    loading: 'Rozdajemy…',
 
     question: 'Pytanie {n} z {total}',
     whichCountry: 'Jaki to kraj?',
@@ -330,6 +349,9 @@ export const pl: Dictionary = {
     resultScore: '{correct} z {total} poprawnie',
     resultPoints: '+{points} punktów',
     resultNone: 'W tej rundzie bez punktów.',
+    resultToward: 'Jeszcze {points} i pierwszy voucher jest Twój.',
+    resultAfford: 'Masz już dość na voucher — idź go odebrać.',
+    resultSpend: 'Wydaj punkty',
     resultStreak: 'Seria: {streak} dni',
     again: 'Zagraj jeszcze raz',
     backToGames: 'Wróć do gier',
@@ -355,34 +377,35 @@ export const pl: Dictionary = {
       resultScore: 'Przeleciane bramy: {cleared}',
       motionTitle: 'Ta gra się porusza',
       motionBody:
-        'Twoje urządzenie prosi o mniej ruchu, a ta gra to nieprzerwany ruch przez cały ekran — nie ma jej wersji nieruchomej. Pozostałe cztery gry to quizy i stoją w miejscu. Jeśli mimo to wolisz polatać, wszystko poza samą grą pozostanie nieruchome.',
+        'Twoje urządzenie prosi o mniej ruchu, a ta gra to nieprzerwany ruch przez cały ekran — nie ma jej wersji nieruchomej. Pozostałe gry to quizy i łamigłówki — stoją w miejscu. Jeśli mimo to wolisz polatać, wszystko poza samą grą pozostanie nieruchome.',
       motionPlay: 'Zagraj mimo to',
       motionBack: 'Wróć do gier',
     },
 
-    countries: [
-      'Polska', 'Uzbekistan', 'Ukraina', 'Niemcy', 'Francja',
-      'Włochy', 'Hiszpania', 'Holandia', 'Turcja', 'Wielka Brytania',
-    ],
-    capitals: [
-      'Warszawa', 'Taszkent', 'Kijów', 'Berlin', 'Paryż',
-      'Rzym', 'Madryt', 'Amsterdam', 'Ankara', 'Londyn',
-    ],
+    memory: {
+      rule: '{pairs} par · bez zegara',
+      reward: 'Mniej ruchów to więcej punktów · +{points} za parę',
+      pairs: 'Pary {found} / {total}',
+      moves: 'Ruchy: {n}',
+      facedown: 'Zakryta karta',
+      hint: 'Odkryj dwie karty. Dopasuj je, a słowo zostaje z Tobą.',
+      resultScore: 'Znalezione pary: {pairs}',
+    },
 
-    brain: [
-      { q: 'Która z tych liczb jest pierwsza?', options: ['91', '87', '83', '99'], a: 2 },
-      { q: 'Ile jest kontynentów?', options: ['5', '6', '7', '8'], a: 2 },
-      { q: 'Który ocean jest największy?', options: ['Atlantycki', 'Indyjski', 'Arktyczny', 'Spokojny'], a: 3 },
-      { q: 'Która planeta jest najbliżej Słońca?', options: ['Wenus', 'Merkury', 'Mars', 'Ziemia'], a: 1 },
-      { q: 'Ile minut ma pełna doba?', options: ['1440', '1240', '960', '1800'], a: 0 },
-    ],
-    poland: [
-      { q: 'Jaka jest waluta Polski?', options: ['Euro', 'Złoty', 'Korona', 'Forint'], a: 1 },
-      { q: 'Ile dni w ciągu 180 można zostać na wizie Schengen?', options: ['30 dni', '60 dni', '90 dni', '120 dni'], a: 2 },
-      { q: 'Do czego służy numer PESEL?', options: ['Do konta w banku', 'Do identyfikacji mieszkańca', 'Do prawa jazdy', 'Do najmu'], a: 1 },
-      { q: 'Który urząd rejestruje Twój adres w Polsce?', options: ['Urząd Gminy', 'Poczta Polska', 'ZUS', 'NFZ'], a: 0 },
-      { q: 'Co zapewnia NFZ?', options: ['Emerytury', 'Publiczną opiekę zdrowotną', 'Rozliczenia podatkowe', 'Pozwolenia na pracę'], a: 1 },
-    ],
+    wordGame: {
+      rule: '{words} słów · od łatwych do trudnych',
+      reward: 'Za pierwszym razem i szybko daje więcej · podpowiedź kosztuje bonus',
+      list: 'Język do ćwiczenia',
+      lists: { pl: 'Polski', en: 'Angielski' },
+      tier: 'Poziom {n}',
+      undo: 'Cofnij',
+      clear: 'Wyczyść',
+      reveal: 'Podpowiedź',
+      next: 'Następne słowo',
+      finish: 'Zobacz wynik',
+      correct: 'Dobrze · +{points} punktów',
+      resultScore: 'Ułożone słowa: {solved} z {total}',
+    },
   },
 
   business: {
@@ -782,40 +805,24 @@ export const pl: Dictionary = {
 
     games: {
       eyebrow: 'Gry',
-      title: 'Trzy sposoby na punkty.',
-      lede: 'Wszystkie trzy są przetłumaczone na każdy język tej strony, więc nigdy nie grasz w swoim drugim języku, chyba że sam chcesz.',
-      items: [
-        {
-          name: 'Capital Game',
-          blurb: 'Podaj stolicę. Zaczyna się łatwo i przestaje być łatwo mniej więcej w czwartej rundzie.',
-          meta: '10 pytań · do 100 pkt',
-        },
-        {
-          name: 'Flag Game',
-          blurb: 'Dopasuj flagę do kraju. Najszybsza z trzech i ta, w którą gra się w kolejce.',
-          meta: '10 pytań · do 100 pkt',
-        },
-        {
-          name: 'Życie w Polsce',
-          blurb: 'Ta praktyczna: urzędy, transport, najem — rzeczy, o których nikt nie mówi. Warta punktów i warta wiedzy.',
-          meta: '10 pytań · do 150 pkt',
-        },
-      ],
+      title: 'Wybierz swoją grę.',
+      lede: 'Każda z nich jest przetłumaczona na wszystkie języki tego serwisu, więc nigdy nie grasz w swoim drugim języku — chyba że sam chcesz.',
     },
 
     streak: {
       eyebrow: 'Serie',
       title: 'To w serii są punkty.',
-      lede: 'Jedna runda co 24 godziny utrzymuje ją przy życiu. Przegapisz to okno, a seria — i punkty, które z nią zbudowałeś — wracają do zera. To cała zasada.',
+      lede: 'Jedna runda co 24 godziny utrzymuje ją przy życiu. Przegapisz to okno, a seria — i punkty, które z nią zbudowałeś — wracają do zera, chyba że masz zamrożenie. Zamrożenie pokrywa jeden opuszczony dzień, dostajesz je co siódmy dzień i możesz mieć dwa. To cała zasada.',
       card: {
         label: 'Aktualna seria',
         unit: 'dni',
         reward: '+250 pkt siódmego dnia',
+        freeze: 'Zamrożenia w zapasie · każde pokrywa jeden opuszczony dzień',
       },
       benefits: [
         {
           title: 'Dzień trzeci: 1,5×',
-          body: 'Każdy zdobyty punkt jest wart o połowę więcej, we wszystkich trzech grach.',
+          body: 'Każdy zdobyty punkt jest wart o połowę więcej, we wszystkich grach na tej stronie.',
         },
         {
           title: 'Dzień siódmy: 250 pkt',
@@ -1400,7 +1407,7 @@ export const pl: Dictionary = {
     hero: {
       eyebrow: 'Przewodnik po życiu',
       lines: ['Nowy kraj.', 'Sto pytań.', 'Jeden przewodnik.'],
-      lede: 'Gdzie założyć konto, jak działa kaucja, która przychodnia przyjmie Twoje ubezpieczenie, ile naprawdę są warte Twoje pieniądze w kraju. Dziewięć tematów, czternaście krajów, pisane przez ludzi, którzy przez to przeszli.',
+      lede: 'Gdzie założyć konto, jak działa kaucja, która przychodnia przyjmie Twoje ubezpieczenie i ile naprawdę są warte Twoje pieniądze w kraju. Dziewięć tematów, czternaście krajów.',
       primary: 'Otwórz przewodnik',
       secondary: 'Sprawdź kurs',
       stats: ['Tematów', 'Krajów', 'Marży na naszym kursie'],
@@ -1437,10 +1444,14 @@ export const pl: Dictionary = {
 
     guide: {
       eyebrow: 'Pomoc i wskazówki',
-      title: 'Dziewięć tematów, a potrzebny zawsze okazuje się inny niż ten spodziewany.',
-      lede: 'Każdy otwiera się w instrukcję krok po kroku dla Twojego miasta — jaki dokument, gdzie go wydają, ile kosztuje i ile trwa.',
+      title: 'Dziewięć tematów. Otwórz jeden.',
+      lede: 'Mieszkanie i papiery są na przedzie, bo pierwszy miesiąc jest właśnie o nich. Każdy temat otwiera się w listę miejsc, które się tym zajmują — z filtrem na Twoje miasto.',
       cities: 'Wszystkie miasta',
-      search: 'Szukaj w przewodniku',
+      city: 'Filtruj po mieście',
+      count: 'Miejsc na liście: {n}',
+      speaks: 'Mówią:',
+      none: 'Na razie nic w tym temacie w mieście {city}. Spróbuj wszystkich miast.',
+      soon: 'Ten temat wciąż powstaje. Asystent poniżej odpowie w międzyczasie.',
       items: [
         { name: 'Miejsca', blurb: 'Sklepy, restauracje i usługi warte drogi' },
         { name: 'Bankowość i finanse', blurb: 'Konta, karty, kredyt i po co komu IBAN' },
@@ -1490,10 +1501,72 @@ export const pl: Dictionary = {
     secondary: 'Poznaj Living Guide',
   },
 
+  contact: {
+    back: 'Wróć do paylez',
+    hero: {
+      eyebrow: 'Kontakt',
+      lines: ['Zapytaj o wszystko.', 'Odpowie człowiek.'],
+      lede: 'Pomoc, współpraca, błąd albo coś, co przewodnik podaje źle — wszystko trafia do tego samego małego zespołu w Krakowie. Czytamy każdą wiadomość po polsku, angielsku, ukraińsku, rosyjsku i uzbecku.',
+      stats: ['Dzień roboczy na odpowiedź', 'Języki obsługi', 'Sposoby kontaktu'],
+    },
+
+    channels: {
+      eyebrow: 'Gdzie nas znaleźć',
+      title: 'Cztery drogi do nas — i żadna nie jest kolejką zgłoszeń.',
+      lede: 'Wybierz tę, która pasuje do sprawy. Dwie skrzynki trafiają do różnych osób i tak ma być: pytanie o wdrożenie to nie zgłoszenie pomocy technicznej i żadne z nich nie powinno czekać za drugim.',
+      items: [
+        {
+          name: 'Pomoc',
+          blurb: 'Punkty, które nie dotarły, voucher, którego nie dało się zeskanować, konto, do którego nie możesz wrócić. Wszystko, co dotyczy korzystania z paylez.',
+          action: 'Napisz do pomocy',
+        },
+        {
+          name: 'Współpraca',
+          blurb: 'Prowadzisz lokal albo kilka i chcesz wiedzieć, jak wygląda wdrożenie paylez. Cennik, uruchomienie, pytania o POS.',
+          action: 'Napisz do zespołu',
+        },
+        {
+          name: 'YouTube',
+          blurb: 'Jak działają gry, jak lokal się konfiguruje i co nowego — te same wyjaśnienia w formie, którą można obejrzeć zamiast czytać.',
+          action: 'Oglądaj',
+        },
+        {
+          name: 'Instagram',
+          blurb: 'Nowe lokale, nowe vouchery i oferty, które szybko znikają. Najszybszy sposób, żeby zobaczyć, co pojawiło się w tym tygodniu.',
+          action: 'Obserwuj',
+        },
+      ],
+    },
+
+    form: {
+      eyebrow: 'Wyślij wiadomość',
+      title: 'Napisz, co się stało.',
+      lede: 'Im konkretniej, tym lepiej — który ekran, czego się spodziewałeś i co zrobiła aplikacja zamiast tego. Jeśli sprawa dotyczy konta, adres e-mail z tego konta oszczędza nam jedną wymianę wiadomości.',
+      topic: 'Czego dotyczy sprawa?',
+      topics: ['Pomoc', 'Opinia', 'Współpraca', 'Coś innego'],
+      name: 'Imię i nazwisko',
+      namePlaceholder: 'Imię i nazwisko',
+      email: 'Twój e-mail',
+      emailPlaceholder: 'ty@email.com',
+      message: 'Wiadomość',
+      messagePlaceholder: 'Co się stało i czego się spodziewałeś.',
+      submit: 'Otwórz w programie pocztowym',
+      note: 'Nic nie jest zapisywane na tej stronie. Przycisk otwiera Twój własny program pocztowy z gotową, zaadresowaną wiadomością — wysyłasz ją Ty.',
+      error: 'Podaj imię, adres e-mail i treść wiadomości.',
+    },
+
+    hours: {
+      title: 'Kiedy odpowiadamy',
+      body: 'Od poniedziałku do piątku, 09:00–18:00 czasu środkowoeuropejskiego. Większość wiadomości dostaje odpowiedź tego samego dnia roboczego. Na to, co przyjdzie w weekend, odpowiadamy w poniedziałek rano.',
+      address: 'Kraków, Polska',
+    },
+  },
+
   footer: {
     blurb:
       'Graj i zarabiaj. Ekskluzywne oferty. Prawdziwe nagrody. Odkrywaj, oszczędzaj i zgarniaj nagrody.',
     location: 'Kraków, Polska',
+    social: 'paylez na {channel}',
     columns: [
       {
         heading: 'Produkt',

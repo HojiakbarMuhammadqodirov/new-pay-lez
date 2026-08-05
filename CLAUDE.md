@@ -26,12 +26,20 @@ layout hooks.** Run `npm run build` for a type check (`tsc -b` is part of it).
 `public/fonts/`. `dev` and `build` both run it, so it rarely needs invoking
 directly — but a fresh clone has no `public/fonts/` until one of them runs.
 
+`npm run banks` regenerates `src/site/games/data/` from the CSV and JSON exports
+in `updates/`. It is deliberately **not** part of `dev` or `build`: those files
+are a hand-delivered export rather than a dependency, the output is committed,
+and a build that silently rebuilt 3 MB of game data from files that may not be
+present would fail on a fresh clone for no reason. Run it when a new export
+lands, and commit what it writes.
+
 ## Layout
 
-The site is `src/site/` — one file per route, plus `i18n/`, `theme/` and `auth/`,
-and all styling in the single sheet `site.css`. The globe is
+The site is `src/site/` — one file per route, plus `games/`, `i18n/`, `theme/`
+and `auth/`, and all styling in the single sheet `site.css`. The globe is
 `src/components/GlobeHero/` — see `README.md`. `landing/` and `b2b/` are design
-prototypes, not code.
+prototypes, not code. `updates/` is inbound material — exports and specs handed
+over to be built from, read by `npm run banks`; nothing in `src/` imports it.
 
 ### `landing/` and `b2b/` are reference material
 
@@ -63,6 +71,16 @@ accent, which is the whole look. On paper that same accent became a colour cast
 on pale grey plastic — a photo with the white balance wrong — so light mode
 lights it with white and puts the colour where a gamepad actually keeps it. Do
 not read either exception as licence for a third hue anywhere else.
+
+**The brand is the word, and the word is `900 21px/1 Onest`.** That is the app's
+own declaration, carried over exactly: `--font-brand` / `--brand-size` in
+`site.css`, and `.brand` is the class every one of them uses — header, footer,
+dashboard rail, admin console, and the intro. There is **no tile beside it**.
+The square logo files are still in `public/logo/` behind the `--logo` token, but
+no chrome shows them: the product has never put a mark next to the name, and a
+30px square of art beside six letters was the one place the site and the app
+disagreed about what the brand looks like. If you are adding a surface that
+needs the wordmark, use `.brand` rather than setting the face again.
 
 **Theming is two parallel palettes, and they must agree.**
 
@@ -115,6 +133,18 @@ their dictionary counterparts, so adding a service or feature means one entry in
 `content.ts` and one in each of the five dictionaries. Never hardcode
 user-visible strings in `sections.tsx`.
 
+Index alignment is the default, not a law: `copy.nav` is **keyed** because a
+business owner sees the header in a different order and without one of its items
+(`NAV_ORDER_BUSINESS` in `content.ts`), and no array survives being reordered.
+Reach for keys whenever the *order* is a variable rather than a constant.
+
+**A page must not describe a list it does not read.** The L-Earn marketing
+section used to carry its own three game cards in five dictionaries, and it was
+already wrong — it claimed three games after five had shipped. It now maps
+`GAMES` with the same names and rule strings the app screen uses, so the pitch
+cannot drift from the product. Where a marketing section is describing something
+`content.ts` already models, render from the model.
+
 Adding a language: create the dictionary, then add it to `LANGUAGE_ORDER` and
 `LANGUAGES` in `i18n/context.ts` — nothing else. The provider's runtime guard is
 derived from `LANGUAGE_ORDER` precisely so it cannot be forgotten. Give it a
@@ -166,6 +196,23 @@ Three things follow from that, and all three are easy to undo by accident:
   seed a blank listing when the account type is chosen, or a brand-new owner
   looks finished and lands on the dashboard.
 
+**A section anchor carries its own page.** A hash that does not start with `#/`
+used to mean "the landing page", full stop — so *every in-page link on every
+other page* went Home. "Open the dashboard" on Analytics pointed at
+`#analytics-reports`, missed the route table, and dropped the visitor on the
+marketing front page; the same was true of `#b2b-cta`, `#learn-games`,
+`#vouchers-catalogue` and `#relocate-guide`. `ANCHOR_ROUTES` in `router.ts` maps
+each page's section prefix to its route, and the landing page keeps the
+unprefixed ones. **A new page must prefix its section ids with its own name and
+add the prefix to that table**, or its own links will leave it; `npm run verify`
+checks the table against `PATHS` and walks the known anchors.
+
+And a matching rule for the labels: **a button goes where its words say.**
+"Open the dashboard" opens `#/dashboard` (which resolves to sign-in for a
+visitor, correctly); "Play & Earn" goes to L-Earn; "Talk to us" goes to Contact.
+Several of these pointed at a section on the page they were already on, which is
+what a page does when nobody has anywhere to send you yet.
+
 **Two storage keys, and they are different things.** `paylez-session` is who is
 signed in *on this device*; `paylez-users` (`auth/directory.ts`) is everyone who
 exists — the three seeds plus everyone who has signed up. The session is a
@@ -195,6 +242,31 @@ everyone else, including business owners — those pages describe the *customer'
 experience, which an owner is reading about rather than living. The rules that
 decide points, streak, lives and the wallet are pure functions in
 `auth/player.ts`, so `npm run verify` owns them; the components only call them.
+
+**One function decides what a finished round does to the account.**
+`awardPoints` owns the streak, the 24-hour window, the lapse that takes the
+balance with it, and the freeze that absorbs one missed day. Seven games score
+seven different ways — a quiz pays per right answer, a flight pays per gap past
+an endless target, Word Builder totals five per-word scores plus a perfect-round
+bonus, Memory Match pays a base plus an efficiency curve — and **none of them
+restates what a streak is.** They compute a number and hand it over. There were
+two copies of that rule once and it would be five by now.
+
+**Questions come from `games/data/`, through a bag.** The four quiz rounds no
+longer read a handful of items out of the dictionaries: `scripts/build-question-banks.mjs`
+turns the CSV exports in `updates/` into one file per bank per language (2102
+general questions, 98 on Poland, 196 flags, 196 capitals), which are code-split
+and fetched on first play — so a visitor who never opens L-Earn pays nothing for
+them, and building a round is asynchronous. Run `npm run banks` when a new export
+arrives and commit what it writes; it is deliberately *not* part of `build`.
+
+`games/bag.ts` is the no-repeat rule: **every question in a bank is asked once
+before any of them is asked twice.** Shuffling the pool per round and taking the
+first five is the thing it replaced, and with a two-thousand-question bank that
+let a player grind all evening and never see a third of it. Anything that can
+renumber the rows has to invalidate the bag — the key encodes the pool size for
+that reason, and missing translations are filled at build time so an index means
+the same question in every language.
 
 **Namespace new component classes, and grep before you name one.** `site.css` is
 one 6,000-line sheet with no scoping, and three separate collisions have already
@@ -277,25 +349,33 @@ bundled, the flag font copied into `public/`), geometry comes from the
   percentage height against an `auto` parent resolves to nothing — which is
   exactly what the country comparison did before `.adm-compare-cols` was given a
   definite `9rem`. Every chart in `site.css` sets one.
-- **The globe is the landing page's, and only the landing page's.** Relocate had
-  it on the argument that the page was about a border being crossed; it is not —
-  it is a guide to where you have already arrived, plus a currency converter. It
+- **The globe belongs to the landing page, and to Contact.** Relocate had it on
+  the argument that the page was about a border being crossed; it is not — it is
+  a guide to where you have already arrived, plus a currency converter, and it
   now takes `.site__rings`, CSS contour rings that mean distance from where you
-  are standing. One consequence worth knowing: the document's single WebGL
-  context is spent on exactly one route again.
-- **The backdrop is per route.** Six *marketing* routes, three canvases. Landing *and*
-  Relocate get the globe, L-Earn gets the node web, B2B gets the market tape
+  are standing. Contact gets it instead: reachable from anywhere is the one other
+  thing the globe honestly says. The document's single WebGL context is still
+  spent on at most one route at a time.
+- **The backdrop is per route.** Seven *marketing* routes, three canvases. Landing
+  *and* Contact get the globe, L-Earn gets the node web, B2B gets the market tape
   (the last two canvas-2D, both on `.site__web`); Analytics gets a CSS plot grid
-  (`.site__grid`) and Vouchers a CSS perforation (`.site__stubs`). `Site.tsx`
-  renders exactly one. Rendering two costs a second context on a page that
-  already spends one on the controller; browsers cap how many a document may hold
-  and start dropping the oldest. Only the globe is WebGL, and that is the budget —
-  a page past the third reaches for CSS, the way Analytics and Vouchers did, or
-  reuses a canvas that already means the right thing, the way Relocate reuses the
-  globe. Reuse is free: one route is mounted at a time.
+  (`.site__grid`), Vouchers a CSS perforation (`.site__stubs`) and Relocate CSS
+  rings (`.site__rings`). `Site.tsx` renders exactly one. Rendering two costs a
+  second context on a page that already spends one on the controller; browsers cap
+  how many a document may hold and start dropping the oldest. Only the globe is
+  WebGL, and that is the budget — a page past the third reaches for CSS, the way
+  Analytics, Vouchers and Relocate did, or reuses a canvas that already means the
+  right thing, the way Contact reuses the globe. Reuse is free: one route is
+  mounted at a time.
+- **A reused globe still needs its scroll anchor.** `scrollTransition` is off only
+  for sign-in, which is one screenful with nothing under it. Any other page that
+  takes the globe has content below the fold, and a globe held in the hero pose
+  sits *on top of it* — Contact's form was unreadable under a pinned one for
+  exactly as long as it took to look. Give the page an anchor at its **third**
+  section (`scrollAnchorId` in `Site.tsx`) and let the globe retire into the arc.
 - **Each backdrop has to *mean* something, or it is wallpaper.** The globe is a
-  border being crossed — which is why Relocate keeps it rather than inventing a
-  fifth thing; the node web is a player base (drifting points that link to each
+  border being crossed — which is why Contact keeps it rather than inventing a
+  sixth thing; the node web is a player base (drifting points that link to each
   other); the market tape is repeat custom compounding into revenue — a line that
   climbs, and the only thing that moves it is a venue under it firing (on its own
   rhythm, or because your cursor walked past); the perforation behind Vouchers is
