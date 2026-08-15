@@ -1259,3 +1259,80 @@ CREATE TABLE IF NOT EXISTS legacy_payment_methods (
   is_verified    INTEGER NOT NULL DEFAULT 0,
   created_at     TEXT NOT NULL
 );
+
+/* ══════════════════════════════════════════ website traffic & activity ══ */
+/*
+ * Neither spec asks for this. It is the operator's own question — who is
+ * visiting the site, and how often — and it is here rather than in a
+ * third-party script for the same reason the fonts are self-hosted: an
+ * analytics tag is a runtime dependency that reads every visitor.
+ *
+ * The privacy design is the whole of it, and it is one decision: **a visitor
+ * is a daily hash, not a person.** `visitor_day` is HMAC(ip + user agent, the
+ * server secret + the day). That is enough to count unique visitors on a day
+ * and to tell a second page view from a second visitor; it is deliberately not
+ * enough to follow anybody from Tuesday to Wednesday, because the key changes
+ * with the day and the input is never stored. No cookie is set, no identifier
+ * is written to the device, and no IP address is ever stored — which is what
+ * keeps this outside the consent gate that `data_sharing_consents` exists for.
+ *
+ * A *signed-in* visitor is a different case and is treated as one: `user_id`
+ * is recorded, because that person already has an account and their activity
+ * is attributable to it. That is the honest line — anonymous traffic is
+ * counted, identified traffic is attributed, and the two are never joined
+ * across the boundary by anything in this file.
+ */
+CREATE TABLE IF NOT EXISTS web_sessions (
+  id            TEXT PRIMARY KEY,
+  /* HMAC of ip+agent under a key that rotates daily. Never reversible to an IP. */
+  visitor_day   TEXT NOT NULL,
+  day           TEXT NOT NULL,
+  started_at    TEXT NOT NULL,
+  last_at       TEXT NOT NULL,
+  views         INTEGER NOT NULL DEFAULT 0,
+  actions       INTEGER NOT NULL DEFAULT 0,
+  entry_path    TEXT NOT NULL,
+  exit_path     TEXT NOT NULL,
+  /* The host only. A full referrer URL carries the search terms someone typed. */
+  referrer_host TEXT,
+  /* From the edge's country header when there is one, else null. Never guessed. */
+  country       TEXT,
+  language      TEXT,
+  device        TEXT,
+  user_id       TEXT REFERENCES users (id) ON DELETE SET NULL,
+  account_type  TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_sessions_day ON web_sessions (day);
+CREATE INDEX IF NOT EXISTS idx_web_sessions_visitor ON web_sessions (visitor_day, day);
+CREATE INDEX IF NOT EXISTS idx_web_sessions_user ON web_sessions (user_id);
+
+CREATE TABLE IF NOT EXISTS web_events (
+  id         TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL REFERENCES web_sessions (id) ON DELETE CASCADE,
+  at         TEXT NOT NULL,
+  day        TEXT NOT NULL,
+  kind       TEXT NOT NULL,
+  path       TEXT NOT NULL,
+  name       TEXT,
+  user_id    TEXT REFERENCES users (id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_web_events_day ON web_events (day, kind);
+CREATE INDEX IF NOT EXISTS idx_web_events_session ON web_events (session_id);
+CREATE INDEX IF NOT EXISTS idx_web_events_path ON web_events (day, path);
+
+/*
+ * Sign-in attempts, for the rate limit in §13's spirit that `auth.signInPerHour`
+ * has always described and nothing enforced. Keyed by the address tried rather
+ * than by the account found, because an attempt against an address that does
+ * not exist is exactly the one worth counting.
+ */
+CREATE TABLE IF NOT EXISTS auth_attempts (
+  id       TEXT PRIMARY KEY,
+  subject  TEXT NOT NULL,
+  at       TEXT NOT NULL,
+  ok       INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_attempts ON auth_attempts (subject, at);

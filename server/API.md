@@ -280,3 +280,46 @@ grant. Never bundle it into sign-up.
 
 `GET /v1/me/export` and `DELETE /v1/me` are the GDPR routines. Erasure requires
 the account email as confirmation.
+
+## 11. Traffic — counting visitors without tracking them
+
+`POST /v1/traffic` is the only endpoint a client calls that is not about a
+person. It takes a batch of page views and named actions and returns nothing
+useful:
+
+```json
+{ "events": [{ "kind": "view", "path": "/#/learn" },
+             { "kind": "action", "path": "/#/learn", "name": "play_flags" }],
+  "referrer": "https://www.google.com/" }
+```
+
+Three things about it are load-bearing, and a client that "improves" any of them
+breaks the privacy property the endpoint exists to have:
+
+- **Do not send an identifier, and do not store one.** There is no session id in
+  the request and none in the response. The server derives the visit from the
+  connection. A client that generates a visitor id and puts it in
+  `localStorage` has quietly built the tracking cookie this design avoids — and
+  has earned the consent banner that goes with it.
+- **Send the referrer, not the URL you are on.** Only the referrer's *host* is
+  kept. Never put a query string in `path`; the server strips everything after a
+  `?`, but the fix belongs on both sides — a query string is where somebody's
+  email address ends up in an analytics tool.
+- **Send it with the session token when there is one.** The route is public, but
+  a token turns an anonymous visit into an attributed one, which is what makes
+  "returning users" answerable for accounts.
+
+It is fire-and-forget: batch it, send it on `visibilitychange`, and never block
+a render or a navigation on the response. A failed beacon is a lost row and
+nothing else.
+
+The console reads it back through `GET /v1/admin/traffic?from=&to=`, alongside
+`GET /v1/admin/activity` (one chronological feed across the platform) and
+`GET /v1/admin/users`. One field in that response needs saying out loud:
+
+- `dailyVisitors` is distinct visitors **summed per day**, not distinct visitors
+  over the range. The second is not answerable, by design.
+- `anonymousReturningVisitors` is always `null`, and it is in the response
+  precisely so that nobody computes it wrongly from the figures beside it.
+  **Render it as "not knowable", never as 0** — the same rule §9's `suppressed`
+  states for partner analytics, for the same reason.

@@ -18,7 +18,7 @@ sheet. `db/import.ts` is the only file that knows those shapes.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 284 checks, no browser, no network
+npm run verify:api     # the test suite — 339 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -27,7 +27,7 @@ npm run openapi        # regenerate openapi.json from the route table
 - **`API.md`** — the flows a spec file cannot express: the gate's four steps,
   idempotency, offline queueing, the games protocol, what counts as a claim, and
   the money/time/language conventions. Read this first.
-- **`openapi.json`** — 111 paths, 121 operations, generated from `allRoutes` so
+- **`openapi.json`** — 115 paths, 125 operations, generated from `allRoutes` so
   it cannot drift. Point a generator at it rather than hand-writing a client.
 - **`FLUTTER-BRIEF.md`** — the standing instruction for the mobile app, written
   to be handed over whole.
@@ -85,6 +85,7 @@ domain/              the rules. React-free, HTTP-free, testable on their own
        fraud.ts      §13  velocity, trust tiers, disputes
        partners.ts   B1-B6 the authoring surface
        accounts.ts   §1.1 identity, provisional accounts, sessions
+       traffic.ts    —    website traffic and the platform activity feed
 
 crypto/              qr + session tokens, AES-CMAC, NTAG 424 verification, scrypt
 http/                router, server, input validation, route modules
@@ -108,7 +109,7 @@ NFC is *not* on that list. `crypto/nfc.ts` implements AES-CMAC (checked against
 RFC 4493's own vectors), the PICC decryption, the AN12196 session key and the
 counter rule. It needs a master key, not a vendor.
 
-## The eight rules worth knowing before changing anything
+## The nine rules worth knowing before changing anything
 
 1. **The balance is derived, never edited.** `users.points_cache` is written only
    by `ledger.ts`, always beside the entry that justifies it, and `reconcile()`
@@ -143,6 +144,19 @@ counter rule. It needs a master key, not a vendor.
 
 8. **Everything that authors or moves value is audited**, through the single
    `audit.record`. (Part E)
+
+9. **A website visitor is a daily hash, not a person.** `domain/traffic.ts` is
+   the one module neither spec asked for — it answers the operator's own
+   question, who is visiting — and it answers it without a cookie, without an
+   identifier on the device and without ever storing an IP. `visitor_day` is an
+   HMAC keyed on the server secret *plus the day*, so Tuesday's visitor cannot
+   be matched to Wednesday's. The cost of that is real and is reported rather
+   than papered over: there is no returning-visitor figure for anonymous
+   traffic, `overview` returns `anonymousReturningVisitors: null`, and a console
+   that renders it as `0` has told the same kind of lie `suppressed` exists to
+   prevent. Signed-in visits carry a `user_id`, because that person has an
+   account already — anonymous traffic is *counted*, identified traffic is
+   *attributed*, and nothing joins the two.
 
 ## Where the spec and the old data disagree
 
@@ -196,4 +210,4 @@ The React site in `src/` still runs on `localStorage` (`src/site/auth/`), which
 its own `users.ts` says must be replaced by a server. The API shapes were chosen
 to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
 fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
-module, not a redesign. `GET /v1` lists all 121 endpoints.
+module, not a redesign. `GET /v1` lists all 125 endpoints.

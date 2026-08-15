@@ -22,6 +22,7 @@ import * as gate from './domain/gate.ts';
 import * as ledger from './domain/ledger.ts';
 import * as notifications from './domain/notifications.ts';
 import * as social from './domain/social.ts';
+import * as traffic from './domain/traffic.ts';
 import * as vouchers from './domain/vouchers.ts';
 import { refreshAverageCheck } from './domain/venues.ts';
 import * as push from './ports/push.ts';
@@ -63,6 +64,10 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
  */
 export function runDaily(db: Db, at: Iso = now()): JobReport {
   const detail: Record<string, unknown> = {};
+
+  /* Retention is a job rather than a query filter: rows nobody deletes are rows
+     that eventually have to be explained to a regulator. */
+  detail.trafficPruned = traffic.prune(db, at);
 
   let warned = 0;
   const players = db.all<{ id: string }>(

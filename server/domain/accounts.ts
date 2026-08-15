@@ -27,7 +27,7 @@ import { DomainError } from './errors.ts';
 import { hashPassword, verifyPassword } from '../crypto/passwords.ts';
 import { hashToken, newToken } from '../crypto/tokens.ts';
 import { newId } from './ids.ts';
-import { now, plusDays, type Iso } from './time.ts';
+import { now, plusDays, plusMinutes, type Iso } from './time.ts';
 
 export type Role = 'consumer' | 'partner_owner' | 'manager' | 'admin';
 export type Mode = 'consumer' | 'partner' | 'admin';
@@ -257,16 +257,63 @@ export interface SignedIn {
  * accounts. It is one extra scrypt on a failed login and it removes an
  * enumeration oracle that is otherwise free to use.
  */
+/**
+ * The sign-in rate limit `CONFIG.auth.signInPerHour` has always described.
+ *
+ * Keyed by the **address tried**, not by the account found. An attempt against
+ * an address that does not exist is precisely the one worth counting — keying
+ * on the account would leave the enumeration case, guessing addresses, entirely
+ * unlimited, and it is the cheaper attack of the two.
+ *
+ * Only *failures* count against the limit, so a household or an office behind
+ * one address cannot lock each other out by signing in successfully. The refusal
+ * is deliberately the same `unauthenticated` shape as a wrong password rather
+ * than its own code: an attacker who can tell "throttled" from "wrong password"
+ * has been told the address is real.
+ */
+function throttleSignIn(db: Db, subject: string, at: Iso): void {
+  const since = plusMinutes(at, -60);
+  const recent = db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM auth_attempts WHERE subject = $s AND ok = 0 AND at >= $since`,
+    { s: subject, since },
+  );
+  if ((recent?.n ?? 0) >= CONFIG.auth.signInPerHour) {
+    throw new DomainError('unauthenticated', 'wrong email or password');
+  }
+}
+
+/**
+ * A success clears the run of failures rather than being recorded beside them:
+ * somebody who mistyped four times and then got it right is not four fifths of
+ * the way to a lockout, and leaving the failures in place would mean their next
+ * genuine slip counts as the fifth.
+ */
+function recordAttempt(db: Db, subject: string, ok: boolean, at: Iso): void {
+  if (ok) {
+    db.run(`DELETE FROM auth_attempts WHERE subject = $s`, { s: subject });
+    return;
+  }
+  db.run(`INSERT INTO auth_attempts (id, subject, at, ok) VALUES ($id, $s, $at, 0)`, {
+    id: newId('ath'),
+    s: subject,
+    at,
+  });
+}
+
 export async function signIn(
   db: Db,
   input: { email: string; password: string; surface?: 'web' | 'mobile'; deviceFingerprint?: string; at?: Iso },
 ): Promise<SignedIn> {
   const at = input.at ?? now();
+  const subject = normalise(input.email);
+  throttleSignIn(db, subject, at);
+
   const user = db.get<User>(`SELECT * FROM users WHERE email_norm = $e AND deleted_at IS NULL`, {
-    e: normalise(input.email),
+    e: subject,
   });
 
   const ok = await verifyPassword(input.password, user?.password_hash ?? null);
+  recordAttempt(db, subject, Boolean(user && ok), at);
   if (!user || !ok) throw new DomainError('unauthenticated', 'wrong email or password');
   if (user.status === 'banned') throw new DomainError('forbidden', 'this account is suspended');
 

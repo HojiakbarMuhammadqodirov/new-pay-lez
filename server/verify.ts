@@ -38,6 +38,7 @@ import * as ledger from './domain/ledger.ts';
 import * as partners from './domain/partners.ts';
 import * as profiles from './domain/profiles.ts';
 import * as social from './domain/social.ts';
+import * as traffic from './domain/traffic.ts';
 import * as vouchers from './domain/vouchers.ts';
 import * as jobs from './jobs.ts';
 import { seedPlatform } from './domain/settings.ts';
@@ -83,6 +84,18 @@ function throws(what: string, code: string, fn: () => unknown): void {
   try {
     fn();
     check(what, false, 'did not throw');
+  } catch (error) {
+    if (error instanceof DomainError) check(what, error.code === code, { got: error.code, want: code });
+    else check(what, false, String(error));
+  }
+}
+
+/** The same, for a promise. `throws` cannot await, and a rejected promise it
+ *  never sees is a check that silently passes. */
+async function rejects(what: string, fn: () => Promise<unknown>, code: string): Promise<void> {
+  try {
+    await fn();
+    check(what, false, 'did not reject');
   } catch (error) {
     if (error instanceof DomainError) check(what, error.code === code, { got: error.code, want: code });
     else check(what, false, String(error));
@@ -1067,6 +1080,142 @@ function socialRules(): void {
   w.db.close();
 }
 
+async function trafficRules(): Promise<void> {
+  describe('website traffic and the sign-in throttle');
+  const w = world();
+  const at = now();
+
+  const beacon = (over: Partial<Parameters<typeof traffic.record>[1]> = {}, when = at) =>
+    traffic.record(
+      w.db,
+      {
+        events: [{ kind: 'view', path: '/' }],
+        ip: '203.0.113.9',
+        agent: 'Mozilla/5.0 (Macintosh)',
+        ...over,
+      },
+      SECRET,
+      when,
+    );
+
+  /* The privacy claim, checked rather than asserted in a comment: the same
+     visitor on two days must not be linkable, and no IP may reach the table. */
+  const dayOne = traffic.visitorKey(SECRET, '2026-08-16', '203.0.113.9', 'agent');
+  const dayTwo = traffic.visitorKey(SECRET, '2026-08-17', '203.0.113.9', 'agent');
+  check('the visitor key rotates daily', dayOne !== dayTwo);
+  eq('…and is stable within a day', traffic.visitorKey(SECRET, '2026-08-16', '203.0.113.9', 'agent'), dayOne);
+  check(
+    'a different visitor hashes differently',
+    traffic.visitorKey(SECRET, '2026-08-16', '198.51.100.4', 'agent') !== dayOne,
+  );
+
+  const first = beacon();
+  const second = beacon({ events: [{ kind: 'view', path: '/#/learn' }] });
+  eq('two views inside the window are one visit', first, second);
+
+  const later = beacon({ events: [{ kind: 'view', path: '/' }] }, plusDays(at, 0.5));
+  check('a view after the idle window is a new visit', later !== first);
+
+  check(
+    'no IP address is stored anywhere',
+    w.db.all<{ visitor_day: string }>(`SELECT visitor_day FROM web_sessions`).every(
+      (row) => !row.visitor_day.includes('203.0.113'),
+    ),
+  );
+
+  /* A query string is where somebody's email ends up in an analytics tool. */
+  beacon({ events: [{ kind: 'view', path: '/search?email=a@b.com&q=x' }] });
+  check(
+    'a query string never lands in a path',
+    w.db.all<{ path: string }>(`SELECT path FROM web_events`).every((row) => !row.path.includes('@')),
+  );
+
+  const own = beacon({ referrer: 'http://localhost:5173/#/b2b' }, plusDays(at, 1));
+  eq(
+    'a referrer from the site itself is not a referrer',
+    w.db.get<{ referrer_host: string | null }>(`SELECT referrer_host FROM web_sessions WHERE id = $i`, {
+      i: own,
+    })?.referrer_host,
+    null,
+  );
+
+  const report = traffic.overview(w.db, traffic.defaultRange(plusDays(at, 1)));
+  check('the console counts the visits', report.sessions >= 3);
+  check('…and the pages', report.pages.length > 0);
+  eq(
+    'returning anonymous visitors is null, never zero',
+    report.anonymousReturningVisitors,
+    null,
+  );
+
+  /* Retention is a promise, so it is a check. */
+  traffic.record(
+    w.db,
+    { events: [{ kind: 'view', path: '/old' }], ip: '203.0.113.1', agent: 'a' },
+    SECRET,
+    plusDays(at, -500),
+  );
+  traffic.prune(w.db, at);
+  eq(
+    'events past the retention window are gone',
+    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM web_events WHERE path = '/old'`)?.n,
+    0,
+  );
+
+  /* The throttle `CONFIG.auth.signInPerHour` has always described. */
+  await accounts.signUp(w.db, {
+    email: 'throttle@verify.test',
+    password: 'correct horse',
+    name: 'Throttle',
+  });
+  await accounts.signUp(w.db, {
+    email: 'bystander@verify.test',
+    password: 'correct horse',
+    name: 'Bystander',
+  });
+  for (let attempt = 0; attempt < CONFIG.auth.signInPerHour; attempt += 1) {
+    await rejects(
+      `wrong password ${attempt + 1} is refused`,
+      () => accounts.signIn(w.db, { email: 'throttle@verify.test', password: 'nope' }),
+      'unauthenticated',
+    );
+  }
+  await rejects(
+    'and the right password is refused too, once the limit is reached',
+    () => accounts.signIn(w.db, { email: 'throttle@verify.test', password: 'correct horse' }),
+    'unauthenticated',
+  );
+
+  /* Keyed by address, so a throttled address cannot lock anybody else out. */
+  const bystander = await accounts.signIn(w.db, {
+    email: 'bystander@verify.test',
+    password: 'correct horse',
+  });
+  check('another address signs in normally', bystander.token.length > 0);
+
+  /* A success clears the run, so a near miss is not a lasting penalty. */
+  for (let attempt = 0; attempt < CONFIG.auth.signInPerHour - 1; attempt += 1) {
+    await rejects(
+      `a near miss ${attempt + 1}`,
+      () => accounts.signIn(w.db, { email: 'bystander@verify.test', password: 'nope' }),
+      'unauthenticated',
+    );
+  }
+  const recovered = await accounts.signIn(w.db, {
+    email: 'bystander@verify.test',
+    password: 'correct horse',
+  });
+  check('getting it right just under the limit still works', recovered.token.length > 0);
+  eq(
+    'and clears the failures behind it',
+    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM auth_attempts WHERE subject = 'bystander@verify.test'`)
+      ?.n,
+    0,
+  );
+
+  w.db.close();
+}
+
 function jobRules(): void {
   describe('the scheduled jobs');
   const w = world();
@@ -1453,6 +1602,7 @@ async function run(): Promise<void> {
   entitlementRules();
   assistantRules();
   socialRules();
+  await trafficRules();
   jobRules();
   await accountRules();
   await httpSurface();

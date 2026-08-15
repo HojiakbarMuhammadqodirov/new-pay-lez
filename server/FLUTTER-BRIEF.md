@@ -37,7 +37,7 @@ Read these three, in this order:
    dart run build_runner …    # or
    openapi-generator generate -i openapi.json -g dart-dio -o lib/api
    ```
-   Do not hand-write the client. It is 121 operations and it will drift.
+   Do not hand-write the client. It is 125 operations and it will drift.
 3. **The two PDFs in `new-data/`** — *context, not a work order.* They describe
    what the **server** must do and why. Reading them will make you build better
    screens; implementing from them will give you a second, disagreeing copy of
@@ -48,7 +48,7 @@ Run the backend locally:
 ```bash
 npm install
 npm run server        # http://127.0.0.1:8787 — migrates, seeds and imports on first run
-npm run verify:api    # 284 checks, if you want to see what it guarantees
+npm run verify:api    # 339 checks, if you want to see what it guarantees
 ```
 
 ---

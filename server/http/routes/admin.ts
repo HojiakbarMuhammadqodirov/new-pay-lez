@@ -16,6 +16,7 @@ import * as fraud from '../../domain/fraud.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as partners from '../../domain/partners.ts';
 import * as settings from '../../domain/settings.ts';
+import * as traffic from '../../domain/traffic.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { newId } from '../../domain/ids.ts';
 import { actor, bool, int, oneOf, optStr, qInt, qStr, str } from '../input.ts';
@@ -335,6 +336,63 @@ export const adminRoutes: Route[] = [
           `SELECT city, COUNT(*) AS venues FROM venues WHERE status = 'live' GROUP BY city ORDER BY venues DESC`,
         ),
       };
+    },
+  },
+  {
+    /**
+     * Website traffic. Not in either statement of work — it is the operator's
+     * own question, and `domain/traffic.ts` explains why the answers have the
+     * shape they do.
+     *
+     * The one thing to carry into any view of this: `dailyVisitors` is distinct
+     * visitors summed per day, and `anonymousReturningVisitors` is `null`
+     * because the design cannot know it. Rendering that null as 0 would be a
+     * lie of the same kind `suppressed` exists to prevent on the partner side.
+     */
+    method: 'GET',
+    pattern: '/v1/admin/traffic',
+    auth: 'admin',
+    handler: (ctx) => {
+      const fallback = traffic.defaultRange(ctx.at);
+      return traffic.overview(ctx.db, {
+        from: qStr(ctx, 'from') ?? fallback.from,
+        to: qStr(ctx, 'to') ?? fallback.to,
+      });
+    },
+  },
+  {
+    /** The activity feed: one chronological list across the whole platform. */
+    method: 'GET',
+    pattern: '/v1/admin/activity',
+    auth: 'admin',
+    handler: (ctx) => ({ events: traffic.activity(ctx.db, qInt(ctx, 'limit', 100)) }),
+  },
+  {
+    /**
+     * The people. Read-only and deliberately shallow — this is the list an
+     * operator scans, not a profile viewer. C1 gives an admin exactly one write
+     * against a person (`/users/:id/ban`), and no view here should grow into a
+     * second one.
+     */
+    method: 'GET',
+    pattern: '/v1/admin/users',
+    auth: 'admin',
+    handler: (ctx) => {
+      const search = qStr(ctx, 'q');
+      return ctx.db.all(
+        `SELECT u.id, u.display_name, u.city, u.country, u.status, u.created_at,
+                u.points_cache AS points, u.referral_code,
+                (SELECT COUNT(*) FROM transactions t
+                  WHERE t.user_id = u.id AND t.status = 'committed') AS scans,
+                (SELECT COUNT(*) FROM issued_vouchers iv WHERE iv.user_id = u.id) AS vouchers,
+                (SELECT GROUP_CONCAT(r.role) FROM user_roles r WHERE r.user_id = u.id) AS roles,
+                (SELECT MAX(s.last_at) FROM web_sessions s WHERE s.user_id = u.id) AS last_seen
+           FROM users u
+          WHERE u.deleted_at IS NULL
+            AND ($q IS NULL OR u.display_name LIKE '%' || $q || '%' OR u.city LIKE '%' || $q || '%')
+          ORDER BY u.created_at DESC LIMIT $l`,
+        { q: search ?? null, l: qInt(ctx, 'limit', 200) },
+      );
     },
   },
   {

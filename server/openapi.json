@@ -6782,6 +6782,126 @@
         }
       }
     },
+    "/v1/admin/traffic": {
+      "get": {
+        "summary": "GET /v1/admin/traffic",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminTraffic",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/activity": {
+      "get": {
+        "summary": "GET /v1/admin/activity",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminActivity",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/users": {
+      "get": {
+        "summary": "GET /v1/admin/users",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminUsers",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/venues": {
       "get": {
         "summary": "GET /v1/admin/venues",
@@ -7986,6 +8106,31 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/traffic": {
+      "post": {
+        "summary": "POST /v1/traffic",
+        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "postTraffic",
+        "tags": [
+          "other"
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "default": {
             "description": "Error",

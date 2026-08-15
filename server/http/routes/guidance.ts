@@ -13,7 +13,8 @@
  * a language the reader did not ask for should be visibly that, not silently it.
  */
 import { CONFIG } from '../../config.ts';
-import { qInt, qStr } from '../input.ts';
+import * as traffic from '../../domain/traffic.ts';
+import { list, optStr, qInt, qStr } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
 /** `field → value` in the best available language, for one entity. */
@@ -276,6 +277,54 @@ export const guidanceRoutes: Route[] = [
         { u: ctx.actor!.user.id },
       ),
     }),
+  },
+  {
+    /**
+     * The traffic beacon. Public, because the visitors worth counting are
+     * mostly not signed in.
+     *
+     * It takes no session id and issues none — the visit is derived from the
+     * connection inside `domain/traffic.ts`, which is what makes it unforgeable
+     * and what keeps anything durable off the device. `auth: 'none'` here still
+     * means `ctx.actor` is populated when a token *was* sent, which is how a
+     * signed-in visit gets attributed without a second endpoint.
+     */
+    method: 'POST',
+    pattern: '/v1/traffic',
+    auth: 'none',
+    name: 'traffic.record',
+    handler: (ctx) => {
+      const events = list(ctx.body, 'events', (item) => {
+        const bag = (item ?? {}) as Record<string, unknown>;
+        return {
+          kind: bag.kind === 'action' ? ('action' as const) : ('view' as const),
+          path: String(bag.path ?? '/'),
+          name: bag.name === undefined ? undefined : String(bag.name),
+        };
+      });
+      if (events.length === 0) return { ok: true, recorded: 0 };
+
+      traffic.record(
+        ctx.db,
+        {
+          events,
+          ip: ctx.ip,
+          agent: String(ctx.req.headers['user-agent'] ?? ''),
+          referrer: optStr(ctx.body, 'referrer'),
+          language: ctx.language,
+          /* Set by the edge (Cloudflare, Vercel, Fly). Absent in development,
+             and null is the honest answer rather than a guess from the IP. */
+          country:
+            (ctx.req.headers['cf-ipcountry'] as string | undefined) ??
+            (ctx.req.headers['x-vercel-ip-country'] as string | undefined),
+          userId: ctx.actor?.user.id ?? null,
+          accountType: ctx.actor?.session.mode ?? null,
+        },
+        ctx.secret,
+        ctx.at,
+      );
+      return { ok: true, recorded: events.length };
+    },
   },
   {
     method: 'GET',

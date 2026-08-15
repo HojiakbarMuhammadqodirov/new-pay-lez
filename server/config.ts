@@ -189,6 +189,27 @@ export const CONFIG = {
     disputeWindowHours: 72,
   },
 
+  /* ─────────────────────────────────────────── website traffic ── */
+  traffic: {
+    /**
+     * How long a gap before the next page view is a new visit rather than the
+     * same one. Thirty minutes is the figure every analytics tool settled on,
+     * and the reason is the same here: shorter counts a long read as two
+     * visits, longer counts tomorrow morning as last night.
+     */
+    sessionIdleMinutes: 30,
+    /**
+     * How long the per-event rows are kept. The daily rollups the console reads
+     * are computed from them, so this is the limit on how far back a *new*
+     * question can be asked — not on how far the charts go.
+     */
+    retentionDays: 400,
+    /** Events accepted in one beacon. A tab that has been open all day batches. */
+    maxBatch: 50,
+    /** Paths are truncated rather than rejected: a long one is still a page. */
+    maxPathLength: 120,
+  },
+
   /* ─────────────────────────────────────────────────────── sessions ── */
   auth: {
     sessionDays: 30,
