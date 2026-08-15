@@ -22,3 +22,17 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# The backend's SQLite file, its WAL, and anything else written at runtime.
+# The schema and the import are code; the database they produce is not.
+server/data
+
+# The Base44 export the backend is seeded from. It is NOT reference material
+# like `updates/` — it is the old app's live database, and it carries names,
+# email addresses, phone numbers, card last-fours, wallet addresses and
+# transaction records belonging to identifiable people. It must never reach a
+# remote, and `db/import.ts` is the only thing that reads it. A clone without
+# it migrates and serves normally; the import reports "nothing (new-data/ not
+# found)" and moves on. The two spec PDFs live there too, and go the same way
+# for the simpler reason that they are commercial documents.
+new-data/

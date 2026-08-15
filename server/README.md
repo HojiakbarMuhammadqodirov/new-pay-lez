@@ -1,0 +1,199 @@
+# `server/` — the Paylez backend
+
+The server-side half of Paylez, built from the two statements of work in
+`new-data/`:
+
+- `paylez-backend-technical-spec.pdf` — the consumer mobile app and its partner
+  companion mode. Sections are cited as **§n** throughout the code.
+- `paylez-desktop-platform-backend-spec.pdf` — the partner dashboard, the
+  consumer web app, and platform operations. Cited as **A1**, **B3**, **C2**,
+  **Part D** and so on.
+
+It is seeded from the old database: the Base44 export in `new-data/`, thirty-one
+CSVs covering the guidebook, the venues, the deals, the people and the rate
+sheet. `db/import.ts` is the only file that knows those shapes.
+
+## Running it
+
+```bash
+npm run server         # migrate, import if empty, serve on :8787
+npm run server:import  # re-import the export and exit
+npm run verify:api     # the test suite — 284 checks, no browser, no network
+npm run openapi        # regenerate openapi.json from the route table
+```
+
+## For whoever builds a client
+
+- **`API.md`** — the flows a spec file cannot express: the gate's four steps,
+  idempotency, offline queueing, the games protocol, what counts as a claim, and
+  the money/time/language conventions. Read this first.
+- **`openapi.json`** — 111 paths, 121 operations, generated from `allRoutes` so
+  it cannot drift. Point a generator at it rather than hand-writing a client.
+- **`FLUTTER-BRIEF.md`** — the standing instruction for the mobile app, written
+  to be handed over whole.
+
+Node 22.18+ runs the TypeScript directly (`--experimental-strip-types` is on by
+default), so there is no build step and no bundler. `npx tsc -b` type-checks the
+whole repo including this project.
+
+**Zero runtime dependencies.** `node:sqlite` for storage, `node:http` for the
+server, `node:crypto` for scrypt, HMAC and AES-CMAC. That is the same rule the
+front end follows for fonts and geometry, and it matters more here: this process
+holds the points ledger, and a supply chain is a thing that can be compromised.
+
+### Environment
+
+| Variable | Default | What it does |
+| --- | --- | --- |
+| `PORT` / `HOST` | `8787` / `127.0.0.1` | Where to listen. |
+| `PAYLEZ_DB` | `server/data/paylez.db` | SQLite file. `:memory:` for tests. |
+| `PAYLEZ_SECRET` | *dev fallback, warns loudly* | Signs QR payloads and sessions. |
+| `PAYLEZ_NFC_KEY` | unset | 16-byte hex master key for NTAG 424 DNA taps. |
+| `PAYLEZ_ORIGINS` | `http://localhost:5173` | CORS allow-list. |
+| `PAYLEZ_BILLING` | `local` | `live` refuses to run without a real adapter. |
+| `PAYLEZ_PUSH` | `local` | Same, for FCM/APNs. |
+| `PAYLEZ_LLM` | `off` | The assistant composes deterministically when off. |
+
+## Layout
+
+```
+config.ts            every tunable, with the constraint that set it
+main.ts              boot: migrate, seed, import, serve
+jobs.ts              the six scheduled rules (expiry, releases, lifecycle, …)
+verify.ts            the test suite
+
+db/    schema.sql    every entity in §14 and Part E
+       db.ts         open, migrate, nested transactions
+       csv.ts        an RFC 4180 reader, for the export
+       import.ts     the old database → this schema
+
+domain/              the rules. React-free, HTTP-free, testable on their own
+       ledger.ts     §2   append-only points, FIFO lots, expiry, caps
+       gate.ts       §3   the universal amount-capture gate
+       budget.ts     §4-5 the pools: spent / reserved / available
+       vouchers.ts   §4   tiers, reserve-debit-release, gift cards
+       campaigns.ts  §5   stamp cards, exact-cost rewards, one per visit
+       deals.ts      §6   targeting, funnel, lifecycle, pushes
+       games.ts      §7   server-owned answers and scoring
+       social.ts     §8   referrals and leaderboards
+       notifications.ts §9 inbox, frequency caps, quiet hours
+       assistant.ts  §10  grounded retrieval, consumer and partner
+       analytics.ts  §12/B9 the estimated-sales pipeline and the findings
+       profiles.ts   B9a  consent-gated identified customers
+       entitlements.ts §12a/B7/D plans, subscriptions, entitlements
+       consent.ts    §1.3/1.4 consent records, GDPR export and erasure
+       fraud.ts      §13  velocity, trust tiers, disputes
+       partners.ts   B1-B6 the authoring surface
+       accounts.ts   §1.1 identity, provisional accounts, sessions
+
+crypto/              qr + session tokens, AES-CMAC, NTAG 424 verification, scrypt
+http/                router, server, input validation, route modules
+ports/               the three external boundaries — see below
+```
+
+## What is real, and what is an adapter
+
+Everything that decides anything is real and runs. The three boundaries below
+need credentials this repository does not have; each has a local adapter so the
+system is exercisable end to end, and each names the exact place a live
+implementation plugs in.
+
+| Boundary | Real here | Adapter |
+| --- | --- | --- |
+| `ports/billing.ts` | The whole subscription lifecycle, source reconciliation, entitlement resolution, webhook idempotency | The network call to Stripe / the App Store, and their signature schemes |
+| `ports/push.ts` | Every delivery decision: frequency cap, quiet hours, mode tag, partner quota, the honest reach figure | The FCM / APNs connection |
+| `ports/llm.ts` | Retrieval, grounding, and the deterministic sentence | The model call, plus the post-check that no number appears that the facts do not contain |
+
+NFC is *not* on that list. `crypto/nfc.ts` implements AES-CMAC (checked against
+RFC 4493's own vectors), the PICC decryption, the AN12196 session key and the
+counter rule. It needs a master key, not a vendor.
+
+## The eight rules worth knowing before changing anything
+
+1. **The balance is derived, never edited.** `users.points_cache` is written only
+   by `ledger.ts`, always beside the entry that justifies it, and `reconcile()`
+   proves it against the ledger. A reversal is a compensating entry; the original
+   row is never touched. (§2.1)
+
+2. **A pool has exactly three states and they exhaust it.** `available` is never
+   stored — it is `base − spent − reserved`. `verify.ts` checks the identity
+   after every operation, because a bar that does not add up lets an owner commit
+   the same złoty twice. (§4.2)
+
+3. **Nothing of value exists before the commit.** One gate, four steps, in one
+   database transaction. No provisional points, no half-stamped card, no
+   "pending" discount. (§3.1, §3.5)
+
+4. **The server owns the answer.** `game_sessions.secret` never leaves
+   `domain/games.ts`; the client reports events and is told about one at a time.
+   (§7.1)
+
+5. **Money is an integer in minor units, and time is UTC resolved to venue-local.**
+   Budget periods, deal windows, quiet hours and "one visit per day" are all the
+   venue's clock, via `Intl` in `domain/time.ts`. (§3.4, §15)
+
+6. **Aggregate only, with a minimum cohort — and identified profiles need a
+   grant.** Suppression returns a *state*, not a zero. The identified-customer
+   queries join `data_sharing_consents` in SQL, so there is no code path that
+   reads a customer row without one. (§1.3, §1.4, B9a)
+
+7. **Ask what an account is entitled to, never what it paid.** Every tier
+   difference is a key in `plan_entitlements`, which is config. A lapse
+   restricts; it never claws back points or deletes data. (§12a, B7, D)
+
+8. **Everything that authors or moves value is audited**, through the single
+   `audit.record`. (Part E)
+
+## Where the spec and the old data disagree
+
+Two places, both resolved in favour of the spec, the first reported by the
+import every time it runs:
+
+- **Percentage rewards on a visit trigger.** `LoyaltyVoucherCampaign` rows pay a
+  percentage; §5.1 says a campaign pays a fixed item with an exact cost, because
+  the exact cost is what makes its budget reserve exact. They are converted to
+  fixed-cost campaigns at that percentage of the venue's average check. **Those
+  three campaigns want a real reward and a real cost typing in** — the conversion
+  keeps the arithmetic honest, it does not invent what the venue gives away.
+- **The lapse wipe.** The old app zeroed a player's points after 24 hours without
+  play — its own hot-deal terms in the export say so. The new ledger gives points
+  a twelve-month life (§2.3) and lists no reason for a negative entry that looks
+  like a wipe, so a lapse resets the *streak* only. `domain/games.ts` says this at
+  the point it happens.
+
+### The quiz banks
+
+`CountryCapital` has 196 countries with names and capitals in four languages and
+no ISO codes, so `db/countries.ts` supplies the mapping — which is what a flag
+question needs, since the emoji is two regional-indicator letters derived from
+the two-letter code. The import builds **1 568 questions**: capitals and flags,
+196 each, in English, Polish, Russian and Uzbek. Wrong answers come from the same
+continent, chosen by a fixed stride rather than a random pick, so the bank is a
+pure function of the export and a disputed question can be reconstructed.
+
+`assertComplete` throws at import time on a country the table does not know, and
+the table refuses to load if two names normalise to one key — both because the
+failure is otherwise invisible: the bank is simply smaller and every test still
+passes. The second guard earned itself immediately. Stripping "Rep." and "Dem."
+as noise words collapsed `Congo, Dem. Rep.` and `Congo, Rep.` into one key, and
+every Kinshasa question got Brazzaville's flag.
+
+### Re-running the import
+
+`npm run server:import` is safe on a database that already has data: every row
+the import writes has a derived id, so a second run updates in place instead of
+delete-and-recreating — which would cascade a budget's movements away — and the
+opening balances insert once and only once. `verify:api` runs a full double
+import and asserts nothing moved.
+
+The remittance tables (`Wallet`, `Recipient`, `Transaction`, `PaymentMethod`) are
+imported into `legacy_*` and served read-only: both specs put real money movement
+in a separate later track, so nothing in `domain/` writes to them.
+
+## Connecting the front end
+
+The React site in `src/` still runs on `localStorage` (`src/site/auth/`), which
+its own `users.ts` says must be replaced by a server. The API shapes were chosen
+to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
+fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
+module, not a redesign. `GET /v1` lists all 121 endpoints.

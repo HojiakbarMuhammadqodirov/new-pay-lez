@@ -33,6 +33,13 @@ and a build that silently rebuilt 3 MB of game data from files that may not be
 present would fail on a fresh clone for no reason. Run it when a new export
 lands, and commit what it writes.
 
+`npm run server` starts the backend, and `npm run verify:api` is *its* test
+suite — a second one, because it checks a different kind of thing (see
+`server/README.md`). `tsc -b` type-checks both projects: `tsconfig.app.json`
+covers `src/`, `tsconfig.server.json` covers `server/`, and they are separate
+because one targets a browser and the other Node. `npm run server:import`
+re-reads the old database in `new-data/` and exits.
+
 ## Layout
 
 The site is `src/site/` — one file per route, plus `games/`, `i18n/`, `theme/`
@@ -40,6 +47,37 @@ and `auth/`, and all styling in the single sheet `site.css`. The globe is
 `src/components/GlobeHero/` — see `README.md`. `landing/` and `b2b/` are design
 prototypes, not code. `updates/` is inbound material — exports and specs handed
 over to be built from, read by `npm run banks`; nothing in `src/` imports it.
+
+`server/` is the backend, built from the two statements of work in `new-data/`
+and seeded from the Base44 export beside them. It shares nothing with `src/` —
+no imports either way — and is documented in `server/README.md`; read that
+before changing anything under it.
+
+### `server/` is a separate program in the same repo
+
+Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
+`node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
+it (migrating, seeding and importing the old database on an empty file);
+`npm run verify:api` is its test suite, the counterpart of `npm run verify`, and
+it is what checks the rules that are arithmetic rather than rendering — the
+points ledger's FIFO expiry, the budget pool's three states, the amount-capture
+gate, the min-cohort suppression, the consent gate on identified customers.
+**Run it after touching anything under `server/domain/`.**
+
+Two things about it are easy to undo by accident and both are checked:
+
+- **The balance is derived, never edited.** `users.points_cache` is written only
+  by `domain/ledger.ts` and reconciled against the ledger; a reversal is a
+  compensating entry and never a mutation of the row it reverses.
+- **A pool has exactly three states and they exhaust it** — spent, set aside,
+  available — which is the same rule `partnerMetrics.ts` states on the front end,
+  enforced here on the money that actually moves.
+
+The React site still runs on `localStorage` (`src/site/auth/`, which says so at
+the top of `users.ts`). Wiring it to this backend is a client module, not a
+redesign: the API returns the fields `PlayerState` and `BusinessProfile` already
+use. Until somebody does, the two halves are independent and both are correct on
+their own terms.
 
 ### `landing/` and `b2b/` are reference material
 
@@ -63,14 +101,47 @@ discarded, they are what an English reader sees.
 in dark, a cyan on near-white in light. Don't introduce a third hue; derive
 tints from the accent with alpha the way `--surface` / `--border` do.
 
-There are exactly two sanctioned exceptions, and both are cases where the thing
-depicted *is* its colours: flag emoji, and the controller's four face buttons on
-the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`). The second is
-new and worth the words: on black the controller is a dark moulding lit by the
+There are exactly three sanctioned exceptions, and all three are cases where the
+thing depicted *is* its colours: flag emoji; the controller's four face buttons
+on the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`); and the
+platformer behind the signed-in Play screen (`LEVEL.palette` in `level/config.ts`).
+
+The controller is worth the words: on black it is a dark moulding lit by the
 accent, which is the whole look. On paper that same accent became a colour cast
 on pale grey plastic — a photo with the white balance wrong — so light mode
-lights it with white and puts the colour where a gamepad actually keeps it. Do
-not read either exception as licence for a third hue anywhere else.
+lights it with white and puts the colour where a gamepad actually keeps it.
+
+The level is worth more of them, because it is the largest of the three. It
+draws a brick, a lucky box, a mushroom and a pipe, and a backdrop has no labels
+— so on one accent they are four identical rectangles and the thing stops being
+a level at all. The four hues are the Play mock's own
+(`b2b/Paylez Play.dc.html`), which spends them on exactly the same problem one
+layer up. Three constraints keep it from leaking: the **ground** is drawn in
+`primaryColor`; the **runner** is drawn in it too, at four lightnesses, because
+he is the product moving through the level rather than part of the scenery; and
+the `ink` row is those same four hues taken down to where they read on paper —
+it is **not** a second accent ramp and nothing in `site.css` may reach for it.
+The exception is the *set*, not the cast.
+
+Do not read any of the three as licence for a fourth hue. In particular, when a
+design hands you a colour per item and you are *not* depicting an object, reach
+for texture instead — see the `[data-texture]` note below.
+
+**When a design hands you a hue per item, reach for texture — unless the item is
+an object.** The Play mock (`b2b/Paylez Play.dc.html`) gives each game its own
+colour, and that colour is doing real work: it is how six cards in a grid stop
+being the same card six times. The work is what had to be kept, not the
+mechanism. `[data-texture]` on `.play-card` paints a different repeating pattern
+per game in `--accent-rgb` at three to five percent, and the cards read as six
+objects with one accent on the page. `PLAY_TEXTURES` in `games.tsx` is
+index-aligned with `GAMES` like everything else there. The alphas are the whole
+difficulty and they are set by the worst case — a texture crisp enough to admire
+on an empty card is noise under the two rule lines every card carries.
+
+That is the rule for *cards*, which are surfaces carrying their own labels. It
+is not the rule for the level behind them, where a brick and a lucky box are
+different things rather than differently-decorated ones and no label exists to
+tell them apart. Deciding which of the two you have is the whole judgement.
 
 **The brand is the word, and the word is `900 21px/1 Onest`.** That is the app's
 own declaration, carried over exactly: `--font-brand` / `--brand-size` in
@@ -162,6 +233,26 @@ not two half-sentences, because the words either side of a price do not sit in
 the same order in every language. Prices snap to a step the currency actually
 uses and estimates snap to two significant figures, both in `currency.ts`: a
 price tag reading £126.65 is an exchange rate, and nobody chose it.
+
+There is a fourth rounding mode for the case that rule destroys. `unit` keeps
+the currency's own minor units (`decimals`, read from `fx.ts` like the rate) and
+is for a per-something cost: a cost per claim, per visit or per new customer is
+a pound or two at most, and `exact` rounds all three of them to "£1" — which is
+what the partner dashboard's "where your money works" panel showed before it
+existed, three different figures written identically. It is 0 decimals where the
+currency has no minor unit, so a soum never grows a fractional part.
+
+**Every rate in the building comes from `i18n/fx.ts`.** That is the nineteen
+currencies the Relocate converter offers, each as units per one euro, from the
+rate sheet handed over for it — and the five in `currency.ts` read their `rate`
+from it rather than carrying their own. One anchor, so a cross rate is
+`to.rate / from.rate` and is exact for all 342 pairs; one table, so the
+converter and the price tag two pages over cannot quote different pounds. Two
+things live *outside* it on purpose: digit grouping, which belongs to the
+reader's language and not to the currency being written (`CURRENCIES[language].group`),
+and the currency *names*, which are dictionary copy keyed by ISO code — indexed
+with `FxCode`, so a currency added to the table without all five names is a
+build error.
 
 **There are three kinds of person, and only two of them are choosable.**
 `admin` sits beside `individual` and `business` in `AccountType` rather than
@@ -287,6 +378,17 @@ controls. Note the error style: the palette has one accent, so an error cannot
 be red — it is weighted instead (700 in `--text`, and the control drops its
 tint), which is louder by contrast rather than by hue.
 
+**Anything shaped like a control has to be one, edge to edge.** Two versions of
+the same bug shipped on Relocate: the converter's amount was an input sized to
+its own digits, so the only tappable part of a full-width row was the number
+itself; and the assistant's ask box was a `<span>` that looked exactly like a
+field and did nothing at all. The fixes are the pattern — wrap the input in a
+`<label>` that fills the row, so the well, the currency symbol and the empty
+space after the digits all put the caret in it; and give a decorative field a
+real destination (the ask box is an `<a>` to sign-in, which is where the
+assistant lives). A picture of a control is only honest when nothing about it
+invites a tap.
+
 **Per-frame work does not go through React state.** This is the load-bearing
 rule of the codebase. Scroll position is written to a ref by a passive listener
 and read in the render loop; the centred-country result goes through
@@ -327,6 +429,32 @@ bundled, the flag font copied into `public/`), geometry comes from the
   page background. The console is also the one signed-in screen with **no
   assistant dock** — the assistant answers out of *your* points, vouchers and
   city, and an admin has none of those.
+- **The partner dashboard carries the prototype's arithmetic, not its output.**
+  `b2b/Paylez Partner Dashboard v2.dc.html` is a working React app: a page of
+  seeds and a page of maths that turns them into every figure on all its screens.
+  `partnerMetrics.ts` is that ported — the seeds verbatim, and the derivations
+  re-run. Transcribing the *numbers* instead was the version before it, and it
+  drifted the first time one was edited: the overview's attribution, the deals
+  table's claim rates, the two budget pools and the cost per new customer are
+  four views of one venue and have to move together. Two things follow. **A pool
+  has exactly three states and they exhaust it** — spent, set aside, available;
+  `npm run verify` checks both pools sum to their budget, because a bar that does
+  not lets an owner commit the same money twice. And **a figure shown twice is
+  computed once**: the cost-per-new-customer headline and the last column of the
+  trend beside it are one value, the plan card in the rail reads the same pool
+  the Campaigns screen does, and the prototype's own third seed for that column
+  (which disagreed with its headline by a few pence) is gone.
+- **The dashboard's surface is glass, and dense panels opt out of it.** Every
+  panel is `.pd-glass` over the aurora on `.pd-app::before` — two radial fields
+  of `rgba(var(--glow-rgb), …)`, the accent at alpha, not a second hue. The sheet
+  opacity is one token, `--pd-glass`, set by the worst frame (body copy over the
+  brightest part of the wash) rather than by how a card looks over an empty
+  corner — the same argument `--glass` makes for the marketing cards, on a screen
+  with far more text. Tables and the heat map take `data-solid`, which keeps the
+  sheet and drops the blur: tabular figures at 0.78rem over a live gradient is
+  the reading the rule exists to protect, and `backdrop-filter` on a dozen
+  stacked panels is the most expensive thing on the page. Reduced-transparency
+  and reduced-motion both turn it off.
 - **The console reports; it does not edit.** There is no server, so every number
   on `#/admin` is derived by the same pure functions the app uses —
   `profileCompleteness` decides "live" there exactly as it does on the owner's
@@ -356,17 +484,22 @@ bundled, the flag font copied into `public/`), geometry comes from the
   are standing. Contact gets it instead: reachable from anywhere is the one other
   thing the globe honestly says. The document's single WebGL context is still
   spent on at most one route at a time.
-- **The backdrop is per route.** Seven *marketing* routes, three canvases. Landing
-  *and* Contact get the globe, L-Earn gets the node web, B2B gets the market tape
-  (the last two canvas-2D, both on `.site__web`); Analytics gets a CSS plot grid
-  (`.site__grid`), Vouchers a CSS perforation (`.site__stubs`) and Relocate CSS
-  rings (`.site__rings`). `Site.tsx` renders exactly one. Rendering two costs a
-  second context on a page that already spends one on the controller; browsers cap
-  how many a document may hold and start dropping the oldest. Only the globe is
-  WebGL, and that is the budget — a page past the third reaches for CSS, the way
-  Analytics, Vouchers and Relocate did, or reuses a canvas that already means the
-  right thing, the way Contact reuses the globe. Reuse is free: one route is
-  mounted at a time.
+- **The backdrop is per route — and on L-Earn, per *reader*.** Seven *marketing*
+  routes, six canvas components. Landing *and* Contact get the globe (the only
+  WebGL one); L-Earn gets the arcade trail (`arcade/`) signed out and the
+  platformer (`level/`) signed in, Analytics the node web (`network/`), B2B the
+  market tape (`market/`) and Vouchers the drifting stubs (`stubs/`) — all five
+  canvas-2D, all on `.site__web`; Relocate keeps CSS rings (`.site__rings`).
+  `Site.tsx` renders exactly one, and that is what makes six components
+  affordable: the document holds at most one backdrop context at a time, plus
+  the controller's on L-Earn. Rendering two at once costs a second context on
+  that page; browsers cap how many a document may hold and start dropping the
+  oldest. The five 2D backdrops share one construction — props for
+  `primaryColor`/`tone`, a config file, nothing per-frame through React state,
+  a one-frame still under `prefers-reduced-motion` — so read one before writing
+  a sixth. **L-Earn's split is the only one keyed to the session, and it keys off
+  `isPlayer`, the same test `<main>` uses** — the backdrop and the page it sits
+  behind have to agree about which of the two L-Earns this is.
 - **A reused globe still needs its scroll anchor.** `scrollTransition` is off only
   for sign-in, which is one screenful with nothing under it. Any other page that
   takes the globe has content below the fold, and a globe held in the hero pose
@@ -375,13 +508,72 @@ bundled, the flag font copied into `public/`), geometry comes from the
   section (`scrollAnchorId` in `Site.tsx`) and let the globe retire into the arc.
 - **Each backdrop has to *mean* something, or it is wallpaper.** The globe is a
   border being crossed — which is why Contact keeps it rather than inventing a
-  sixth thing; the node web is a player base (drifting points that link to each
-  other); the market tape is repeat custom compounding into revenue — a line that
-  climbs, and the only thing that moves it is a venue under it firing (on its own
-  rhythm, or because your cursor walked past); the perforation behind Vouchers is
-  the tear line down a ticket stub, and it is the one that does not move, because
-  a perforation does not. They are different pictures on purpose. A new one that
-  is "the node web but different particles" is a reason not to add it.
+  seventh thing; the arcade trail behind L-Earn is the page's own game — gates
+  drifting past, a flyer threading the gaps on autopilot (or chasing your
+  cursor), a pulse where a gate pays; the node web behind Analytics is the
+  customer base being measured (drifting points that link to each other — it
+  moved there from L-Earn, where it was "a player base", when L-Earn got its
+  own game); the market tape is repeat custom compounding into revenue — a line
+  that climbs, and the only thing that moves it is a venue under it firing (on
+  its own rhythm, or because your cursor walked past); the stubs behind
+  Vouchers are the tickets themselves, notched and tear-lined, settling into a
+  wallet; the platformer behind the *signed-in* L-Earn is the page's promise in
+  the one grammar nobody has to be taught — a runner breaks blocks, takes a
+  power-up out of a lucky box, grows, and leaves down a pipe, which is play, get
+  bigger, cash out. They are different pictures on purpose. A new one that is
+  "the node web but different particles" is a reason not to add it.
+
+- **The runner is a sprite, and sprites are authored as text.** `level/sprite.ts`
+  holds each frame as rows of `.o+#-` on an 18 × 27 grid — the source *is* the
+  picture, so you edit it by looking at it, and a frame that stops being
+  `COLS × ROWS` throws at module load rather than drawing a quietly lopsided
+  figure. It has already caught one. He was a stroked stick figure first and that
+  was wrong the way a vector logo is wrong on a games console: everything around
+  him is cells on a grid, and the one smooth-curved thing in the frame read as a
+  different picture pasted on top. Six things there are not free:
+  - **Shading is four colours at one alpha**, never one colour at four alphas.
+    Alpha means "brighter" on black and "darker" on paper, so an alpha-built
+    highlight inverts in light mode. The four are a *ramp*, not four garments:
+    the darkest doubles as every shadow on the figure and the second-lightest as
+    every highlight, and that is how the brow shadow, the hi-vis band and the
+    belt buckle exist without a fifth colour.
+  - **Each frame is stamped into a tiny offscreen canvas and blitted** with
+    `imageSmoothingEnabled = false`. Painting the cells straight onto the page
+    double-blends every overlap and draws a bright grid over the figure.
+  - **The run is eight frames** — contact, down, passing, up, twice over. Two
+    frames is a march. Four was the next wrong answer: contact and passing only
+    is a run with no vertical in it, so the body travels along a flat line with
+    its legs swapping under it. Down and up are what put the bounce in.
+  - **The bob is the row count, not an offset.** Each leg block is a different
+    height and `pose` pads the top of the frame to `ROWS`, so a shorter block
+    settles the whole figure without lifting his feet off the floor — which is
+    what a bent knee does. The pad goes at the *top* because `drawRunner` puts
+    the last row on the ground and builds upward.
+  - **The legs repeat every four frames; only the arms run all eight.** Mirroring
+    the legs for the second half is the obvious version and it moonwalks: within
+    a step the planted boot walks *backwards* under the body, and a mirror runs
+    that sweep forwards on alternate steps. It is also the truer ratio — a stride
+    is two steps and an arm goes forward once per stride. The two poses that
+    *are* mirror-symmetric, contact and airborne, are drawn symmetric on purpose:
+    both are frames the eye rests on, and one column off centre is a lean.
+  - **One size of art, drawn at two heights.** The mushroom scales him. Two
+    hand-drawn sizes is twice the art to keep in step for a figure fifty pixels
+    tall, and "same person, bigger" is what a power-up should read as. The grid's
+    2:3 ratio is what makes a resolution change free — `drawRunner` derives the
+    cell size from `frame.length` and the width from `COLS`, so he lands on
+    screen at the same size and the block-striking peaks in `LEVEL.moves` still
+    hold. Changing the *frame count* is not free: `LEVEL.runner.stride` is frames
+    per tile and has to scale with it or the cadence moves.
+- **The level is scripted, not simulated, and that is not laziness.**
+  `LEVEL.moves` is a gapless list of parabolas and the runner's height is a
+  lookup into it. There is no gravity, no collision and no fail state, because a
+  simulated runner on a backdrop is one who eventually falls in a pit at 3am and
+  lies there until somebody reloads the page. Every jump clears every pit
+  because the jump *is* the level. The corollary is that the two are authored
+  together: a block moved without moving the jump that strikes it is a runner
+  sailing through it with nothing happening, and a `peak` is the height of his
+  **feet** while what has to reach the block is his **head**. Both of those have
+  already been wrong once; `config.ts` says so at the point of use.
 - **Charts and product mocks are DOM, not canvas and not images.** Analytics'
   funnel and week chart, and B2B's owner dashboard and pillar consoles, are divs
   with a custom property for their size, animated with `transform` off the shared `[data-shown]` reveal.
