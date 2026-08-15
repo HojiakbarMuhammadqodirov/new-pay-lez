@@ -130,10 +130,12 @@
             {{ secondaryIcon }}
             {{ secondaryLabel }}
           </button>
+          <sc-if value="{{ showPrimary }}" hint-placeholder-val="{{ true }}">
           <button onClick="{{ primaryAction }}" style="display:flex;align-items:center;gap:8px;padding:11px 18px;border-radius:10px;border:none;background:#0B1512;color:#5FE9C4;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap" style-hover="background:#16302A">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"></path></svg>
             {{ primaryLabel }}
           </button>
+          </sc-if>
         </div>
       </div>
 
@@ -363,129 +365,100 @@
       </sc-if>
 
       <sc-if value="{{ showAssistant }}" hint-placeholder-val="{{ false }}">
-        <div style="display:flex;flex-direction:column;gap:20px;animation:plzFade .3s ease;max-width:940px">
+        <div style="display:flex;flex-direction:column;gap:20px;animation:plzFade .3s ease;max-width:1080px">
 
-          <section style="background:#0B1512;border-radius:18px;padding:28px 30px">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;color:#5FE9C4;margin-bottom:14px">WHAT I KNOW ABOUT YOUR VENUE</div>
-            <p style="margin:0 0 20px;font-size:17px;color:#FFFFFF;line-height:1.6;max-width:620px;text-wrap:pretty">{{ asIntro }}</p>
-            <div style="display:flex;flex-direction:column;gap:9px">
-              <sc-for list="{{ asKnows }}" as="k" hint-placeholder-count="4">
-                <div style="display:flex;align-items:flex-start;gap:10px">
-                  <span style="width:5px;height:5px;border-radius:50%;background:#5FE9C4;margin-top:8px;flex:0 0 5px"></span>
-                  <span style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.6">{{ k.text }}</span>
-                </div>
-              </sc-for>
-            </div>
-          </section>
-
-          <div style="{{ asThinStyle }}">
-            <div style="display:flex;align-items:flex-start;gap:12px;padding:18px 20px;border-radius:14px;background:rgba(198,138,63,0.1);border:1px solid rgba(198,138,63,0.3)">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C68A3F" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 18px;margin-top:1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
-              <span style="font-size:13.5px;line-height:1.65">{{ asThinNote }}</span>
-            </div>
-          </div>
-
-          <section style="{{ asStartStyle }}">
-            <div style="background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:24px">
-              <h2 style="margin:0 0 5px;font-size:16px;font-weight:700">What do you want to happen?</h2>
-              <p style="margin:0 0 18px;font-size:13px;color:#6B7772">Pick the closest one. I will ask two short questions after that, then show you a draft.</p>
-              <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px">
-                <sc-for list="{{ asGoals }}" as="g" hint-placeholder-count="4">
-                  <button onClick="{{ g.go }}" style="{{ g.style }}">
-                    <span style="display:block;font-size:14px;font-weight:700;margin-bottom:5px">{{ g.label }}</span>
-                    <span style="display:block;font-size:12.5px;color:#6B7772;line-height:1.5">{{ g.note }}</span>
-                  </button>
-                </sc-for>
-              </div>
-
-              <div style="display:flex;gap:26px;flex-wrap:wrap;margin-bottom:20px">
-                <div>
-                  <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:9px">How much can you spend on it?</label>
-                  <div style="display:flex;padding:3px;border:1px solid #E6E9E8;border-radius:10px;background:#F6F8F7;gap:2px;width:fit-content">
-                    <sc-for list="{{ asBudgets }}" as="b" hint-placeholder-count="3">
-                      <button onClick="{{ b.go }}" style="{{ b.style }}">{{ b.label }}</button>
-                    </sc-for>
-                  </div>
-                </div>
-                <div>
-                  <label style="display:block;font-size:12.5px;font-weight:700;margin-bottom:9px">For how long?</label>
-                  <div style="display:flex;padding:3px;border:1px solid #E6E9E8;border-radius:10px;background:#F6F8F7;gap:2px;width:fit-content">
-                    <sc-for list="{{ asWeeks }}" as="w" hint-placeholder-count="3">
-                      <button onClick="{{ w.go }}" style="{{ w.style }}">{{ w.label }}</button>
-                    </sc-for>
-                  </div>
-                </div>
-              </div>
-              <p style="margin:0 0 22px;font-size:12.5px;color:#6B7772;line-height:1.6;max-width:560px">{{ asBudgetNote }}</p>
-              <button onClick="{{ asStart }}" style="{{ asStartStyleBtn }}">Set it up for me</button>
-            </div>
-
-            <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:16px">
-              <div style="flex:1 1 380px;min-width:300px;background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:22px 24px">
-                <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:14px">START FROM ONE OF THESE</div>
-                <div style="display:flex;gap:9px;flex-wrap:wrap">
-                  <sc-for list="{{ asSuggestions }}" as="s" hint-placeholder-count="4">
-                    <button onClick="{{ s.go }}" style="padding:11px 15px;border-radius:999px;border:1px solid #E6E9E8;background:#FFFFFF;font-size:13px;font-weight:600;color:#0B1512;cursor:pointer;text-align:left" style-hover="border-color:#0B7F63;color:#0B7F63">{{ s.label }}</button>
+          <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:stretch">
+            <section style="flex:1 1 300px;min-width:250px;background:#0B1512;border-radius:18px;padding:28px 30px;display:flex;flex-direction:column">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.12em;color:#5FE9C4;margin-bottom:14px">WHAT I KNOW ABOUT YOUR VENUE</div>
+              <div style="{{ asKnowEstStyle }}">
+                <p style="margin:0 0 20px;font-size:16px;color:#FFFFFF;line-height:1.6;text-wrap:pretty">{{ asIntro }}</p>
+                <div style="display:flex;flex-direction:column;gap:11px">
+                  <sc-for list="{{ asKnows }}" as="k" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:flex-start;gap:10px">
+                      <span style="width:5px;height:5px;border-radius:50%;background:#5FE9C4;margin-top:8px;flex:0 0 5px"></span>
+                      <span style="font-size:13px;color:rgba(255,255,255,0.65);line-height:1.6">{{ k.text }}</span>
+                    </div>
                   </sc-for>
                 </div>
               </div>
-              <div style="flex:1 1 380px;min-width:300px;background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:22px 24px;display:flex;flex-direction:column">
-                <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:14px">OR TELL ME IN YOUR OWN WORDS</div>
-                <textarea value="{{ asFreeText }}" onInput="{{ onAsFreeText }}" rows="3" placeholder="{{ asFreePlaceholder }}" style="width:100%;padding:12px 14px;border:1px solid #E6E9E8;border-radius:11px;background:#FFFFFF;font-size:13.5px;color:#0B1512;outline:none;resize:vertical;line-height:1.6;font-family:inherit;margin-bottom:12px" style-focus="border-color:#0B7F63"></textarea>
-                <div style="font-size:12px;color:#9AA5A0;line-height:1.6;margin-bottom:16px">{{ asFreeNote }}</div>
-                <div style="flex:1"></div>
-                <div><button onClick="{{ asFreeGo }}" style="{{ asFreeStyle }}">Set it up from that</button></div>
-              </div>
-            </div>
-          </section>
-
-          <section style="{{ asAskStyle }}">
-            <div style="background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:24px">
-              <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap">
-                <h2 style="margin:0;font-size:16px;font-weight:700">Two questions, then I will show you a draft</h2>
-                <button onClick="{{ asAskBack }}" style="padding:8px 13px;border-radius:9px;border:1px solid #E6E9E8;background:#FFFFFF;font-size:12.5px;font-weight:600;color:#6B7772;cursor:pointer" style-hover="border-color:#0B7F63;color:#0B7F63">Start over</button>
-              </div>
-              <div style="{{ asRetainedStyle }}">
-                <div style="padding:14px 16px;border-radius:12px;background:#F6F8F7;border:1px solid #E6E9E8;margin-bottom:22px">
-                  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:9px">
-                    <sc-for list="{{ asRetained }}" as="r" hint-placeholder-count="3">
-                      <span style="display:inline-flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;background:#FFFFFF;border:1px solid #E6E9E8;font-size:12.5px">
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#0B7F63" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 12px"><path d="m5 12 5 5L20 6"></path></svg>
-                        <span style="color:#6B7772">{{ r.label }}:</span>
-                        <span style="font-weight:700">{{ r.value }}</span>
-                      </span>
-                    </sc-for>
-                  </div>
-                  <div style="font-size:12px;color:#9AA5A0;line-height:1.6">{{ asRetainedNote }}</div>
+              <div style="{{ asKnowNewStyle }}">
+                <p style="margin:0 0 22px;font-size:16px;color:#FFFFFF;line-height:1.6;text-wrap:pretty">{{ asKnowNewIntro }}</p>
+                <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:rgba(255,255,255,0.4);margin-bottom:13px">WHAT I WILL BE ABLE TO SHOW YOU</div>
+                <div style="display:flex;flex-direction:column;gap:12px">
+                  <sc-for list="{{ asKnowSoon }}" as="k" hint-placeholder-count="4">
+                    <div style="display:flex;align-items:flex-start;gap:10px">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.35)" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 14px;margin-top:3px"><circle cx="12" cy="12" r="9"></circle><path d="M12 8v4l2.5 1.5"></path></svg>
+                      <span style="font-size:13px;color:rgba(255,255,255,0.55);line-height:1.6">{{ k.text }}</span>
+                    </div>
+                  </sc-for>
                 </div>
               </div>
-              <div style="display:flex;flex-direction:column;gap:24px">
-                <sc-for list="{{ asQuestions }}" as="q" hint-placeholder-count="2">
-                  <div>
-                    <div style="font-size:14.5px;font-weight:700;margin-bottom:6px">{{ q.q }}</div>
-                    <div style="font-size:12.5px;color:#6B7772;line-height:1.6;margin-bottom:12px;max-width:600px">{{ q.note }}</div>
-                    <div style="{{ q.optionsStyle }}">
-                      <sc-for list="{{ q.options }}" as="o" hint-placeholder-count="2">
-                        <button onClick="{{ o.go }}" style="{{ o.style }}">{{ o.label }}</button>
-                      </sc-for>
-                      <button onClick="{{ q.otherGo }}" style="{{ q.otherStyle }}">Something else — let me explain</button>
-                    </div>
-                    <div style="{{ q.openStyle }}">
-                      <textarea value="{{ q.otherValue }}" onInput="{{ q.onOther }}" rows="2" placeholder="Say it however you like" style="width:100%;padding:12px 14px;border:1.5px solid #0B7F63;border-radius:11px;background:#FFFFFF;font-size:13.5px;color:#0B1512;outline:none;resize:vertical;line-height:1.6;font-family:inherit;margin-bottom:10px"></textarea>
-                      <button onClick="{{ q.otherBack }}" style="padding:8px 13px;border-radius:9px;border:1px solid #E6E9E8;background:#FFFFFF;font-size:12.5px;font-weight:600;color:#6B7772;cursor:pointer" style-hover="border-color:#0B7F63;color:#0B7F63">Go back to the options</button>
-                    </div>
-                  </div>
+            </section>
+
+            <section style="flex:1 1 280px;min-width:250px;background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:24px;display:flex;flex-direction:column">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:8px">WHAT YOU CAN DO</div>
+              <p style="margin:0 0 16px;font-size:13px;color:#6B7772;line-height:1.6;text-wrap:pretty">{{ asOptionsIntro }}</p>
+              <div style="display:flex;flex-direction:column;gap:10px">
+                <sc-for list="{{ asOptionCards }}" as="c" hint-placeholder-count="4">
+                  <button onClick="{{ c.go }}" style="text-align:left;padding:14px 16px;border-radius:12px;border:1px solid #E6E9E8;background:#FFFFFF;cursor:pointer;display:flex;flex-direction:column;gap:4px;font-family:inherit" style-hover="border-color:#0B7F63;background:#F6F8F7">
+                    <span style="font-size:13.5px;font-weight:700;color:#0B1512">{{ c.name }}</span>
+                    <span style="font-size:12.5px;color:#6B7772;line-height:1.5">{{ c.desc }}</span>
+                  </button>
                 </sc-for>
               </div>
-              <div style="{{ asPushbackStyle }}">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#C68A3F" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 16px;margin-top:2px"><path d="M12 9v5"></path><path d="M12 17h.01"></path><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg>
-                <div style="min-width:0">
-                  <div style="margin-bottom:10px">{{ asPushback }}</div>
-                  <button onClick="{{ asSwitchBack }}" style="padding:9px 14px;border-radius:9px;border:1px solid #E6E9E8;background:#FFFFFF;font-size:12.5px;font-weight:700;color:#0B1512;cursor:pointer" style-hover="border-color:#0B7F63;color:#0B7F63">Use a free filter coffee instead</button>
+            </section>
+          </div>
+
+          <section style="{{ asStartStyle }}">
+            <div style="background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;overflow:hidden;display:flex;flex-direction:column">
+              <div style="padding:17px 24px;border-bottom:1px solid #EEF1F0;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap">
+                <div style="display:flex;align-items:center;gap:9px">
+                  <span style="width:7px;height:7px;border-radius:50%;background:#0B7F63"></span>
+                  <span style="font-size:11px;font-weight:700;letter-spacing:0.12em;color:#0B7F63">TALK TO YOUR ASSISTANT</span>
+                </div>
+                <button onClick="{{ asConvReset }}" style="{{ asConvResetStyle }}" style-hover="border-color:#0B7F63;color:#0B7F63">Start over</button>
+              </div>
+
+              <div style="padding:24px;display:flex;flex-direction:column;gap:16px;min-height:180px">
+                <sc-for list="{{ asConvMsgs }}" as="m" hint-placeholder-count="1">
+                  <div style="{{ m.rowStyle }}">
+                    <div style="{{ m.bubbleStyle }}">{{ m.text }}</div>
+                  </div>
+                </sc-for>
+
+                <div style="{{ asChipsStyle }}">
+                  <div style="display:flex;gap:9px;flex-wrap:wrap">
+                    <sc-for list="{{ asChips }}" as="c" hint-placeholder-count="2">
+                      <button onClick="{{ c.go }}" style="padding:11px 16px;border-radius:999px;border:1.5px solid #0B1512;background:#FFFFFF;font-family:inherit;font-size:13.5px;font-weight:700;color:#0B1512;cursor:pointer" style-hover="background:#0B1512;color:#5FE9C4">{{ c.label }}</button>
+                    </sc-for>
+                  </div>
+                  <div style="font-size:12px;color:#9AA5A0;margin-top:11px">{{ asChipsHint }}</div>
+                </div>
+
+                <div style="{{ asReadyStyle }}">
+                  <div style="border:1px solid rgba(11,127,99,0.3);background:rgba(95,233,196,0.12);border-radius:13px;padding:17px 19px;margin-bottom:15px">
+                    <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#0B7F63;margin-bottom:13px">WHAT I WOULD SET UP</div>
+                    <div style="display:flex;flex-direction:column;gap:9px">
+                      <sc-for list="{{ asReadyItems }}" as="r" hint-placeholder-count="4">
+                        <div style="display:grid;grid-template-columns:130px 1fr;gap:12px;align-items:baseline;font-size:13px">
+                          <span style="color:#6B7772">{{ r.label }}</span>
+                          <span style="font-weight:700">{{ r.value }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                  <button onClick="{{ asAskDone }}" style="padding:13px 20px;border-radius:11px;border:none;background:#0B1512;color:#5FE9C4;font-family:inherit;font-size:14px;font-weight:700;cursor:pointer" style-hover="background:#16302A">Show me the draft</button>
                 </div>
               </div>
-              <div style="margin-top:24px">
-                <button onClick="{{ asAskDone }}" style="padding:13px 20px;border-radius:11px;border:none;background:#0B1512;color:#5FE9C4;font-size:14px;font-weight:700;cursor:pointer" style-hover="background:#16302A">Show me the draft</button>
+
+              <div style="padding:16px 24px 22px;border-top:1px solid #EEF1F0;background:#F6F8F7">
+                <div style="display:flex;gap:10px;align-items:flex-end;background:#FFFFFF;border:1.5px solid #E6E9E8;border-radius:14px;padding:8px 8px 8px 15px">
+                  <textarea value="{{ asFreeText }}" onInput="{{ onAsFreeText }}" onKeyDown="{{ onAsComposerKey }}" rows="1" placeholder="{{ asComposerPlaceholder }}" style="flex:1;min-width:0;border:none;outline:none;background:transparent;font-size:14px;color:#0B1512;resize:none;line-height:1.6;font-family:inherit;padding:7px 0;max-height:120px" style-focus="outline:none"></textarea>
+                  <button onClick="{{ asComposerSend }}" style="{{ asComposerSendStyle }}" title="Send">
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></svg>
+                  </button>
+                </div>
+                <div style="font-size:12px;color:#9AA5A0;margin-top:11px;line-height:1.6;max-width:620px">{{ asComposerNote }}</div>
               </div>
             </div>
           </section>
@@ -804,6 +777,147 @@
           </section>
 
           <section style="background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:24px">
+
+            <div style="{{ custListStyle }}">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:2px">
+                <div style="flex:1 1 340px;min-width:260px">
+                  <h2 style="margin:0 0 6px;font-size:16px;font-weight:700">Your customers</h2>
+                  <p style="margin:0;font-size:13px;color:#6B7772;line-height:1.6;max-width:560px;text-wrap:pretty">{{ custIntro }}</p>
+                </div>
+                <div style="flex:0 0 auto;display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:99px;background:rgba(11,127,99,0.1)">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B7F63" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 5v6c0 4.5 3.2 7.7 8 9 4.8-1.3 8-4.5 8-9V5z"></path><path d="m9 12 2 2 4-4"></path></svg>
+                  <span style="font-size:12.5px;font-weight:700;color:#0B7F63;white-space:nowrap">{{ custCountLine }}</span>
+                </div>
+              </div>
+
+              <div style="{{ custFewStyle }}">{{ custFewNote }}</div>
+
+              <div style="display:flex;gap:8px;flex-wrap:wrap;margin:20px 0 2px">
+                <sc-for list="{{ custFilterBtns }}" as="f" hint-placeholder-count="4">
+                  <button onClick="{{ f.go }}" style="{{ f.style }}">{{ f.label }}</button>
+                </sc-for>
+              </div>
+
+              <div style="overflow-x:auto;margin-top:14px">
+                <div style="min-width:660px">
+                  <div style="{{ custHeadRowStyle }}">
+                    <div style="font-size:11px;font-weight:700;letter-spacing:0.06em;color:#9AA5A0;text-transform:uppercase">Customer</div>
+                    <button onClick="{{ custHead.spent.go }}" style="{{ custHead.spent.style }}">{{ custHead.spent.label }}{{ custHead.spent.arrow }}</button>
+                    <button onClick="{{ custHead.visits.go }}" style="{{ custHead.visits.style }}">{{ custHead.visits.label }}{{ custHead.visits.arrow }}</button>
+                    <button onClick="{{ custHead.recency.go }}" style="{{ custHead.recency.style }}">{{ custHead.recency.label }}{{ custHead.recency.arrow }}</button>
+                    <button onClick="{{ custHead.status.go }}" style="{{ custHead.status.style }}">{{ custHead.status.label }}{{ custHead.status.arrow }}</button>
+                    <div></div>
+                  </div>
+                  <sc-for list="{{ custRows }}" as="r" hint-placeholder-count="6">
+                    <button onClick="{{ r.go }}" style="{{ r.rowStyle }}" style-hover="background:#F6F8F7">
+                      <div style="display:flex;align-items:center;gap:11px;min-width:0">
+                        <span style="{{ r.avatarStyle }}">{{ r.init }}</span>
+                        <div style="min-width:0">
+                          <div style="font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ r.name }}</div>
+                          <div style="display:flex;align-items:center;gap:7px;margin-top:5px">
+                            <div style="height:4px;width:66px;border-radius:99px;background:#EEF1F0;overflow:hidden"><div style="{{ r.progStyle }}"></div></div>
+                            <span style="font-size:10.5px;color:#9AA5A0;white-space:nowrap">{{ r.progLabel }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div style="display:flex;align-items:center;gap:5px;font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums"><span style="{{ r.trendStyle }}">{{ r.trendArrow }}</span><span>{{ r.spent }}</span></div>
+                      <div style="font-size:13px;color:#6B7772;font-variant-numeric:tabular-nums">{{ r.visits }}</div>
+                      <div style="{{ r.lastStyle }}">{{ r.last }}</div>
+                      <div><span style="{{ r.statusStyle }}">{{ r.statusLabel }}</span></div>
+                      <div style="text-align:right"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#C6CFCB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6"></path></svg></div>
+                    </button>
+                  </sc-for>
+                </div>
+              </div>
+              <p style="{{ custShownStyle }}">{{ custShownNote }}</p>
+              <p style="{{ custWithdrewStyle }}">{{ custWithdrewNote }}</p>
+            </div>
+
+            <div style="{{ custEmptyStyle }}">
+              <div style="max-width:520px;padding:8px 0 4px">
+                <span style="display:inline-flex;width:42px;height:42px;border-radius:12px;background:#F6F8F7;align-items:center;justify-content:center;margin-bottom:16px">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6B7772" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 11h-6"></path></svg>
+                </span>
+                <h2 style="margin:0 0 9px;font-size:18px;font-weight:800;letter-spacing:-0.02em">{{ custEmptyTitle }}</h2>
+                <p style="margin:0;font-size:14px;color:#6B7772;line-height:1.65">{{ custEmptyBody }}</p>
+              </div>
+            </div>
+
+            <div style="{{ custDetailStyle }}">
+              <button onClick="{{ cdBack }}" style="display:inline-flex;align-items:center;gap:7px;padding:8px 13px 8px 10px;border-radius:9px;border:1px solid #E6E9E8;background:#FFFFFF;font-family:inherit;font-size:12.5px;font-weight:600;color:#6B7772;cursor:pointer;margin-bottom:22px" style-hover="border-color:#0B7F63;color:#0B7F63">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6"></path></svg><span>All customers</span>
+              </button>
+              <div style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+                <span style="{{ cdAvatarStyle }}">{{ cdInit }}</span>
+                <div style="flex:1 1 240px;min-width:0">
+                  <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap">
+                    <h2 style="margin:0;font-size:23px;font-weight:800;letter-spacing:-0.025em">{{ cdName }}</h2>
+                    <span style="{{ cdStatusStyle }}">{{ cdStatusLabel }}</span>
+                  </div>
+                  <p style="margin:6px 0 0;font-size:13px;color:#6B7772">{{ cdSince }}</p>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:9px;padding:11px 15px;border-radius:11px;background:rgba(11,127,99,0.08);margin-bottom:22px;max-width:660px">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B7F63" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 15px;margin-top:2px"><path d="M12 2 4 5v6c0 4.5 3.2 7.7 8 9 4.8-1.3 8-4.5 8-9V5z"></path></svg>
+                <span style="font-size:12px;color:#0B7F63;line-height:1.55">{{ cdPrivacy }}</span>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;background:#E6E9E8;border-radius:13px;overflow:hidden;margin-bottom:20px">
+                <sc-for list="{{ cdStats }}" as="s" hint-placeholder-count="4">
+                  <div style="background:#FFFFFF;padding:16px 18px">
+                    <div style="font-size:11.5px;color:#9AA5A0;margin-bottom:8px">{{ s.label }}</div>
+                    <div style="font-size:20px;font-weight:800;letter-spacing:-0.02em;font-variant-numeric:tabular-nums">{{ s.value }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;gap:18px;flex-wrap:wrap">
+                <div style="flex:1 1 320px;min-width:280px;border:1px solid #E6E9E8;border-radius:13px;padding:18px 20px">
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#9AA5A0;margin-bottom:18px">SPEND WITH YOU, BY MONTH</div>
+                  <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:12px;height:96px">
+                    <sc-for list="{{ cdTrend }}" as="m" hint-placeholder-count="6">
+                      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">
+                        <div style="{{ m.barStyle }}"></div>
+                        <div style="font-size:10.5px;color:#9AA5A0;margin-top:8px">{{ m.month }}</div>
+                      </div>
+                    </sc-for>
+                  </div>
+                </div>
+                <div style="flex:1 1 300px;min-width:260px;display:flex;flex-direction:column;gap:16px">
+                  <div style="border:1px solid #E6E9E8;border-radius:13px;padding:18px 20px">
+                    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#9AA5A0;margin-bottom:13px">REWARD STATUS</div>
+                    <div style="font-size:14px;font-weight:700;margin-bottom:11px">{{ cdRewardLabel }}</div>
+                    <div style="height:9px;border-radius:99px;background:#EEF1F0;overflow:hidden;margin-bottom:11px"><div style="{{ cdRewardBarStyle }}"></div></div>
+                    <div style="font-size:12.5px;color:#6B7772;line-height:1.55">{{ cdReward }}</div>
+                  </div>
+                  <div style="border:1px solid #E6E9E8;border-radius:13px;padding:18px 20px">
+                    <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#9AA5A0;margin-bottom:13px">WHAT THEY HAVE USED</div>
+                    <div style="display:flex;flex-direction:column;gap:9px">
+                      <sc-for list="{{ cdDeals }}" as="d" hint-placeholder-count="2">
+                        <div style="display:flex;align-items:center;gap:9px;font-size:13px">
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#0B7F63" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex:0 0 15px"><path d="m5 12 4 4 10-10"></path></svg>
+                          <span>{{ d.name }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                    <div style="{{ cdDealsEmptyStyle }}">Hasn’t used a deal yet.</div>
+                    <div style="{{ cdCampStyle }}">In your {{ cdCamp }} campaign</div>
+                  </div>
+                </div>
+              </div>
+              <div style="margin-top:16px;padding:17px 20px;border-radius:13px;background:#F6F8F7;border:1px solid #E6E9E8;display:flex;align-items:center;gap:18px;flex-wrap:wrap">
+                <div style="flex:1 1 260px;min-width:220px">
+                  <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#9AA5A0;margin-bottom:6px">WHEN THEY COME IN</div>
+                  <p style="margin:0;font-size:14.5px;font-weight:600;line-height:1.5;text-wrap:pretty">{{ cdPattern }}</p>
+                </div>
+                <div style="flex:0 0 auto;display:flex;gap:9px;flex-wrap:wrap">
+                  <button onClick="{{ cdBuild }}" style="padding:12px 18px;border-radius:11px;border:1px solid #E6E9E8;background:#FFFFFF;font-family:inherit;font-size:13.5px;font-weight:600;color:#0B1512;cursor:pointer;white-space:nowrap" style-hover="border-color:#0B7F63;color:#0B7F63">Build a deal like this</button>
+                  <button onClick="{{ cdAction }}" style="padding:12px 18px;border-radius:11px;border:none;background:#0B1512;color:#5FE9C4;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;white-space:nowrap" style-hover="background:#16302A">{{ cdActionLabel }}</button>
+                </div>
+              </div>
+            </div>
+
+          </section>
+
+          <section style="background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:24px">
             <h2 style="margin:0 0 5px;font-size:16px;font-weight:700">When they come in</h2>
             <p style="margin:0 0 20px;font-size:13px;color:#6B7772">Every QR scan at the counter, in an average week. Darker means busier.</p>
             <div style="overflow-x:auto">
@@ -839,66 +953,22 @@
           </section>
 
           <section style="background:#FFFFFF;border:1px solid #E6E9E8;border-radius:16px;padding:24px">
-            <h2 style="margin:0 0 5px;font-size:16px;font-weight:700">Who comes here</h2>
-            <p style="margin:0 0 20px;font-size:13px;color:#6B7772">{{ cuPrivacyNote }}</p>
-            <div style="display:flex;gap:26px;flex-wrap:wrap">
-              <div style="flex:1 1 300px;min-width:260px">
-                <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:14px">WHERE THEY ARE FROM</div>
-                <div style="display:flex;flex-direction:column;gap:12px">
-                  <sc-for list="{{ nationRows }}" as="n" hint-placeholder-count="6">
-                    <div>
-                      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px">
-                        <span style="font-size:13px;font-weight:600">{{ n.label }}</span>
-                        <span style="font-size:12.5px;color:#6B7772;font-variant-numeric:tabular-nums">{{ n.count }} · {{ n.pct }}</span>
-                      </div>
-                      <div style="height:8px;border-radius:99px;background:#EEF1F0;overflow:hidden"><div style="{{ n.barStyle }}"></div></div>
+            <h2 style="margin:0 0 5px;font-size:16px;font-weight:700">What language your customers use</h2>
+            <p style="margin:0 0 22px;font-size:13px;color:#6B7772">{{ cuPrivacyNote }}</p>
+            <div style="max-width:560px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:16px">THE LANGUAGE THEY USE IN PAYLEZ</div>
+              <div style="display:flex;flex-direction:column;gap:16px">
+                <sc-for list="{{ langRows }}" as="l" hint-placeholder-count="5">
+                  <div>
+                    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:7px">
+                      <span style="font-size:14px;font-weight:600">{{ l.label }}</span>
+                      <span style="font-size:12.5px;color:#6B7772;font-variant-numeric:tabular-nums">{{ l.detail }}</span>
                     </div>
-                  </sc-for>
-                </div>
-                <div style="font-size:11.5px;color:#9AA5A0;margin-top:12px;line-height:1.6">{{ nationHidden }}</div>
-              </div>
-              <div style="flex:1 1 260px;min-width:240px">
-                <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:14px">WHAT THEY READ THE APP IN</div>
-                <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:22px">
-                  <sc-for list="{{ langRows }}" as="l" hint-placeholder-count="5">
-                    <div>
-                      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:6px">
-                        <span style="font-size:13px;font-weight:600">{{ l.label }}</span>
-                        <span style="font-size:12.5px;color:#6B7772;font-variant-numeric:tabular-nums">{{ l.pct }}</span>
-                      </div>
-                      <div style="height:8px;border-radius:99px;background:#EEF1F0;overflow:hidden"><div style="{{ l.barStyle }}"></div></div>
-                    </div>
-                  </sc-for>
-                </div>
-                <div style="{{ cuDemoThinStyle }}">
-                  <div style="display:flex;gap:26px;flex-wrap:wrap">
-                    <div style="flex:1 1 120px">
-                      <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:11px">AGE</div>
-                      <sc-for list="{{ ageRows }}" as="a" hint-placeholder-count="4">
-                        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:5px 0;font-size:12.5px">
-                          <span style="color:#6B7772">{{ a.label }}</span>
-                          <span style="font-weight:700;font-variant-numeric:tabular-nums">{{ a.pct }}</span>
-                        </div>
-                      </sc-for>
-                    </div>
-                    <div style="flex:1 1 150px">
-                      <div style="font-size:11px;font-weight:700;letter-spacing:0.09em;color:#9AA5A0;margin-bottom:11px">TIME IN POLAND</div>
-                      <sc-for list="{{ settledRows }}" as="a" hint-placeholder-count="3">
-                        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:5px 0;font-size:12.5px">
-                          <span style="color:#6B7772">{{ a.label }}</span>
-                          <span style="font-weight:700;font-variant-numeric:tabular-nums">{{ a.pct }}</span>
-                        </div>
-                      </sc-for>
-                    </div>
+                    <div style="height:9px;border-radius:99px;background:#EEF1F0;overflow:hidden"><div style="{{ l.barStyle }}"></div></div>
                   </div>
-                </div>
-                <div style="{{ cuDemoNoDataStyle }}">
-                  <div style="display:flex;align-items:flex-start;gap:11px;padding:15px 16px;border-radius:12px;background:#F6F8F7;border:1px dashed #C6CFCB">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9AA5A0" stroke-width="1.9" stroke-linecap="round" style="flex:0 0 16px;margin-top:1px"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg>
-                    <span style="font-size:12.5px;color:#6B7772;line-height:1.6">{{ cuDemoNoData }}</span>
-                  </div>
-                </div>
+                </sc-for>
               </div>
+              <div style="font-size:11.5px;color:#9AA5A0;margin-top:14px;line-height:1.6">{{ langHidden }}</div>
             </div>
             <div style="display:flex;align-items:center;gap:20px;flex-wrap:wrap;margin-top:22px;padding:18px 20px;border-radius:13px;background:#F6F8F7;border:1px solid #E6E9E8">
               <p style="margin:0;flex:1 1 340px;min-width:280px;font-size:15px;font-weight:600;line-height:1.55;text-wrap:pretty">{{ langFinding }}</p>
@@ -2227,6 +2297,27 @@ const CUST = {
   benchSecond: 34
 };
 
+const CUSTINDIV = {
+  roster: [
+    { id: 1, name: 'Andrii P.', init: 'AP', spent: 1180, visits: 14, last: 3, status: 'regular', hv: true, sg: 0, so: 0, tier: '15%', trend: 'up', tenure: 5, since: 'April', deals: ['20% off flat white', 'Free filter coffee with any bake'], camp: 'Regulars’ reward', pattern: 'Weekday mornings, often before 9', reward: '15% tier — your top spender' },
+    { id: 2, name: 'Marta K.', init: 'MK', spent: 340, visits: 6, last: 4, status: 'regular', hv: false, sg: 3, so: 4, tier: '', trend: 'up', tenure: 6, since: 'March', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Weekday mornings', reward: 'One stamp from a free coffee' },
+    { id: 3, name: 'Kateryna B.', init: 'KB', spent: 705, visits: 11, last: 6, status: 'regular', hv: true, sg: 0, so: 0, tier: '10%', trend: 'flat', tenure: 4, since: 'May', deals: ['Free filter coffee with any bake'], camp: 'Regulars’ reward', pattern: 'Weekends, late morning', reward: '10% tier' },
+    { id: 4, name: 'Giorgi M.', init: 'GM', spent: 610, visits: 9, last: 32, status: 'lapsed', hv: false, sg: 0, so: 0, tier: '10%', trend: 'down', tenure: 4, since: 'April', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Used to come Friday afternoons', reward: '10% tier — going cold' },
+    { id: 5, name: 'Dilnoza Y.', init: 'DY', spent: 95, visits: 2, last: 5, status: 'new', hv: false, sg: 1, so: 4, tier: '', trend: 'up', tenure: 1, since: 'August', deals: [], camp: '', pattern: 'Two visits, both afternoons', reward: '1 of 4 stamps' },
+    { id: 6, name: 'Oleksandr H.', init: 'OH', spent: 892, visits: 13, last: 9, status: 'regular', hv: true, sg: 0, so: 0, tier: '10%', trend: 'up', tenure: 5, since: 'April', deals: ['Free filter coffee with any bake', '20% off flat white'], camp: 'Regulars’ reward', pattern: 'Weekday lunch', reward: '10% tier' },
+    { id: 7, name: 'Nino K.', init: 'NK', spent: 418, visits: 7, last: 14, status: 'regular', hv: false, sg: 4, so: 4, tier: '', trend: 'flat', tenure: 3, since: 'June', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Weekend mornings', reward: 'Free coffee ready to redeem' },
+    { id: 8, name: 'Mehmet A.', init: 'MA', spent: 233, visits: 4, last: 3, status: 'regular', hv: false, sg: 2, so: 4, tier: '', trend: 'up', tenure: 2, since: 'July', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Afternoons, mixed days', reward: '2 of 4 stamps' },
+    { id: 9, name: 'Yulia S.', init: 'YS', spent: 1024, visits: 15, last: 2, status: 'regular', hv: true, sg: 0, so: 0, tier: '15%', trend: 'up', tenure: 5, since: 'April', deals: ['Free filter coffee with any bake', '20% off flat white'], camp: 'Regulars’ reward', pattern: 'Most weekday mornings', reward: '15% tier' },
+    { id: 10, name: 'Aziz R.', init: 'AR', spent: 156, visits: 3, last: 21, status: 'new', hv: false, sg: 1, so: 4, tier: '', trend: 'flat', tenure: 2, since: 'July', deals: [], camp: '', pattern: 'Three visits, afternoons', reward: '1 of 4 stamps' },
+    { id: 11, name: 'Sofiia M.', init: 'SM', spent: 487, visits: 8, last: 41, status: 'lapsed', hv: false, sg: 0, so: 0, tier: '10%', trend: 'down', tenure: 4, since: 'April', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Was a Tuesday regular', reward: '10% tier — lapsed' },
+    { id: 12, name: 'Davit T.', init: 'DT', spent: 372, visits: 6, last: 7, status: 'regular', hv: false, sg: 3, so: 4, tier: '', trend: 'up', tenure: 3, since: 'June', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Weekday mornings', reward: 'One stamp from a free coffee' },
+    { id: 13, name: 'Anna W.', init: 'AW', spent: 268, visits: 5, last: 18, status: 'regular', hv: false, sg: 2, so: 4, tier: '', trend: 'flat', tenure: 3, since: 'June', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Weekends', reward: '2 of 4 stamps' },
+    { id: 14, name: 'Farrukh N.', init: 'FN', spent: 61, visits: 1, last: 2, status: 'new', hv: false, sg: 1, so: 4, tier: '', trend: 'flat', tenure: 1, since: 'August', deals: [], camp: '', pattern: 'First visit two days ago', reward: '1 of 4 stamps' },
+    { id: 15, name: 'Tamar G.', init: 'TG', spent: 549, visits: 9, last: 28, status: 'regular', hv: false, sg: 0, so: 0, tier: '10%', trend: 'down', tenure: 4, since: 'April', deals: ['Free filter coffee with any bake'], camp: 'Regulars’ reward', pattern: 'Thursday afternoons, less lately', reward: '10% tier — slowing down' },
+    { id: 16, name: 'Ivan D.', init: 'ID', spent: 815, visits: 12, last: 11, status: 'regular', hv: true, sg: 0, so: 0, tier: '10%', trend: 'flat', tenure: 5, since: 'April', deals: ['20% off flat white'], camp: 'Regulars’ reward', pattern: 'Weekday mornings', reward: '10% tier' }
+  ]
+};
+
 const AVG_SPEND = 34.1;
 const PAYLEZ_FEE = 1894;
 
@@ -2236,6 +2327,12 @@ const AS_GOALS = [
   ['new', 'Get more first-time visitors', 'People near you who have never been in'],
   ['review', 'Review everything I am running', 'Tell me what to fix']
 ];
+
+const AS_GOAL_OPEN = {
+  quiet: 'Your quietest stretch is Tuesday and Wednesday, 14:00 to 16:00 — about 60% below your weekly average. I would run a short deal then. What should people get?',
+  lapsed: '84 of your regulars have not been in for over 30 days. A deal aimed at them can pull some back. What should they get?',
+  new: 'New visitors mostly come from one clear, simple offer they see in the feed. What should first-time people get?'
+};
 
 const AS_LANGS = {
   item: [
@@ -2258,6 +2355,7 @@ const CU = {
   normal: {},
   thin: { thin: true, days: 12 },
   fewPeers: { peers: 6 },
+  noShared: { noShared: true },
   empty: { empty: true }
 };
 
@@ -2323,6 +2421,7 @@ class Component extends DCLogic {
     range: '30', rail: false, page: 0, currency: 'PLN', uiLang: 'EN',
     drawer: null, lang: 'EN', toast: '',
     search: '', dealFilter: 'all', sort: 'claimRate', dir: 'desc', openDeal: null,
+    custFilter: 'all', custSort: 'spent', custDir: 'desc', custDetail: null,
     scanFilter: 'all',
     budget: null, avgCheck: null, maxPerVoucher: 25, avgNoteSeen: false, loyaltyShare: 2000,
     tiers: [{ pct: 5, points: 250 }, { pct: 10, points: 600 }, { pct: 15, points: 1200 }],
@@ -2339,6 +2438,7 @@ class Component extends DCLogic {
     appLinks: false,
     asst: {
       step: 'start', goal: '', budget: 400, weeks: 4, reward: 'item', notify: true, langOpen: 'EN',
+      msgs: [], stage: 'idle', routeTo: '', routeLabel: '',
       terms: 'One claim per visit. Not valid with other deals. Valid only in the hours shown.',
       stopAfter: null, sendAt: '13:30', copy: {},
       freeText: '', askOpen: {}, askOther: {}, revText: '', changes: [], exits: false, attempts: 0,
@@ -2359,7 +2459,12 @@ class Component extends DCLogic {
 
   componentWillUnmount() { clearTimeout(this.tt); }
 
-  go(screen) { this.setState({ screen: screen, page: 0 }); }
+  go(screen) { this.setState({ screen: screen, page: 0, custDetail: null }); }
+  openCust(id) { this.setState({ custDetail: id }); }
+  closeCust() { this.setState({ custDetail: null }); }
+  setCustFilter(f) { this.setState({ custFilter: f, custDetail: null }); }
+  setCustSort(k) { this.setState((s) => ({ custSort: k, custDir: s.custSort === k ? (s.custDir === 'desc' ? 'asc' : 'desc') : 'desc' })); }
+  targetCust(id) { const c = CUSTINDIV.roster.find((r) => r.id === id); this.setState({ custDetail: null }); this.toast('Sent ' + (c ? c.name : 'them') + ' a private offer in the app.'); }
   openDrawer(kind) { this.setState({ drawer: kind, lang: 'EN' }); }
   closeDrawer() { this.setState({ drawer: null }); }
   toast(text) {
@@ -2372,6 +2477,7 @@ class Component extends DCLogic {
   resetAsst(patch) {
     this.setState((s) => ({ asst: Object.assign({}, s.asst, {
       step: 'start', goal: '', copy: {}, stopAfter: null, sendAt: '13:30', freeText: '',
+      msgs: [], stage: 'idle',
       askOpen: {}, askOther: {}, revText: '', changes: [], exits: false,
       days: 'Tuesday and Wednesday', hours: '14:00–16:00', audience: 'Everyone near you — about 4 820 people'
     }, patch || {}) }));
@@ -2386,6 +2492,120 @@ class Component extends DCLogic {
     const t = (text || '').toLowerCase();
     if (/spend|średnio|тратят|budget per person|how much they/.test(t)) return 'cant';
     return 'ask';
+  }
+  parseReward(t) {
+    t = (t || '').toLowerCase();
+    if (/coffee|free item|free |\bitem\b|kawa|бесплат|filter|kahv|qahva|подар/.test(t)) return 'item';
+    if (/percent|%|off the bill|\boff\b|discount|zniżk|скид|endirim|chegirma|indirim/.test(t)) return 'percent';
+    return null;
+  }
+  parseBudget(t) {
+    const m = (t || '').replace(/\s/g, '').match(/(\d{2,4})/);
+    if (!m) return null;
+    const n = parseInt(m[1], 10);
+    const opts = [200, 400, 700]; let best = opts[0], d = 1e9;
+    opts.forEach((o) => { const dd = Math.abs(o - n); if (dd < d) { d = dd; best = o; } });
+    return best;
+  }
+  parseWeeks(t) {
+    t = (t || '').toLowerCase();
+    if (/fortnight|two week|2 week|dwa tyg/.test(t)) return 2;
+    if (/month|miesiąc|месяц/.test(t)) return 4;
+    const m = t.match(/(\d+)\s*(week|tyg|недел|hafta)/);
+    if (m) { const n = parseInt(m[1], 10); const opts = [2, 4, 8]; let best = opts[0], d = 1e9; opts.forEach((o) => { const dd = Math.abs(o - n); if (dd < d) { d = dd; best = o; } }); return best; }
+    return null;
+  }
+  parseNotify(t) {
+    t = (t || '').toLowerCase();
+    if (/\bno\b|nope|\bnie\b|нет|just list|don.t|do not/.test(t)) return false;
+    if (/\byes\b|yeah|sure|send|\btak\b|да|davai|göndər|\bha\b/.test(t)) return true;
+    return null;
+  }
+  budgetQ(r) {
+    return r === 'item'
+      ? 'A free filter coffee, good. Free-item deals get about 2.4× the claims of a percentage off at cafés like yours, and each one costs you a fixed ' + this.money(5) + '. How much do you want to put toward it this month?'
+      : '20% off it is. That moves with the size of each bill, so I will add a stop once it has cost enough. How much do you want to put toward it this month?';
+  }
+  durationQ(b) { return this.money(b) + '. Hot deals do not come out of your loyalty or voucher pools, so this is money off your margin. For how long should it run?'; }
+  notifyQ(w) { return w + ' weeks. You have 2 of your 4 notifications left this month — want me to send one when it starts? Without it, most people only see the deal if they open the app.'; }
+  readyMsg(r, n) { return 'Here is what I would set up' + (n ? ', with a notification when it starts' : '') + '. Nothing is live yet — it goes out only when you press publish. Take a look at the draft.'; }
+  goalOpen(g) { return AS_GOAL_OPEN[g] || AS_GOAL_OPEN.quiet; }
+  goalOpen(g, thin) {
+    if (thin) {
+      if (g === 'lapsed') return 'You do not have regulars to win back yet — that needs some history. But I can set up a thank-you reward for people who keep coming back. What should they get?';
+      if (g === 'new') return 'Bringing in first-time visitors is a good first move. It comes down to one clear offer people see nearby. What should new people get?';
+      return 'You are new here, so I cannot point to your quietest hours yet — that takes about a month of scans. A good first deal at a café like yours is a short afternoon offer. What should people get?';
+    }
+    return AS_GOAL_OPEN[g] || AS_GOAL_OPEN.quiet;
+  }
+  convStart(goal, seedText) {
+    const g = goal || 'quiet';
+    const thin = (this.props && this.props.customersState) === 'thin';
+    const seed = seedText || (AS_GOALS.find((x) => x[0] === g) || ['', '', ''])[1];
+    this.setState((s) => ({ asst: Object.assign({}, s.asst, {
+      step: 'start', goal: g, stage: 'reward', freeText: '',
+      msgs: [{ role: 'u', text: seed }, { role: 'a', text: this.goalOpen(g, thin) }]
+    }) }));
+    this.go('assistant');
+  }
+  convSeedRoute(routeTo, label, opener, routeLabel) {
+    this.setState((s) => ({ asst: Object.assign({}, s.asst, {
+      step: 'start', stage: 'route', routeTo: routeTo, routeLabel: routeLabel, freeText: '',
+      msgs: [{ role: 'u', text: label }, { role: 'a', text: opener }]
+    }) }));
+    this.go('assistant');
+  }
+  convTour() {
+    this.setState((s) => ({ asst: Object.assign({}, s.asst, {
+      step: 'start', stage: 'idle', freeText: '',
+      msgs: [
+        { role: 'u', text: 'Show me what is possible' },
+        { role: 'a', text: 'Here is what you can run. Hot deals are short discounts that bring people in now. Loyalty campaigns reward people for coming back — a stamp card, for example. Point discounts let customers earn money off as they spend. Tell me which fits what you are after, or tap a start on the right.' }
+      ]
+    }) }));
+    this.go('assistant');
+  }
+  convChip(stage, value, label) {
+    this.setState((s) => {
+      const as = s.asst; const msgs = as.msgs.slice(); msgs.push({ role: 'u', text: label });
+      const patch = {}; let next = stage, reply = '';
+      if (stage === 'reward') { patch.reward = value; next = 'budget'; reply = this.budgetQ(value); }
+      else if (stage === 'budget') { patch.budget = value; next = 'duration'; reply = this.durationQ(value); }
+      else if (stage === 'duration') { patch.weeks = value; next = 'notify'; reply = this.notifyQ(value); }
+      else if (stage === 'notify') { patch.notify = value; next = 'ready'; reply = this.readyMsg(as.reward, value); }
+      msgs.push({ role: 'a', text: reply });
+      patch.msgs = msgs; patch.stage = next; patch.freeText = '';
+      return { asst: Object.assign({}, as, patch) };
+    });
+  }
+  convSend() {
+    const text = ((this.state.asst.freeText) || '').trim();
+    if (!text) return;
+    this.setState((s) => {
+      const as = s.asst; const msgs = as.msgs.slice(); msgs.push({ role: 'u', text: text });
+      const patch = { msgs: msgs, freeText: '' };
+      const stage = as.stage || 'idle'; const low = text.toLowerCase();
+      if (stage === 'idle') {
+        if (this.readRequest(text) === 'cant') { patch.step = 'cant'; return { asst: Object.assign({}, as, patch) }; }
+        if (/review|everything|what.*fix|przegl|обзор/.test(low)) { patch.step = 'review'; patch.goal = 'review'; return { asst: Object.assign({}, as, patch) }; }
+        if (/voucher|why.*drop|why.*down|\bbon\b|ваучер/.test(low)) { patch.step = 'answer'; return { asst: Object.assign({}, as, patch) }; }
+        const goal = /back|stopped|lapsed|regular|wróc|верн|давно/.test(low) ? 'lapsed' : (/first.time|new customer|new people|nowy|нов/.test(low) ? 'new' : 'quiet');
+        const thin = (this.props && this.props.customersState) === 'thin';
+        patch.goal = goal;
+        const b = this.parseBudget(text); if (b) patch.budget = b;
+        const w = this.parseWeeks(text); if (w) patch.weeks = w;
+        const r = this.parseReward(text); if (r) patch.reward = r;
+        patch.stage = 'reward';
+        msgs.push({ role: 'a', text: this.goalOpen(goal, thin) });
+        return { asst: Object.assign({}, as, patch) };
+      }
+      if (stage === 'reward') { const v = this.parseReward(text); if (v) { patch.reward = v; patch.stage = 'budget'; msgs.push({ role: 'a', text: this.budgetQ(v) }); } else { msgs.push({ role: 'a', text: 'I did not quite catch that — a free filter coffee, or a percentage off the bill?' }); } }
+      else if (stage === 'budget') { const v = this.parseBudget(text); if (v) { patch.budget = v; patch.stage = 'duration'; msgs.push({ role: 'a', text: this.durationQ(v) }); } else { msgs.push({ role: 'a', text: 'Roughly how much for the month — 200, 400 or 700 zł?' }); } }
+      else if (stage === 'duration') { const v = this.parseWeeks(text); if (v) { patch.weeks = v; patch.stage = 'notify'; msgs.push({ role: 'a', text: this.notifyQ(v) }); } else { msgs.push({ role: 'a', text: 'For how long — 2, 4 or 8 weeks?' }); } }
+      else if (stage === 'notify') { const v = this.parseNotify(text); if (v != null) { patch.notify = v; patch.stage = 'ready'; msgs.push({ role: 'a', text: this.readyMsg(as.reward, v) }); } else { msgs.push({ role: 'a', text: 'Should I send a notification when it starts — yes, or no?' }); } }
+      else { msgs.push({ role: 'a', text: 'You can change any of that on the draft. Want to see it?' }); }
+      return { asst: Object.assign({}, as, patch) };
+    });
   }
   applyRevision() {
     const raw = this.state.asst.revText || '';
@@ -2823,7 +3043,7 @@ class Component extends DCLogic {
     const hotLeft = 260;
     const asMode = (this.props && this.props.assistantState) || 'normal';
     const budgetTight = asMode === 'budgetTight';
-    const asStep = (asMode === 'misunderstood' && as.step === 'start') ? 'missed' : as.step;
+    const asStep = (asMode === 'misunderstood' && as.step === 'start' && (as.msgs && as.msgs.length)) ? 'missed' : as.step;
     const asBudget = budgetTight ? Math.min(as.budget, hotLeft) : as.budget;
     const asUnit = as.reward === 'item' ? 5 : AVG_SPEND * 0.2;
     const asCopySet = AS_LANGS[as.reward] || AS_LANGS.item;
@@ -2832,12 +3052,81 @@ class Component extends DCLogic {
     const asDefaultClaims = Math.max(1, Math.round(asBudget / asUnit));
     const asClaims = as.stopAfter != null ? Math.max(1, as.stopAfter) : asDefaultClaims;
     const asCost = asClaims * asUnit;
+    const asOpening = 'Tell me what you want to happen in your venue — in your own words, in any of your six languages. I will ask a couple of short questions, show you what it will cost, and leave it to you to publish.';
     const pickStyle = (on) => 'flex:1 1 190px;text-align:left;padding:13px 15px;border-radius:11px;cursor:pointer;font-size:13.5px;font-weight:600;border:1.5px solid '
       + (on ? INK : LINE) + ';background:' + (on ? BONE : '#FFFFFF') + ';color:' + INK + ';';
 
     const cu = CU[(this.props && this.props.customersState) || 'normal'] || CU.normal;
     const locked = ((this.props && this.props.plan) || 'growth') !== 'growth';
     const perNew = t.newCust > 0 ? costTotal / t.newCust : 0;
+
+    // ---- Individual customers (opt-in only) ----
+    const custOpted = (cu.empty || cu.noShared) ? 0 : (cu.thin ? 3 : 92);
+    const custBase = (cu.empty || cu.noShared) ? []
+      : (cu.thin ? CUSTINDIV.roster.filter((r) => r.status === 'new') : CUSTINDIV.roster);
+    const custFilterDefs = [
+      ['all', 'Everyone', custBase.length],
+      ['regular', 'Regulars', custBase.filter((r) => r.status === 'regular').length],
+      ['lapsed', 'Slipping away', custBase.filter((r) => r.status === 'lapsed').length],
+      ['new', 'New', custBase.filter((r) => r.status === 'new').length],
+      ['hv', 'Top spenders', custBase.filter((r) => r.hv).length]
+    ].filter((f) => f[0] === 'all' || f[2] > 0);
+    const custAF = st.custFilter || 'all';
+    const custSortKey = st.custSort || 'spent';
+    const custDir = st.custDir || 'desc';
+    const _sk = { spent: 'spent', visits: 'visits', recency: 'last', status: 'name' }[custSortKey] || 'spent';
+    const custList = custBase.filter((r) => custAF === 'all' ? true : custAF === 'hv' ? r.hv : r.status === custAF)
+      .slice().sort((a, b) => {
+        let av = a[_sk], bv = b[_sk];
+        if (typeof av === 'string') { av = av.toLowerCase(); bv = bv.toLowerCase(); return custDir === 'asc' ? (av < bv ? -1 : av > bv ? 1 : 0) : (av > bv ? -1 : av < bv ? 1 : 0); }
+        return custDir === 'asc' ? av - bv : bv - av;
+      });
+    const statusMeta = (s) => ({
+      regular: { label: 'Regular', fg: DEEP, bg: 'rgba(11,127,99,0.12)' },
+      lapsed: { label: 'Slipping away', fg: DOWN, bg: 'rgba(180,85,63,0.13)' },
+      new: { label: 'New', fg: WARN, bg: 'rgba(138,109,47,0.16)' }
+    }[s] || { label: s, fg: MUTED, bg: SOFT });
+    const custGrid = 'display:grid;grid-template-columns:minmax(0,1.7fr) 108px 74px 118px 132px 18px;gap:12px;align-items:center;';
+    const custRowsArr = custList.map((r) => {
+      const m = statusMeta(r.status);
+      const prog = r.tier ? 100 : (r.so ? Math.round(r.sg / r.so * 100) : 0);
+      return {
+        init: r.init, name: r.name, go: () => this.openCust(r.id),
+        spent: this.money(r.spent), visits: this.num(r.visits),
+        last: r.last === 0 ? 'Today' : this.num(r.last) + (r.last === 1 ? ' day ago' : ' days ago'),
+        lastStyle: 'font-size:13px;font-variant-numeric:tabular-nums;color:' + (r.last > 30 ? DOWN : MUTED) + ';',
+        statusLabel: m.label,
+        statusStyle: 'display:inline-flex;align-items:center;padding:3px 10px;border-radius:99px;font-size:11.5px;font-weight:700;white-space:nowrap;color:' + m.fg + ';background:' + m.bg + ';',
+        avatarStyle: 'flex:0 0 auto;width:34px;height:34px;border-radius:10px;display:inline-flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:' + (r.hv ? MINT : INK) + ';background:' + (r.hv ? INK : SOFT) + ';',
+        trendArrow: r.trend === 'up' ? '\u25B2' : r.trend === 'down' ? '\u25BC' : '\u2014',
+        trendStyle: 'font-size:9px;color:' + (r.trend === 'up' ? DEEP : r.trend === 'down' ? DOWN : FAINT) + ';',
+        progStyle: 'height:100%;border-radius:99px;width:' + prog + '%;background:' + (r.tier ? 'linear-gradient(90deg,' + MINT + ',' + DEEP + ')' : DEEP) + ';',
+        progLabel: r.tier ? r.tier + ' tier' : (r.so ? r.sg + '/' + r.so : ''),
+        rowStyle: custGrid + 'padding:12px 8px;border:none;border-bottom:1px solid ' + SOFT + ';background:#FFFFFF;width:100%;text-align:left;cursor:pointer;font-family:inherit;'
+      };
+    });
+    const sortHead = (key, label) => ({
+      label: label, go: () => this.setCustSort(key),
+      arrow: custSortKey === key ? (custDir === 'desc' ? ' \u2193' : ' \u2191') : '',
+      style: 'padding:0;border:none;background:none;font-family:inherit;font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;cursor:pointer;text-align:left;white-space:nowrap;color:' + (custSortKey === key ? INK : FAINT) + ';'
+    });
+    const cd = st.custDetail != null ? CUSTINDIV.roster.find((r) => r.id === st.custDetail) : null;
+    let cdTrend = [];
+    if (cd) {
+      const _mo = ['Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug'];
+      const _mult = cd.trend === 'up' ? [0.45, 0.6, 0.78, 0.92, 1.15, 1.35]
+        : cd.trend === 'down' ? [1.35, 1.2, 1.02, 0.85, 0.66, 0.4]
+        : [0.9, 1.03, 0.93, 1.08, 0.98, 1.07];
+      const _avg = cd.spent / 6;
+      const _vals = _mult.map((x) => _avg * x);
+      const _max = Math.max.apply(null, _vals) || 1;
+      cdTrend = _mo.map((mo, i) => ({
+        month: mo, value: this.money(_vals[i]),
+        barStyle: 'width:26px;border-radius:7px 7px 0 0;background:' + (i === 5 ? 'linear-gradient(180deg,' + MINT + ',' + DEEP + ')' : SOFT) + ';height:' + Math.max(7, Math.round(_vals[i] / _max * 72)) + 'px;'
+      }));
+    }
+    const cdMeta = cd ? statusMeta(cd.status) : null;
+    const cdProg = cd ? (cd.tier ? 100 : (cd.so ? Math.round(cd.sg / cd.so * 100) : 0)) : 0;
     const heat = this.heatGrid();
     const heatMax = Math.max.apply(null, heat.grid.map((r) => Math.max.apply(null, r)));
     const lastCohort = CUST.cohorts[CUST.cohorts.length - 1];
@@ -2930,6 +3219,7 @@ class Component extends DCLogic {
       pageSubtitle: subs[st.screen] || '',
       primaryLabel: sc[1],
       primaryAction: sc[2],
+      showPrimary: st.screen !== 'vouchers' && st.screen !== 'assistant',
       secondaryLabel: st.screen === 'profile' ? 'Preview listing' : 'Export CSV',
       secondaryIcon: st.screen === 'profile'
         ? ic(['M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'], INK, 15)
@@ -2970,14 +3260,14 @@ class Component extends DCLogic {
       asMissedStyle: asStep === 'missed' ? '' : 'display:none;',
       asCantStyle: asStep === 'cant' ? '' : 'display:none;',
       asHandedStyle: asStep === 'handed' ? '' : 'display:none;',
-      goAssistQuiet: () => { this.updAsst({ goal: 'quiet', step: 'ask' }); this.go('assistant'); },
-      goAssistLapsed: () => { this.updAsst({ goal: 'lapsed', step: 'ask' }); this.go('assistant'); },
+      goAssistQuiet: () => this.convStart('quiet'),
+      goAssistLapsed: () => this.convStart('lapsed'),
       goAssistReview: () => { this.updAsst({ goal: 'review', step: 'review' }); this.go('assistant'); },
 
       asIntro: 'Tell me what you want to happen in your venue. I will set it up, show you what it costs, and leave it to you to publish. Nothing goes live until you press the button.',
       asKnows: [
         'Your quietest hours are Tuesday and Wednesday, 14:00 to 16:00 — about 60% below your weekly average.',
-        '42% of your customers read the app in Russian, and 38% are Ukrainian.',
+        '42% of your customers use the app in Russian, but none of your live deals is written in Russian.',
         'Across 47 Kraków cafés, free-item deals get about 2.4× the claims of percentage discounts.',
         'You have ' + this.money(Math.max(0, vm.available)) + ' unspent in vouchers and ' + this.money(Math.max(0, cm.available)) + ' in loyalty this month.'
       ].map((k) => ({ text: k })),
@@ -3005,11 +3295,84 @@ class Component extends DCLogic {
       asStartStyleBtn: as.goal ? 'padding:13px 20px;border-radius:11px;border:none;background:' + INK + ';color:' + MINT + ';font-size:14px;font-weight:700;cursor:pointer;'
         : 'padding:13px 20px;border-radius:11px;border:none;background:' + SOFT + ';color:#B9C2BE;font-size:14px;font-weight:700;cursor:not-allowed;',
       asSuggestions: [
-        { label: 'Fill my quiet Tuesday afternoons', go: () => this.updAsst({ goal: 'quiet', step: 'ask' }) },
-        { label: 'Get back the 84 regulars who stopped coming', go: () => this.updAsst({ goal: 'lapsed', step: 'ask' }) },
-        { label: 'Review everything I am running and tell me what to fix', go: () => this.updAsst({ goal: 'review', step: 'review' }) },
+        { label: 'Fill my quiet Tuesday afternoons', go: () => this.convStart('quiet', 'Fill my quiet Tuesday afternoons') },
+        { label: 'Get back the 84 regulars who stopped coming', go: () => this.convStart('lapsed', 'Get back the 84 regulars who stopped coming') },
+        { label: 'Review everything I am running and tell me what to fix', go: () => { this.updAsst({ goal: 'review', step: 'review' }); } },
         { label: 'Why did voucher use drop this month?', go: () => this.updAsst({ step: 'answer' }) }
       ],
+
+      asConvMsgs: [{ role: 'a', text: asOpening }].concat(as.msgs || []).map((m) => ({
+        text: m.text,
+        rowStyle: m.role === 'u' ? 'display:flex;justify-content:flex-end;' : 'display:flex;justify-content:flex-start;',
+        bubbleStyle: m.role === 'u'
+          ? 'max-width:80%;padding:12px 16px;border-radius:14px 14px 4px 14px;background:' + INK + ';color:#FFFFFF;font-size:14px;line-height:1.55;text-wrap:pretty;'
+          : 'max-width:82%;padding:14px 17px;border-radius:4px 14px 14px 14px;background:' + BONE + ';border:1px solid ' + SOFT + ';color:' + INK + ';font-size:14.5px;line-height:1.62;text-wrap:pretty;'
+      })),
+      asChips: as.stage === 'route'
+        ? [{ label: as.routeLabel, go: () => this.go(as.routeTo) }]
+        : ({
+        reward: [['A free filter coffee', 'item'], ['20% off the bill', 'percent']],
+        budget: [[this.money(200), 200], [this.money(400), 400], [this.money(700), 700]],
+        duration: [['2 weeks', 2], ['4 weeks', 4], ['8 weeks', 8]],
+        notify: [['Yes, send one', true], ['No, just list it', false]]
+      }[as.stage] || []).map((c) => ({ label: c[0], go: () => this.convChip(as.stage, c[1], c[0]) })),
+      asChipsStyle: (['reward', 'budget', 'duration', 'notify', 'route'].indexOf(as.stage) >= 0) ? '' : 'display:none;',
+      asChipsHint: as.stage === 'route' ? 'Or tell me more about what you are trying to do below.' : 'Tap one, or type your answer below.',
+
+      asKnowEstStyle: cu.thin ? 'display:none;' : '',
+      asKnowNewStyle: cu.thin ? '' : 'display:none;',
+      asKnowNewIntro: 'You are new here, so I do not have your patterns yet. I will learn them as customers start scanning, usually about a month. For now, here is what you can set up.',
+      asKnowSoon: [
+        'Your quietest hours, so a deal can fill them',
+        'Your busiest times, so you do not discount when you are already full',
+        'Which offers actually work at a caf\u00e9 like yours',
+        'What each new customer costs you'
+      ].map((t) => ({ text: t })),
+      asOptionsIntro: cu.thin
+        ? 'You are just getting started, so here is a fuller set. Tap one and I will walk you through it \u2014 nothing is set until you publish.'
+        : 'Focused starts, based on what I am seeing in your numbers. Tap one to talk it through.',
+      asOptionCards: (cu.thin
+        ? [
+          ['Run my first deal', 'A simple discount to get people through the door.', () => this.convStart('quiet', 'Run my first deal')],
+          ['Bring in first-time visitors', 'Reach people near you who have not been in.', () => this.convStart('new', 'Bring in first-time visitors')],
+          ['Reward my regulars', 'Set up a thank-you for people who keep coming back.', () => this.convStart('lapsed', 'Reward my regulars')],
+          ['Start a loyalty stamp card', 'Give a free item after a set number of visits.', () => this.convSeedRoute('campaigns', 'Start a loyalty stamp card', 'A stamp card is a loyalty campaign \u2014 buy a set number, get one free. I can open the builder with sensible defaults for a caf\u00e9 and you take it from there.', 'Open the loyalty builder')],
+          ['Set up a points discount', 'Let customers earn toward money off as they spend.', () => this.convSeedRoute('vouchers', 'Set up a points discount', 'A points discount lives in your vouchers settings \u2014 customers earn toward a discount as they spend. Set the monthly budget and the tiers there and it starts working.', 'Open vouchers settings')],
+          ['Show me what is possible', 'A quick tour of what you can run here.', () => this.convTour()]
+        ]
+        : [
+          ['Fill my quiet hours', 'Tuesday and Wednesday, 14:00 to 16:00 \u2014 about 60% below average.', () => this.convStart('quiet', 'Fill my quiet Tuesday afternoons')],
+          ['Bring back customers who stopped coming', '84 regulars, last seen over 30 days ago.', () => this.convStart('lapsed', 'Get back the 84 regulars who stopped coming')],
+          ['Review everything I am running', 'Three things worth changing this week.', () => this.updAsst({ goal: 'review', step: 'review' })],
+          ['Why did voucher use drop?', 'Down 4% this month \u2014 I can show you where.', () => this.updAsst({ step: 'answer' })]
+        ]
+      ).map((c) => ({ name: c[0], desc: c[1], go: c[2] })),
+      asReadyStyle: as.stage === 'ready' ? '' : 'display:none;',
+      asReadyItems: [
+        { label: 'The goal', value: (AS_GOALS.find((g) => g[0] === as.goal) || ['', 'Fill my quiet hours'])[1] },
+        { label: 'What people get', value: as.reward === 'item' ? 'Free filter coffee with any bake' : '20% off the bill' },
+        { label: 'Days and hours', value: as.days + ', ' + as.hours },
+        { label: 'Budget', value: this.money(asBudget) },
+        { label: 'Runs for', value: as.weeks + ' weeks' },
+        { label: 'Notification', value: as.notify ? 'Yes, when it starts' : 'No, listed only' }
+      ],
+      asComposerSend: () => this.convSend(),
+      onAsComposerKey: (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.convSend(); } },
+      asComposerSendStyle: (as.freeText || '').trim()
+        ? 'flex:0 0 auto;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:11px;border:none;background:' + INK + ';color:' + MINT + ';cursor:pointer;'
+        : 'flex:0 0 auto;width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:11px;border:none;background:' + SOFT + ';color:#B9C2BE;cursor:not-allowed;',
+      asComposerPlaceholder: (!as.stage || as.stage === 'idle') ? 'Tell me what you want to happen in your venue'
+        : as.stage === 'reward' ? 'A free coffee, or a percentage off \u2014 or say it your way'
+        : as.stage === 'budget' ? 'Around 200, 400 or 700 z\u0142?'
+        : as.stage === 'duration' ? '2, 4 or 8 weeks?'
+        : as.stage === 'notify' ? 'Yes or no?'
+        : 'Change something before I show the draft?',
+      asComposerNote: 'I read Polish, Russian, Ukrainian, Uzbek, Turkish and English. Every figure I use comes from your own numbers or caf\u00e9s like yours \u2014 I will not make one up.',
+      asSuggestBlockStyle: (as.msgs && as.msgs.length) ? 'display:none;' : '',
+      asConvReset: () => this.resetAsst(),
+      asConvResetStyle: (as.msgs && as.msgs.length)
+        ? 'padding:8px 13px;border-radius:9px;border:1px solid ' + LINE + ';background:#FFFFFF;font-size:12.5px;font-weight:600;color:' + MUTED + ';cursor:pointer;font-family:inherit;white-space:nowrap;'
+        : 'display:none;',
 
       asQuestions: [
         {
@@ -3121,7 +3484,7 @@ class Component extends DCLogic {
 
       asCantLine: 'I cannot target people by how much they usually spend. Paylez does not track that yet.',
       asCantAlt: 'I can target people who have visited you before — 1 384 of them have been in at least twice. Want that instead?',
-      asCantGo: () => this.updAsst({ step: 'ask', goal: 'lapsed' }),
+      asCantGo: () => this.convStart('lapsed'),
       asCantBack: () => this.resetAsst(),
       asCantElsewhere: 'If you want to see what people spend, the average per visit is on the Customers page.',
       asCantElsewhereGo: () => this.go('customers'),
@@ -3240,7 +3603,7 @@ class Component extends DCLogic {
       showCustomers: st.screen === 'customers',
       cuEmptyStyle: cu.empty ? '' : 'display:none;',
       cuMainStyle: cu.empty ? 'display:none;' : 'display:flex;flex-direction:column;gap:22px;',
-      cuPrivacyNote: 'Everything on this page is counted across groups of customers. Paylez never shows you a single person, and groups smaller than 10 customers are rolled into “other”.',
+      cuPrivacyNote: 'These bars are counted across groups of customers, never one person. Groups smaller than 10 are rolled into “other”.',
 
       cpnLine: cu.thin
         ? 'You spent ' + this.money(costTotal) + ' so far and gained ' + this.num(t.newCust)
@@ -3306,15 +3669,66 @@ class Component extends DCLogic {
           + (n[0] === 'Other' ? SOFT : 'linear-gradient(90deg,' + MINT + ',' + DEEP + ')') + ';'
       })),
       nationHidden: CUST.hidden + ' smaller groups are counted in “other”, so nobody can be picked out.',
-      langRows: CUST.langs.map((l) => ({ label: l[0], pct: l[1] + '%', barStyle: 'height:8px;border-radius:99px;width:' + l[1] * 2.2 + '%;background:linear-gradient(90deg,' + MINT + ',' + DEEP + ');' })),
-      ageRows: CUST.ages.map((a) => ({ label: a[0], pct: a[1] + '%' })),
-      settledRows: CUST.settled.map((a) => ({ label: a[0], pct: a[1] + '%' })),
-      langFinding: '38% of your customers are Ukrainian and 42% read the app in Russian. None of your live deals is aimed at Russian speakers.',
+      langRows: CUST.langs.map((l) => ({
+        label: l[0],
+        detail: (l[0] === 'Other' ? l[1] + '%' : this.num(Math.round(l[1] / 100 * CUST.total)) + ' customers · ' + l[1] + '%'),
+        barStyle: 'height:9px;border-radius:99px;width:' + (l[1] / CUST.langs[0][1] * 100).toFixed(1) + '%;background:'
+          + (l[0] === 'Other' ? SOFT : 'linear-gradient(90deg,' + MINT + ',' + DEEP + ')') + ';'
+      })),
+      langHidden: 'Smaller groups are counted in “other”, so nobody can be picked out.',
+      langFinding: '42% of your customers use the app in Russian, but none of your live deals is written in Russian.',
       langAction: () => {
         this.setState((s) => ({ deal: Object.assign({}, s.deal, { audience: 'russian' }) }));
         this.openDrawer('deal');
         this.toast('Audience set to Russian speakers.');
       },
+
+      custListStyle: (st.custDetail == null && custOpted > 0) ? 'display:block;' : 'display:none;',
+      custEmptyStyle: (st.custDetail == null && custOpted === 0) ? 'display:block;' : 'display:none;',
+      custDetailStyle: st.custDetail != null ? 'display:block;' : 'display:none;',
+      custIntro: this.num(custOpted) + ' of your ' + this.num(CUST.total) + ' customers turned on profile sharing, so you can see these ones by name. Everyone else stays in the grouped figures below.',
+      custCountLine: this.num(custOpted) + ' sharing',
+      custFilterBtns: custFilterDefs.map((f) => ({
+        label: f[1] + '  ' + f[2], go: () => this.setCustFilter(f[0]),
+        style: 'padding:7px 13px;border-radius:9px;cursor:pointer;font-family:inherit;font-size:12.5px;font-weight:600;white-space:nowrap;border:1px solid ' + (custAF === f[0] ? INK : LINE) + ';background:' + (custAF === f[0] ? INK : '#FFFFFF') + ';color:' + (custAF === f[0] ? '#FFFFFF' : MUTED) + ';'
+      })),
+      custHeadRowStyle: custGrid + 'padding:0 8px 11px;border-bottom:1px solid ' + LINE + ';',
+      custHead: { spent: sortHead('spent', 'Spent'), visits: sortHead('visits', 'Visits'), recency: sortHead('recency', 'Last seen'), status: sortHead('status', 'Status') },
+      custRows: custRowsArr,
+      custShownNote: custOpted > custBase.length ? 'Showing your ' + custBase.length + ' most active. ' + this.num(custOpted) + ' have shared their profile in total.' : '',
+      custShownStyle: custOpted > custBase.length ? 'margin:15px 0 0;font-size:12px;color:' + FAINT + ';' : 'display:none;',
+      custWithdrewNote: 'Someone can turn sharing off at any time. When they do, they drop off this list and their history stops being visible to you.',
+      custWithdrewStyle: (cu.thin || custOpted === 0) ? 'display:none;' : 'margin:6px 0 0;font-size:12px;color:' + FAINT + ';line-height:1.6;',
+      custFewNote: 'Only a few people have shared their profile so far. More of your regulars will show up here as they opt in.',
+      custFewStyle: cu.thin ? 'margin:16px 0 0;padding:13px 16px;border-radius:11px;background:' + BONE + ';border:1px solid ' + LINE + ';font-size:13px;color:' + MUTED + ';line-height:1.6;' : 'display:none;',
+      custEmptyTitle: 'No one is sharing their profile yet',
+      custEmptyBody: 'When a customer chooses to share their profile, they show up here so you can look after your regulars by name. You never see anyone who has not opted in.',
+      cdName: cd ? cd.name : '',
+      cdInit: cd ? cd.init : '',
+      cdBack: () => this.closeCust(),
+      cdAvatarStyle: 'flex:0 0 auto;width:52px;height:52px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:' + (cd && cd.hv ? MINT : INK) + ';background:' + (cd && cd.hv ? INK : SOFT) + ';',
+      cdStatusLabel: cdMeta ? cdMeta.label : '',
+      cdStatusStyle: cdMeta ? 'display:inline-flex;align-items:center;padding:4px 11px;border-radius:99px;font-size:12px;font-weight:700;color:' + cdMeta.fg + ';background:' + cdMeta.bg + ';' : 'display:none;',
+      cdSince: cd ? 'Sharing their profile since ' + cd.since : '',
+      cdPrivacy: cd ? cd.name.split(' ')[0] + ' chose to share this with you and can turn it off whenever they like. You are only seeing it because they opted in.' : '',
+      cdStats: cd ? [
+        { label: 'Spent with you', value: this.money(cd.spent) },
+        { label: 'Visits', value: this.num(cd.visits) },
+        { label: 'Average spend', value: this.money(cd.spent / cd.visits, true) },
+        { label: 'Last seen', value: cd.last === 0 ? 'Today' : this.num(cd.last) + (cd.last === 1 ? ' day ago' : ' days ago') }
+      ] : [],
+      cdTrend: cdTrend,
+      cdRewardLabel: cd ? (cd.tier ? cd.tier + ' discount tier' : cd.sg + ' of ' + cd.so + ' stamps') : '',
+      cdRewardBarStyle: 'height:100%;border-radius:99px;width:' + cdProg + '%;background:' + (cd && cd.tier ? 'linear-gradient(90deg,' + MINT + ',' + DEEP + ')' : DEEP) + ';',
+      cdReward: cd ? cd.reward : '',
+      cdDeals: cd ? cd.deals.map((d) => ({ name: d })) : [],
+      cdDealsEmptyStyle: (cd && cd.deals.length === 0) ? 'font-size:13px;color:' + FAINT + ';' : 'display:none;',
+      cdCamp: cd ? cd.camp : '',
+      cdCampStyle: (cd && cd.camp) ? 'margin-top:11px;padding-top:11px;border-top:1px solid ' + SOFT + ';font-size:13px;color:' + MUTED + ';' : 'display:none;',
+      cdPattern: cd ? cd.pattern : '',
+      cdActionLabel: cd ? (cd.status === 'lapsed' ? 'Win ' + cd.name.split(' ')[0] + ' back' : 'Send ' + cd.name.split(' ')[0] + ' a private offer') : '',
+      cdAction: () => { if (cd) this.targetCust(cd.id); },
+      cdBuild: () => this.convStart((cd && cd.status === 'lapsed') ? 'lapsed' : 'quiet'),
 
       cuBackStyle: cu.thin ? 'display:none;' : '',
       backFinding: this.num(lastCohort.first) + ' people visited you for the first time in ' + lastCohort.month + '. '

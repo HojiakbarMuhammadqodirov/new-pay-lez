@@ -4,8 +4,12 @@ import type { GlobeTone } from '../theme/context';
 import { WEB } from './config';
 
 /**
- * The L-Earn page's background: a drifting field of neon nodes that wire
+ * The Analytics page's background: a drifting field of neon nodes that wire
  * themselves to every neighbour within range, brightening under the pointer.
+ *
+ * It began life behind L-Earn as "a player base"; it moved here when L-Earn
+ * got the arcade trail, and the picture is truer in this spot — every dot a
+ * customer, every link a pattern the dashboards above it exist to surface.
  *
  * Canvas 2D rather than WebGL, deliberately. The page already holds a GL
  * context for the controller, browsers cap how many a document may keep alive,

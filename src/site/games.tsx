@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BOARD_TABS, GAME_BOARD, GAMES } from './content';
+import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -34,12 +34,21 @@ import '../components/GlobeHero/ui/flagFont.css';
  * L-Earn, for someone who is signed in — the games themselves rather than a page
  * describing them.
  *
- * Rebuilt from the old paylez app (`landing/screenshots/learn1.png` …
- * `learn5.png`): the stats bar, the redeem strip, the game cards, and a
- * leaderboard with two orderings. What is *not* carried over is that app's
- * palette — a game per gradient — because this site has one accent. The games
- * are told apart by their icon, their name and their rules, which is what a
- * player actually reads.
+ * The layout follows `b2b/Paylez Play.dc.html`, the Play mock: a points panel
+ * that leads with the balance and the bar it is filling, a stats strip that
+ * folds the detail away until asked, one featured game given the width it
+ * deserves, and the rest as a grid of cards. The reasoning behind that shape is
+ * the mock's and it is right — the old version opened with four equal figures
+ * in a box, which told a player what they had and nothing about what to do next.
+ *
+ * What is *not* carried over is the mock's palette: it gives every game its own
+ * hue (amber, lime, violet, coral, sky) and this site has one accent. The cards
+ * are told apart by a **texture** instead — a hatch, a grid, a stripe, a dot
+ * field, drawn in the accent at a few percent — which does the same job of
+ * making six cards six different objects at a glance without a second colour
+ * family on the page. `data-texture` on `.play-card` is the whole mechanism; the
+ * index into `PLAY_TEXTURES` is positional, like everything else keyed to
+ * `GAMES`.
  *
  * The four *quiz* rounds run through one engine. They differ only in how a
  * question is built (`kind` in `GAMES`) and what it pays, so there is one timer
@@ -59,6 +68,88 @@ import '../components/GlobeHero/ui/flagFont.css';
 
 type GameId = (typeof GAMES)[number]['id'];
 type Game = (typeof GAMES)[number];
+
+/**
+ * The card textures, index-aligned with `GAMES`.
+ *
+ * This is what stands in for the mock's six hues. Each name is a pattern in
+ * `site.css` drawn from `--accent-rgb` at a few percent — the point is only that
+ * neighbouring cards do not look like the same card twice, so the values are
+ * chosen to sit next to each other rather than to mean anything. The featured
+ * card takes `GAMES[0]`'s, which is why `dots` is first: it is the quietest of
+ * the six and the featured card is the largest surface on the page.
+ */
+const PLAY_TEXTURES = [
+  'dots',
+  'stripe',
+  'orbit',
+  'weave',
+  'chevron',
+  'grid',
+  'hatch',
+] as const;
+
+/** The game the screen leads with — the first row of `GAMES`, the general quiz. */
+const FEATURED = 0;
+
+/** The voucher ladder, cheapest first and deduplicated. */
+const TIERS = [...new Set(VOUCHER_CARDS.map((card) => card.points))].sort((a, b) => a - b);
+
+/**
+ * The rung the points bar is filling toward: the cheapest card in the catalogue
+ * this balance will not yet buy.
+ *
+ * Read out of `VOUCHER_CARDS` rather than fixed at `CHEAPEST_VOUCHER`, because a
+ * bar pinned to 100 is full for every player past their first afternoon and
+ * then says nothing for the rest of the account's life. The ladder is real —
+ * 100, 200, 300, 400, 500 — so the bar has somewhere to go at every balance. A
+ * player who can afford everything gets the top rung and a full bar, which is
+ * the honest end of it.
+ */
+function nextTier(points: number): number {
+  return TIERS.find((cost) => cost > points) ?? TIERS[TIERS.length - 1];
+}
+
+/**
+ * The two rule lines under a game's name.
+ *
+ * Each row of `GAMES` reads its own columns (see the table's comment), so the
+ * lines are per kind rather than one sentence with four holes in it: a
+ * per-question clock means nothing to a round that lasts as long as you do, and
+ * "one mistake allowed" means nothing to a board you cannot lose. Lifted out of
+ * the card so the featured card and the grid cards cannot describe the same
+ * game differently.
+ */
+function rulesFor(entry: Game, games: ReturnType<typeof useCopy>['games']): string[] {
+  if (entry.kind === 'flight') {
+    return [
+      fill(games.flight.rule, { gaps: String(entry.questions) }),
+      fill(games.flight.reward, { points: String(entry.perCorrect) }),
+    ];
+  }
+  if (entry.kind === 'memory') {
+    return [
+      fill(games.memory.rule, { pairs: String(entry.questions) }),
+      fill(games.memory.reward, { points: String(entry.perCorrect) }),
+    ];
+  }
+  if (entry.kind === 'word') {
+    return [
+      fill(games.wordGame.rule, { words: String(entry.questions) }),
+      games.wordGame.reward,
+    ];
+  }
+  return [
+    fill(games.rule, {
+      questions: String(entry.questions),
+      seconds: String(entry.seconds),
+    }),
+    fill(games.reward, {
+      mistakes: String(entry.allowedMistakes),
+      points: String(entry.perCorrect),
+    }),
+  ];
+}
 
 /* ──────────────────────────────────────────────────────────────── the round ── */
 
@@ -253,16 +344,31 @@ function Result({
 
   return (
     <div className="round round-result">
-      <span className="result-ico" data-won={won ? 'true' : undefined}>
-        <Icon name={won ? 'trophy' : 'check'} size={26} strokeWidth={1.8} />
+      {/*
+        The gain, at the size the mock gives it.
+
+        A round's whole feedback is one number, and it used to arrive as a line
+        of body copy between two other lines of body copy. The kicker above it
+        carries what the old `<h2>` said — won or lost — because at this size
+        the figure is the headline and a heading over it would be a second one.
+      */}
+      <span className="result-kicker" data-won={won ? 'true' : undefined}>
+        <Icon name={won ? 'trophy' : 'check'} size={14} strokeWidth={2} />
+        {won ? copy.wonTitle : copy.lostTitle}
       </span>
-      <h2>{won ? copy.wonTitle : copy.lostTitle}</h2>
+      {/* A round that paid nothing still states its figure — leaving it out
+          would make the card jump between outcomes — but not in the accent.
+          A celebratory 0 is the wrong face for the wrong news. */}
+      <b className="result-gain" data-zero={points === 0 ? 'true' : undefined}>
+        {points > 0 ? `+${points}` : '0'}
+      </b>
       <p className="result-score">
         {scoreLine ?? fill(copy.resultScore, { correct: String(correct), total: String(total) })}
       </p>
-      <p className="result-points">
-        {points > 0 ? fill(copy.resultPoints, { points: String(points) }) : copy.resultNone}
-      </p>
+      {/* Only the empty round needs saying in words. `resultPoints` restated
+          the figure directly above it, which was fine as a line of body copy
+          and is noise under a 4.5rem one. */}
+      {points === 0 && <p className="result-points">{copy.resultNone}</p>}
       <p className="result-toward">
         {short > 0
           ? fill(copy.resultToward, { points: String(short) })
@@ -374,6 +480,9 @@ export function GamesApp() {
   const [playing, setPlaying] = useState<GameId | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
+  /* The detail behind the strip. Shut by default: four figures a player checks
+     occasionally should not push the games below the fold every visit. */
+  const [statsOpen, setStatsOpen] = useState(false);
   const [result, setResult] = useState<{
     won: boolean;
     correct: number;
@@ -414,6 +523,12 @@ export function GamesApp() {
   if (!player) return null;
 
   const game = GAMES.find((g) => g.id === playing);
+
+  /* The points panel's three numbers. `target` is the rung of the voucher
+     ladder above this balance, so the bar always has somewhere to go. */
+  const target = nextTier(player.points);
+  const short = Math.max(0, target - player.points);
+  const pct = Math.min(100, Math.round((player.points / target) * 100));
 
   /**
    * Start a round.
@@ -527,91 +642,133 @@ export function GamesApp() {
             <p>{games.lede}</p>
           </div>
 
-          {/* ── the stats bar ── */}
-          <div className="stat-bar" data-reveal>
-            <div className="stat-row">
-              <div className="stat">
-                <span>
-                  <Icon name="trophy" size={15} />
-                  {games.score}
-                </span>
-                <b>{player.points}</b>
+          {/*
+            ── the points panel ──
+
+            The balance, what it is short of, and the bar between the two, in
+            one object that is itself the link to spending it. The old screen
+            opened with four equal figures in a box and a separate strip
+            underneath saying "redeem"; a player reading that had to assemble
+            "I have 340, a voucher is 400, so the button is for me" out of three
+            places. Here it is one sentence and one bar.
+          */}
+          <a className="play-hero" href={PATHS.vouchers} data-reveal>
+            <span className="play-hero-glow" aria-hidden />
+            <div className="play-hero-main">
+              <span className="play-hero-kicker">
+                <i>
+                  <Icon name="coin" size={13} strokeWidth={2} />
+                </i>
+                {games.pointsKicker}
+              </span>
+              <p className="play-hero-line">
+                <b>{fill(games.pointsUnit, { points: String(player.points) })}</b>
+                <span aria-hidden> · </span>
+                {short > 0
+                  ? fill(games.pointsGoal, { points: String(short) })
+                  : games.pointsHave}
+              </p>
+              <div className="play-hero-bar">
+                <i style={{ width: `${pct}%` }} />
               </div>
-              <div className="stat">
-                <span>
-                  <Icon name="coin" size={15} />
-                  {games.streak}
-                </span>
+              <div className="play-hero-scale">
+                <span>{player.points}</span>
+                <span>{fill(games.pointsTarget, { points: String(target) })}</span>
+              </div>
+            </div>
+            <span className="play-hero-cta">
+              {games.redeemTitle}
+              <Icon name="arrow" size={16} strokeWidth={2.4} />
+            </span>
+          </a>
+
+          {/*
+            ── the stats strip ──
+
+            One line of the four readings a player checks constantly, and a
+            disclosure for the four they do not. Freezes stay in the top line
+            next to the streak they protect, because the whole point of a freeze
+            is knowing you have one *before* the day you need it. Spending is
+            automatic (see `awardPoints`), so every figure here is a reading and
+            none of them is a control.
+          */}
+          <div className="play-strip" data-reveal>
+            <div className="play-strip-row">
+              <span className="play-stat">
+                <Icon name="coin" size={15} />
+                <em>{games.streak}</em>
                 <b>{player.streak}</b>
-              </div>
-              <div className="stat">
-                <span>
-                  <Icon name="check" size={15} />
-                  {games.lives}
-                </span>
-                <b className="stat-hearts" aria-label={`${player.lives}/${MAX_LIVES}`}>
+              </span>
+              <span className="play-stat">
+                <em>{games.lives}</em>
+                <b className="play-pips" aria-label={`${player.lives}/${MAX_LIVES}`}>
                   {Array.from({ length: MAX_LIVES }, (_, i) => (
                     <i key={i} data-spent={i >= player.lives ? 'true' : undefined}>
                       ♥
                     </i>
                   ))}
                 </b>
-              </div>
-              {/*
-                Freezes held.
-
-                Shown next to the streak it protects rather than tucked into the
-                sub-row, because the whole point of a freeze is knowing you have
-                one *before* the day you need it. Spending is automatic (see
-                `awardPoints`), so this is a reading, not a control.
-              */}
-              <div className="stat">
-                <span>
-                  <Icon name="freeze" size={15} />
-                  {games.freezes}
-                </span>
+              </span>
+              <span className="play-stat">
+                <Icon name="freeze" size={15} />
+                <em>{games.freezes}</em>
                 <b
-                  className="stat-hearts"
+                  className="play-pips"
                   aria-label={`${freezesOf(player)}/${MAX_FREEZES}`}
                 >
                   {Array.from({ length: MAX_FREEZES }, (_, i) => (
                     <i key={i} data-spent={i >= freezesOf(player) ? 'true' : undefined}>
-                      <Icon name="freeze" size={19} strokeWidth={2} />
+                      <Icon name="freeze" size={15} strokeWidth={2} />
                     </i>
                   ))}
                 </b>
-              </div>
+              </span>
+              <span className="play-stat">
+                <Icon name="trophy" size={15} />
+                <em>{games.score}</em>
+                <b>{player.points}</b>
+              </span>
+
+              <button
+                type="button"
+                className="play-stats-toggle"
+                aria-expanded={statsOpen}
+                onClick={() => setStatsOpen((open) => !open)}
+              >
+                {games.statsToggle}
+                <Icon name="chevron" size={14} strokeWidth={2.2} />
+              </button>
             </div>
 
-            <div className="stat-sub">
-              <div>
-                <span>{games.answered}</span>
-                <b>{player.answered}</b>
+            {statsOpen && (
+              <div className="play-stats">
+                <div>
+                  <span>{games.answered}</span>
+                  <b>{player.answered}</b>
+                </div>
+                <div>
+                  <span>{games.correctLabel}</span>
+                  <b>{player.correct}</b>
+                </div>
+                <div>
+                  <span>{games.accuracy}</span>
+                  {/* Zero answered is zero percent, not a division by it. */}
+                  <b data-lit="true">
+                    {player.answered > 0
+                      ? Math.round((player.correct / player.answered) * 100)
+                      : 0}
+                    %
+                  </b>
+                </div>
+                {/* The reward connection, on the screen rather than only on the
+                    result card: what the balance is actually for. */}
+                <div>
+                  <span>{games.toVoucher}</span>
+                  <b>{Math.max(0, CHEAPEST_VOUCHER - player.points)}</b>
+                </div>
               </div>
-              <div>
-                <span>{games.correctLabel}</span>
-                <b>{player.correct}</b>
-              </div>
-              {/* The reward connection, on the screen rather than only on the
-                  result card: what the balance is actually for. */}
-              <div>
-                <span>{games.toVoucher}</span>
-                <b>{Math.max(0, CHEAPEST_VOUCHER - player.points)}</b>
-              </div>
-            </div>
+            )}
           </div>
-
-          {/* ── redeem strip ── */}
-          <a className="redeem-strip" href={PATHS.vouchers} data-reveal>
-            <span className="redeem-ico">
-              <Icon name="gift" size={20} />
-            </span>
-            <b>{games.redeemTitle}</b>
-            <span className="redeem-go">
-              {games.redeemAction}
-              <Icon name="arrow" size={15} strokeWidth={2.4} />
-            </span>
-          </a>
 
           {/* ── in play, or the cards ── */}
           {result && game ? (
@@ -663,89 +820,120 @@ export function GamesApp() {
               onQuit={() => setPlaying(null)}
             />
           ) : (
-            <div className="play-grid">
-              {GAMES.map((entry, index) => {
-                /*
-                 * Each row of `GAMES` reads its own columns (see the table's
-                 * comment), so the two rule lines are per kind rather than one
-                 * sentence with four holes in it. A per-question clock means
-                 * nothing to a round that lasts as long as you do, and "one
-                 * mistake allowed" means nothing to a board you cannot lose.
-                 */
-                const rules =
-                  entry.kind === 'flight'
-                    ? [
-                        fill(games.flight.rule, { gaps: String(entry.questions) }),
-                        fill(games.flight.reward, { points: String(entry.perCorrect) }),
-                      ]
-                    : entry.kind === 'memory'
-                      ? [
-                          fill(games.memory.rule, { pairs: String(entry.questions) }),
-                          fill(games.memory.reward, { points: String(entry.perCorrect) }),
-                        ]
-                      : entry.kind === 'word'
-                        ? [
-                            fill(games.wordGame.rule, { words: String(entry.questions) }),
-                            games.wordGame.reward,
-                          ]
-                        : [
-                            fill(games.rule, {
-                              questions: String(entry.questions),
-                              seconds: String(entry.seconds),
-                            }),
-                            fill(games.reward, {
-                              mistakes: String(entry.allowedMistakes),
-                              points: String(entry.perCorrect),
-                            }),
-                          ];
+            <>
+              {/*
+                ── the featured game ──
 
+                One game given the width of the page, the way the mock leads
+                with its daily quiz. It is `GAMES[FEATURED]` rather than a row
+                of its own, so the featured card and the grid card below it read
+                the same table and cannot disagree about what the game pays.
+              */}
+              {(() => {
+                const entry = GAMES[FEATURED];
+                const rules = rulesFor(entry, games);
                 return (
-                  <article className="play-card" key={entry.id} data-reveal>
-                    <span className="play-ico">
-                      <Icon name={entry.icon} size={24} />
-                    </span>
-                    <b>{games.names[index]}</b>
-                    {rules.map((rule) => (
-                      <span className="play-rule" key={rule}>
-                        {rule}
+                  <article
+                    className="play-feature"
+                    data-texture={PLAY_TEXTURES[FEATURED]}
+                    data-reveal
+                  >
+                    <span className="play-feature-glow" aria-hidden />
+                    <div className="play-feature-main">
+                      <span className="play-badge">
+                        <Icon name="coin" size={13} strokeWidth={2} />
+                        {games.featured}
                       </span>
-                    ))}
-
-                    {/* Word Builder picks the language it is teaching, on the
-                        card, before the round starts — the choice belongs to
-                        the game rather than to the site's own switcher, which
-                        decides what you *read*, not what you are learning. */}
-                    {entry.kind === 'word' && (
-                      <div className="play-pick" role="group" aria-label={games.wordGame.list}>
-                        {(['pl', 'en'] as const).map((option) => (
-                          <button
-                            key={option}
-                            type="button"
-                            data-on={wordList === option ? 'true' : undefined}
-                            onClick={() => setWordList(option)}
-                          >
-                            {games.wordGame.lists[option]}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-
-                    <button
-                      type="button"
-                      className="btn btn-solid play-start"
-                      disabled={player.lives <= 0 || loading}
-                      onClick={() => start(entry.id)}
-                    >
-                      {loading
-                        ? games.loading
-                        : player.lives > 0
-                          ? games.start
-                          : games.noLives}
-                    </button>
+                      <h2>{games.names[FEATURED]}</h2>
+                      <p className="play-feature-rules">{rules.join(' · ')}</p>
+                      <button
+                        type="button"
+                        className="btn btn-solid play-feature-cta"
+                        disabled={player.lives <= 0 || loading}
+                        onClick={() => start(entry.id)}
+                      >
+                        {loading
+                          ? games.loading
+                          : player.lives > 0
+                            ? games.start
+                            : games.noLives}
+                        {player.lives > 0 && !loading && (
+                          <Icon name="arrow" size={16} strokeWidth={2.4} />
+                        )}
+                      </button>
+                    </div>
+                    <span className="play-feature-ico" aria-hidden>
+                      <Icon name={entry.icon} size={64} strokeWidth={1.3} />
+                    </span>
                   </article>
                 );
-              })}
-            </div>
+              })()}
+
+              {/* ── the rest of the catalogue ── */}
+              <div className="play-grid">
+                {GAMES.map((entry, index) => {
+                  if (index === FEATURED) return null;
+                  const rules = rulesFor(entry, games);
+
+                  return (
+                    <article
+                      className="play-card"
+                      key={entry.id}
+                      data-texture={PLAY_TEXTURES[index]}
+                      data-reveal
+                    >
+                      <span className="play-ico">
+                        <Icon name={entry.icon} size={24} />
+                      </span>
+                      <b>{games.names[index]}</b>
+                      {rules.map((rule) => (
+                        <span className="play-rule" key={rule}>
+                          {rule}
+                        </span>
+                      ))}
+
+                      <span className="play-fill" aria-hidden />
+
+                      {/* Word Builder picks the language it is teaching, on the
+                          card, before the round starts — the choice belongs to
+                          the game rather than to the site's own switcher, which
+                          decides what you *read*, not what you are learning. */}
+                      {entry.kind === 'word' && (
+                        <div
+                          className="play-pick"
+                          role="group"
+                          aria-label={games.wordGame.list}
+                        >
+                          {(['pl', 'en'] as const).map((option) => (
+                            <button
+                              key={option}
+                              type="button"
+                              data-on={wordList === option ? 'true' : undefined}
+                              onClick={() => setWordList(option)}
+                            >
+                              {games.wordGame.lists[option]}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        className="btn btn-solid play-start"
+                        disabled={player.lives <= 0 || loading}
+                        onClick={() => start(entry.id)}
+                      >
+                        {loading
+                          ? games.loading
+                          : player.lives > 0
+                            ? games.play
+                            : games.noLives}
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+            </>
           )}
 
           <Board player={player} />

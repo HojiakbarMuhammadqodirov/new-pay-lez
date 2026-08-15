@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { DASH_SCREENS, PARTNER_BUDGET } from './content';
+import { DASH_SCREENS } from './content';
+import { PD_ALLOCATION, PD_CAMPAIGN_MODEL, PD_VOUCHER_MODEL } from './partnerMetrics';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -20,13 +21,16 @@ import { useCountUp, useReveal } from './useReveal';
  * The layout follows the prototype in `b2b/Paylez Partner Dashboard v2.dc.html`
  * — same rail, same groups, same plan card — but every colour comes from the
  * site's tokens rather than that file's own palette, which is what gives this
- * screen a dark theme, five languages and the reader's own currency.
+ * screen a dark theme, five languages and the reader's own currency. The
+ * surface is glass over the wash on `.pd-app`; see the `── the screens: glass ──`
+ * block in `site.css` for what that costs and where it is turned off.
  *
- * **All seven screens open.** Only the profile has a form behind it; the rest
- * show the state a venue actually starts in — no deals run, no customers, no
- * scans — with the sentence explaining what would fill them. That is the
- * prototype's own design rather than a placeholder: it withholds a number it
- * cannot honestly show and says why, instead of drawing a chart full of zeroes.
+ * **All seven screens open**, and six of them now report a full month rather
+ * than the empty state a brand-new venue is in: `partnerMetrics.ts` carries the
+ * prototype's seeds *and* its arithmetic, so the overview's attribution, the
+ * deal claim rates, the two budget pools and the cost per new customer are one
+ * calculation seen from four screens. The seventh is the profile, which is the
+ * only one with a form behind it.
  */
 
 /* ────────────────────────────────────────────────────────────────── rail ── */
@@ -44,7 +48,15 @@ function Rail({
 }) {
   const copy = useCopy();
   const money = useMoney();
-  const used = PARTNER_BUDGET.spent / PARTNER_BUDGET.total;
+  /*
+   * The plan card reads the same pool the Campaigns and Vouchers screens do.
+   * It used to carry its own two numbers, which was fine while those screens
+   * showed a venue's empty state and became a contradiction the moment they
+   * started reporting: the rail said one budget was spent and the screen one
+   * click away said another.
+   */
+  const spent = PD_CAMPAIGN_MODEL.spent + PD_VOUCHER_MODEL.spent;
+  const used = spent / PD_ALLOCATION.total;
 
   const group = (which: 'grow' | 'workspace') =>
     DASH_SCREENS.map((entry, index) => ({ entry, index })).filter(
@@ -93,8 +105,8 @@ function Rail({
           </div>
           <span className="plan-usage">
             {fill(copy.dashboard.plan.usage, {
-              used: money(PARTNER_BUDGET.spent, 'exact'),
-              total: money(PARTNER_BUDGET.total, 'exact'),
+              used: money(spent, 'exact'),
+              total: money(PD_ALLOCATION.total, 'exact'),
             })}
           </span>
         </div>
@@ -164,7 +176,10 @@ const PROFILE = DASH_SCREENS.length - 1;
 export function DashboardPage() {
   const copy = useCopy();
   const [collapsed, setCollapsed] = useState(false);
-  const [screen, setScreen] = useState(PROFILE);
+  /* Opens on the overview, which is the first entry in the rail and the screen
+     the prototype opens on. It used to open on the profile because that was the
+     only screen with anything on it. */
+  const [screen, setScreen] = useState(0);
 
   /*
    * A second rescan, keyed on the screen. `Site` keys its own on the route, and

@@ -40,7 +40,6 @@ import {
   REQUIRED_FIELDS,
 } from '../src/site/auth/business';
 import {
-  DEMO_USERS,
   findUser,
   MIN_PASSWORD,
   newUser,
@@ -70,6 +69,34 @@ import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
 import { GAMES } from '../src/site/content';
+/* The source dictionary, read for its *shapes* rather than its words: the
+   dashboard's arrays are index-aligned with the seeds below, and a stale index
+   renders `undefined` instead of throwing. */
+import { en } from '../src/site/i18n/en';
+import { CURRENCIES, money } from '../src/site/i18n/currency';
+import {
+  HEAT_HOURS,
+  PD_ALLOCATION,
+  PD_AUDIENCES,
+  PD_CAMPAIGN_MODEL,
+  PD_COST_ROWS,
+  PD_COST_TOTAL,
+  PD_CUSTOMERS,
+  PD_DEALS,
+  PD_HEAT,
+  PD_HEAT_MAX,
+  PD_MAX_PER_VOUCHER,
+  PD_PER_NEW,
+  PD_ROSTER,
+  PD_SCAN_NAMES,
+  PD_SCANS,
+  PD_SERIES,
+  PD_TOTALS,
+  PD_VOUCHER_MODEL,
+  RANGE_DAYS,
+  polyarea,
+  polyline,
+} from '../src/site/partnerMetrics';
 import { LANGUAGE_ORDER, LANGUAGES } from '../src/site/i18n/context';
 import {
   dayLabel,
@@ -1334,10 +1361,12 @@ console.log('\nthe directory');
   check('ids are unique', ids.size === SEED_USERS.length);
   check('addresses are unique', emails.size === SEED_USERS.length);
 
-  /* The console reads every account on the platform. It is in the bundle like
-     everything else, but it is not advertised on the front door. */
-  check('the demo list is the two visitors', DEMO_USERS.length === 2);
-  check('…and never the admin', DEMO_USERS.every((u) => u.type !== 'admin'));
+  /* Nothing prints these on the sign-in form any more — see the note where
+     `DEMO_USERS` used to be exported. What is checked instead is the property
+     that made the admin unprintable in the first place: sign-up cannot produce
+     one, at the type level, so the seeds are the only three that exist. */
+  check('exactly one admin is seeded', SEED_USERS.filter((u) => u.type === 'admin').length === 1);
+  check('and the other two are ordinary accounts', SEED_USERS.filter((u) => u.type !== 'admin').length === 2);
 }
 
 console.log('\nsigning up');
@@ -1442,6 +1471,209 @@ console.log('\nthe console');
   check('the csv quotes every field', csv.startsWith('"a","b"'));
   check('…and doubles a quote inside one', csv.includes('"say ""hi"""'));
   check('…and keeps a comma inside its cell', csv.includes('"Kraków, PL"'));
+}
+
+console.log('\nthe partner dashboard');
+{
+  /*
+   * The dashboard derives seven screens from one set of seeds, so the checks
+   * here are the ones that derivation can get wrong: a budget whose three
+   * slices do not add up to the budget, an attribution that claims more visits
+   * than happened, and a series that is not the same series twice — which would
+   * make the chart, the totals and the sparklines disagree on one screen.
+   */
+  const totals = PD_TOTALS;
+
+  check('the series is the window', PD_SERIES.visits.length === RANGE_DAYS);
+  check(
+    'the series is deterministic',
+    JSON.stringify(PD_SERIES) === JSON.stringify(PD_SERIES),
+  );
+  check(
+    'visits are the sum of the days',
+    totals.visits === PD_SERIES.visits.reduce((a, b) => a + b, 0),
+    String(totals.visits),
+  );
+
+  /* Attribution is a subset, never a superset. Both halves have failed this in
+     other dashboards by double-counting a newcomer who also claimed a deal. */
+  check('what we claim is a subset of what happened', totals.attributed <= totals.visits);
+  check('…and at least everyone new', totals.attributed >= totals.newCustomers);
+  check(
+    '…and worth less than the estimate',
+    totals.attributedMoney <= totals.estimate,
+  );
+
+  /* A pool has exactly three states and they exhaust it. If they do not, the
+     screen lets an owner commit the same money twice. */
+  const loyalty = PD_CAMPAIGN_MODEL;
+  check(
+    'the loyalty pool adds up',
+    Math.abs(loyalty.spent + loyalty.aside + loyalty.available - loyalty.allocation) < 1e-6,
+  );
+  check(
+    'the widest gap is the widest',
+    loyalty.list.every((c) => c.gap <= loyalty.widestGap),
+    `${loyalty.widestGap} unused`,
+  );
+  check(
+    'nothing is used more than was earned',
+    loyalty.list.every((c) => c.used + c.expired <= c.earned),
+  );
+
+  const vouchers = PD_VOUCHER_MODEL;
+  check(
+    'the voucher pool adds up',
+    Math.abs(vouchers.spent + vouchers.reserved + vouchers.available - vouchers.budget) < 1e-6,
+  );
+  check(
+    'the two pools are the whole budget',
+    Math.abs(loyalty.allocation + vouchers.budget - PD_ALLOCATION.total) < 1e-6,
+  );
+  /* The per-voucher cap is the reason that input exists — an uncapped 15% on a
+     large order is an unbounded bite out of a fixed monthly budget. */
+  check(
+    'no tier costs more than the cap',
+    vouchers.tiers.every((t) => t.unit <= PD_MAX_PER_VOUCHER + 1e-9),
+  );
+  check(
+    'the biggest tier is the biggest',
+    vouchers.tiers.every((t) => t.spent <= vouchers.tiers[vouchers.biggest].spent),
+  );
+
+  /* The cost breakdown is shown twice — as rows on the overview and as tiles on
+     customers — and the cost per new customer divides by it. */
+  check(
+    'the cost total is its rows',
+    Math.abs(PD_COST_TOTAL - PD_COST_ROWS.reduce((a, b) => a + b, 0)) < 1e-6,
+  );
+  check(
+    'cost per new customer follows the total',
+    Math.abs(PD_PER_NEW * totals.newCustomers - PD_COST_TOTAL) < 1e-6,
+  );
+  /* The headline figure and the last column of the trend beside it are the same
+     number, not two figures for one thing. */
+  check(
+    'the trend ends on that same figure',
+    PD_CUSTOMERS.perNewTrend[PD_CUSTOMERS.perNewTrend.length - 1] === PD_PER_NEW,
+  );
+
+  /* The heat map is alpha on one accent, so an empty cell and a busy one have
+     to differ by density alone — which needs a real range to work with. */
+  check('the heat map is a week', PD_HEAT.length === 7);
+  check('…fourteen hours wide', PD_HEAT.every((row) => row.length === HEAT_HOURS.length));
+  check('…with a range to shade', PD_HEAT_MAX > Math.min(...PD_HEAT.flat()));
+  /* Tuesday and Wednesday, 14:00–16:00 is the quiet block every "fill your
+     quiet hours" prompt in the product points at. If the generator stops
+     producing it, three sentences on two screens become false. */
+  const hour15 = HEAT_HOURS.indexOf(15);
+  check(
+    'Tuesday afternoon is the quiet one',
+    PD_HEAT[1][hour15] < PD_HEAT[0][hour15] && PD_HEAT[2][hour15] < PD_HEAT[3][hour15],
+  );
+
+  /* Normalised paths: every point has to land inside the box, or a line clips
+     out of its own card. */
+  const line = polyline(PD_SERIES.visits);
+  const coords = line.match(/-?\d+\.\d+/g)?.map(Number) ?? [];
+  check('a polyline stays in its box', coords.every((n) => n >= 0 && n <= 100));
+  check('…and starts at the left edge', line.startsWith('M0.00 '));
+  check('a two-point series still draws', polyline([1, 2]).length > 0);
+  check('a one-point series draws nothing', polyline([1]) === '');
+  check('the area closes to the floor', polyarea(PD_SERIES.visits).endsWith('L0 100 Z'));
+
+  /* Every index in the roster is an index into a dictionary array. A stale one
+     renders `undefined` rather than failing, which is why it is checked here. */
+  check(
+    'roster patterns are in range',
+    PD_ROSTER.every((r) => r.pattern >= 0 && r.pattern < en.dashboard.customers.patterns.length),
+  );
+  check(
+    'roster rewards are in range',
+    PD_ROSTER.every((r) => r.reward >= 0 && r.reward < en.dashboard.customers.rewards.length),
+  );
+  check(
+    'roster deals point at real deals',
+    PD_ROSTER.every((r) => r.deals.every((d) => d >= 0 && d < en.dashboard.deals.rows.length)),
+  );
+  check(
+    'roster campaigns point at real campaigns',
+    PD_ROSTER.every((r) => r.camp === -1 || en.dashboard.campaigns.rows[r.camp] !== undefined),
+  );
+  check(
+    'a customer has a tier or stamps, never both',
+    PD_ROSTER.every((r) => (r.tier > 0) !== (r.so > 0)),
+  );
+
+  /* The deals table is index-aligned with four dictionary arrays at once. */
+  check(
+    'every deal has a name, a window, hours and an audience',
+    PD_DEALS.every(
+      (_, i) =>
+        en.dashboard.deals.rows[i] !== undefined &&
+        en.dashboard.deals.windows[i] !== undefined &&
+        en.dashboard.deals.when[i] !== undefined,
+    ),
+  );
+  check(
+    'every deal aims at a real audience',
+    PD_DEALS.every((d) => PD_AUDIENCES[d.audience] !== undefined),
+  );
+  check(
+    'nobody claims a deal they never saw',
+    PD_DEALS.every((d) => d.claimed <= d.opened || d.seen === 0),
+  );
+  check(
+    'a notification never reaches more than the audience',
+    PD_DEALS.every((d) => d.notify.reach <= d.notify.match),
+  );
+
+  /* Scans are generated per index, so the whole page has to come out stable and
+     in range — the progress bar divides by `need`. */
+  check('a scan never over-fills its card', PD_SCANS.every((s) => s.done <= s.need));
+  check(
+    'a scan with no campaign has no card',
+    PD_SCANS.every((s) => (s.campaign === -1) === (s.need === 0)),
+  );
+  check(
+    'scan clock times are real',
+    PD_SCANS.every((s) => s.hour >= 0 && s.hour < 24 && s.minute >= 0 && s.minute < 60),
+  );
+  check(
+    'every scan names someone',
+    PD_SCANS.every((s) => PD_SCAN_NAMES[s.who] !== undefined),
+  );
+  /* "Newest first" is the screen's own subtitle, so it has to be true. */
+  check(
+    'scans are newest first',
+    PD_SCANS.every(
+      (s, i) =>
+        i === 0 ||
+        PD_SCANS[i - 1].hour * 60 + PD_SCANS[i - 1].minute >= s.hour * 60 + s.minute,
+    ),
+  );
+
+  /*
+   * `unit` money, which this screen is the reason for. A cost per claim is
+   * under a pound, and the other three rounding modes all take it to "£1" —
+   * which turned three different figures in the ROI panel into the same one.
+   */
+  const gbp = CURRENCIES.en;
+  const soum = CURRENCIES.uz;
+  check('a per-unit amount keeps its minor units', money(0.78, gbp, 'unit') === '£0.67', money(0.78, gbp, 'unit'));
+  check('…and is not the same as the rounded one', money(0.78, gbp, 'unit') !== money(0.78, gbp, 'exact'));
+  check(
+    '…and still groups its thousands',
+    money(2000, gbp, 'unit') === '£1,714.71',
+    money(2000, gbp, 'unit'),
+  );
+  /* A soum has no minor unit, so `unit` there must not invent one. */
+  check('a currency with no minor unit gets no decimals', !money(0.78, soum, 'unit').includes('.'));
+  check('the other modes are unchanged', money(126.65, gbp, 'price') === '£110', money(126.65, gbp, 'price'));
+  check('…including exact', money(126.65, gbp, 'exact') === '£109', money(126.65, gbp, 'exact'));
+  /* Zero keeps its decimals so a column of per-unit costs stays aligned —
+     "£0" among "£0.67" is a ragged column, and these are tabular figures. */
+  check('…and zero keeps the same shape', money(0, gbp, 'unit') === '£0.00', money(0, gbp, 'unit'));
 }
 
 console.log(

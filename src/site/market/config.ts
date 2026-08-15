@@ -6,9 +6,10 @@
  * display has and the loop is driven by elapsed time, so a retina laptop and a
  * 60Hz monitor have to agree on what "a slow climb" means.
  *
- * What it is, and why it is not the node web again: the L-Earn backdrop is
- * *drifting points that link to each other* — a network, which is what a player
- * base is. This one is a **line that climbs, ticked up by the venues under it**.
+ * What it is, and why it is not the node web again: the Analytics backdrop is
+ * *drifting points that link to each other* — a network, which is what a
+ * customer base is. This one is a **line that climbs, ticked up by the venues
+ * under it**.
  * Every B2B claim on the page is a revenue claim, and the two halves say the
  * two halves of it: the venues are repeat custom (fixed points that fire again,
  * and fire when your cursor passes them), and the tape is what that repeat

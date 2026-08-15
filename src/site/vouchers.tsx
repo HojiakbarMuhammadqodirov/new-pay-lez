@@ -26,9 +26,9 @@ import { PATHS } from './router';
  * picks the currency, so a gift card's face value is quoted in pounds for an
  * English reader and złoty for a Polish one. See `i18n/currency.ts`.
  *
- * The backdrop is `.site__stubs`, CSS only. The globe, the node web and the
- * market tape are the whole canvas budget; see the backdrop note in CLAUDE.md
- * for why the fifth page does not get a fourth one.
+ * The backdrop is `StubDrift` — the tickets themselves, notched and tear-lined,
+ * sinking slowly down the page. It replaced a static CSS perforation; see the
+ * backdrop note in CLAUDE.md.
  */
 
 /* ───────────────────────────────────────────────────────────── the wallet ── */

@@ -52,8 +52,6 @@ export const en = {
     submit: 'Sign in',
     /* The credentials are in the bundle either way — see `auth/users.ts`. One
        line per demo account; the role is the same word the header chip uses. */
-    demoTitle: 'Demo accounts',
-    demoLine: '{role} — {email} · {password}',
     errors: {
       email: 'We do not have an account with that email address.',
       password: 'That password does not match.',
@@ -360,6 +358,33 @@ export const en = {
     redeemTitle: 'Turn points into rewards',
     redeemAction: 'Redeem now',
 
+    /*
+     * The points panel at the top of the screen.
+     *
+     * `pointsGoal` and `pointsHave` are alternatives, not halves — the balance
+     * either does or does not reach the next rung of the voucher ladder, and
+     * exactly one of them is shown. Each carries its whole clause rather than a
+     * fragment glued to `pointsUnit`, because "60 more for" does not sit in the
+     * same order in five languages.
+     */
+    pointsKicker: 'Your points',
+    pointsUnit: '{points} points',
+    pointsGoal: '{points} more for the next discount',
+    pointsHave: 'enough for a discount already',
+    /* The right-hand end of the progress bar: the rung it is filling toward. */
+    pointsTarget: '{points} unlocks the next one',
+
+    /* The stats strip, and the four figures it opens onto. */
+    statsToggle: 'Your stats',
+    accuracy: 'Accuracy',
+
+    /*
+     * The badge on the featured game. It says what the card is *for* — any
+     * round keeps the streak, but this is the one the screen puts first, so it
+     * is the one that has to say so out loud.
+     */
+    featured: 'Today’s game · keeps your streak',
+
     /* Index-aligned with `GAMES` in `content.ts`. */
     names: [
       'Brain Games',
@@ -375,6 +400,9 @@ export const en = {
     rule: '{questions} questions · {seconds} sec each',
     reward: '{mistakes} mistake allowed · +{points} per correct answer',
     start: 'Start game',
+    /* The short label, for the cards in the grid — six of them side by side,
+       where "Start game" wraps and the surrounding card already says which. */
+    play: 'Play',
     noLives: 'Out of lives — come back tomorrow',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
@@ -632,33 +660,147 @@ export const en = {
     /* One honest line rather than a fake chart behind each button. */
     notWired: 'Not wired up in this build.',
 
+    /** The month every screen reports on. */
+    month: 'August',
+    /** The window the range picker is set to, spelled into a sentence. */
+    rangeLabel: 'last 30 days',
+
     /*
-     * The venue's month, in words. Every figure comes from `PD_*` in
-     * `content.ts`, which is the prototype's own seed data — so the sentences
-     * here can be specific without inventing anything.
+     * Words that appear on more than one screen. Kept in one place because the
+     * prototype uses the same six verbs throughout and translating "Edit" four
+     * times is four chances for four different words.
+     */
+    words: {
+      edit: 'Edit',
+      pause: 'Pause',
+      remind: 'Remind them',
+      ask: 'Ask the assistant',
+      open: 'Open it',
+      priority: 'Priority {n}',
+      each: '{amount} each',
+      spent: 'Spent',
+      aside: 'Set aside',
+      available: 'Available',
+      costSoFar: 'Cost so far',
+      returned: '{amount} came back this month from rewards that expired unused.',
+    },
+
+    /*
+     * The venue's month, in words. Every figure comes from `partnerMetrics.ts`,
+     * which is the prototype's own seed data run through the prototype's own
+     * arithmetic — so the sentences here can be specific without inventing
+     * anything, and stay true if a seed moves.
      */
     overview: {
-      kicker: 'What Paylez did for you',
-      /* Both holes are figures: a count and money in the reader's currency. */
-      headline:
-        'We brought {customers} new customers through your door, and they spent about {revenue} with you.',
-      estimate:
+      kicker: 'What Paylez did for you · {range}',
+      countedLabel: 'Counted',
+      counted: 'visits through Paylez',
+      countedNew: '{n} of them were customers new to your venue',
+      estimateTag: 'Estimate',
+      /* The hole is money in the reader's currency, set inside the phrase
+         because "about £X in sales" does not keep its word order everywhere. */
+      estimate: 'about {amount} in sales',
+      estimateNote:
         'An estimate. Every visit through Paylez multiplied by an average spend of {avg}, taken from your own sales.',
-      tiles: ['Visits', 'Deals claimed', 'Vouchers used', 'Rewards used'],
-      since: 'vs. previous 30 days',
+      claimTitle: 'What we can fairly claim',
+      claim: '{visits} visits · about {amount}',
+      claimNote:
+        'Visits from customers new to your venue, plus visits with a deal claim or a notification behind them. The rest were regulars who may have come anyway.',
+      /* Index-aligned with the three tiles beside the headline. */
+      support: [
+        { label: 'Visits through Paylez', note: 'counted from QR scans' },
+        { label: 'Average spend per visit', note: 'from your sales, last 30 days' },
+        { label: 'Customers new to your venue', note: 'first scan at your counter' },
+      ],
+      budgetAlert:
+        'Your loyalty budget is forecast to run out before the end of {month}. You have {amount} unused in vouchers — move some across?',
+      budgetAction: 'Open loyalty budget',
+
       costTitle: 'What Paylez cost you',
-      costTotal: 'Total this month',
-      roi: '{n}× back for every 1 you spend.',
+      /* Index-aligned with `PD_COST_ROWS`. */
+      costRows: [
+        'Paylez fees',
+        'Loyalty rewards given',
+        'Voucher discounts given',
+        'Hot deal discounts',
+      ],
+      costTotal: 'Total',
+      returnLabel: 'Sales we can tie back to Paylez',
+      roiGood:
+        'Paylez cost you {cost} in {month} and can be tied to about {revenue} in sales. That is {n}× back for every 1 you spend.',
+      roiBad:
+        'Paylez cost you {cost} in {month} and can be tied to about {revenue} in sales. That is {gap} more than we can show back. Most of your visits were regulars who may have come anyway.',
+
+      tiles: ['Visits', 'Deals claimed', 'Vouchers used', 'Rewards used'],
+      since: 'vs previous period',
+      inMonth: 'in {month}',
+
       proofTitle: 'The one thing we can prove',
       proof:
-        'Customers in your loyalty campaigns visit {after} times a month, up from {before} before they joined.',
+        'Customers in your loyalty campaigns visit {after} times a month, up from {before} times before they joined.',
       proofNote: 'Counted from your own QR scans, not estimated. No till integration needed.',
-      before: 'Before',
-      now: 'Now',
+      before: 'before',
+      now: 'now',
+
+      chartTitle: 'Visits and voucher redemptions',
+      chartNote:
+        'Every QR scan at the counter, against the vouchers customers actually spent',
+      chartVisits: 'Visits',
+      chartRedeemed: 'Vouchers redeemed',
+
+      holdingTitle: 'Money you are holding',
+      holding:
+        '{rewards} rewards and {vouchers} vouchers are sitting unused, holding {amount} of your budget.',
+      holdingNote:
+        'Every one of them is a customer who qualified and has not come back yet. If they expire, the money returns to your budget.',
+
+      noticed: 'What we noticed',
+      insights: [
+        {
+          text: 'Visits are up 12% but voucher use is down 4%. People are coming in — the rewards are not pulling them back.',
+          detail:
+            'Only 27 customers reached the 10% tier this month because it needs 600 points. At 450 points, 61 more of your regulars would have qualified.',
+          action: 'Change the 10% tier',
+        },
+        {
+          text: 'Your free-item deals get 2.4× more claims than your percentage discounts.',
+          detail:
+            '“Free filter with any bake” was claimed 186 times from 4 798 views. “Morning flat white” at 20% off was claimed 149 times from 8 412 views.',
+          action: 'Look at your deals',
+        },
+        {
+          text: '{n} loyalty rewards are earned and sitting unused, holding {amount}.',
+          detail:
+            'Those customers qualified and did not come back. A reminder usually brings about a third of them in within a week.',
+          action: 'Remind them',
+        },
+      ],
+
+      runningTitle: 'Running right now',
+      runningNote: 'Everything customers can see or earn in your venue today',
+      quota: '{n} of {total} notifications left this month',
+      quotaOut: 'No notifications left this month',
+      kinds: { deal: 'Hot deal', campaign: 'Campaign', vouchers: 'Vouchers' },
+      claims: 'claims',
+      usedEarned: 'used / earned',
+      givenAway: 'given away',
+      notifySent: 'Notification sent',
+      notifySet: 'Notification set',
+      tierBundle: 'Three point tiers',
+      tierBundleRule: '5% · 10% · 15% off · one monthly budget',
     },
 
     deals: {
-      columns: ['Deal', 'State', 'Seen', 'Opened', 'Claimed', 'Cost'],
+      columns: [
+        'Deal',
+        'State',
+        'Seen',
+        'Opened',
+        'Claimed',
+        'Claim rate',
+        'Cost',
+        'Last 7 days',
+      ],
       rows: [
         'Morning flat white',
         'Student Tuesdays',
@@ -667,62 +809,290 @@ export const en = {
         'Neighbour discount',
         'Lunch bundle',
       ],
+      /* Index-aligned with `PD_DEALS`: when each one runs, and between which
+         dates. Words, not structure — a month is spelled differently in five
+         languages and a date range is a sentence in some of them. */
+      when: [
+        'Mon–Fri, 07:00–10:00',
+        'Tue, 12:00–17:00',
+        'Every day',
+        'Every day',
+        'Every day',
+        'Mon–Fri, 11:00–15:00',
+      ],
+      windows: [
+        '3 Aug – 31 Aug',
+        '1 Jul – 30 Sep',
+        '12 Jul – 12 Aug',
+        '15 Aug – 15 Oct',
+        '5 Jul – 5 Sep',
+        '2 Jun – 30 Jun',
+      ],
+      /* Index-aligned with `PD_AUDIENCES`. */
+      audiences: [
+        'Everyone',
+        'Newcomers',
+        'Lapsed customers',
+        'New to your venue',
+        'Russian speakers',
+      ],
       states: {
         live: 'Live',
         scheduled: 'Scheduled',
         paused: 'Paused',
         expired: 'Expired',
       },
+      search: 'Search your deals',
+      filters: ['All', 'Live', 'Scheduled', 'Paused', 'Expired'],
+      count: '{n} of {total} deals',
+      sortNote: 'Sorted by claim rate, best first. Live and scheduled deals come first.',
       insight:
         'Your free-item deals get 2.4× more claims than your percentage discounts. The 5% lunch bundle underperformed — small discounts rarely move people.',
-      count: '{n} deals',
+      langsAll: 'Written in all five languages',
+      langsSome: 'Written in {n} of 5 languages — losing about {pct}% of reach',
+      notify: {
+        none: 'No notification',
+        scheduled: 'Notification scheduled',
+        sent: 'Notification sent',
+      },
+      reach: '{n} of {total} people can be notified',
+      limit: '{claimed} of {limit} claims',
+      noLimit: 'No claim limit',
     },
 
     campaigns: {
       rows: ['Regulars’ reward', 'Coffee streak', 'Lunch club', 'Winter comeback'],
-      rule: '{visits} visits → a reward',
-      each: '{amount} each',
+      /* Index-aligned with `PD_CAMPAIGNS`: what a member gets, and since when. */
+      rewards: [
+        'a free filter coffee',
+        'a free cake slice',
+        '{amount} off lunch',
+        'a free hot chocolate',
+      ],
+      since: [
+        'Running since 12 January',
+        'Running since 4 April',
+        'Started 2 June',
+        'Paused on 28 March',
+      ],
+      rule: '{visits} visits → {reward}',
+      visitRule: 'One visit counts per day. A reward expires 60 days after it is earned.',
       earned: 'Earned',
       used: 'Used',
       unused: '{n} earned but never used',
+      usedRate: '{pct}% used',
       gapTitle: 'The gap is the number to watch',
-      gap: 'A reward earned but never used means a customer qualified and did not come back. Right now “{name}” has the widest gap: {n} rewards sitting unused.',
+      gapLede:
+        'A reward that was earned but never used means a customer qualified and did not come back.',
+      gap: 'Right now “{name}” has the widest gap: {n} rewards sitting unused.',
+      totals: ['Earned', 'Used', 'Waiting'],
+      remindLabel: 'Remind {n} customers',
+      remindNote: 'They earned a reward and have not come back for it.',
+      remindResult: 'Last time, {back} of {of} came in within a week.',
+      remindSetup: 'Set this up for me',
+      near: '{n} regulars are one visit away from their next reward.',
+      rebalance:
+        'Your loyalty budget is forecast to run out on {date}. Vouchers have {amount} unused — move some across?',
+      rebalanceAction: 'Move budget across',
+      budgetTitle: 'Loyalty budget',
+      budgetLede:
+        'What you have set aside this month for loyalty rewards. Hot deals do not come out of it.',
+      spentNote: 'Rewards customers actually took.',
+      asideNote:
+        'Money held for rewards customers have earned but have not used yet. If they expire, it comes back.',
+      availableNote: 'Free for new rewards right now.',
+      forecast: 'At this rate the loyalty budget lasts until {date}.',
+      forecastOut: 'The loyalty budget is spent. New rewards stop being handed out.',
+      forecastSafe: 'At this rate the loyalty budget lasts the whole of {month}.',
+      pausedNote: 'Paused. Members keep what they have earned, and nothing new is counted.',
     },
 
     vouchers: {
+      alertTitle: 'Your discount budget is running low',
+      alertBody:
+        'At the current rate it runs out on {date}, and vouchers stop being given out until next month.',
+      alertAction: 'Increase the budget',
+      budgetTitle: 'Vouchers budget',
+      budgetLede:
+        'One pool for all three tiers. This is real money leaving your till, and you set the total for both features here.',
+      budgetLabel: 'Total discount budget',
+      allocNote:
+        'The bar shows what has gone out and what is committed. Only the pale part is still yours to spend.',
+      spent: 'Spent',
+      spentNote: 'Gone. Discounts on vouchers customers actually used.',
+      held: 'Set aside',
+      heldNote:
+        'Money held for vouchers customers have earned but have not used yet. If they expire, it comes back.',
+      free: 'Available',
+      freeNote: 'Free to spend on new vouchers right now.',
+      forecast: 'At this rate the budget lasts until {date}.',
+      forecastOut: 'The budget is spent. No new vouchers are being given out.',
+      forecastSafe: 'At this rate the budget lasts the whole of {month}.',
+      buysTitle: 'What is left buys',
+      buys: 'about {n} more vouchers',
+      buysNote: 'At the mix of tiers your customers are reaching now.',
+      avgTitle: 'Average transaction',
+      avgNote: 'Taken from your own sales over the last 30 days. Change it if it looks wrong.',
+      maxTitle: 'Most off one voucher',
+      maxNote:
+        'No single voucher takes more than this off a bill, however large the order.',
       tiersTitle: 'Who reaches each tier',
       tiersLede:
-        'Points decide who gets there, so raising a number sends less of the budget that way.',
+        'Tiers do not hold money. Points decide who gets there, so raising a number sends less of the budget that way.',
       columns: ['Tier', 'Points needed', 'Given out', 'Used', 'Cost so far'],
       tier: '{n}% off',
-      budgetTitle: 'Discount budget',
-      spent: 'Spent',
-      held: 'Set aside',
-      free: 'Available',
-      heldNote:
-        'Money held for rewards customers have earned but have not used yet. If they expire, it comes back.',
+      points: '{n} pts',
+      mixTitle: 'Where the money went',
+      returnedTitle: 'Money returned',
+      returnedNote:
+        'Came back this month from vouchers that expired unused. It is free to spend again.',
+      suggestion: 'Suggestion',
+      insight:
+        'Your {n}% tier is using most of the budget. Raise its points threshold if you would rather save the money for loyal customers.',
     },
 
     customers: {
+      costKicker: 'What a new customer costs you',
+      costUnit: 'each, in {month}',
+      costLine:
+        'You spent {cost} in {month} and gained {n} customers new to your venue. That is {each} each.',
+      costBreakdown: [
+        'Paylez fees',
+        'Loyalty rewards',
+        'Voucher discounts',
+        'Hot deal discounts',
+      ],
+      costFinding:
+        'Each new customer cost you {now} in {month}, down from {then} in June. Most of that fall came from your free-item deal.',
+      costAction: 'See your deals',
+      trendTitle: 'Last three months',
+      trendMonths: ['June', 'July', 'August'],
+      spendByMonth: 'Spend with you, by month',
+      benchmark:
+        'The average Kraków café on Paylez pays {amount} for each new customer. This is an estimate from venues like yours, not a promise.',
+
+      rosterTitle: 'Your customers',
+      rosterIntro:
+        '{n} of your {total} customers turned on profile sharing, so you can see these ones by name. Everyone else stays in the grouped figures below.',
+      rosterCount: '{n} sharing',
+      rosterColumns: ['Customer', 'Spent', 'Visits', 'Last seen', 'Status'],
+      rosterFilters: ['Everyone', 'Regulars', 'Lapsed', 'New'],
+      withdrew:
+        'Someone can turn sharing off at any time. When they do, they drop off this list and their history stops being visible to you.',
+      statuses: { regular: 'Regular', lapsed: 'Lapsed', new: 'New' },
+      today: 'Today',
+      daysAgo: '{n} days ago',
+      dayAgo: '1 day ago',
+      stamps: '{done} of {of} stamps',
+      tierProgress: '{n}% tier',
+
+      whenTitle: 'When they come in',
+      whenLede: 'Every QR scan at the counter, in an average week. Darker means busier.',
+      days: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+      heatCell: 'about {n} visits in a normal week',
+      quietFinding:
+        'Tuesday and Wednesday, 14:00 to 16:00, are your quietest hours — about 60% below your weekly average.',
+      quietAction: 'Set this up for me',
+      quietSelf: 'I will do it myself',
+      peakFinding:
+        'Your busiest hours are weekdays 08:00 to 10:00. Your morning deal already runs then, so there is little to gain from discounting deeper there.',
+
       fromTitle: 'Where they are from',
       nations: ['Ukrainian', 'Polish', 'Belarusian', 'Georgian', 'Turkish', 'Other'],
-      readTitle: 'What they read the app in',
+      nationCount: '{n} customers · {pct}%',
+      nationHidden:
+        '{n} smaller groups are counted in “other”, so nobody can be picked out.',
+      readTitle: 'What language your customers use',
+      readLede:
+        'These bars are counted across groups of customers, never one person. Groups smaller than 10 are rolled into “other”.',
+      langKicker: 'The language they use in Paylez',
       langs: ['Russian', 'Ukrainian', 'Polish', 'English', 'Other'],
+      langFinding:
+        '42% of your customers use the app in Russian, but none of your live deals is written in Russian.',
+      langAction: 'Create a deal for them',
       privacy:
         'Everything here is counted across groups. Paylez never shows you a single person, and groups smaller than ten are rolled into “other”.',
+
       backTitle: 'Do they come back',
+      backLede: 'First-time visitors, and how many returned within 30 days',
       months: ['April', 'May', 'June', 'July'],
-      cohort: '{back} of {first} came back within 30 days',
-      finding:
-        '38% of your customers are Ukrainian and 42% read the app in Russian. None of your live deals is aimed at Russian speakers.',
+      monthNames: [
+        'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December',
+      ],
+      cohort: '{back} of {first} · {pct}%',
+      backFinding:
+        '{first} people visited you for the first time in {month}. {back} came back within 30 days — {pct}%.',
+      lapsedFinding:
+        '{n} of your regulars have not visited in 30 days. They used to come about once a week.',
+
+      compareTitle: 'How you compare',
+      compareNote:
+        'Compared with {n} other Kraków cafés on Paylez. Numbers are averaged across venues, never shown per venue.',
+      compareRows: ['Deal claim rate', 'Second visit within 30 days', 'Cost per new customer'],
+      compareThem: 'others average {amount}',
+      roiTitle: 'Where your money works',
+      roiLede: 'What each of your three tools cost in {month}, and what it bought',
+      roiRows: ['Loyalty campaigns', 'Hot deals', 'Vouchers'],
+      roiUnits: ['repeat visits', 'claims', 'vouchers used'],
+      roiPer: ['per repeat visit', 'per claim', 'per use'],
+      roiLine: '{cost} spent · {n} {unit}',
+
+      /* One line per roster entry, index-aligned with `PD_ROSTER.pattern`. */
+      patterns: [
+        'Weekday mornings, often before 9',
+        'Weekday mornings',
+        'Weekends, late morning',
+        'Used to come Friday afternoons',
+        'Two visits, both afternoons',
+        'Weekday lunch',
+        'Weekend mornings',
+        'Afternoons, mixed days',
+        'Most weekday mornings',
+        'Three visits, afternoons',
+        'Was a Tuesday regular',
+        'Weekends',
+        'First visit two days ago',
+        'Thursday afternoons, less lately',
+      ],
+      /* …and with `PD_ROSTER.reward`. */
+      rewards: [
+        '15% tier — your top spender',
+        'One stamp from a free coffee',
+        '10% tier',
+        '10% tier — going cold',
+        '1 of 4 stamps',
+        'Free coffee ready to redeem',
+        '2 of 4 stamps',
+        '15% tier',
+        '10% tier — lapsed',
+        '10% tier — slowing down',
+      ],
     },
 
     scans: {
-      columns: ['When', 'Customer', 'Spent', 'Points', 'Receipt', 'Progress'],
+      columns: [
+        'When',
+        'Customer',
+        'First visit?',
+        'Spent',
+        'Points',
+        'Receipt',
+        'Where',
+        'Progress to reward',
+      ],
+      filters: ['Everyone', 'First visit', 'Came back'],
       first: 'First visit',
       again: 'Came back',
       today: 'Today',
-      count: 'Showing {n} of 48 scans',
+      /* Index-aligned with `ScanRow.place`. */
+      places: ['Bratysławska 6', 'Bratysławska 6', 'Kleparz kiosk'],
+      noCampaign: 'No campaign running',
+      progress: '{done}/{need} scans',
+      toGo: '{n} to go',
+      ready: 'reward ready',
+      count: '{n} scans',
+      showing: 'Showing {n} of {total}',
     },
     collapse: 'Collapse menu',
     expand: 'Expand menu',
@@ -1510,6 +1880,37 @@ export const en = {
       enter: 'Type an amount to convert.',
       saved: 'Saved pairs',
       savedNote: 'Pinned to the top of the screen, so a rate check is one tap rather than a search.',
+      /* The picker. `pick` is read out by a screen reader with the chosen
+         currency after it, so it is a noun phrase rather than a sentence. */
+      pick: 'Currency',
+      search: 'Search 19 currencies',
+      noMatch: 'Nothing matches “{query}”.',
+      /*
+       * Keyed by ISO 4217 code, and the keys are the ones in `i18n/fx.ts` —
+       * `relocate.tsx` indexes this with `FxCode`, so a currency added to the
+       * table without a name here is a build error rather than a blank row.
+       */
+      names: {
+        EUR: 'Euro',
+        USD: 'US dollar',
+        GBP: 'British pound',
+        PLN: 'Polish złoty',
+        UAH: 'Ukrainian hryvnia',
+        RUB: 'Russian rouble',
+        UZS: 'Uzbek soum',
+        KZT: 'Kazakh tenge',
+        TRY: 'Turkish lira',
+        CZK: 'Czech koruna',
+        CHF: 'Swiss franc',
+        BYN: 'Belarusian rouble',
+        MDL: 'Moldovan leu',
+        GEL: 'Georgian lari',
+        AMD: 'Armenian dram',
+        AZN: 'Azerbaijani manat',
+        TMT: 'Turkmen manat',
+        KGS: 'Kyrgyz som',
+        TJS: 'Tajik somoni',
+      },
       bullets: [
         {
           title: 'The mid-market rate, unmarked',

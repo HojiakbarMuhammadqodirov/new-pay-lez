@@ -24,9 +24,11 @@ import { usePalette } from './theme/context';
  * equivalent of — the step rail, the game cards, the streak card and the board.
  *
  * The backdrop is where the two pages part company. The landing page has the
- * globe; this one has the node web (`network/NetworkWeb`) behind everything and
- * the controller in the hero's right-hand column. Cross-border payments are
- * what the globe is *about*, and none of that is what this page sells.
+ * globe; this one has the arcade trail (`arcade/ArcadeTrail`) behind everything
+ * — Squawk's Flight played endlessly, gates drifting past and a flyer threading
+ * them — and the controller in the hero's right-hand column. Cross-border
+ * payments are what the globe is *about*, and none of that is what this page
+ * sells; its own game is.
  */
 
 /* ─────────────────────────────────────────────────────────────── hero ── */
@@ -90,7 +92,7 @@ function LearnHero() {
         {/*
           The controller stands in for the globe here. It is in the flow rather
           than in the fixed layer behind the page: it belongs to the hero, and
-          the fixed layer is the node web, which belongs to the whole page.
+          the fixed layer is the arcade trail, which belongs to the whole page.
         */}
         <div className="hero-visual learn-visual" aria-hidden>
           <Controller3D

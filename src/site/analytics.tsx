@@ -24,8 +24,10 @@ import { PATHS } from './router';
  * machinery that a marketing page for a dashboard does not need. It also means
  * the charts inherit the theme tokens for free, which a canvas would not.
  *
- * The backdrop follows suit: no globe and no node web, just the CSS plot grid in
- * `.site__grid`. See the note in `Site.tsx`.
+ * The backdrop is the node web (`NetworkWeb`) — drifting points wiring
+ * themselves to their neighbours, which is this page's own subject drawn out:
+ * every dot a customer, every link a pattern the dashboards surface. See the
+ * backdrop note in `Site.tsx`.
  */
 
 /* ─────────────────────────────────────────────────────────────── hero ── */

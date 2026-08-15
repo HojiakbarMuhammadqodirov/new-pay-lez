@@ -39,8 +39,6 @@ export const pl: Dictionary = {
     password: 'Hasło',
     passwordPlaceholder: 'Twoje hasło',
     submit: 'Zaloguj się',
-    demoTitle: 'Konta demo',
-    demoLine: '{role} — {email} · {password}',
     errors: {
       email: 'Nie mamy konta z tym adresem e-mail.',
       password: 'To hasło się nie zgadza.',
@@ -323,6 +321,17 @@ export const pl: Dictionary = {
     redeemTitle: 'Zamień punkty na nagrody',
     redeemAction: 'Odbierz teraz',
 
+    pointsKicker: 'Twoje punkty',
+    pointsUnit: '{points} pkt',
+    pointsGoal: 'jeszcze {points} do następnej zniżki',
+    pointsHave: 'masz już dość na zniżkę',
+    pointsTarget: '{points} odblokowuje kolejną',
+
+    statsToggle: 'Twoje statystyki',
+    accuracy: 'Skuteczność',
+
+    featured: 'Dzisiejsza gra · podtrzymuje serię',
+
     names: [
       'Gry na rozum',
       'Zgadnij flagę',
@@ -335,6 +344,7 @@ export const pl: Dictionary = {
     rule: '{questions} pytań · po {seconds} sek.',
     reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
     start: 'Zacznij grę',
+    play: 'Zagraj',
     noLives: 'Koniec żyć — wróć jutro',
     loading: 'Rozdajemy…',
 
@@ -554,27 +564,130 @@ export const pl: Dictionary = {
     ],
     notWired: 'Niepodłączone w tej wersji.',
 
+    month: 'sierpień',
+    rangeLabel: 'ostatnie 30 dni',
+
+    words: {
+      edit: 'Edytuj',
+      pause: 'Wstrzymaj',
+      remind: 'Przypomnij im',
+      ask: 'Zapytaj asystenta',
+      open: 'Otwórz',
+      priority: 'Priorytet {n}',
+      each: 'po {amount}',
+      spent: 'Wydane',
+      aside: 'Zarezerwowane',
+      available: 'Dostępne',
+      costSoFar: 'Koszt dotąd',
+      returned: '{amount} wróciło w tym miesiącu z nagród, które wygasły niewykorzystane.',
+    },
+
     overview: {
-      kicker: 'Co Paylez dla Ciebie zrobił',
-      headline:
-        'Przyprowadziliśmy do Ciebie {customers} nowych klientów, którzy wydali u Ciebie około {revenue}.',
-      estimate:
+      kicker: 'Co Paylez dla Ciebie zrobił · {range}',
+      countedLabel: 'Policzone',
+      counted: 'wizyt przez Paylez',
+      countedNew: '{n} z nich to klienci nowi w Twoim lokalu',
+      estimateTag: 'Szacunek',
+      estimate: 'około {amount} w sprzedaży',
+      estimateNote:
         'Szacunek. Każda wizyta przez Paylez pomnożona przez średni wydatek {avg}, wzięty z Twojej własnej sprzedaży.',
-      tiles: ['Wizyty', 'Odebrane okazje', 'Użyte vouchery', 'Użyte nagrody'],
-      since: 'wobec poprzednich 30 dni',
+      claimTitle: 'Co możemy uczciwie przypisać sobie',
+      claim: '{visits} wizyt · około {amount}',
+      claimNote:
+        'Wizyty klientów nowych w Twoim lokalu oraz wizyty, za którymi stoi odebrana okazja albo powiadomienie. Reszta to stali bywalcy, którzy i tak mogli przyjść.',
+      support: [
+        { label: 'Wizyty przez Paylez', note: 'policzone ze skanów QR' },
+        { label: 'Średni wydatek na wizytę', note: 'z Twojej sprzedaży, ostatnie 30 dni' },
+        { label: 'Klienci nowi w Twoim lokalu', note: 'pierwsze skanowanie przy Twojej kasie' },
+      ],
+      budgetAlert:
+        'Prognozujemy, że Twój budżet lojalnościowy skończy się przed końcem miesiąca ({month}). Masz {amount} niewykorzystane w voucherach — przenieść część?',
+      budgetAction: 'Otwórz budżet lojalnościowy',
+
       costTitle: 'Ile kosztował Cię Paylez',
-      costTotal: 'Razem w tym miesiącu',
-      roi: '{n}× zwrotu z każdej wydanej złotówki.',
+      costRows: [
+        'Opłaty Paylez',
+        'Wydane nagrody lojalnościowe',
+        'Udzielone rabaty voucherowe',
+        'Rabaty gorących okazji',
+      ],
+      costTotal: 'Razem',
+      returnLabel: 'Sprzedaż, którą możemy powiązać z Paylez',
+      roiGood:
+        'Paylez kosztował Cię {cost} w miesiącu {month} i można go powiązać z około {revenue} sprzedaży. To {n}× zwrotu z każdej wydanej złotówki.',
+      roiBad:
+        'Paylez kosztował Cię {cost} w miesiącu {month} i można go powiązać z około {revenue} sprzedaży. To o {gap} więcej, niż potrafimy wykazać. Większość wizyt to stali bywalcy, którzy i tak mogli przyjść.',
+
+      tiles: ['Wizyty', 'Odebrane okazje', 'Użyte vouchery', 'Użyte nagrody'],
+      since: 'wobec poprzedniego okresu',
+      inMonth: 'w miesiącu {month}',
+
       proofTitle: 'Jedyna rzecz, którą możemy udowodnić',
       proof:
-        'Klienci w Twoich kampaniach lojalnościowych przychodzą {after} razy w miesiącu, wobec {before} przed dołączeniem.',
+        'Klienci w Twoich kampaniach lojalnościowych przychodzą {after} razy w miesiącu, wobec {before} razy przed dołączeniem.',
       proofNote: 'Policzone z Twoich własnych skanów QR, nie oszacowane. Bez integracji z kasą.',
-      before: 'Przedtem',
-      now: 'Teraz',
+      before: 'przedtem',
+      now: 'teraz',
+
+      chartTitle: 'Wizyty i realizacje voucherów',
+      chartNote:
+        'Każde skanowanie QR przy kasie zestawione z voucherami, które klienci naprawdę wykorzystali',
+      chartVisits: 'Wizyty',
+      chartRedeemed: 'Zrealizowane vouchery',
+
+      holdingTitle: 'Pieniądze, które trzymasz',
+      holding:
+        '{rewards} nagród i {vouchers} voucherów leży niewykorzystanych, blokując {amount} Twojego budżetu.',
+      holdingNote:
+        'Za każdym z nich stoi klient, który się zakwalifikował i jeszcze nie wrócił. Jeśli wygasną, pieniądze wracają do budżetu.',
+
+      noticed: 'Co zauważyliśmy',
+      insights: [
+        {
+          text: 'Wizyt jest o 12% więcej, ale użycie voucherów spadło o 4%. Ludzie przychodzą — to nagrody ich nie przyciągają z powrotem.',
+          detail:
+            'Tylko 27 klientów sięgnęło w tym miesiącu progu 10%, bo wymaga on 600 punktów. Przy 450 punktach zakwalifikowałoby się 61 kolejnych stałych klientów.',
+          action: 'Zmień próg 10%',
+        },
+        {
+          text: 'Twoje okazje z darmowym produktem są odbierane 2,4× częściej niż rabaty procentowe.',
+          detail:
+            '„Darmowy przelew do wypieku” odebrano 186 razy przy 4 798 wyświetleniach. „Poranną flat white” z rabatem 20% odebrano 149 razy przy 8 412 wyświetleniach.',
+          action: 'Zobacz swoje okazje',
+        },
+        {
+          text: '{n} nagród lojalnościowych jest zdobytych i leży nieużytych, blokując {amount}.',
+          detail:
+            'Ci klienci się zakwalifikowali i nie wrócili. Przypomnienie zwykle sprowadza około jednej trzeciej z nich w ciągu tygodnia.',
+          action: 'Przypomnij im',
+        },
+      ],
+
+      runningTitle: 'Działa właśnie teraz',
+      runningNote: 'Wszystko, co klienci mogą dziś zobaczyć albo zdobyć w Twoim lokalu',
+      quota: 'Zostało {n} z {total} powiadomień w tym miesiącu',
+      quotaOut: 'Brak powiadomień w tym miesiącu',
+      kinds: { deal: 'Gorąca okazja', campaign: 'Kampania', vouchers: 'Vouchery' },
+      claims: 'odebrań',
+      usedEarned: 'użyte / zdobyte',
+      givenAway: 'rozdane',
+      notifySent: 'Powiadomienie wysłane',
+      notifySet: 'Powiadomienie zaplanowane',
+      tierBundle: 'Trzy progi punktowe',
+      tierBundleRule: '5% · 10% · 15% rabatu · jeden miesięczny budżet',
     },
 
     deals: {
-      columns: ['Okazja', 'Stan', 'Wyświetlenia', 'Otwarcia', 'Odebrane', 'Koszt'],
+      columns: [
+        'Okazja',
+        'Stan',
+        'Wyświetlenia',
+        'Otwarcia',
+        'Odebrane',
+        'Odsetek odebrań',
+        'Koszt',
+        'Ostatnie 7 dni',
+      ],
       rows: [
         'Poranna flat white',
         'Studenckie wtorki',
@@ -583,56 +696,285 @@ export const pl: Dictionary = {
         'Zniżka sąsiedzka',
         'Zestaw lunchowy',
       ],
+      when: [
+        'Pn–Pt, 07:00–10:00',
+        'Wt, 12:00–17:00',
+        'Codziennie',
+        'Codziennie',
+        'Codziennie',
+        'Pn–Pt, 11:00–15:00',
+      ],
+      windows: [
+        '3 sie – 31 sie',
+        '1 lip – 30 wrz',
+        '12 lip – 12 sie',
+        '15 sie – 15 paź',
+        '5 lip – 5 wrz',
+        '2 cze – 30 cze',
+      ],
+      audiences: [
+        'Wszyscy',
+        'Nowo przybyli',
+        'Klienci, którzy przestali przychodzić',
+        'Nowi w Twoim lokalu',
+        'Rosyjskojęzyczni',
+      ],
       states: { live: 'Aktywna', scheduled: 'Zaplanowana', paused: 'Wstrzymana', expired: 'Zakończona' },
+      search: 'Szukaj wśród swoich okazji',
+      filters: ['Wszystkie', 'Aktywne', 'Zaplanowane', 'Wstrzymane', 'Zakończone'],
+      count: '{n} z {total} okazji',
+      sortNote:
+        'Sortowane po odsetku odebrań, najlepsze u góry. Aktywne i zaplanowane okazje idą pierwsze.',
       insight:
         'Twoje okazje z darmowym produktem są odbierane 2,4× częściej niż rabaty procentowe. Zestaw lunchowy z 5% wypadł słabo — małe rabaty rzadko kogoś ruszają.',
-      count: '{n} okazji',
+      langsAll: 'Napisana we wszystkich pięciu językach',
+      langsSome: 'Napisana w {n} z 5 języków — tracisz około {pct}% zasięgu',
+      notify: {
+        none: 'Bez powiadomienia',
+        scheduled: 'Powiadomienie zaplanowane',
+        sent: 'Powiadomienie wysłane',
+      },
+      reach: '{n} z {total} osób można powiadomić',
+      limit: '{claimed} z {limit} odebrań',
+      noLimit: 'Bez limitu odebrań',
     },
 
     campaigns: {
       rows: ['Nagroda dla stałych', 'Kawowa seria', 'Klub lunchowy', 'Zimowy powrót'],
-      rule: '{visits} wizyty → nagroda',
-      each: 'po {amount}',
+      rewards: [
+        'darmowa kawa przelewowa',
+        'darmowy kawałek ciasta',
+        '{amount} zniżki na lunch',
+        'darmowa gorąca czekolada',
+      ],
+      since: [
+        'Działa od 12 stycznia',
+        'Działa od 4 kwietnia',
+        'Ruszyła 2 czerwca',
+        'Wstrzymana 28 marca',
+      ],
+      rule: '{visits} wizyty → {reward}',
+      visitRule: 'Liczy się jedna wizyta dziennie. Nagroda wygasa 60 dni po zdobyciu.',
       earned: 'Zdobyte',
       used: 'Wykorzystane',
       unused: '{n} zdobytych i nigdy nieużytych',
+      usedRate: '{pct}% wykorzystanych',
       gapTitle: 'To różnica jest liczbą, którą warto śledzić',
-      gap: 'Nagroda zdobyta, ale nieużyta, znaczy, że klient się zakwalifikował i nie wrócił. Największą różnicę ma teraz „{name}”: {n} nieużytych nagród.',
+      gapLede:
+        'Nagroda zdobyta, ale nieużyta, znaczy, że klient się zakwalifikował i nie wrócił.',
+      gap: 'Największą różnicę ma teraz „{name}”: {n} nieużytych nagród.',
+      totals: ['Zdobyte', 'Użyte', 'Czekają'],
+      remindLabel: 'Przypomnij {n} klientom',
+      remindNote: 'Zdobyli nagrodę i nie wrócili po nią.',
+      remindResult: 'Ostatnim razem {back} z {of} przyszło w ciągu tygodnia.',
+      remindSetup: 'Ustaw to za mnie',
+      near: '{n} stałych klientów dzieli jedna wizyta od kolejnej nagrody.',
+      rebalance:
+        'Prognozujemy, że Twój budżet lojalnościowy skończy się {date}. W voucherach leży niewykorzystane {amount} — przenieść część?',
+      rebalanceAction: 'Przenieś budżet',
+      budgetTitle: 'Budżet lojalnościowy',
+      budgetLede:
+        'Ile odłożyłeś w tym miesiącu na nagrody lojalnościowe. Gorące okazje nie wchodzą w to.',
+      spentNote: 'Nagrody, które klienci naprawdę odebrali.',
+      asideNote:
+        'Pieniądze odłożone na nagrody, które klienci zdobyli, ale jeszcze nie wykorzystali. Jeśli wygasną, wracają.',
+      availableNote: 'Wolne na nowe nagrody już teraz.',
+      forecast: 'W tym tempie budżet lojalnościowy wystarczy do {date}.',
+      forecastOut: 'Budżet lojalnościowy jest wyczerpany. Nowe nagrody przestają być wydawane.',
+      forecastSafe: 'W tym tempie budżet lojalnościowy wystarczy na cały {month}.',
+      pausedNote:
+        'Wstrzymana. Uczestnicy zachowują to, co zdobyli, a nic nowego nie jest liczone.',
     },
 
     vouchers: {
+      alertTitle: 'Twój budżet rabatowy się kończy',
+      alertBody:
+        'W obecnym tempie skończy się {date}, a vouchery przestaną być wydawane do przyszłego miesiąca.',
+      alertAction: 'Zwiększ budżet',
+      budgetTitle: 'Budżet voucherów',
+      budgetLede:
+        'Jedna pula na wszystkie trzy progi. To prawdziwe pieniądze wychodzące z Twojej kasy, a łączną kwotę dla obu funkcji ustawiasz tutaj.',
+      budgetLabel: 'Łączny budżet rabatowy',
+      allocNote:
+        'Pasek pokazuje, co już wyszło i co jest zarezerwowane. Tylko jasna część jest jeszcze Twoja do wydania.',
+      spent: 'Wydane',
+      spentNote: 'Przepadło. Rabaty na voucherach, których klienci naprawdę użyli.',
+      held: 'Zarezerwowane',
+      heldNote:
+        'Pieniądze odłożone na vouchery, które klienci zdobyli, ale jeszcze nie wykorzystali. Jeśli wygasną, wracają.',
+      free: 'Dostępne',
+      freeNote: 'Wolne na nowe vouchery już teraz.',
+      forecast: 'W tym tempie budżet wystarczy do {date}.',
+      forecastOut: 'Budżet jest wyczerpany. Nowe vouchery nie są wydawane.',
+      forecastSafe: 'W tym tempie budżet wystarczy na cały {month}.',
+      buysTitle: 'To, co zostało, kupi',
+      buys: 'około {n} kolejnych voucherów',
+      buysNote: 'Przy takim rozkładzie progów, jaki osiągają teraz Twoi klienci.',
+      avgTitle: 'Średnia transakcja',
+      avgNote:
+        'Wzięta z Twojej własnej sprzedaży z ostatnich 30 dni. Zmień, jeśli wygląda źle.',
+      maxTitle: 'Najwięcej z jednego vouchera',
+      maxNote:
+        'Żaden pojedynczy voucher nie zdejmuje z rachunku więcej niż tyle, jakkolwiek duże byłoby zamówienie.',
       tiersTitle: 'Kto sięga którego progu',
-      tiersLede: 'O dotarciu decydują punkty, więc podniesienie liczby kieruje tam mniej budżetu.',
+      tiersLede:
+        'Progi nie trzymają pieniędzy. O dotarciu decydują punkty, więc podniesienie liczby kieruje tam mniej budżetu.',
       columns: ['Próg', 'Potrzebne punkty', 'Wydane', 'Użyte', 'Koszt dotąd'],
       tier: '{n}% rabatu',
-      budgetTitle: 'Budżet rabatowy',
-      spent: 'Wydane',
-      held: 'Zarezerwowane',
-      free: 'Dostępne',
-      heldNote:
-        'Pieniądze odłożone na nagrody, które klienci zdobyli, ale jeszcze nie wykorzystali. Jeśli wygasną, wracają.',
+      points: '{n} pkt',
+      mixTitle: 'Gdzie poszły pieniądze',
+      returnedTitle: 'Zwrócone pieniądze',
+      returnedNote:
+        'Wróciły w tym miesiącu z voucherów, które wygasły niewykorzystane. Można je wydać ponownie.',
+      suggestion: 'Sugestia',
+      insight:
+        'Twój próg {n}% zużywa większość budżetu. Podnieś jego wymóg punktowy, jeśli wolisz zachować pieniądze dla lojalnych klientów.',
     },
 
     customers: {
+      costKicker: 'Ile kosztuje Cię nowy klient',
+      costUnit: 'każdy, w miesiącu {month}',
+      costLine:
+        'Wydałeś {cost} w miesiącu {month} i zyskałeś {n} klientów nowych w Twoim lokalu. To {each} za każdego.',
+      costBreakdown: [
+        'Opłaty Paylez',
+        'Nagrody lojalnościowe',
+        'Rabaty voucherowe',
+        'Rabaty gorących okazji',
+      ],
+      costFinding:
+        'Każdy nowy klient kosztował Cię {now} w miesiącu {month}, wobec {then} w czerwcu. Większość tego spadku wzięła się z Twojej okazji z darmowym produktem.',
+      costAction: 'Zobacz swoje okazje',
+      trendTitle: 'Ostatnie trzy miesiące',
+      trendMonths: ['Czerwiec', 'Lipiec', 'Sierpień'],
+      spendByMonth: 'Wydatki u Ciebie, miesiąc po miesiącu',
+      benchmark:
+        'Przeciętna krakowska kawiarnia w Paylez płaci {amount} za każdego nowego klienta. To szacunek z lokali podobnych do Twojego, nie obietnica.',
+
+      rosterTitle: 'Twoi klienci',
+      rosterIntro:
+        '{n} z Twoich {total} klientów włączyło udostępnianie profilu, więc tych widzisz z imienia. Wszyscy pozostali zostają w zbiorczych liczbach poniżej.',
+      rosterCount: '{n} udostępnia',
+      rosterColumns: ['Klient', 'Wydał', 'Wizyty', 'Ostatnio', 'Status'],
+      rosterFilters: ['Wszyscy', 'Stali', 'Odeszli', 'Nowi'],
+      withdrew:
+        'Każdy może wyłączyć udostępnianie w dowolnej chwili. Wtedy znika z tej listy, a jego historia przestaje być dla Ciebie widoczna.',
+      statuses: { regular: 'Stały', lapsed: 'Odszedł', new: 'Nowy' },
+      today: 'Dziś',
+      daysAgo: '{n} dni temu',
+      dayAgo: 'wczoraj',
+      stamps: '{done} z {of} pieczątek',
+      tierProgress: 'próg {n}%',
+
+      whenTitle: 'Kiedy przychodzą',
+      whenLede:
+        'Każde skanowanie QR przy kasie, w przeciętnym tygodniu. Ciemniej znaczy tłoczniej.',
+      days: ['Pn', 'Wt', 'Śr', 'Cz', 'Pt', 'So', 'Nd'],
+      heatCell: 'około {n} wizyt w normalnym tygodniu',
+      quietFinding:
+        'Wtorek i środa, 14:00–16:00, to Twoje najspokojniejsze godziny — około 60% poniżej tygodniowej średniej.',
+      quietAction: 'Ustaw to za mnie',
+      quietSelf: 'Zrobię to sam',
+      peakFinding:
+        'Najwięcej masz w dni robocze między 08:00 a 10:00. Twoja poranna okazja już wtedy działa, więc głębszy rabat niewiele tam da.',
+
       fromTitle: 'Skąd pochodzą',
       nations: ['Ukraińcy', 'Polacy', 'Białorusini', 'Gruzini', 'Turcy', 'Inni'],
-      readTitle: 'W jakim języku czytają aplikację',
+      nationCount: '{n} klientów · {pct}%',
+      nationHidden:
+        '{n} mniejsze grupy są liczone w „innych”, więc nikogo nie da się wyłuskać.',
+      readTitle: 'W jakim języku mówią Twoi klienci',
+      readLede:
+        'Te paski są liczone na grupach klientów, nigdy na jednej osobie. Grupy mniejsze niż 10 trafiają do „innych”.',
+      langKicker: 'Język, którego używają w Paylez',
       langs: ['Rosyjski', 'Ukraiński', 'Polski', 'Angielski', 'Inny'],
+      langFinding:
+        '42% Twoich klientów używa aplikacji po rosyjsku, ale żadna z Twoich aktywnych okazji nie jest napisana po rosyjsku.',
+      langAction: 'Stwórz okazję dla nich',
       privacy:
         'Wszystko tutaj jest liczone na grupach. Paylez nigdy nie pokazuje pojedynczej osoby, a grupy mniejsze niż dziesięć trafiają do „innych”.',
+
       backTitle: 'Czy wracają',
+      backLede: 'Pierwsze wizyty i ilu z nich wróciło w ciągu 30 dni',
       months: ['Kwiecień', 'Maj', 'Czerwiec', 'Lipiec'],
-      cohort: '{back} z {first} wróciło w ciągu 30 dni',
-      finding:
-        '38% Twoich klientów to Ukraińcy, a 42% czyta aplikację po rosyjsku. Żadna z Twoich aktywnych okazji nie jest kierowana do rosyjskojęzycznych.',
+      monthNames: [
+        'Styczeń', 'Luty', 'Marzec', 'Kwiecień', 'Maj', 'Czerwiec',
+        'Lipiec', 'Sierpień', 'Wrzesień', 'Październik', 'Listopad', 'Grudzień',
+      ],
+      cohort: '{back} z {first} · {pct}%',
+      backFinding:
+        '{first} osób odwiedziło Cię po raz pierwszy w miesiącu {month}. {back} wróciło w ciągu 30 dni — {pct}%.',
+      lapsedFinding:
+        '{n} Twoich stałych klientów nie było od 30 dni. Wcześniej przychodzili mniej więcej raz w tygodniu.',
+
+      compareTitle: 'Jak wypadasz na tle innych',
+      compareNote:
+        'Porównanie z {n} innymi krakowskimi kawiarniami w Paylez. Liczby są uśredniane po lokalach, nigdy pokazywane per lokal.',
+      compareRows: [
+        'Odsetek odebrań okazji',
+        'Druga wizyta w ciągu 30 dni',
+        'Koszt nowego klienta',
+      ],
+      compareThem: 'inni średnio {amount}',
+      roiTitle: 'Gdzie pracują Twoje pieniądze',
+      roiLede: 'Ile kosztowało Cię każde z trzech narzędzi w miesiącu {month} i co za to kupiłeś',
+      roiRows: ['Kampanie lojalnościowe', 'Gorące okazje', 'Vouchery'],
+      roiUnits: ['powtórnych wizyt', 'odebrań', 'użytych voucherów'],
+      roiPer: ['za powtórną wizytę', 'za odebranie', 'za użycie'],
+      roiLine: '{cost} wydane · {n} {unit}',
+
+      patterns: [
+        'Poranki w dni robocze, często przed 9',
+        'Poranki w dni robocze',
+        'Weekendy, późny poranek',
+        'Przychodził w piątkowe popołudnia',
+        'Dwie wizyty, obie po południu',
+        'Lunch w dni robocze',
+        'Weekendowe poranki',
+        'Popołudnia, różne dni',
+        'Prawie każdy roboczy poranek',
+        'Trzy wizyty, popołudnia',
+        'Był wtorkowym stałym bywalcem',
+        'Weekendy',
+        'Pierwsza wizyta dwa dni temu',
+        'Czwartkowe popołudnia, ostatnio rzadziej',
+      ],
+      rewards: [
+        'próg 15% — Twój najlepszy klient',
+        'Jedna pieczątka od darmowej kawy',
+        'próg 10%',
+        'próg 10% — stygnie',
+        '1 z 4 pieczątek',
+        'Darmowa kawa gotowa do odbioru',
+        '2 z 4 pieczątek',
+        'próg 15%',
+        'próg 10% — odszedł',
+        'próg 10% — zwalnia',
+      ],
     },
 
     scans: {
-      columns: ['Kiedy', 'Klient', 'Wydał', 'Punkty', 'Paragon', 'Postęp'],
+      columns: [
+        'Kiedy',
+        'Klient',
+        'Pierwsza wizyta?',
+        'Wydał',
+        'Punkty',
+        'Paragon',
+        'Gdzie',
+        'Postęp do nagrody',
+      ],
+      filters: ['Wszyscy', 'Pierwsza wizyta', 'Wrócił'],
       first: 'Pierwsza wizyta',
       again: 'Wrócił',
       today: 'Dziś',
-      count: 'Pokazano {n} z 48 skanowań',
+      places: ['Bratysławska 6', 'Bratysławska 6', 'Kiosk Kleparz'],
+      noCampaign: 'Żadna kampania nie działa',
+      progress: '{done}/{need} skanowań',
+      toGo: 'jeszcze {n}',
+      ready: 'nagroda gotowa',
+      count: '{n} skanowań',
+      showing: 'Pokazano {n} z {total}',
     },
     collapse: 'Zwiń menu',
     expand: 'Rozwiń menu',
@@ -1426,6 +1768,30 @@ export const pl: Dictionary = {
       enter: 'Wpisz kwotę do przeliczenia.',
       saved: 'Zapisane pary',
       savedNote: 'Przypięte na górze ekranu, więc sprawdzenie kursu to jedno dotknięcie, a nie wyszukiwanie.',
+      pick: 'Waluta',
+      search: 'Szukaj wśród 19 walut',
+      noMatch: 'Nic nie pasuje do „{query}”.',
+      names: {
+        EUR: 'Euro',
+        USD: 'Dolar amerykański',
+        GBP: 'Funt brytyjski',
+        PLN: 'Złoty polski',
+        UAH: 'Hrywna ukraińska',
+        RUB: 'Rubel rosyjski',
+        UZS: 'Sum uzbecki',
+        KZT: 'Tenge kazachskie',
+        TRY: 'Lira turecka',
+        CZK: 'Korona czeska',
+        CHF: 'Frank szwajcarski',
+        BYN: 'Rubel białoruski',
+        MDL: 'Lej mołdawski',
+        GEL: 'Lari gruzińskie',
+        AMD: 'Dram armeński',
+        AZN: 'Manat azerbejdżański',
+        TMT: 'Manat turkmeński',
+        KGS: 'Som kirgiski',
+        TJS: 'Somoni tadżyckie',
+      },
       bullets: [
         {
           title: 'Kurs międzybankowy, bez narzutu',

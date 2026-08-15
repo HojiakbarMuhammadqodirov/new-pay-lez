@@ -5,7 +5,6 @@ import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
-  DEMO_USERS,
   MIN_PASSWORD,
   type ChoosableType,
   type SignInError,
@@ -111,26 +110,15 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
       </p>
 
       {/*
-        The demo accounts, printed on the form.
-        A demo nobody can get into is not a demo, and the passwords are in the
-        bundle either way — see `auth/users.ts`. The admin is not on this list
-        on purpose: same bundle, but a console that reads every account on the
-        platform is not something to hand to whoever lands on the front door.
+        There is no list of accounts under this form.
+
+        There used to be: while the seeds lived in the bundle, printing them cost
+        nothing — view-source was already enough — and a demo nobody can get into
+        is not a demo. Now that `server/` holds real accounts behind scrypt, the
+        same block would be a working credential pair on the front door of a
+        system where credentials mean something. The argument that justified it
+        was "these are readable anyway", and that argument has expired.
       */}
-      <div className="auth-demo">
-        <span>{copy.auth.demoTitle}</span>
-        <ul>
-          {DEMO_USERS.map((user) => (
-            <li key={user.id}>
-              {fill(copy.auth.demoLine, {
-                role: user.type ? copy.auth.roles[user.type] : '',
-                email: user.email,
-                password: user.password,
-              })}
-            </li>
-          ))}
-        </ul>
-      </div>
     </form>
   );
 }

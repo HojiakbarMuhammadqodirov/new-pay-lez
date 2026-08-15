@@ -3,6 +3,7 @@ import { GlobeHero } from '../components/GlobeHero';
 import { PaylezIntro } from '../components/PaylezIntro';
 import { AdminPage } from './admin';
 import { AnalyticsPage } from './analytics';
+import { ArcadeTrail } from './arcade/ArcadeTrail';
 import { AssistantDock } from './AssistantDock';
 import { AuthProvider } from './auth/AuthProvider';
 import { useAuth, useIsPlayer } from './auth/context';
@@ -12,6 +13,7 @@ import { B2bPage } from './b2b';
 import { BusinessSetupPage } from './business';
 import { ContactPage } from './contact';
 import { DashboardPage } from './dashboard';
+import { LevelRun } from './level/LevelRun';
 import { Header } from './Header';
 import { useLanguage } from './i18n/context';
 import { LanguageProvider } from './i18n/LanguageProvider';
@@ -21,6 +23,7 @@ import { NetworkWeb } from './network/NetworkWeb';
 import { RelocatePage } from './relocate';
 import { navigate, resolveRoute, useRoute } from './router';
 import { SignInPage } from './signin';
+import { StubDrift } from './stubs/StubDrift';
 import { VouchersPage } from './vouchers';
 import { usePalette } from './theme/context';
 import { ThemeProvider } from './theme/ThemeProvider';
@@ -55,7 +58,7 @@ import './site.css';
  *
  * L-Earn is the second route. It shares this shell — one header, one footer,
  * one intro — but not the backdrop: L-Earn is about playing, not about paying
- * across borders, so the globe hands over to a neon node web and the hero's
+ * across borders, so the globe hands over to the arcade trail and the hero's
  * reserved column gets the controller instead. Swapping the layer does cost a
  * WebGL context teardown and a re-parse of the atlas on the way back, which is
  * why it is the *only* thing that swaps besides `<main>`.
@@ -143,25 +146,41 @@ function SiteContent() {
       />
 
       {/*
-        One backdrop per route, and never two at once: each canvas costs a WebGL
-        or 2D context on a page that already spends one on the controller, and
-        browsers cap how many a document may hold.
+        One backdrop per route, and never two at once: each canvas costs a
+        context on a page that already spends one on the controller, and
+        browsers cap how many a document may hold. Only one route is ever
+        mounted, which is what makes five canvas components affordable — the
+        document still holds at most one backdrop context at a time, and only
+        the globe's is WebGL.
 
-        Six routes, three canvases. Analytics and Vouchers are CSS only — a plot
-        grid and a run of ticket perforations — which is not a compromise on
-        either: a dashboard brochure full of its own charts does not want a
-        fourth thing moving behind them, and a perforation is a thing that does
-        not move.
-
-        Relocate keeps the globe, and it is the one route besides the landing
-        page that should: the globe is a border being crossed, which is the whole
-        subject of the page. Rendering it twice costs nothing, because only one
-        route is ever mounted.
+        Each backdrop is the page's own subject drawn out: the globe is a
+        border being crossed (landing, Contact); the arcade trail is Squawk's
+        Flight itself, the game L-Earn is selling; the node web is the player
+        base whose behaviour Analytics measures; the market tape is repeat
+        custom compounding into B2B revenue; the stubs are the vouchers,
+        settling into a wallet; Relocate's rings are distance from where you
+        stand. A backdrop that cannot say what it means like that is wallpaper,
+        and does not ship.
       */}
       {route === 'analytics' ? (
-        <div className="site__grid" aria-hidden />
+        /*
+         * The node web, moved here from L-Earn. The picture always was
+         * "drifting points that wire themselves to their neighbours", and that
+         * is a truer image of this page than of the arcade: every dot a
+         * customer, every link a pattern the dashboards surface. L-Earn got
+         * the arcade trail in exchange — its own game, not borrowed imagery.
+         */
+        <NetworkWeb
+          className="site__web"
+          primaryColor={palette.primary}
+          tone={palette.tone}
+        />
       ) : route === 'vouchers' ? (
-        <div className="site__stubs" aria-hidden />
+        <StubDrift
+          className="site__web"
+          primaryColor={palette.primary}
+          tone={palette.tone}
+        />
       ) : route === 'relocate' ? (
         /*
          * Rings, not the globe.
@@ -184,11 +203,28 @@ function SiteContent() {
           tone={palette.tone}
         />
       ) : route === 'learn' ? (
-        <NetworkWeb
-          className="site__web"
-          primaryColor={palette.primary}
-          tone={palette.tone}
-        />
+        /*
+         * L-Earn is the one route whose backdrop turns on who is reading, and
+         * the split is the same one `<main>` already makes. Signed out, the
+         * page is *selling* the arcade, so it shows the arcade. Signed in it is
+         * no longer a pitch — you are the one playing — so it shows a level
+         * being played: a runner breaking blocks, taking a power-up out of a
+         * lucky box, growing, and leaving down a pipe, forever. Still one
+         * context at a time: only ever one of these mounts.
+         */
+        isPlayer ? (
+          <LevelRun
+            className="site__web"
+            primaryColor={palette.primary}
+            tone={palette.tone}
+          />
+        ) : (
+          <ArcadeTrail
+            className="site__web"
+            primaryColor={palette.primary}
+            tone={palette.tone}
+          />
+        )
       ) : (
         <GlobeHero
           className="site__globe"

@@ -18,6 +18,7 @@
  * nearest 50 anyway.
  */
 import type { LanguageCode } from './context';
+import { FX } from './fx';
 
 export interface Currency {
   /** Written before the number (`£25`) or after it (`25 zł`). */
@@ -26,7 +27,14 @@ export interface Currency {
   /** Thousands separator. A narrow no-break space where the locale wants one:
    *  a plain space would let a price wrap across two lines. */
   group: string;
-  /** Multiplier from the base unit, euros. */
+  /**
+   * Multiplier from the base unit, euros.
+   *
+   * Read from `fx.ts` rather than written here. The rate sheet behind the
+   * Relocate converter covers all five of these, and two tables of pounds that
+   * disagree by a percent is a converter quoting one number and the price tag
+   * beside it another.
+   */
   rate: number;
   /**
    * Shelf prices round to a multiple of this.
@@ -36,14 +44,22 @@ export interface Currency {
    * step the currency actually uses puts the chosen-ness back.
    */
   step: number;
+  /**
+   * Minor units the currency actually has, for `unit` amounts.
+   *
+   * Read from `fx.ts` like the rate, and for the same reason: a soum has no
+   * practical minor unit, and "0.67 so'm" would be as wrong there as "£1" is
+   * for sixty-seven pence here.
+   */
+  decimals: number;
 }
 
 export const CURRENCIES: Record<LanguageCode, Currency> = {
-  en: { symbol: '£', before: true, group: ',', rate: 0.85, step: 5 },
-  pl: { symbol: 'zł', before: false, group: ' ', rate: 4.3, step: 10 },
-  uz: { symbol: "so'm", before: false, group: ' ', rate: 13600, step: 10000 },
-  ru: { symbol: '₽', before: false, group: ' ', rate: 98, step: 100 },
-  uk: { symbol: '₴', before: false, group: ' ', rate: 44, step: 50 },
+  en: { symbol: FX.GBP.symbol, before: true, group: ',', rate: FX.GBP.rate, step: 5, decimals: FX.GBP.decimals },
+  pl: { symbol: FX.PLN.symbol, before: false, group: ' ', rate: FX.PLN.rate, step: 10, decimals: FX.PLN.decimals },
+  uz: { symbol: FX.UZS.symbol, before: false, group: ' ', rate: FX.UZS.rate, step: 10000, decimals: FX.UZS.decimals },
+  ru: { symbol: FX.RUB.symbol, before: false, group: ' ', rate: FX.RUB.rate, step: 100, decimals: FX.RUB.decimals },
+  uk: { symbol: FX.UAH.symbol, before: false, group: ' ', rate: FX.UAH.rate, step: 50, decimals: FX.UAH.decimals },
 };
 
 /**
@@ -55,8 +71,14 @@ export const CURRENCIES: Record<LanguageCode, Currency> = {
  *   pound would be claiming a precision the forecast does not have.
  * - `exact` — converted and rounded to the unit, nothing more. For figures that
  *   are counted rather than estimated.
+ * - `unit`  — a per-something cost ("£0.67 per claim"). Converted exactly and
+ *   written to the currency's own minor units, because these are the figures
+ *   the other three modes destroy: a cost per claim, per visit or per new
+ *   customer is a couple of pounds at most, and rounding it to the pound turns
+ *   three different numbers into "£1" and the panel comparing them into
+ *   nothing. `decimals` is 0 where the currency has no minor unit.
  */
-export type MoneyRound = 'price' | 'soft' | 'exact';
+export type MoneyRound = 'price' | 'soft' | 'exact' | 'unit';
 
 /** Euros to the currency's own units, rounded as the context asks. */
 export function convert(eur: number, currency: Currency, round: MoneyRound): number {
@@ -73,20 +95,24 @@ export function convert(eur: number, currency: Currency, round: MoneyRound): num
     return Math.round(raw / magnitude) * magnitude;
   }
 
+  if (round === 'unit') return raw;
+
   return Math.round(raw);
 }
 
 /** Digit grouping. `Intl` is not used: it would also impose the locale's own
  *  currency placement, and the placement here is a property of the pitch. */
-export function group(value: number, currency: Currency): string {
+export function group(value: number, currency: Currency, decimals = 0): string {
   const sign = value < 0 ? '-' : '';
-  const digits = String(Math.abs(Math.round(value)));
+  const fixed = Math.abs(value).toFixed(decimals);
+  const [whole, fraction] = fixed.split('.');
+  const digits = whole;
   let out = '';
   for (let i = 0; i < digits.length; i++) {
     if (i > 0 && (digits.length - i) % 3 === 0) out += currency.group;
     out += digits[i];
   }
-  return sign + out;
+  return sign + out + (fraction ? `.${fraction}` : '');
 }
 
 /** The finished string — what almost every caller wants. */
@@ -95,7 +121,11 @@ export function money(
   currency: Currency,
   round: MoneyRound = 'price',
 ): string {
-  const amount = group(convert(eur, currency, round), currency);
+  const amount = group(
+    convert(eur, currency, round),
+    currency,
+    round === 'unit' ? currency.decimals : 0,
+  );
   // No-break space on the trailing form: "1 299 zł" must never break between
   // the number and its unit, and the leading form has no space at all.
   return currency.before ? `${currency.symbol}${amount}` : `${amount} ${currency.symbol}`;

@@ -14,6 +14,7 @@ import type {
   SpokenLanguage,
 } from './auth/business';
 import type { IconName } from './icons';
+import type { FxCode } from './i18n/fx';
 import { PATHS } from './router';
 
 /**
@@ -618,109 +619,15 @@ export const PARTNER_BUDGET = { total: 350, spent: 214 };
 
 /* ── the venue's actual figures ─────────────────────────────────────────────
  *
- * Lifted from the prototype's seed data (`b2b/Paylez Partner Dashboard v2.dc.html`,
- * the `DEALS` / `CAMPAIGNS` / `CSCEN` tables) rather than invented, so the
- * screens show a month that hangs together: the deal claim counts, the campaign
- * costs and the customer mix all came from the same imaginary café and were
- * written to agree with each other.
+ * They used to live here, transcribed by hand from the prototype's seed tables.
+ * They are now in `partnerMetrics.ts`, which carries the prototype's *seeds and
+ * its arithmetic* rather than a snapshot of its output — so the deal claim
+ * rates, the campaign set-aside money, the cost per new customer and the ROI
+ * verdict are all one calculation seen from four screens, and a seed edit moves
+ * them together instead of leaving three of them stale.
  *
- * Money is euros like everything else in this file and is converted at render;
- * the prototype quotes złoty because it is a Polish venue, and an English
- * reader sees the same figures in pounds.
+ * Money there is euros like everything else here, for the same reason.
  */
-
-/** Overview headline. `revenue` and `cost` are euros. */
-export const PD_OVERVIEW = {
-  visits: 1240,
-  newCustomers: 286,
-  revenue: 8_640,
-  cost: 1_412,
-  avgSpend: 7.9,
-  /** Visits per month, before joining a campaign and after. */
-  repeatBefore: 1.5,
-  repeatAfter: 2.4,
-  tiles: [
-    { key: 'visits', value: 1240, suffix: '', delta: 12 },
-    { key: 'claims', value: 649, suffix: '', delta: 8 },
-    { key: 'vouchers', value: 168, suffix: '', delta: -4 },
-    { key: 'rewards', value: 212, suffix: '', delta: 6 },
-  ],
-};
-
-/** Index-aligned with `copy.dashboard.deals.rows`. `cost` is euros. */
-export const PD_DEALS: Array<{
-  badge: string;
-  state: 'live' | 'scheduled' | 'paused' | 'expired';
-  seen: number;
-  opened: number;
-  claimed: number;
-  cost: number;
-}> = [
-  { badge: '20%', state: 'live', seen: 8412, opened: 612, claimed: 149, cost: 64 },
-  { badge: '15%', state: 'live', seen: 6134, opened: 548, claimed: 214, cost: 97 },
-  { badge: 'FREE', state: 'live', seen: 4798, opened: 291, claimed: 186, cost: 216 },
-  { badge: '2×', state: 'scheduled', seen: 0, opened: 0, claimed: 0, cost: 0 },
-  { badge: '10%', state: 'paused', seen: 3164, opened: 187, claimed: 61, cost: 33 },
-  { badge: '5%', state: 'expired', seen: 9211, opened: 402, claimed: 38, cost: 17 },
-];
-
-/** Index-aligned with `copy.dashboard.campaigns.rows`. `cost` is euros each. */
-export const PD_CAMPAIGNS: Array<{
-  visits: number;
-  cost: number;
-  earned: number;
-  used: number;
-  live: boolean;
-}> = [
-  { visits: 4, cost: 1.16, earned: 124, used: 95, live: true },
-  { visits: 10, cost: 2.09, earned: 59, used: 45, live: true },
-  { visits: 6, cost: 2.33, earned: 16, used: 12, live: true },
-  { visits: 6, cost: 1.63, earned: 31, used: 8, live: false },
-];
-
-/** The three voucher tiers. `spent` is euros. */
-export const PD_TIERS = [
-  { pct: 5, points: 250, given: 214, used: 168, spent: 121 },
-  { pct: 10, points: 600, given: 96, used: 71, spent: 143 },
-  { pct: 15, points: 1200, given: 31, used: 22, spent: 98 },
-];
-
-/** The month's discount budget, in euros. */
-export const PD_BUDGET = { total: 907, spent: 362, held: 118 };
-
-/**
- * Who comes in, from the prototype's `CSCEN`.
- *
- * Counts rather than percentages for the nationalities, because the smallest
- * groups are rolled into "other" and a percentage would hide how few that is —
- * the prototype's own privacy note says groups under ten are never shown alone.
- */
-export const PD_NATIONS = [244, 135, 71, 58, 45, 89];
-export const PD_LANGS = [42, 24, 19, 11, 4];
-export const PD_COHORTS = [
-  { first: 268, back: 96 },
-  { first: 291, back: 112 },
-  { first: 284, back: 108 },
-  { first: 312, back: 129 },
-];
-
-/** Scan rows. `spent` is euros; `points` is what the scan earned. */
-export const PD_SCANS: Array<{
-  when: string;
-  who: string;
-  first: boolean;
-  spent: number;
-  points: number;
-  code: string;
-  progress: [number, number];
-}> = [
-  { when: '09:14', who: 'OK', first: false, spent: 4.2, points: 12, code: '#7F2A', progress: [3, 4] },
-  { when: '09:02', who: 'MR', first: true, spent: 6.8, points: 20, code: '#B14C', progress: [1, 4] },
-  { when: '08:47', who: 'PS', first: false, spent: 3.1, points: 9, code: '#C903', progress: [8, 10] },
-  { when: '08:31', who: 'EV', first: false, spent: 9.4, points: 28, code: '#2D71', progress: [2, 6] },
-  { when: '08:12', who: 'MD', first: true, spent: 5.5, points: 16, code: '#A48E', progress: [1, 4] },
-  { when: '07:58', who: 'OK', first: false, spent: 4.2, points: 12, code: '#66F1', progress: [4, 4] },
-];
 
 /**
  * The dashboard's screens, in rail order and index-aligned with
@@ -1174,20 +1081,31 @@ export const RELOCATE_CITIES = [
 ].sort((a, b) => a.localeCompare(b));
 
 /**
- * The currency pairs the rate card offers, as language codes.
+ * The shortcut pairs above the converter — one tap, both sides set.
  *
- * Language codes rather than currency codes because the currencies are already
- * defined per language in `i18n/currency.ts`, and every rate here is derived
- * from that one table — the card cannot drift from the prices on the rest of
- * the site. The reader's own currency is filtered out at render: a card
- * offering to convert złoty into złoty is a card nobody asked for.
+ * Currency codes now, not language codes. The card used to offer the five
+ * currencies the *site* is priced in, which is a much smaller world than the
+ * one it is for: somebody in Kraków sending money to Tashkent was offered
+ * neither end of that. It reads the full table in `i18n/fx.ts` instead, and
+ * what is left here is the handful of corridors worth putting one tap away.
  *
- * Pairs, not corridors: the card converts and nothing else. Paylez does not
- * send, receive or hold money, so there is no fee, no arrival time and no
- * provider to compare — which is exactly why it can quote the mid-market rate
- * with nothing on top of it.
+ * The reader's own currency leads regardless — see the shortcut list in
+ * `relocate.tsx`, which prepends it and drops whatever duplicates it. These are
+ * the ones that follow.
+ *
+ * Pairs, not corridors in the money-transfer sense: the card converts and
+ * nothing else. Paylez does not send, receive or hold money, so there is no
+ * fee, no arrival time and no provider to compare — which is exactly why it can
+ * quote the mid-market rate with nothing on top of it.
  */
-export const RELOCATE_PAIRS = ['uz', 'uk', 'pl', 'ru', 'en'] as const;
+export const RELOCATE_PAIRS: Array<[FxCode, FxCode]> = [
+  ['PLN', 'UAH'],
+  ['PLN', 'UZS'],
+  ['EUR', 'PLN'],
+  ['GBP', 'PLN'],
+  ['PLN', 'KZT'],
+  ['USD', 'TRY'],
+];
 
 /**
  * What the rate card converts.

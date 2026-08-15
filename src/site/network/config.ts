@@ -1,5 +1,5 @@
 /**
- * Tunables for the neon web behind the L-Earn page.
+ * Tunables for the neon web behind the Analytics page.
  *
  * Everything here is in **CSS pixels and seconds**, never in device pixels or
  * frames: the canvas is drawn at whatever `devicePixelRatio` the display has,

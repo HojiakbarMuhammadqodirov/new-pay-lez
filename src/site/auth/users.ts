@@ -46,8 +46,6 @@ export interface UserRecord {
   type: AccountType | null;
   business: BusinessProfile | null;
   player: PlayerState | null;
-  /** Offered on the sign-in form. The admin is deliberately not. */
-  demo?: boolean;
 }
 
 /**
@@ -131,7 +129,6 @@ export const SEED_USERS: UserRecord[] = [
     type: 'business',
     business: BRATYSLAWSKA,
     player: null,
-    demo: true,
   },
   {
     id: 'u_dilnoza',
@@ -142,20 +139,20 @@ export const SEED_USERS: UserRecord[] = [
     type: 'individual',
     business: null,
     player: seededPlayer(),
-    demo: true,
   },
 ];
 
-/**
- * The credentials printed on the sign-in form.
+/*
+ * There was a `DEMO_USERS` export here, and the sign-in form printed it.
  *
- * A demo nobody can get into is not a demo, and the passwords are readable in
- * the bundle anyway — so showing them costs nothing and saves everyone guessing.
- * The admin is filtered out: it is in the bundle like the rest, but a console
- * that reads every account on the platform is not something to advertise to
- * whoever lands on the front door.
+ * The argument for it was that the passwords ship in the bundle either way, so
+ * showing them cost nothing and saved everyone guessing. That was true while the
+ * seeds below were the whole of the account system. It stopped being true when
+ * `server/` arrived: those are now credentials to a system that hashes them,
+ * and a working pair printed on the front door is a working pair whoever reads
+ * it. The seeds stay — they are what makes the prototype's screens worth looking
+ * at — but nothing advertises them.
  */
-export const DEMO_USERS = SEED_USERS.filter((user) => user.demo);
 
 export type SignInError = 'email' | 'password';
 export type SignUpError = 'name' | 'email' | 'taken' | 'password' | 'type';

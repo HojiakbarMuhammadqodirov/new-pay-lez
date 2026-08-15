@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="" />
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin:0; padding:0; background:#070B0A; }
+  body { font-family:'Outfit', system-ui, -apple-system, sans-serif; -webkit-font-smoothing:antialiased; }
+  a { color:#5FE9C4; text-decoration:none; }
+  a:hover { color:#8FF3DA; }
+  button { font-family:inherit; }
+  @keyframes pl-driftA { 0%,100% { transform:translate3d(0,0,0) rotate(0deg); } 50% { transform:translate3d(var(--dx,14px), var(--dy,-18px), 0) rotate(var(--dr,10deg)); } }
+  @keyframes pl-driftB { 0%,100% { transform:translate3d(0,0,0) rotate(0deg); } 33% { transform:translate3d(var(--dx,14px), var(--dy,-18px), 0) rotate(var(--dr,10deg)); } 66% { transform:translate3d(calc(var(--dx,14px) * -0.7), calc(var(--dy,-18px) * 0.6), 0) rotate(calc(var(--dr,10deg) * -1)); } }
+  @keyframes pl-shake { 0%,100% { transform:translateX(0); } 15% { transform:translateX(-7px); } 30% { transform:translateX(6px); } 45% { transform:translateX(-4px); } 60% { transform:translateX(3px); } 80% { transform:translateX(-2px); } }
+  @keyframes pl-pop { 0% { transform:scale(0.86); opacity:0; } 60% { transform:scale(1.04); } 100% { transform:scale(1); opacity:1; } }
+  @keyframes pl-glow { 0%,100% { opacity:0.35; } 50% { opacity:0.7; } }
+  @keyframes pl-rise { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
+</style>
+</helmet>
+
+<div style="position:relative;min-height:100vh;background:#070B0A;color:#EAF3EF;overflow-x:hidden">
+
+  {{ backdrop }}
+
+  <header style="position:relative;z-index:20;border-bottom:1px solid #141E1A;background:rgba(7,11,10,0.82);backdrop-filter:blur(14px);position:sticky;top:0">
+    <div style="max-width:1180px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:14px">
+      <a href="#" style="display:flex;align-items:center;gap:9px;color:#EAF3EF;flex-shrink:0">
+        <img src="paylez-mark.png" alt="" style="width:28px;height:28px;border-radius:9px;object-fit:cover;display:block" />
+        <span style="font-size:20px;font-weight:800;letter-spacing:-0.02em">paylez</span>
+      </a>
+
+      <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+        <nav style="display:flex;align-items:center;gap:6px;margin-left:22px">
+          <a href="#" style="display:flex;align-items:center;gap:8px;padding:8px 13px;border-radius:10px;font-size:14.5px;font-weight:500;color:#7C8B85" style-hover="color:#EAF3EF;background:#101816">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5.5 9.5V20h13V9.5"></path></svg>
+            Home
+          </a>
+          <a href="#" style="display:flex;align-items:center;gap:8px;padding:8px 13px;border-radius:10px;font-size:14.5px;font-weight:600;color:#5FE9C4;background:rgba(95,233,196,0.1)">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v9M14.5 10a2.5 2.5 0 0 0-5 .3c0 2.4 5 1.3 5 3.7a2.5 2.5 0 0 1-5 .3"></path></svg>
+            L·Earn
+          </a>
+          <a href="#" style="display:flex;align-items:center;gap:8px;padding:8px 13px;border-radius:10px;font-size:14.5px;font-weight:500;color:#7C8B85" style-hover="color:#EAF3EF;background:#101816">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z"></path><path d="M13 8.5v11"></path></svg>
+            Vouchers
+          </a>
+          <a href="#" style="display:flex;align-items:center;gap:8px;padding:8px 13px;border-radius:10px;font-size:14.5px;font-weight:500;color:#7C8B85" style-hover="color:#EAF3EF;background:#101816">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10.5 13.5"></path><path d="M21 3 14.5 21l-4-7.5L3 9.5z"></path></svg>
+            Relocate
+          </a>
+        </nav>
+      </sc-if>
+
+      <div style="flex:1"></div>
+
+      <div style="position:relative">
+        <button onClick="{{ toggleLang }}" style="display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;border:1px solid #1C2A24;background:#0D1412;color:#EAF3EF;font-size:13.5px;font-weight:600;cursor:pointer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#5FE9C4" stroke-width="1.7" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.4 2.6 3.7 5.6 3.7 9s-1.3 6.4-3.7 9c-2.4-2.6-3.7-5.6-3.7-9S9.6 5.6 12 3z"></path></svg>
+          {{ langLabel }}
+          <span style="color:#5B6B64;font-size:11px">▾</span>
+        </button>
+        <sc-if value="{{ langOpen }}" hint-placeholder-val="{{ false }}">
+          <div style="position:absolute;top:46px;right:0;z-index:60;min-width:200px;padding:6px;border-radius:14px;border:1px solid #1C2A24;background:#0D1412;box-shadow:0 20px 50px rgba(0,0,0,0.6);display:flex;flex-direction:column;gap:2px">
+            <sc-for list="{{ languages }}" as="l" hint-placeholder-count="6">
+              <button onClick="{{ l.pick }}" style="{{ l.style }}">
+                <span>{{ l.label }}</span>
+                <span style="font-size:11px;font-weight:700;letter-spacing:0.08em;color:#5B6B64">{{ l.code }}</span>
+              </button>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:9px;padding:4px 12px 4px 4px;border:1px solid #1C2A24;border-radius:999px;background:#0D1412;flex-shrink:0">
+        <span style="width:28px;height:28px;border-radius:50%;background:rgba(95,233,196,0.16);color:#5FE9C4;font-size:12px;font-weight:800;display:flex;align-items:center;justify-content:center">D</span>
+        <sc-if value="{{ wide }}" hint-placeholder-val="{{ true }}">
+          <span style="font-size:13.5px;font-weight:600;white-space:nowrap">Dilnoza Y.</span>
+        </sc-if>
+      </div>
+    </div>
+  </header>
+
+  <main style="{{ mainStyle }}">
+
+    <sc-if value="{{ inHub }}" hint-placeholder-val="{{ true }}">
+      <div style="display:flex;flex-direction:column;gap:26px">
+
+        <div>
+          <h1 style="margin:0 0 6px;font-size:clamp(30px,5vw,42px);font-weight:800;letter-spacing:-0.035em;line-height:1.02">Play</h1>
+          <p style="margin:0;font-size:16.5px;color:#7C8B85;line-height:1.5;text-wrap:pretty">Play, earn points, turn them into discounts.</p>
+        </div>
+
+        <div style="position:relative;overflow:hidden;border-radius:22px;border:1px solid rgba(95,233,196,0.28);background:linear-gradient(115deg, rgba(95,233,196,0.16) 0%, rgba(95,233,196,0.05) 45%, rgba(13,20,18,0.9) 100%);padding:clamp(20px,3vw,28px)">
+          <div style="position:absolute;top:-70px;right:-40px;width:260px;height:260px;border-radius:50%;background:radial-gradient(circle, rgba(95,233,196,0.30) 0%, rgba(95,233,196,0) 68%);animation:pl-glow 5.5s ease-in-out infinite;pointer-events:none"></div>
+          <div style="position:relative;display:flex;align-items:center;gap:clamp(18px,3vw,36px);flex-wrap:wrap">
+            <div style="flex:1 1 420px;min-width:260px">
+              <div style="display:flex;align-items:center;gap:9px;margin-bottom:12px">
+                <span style="width:22px;height:22px;border-radius:7px;background:rgba(95,233,196,0.2);display:flex;align-items:center;justify-content:center">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#5FE9C4" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 8v8M14.4 10.2a2.4 2.4 0 0 0-4.8.3c0 2.3 4.8 1.2 4.8 3.5a2.4 2.4 0 0 1-4.8.3"></path></svg>
+                </span>
+                <span style="font-size:12px;font-weight:700;letter-spacing:0.14em;color:#5FE9C4">YOUR POINTS</span>
+              </div>
+              <div style="font-size:clamp(22px,3.2vw,30px);font-weight:700;letter-spacing:-0.028em;line-height:1.22;text-wrap:pretty;margin-bottom:16px">
+                <span style="font-weight:800;color:#5FE9C4">{{ pointsFmt }} points</span><span style="color:#4A5A54"> · </span>{{ goPhrase }}
+              </div>
+              <div style="height:7px;border-radius:99px;background:#12201B;overflow:hidden;max-width:460px">
+                <div style="{{ progressStyle }}"></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;max-width:460px;margin-top:8px;font-size:12.5px;font-weight:600;color:#5B6B64">
+                <span>{{ pointsFmt }}</span>
+                <span>{{ targetFmt }} for the next discount</span>
+              </div>
+            </div>
+            <a href="#" style="display:inline-flex;align-items:center;gap:10px;background:#5FE9C4;color:#04140F;font-size:16px;font-weight:700;padding:16px 24px;border-radius:14px;white-space:nowrap;box-shadow:0 14px 34px rgba(95,233,196,0.22)" style-hover="color:#04140F;background:#7DF0D5">
+              Turn points into a discount
+              <span style="font-size:17px">→</span>
+            </a>
+          </div>
+        </div>
+
+        <div style="border-radius:16px;border:1px solid #1A2620;background:rgba(13,20,18,0.72)">
+          <div style="display:flex;align-items:center;gap:clamp(16px,3vw,34px);flex-wrap:wrap;padding:13px 18px">
+            <div style="display:flex;align-items:center;gap:9px">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FFC65C" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.6 3.2 3 4.2 3 7a3 3 0 0 1-6 0c0-1 .3-1.7.7-2.3C8 9.4 6.5 11.4 6.5 14a5.5 5.5 0 0 0 11 0c0-4.6-3-6.9-5.5-11z"></path></svg>
+              <span style="font-size:13.5px;color:#7C8B85;font-weight:500">Streak</span>
+              <span style="font-size:15px;font-weight:700">8 days</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="font-size:13.5px;color:#7C8B85;font-weight:500">Lives today</span>
+              {{ livesHearts }}
+            </div>
+            <div style="display:flex;align-items:center;gap:9px">
+              <span style="font-size:13.5px;color:#7C8B85;font-weight:500">Score</span>
+              <span style="font-size:15px;font-weight:700">{{ pointsFmt }}</span>
+            </div>
+            <div style="flex:1"></div>
+            <button onClick="{{ toggleStats }}" style="display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:9px;border:1px solid #1C2A24;background:transparent;color:#7C8B85;font-size:13px;font-weight:600;cursor:pointer" style-hover="color:#EAF3EF;border-color:#2A3A33">
+              Your stats
+              <span style="{{ chevStyle }}">▾</span>
+            </button>
+          </div>
+          <sc-if value="{{ statsOpen }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:clamp(20px,4vw,48px);flex-wrap:wrap;padding:16px 18px 18px;border-top:1px solid #141E1A">
+              <div>
+                <div style="font-size:12px;font-weight:600;color:#5B6B64;margin-bottom:4px">Answered</div>
+                <div style="font-size:21px;font-weight:800;letter-spacing:-0.02em">152</div>
+              </div>
+              <div>
+                <div style="font-size:12px;font-weight:600;color:#5B6B64;margin-bottom:4px">Correct</div>
+                <div style="font-size:21px;font-weight:800;letter-spacing:-0.02em">113</div>
+              </div>
+              <div>
+                <div style="font-size:12px;font-weight:600;color:#5B6B64;margin-bottom:4px">Accuracy</div>
+                <div style="font-size:21px;font-weight:800;letter-spacing:-0.02em;color:#5FE9C4">74%</div>
+              </div>
+              <div>
+                <div style="font-size:12px;font-weight:600;color:#5B6B64;margin-bottom:4px">Best streak</div>
+                <div style="font-size:21px;font-weight:800;letter-spacing:-0.02em">21 days</div>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+
+        <div onClick="{{ openDaily }}" style="position:relative;overflow:hidden;border-radius:22px;border:1px solid rgba(255,198,92,0.26);background:#0F1310;padding:clamp(22px,3vw,30px);cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s" style-hover="transform:translateY(-3px);border-color:rgba(255,198,92,0.55);box-shadow:0 20px 46px rgba(0,0,0,0.55)">
+          <div style="position:absolute;inset:0;pointer-events:none;opacity:0.5;background-image:radial-gradient(rgba(255,198,92,0.16) 1.4px, transparent 1.4px);background-size:22px 22px"></div>
+          <div style="position:absolute;top:-90px;right:-60px;width:300px;height:300px;border-radius:50%;background:radial-gradient(circle, rgba(255,198,92,0.16) 0%, rgba(255,198,92,0) 70%);pointer-events:none"></div>
+          <div style="position:relative;display:flex;gap:clamp(18px,3vw,34px);align-items:center;flex-wrap:wrap">
+            <div style="flex:1 1 380px;min-width:250px">
+              <div style="display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;background:rgba(255,198,92,0.13);border:1px solid rgba(255,198,92,0.28);margin-bottom:16px">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#FFC65C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.6 3.2 3 4.2 3 7a3 3 0 0 1-6 0c0-1 .3-1.7.7-2.3C8 9.4 6.5 11.4 6.5 14a5.5 5.5 0 0 0 11 0c0-4.6-3-6.9-5.5-11z"></path></svg>
+                <span style="font-size:11.5px;font-weight:700;letter-spacing:0.1em;color:#FFC65C">TODAY'S GAME · KEEPS YOUR STREAK</span>
+              </div>
+              <h2 style="margin:0 0 8px;font-size:clamp(26px,3.6vw,36px);font-weight:800;letter-spacing:-0.03em;line-height:1.05">Daily Quiz</h2>
+              <p style="margin:0 0 16px;font-size:16px;color:#8B9A93;line-height:1.55;max-width:460px;text-wrap:pretty">Mixed-topic questions about Kraków, Poland and the wider world.</p>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:22px">
+                <span style="font-size:13.5px;font-weight:600;color:#7C8B85">5 questions · 12 sec each</span>
+                <span style="width:3px;height:3px;border-radius:50%;background:#3A4A44"></span>
+                <span style="font-size:13.5px;font-weight:700;color:#FFC65C">25 points available</span>
+                <span style="width:3px;height:3px;border-radius:50%;background:#3A4A44"></span>
+                <span style="font-size:13.5px;font-weight:600;color:#7C8B85">{{ livesLabel }}</span>
+              </div>
+              <span style="display:inline-flex;align-items:center;gap:10px;background:#FFC65C;color:#1A1204;font-size:16px;font-weight:700;padding:15px 26px;border-radius:13px">
+                {{ dailyCta }}
+                <span style="font-size:17px">→</span>
+              </span>
+            </div>
+            <div style="flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:clamp(110px,15vw,158px);height:clamp(110px,15vw,158px);border-radius:32px;background:rgba(255,198,92,0.09);border:1px solid rgba(255,198,92,0.2)">
+              <svg width="60%" height="60%" viewBox="0 0 24 24" fill="none" stroke="#FFC65C" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18.5h6M10 21.2h4"></path>
+                <path d="M12 2.8a6.2 6.2 0 0 0-3.6 11.2c.6.5.9 1.2.9 2v.5h5.4V16c0-.8.3-1.5.9-2A6.2 6.2 0 0 0 12 2.8z"></path>
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(268px,1fr));gap:16px">
+
+          <div onClick="{{ openWord }}" style="position:relative;overflow:hidden;border-radius:20px;border:1px solid rgba(198,243,94,0.26);background:#0F120D;padding:22px;display:flex;flex-direction:column;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s" style-hover="transform:translateY(-3px);border-color:rgba(198,243,94,0.55);box-shadow:0 18px 40px rgba(0,0,0,0.5)">
+            <div style="position:absolute;inset:0;pointer-events:none;opacity:0.45;background-image:repeating-linear-gradient(58deg, rgba(198,243,94,0.11) 0px, rgba(198,243,94,0.11) 1.5px, transparent 1.5px, transparent 13px)"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px">
+              <span style="width:50px;height:50px;border-radius:15px;background:rgba(198,243,94,0.11);border:1px solid rgba(198,243,94,0.24);display:flex;align-items:center;justify-content:center">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
+                  <rect x="2.5" y="6.5" width="8.5" height="11" rx="2.5" stroke="#C6F35E" stroke-width="1.6"></rect>
+                  <rect x="13" y="6.5" width="8.5" height="11" rx="2.5" stroke="#C6F35E" stroke-width="1.6"></rect>
+                  <text x="6.75" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" fill="#C6F35E" font-family="Outfit">A</text>
+                  <text x="17.25" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" fill="#C6F35E" font-family="Outfit">Ą</text>
+                </svg>
+              </span>
+              <span style="padding:5px 10px;border-radius:999px;background:rgba(198,243,94,0.14);color:#C6F35E;font-size:11px;font-weight:700;letter-spacing:0.08em">NEW</span>
+            </div>
+            <h3 style="position:relative;margin:0 0 7px;font-size:21px;font-weight:800;letter-spacing:-0.022em">Word Builder</h3>
+            <p style="position:relative;margin:0 0 14px;font-size:14.5px;color:#8B9A93;line-height:1.55;text-wrap:pretty">Spell Polish or English words from a clue. Doubles as language practice.</p>
+            <div style="position:relative;display:flex;flex-direction:column;gap:5px;margin-bottom:18px">
+              <span style="font-size:13px;font-weight:600;color:#7C8B85">5 words · 8 points each</span>
+              <span style="font-size:13px;font-weight:700;color:#C6F35E">40 points available</span>
+            </div>
+            <div style="flex:1"></div>
+            <span style="position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:#C6F35E;color:#161C08;font-size:15px;font-weight:700;padding:13px 18px;border-radius:12px">Play <span style="font-size:16px">→</span></span>
+          </div>
+
+          <div onClick="{{ openMemory }}" style="position:relative;overflow:hidden;border-radius:20px;border:1px solid rgba(180,156,255,0.26);background:#0E0D14;padding:22px;display:flex;flex-direction:column;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s" style-hover="transform:translateY(-3px);border-color:rgba(180,156,255,0.55);box-shadow:0 18px 40px rgba(0,0,0,0.5)">
+            <div style="position:absolute;inset:0;pointer-events:none;opacity:0.5;background-image:repeating-linear-gradient(0deg, rgba(180,156,255,0.10) 0px, rgba(180,156,255,0.10) 1px, transparent 1px, transparent 26px), repeating-linear-gradient(90deg, rgba(180,156,255,0.10) 0px, rgba(180,156,255,0.10) 1px, transparent 1px, transparent 26px)"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px">
+              <span style="width:50px;height:50px;border-radius:15px;background:rgba(180,156,255,0.11);border:1px solid rgba(180,156,255,0.24);display:flex;align-items:center;justify-content:center">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#B49CFF" stroke-width="1.6">
+                  <rect x="3" y="5.5" width="9.5" height="13.5" rx="2.5" transform="rotate(-8 7.75 12.25)"></rect>
+                  <rect x="11.5" y="5.5" width="9.5" height="13.5" rx="2.5" transform="rotate(8 16.25 12.25)"></rect>
+                </svg>
+              </span>
+              <span style="padding:5px 10px;border-radius:999px;background:rgba(180,156,255,0.14);color:#B49CFF;font-size:11px;font-weight:700;letter-spacing:0.08em">NEW</span>
+            </div>
+            <h3 style="position:relative;margin:0 0 7px;font-size:21px;font-weight:800;letter-spacing:-0.022em">Memory Match</h3>
+            <p style="position:relative;margin:0 0 14px;font-size:14.5px;color:#8B9A93;line-height:1.55;text-wrap:pretty">Find pairs of Kraków icons and learn their Polish names.</p>
+            <div style="position:relative;display:flex;flex-direction:column;gap:5px;margin-bottom:18px">
+              <span style="font-size:13px;font-weight:600;color:#7C8B85">6 pairs · 6 points each</span>
+              <span style="font-size:13px;font-weight:700;color:#B49CFF">36 points available</span>
+            </div>
+            <div style="flex:1"></div>
+            <span style="position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:#B49CFF;color:#150E2B;font-size:15px;font-weight:700;padding:13px 18px;border-radius:12px">Play <span style="font-size:16px">→</span></span>
+          </div>
+
+          <div onClick="{{ openFlags }}" style="position:relative;overflow:hidden;border-radius:20px;border:1px solid rgba(255,126,107,0.26);background:#130E0C;padding:22px;display:flex;flex-direction:column;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s" style-hover="transform:translateY(-3px);border-color:rgba(255,126,107,0.55);box-shadow:0 18px 40px rgba(0,0,0,0.5)">
+            <div style="position:absolute;inset:0;pointer-events:none;opacity:0.5;background-image:repeating-linear-gradient(180deg, rgba(255,126,107,0.10) 0px, rgba(255,126,107,0.10) 7px, transparent 7px, transparent 21px)"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px">
+              <span style="width:50px;height:50px;border-radius:15px;background:rgba(255,126,107,0.11);border:1px solid rgba(255,126,107,0.24);display:flex;align-items:center;justify-content:center">
+                <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#FF7E6B" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 21V3.5"></path><path d="M5.5 4.5h12l-2.4 3.8 2.4 3.8h-12"></path></svg>
+              </span>
+            </div>
+            <h3 style="position:relative;margin:0 0 7px;font-size:21px;font-weight:800;letter-spacing:-0.022em">Guess the Flag</h3>
+            <p style="position:relative;margin:0 0 14px;font-size:14.5px;color:#8B9A93;line-height:1.55;text-wrap:pretty">Name the country from its flag. Quick rounds, quick points.</p>
+            <div style="position:relative;display:flex;flex-direction:column;gap:5px;margin-bottom:18px">
+              <span style="font-size:13px;font-weight:600;color:#7C8B85">5 questions · 6 sec each</span>
+              <span style="font-size:13px;font-weight:700;color:#FF7E6B">10 points available</span>
+            </div>
+            <div style="flex:1"></div>
+            <span style="{{ flagsCtaStyle }}">{{ flagsCta }}</span>
+          </div>
+
+          <div onClick="{{ openCapitals }}" style="position:relative;overflow:hidden;border-radius:20px;border:1px solid rgba(111,180,255,0.26);background:#0C1015;padding:22px;display:flex;flex-direction:column;cursor:pointer;transition:transform .2s,border-color .2s,box-shadow .2s" style-hover="transform:translateY(-3px);border-color:rgba(111,180,255,0.55);box-shadow:0 18px 40px rgba(0,0,0,0.5)">
+            <div style="position:absolute;inset:0;pointer-events:none;opacity:0.55;background-image:repeating-radial-gradient(circle at 82% 14%, rgba(111,180,255,0.13) 0px, rgba(111,180,255,0.13) 1.2px, transparent 1.2px, transparent 17px)"></div>
+            <div style="position:relative;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:18px">
+              <span style="width:50px;height:50px;border-radius:15px;background:rgba(111,180,255,0.11);border:1px solid rgba(111,180,255,0.24);display:flex;align-items:center;justify-content:center">
+                <svg width="25" height="25" viewBox="0 0 24 24" fill="none" stroke="#6FB4FF" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M3 12h18M12 3c2.4 2.6 3.7 5.6 3.7 9s-1.3 6.4-3.7 9c-2.4-2.6-3.7-5.6-3.7-9S9.6 5.6 12 3z"></path></svg>
+              </span>
+            </div>
+            <h3 style="position:relative;margin:0 0 7px;font-size:21px;font-weight:800;letter-spacing:-0.022em">Country &amp; Capital</h3>
+            <p style="position:relative;margin:0 0 14px;font-size:14.5px;color:#8B9A93;line-height:1.55;text-wrap:pretty">Match a country to its capital city. Five in a row.</p>
+            <div style="position:relative;display:flex;flex-direction:column;gap:5px;margin-bottom:18px">
+              <span style="font-size:13px;font-weight:600;color:#7C8B85">5 questions · 6 sec each</span>
+              <span style="font-size:13px;font-weight:700;color:#6FB4FF">10 points available</span>
+            </div>
+            <div style="flex:1"></div>
+            <span style="{{ capsCtaStyle }}">{{ capsCta }}</span>
+          </div>
+
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ inGame }}" hint-placeholder-val="{{ false }}">
+      <div style="max-width:660px;margin:0 auto;animation:pl-rise .3s ease-out">
+
+        <button onClick="{{ backToHub }}" style="display:flex;align-items:center;gap:8px;padding:9px 14px 9px 11px;margin-bottom:20px;border-radius:10px;border:1px solid #1C2A24;background:#0D1412;color:#8B9A93;font-size:14px;font-weight:600;cursor:pointer" style-hover="color:#EAF3EF;border-color:#2A3A33">
+          <span style="font-size:15px">←</span> Play
+        </button>
+
+        <sc-if value="{{ isDone }}" hint-placeholder-val="{{ false }}">
+          <div style="text-align:center;padding:clamp(28px,5vw,52px) clamp(20px,4vw,36px);border-radius:22px;border:1px solid #1C2A24;background:#0D1412">
+            <div style="display:inline-block;padding:6px 14px;border-radius:999px;border:1px solid #223029;font-size:11.5px;font-weight:700;letter-spacing:0.14em;color:#5FE9C4;margin-bottom:20px">{{ doneKicker }}</div>
+            <div style="font-size:clamp(52px,10vw,72px);font-weight:800;letter-spacing:-0.04em;line-height:1;color:#5FE9C4">+{{ doneGain }}</div>
+            <p style="margin:10px 0 6px;font-size:17.5px;font-weight:600;color:#EAF3EF">{{ doneSub }}</p>
+            <p style="margin:0 auto 28px;font-size:16px;line-height:1.55;color:#8B9A93;max-width:400px;text-wrap:pretty">{{ doneReward }}</p>
+            <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+              <button onClick="{{ playAgain }}" style="background:#5FE9C4;color:#04140F;border:none;border-radius:13px;padding:14px 26px;font-size:15.5px;font-weight:700;cursor:pointer">Play again</button>
+              <button onClick="{{ backToHub }}" style="background:transparent;color:#EAF3EF;border:1px solid #223029;border-radius:13px;padding:14px 26px;font-size:15.5px;font-weight:600;cursor:pointer" style-hover="border-color:#33463D">Back to play</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showQuiz }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:14px;flex-wrap:wrap">
+              <div style="font-size:13.5px;font-weight:600;color:#7C8B85">{{ quizName }} · question {{ qNum }} of 5</div>
+              <div style="display:flex;align-items:center;gap:14px">
+                <span style="font-size:13.5px;font-weight:600;color:#7C8B85">Mistakes {{ qMistakes }}/1</span>
+                <span style="{{ qScoreStyle }}">{{ qScore }} pts</span>
+              </div>
+            </div>
+            <div style="height:5px;border-radius:99px;background:#12201B;overflow:hidden;margin-bottom:26px">
+              <div style="{{ timerStyle }}"></div>
+            </div>
+
+            <div style="padding:clamp(22px,4vw,34px) clamp(20px,3vw,28px);border-radius:20px;border:1px solid #1C2A24;background:#0D1412;margin-bottom:16px;text-align:center">
+              <sc-if value="{{ hasGlyph }}" hint-placeholder-val="{{ false }}">
+                <div style="font-size:clamp(62px,12vw,86px);line-height:1;margin-bottom:16px">{{ qGlyph }}</div>
+              </sc-if>
+              <h2 style="margin:0;font-size:clamp(20px,3.4vw,27px);font-weight:700;letter-spacing:-0.022em;line-height:1.3;text-wrap:pretty">{{ qPrompt }}</h2>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:11px">
+              <sc-for list="{{ qOptions }}" as="o" hint-placeholder-count="4">
+                <button onClick="{{ o.pick }}" style="{{ o.style }}">{{ o.label }}</button>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ hasFeedback }}" hint-placeholder-val="{{ false }}">
+              <p style="{{ feedbackStyle }}">{{ qFeedback }}</p>
+            </sc-if>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showWord }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:22px;flex-wrap:wrap">
+              <div style="font-size:13.5px;font-weight:600;color:#7C8B85">Word Builder · {{ wNum }} of 5 · <span style="color:#C6F35E">{{ wScore }} pts</span></div>
+              <div style="display:flex;padding:3px;border:1px solid #1C2A24;border-radius:10px;background:#0D1412;gap:2px">
+                <button onClick="{{ setPL }}" style="{{ plStyle }}">Polski</button>
+                <button onClick="{{ setEN }}" style="{{ enStyle }}">English</button>
+              </div>
+            </div>
+
+            <div style="padding:clamp(24px,4vw,34px) clamp(18px,3vw,28px);border-radius:20px;border:1px solid #1C2A24;background:#0D1412">
+              <div style="text-align:center;margin-bottom:26px">
+                <div style="font-size:11.5px;font-weight:700;letter-spacing:0.14em;color:#C6F35E;margin-bottom:10px">CLUE</div>
+                <h2 style="margin:0;font-size:clamp(19px,3.2vw,25px);font-weight:700;letter-spacing:-0.02em;line-height:1.32;text-wrap:pretty">{{ wClue }}</h2>
+              </div>
+
+              <div style="{{ wSlotRowStyle }}">
+                <sc-for list="{{ wSlots }}" as="s" hint-placeholder-count="5">
+                  <span style="{{ s.style }}">{{ s.ch }}</span>
+                </sc-for>
+              </div>
+
+              <div style="display:flex;flex-wrap:wrap;gap:9px;justify-content:center;margin-bottom:24px">
+                <sc-for list="{{ wTray }}" as="t" hint-placeholder-count="5">
+                  <button onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.ch }}</button>
+                </sc-for>
+              </div>
+
+              <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+                <button onClick="{{ wUndo }}" style="padding:11px 18px;border-radius:11px;border:1px solid #223029;background:transparent;color:#8B9A93;font-size:14px;font-weight:600;cursor:pointer" style-hover="color:#EAF3EF;border-color:#33463D">Undo</button>
+                <button onClick="{{ wClear }}" style="padding:11px 18px;border-radius:11px;border:1px solid #223029;background:transparent;color:#8B9A93;font-size:14px;font-weight:600;cursor:pointer" style-hover="color:#EAF3EF;border-color:#33463D">Clear</button>
+                <button onClick="{{ wHint }}" style="display:flex;align-items:center;gap:7px;padding:11px 18px;border-radius:11px;border:1px solid rgba(198,243,94,0.3);background:rgba(198,243,94,0.08);color:#C6F35E;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:rgba(198,243,94,0.16)">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M9.5 18.5h5M10.5 21h3"></path><path d="M12 3.5a5.6 5.6 0 0 0-3.3 10.1c.5.4.8 1.1.8 1.8v.6h5v-.6c0-.7.3-1.4.8-1.8A5.6 5.6 0 0 0 12 3.5z"></path></svg>
+                  Hint
+                </button>
+              </div>
+
+              <p style="{{ wStatusStyle }}">{{ wStatusText }}</p>
+            </div>
+          </div>
+        </sc-if>
+
+        <sc-if value="{{ showMemory }}" hint-placeholder-val="{{ false }}">
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:20px;flex-wrap:wrap">
+              <div style="font-size:13.5px;font-weight:600;color:#7C8B85">Pairs <span style="color:#B49CFF;font-weight:700">{{ mMatched }}</span> of 6</div>
+              <div style="font-size:13.5px;font-weight:600;color:#7C8B85">Moves {{ mMoves }} · <span style="color:#B49CFF;font-weight:700">{{ mScore }} pts</span></div>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+              <sc-for list="{{ mDeck }}" as="c" hint-placeholder-count="12">
+                <button onClick="{{ c.flip }}" style="{{ c.style }}">
+                  <sc-if value="{{ c.faceUp }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:clamp(24px,6vw,32px);line-height:1">{{ c.icon }}</span>
+                  </sc-if>
+                  <sc-if value="{{ c.matched }}" hint-placeholder-val="{{ false }}">
+                    <span style="font-size:10.5px;color:#B49CFF;font-weight:700;letter-spacing:0.02em">{{ c.label }}</span>
+                  </sc-if>
+                  <sc-if value="{{ c.down }}" hint-placeholder-val="{{ true }}">
+                    <span style="width:18px;height:18px;border-radius:6px;border:1.5px solid #223029;display:block"></span>
+                  </sc-if>
+                </button>
+              </sc-for>
+            </div>
+            <p style="text-align:center;color:#5B6B64;font-size:13.5px;margin:20px 0 0;line-height:1.5;text-wrap:pretty">Tap a card to flip it. Match the two Wawels, the two dragons.</p>
+          </div>
+        </sc-if>
+
+      </div>
+    </sc-if>
+
+  </main>
+
+  <sc-if value="{{ narrow }}" hint-placeholder-val="{{ false }}">
+    <nav style="position:fixed;left:0;right:0;bottom:0;z-index:40;display:grid;grid-template-columns:repeat(4,1fr);gap:2px;padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:rgba(7,11,10,0.94);backdrop-filter:blur(16px);border-top:1px solid #141E1A">
+      <a href="#" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 4px;border-radius:11px;color:#5B6B64;font-size:11px;font-weight:600">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5 12 3l9 7.5"></path><path d="M5.5 9.5V20h13V9.5"></path></svg>
+        Home
+      </a>
+      <a href="#" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 4px;border-radius:11px;color:#5FE9C4;background:rgba(95,233,196,0.1);font-size:11px;font-weight:700">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7.5v9M14.5 10a2.5 2.5 0 0 0-5 .3c0 2.4 5 1.3 5 3.7a2.5 2.5 0 0 1-5 .3"></path></svg>
+        L·Earn
+      </a>
+      <a href="#" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 4px;border-radius:11px;color:#5B6B64;font-size:11px;font-weight:600">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5h18v3a2 2 0 0 0 0 4v3H3v-3a2 2 0 0 0 0-4z"></path><path d="M13 8.5v11"></path></svg>
+        Vouchers
+      </a>
+      <a href="#" style="display:flex;flex-direction:column;align-items:center;gap:4px;padding:7px 4px;border-radius:11px;color:#5B6B64;font-size:11px;font-weight:600">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3 10.5 13.5"></path><path d="M21 3 14.5 21l-4-7.5L3 9.5z"></path></svg>
+        Relocate
+      </a>
+    </nav>
+  </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;motionLevel&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:7,&quot;min&quot;:0,&quot;max&quot;:10,&quot;step&quot;:1,&quot;unit&quot;:&quot;&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Motion&quot;},&quot;livesLeft&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:3,&quot;min&quot;:0,&quot;max&quot;:3,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;State&quot;},&quot;pointsBalance&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:1246,&quot;min&quot;:0,&quot;max&quot;:9999,&quot;step&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;State&quot;},&quot;statsOpenByDefault&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;State&quot;}}">
+const REWARD = "10% off at Café Bratysławska";
+const TARGET_GAP = 60;
+
+const MINT = "#5FE9C4", AMBER = "#FFC65C", CORAL = "#FF7E6B", SKY = "#6FB4FF", LIME = "#C6F35E", VIOLET = "#B49CFF";
+
+const QUIZZES = {
+  daily: { name: "Daily Quiz", color: AMBER, per: 5, secs: 12, qs: [
+    { p: "Which river runs through Kraków?", a: ["Vistula", "Oder", "Warta", "Bug"] },
+    { p: "What is the currency of Poland?", a: ["Złoty", "Euro", "Koruna", "Forint"] },
+    { p: "What does “dziękuję” mean?", a: ["Thank you", "Good morning", "Excuse me", "See you"] },
+    { p: "Kraków Główny is the city's main what?", a: ["Train station", "Market square", "Museum", "Park"] },
+    { p: "Which planet is closest to the Sun?", a: ["Mercury", "Venus", "Mars", "Earth"] }
+  ]},
+  flags: { name: "Guess the Flag", color: CORAL, per: 2, secs: 6, qs: [
+    { g: "🇺🇦", p: "Which country is this?", a: ["Ukraine", "Sweden", "Kazakhstan", "Belarus"] },
+    { g: "🇬🇪", p: "Which country is this?", a: ["Georgia", "Denmark", "Switzerland", "England"] },
+    { g: "🇹🇷", p: "Which country is this?", a: ["Turkey", "Tunisia", "Morocco", "Azerbaijan"] },
+    { g: "🇮🇳", p: "Which country is this?", a: ["India", "Ireland", "Niger", "Ivory Coast"] },
+    { g: "🇧🇾", p: "Which country is this?", a: ["Belarus", "Latvia", "Austria", "Poland"] }
+  ]},
+  capitals: { name: "Country & Capital", color: SKY, per: 2, secs: 6, qs: [
+    { p: "What is the capital of Georgia?", a: ["Tbilisi", "Yerevan", "Baku", "Batumi"] },
+    { p: "What is the capital of Turkey?", a: ["Ankara", "Istanbul", "Izmir", "Bursa"] },
+    { p: "What is the capital of Ukraine?", a: ["Kyiv", "Lviv", "Odesa", "Kharkiv"] },
+    { p: "What is the capital of Poland?", a: ["Warsaw", "Kraków", "Gdańsk", "Wrocław"] },
+    { p: "What is the capital of India?", a: ["New Delhi", "Mumbai", "Kolkata", "Jaipur"] }
+  ]}
+};
+
+const WORDS = {
+  PL: [
+    { w: "KAWA", clue: "You order this in a café" },
+    { w: "CHLEB", clue: "You buy this at the bakery" },
+    { w: "SKLEP", clue: "You go here to buy food" },
+    { w: "BILET", clue: "You need one of these to ride the tram" },
+    { w: "POCIĄG", clue: "It leaves from Kraków Główny" }
+  ],
+  EN: [
+    { w: "COFFEE", clue: "You order this in a café" },
+    { w: "BREAD", clue: "You buy this at the bakery" },
+    { w: "MARKET", clue: "You go here to buy food" },
+    { w: "TICKET", clue: "You need one of these to ride the tram" },
+    { w: "TRAIN", clue: "It leaves from Kraków Główny" }
+  ]
+};
+
+const KRAKOW = [
+  { id: "wawel", icon: "🏰", label: "Wawel" },
+  { id: "dragon", icon: "🐉", label: "Smok" },
+  { id: "pretzel", icon: "🥨", label: "Obwarzanek" },
+  { id: "pierogi", icon: "🥟", label: "Pierogi" },
+  { id: "tram", icon: "🚊", label: "Tramwaj" },
+  { id: "square", icon: "⛲", label: "Rynek" },
+  { id: "coffee", icon: "☕", label: "Kawa" },
+  { id: "trumpet", icon: "🎺", label: "Hejnał" }
+];
+
+const LANGS = [
+  { code: "EN", label: "English" },
+  { code: "PL", label: "Polski" },
+  { code: "UK", label: "Українська" },
+  { code: "BE", label: "Беларуская" },
+  { code: "TR", label: "Türkçe" },
+  { code: "KA", label: "ქართული" }
+];
+
+const ICONS = {
+  dice: ["M3.5 3.5h17v17h-17z", "M8.6 8.6h.01", "M15.4 15.4h.01", "M12 12h.01"],
+  card: ["M4.5 2.8h15v18.4h-15z", "M12 7.2l2.6 4.3-2.6 4.3-2.6-4.3z"],
+  trophy: ["M7 4h10v5a5 5 0 0 1-10 0z", "M7 6H4.5a2.5 2.5 0 0 0 2.5 3", "M17 6h2.5a2.5 2.5 0 0 1-2.5 3", "M10 14.2v3h4v-3", "M8 20.2h8"],
+  pad: ["M2.5 7.5h19v9h-19z", "M7 10.5v3.5", "M5.2 12.2h3.6", "M16 11.2h.01", "M18.4 13.4h.01"],
+  star: ["M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.4l6-.8z"],
+  bolt: ["M13 3L5 14h6l-1 7 8-11h-6z"]
+};
+
+const FLOATERS = [
+  { x: 5, y: 12, s: 54, i: "dice", c: MINT, d: 26, dl: 0, a: "A" },
+  { x: 88, y: 8, s: 42, i: "trophy", c: AMBER, d: 32, dl: 1.4, a: "B" },
+  { x: 17, y: 44, s: 34, i: "star", c: VIOLET, d: 24, dl: 2.6, a: "B" },
+  { x: 78, y: 34, s: 60, i: "card", c: CORAL, d: 30, dl: 0.6, a: "A" },
+  { x: 46, y: 6, s: 30, i: "bolt", c: LIME, d: 22, dl: 3.2, a: "A" },
+  { x: 93, y: 58, s: 46, i: "pad", c: SKY, d: 34, dl: 1.9, a: "B" },
+  { x: 8, y: 70, s: 48, i: "card", c: VIOLET, d: 28, dl: 2.1, a: "B" },
+  { x: 63, y: 76, s: 36, i: "dice", c: AMBER, d: 25, dl: 0.9, a: "A" },
+  { x: 30, y: 88, s: 52, i: "trophy", c: MINT, d: 33, dl: 3.6, a: "B" },
+  { x: 71, y: 96, s: 32, i: "star", c: CORAL, d: 27, dl: 1.2, a: "A" },
+  { x: 2, y: 34, s: 30, i: "bolt", c: SKY, d: 29, dl: 4.1, a: "B" },
+  { x: 51, y: 52, s: 40, i: "pad", c: LIME, d: 36, dl: 2.8, a: "A" },
+  { x: 96, y: 82, s: 38, i: "dice", c: VIOLET, d: 23, dl: 3.9, a: "B" },
+  { x: 25, y: 20, s: 26, i: "star", c: AMBER, d: 31, dl: 1.6, a: "A" },
+  { x: 84, y: 20, s: 28, i: "bolt", c: MINT, d: 20, dl: 4.4, a: "A" },
+  { x: 40, y: 66, s: 44, i: "trophy", c: SKY, d: 35, dl: 0.3, a: "B" }
+];
+
+function shuffle(arr) {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      view: "hub", stage: "play", gain: 0,
+      points: 0, statsOpen: false, lang: "EN", langOpen: false, lives: 0, wide: true,
+      quizKey: null, qIndex: 0, qMistakes: 0, qScore: 0, qPicked: null, qLocked: false, qDeck: [], timeLeft: 0,
+      wLang: "PL", wIndex: 0, wScore: 0, wTray: [], wSlots: [], wStatus: "typing", wShake: 0,
+      deck: [], flipped: [], matched: 0, moves: 0, mScore: 0, busy: false, justMatched: null
+    };
+  }
+
+  componentDidMount() {
+    this._alive = true;
+    this._timers = [];
+    this.setState({
+      points: this.props.pointsBalance ?? 1246,
+      lives: this.props.livesLeft ?? 3,
+      statsOpen: !!this.props.statsOpenByDefault,
+      wide: window.innerWidth >= 880
+    });
+    this._onResize = () => this.setState({ wide: window.innerWidth >= 880 });
+    window.addEventListener("resize", this._onResize);
+  }
+  componentWillUnmount() {
+    this._alive = false;
+    window.removeEventListener("resize", this._onResize);
+    this.clearTimers();
+  }
+  componentDidUpdate(prev) {
+    if (prev.livesLeft !== this.props.livesLeft) this.setState({ lives: this.props.livesLeft ?? 3 });
+    if (prev.pointsBalance !== this.props.pointsBalance) this.setState({ points: this.props.pointsBalance ?? 1246 });
+  }
+
+  clearTimers() { (this._timers || []).forEach(clearTimeout); this._timers = []; if (this._tick) { clearInterval(this._tick); this._tick = null; } }
+  later(fn, ms) { const t = setTimeout(() => { if (this._alive) fn(); }, ms); this._timers.push(t); }
+
+  gap() { const base = (this.props.pointsBalance ?? 1246) + TARGET_GAP; return Math.max(0, base - this.state.points); }
+
+  rewardLine(gain) {
+    const left = this.gap();
+    if (left <= 0) return "+" + gain + " points · you've unlocked " + REWARD + ".";
+    return "+" + gain + " points · you're " + left + " from " + REWARD + ".";
+  }
+
+  // hub ----------------------------------------------------------------
+  toggleStats = () => this.setState(s => ({ statsOpen: !s.statsOpen }));
+  toggleLang = () => this.setState(s => ({ langOpen: !s.langOpen }));
+  pickLang = (code) => () => this.setState({ lang: code, langOpen: false });
+  backToHub = () => { this.clearTimers(); this.setState({ view: "hub", stage: "play", langOpen: false }); };
+
+  // quiz ---------------------------------------------------------------
+  startQuiz = (key) => () => {
+    if (this.state.lives <= 0) return;
+    this.clearTimers();
+    const set = QUIZZES[key];
+    const deck = set.qs.map(q => ({ ...q, opts: shuffle(q.a), correct: q.a[0] }));
+    this.setState({ view: "quiz", quizKey: key, stage: "play", qIndex: 0, qMistakes: 0, qScore: 0, qPicked: null, qLocked: false, qDeck: deck, timeLeft: set.secs, gain: 0, langOpen: false }, this.runTimer);
+  };
+  runTimer = () => {
+    if (this._tick) clearInterval(this._tick);
+    this._tick = setInterval(() => {
+      if (!this._alive) return;
+      this.setState(s => {
+        if (s.qLocked || s.view !== "quiz" || s.stage !== "play") return null;
+        if (s.timeLeft <= 0.1) return null;
+        return { timeLeft: Math.max(0, s.timeLeft - 0.1) };
+      }, () => { if (this.state.timeLeft <= 0.1 && !this.state.qLocked && this.state.view === "quiz" && this.state.stage === "play") this.answer(null)(); });
+    }, 100);
+  };
+  answer = (label) => () => {
+    const s = this.state;
+    if (s.qLocked) return;
+    const q = s.qDeck[s.qIndex];
+    const ok = label === q.correct;
+    const per = QUIZZES[s.quizKey].per;
+    const mistakes = ok ? s.qMistakes : s.qMistakes + 1;
+    this.setState({
+      qLocked: true, qPicked: label,
+      qScore: ok ? s.qScore + per : s.qScore,
+      points: ok ? s.points + per : s.points,
+      qMistakes: mistakes
+    });
+    this.later(() => {
+      const st = this.state;
+      const last = st.qIndex >= st.qDeck.length - 1;
+      if (mistakes > 1) { this.clearTimers(); this.setState(p => ({ stage: "done", gain: p.qScore, lives: Math.max(0, p.lives - 1) })); return; }
+      if (last) { this.clearTimers(); this.setState(p => ({ stage: "done", gain: p.qScore })); return; }
+      this.setState(p => ({ qIndex: p.qIndex + 1, qPicked: null, qLocked: false, timeLeft: QUIZZES[p.quizKey].secs }));
+    }, ok ? 900 : 1500);
+  };
+
+  // word builder --------------------------------------------------------
+  startWord = () => {
+    this.clearTimers();
+    this.setState({ view: "word", stage: "play", wIndex: 0, wScore: 0, gain: 0, langOpen: false }, () => this.loadWord(0, this.state.wLang));
+  };
+  loadWord = (i, lang) => {
+    const w = WORDS[lang][i].w;
+    const tray = shuffle(w.split("").map((ch, k) => ({ ch, key: k, used: false })));
+    this.setState({ wTray: tray, wSlots: w.split("").map(() => null), wStatus: "typing", wShake: 0 });
+  };
+  setWLang = (lang) => () => { this.setState({ wLang: lang, wIndex: 0, wScore: 0 }, () => this.loadWord(0, lang)); };
+  tapLetter = (key) => () => {
+    const s = this.state;
+    if (s.wStatus === "correct") return;
+    const idx = s.wSlots.indexOf(null);
+    if (idx === -1) return;
+    const t = s.wTray.find(x => x.key === key);
+    if (!t || t.used) return;
+    const slots = [...s.wSlots]; slots[idx] = key;
+    const tray = s.wTray.map(x => x.key === key ? { ...x, used: true } : x);
+    this.setState({ wSlots: slots, wTray: tray, wStatus: "typing" }, () => { if (slots.indexOf(null) === -1) this.checkWord(); });
+  };
+  undo = () => {
+    const s = this.state;
+    if (s.wStatus === "correct") return;
+    let last = -1;
+    for (let i = s.wSlots.length - 1; i >= 0; i--) if (s.wSlots[i] !== null) { last = i; break; }
+    if (last === -1) return;
+    const key = s.wSlots[last];
+    const slots = [...s.wSlots]; slots[last] = null;
+    this.setState({ wSlots: slots, wTray: s.wTray.map(x => x.key === key ? { ...x, used: false } : x), wStatus: "typing" });
+  };
+  clearWord = () => {
+    const s = this.state;
+    if (s.wStatus === "correct") return;
+    this.setState({ wSlots: s.wSlots.map(() => null), wTray: s.wTray.map(x => ({ ...x, used: false })), wStatus: "typing" });
+  };
+  hint = () => {
+    const s = this.state;
+    if (s.wStatus === "correct") return;
+    const word = WORDS[s.wLang][s.wIndex].w;
+    const slots = [...s.wSlots];
+    let tray = s.wTray.map(x => ({ ...x }));
+    let target = -1;
+    for (let i = 0; i < slots.length; i++) {
+      const cur = slots[i] === null ? null : tray.find(x => x.key === slots[i]).ch;
+      if (cur !== word[i]) { target = i; break; }
+    }
+    if (target === -1) return;
+    if (slots[target] !== null) { const k = slots[target]; tray = tray.map(x => x.key === k ? { ...x, used: false } : x); slots[target] = null; }
+    const pick = tray.find(x => !x.used && x.ch === word[target]);
+    if (!pick) return;
+    slots[target] = pick.key;
+    tray = tray.map(x => x.key === pick.key ? { ...x, used: true } : x);
+    this.setState({ wSlots: slots, wTray: tray, wStatus: "typing" }, () => { if (slots.indexOf(null) === -1) this.checkWord(); });
+  };
+  checkWord = () => {
+    const s = this.state;
+    const word = WORDS[s.wLang][s.wIndex].w;
+    const built = s.wSlots.map(k => s.wTray.find(x => x.key === k).ch).join("");
+    if (built === word) {
+      this.setState(p => ({ wStatus: "correct", wScore: p.wScore + 8, points: p.points + 8 }));
+      this.later(() => {
+        const st = this.state;
+        if (st.wIndex >= WORDS[st.wLang].length - 1) { this.setState(p => ({ stage: "done", gain: p.wScore })); return; }
+        this.setState(p => ({ wIndex: p.wIndex + 1 }), () => this.loadWord(this.state.wIndex, this.state.wLang));
+      }, 1200);
+    } else {
+      this.setState(p => ({ wStatus: "wrong", wShake: p.wShake + 1 }));
+      this.later(() => this.setState(p => ({ wSlots: p.wSlots.map(() => null), wTray: p.wTray.map(x => ({ ...x, used: false })), wStatus: "typing" })), 800);
+    }
+  };
+
+  // memory --------------------------------------------------------------
+  startMemory = () => {
+    this.clearTimers();
+    const picks = shuffle(KRAKOW).slice(0, 6);
+    const doubled = picks.flatMap((p, k) => [{ ...p, key: p.id + "-a", pairIndex: k }, { ...p, key: p.id + "-b", pairIndex: k }]);
+    this.setState({ view: "memory", stage: "play", deck: shuffle(doubled).map(c => ({ ...c, state: "down" })), flipped: [], matched: 0, moves: 0, mScore: 0, busy: false, justMatched: null, gain: 0, langOpen: false });
+  };
+  flip = (i) => () => {
+    const s = this.state;
+    if (s.busy || s.deck[i].state !== "down") return;
+    if (s.flipped.length === 1 && s.flipped[0] === i) return;
+    const nextDeck = s.deck.map((c, k) => k === i ? { ...c, state: "up" } : c);
+    const nextFlipped = [...s.flipped, i];
+    this.setState({ deck: nextDeck, flipped: nextFlipped });
+    if (nextFlipped.length !== 2) return;
+    const [a, b] = nextFlipped;
+    this.setState(p => ({ moves: p.moves + 1, busy: true }));
+    if (nextDeck[a].pairIndex === nextDeck[b].pairIndex) {
+      this.later(() => {
+        this.setState(p => {
+          const n = p.matched + 1;
+          return { deck: p.deck.map((c, k) => (k === a || k === b) ? { ...c, state: "matched" } : c), justMatched: nextDeck[a].pairIndex, matched: n, mScore: p.mScore + 6, points: p.points + 6, flipped: [], busy: false };
+        }, () => {
+          this.later(() => this.setState({ justMatched: null }), 600);
+          if (this.state.matched >= 6) this.later(() => this.setState(p => ({ stage: "done", gain: p.mScore })), 700);
+        });
+      }, 480);
+    } else {
+      this.later(() => this.setState(p => ({ deck: p.deck.map((c, k) => (k === a || k === b) ? { ...c, state: "down" } : c), flipped: [], busy: false })), 850);
+    }
+  };
+
+  playAgain = () => {
+    const v = this.state.view;
+    if (v === "word") this.startWord();
+    else if (v === "memory") this.startMemory();
+    else this.startQuiz(this.state.quizKey)();
+  };
+
+  buildBackdrop() {
+    const m = this.props.motionLevel ?? 7;
+    if (this._bdKey === m && this._bd) return this._bd;
+    const scale = m / 7;
+    const kids = FLOATERS.map((f, n) => {
+      const paths = ICONS[f.i].map((d, k) => React.createElement("path", { key: k, d, strokeLinecap: "round", strokeLinejoin: "round" }));
+      const svg = React.createElement("svg", { width: "100%", height: "100%", viewBox: "0 0 24 24", fill: "none", stroke: f.c, strokeWidth: 1.3 }, paths);
+      const style = {
+        position: "absolute", left: f.x + "%", top: f.y + "%", width: f.s, height: f.s,
+        opacity: 0.055 + (n % 4) * 0.012, willChange: "transform",
+        "--dx": Math.round((n % 2 ? 26 : -22) * scale) + "px",
+        "--dy": Math.round((n % 3 ? -30 : 24) * scale) + "px",
+        "--dr": Math.round((n % 2 ? 14 : -11) * scale) + "deg"
+      };
+      if (m > 0) style.animation = "pl-drift" + f.a + " " + Math.max(8, f.d * (1.6 - m / 12)).toFixed(1) + "s ease-in-out " + f.dl + "s infinite";
+      return React.createElement("div", { key: n, style }, svg);
+    });
+    this._bd = React.createElement("div", { "aria-hidden": "true", style: { position: "fixed", inset: 0, zIndex: 0, pointerEvents: "none", overflow: "hidden" } }, kids);
+    this._bdKey = m;
+    return this._bd;
+  }
+
+  renderVals() {
+    const s = this.state;
+    const wide = s.wide, narrow = !s.wide;
+    const gap = this.gap();
+    const target = s.points + gap;
+    const pct = Math.min(100, Math.round((s.points / Math.max(1, target)) * 100));
+    const inHub = s.view === "hub";
+    const isDone = !inHub && s.stage === "done";
+
+    const v = {
+      backdrop: this.buildBackdrop(),
+      wide, narrow,
+      mainStyle: "position:relative;z-index:10;max-width:1180px;margin:0 auto;padding:" + (wide ? "34px 20px 80px" : "24px 16px 110px"),
+      pointsFmt: fmt(s.points),
+      targetFmt: fmt(target),
+      goPhrase: gap > 0 ? gap + " more for " + REWARD : "you've unlocked " + REWARD,
+      progressStyle: "height:100%;width:" + pct + "%;border-radius:99px;background:linear-gradient(90deg,#2FBF9B,#5FE9C4);box-shadow:0 0 16px rgba(95,233,196,0.45);transition:width .6s cubic-bezier(.2,.8,.2,1)",
+      statsOpen: s.statsOpen, toggleStats: this.toggleStats,
+      chevStyle: "font-size:11px;transition:transform .2s;display:inline-block;transform:rotate(" + (s.statsOpen ? "180deg" : "0deg") + ")",
+      langOpen: s.langOpen, toggleLang: this.toggleLang,
+      langLabel: (LANGS.find(l => l.code === s.lang) || LANGS[0]).label,
+      languages: LANGS.map(l => ({
+        code: l.code, label: l.label, pick: this.pickLang(l.code),
+        style: "display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 12px;border-radius:10px;border:none;cursor:pointer;font-size:14px;text-align:left;background:" + (s.lang === l.code ? "rgba(95,233,196,0.12)" : "transparent") + ";color:" + (s.lang === l.code ? MINT : "#C4D2CC") + ";font-weight:" + (s.lang === l.code ? 700 : 500)
+      })),
+      livesHearts: React.createElement("span", { style: { display: "flex", gap: 4 } },
+        [0, 1, 2].map(i => React.createElement("svg", { key: i, width: 15, height: 15, viewBox: "0 0 24 24", fill: i < s.lives ? MINT : "none", stroke: i < s.lives ? MINT : "#2A3A33", strokeWidth: 1.8 },
+          React.createElement("path", { d: "M12 20.5S3.8 15.2 3.8 9.4a4.6 4.6 0 0 1 8.2-2.8 4.6 4.6 0 0 1 8.2 2.8c0 5.8-8.2 11.1-8.2 11.1z", strokeLinejoin: "round" })))),
+      livesLabel: s.lives > 0 ? s.lives + " of 3 lives left today" : "No lives left today",
+      dailyCta: s.lives > 0 ? "Play today's quiz" : "Come back tomorrow",
+      flagsCta: s.lives > 0 ? "Play" : "Out of lives",
+      capsCta: s.lives > 0 ? "Play" : "Out of lives",
+      flagsCtaStyle: this.smallCta(CORAL, "#2B0F0A", s.lives > 0),
+      capsCtaStyle: this.smallCta(SKY, "#06182B", s.lives > 0),
+      openDaily: this.startQuiz("daily"), openFlags: this.startQuiz("flags"), openCapitals: this.startQuiz("capitals"),
+      openWord: this.startWord, openMemory: this.startMemory, backToHub: this.backToHub,
+      inHub, inGame: !inHub, isDone,
+      showQuiz: !inHub && !isDone && (s.view === "quiz"),
+      showWord: !inHub && !isDone && (s.view === "word"),
+      showMemory: !inHub && !isDone && (s.view === "memory"),
+      playAgain: this.playAgain,
+      doneKicker: s.view === "memory" ? "ALL PAIRS FOUND" : s.view === "word" ? "ROUND COMPLETE" : "ROUND COMPLETE",
+      doneGain: s.gain,
+      doneSub: s.view === "memory"
+        ? "Solved in " + s.moves + " moves" + (s.moves === 6 ? " · flawless" : "")
+        : s.view === "word"
+          ? (s.wLang === "PL" ? "Five Polish words built" : "Five English words built")
+          : (s.qMistakes > 1 ? "Out of tries this round" : "Five of five answered"),
+      doneReward: this.rewardLine(s.gain)
+    };
+
+    if (s.view === "quiz" && s.qDeck.length) {
+      const set = QUIZZES[s.quizKey];
+      const q = s.qDeck[s.qIndex];
+      const wrong = s.qLocked && s.qPicked !== q.correct;
+      v.quizName = set.name;
+      v.qNum = s.qIndex + 1;
+      v.qMistakes = s.qMistakes;
+      v.qScore = s.qScore;
+      v.qScoreStyle = "font-size:13.5px;font-weight:700;color:" + set.color;
+      v.qPrompt = q.p;
+      v.qGlyph = q.g || "";
+      v.hasGlyph = !!q.g;
+      v.timerStyle = "height:100%;width:" + Math.max(0, (s.timeLeft / set.secs) * 100) + "%;border-radius:99px;background:" + (s.timeLeft / set.secs < 0.3 ? CORAL : set.color) + ";transition:width .1s linear";
+      v.qOptions = q.opts.map(label => {
+        let bg = "#0D1412", bd = "#1C2A24", col = "#EAF3EF";
+        if (s.qLocked) {
+          if (label === q.correct) { bg = "rgba(95,233,196,0.13)"; bd = MINT; col = MINT; }
+          else if (label === s.qPicked) { bg = "rgba(255,126,107,0.12)"; bd = CORAL; col = CORAL; }
+          else { col = "#4F5F58"; }
+        }
+        return { label, pick: this.answer(label), style: "padding:16px 18px;border-radius:14px;border:1.5px solid " + bd + ";background:" + bg + ";color:" + col + ";font-size:15.5px;font-weight:600;text-align:left;cursor:" + (s.qLocked ? "default" : "pointer") + ";transition:all .16s" };
+      });
+      v.hasFeedback = s.qLocked;
+      v.qFeedback = wrong ? (s.qPicked === null ? "Time's up — the answer is " + q.correct + "." : "Not quite — the answer is " + q.correct + ".") : "Correct · +" + set.per + " points";
+      v.feedbackStyle = "text-align:center;margin:18px 0 0;font-size:15px;font-weight:600;color:" + (wrong ? CORAL : MINT);
+    }
+
+    if (s.view === "word" && s.wTray.length) {
+      const item = WORDS[s.wLang][s.wIndex];
+      v.wNum = s.wIndex + 1;
+      v.wScore = s.wScore;
+      v.wClue = item.clue;
+      v.plStyle = this.seg(s.wLang === "PL");
+      v.enStyle = this.seg(s.wLang === "EN");
+      v.setPL = this.setWLang("PL");
+      v.setEN = this.setWLang("EN");
+      v.wSlotRowStyle = "display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-bottom:26px" + (s.wStatus === "wrong" ? ";animation:pl-shake .45s ease" : "");
+      v.wSlots = s.wSlots.map((key, i) => {
+        const ch = key === null ? "" : (s.wTray.find(x => x.key === key) || {}).ch || "";
+        const done = s.wStatus === "correct";
+        const bad = s.wStatus === "wrong";
+        const bd = done ? MINT : bad ? CORAL : (ch ? "#33463D" : "#1C2A24");
+        const bg = done ? "rgba(95,233,196,0.13)" : bad ? "rgba(255,126,107,0.1)" : "#0A100E";
+        const col = done ? MINT : bad ? CORAL : "#EAF3EF";
+        return { ch, style: "width:clamp(40px,9vw,52px);height:clamp(48px,10vw,60px);border-radius:12px;border:1.5px solid " + bd + ";background:" + bg + ";color:" + col + ";font-size:clamp(20px,4vw,25px);font-weight:800;display:flex;align-items:center;justify-content:center;transition:all .18s" };
+      });
+      v.wTray = s.wTray.map(t => ({
+        ch: t.ch, pick: this.tapLetter(t.key),
+        style: "width:clamp(40px,9vw,50px);height:clamp(44px,9vw,54px);border-radius:12px;border:1.5px solid " + (t.used ? "#141E1A" : "rgba(198,243,94,0.32)") + ";background:" + (t.used ? "transparent" : "rgba(198,243,94,0.07)") + ";color:" + (t.used ? "#1E2A25" : LIME) + ";font-size:clamp(17px,3.4vw,21px);font-weight:700;cursor:" + (t.used ? "default" : "pointer") + ";transition:all .16s;padding:0"
+      }));
+      v.wUndo = this.undo; v.wClear = this.clearWord; v.wHint = this.hint;
+      v.wStatusText = s.wStatus === "correct" ? "Correct · +8 points" : s.wStatus === "wrong" ? "Not quite — try again" : "Tap the letters in order.";
+      v.wStatusStyle = "text-align:center;margin:22px 0 0;font-size:14.5px;font-weight:600;color:" + (s.wStatus === "correct" ? MINT : s.wStatus === "wrong" ? CORAL : "#5B6B64");
+    }
+
+    if (s.view === "memory") {
+      v.mMatched = s.matched; v.mMoves = s.moves; v.mScore = s.mScore;
+      v.mDeck = s.deck.map((c, i) => {
+        const faceUp = c.state === "up" || c.state === "matched";
+        const matched = c.state === "matched";
+        const glow = s.justMatched === c.pairIndex && matched;
+        return {
+          icon: c.icon, label: c.label, faceUp, matched, down: !faceUp, flip: this.flip(i),
+          style: "aspect-ratio:3/4;border-radius:14px;border:1.5px solid " + (faceUp ? "rgba(180,156,255,0.55)" : "#1C2A24") + ";background:" + (matched ? "rgba(180,156,255,0.13)" : faceUp ? "#151322" : "#0D1412") + ";cursor:" + (faceUp ? "default" : "pointer") + ";display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;transition:all .18s;transform:scale(" + (glow ? 1.05 : 1) + ");box-shadow:" + (glow ? "0 0 0 2px " + VIOLET : "none") + ";opacity:" + (matched ? 0.9 : 1) + ";padding:0"
+        };
+      });
+    }
+
+    return v;
+  }
+
+  seg(on) {
+    return "padding:8px 15px;border-radius:8px;border:none;cursor:pointer;font-size:13.5px;font-weight:" + (on ? 700 : 600) + ";background:" + (on ? "rgba(198,243,94,0.15)" : "transparent") + ";color:" + (on ? LIME : "#7C8B85");
+  }
+  smallCta(color, ink, on) {
+    return on
+      ? "position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:" + color + ";color:" + ink + ";font-size:15px;font-weight:700;padding:13px 18px;border-radius:12px"
+      : "position:relative;display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;border:1px solid #223029;color:#5B6B64;font-size:15px;font-weight:600;padding:12px 18px;border-radius:12px";
+  }
+}
+</script>
+</body>
+</html>

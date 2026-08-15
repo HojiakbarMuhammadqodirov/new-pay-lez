@@ -34,8 +34,6 @@ export const uz: Dictionary = {
     password: 'Parol',
     passwordPlaceholder: 'Parolingiz',
     submit: 'Kirish',
-    demoTitle: 'Demo hisoblar',
-    demoLine: '{role} — {email} · {password}',
     errors: {
       email: 'Bu manzil bilan hisobimiz yo‘q.',
       password: 'Bu parol to‘g‘ri kelmadi.',
@@ -318,6 +316,17 @@ export const uz: Dictionary = {
     redeemTitle: 'Ballarni mukofotga almashtiring',
     redeemAction: 'Hoziroq almashtirish',
 
+    pointsKicker: 'Sizning ballaringiz',
+    pointsUnit: '{points} ball',
+    pointsGoal: 'keyingi chegirmagacha yana {points}',
+    pointsHave: 'chegirma uchun allaqachon yetarli',
+    pointsTarget: '{points} keyingisini ochadi',
+
+    statsToggle: 'Statistikangiz',
+    accuracy: 'Aniqlik',
+
+    featured: 'Bugungi o‘yin · ketma-ketlikni saqlaydi',
+
     names: [
       'Aql o‘yinlari',
       'Bayroqni top',
@@ -330,6 +339,7 @@ export const uz: Dictionary = {
     rule: '{questions} savol · har biri {seconds} soniya',
     reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
     start: 'O‘yinni boshlash',
+    play: 'O‘ynash',
     noLives: 'Jonlar tugadi — ertaga qayting',
     loading: 'Tarqatilmoqda…',
 
@@ -549,27 +559,131 @@ export const uz: Dictionary = {
     ],
     notWired: 'Bu versiyada ulanmagan.',
 
+    month: 'avgust',
+    rangeLabel: 'oxirgi 30 kun',
+
+    words: {
+      edit: 'Tahrirlash',
+      pause: 'To‘xtatish',
+      remind: 'Ularga eslatish',
+      ask: 'Yordamchidan so‘rash',
+      open: 'Ochish',
+      priority: '{n}-darajali',
+      each: 'har biri {amount}',
+      spent: 'Sarflangan',
+      aside: 'Ajratilgan',
+      available: 'Mavjud',
+      costSoFar: 'Hozirgi xarajat',
+      returned: 'Muddati o‘tib ishlatilmagan mukofotlardan shu oyda {amount} qaytdi.',
+    },
+
     overview: {
-      kicker: 'Paylez siz uchun nima qildi',
-      headline:
-        'Sizga {customers} ta yangi mijoz olib keldik va ular sizda taxminan {revenue} sarfladi.',
-      estimate:
+      kicker: 'Paylez siz uchun nima qildi · {range}',
+      countedLabel: 'Hisoblangan',
+      counted: 'ta tashrif Paylez orqali',
+      countedNew: 'shundan {n} tasi shu joyingizga birinchi marta kelgan mijozlar',
+      estimateTag: 'Taxmin',
+      estimate: 'savdoda taxminan {amount}',
+      estimateNote:
         'Bu taxmin. Paylez orqali har bir tashrif sizning o‘z savdongizdan olingan {avg} o‘rtacha chekka ko‘paytirilgan.',
-      tiles: ['Tashriflar', 'Olingan takliflar', 'Ishlatilgan vaucherlar', 'Ishlatilgan mukofotlar'],
-      since: 'oldingi 30 kunga nisbatan',
+      claimTitle: 'Halol ravishda o‘zimizga yozib olishimiz mumkin bo‘lgani',
+      claim: '{visits} ta tashrif · taxminan {amount}',
+      claimNote:
+        'Sizga birinchi marta kelgan mijozlarning tashriflari, ustiga olingan taklif yoki bildirishnoma turgan tashriflar. Qolganlari — baribir kelishi mumkin bo‘lgan doimiy mijozlar.',
+      support: [
+        { label: 'Paylez orqali tashriflar', note: 'QR skanlardan hisoblangan' },
+        { label: 'Bir tashrifga o‘rtacha chek', note: 'savdongizdan, oxirgi 30 kun' },
+        { label: 'Siz uchun yangi mijozlar', note: 'kassangizdagi birinchi skanerlash' },
+      ],
+      budgetAlert:
+        'Sodiqlik byudjetingiz {month} oyi tugashidan oldin tugashi kutilmoqda. Vaucherlarda {amount} ishlatilmay turibdi — bir qismini ko‘chiraymi?',
+      budgetAction: 'Sodiqlik byudjetini ochish',
+
       costTitle: 'Paylez sizga qanchaga tushdi',
-      costTotal: 'Shu oyda jami',
-      roi: 'Har sarflangan birlikka {n}× qaytim.',
+      costRows: [
+        'Paylez to‘lovlari',
+        'Berilgan sodiqlik mukofotlari',
+        'Berilgan vaucher chegirmalari',
+        'Qaynoq takliflar chegirmalari',
+      ],
+      costTotal: 'Jami',
+      returnLabel: 'Paylez bilan bog‘lay oladigan savdo',
+      roiGood:
+        'Paylez {month} oyida sizga {cost} ga tushdi va taxminan {revenue} savdo bilan bog‘lanadi. Bu har sarflangan birlikka {n}× qaytim.',
+      roiBad:
+        'Paylez {month} oyida sizga {cost} ga tushdi va taxminan {revenue} savdo bilan bog‘lanadi. Bu ko‘rsata oladiganimizdan {gap} ko‘proq. Tashriflaringizning ko‘pi — baribir kelishi mumkin bo‘lgan doimiy mijozlar.',
+
+      tiles: ['Tashriflar', 'Olingan takliflar', 'Ishlatilgan vaucherlar', 'Ishlatilgan mukofotlar'],
+      since: 'oldingi davrga nisbatan',
+      inMonth: '{month} oyida',
+
       proofTitle: 'Isbotlay oladigan yagona narsa',
       proof:
         'Sodiqlik kampaniyalaringizdagi mijozlar oyiga {after} marta keladi — qo‘shilishdan oldingi {before} martaga qarshi.',
-      proofNote: 'Sizning o‘z QR skanlaringizdan hisoblangan, taxmin emas. Kassa integratsiyasi kerak emas.',
-      before: 'Oldin',
-      now: 'Hozir',
+      proofNote:
+        'Sizning o‘z QR skanlaringizdan hisoblangan, taxmin emas. Kassa integratsiyasi kerak emas.',
+      before: 'oldin',
+      now: 'hozir',
+
+      chartTitle: 'Tashriflar va vaucher ishlatilishi',
+      chartNote:
+        'Kassadagi har bir QR skanerlash mijozlar haqiqatan sarflagan vaucherlarga qarshi',
+      chartVisits: 'Tashriflar',
+      chartRedeemed: 'Ishlatilgan vaucherlar',
+
+      holdingTitle: 'Siz ushlab turgan pul',
+      holding:
+        '{rewards} ta mukofot va {vouchers} ta vaucher ishlatilmay turibdi va byudjetingizning {amount} ini ushlab turibdi.',
+      holdingNote:
+        'Ularning har biri ortida shartni bajargan va hali qaytmagan mijoz turibdi. Muddati o‘tsa, pul byudjetga qaytadi.',
+
+      noticed: 'Biz nimani sezdik',
+      insights: [
+        {
+          text: 'Tashriflar 12% oshdi, lekin vaucher ishlatilishi 4% tushdi. Odamlar kelmoqda — ularni qaytarayotgani mukofotlar emas.',
+          detail:
+            'Shu oyda 10% bosqichiga atigi 27 mijoz yetdi, chunki u 600 ball talab qiladi. 450 ballda yana 61 doimiy mijozingiz shartni bajargan bo‘lardi.',
+          action: '10% bosqichini o‘zgartirish',
+        },
+        {
+          text: 'Bepul mahsulotli takliflaringiz foizli chegirmalarga qaraganda 2,4 barobar ko‘p olinadi.',
+          detail:
+            '«Pishiriqqa bepul filtr» 4 798 ko‘rishdan 186 marta olindi. 20% chegirmali «Ertalabki flat white» esa 8 412 ko‘rishdan 149 marta.',
+          action: 'Takliflaringizni ko‘rish',
+        },
+        {
+          text: '{n} ta sodiqlik mukofoti yig‘ilgan-u ishlatilmay turibdi, {amount} ni ushlab.',
+          detail:
+            'Bu mijozlar shartni bajarib, qaytib kelmadi. Eslatma odatda bir hafta ichida ularning uchdan birini olib keladi.',
+          action: 'Ularga eslatish',
+        },
+      ],
+
+      runningTitle: 'Hozir ishlab turgani',
+      runningNote: 'Mijozlar bugun joyingizda ko‘ra oladigan yoki yig‘a oladigan hamma narsa',
+      quota: 'Shu oyda {total} tadan {n} ta bildirishnoma qoldi',
+      quotaOut: 'Shu oyda bildirishnoma qolmadi',
+      kinds: { deal: 'Qaynoq taklif', campaign: 'Kampaniya', vouchers: 'Vaucherlar' },
+      claims: 'olindi',
+      usedEarned: 'ishlatilgan / yig‘ilgan',
+      givenAway: 'tarqatilgan',
+      notifySent: 'Bildirishnoma yuborildi',
+      notifySet: 'Bildirishnoma rejalashtirildi',
+      tierBundle: 'Uchta ball bosqichi',
+      tierBundleRule: '5% · 10% · 15% chegirma · bitta oylik byudjet',
     },
 
     deals: {
-      columns: ['Taklif', 'Holat', 'Ko‘rildi', 'Ochildi', 'Olindi', 'Xarajat'],
+      columns: [
+        'Taklif',
+        'Holat',
+        'Ko‘rildi',
+        'Ochildi',
+        'Olindi',
+        'Olish ulushi',
+        'Xarajat',
+        'Oxirgi 7 kun',
+      ],
       rows: [
         'Ertalabki flat white',
         'Talabalar seshanbasi',
@@ -578,56 +692,285 @@ export const uz: Dictionary = {
         'Qo‘shni chegirmasi',
         'Tushlik to‘plami',
       ],
+      when: [
+        'Du–Ju, 07:00–10:00',
+        'Se, 12:00–17:00',
+        'Har kuni',
+        'Har kuni',
+        'Har kuni',
+        'Du–Ju, 11:00–15:00',
+      ],
+      windows: [
+        '3 avg – 31 avg',
+        '1 iyul – 30 sen',
+        '12 iyul – 12 avg',
+        '15 avg – 15 okt',
+        '5 iyul – 5 sen',
+        '2 iyun – 30 iyun',
+      ],
+      audiences: [
+        'Hamma',
+        'Yaqinda kelganlar',
+        'Kelishdan to‘xtaganlar',
+        'Joyingiz uchun yangilar',
+        'Rus tilida gaplashuvchilar',
+      ],
       states: { live: 'Faol', scheduled: 'Rejalashtirilgan', paused: 'To‘xtatilgan', expired: 'Tugagan' },
+      search: 'Takliflaringiz orasidan qidirish',
+      filters: ['Hammasi', 'Faol', 'Rejalashtirilgan', 'To‘xtatilgan', 'Tugagan'],
+      count: '{total} tadan {n} ta taklif',
+      sortNote:
+        'Olish ulushi bo‘yicha saralangan, eng yaxshisi yuqorida. Faol va rejalashtirilganlar birinchi turadi.',
       insight:
         'Bepul mahsulotli takliflaringiz foizli chegirmalarga qaraganda 2,4 barobar ko‘p olinadi. 5% li tushlik to‘plami sust ishladi — kichik chegirmalar odamlarni kamdan-kam qo‘zg‘atadi.',
-      count: '{n} ta taklif',
+      langsAll: 'Beshala tilda yozilgan',
+      langsSome: '5 tildan {n} tasida yozilgan — qamrovning taxminan {pct}% i yo‘qolmoqda',
+      notify: {
+        none: 'Bildirishnomasiz',
+        scheduled: 'Bildirishnoma rejalashtirilgan',
+        sent: 'Bildirishnoma yuborilgan',
+      },
+      reach: '{total} odamdan {n} tasiga xabar berish mumkin',
+      limit: '{limit} tadan {claimed} tasi olingan',
+      noLimit: 'Olish chegarasi yo‘q',
     },
 
     campaigns: {
       rows: ['Doimiylar mukofoti', 'Qahva ketma-ketligi', 'Tushlik klubi', 'Qishki qaytish'],
-      rule: '{visits} tashrif → mukofot',
-      each: 'har biri {amount}',
+      rewards: [
+        'bepul filtrli qahva',
+        'bepul tort bo‘lagi',
+        'tushlikka {amount} chegirma',
+        'bepul issiq shokolad',
+      ],
+      since: [
+        '12-yanvardan beri ishlaydi',
+        '4-apreldan beri ishlaydi',
+        '2-iyunda boshlangan',
+        '28-martda to‘xtatilgan',
+      ],
+      rule: '{visits} tashrif → {reward}',
+      visitRule:
+        'Kuniga bitta tashrif hisobga olinadi. Mukofot yig‘ilgandan 60 kun keyin kuchini yo‘qotadi.',
       earned: 'Yig‘ilgan',
       used: 'Ishlatilgan',
       unused: '{n} tasi yig‘ilgan-u hech ishlatilmagan',
+      usedRate: '{pct}% ishlatilgan',
       gapTitle: 'Kuzatish kerak bo‘lgan raqam — bu farq',
-      gap: 'Yig‘ilgan-u ishlatilmagan mukofot mijoz shartni bajarib, qaytib kelmaganini bildiradi. Hozir eng katta farq «{name}»da: {n} ta ishlatilmagan mukofot.',
+      gapLede:
+        'Yig‘ilgan-u ishlatilmagan mukofot mijoz shartni bajarib, qaytib kelmaganini bildiradi.',
+      gap: 'Hozir eng katta farq «{name}»da: {n} ta ishlatilmagan mukofot.',
+      totals: ['Yig‘ilgan', 'Ishlatilgan', 'Kutmoqda'],
+      remindLabel: '{n} mijozga eslatish',
+      remindNote: 'Ular mukofot yig‘ib, uni olishga qaytmadi.',
+      remindResult: 'O‘tgan safar {of} tadan {back} tasi bir hafta ichida keldi.',
+      remindSetup: 'Buni men uchun sozlang',
+      near: '{n} doimiy mijoz keyingi mukofotidan bitta tashrif narida.',
+      rebalance:
+        'Sodiqlik byudjetingiz {date} da tugashi kutilmoqda. Vaucherlarda {amount} ishlatilmay turibdi — bir qismini ko‘chiraymi?',
+      rebalanceAction: 'Byudjetni ko‘chirish',
+      budgetTitle: 'Sodiqlik byudjeti',
+      budgetLede:
+        'Shu oyda sodiqlik mukofotlari uchun ajratganingiz. Qaynoq takliflar bunga kirmaydi.',
+      spentNote: 'Mijozlar haqiqatan olgan mukofotlar.',
+      asideNote:
+        'Mijozlar yig‘gan-u hali ishlatmagan mukofotlar uchun ajratilgan pul. Muddati o‘tsa, u qaytadi.',
+      availableNote: 'Yangi mukofotlar uchun hozir bo‘sh.',
+      forecast: 'Shu sur’atda sodiqlik byudjeti {date} gacha yetadi.',
+      forecastOut: 'Sodiqlik byudjeti tugadi. Yangi mukofotlar berilmay qoladi.',
+      forecastSafe: 'Shu sur’atda sodiqlik byudjeti butun {month} oyiga yetadi.',
+      pausedNote:
+        'To‘xtatilgan. A’zolar yig‘ganini saqlab qoladi, yangisi hisobga olinmaydi.',
     },
 
     vouchers: {
+      alertTitle: 'Chegirma byudjetingiz tugab bormoqda',
+      alertBody:
+        'Hozirgi sur’atda u {date} da tugaydi va keyingi oygacha vaucherlar berilmay qoladi.',
+      alertAction: 'Byudjetni oshirish',
+      budgetTitle: 'Vaucherlar byudjeti',
+      budgetLede:
+        'Uchala bosqich uchun bitta umumiy jamg‘arma. Bu kassangizdan chiqadigan haqiqiy pul, ikkala funksiya uchun umumiy summani shu yerda belgilaysiz.',
+      budgetLabel: 'Umumiy chegirma byudjeti',
+      allocNote:
+        'Chiziq nima ketganini va nima ajratilganini ko‘rsatadi. Faqat och qismi hali sizniki.',
+      spent: 'Sarflangan',
+      spentNote: 'Ketdi. Mijozlar haqiqatan ishlatgan vaucherlardagi chegirmalar.',
+      held: 'Ajratilgan',
+      heldNote:
+        'Mijozlar yig‘gan-u hali ishlatmagan vaucherlar uchun ajratilgan pul. Muddati o‘tsa, u qaytadi.',
+      free: 'Mavjud',
+      freeNote: 'Yangi vaucherlar uchun hozir bo‘sh.',
+      forecast: 'Shu sur’atda byudjet {date} gacha yetadi.',
+      forecastOut: 'Byudjet tugadi. Yangi vaucherlar berilmayapti.',
+      forecastSafe: 'Shu sur’atda byudjet butun {month} oyiga yetadi.',
+      buysTitle: 'Qolgani nimaga yetadi',
+      buys: 'yana taxminan {n} ta vaucher',
+      buysNote: 'Mijozlaringiz hozir yetayotgan bosqichlar nisbatida.',
+      avgTitle: 'O‘rtacha tranzaksiya',
+      avgNote: 'Oxirgi 30 kunlik savdongizdan olingan. Noto‘g‘ri ko‘rinsa, o‘zgartiring.',
+      maxTitle: 'Bitta vaucherdan eng ko‘pi',
+      maxNote:
+        'Buyurtma qanchalik katta bo‘lmasin, birorta vaucher hisobdan bundan ko‘pini olmaydi.',
       tiersTitle: 'Kim qaysi bosqichga yetadi',
-      tiersLede: 'Bosqichga ballar olib boradi, ya’ni raqamni oshirsangiz, u yoqqa byudjet kamroq ketadi.',
+      tiersLede:
+        'Bosqichlar pul ushlab turmaydi. Bosqichga ballar olib boradi, ya’ni raqamni oshirsangiz, u yoqqa byudjet kamroq ketadi.',
       columns: ['Bosqich', 'Kerakli ball', 'Berilgan', 'Ishlatilgan', 'Hozirgi xarajat'],
       tier: '{n}% chegirma',
-      budgetTitle: 'Chegirma byudjeti',
-      spent: 'Sarflangan',
-      held: 'Ajratilgan',
-      free: 'Mavjud',
-      heldNote:
-        'Mijozlar yig‘gan-u hali ishlatmagan mukofotlar uchun ajratilgan pul. Muddati o‘tsa, u qaytadi.',
+      points: '{n} ball',
+      mixTitle: 'Pul qayerga ketdi',
+      returnedTitle: 'Qaytgan pul',
+      returnedNote:
+        'Muddati o‘tib ishlatilmagan vaucherlardan shu oyda qaytdi. Uni yana sarflash mumkin.',
+      suggestion: 'Taklif',
+      insight:
+        '{n}% bosqichingiz byudjetning ko‘p qismini yeydi. Pulni sodiq mijozlar uchun saqlamoqchi bo‘lsangiz, uning ball chegarasini ko‘taring.',
     },
 
     customers: {
+      costKicker: 'Yangi mijoz sizga qanchaga tushadi',
+      costUnit: 'har biri, {month} oyida',
+      costLine:
+        '{month} oyida {cost} sarfladingiz va joyingiz uchun yangi bo‘lgan {n} ta mijoz oldingiz. Bu har biriga {each}.',
+      costBreakdown: [
+        'Paylez to‘lovlari',
+        'Sodiqlik mukofotlari',
+        'Vaucher chegirmalari',
+        'Qaynoq takliflar chegirmalari',
+      ],
+      costFinding:
+        'Har bir yangi mijoz {month} oyida sizga {now} ga tushdi — iyundagi {then} ga qarshi. Bu pasayishning ko‘p qismi bepul mahsulotli taklifingizdan.',
+      costAction: 'Takliflaringizni ko‘rish',
+      trendTitle: 'Oxirgi uch oy',
+      trendMonths: ['Iyun', 'Iyul', 'Avgust'],
+      spendByMonth: 'Sizdagi xarajatlar, oylar bo‘yicha',
+      benchmark:
+        'Paylezdagi o‘rtacha Krakov kafesi har bir yangi mijoz uchun {amount} to‘laydi. Bu sizga o‘xshash joylardan olingan taxmin, va’da emas.',
+
+      rosterTitle: 'Mijozlaringiz',
+      rosterIntro:
+        '{total} mijozingizdan {n} tasi profil ulashishni yoqdi, shuning uchun ularni ism bilan ko‘rasiz. Qolganlarning hammasi quyidagi umumiy raqamlarda qoladi.',
+      rosterCount: '{n} tasi ulashmoqda',
+      rosterColumns: ['Mijoz', 'Sarfladi', 'Tashriflar', 'Oxirgi marta', 'Holat'],
+      rosterFilters: ['Hamma', 'Doimiylar', 'Ketganlar', 'Yangilar'],
+      withdrew:
+        'Ulashishni istalgan vaqtda o‘chirish mumkin. Shunda odam bu ro‘yxatdan tushadi va uning tarixi sizga ko‘rinmay qoladi.',
+      statuses: { regular: 'Doimiy', lapsed: 'Ketgan', new: 'Yangi' },
+      today: 'Bugun',
+      daysAgo: '{n} kun oldin',
+      dayAgo: 'kecha',
+      stamps: '{of} tadan {done} ta shtamp',
+      tierProgress: '{n}% bosqichi',
+
+      whenTitle: 'Ular qachon keladi',
+      whenLede:
+        'O‘rtacha bir haftadagi kassadagi har bir QR skanerlash. To‘qroq — gavjumroq degani.',
+      days: ['Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh', 'Ya'],
+      heatCell: 'oddiy haftada taxminan {n} ta tashrif',
+      quietFinding:
+        'Seshanba va chorshanba, 14:00 dan 16:00 gacha — eng tinch soatlaringiz, haftalik o‘rtachadan taxminan 60% past.',
+      quietAction: 'Buni men uchun sozlang',
+      quietSelf: 'O‘zim qilaman',
+      peakFinding:
+        'Eng gavjum soatlar — ish kunlari 08:00 dan 10:00 gacha. Ertalabki taklifingiz allaqachon shunda ishlaydi, shuning uchun u yerda chegirmani chuqurlashtirishdan foyda kam.',
+
       fromTitle: 'Ular qayerdan',
       nations: ['Ukrainlar', 'Polyaklar', 'Belaruslar', 'Gruzinlar', 'Turklar', 'Boshqalar'],
-      readTitle: 'Ilovani qaysi tilda o‘qiydi',
+      nationCount: '{n} ta mijoz · {pct}%',
+      nationHidden:
+        '{n} ta kichikroq guruh «boshqalar»ga qo‘shilgan, shuning uchun hech kimni ajratib bo‘lmaydi.',
+      readTitle: 'Mijozlaringiz qaysi tilda gaplashadi',
+      readLede:
+        'Bu chiziqlar mijozlar guruhlari bo‘yicha hisoblanadi, hech qachon bitta odam bo‘yicha emas. 10 tadan kichik guruhlar «boshqalar»ga qo‘shiladi.',
+      langKicker: 'Ular Paylezda ishlatadigan til',
       langs: ['Ruscha', 'Ukraincha', 'Polyakcha', 'Inglizcha', 'Boshqa'],
+      langFinding:
+        'Mijozlaringizning 42 foizi ilovadan ruscha foydalanadi, lekin faol takliflaringizdan birortasi ham rus tilida yozilmagan.',
+      langAction: 'Ular uchun taklif yaratish',
       privacy:
         'Bu yerdagi hamma narsa guruhlar bo‘yicha hisoblanadi. Paylez hech qachon alohida odamni ko‘rsatmaydi, o‘ntadan kichik guruhlar esa «boshqalar»ga qo‘shiladi.',
+
       backTitle: 'Ular qaytadimi',
+      backLede: 'Birinchi marta kelganlar va ulardan nechtasi 30 kun ichida qaytgani',
       months: ['Aprel', 'May', 'Iyun', 'Iyul'],
-      cohort: '{first} dan {back} tasi 30 kun ichida qaytdi',
-      finding:
-        'Mijozlaringizning 38 foizi ukrainlar, 42 foizi esa ilovani ruscha o‘qiydi. Faol takliflaringizdan birortasi ham rus tilida gaplashuvchilarga qaratilmagan.',
+      monthNames: [
+        'Yanvar', 'Fevral', 'Mart', 'Aprel', 'May', 'Iyun',
+        'Iyul', 'Avgust', 'Sentyabr', 'Oktyabr', 'Noyabr', 'Dekabr',
+      ],
+      cohort: '{first} dan {back} tasi · {pct}%',
+      backFinding:
+        '{month} oyida {first} kishi sizga birinchi marta keldi. {back} tasi 30 kun ichida qaytdi — {pct}%.',
+      lapsedFinding:
+        'Doimiy mijozlaringizdan {n} tasi 30 kundan beri kelmadi. Ilgari ular haftada bir marta kelardi.',
+
+      compareTitle: 'Boshqalar bilan qanday ko‘rinasiz',
+      compareNote:
+        'Paylezdagi boshqa {n} ta Krakov kafesi bilan solishtirildi. Raqamlar joylar bo‘yicha o‘rtachalanadi, hech qachon bittalab ko‘rsatilmaydi.',
+      compareRows: [
+        'Taklif olish ulushi',
+        '30 kun ichida ikkinchi tashrif',
+        'Yangi mijoz narxi',
+      ],
+      compareThem: 'boshqalarda o‘rtacha {amount}',
+      roiTitle: 'Pulingiz qayerda ishlaydi',
+      roiLede: 'Uchta vositangizning har biri {month} oyida qanchaga tushdi va nima sotib oldi',
+      roiRows: ['Sodiqlik kampaniyalari', 'Qaynoq takliflar', 'Vaucherlar'],
+      roiUnits: ['takroriy tashrif', 'olingan taklif', 'ishlatilgan vaucher'],
+      roiPer: ['bir takroriy tashrifga', 'bir olishga', 'bir ishlatishga'],
+      roiLine: '{cost} sarflangan · {n} {unit}',
+
+      patterns: [
+        'Ish kunlari ertalab, ko‘pincha 9 gacha',
+        'Ish kunlari ertalab',
+        'Dam olish kunlari, kech ertalab',
+        'Ilgari juma kunlari tushdan keyin kelardi',
+        'Ikki tashrif, ikkalasi ham tushdan keyin',
+        'Ish kunlari tushlik',
+        'Dam olish kunlari ertalab',
+        'Tushdan keyin, turli kunlarda',
+        'Deyarli har ish kuni ertalab',
+        'Uch tashrif, tushdan keyin',
+        'Seshanba doimiysi edi',
+        'Dam olish kunlari',
+        'Birinchi tashrif ikki kun oldin',
+        'Payshanba tushdan keyin, so‘nggi paytda kamroq',
+      ],
+      rewards: [
+        '15% bosqichi — eng ko‘p sarflovchingiz',
+        'Bepul qahvagacha bitta shtamp',
+        '10% bosqichi',
+        '10% bosqichi — sovumoqda',
+        '4 tadan 1 ta shtamp',
+        'Bepul qahva olishga tayyor',
+        '4 tadan 2 ta shtamp',
+        '15% bosqichi',
+        '10% bosqichi — ketgan',
+        '10% bosqichi — sekinlashmoqda',
+      ],
     },
 
     scans: {
-      columns: ['Qachon', 'Mijoz', 'Sarfladi', 'Ballar', 'Chek', 'Jarayon'],
+      columns: [
+        'Qachon',
+        'Mijoz',
+        'Birinchi tashrifmi?',
+        'Sarfladi',
+        'Ballar',
+        'Chek',
+        'Qayerda',
+        'Mukofotgacha jarayon',
+      ],
+      filters: ['Hamma', 'Birinchi tashrif', 'Qaytib keldi'],
       first: 'Birinchi tashrif',
       again: 'Qaytib keldi',
       today: 'Bugun',
-      count: '48 skanerlashdan {n} tasi ko‘rsatilmoqda',
+      places: ['Bratislavska 6', 'Bratislavska 6', 'Kleparz kioski'],
+      noCampaign: 'Kampaniya ishlamayapti',
+      progress: '{need} tadan {done} ta skanerlash',
+      toGo: 'yana {n} ta',
+      ready: 'mukofot tayyor',
+      count: '{n} ta skanerlash',
+      showing: '{total} tadan {n} tasi ko‘rsatilmoqda',
     },
     collapse: 'Menyuni yig‘ish',
     expand: 'Menyuni ochish',
@@ -1425,6 +1768,30 @@ export const uz: Dictionary = {
       enter: 'Hisoblash uchun summa kiriting.',
       saved: 'Saqlangan juftliklar',
       savedNote: "Ekranning tepasiga mahkamlangan, shuning uchun kursni tekshirish qidiruv emas, bitta tegish.",
+      pick: 'Valyuta',
+      search: '19 ta valyuta ichidan qidiring',
+      noMatch: '"{query}" bo\'yicha hech narsa topilmadi.',
+      names: {
+        EUR: 'Yevro',
+        USD: 'AQSH dollari',
+        GBP: 'Britaniya funti',
+        PLN: 'Polsha zlotiysi',
+        UAH: 'Ukraina grivnasi',
+        RUB: 'Rossiya rubli',
+        UZS: "O'zbekiston so'mi",
+        KZT: "Qozog'iston tengesi",
+        TRY: 'Turkiya lirasi',
+        CZK: 'Chexiya kronasi',
+        CHF: 'Shveytsariya franki',
+        BYN: 'Belarus rubli',
+        MDL: 'Moldova leyi',
+        GEL: 'Gruziya larisi',
+        AMD: 'Armaniston drami',
+        AZN: 'Ozarbayjon manati',
+        TMT: 'Turkmaniston manati',
+        KGS: "Qirg'iziston somi",
+        TJS: 'Tojikiston somoniysi',
+      },
       bullets: [
         {
           title: 'Banklararo kurs, ustamasiz',
