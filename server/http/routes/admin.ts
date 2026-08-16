@@ -380,7 +380,7 @@ export const adminRoutes: Route[] = [
     handler: (ctx) => {
       const search = qStr(ctx, 'q');
       return ctx.db.all(
-        `SELECT u.id, u.display_name, u.city, u.country, u.status, u.created_at,
+        `SELECT u.id, u.display_name, u.city, u.country_code, u.status, u.created_at,
                 u.points_cache AS points, u.referral_code,
                 (SELECT COUNT(*) FROM transactions t
                   WHERE t.user_id = u.id AND t.status = 'committed') AS scans,

@@ -1139,6 +1139,10 @@ async function trafficRules(): Promise<void> {
     null,
   );
 
+  /* The feed is a five-arm union over five tables' real column names. */
+  const feed = traffic.activity(w.db, 20);
+  check('the activity feed runs', Array.isArray(feed));
+
   const report = traffic.overview(w.db, traffic.defaultRange(plusDays(at, 1)));
   check('the console counts the visits', report.sessions >= 3);
   check('…and the pages', report.pages.length > 0);
@@ -1161,6 +1165,35 @@ async function trafficRules(): Promise<void> {
     w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM web_events WHERE path = '/old'`)?.n,
     0,
   );
+
+  /* Part C is twenty-four endpoints behind `auth: 'admin'`, and before
+     `provisionAdmin` nothing in the server could produce one. */
+  eq(
+    'no admin exists without the environment',
+    await accounts.provisionAdmin(w.db, undefined, undefined),
+    'skipped',
+  );
+  eq(
+    'a short admin password is refused rather than accepted quietly',
+    await accounts
+      .provisionAdmin(w.db, 'ops@verify.test', 'x')
+      .then(() => 'accepted')
+      .catch((error: unknown) => (error instanceof DomainError ? error.code : 'other')),
+    'validation_failed',
+  );
+  eq(
+    'provisioning creates one',
+    await accounts.provisionAdmin(w.db, 'ops@verify.test', 'operations-key'),
+    'created',
+  );
+  eq(
+    'and is idempotent, so a restart rotates rather than fails',
+    await accounts.provisionAdmin(w.db, 'ops@verify.test', 'operations-key-2'),
+    'updated',
+  );
+  const asAdmin = await accounts.signIn(w.db, { email: 'ops@verify.test', password: 'operations-key-2' });
+  check('the admin signs in with the rotated key', asAdmin.roles.includes('admin'));
+  eq('…and lands in admin mode', asAdmin.session.mode, 'admin');
 
   /* The throttle `CONFIG.auth.signInPerHour` has always described. */
   await accounts.signUp(w.db, {
@@ -1378,6 +1411,50 @@ async function httpSurface(): Promise<void> {
 
   const missing = await call('GET', '/v1/nope');
   eq('an unknown path is 404', missing.status, 404);
+
+  /* Part C, over HTTP and with a real admin, because the queries behind these
+     are hand-written SQL against columns nothing else in this file selects.
+     Calling `overview()` in isolation does not compile the route's own query,
+     and two of these shipped with a wrong column name that only a request could
+     find. Every admin read is exercised for that reason. */
+  const beacon = await call('POST', '/v1/traffic', {
+    body: { events: [{ kind: 'view', path: '/#/b2b' }, { kind: 'action', path: '/#/b2b', name: 'pricing' }] },
+  });
+  eq('the traffic beacon is public', beacon.status, 200);
+  eq('and takes no identifier', beacon.body.recorded, 2);
+
+  const outsider = await call('GET', '/v1/admin/traffic', { token });
+  eq('a customer cannot read the console', outsider.status, 403);
+
+  await accounts.provisionAdmin(w.db, 'ops@verify.test', 'operations-key');
+  const adminIn = await call('POST', '/v1/auth/signin', {
+    body: { email: 'ops@verify.test', password: 'operations-key' },
+  });
+  eq('the provisioned admin signs in', adminIn.status, 200);
+  const adminToken = adminIn.body.token as string;
+
+  for (const path of [
+    '/v1/admin/traffic',
+    '/v1/admin/activity',
+    '/v1/admin/users',
+    '/v1/admin/venues',
+    '/v1/admin/overview',
+    '/v1/admin/queue',
+    '/v1/admin/fraud',
+    '/v1/admin/trials',
+    '/v1/admin/audit',
+    '/v1/admin/config',
+    '/v1/admin/verifications',
+    '/v1/admin/tags',
+  ]) {
+    const read = await call('GET', path, { token: adminToken });
+    eq(`GET ${path} answers`, read.status, 200);
+  }
+
+  const feed = await call('GET', '/v1/admin/activity?limit=10', { token: adminToken });
+  check('the activity feed is chronological', feed.body.events.length >= 0);
+  const seenTraffic = await call('GET', '/v1/admin/traffic', { token: adminToken });
+  check('the console sees the beacon', (seenTraffic.body.views as number) >= 1);
 
   server.close();
   w.db.close();

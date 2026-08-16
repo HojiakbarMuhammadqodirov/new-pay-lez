@@ -375,12 +375,12 @@ export function activity(db: Db, limit = 100) {
       UNION ALL
       SELECT * FROM (
         SELECT issued_at AS at, 'voucher' AS kind, code AS subject,
-               CAST(points_cost AS TEXT) AS detail
+               CAST(points_spent AS TEXT) AS detail
           FROM issued_vouchers ORDER BY issued_at DESC LIMIT $n)
       UNION ALL
       SELECT * FROM (
         SELECT finished_at AS at, 'game' AS kind, game_type AS subject,
-               CAST(points_awarded AS TEXT) AS detail
+               CAST(score AS TEXT) AS detail
           FROM game_sessions WHERE finished_at IS NOT NULL
          ORDER BY finished_at DESC LIMIT $n)
       ORDER BY at DESC LIMIT $n`,

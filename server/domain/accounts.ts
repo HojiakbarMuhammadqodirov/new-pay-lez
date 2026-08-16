@@ -258,6 +258,64 @@ export interface SignedIn {
  * enumeration oracle that is otherwise free to use.
  */
 /**
+ * Provision the one admin, from the environment.
+ *
+ * Part C's console is twenty-four endpoints behind `auth: 'admin'`, and nothing
+ * else in this server grants that role — sign-up cannot produce one (§1.2, and
+ * the site says the same thing at the type level with `ChoosableType`), the
+ * import does not carry one, and there is no endpoint that promotes anybody.
+ * Without this the whole operations surface is unreachable.
+ *
+ * From the environment and **never a default**, which is the entire point. A
+ * seeded admin password in a repository is a back door into every venue's
+ * money, and it would be found by whoever reads this file next. If the
+ * variables are unset the server says the console is unreachable and carries on
+ * serving everything else, because that is true and recoverable; a fallback
+ * credential is neither.
+ *
+ * Idempotent: it updates the password of the account it already made rather
+ * than failing on the second boot, so rotating the key is `PAYLEZ_ADMIN_PASSWORD=…`
+ * and a restart.
+ */
+export async function provisionAdmin(
+  db: Db,
+  email: string | undefined,
+  password: string | undefined,
+  at: Iso = now(),
+): Promise<'created' | 'updated' | 'skipped'> {
+  if (!email || !password) return 'skipped';
+  if (password.length < CONFIG.auth.minPasswordLength) {
+    throw new DomainError('validation_failed', 'the admin password is shorter than the minimum');
+  }
+
+  const norm = normalise(email);
+  const hash = await hashPassword(password);
+  const existing = db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, { e: norm });
+
+  return db.tx(() => {
+    const id = existing?.id ?? newId('usr');
+    if (existing) {
+      db.run(`UPDATE users SET password_hash = $h, status = 'active', updated_at = $t WHERE id = $i`, {
+        h: hash,
+        t: at,
+        i: id,
+      });
+    } else {
+      db.run(
+        `INSERT INTO users (id, email, email_norm, display_name, auth_provider, password_hash,
+                            language, status, created_at, updated_at)
+         VALUES ($i, $e, $n, 'Paylez operations', 'email', $h, 'en', 'active', $t, $t)`,
+        { i: id, e: email, n: norm, h: hash, t: at },
+      );
+    }
+    /* The role is granted separately and idempotently: an operator who existed
+       as a customer first keeps that row and gains this one. */
+    grantRole(db, id, 'admin', at);
+    return existing ? 'updated' : 'created';
+  });
+}
+
+/**
  * The sign-in rate limit `CONFIG.auth.signInPerHour` has always described.
  *
  * Keyed by the **address tried**, not by the account found. An attempt against

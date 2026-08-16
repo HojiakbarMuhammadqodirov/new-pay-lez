@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
 import { importLegacy } from './db/import.ts';
+import { provisionAdmin } from './domain/accounts.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { createApi } from './http/server.ts';
 import { allRoutes } from './http/routes/index.ts';
@@ -85,6 +86,22 @@ export async function main(): Promise<void> {
       '\n  ⚠  PAYLEZ_SECRET is unset — QR codes and sessions are signed with a key that is in the repo.',
     );
     console.warn('     Set it before this points at anybody’s data.\n');
+  }
+
+  /* Part C's console is unreachable without this — see `provisionAdmin`. It is
+     reported either way, because "the operations console has no way in" is not
+     a thing to discover from a 403 three weeks later. */
+  const admin = await provisionAdmin(
+    db,
+    process.env.PAYLEZ_ADMIN_EMAIL,
+    process.env.PAYLEZ_ADMIN_PASSWORD,
+  );
+  if (admin === 'skipped') {
+    console.warn(
+      '  ⚠  PAYLEZ_ADMIN_EMAIL / PAYLEZ_ADMIN_PASSWORD are unset — the admin console has no account and /v1/admin/* is unreachable.',
+    );
+  } else {
+    console.log(`admin account ${admin}: ${process.env.PAYLEZ_ADMIN_EMAIL}`);
   }
 
   const all = [...routes, indexRoute(routes)];

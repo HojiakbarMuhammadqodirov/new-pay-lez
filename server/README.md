@@ -53,6 +53,7 @@ holds the points ledger, and a supply chain is a thing that can be compromised.
 | `PAYLEZ_BILLING` | `local` | `live` refuses to run without a real adapter. |
 | `PAYLEZ_PUSH` | `local` | Same, for FCM/APNs. |
 | `PAYLEZ_LLM` | `off` | The assistant composes deterministically when off. |
+| `PAYLEZ_ADMIN_EMAIL` / `PAYLEZ_ADMIN_PASSWORD` | unset | Provisions the one admin at boot. Unset means `/v1/admin/*` is unreachable. |
 
 ## Layout
 
@@ -211,3 +212,20 @@ its own `users.ts` says must be replaced by a server. The API shapes were chosen
 to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
 fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
 module, not a redesign. `GET /v1` lists all 125 endpoints.
+
+### The admin account
+
+Part C's console is twenty-four endpoints behind `auth: 'admin'`, and **nothing
+else in this server grants that role** — sign-up cannot produce one (§1.2), the
+import does not carry one, and no endpoint promotes anybody. `provisionAdmin`
+runs at boot and is the only way in:
+
+```bash
+PAYLEZ_ADMIN_EMAIL=ops@pay-lez.com PAYLEZ_ADMIN_PASSWORD='…' npm run server
+```
+
+From the environment and **never a default**. A seeded admin password in a
+repository is a back door into every venue's money, and it would be found by
+whoever reads the file next. With the variables unset the server says so at boot
+and serves everything else; the console is simply unreachable, which is true and
+recoverable. It is idempotent, so rotating the key is a new value and a restart.
