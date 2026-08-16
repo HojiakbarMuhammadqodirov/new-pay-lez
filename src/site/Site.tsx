@@ -17,6 +17,7 @@ import { LevelRun } from './level/LevelRun';
 import { Header } from './Header';
 import { useLanguage } from './i18n/context';
 import { LanguageProvider } from './i18n/LanguageProvider';
+import { startTraffic, trackView } from './api/traffic';
 import { LearnPage } from './learn';
 import { MarketTape } from './market/MarketTape';
 import { NetworkWeb } from './network/NetworkWeb';
@@ -83,6 +84,21 @@ function SiteContent() {
   useEffect(() => {
     if (route !== requested) navigate(route);
   }, [route, requested]);
+
+  /*
+   * The traffic beacon. Started once, and told about the *resolved* route rather
+   * than the requested one — a visitor bounced from `#/dashboard` to sign-in
+   * saw sign-in, and recording the page they were refused would make the most
+   * popular page on the site one nobody ever read.
+   *
+   * It is fire-and-forget and swallows every failure, so the usual case — no
+   * server running — costs nothing and says nothing. See `api/traffic.ts` for
+   * the three things it must never start doing.
+   */
+  useEffect(() => startTraffic(), []);
+  useEffect(() => {
+    trackView(`#/${route}`);
+  }, [route]);
 
   /*
    * Re-scan on navigation *and* on a language change. Both hooks bind to the

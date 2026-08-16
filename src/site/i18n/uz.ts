@@ -99,7 +99,7 @@ export const uz: Dictionary = {
       'Hisoblar',
       'O‘yinchilar',
     ],
-    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar'],
+    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt'],
 
     services: {
       title: 'Biznes xizmatlari',
@@ -137,6 +137,69 @@ export const uz: Dictionary = {
     },
 
     note: 'Bu hisoblar ro‘yxati shu brauzerda saqlanadi. Hali server yo‘q, shuning uchun konsol tahrirlamaydi, faqat o‘qiydi — auth/users.ts’ga qarang.',
+
+    /* ── to‘rtinchi bo‘lim: saytning o‘zi, serverdan so‘raydigan yagonasi ── */
+    website: {
+      title: 'Sayt',
+      lede: 'Tashrifchilar, sahifalar va faollik, {from} – {to}.',
+      loading: 'Serverdan so‘ralmoqda…',
+      empty: 'Hali hech narsa yozilmagan.',
+      kpis: [
+        'Tashrifchilar (kunlik, yig‘indi)',
+        'Tashriflar',
+        'Sahifa ko‘rishlar',
+        'Amallar',
+        'Kirgan foydalanuvchi tashriflari',
+        'Qaytgan hisoblar',
+      ],
+      privacy:
+        'Tashrifchi — har kuni o‘zgaradigan xesh, shuning uchun hech kim kunlar oralig‘ida kuzatilmaydi va manzil saqlanmaydi. Shu sababli anonim trafik uchun “qaytgan tashrifchilar” ko‘rsatkichi yo‘q — u nol emas, uni o‘lchab bo‘lmaydi.',
+      trend: 'Kunlik tashrifchilar',
+      pages: 'Eng ko‘p o‘qilgan sahifalar',
+      referrers: 'Qayerdan kelishgan',
+      countries: 'Davlatlar',
+      devices: 'Qurilmalar',
+      actions: 'Nima qilishdi',
+
+      people: {
+        title: 'Serverdagi hisoblar',
+        lede: 'Backend biladigan hamma, eng yangisidan boshlab.',
+        columns: ['Ism', 'Shahar', 'Rol', 'Ballar', 'Skanlar', 'Qo‘shilgan'],
+      },
+
+      feed: {
+        title: 'Faollik',
+        lede: 'Platformada sodir bo‘lgan hamma narsa, eng yangisidan boshlab.',
+        kinds: {
+          signup: 'Ro‘yxatdan o‘tdi',
+          venue: 'Yangi joy',
+          transaction: 'Skan',
+          voucher: 'Vaucher',
+          game: 'O‘yin',
+        } as Record<string, string>,
+      },
+
+      connect: {
+        title: 'Backendga ulanish',
+        lede: 'Bu bo‘lim jonli serverni o‘qiydi, shuning uchun operatsion hisob kerak — PAYLEZ_ADMIN_EMAIL bergan hisob, demo kirish emas.',
+        email: 'Operatsion e-pochta',
+        password: 'Parol',
+        submit: 'Ulanish',
+        working: 'Ulanmoqda…',
+        refused: 'Rad etildi. Manzil va parolni tekshiring.',
+        notAdmin: 'Bu hisob bor, lekin operator emas.',
+        unreachable: 'Javob yo‘q. Backend ishlayaptimi (npm run server)?',
+      },
+
+      down: {
+        title: 'Backend javob bermayapti',
+        unreachable:
+          'Hech narsa tinglamayapti. npm run server bilan ishga tushiring yoki server boshqa joyda bo‘lsa VITE_API_URL ni belgilang.',
+        refused: 'Server javob berdi, lekin bu hisobni rad etdi.',
+        retry: 'Qayta urinish',
+        disconnect: 'API dan chiqish',
+      },
+    },
 
     analytics: {
       back: 'Barcha xizmatlar',

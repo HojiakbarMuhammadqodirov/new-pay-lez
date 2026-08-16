@@ -8,6 +8,7 @@ import {
   type AdminService,
 } from './content';
 import { ServiceAnalytics } from './adminAnalytics';
+import { AdminWebsite } from './adminWebsite';
 import { ThemeToggle } from './Header';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
@@ -383,6 +384,10 @@ export function AdminPage() {
                     </ul>
                   )}
                 </section>
+              ) : tab === 3 ? (
+                /* The one tab that is not derived on this device — it asks the
+                   backend, and says so when the backend is not there. */
+                <AdminWebsite />
               ) : (
                 <section className="adm-block" data-reveal>
                   <div className="adm-block-head">

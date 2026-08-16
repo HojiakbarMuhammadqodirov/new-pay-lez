@@ -11613,3 +11613,33 @@ button {
     transform: none;
   }
 }
+
+/*
+ * The console's traffic trend.
+ *
+ * A chart states its own height: the columns inside are percentages, and a
+ * percentage height against an `auto` parent resolves to nothing — which is what
+ * the country comparison did before `.adm-compare-cols` was given a definite
+ * one. Same rule, same fix.
+ *
+ * `align-items: flex-end` so a short day grows from the floor, and the columns
+ * flex rather than taking a fixed width: thirty days on a phone and thirty days
+ * on a desktop are the same chart at two densities, not two charts.
+ */
+.adm-web-trend {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 100%;
+  height: 8rem;
+}
+
+.adm-web-trend span {
+  flex: 1 1 0;
+  min-width: 2px;
+  border-radius: 3px 3px 0 0;
+  background: var(--accent);
+  /* A day with no visitors is still a day, and reads as a floor tick rather
+     than a gap in the axis. */
+  opacity: 0.85;
+}

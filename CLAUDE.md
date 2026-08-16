@@ -455,11 +455,34 @@ bundled, the flag font copied into `public/`), geometry comes from the
   the reading the rule exists to protect, and `backdrop-filter` on a dozen
   stacked panels is the most expensive thing on the page. Reduced-transparency
   and reduced-motion both turn it off.
-- **The console reports; it does not edit.** There is no server, so every number
-  on `#/admin` is derived by the same pure functions the app uses —
-  `profileCompleteness` decides "live" there exactly as it does on the owner's
-  own dashboard. Adding a control that writes to somebody else's account means
-  deciding what happens when two tabs disagree, which is a server's job.
+- **The console reports; it does not edit.** Every number on `#/admin` is
+  derived by the same pure functions the app uses — `profileCompleteness`
+  decides "live" there exactly as it does on the owner's own dashboard. Adding a
+  control that writes to somebody else's account means deciding what happens when
+  two tabs disagree, which is a server's job.
+- **The console's fourth tab is the one screen that asks a server, and it says
+  so when there is none.** Three tabs are derived on this device; "who visited
+  the site" is a question about people who never signed in and never touched this
+  browser, so `adminWebsite.tsx` reads `/v1/admin/*` through `api/`. It is the
+  first thing in `src/` that talks to `server/` — the session, wallet and games
+  are still `localStorage`. Two rules come with it. **A failed request is a
+  state, not a zero**: `useApi` returns `loading | ready | error` as a union
+  precisely so "not connected" and "connected, and the answer is 0" cannot be
+  confused, and the tab renders a "backend is not answering" panel rather than an
+  empty chart. And **the console signs in to the API separately from the site**,
+  because the site's admin is a seed in `auth/users.ts` and the server's is
+  whoever `PAYLEZ_ADMIN_EMAIL` provisioned; that panel disappears when the site's
+  own auth moves to the server.
+- **The traffic beacon must not acquire a memory.** `api/traffic.ts` sends page
+  views and named actions to `POST /v1/traffic` and holds *nothing* — no cookie,
+  no `localStorage` key, no visitor id. The server identifies a visitor by a hash
+  of the connection that rotates daily, which is what keeps the whole thing
+  outside consent-banner territory; a client that generates an id to "improve"
+  the numbers has quietly built a tracking cookie and earned the banner. The cost
+  is that returning *anonymous* visitors is unmeasurable — the API returns
+  `anonymousReturningVisitors: null` and the console prints a sentence. **Never
+  render that as 0**; it is the same lie `suppressed` exists to prevent one screen
+  over.
 - **A venue's analytics come out of one number.** `ADMIN_SERVICES` gives each
   seeded venue a `scale`, and `adminMetrics.ts` derives the whole month from it —
   cards, trends, tables, insights and the country comparison. That is what keeps

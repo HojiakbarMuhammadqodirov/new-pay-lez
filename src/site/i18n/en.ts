@@ -123,7 +123,7 @@ export const en = {
       'Players',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
-    tabs: ['Services', 'Offers', 'People'],
+    tabs: ['Services', 'Offers', 'People', 'Website'],
 
     services: {
       title: 'Business services',
@@ -162,6 +162,70 @@ export const en = {
     },
 
     note: 'This directory lives in this browser. There is no server behind it yet, so the console reads rather than edits — see auth/users.ts.',
+
+    /* ── the fourth tab: the site itself, and the only one that asks a server ── */
+    website: {
+      title: 'The website',
+      lede: 'Visitors, pages and activity, {from} to {to}.',
+      loading: 'Asking the server…',
+      empty: 'Nothing recorded yet.',
+      /* Index-aligned with the six tiles in `adminWebsite.tsx`. */
+      kpis: [
+        'Visitors (daily, summed)',
+        'Visits',
+        'Page views',
+        'Actions',
+        'Signed-in visits',
+        'Returning accounts',
+      ],
+      privacy:
+        'A visitor is a hash that changes every day, so nobody is followed between days and no address is stored. That is why there is no “returning visitors” figure for anonymous traffic — it is not measurable, rather than zero.',
+      trend: 'Visitors per day',
+      pages: 'Most-read pages',
+      referrers: 'Where they came from',
+      countries: 'Countries',
+      devices: 'Devices',
+      actions: 'What they did',
+
+      people: {
+        title: 'Accounts on the server',
+        lede: 'Everyone the backend knows about, newest first.',
+        columns: ['Name', 'City', 'Role', 'Points', 'Scans', 'Joined'],
+      },
+
+      feed: {
+        title: 'Activity',
+        lede: 'Everything that has happened across the platform, newest first.',
+        kinds: {
+          signup: 'Signed up',
+          venue: 'New venue',
+          transaction: 'Scan',
+          voucher: 'Voucher',
+          game: 'Game',
+        } as Record<string, string>,
+      },
+
+      connect: {
+        title: 'Connect to the backend',
+        lede: 'This tab reads the live server, so it needs the operations account — the one PAYLEZ_ADMIN_EMAIL provisioned, not the demo sign-in.',
+        email: 'Operations email',
+        password: 'Password',
+        submit: 'Connect',
+        working: 'Connecting…',
+        refused: 'That was refused. Check the address and password.',
+        notAdmin: 'That account exists but is not an operator.',
+        unreachable: 'No answer. Is the backend running (npm run server)?',
+      },
+
+      down: {
+        title: 'The backend is not answering',
+        unreachable:
+          'Nothing is listening. Start it with npm run server, or set VITE_API_URL if it lives somewhere else.',
+        refused: 'The server answered, but refused this account.',
+        retry: 'Try again',
+        disconnect: 'Sign out of the API',
+      },
+    },
 
     /* ── one venue, five tabs ── */
 

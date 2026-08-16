@@ -536,7 +536,7 @@ export const ADMIN_VOUCHER_ROWS: Array<{
 ];
 
 /** The console's own tabs, and the analytics view's. Icons are structure. */
-export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant'];
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant', 'bars'];
 export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
 
 /** The nine Dashboard cards, in the original's order. */

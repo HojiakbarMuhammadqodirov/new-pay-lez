@@ -104,7 +104,7 @@ export const pl: Dictionary = {
       'Konta',
       'Gracze',
     ],
-    tabs: ['Usługi', 'Oferty', 'Ludzie'],
+    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna'],
 
     services: {
       title: 'Usługi biznesowe',
@@ -142,6 +142,69 @@ export const pl: Dictionary = {
     },
 
     note: 'Ta baza kont jest w tej przeglądarce. Nie ma jeszcze serwera, więc konsola czyta, a nie edytuje — zobacz auth/users.ts.',
+
+    /* ── czwarta zakładka: sama witryna, jedyna pytająca serwer ── */
+    website: {
+      title: 'Witryna',
+      lede: 'Odwiedzający, strony i aktywność, {from} – {to}.',
+      loading: 'Pytamy serwer…',
+      empty: 'Nic jeszcze nie zapisano.',
+      kpis: [
+        'Odwiedzający (dziennie, suma)',
+        'Wizyty',
+        'Odsłony',
+        'Akcje',
+        'Wizyty zalogowanych',
+        'Powracające konta',
+      ],
+      privacy:
+        'Odwiedzający to skrót zmieniany każdego dnia, więc nikt nie jest śledzony między dniami i żaden adres nie jest zapisywany. Dlatego dla ruchu anonimowego nie ma liczby „powracających” — jej nie da się zmierzyć, a nie jest ona zerem.',
+      trend: 'Odwiedzający dziennie',
+      pages: 'Najczęściej czytane strony',
+      referrers: 'Skąd przyszli',
+      countries: 'Kraje',
+      devices: 'Urządzenia',
+      actions: 'Co zrobili',
+
+      people: {
+        title: 'Konta na serwerze',
+        lede: 'Wszyscy, o których wie backend, od najnowszych.',
+        columns: ['Nazwa', 'Miasto', 'Rola', 'Punkty', 'Skany', 'Dołączył'],
+      },
+
+      feed: {
+        title: 'Aktywność',
+        lede: 'Wszystko, co wydarzyło się na platformie, od najnowszych.',
+        kinds: {
+          signup: 'Rejestracja',
+          venue: 'Nowy lokal',
+          transaction: 'Skan',
+          voucher: 'Voucher',
+          game: 'Gra',
+        } as Record<string, string>,
+      },
+
+      connect: {
+        title: 'Połącz z backendem',
+        lede: 'Ta zakładka czyta działający serwer, więc potrzebuje konta operacyjnego — tego z PAYLEZ_ADMIN_EMAIL, nie demonstracyjnego logowania.',
+        email: 'E-mail operacyjny',
+        password: 'Hasło',
+        submit: 'Połącz',
+        working: 'Łączenie…',
+        refused: 'Odmowa. Sprawdź adres i hasło.',
+        notAdmin: 'To konto istnieje, ale nie jest kontem operatora.',
+        unreachable: 'Brak odpowiedzi. Czy backend działa (npm run server)?',
+      },
+
+      down: {
+        title: 'Backend nie odpowiada',
+        unreachable:
+          'Nic nie nasłuchuje. Uruchom npm run server albo ustaw VITE_API_URL, jeśli serwer jest gdzie indziej.',
+        refused: 'Serwer odpowiedział, ale odmówił temu kontu.',
+        retry: 'Spróbuj ponownie',
+        disconnect: 'Wyloguj z API',
+      },
+    },
 
     analytics: {
       back: 'Wszystkie usługi',
