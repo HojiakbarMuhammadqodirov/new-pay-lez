@@ -73,11 +73,32 @@ Two things about it are easy to undo by accident and both are checked:
   available — which is the same rule `partnerMetrics.ts` states on the front end,
   enforced here on the money that actually moves.
 
+Two of the four question banks do not come from `new-data/`. The capitals and
+flags banks are derived from the `CountryCapital` export; **the general and
+Poland banks are the hand-delivered CSVs in `updates/`**, the same files
+`npm run banks` reads for the front end, and `db/import.ts` reads that directory
+as a second source. They were missing for a while and the symptom is worth
+recognising: `POST /v1/games/sessions {gameType:"brain"}` returns a 404 saying
+"no questions in the brain bank", and two of the seven games are unplayable
+while every other endpoint looks fine. The import reports it in its notes when
+the files are not there rather than importing nothing quietly.
+
 The React site still runs on `localStorage` (`src/site/auth/`, which says so at
 the top of `users.ts`). Wiring it to this backend is a client module, not a
 redesign: the API returns the fields `PlayerState` and `BusinessProfile` already
 use. Until somebody does, the two halves are independent and both are correct on
 their own terms.
+
+**The Flutter app is the one client that does talk to it.** It lives in the
+`Pay-lez mobile` repo beside this one and is wired end to end — the four-step
+gate from both sides, all seven games on the server's move-by-move protocol, the
+wallet, the guidebook, and the partner companion. Two things follow for anybody
+changing `server/`. Its `test/live_test.dart` runs the whole journey against
+`npm run server` and will catch a renamed field before a phone does, so **run it
+after changing a response shape**. And its `test/protocol_test.dart` holds
+response bodies copied verbatim from a running server — a deliberate duplicate
+of this repo's shapes, because a mapper written against a guess passes a test
+written against the same guess.
 
 ### `landing/` and `b2b/` are reference material
 

@@ -271,6 +271,21 @@ const SCHEMAS: Record<string, Schema> = {
       vouchers: arrayOf(ref('Voucher')),
       rewards: arrayOf(ref('Reward')),
       giftCards: arrayOf({ type: 'object' }),
+      stampCards: arrayOf({
+        type: 'object',
+        description:
+          'Cards this customer has started, across every venue. A paused campaign’s card is still listed — the stamps already collected stay valid.',
+        properties: {
+          campaign_id: str(),
+          venue_id: str(),
+          venue_name: str(),
+          label: str(),
+          stamps: int(),
+          required: int(),
+          cycles: int(),
+          status: { type: 'string', enum: ['active', 'paused'] },
+        },
+      }),
     },
   },
 

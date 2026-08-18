@@ -46,7 +46,7 @@ export interface ImportSummary {
   notes: string[];
 }
 
-export function importLegacy(db: Db, dir: string): ImportSummary {
+export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSummary {
   const at = now();
   const counts: Record<string, number> = {};
   const notes: string[] = [];
@@ -840,6 +840,24 @@ export function importLegacy(db: Db, dir: string): ImportSummary {
   importCapitals(db, countries, bump);
   importFlags(db, countries, bump);
 
+  /* The other two banks are hand-delivered exports rather than Base44 tables, so
+     they sit in `updates/` beside the front end's own copy of them and are read
+     from there. Without them `POST /v1/games/sessions {gameType:"brain"}` is a
+     404 and two of the seven games cannot be played at all — which is a data
+     gap, not a missing feature, and it is fixed here rather than by teaching the
+     client to hide the cards. */
+  const banksDir = gamesDir ?? 'updates';
+  const general = readCsv(join(banksDir, 'General Quiz - data.csv'));
+  const poland = readCsv(join(banksDir, 'Poland Quiz Question - data.csv'));
+  if (general.length === 0 || poland.length === 0) {
+    notes.push(
+      `game banks: ${general.length} general and ${poland.length} Poland questions found in ${banksDir}/ — ` +
+        'the brain and poland games need both',
+    );
+  }
+  importGeneralQuiz(db, general, bump);
+  importPolandQuiz(db, poland, bump);
+
   /* ────────────────────────────── 9. the remittance tables, archived as-is ── */
 
   for (const row of file('Wallet')) {
@@ -1150,5 +1168,108 @@ function importFlags(
       );
       bump('quiz_items');
     });
+  }
+}
+
+/**
+ * The five languages the two hand-delivered banks are written in.
+ *
+ * The general export also carries Turkish and Azerbaijani columns. They are
+ * skipped rather than imported: the account's `language` can only ever be one of
+ * the five the product ships in, so a `tr` row would be written and never read,
+ * and a bank that is present but unreachable is worse than one that is absent —
+ * the first looks like coverage.
+ */
+const BANK_LANGS = ['en', 'pl', 'ru', 'uz', 'uk'] as const;
+
+/**
+ * Brain Games, from `General Quiz - data.csv`.
+ *
+ * The export is already shaped like a quiz — a question, four options and the
+ * index of the right one — so nothing has to be invented here, and nothing is:
+ * where a language's translation is blank the row is skipped for *that language
+ * only*, which is why the counts per bank differ and should.
+ *
+ * `correct_answer` is an index into `options_<lang>`, and the same index in every
+ * language, so the option order must be preserved exactly as exported. It is not
+ * shuffled here — `domain/games.ts` shuffles per round and remembers where the
+ * answer went, which is the only place that can do it without losing the key.
+ */
+function importGeneralQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: number) => void): void {
+  for (const row of rows) {
+    const id = str(row, 'id');
+    if (!id) continue;
+    const correct = Number(str(row, 'correct_answer'));
+    if (!Number.isInteger(correct) || correct < 0) continue;
+
+    for (const lang of BANK_LANGS) {
+      const prompt = str(row, `question_text_${lang}`);
+      const options = json<string[]>(row, `options_${lang}`, []);
+      /* Four options and a valid index, or the row is not a question in this
+         language. A three-option round with a dangling answer index would score
+         wrongly rather than fail, which is the worst of the two. */
+      if (!prompt || options.length < 2 || correct >= options.length) continue;
+      const answer = options[correct];
+      if (!answer) continue;
+
+      db.run(
+        `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
+         VALUES ($i, 'brain', $l, $p, $a, $d, $m)`,
+        {
+          i: `brain_${id}_${lang}`,
+          l: lang,
+          p: prompt,
+          a: answer,
+          d: JSON.stringify(options.filter((_, index) => index !== correct)),
+          m: JSON.stringify({
+            subject: str(row, 'subject') || null,
+            difficulty: num(row, 'difficulty', 0) || null,
+            explanation: str(row, `explanation_${lang}`) || null,
+          }),
+        },
+      );
+      bump('quiz_items');
+    }
+  }
+}
+
+/**
+ * The Poland quiz, from `Poland Quiz Question - data.csv`.
+ *
+ * Same bank, a different export shape: four lettered columns per language and a
+ * letter rather than an index. `A`–`D` is mapped to 0–3 once, here, so nothing
+ * downstream has to know that two of the four banks were exported by different
+ * tools.
+ */
+function importPolandQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: number) => void): void {
+  const letters = ['a', 'b', 'c', 'd'] as const;
+
+  for (const row of rows) {
+    const id = str(row, 'id');
+    if (!id) continue;
+    const correct = letters.indexOf(
+      str(row, 'correct_answer').trim().toLowerCase() as (typeof letters)[number],
+    );
+    if (correct < 0) continue;
+
+    for (const lang of BANK_LANGS) {
+      const prompt = str(row, `question_${lang}`);
+      const options = letters.map((letter) => str(row, `option_${letter}_${lang}`));
+      if (!prompt || options.some((option) => !option)) continue;
+
+      db.run(
+        `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
+         VALUES ($i, 'poland', $l, $p, $a, $d, $m)`,
+        {
+          i: `poland_${id}_${lang}`,
+          l: lang,
+          p: prompt,
+          a: options[correct],
+          d: JSON.stringify(options.filter((_, index) => index !== correct)),
+          m: JSON.stringify({ source: 'poland_quiz' }),
+        },
+      );
+      bump('quiz_items');
+    }
   }
 }

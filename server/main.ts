@@ -21,6 +21,8 @@ import type { Route } from './http/router.ts';
 export interface BootOptions {
   file?: string;
   legacyDir?: string;
+  /** Where the two hand-delivered question banks live. See `db/import.ts` §8. */
+  gamesDir?: string;
   /** Import even when the database already has venues. */
   reimport?: boolean;
   quiet?: boolean;
@@ -38,7 +40,9 @@ export function boot(options: BootOptions = {}): { db: Db; routes: Route[] } {
 
   const venues = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`)?.n ?? 0;
   if (options.reimport || venues === 0) {
-    const summary = db.tx(() => importLegacy(db, options.legacyDir ?? 'new-data'));
+    const summary = db.tx(() =>
+      importLegacy(db, options.legacyDir ?? 'new-data', options.gamesDir ?? 'updates'),
+    );
     if (!options.quiet) {
       const total = Object.entries(summary.counts)
         .map(([key, value]) => `${key} ${value}`)

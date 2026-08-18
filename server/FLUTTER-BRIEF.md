@@ -48,7 +48,7 @@ Run the backend locally:
 ```bash
 npm install
 npm run server        # http://127.0.0.1:8787 — migrates, seeds and imports on first run
-npm run verify:api    # 339 checks, if you want to see what it guarantees
+npm run verify:api    # 364 checks, if you want to see what it guarantees
 ```
 
 ---

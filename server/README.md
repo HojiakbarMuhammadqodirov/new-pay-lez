@@ -13,12 +13,21 @@ It is seeded from the old database: the Base44 export in `new-data/`, thirty-one
 CSVs covering the guidebook, the venues, the deals, the people and the rate
 sheet. `db/import.ts` is the only file that knows those shapes.
 
+Two of the four question banks come from somewhere else, and it is worth knowing
+where. The capitals and flags banks are derived from `CountryCapital` in the
+export; the **general and Poland banks are hand-delivered exports** and live in
+`updates/` beside the front end's own copy of them, so the import reads that
+directory too. Without them `POST /v1/games/sessions {gameType:"brain"}` is a
+404 and two of the seven games cannot be played at all — which is a data gap
+rather than a missing feature, and the import reports it in its notes when the
+files are not found.
+
 ## Running it
 
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 339 checks, no browser, no network
+npm run verify:api     # the test suite — 364 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -66,7 +75,8 @@ verify.ts            the test suite
 db/    schema.sql    every entity in §14 and Part E
        db.ts         open, migrate, nested transactions
        csv.ts        an RFC 4180 reader, for the export
-       import.ts     the old database → this schema
+       import.ts     the old database → this schema, plus the two game banks
+                     that arrive as hand-delivered CSVs in `updates/`
 
 domain/              the rules. React-free, HTTP-free, testable on their own
        ledger.ts     §2   append-only points, FIFO lots, expiry, caps

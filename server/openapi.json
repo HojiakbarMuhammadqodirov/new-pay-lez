@@ -637,6 +637,43 @@
             "items": {
               "type": "object"
             }
+          },
+          "stampCards": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Cards this customer has started, across every venue. A paused campaign’s card is still listed — the stamps already collected stay valid.",
+              "properties": {
+                "campaign_id": {
+                  "type": "string"
+                },
+                "venue_id": {
+                  "type": "string"
+                },
+                "venue_name": {
+                  "type": "string"
+                },
+                "label": {
+                  "type": "string"
+                },
+                "stamps": {
+                  "type": "integer"
+                },
+                "required": {
+                  "type": "integer"
+                },
+                "cycles": {
+                  "type": "integer"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "active",
+                    "paused"
+                  ]
+                }
+              }
+            }
           }
         }
       },

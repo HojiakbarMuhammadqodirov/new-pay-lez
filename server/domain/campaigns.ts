@@ -119,6 +119,46 @@ export function progressFor(db: Db, userId: string, venueId: string): StampProgr
 }
 
 /**
+ * Every card this customer has started, across every venue.
+ *
+ * `progressFor` answers "what is on offer at this venue", which is the venue
+ * screen's question and includes campaigns the customer has never touched.
+ * The wallet's question is the other one — "what am I part-way through" — and
+ * answering it by walking every venue would be one request per venue on a screen
+ * that opens first. The venue name travels with the row for the same reason: a
+ * wallet that renders card ids is a wallet nobody can read.
+ *
+ * A paused campaign's card is still listed. §5.3 keeps stamps already collected
+ * valid when a campaign pauses, so hiding the card would look like the stamps
+ * were taken away.
+ */
+export function cardsFor(db: Db, userId: string) {
+  return db.all<{
+    campaign_id: string;
+    venue_id: string;
+    venue_name: string;
+    label: string;
+    stamps: number;
+    required: number;
+    cycles: number;
+    status: string;
+    reward_valid_days: number;
+    min_spend_minor: number;
+    updated_at: string | null;
+  }>(
+    `SELECT s.campaign_id, c.venue_id, v.name AS venue_name, c.reward_label AS label,
+            s.stamps, c.visits_required AS required, s.cycles, c.status,
+            c.reward_valid_days, c.min_spend_minor, s.updated_at
+       FROM stamp_cards s
+       JOIN campaigns c ON c.id = s.campaign_id
+       JOIN venues v ON v.id = c.venue_id
+      WHERE s.user_id = $u AND c.status <> 'ended' AND v.deleted_at IS NULL
+      ORDER BY (CAST(s.stamps AS REAL) / MAX(1, c.visits_required)) DESC, v.name`,
+    { u: userId },
+  );
+}
+
+/**
  * A confirmed qualifying visit, applied to the stamp cards (§5.2).
  *
  * Called from inside the gate's commit. It stamps *every* active campaign the

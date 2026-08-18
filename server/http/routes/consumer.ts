@@ -159,6 +159,11 @@ export const consumerRoutes: Route[] = [
         expiringSoon: ledger.expiringSoon(ctx.db, user.id, ctx.at),
         vouchers: vouchers.activeVouchers(ctx.db, user.id),
         rewards: campaigns.availableRewards(ctx.db, user.id),
+        /* The cards in progress, across every venue. The venue screen answers
+           "what is on offer here"; this answers "what am I part-way through",
+           which is the wallet's question and cannot be assembled from the other
+           one without a request per venue. */
+        stampCards: campaigns.cardsFor(ctx.db, user.id),
         giftCards: ctx.db.all(
           `SELECT g.id, g.code, g.status, g.issued_at, g.expires_at, s.brand, s.logo,
                   s.face_minor, s.currency
