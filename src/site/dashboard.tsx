@@ -1,13 +1,21 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { DASH_SCREENS } from './content';
-import { PD_ALLOCATION, PD_CAMPAIGN_MODEL, PD_VOUCHER_MODEL } from './partnerMetrics';
+import {
+  PD_ALLOCATION,
+  PD_CAMPAIGN_MODEL,
+  PD_DEALS,
+  PD_VOUCHER_MODEL,
+} from './partnerMetrics';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth, initial } from './auth/context';
 import { BusinessForm } from './business';
 import { DashboardScreen } from './dashboardScreens';
-import { ThemeToggle } from './Header';
+import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
+import { DashboardContext } from './dashboardShell';
+import type { DrawerKind } from './dashboardShell';
+import { LanguageMenu, ThemeToggle } from './Header';
 import { PATHS } from './router';
 import { useCountUp, useReveal } from './useReveal';
 
@@ -19,18 +27,26 @@ import { useCountUp, useReveal } from './useReveal';
  * opening this on a Monday morning is working, not reading a pitch.
  *
  * The layout follows the prototype in `b2b/Paylez Partner Dashboard v2.dc.html`
- * — same rail, same groups, same plan card — but every colour comes from the
- * site's tokens rather than that file's own palette, which is what gives this
- * screen a dark theme, five languages and the reader's own currency. The
- * surface is glass over the wash on `.pd-app`; see the `── the screens: glass ──`
- * block in `site.css` for what that costs and where it is turned off.
+ * — same rail, same groups, same plan card, same pair of buttons above every
+ * screen — but every colour comes from the site's tokens rather than that file's
+ * own palette, which is what gives this screen a dark theme, five languages and
+ * the reader's own currency. The surface is glass over the wash on `.pd-app`;
+ * see the `── the screens: glass ──` block in `site.css` for what that costs and
+ * where it is turned off.
  *
- * **All seven screens open**, and six of them now report a full month rather
- * than the empty state a brand-new venue is in: `partnerMetrics.ts` carries the
- * prototype's seeds *and* its arithmetic, so the overview's attribution, the
- * deal claim rates, the two budget pools and the cost per new customer are one
- * calculation seen from four screens. The seventh is the profile, which is the
- * only one with a form behind it.
+ * **All eight screens open.** Seven report a full month rather than the empty
+ * state a brand-new venue is in — `partnerMetrics.ts` carries the prototype's
+ * seeds *and* its arithmetic, so the overview's attribution, the deal claim
+ * rates, the two budget pools and the cost per new customer are one calculation
+ * seen from four screens. The eighth is the profile, the only one with a form
+ * behind it.
+ *
+ * Two things belong to the frame rather than to any screen, and both are here
+ * for the same reason the prototype puts them here: **the create drawer** —
+ * reachable from six places and always the same panel — and **the confirmation
+ * strip**, which is the one honest thing a button can do on a screen with no
+ * server behind it. They are handed down through `DashboardContext` rather than
+ * threaded as props through eight screens and forty buttons.
  */
 
 /* ────────────────────────────────────────────────────────────────── rail ── */
@@ -57,6 +73,16 @@ function Rail({
    */
   const spent = PD_CAMPAIGN_MODEL.spent + PD_VOUCHER_MODEL.spent;
   const used = spent / PD_ALLOCATION.total;
+
+  /*
+   * The two counts in the rail, and both are counted rather than written down.
+   * The prototype hardcodes "3" against each; a badge that has to be edited by
+   * hand when a deal is paused is a badge that will be wrong by Thursday.
+   */
+  const badges: Record<string, number> = {
+    deals: PD_DEALS.filter((deal) => deal.state === 'live').length,
+    campaigns: PD_CAMPAIGN_MODEL.list.filter((campaign) => campaign.live).length,
+  };
 
   const group = (which: 'grow' | 'workspace') =>
     DASH_SCREENS.map((entry, index) => ({ entry, index })).filter(
@@ -85,6 +111,7 @@ function Rail({
               >
                 <Icon name={entry.icon} size={18} />
                 <span>{copy.dashboard.screens[index].name}</span>
+                {badges[entry.id] > 0 && <i className="rail-badge">{badges[entry.id]}</i>}
               </button>
             ))}
           </div>
@@ -138,14 +165,20 @@ function TopBar({ screen }: { screen: number }) {
       <div className="pd-actions">
         <span className="pd-range">{copy.dashboard.range}</span>
         {/*
-          The dashboard replaces the site header, and the theme toggle lived
-          there — so without this the one screen an owner spends the most time
-          on was the one screen with no way to switch. Same control, same
-          `data-theme` cross-fade; it just needs its own mount here.
+          The dashboard replaces the site header, and both of these lived there —
+          so without them the one screen an owner spends the most time on was the
+          one screen with no way to switch theme or language. Same controls, same
+          `data-theme` cross-fade and the same `paylez-language` key; they just
+          need their own mount here.
         */}
+        <LanguageMenu />
         <ThemeToggle />
         <button type="button" className="pd-icon" aria-label={copy.dashboard.notifications}>
-          <Icon name="coin" size={17} />
+          <Icon name="bell" size={17} />
+          {/* Unread, and drawn as a mark rather than a count: there is nothing
+              behind it to count, and a badge reading "3" would be the one
+              invented number on the screen. */}
+          <i className="pd-dot" aria-hidden />
         </button>
         {/*
           Avatar, first name, role — and nothing else. It was the full name on
@@ -173,6 +206,21 @@ function TopBar({ screen }: { screen: number }) {
 /** The profile is the last screen and the only one with a form. */
 const PROFILE = DASH_SCREENS.length - 1;
 
+/**
+ * Which of the two things a screen's primary button makes.
+ *
+ * The prototype changes it by screen and the choice is not decorative: the
+ * button above Campaigns and Scan activity makes a campaign, and everywhere else
+ * it makes a hot deal, because that is what an owner standing on each of those
+ * screens is most likely to want next. The assistant is the one screen with no
+ * primary at all — it *is* the create flow, and a "create" button beside it
+ * would be offering the long way round.
+ */
+function primaryFor(id: string): DrawerKind | null {
+  if (id === 'assistant' || id === 'profile') return null;
+  return id === 'campaigns' || id === 'scans' ? 'campaign' : 'deal';
+}
+
 export function DashboardPage() {
   const copy = useCopy();
   const [collapsed, setCollapsed] = useState(false);
@@ -180,6 +228,8 @@ export function DashboardPage() {
      the prototype opens on. It used to open on the profile because that was the
      only screen with anything on it. */
   const [screen, setScreen] = useState(0);
+  const [drawer, setDrawer] = useState<DrawerKind | null>(null);
+  const [toastText, setToastText] = useState<string | null>(null);
 
   /*
    * A second rescan, keyed on the screen. `Site` keys its own on the route, and
@@ -190,39 +240,96 @@ export function DashboardPage() {
   useReveal(screen);
   useCountUp(screen);
 
+  /* Memoised on the two things that actually move: without it every screen
+     re-renders on each keystroke inside the drawer, because the context value
+     would be a new object every time the frame renders. */
+  const shell = useMemo(
+    () => ({
+      screen,
+      go: setScreen,
+      goTo: (id: string) => {
+        const index = DASH_SCREENS.findIndex((entry) => entry.id === id);
+        if (index >= 0) setScreen(index);
+      },
+      openDrawer: (kind: DrawerKind) => setDrawer(kind),
+      closeDrawer: () => setDrawer(null),
+      toast: (message: string) => setToastText(message),
+    }),
+    [screen],
+  );
+
+  const id = DASH_SCREENS[screen].id;
+  const primary = primaryFor(id);
+  const dismiss = useCallback(() => setToastText(null), []);
+
   return (
     /*
      * `<main>` and not a `<div>`: `site.css` gives `z-index: 1` to `.site > main`
      * only, and the intro hand-off keys off `.site[data-intro='running'] main`.
      * A dashboard in a plain div sits behind the page background.
      */
-    <main className="pd-app" data-collapsed={collapsed ? 'true' : undefined}>
-      <Rail
-        screen={screen}
-        onGo={setScreen}
-        collapsed={collapsed}
-        onToggle={() => setCollapsed((on) => !on)}
-      />
+    <DashboardContext.Provider value={shell}>
+      <main className="pd-app" data-collapsed={collapsed ? 'true' : undefined}>
+        <Rail
+          screen={screen}
+          onGo={setScreen}
+          collapsed={collapsed}
+          onToggle={() => setCollapsed((on) => !on)}
+        />
 
-      <div className="pd-main">
-        <TopBar screen={screen} />
+        <div className="pd-main">
+          <TopBar screen={screen} />
 
-        {/* Keyed on the screen so the reveal observer rescans and the new panel
-            fades in rather than appearing at `opacity: 0`. */}
-        <div className="pd-page" key={screen}>
-          <div className="pd-head" data-reveal>
-            <div>
-              <h1>{copy.dashboard.screens[screen].name}</h1>
-              <p>{copy.dashboard.screens[screen].lede}</p>
+          {/* Keyed on the screen so the reveal observer rescans and the new panel
+              fades in rather than appearing at `opacity: 0`. */}
+          <div className="pd-page" key={screen}>
+            <div className="pd-head" data-reveal>
+              <div>
+                <h1>{copy.dashboard.screens[screen].name}</h1>
+                <p>{copy.dashboard.screens[screen].lede}</p>
+              </div>
+              <div className="pd-head-acts">
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() =>
+                    setToastText(
+                      id === 'profile'
+                        ? copy.dashboard.actions.previewing
+                        : copy.dashboard.actions.exported,
+                    )
+                  }
+                >
+                  <Icon name={id === 'profile' ? 'eye' : 'download'} size={15} />
+                  {id === 'profile'
+                    ? copy.dashboard.actions.preview
+                    : copy.dashboard.actions.exportCsv}
+                </button>
+                {primary && (
+                  <button type="button" className="btn btn-solid" onClick={() => setDrawer(primary)}>
+                    <Icon name="plus" size={15} strokeWidth={2} />
+                    {primary === 'deal'
+                      ? copy.dashboard.actions.newDeal
+                      : copy.dashboard.actions.newCampaign}
+                  </button>
+                )}
+                <a className="btn btn-ghost pd-tosite" href={PATHS.landing}>
+                  {copy.dashboard.backToSite}
+                </a>
+              </div>
             </div>
-            <a className="btn btn-ghost" href={PATHS.landing}>
-              {copy.dashboard.backToSite}
-            </a>
-          </div>
 
-          {screen === PROFILE ? <BusinessForm mode="profile" /> : <DashboardScreen index={screen} />}
+            {screen === PROFILE ? (
+              <BusinessForm mode="profile" />
+            ) : (
+              <DashboardScreen index={screen} />
+            )}
+          </div>
         </div>
-      </div>
-    </main>
+
+        {drawer && <DashboardDrawer kind={drawer} />}
+        {toastText && <DashboardToast message={toastText} onDone={dismiss} />}
+      </main>
+    </DashboardContext.Provider>
   );
 }

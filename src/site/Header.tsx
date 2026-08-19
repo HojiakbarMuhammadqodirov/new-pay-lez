@@ -99,8 +99,15 @@ function NavItem({
   );
 }
 
-/** Language switcher. Closes on outside click and on Escape. */
-function LanguageMenu() {
+/**
+ * Language switcher. Closes on outside click and on Escape.
+ *
+ * Exported because the dashboard replaces this header wholesale and needs the
+ * same control in its own bar: without it, the one screen a partner spends the
+ * most time on was the one screen with no way to change language — the same gap
+ * `ThemeToggle` was exported to close.
+ */
+export function LanguageMenu() {
   const copy = useCopy();
   const [language, setLanguage] = useLanguage();
   const [open, setOpen] = useState(false);

@@ -77,6 +77,8 @@ import { CURRENCIES, money } from '../src/site/i18n/currency';
 import {
   HEAT_HOURS,
   PD_ALLOCATION,
+  PD_ASSIST,
+  PD_ASSIST_COPY,
   PD_AUDIENCES,
   PD_CAMPAIGN_MODEL,
   PD_COST_ROWS,
@@ -94,6 +96,7 @@ import {
   PD_TOTALS,
   PD_VOUCHER_MODEL,
   RANGE_DAYS,
+  dealNotify,
   polyarea,
   polyline,
 } from '../src/site/partnerMetrics';
@@ -1626,6 +1629,73 @@ console.log('\nthe partner dashboard');
   check(
     'a notification never reaches more than the audience',
     PD_DEALS.every((d) => d.notify.reach <= d.notify.match),
+  );
+
+  /*
+   * The expanded row draws the notification as a funnel — notified, opened,
+   * came in — and a funnel that widens is not a funnel. `dealNotify` derives
+   * the middle from the send and the last from the *claims*, so the two are
+   * only guaranteed to stack while the rates keep that order; this is the check
+   * that says so.
+   */
+  check(
+    'the notification funnel reads downward',
+    PD_DEALS.every((d) => {
+      const n = dealNotify(d);
+      return n.opened <= n.notified && n.camein <= n.opened;
+    }),
+  );
+  check(
+    'a notification never claims more than the deal got',
+    PD_DEALS.every((d) => dealNotify(d).camein + dealNotify(d).alone === d.claimed),
+  );
+  check(
+    'every deal says what it gives away',
+    PD_DEALS.every((d) => en.dashboard.deals.act[d.state] !== undefined),
+  );
+  /* Only a deal with a limit gets the forecast, and the forecast names a date. */
+  check(
+    'a claim limit has a date to forecast against',
+    PD_DEALS.every((d, i) => d.limit === 0 || en.dashboard.deals.limitDates[i] !== ''),
+  );
+
+  /*
+   * The assistant writes the deal text in every language the product ships, and
+   * that is the whole argument for the panel — an owner reading in one sees
+   * what a customer reading in another will be shown. A language added to
+   * `LANGUAGE_ORDER` without a line here would show that reader a blank field.
+   */
+  check(
+    'the assistant can write a deal in all five languages',
+    (['item', 'percent'] as const).every((reward) =>
+      LANGUAGE_ORDER.every(
+        (code) =>
+          PD_ASSIST_COPY[reward][code]?.title.trim() &&
+          PD_ASSIST_COPY[reward][code]?.body.trim(),
+      ),
+    ),
+  );
+  /* Three budgets, three durations, three ways it can move the days: the chips,
+     the retry line and the revision list all count on those being what they
+     are. */
+  check(
+    'the assistant offers three budgets and three durations',
+    PD_ASSIST.budgets.length === 3 && PD_ASSIST.weeks.length === 3,
+  );
+  check(
+    'the assistant has somewhere to move the days to',
+    en.dashboard.assistant.dayChoices.length === 3,
+  );
+  /*
+   * The budget warning is not a demo switch here — it fires when the budget
+   * asked for is more than the month has room for. Both halves have to be
+   * reachable or the panel is dead code: the smallest offer must fit and the
+   * largest must not.
+   */
+  check(
+    'the assistant sizes down a budget it cannot afford',
+    PD_ASSIST.budgets[0] <= PD_ASSIST.hotRoom &&
+      PD_ASSIST.budgets[PD_ASSIST.budgets.length - 1] > PD_ASSIST.hotRoom,
   );
 
   /* Scans are generated per index, so the whole page has to come out stable and

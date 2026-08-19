@@ -37,6 +37,9 @@
  * only do that if the two directions use one number.
  */
 import { FX } from './i18n/fx';
+/* Type-only, so this stays a leaf: `i18n/context.ts` pulls in all five
+   dictionaries and nothing here may drag those into a chart. */
+import type { LanguageCode } from './i18n/context';
 
 const zl = (pln: number) => pln / FX.PLN.rate;
 
@@ -89,6 +92,8 @@ export interface PartnerDeal {
   id: string;
   badge: string;
   state: 'live' | 'scheduled' | 'paused' | 'expired';
+  /** What the deal gives away, which decides how its cost is written. */
+  kind: 'percent' | 'item' | 'points';
   /** Index into `copy.dashboard.deals.audiences`. */
   audience: number;
   /** How many of the five languages the deal is written in. */
@@ -104,6 +109,40 @@ export interface PartnerDeal {
   trend: number[];
   /** How the deal's one notification stands. */
   notify: { state: 'none' | 'scheduled' | 'sent'; reach: number; match: number };
+  /** How many weeks it ran, for the retrospective on an expired deal. */
+  weeks: number;
+}
+
+/**
+ * What a deal's one notification did.
+ *
+ * Derived rather than seeded, and derived from the *claims* rather than from
+ * the sends: the sentence the panel prints is "N of this deal's M claims came
+ * from the notification", so making N a share of M is what stops the two halves
+ * of that sentence disagreeing. Opens are a share of the send, which is the
+ * only other figure the panel needs — and is always larger than N here, which
+ * it has to be for the funnel to read downward.
+ */
+const NOTIFY_OPEN_RATE = 0.31;
+const NOTIFY_CLAIM_SHARE = 0.42;
+const NOTIFY_BLOCKED_RATE = 0.09;
+
+export function dealNotify(deal: PartnerDeal) {
+  const notified = deal.notify.reach;
+  const opened = Math.round(notified * NOTIFY_OPEN_RATE);
+  const camein = Math.round(deal.claimed * NOTIFY_CLAIM_SHARE);
+  return {
+    notified,
+    opened,
+    camein,
+    /* Matched the audience but had had another notification recently, so this
+       one was held back. It is the number that keeps the reach honest. */
+    blocked: Math.round(deal.notify.match * NOTIFY_BLOCKED_RATE),
+    /** The rest of the claims: people who found it in the app on their own. */
+    alone: Math.max(0, deal.claimed - camein),
+    openPct: notified > 0 ? (opened / notified) * 100 : 0,
+    cameinPct: opened > 0 ? (camein / opened) * 100 : 0,
+  };
 }
 
 export const PD_DEALS: PartnerDeal[] = [
@@ -111,6 +150,7 @@ export const PD_DEALS: PartnerDeal[] = [
     id: 'flat',
     badge: '20%',
     state: 'live',
+    kind: 'percent',
     audience: 0,
     langs: 3,
     reachLoss: 34,
@@ -121,11 +161,13 @@ export const PD_DEALS: PartnerDeal[] = [
     limit: 300,
     trend: [22, 26, 24, 31, 38, 34, 42],
     notify: { state: 'scheduled', reach: 3133, match: 4820 },
+    weeks: 4,
   },
   {
     id: 'students',
     badge: '15%',
     state: 'live',
+    kind: 'percent',
     audience: 1,
     langs: 5,
     reachLoss: 0,
@@ -136,11 +178,13 @@ export const PD_DEALS: PartnerDeal[] = [
     limit: 0,
     trend: [31, 28, 34, 30, 36, 41, 44],
     notify: { state: 'sent', reach: 938, match: 1400 },
+    weeks: 13,
   },
   {
     id: 'filter',
     badge: 'FREE',
     state: 'live',
+    kind: 'item',
     audience: 0,
     langs: 5,
     reachLoss: 0,
@@ -151,11 +195,13 @@ export const PD_DEALS: PartnerDeal[] = [
     limit: 0,
     trend: [18, 21, 19, 17, 22, 20, 24],
     notify: { state: 'sent', reach: 2968, match: 4820 },
+    weeks: 4,
   },
   {
     id: 'points',
     badge: '2×',
     state: 'scheduled',
+    kind: 'points',
     audience: 0,
     langs: 5,
     reachLoss: 0,
@@ -166,11 +212,13 @@ export const PD_DEALS: PartnerDeal[] = [
     limit: 0,
     trend: [0, 0, 0, 0, 0, 0, 0],
     notify: { state: 'none', reach: 3133, match: 4820 },
+    weeks: 9,
   },
   {
     id: 'neighbour',
     badge: '10%',
     state: 'paused',
+    kind: 'percent',
     audience: 2,
     langs: 5,
     reachLoss: 0,
@@ -181,11 +229,13 @@ export const PD_DEALS: PartnerDeal[] = [
     limit: 0,
     trend: [14, 16, 13, 11, 12, 10, 9],
     notify: { state: 'none', reach: 320, match: 940 },
+    weeks: 9,
   },
   {
     id: 'lunch',
     badge: '5%',
     state: 'expired',
+    kind: 'percent',
     audience: 0,
     langs: 4,
     reachLoss: 11,
@@ -196,6 +246,7 @@ export const PD_DEALS: PartnerDeal[] = [
     limit: 0,
     trend: [26, 22, 19, 16, 12, 9, 6],
     notify: { state: 'sent', reach: 2104, match: 4820 },
+    weeks: 4,
   },
 ];
 
@@ -348,11 +399,11 @@ export const PD_ROSTER: RosterEntry[] = [
 
 /** The five audiences a deal or notification can be aimed at. */
 export const PD_AUDIENCES = [
-  { reach: 4820, notifiable: 3133 },
-  { reach: 1400, notifiable: 938 },
-  { reach: 940, notifiable: 320 },
-  { reach: 2310, notifiable: 1340 },
-  { reach: 1680, notifiable: 1193 },
+  { reach: 4820, notifiable: 3133, sendAt: '07:30' },
+  { reach: 1400, notifiable: 938, sendAt: '12:20' },
+  { reach: 940, notifiable: 320, sendAt: '17:40' },
+  { reach: 2310, notifiable: 1340, sendAt: '18:10' },
+  { reach: 1680, notifiable: 1193, sendAt: '08:50' },
 ];
 
 /** Notifications the plan allows a month, and how many are left. */
@@ -681,7 +732,129 @@ function makeScans(count: number): ScanRow[] {
   return rows.sort((a, b) => b.hour * 60 + b.minute - (a.hour * 60 + a.minute));
 }
 
-export const PD_SCANS = makeScans(PD_SCAN_PAGE);
+/**
+ * All forty-eight, not the first twelve.
+ *
+ * This used to build one page, on the argument that a "Next" button with no
+ * server behind it is a control that lies. It is the generator that settles
+ * that: every field is a pure function of the row index, so asking it for 48
+ * rows costs nothing and the prototype's pager becomes true rather than
+ * decorative. The screen still shows `PD_SCAN_PAGE` at a time.
+ */
+export const PD_SCANS = makeScans(PD_SCAN_TOTAL);
+
+/* ────────────────────────────────────────────────────────────── assistant ── */
+
+/**
+ * The numbers the assistant quotes.
+ *
+ * It is the one screen that talks, so every figure it says out loud has to come
+ * from somewhere the rest of the dashboard can be checked against — the
+ * prototype's own rule, stated in its composer note: *every figure I use comes
+ * from your own numbers or cafés like yours, I will not make one up*. These are
+ * that second half, the seeds the prototype quotes at the owner; the first half
+ * it reads out of the models above.
+ */
+export const PD_ASSIST = {
+  /** The quietest stretch, and how far below the weekly average it runs. */
+  quietDays: [1, 2] as const,
+  quietFrom: '14:00',
+  quietTo: '16:00',
+  quietBelow: 60,
+  /** How many cafés in the city the free-item comparison is drawn from. */
+  peers: 47,
+  /** Free-item deals against percentage ones, in claims. */
+  itemMultiple: 2.4,
+  /** What one free filter coffee costs the venue. */
+  itemCost: zl(5),
+  /**
+   * How much room the month has left before a hot deal eats into margin.
+   *
+   * Hot deals have no pool of their own — the loyalty and voucher budgets do not
+   * cover them — so this is the one figure that decides whether the assistant
+   * takes the budget you asked for or quietly builds a smaller version and says
+   * so. The prototype makes it a demo switch; here it is a number the three
+   * budget chips are compared against, so the warning appears when it is true.
+   */
+  hotRoom: zl(260),
+  /** The three budgets it offers, and the three durations. */
+  budgets: [zl(200), zl(400), zl(700)],
+  weeks: [2, 4, 8],
+  /** Where the draft starts: audience 0 is everyone near the venue. */
+  audience: 0,
+  /** The claim ceiling it proposes, and the hour it would send at. */
+  stopAfter: 80,
+  sendAt: '07:30',
+  /** Customers whose app language is Russian, as a share — the gap it names. */
+  russianShare: 42,
+} as const;
+
+/** The reward the assistant drafts: a free item, or a share off the bill. */
+export type AssistReward = 'item' | 'percent';
+
+/**
+ * The deal text the assistant writes, in all five languages at once.
+ *
+ * Not dictionary copy, and the one table in the building that deliberately is
+ * not: the point of the language tabs on the draft is that an owner reading in
+ * Polish sees what a Russian-speaking customer will read. Copy that lived in
+ * `pl.ts` would be the Polish *for* five languages, which is a different thing
+ * and a useless one. The prototype makes the same call — its own set is fixed
+ * and its UI language is a separate control.
+ *
+ * The languages are the site's five, not the prototype's (which offers Turkish
+ * and Azerbaijani): a draft cannot promise a translation the product does not
+ * ship.
+ */
+export const PD_ASSIST_COPY: Record<
+  AssistReward,
+  Record<LanguageCode, { title: string; body: string }>
+> = {
+  item: {
+    en: {
+      title: 'Free filter coffee with any bake',
+      body: 'Tuesday and Wednesday afternoons, any bake comes with a free filter coffee.',
+    },
+    pl: {
+      title: 'Darmowa kawa przelewowa do każdego wypieku',
+      body: 'We wtorki i środy po południu do każdego wypieku dostajesz darmową kawę przelewową.',
+    },
+    uz: {
+      title: 'Har qanday pishiriqqa filtrli qahva bepul',
+      body: 'Seshanba va chorshanba kunlari tushdan keyin har qanday pishiriqqa bepul filtrli qahva.',
+    },
+    ru: {
+      title: 'Фильтр-кофе бесплатно к любой выпечке',
+      body: 'По вторникам и средам после обеда к любой выпечке — бесплатный фильтр-кофе.',
+    },
+    uk: {
+      title: 'Фільтр-кава безкоштовно до будь-якої випічки',
+      body: 'У вівторок і середу по обіді до будь-якої випічки — безкоштовна фільтр-кава.',
+    },
+  },
+  percent: {
+    en: {
+      title: '20% off on Tuesday and Wednesday afternoons',
+      body: 'Come in between 14:00 and 16:00 on a Tuesday or Wednesday and take 20% off your bill.',
+    },
+    pl: {
+      title: '20% zniżki we wtorki i środy po południu',
+      body: 'Przyjdź we wtorek lub środę między 14:00 a 16:00 i odbierz 20% zniżki na rachunek.',
+    },
+    uz: {
+      title: 'Seshanba va chorshanba kunlari 20% chegirma',
+      body: 'Seshanba yoki chorshanba kuni soat 14:00 dan 16:00 gacha keling va hisobingizdan 20% chegirma oling.',
+    },
+    ru: {
+      title: 'Скидка 20% по вторникам и средам после обеда',
+      body: 'Приходите с 14:00 до 16:00 во вторник или среду и получите скидку 20% на счёт.',
+    },
+    uk: {
+      title: 'Знижка 20% у вівторок і середу по обіді',
+      body: 'Приходьте з 14:00 до 16:00 у вівторок або середу й отримайте знижку 20% на рахунок.',
+    },
+  },
+};
 
 /**
  * A polyline through a series, as an SVG `d` string in a 0–100 × 0–100 box.

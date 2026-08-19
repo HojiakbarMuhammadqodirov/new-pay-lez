@@ -7723,25 +7723,6 @@ button {
   background: var(--surface);
 }
 
-.pd-drawer {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 1.2rem;
-  padding: 1rem clamp(1rem, 2.2vw, 1.4rem) 1.2rem;
-}
-
-.pd-drawer > div {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.pd-drawer-acts {
-  flex-direction: row !important;
-  align-items: flex-start;
-  gap: 0.5rem;
-}
-
 /* ── campaign cards ── */
 
 .pd-cards {
@@ -8523,6 +8504,1679 @@ button {
   flex-direction: column;
   gap: 0.15rem;
   margin-bottom: 1.1rem;
+}
+
+/* ── the rail: counts ──────────────────────────────────────────────────────
+ *
+ * How many things are live behind a rail entry. Counted in `dashboard.tsx`
+ * rather than written down, so pausing a deal moves the badge.
+ */
+
+.rail-badge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  padding: 0.05rem 0.4rem;
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail[data-collapsed='true'] .rail-badge {
+  display: none;
+}
+
+/* The unread mark on the bell. A dot, not a number — see `dashboard.tsx`. */
+.pd-icon {
+  position: relative;
+}
+
+.pd-dot {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.45rem;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 1.5px var(--surface);
+}
+
+/* ── the two buttons above every screen ── */
+
+.pd-head-acts {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.pd-head-acts .btn {
+  gap: 0.45rem;
+}
+
+/* "Back to paylez" is the quietest of the three and drops out first: it is the
+   only one of them that leaves the dashboard. */
+@media (max-width: 60rem) {
+  .pd-tosite {
+    display: none;
+  }
+}
+
+/* ── the deals table: sorting, chips, actions ────────────────────────────── */
+
+.pd-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pd-sort:hover,
+.pd-sort[data-on='true'] {
+  color: var(--accent-ink);
+}
+
+/* Reserved whether or not it is showing, so choosing a column does not shunt
+   the header text sideways. */
+.pd-sort > i {
+  display: inline-block;
+  min-width: 0.5rem;
+  font-size: 0.55rem;
+  font-style: normal;
+  color: var(--accent-lit);
+}
+
+.pd-row-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+/* Four notification states, and each is a different thing to say. The palette
+   has one accent, so they separate by weight and fill rather than by hue. */
+.pd-notif[data-state='sent'] {
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-ink);
+}
+
+.pd-notif[data-state='scheduled'] {
+  border: 1px solid var(--border-2);
+  background: none;
+  color: var(--text-mut);
+}
+
+.pd-notif[data-state='points'] {
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.pd-cost-note {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.66rem;
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-fnt);
+}
+
+.pd-row-acts {
+  display: inline-flex;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.pd-row-acts .btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+/* An expired deal is still on the table and still worth reading; it is just not
+   the row you act on. */
+.pd-table tbody tr[data-dim='true'] {
+  opacity: 0.66;
+}
+
+.pd-empty-acts {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ── one deal, opened out ──────────────────────────────────────────────────
+ *
+ * The row expansion. Two columns: the funnels on the left, everything that
+ * qualifies them on the right. It sits inside a table cell, so the padding is
+ * the cell's rather than the panel's.
+ */
+
+.pd-open {
+  display: grid;
+  grid-template-columns: minmax(20rem, 1.4fr) minmax(16rem, 1fr);
+  gap: 1.4rem;
+  padding: 1.1rem clamp(1rem, 2.2vw, 1.4rem) 1.3rem;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.pd-open-main,
+.pd-open-side {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+@media (max-width: 66rem) {
+  .pd-open {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Three steps of a funnel, side by side. A step is a card rather than a bar
+   segment because each one carries a figure *and* a sentence, and a stacked bar
+   has room for neither. */
+.pd-funnel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.3rem;
+}
+
+.pd-funnel > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.pd-funnel span {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.pd-funnel b {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.pd-funnel b[data-lead='true'] {
+  color: var(--accent-ink);
+}
+
+/* The bar under each step. `data-step` is the position, not a value: the last
+   one is the accent because it is the number the panel is about, and the first
+   is the full width by definition. */
+.pd-funnel i {
+  display: block;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--border-2);
+}
+
+.pd-funnel i[data-step='1'] {
+  background: rgba(var(--accent-rgb), 0.4);
+}
+
+.pd-funnel i[data-step='2'] {
+  background: var(--accent);
+}
+
+.pd-funnel em {
+  font-size: 0.7rem;
+  font-style: normal;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+@media (max-width: 40rem) {
+  .pd-funnel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── a bordered aside ──────────────────────────────────────────────────────
+ *
+ * The workhorse of the expanded row, the draft and the drawer: a small panel
+ * carrying one thought and sometimes a button. `.pd-note` is a *text* style and
+ * a different thing; these two collided once already.
+ */
+
+.pd-brief {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+/*
+ * The wrap basis is what decides the shape, and the three shapes are all here:
+ * an icon keeps its own width and the text flows beside it; a block of prose
+ * takes the full row and stacks; a sentence with a button after it shares the
+ * row with it. Setting these per child rather than per variant is what lets one
+ * class carry a warning strip, a four-line aside and a call to action.
+ */
+.pd-brief > svg {
+  flex: 0 0 auto;
+  color: var(--accent-lit);
+  margin-top: 0.1rem;
+}
+
+.pd-brief > div {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.pd-brief > span {
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.pd-brief > b,
+.pd-brief > p,
+.pd-brief > .console-label {
+  flex: 1 1 100%;
+}
+
+.pd-brief b,
+.pd-brief .console-label {
+  color: var(--text);
+}
+
+/* `.console-label` carries 0.9rem of its own, which is right under a panel
+   heading and far too much inside a card this size. */
+.pd-brief .console-label {
+  margin-bottom: 0;
+}
+
+.pd-brief b {
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* A budget or a limit about to run out. One accent means this cannot go amber,
+   so it is weighted instead — the same answer `.field-error` gives. */
+.pd-brief-warn {
+  border-color: var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pd-brief-acts {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.pd-brief-acts .btn {
+  padding: 0.35rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+/* Where a scan happened. The glyph and the name on one line, the till under
+   it — a grid rather than a flex column so the second line clears the pin. */
+.pd-place {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.1rem 0.35rem;
+  white-space: nowrap;
+}
+
+.pd-place svg {
+  color: var(--text-fnt);
+}
+
+.pd-place b {
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.pd-place em {
+  grid-column: 2;
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--text-fnt);
+}
+
+/* ── the scan pager ── */
+
+.pd-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+}
+
+.pd-pager > div {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ════════════════════════════════════════════════════ the assistant ══
+   The one screen that talks.
+
+   Two panels at the top — what it knows, and where to start — then whichever
+   of the seven bodies the conversation has reached. The thread is `data-solid`
+   for the same reason the tables are: it carries the most continuous prose on
+   the dashboard, and prose over a moving wash is the reading the glass rule
+   exists to protect.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.pd-assist-top {
+  align-items: stretch;
+}
+
+.pd-knows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.pd-lede {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.pd-knows ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.pd-knows li {
+  position: relative;
+  padding-left: 0.9rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--text-mut);
+}
+
+.pd-knows li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.pd-starts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pd-start-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.pd-start-list button {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  text-align: left;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 180ms var(--ease), background 180ms var(--ease);
+}
+
+.pd-start-list button:hover {
+  border-color: var(--accent-soft);
+  background: var(--surface-2);
+}
+
+.pd-start-list b {
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.pd-start-list span {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+/* ── the thread ── */
+
+.pd-thread {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.pd-thread-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding: 0.85rem clamp(1rem, 2.2vw, 1.4rem);
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-thread-head .console-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pd-live-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.pd-msgs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: clamp(1rem, 2.2vw, 1.4rem);
+  min-height: 11rem;
+}
+
+/*
+ * A bubble, and the corner it loses is which side it came from — the one cue
+ * that survives having a single accent to draw both halves of a conversation
+ * with. Yours is filled; its is a sheet, because it is the one doing the
+ * talking and a page of filled bubbles is a page of buttons.
+ */
+.pd-msg {
+  max-width: 82%;
+  padding: 0.7rem 0.95rem;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+.pd-msg[data-who='it'] {
+  align-self: flex-start;
+  border-radius: 4px 14px 14px 14px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.pd-msg[data-who='you'] {
+  align-self: flex-end;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+}
+
+/* The buttons run along a row and the hint sits under them: one container, and
+   the hint takes the whole basis rather than needing a nested div. */
+.pd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pd-chips .pd-fine {
+  flex: 1 0 100%;
+}
+
+.pd-chips button {
+  padding: 0.55rem 0.95rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--text);
+  background: none;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+.pd-chips button:hover {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--on-accent);
+}
+
+/* ── what it would set up ── */
+
+.pd-ready {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem 1rem;
+  border-radius: 13px;
+  border: 1px solid var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.pd-ready dl {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.pd-ready dl > div {
+  display: grid;
+  grid-template-columns: minmax(6rem, 8rem) minmax(0, 1fr);
+  gap: 0.8rem;
+  align-items: baseline;
+  font-size: 0.8rem;
+}
+
+.pd-ready dt {
+  color: var(--text-mut);
+}
+
+.pd-ready dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+.pd-ready .btn {
+  align-self: flex-start;
+}
+
+/* ── the composer ── */
+
+.pd-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem clamp(1rem, 2.2vw, 1.4rem) 1.1rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+/* The whole well is the label, so the empty space to the right of the caret
+   still focuses the field — the rule the Relocate converter had to learn. */
+.pd-composer-well {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.5rem;
+  padding: 0.35rem 0.35rem 0.35rem 0.85rem;
+  border-radius: 14px;
+  border: 1.5px solid var(--border-2);
+  background: var(--surface);
+  cursor: text;
+}
+
+.pd-composer-well:focus-within {
+  border-color: var(--accent-lit);
+}
+
+.pd-composer-well textarea {
+  flex: 1;
+  min-width: 0;
+  max-height: 7rem;
+  border: none;
+  background: none;
+  padding: 0.45rem 0;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text);
+  resize: none;
+}
+
+.pd-composer-well textarea:focus {
+  outline: none;
+}
+
+.pd-send {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border: none;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--on-accent);
+  cursor: pointer;
+}
+
+.pd-send:disabled {
+  background: var(--surface-2);
+  color: var(--text-fnt);
+  cursor: not-allowed;
+}
+
+/* ── the draft ────────────────────────────────────────────────────────────
+ *
+ * Bordered in `--text` rather than `--border`: it is the one panel on the
+ * dashboard that is a *proposal* and not a report, and the heavier edge is what
+ * says so before the stamp is read.
+ */
+
+.pd-draft {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border-width: 1.5px;
+  border-color: var(--text);
+}
+
+.pd-draft-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: 0.85rem clamp(1rem, 2.2vw, 1.4rem);
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.8rem;
+}
+
+.pd-draft-head .pd-tag {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pd-draft-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: clamp(1rem, 2.2vw, 1.4rem);
+}
+
+.pd-changed {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: 13px;
+  border: 1px solid var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.pd-changed > div {
+  display: grid;
+  grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr);
+  gap: 0.7rem;
+  align-items: baseline;
+  font-size: 0.8rem;
+}
+
+.pd-changed > div > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.pd-changed del {
+  color: var(--text-fnt);
+}
+
+.pd-changed em {
+  display: flex;
+  align-items: baseline;
+  gap: 0.45rem;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.pd-changed em svg {
+  flex: 0 0 auto;
+  color: var(--accent-lit);
+  transform: translateY(2px);
+}
+
+.pd-reasons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.pd-reasons li {
+  position: relative;
+  padding-left: 0.9rem;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.pd-reasons li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.55rem;
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+/* ── a record it would create ──
+   Field name on the left, value on the right, one per row. The point is that it
+   reads like the thing that would be written rather than like a paragraph
+   about it. */
+
+.pd-record {
+  display: flex;
+  flex-direction: column;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.pd-record-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.pd-record-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.8rem;
+}
+
+.pd-record-row:last-child {
+  border-bottom: none;
+}
+
+.pd-record-row > span:first-child {
+  flex: 0 0 8rem;
+  color: var(--text-mut);
+}
+
+.pd-record-row > b {
+  flex: 1 1 12rem;
+  font-weight: 700;
+}
+
+.pd-record-row > em {
+  flex: 0 0 auto;
+}
+
+.pd-record-row .pd-well {
+  flex: 0 0 auto;
+}
+
+.pd-record .pd-fine {
+  padding: 0.55rem 0.9rem;
+}
+
+/* The two things a publish produced, each with a way into it. */
+.pd-record-item {
+  align-items: center;
+}
+
+.pd-record-item > div {
+  flex: 1 1 12rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+/* ── the five languages ── */
+
+.pd-langs {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.pd-lang-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.pd-tag[data-quiet='true'] {
+  color: var(--text-mut);
+  background: var(--surface-2);
+}
+
+/* Written by a machine and not yet read by a person. Weighted, not coloured. */
+.pd-tag[data-warn='true'] {
+  border-color: var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-ink);
+}
+
+/* ── revising, publishing, backing out ── */
+
+.pd-draft-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: clamp(1rem, 2.2vw, 1.4rem);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.pd-revise {
+  display: flex;
+  gap: 0.7rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.pd-revise .field {
+  flex: 1 1 22rem;
+  min-width: 16rem;
+}
+
+.pd-draft-acts,
+.pd-answer-acts {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  padding: clamp(0.9rem, 2vw, 1.1rem) clamp(1rem, 2.2vw, 1.4rem);
+}
+
+/* "This is not what I need" sits at the far end, away from the button it is the
+   opposite of. */
+.pd-draft-acts .btn-ghost:last-child {
+  margin-left: auto;
+}
+
+.pd-answer-acts {
+  padding: 0;
+}
+
+.pd-answer-acts .pd-fine {
+  flex: 1 1 16rem;
+}
+
+.pd-exits {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: clamp(1rem, 2.2vw, 1.4rem);
+  border-top: 1px solid var(--border);
+}
+
+.pd-exit-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 0.7rem;
+}
+
+.pd-exit-list > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+}
+
+.pd-exit-list b {
+  font-size: 0.85rem;
+}
+
+.pd-exit-list p {
+  flex: 1;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.pd-exit-list .btn {
+  align-self: flex-start;
+}
+
+.pd-done {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.pd-done svg {
+  color: var(--accent-lit);
+}
+
+/* ════════════════════════════════════════════════════ the create panel ══
+   One drawer, two bodies — see `dashboardDrawer.tsx`.
+
+   A right-hand slide-over rather than a centred modal: the form is long, and a
+   sheet that owns one edge of the screen can be as tall as the viewport without
+   arguing with the page behind it.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.pd-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.pd-scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  cursor: pointer;
+}
+
+.pd-drawer-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 39rem;
+  max-width: 100%;
+  height: 100%;
+  border-left: 1px solid var(--border);
+  background: var(--bg-2);
+  box-shadow: -24px 0 60px var(--shadow);
+  animation: pdSlide 260ms var(--ease);
+}
+
+@keyframes pdSlide {
+  from {
+    transform: translateX(24px);
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-drawer-panel {
+    animation: none;
+  }
+}
+
+.pd-drawer-panel > header {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 1.2rem clamp(1rem, 2.4vw, 1.6rem);
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-drawer-panel > header > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pd-drawer-panel h2 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+.pd-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding: clamp(1rem, 2.4vw, 1.6rem);
+}
+
+.pd-drawer-panel > footer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding: 0.9rem clamp(1rem, 2.4vw, 1.6rem);
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.pd-drawer-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* A section of the form, separated by a rule rather than by a card: the whole
+   drawer is one document and eight nested panels would read as eight forms. */
+.pd-form-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  padding-top: 1.4rem;
+  border-top: 1px solid var(--border);
+}
+
+.pd-form-block:first-child {
+  padding-top: 0;
+  border-top: none;
+}
+
+.pd-field-short input,
+.pd-field-short .pd-well {
+  max-width: 15rem;
+}
+
+/* ── a number with its unit welded on ── */
+
+.pd-well {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  cursor: text;
+  max-width: 14rem;
+}
+
+.pd-well[data-wide='true'] {
+  max-width: none;
+  width: 100%;
+}
+
+.pd-well:focus-within {
+  border-color: var(--accent-lit);
+}
+
+.pd-well input {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.pd-well input:focus {
+  outline: none;
+}
+
+.pd-well > span {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.pd-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pd-stepper > button {
+  flex: 0 0 auto;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.pd-stepper > button:hover {
+  border-color: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.pd-projection {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.pd-projection b {
+  flex: 1 1 12rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* ── days, audiences, stop conditions ── */
+
+.pd-days {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.pd-days button {
+  padding: 0.45rem 0.7rem;
+  border-radius: 9px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  cursor: pointer;
+}
+
+.pd-days button[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* Three things on one line, not two — so this drops the `.field-row` grid for a
+   wrapping row: the sentence after the two clocks reads as their caption and
+   sizing it to a grid column would give it half the drawer. */
+.pd-hours {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+}
+
+.pd-hours > .field {
+  flex: 0 0 auto;
+}
+
+.pd-hours .pd-fine {
+  flex: 1 1 11rem;
+  padding-bottom: 0.6rem;
+}
+
+.pd-picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: 0.5rem;
+}
+
+.pd-picks button,
+.pd-radios button {
+  display: flex;
+  gap: 0.6rem;
+  text-align: left;
+  padding: 0.7rem 0.85rem;
+  border-radius: 11px;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color 160ms var(--ease), background 160ms var(--ease);
+}
+
+.pd-picks button {
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pd-picks button[data-on='true'],
+.pd-radios button[data-on='true'] {
+  border-color: var(--accent-lit);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.pd-picks b,
+.pd-radios b {
+  font-size: 0.8rem;
+}
+
+.pd-picks span,
+.pd-radios em {
+  font-size: 0.74rem;
+  font-style: normal;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.pd-radios {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.pd-radios button > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+/* The dot. A real radio would need a name and a form; this group is three
+   buttons because two of them reveal a field, and a radio that opens a panel is
+   a control doing two jobs. */
+.pd-radios button > i {
+  flex: 0 0 auto;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: 0.15rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-2);
+}
+
+.pd-radios button[data-on='true'] > i {
+  border-color: var(--accent-lit);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2.5px var(--surface);
+}
+
+/* ── the notification switch ── */
+
+.pd-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.pd-switch-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pd-switch-row b {
+  font-size: 0.82rem;
+}
+
+/* A real checkbox under a drawn track: the label association, the keyboard and
+   the focus ring all come free, which a `role="switch"` button has to
+   re-implement. */
+.pd-switch {
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.pd-switch input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+}
+
+.pd-switch i {
+  display: block;
+  width: 2.6rem;
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--border-2);
+  transition: background 180ms var(--ease);
+}
+
+.pd-switch i::after {
+  content: '';
+  position: absolute;
+  top: 0.2rem;
+  left: 0.2rem;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  background: var(--surface);
+  transition: transform 180ms var(--ease);
+}
+
+.pd-switch input:checked + i {
+  background: var(--accent);
+}
+
+.pd-switch input:checked + i::after {
+  transform: translateX(1.1rem);
+}
+
+.pd-switch input:focus-visible + i {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 2px;
+}
+
+.pd-switch input:disabled + i {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pd-notify-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pd-notify-when {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* ── the lock screen ──────────────────────────────────────────────────────
+ *
+ * The one place on the dashboard that draws the customer's phone rather than
+ * the owner's desk, because a notification is the only thing here that arrives
+ * uninvited. It is deliberately dark in both themes: a lock screen is.
+ */
+
+.pd-lock {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.3rem 1rem 1.6rem;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #1b3129, #0b1512);
+}
+
+.pd-lock-clock {
+  font-size: 1.8rem;
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.pd-lock-card {
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.8rem 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.pd-lock-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.2rem;
+}
+
+.pd-lock-head .brand {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.pd-lock-head i {
+  margin-left: auto;
+  font-style: normal;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.pd-lock-card b {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.pd-lock-card p {
+  font-size: 0.76rem;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+/* ── the app card ──────────────────────────────────────────────────────────
+ *
+ * What the deal looks like in the feed, drawn from the live draft rather than
+ * from placeholders — a preview built from invented content is decoration, and
+ * decoration is what this panel replaces.
+ */
+
+.pd-phone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  width: 17.5rem;
+  max-width: 100%;
+  margin-inline: auto;
+  padding: 0.7rem;
+  border-radius: 30px;
+  background: #0b1512;
+  box-shadow: 0 20px 44px var(--shadow);
+}
+
+.pd-phone-notch {
+  width: 3.5rem;
+  height: 0.25rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.pd-phone-card {
+  align-self: stretch;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #122019;
+}
+
+.pd-phone-art {
+  display: flex;
+  align-items: flex-end;
+  height: 6.5rem;
+  padding: 0.75rem;
+  background: linear-gradient(150deg, #1b3129, #0b1512);
+}
+
+.pd-phone-art span {
+  padding: 0.4rem 0.7rem;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.pd-phone-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.9rem;
+}
+
+.pd-phone-body em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.pd-phone-body b {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.35;
+  color: #fff;
+}
+
+.pd-phone-body p {
+  font-size: 0.76rem;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.pd-phone-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-top: 0.4rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.pd-phone-foot span {
+  font-size: 0.68rem;
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.pd-phone-foot i {
+  padding: 0.35rem 0.65rem;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.pd-centred {
+  text-align: center;
+}
+
+/* The whole form said back in one sentence, on the dark ground the overview
+   uses for the same job: this is the panel that answers "what did I just
+   build". */
+.pd-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.1rem 1.2rem;
+  border-radius: 14px;
+  background: var(--text);
+  color: var(--bg);
+}
+
+.pd-summary .console-label {
+  color: var(--accent);
+}
+
+.pd-summary b {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+
+.pd-summary p {
+  font-size: 0.76rem;
+  line-height: 1.6;
+  opacity: 0.62;
+}
+
+/* ── the confirmation strip ───────────────────────────────────────────────
+ *
+ * The one honest thing a button can do on a screen with no server behind it.
+ * `<output>` rather than a div: it announces politely, which is right for a
+ * confirmation of a press the reader just made.
+ */
+
+.pd-toast {
+  position: fixed;
+  bottom: 1.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  max-width: calc(100vw - 2rem);
+  padding: 0.8rem 1.15rem;
+  border-radius: 12px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 18px 40px var(--shadow);
+  animation: pdRise 220ms var(--ease);
+}
+
+.pd-toast i {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+@keyframes pdRise {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-toast {
+    animation: none;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════ games ══

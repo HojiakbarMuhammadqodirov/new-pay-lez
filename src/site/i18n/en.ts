@@ -684,6 +684,10 @@ export const en = {
       { name: 'Loyalty campaigns', lede: 'Recurring rewards your regulars earn by coming back.' },
       { name: 'Vouchers', lede: 'How points turn into discounts, and what that costs you.' },
       { name: 'Customers', lede: 'Who comes in, when they come, and whether they come back.' },
+      {
+        name: 'Assistant',
+        lede: 'Say what you want to happen. I set it up, you decide whether it goes live.',
+      },
       { name: 'Scan activity', lede: 'Every QR scan at your counter, newest first.' },
       { name: 'Business profile', lede: 'Your listing in the Paylez app, translated for every customer.' },
     ],
@@ -714,6 +718,11 @@ export const en = {
         title: 'Put your QR code on the counter',
         body: 'Nothing on this page can fill in until customers start scanning. Print your code, stand it next to the till, and ask staff to point at it with the bill. The first numbers show up the same day.',
         action: 'Get your QR code',
+      },
+      {
+        title: 'Tell me what you want to happen',
+        body: 'I read your quiet hours, your budgets and what works at venues like yours, then set the whole thing up for you to check. Nothing goes live until you press publish.',
+        action: 'Start a conversation',
       },
       {
         title: 'No scans yet',
@@ -921,7 +930,80 @@ export const en = {
       },
       reach: '{n} of {total} people can be notified',
       limit: '{claimed} of {limit} claims',
+      limitAllowed: 'of {limit} allowed',
       noLimit: 'No claim limit',
+
+      /* Index-aligned with `PD_AUDIENCES`, and only the drawer reads them: the
+         table shows an audience by name, the form has to say what the name
+         means before an owner picks one. */
+      audienceNotes: [
+        'Anyone using the Paylez app near you.',
+        'People who arrived in Poland in the last 60 days.',
+        'Came to you before, but not in the last 30 days.',
+        'App users nearby who have never visited you.',
+        'People whose app language is Russian.',
+      ],
+
+      /*
+       * The expanded row. Three panels: where the people went, what the one
+       * notification did, and what stops the deal. Every figure is filled from
+       * `PD_DEALS` and `dealNotify`, so a row cannot describe a funnel its own
+       * columns disagree with.
+       */
+      funnelTitle: 'What happened, step by step',
+      funnel: ['Seen', 'Opened', 'Claimed'],
+      funnelNotes: [
+        'in the app feed',
+        '{pct}% of people who saw it',
+        '{pct}% of people who opened it came in',
+      ],
+      notStarted: 'not started',
+      drop: '{seen} people saw it and did not open it. {opened} opened it and did not come in.',
+      dropNone: 'This deal has not started yet, so there is nothing to measure.',
+
+      notifyTitle: 'What the notification did',
+      notifySteps: ['Notified', 'Opened', 'Came in'],
+      notifyStepNotes: [
+        'people with notifications switched on',
+        '{pct}% of the people notified',
+        '{pct}% of the people who opened it',
+      ],
+      notifySplit:
+        '{camein} of this deal’s {claims} claims came from the notification. The other {alone} found it in the app on their own.',
+      notifyBlocked:
+        'Sent to {n} people. {blocked} more matched but had recently received other notifications, so they did not get this one.',
+      notifyScheduled:
+        'A notification goes out at {at} to {n} people who have notifications switched on.',
+      notifyNone:
+        'No notification on this deal. {n} of the {total} people who match it have notifications switched on.',
+      notifyChange: 'Change the time',
+      notifyCancel: 'Cancel it',
+      whoTitle: 'Who sees it, and when',
+
+      /* The claim ceiling, from the two sides it can be seen from. Only the
+         first deal has one, so both are written for that case. */
+      limitForecast: 'At this pace, this deal hits its {limit}-claim limit around {date}.',
+      limitDates: ['22 August', '', '', '', '', ''],
+      retro:
+        'This ran for {weeks} weeks and got {claims} claims — about a third of what your 15% deals average. Try a deeper discount or a free item.',
+
+      /* What a row's second button does, by state. A paused deal resumes; an
+         expired one is copied rather than restarted, because its dates are
+         gone. */
+      act: { live: 'Pause', paused: 'Resume', scheduled: 'Pause', expired: 'Copy' },
+      pointsNote: 'Points offer — costs you nothing at the till',
+      costEstimate: 'estimate',
+      costNone: 'no discount cost',
+      notifyChips: {
+        none: 'No notification',
+        scheduled: 'Notification set for {at}',
+        sent: 'Notification sent · {n} came in',
+      },
+      sortBy: 'Sort by {column}',
+      clearFilters: 'Clear filters',
+      emptyFiltered: 'Nothing matches that',
+      emptyFilteredBody:
+        'No deal in your list matches the search and filter you have set. Clear them to see all six again.',
     },
 
     campaigns: {
@@ -1157,7 +1239,452 @@ export const en = {
       ready: 'reward ready',
       count: '{n} scans',
       showing: 'Showing {n} of {total}',
+      /* The pager. Honest now that `PD_SCANS` builds all forty-eight rather
+         than the first page — the generator is a pure function of the row
+         index, so the twelve you are not looking at cost nothing. */
+      page: 'Showing {from}–{to} of {total}',
+      prev: 'Previous',
+      next: 'Next',
+      coords: 'Counter',
     },
+
+    /*
+     * The two buttons above every screen.
+     *
+     * The prototype puts a primary and a secondary there and changes both by
+     * screen — create a deal from four screens, create a campaign from two, and
+     * a secondary that is "preview the listing" on the profile and "export"
+     * everywhere else. Index-aligned with `DASH_SCREENS`.
+     */
+    actions: {
+      newDeal: 'Create hot deal',
+      newCampaign: 'Create campaign',
+      exportCsv: 'Export CSV',
+      preview: 'Preview listing',
+      exported: 'Your CSV is downloading.',
+      previewing: 'Opening your listing preview.',
+    },
+
+    /*
+     * The create panel, shared by both things a partner can make.
+     *
+     * One drawer with two bodies rather than two drawers: the header, the
+     * footer, the validation line and the way it slides in are the same, and the
+     * prototype builds it that way for the same reason.
+     */
+    drawer: {
+      close: 'Close',
+      cancel: 'Cancel',
+      later: 'Save and finish later',
+      deal: {
+        kicker: 'New hot deal',
+        title: 'Create a hot deal',
+        sub: 'A time-bound offer in the app feed. Nothing is charged until somebody claims one.',
+        publish: 'Publish the deal',
+        copyTitle: 'Title and description',
+        titleLabel: 'Deal title',
+        titlePlaceholder: 'Morning flat white',
+        descLabel: 'Description',
+        descPlaceholder: 'Say what the customer gets, in one or two short lines.',
+        translateNote: 'Paylez translates this for customers reading in another language.',
+        copyError: 'A deal needs a title and a description before it can go live.',
+        kindTitle: 'What kind of deal',
+        kinds: ['Percentage off', 'Free item', 'Money off', 'Double points'],
+        discountTitle: 'Discount and dates',
+        badgeLabel: 'Discount text',
+        badgeNote: 'Short and clear. Customers see this first. 14 characters at most.',
+        from: 'Starts',
+        to: 'Ends',
+        windowError: 'The end date is before the start date.',
+        whenTitle: 'Which days and hours',
+        hourFrom: 'From',
+        hourTo: 'To',
+        whenNote: 'Runs {days}, {from}–{to}. Use this to fill your quiet hours.',
+        everyDay: 'every day',
+        noDays: 'no days yet',
+        audienceTitle: 'Who sees it',
+        audienceEstimate: 'About {n} people match this, and {notifiable} of them can be notified.',
+        notifyTitle: 'Notify people',
+        notifySwitch: 'Send a notification for this deal',
+        notifyQuota: '{n} of {total} left this month.',
+        notifyOutTitle: 'You have used all {total} this month',
+        notifyOutBody:
+          'The count resets on the first. The Growth plan carries more of them, and the deal still runs without one — it just waits for people to open the app.',
+        notifyPlan: 'See the Growth plan',
+        notifyWhen: 'When it goes out',
+        notifySuggested: 'Your audience opens the app most around {at}.',
+        useSuggested: 'Use {at}',
+        quietNote: 'Nothing goes out between 21:00 and 08:00, whatever you set.',
+        notifyWho: 'Who gets it',
+        notifyReach: '{n} of {total} have notifications switched on.',
+        notifyWhoNote: 'Change it in “Who sees it” above',
+        notifyText: 'What it says',
+        notifyTextNote:
+          'Taken from your deal title. Shorten it if you like — 64 characters at most.',
+        stopTitle: 'When should it stop',
+        stopOptions: [
+          { label: 'On the end date', note: 'It runs to the date you set and no further.' },
+          { label: 'After a number of claims', note: 'Stops itself once enough people have used it.' },
+          { label: 'Once it has cost enough', note: 'Stops itself once the discounts reach an amount.' },
+        ],
+        stopClaims: 'Most claims allowed',
+        stopMoney: 'Stop once it has cost',
+        claims: 'claims',
+        stopNote:
+          'Hot deals do not use your loyalty or voucher budgets. This limit is what stops them.',
+        termsTitle: 'Rules for using the deal',
+        termsPlaceholder: 'One claim per visit. Not valid with other deals.',
+        previewTitle: 'How customers will see it',
+        previewClaim: 'Claim deal',
+        previewUntitled: 'Your deal title',
+        previewNoDesc: 'Your description shows here.',
+        previewLimitNone: 'No claim limit',
+        previewLimitClaims: 'Stops after {n} claims',
+        previewLimitMoney: 'Stops once it has cost {amount}',
+      },
+      campaign: {
+        kicker: 'New loyalty campaign',
+        title: 'Create a loyalty campaign',
+        sub: 'A reward your regulars earn by coming back. It is held from your loyalty budget the moment somebody qualifies.',
+        publish: 'Start the campaign',
+        nameLabel: 'Campaign name',
+        namePlaceholder: 'Coffee streak',
+        nameNote: 'Only you see this name. Customers see the reward.',
+        nameError: 'Give the campaign a name so you can find it later.',
+        visitsTitle: 'How many visits',
+        visits: 'visits',
+        visitsHelp: 'A customer earns the reward on their {n}th visit, then starts again.',
+        visitsMinus: 'One fewer visit',
+        visitsPlus: 'One more visit',
+        rewardTitle: 'What they get',
+        rewardKinds: ['A free item', 'Money off'],
+        rewardItemPlaceholder: 'a free filter coffee',
+        rewardItemNote: 'Write it the way a customer would read it in the app.',
+        rewardOff: 'off',
+        rewardError: 'Say what the customer gets.',
+        costTitle: 'What does this cost you',
+        costEach: 'each',
+        costNote:
+          'We use this to track what your campaigns are costing you. It is the amount held from your loyalty budget each time somebody earns this reward.',
+        project: 'customers',
+        projection: 'If {n} customers finish it, that is {amount} out of your loyalty budget.',
+        priorityTitle: 'When two campaigns match the same visit',
+        priorityLede:
+          'A customer can qualify for more than one campaign at the same visit. Only one reward is given: the one with the lower priority number.',
+        priorityHelp: 'Priority {n} of 5. Lower wins.',
+        rulesTitle: 'The small rules',
+        expiry: 'Reward expires after',
+        days: 'days',
+        expiryNote: 'After that the reward is gone and the money returns to your budget.',
+        minSpend: 'Minimum spend per visit',
+        minSpendNote: 'Smaller visits do not count. One scan per customer per day.',
+        summaryTitle: 'Your campaign in one line',
+        summary: '{visits} visits, then {reward}. Costs you {amount} every time somebody finishes it.',
+        summaryNote:
+          'The money is held from your loyalty budget when a customer qualifies, not when they use it. If the reward expires, it comes back.',
+        summaryReward: 'a reward',
+      },
+      valid: 'Fix the {n} thing above before publishing.',
+      validPlural: 'Fix the {n} things above before publishing.',
+    },
+
+    /*
+     * The assistant.
+     *
+     * The one screen that talks, and the largest single thing in the prototype:
+     * a conversation, a draft it can defend, the deal text in five languages,
+     * three named ways out of it, and four endings the conversation can reach
+     * that are not a draft at all — an answer, a review, a hand-over to the
+     * form, and a plain "I cannot do that".
+     *
+     * **It reads numbers, it does not invent them.** Every figure below arrives
+     * through a hole filled from `partnerMetrics.ts`, which is what lets the
+     * composer note promise exactly that. A number typed into a sentence here is
+     * the bug this arrangement exists to prevent.
+     *
+     * **And nothing it drafts is live.** There is no server behind any of it, so
+     * publishing shows what would happen and says so; the same rule the rest of
+     * the dashboard follows with `notWired`.
+     */
+    assistant: {
+      knowTitle: 'What I know about your venue',
+      intro:
+        'Tell me what you want to happen in your venue. I will set it up, show you what it costs, and leave it to you to publish. Nothing goes live until you press the button.',
+      knows: [
+        'Your quietest hours are {days}, {from} to {to} — about {pct}% below your weekly average.',
+        '{pct}% of your customers use the app in Russian, but none of your live deals is written in Russian.',
+        'Across {n} cafés in your city, free-item deals get about {x}× the claims of percentage discounts.',
+        'You have {vouchers} unspent in vouchers and {loyalty} in loyalty this month.',
+      ],
+
+      optionsTitle: 'What you can do',
+      optionsIntro: 'Focused starts, based on what I am seeing in your numbers. Tap one to talk it through.',
+      options: [
+        {
+          name: 'Fill my quiet hours',
+          desc: '{days}, {from} to {to} — about {pct}% below average.',
+          seed: 'Fill my quiet Tuesday afternoons',
+        },
+        {
+          name: 'Bring back customers who stopped coming',
+          desc: '{n} regulars, last seen over 30 days ago.',
+          seed: 'Get back the {n} regulars who stopped coming',
+        },
+        {
+          name: 'Review everything I am running',
+          desc: 'Three things worth changing this week.',
+          seed: 'Review everything I am running and tell me what to fix',
+        },
+        {
+          name: 'Why did voucher use drop?',
+          desc: 'Down 4% this month — I can show you where.',
+          seed: 'Why did voucher use drop this month?',
+        },
+      ],
+
+      convTitle: 'Talk to your assistant',
+      reset: 'Start over',
+      opening:
+        'Tell me what you want to happen in your venue — in your own words, in any of the five languages Paylez speaks. I will ask a couple of short questions, show you what it will cost, and leave it to you to publish.',
+      chipsHint: 'Tap one, or type your answer below.',
+      send: 'Send',
+      placeholders: {
+        idle: 'Tell me what you want to happen in your venue',
+        reward: 'A free coffee, or a percentage off — or say it your way',
+        budget: 'Around {a}, {b} or {c}?',
+        duration: '2, 4 or 8 weeks?',
+        notify: 'Yes or no?',
+        ready: 'Change something before I show the draft?',
+      },
+      composerNote:
+        'I read all five languages Paylez speaks. Every figure I use comes from your own numbers or from venues like yours — I will not make one up.',
+
+      /* What it says when it has understood which of the three goals you mean. */
+      goalOpen: {
+        quiet:
+          'Your quietest stretch is {days}, {from} to {to} — about {pct}% below your weekly average. I would run a short deal then. What should people get?',
+        lapsed:
+          '{n} of your regulars have not been in for over 30 days. A deal aimed at them can pull some back. What should they get?',
+        new: 'New visitors mostly come from one clear, simple offer they see in the feed. What should first-time people get?',
+      },
+      /* The four questions, each answered by a chip or by typing. */
+      askBudget: {
+        item:
+          'A free filter coffee, good. Free-item deals get about {x}× the claims of a percentage off at venues like yours, and each one costs you a fixed {amount}. How much do you want to put toward it this month?',
+        percent:
+          '20% off it is. That moves with the size of each bill, so I will add a stop once it has cost enough. How much do you want to put toward it this month?',
+      },
+      askDuration:
+        '{amount}. Hot deals do not come out of your loyalty or voucher pools, so this is money off your margin. For how long should it run?',
+      askNotify:
+        '{n} weeks. You have {left} of your {total} notifications left this month — want me to send one when it starts? Without it, most people only see the deal if they open the app.',
+      ready:
+        'Here is what I would set up{notify}. Nothing is live yet — it goes out only when you press publish. Take a look at the draft.',
+      readyNotify: ', with a notification when it starts',
+      retry: {
+        reward: 'I did not quite catch that — a free filter coffee, or a percentage off the bill?',
+        budget: 'Roughly how much for the month — {a}, {b} or {c}?',
+        duration: 'For how long — 2, 4 or 8 weeks?',
+        notify: 'Should I send a notification when it starts — yes, or no?',
+        other: 'You can change any of that on the draft. Want to see it?',
+      },
+      chips: {
+        item: 'A free filter coffee',
+        percent: '20% off the bill',
+        weeks: '{n} weeks',
+        yes: 'Yes, send one',
+        no: 'No, just list it',
+      },
+
+      readyTitle: 'What I would set up',
+      readyRows: ['The goal', 'What people get', 'Days and hours', 'Budget', 'Runs for', 'Notification'],
+      showDraft: 'Show me the draft',
+
+      /* The draft. */
+      draftTag: 'Draft',
+      draftNote: 'Nothing here is live. It goes out only when you publish it.',
+      changedTitle: 'What I changed',
+      changedNote: 'Nothing else moved. Every other field is the same as before.',
+      sentence: {
+        item: 'A free filter coffee with any bake, {days} {from} to {to}, for the next {weeks} weeks.',
+        percent: '20% off the bill, {days} {from} to {to}, for the next {weeks} weeks.',
+      },
+      whyTitle: 'Why I chose this',
+      reasons: {
+        quietDays:
+          'I chose {days}, {from} to {to}, because those are your quietest hours — about {pct}% below your weekly average.',
+        movedDays:
+          'You asked for {days}, so I moved it. Your quietest hours are still {quiet}, {from} to {to}, if you want to go back.',
+        item:
+          'I chose a free item because free-item deals get about {x}× the claims of percentage discounts across {n} venues in your city, and the cost is a fixed {amount} each time.',
+        percent:
+          'You asked for a percentage discount, so I set 20%. The cost moves with the size of each bill, so I added a stopping condition.',
+        budget: 'I set the budget at {amount} because that is what you told me you can spend this month.',
+        budgetTight:
+          'I set the budget at {amount} because that is what is left before hot deals start eating into your margin this month.',
+      },
+      dealTag: 'Hot deal',
+      dealNew: 'New — this will be created',
+      dealFields: ['What it is', 'Days and hours', 'Runs', 'Who sees it'],
+      dealValues: {
+        item: 'Free item — a filter coffee with any bake',
+        percent: 'Percentage off — 20% off the bill',
+      },
+      stopAfter: 'Stops after',
+      claims: 'claims',
+      fieldNote:
+        'Days, hours, dates and audience are set the way I explained above. Change any of them in the full form.',
+      notifyTag: 'Notification',
+      notifyAttached: 'Attached to the deal above',
+      goesOut: 'Goes out',
+      notifyFields: ['Reaches', 'Uses'],
+      notifyReach: '{n} people with notifications switched on',
+      notifyUses: '1 of your {n} remaining notifications this month',
+      costTitle: 'What it will cost',
+      costLine: {
+        item: 'If {n} people claim this, it costs you about {amount}. That is an estimate, based on a fixed {each} per claim.',
+        percent:
+          'If {n} people claim this, it costs you about {amount}. That is an estimate, based on your average spend of {avg} per visit.',
+      },
+      costNote:
+        'Hot deals have no budget pool of their own, so this comes straight off your margin. The stopping condition above is what limits it.',
+      budgetWarn:
+        'You asked for {asked}. You have {room} of room this month, so I made a smaller version rather than refusing — {n} claims instead of {wanted}.',
+      readTitle: 'What customers will read',
+      readWarn: 'Written by me — check before publishing',
+      titleIn: 'Title in {lang}',
+      bodyIn: 'Description in {lang}',
+      termsTitle: 'Rules for using it',
+      termsTag: 'Standard terms',
+      terms: 'One claim per visit. Not valid with other deals. The venue may end the offer early.',
+      reviseTitle: 'Change something? Tell me what',
+      revisePlaceholder: 'Make it Thursday instead, and I do not want students getting it.',
+      reviseAction: 'Change the draft',
+      reviseNote:
+        'I change only what you name, and show you what moved. The rest of the draft stays as it is.',
+      publish: 'Publish it',
+      notRight: 'This is not what I need',
+      exitsIntro:
+        'Three ways out. None of them is worse than the others — pick whichever suits how wrong it is.',
+      exits: [
+        {
+          title: 'Tell me what is wrong',
+          note: 'I change this draft. Everything you have already approved stays.',
+          label: 'Write it below',
+        },
+        {
+          title: 'Open it in the normal form',
+          note: 'You take over. Everything I got right is already filled in.',
+          label: 'Take over',
+        },
+        {
+          title: 'Start over',
+          note: 'Throws away this draft and the text in five languages.',
+          label: 'Throw it away',
+        },
+      ],
+      /* What a revision recognises, and what it writes in the change list. */
+      revisions: {
+        days: 'Days',
+        hours: 'Hours',
+        audience: 'Who sees it',
+        thursday: 'Thursday',
+        friday: 'Friday',
+        morning: '07:00–10:00',
+        noStudents: 'Everyone except students — about {n} people',
+      },
+
+      publishedTitle: 'Two things are ready',
+      publishedOne: 'One thing is ready',
+      publishedDeal: '{days}, {from}–{to} · stops after {n} claims',
+      publishedNotify: 'Goes out at {at}',
+      publishedNotifyNote: 'To {n} people',
+      watch:
+        'Check back in two days. If fewer than 10 people have claimed it by then, the hours are probably right and the offer is not strong enough.',
+      again: 'Set up something else',
+
+      reviewTitle: 'What I would change this week',
+      reviewIntro: 'Three things are worth changing this week. I have left everything else alone.',
+      review: [
+        {
+          text: 'Your {pct}% voucher tier needs {points} points. Only {reached} customers reached it this month. At {lower} points, {more} more of your regulars would have qualified.',
+          label: 'Change the tier',
+        },
+        {
+          text: '“{name}” is paused but still holding {amount}. {n} rewards were earned and never used, and they stay valid until they expire.',
+          label: 'Open the campaign',
+        },
+        {
+          text: '“{name}” ran for {weeks} weeks at 5% off and got {claims} claims — about a third of what your 15% deals average. Small discounts rarely move people.',
+          label: 'Look at your deals',
+        },
+      ],
+
+      asked: 'You asked: “{q}”',
+      answerLine:
+        'Voucher use is down 4%, from 158 to 152. The drop is all in the {pct}% tier — {now} customers reached it this month against {before} last month, because the points threshold went up to {points}.',
+      answerNote:
+        'Visits are up 12% over the same period, so people are coming in. Fewer of them are reaching a tier worth using.',
+      answerLabel: 'Open the tiers',
+      answerMore:
+        'Where the money went, tier by tier, is on the Vouchers page. I have not rebuilt it here.',
+      askElse: 'Ask something else',
+
+      handedTitle: 'It is yours now',
+      handedNote:
+        'I filled in what I was confident about. Check the two at the bottom — I guessed those.',
+      handedFields: [
+        'Days and hours',
+        'What people get',
+        'Runs for',
+        'Stops after',
+        'Who sees it',
+        'Text in five languages',
+      ],
+      handedWeeks: '{n} weeks',
+      handedCopy: 'Written by me — check before publishing',
+      filledIn: 'Filled in',
+      checkThis: 'Check this',
+      openForm: 'Open the form',
+      backToDraft: 'Go back to the draft',
+
+      cantLine: 'I cannot target people by how much they usually spend. Paylez does not track that yet.',
+      cantAlt:
+        'I can target people who have visited you before — {n} of them have been in at least twice. Want that instead?',
+      cantYes: 'Yes, use that instead',
+      cantNo: 'Ask for something else',
+      cantElsewhere:
+        'If you want to see what people spend, the average per visit is on the Customers page.',
+      cantOpen: 'Open Customers',
+
+      missedTitle: 'I did not understand that one',
+      missedBody:
+        'I got as far as: a deal on {days} afternoons. I could not work out the offer or the budget, and I would rather hand it over than keep asking.',
+      loopNote:
+        'That is twice now. I am not going to keep guessing — the form will be quicker, and I have put in the days and hours I did understand.',
+      missedAction: 'Open the normal form',
+      tryAgain: 'Try again',
+
+      /* The three days it can be moved to, and the days it starts on. Written
+         out rather than assembled from weekday names: "Tuesday and Wednesday"
+         is one phrase in English and joins differently in the other four. */
+      dayChoices: ['Tuesday and Wednesday', 'Thursday', 'Friday'],
+      goals: [
+        'Fill my quiet hours',
+        'Bring back customers who stopped coming',
+        'Get more first-time visitors',
+        'Review everything I am running',
+      ],
+      notifyYes: 'Yes, when it starts',
+      notifyNo: 'No, listed only',
+      weeksValue: '{n} weeks',
+      /* Nothing behind it can actually publish, and the screen says so rather
+         than pretending. */
+      published: 'Nothing was published — there is no server behind this build.',
+      draftUpdated: 'Draft updated. Everything else is unchanged.',
+      handedOver: 'Opened the form with everything carried across.',
+    },
+
     collapse: 'Collapse menu',
     expand: 'Expand menu',
     backToSite: 'Back to paylez',

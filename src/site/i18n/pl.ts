@@ -590,6 +590,10 @@ export const pl: Dictionary = {
       { name: 'Kampanie lojalnościowe', lede: 'Powtarzalne nagrody, na które zapracowują stali klienci.' },
       { name: 'Vouchery', lede: 'Jak punkty zamieniają się w rabaty i ile Cię to kosztuje.' },
       { name: 'Klienci', lede: 'Kto przychodzi, kiedy przychodzi i czy wraca.' },
+      {
+        name: 'Asystent',
+        lede: 'Powiedz, co ma się wydarzyć. Ja to przygotuję, Ty decydujesz, czy ruszy.',
+      },
       { name: 'Skanowania', lede: 'Każde skanowanie QR przy Twojej kasie, od najnowszego.' },
       { name: 'Profil firmy', lede: 'Twoja wizytówka w aplikacji Paylez, przetłumaczona dla każdego klienta.' },
     ],
@@ -618,6 +622,11 @@ export const pl: Dictionary = {
         title: 'Postaw kod QR przy kasie',
         body: 'Nic na tej stronie nie może się wypełnić, dopóki klienci nie zaczną skanować. Wydrukuj kod, postaw go obok kasy i poproś obsługę, by wskazywała go razem z rachunkiem. Pierwsze liczby pojawią się tego samego dnia.',
         action: 'Pobierz swój kod QR',
+      },
+      {
+        title: 'Powiedz, co ma się wydarzyć',
+        body: 'Czytam Twoje ciche godziny, Twoje budżety i to, co działa w lokalach takich jak Twój, a potem przygotowuję całość do sprawdzenia. Nic nie ruszy, dopóki nie klikniesz publikacji.',
+        action: 'Zacznij rozmowę',
       },
       {
         title: 'Jeszcze żadnych skanowań',
@@ -799,7 +808,66 @@ export const pl: Dictionary = {
       },
       reach: '{n} z {total} osób można powiadomić',
       limit: '{claimed} z {limit} odebrań',
+      limitAllowed: 'z {limit} dozwolonych',
       noLimit: 'Bez limitu odebrań',
+
+      audienceNotes: [
+        'Każdy, kto korzysta z aplikacji Paylez w Twojej okolicy.',
+        'Osoby, które przyjechały do Polski w ciągu ostatnich 60 dni.',
+        'Byli u Ciebie wcześniej, ale nie w ciągu ostatnich 30 dni.',
+        'Użytkownicy aplikacji w pobliżu, którzy nigdy Cię nie odwiedzili.',
+        'Osoby, których językiem aplikacji jest rosyjski.',
+      ],
+
+      funnelTitle: 'Co się wydarzyło, krok po kroku',
+      funnel: ['Zobaczyli', 'Otworzyli', 'Odebrali'],
+      funnelNotes: [
+        'w kanale aplikacji',
+        '{pct}% osób, które to zobaczyły',
+        '{pct}% osób, które otworzyły, przyszło',
+      ],
+      notStarted: 'jeszcze nie ruszyło',
+      drop: '{seen} osób zobaczyło i nie otworzyło. {opened} otworzyło i nie przyszło.',
+      dropNone: 'Ta okazja jeszcze nie ruszyła, więc nie ma czego mierzyć.',
+
+      notifyTitle: 'Co zrobiło powiadomienie',
+      notifySteps: ['Powiadomieni', 'Otworzyli', 'Przyszli'],
+      notifyStepNotes: [
+        'osób z włączonymi powiadomieniami',
+        '{pct}% powiadomionych osób',
+        '{pct}% osób, które je otworzyły',
+      ],
+      notifySplit:
+        '{camein} z {claims} odebrań tej okazji przyszło z powiadomienia. Pozostałe {alone} znalazły ją w aplikacji same.',
+      notifyBlocked:
+        'Wysłane do {n} osób. Kolejne {blocked} pasowały, ale niedawno dostały inne powiadomienia, więc tego nie otrzymały.',
+      notifyScheduled:
+        'Powiadomienie wyjdzie o {at} do {n} osób z włączonymi powiadomieniami.',
+      notifyNone:
+        'Ta okazja nie ma powiadomienia. {n} z {total} pasujących osób ma włączone powiadomienia.',
+      notifyChange: 'Zmień godzinę',
+      notifyCancel: 'Anuluj je',
+      whoTitle: 'Kto to widzi i kiedy',
+
+      limitForecast: 'W tym tempie ta okazja osiągnie limit {limit} odebrań około {date}.',
+      limitDates: ['22 sierpnia', '', '', '', '', ''],
+      retro:
+        'Trwała {weeks} tygodni i dała {claims} odebrań — mniej więcej jedną trzecią tego, co średnio dają Twoje okazje 15%. Spróbuj większego rabatu albo darmowej pozycji.',
+
+      act: { live: 'Wstrzymaj', paused: 'Wznów', scheduled: 'Wstrzymaj', expired: 'Skopiuj' },
+      pointsNote: 'Oferta punktowa — nic Cię nie kosztuje przy kasie',
+      costEstimate: 'szacunek',
+      costNone: 'bez kosztu rabatu',
+      notifyChips: {
+        none: 'Bez powiadomienia',
+        scheduled: 'Powiadomienie na {at}',
+        sent: 'Powiadomienie wysłane · przyszło {n}',
+      },
+      sortBy: 'Sortuj według: {column}',
+      clearFilters: 'Wyczyść filtry',
+      emptyFiltered: 'Nic nie pasuje',
+      emptyFilteredBody:
+        'Żadna okazja z Twojej listy nie pasuje do ustawionego wyszukiwania i filtra. Wyczyść je, aby znów zobaczyć wszystkie sześć.',
     },
 
     campaigns: {
@@ -1038,7 +1106,405 @@ export const pl: Dictionary = {
       ready: 'nagroda gotowa',
       count: '{n} skanowań',
       showing: 'Pokazano {n} z {total}',
+      page: 'Pokazano {from}–{to} z {total}',
+      prev: 'Poprzednia',
+      next: 'Następna',
+      coords: 'Kasa',
     },
+    actions: {
+      newDeal: 'Stwórz gorącą okazję',
+      newCampaign: 'Stwórz kampanię',
+      exportCsv: 'Eksport CSV',
+      preview: 'Podejrzyj wizytówkę',
+      exported: 'Twój plik CSV się pobiera.',
+      previewing: 'Otwieram podgląd Twojej wizytówki.',
+    },
+
+    drawer: {
+      close: 'Zamknij',
+      cancel: 'Anuluj',
+      later: 'Zapisz i dokończ później',
+      deal: {
+        kicker: 'Nowa gorąca okazja',
+        title: 'Stwórz gorącą okazję',
+        sub: 'Czasowa oferta w kanale aplikacji. Nic nie jest naliczane, dopóki ktoś jej nie odbierze.',
+        publish: 'Opublikuj okazję',
+        copyTitle: 'Tytuł i opis',
+        titleLabel: 'Tytuł okazji',
+        titlePlaceholder: 'Poranna flat white',
+        descLabel: 'Opis',
+        descPlaceholder: 'Napisz, co dostaje klient, w jednym–dwóch krótkich zdaniach.',
+        translateNote: 'Paylez przetłumaczy to dla klientów czytających w innym języku.',
+        copyError: 'Okazja potrzebuje tytułu i opisu, zanim ruszy.',
+        kindTitle: 'Jaki to rodzaj okazji',
+        kinds: ['Rabat procentowy', 'Darmowa pozycja', 'Kwota zniżki', 'Podwójne punkty'],
+        discountTitle: 'Rabat i daty',
+        badgeLabel: 'Tekst rabatu',
+        badgeNote: 'Krótko i jasno. Klienci widzą to najpierw. Najwyżej 14 znaków.',
+        from: 'Start',
+        to: 'Koniec',
+        windowError: 'Data końca jest wcześniejsza niż data startu.',
+        whenTitle: 'Które dni i godziny',
+        hourFrom: 'Od',
+        hourTo: 'Do',
+        whenNote: 'Działa {days}, {from}–{to}. Wykorzystaj to na swoje ciche godziny.',
+        everyDay: 'codziennie',
+        noDays: 'jeszcze żadnych dni',
+        audienceTitle: 'Kto to widzi',
+        audienceEstimate: 'Pasuje do tego około {n} osób, a {notifiable} z nich można powiadomić.',
+        notifyTitle: 'Powiadom ludzi',
+        notifySwitch: 'Wyślij powiadomienie o tej okazji',
+        notifyQuota: 'Zostało {n} z {total} w tym miesiącu.',
+        notifyOutTitle: 'Wykorzystałeś wszystkie {total} w tym miesiącu',
+        notifyOutBody:
+          'Licznik zeruje się pierwszego. Plan Growth ma ich więcej, a okazja działa i bez powiadomienia — po prostu czeka, aż ktoś otworzy aplikację.',
+        notifyPlan: 'Zobacz plan Growth',
+        notifyWhen: 'Kiedy wychodzi',
+        notifySuggested: 'Twoi odbiorcy otwierają aplikację najczęściej około {at}.',
+        useSuggested: 'Ustaw {at}',
+        quietNote: 'Nic nie wychodzi między 21:00 a 08:00, cokolwiek ustawisz.',
+        notifyWho: 'Kto je dostanie',
+        notifyReach: '{n} z {total} ma włączone powiadomienia.',
+        notifyWhoNote: 'Zmień to wyżej, w „Kto to widzi”',
+        notifyText: 'Co w nim jest',
+        notifyTextNote: 'Wzięte z tytułu okazji. Możesz skrócić — najwyżej 64 znaki.',
+        stopTitle: 'Kiedy ma się zatrzymać',
+        stopOptions: [
+          { label: 'W dacie końca', note: 'Działa do ustawionej daty i ani dnia dłużej.' },
+          { label: 'Po liczbie odebrań', note: 'Zatrzyma się, gdy wystarczająco wiele osób jej użyje.' },
+          { label: 'Gdy dojdzie do kwoty', note: 'Zatrzyma się, gdy rabaty osiągną daną kwotę.' },
+        ],
+        stopClaims: 'Maksymalna liczba odebrań',
+        stopMoney: 'Zatrzymaj, gdy kosztuje',
+        claims: 'odebrań',
+        stopNote:
+          'Gorące okazje nie korzystają z budżetu lojalnościowego ani voucherowego. Zatrzymuje je właśnie ten limit.',
+        termsTitle: 'Zasady korzystania z okazji',
+        termsPlaceholder: 'Jedno odebranie na wizytę. Nie łączy się z innymi okazjami.',
+        previewTitle: 'Jak zobaczą to klienci',
+        previewClaim: 'Odbierz',
+        previewUntitled: 'Tytuł Twojej okazji',
+        previewNoDesc: 'Tutaj pojawi się Twój opis.',
+        previewLimitNone: 'Bez limitu odebrań',
+        previewLimitClaims: 'Zatrzymuje się po {n} odebraniach',
+        previewLimitMoney: 'Zatrzymuje się, gdy kosztuje {amount}',
+      },
+      campaign: {
+        kicker: 'Nowa kampania lojalnościowa',
+        title: 'Stwórz kampanię lojalnościową',
+        sub: 'Nagroda, na którą zapracowują stali klienci wracając. Kwota jest rezerwowana z budżetu lojalnościowego w chwili, gdy ktoś się kwalifikuje.',
+        publish: 'Uruchom kampanię',
+        nameLabel: 'Nazwa kampanii',
+        namePlaceholder: 'Kawowa passa',
+        nameNote: 'Tę nazwę widzisz tylko Ty. Klienci widzą nagrodę.',
+        nameError: 'Nadaj kampanii nazwę, żeby ją później znaleźć.',
+        visitsTitle: 'Ile wizyt',
+        visits: 'wizyt',
+        visitsHelp: 'Klient zdobywa nagrodę przy {n}. wizycie, a potem zaczyna od nowa.',
+        visitsMinus: 'O jedną wizytę mniej',
+        visitsPlus: 'O jedną wizytę więcej',
+        rewardTitle: 'Co dostają',
+        rewardKinds: ['Darmowa pozycja', 'Kwota zniżki'],
+        rewardItemPlaceholder: 'darmowa kawa przelewowa',
+        rewardItemNote: 'Napisz tak, jak przeczyta to klient w aplikacji.',
+        rewardOff: 'zniżki',
+        rewardError: 'Napisz, co dostaje klient.',
+        costTitle: 'Ile Cię to kosztuje',
+        costEach: 'za każdym razem',
+        costNote:
+          'Używamy tego, by śledzić koszt Twoich kampanii. To kwota rezerwowana z budżetu lojalnościowego za każdym razem, gdy ktoś zdobędzie tę nagrodę.',
+        project: 'klientów',
+        projection: 'Jeśli {n} klientów ją ukończy, to {amount} z Twojego budżetu lojalnościowego.',
+        priorityTitle: 'Gdy dwie kampanie pasują do tej samej wizyty',
+        priorityLede:
+          'Klient może kwalifikować się do więcej niż jednej kampanii przy tej samej wizycie. Przyznawana jest tylko jedna nagroda: ta o niższym numerze priorytetu.',
+        priorityHelp: 'Priorytet {n} z 5. Wygrywa niższy.',
+        rulesTitle: 'Drobne zasady',
+        expiry: 'Nagroda wygasa po',
+        days: 'dniach',
+        expiryNote: 'Po tym czasie nagroda przepada, a pieniądze wracają do budżetu.',
+        minSpend: 'Minimalna kwota na wizytę',
+        minSpendNote: 'Mniejsze wizyty się nie liczą. Jedno skanowanie na klienta dziennie.',
+        summaryTitle: 'Twoja kampania w jednym zdaniu',
+        summary: '{visits} wizyt, a potem {reward}. Kosztuje Cię {amount} za każdym razem, gdy ktoś ją ukończy.',
+        summaryNote:
+          'Pieniądze są rezerwowane z budżetu lojalnościowego, gdy klient się kwalifikuje, a nie gdy odbiera nagrodę. Jeśli nagroda wygaśnie, wracają.',
+        summaryReward: 'nagroda',
+      },
+      valid: 'Popraw {n} rzecz powyżej przed publikacją.',
+      validPlural: 'Popraw {n} rzeczy powyżej przed publikacją.',
+    },
+
+    assistant: {
+      knowTitle: 'Co wiem o Twoim lokalu',
+      intro:
+        'Powiedz, co ma się wydarzyć w Twoim lokalu. Przygotuję to, pokażę, ile kosztuje, i zostawię Tobie decyzję o publikacji. Nic nie ruszy, dopóki nie klikniesz przycisku.',
+      knows: [
+        'Twoje najcichsze godziny to {days}, {from}–{to} — około {pct}% poniżej tygodniowej średniej.',
+        '{pct}% Twoich klientów korzysta z aplikacji po rosyjsku, ale żadna z Twoich aktywnych okazji nie jest napisana po rosyjsku.',
+        'W {n} kawiarniach w Twoim mieście okazje z darmową pozycją mają około {x}× więcej odebrań niż rabaty procentowe.',
+        'Masz {vouchers} niewykorzystane w voucherach i {loyalty} w lojalności w tym miesiącu.',
+      ],
+
+      optionsTitle: 'Co możesz zrobić',
+      optionsIntro: 'Konkretne początki, oparte na tym, co widzę w Twoich liczbach. Kliknij, żeby to omówić.',
+      options: [
+        {
+          name: 'Zapełnij ciche godziny',
+          desc: '{days}, {from}–{to} — około {pct}% poniżej średniej.',
+          seed: 'Zapełnij ciche wtorkowe popołudnia',
+        },
+        {
+          name: 'Odzyskaj klientów, którzy przestali przychodzić',
+          desc: '{n} stałych klientów, ostatnio widzianych ponad 30 dni temu.',
+          seed: 'Odzyskaj {n} stałych klientów, którzy przestali przychodzić',
+        },
+        {
+          name: 'Przejrzyj wszystko, co prowadzę',
+          desc: 'Trzy rzeczy warte zmiany w tym tygodniu.',
+          seed: 'Przejrzyj wszystko, co prowadzę, i powiedz, co poprawić',
+        },
+        {
+          name: 'Dlaczego spadło korzystanie z voucherów?',
+          desc: 'W tym miesiącu o 4% — mogę pokazać gdzie.',
+          seed: 'Dlaczego w tym miesiącu spadło korzystanie z voucherów?',
+        },
+      ],
+
+      convTitle: 'Porozmawiaj z asystentem',
+      reset: 'Zacznij od nowa',
+      opening:
+        'Powiedz, co ma się wydarzyć w Twoim lokalu — własnymi słowami, w dowolnym z pięciu języków Paylez. Zadam kilka krótkich pytań, pokażę, ile to będzie kosztować, i zostawię Tobie publikację.',
+      chipsHint: 'Kliknij jedno albo wpisz odpowiedź poniżej.',
+      send: 'Wyślij',
+      placeholders: {
+        idle: 'Powiedz, co ma się wydarzyć w Twoim lokalu',
+        reward: 'Darmowa kawa albo rabat procentowy — albo powiedz to po swojemu',
+        budget: 'Około {a}, {b} czy {c}?',
+        duration: '2, 4 czy 8 tygodni?',
+        notify: 'Tak czy nie?',
+        ready: 'Zmienić coś, zanim pokażę projekt?',
+      },
+      composerNote:
+        'Czytam we wszystkich pięciu językach Paylez. Każda liczba, której używam, pochodzi z Twoich danych albo z lokali takich jak Twój — żadnej nie wymyślam.',
+
+      goalOpen: {
+        quiet:
+          'Twój najcichszy czas to {days}, {from}–{to} — około {pct}% poniżej tygodniowej średniej. Uruchomiłbym wtedy krótką okazję. Co mają dostać?',
+        lapsed:
+          '{n} Twoich stałych klientów nie było u Ciebie od ponad 30 dni. Okazja skierowana do nich może część ściągnąć z powrotem. Co mają dostać?',
+        new: 'Nowi goście przychodzą najczęściej po jednej jasnej, prostej ofercie, którą zobaczą w kanale. Co mają dostać nowe osoby?',
+      },
+      askBudget: {
+        item:
+          'Darmowa kawa przelewowa, dobrze. Okazje z darmową pozycją mają w lokalach takich jak Twój około {x}× więcej odebrań niż rabat procentowy, a każda kosztuje Cię stałe {amount}. Ile chcesz na to przeznaczyć w tym miesiącu?',
+        percent:
+          'Niech będzie 20% zniżki. To zależy od wielkości rachunku, więc dodam limit kosztu. Ile chcesz na to przeznaczyć w tym miesiącu?',
+      },
+      askDuration:
+        '{amount}. Gorące okazje nie idą z puli lojalnościowej ani voucherowej, więc to pieniądze z Twojej marży. Jak długo ma trwać?',
+      askNotify:
+        '{n} tygodni. Zostało Ci {left} z {total} powiadomień w tym miesiącu — mam wysłać jedno na starcie? Bez niego większość ludzi zobaczy okazję tylko wtedy, gdy otworzy aplikację.',
+      ready:
+        'Oto co bym przygotował{notify}. Nic jeszcze nie jest aktywne — ruszy dopiero, gdy klikniesz publikację. Zajrzyj do projektu.',
+      readyNotify: ', z powiadomieniem na starcie',
+      retry: {
+        reward: 'Nie do końca zrozumiałem — darmowa kawa przelewowa czy procent od rachunku?',
+        budget: 'Mniej więcej ile na miesiąc — {a}, {b} czy {c}?',
+        duration: 'Jak długo — 2, 4 czy 8 tygodni?',
+        notify: 'Mam wysłać powiadomienie na starcie — tak czy nie?',
+        other: 'Wszystko to możesz zmienić w projekcie. Chcesz go zobaczyć?',
+      },
+      chips: {
+        item: 'Darmowa kawa przelewowa',
+        percent: '20% od rachunku',
+        weeks: '{n} tygodni',
+        yes: 'Tak, wyślij',
+        no: 'Nie, tylko wystaw',
+      },
+
+      readyTitle: 'Co bym przygotował',
+      readyRows: ['Cel', 'Co dostają ludzie', 'Dni i godziny', 'Budżet', 'Trwa', 'Powiadomienie'],
+      showDraft: 'Pokaż projekt',
+
+      draftTag: 'Projekt',
+      draftNote: 'Nic tutaj nie jest aktywne. Ruszy dopiero, gdy to opublikujesz.',
+      changedTitle: 'Co zmieniłem',
+      changedNote: 'Nic innego się nie ruszyło. Każde inne pole jest takie jak wcześniej.',
+      sentence: {
+        item: 'Darmowa kawa przelewowa do każdego wypieku, {days} {from}–{to}, przez najbliższe {weeks} tygodni.',
+        percent: '20% zniżki na rachunek, {days} {from}–{to}, przez najbliższe {weeks} tygodni.',
+      },
+      whyTitle: 'Dlaczego tak wybrałem',
+      reasons: {
+        quietDays:
+          'Wybrałem {days}, {from}–{to}, bo to Twoje najcichsze godziny — około {pct}% poniżej tygodniowej średniej.',
+        movedDays:
+          'Poprosiłeś o {days}, więc przeniosłem. Twoje najcichsze godziny to nadal {quiet}, {from}–{to}, jeśli chcesz wrócić.',
+        item:
+          'Wybrałem darmową pozycję, bo takie okazje mają około {x}× więcej odebrań niż rabaty procentowe w {n} lokalach w Twoim mieście, a koszt to stałe {amount} za każdym razem.',
+        percent:
+          'Poprosiłeś o rabat procentowy, więc ustawiłem 20%. Koszt zależy od wielkości rachunku, więc dodałem warunek zatrzymania.',
+        budget: 'Ustawiłem budżet na {amount}, bo tyle powiedziałeś, że możesz wydać w tym miesiącu.',
+        budgetTight:
+          'Ustawiłem budżet na {amount}, bo tyle zostaje, zanim gorące okazje zaczną zjadać Twoją marżę w tym miesiącu.',
+      },
+      dealTag: 'Gorąca okazja',
+      dealNew: 'Nowa — zostanie utworzona',
+      dealFields: ['Co to jest', 'Dni i godziny', 'Trwa', 'Kto to widzi'],
+      dealValues: {
+        item: 'Darmowa pozycja — kawa przelewowa do każdego wypieku',
+        percent: 'Rabat procentowy — 20% od rachunku',
+      },
+      stopAfter: 'Zatrzymuje się po',
+      claims: 'odebraniach',
+      fieldNote:
+        'Dni, godziny, daty i odbiorcy są ustawione tak, jak wyjaśniłem wyżej. Każde z nich zmienisz w pełnym formularzu.',
+      notifyTag: 'Powiadomienie',
+      notifyAttached: 'Dołączone do okazji powyżej',
+      goesOut: 'Wychodzi',
+      notifyFields: ['Dociera do', 'Zużywa'],
+      notifyReach: '{n} osób z włączonymi powiadomieniami',
+      notifyUses: '1 z Twoich {n} pozostałych powiadomień w tym miesiącu',
+      costTitle: 'Ile to będzie kosztować',
+      costLine: {
+        item: 'Jeśli odbierze to {n} osób, kosztuje Cię to około {amount}. To szacunek, oparty na stałych {each} za odebranie.',
+        percent:
+          'Jeśli odbierze to {n} osób, kosztuje Cię to około {amount}. To szacunek, oparty na Twoim średnim rachunku {avg} na wizytę.',
+      },
+      costNote:
+        'Gorące okazje nie mają własnej puli budżetowej, więc to idzie prosto z Twojej marży. Ogranicza je warunek zatrzymania powyżej.',
+      budgetWarn:
+        'Poprosiłeś o {asked}. Masz w tym miesiącu {room} zapasu, więc zamiast odmawiać przygotowałem mniejszą wersję — {n} odebrań zamiast {wanted}.',
+      readTitle: 'Co przeczytają klienci',
+      readWarn: 'Napisane przeze mnie — sprawdź przed publikacją',
+      titleIn: 'Tytuł po {lang}',
+      bodyIn: 'Opis po {lang}',
+      termsTitle: 'Zasady korzystania',
+      termsTag: 'Standardowe warunki',
+      terms: 'Jedno odebranie na wizytę. Nie łączy się z innymi okazjami. Lokal może zakończyć ofertę wcześniej.',
+      reviseTitle: 'Zmienić coś? Powiedz co',
+      revisePlaceholder: 'Niech będzie czwartek, i nie chcę, żeby dostawali to studenci.',
+      reviseAction: 'Zmień projekt',
+      reviseNote:
+        'Zmieniam tylko to, co wskażesz, i pokazuję, co się ruszyło. Reszta projektu zostaje bez zmian.',
+      publish: 'Opublikuj',
+      notRight: 'To nie jest to, czego potrzebuję',
+      exitsIntro:
+        'Trzy wyjścia. Żadne nie jest gorsze od pozostałych — wybierz to, które pasuje do skali pomyłki.',
+      exits: [
+        {
+          title: 'Powiedz mi, co jest nie tak',
+          note: 'Zmieniam ten projekt. Wszystko, co już zaakceptowałeś, zostaje.',
+          label: 'Napisz poniżej',
+        },
+        {
+          title: 'Otwórz to w zwykłym formularzu',
+          note: 'Przejmujesz stery. Wszystko, co trafiłem, jest już wypełnione.',
+          label: 'Przejmuję',
+        },
+        {
+          title: 'Zacznij od nowa',
+          note: 'Wyrzuca ten projekt i teksty w pięciu językach.',
+          label: 'Wyrzuć to',
+        },
+      ],
+      revisions: {
+        days: 'Dni',
+        hours: 'Godziny',
+        audience: 'Kto to widzi',
+        thursday: 'Czwartek',
+        friday: 'Piątek',
+        morning: '07:00–10:00',
+        noStudents: 'Wszyscy poza studentami — około {n} osób',
+      },
+
+      publishedTitle: 'Dwie rzeczy są gotowe',
+      publishedOne: 'Jedna rzecz jest gotowa',
+      publishedDeal: '{days}, {from}–{to} · zatrzymuje się po {n} odebraniach',
+      publishedNotify: 'Wychodzi o {at}',
+      publishedNotifyNote: 'Do {n} osób',
+      watch:
+        'Zajrzyj za dwa dni. Jeśli do tego czasu odbierze to mniej niż 10 osób, godziny są raczej dobre, a oferta za słaba.',
+      again: 'Przygotuj coś jeszcze',
+
+      reviewTitle: 'Co zmieniłbym w tym tygodniu',
+      reviewIntro: 'Trzy rzeczy są warte zmiany w tym tygodniu. Resztę zostawiłem w spokoju.',
+      review: [
+        {
+          text: 'Twój próg vouchera {pct}% wymaga {points} punktów. W tym miesiącu sięgnęło po niego tylko {reached} klientów. Przy {lower} punktach zakwalifikowałoby się o {more} stałych klientów więcej.',
+          label: 'Zmień próg',
+        },
+        {
+          text: '„{name}” jest wstrzymana, ale wciąż trzyma {amount}. {n} nagród zostało zdobytych i nigdy nieodebranych — są ważne aż do wygaśnięcia.',
+          label: 'Otwórz kampanię',
+        },
+        {
+          text: '„{name}” trwała {weeks} tygodni przy 5% zniżki i dała {claims} odebrań — mniej więcej jedną trzecią tego, co średnio dają Twoje okazje 15%. Małe rabaty rzadko kogoś ruszają.',
+          label: 'Zobacz swoje okazje',
+        },
+      ],
+
+      asked: 'Zapytałeś: „{q}”',
+      answerLine:
+        'Korzystanie z voucherów spadło o 4%, ze 158 do 152. Cały spadek jest w progu {pct}% — w tym miesiącu sięgnęło po niego {now} klientów wobec {before} w poprzednim, bo próg punktowy wzrósł do {points}.',
+      answerNote:
+        'Wizyty w tym samym okresie wzrosły o 12%, więc ludzie przychodzą. Mniej z nich dochodzi do progu, który warto wykorzystać.',
+      answerLabel: 'Otwórz progi',
+      answerMore:
+        'Gdzie poszły pieniądze, próg po progu, jest na stronie Vouchery. Nie odtwarzałem tego tutaj.',
+      askElse: 'Zapytaj o coś innego',
+
+      handedTitle: 'Teraz to Twoje',
+      handedNote:
+        'Wypełniłem to, czego byłem pewien. Sprawdź dwie ostatnie pozycje — te zgadywałem.',
+      handedFields: [
+        'Dni i godziny',
+        'Co dostają ludzie',
+        'Trwa',
+        'Zatrzymuje się po',
+        'Kto to widzi',
+        'Tekst w pięciu językach',
+      ],
+      handedWeeks: '{n} tygodni',
+      handedCopy: 'Napisane przeze mnie — sprawdź przed publikacją',
+      filledIn: 'Wypełnione',
+      checkThis: 'Sprawdź to',
+      openForm: 'Otwórz formularz',
+      backToDraft: 'Wróć do projektu',
+
+      cantLine: 'Nie potrafię celować w ludzi po tym, ile zwykle wydają. Paylez tego jeszcze nie śledzi.',
+      cantAlt:
+        'Mogę celować w osoby, które już u Ciebie były — {n} z nich odwiedziło Cię co najmniej dwa razy. Chcesz tak zamiast tego?',
+      cantYes: 'Tak, użyj tego',
+      cantNo: 'Poproś o coś innego',
+      cantElsewhere:
+        'Jeśli chcesz zobaczyć, ile ludzie wydają, średnia na wizytę jest na stronie Klienci.',
+      cantOpen: 'Otwórz Klientów',
+
+      missedTitle: 'Tego nie zrozumiałem',
+      missedBody:
+        'Doszedłem do tego: okazja w popołudnia {days}. Nie udało mi się ustalić oferty ani budżetu, a wolę przekazać to dalej, niż dopytywać w kółko.',
+      loopNote:
+        'To już drugi raz. Nie będę dalej zgadywał — formularz pójdzie szybciej, a wpisałem w niego dni i godziny, które zrozumiałem.',
+      missedAction: 'Otwórz zwykły formularz',
+      tryAgain: 'Spróbuj jeszcze raz',
+
+      dayChoices: ['Wtorek i środa', 'Czwartek', 'Piątek'],
+      goals: [
+        'Zapełnij ciche godziny',
+        'Odzyskaj klientów, którzy przestali przychodzić',
+        'Przyciągnij więcej nowych gości',
+        'Przejrzyj wszystko, co prowadzę',
+      ],
+      notifyYes: 'Tak, na starcie',
+      notifyNo: 'Nie, tylko wystawione',
+      weeksValue: '{n} tygodni',
+      published: 'Nic nie zostało opublikowane — w tej wersji nie ma serwera.',
+      draftUpdated: 'Projekt zaktualizowany. Reszta bez zmian.',
+      handedOver: 'Otworzyłem formularz ze wszystkim, co udało się przenieść.',
+    },
+
     collapse: 'Zwiń menu',
     expand: 'Rozwiń menu',
     backToSite: 'Wróć do paylez',

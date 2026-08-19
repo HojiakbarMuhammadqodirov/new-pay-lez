@@ -24,19 +24,23 @@ import {
   PD_ROI_ROWS,
   PD_ROSTER,
   PD_SCAN_NAMES,
+  PD_SCAN_PAGE,
   PD_SCAN_TOTAL,
   PD_SCANS,
   PD_SERIES,
   PD_TOTALS,
   PD_VOUCHER_MODEL,
+  dealNotify,
   polyarea,
   polyline,
   type PartnerDeal,
   type RosterEntry,
 } from './partnerMetrics';
+import { Assistant } from './dashboardAssistant';
+import { useDashboard } from './dashboardShell';
 
 /**
- * The six dashboard screens that are not the profile form.
+ * The seven dashboard screens that are not the profile form.
  *
  * This is `b2b/Paylez Partner Dashboard v2.dc.html` rebuilt — the same screens,
  * the same panels in the same order, the same sentences, and the same figures,
@@ -571,15 +575,202 @@ function Chart() {
 
 /* ──────────────────────────────────────────────────────────────── deals ── */
 
+/**
+ * One deal, opened out.
+ *
+ * The prototype's row expansion, which is the densest thing on the screen and
+ * the reason the table is worth clicking: three panels that answer the three
+ * questions the columns raise but cannot fit. Where did the people go, what did
+ * the one notification actually do, and what is going to stop this.
+ *
+ * The notification panel has four shapes because a notification has four states
+ * — sent, scheduled, never set, and not applicable because the deal has expired
+ * — and each of them is a different thing to tell an owner. Collapsing them into
+ * one "notification: yes/no" line is what this panel exists instead of.
+ */
+function DealDetail({ deal, index }: { deal: PartnerDeal; index: number }) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.deals;
+  const num = useNum();
+  const { openDrawer, toast } = useDashboard();
+
+  const started = deal.seen > 0;
+  const openRate = started ? (deal.opened / deal.seen) * 100 : 0;
+  const claimRate = started ? (deal.claimed / deal.seen) * 100 : 0;
+  const useRate = deal.opened ? (deal.claimed / deal.opened) * 100 : 0;
+  const notify = dealNotify(deal);
+  const audience = PD_AUDIENCES[deal.audience];
+
+  /* Seen is the whole width by definition; the other two are shares of it. The
+     bar has a 3% floor so a step that happened at all is still a mark. */
+  const steps = [
+    { value: deal.seen, width: 100, note: copy.funnelNotes[0] },
+    {
+      value: deal.opened,
+      width: openRate,
+      note: fill(copy.funnelNotes[1], { pct: openRate.toFixed(1) }),
+    },
+    {
+      value: deal.claimed,
+      width: claimRate,
+      note: fill(copy.funnelNotes[2], { pct: useRate.toFixed(0) }),
+    },
+  ];
+
+  return (
+    <div className="pd-open">
+      <div className="pd-open-main">
+        <span className="console-label">{copy.funnelTitle}</span>
+        <div className="pd-funnel">
+          {copy.funnel.map((label, step) => (
+            <div key={label}>
+              <span>{label}</span>
+              <b data-lead={step === 2 ? 'true' : undefined}>
+                {started ? num(steps[step].value) : '—'}
+              </b>
+              <i style={{ width: `${Math.max(3, steps[step].width)}%` }} data-step={step} />
+              <em>{started ? steps[step].note : copy.notStarted}</em>
+            </div>
+          ))}
+        </div>
+        <p className="pd-fine">
+          {started
+            ? fill(copy.drop, {
+                seen: num(deal.seen - deal.opened),
+                opened: num(deal.opened - deal.claimed),
+              })
+            : copy.dropNone}
+        </p>
+
+        {deal.notify.state === 'sent' && (
+          <>
+            <span className="console-label">{copy.notifyTitle}</span>
+            <div className="pd-funnel">
+              {copy.notifySteps.map((label, step) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <b data-lead={step === 2 ? 'true' : undefined}>
+                    {num([notify.notified, notify.opened, notify.camein][step])}
+                  </b>
+                  <em>
+                    {step === 0
+                      ? copy.notifyStepNotes[0]
+                      : fill(copy.notifyStepNotes[step], {
+                          pct: (step === 1 ? notify.openPct : notify.cameinPct).toFixed(0),
+                        })}
+                  </em>
+                </div>
+              ))}
+            </div>
+            <p className="pd-fine">
+              {fill(copy.notifySplit, {
+                camein: num(notify.camein),
+                claims: num(deal.claimed),
+                alone: num(notify.alone),
+              })}
+            </p>
+            <p className="pd-fine">
+              {fill(copy.notifyBlocked, {
+                n: num(notify.notified),
+                blocked: num(notify.blocked),
+              })}
+            </p>
+          </>
+        )}
+      </div>
+
+      <div className="pd-open-side">
+        {deal.limit > 0 && deal.state === 'live' && (
+          <p className="pd-brief pd-brief-warn">
+            <Icon name="clock" size={15} />
+            {fill(copy.limitForecast, {
+              limit: num(deal.limit),
+              date: copy.limitDates[index],
+            })}
+          </p>
+        )}
+
+        {deal.notify.state === 'scheduled' && (
+          <div className="pd-brief">
+            <Icon name="bell" size={16} />
+            <div>
+              <p>
+                {fill(copy.notifyScheduled, {
+                  at: PD_AUDIENCES[deal.audience].sendAt,
+                  n: num(deal.notify.reach),
+                })}
+              </p>
+              <div className="pd-brief-acts">
+                <button type="button" className="btn btn-ghost" onClick={() => openDrawer('deal')}>
+                  {copy.notifyChange}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => toast(dashboard.notWired)}
+                >
+                  {copy.notifyCancel}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deal.notify.state === 'none' && deal.state !== 'expired' && (
+          <p className="pd-brief">
+            {fill(copy.notifyNone, {
+              n: num(deal.notify.reach),
+              total: num(deal.notify.match),
+            })}
+          </p>
+        )}
+
+        {deal.state === 'expired' && (
+          <p className="pd-brief">
+            <Icon name="bulb" size={15} />
+            {fill(copy.retro, { weeks: String(deal.weeks), claims: num(deal.claimed) })}
+          </p>
+        )}
+
+        <div className="pd-brief">
+          <span className="console-label">{copy.whoTitle}</span>
+          <b>{copy.when[index]}</b>
+          <p>{copy.audiences[deal.audience]}</p>
+          <p className="pd-fine">
+            {fill(copy.reach, {
+              n: num(audience.notifiable),
+              total: num(audience.reach),
+            })}
+          </p>
+          <p className="pd-fine">
+            {deal.langs === 5
+              ? copy.langsAll
+              : fill(copy.langsSome, {
+                  n: String(deal.langs),
+                  pct: String(deal.reachLoss),
+                })}
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Which column the table is ordered by. `rank` is the prototype's default. */
+type DealSort = 'rank' | 'seen' | 'opened' | 'claimed' | 'rate' | 'cost';
+
 function Deals() {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.deals;
   const money = useMoney();
   const num = useNum();
+  const { openDrawer, toast } = useDashboard();
 
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
+  const [sort, setSort] = useState<DealSort>('rank');
+  const [descending, setDescending] = useState(true);
 
   /* The prototype's own order: live and scheduled first, then by claim rate.
      A paused deal with a brilliant rate is still not the row you act on. */
@@ -590,6 +781,16 @@ function Deals() {
     const rate = (deal: PartnerDeal) => (deal.seen ? deal.claimed / deal.seen : 0);
     const rank = (deal: PartnerDeal) =>
       deal.state === 'live' || deal.state === 'scheduled' ? 0 : 1;
+    const key = (deal: PartnerDeal) =>
+      sort === 'seen'
+        ? deal.seen
+        : sort === 'opened'
+          ? deal.opened
+          : sort === 'claimed'
+            ? deal.claimed
+            : sort === 'cost'
+              ? deal.cost
+              : rate(deal);
 
     return PD_DEALS.map((deal, index) => ({ deal, index }))
       .filter(({ deal, index }) => {
@@ -599,13 +800,33 @@ function Deals() {
           .toLowerCase()
           .includes(q);
       })
-      .sort((a, b) => rank(a.deal) - rank(b.deal) || rate(b.deal) - rate(a.deal));
-  }, [search, filter, copy]);
+      .sort((a, b) => {
+        /* The default keeps its two-level order; any chosen column replaces it
+           outright, because a column header that only sorts within a group is a
+           control that half works. */
+        if (sort === 'rank') return rank(a.deal) - rank(b.deal) || rate(b.deal) - rate(a.deal);
+        const delta = key(a.deal) - key(b.deal);
+        return descending ? -delta : delta;
+      });
+  }, [search, filter, copy, sort, descending]);
+
+  /* Index into `copy.columns` → the key it sorts by. The last column is a
+     sparkline and the first two are words, so neither is sortable. */
+  const sortKeys: Array<DealSort | null> = [
+    null,
+    null,
+    'seen',
+    'opened',
+    'claimed',
+    'rate',
+    'cost',
+    null,
+  ];
 
   return (
     <div className="pd-stack">
       <p className="pd-glass pd-insight" data-reveal>
-        <Icon name="trophy" size={16} />
+        <Icon name="bulb" size={16} />
         {copy.insight}
       </p>
 
@@ -635,7 +856,7 @@ function Deals() {
           </div>
 
           <span className="pd-chip" data-warn={PD_NOTIFY_QUOTA.left === 0 ? 'true' : undefined}>
-            <Icon name="coin" size={13} />
+            <Icon name="bell" size={13} />
             {fill(dashboard.overview.quota, {
               n: String(PD_NOTIFY_QUOTA.left),
               total: String(PD_NOTIFY_QUOTA.total),
@@ -649,133 +870,181 @@ function Deals() {
 
         <p className="pd-sort-note">{copy.sortNote}</p>
 
-        <div className="pd-scroll">
-          <table className="pd-table pd-table-deals">
-            <thead>
-              <tr>
-                {copy.columns.map((column, index) => (
-                  <th key={column} data-align={index >= 2 && index <= 6 ? 'right' : undefined}>
-                    {column}
-                  </th>
-                ))}
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ deal, index }) => {
-                const rate = deal.seen ? (deal.claimed / deal.seen) * 100 : 0;
-                const audience = PD_AUDIENCES[deal.audience];
-                const isOpen = open === deal.id;
-                return [
-                  <tr
-                    key={deal.id}
-                    data-open={isOpen ? 'true' : undefined}
-                    onClick={() => setOpen(isOpen ? null : deal.id)}
-                  >
-                    <td>
-                      <span className="pd-deal">
-                        <i>{deal.badge}</i>
-                        <span>
-                          <b>{copy.rows[index]}</b>
-                          <em>
-                            {copy.windows[index]} · {copy.when[index]} ·{' '}
-                            {copy.audiences[deal.audience]}
-                          </em>
-                        </span>
-                      </span>
-                    </td>
-                    <td>
-                      <State state={deal.state} label={copy.states[deal.state]} />
-                    </td>
-                    <td data-align="right">{num(deal.seen)}</td>
-                    <td data-align="right">{num(deal.opened)}</td>
-                    <td data-align="right">
-                      <b>{num(deal.claimed)}</b>
-                      {deal.limit > 0 && (
-                        <span className="pd-limit">
-                          <i>
-                            <b style={{ width: `${Math.min(100, (deal.claimed / deal.limit) * 100)}%` }} />
+        {rows.length === 0 ? (
+          /* Not a zero row and not a blank table: the filter is the reason, so
+             the way out of it is the button. */
+          <div className="pd-empty">
+            <span className="pd-empty-ico" aria-hidden>
+              <Icon name="ticket" size={21} />
+            </span>
+            <b>{copy.emptyFiltered}</b>
+            <p>{copy.emptyFilteredBody}</p>
+            <div className="pd-empty-acts">
+              <button type="button" className="btn btn-solid" onClick={() => openDrawer('deal')}>
+                {dashboard.actions.newDeal}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setSearch('');
+                  setFilter(0);
+                }}
+              >
+                {copy.clearFilters}
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="pd-scroll">
+            <table className="pd-table pd-table-deals">
+              <thead>
+                <tr>
+                  {copy.columns.map((column, index) => {
+                    const key = sortKeys[index];
+                    const on = key != null && sort === key;
+                    return (
+                      <th key={column} data-align={index >= 2 && index <= 6 ? 'right' : undefined}>
+                        {key ? (
+                          <button
+                            type="button"
+                            className="pd-sort"
+                            data-on={on ? 'true' : undefined}
+                            title={fill(copy.sortBy, { column })}
+                            onClick={() => {
+                              if (on) setDescending((d) => !d);
+                              else {
+                                setSort(key);
+                                setDescending(true);
+                              }
+                            }}
+                          >
+                            {column}
+                            <i aria-hidden>{on ? (descending ? '▾' : '▴') : ''}</i>
+                          </button>
+                        ) : (
+                          column
+                        )}
+                      </th>
+                    );
+                  })}
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ deal, index }) => {
+                  const rate = deal.seen ? (deal.claimed / deal.seen) * 100 : 0;
+                  const isOpen = open === deal.id;
+                  const notify = dealNotify(deal);
+                  return [
+                    <tr
+                      key={deal.id}
+                      data-open={isOpen ? 'true' : undefined}
+                      data-dim={deal.state === 'expired' ? 'true' : undefined}
+                      onClick={() => setOpen(isOpen ? null : deal.id)}
+                    >
+                      <td>
+                        <span className="pd-deal">
+                          <i data-kind={deal.kind} data-live={deal.state === 'live' ? 'true' : undefined}>
+                            {deal.badge}
                           </i>
-                          {fill(copy.limit, {
-                            claimed: num(deal.claimed),
-                            limit: num(deal.limit),
-                          })}
+                          <span>
+                            <b>{copy.rows[index]}</b>
+                            <em>
+                              {copy.windows[index]} · {copy.when[index]} ·{' '}
+                              {copy.audiences[deal.audience]}
+                            </em>
+                            <span className="pd-row-chips">
+                              <i className="pd-notif" data-state={deal.notify.state}>
+                                {deal.notify.state === 'sent'
+                                  ? fill(copy.notifyChips.sent, { n: num(notify.camein) })
+                                  : deal.notify.state === 'scheduled'
+                                    ? fill(copy.notifyChips.scheduled, {
+                                        at: PD_AUDIENCES[deal.audience].sendAt,
+                                      })
+                                    : copy.notifyChips.none}
+                              </i>
+                              {deal.kind === 'points' && (
+                                <i className="pd-notif" data-state="points">
+                                  {copy.pointsNote}
+                                </i>
+                              )}
+                            </span>
+                          </span>
                         </span>
-                      )}
-                    </td>
-                    <td data-align="right">
-                      <b>{rate.toFixed(1)}%</b>
-                    </td>
-                    <td data-align="right">{money(deal.cost, 'exact')}</td>
-                    <td className="pd-trend-cell">
-                      <Spark values={deal.trend} />
-                    </td>
-                    <td data-align="right">
-                      <Icon name="chevron" size={15} className="pd-row-chevron" />
-                    </td>
-                  </tr>,
-                  isOpen ? (
-                    <tr className="pd-drawer-row" key={`${deal.id}-open`}>
-                      <td colSpan={9}>
-                        <div className="pd-drawer">
-                          <div>
-                            <span className="console-label">{copy.notify[deal.notify.state]}</span>
-                            <p className="pd-fine">
-                              {fill(copy.reach, {
-                                n: num(audience.notifiable),
-                                total: num(audience.reach),
-                              })}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="console-label">{copy.audiences[deal.audience]}</span>
-                            <p className="pd-fine">
-                              {deal.langs === 5
-                                ? copy.langsAll
-                                : fill(copy.langsSome, {
-                                    n: String(deal.langs),
-                                    pct: String(deal.reachLoss),
-                                  })}
-                            </p>
-                          </div>
-                          <div>
-                            <span className="console-label">{copy.columns[4]}</span>
-                            <p className="pd-fine">
-                              {deal.limit > 0
-                                ? fill(copy.limit, {
-                                    claimed: num(deal.claimed),
-                                    limit: num(deal.limit),
-                                  })
-                                : copy.noLimit}
-                            </p>
-                          </div>
-                          <div className="pd-drawer-acts">
-                            <button
-                              type="button"
-                              className="btn btn-ghost"
-                              disabled
-                              title={dashboard.notWired}
-                            >
-                              {dashboard.words.edit}
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-ghost"
-                              disabled
-                              title={dashboard.notWired}
-                            >
-                              {dashboard.words.pause}
-                            </button>
-                          </div>
-                        </div>
                       </td>
-                    </tr>
-                  ) : null,
-                ];
-              })}
-            </tbody>
-          </table>
-        </div>
+                      <td>
+                        <State state={deal.state} label={copy.states[deal.state]} />
+                      </td>
+                      <td data-align="right">{deal.seen ? num(deal.seen) : '—'}</td>
+                      <td data-align="right">{deal.seen ? num(deal.opened) : '—'}</td>
+                      <td data-align="right">
+                        <b>{deal.seen ? num(deal.claimed) : '—'}</b>
+                        {deal.limit > 0 && (
+                          <span className="pd-limit">
+                            <i>
+                              <b
+                                style={{
+                                  width: `${Math.min(100, (deal.claimed / deal.limit) * 100)}%`,
+                                }}
+                              />
+                            </i>
+                            {fill(copy.limitAllowed, { limit: num(deal.limit) })}
+                          </span>
+                        )}
+                      </td>
+                      <td data-align="right">
+                        <b>{deal.seen ? `${rate.toFixed(1)}%` : '—'}</b>
+                      </td>
+                      <td data-align="right">
+                        {deal.kind === 'points' ? '—' : money(deal.cost, 'exact')}
+                        {(deal.kind === 'points' || (deal.kind === 'percent' && deal.seen > 0)) && (
+                          <em className="pd-cost-note">
+                            {deal.kind === 'points' ? copy.costNone : copy.costEstimate}
+                          </em>
+                        )}
+                      </td>
+                      <td className="pd-trend-cell">
+                        <Spark values={deal.trend} />
+                      </td>
+                      <td data-align="right">
+                        <span className="pd-row-acts">
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openDrawer('deal');
+                            }}
+                          >
+                            {dashboard.words.edit}
+                          </button>
+                          <button
+                            type="button"
+                            className="btn btn-ghost"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              toast(dashboard.notWired);
+                            }}
+                          >
+                            {copy.act[deal.state]}
+                          </button>
+                        </span>
+                      </td>
+                    </tr>,
+                    isOpen ? (
+                      <tr className="pd-drawer-row" key={`${deal.id}-open`}>
+                        <td colSpan={9}>
+                          <DealDetail deal={deal} index={index} />
+                        </td>
+                      </tr>
+                    ) : null,
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -1527,7 +1796,7 @@ function CustomerDetail({ entry, onBack }: { entry: RosterEntry; onBack: () => v
     entry.tier > 0 ? 100 : entry.so > 0 ? Math.min(100, (entry.sg / entry.so) * 100) : 0;
 
   return (
-    <div className="pd-detail">
+    <div className="pd-open">
       <button type="button" className="btn btn-ghost pd-back" onClick={onBack}>
         <Icon name="chevron" size={15} className="pd-back-ico" />
         {copy.rosterTitle}
@@ -1692,14 +1961,23 @@ function Scans() {
   const num = useNum();
 
   const [filter, setFilter] = useState(0);
+  const [page, setPage] = useState(0);
 
-  const rows = useMemo(
+  const matching = useMemo(
     () =>
       PD_SCANS.filter((scan) =>
         filter === 0 ? true : filter === 1 ? scan.first : !scan.first,
       ),
     [filter],
   );
+
+  /* Twelve at a time, the prototype's page size. The filter changing has to
+     take the pager back to the top with it, or a narrow filter lands you on an
+     empty page four. */
+  const pages = Math.max(1, Math.ceil(matching.length / PD_SCAN_PAGE));
+  const current = Math.min(page, pages - 1);
+  const from = current * PD_SCAN_PAGE;
+  const rows = matching.slice(from, from + PD_SCAN_PAGE);
 
   return (
     <div className="pd-stack">
@@ -1711,7 +1989,10 @@ function Scans() {
                 key={label}
                 type="button"
                 data-on={filter === index ? 'true' : undefined}
-                onClick={() => setFilter(index)}
+                onClick={() => {
+                  setFilter(index);
+                  setPage(0);
+                }}
               >
                 {label}
               </button>
@@ -1763,7 +2044,18 @@ function Scans() {
                     <td data-align="right">{money(scan.spent, 'unit')}</td>
                     <td data-align="right">+{scan.points}</td>
                     <td className="pd-code">#{scan.receipt}</td>
-                    <td>{copy.places[scan.place]}</td>
+                    {/* Pinned, and the second line names the till rather than
+                        the prototype's latitude and longitude: a coordinate
+                        pair under every row is six decimal places of precision
+                        about where a customer stood, which is not a thing this
+                        screen should be printing. */}
+                    <td>
+                      <span className="pd-place">
+                        <Icon name="pin" size={12} strokeWidth={2} />
+                        <b>{copy.places[scan.place]}</b>
+                        <em>{copy.coords}</em>
+                      </span>
+                    </td>
                     <td>
                       {scan.need > 0 ? (
                         <span className="pd-progress">
@@ -1791,9 +2083,33 @@ function Scans() {
           </table>
         </div>
 
-        <p className="pd-fine">
-          {fill(copy.showing, { n: String(rows.length), total: num(PD_SCAN_TOTAL) })}
-        </p>
+        <div className="pd-pager">
+          <span className="pd-fine">
+            {fill(copy.page, {
+              from: String(from + 1),
+              to: String(from + rows.length),
+              total: num(matching.length),
+            })}
+          </span>
+          <div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={current === 0}
+              onClick={() => setPage(current - 1)}
+            >
+              {copy.prev}
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={current >= pages - 1}
+              onClick={() => setPage(current + 1)}
+            >
+              {copy.next}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1808,7 +2124,7 @@ function Scans() {
  * loses React fast refresh, which is the same rule `theme/` and `i18n/` are
  * split for.
  */
-const SCREENS = [Overview, Deals, Campaigns, Vouchers, Customers, Scans];
+const SCREENS = [Overview, Deals, Campaigns, Vouchers, Customers, Assistant, Scans];
 
 /** The rail's current screen, whichever that is. */
 export function DashboardScreen({ index }: { index: number }) {

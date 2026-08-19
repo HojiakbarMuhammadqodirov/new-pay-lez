@@ -71,6 +71,32 @@ const PATHS = {
      product has one accent to draw it in. */
   freeze: <><path d="M12 3v18M4.2 7.5l15.6 9M19.8 7.5l-15.6 9" /><path d="M12 6.4 9.9 4.6M12 6.4l2.1-1.8M12 17.6l-2.1 1.8M12 17.6l2.1 1.8" /></>,
 
+  /* ── the partner dashboard's own set ──────────────────────────────────── */
+  /* Traced from `b2b/Paylez Partner Dashboard v2.dc.html`, which draws these
+     eleven inline and nowhere else in the product does. They live here because
+     `Icon` is the one place a glyph is allowed to live — and because three of
+     them (bell, warn, bulb) had been standing in as `coin` and `trophy`, a
+     saving that showed: a notification quota labelled with a coin reads as
+     money rather than as a message nobody has sent yet. */
+  bell: <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" /><path d="M13.7 21a2 2 0 0 1-3.4 0" /></>,
+  /* The assistant. A four-point sparkle rather than the prototype's sun: the
+     sun is already the light-theme toggle two controls away in the same bar,
+     and two suns in one header is one too many. */
+  spark: <><path d="M12 3.2 13.9 9 19.8 11l-5.9 2-1.9 5.8L10.1 13 4.2 11 10.1 9Z" /><path d="M18.5 3.6v3M17 5.1h3" /></>,
+  /* Customers: a group, not the single figure `assistant` draws. The rail
+     lists both screens, so they cannot share a glyph. */
+  people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9" /></>,
+  plus: <><path d="M12 5v14M5 12h14" /></>,
+  close: <><path d="M18 6 6 18M6 6l12 12" /></>,
+  download: <><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></>,
+  eye: <><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  /* A budget running out. The palette has one accent, so this cannot be the
+     amber the prototype uses — the shape carries the warning instead. */
+  warn: <><path d="M12 9v5" /><path d="M12 17h.01" /><path d="M10.3 3.9 2.4 18a2 2 0 0 0 1.7 3h15.8a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z" /></>,
+  bulb: <><path d="M9 18h6" /><path d="M10 21h4" /><path d="M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.5H9c0-.5-.1-1.1-.6-1.5A6 6 0 0 1 12 3Z" /></>,
+  pin: <><path d="M12 21s7-5.5 7-11a7 7 0 1 0-14 0c0 5.5 7 11 7 11Z" /><circle cx="12" cy="10" r="2.5" /></>,
+
   arrow: <><path d="M5 12h14M13 6l6 6-6 6" /></>,
   chevron: <><path d="m6 9 6 6 6-6" /></>,
   sun: <><circle cx="12" cy="12" r="4.2" /><path d="M12 2v2.4M12 19.6V22M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2 12h2.4M19.6 12H22M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7" /></>,

@@ -465,6 +465,39 @@ bundled, the flag font copied into `public/`), geometry comes from the
   trend beside it are one value, the plan card in the rail reads the same pool
   the Campaigns screen does, and the prototype's own third seed for that column
   (which disagreed with its headline by a few pence) is gone.
+- **Eight screens, and two of them belong to the frame.** The rail lists the
+  prototype's eight — the six report screens, the profile form, and **the
+  assistant** (`dashboardAssistant.tsx`), which is the largest single thing in
+  that file and the only screen that talks: a conversation, a draft it defends
+  line by line, the deal text in all five languages, three named ways out, and
+  four endings that are not a draft at all (an answer, a review, a hand-over to
+  the form, a plain "I cannot do that"). The endings are the design — an
+  assistant that only ever succeeds is a demo. The **create drawer** and the
+  **confirmation strip** (`dashboardDrawer.tsx`) sit on the frame rather than on
+  any screen, because six places open the drawer and every one of them is the
+  same panel; both are reached through `DashboardContext` (`dashboardShell.ts`)
+  rather than threaded as props through eight screens.
+- **Nothing on this dashboard writes anything, and every control that looks like
+  it does says so.** There is no server behind `#/dashboard`, so publishing a
+  deal, cancelling a notification or exporting a CSV raises the strip with
+  `copy.dashboard.notWired` instead of pretending. Two corollaries. Money
+  *inputs* — the drawer's, the assistant's claim ceiling — hold the **reader's
+  currency**, not euros: the site stores euros and converts on the way out, which
+  is right for a figure being shown and wrong for one being typed, so they divide
+  by the rate once at the point a sentence needs euros back. And a figure the
+  screen cannot honestly make editable is shown as a **fact rather than a field**
+  — the voucher pool's three inputs are the note that states this, and the
+  Campaigns allocation follows it.
+- **The assistant reads numbers; it does not invent them.** Every figure in every
+  sentence it says arrives through a `fill()` hole from `partnerMetrics.ts` — the
+  quiet hours, the peer comparison, the notification quota, both budget pools,
+  the tier that moved, the count of customers who came twice. That is exactly
+  what its own composer note promises the owner, and a number typed into a
+  dictionary string breaks the promise silently. Its language tabs are the one
+  table in the building that is deliberately **not** dictionary copy
+  (`PD_ASSIST_COPY`): the point of the panel is that an owner reading in Polish
+  sees what a Russian-speaking customer will read, so the set is fixed and
+  `npm run verify` checks it covers `LANGUAGE_ORDER`.
 - **The dashboard's surface is glass, and dense panels opt out of it.** Every
   panel is `.pd-glass` over the aurora on `.pd-app::before` — two radial fields
   of `rgba(var(--glow-rgb), …)`, the accent at alpha, not a second hue. The sheet

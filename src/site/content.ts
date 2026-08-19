@@ -649,7 +649,8 @@ export const DASH_SCREENS: Array<{
   { id: 'deals', icon: 'ticket', group: 'grow' },
   { id: 'campaigns', icon: 'trophy', group: 'grow' },
   { id: 'vouchers', icon: 'gift', group: 'grow' },
-  { id: 'customers', icon: 'assistant', group: 'grow' },
+  { id: 'customers', icon: 'people', group: 'grow' },
+  { id: 'assistant', icon: 'spark', group: 'grow' },
   { id: 'scans', icon: 'qr', group: 'workspace' },
   { id: 'profile', icon: 'housing', group: 'workspace' },
 ];

@@ -585,6 +585,10 @@ export const uz: Dictionary = {
       { name: 'Sodiqlik kampaniyalari', lede: 'Doimiy mijozlar qaytib kelib yig‘adigan takrorlanuvchi mukofotlar.' },
       { name: 'Vaucherlar', lede: 'Ballar chegirmaga qanday aylanadi va bu sizga qanchaga tushadi.' },
       { name: 'Mijozlar', lede: 'Kim keladi, qachon keladi va qaytadimi.' },
+      {
+        name: 'Yordamchi',
+        lede: 'Nima bo‘lishini ayting. Men sozlayman, ishga tushirishni siz hal qilasiz.',
+      },
       { name: 'Skanerlashlar', lede: 'Kassangizdagi har bir QR skani, eng yangisidan boshlab.' },
       { name: 'Biznes profili', lede: 'Paylez ilovasidagi kartangiz, har bir mijoz uchun tarjima qilingan.' },
     ],
@@ -613,6 +617,11 @@ export const uz: Dictionary = {
         title: 'QR kodni kassaga qo‘ying',
         body: 'Mijozlar skanerlay boshlamaguncha bu sahifada hech narsa to‘lmaydi. Kodni chop eting, kassa yoniga qo‘ying va xodimlardan hisob bilan birga unga ishora qilishni so‘rang. Birinchi raqamlar o‘sha kuniyoq paydo bo‘ladi.',
         action: 'QR kodni olish',
+      },
+      {
+        title: 'Nima bo‘lishini ayting',
+        body: 'Men sizning tinch soatlaringizni, byudjetlaringizni va sizga o‘xshash joylarda nima ishlashini o‘qiyman, so‘ng hammasini tekshirishingiz uchun tayyorlab qo‘yaman. Siz nashr tugmasini bosmaguningizcha hech narsa ishga tushmaydi.',
+        action: 'Suhbatni boshlash',
       },
       {
         title: 'Hozircha skanerlash yo‘q',
@@ -795,7 +804,66 @@ export const uz: Dictionary = {
       },
       reach: '{total} odamdan {n} tasiga xabar berish mumkin',
       limit: '{limit} tadan {claimed} tasi olingan',
+      limitAllowed: 'ruxsat etilgan {limit} tadan',
       noLimit: 'Olish chegarasi yo‘q',
+
+      audienceNotes: [
+        'Yaqin atrofda Paylez ilovasidan foydalanadigan har kim.',
+        'So‘nggi 60 kun ichida Polshaga kelgan odamlar.',
+        'Ilgari sizda bo‘lgan, lekin so‘nggi 30 kunda kelmagan.',
+        'Yaqin atrofdagi, sizga hech qachon kelmagan ilova foydalanuvchilari.',
+        'Ilova tili rus tili bo‘lgan odamlar.',
+      ],
+
+      funnelTitle: 'Nima bo‘ldi, bosqichma-bosqich',
+      funnel: ['Ko‘rdi', 'Ochdi', 'Oldi'],
+      funnelNotes: [
+        'ilova lentasida',
+        'ko‘rganlarning {pct}% i',
+        'ochganlarning {pct}% i keldi',
+      ],
+      notStarted: 'hali boshlanmagan',
+      drop: '{seen} kishi ko‘rdi va ochmadi. {opened} kishi ochdi va kelmadi.',
+      dropNone: 'Bu taklif hali boshlanmagan, shuning uchun o‘lchaydigan narsa yo‘q.',
+
+      notifyTitle: 'Bildirishnoma nima qildi',
+      notifySteps: ['Xabar berildi', 'Ochdi', 'Keldi'],
+      notifyStepNotes: [
+        'bildirishnomalari yoqilgan odam',
+        'xabar berilganlarning {pct}% i',
+        'uni ochganlarning {pct}% i',
+      ],
+      notifySplit:
+        'Bu taklifning {claims} ta olinishidan {camein} tasi bildirishnomadan keldi. Qolgan {alone} tasi uni ilovadan o‘zi topdi.',
+      notifyBlocked:
+        '{n} kishiga yuborildi. Yana {blocked} kishi mos kelgan, lekin yaqinda boshqa bildirishnomalar olgani uchun bunisini olmadi.',
+      notifyScheduled:
+        'Bildirishnoma soat {at} da bildirishnomalari yoqilgan {n} kishiga chiqadi.',
+      notifyNone:
+        'Bu taklifda bildirishnoma yo‘q. Mos keladigan {total} kishidan {n} tasining bildirishnomalari yoqilgan.',
+      notifyChange: 'Vaqtni o‘zgartirish',
+      notifyCancel: 'Bekor qilish',
+      whoTitle: 'Kim ko‘radi va qachon',
+
+      limitForecast: 'Shu sur’atda bu taklif {limit} ta olish chegarasiga taxminan {date} da yetadi.',
+      limitDates: ['22-avgust', '', '', '', '', ''],
+      retro:
+        'U {weeks} hafta davom etdi va {claims} ta olinish berdi — 15% li takliflaringiz o‘rtachasining taxminan uchdan biri. Kattaroq chegirma yoki bepul mahsulotni sinab ko‘ring.',
+
+      act: { live: 'Pauza', paused: 'Davom ettirish', scheduled: 'Pauza', expired: 'Nusxalash' },
+      pointsNote: 'Ball taklifi — kassada sizga hech narsaga tushmaydi',
+      costEstimate: 'taxmin',
+      costNone: 'chegirma xarajatisiz',
+      notifyChips: {
+        none: 'Bildirishnomasiz',
+        scheduled: 'Bildirishnoma {at} ga',
+        sent: 'Bildirishnoma yuborildi · {n} kishi keldi',
+      },
+      sortBy: 'Saralash: {column}',
+      clearFilters: 'Filtrlarni tozalash',
+      emptyFiltered: 'Hech narsa mos kelmadi',
+      emptyFilteredBody:
+        'Ro‘yxatingizdagi hech bir taklif siz qo‘ygan qidiruv va filtrga mos kelmadi. Oltalasini yana ko‘rish uchun ularni tozalang.',
     },
 
     campaigns: {
@@ -1034,7 +1102,405 @@ export const uz: Dictionary = {
       ready: 'mukofot tayyor',
       count: '{n} ta skanerlash',
       showing: '{total} tadan {n} tasi ko‘rsatilmoqda',
+      page: '{total} tadan {from}–{to} ko‘rsatilmoqda',
+      prev: 'Oldingi',
+      next: 'Keyingi',
+      coords: 'Kassa',
     },
+    actions: {
+      newDeal: 'Qaynoq taklif yaratish',
+      newCampaign: 'Kampaniya yaratish',
+      exportCsv: 'CSV eksport',
+      preview: 'Kartani ko‘rish',
+      exported: 'CSV faylingiz yuklanmoqda.',
+      previewing: 'Kartangiz ko‘rinishini ochyapman.',
+    },
+
+    drawer: {
+      close: 'Yopish',
+      cancel: 'Bekor qilish',
+      later: 'Saqlab, keyinroq tugatish',
+      deal: {
+        kicker: 'Yangi qaynoq taklif',
+        title: 'Qaynoq taklif yaratish',
+        sub: 'Ilova lentasidagi muddatli taklif. Kimdir uni olmaguncha hech narsa yechilmaydi.',
+        publish: 'Taklifni nashr qilish',
+        copyTitle: 'Sarlavha va tavsif',
+        titleLabel: 'Taklif sarlavhasi',
+        titlePlaceholder: 'Ertalabki flat white',
+        descLabel: 'Tavsif',
+        descPlaceholder: 'Mijoz nima olishini bir-ikki qisqa qatorda yozing.',
+        translateNote: 'Paylez buni boshqa tilda o‘qiydigan mijozlar uchun tarjima qiladi.',
+        copyError: 'Taklif ishga tushishidan oldin unga sarlavha va tavsif kerak.',
+        kindTitle: 'Qanday taklif',
+        kinds: ['Foizli chegirma', 'Bepul mahsulot', 'Summali chegirma', 'Ikki barobar ball'],
+        discountTitle: 'Chegirma va sanalar',
+        badgeLabel: 'Chegirma matni',
+        badgeNote: 'Qisqa va aniq. Mijozlar avval shuni ko‘radi. Ko‘pi bilan 14 belgi.',
+        from: 'Boshlanish',
+        to: 'Tugash',
+        windowError: 'Tugash sanasi boshlanish sanasidan oldin.',
+        whenTitle: 'Qaysi kunlar va soatlar',
+        hourFrom: 'Dan',
+        hourTo: 'Gacha',
+        whenNote: '{days}, {from}–{to} ishlaydi. Buni tinch soatlaringizni to‘ldirish uchun ishlating.',
+        everyDay: 'har kuni',
+        noDays: 'hali kun tanlanmagan',
+        audienceTitle: 'Kim ko‘radi',
+        audienceEstimate: 'Bunga taxminan {n} kishi mos keladi, ulardan {notifiable} tasiga xabar berish mumkin.',
+        notifyTitle: 'Odamlarga xabar berish',
+        notifySwitch: 'Bu taklif bo‘yicha bildirishnoma yuborish',
+        notifyQuota: 'Bu oyda {total} tadan {n} tasi qoldi.',
+        notifyOutTitle: 'Bu oyda {total} tasini ham ishlatib bo‘ldingiz',
+        notifyOutBody:
+          'Hisob oyning birinchi kuni nolga tushadi. Growth tarifida ular ko‘proq, taklif esa bildirishnomasiz ham ishlaydi — shunchaki kimdir ilovani ochishini kutadi.',
+        notifyPlan: 'Growth tarifini ko‘rish',
+        notifyWhen: 'Qachon chiqadi',
+        notifySuggested: 'Auditoriyangiz ilovani ko‘pincha taxminan {at} da ochadi.',
+        useSuggested: '{at} ni qo‘yish',
+        quietNote: 'Nima qo‘ysangiz ham, 21:00 dan 08:00 gacha hech narsa chiqmaydi.',
+        notifyWho: 'Kim oladi',
+        notifyReach: '{total} tadan {n} tasining bildirishnomalari yoqilgan.',
+        notifyWhoNote: 'Buni yuqoridagi “Kim ko‘radi” bo‘limida o‘zgartiring',
+        notifyText: 'Unda nima yozilgan',
+        notifyTextNote: 'Taklif sarlavhasidan olingan. Xohlasangiz qisqartiring — ko‘pi bilan 64 belgi.',
+        stopTitle: 'Qachon to‘xtashi kerak',
+        stopOptions: [
+          { label: 'Tugash sanasida', note: 'Belgilangan sanagacha ishlaydi, bir kun ham ortiq emas.' },
+          { label: 'Ma’lum sondagi olishdan keyin', note: 'Yetarlicha odam foydalangach o‘zi to‘xtaydi.' },
+          { label: 'Summaga yetganda', note: 'Chegirmalar belgilangan summaga yetgach o‘zi to‘xtaydi.' },
+        ],
+        stopClaims: 'Eng ko‘p olish soni',
+        stopMoney: 'Shu summaga yetganda to‘xtatish',
+        claims: 'olish',
+        stopNote:
+          'Qaynoq takliflar sodiqlik yoki vaucher byudjetidan foydalanmaydi. Ularni aynan shu chegara to‘xtatadi.',
+        termsTitle: 'Taklifdan foydalanish qoidalari',
+        termsPlaceholder: 'Bir tashrifga bitta olish. Boshqa takliflar bilan qo‘shilmaydi.',
+        previewTitle: 'Mijozlar buni qanday ko‘radi',
+        previewClaim: 'Olish',
+        previewUntitled: 'Taklifingiz sarlavhasi',
+        previewNoDesc: 'Tavsifingiz shu yerda chiqadi.',
+        previewLimitNone: 'Olish chegarasi yo‘q',
+        previewLimitClaims: '{n} ta olishdan keyin to‘xtaydi',
+        previewLimitMoney: '{amount} ga yetganda to‘xtaydi',
+      },
+      campaign: {
+        kicker: 'Yangi sodiqlik kampaniyasi',
+        title: 'Sodiqlik kampaniyasini yaratish',
+        sub: 'Doimiy mijozlar qaytib kelib yig‘adigan mukofot. Kimdir shartni bajargan zahoti summa sodiqlik byudjetidan ajratib qo‘yiladi.',
+        publish: 'Kampaniyani boshlash',
+        nameLabel: 'Kampaniya nomi',
+        namePlaceholder: 'Qahva seriyasi',
+        nameNote: 'Bu nomni faqat siz ko‘rasiz. Mijozlar mukofotni ko‘radi.',
+        nameError: 'Keyin topa olishingiz uchun kampaniyaga nom bering.',
+        visitsTitle: 'Nechta tashrif',
+        visits: 'tashrif',
+        visitsHelp: 'Mijoz mukofotni {n}-tashrifda oladi, so‘ng yangidan boshlaydi.',
+        visitsMinus: 'Bitta kam tashrif',
+        visitsPlus: 'Bitta ko‘p tashrif',
+        rewardTitle: 'Ular nima oladi',
+        rewardKinds: ['Bepul mahsulot', 'Summali chegirma'],
+        rewardItemPlaceholder: 'bepul filtrli qahva',
+        rewardItemNote: 'Mijoz ilovada o‘qiydigan tarzda yozing.',
+        rewardOff: 'chegirma',
+        rewardError: 'Mijoz nima olishini yozing.',
+        costTitle: 'Bu sizga qanchaga tushadi',
+        costEach: 'har safar',
+        costNote:
+          'Kampaniyalaringiz qanchaga tushayotganini kuzatish uchun shundan foydalanamiz. Bu kimdir shu mukofotni yig‘gan har safar sodiqlik byudjetingizdan ajratiladigan summa.',
+        project: 'mijoz',
+        projection: 'Agar {n} mijoz uni tugatsa, bu sodiqlik byudjetingizdan {amount} bo‘ladi.',
+        priorityTitle: 'Ikki kampaniya bitta tashrifga mos kelganda',
+        priorityLede:
+          'Mijoz bitta tashrifda bir nechta kampaniyaga mos kelishi mumkin. Faqat bitta mukofot beriladi: ustuvorlik raqami kichigi.',
+        priorityHelp: '5 tadan {n}-ustuvorlik. Kichigi yutadi.',
+        rulesTitle: 'Mayda qoidalar',
+        expiry: 'Mukofot muddati',
+        days: 'kun',
+        expiryNote: 'Shundan keyin mukofot yo‘qoladi, pul esa byudjetingizga qaytadi.',
+        minSpend: 'Bir tashrifdagi eng kam summa',
+        minSpendNote: 'Kichikroq tashriflar hisoblanmaydi. Kuniga bir mijozga bitta skanerlash.',
+        summaryTitle: 'Kampaniyangiz bir qatorda',
+        summary: '{visits} ta tashrif, so‘ng {reward}. Kimdir uni tugatgan har safar sizga {amount} ga tushadi.',
+        summaryNote:
+          'Pul mijoz shartni bajargan paytda sodiqlik byudjetidan ajratiladi, u mukofotdan foydalanganda emas. Mukofot muddati o‘tsa, pul qaytadi.',
+        summaryReward: 'mukofot',
+      },
+      valid: 'Nashrdan oldin yuqoridagi {n} ta narsani tuzating.',
+      validPlural: 'Nashrdan oldin yuqoridagi {n} ta narsani tuzating.',
+    },
+
+    assistant: {
+      knowTitle: 'Joyingiz haqida nimalarni bilaman',
+      intro:
+        'Joyingizda nima bo‘lishini ayting. Men buni sozlayman, qanchaga tushishini ko‘rsataman va nashrni sizga qoldiraman. Tugmani bosmaguningizcha hech narsa ishga tushmaydi.',
+      knows: [
+        'Eng tinch soatlaringiz — {days}, {from}–{to}, haftalik o‘rtachadan taxminan {pct}% past.',
+        'Mijozlaringizning {pct}% i ilovadan rus tilida foydalanadi, ammo faol takliflaringizdan birortasi ham rus tilida yozilmagan.',
+        'Shahringizdagi {n} ta qahvaxonada bepul mahsulotli takliflar foizli chegirmalarga qaraganda taxminan {x}× ko‘proq olinadi.',
+        'Bu oyda vaucherlarda {vouchers} va sodiqlikda {loyalty} sarflanmagan holda turibdi.',
+      ],
+
+      optionsTitle: 'Nima qila olasiz',
+      optionsIntro: 'Raqamlaringizda ko‘rayotganimga asoslangan aniq boshlanishlar. Muhokama qilish uchun bosing.',
+      options: [
+        {
+          name: 'Tinch soatlarni to‘ldirish',
+          desc: '{days}, {from}–{to} — o‘rtachadan taxminan {pct}% past.',
+          seed: 'Tinch seshanba kunlarini to‘ldiring',
+        },
+        {
+          name: 'Kelishdan to‘xtagan mijozlarni qaytarish',
+          desc: '{n} ta doimiy mijoz, oxirgi marta 30 kundan avval kelgan.',
+          seed: 'Kelishdan to‘xtagan {n} ta doimiy mijozni qaytaring',
+        },
+        {
+          name: 'Ishlab turgan hamma narsani ko‘rib chiqish',
+          desc: 'Shu hafta o‘zgartirishga arzigulik uchta narsa.',
+          seed: 'Ishlab turgan hamma narsani ko‘rib chiqing va nimani tuzatish kerakligini ayting',
+        },
+        {
+          name: 'Nega vaucherlardan foydalanish kamaydi?',
+          desc: 'Bu oyda 4% ga — qayerdaligini ko‘rsata olaman.',
+          seed: 'Nega bu oyda vaucherlardan foydalanish kamaydi?',
+        },
+      ],
+
+      convTitle: 'Yordamchi bilan gaplashing',
+      reset: 'Boshidan boshlash',
+      opening:
+        'Joyingizda nima bo‘lishini ayting — o‘z so‘zlaringiz bilan, Paylez biladigan besh tildan istalganida. Bir-ikki qisqa savol beraman, qanchaga tushishini ko‘rsataman va nashrni sizga qoldiraman.',
+      chipsHint: 'Bittasini bosing yoki javobingizni quyida yozing.',
+      send: 'Yuborish',
+      placeholders: {
+        idle: 'Joyingizda nima bo‘lishini ayting',
+        reward: 'Bepul qahva yoki foizli chegirma — yoki o‘zingizcha ayting',
+        budget: 'Taxminan {a}, {b} yoki {c}?',
+        duration: '2, 4 yoki 8 hafta?',
+        notify: 'Ha yoki yo‘q?',
+        ready: 'Qoralamani ko‘rsatishimdan oldin biror narsani o‘zgartiraymi?',
+      },
+      composerNote:
+        'Men Paylez biladigan besh tilning hammasida o‘qiyman. Ishlatadigan har bir raqamim sizning ma’lumotlaringizdan yoki sizga o‘xshash joylardan olinadi — hech birini o‘ylab topmayman.',
+
+      goalOpen: {
+        quiet:
+          'Eng tinch payt — {days}, {from}–{to}, haftalik o‘rtachadan taxminan {pct}% past. Men o‘shanda qisqa taklif ishga tushirardim. Odamlar nima olishi kerak?',
+        lapsed:
+          'Doimiy mijozlaringizdan {n} tasi 30 kundan ortiq vaqtdan beri kelmagan. Ularga qaratilgan taklif bir qismini qaytarishi mumkin. Ular nima olishi kerak?',
+        new: 'Yangi mehmonlar ko‘pincha lentada ko‘rgan bitta aniq va sodda taklif tufayli keladi. Yangi odamlar nima olishi kerak?',
+      },
+      askBudget: {
+        item:
+          'Bepul filtrli qahva, yaxshi. Sizga o‘xshash joylarda bepul mahsulotli takliflar foizli chegirmaga qaraganda taxminan {x}× ko‘proq olinadi va har biri sizga qat’iy {amount} ga tushadi. Bu oyda bunga qancha ajratmoqchisiz?',
+        percent:
+          'Mayli, 20% chegirma. U hisob kattaligiga bog‘liq, shuning uchun summa bo‘yicha to‘xtatishni qo‘shaman. Bu oyda bunga qancha ajratmoqchisiz?',
+      },
+      askDuration:
+        '{amount}. Qaynoq takliflar sodiqlik yoki vaucher jamg‘armasidan chiqmaydi, ya’ni bu sizning marjangizdan ketadigan pul. U qancha davom etsin?',
+      askNotify:
+        '{n} hafta. Bu oyda {total} tadan {left} tasi bildirishnoma qoldi — boshlanishida bittasini yuboraymi? Usiz ko‘pchilik taklifni faqat ilovani ochsagina ko‘radi.',
+      ready:
+        'Mana men sozlaydigan narsa{notify}. Hozircha hech narsa faol emas — u faqat siz nashrni bosganingizda chiqadi. Qoralamaga qarang.',
+      readyNotify: ', boshlanishida bildirishnoma bilan',
+      retry: {
+        reward: 'Yaxshi tushunmadim — bepul filtrli qahvami yoki hisobdan foizmi?',
+        budget: 'Oyiga taxminan qancha — {a}, {b} yoki {c}?',
+        duration: 'Qancha davom etsin — 2, 4 yoki 8 hafta?',
+        notify: 'Boshlanishida bildirishnoma yuboraymi — ha yoki yo‘q?',
+        other: 'Bularning hammasini qoralamada o‘zgartira olasiz. Ko‘rsataymi?',
+      },
+      chips: {
+        item: 'Bepul filtrli qahva',
+        percent: 'Hisobdan 20%',
+        weeks: '{n} hafta',
+        yes: 'Ha, yuboring',
+        no: 'Yo‘q, shunchaki joylashtiring',
+      },
+
+      readyTitle: 'Men nimani sozlagan bo‘lardim',
+      readyRows: ['Maqsad', 'Odamlar nima oladi', 'Kunlar va soatlar', 'Byudjet', 'Davomiyligi', 'Bildirishnoma'],
+      showDraft: 'Qoralamani ko‘rsat',
+
+      draftTag: 'Qoralama',
+      draftNote: 'Bu yerda hech narsa faol emas. U faqat siz nashr qilganingizda chiqadi.',
+      changedTitle: 'Men nimani o‘zgartirdim',
+      changedNote: 'Boshqa hech narsa qimirlamadi. Qolgan hamma maydon avvalgidek.',
+      sentence: {
+        item: 'Har qanday pishiriqqa bepul filtrli qahva, {days} {from}–{to}, keyingi {weeks} hafta davomida.',
+        percent: 'Hisobdan 20% chegirma, {days} {from}–{to}, keyingi {weeks} hafta davomida.',
+      },
+      whyTitle: 'Nega shuni tanladim',
+      reasons: {
+        quietDays:
+          'Men {days}, {from}–{to} ni tanladim, chunki bu sizning eng tinch soatlaringiz — haftalik o‘rtachadan taxminan {pct}% past.',
+        movedDays:
+          'Siz {days} ni so‘radingiz, men ko‘chirdim. Eng tinch soatlaringiz hamon {quiet}, {from}–{to}, agar qaytmoqchi bo‘lsangiz.',
+        item:
+          'Bepul mahsulotni tanladim, chunki bunday takliflar shahringizdagi {n} ta joyda foizli chegirmalarga qaraganda taxminan {x}× ko‘proq olinadi va har safar qat’iy {amount} ga tushadi.',
+        percent:
+          'Siz foizli chegirma so‘radingiz, men 20% qo‘ydim. Xarajat hisob kattaligiga bog‘liq, shuning uchun to‘xtatish shartini qo‘shdim.',
+        budget: 'Byudjetni {amount} qilib qo‘ydim, chunki bu oyda shuncha sarflay olishingizni aytdingiz.',
+        budgetTight:
+          'Byudjetni {amount} qilib qo‘ydim, chunki bu oyda qaynoq takliflar marjangizni yey boshlaguncha shuncha qoladi.',
+      },
+      dealTag: 'Qaynoq taklif',
+      dealNew: 'Yangi — yaratiladi',
+      dealFields: ['Bu nima', 'Kunlar va soatlar', 'Davomiyligi', 'Kim ko‘radi'],
+      dealValues: {
+        item: 'Bepul mahsulot — har qanday pishiriqqa filtrli qahva',
+        percent: 'Foizli chegirma — hisobdan 20%',
+      },
+      stopAfter: 'Shundan keyin to‘xtaydi',
+      claims: 'olish',
+      fieldNote:
+        'Kunlar, soatlar, sanalar va auditoriya men yuqorida tushuntirganday qo‘yilgan. Ularning istalganini to‘liq shaklda o‘zgartiring.',
+      notifyTag: 'Bildirishnoma',
+      notifyAttached: 'Yuqoridagi taklifga biriktirilgan',
+      goesOut: 'Chiqadi',
+      notifyFields: ['Yetib boradi', 'Sarflaydi'],
+      notifyReach: 'bildirishnomalari yoqilgan {n} kishi',
+      notifyUses: 'bu oyda qolgan {n} ta bildirishnomangizdan 1 tasi',
+      costTitle: 'Bu qanchaga tushadi',
+      costLine: {
+        item: 'Agar buni {n} kishi olsa, sizga taxminan {amount} ga tushadi. Bu taxmin, har bir olish uchun qat’iy {each} ga asoslangan.',
+        percent:
+          'Agar buni {n} kishi olsa, sizga taxminan {amount} ga tushadi. Bu taxmin, bir tashrifdagi o‘rtacha {avg} hisobingizga asoslangan.',
+      },
+      costNote:
+        'Qaynoq takliflarning o‘z byudjet jamg‘armasi yo‘q, shuning uchun bu to‘g‘ridan-to‘g‘ri marjangizdan ketadi. Uni yuqoridagi to‘xtatish sharti cheklaydi.',
+      budgetWarn:
+        'Siz {asked} so‘radingiz. Bu oyda {room} zaxirangiz bor, shuning uchun rad etish o‘rniga kichikroq variant qildim — {wanted} o‘rniga {n} ta olish.',
+      readTitle: 'Mijozlar nimani o‘qiydi',
+      readWarn: 'Men yozdim — nashrdan oldin tekshiring',
+      titleIn: 'Sarlavha, {lang}',
+      bodyIn: 'Tavsif, {lang}',
+      termsTitle: 'Foydalanish qoidalari',
+      termsTag: 'Standart shartlar',
+      terms: 'Bir tashrifga bitta olish. Boshqa takliflar bilan qo‘shilmaydi. Joy taklifni muddatidan oldin tugatishi mumkin.',
+      reviseTitle: 'Biror narsani o‘zgartiraymi? Nimani ayting',
+      revisePlaceholder: 'Payshanba qiling, va talabalar buni olishini istamayman.',
+      reviseAction: 'Qoralamani o‘zgartirish',
+      reviseNote:
+        'Men faqat siz aytgan narsani o‘zgartiraman va nima qimirlaganini ko‘rsataman. Qoralamaning qolgani o‘z holicha qoladi.',
+      publish: 'Nashr qilish',
+      notRight: 'Bu menga kerak narsa emas',
+      exitsIntro:
+        'Uchta chiqish yo‘li. Hech biri boshqasidan yomon emas — xatoning kattaligiga qarab tanlang.',
+      exits: [
+        {
+          title: 'Nima noto‘g‘riligini ayting',
+          note: 'Men shu qoralamani o‘zgartiraman. Siz tasdiqlagan hamma narsa qoladi.',
+          label: 'Quyida yozing',
+        },
+        {
+          title: 'Oddiy shaklda ochish',
+          note: 'Siz boshqaruvni olasiz. Men to‘g‘ri topgan hamma narsa allaqachon to‘ldirilgan.',
+          label: 'O‘zim qilaman',
+        },
+        {
+          title: 'Boshidan boshlash',
+          note: 'Bu qoralamani va besh tildagi matnni tashlab yuboradi.',
+          label: 'Tashlab yuborish',
+        },
+      ],
+      revisions: {
+        days: 'Kunlar',
+        hours: 'Soatlar',
+        audience: 'Kim ko‘radi',
+        thursday: 'Payshanba',
+        friday: 'Juma',
+        morning: '07:00–10:00',
+        noStudents: 'Talabalardan tashqari hamma — taxminan {n} kishi',
+      },
+
+      publishedTitle: 'Ikki narsa tayyor',
+      publishedOne: 'Bir narsa tayyor',
+      publishedDeal: '{days}, {from}–{to} · {n} ta olishdan keyin to‘xtaydi',
+      publishedNotify: 'Soat {at} da chiqadi',
+      publishedNotifyNote: '{n} kishiga',
+      watch:
+        'Ikki kundan keyin qarang. Agar o‘shangacha 10 kishidan kam olsa, soatlar to‘g‘ri, taklif esa kuchsiz.',
+      again: 'Yana nimadir sozlash',
+
+      reviewTitle: 'Shu hafta nimani o‘zgartirardim',
+      reviewIntro: 'Shu hafta uchta narsani o‘zgartirishga arziydi. Qolganiga tegmadim.',
+      review: [
+        {
+          text: '{pct}% li vaucher bosqichingiz {points} ball talab qiladi. Bu oyda unga faqat {reached} mijoz yetdi. {lower} ballda yana {more} ta doimiy mijozingiz shartni bajargan bo‘lardi.',
+          label: 'Bosqichni o‘zgartirish',
+        },
+        {
+          text: '“{name}” pauzada, lekin hamon {amount} ushlab turibdi. {n} ta mukofot yig‘ilgan va hech qachon ishlatilmagan — ular muddati o‘tguncha amal qiladi.',
+          label: 'Kampaniyani ochish',
+        },
+        {
+          text: '“{name}” 5% chegirma bilan {weeks} hafta ishladi va {claims} ta olinish berdi — 15% li takliflaringiz o‘rtachasining taxminan uchdan biri. Kichik chegirmalar odamni kamdan-kam qo‘zg‘atadi.',
+          label: 'Takliflarni ko‘rish',
+        },
+      ],
+
+      asked: 'Siz so‘radingiz: “{q}”',
+      answerLine:
+        'Vaucherlardan foydalanish 4% ga, 158 dan 152 ga tushdi. Butun pasayish {pct}% li bosqichda — bu oyda unga {now} mijoz yetdi, o‘tgan oyda {before} tasi, chunki ball chegarasi {points} gacha ko‘tarildi.',
+      answerNote:
+        'Shu davrda tashriflar 12% ga o‘sdi, ya’ni odamlar kelyapti. Faqat ularning kamrog‘i foydalanishga arzigulik bosqichga yetyapti.',
+      answerLabel: 'Bosqichlarni ochish',
+      answerMore:
+        'Pul qayerga ketgani, bosqichma-bosqich, Vaucherlar sahifasida. Men buni bu yerda qayta qurmadim.',
+      askElse: 'Boshqa narsa so‘rash',
+
+      handedTitle: 'Endi bu sizniki',
+      handedNote:
+        'Ishonchim komil bo‘lgan narsalarni to‘ldirdim. Oxirgi ikkitasini tekshiring — ularni taxmin qildim.',
+      handedFields: [
+        'Kunlar va soatlar',
+        'Odamlar nima oladi',
+        'Davomiyligi',
+        'Shundan keyin to‘xtaydi',
+        'Kim ko‘radi',
+        'Besh tildagi matn',
+      ],
+      handedWeeks: '{n} hafta',
+      handedCopy: 'Men yozdim — nashrdan oldin tekshiring',
+      filledIn: 'To‘ldirildi',
+      checkThis: 'Buni tekshiring',
+      openForm: 'Shaklni ochish',
+      backToDraft: 'Qoralamaga qaytish',
+
+      cantLine: 'Odamlarni odatda qancha sarflashiga qarab tanlay olmayman. Paylez buni hali kuzatmaydi.',
+      cantAlt:
+        'Sizda allaqachon bo‘lgan odamlarni tanlay olaman — ulardan {n} tasi kamida ikki marta kelgan. Shunday qilaymi?',
+      cantYes: 'Ha, shunday qiling',
+      cantNo: 'Boshqa narsa so‘rash',
+      cantElsewhere:
+        'Odamlar qancha sarflashini ko‘rmoqchi bo‘lsangiz, bir tashrifdagi o‘rtacha Mijozlar sahifasida.',
+      cantOpen: 'Mijozlarni ochish',
+
+      missedTitle: 'Buni tushunmadim',
+      missedBody:
+        'Shu yergacha yetdim: {days} kunlari tushdan keyingi taklif. Taklif va byudjetni ajrata olmadim, tinmay so‘rayverganimdan ko‘ra topshirganim yaxshi.',
+      loopNote:
+        'Bu ikkinchi marta. Taxmin qilishda davom etmayman — shakl tezroq bo‘ladi, tushungan kunlar va soatlarni esa unga yozib qo‘ydim.',
+      missedAction: 'Oddiy shaklni ochish',
+      tryAgain: 'Yana urinish',
+
+      dayChoices: ['Seshanba va chorshanba', 'Payshanba', 'Juma'],
+      goals: [
+        'Tinch soatlarni to‘ldirish',
+        'Kelishdan to‘xtagan mijozlarni qaytarish',
+        'Ko‘proq yangi mehmon jalb qilish',
+        'Ishlab turgan hamma narsani ko‘rib chiqish',
+      ],
+      notifyYes: 'Ha, boshlanishida',
+      notifyNo: 'Yo‘q, faqat joylashtirilsin',
+      weeksValue: '{n} hafta',
+      published: 'Hech narsa nashr qilinmadi — bu versiyada server yo‘q.',
+      draftUpdated: 'Qoralama yangilandi. Qolgani o‘zgarmadi.',
+      handedOver: 'Ko‘chirib bo‘ladigan hamma narsa bilan shaklni ochdim.',
+    },
+
     collapse: 'Menyuni yig‘ish',
     expand: 'Menyuni ochish',
     backToSite: 'paylez’ga qaytish',
