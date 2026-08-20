@@ -92,6 +92,43 @@
   --accent-soft: color-mix(in srgb, var(--accent-ink) 72%, transparent);
   --on-accent: #05201c;
 
+  /*
+   * ── the ink ──
+   *
+   * The near-black this brand's dark surfaces are made of, and the mint that
+   * marks them, declared here rather than in either theme because *both* need
+   * them. Dark is ink already. Paper spends them in four places: the face of
+   * every button, the current item in the dashboard rail, the two phone mocks
+   * (an app whose ground is black whichever theme is reading), and the panels
+   * that carry the reference design's black slabs.
+   *
+   * `--ink-on-rgb` is the same triplet as dark's `--accent` and is deliberately
+   * not a reference to it: it belongs to the ink rather than to the theme, so if
+   * the light accent and the accent-on-black ever part company this one stays
+   * with the black.
+   */
+  --ink-rgb: 4, 32, 31;
+  --ink-on-rgb: 88, 233, 212;
+
+  /*
+   * The solid — the face of a thing you press, separate from `--accent`
+   * because only one of the two is the accent.
+   *
+   * On black they are the same colour and these three are pass-throughs. On
+   * paper they are not, and the reference design
+   * (`b2b/Paylez Partner Dashboard v2.dc.html`) is where that comes from: it is
+   * a light page, and it fills every call to action with near-black and sets the
+   * label in mint, spending its green only on *marks* — icon strokes,
+   * eyebrows, one chart line, a 6px dot. That is what keeps a page of white
+   * cards from reading flat, and it is the split this token exists to hold.
+   * `--accent` still fills every bar, column, dot and selected tab; only the
+   * things you press read from here.
+   */
+  --solid-rgb: var(--accent-rgb);
+  --solid: rgb(var(--solid-rgb));
+  --solid-lit: var(--solid);
+  --on-solid: var(--on-accent);
+
   --text: #e6f6f3;
   --text-mut: rgba(230, 246, 243, 0.62);
   --text-fnt: rgba(230, 246, 243, 0.4);
@@ -276,10 +313,30 @@
    */
   --on-accent: #ffffff;
 
+  /*
+   * The solid, and on paper it is near-black with a mint label.
+   *
+   * That is the reference design's own pair (`#0B1512` / `#5FE9C4`), and it does
+   * not cost a third hue: `--solid` is `--text`, the ink already writing every
+   * heading on this page, and `--on-solid` is `:root`'s `--accent`, hex for hex.
+   * A black fill carries the accent that black carries — it is the dark theme
+   * seen through a hole in the paper, not a new colour. Everything that is a
+   * mark rather than a press keeps the deep teal above.
+   *
+   * It also closes the contrast miss the pair above documents: white on
+   * `#089b99` is 3.4:1, under AA for the 15px labels most of these buttons hold.
+   * Mint on this ink is 11.8:1. `--solid-lit` is the same 179deg hue two stops
+   * up, which is the hover the design uses (`#16302A` to its `#0B1512`) — a
+   * near-black button cannot lift by getting darker.
+   */
+  --solid-rgb: var(--ink-rgb);
+  --solid-lit: #0f3b39;
+  --on-solid: rgb(var(--ink-on-rgb));
+
   /* 16:1 against the page, and the muted pair well clear of AA. */
-  --text: #04201f;
-  --text-mut: rgba(4, 32, 31, 0.68);
-  --text-fnt: rgba(4, 32, 31, 0.62);
+  --text: rgb(var(--ink-rgb));
+  --text-mut: rgba(var(--ink-rgb), 0.68);
+  --text-fnt: rgba(var(--ink-rgb), 0.62);
 
   /* Glows take the neon rather than the ink: they are light spilling off a fill,
      and the fill is neon. `--glow-k` damps them all to 40% regardless. */
@@ -504,18 +561,19 @@ button {
  *
  * A hairline round the pill looks like a mistake — a sticker with a keyline —
  * and neither theme needs one: dark's mint reads at 11:1 against the page, and
- * light's fill is now the same deep teal as the accented type beside it, which
- * has its own silhouette. The label and the glow carry the shape.
+ * light's near-black has more silhouette than anything else on the page. The
+ * label and the shadow carry the shape.
  */
 .btn-solid {
-  background: var(--accent);
-  color: var(--on-accent);
-  box-shadow: 0 14px 40px -18px rgba(var(--glow-rgb), calc(0.75 * var(--glow-k)));
+  background: var(--solid);
+  color: var(--on-solid);
+  box-shadow: 0 14px 40px -18px rgba(var(--solid-rgb), calc(0.75 * var(--glow-k)));
 }
 
 .btn-solid:hover {
+  background: var(--solid-lit);
   transform: translateY(-2px);
-  box-shadow: 0 20px 52px -18px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
+  box-shadow: 0 20px 52px -18px rgba(var(--solid-rgb), calc(0.9 * var(--glow-k)));
 }
 
 .btn-ghost {
@@ -1838,8 +1896,8 @@ button {
   width: 42px;
   height: 42px;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  color: var(--on-solid);
   transition: transform 200ms var(--ease);
 }
 
@@ -3346,6 +3404,14 @@ button {
   background: var(--accent);
 }
 
+/* Same call as the partner chart above, on the mock that depicts it: light has
+   an ink to spend, so the redemption drawn inside the column is a second colour
+   rather than a second alpha of the first. */
+:root[data-theme='light'] .dash-col i,
+:root[data-theme='light'] .dash-keys i[data-solid='true'] {
+  background: var(--solid);
+}
+
 [data-shown='true'] .dash-col {
   transform: scaleY(1);
 }
@@ -3388,8 +3454,8 @@ button {
 
 .dash-act[data-solid='true'] {
   border-color: transparent;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  color: var(--on-solid);
 }
 
 /* ── what is live ─────────────────────────────────────────────────────── */
@@ -3993,8 +4059,8 @@ button {
   gap: 0.45rem;
   padding: 0.5rem 0.9rem;
   border-radius: 999px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  color: var(--on-solid);
   font-size: 0.8rem;
   font-weight: 700;
 }
@@ -5799,8 +5865,8 @@ button {
   width: 2.1rem;
   height: 2.1rem;
   border-radius: 50%;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  color: var(--on-solid);
   cursor: pointer;
   transition: opacity 200ms var(--ease), transform 200ms var(--ease);
 }
@@ -6128,11 +6194,22 @@ button {
   color: var(--text);
 }
 
-/* Current is a wash and the accent, not a fill: the rail is a list of names and
-   one of them being a solid block reads as a button among labels. */
+/* On black, current is a wash and the accent rather than a fill: the rail is a
+   list of names, and one of them as a solid mint block reads as a button that
+   wandered in among labels. */
 .rail-link[data-on='true'] {
   background: var(--surface-2);
   color: var(--accent-ink);
+}
+
+/* Paper cannot afford that restraint. A 5% tint of the deep teal on near-white
+   is barely a mark, and the reference design does not try — it fills the
+   current item with the ink and sets the label in mint, which is the one thing
+   strong enough to hold a rail of eight names against a white page. The reading
+   above still holds where it was written: on black the wash already registers. */
+:root[data-theme='light'] .rail-link[data-on='true'] {
+  background: var(--solid);
+  color: var(--on-solid);
 }
 
 .rail-foot {
@@ -6499,6 +6576,80 @@ button {
   --pd-glass: 0.72;
 }
 
+/*
+ * ── an ink surface ────────────────────────────────────────────────────────
+ *
+ * A panel made of the ink rather than of the page. Two kinds, and the attribute
+ * says which:
+ *
+ *   data-ink='on'      ink in both themes — the phone mocks, which are
+ *                      pictures of an app whose ground is black either way.
+ *   data-ink='paper'   ink only on paper — the overview headline and the
+ *                      assistant's opening panel, the two black slabs the
+ *                      reference design builds its dashboard around. In dark
+ *                      they are already dark, and glass is the better answer
+ *                      there.
+ *
+ * It works by re-pointing the tokens *inside* the panel instead of restating
+ * every child rule, because the children already read from them: a kicker is
+ * `--accent-ink`, the figures are `--text`, notes are `--text-mut` and
+ * `--text-fnt`, the support tiles are `--bg-2` separated by `--border`. One
+ * scope inverts all of them at once, and anything added to these panels later
+ * inherits the inversion without having to know it exists.
+ *
+ * The alphas are the reference design's own, and they are alphas rather than
+ * four fixed greys because here the ground *is* fixed — which is the opposite
+ * of the case the runner sprite argues, where the ground is whichever theme is
+ * running and an alpha-built highlight inverts with it.
+ */
+[data-ink='on'],
+:root[data-theme='light'] [data-ink='paper'] {
+  --bg: rgb(var(--ink-rgb));
+  /* One step up from the ground, for a tile sitting on it. A mix rather than a
+     hex so it cannot drift out of the ink's hue the way a hand-picked
+     near-black does. */
+  --bg-2: color-mix(in srgb, rgb(var(--ink-on-rgb)) 6%, rgb(var(--ink-rgb)));
+  --panel-rgb: var(--ink-rgb);
+  --glass: rgb(var(--panel-rgb));
+  --pd-glass: 1;
+
+  /* On ink the accent has no middle to need, exactly as in dark: one mint at
+     11:1 does fills, marks and hairlines alike. */
+  --accent-rgb: var(--ink-on-rgb);
+  --tint-rgb: 255, 255, 255;
+  --accent: rgb(var(--ink-on-rgb));
+  --accent-ink: var(--accent);
+  --accent-lit: var(--accent);
+  --accent-soft: rgba(var(--ink-on-rgb), 0.72);
+  --on-accent: #05201c;
+
+  /* A black button on black is not a button, so inside the ink a press is the
+     mint — the same inversion dark runs, for the same reason. */
+  --solid-rgb: var(--ink-on-rgb);
+  --solid-lit: var(--solid);
+  --on-solid: var(--on-accent);
+
+  --text: #ffffff;
+  --text-mut: rgba(255, 255, 255, 0.72);
+  --text-fnt: rgba(255, 255, 255, 0.45);
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-2: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.1);
+  --border-2: rgba(255, 255, 255, 0.22);
+  --glow-rgb: var(--ink-on-rgb);
+  --glow-k: 1;
+  --shadow: rgba(0, 0, 0, 0.5);
+
+  color: var(--text);
+}
+
+/* Every eyebrow on a slab is the mint. It is the one mark on the panel that is
+   not white at some alpha, which is what makes the thing read as a statement
+   rather than as a dark card with a caption. */
+[data-ink] .console-label {
+  color: var(--accent-ink);
+}
+
 /* The field the glass refracts. Fixed, so it does not travel with the scroll —
    a wash that scrolls under a sticky rail reads as a second page moving. */
 .pd-app::before {
@@ -6548,6 +6699,13 @@ button {
     transparent
   );
   pointer-events: none;
+}
+
+/* An ink panel is opaque, so the blur behind it is a GPU pass with nothing to
+   show for it — the same argument `data-solid` makes one rule down. */
+.pd-glass[data-ink] {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 /* Tables and the heat map: keep the sheet, drop the translucency. */
@@ -7145,13 +7303,25 @@ button {
   stroke-width: 2;
 }
 
-/* The second series is the same colour dashed, not a second colour. Both lines
-   share one scale on purpose — redemptions are a fraction of visits, and that
-   ratio is the whole point of putting them in one box. */
+/* Both lines share one scale on purpose — redemptions are a fraction of
+   visits, and that ratio is the whole point of putting them in one box.
+
+   On black the second series is the same colour dashed, because there is no
+   second colour to spend — everything on the page is the mint or a step of
+   it, so the dash is the only thing left to tell two lines apart. */
 .pd-chart-line[data-second='true'] {
   stroke: var(--text-mut);
   stroke-width: 1.6;
   stroke-dasharray: 4 3;
+}
+
+/* On paper there *is* a second colour: the ink the buttons are filled with. The
+   reference design runs this exact chart that way — visits in the accent,
+   redemptions in near-black — and two colours need no dash, so the line gets
+   its own shape back. */
+:root[data-theme='light'] .pd-chart-line[data-second='true'] {
+  stroke: var(--solid);
+  stroke-dasharray: none;
 }
 
 .pd-chart-fill {
@@ -7161,6 +7331,18 @@ button {
 
 .pd-chart-panel .pd-legend {
   gap: 1rem;
+}
+
+/* This legend is not the budget bar's. Its second swatch stands for the second
+   *line*, so it reads from that pair rather than inheriting the hatched fill
+   that `data-part='held'` means one panel over, where it marks money set aside.
+   A key that does not match the mark it keys is worse than no key. */
+.pd-chart-panel .pd-legend i[data-part='held'] {
+  background: var(--text-mut);
+}
+
+:root[data-theme='light'] .pd-chart-panel .pd-legend i[data-part='held'] {
+  background: var(--solid);
 }
 
 /* ── proof columns ── */
@@ -9076,10 +9258,14 @@ button {
   transition: background 160ms var(--ease), color 160ms var(--ease);
 }
 
+/* The one control on the site that fills on *hover* rather than by being the
+   primary action, and it is the design's own: a chip outlined 1.5px in the ink
+   above, flipping to that ink filled with the mint label on it. The border is
+   already the face, so the flip costs no new colour and nothing moves. */
 .pd-chips button:hover {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  border-color: var(--solid);
+  color: var(--on-solid);
 }
 
 /* ── what it would set up ── */
@@ -9176,8 +9362,8 @@ button {
   height: 2.4rem;
   border: none;
   border-radius: 11px;
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  color: var(--on-solid);
   cursor: pointer;
 }
 
@@ -10007,7 +10193,7 @@ button {
   margin-inline: auto;
   padding: 0.7rem;
   border-radius: 30px;
-  background: #0b1512;
+  background: var(--bg);
   box-shadow: 0 20px 44px var(--shadow);
 }
 
@@ -10015,14 +10201,14 @@ button {
   width: 3.5rem;
   height: 0.25rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.18);
+  background: var(--border-2);
 }
 
 .pd-phone-card {
   align-self: stretch;
   border-radius: 20px;
   overflow: hidden;
-  background: #122019;
+  background: var(--bg-2);
 }
 
 .pd-phone-art {
@@ -10030,7 +10216,7 @@ button {
   align-items: flex-end;
   height: 6.5rem;
   padding: 0.75rem;
-  background: linear-gradient(150deg, #1b3129, #0b1512);
+  background: linear-gradient(150deg, var(--surface-2), var(--bg));
 }
 
 .pd-phone-art span {
@@ -10052,7 +10238,7 @@ button {
 .pd-phone-body em {
   font-style: normal;
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-fnt);
 }
 
 .pd-phone-body b {
@@ -10060,13 +10246,13 @@ button {
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1.35;
-  color: #fff;
+  color: var(--text);
 }
 
 .pd-phone-body p {
   font-size: 0.76rem;
   line-height: 1.55;
-  color: rgba(255, 255, 255, 0.62);
+  color: var(--text-mut);
 }
 
 .pd-phone-foot {
@@ -10076,12 +10262,12 @@ button {
   gap: 0.6rem;
   margin-top: 0.4rem;
   padding-top: 0.7rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--border);
 }
 
 .pd-phone-foot span {
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--text-fnt);
 }
 
 .pd-phone-foot i {
@@ -10374,11 +10560,11 @@ button {
   gap: 0.6rem;
   padding: 1rem 1.4rem;
   border-radius: var(--r-sm);
-  background: var(--accent);
-  color: var(--on-accent);
+  background: var(--solid);
+  color: var(--on-solid);
   font-size: 0.95rem;
   font-weight: 700;
-  box-shadow: 0 14px 34px rgba(var(--glow-rgb), calc(0.22 * var(--glow-k)));
+  box-shadow: 0 14px 34px rgba(var(--solid-rgb), calc(0.22 * var(--glow-k)));
 }
 
 /* ── the stats strip ──────────────────────────────────────────────────────

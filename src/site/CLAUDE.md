@@ -8,8 +8,9 @@ file is the token-level reasoning behind `site.css` and `theme/context.ts`.
 Everything accented on that page is 179°; only the step changes, and the step is
 chosen by what the mark *is*, because paper sets a different bar for each:
 
-    --accent      #089b99  fills — buttons, chips, bars, chart columns. The
-                           same hex as --accent-lit below, deliberately.
+    --accent      #089b99  fills — chips, bars, chart columns, selected tabs.
+                           The same hex as --accent-lit below, deliberately.
+                           *Not* buttons on paper; see the ink, below.
     --accent-lit  #089b99  3.2:1. Icon strokes, focus rings and large type,
                            which is the WCAG bar for both. Most of the accent
                            you see on the page is this.
@@ -67,6 +68,45 @@ Two more tokens exist because one value cannot do both jobs on paper:
   on `--accent`. Declared as a token so only the matched theme's file is fetched.
   `THEMES[…].logo` mirrors it for `PaylezIntro`, which lives under `components/`
   and takes a `markImage` prop rather than reading the site's stylesheet.
+
+**There is a third palette block, and it is the ink.** `--ink-rgb` (`4, 32, 31`)
+and `--ink-on-rgb` (`88, 233, 212`) are declared in `:root` and never redeclared,
+because they belong to a *surface* rather than to a theme: the near-black this
+brand's dark things are made of, and the mint that marks it. Dark is already made
+of them. Paper spends them in four places, and all four come from the reference
+design (`b2b/Paylez Partner Dashboard v2.dc.html`), which is itself a light page:
+
+    --solid       the face of a thing you press. rgb(--solid-rgb), which is
+    --solid-lit   --accent-rgb in dark and --ink-rgb in light. Its label is
+    --on-solid    --on-solid: near-black in dark, the ink's mint on paper.
+
+That is the inversion worth understanding. **The accent is what a mark is made
+of; the ink is what a press is made of**, and on paper those stop being the same
+colour. A page of white cards with a deep-teal button on each reads flat; the
+design's answer is near-black buttons and a green kept for icon strokes,
+eyebrows, one chart line and a 6px dot, and that is what these tokens carry over.
+It also closes a real contrast gap — white on `#089b99` is the 3.4:1 the
+paragraph above admits to, and mint on the ink is 11.8:1.
+
+`[data-ink]` is the same pair at panel size, and it is the third palette block in
+`site.css` — the one place other than the two `:root` blocks where a colour is
+named, sitting immediately after them. It re-points the tokens *inside* a panel
+(text to white at three alphas, the accent to the mint, surfaces and borders to
+white at low alpha) so the children invert without a rule each: a kicker is
+already `--accent-ink`, a figure already `--text`, a support tile already
+`--bg-2` on a `--border` hairline. Two values:
+
+- **`data-ink='on'`** — ink in both themes. The two phone mocks, which are
+  pictures of an app whose ground is black whichever theme is reading.
+- **`data-ink='paper'`** — ink only in light. The dashboard's black slabs: the
+  overview headline, the cost-per-new-customer panel, and the assistant's
+  opening panel. In dark they are already dark and glass is the better answer.
+
+Inside the scope a press flips back to the mint, because a black button on black
+is not a button — the same inversion dark runs, one level down. Anything added to
+those panels later inherits all of it without knowing the scope exists; the thing
+that breaks it is a rule that names a colour instead of reading a token, which is
+the rule this whole file is about.
 
 The canvases take `--accent-lit` (`THEMES.light.primary`, same hex — the globe,
 the controller, the node web, the market tape): they are

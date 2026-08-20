@@ -222,7 +222,7 @@ function Overview() {
           order of how much we can stand behind them: counted, estimated, and
           the subset we would defend. Stacking them is the design — a dashboard
           that shows only the estimate is a brochure. */}
-      <div className="pd-glass pd-hero" data-reveal>
+      <div className="pd-glass pd-hero" data-ink="paper" data-reveal>
         <div className="pd-hero-main">
           <span className="console-label">
             {fill(copy.kicker, { range: dashboard.rangeLabel })}
@@ -1472,7 +1472,7 @@ function Customers() {
       {/* What a new customer costs. One number, its four parts, and the trend —
           which is the honest version of "customer acquisition cost": everything
           Paylez charged plus every discount given, over everyone new. */}
-      <div className="pd-glass pd-hero" data-reveal>
+      <div className="pd-glass pd-hero" data-ink="paper" data-reveal>
         <div className="pd-hero-main">
           <span className="console-label">{copy.costKicker}</span>
           <p className="pd-counted">

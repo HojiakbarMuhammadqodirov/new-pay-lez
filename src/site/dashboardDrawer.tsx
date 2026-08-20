@@ -433,7 +433,7 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
       </Block>
 
       <Block title={copy.previewTitle}>
-        <div className="pd-phone">
+        <div className="pd-phone" data-ink="on">
           <span className="pd-phone-notch" aria-hidden />
           <div className="pd-phone-card">
             <div className="pd-phone-art">

@@ -550,7 +550,7 @@ export function Assistant() {
           the argument for trusting it at all, so it comes first and it is the
           dark one. */}
       <div className="pd-two pd-assist-top">
-        <div className="pd-glass pd-hero pd-knows" data-reveal>
+        <div className="pd-glass pd-hero pd-knows" data-ink="paper" data-reveal>
           <span className="console-label">{copy.knowTitle}</span>
           <p className="pd-lede">{copy.intro}</p>
           <ul>

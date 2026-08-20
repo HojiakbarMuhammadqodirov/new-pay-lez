@@ -144,7 +144,7 @@ function AppPreview({ profile }: { profile: BusinessProfile }) {
     <div className="console preview-phone" data-reveal>
       <span className="console-label">{preview.title}</span>
 
-      <div className="phone">
+      <div className="phone" data-ink="on">
         <div className="phone-cover">{preview.cover}</div>
         <div className="phone-body">
           <b>{profile.name || preview.name}</b>
