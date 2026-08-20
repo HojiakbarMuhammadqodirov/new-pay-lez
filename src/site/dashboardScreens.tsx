@@ -17,6 +17,8 @@ import {
   PD_HEAT_MAX,
   PD_MAX_PER_VOUCHER,
   PD_NEAR,
+  PD_TIERS,
+  PD_VOUCHER_BUDGET,
   PD_NOTIFY_QUOTA,
   PD_REMIND,
   PD_ROSTER,
@@ -27,12 +29,14 @@ import {
   PD_VOUCHER_MODEL,
   dealNotify,
   metricsFor,
+  voucherModelFor,
   polyarea,
   polyline,
   type PartnerDeal,
   type RosterEntry,
 } from './partnerMetrics';
 import { Assistant } from './dashboardAssistant';
+import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
 
 /**
@@ -1275,12 +1279,47 @@ function Vouchers() {
   const money = useMoney();
   const num = useNum();
 
-  /* Which tier the ladder is showing, and the only state on this screen. It
-     opens on the tier eating the most of the pool, which is the one the
-     suggestion card at the bottom is already about. */
+  const currency = useCurrency();
+
+  /* Which tier the ladder is showing. It opens on the tier eating the most of
+     the pool, which is the one the suggestion card at the bottom is about. */
   const [tierPick, setTierPick] = useState(PD_VOUCHER_MODEL.biggest);
 
-  const model = PD_VOUCHER_MODEL;
+  /*
+   * The three figures the pool is computed from, and the points thresholds
+   * beside them.
+   *
+   * These are held in **euros**, which is the one place on the dashboard that
+   * differs from the drawer's rule (a money control holds the reader's
+   * currency). The reason is what is behind them: the drawer's fields feed one
+   * sentence, so keeping złoty and dividing once at that sentence is simplest;
+   * these three feed a *model* whose every output is money, and holding the
+   * reader's currency would mean converting at a dozen call sites and carrying a
+   * stale number when the language — and so the currency — changes underneath.
+   * The owner still types złoty: the well is handed `local()` and hands back
+   * `eur()`, so the conversion happens at the control instead of at the reading.
+   */
+  const [budget, setBudget] = useState(PD_VOUCHER_BUDGET);
+  const [avgSpend, setAvgSpend] = useState(AVG_SPEND);
+  const [maxPer, setMaxPer] = useState(PD_MAX_PER_VOUCHER);
+  const [points, setPoints] = useState(() => PD_TIERS.map((t) => t.points));
+
+  const eur = (local: number) => local / currency.rate;
+  /* Two decimals because the round trip through euros is not exact in binary
+     and 34.10 would otherwise render as 34.099999999999994 the moment it was
+     read back. Whole units for the pool, which is a four-figure sum. */
+  const local = (value: number, whole?: boolean) =>
+    whole
+      ? Math.round(value * currency.rate)
+      : Math.round(value * currency.rate * 100) / 100;
+
+  const model = voucherModelFor(budget, avgSpend, maxPer);
+
+  /* A deeper discount cannot be cheaper to reach than a shallower one. Nothing
+     downstream depends on the thresholds — they decide who qualifies, which is
+     a question about customers this screen has no counted answer to — so the
+     check is the whole of what this field can honestly do, and it does it. */
+  const pointsOutOfOrder = points.some((n, i) => i > 0 && n <= points[i - 1]);
   /* Every bar is drawn against the widest, not against the pool: the question
      is who reaches each tier, and that is a comparison between the tiers. */
   const widest = Math.max(...model.tiers.map((t) => t.issued));
@@ -1312,7 +1351,13 @@ function Vouchers() {
           </div>
           <div className="pd-budget-figure">
             <span>{copy.budgetLabel}</span>
-            <b>{money(model.budget, 'exact')}</b>
+            <NumberWell
+              value={local(budget, true)}
+              onChange={(next) => setBudget(Math.max(0, eur(next)))}
+              unit={currency.symbol}
+              label={copy.budgetLabel}
+              min={0}
+            />
           </div>
         </div>
 
@@ -1352,9 +1397,10 @@ function Vouchers() {
               : fill(copy.forecast, { date: runOut })}
         </span>
 
-        {/* The three inputs the pool is computed from, shown as facts rather
-            than fields: there is no server, and a control that silently forgets
-            what you typed is worse than a figure that says where it came from. */}
+        {/* The two figures the pool is computed from, and what the remainder
+            still buys at the current mix — which is the reading that tells you
+            whether the number you just typed was a good one. Every figure on
+            this panel above recomputes as they move. */}
         <div className="pd-inputs">
           <div>
             <span className="console-label">{copy.buysTitle}</span>
@@ -1363,15 +1409,35 @@ function Vouchers() {
           </div>
           <div>
             <span className="console-label">{copy.avgTitle}</span>
-            <b>{money(AVG_SPEND, 'unit')}</b>
+            <NumberWell
+              value={local(avgSpend)}
+              onChange={(next) => setAvgSpend(Math.max(0, eur(next)))}
+              unit={currency.symbol}
+              label={copy.avgTitle}
+              step={0.5}
+              min={0}
+              wide
+            />
             <p className="pd-fine">{copy.avgNote}</p>
           </div>
           <div>
             <span className="console-label">{copy.maxTitle}</span>
-            <b>{money(PD_MAX_PER_VOUCHER, 'unit')}</b>
+            <NumberWell
+              value={local(maxPer)}
+              onChange={(next) => setMaxPer(Math.max(0, eur(next)))}
+              unit={currency.symbol}
+              label={copy.maxTitle}
+              step={0.5}
+              min={0}
+              wide
+            />
             <p className="pd-fine">{copy.maxNote}</p>
           </div>
         </div>
+
+        {/* The one thing these fields cannot do, said out loud. Every other
+            control on this frame carries `notWired` for the same reason. */}
+        <p className="pd-fine pd-try-note">{copy.tryNote}</p>
       </div>
 
       {/*
@@ -1413,17 +1479,47 @@ function Vouchers() {
             const used = tier.issued > 0 ? (tier.redeemed / tier.issued) * 100 : 0;
             const on = index === tierPick;
             return (
-              <button
+              /* A div with a role rather than a <button>: the points field
+                 lives inside this row, and a form control nested in a button is
+                 invalid HTML that browsers resolve by dropping the field. */
+              <div
                 key={tier.pct}
-                type="button"
                 className="pd-tier-row"
+                role="button"
+                tabIndex={0}
                 data-step={index}
                 data-on={on ? 'true' : undefined}
                 aria-pressed={on}
                 onClick={() => setTierPick(index)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setTierPick(index);
+                  }
+                }}
               >
                 <span className="pd-tier">{fill(copy.tier, { n: String(tier.pct) })}</span>
-                <span className="pd-tier-pts">{fill(copy.points, { n: num(tier.points) })}</span>
+                {/* A field inside a row that is itself a button: the click has
+                    to stop here, or typing a threshold would also re-pick the
+                    tier under the caret. */}
+                <span
+                  className="pd-tier-pts"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <NumberWell
+                    value={points[index]}
+                    onChange={(next) =>
+                      setPoints((was) =>
+                        was.map((n, i) => (i === index ? Math.max(0, Math.round(next)) : n)),
+                      )
+                    }
+                    unit={copy.pointsUnit}
+                    label={`${fill(copy.tier, { n: String(tier.pct) })} — ${copy.columns[1]}`}
+                    step={50}
+                    min={0}
+                    wide
+                  />
+                </span>
                 <span className="pd-tier-track">
                   <i style={{ '--reach': `${reach}%` } as CSSProperties}>
                     <b style={{ '--used': `${used}%` } as CSSProperties} />
@@ -1441,10 +1537,12 @@ function Vouchers() {
                   <span className="pd-tier-key">{copy.columns[4]}</span>
                   {money(tier.spent, 'exact')}
                 </em>
-              </button>
+              </div>
             );
           })}
         </div>
+
+        {pointsOutOfOrder && <p className="field-error">{copy.pointsOrder}</p>}
 
         <p className="pd-fine pd-ladder-note">
           {fill(copy.tierDetail, {

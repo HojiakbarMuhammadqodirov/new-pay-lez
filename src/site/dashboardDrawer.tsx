@@ -6,6 +6,7 @@ import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PD_AUDIENCES, PD_NOTIFY_QUOTA } from './partnerMetrics';
 import { FX } from './i18n/fx';
+import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
 import type { DrawerKind } from './dashboardShell';
 
@@ -40,37 +41,6 @@ import type { DrawerKind } from './dashboardShell';
  */
 
 /* ────────────────────────────────────────────────────────────── controls ── */
-
-/** A number well with its unit welded to the right of the digits. */
-function NumberWell({
-  value,
-  onChange,
-  unit,
-  label,
-  wide,
-}: {
-  value: number;
-  onChange: (next: number) => void;
-  unit: string;
-  label: string;
-  wide?: boolean;
-}) {
-  return (
-    /* A `<label>` around the whole well, not just the digits: the unit and the
-       empty space after the number have to put the caret in the field too. The
-       Relocate converter shipped the other version and only its digits were
-       tappable (root `CLAUDE.md`). */
-    <label className="pd-well" data-wide={wide ? 'true' : undefined}>
-      <input
-        type="number"
-        value={Number.isFinite(value) ? value : 0}
-        aria-label={label}
-        onChange={(event) => onChange(Number(event.target.value))}
-      />
-      <span>{unit}</span>
-    </label>
-  );
-}
 
 function Segmented({
   options,

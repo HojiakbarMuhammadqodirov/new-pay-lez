@@ -1095,6 +1095,16 @@ export const en = {
          row has no space for, and they are what tie this panel to "where the
          money went" beside it. Both holes are figures. */
       tierDetail: 'Each one takes {unit} off a bill. This tier is {pct}% of what the pool has spent so far.',
+      pointsUnit: 'pts',
+      /* Weighted rather than red: the palette has one accent, so an error is
+         said in weight and wording (root `CLAUDE.md`, the forms block). */
+      pointsOrder: 'A deeper discount cannot cost fewer points than a shallower one.',
+      /* The honest limit of the three fields above. They recompute this screen
+         and nothing else — there is no server to save a setting to, and the
+         thresholds decide who qualifies, which is a question about customers
+         that no counted figure here can answer. */
+      tryNote:
+        'Type over any of these to see what it would do to the pool. Nothing is saved, and the figures go back to your real ones when you reload.',
       points: '{n} pts',
       mixTitle: 'Where the money went',
       returnedTitle: 'Money returned',

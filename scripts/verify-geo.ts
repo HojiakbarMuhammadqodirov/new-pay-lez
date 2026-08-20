@@ -95,10 +95,13 @@ import {
   PD_SCANS,
   PD_SERIES,
   PD_TOTALS,
+  AVG_SPEND,
+  PD_VOUCHER_BUDGET,
   PD_VOUCHER_MODEL,
   RANGE_DAYS,
   dealNotify,
   metricsFor,
+  voucherModelFor,
   polyarea,
   polyline,
 } from '../src/site/partnerMetrics';
@@ -1535,6 +1538,41 @@ console.log('\nthe partner dashboard');
     'the two pools are the whole budget',
     Math.abs(loyalty.allocation + vouchers.budget - PD_ALLOCATION.total) < 1e-6,
   );
+  /*
+   * The pool's three fields are typeable now, so the invariant above has to
+   * hold at whatever gets typed — not only at the seeded figures. A budget an
+   * owner halves must still be exhausted by spent + set aside + available, or
+   * the bar lets them commit the same money twice, which is the thing that
+   * check exists to stop.
+   */
+  for (const budget of [0, PD_VOUCHER_BUDGET / 2, PD_VOUCHER_BUDGET * 3]) {
+    const m = voucherModelFor(budget, AVG_SPEND, PD_MAX_PER_VOUCHER);
+    check(
+      `the pool still adds up at a budget of ${Math.round(budget)}`,
+      Math.abs(m.spent + m.reserved + m.available - budget) < 1e-6,
+    );
+  }
+
+  /* The cap is the reason that field exists, and it has to bind at every value
+     it can be given — an uncapped 15% on a large order is an unbounded bite out
+     of a fixed monthly budget. */
+  for (const cap of [0, 1, PD_MAX_PER_VOUCHER, PD_MAX_PER_VOUCHER * 10]) {
+    const m = voucherModelFor(PD_VOUCHER_BUDGET, AVG_SPEND, cap);
+    check(
+      `no tier beats a cap of ${cap.toFixed(2)}`,
+      m.tiers.every((t) => t.unit <= cap + 1e-9),
+    );
+  }
+
+  /* Raising the average transaction can only cost more, never less: every unit
+     is a percentage of it under a cap that does not move. */
+  const cheap = voucherModelFor(PD_VOUCHER_BUDGET, AVG_SPEND / 2, PD_MAX_PER_VOUCHER);
+  check(
+    'a smaller average transaction never spends more',
+    cheap.spent <= PD_VOUCHER_MODEL.spent + 1e-9,
+    `${cheap.spent.toFixed(2)} vs ${PD_VOUCHER_MODEL.spent.toFixed(2)}`,
+  );
+
   /* The per-voucher cap is the reason that input exists — an uncapped 15% on a
      large order is an unbounded bite out of a fixed monthly budget. */
   check(

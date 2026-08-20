@@ -953,6 +953,10 @@ export const pl: Dictionary = {
       columns: ['Próg', 'Potrzebne punkty', 'Wydane', 'Użyte', 'Koszt dotąd'],
       tier: '{n}% rabatu',
       tierDetail: 'Każdy zabiera {unit} z rachunku. Ten próg to {pct}% tego, co pula wydała do tej pory.',
+      pointsUnit: 'pkt',
+      pointsOrder: 'Większy rabat nie może kosztować mniej punktów niż mniejszy.',
+      tryNote:
+        'Wpisz tu inne wartości, aby zobaczyć, co stałoby się z pulą. Nic nie jest zapisywane — po odświeżeniu wracają Twoje prawdziwe liczby.',
       points: '{n} pkt',
       mixTitle: 'Gdzie poszły pieniądze',
       returnedTitle: 'Zwrócone pieniądze',

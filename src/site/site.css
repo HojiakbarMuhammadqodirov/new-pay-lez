@@ -7633,6 +7633,29 @@ button {
   color: var(--text-fnt);
 }
 
+/* The pool is the largest number on the panel and stays that size when it
+   becomes typeable — a four-figure sum in a 0.85rem well reads as a setting
+   someone tucked away rather than as the headline it is. */
+.pd-budget-figure .pd-well {
+  /* A definite width, not a percentage: the well is inline-flex inside a
+     content-sized column, so a percentage on the input inside it would resolve
+     against a box that is being sized by that same input. */
+  max-width: none;
+  width: 11rem;
+}
+
+.pd-budget-figure .pd-well input {
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 3vw, 1.8rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  text-align: right;
+}
+
+.pd-try-note {
+  margin-top: 0.9rem;
+}
+
 .pd-inputs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
@@ -8697,7 +8720,7 @@ button {
 .pd-tier-row {
   display: grid;
   grid-template-columns:
-    minmax(4.5rem, auto) minmax(4rem, auto) minmax(3rem, 1fr)
+    minmax(4.5rem, auto) 7.5rem minmax(3rem, 1fr)
     4.5rem 3.5rem minmax(5rem, auto);
   align-items: center;
   gap: 0.75rem;
@@ -8744,6 +8767,13 @@ button {
   background: var(--surface);
 }
 
+/* A `<button>` brought this for free; a div with `role="button"` does not, and
+   a row you can tab to but cannot see is worse than one you cannot tab to. */
+.pd-tier-row:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: -2px;
+}
+
 .pd-tier-row[data-on='true'] {
   background: var(--surface-2);
 }
@@ -8768,11 +8798,21 @@ button {
   color: var(--on-solid);
 }
 
+/* The threshold is a field, and the field is the whole cell — same rule the
+   Relocate converter was fixed for: the well, its unit and the empty space
+   after the digits all have to put the caret in it. */
 .pd-tier-pts {
+  display: block;
+  min-width: 0;
+}
+
+.pd-tier-pts .pd-well {
+  padding: 0.35rem 0.55rem;
+}
+
+.pd-tier-pts .pd-well input {
   font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-mut);
-  white-space: nowrap;
+  font-weight: 600;
 }
 
 /* A chart states its own height, and a bar states its own too — a percentage
@@ -8872,6 +8912,10 @@ button {
 
   .pd-tier-key {
     display: inline;
+  }
+
+  .pd-tier-pts {
+    order: 2;
   }
 }
 

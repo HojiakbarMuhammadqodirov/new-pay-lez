@@ -949,6 +949,10 @@ export const uz: Dictionary = {
       columns: ['Bosqich', 'Kerakli ball', 'Berilgan', 'Ishlatilgan', 'Hozirgi xarajat'],
       tier: '{n}% chegirma',
       tierDetail: 'Har biri hisobdan {unit} oladi. Bu bosqich puldan hozirgacha sarflanganining {pct}% qismi.',
+      pointsUnit: 'ball',
+      pointsOrder: 'Kattaroq chegirma kichikrog‘idan kam ball turishi mumkin emas.',
+      tryNote:
+        'Puldan nima bo‘lishini ko‘rish uchun bu yerga boshqa qiymat yozing. Hech narsa saqlanmaydi — sahifani yangilasangiz, haqiqiy raqamlaringiz qaytadi.',
       points: '{n} ball',
       mixTitle: 'Pul qayerga ketdi',
       returnedTitle: 'Qaytgan pul',

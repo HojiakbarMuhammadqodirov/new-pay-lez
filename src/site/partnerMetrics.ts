@@ -581,15 +581,29 @@ export const PD_CAMPAIGN_MODEL = makeCampaignModel();
  * The voucher pool.
  *
  * A tier's unit cost is the venue's average transaction times the tier's
- * percentage, capped by `PD_MAX_PER_VOUCHER` — which is why the cap is an input
- * on that screen rather than a footnote. Without it a 15% voucher on an unusually
- * large order would take an unbounded bite out of a fixed monthly budget.
+ * percentage, capped by the most-off-one-voucher figure — which is why that cap
+ * is a field on that screen rather than a footnote. Without it a 15% voucher on
+ * an unusually large order would take an unbounded bite out of a fixed monthly
+ * budget.
+ *
+ * All three of its inputs are arguments rather than module constants, because
+ * all three are fields the owner can move: the whole pool — spent, set aside,
+ * available, the run-out date, and what the remainder still buys — is recomputed
+ * from them on this device. That is what makes those fields honest without a
+ * server behind them. `PD_VOUCHER_MODEL` below is this same function at the
+ * seeded values, which is what the checks and every other screen read.
+ *
+ * The invariant survives the move: `available` is `budget - spent - reserved`,
+ * so the three states exhaust the pool at *any* budget the owner types, not just
+ * the seeded one.
  */
-function makeVoucherModel() {
-  const budget = PD_ALLOCATION.total - PD_ALLOCATION.loyalty;
-
+export function voucherModelFor(
+  budget: number,
+  avgSpend: number,
+  maxPerVoucher: number,
+) {
   const tiers = PD_TIERS.map((t) => {
-    const unit = Math.min((AVG_SPEND * t.pct) / 100, PD_MAX_PER_VOUCHER);
+    const unit = Math.min((avgSpend * t.pct) / 100, maxPerVoucher);
     return {
       ...t,
       unit,
@@ -634,7 +648,14 @@ function makeVoucherModel() {
   };
 }
 
-export const PD_VOUCHER_MODEL = makeVoucherModel();
+/** The pool the three fields on that screen start from. */
+export const PD_VOUCHER_BUDGET = PD_ALLOCATION.total - PD_ALLOCATION.loyalty;
+
+export const PD_VOUCHER_MODEL = voucherModelFor(
+  PD_VOUCHER_BUDGET,
+  AVG_SPEND,
+  PD_MAX_PER_VOUCHER,
+);
 
 /** What the month cost, line by line. Index-aligned with `…overview.costRows`. */
 export const PD_COST_ROWS = [
