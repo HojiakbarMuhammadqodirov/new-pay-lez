@@ -637,7 +637,7 @@ export const pl: Dictionary = {
     notWired: 'Niepodłączone w tej wersji.',
 
     month: 'sierpień',
-    rangeLabel: 'ostatnie 30 dni',
+    rangeLabels: ['ostatnie 7 dni', 'ostatnie 14 dni', 'ostatnie 30 dni', 'ostatni kwartał'],
 
     words: {
       edit: 'Edytuj',
@@ -952,6 +952,7 @@ export const pl: Dictionary = {
         'Progi nie trzymają pieniędzy. O dotarciu decydują punkty, więc podniesienie liczby kieruje tam mniej budżetu.',
       columns: ['Próg', 'Potrzebne punkty', 'Wydane', 'Użyte', 'Koszt dotąd'],
       tier: '{n}% rabatu',
+      tierDetail: 'Każdy zabiera {unit} z rachunku. Ten próg to {pct}% tego, co pula wydała do tej pory.',
       points: '{n} pkt',
       mixTitle: 'Gdzie poszły pieniądze',
       returnedTitle: 'Zwrócone pieniądze',
@@ -1009,11 +1010,7 @@ export const pl: Dictionary = {
       peakFinding:
         'Najwięcej masz w dni robocze między 08:00 a 10:00. Twoja poranna okazja już wtedy działa, więc głębszy rabat niewiele tam da.',
 
-      fromTitle: 'Skąd pochodzą',
-      nations: ['Ukraińcy', 'Polacy', 'Białorusini', 'Gruzini', 'Turcy', 'Inni'],
       nationCount: '{n} klientów · {pct}%',
-      nationHidden:
-        '{n} mniejsze grupy są liczone w „innych”, więc nikogo nie da się wyłuskać.',
       readTitle: 'W jakim języku mówią Twoi klienci',
       readLede:
         'Te paski są liczone na grupach klientów, nigdy na jednej osobie. Grupy mniejsze niż 10 trafiają do „innych”.',
@@ -1516,7 +1513,8 @@ export const pl: Dictionary = {
       usage: '{used} z {total}',
     },
 
-    range: 'Ostatnie 30 dni',
+    ranges: ['Ostatnie 7 dni', 'Ostatnie 14 dni', 'Ostatnie 30 dni', 'Ostatni kwartał'],
+    rangeMenu: 'Okres raportowania',
     notifications: 'Powiadomienia',
   },
 

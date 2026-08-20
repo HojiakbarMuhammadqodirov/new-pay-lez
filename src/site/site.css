@@ -6412,15 +6412,60 @@ button {
   gap: 0.6rem;
 }
 
+/*
+ * The reporting window.
+ *
+ * It was a label for as long as there was one window to report. Now that there
+ * are four it is a listbox, and it borrows `.lang-menu` / `.lang-option` wholesale
+ * rather than growing a second set of rules — a trigger with a panel of choices
+ * under it is one component, and this sheet already has it. The trigger is the
+ * part that does *not* transfer: the language one is header chrome sized to sit
+ * beside a wordmark, and this one is dashboard chrome sized to sit beside a
+ * 0.78rem crumb, so it keeps the face the label had.
+ */
 .pd-range {
+  position: relative;
+}
+
+.pd-range-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.4rem 0.7rem;
   border-radius: 9px;
   border: 1px solid var(--border-2);
   background: var(--surface);
+  font-family: var(--font-body);
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-mut);
   white-space: nowrap;
+  cursor: pointer;
+  transition:
+    color 200ms var(--ease),
+    border-color 200ms var(--ease),
+    background 200ms var(--ease);
+}
+
+.pd-range-btn svg:first-child {
+  color: var(--accent-lit);
+}
+
+.pd-range-btn:hover,
+.pd-range-btn[aria-expanded='true'] {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+  color: var(--text);
+}
+
+.pd-range-btn[aria-expanded='true'] .lang-caret {
+  transform: rotate(180deg);
+}
+
+/* Narrower than the language menu: four short phrases, not five language names
+   with their codes. */
+.pd-range-menu {
+  min-width: 9.5rem;
 }
 
 .pd-icon {
@@ -8627,9 +8672,227 @@ button {
   background: var(--accent);
 }
 
-.pd-tier {
+/*
+ * ── who reaches each tier ─────────────────────────────────────────────────
+ *
+ * A ladder of three rows, and the shape of it is the answer: the bars fall away
+ * to a stub because almost nobody gets to the deepest discount. That is the
+ * thing a five-column table made the reader assemble for themselves.
+ *
+ * The colour question this had to solve is the one the palette does not allow
+ * an easy answer to. Three tiers want to be three marks, and the site has one
+ * accent — so they are three *alphas* of it, and the ramp runs the way it does
+ * for a reason that is not decoration: the top tier's bar is a thirteenth of the
+ * width of the bottom one, so the rarest tier gets the strongest fill because it
+ * has the least room to register in. The reach bar is the accent held back; the
+ * head inside it is the accent at full, and that is the share that came back
+ * used. One hue, three weights, two states.
+ *
+ * The selected row is the exception and it is the ink — `--solid`, the material
+ * a press is made of, which is near-black on paper and the mint on black. That
+ * is what makes the pick read as a pick in both themes without a fourth alpha
+ * that would collide with the three above it.
+ */
+.pd-ladder-head,
+.pd-tier-row {
+  display: grid;
+  grid-template-columns:
+    minmax(4.5rem, auto) minmax(4rem, auto) minmax(3rem, 1fr)
+    4.5rem 3.5rem minmax(5rem, auto);
+  align-items: center;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.pd-ladder-head {
+  padding: 0 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.68rem;
   font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.pd-ladder-head > span:nth-child(n + 4) {
+  text-align: right;
+}
+
+.pd-ladder {
+  display: flex;
+  flex-direction: column;
+}
+
+.pd-tier-row {
+  width: 100%;
+  padding: 0.7rem 0.6rem;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: none;
+  font: inherit;
   color: var(--text);
+  cursor: pointer;
+  transition: background 200ms var(--ease);
+}
+
+.pd-tier-row:last-child {
+  border-bottom: none;
+}
+
+.pd-tier-row:hover {
+  background: var(--surface);
+}
+
+.pd-tier-row[data-on='true'] {
+  background: var(--surface-2);
+}
+
+/* The tier itself. On the selected row it takes the ink and its mint label —
+   the same pair every primary control on the site is made of. */
+.pd-tier {
+  justify-self: start;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text);
+  transition: background 200ms var(--ease), color 200ms var(--ease);
+}
+
+.pd-tier-row[data-on='true'] .pd-tier {
+  border-color: transparent;
+  background: var(--solid);
+  color: var(--on-solid);
+}
+
+.pd-tier-pts {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+/* A chart states its own height, and a bar states its own too — a percentage
+   against an auto parent resolves to nothing. */
+.pd-tier-track {
+  display: block;
+  height: 0.65rem;
+  min-width: 0;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+/* Reach: how many of this tier went out, against the widest tier. */
+.pd-tier-track i {
+  position: relative;
+  display: block;
+  height: 100%;
+  width: var(--reach);
+  border-radius: inherit;
+  background: rgba(var(--accent-rgb), var(--a));
+  transition: width 600ms var(--ease);
+}
+
+/* Used: the share of those that came back, drawn inside the reach rather than
+   beside it, because a redemption is a subset of an issue and two bars side by
+   side would say they were independent — the same argument the B2B mock's
+   columns make one screen over. */
+.pd-tier-track b {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--used);
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.pd-tier-row[data-step='0'] .pd-tier-track i {
+  --a: 0.26;
+}
+.pd-tier-row[data-step='1'] .pd-tier-track i {
+  --a: 0.4;
+}
+.pd-tier-row[data-step='2'] .pd-tier-track i {
+  --a: 0.58;
+}
+
+.pd-tier-row em {
+  font-size: 0.8rem;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* The per-row label, shown only when the head above has been dropped. */
+.pd-tier-key {
+  display: none;
+  margin-right: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.pd-ladder-note {
+  margin-top: 0.9rem;
+}
+
+/*
+ * Narrow: the head cannot label six columns that are no longer in a row, so it
+ * goes and each figure carries its own key instead. The track spans the full
+ * width underneath, which is the one element that reads *better* wide than
+ * boxed into a sixth of the row.
+ */
+@media (max-width: 52rem) {
+  .pd-ladder-head {
+    display: none;
+  }
+
+  .pd-tier-row {
+    grid-template-columns: auto auto;
+    justify-content: space-between;
+    gap: 0.4rem 0.75rem;
+  }
+
+  .pd-tier-track {
+    grid-column: 1 / -1;
+    order: 3;
+    margin-top: 0.2rem;
+  }
+
+  .pd-tier-row em {
+    order: 4;
+    text-align: left;
+  }
+
+  .pd-tier-key {
+    display: inline;
+  }
+}
+
+/* Picking a tier above dims the rest of the mix, so the two panels are one
+   subject rather than two lists of the same three numbers. */
+.pd-stacked i[data-dim='true'],
+.pd-mix-row[data-dim='true'] {
+  opacity: 0.4;
+}
+
+.pd-stacked i,
+.pd-mix-row {
+  transition: opacity 240ms var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-tier-track i,
+  .pd-stacked i,
+  .pd-mix-row {
+    transition: none;
+  }
 }
 
 /* ── empty states ── */
@@ -8736,8 +8999,18 @@ button {
   flex-wrap: wrap;
 }
 
+/*
+ * Smaller than a page button, because these are not one. `.btn` is sized for a
+ * marketing page where a call to action is the largest thing in its section; up
+ * here three of them sit in a row above every screen, beside a 0.78rem crumb and
+ * a rail of 0.875rem names, and at full size they were the loudest thing on a
+ * dashboard whose subject is the numbers underneath. The reference design sets
+ * its header actions at 13.5px against 13px chrome; this is the same relation.
+ */
 .pd-head-acts .btn {
-  gap: 0.45rem;
+  gap: 0.4rem;
+  padding: 0.5rem 0.9rem;
+  font-size: 0.82rem;
 }
 
 /* "Back to paylez" is the quietest of the three and drops out first: it is the

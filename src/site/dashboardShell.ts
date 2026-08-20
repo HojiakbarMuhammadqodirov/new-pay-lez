@@ -1,5 +1,7 @@
 import { createContext, useContext } from 'react';
 
+import { RANGE_DAYS, type RangeDays } from './partnerMetrics';
+
 /**
  * What every dashboard screen can reach for, and nothing else.
  *
@@ -32,6 +34,16 @@ export interface DashboardShell {
    * one place where a button has to acknowledge the press.
    */
   toast: (message: string) => void;
+  /**
+   * The reporting window, and the one piece of state on this frame that changes
+   * what the screens *say* rather than which screen is showing.
+   *
+   * It lives here rather than on the screens because three of them read it and
+   * the control that sets it is on the bar above all of them — the same reason
+   * the drawer and the toast are here.
+   */
+  range: RangeDays;
+  setRange: (days: RangeDays) => void;
 }
 
 /* The default is a working no-op rather than `null` so a screen rendered outside
@@ -43,6 +55,8 @@ export const DashboardContext = createContext<DashboardShell>({
   openDrawer: () => {},
   closeDrawer: () => {},
   toast: () => {},
+  range: RANGE_DAYS,
+  setRange: () => {},
 });
 
 export function useDashboard(): DashboardShell {

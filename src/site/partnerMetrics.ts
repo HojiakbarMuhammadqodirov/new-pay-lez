@@ -72,8 +72,24 @@ const CLAIM_RATIO = 0.4598;
  */
 const CLAIMS_BY_NEW = 0.2;
 
-/** The window every figure on the dashboard covers. */
-export const RANGE_DAYS = 30;
+/**
+ * The windows the range picker offers, in the order it lists them.
+ *
+ * The prototype's four, and its arithmetic with them: a window is *days of the
+ * series*, and the series is generated rather than sampled, so seven days is the
+ * first seven of the same curve and not a different curve. The quarter draws 45
+ * — the prototype clamps there too, and for the same reason: ninety daily points
+ * across a chart this wide is a comb, and the shape is the only thing the panel
+ * is for.
+ */
+export const PD_RANGES = [7, 14, 30, 90] as const;
+export type RangeDays = (typeof PD_RANGES)[number];
+
+/** The window everything defaults to, and the one the picker opens on. */
+export const RANGE_DAYS: RangeDays = 30;
+
+/** The most points the chart will draw, however long the window. */
+const MAX_POINTS = 45;
 
 /** Which day of the month the venue is standing on, for the run-out forecasts. */
 const TODAY = 14;
@@ -301,10 +317,6 @@ export const PD_MAX_PER_VOUCHER = zl(25);
 /** Who comes in, from the prototype's `CUST`. Counts, not percentages. */
 export const PD_CUSTOMERS = {
   total: 642,
-  /** Index-aligned with `copy.dashboard.customers.nations`. */
-  nations: [244, 135, 71, 58, 45, 89],
-  /** How many groups were too small to name and were rolled into "other". */
-  hiddenGroups: 3,
   /** Percentages — index-aligned with `copy.dashboard.customers.langs`. */
   langs: [42, 24, 19, 11, 4],
   /** Percentages — index-aligned with `…customers.ages`. */
@@ -329,7 +341,10 @@ export const PD_CUSTOMERS = {
    * divided the cost total by the new-customer count. Two figures for one thing
    * on one panel is the drift this file exists to prevent.
    */
-  perNewTrend: [zl(21.4), zl(18.9), 0],
+  /* Two months, not three. The third column *is* the cost-per-new-customer
+     headline beside it, and it moves with the range picker, so the trend is
+     built in `metricsFor` rather than seeded with a hole and patched. */
+  perNewPrev: [zl(21.4), zl(18.9)],
   /** What the average Kraków café on Paylez pays for one, in euros. */
   benchmark: zl(24.6),
   /** The same venues' average deal claim rate, as a percentage. */
@@ -433,8 +448,6 @@ function makeSeries(days: number) {
   return { visits, redeemed };
 }
 
-export const PD_SERIES = makeSeries(RANGE_DAYS);
-
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
 /**
@@ -445,9 +458,9 @@ const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
  * new, plus visits with a claim behind them, minus the overlap. Everything else
  * on that screen is either counted (`visits`) or explicitly an estimate.
  */
-function makeTotals() {
-  const visits = sum(PD_SERIES.visits);
-  const redeemed = sum(PD_SERIES.redeemed);
+function makeTotals(series: ReturnType<typeof makeSeries>) {
+  const visits = sum(series.visits);
+  const redeemed = sum(series.redeemed);
   const claims = Math.round(visits * CLAIM_RATIO);
   const newCustomers = Math.round(visits * NEW_RATIO);
   const attributed = newCustomers + Math.max(0, claims - Math.round(claims * CLAIMS_BY_NEW));
@@ -464,7 +477,6 @@ function makeTotals() {
   };
 }
 
-export const PD_TOTALS = makeTotals();
 
 /**
  * An average week at the counter, by day and hour.
@@ -634,16 +646,6 @@ export const PD_COST_ROWS = [
 
 export const PD_COST_TOTAL = sum(PD_COST_ROWS);
 
-/** Sales tied back to Paylez, over what it cost. The overview's verdict line. */
-export const PD_ROI = PD_TOTALS.attributedMoney / PD_COST_TOTAL;
-
-/** What one new customer cost in August. */
-export const PD_PER_NEW = PD_COST_TOTAL / Math.max(1, PD_TOTALS.newCustomers);
-
-/* This month's column of the three-month trend is that figure, not a fourth
-   copy of it. See the note on `perNewTrend`. */
-PD_CUSTOMERS.perNewTrend[2] = PD_PER_NEW;
-
 /**
  * The venue's deal claim rate, for the comparison table.
  *
@@ -651,14 +653,82 @@ PD_CUSTOMERS.perNewTrend[2] = PD_PER_NEW;
  * still carries its views, and leaving them in would quietly halve the figure.
  */
 const liveSeen = sum(PD_DEALS.filter((d) => d.state === 'live').map((d) => d.seen));
-export const PD_CLAIM_RATE = liveSeen > 0 ? (PD_TOTALS.claims / liveSeen) * 100 : 0;
 
-/** Where each of the three tools' money went. Index-aligned with `…roi.rows`. */
-export const PD_ROI_ROWS = [
-  { cost: PD_CAMPAIGN_MODEL.spent, units: 148 },
-  { cost: sum(PD_DEALS.map((d) => d.cost)), units: PD_TOTALS.claims },
-  { cost: PD_VOUCHER_MODEL.spent, units: PD_TOTALS.redeemed },
-];
+/**
+ * Everything the range picker moves — and deliberately nothing else.
+ *
+ * What a window changes is how much *counted activity* falls inside it: the
+ * series, its sums, and every figure derived from them. What it does not change
+ * is what the month cost. `PAYLEZ_FEE` is a monthly charge and the two budget
+ * pools are a monthly allocation; scaling those to a seven-day window would say
+ * the venue paid a seventh of its subscription, and it would break the invariant
+ * the pools are checked against — that spent, set aside and available exhaust
+ * the budget.
+ *
+ * So the cost side is fixed and the return side moves, and that asymmetry is
+ * what makes the short windows worth opening: a seven-day view is honest about
+ * having earned back a fraction of a fee it has still paid in full. Reading a
+ * good ROI on every window would mean the picker was decoration.
+ *
+ * Memoised on the window because this is called during render on three screens
+ * and the identity has to be stable — a fresh object per frame would re-run
+ * every `useMemo` downstream and restart the count-up animations on every tick.
+ */
+export interface PartnerMetrics {
+  /** The window in days, and its place in `PD_RANGES` for the label arrays. */
+  days: RangeDays;
+  index: number;
+  series: ReturnType<typeof makeSeries>;
+  totals: ReturnType<typeof makeTotals>;
+  /** Attributed sales over what the month cost. The overview's verdict line. */
+  roi: number;
+  /** What one new customer cost. */
+  perNew: number;
+  /** Claims over views on the live deals, as a percentage. */
+  claimRate: number;
+  /** Where each of the three tools' money went. Index-aligned with `…roi.rows`. */
+  roiRows: { cost: number; units: number }[];
+  /** Three months, the last of which is `perNew` rather than a copy of it. */
+  perNewTrend: number[];
+}
+
+const METRICS = new Map<number, PartnerMetrics>();
+
+export function metricsFor(days: RangeDays): PartnerMetrics {
+  const cached = METRICS.get(days);
+  if (cached) return cached;
+
+  const series = makeSeries(Math.min(days, MAX_POINTS));
+  const totals = makeTotals(series);
+  const perNew = PD_COST_TOTAL / Math.max(1, totals.newCustomers);
+
+  const built: PartnerMetrics = {
+    days,
+    index: PD_RANGES.indexOf(days),
+    series,
+    totals,
+    roi: totals.attributedMoney / PD_COST_TOTAL,
+    perNew,
+    claimRate: liveSeen > 0 ? (totals.claims / liveSeen) * 100 : 0,
+    roiRows: [
+      { cost: PD_CAMPAIGN_MODEL.spent, units: 148 },
+      { cost: sum(PD_DEALS.map((d) => d.cost)), units: totals.claims },
+      { cost: PD_VOUCHER_MODEL.spent, units: totals.redeemed },
+    ],
+    perNewTrend: [...PD_CUSTOMERS.perNewPrev, perNew],
+  };
+
+  METRICS.set(days, built);
+  return built;
+}
+
+/* The default window, named so the checks and anything outside the dashboard
+   can reach one set of figures without asking for a window first. */
+const DEFAULT_METRICS = metricsFor(RANGE_DAYS);
+
+export const PD_SERIES = DEFAULT_METRICS.series;
+export const PD_TOTALS = DEFAULT_METRICS.totals;
+export const PD_PER_NEW = DEFAULT_METRICS.perNew;
 
 /**
  * Today's scans at the counter.

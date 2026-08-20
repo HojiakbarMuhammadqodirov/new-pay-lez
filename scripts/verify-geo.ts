@@ -89,6 +89,7 @@ import {
   PD_HEAT_MAX,
   PD_MAX_PER_VOUCHER,
   PD_PER_NEW,
+  PD_RANGES,
   PD_ROSTER,
   PD_SCAN_NAMES,
   PD_SCANS,
@@ -97,6 +98,7 @@ import {
   PD_VOUCHER_MODEL,
   RANGE_DAYS,
   dealNotify,
+  metricsFor,
   polyarea,
   polyline,
 } from '../src/site/partnerMetrics';
@@ -1556,9 +1558,61 @@ console.log('\nthe partner dashboard');
   );
   /* The headline figure and the last column of the trend beside it are the same
      number, not two figures for one thing. */
+  const trend = metricsFor(RANGE_DAYS).perNewTrend;
+  check('the trend ends on that same figure', trend[trend.length - 1] === PD_PER_NEW);
+  check('…and is still three months wide', trend.length === 3);
+
+  /*
+   * The range picker.
+   *
+   * Four windows, and the thing that can go wrong is not arithmetic but the
+   * split: what moves has to move, and what must not move has to stay put. A
+   * window that scaled the monthly fee or the budget pools with it would let an
+   * owner read a seven-day view as though they had paid a seventh of the
+   * subscription, and it would break the pool invariant checked above.
+   */
+  check('every window is offered once', new Set(PD_RANGES).size === PD_RANGES.length);
+  check('the default is one of them', PD_RANGES.includes(RANGE_DAYS));
+
+  const windows = PD_RANGES.map((days) => metricsFor(days));
+
   check(
-    'the trend ends on that same figure',
-    PD_CUSTOMERS.perNewTrend[PD_CUSTOMERS.perNewTrend.length - 1] === PD_PER_NEW,
+    'a window is memoised, not rebuilt',
+    PD_RANGES.every((days) => metricsFor(days) === metricsFor(days)),
+  );
+  check(
+    'a longer window never counts fewer visits',
+    windows.every((m, i) => i === 0 || m.totals.visits >= windows[i - 1].totals.visits),
+    `${windows.map((m) => m.totals.visits).join(' → ')}`,
+  );
+  check(
+    'the chart never draws more points than it can show',
+    windows.every((m) => m.series.visits.length === Math.min(m.days, 45)),
+  );
+  /* Attribution stays a subset in every window, not just the default one. */
+  check(
+    'what we claim is a subset in every window',
+    windows.every((m) => m.totals.attributed <= m.totals.visits),
+  );
+  /* The cost side is fixed on purpose, so a short window has to read as *worse*
+     value rather than as proportionally the same. That is the whole reason the
+     picker is worth having. */
+  check(
+    'a shorter window earns back less of the same cost',
+    windows.every((m, i) => i === 0 || m.roi >= windows[i - 1].roi),
+    windows.map((m) => m.roi.toFixed(2)).join(' → '),
+  );
+  check(
+    'cost per new customer follows the total in every window',
+    windows.every((m) => Math.abs(m.perNew * m.totals.newCustomers - PD_COST_TOTAL) < 1e-6),
+  );
+  check(
+    'the trend ends on the headline in every window',
+    windows.every((m) => m.perNewTrend[m.perNewTrend.length - 1] === m.perNew),
+  );
+  check(
+    'each window knows its own place in the label arrays',
+    windows.every((m, i) => m.index === i),
   );
 
   /* The heat map is alpha on one accent, so an empty cell and a busy one have

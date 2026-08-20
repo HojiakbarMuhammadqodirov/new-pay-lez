@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Icon } from './icons';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill, group as groupDigits } from './i18n/currency';
@@ -8,7 +9,6 @@ import {
   PD_AUDIENCES,
   PD_CAMPAIGN_MODEL,
   PD_CAMPAIGNS,
-  PD_CLAIM_RATE,
   PD_COST_ROWS,
   PD_COST_TOTAL,
   PD_CUSTOMERS,
@@ -18,19 +18,15 @@ import {
   PD_MAX_PER_VOUCHER,
   PD_NEAR,
   PD_NOTIFY_QUOTA,
-  PD_PER_NEW,
   PD_REMIND,
-  PD_ROI,
-  PD_ROI_ROWS,
   PD_ROSTER,
   PD_SCAN_NAMES,
   PD_SCAN_PAGE,
   PD_SCAN_TOTAL,
   PD_SCANS,
-  PD_SERIES,
-  PD_TOTALS,
   PD_VOUCHER_MODEL,
   dealNotify,
+  metricsFor,
   polyarea,
   polyline,
   type PartnerDeal,
@@ -167,6 +163,12 @@ function Overview() {
   const money = useMoney();
   const num = useNum();
   const digitGroup = useGroup();
+  /* Every figure below is a figure *in the window*, so they come from the
+     picker in the bar rather than from a module constant. What is not in here
+     is the cost side — see the note on `metricsFor`. */
+  const metrics = metricsFor(useDashboard().range);
+  const { totals, series, roi } = metrics;
+  const rangeLabel = dashboard.rangeLabels[metrics.index];
 
   const campaigns = PD_CAMPAIGN_MODEL;
   const vouchers = PD_VOUCHER_MODEL;
@@ -176,24 +178,24 @@ function Overview() {
      previous month to compare it against is the one thing this screen must not
      do — it is the screen that explains what it is willing to claim. */
   const tiles = [
-    { value: PD_TOTALS.visits, delta: 12.4, series: PD_SERIES.visits.slice(-14) },
+    { value: totals.visits, delta: 12.4, series: series.visits.slice(-14) },
     {
-      value: PD_TOTALS.claims,
+      value: totals.claims,
       delta: 8.1,
-      series: PD_SERIES.visits.slice(-14).map((v) => Math.round(v * 0.4598)),
+      series: series.visits.slice(-14).map((v) => Math.round(v * 0.4598)),
     },
-    { value: PD_TOTALS.redeemed, delta: -3.6, series: PD_SERIES.redeemed.slice(-14) },
+    { value: totals.redeemed, delta: -3.6, series: series.redeemed.slice(-14) },
     {
       value: campaigns.used,
       delta: null,
-      series: PD_SERIES.visits.slice(-14).map((v) => Math.round(v * 0.07)),
+      series: series.visits.slice(-14).map((v) => Math.round(v * 0.07)),
     },
   ];
 
   const support = [
-    num(PD_TOTALS.visits),
+    num(totals.visits),
     money(AVG_SPEND, 'unit'),
-    num(PD_TOTALS.newCustomers),
+    num(totals.newCustomers),
   ];
 
   /* The three deals customers can see today, plus the top campaign and the
@@ -225,23 +227,23 @@ function Overview() {
       <div className="pd-glass pd-hero" data-ink="paper" data-reveal>
         <div className="pd-hero-main">
           <span className="console-label">
-            {fill(copy.kicker, { range: dashboard.rangeLabel })}
+            {fill(copy.kicker, { range: rangeLabel })}
           </span>
 
           <span className="pd-hero-eyebrow">{copy.countedLabel}</span>
           <p className="pd-counted">
-            <b data-count={PD_TOTALS.visits} data-group={digitGroup}>
+            <b data-count={totals.visits} data-group={digitGroup}>
               0
             </b>
             <span>{copy.counted}</span>
           </p>
           <p className="pd-fine pd-counted-new">
-            {fill(copy.countedNew, { n: num(PD_TOTALS.newCustomers) })}
+            {fill(copy.countedNew, { n: num(totals.newCustomers) })}
           </p>
 
           <div className="pd-estimate">
             <span className="pd-tag">{copy.estimateTag}</span>
-            <b>{fill(copy.estimate, { amount: money(PD_TOTALS.estimate, 'soft') })}</b>
+            <b>{fill(copy.estimate, { amount: money(totals.estimate, 'soft') })}</b>
             <p className="pd-fine">
               {fill(copy.estimateNote, { avg: money(AVG_SPEND, 'unit') })}
             </p>
@@ -251,8 +253,8 @@ function Overview() {
             <span className="console-label">{copy.claimTitle}</span>
             <b>
               {fill(copy.claim, {
-                visits: num(PD_TOTALS.attributed),
-                amount: money(PD_TOTALS.attributedMoney, 'soft'),
+                visits: num(totals.attributed),
+                amount: money(totals.attributedMoney, 'soft'),
               })}
             </b>
             <p className="pd-fine">{copy.claimNote}</p>
@@ -293,21 +295,21 @@ function Overview() {
 
         <div className="pd-return">
           <span>{copy.returnLabel}</span>
-          <b>{money(PD_TOTALS.attributedMoney, 'soft')}</b>
+          <b>{money(totals.attributedMoney, 'soft')}</b>
         </div>
-        <p className="pd-verdict" data-good={PD_ROI >= 1 ? 'true' : 'false'}>
-          {PD_ROI >= 1
+        <p className="pd-verdict" data-good={roi >= 1 ? 'true' : 'false'}>
+          {roi >= 1
             ? fill(copy.roiGood, {
                 cost: money(PD_COST_TOTAL, 'exact'),
                 month: dashboard.month,
-                revenue: money(PD_TOTALS.attributedMoney, 'soft'),
-                n: PD_ROI.toFixed(1),
+                revenue: money(totals.attributedMoney, 'soft'),
+                n: roi.toFixed(1),
               })
             : fill(copy.roiBad, {
                 cost: money(PD_COST_TOTAL, 'exact'),
                 month: dashboard.month,
-                revenue: money(PD_TOTALS.attributedMoney, 'soft'),
-                gap: money(PD_COST_TOTAL - PD_TOTALS.attributedMoney, 'exact'),
+                revenue: money(totals.attributedMoney, 'soft'),
+                gap: money(PD_COST_TOTAL - totals.attributedMoney, 'exact'),
               })}
         </p>
       </div>
@@ -533,10 +535,11 @@ function Overview() {
  */
 function Chart() {
   const copy = useCopy().dashboard.overview;
-  const max = Math.max(...PD_SERIES.visits) * 1.12;
-  const visits = polyline(PD_SERIES.visits, max);
-  const area = polyarea(PD_SERIES.visits, max);
-  const redeemed = polyline(PD_SERIES.redeemed, max);
+  const { series } = metricsFor(useDashboard().range);
+  const max = Math.max(...series.visits) * 1.12;
+  const visits = polyline(series.visits, max);
+  const area = polyarea(series.visits, max);
+  const redeemed = polyline(series.redeemed, max);
 
   return (
     <div className="pd-glass pd-panel pd-chart-panel" data-reveal>
@@ -1272,7 +1275,15 @@ function Vouchers() {
   const money = useMoney();
   const num = useNum();
 
+  /* Which tier the ladder is showing, and the only state on this screen. It
+     opens on the tier eating the most of the pool, which is the one the
+     suggestion card at the bottom is already about. */
+  const [tierPick, setTierPick] = useState(PD_VOUCHER_MODEL.biggest);
+
   const model = PD_VOUCHER_MODEL;
+  /* Every bar is drawn against the widest, not against the pool: the question
+     is who reaches each tier, and that is a comparison between the tiers. */
+  const widest = Math.max(...model.tiers.map((t) => t.issued));
   const pct = (value: number) =>
     model.budget > 0 ? Math.max(0, Math.min(100, (value / model.budget) * 100)) : 0;
   const runOut = `${model.runOut} ${dashboard.month}`;
@@ -1363,39 +1374,88 @@ function Vouchers() {
         </div>
       </div>
 
-      <div className="pd-glass pd-table-wrap" data-solid="true" data-reveal>
+      {/*
+        A ladder rather than a table, because the answer to "who reaches each
+        tier" is a *shape* — 124 vouchers at 5%, 59 at 10%, 16 at 15% — and five
+        columns of digits make the reader rebuild that shape in their head. Each
+        bar is the tier's reach against the widest one, and the solid head
+        inside it is the part that came back used, so reach and conversion are
+        one mark instead of two columns.
+
+        Picking a tier is the interaction, and it does something rather than
+        highlighting itself: the line underneath says what that tier costs per
+        voucher and what share of the pool it has eaten, and the "where the
+        money went" panel below dims to the same tier. Two panels, one subject.
+      */}
+      <div className="pd-glass pd-panel" data-solid="true" data-reveal>
         <div className="pd-panel-head">
           <div>
             <span className="console-label">{copy.tiersTitle}</span>
             <p className="pd-fine">{copy.tiersLede}</p>
           </div>
         </div>
-        <div className="pd-scroll">
-          <table className="pd-table">
-            <thead>
-              <tr>
-                {copy.columns.map((column, index) => (
-                  <th key={column} data-align={index >= 2 ? 'right' : undefined}>
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {model.tiers.map((tier) => (
-                <tr key={tier.pct}>
-                  <td>
-                    <span className="pd-tier">{fill(copy.tier, { n: String(tier.pct) })}</span>
-                  </td>
-                  <td>{fill(copy.points, { n: num(tier.points) })}</td>
-                  <td data-align="right">{num(tier.issued)}</td>
-                  <td data-align="right">{num(tier.redeemed)}</td>
-                  <td data-align="right">{money(tier.spent, 'exact')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        {/* The column names, once, above rows that are buttons rather than
+            cells. `aria-hidden` because each row already names its own figures
+            to a screen reader through the labels below. */}
+        <div className="pd-ladder-head" aria-hidden>
+          <span>{copy.columns[0]}</span>
+          <span>{copy.columns[1]}</span>
+          <span />
+          <span>{copy.columns[2]}</span>
+          <span>{copy.columns[3]}</span>
+          <span>{copy.columns[4]}</span>
         </div>
+
+        <div className="pd-ladder">
+          {model.tiers.map((tier, index) => {
+            const reach = widest > 0 ? (tier.issued / widest) * 100 : 0;
+            const used = tier.issued > 0 ? (tier.redeemed / tier.issued) * 100 : 0;
+            const on = index === tierPick;
+            return (
+              <button
+                key={tier.pct}
+                type="button"
+                className="pd-tier-row"
+                data-step={index}
+                data-on={on ? 'true' : undefined}
+                aria-pressed={on}
+                onClick={() => setTierPick(index)}
+              >
+                <span className="pd-tier">{fill(copy.tier, { n: String(tier.pct) })}</span>
+                <span className="pd-tier-pts">{fill(copy.points, { n: num(tier.points) })}</span>
+                <span className="pd-tier-track">
+                  <i style={{ '--reach': `${reach}%` } as CSSProperties}>
+                    <b style={{ '--used': `${used}%` } as CSSProperties} />
+                  </i>
+                </span>
+                <em>
+                  <span className="pd-tier-key">{copy.columns[2]}</span>
+                  {num(tier.issued)}
+                </em>
+                <em>
+                  <span className="pd-tier-key">{copy.columns[3]}</span>
+                  {num(tier.redeemed)}
+                </em>
+                <em>
+                  <span className="pd-tier-key">{copy.columns[4]}</span>
+                  {money(tier.spent, 'exact')}
+                </em>
+              </button>
+            );
+          })}
+        </div>
+
+        <p className="pd-fine pd-ladder-note">
+          {fill(copy.tierDetail, {
+            unit: money(model.tiers[tierPick].unit, 'unit'),
+            pct: String(
+              spendTotal > 0
+                ? Math.round((model.tiers[tierPick].spent / spendTotal) * 100)
+                : 0,
+            ),
+          })}
+        </p>
       </div>
 
       <div className="pd-two">
@@ -1409,12 +1469,17 @@ function Vouchers() {
               <i
                 key={tier.pct}
                 data-part={['spent', 'held', 'free'][index]}
+                data-dim={index === tierPick ? undefined : 'true'}
                 style={{ width: `${spendTotal > 0 ? (tier.spent / spendTotal) * 100 : 0}%` }}
               />
             ))}
           </div>
           {model.tiers.map((tier, index) => (
-            <div className="pd-mix-row" key={tier.pct}>
+            <div
+              className="pd-mix-row"
+              key={tier.pct}
+              data-dim={index === tierPick ? undefined : 'true'}
+            >
               <i data-part={['spent', 'held', 'free'][index]} />
               <span>{fill(copy.tier, { n: String(tier.pct) })}</span>
               <em>{money(tier.spent, 'exact')}</em>
@@ -1453,10 +1518,15 @@ function Customers() {
   const [filter, setFilter] = useState(0);
   const [detail, setDetail] = useState<number | null>(null);
 
-  const nationsTotal = PD_CUSTOMERS.nations.reduce((a, b) => a + b, 0);
+  /* The cost-per-new-customer headline, the trend column beside it and the two
+     comparison rows are all one window's worth of arithmetic. */
+  const { totals, perNew, claimRate, roiRows, perNewTrend } = metricsFor(
+    useDashboard().range,
+  );
+
   const last = PD_CUSTOMERS.cohorts[PD_CUSTOMERS.cohorts.length - 1];
   const lastPct = Math.round((last.back / last.first) * 100);
-  const trendMax = Math.max(...PD_CUSTOMERS.perNewTrend);
+  const trendMax = Math.max(...perNewTrend);
 
   const roster = useMemo(() => {
     const wanted = ['all', 'regular', 'lapsed', 'new'][filter];
@@ -1476,15 +1546,15 @@ function Customers() {
         <div className="pd-hero-main">
           <span className="console-label">{copy.costKicker}</span>
           <p className="pd-counted">
-            <b>{money(PD_PER_NEW, 'unit')}</b>
+            <b>{money(perNew, 'unit')}</b>
             <span>{fill(copy.costUnit, { month: dashboard.month })}</span>
           </p>
           <p className="pd-proof">
             {fill(copy.costLine, {
               cost: money(PD_COST_TOTAL, 'exact'),
               month: dashboard.month,
-              n: num(PD_TOTALS.newCustomers),
-              each: money(PD_PER_NEW, 'unit'),
+              n: num(totals.newCustomers),
+              each: money(perNew, 'unit'),
             })}
           </p>
 
@@ -1500,9 +1570,9 @@ function Customers() {
           <div className="pd-finding">
             <p className="pd-fine">
               {fill(copy.costFinding, {
-                now: money(PD_PER_NEW, 'unit'),
+                now: money(perNew, 'unit'),
                 month: dashboard.month,
-                then: money(PD_CUSTOMERS.perNewTrend[0], 'unit'),
+                then: money(perNewTrend[0], 'unit'),
               })}
             </p>
             <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
@@ -1514,7 +1584,7 @@ function Customers() {
         <div className="pd-trend">
           <span className="console-label">{copy.trendTitle}</span>
           <div className="pd-trend-cols">
-            {PD_CUSTOMERS.perNewTrend.map((value, index) => (
+            {perNewTrend.map((value, index) => (
               <span key={copy.trendMonths[index]} data-on={index === 2 ? 'true' : undefined}>
                 <em>{money(value, 'unit')}</em>
                 <i style={{ height: `${(value / trendMax) * 100}%` }} />
@@ -1628,53 +1698,35 @@ function Customers() {
 
       <Heat />
 
-      <div className="pd-two">
-        <div className="pd-glass pd-panel" data-reveal>
-          <span className="console-label">{copy.fromTitle}</span>
-          {PD_CUSTOMERS.nations.map((count, index) => (
-            <Bar
-              key={copy.nations[index]}
-              label={copy.nations[index]}
-              value={count}
-              of={PD_CUSTOMERS.nations[0]}
-              muted={index === PD_CUSTOMERS.nations.length - 1}
-              note={fill(copy.nationCount, {
-                n: num(count),
-                pct: String(Math.round((count / nationsTotal) * 100)),
-              })}
-            />
-          ))}
-          <p className="pd-fine">
-            {fill(copy.nationHidden, { n: String(PD_CUSTOMERS.hiddenGroups) })}
-          </p>
-        </div>
-
-        <div className="pd-glass pd-panel" data-reveal>
-          <span className="console-label">{copy.readTitle}</span>
-          <p className="pd-fine">{copy.readLede}</p>
-          {PD_CUSTOMERS.langs.map((pct, index) => (
-            <Bar
-              key={copy.langs[index]}
-              label={copy.langs[index]}
-              value={pct}
-              of={PD_CUSTOMERS.langs[0]}
-              muted={index === PD_CUSTOMERS.langs.length - 1}
-              note={
-                index === PD_CUSTOMERS.langs.length - 1
-                  ? `${pct}%`
-                  : fill(copy.nationCount, {
-                      n: num(Math.round((pct / 100) * PD_CUSTOMERS.total)),
-                      pct: String(pct),
-                    })
-              }
-            />
-          ))}
-          <div className="pd-finding">
-            <p className="pd-fine">{copy.langFinding}</p>
-            <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-              {copy.langAction}
-            </button>
-          </div>
+      {/* One panel and not two. "Where they are from" sat beside this one and
+          was the same six bars asking a question this dashboard has no use for:
+          an owner acts on the language a customer reads, which is the panel that
+          survived, and not on the passport behind it. */}
+      <div className="pd-glass pd-panel" data-reveal>
+        <span className="console-label">{copy.readTitle}</span>
+        <p className="pd-fine">{copy.readLede}</p>
+        {PD_CUSTOMERS.langs.map((pct, index) => (
+          <Bar
+            key={copy.langs[index]}
+            label={copy.langs[index]}
+            value={pct}
+            of={PD_CUSTOMERS.langs[0]}
+            muted={index === PD_CUSTOMERS.langs.length - 1}
+            note={
+              index === PD_CUSTOMERS.langs.length - 1
+                ? `${pct}%`
+                : fill(copy.nationCount, {
+                    n: num(Math.round((pct / 100) * PD_CUSTOMERS.total)),
+                    pct: String(pct),
+                  })
+            }
+          />
+        ))}
+        <div className="pd-finding">
+          <p className="pd-fine">{copy.langFinding}</p>
+          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
+            {copy.langAction}
+          </button>
         </div>
       </div>
 
@@ -1721,9 +1773,9 @@ function Customers() {
           </p>
           {[
             {
-              you: `${PD_CLAIM_RATE.toFixed(1)}%`,
+              you: `${claimRate.toFixed(1)}%`,
               them: `${PD_CUSTOMERS.benchClaim.toFixed(1)}%`,
-              better: PD_CLAIM_RATE > PD_CUSTOMERS.benchClaim,
+              better: claimRate > PD_CUSTOMERS.benchClaim,
             },
             {
               you: `${lastPct}%`,
@@ -1731,9 +1783,9 @@ function Customers() {
               better: lastPct > PD_CUSTOMERS.benchSecond,
             },
             {
-              you: money(PD_PER_NEW, 'unit'),
+              you: money(perNew, 'unit'),
               them: money(PD_CUSTOMERS.benchmark, 'unit'),
-              better: PD_PER_NEW < PD_CUSTOMERS.benchmark,
+              better: perNew < PD_CUSTOMERS.benchmark,
             },
           ].map((row, index) => (
             <div className="pd-compare" key={copy.compareRows[index]}>
@@ -1749,7 +1801,7 @@ function Customers() {
         <div className="pd-glass pd-panel" data-reveal>
           <span className="console-label">{copy.roiTitle}</span>
           <p className="pd-fine">{fill(copy.roiLede, { month: dashboard.month })}</p>
-          {PD_ROI_ROWS.map((row, index) => (
+          {roiRows.map((row, index) => (
             <div className="pd-compare" key={copy.roiRows[index]}>
               <span>
                 <b>{copy.roiRows[index]}</b>
@@ -1963,6 +2015,10 @@ function Scans() {
   const [filter, setFilter] = useState(0);
   const [page, setPage] = useState(0);
 
+  /* The count under the table is "48 scans · last 30 days"; only the second
+     half moves, because the scan list itself is today's and is not windowed. */
+  const rangeLabel = dashboard.rangeLabels[metricsFor(useDashboard().range).index];
+
   const matching = useMemo(
     () =>
       PD_SCANS.filter((scan) =>
@@ -1999,7 +2055,7 @@ function Scans() {
             ))}
           </div>
           <span className="pd-fine">
-            {fill(copy.count, { n: num(PD_SCAN_TOTAL) })} · {dashboard.rangeLabel}
+            {fill(copy.count, { n: num(PD_SCAN_TOTAL) })} · {rangeLabel}
           </span>
         </div>
 

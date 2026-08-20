@@ -1,11 +1,14 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DASH_SCREENS } from './content';
 import {
   PD_ALLOCATION,
   PD_CAMPAIGN_MODEL,
   PD_DEALS,
+  PD_RANGES,
   PD_VOUCHER_MODEL,
+  RANGE_DAYS,
 } from './partnerMetrics';
+import type { RangeDays } from './partnerMetrics';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -13,7 +16,7 @@ import { useAuth, initial } from './auth/context';
 import { BusinessForm } from './business';
 import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
-import { DashboardContext } from './dashboardShell';
+import { DashboardContext, useDashboard } from './dashboardShell';
 import type { DrawerKind } from './dashboardShell';
 import { LanguageMenu, ThemeToggle } from './Header';
 import { PATHS } from './router';
@@ -149,6 +152,85 @@ function Rail({
 
 /* ───────────────────────────────────────────────────────────────── topbar ── */
 
+/**
+ * The reporting window.
+ *
+ * Built like `LanguageMenu` and sharing its menu rules, because it is the same
+ * component — a trigger and a listbox — and `site.css` has one set of rules for
+ * that. What it does not share is the trigger: this one is chrome in the
+ * dashboard bar rather than a header control, so it keeps `.pd-range-btn`.
+ *
+ * Unlike everything else on this frame it is *not* a control that has to
+ * apologise for having no server: the numbers behind it are derived on this
+ * device, so changing the window really does change every figure that depends
+ * on it. That is why it is the one thing up here that is not `disabled`.
+ */
+function RangeMenu() {
+  const copy = useCopy();
+  const { range, setRange } = useDashboard();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const at = PD_RANGES.indexOf(range);
+
+  return (
+    <div className="pd-range" ref={ref}>
+      <button
+        type="button"
+        className="pd-range-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label={copy.dashboard.rangeMenu}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="calendar" size={14} />
+        {copy.dashboard.ranges[at]}
+        <Icon name="chevron" size={13} strokeWidth={2.2} className="lang-caret" />
+      </button>
+
+      {open && (
+        <ul className="lang-menu pd-range-menu" role="listbox" aria-label={copy.dashboard.rangeMenu}>
+          {PD_RANGES.map((days, index) => (
+            <li key={days}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={days === range}
+                className="lang-option"
+                data-on={days === range ? 'true' : undefined}
+                onClick={() => {
+                  setRange(days);
+                  setOpen(false);
+                }}
+              >
+                {copy.dashboard.ranges[index]}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function TopBar({ screen }: { screen: number }) {
   const copy = useCopy();
   const { account } = useAuth();
@@ -163,7 +245,7 @@ function TopBar({ screen }: { screen: number }) {
       </div>
 
       <div className="pd-actions">
-        <span className="pd-range">{copy.dashboard.range}</span>
+        <RangeMenu />
         {/*
           The dashboard replaces the site header, and both of these lived there —
           so without them the one screen an owner spends the most time on was the
@@ -229,6 +311,9 @@ export function DashboardPage() {
      only screen with anything on it. */
   const [screen, setScreen] = useState(0);
   const [drawer, setDrawer] = useState<DrawerKind | null>(null);
+  /* Opens on the month, which is what every figure was written against and what
+     the copy's own "August" crumb still says. */
+  const [range, setRange] = useState<RangeDays>(RANGE_DAYS);
   const [toastText, setToastText] = useState<string | null>(null);
 
   /*
@@ -238,7 +323,7 @@ export function DashboardPage() {
    * its `[data-count]` figures never leave zero.
    */
   useReveal(screen);
-  useCountUp(screen);
+  useCountUp(`${screen}:${range}`);
 
   /* Memoised on the two things that actually move: without it every screen
      re-renders on each keystroke inside the drawer, because the context value
@@ -254,8 +339,10 @@ export function DashboardPage() {
       openDrawer: (kind: DrawerKind) => setDrawer(kind),
       closeDrawer: () => setDrawer(null),
       toast: (message: string) => setToastText(message),
+      range,
+      setRange,
     }),
-    [screen],
+    [screen, range],
   );
 
   const id = DASH_SCREENS[screen].id;
@@ -282,7 +369,7 @@ export function DashboardPage() {
 
           {/* Keyed on the screen so the reveal observer rescans and the new panel
               fades in rather than appearing at `opacity: 0`. */}
-          <div className="pd-page" key={screen}>
+          <div className="pd-page" key={`${screen}:${range}`}>
             <div className="pd-head" data-reveal>
               <div>
                 <h1>{copy.dashboard.screens[screen].name}</h1>

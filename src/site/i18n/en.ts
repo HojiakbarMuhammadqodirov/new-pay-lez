@@ -735,8 +735,11 @@ export const en = {
 
     /** The month every screen reports on. */
     month: 'August',
-    /** The window the range picker is set to, spelled into a sentence. */
-    rangeLabel: 'last 30 days',
+    /* The four windows the picker offers, index-aligned with `PD_RANGES`.
+       `rangeLabels` is the form that goes *into* a sentence and `ranges` the
+       form that stands alone on the button, which is why both exist: only
+       English can make one from the other by capitalising it. */
+    rangeLabels: ['last 7 days', 'last 14 days', 'last 30 days', 'last quarter'],
 
     /*
      * Words that appear on more than one screen. Kept in one place because the
@@ -1087,6 +1090,11 @@ export const en = {
         'Tiers do not hold money. Points decide who gets there, so raising a number sends less of the budget that way.',
       columns: ['Tier', 'Points needed', 'Given out', 'Used', 'Cost so far'],
       tier: '{n}% off',
+      /* The line under the ladder. Deliberately not a restatement of the row
+         above it: the unit cost and the share of the pool are the two things a
+         row has no space for, and they are what tie this panel to "where the
+         money went" beside it. Both holes are figures. */
+      tierDetail: 'Each one takes {unit} off a bill. This tier is {pct}% of what the pool has spent so far.',
       points: '{n} pts',
       mixTitle: 'Where the money went',
       returnedTitle: 'Money returned',
@@ -1143,11 +1151,7 @@ export const en = {
       peakFinding:
         'Your busiest hours are weekdays 08:00 to 10:00. Your morning deal already runs then, so there is little to gain from discounting deeper there.',
 
-      fromTitle: 'Where they are from',
-      nations: ['Ukrainian', 'Polish', 'Belarusian', 'Georgian', 'Turkish', 'Other'],
       nationCount: '{n} customers · {pct}%',
-      nationHidden:
-        '{n} smaller groups are counted in “other”, so nobody can be picked out.',
       readTitle: 'What language your customers use',
       readLede:
         'These bars are counted across groups of customers, never one person. Groups smaller than 10 are rolled into “other”.',
@@ -1697,7 +1701,8 @@ export const en = {
       usage: '{used} of {total}',
     },
 
-    range: 'Last 30 days',
+    ranges: ['Last 7 days', 'Last 14 days', 'Last 30 days', 'Last quarter'],
+    rangeMenu: 'Reporting window',
     notifications: 'Notifications',
   },
 

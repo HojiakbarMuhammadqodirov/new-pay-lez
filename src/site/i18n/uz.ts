@@ -632,7 +632,7 @@ export const uz: Dictionary = {
     notWired: 'Bu versiyada ulanmagan.',
 
     month: 'avgust',
-    rangeLabel: 'oxirgi 30 kun',
+    rangeLabels: ['oxirgi 7 kun', 'oxirgi 14 kun', 'oxirgi 30 kun', 'oxirgi chorak'],
 
     words: {
       edit: 'Tahrirlash',
@@ -948,6 +948,7 @@ export const uz: Dictionary = {
         'Bosqichlar pul ushlab turmaydi. Bosqichga ballar olib boradi, ya’ni raqamni oshirsangiz, u yoqqa byudjet kamroq ketadi.',
       columns: ['Bosqich', 'Kerakli ball', 'Berilgan', 'Ishlatilgan', 'Hozirgi xarajat'],
       tier: '{n}% chegirma',
+      tierDetail: 'Har biri hisobdan {unit} oladi. Bu bosqich puldan hozirgacha sarflanganining {pct}% qismi.',
       points: '{n} ball',
       mixTitle: 'Pul qayerga ketdi',
       returnedTitle: 'Qaytgan pul',
@@ -1005,11 +1006,7 @@ export const uz: Dictionary = {
       peakFinding:
         'Eng gavjum soatlar — ish kunlari 08:00 dan 10:00 gacha. Ertalabki taklifingiz allaqachon shunda ishlaydi, shuning uchun u yerda chegirmani chuqurlashtirishdan foyda kam.',
 
-      fromTitle: 'Ular qayerdan',
-      nations: ['Ukrainlar', 'Polyaklar', 'Belaruslar', 'Gruzinlar', 'Turklar', 'Boshqalar'],
       nationCount: '{n} ta mijoz · {pct}%',
-      nationHidden:
-        '{n} ta kichikroq guruh «boshqalar»ga qo‘shilgan, shuning uchun hech kimni ajratib bo‘lmaydi.',
       readTitle: 'Mijozlaringiz qaysi tilda gaplashadi',
       readLede:
         'Bu chiziqlar mijozlar guruhlari bo‘yicha hisoblanadi, hech qachon bitta odam bo‘yicha emas. 10 tadan kichik guruhlar «boshqalar»ga qo‘shiladi.',
@@ -1512,7 +1509,8 @@ export const uz: Dictionary = {
       usage: '{total} dan {used}',
     },
 
-    range: 'Oxirgi 30 kun',
+    ranges: ['Oxirgi 7 kun', 'Oxirgi 14 kun', 'Oxirgi 30 kun', 'Oxirgi chorak'],
+    rangeMenu: 'Hisobot davri',
     notifications: 'Bildirishnomalar',
   },
 
