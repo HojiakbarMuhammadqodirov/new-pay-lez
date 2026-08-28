@@ -11,11 +11,16 @@ export const uz: Dictionary = {
     home: 'Bosh sahifa',
     learn: 'L-Earn',
     analytics: 'Tahlil',
-    b2b: 'B2B',
+    business: 'Biznes',
+    /* The same route as `learn`, under the word an owner needs. See
+       `NAV_LABEL_BUSINESS` in `content.ts`. */
+    games: 'O‘yinlar',
     wallet: 'Hamyon',
     contact: 'Aloqa',
     relocate: 'Ko‘chish',
   },
+  /** The phone burger's label. There is no visible text beside it. */
+  menu: 'Menyu',
   signIn: 'Kirish',
   assistant: 'AI yordamchini ochish',
   languageMenu: "Tilni o‘zgartirish",
@@ -50,6 +55,13 @@ export const uz: Dictionary = {
     typeQuestion: 'Siz kimsiz?',
     typeNote: 'Hozircha faqat bir marta tanlanadi, shuning uchun mos kelganini tanlang.',
     signUpSubmit: 'Hisob yaratish',
+    orDivider: 'yoki',
+    googleContinue: 'Google bilan davom etish',
+    googleWorking: 'Kirilmoqda…',
+    googleUnreachable:
+      'Google orqali kirish hozir ishlamayapti. Quyidagi e-pochta va paroldan foydalaning.',
+    googleRefused:
+      'Google orqali kirib bo‘lmadi. Qayta urinib ko‘ring.',
     signUpErrors: {
       name: 'Ismingizni yozing.',
       email: 'Bu elektron pochta manziliga o‘xshamaydi.',
@@ -362,6 +374,35 @@ export const uz: Dictionary = {
     short: 'Ball yetarli emas',
     soldOut: '1-sanada qaytadi',
     left: '{of} dan {left} qoldi',
+
+    stamps: {
+      title: 'Shtamp kartalari',
+      lede: 'Har bir karta bitta joyga tashriflarni sanaydi. Tashriflar ball emas va boshqa joyda sarflanmaydi.',
+      progress: '{of} tadan {done} ta',
+      empty: 'Hali tashrif yo‘q — {of} ta tashrif {reward} beradi',
+      going: '{reward} uchun yana {left} ta',
+      goingOne: '{reward} uchun yana bitta tashrif',
+      full: 'To‘ldi — {reward} kassada kutmoqda',
+      cycles: 'Avval {n}× to‘ldirilgan',
+      none: 'Hali karta yo‘q. Birinchisi karta ishlatadigan joyga birinchi tashrifda boshlanadi.',
+      visit: 'Tashrif qo‘shish',
+    },
+
+    deals: {
+      title: 'Qaynoq takliflar',
+      lede: 'Yaqin atrofdagi takliflar. Ko‘pchiligi bepul — joyning o‘zi to‘laydi.',
+      held: 'Hamyoningizda',
+      board: 'Bittasini oling',
+      free: 'Bepul',
+      claim: 'Olish',
+      claimed: '{date} olingan',
+      until: '{date} gacha',
+      short: 'Ball yetarli emas',
+      none: 'Hali hech narsa olinmagan.',
+    },
+
+    giftsTitle: 'Sovg‘a kartalari',
+    giftsLede: 'Paylez to‘laydi. Belgilangan summa, kartada ko‘rsatilgan joyda pul kabi sarflanadi.',
   },
 
   games: {
@@ -476,7 +517,7 @@ export const uz: Dictionary = {
     },
   },
 
-  business: {
+  listing: {
     setupEyebrow: 'Joyingizni sozlang',
     setupTitle: 'Biznesingiz haqida gapirib bering.',
     setupLede:
@@ -667,6 +708,20 @@ export const uz: Dictionary = {
         { label: 'Bir tashrifga o‘rtacha chek', note: 'savdongizdan, oxirgi 30 kun' },
         { label: 'Siz uchun yangi mijozlar', note: 'kassangizdagi birinchi skanerlash' },
       ],
+      reachTitle: 'Sizni kim ko‘rdi',
+      reachSeen: 'Ko‘rsatishlar',
+      reachSeenNote: 'joyingiz yoki taklifingiz ekranda necha marta chiqdi',
+      reachClicks: 'Bosishlar',
+      reachClicksNote: 'batafsil o‘qish uchun necha marta ochildi',
+      reachRate: 'Bosish darajasi',
+      reachRateNote: 'yuz ko‘rsatishga necha bosish',
+      reachSplit: 'Qayerdan kelgan',
+      reachListing: 'Sizning e’loningiz',
+      reachDeals: 'Faol takliflaringiz',
+      reachFunnel: '{seen} ko‘rdi · {clicks} ochdi · {claims} foydalandi',
+      reachEmpty: 'Hali hech kim ko‘rmadi. Taklif e’lon qilsangiz, ilova lentasiga tushasiz.',
+      reachLive: 'Jonli raqamlar — e’loningiz va takliflaringiz bo‘yicha sanaldi.',
+      reachSample: 'Namuna raqamlar — bu qurilma serverdan qamrovni o‘qimayapti.',
       budgetAlert:
         'Sodiqlik byudjetingiz {month} oyi tugashidan oldin tugashi kutilmoqda. Vaucherlarda {amount} ishlatilmay turibdi — bir qismini ko‘chiraymi?',
       budgetAction: 'Sodiqlik byudjetini ochish',
@@ -714,13 +769,13 @@ export const uz: Dictionary = {
         {
           text: 'Tashriflar 12% oshdi, lekin vaucher ishlatilishi 4% tushdi. Odamlar kelmoqda — ularni qaytarayotgani mukofotlar emas.',
           detail:
-            'Shu oyda 10% bosqichiga atigi 27 mijoz yetdi, chunki u 600 ball talab qiladi. 450 ballda yana 61 doimiy mijozingiz shartni bajargan bo‘lardi.',
+            'Shu oyda {pct}% bosqichiga atigi {reached} mijoz yetdi, chunki u {points} ball talab qiladi. {lower} ballda yana {more} doimiy mijozingiz shartni bajargan bo‘lardi.',
           action: '10% bosqichini o‘zgartirish',
         },
         {
           text: 'Bepul mahsulotli takliflaringiz foizli chegirmalarga qaraganda 2,4 barobar ko‘p olinadi.',
           detail:
-            '«Pishiriqqa bepul filtr» 4 798 ko‘rishdan 186 marta olindi. 20% chegirmali «Ertalabki flat white» esa 8 412 ko‘rishdan 149 marta.',
+            '«Pishiriqqa bepul filtr» {itemSeen} ko‘rishdan {itemClaims} marta olindi. {pctBadge} chegirmali «Ertalabki flat white» esa {pctSeen} ko‘rishdan {pctClaims} marta.',
           action: 'Takliflaringizni ko‘rish',
         },
         {
@@ -1444,7 +1499,7 @@ export const uz: Dictionary = {
 
       asked: 'Siz so‘radingiz: “{q}”',
       answerLine:
-        'Vaucherlardan foydalanish 4% ga, 158 dan 152 ga tushdi. Butun pasayish {pct}% li bosqichda — bu oyda unga {now} mijoz yetdi, o‘tgan oyda {before} tasi, chunki ball chegarasi {points} gacha ko‘tarildi.',
+        'Vaucherlardan foydalanish {down}% ga, {from} dan {to} ga tushdi. Butun pasayish {pct}% li bosqichda — bu oyda unga {now} mijoz yetdi, o‘tgan oyda {before} tasi, chunki ball chegarasi {points} gacha ko‘tarildi.',
       answerNote:
         'Shu davrda tashriflar 12% ga o‘sdi, ya’ni odamlar kelyapti. Faqat ularning kamrog‘i foydalanishga arzigulik bosqichga yetyapti.',
       answerLabel: 'Bosqichlarni ochish',
@@ -1751,12 +1806,12 @@ export const uz: Dictionary = {
     hero: {
       eyebrow: 'Hamkor tahlili',
       lines: ['Har bir skan —', 'hisobda.'],
-      lede: "Service ID’ingizni kiriting va kampaniya aslida nima qilganini ko‘ring: ko‘rsatishlar, bosishlar, foydalanishlar va ularning qiymati — har bir taklif bo‘yicha.",
+      lede: "Kampaniya aslida nima qilganini ko‘ring: ko‘rsatishlar, bosishlar, foydalanishlar va ularning qiymati — har bir taklif bo‘yicha.",
       primary: 'Panelni ochish',
       secondary: "Nima olishingizni ko‘ring",
-      idLabel: 'Service ID',
-      idNote: "Sizning noyob ID’ingiz — hamkorlik shartnomasida bor.",
-      idAction: "Tahlilni ko‘rish",
+      venueLabel: 'Sizning joyingiz',
+      venueNone: 'Bu hisobda hali e’lon yo‘q',
+      venueNote: "Hech narsa kiritish shart emas. Siz tizimga kirgansiz, shuning uchun panel qaysi joy sizniki ekanini biladi — Service ID bizniki va uni qo‘llab-quvvatlash so‘raydi.",
     },
 
     kpis: {
@@ -1823,16 +1878,16 @@ export const uz: Dictionary = {
 
     cta: {
       title: 'U allaqachon ishlayapti.',
-      lede: "Har bir hamkor taklifi ishga tushgan kunidan buyon shu ma’lumotni yig‘moqda. Service ID’ni kiriting — panel joyida.",
+      lede: "Har bir hamkor taklifi ishga tushgan kunidan buyon shu ma’lumotni yig‘moqda. Panel allaqachon sizniki — bir bosish narida.",
       primary: 'Panelni ochish',
       secondary: 'Hamkorlik haqida gaplashamiz',
       note: "Har bir hamkor hisobida · Qo‘shimcha to‘lovsiz",
     },
   },
 
-  /* ──────────────────────────────────────────────────────────────── b2b ── */
+  /* ─────────────────────────────────────────────────────────── business ── */
 
-  b2b: {
+  business: {
     back: "paylez’ga qaytish",
     hero: {
       eyebrow: 'Mukofot, vaucher, marketing va tahlil — bitta platformada',
@@ -2400,41 +2455,6 @@ export const uz: Dictionary = {
 
   contact: {
     back: 'paylezga qaytish',
-    hero: {
-      eyebrow: 'Aloqa',
-      lines: ['Istagan narsani so‘rang.', 'Javobni odam yozadi.'],
-      lede: 'Yordam, hamkorlik, xatolik yoki qo‘llanmadagi noto‘g‘ri ma’lumot — hammasi Krakovdagi bitta kichik jamoaga tushadi. Har bir xabarni ingliz, polyak, ukrain, rus va o‘zbek tillarida o‘qiymiz.',
-      stats: ['Ish kunida javob', 'Javob beriladigan tillar', 'Bog‘lanish yo‘llari'],
-    },
-
-    channels: {
-      eyebrow: 'Bizni qayerdan topasiz',
-      title: 'To‘rtta yo‘l, va ularning hech biri navbat emas.',
-      lede: 'Savolingizga mos keladiganini tanlang. Ikkita pochta qutisi ataylab turli odamlarga boradi: joriy etish haqidagi savol texnik yordam murojaati emas va ikkalasi bir-birini kutib turmasligi kerak.',
-      items: [
-        {
-          name: 'Yordam',
-          blurb: 'Kelmagan ballar, skanerlanmagan voucher, kira olmayotgan hisob. paylezdan foydalanishga oid har qanday narsa.',
-          action: 'Yordamga yozing',
-        },
-        {
-          name: 'Hamkorlik',
-          blurb: 'Sizda joy bor yoki bir nechtasi va paylezni joriy etish qanday kechishini bilmoqchisiz. Narxlar, ishga tushirish, POS savollari.',
-          action: 'Jamoaga yozing',
-        },
-        {
-          name: 'YouTube',
-          blurb: 'O‘yinlar qanday ishlaydi, joy qanday sozlanadi va nima yangilik — o‘qish o‘rniga ko‘rish mumkin bo‘lgan shakldagi o‘sha tushuntirishlar.',
-          action: 'Ko‘rish',
-        },
-        {
-          name: 'Instagram',
-          blurb: 'Yangi joylar, yangi voucherlar va tez tugaydigan takliflar. Shu hafta nima paydo bo‘lganini ko‘rishning eng tez yo‘li.',
-          action: 'Kuzatish',
-        },
-      ],
-    },
-
     form: {
       eyebrow: 'Xabar yuborish',
       title: 'Nima bo‘lganini yozing.',
@@ -2459,6 +2479,13 @@ export const uz: Dictionary = {
     },
   },
 
+  legal: {
+    contents: 'Mundarija',
+    english:
+      'Ushbu hujjat ingliz tilida chop etilgan. Ingliz tilidagi matn asosiy hisoblanadi.',
+    privacyVersion: 'Versiya 1.1 · 2026-yil 28-avgustdan kuchga kiradi · GDPR talablariga muvofiq',
+    termsVersion: 'Versiya 1.0 · 2025-yil 24-apreldan kuchga kiradi',
+  },
   footer: {
     blurb:
       "O‘yna va yutib ol. Eksklyuziv takliflar. Haqiqiy mukofotlar. Kashf eting, tejang va mukofot oling.",
@@ -2477,7 +2504,7 @@ export const uz: Dictionary = {
     news: {
       heading: "Eng yaxshi takliflarni birinchi bo‘lib oling",
       body: "Haftasiga bitta qisqa xat — vaqtingizga arziydigan yangi takliflar va ball ko‘paytirgichlari.",
-      success: 'Tayyor — pochtangizni kuzating ✦',
+      success: 'Pochta ilovangiz ochildi — xatni yuboring va ro‘yxatdasiz ✦',
       placeholder: 'you@email.com',
       emailLabel: 'Elektron pochta manzili',
       subscribe: 'Obuna bo‘lish',

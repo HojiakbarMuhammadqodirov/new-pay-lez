@@ -16,11 +16,16 @@ export const pl: Dictionary = {
     home: 'Start',
     learn: 'L-Earn',
     analytics: 'Analityka',
-    b2b: 'B2B',
+    business: 'Dla firm',
+    /* The same route as `learn`, under the word an owner needs. See
+       `NAV_LABEL_BUSINESS` in `content.ts`. */
+    games: 'Gry',
     wallet: 'Portfel',
     contact: 'Kontakt',
     relocate: 'Przeprowadzka',
   },
+  /** The phone burger's label. There is no visible text beside it. */
+  menu: 'Menu',
   signIn: 'Zaloguj się',
   assistant: 'Otwórz asystenta AI',
   languageMenu: 'Zmień język',
@@ -55,6 +60,13 @@ export const pl: Dictionary = {
     typeQuestion: 'Kim jesteś?',
     typeNote: 'Na razie wybierasz tylko raz, więc wybierz to, co pasuje.',
     signUpSubmit: 'Załóż konto',
+    orDivider: 'lub',
+    googleContinue: 'Kontynuuj z Google',
+    googleWorking: 'Logowanie…',
+    googleUnreachable:
+      'Logowanie Google jest chwilowo niedostępne. Użyj adresu e-mail i hasła poniżej.',
+    googleRefused:
+      'Nie udało się zalogować przez Google. Spróbuj ponownie.',
     signUpErrors: {
       name: 'Podaj swoje imię i nazwisko.',
       email: 'To nie wygląda na adres e-mail.',
@@ -367,6 +379,35 @@ export const pl: Dictionary = {
     short: 'Za mało punktów',
     soldOut: 'Wraca 1. dnia miesiąca',
     left: 'zostało {left} z {of}',
+
+    stamps: {
+      title: 'Karty pieczątek',
+      lede: 'Każda karta liczy wizyty w jednym lokalu. Wizyty to nie punkty i nie można ich wydać gdzie indziej.',
+      progress: '{done} z {of}',
+      empty: 'Jeszcze bez wizyt — {of} wizyt daje {reward}',
+      going: 'Jeszcze {left} do {reward}',
+      goingOne: 'Jeszcze jedna wizyta do {reward}',
+      full: 'Komplet — {reward} czeka przy kasie',
+      cycles: 'Wypełniona {n}× wcześniej',
+      none: 'Nie masz jeszcze kart. Pierwsza zaczyna się przy pierwszej wizycie w lokalu z kartą.',
+      visit: 'Dodaj wizytę',
+    },
+
+    deals: {
+      title: 'Gorące oferty',
+      lede: 'Oferty w pobliżu. Większość nie kosztuje nic — płaci za nie lokal.',
+      held: 'W Twoim portfelu',
+      board: 'Odbierz ofertę',
+      free: 'Za darmo',
+      claim: 'Odbierz',
+      claimed: 'Odebrano {date}',
+      until: 'Do {date}',
+      short: 'Za mało punktów',
+      none: 'Nic jeszcze nie odebrano.',
+    },
+
+    giftsTitle: 'Karty podarunkowe',
+    giftsLede: 'Opłacone przez Paylez. Stała kwota, wydawana jak pieniądze w miejscu na karcie.',
   },
 
   games: {
@@ -481,7 +522,7 @@ export const pl: Dictionary = {
     },
   },
 
-  business: {
+  listing: {
     setupEyebrow: 'Skonfiguruj swój lokal',
     setupTitle: 'Opowiedz nam o swojej firmie.',
     setupLede:
@@ -672,6 +713,20 @@ export const pl: Dictionary = {
         { label: 'Średni wydatek na wizytę', note: 'z Twojej sprzedaży, ostatnie 30 dni' },
         { label: 'Klienci nowi w Twoim lokalu', note: 'pierwsze skanowanie przy Twojej kasie' },
       ],
+      reachTitle: 'Kto Cię zobaczył',
+      reachSeen: 'Wyświetlenia',
+      reachSeenNote: 'ile razy Twój lokal lub oferta pojawiły się na ekranie',
+      reachClicks: 'Kliknięcia',
+      reachClicksNote: 'ile razy ktoś otworzył je, żeby przeczytać więcej',
+      reachRate: 'Wskaźnik kliknięć',
+      reachRateNote: 'kliknięć na sto wyświetleń',
+      reachSplit: 'Skąd pochodzą',
+      reachListing: 'Twoja wizytówka',
+      reachDeals: 'Twoje aktywne oferty',
+      reachFunnel: '{seen} zobaczyło · {clicks} otworzyło · {claims} skorzystało',
+      reachEmpty: 'Nikt Cię jeszcze nie zobaczył. Opublikowanie oferty umieszcza Cię w kanale aplikacji.',
+      reachLive: 'Dane na żywo, zliczone z Twojej wizytówki i Twoich ofert.',
+      reachSample: 'Dane przykładowe — to urządzenie nie pobiera zasięgu z serwera.',
       budgetAlert:
         'Prognozujemy, że Twój budżet lojalnościowy skończy się przed końcem miesiąca ({month}). Masz {amount} niewykorzystane w voucherach — przenieść część?',
       budgetAction: 'Otwórz budżet lojalnościowy',
@@ -718,13 +773,13 @@ export const pl: Dictionary = {
         {
           text: 'Wizyt jest o 12% więcej, ale użycie voucherów spadło o 4%. Ludzie przychodzą — to nagrody ich nie przyciągają z powrotem.',
           detail:
-            'Tylko 27 klientów sięgnęło w tym miesiącu progu 10%, bo wymaga on 600 punktów. Przy 450 punktach zakwalifikowałoby się 61 kolejnych stałych klientów.',
+            'Tylko {reached} klientów sięgnęło w tym miesiącu progu {pct}%, bo wymaga on {points} punktów. Przy {lower} punktach zakwalifikowałoby się {more} kolejnych stałych klientów.',
           action: 'Zmień próg 10%',
         },
         {
           text: 'Twoje okazje z darmowym produktem są odbierane 2,4× częściej niż rabaty procentowe.',
           detail:
-            '„Darmowy przelew do wypieku” odebrano 186 razy przy 4 798 wyświetleniach. „Poranną flat white” z rabatem 20% odebrano 149 razy przy 8 412 wyświetleniach.',
+            '„Darmowy przelew do wypieku” odebrano {itemClaims} razy przy {itemSeen} wyświetleniach. „Poranną flat white” z rabatem {pctBadge} odebrano {pctClaims} razy przy {pctSeen} wyświetleniach.',
           action: 'Zobacz swoje okazje',
         },
         {
@@ -1448,7 +1503,7 @@ export const pl: Dictionary = {
 
       asked: 'Zapytałeś: „{q}”',
       answerLine:
-        'Korzystanie z voucherów spadło o 4%, ze 158 do 152. Cały spadek jest w progu {pct}% — w tym miesiącu sięgnęło po niego {now} klientów wobec {before} w poprzednim, bo próg punktowy wzrósł do {points}.',
+        'Korzystanie z voucherów spadło o {down}%, ze {from} do {to}. Cały spadek jest w progu {pct}% — w tym miesiącu sięgnęło po niego {now} klientów wobec {before} w poprzednim, bo próg punktowy wzrósł do {points}.',
       answerNote:
         'Wizyty w tym samym okresie wzrosły o 12%, więc ludzie przychodzą. Mniej z nich dochodzi do progu, który warto wykorzystać.',
       answerLabel: 'Otwórz progi',
@@ -1755,12 +1810,12 @@ export const pl: Dictionary = {
     hero: {
       eyebrow: 'Analityka partnera',
       lines: ['Każde skanowanie,', 'rozliczone.'],
-      lede: 'Podaj swój Service ID i zobacz, co naprawdę zrobiła kampania — wyświetlenia, kliknięcia, realizacje i ich wartość, dla każdej prowadzonej oferty.',
+      lede: 'Zobacz, co naprawdę zrobiła kampania — wyświetlenia, kliknięcia, realizacje i ich wartość, dla każdej prowadzonej oferty.',
       primary: 'Otwórz panel',
       secondary: 'Zobacz, co dostajesz',
-      idLabel: 'Service ID',
-      idNote: 'Twój unikalny identyfikator — znajdziesz go w umowie partnerskiej.',
-      idAction: 'Pokaż analitykę',
+      venueLabel: 'Twój lokal',
+      venueNone: 'To konto nie ma jeszcze wizytówki',
+      venueNote: 'Nie trzeba nic wpisywać. Jesteś zalogowany, więc panel już wie, który lokal jest Twój — Service ID jest nasz i pyta o niego wsparcie.',
     },
 
     kpis: {
@@ -1827,16 +1882,16 @@ export const pl: Dictionary = {
 
     cta: {
       title: 'To już działa.',
-      lede: 'Każda oferta partnerska zbiera te dane od dnia uruchomienia. Podaj Service ID, a panel jest na miejscu.',
+      lede: 'Każda oferta partnerska zbiera te dane od dnia uruchomienia. Panel jest już Twój — o jedno kliknięcie stąd.',
       primary: 'Otwórz panel',
       secondary: 'Porozmawiajmy o współpracy',
       note: 'W każdym koncie partnera · Bez dodatkowej opłaty',
     },
   },
 
-  /* ──────────────────────────────────────────────────────────────── b2b ── */
+  /* ─────────────────────────────────────────────────────────── business ── */
 
-  b2b: {
+  business: {
     back: 'Wróć do paylez',
     hero: {
       eyebrow: 'Nagrody, vouchery, marketing i analityka w jednej platformie',
@@ -2400,41 +2455,6 @@ export const pl: Dictionary = {
 
   contact: {
     back: 'Wróć do paylez',
-    hero: {
-      eyebrow: 'Kontakt',
-      lines: ['Zapytaj o wszystko.', 'Odpowie człowiek.'],
-      lede: 'Pomoc, współpraca, błąd albo coś, co przewodnik podaje źle — wszystko trafia do tego samego małego zespołu w Krakowie. Czytamy każdą wiadomość po polsku, angielsku, ukraińsku, rosyjsku i uzbecku.',
-      stats: ['Dzień roboczy na odpowiedź', 'Języki obsługi', 'Sposoby kontaktu'],
-    },
-
-    channels: {
-      eyebrow: 'Gdzie nas znaleźć',
-      title: 'Cztery drogi do nas — i żadna nie jest kolejką zgłoszeń.',
-      lede: 'Wybierz tę, która pasuje do sprawy. Dwie skrzynki trafiają do różnych osób i tak ma być: pytanie o wdrożenie to nie zgłoszenie pomocy technicznej i żadne z nich nie powinno czekać za drugim.',
-      items: [
-        {
-          name: 'Pomoc',
-          blurb: 'Punkty, które nie dotarły, voucher, którego nie dało się zeskanować, konto, do którego nie możesz wrócić. Wszystko, co dotyczy korzystania z paylez.',
-          action: 'Napisz do pomocy',
-        },
-        {
-          name: 'Współpraca',
-          blurb: 'Prowadzisz lokal albo kilka i chcesz wiedzieć, jak wygląda wdrożenie paylez. Cennik, uruchomienie, pytania o POS.',
-          action: 'Napisz do zespołu',
-        },
-        {
-          name: 'YouTube',
-          blurb: 'Jak działają gry, jak lokal się konfiguruje i co nowego — te same wyjaśnienia w formie, którą można obejrzeć zamiast czytać.',
-          action: 'Oglądaj',
-        },
-        {
-          name: 'Instagram',
-          blurb: 'Nowe lokale, nowe vouchery i oferty, które szybko znikają. Najszybszy sposób, żeby zobaczyć, co pojawiło się w tym tygodniu.',
-          action: 'Obserwuj',
-        },
-      ],
-    },
-
     form: {
       eyebrow: 'Wyślij wiadomość',
       title: 'Napisz, co się stało.',
@@ -2459,6 +2479,13 @@ export const pl: Dictionary = {
     },
   },
 
+  legal: {
+    contents: 'Spis treści',
+    english:
+      'Ten dokument jest publikowany w języku angielskim. Tekst angielski jest wersją wiążącą.',
+    privacyVersion: 'Wersja 1.1 · Obowiązuje od 28 sierpnia 2026 · Zgodna z RODO',
+    termsVersion: 'Wersja 1.0 · Obowiązuje od 24 kwietnia 2025',
+  },
   footer: {
     blurb:
       'Graj i zarabiaj. Ekskluzywne oferty. Prawdziwe nagrody. Odkrywaj, oszczędzaj i zgarniaj nagrody.',
@@ -2477,7 +2504,7 @@ export const pl: Dictionary = {
     news: {
       heading: 'Poznaj najlepsze oferty jako pierwszy',
       body: 'Jeden krótki e-mail w tygodniu — nowe okazje i mnożniki punktów warte Twojego czasu.',
-      success: 'Jesteś na liście — sprawdzaj skrzynkę ✦',
+      success: 'Twój program pocztowy jest otwarty — wyślij wiadomość i jesteś na liście ✦',
       placeholder: 'ty@email.com',
       emailLabel: 'Adres e-mail',
       subscribe: 'Subskrybuj',

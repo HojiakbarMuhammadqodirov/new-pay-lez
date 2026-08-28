@@ -3,9 +3,9 @@ import {
   ANALYTICS_FUNNEL,
   ANALYTICS_KPIS,
   ANALYTICS_REPORT_ICONS,
-  ANALYTICS_SERVICE,
   ANALYTICS_WEEK,
 } from './content';
+import { useAuth } from './auth/context';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { PATHS } from './router';
@@ -33,13 +33,33 @@ import { PATHS } from './router';
 /* ─────────────────────────────────────────────────────────────── hero ── */
 
 /**
- * The Service ID panel is the page's one product screenshot, and it is real
- * markup rather than an image: it is the actual first step of the dashboard
- * ("Enter your unique Service ID to view analytics"), and a partner who
- * recognises that field knows immediately that this page is about their data.
+ * The panel is the page's one product screenshot, and it is real markup rather
+ * than an image — but what it shows changed, and the change is the point.
+ *
+ * It used to be a Service ID field: a mocked-up `PLZ-4417-KRK` in a well with a
+ * caret and a "View analytics" button, because that was the dashboard's actual
+ * first step. It is not any more, and it should not have been here for a while:
+ * **an owner does not identify their venue to us, they sign in.** The Service ID
+ * is an operator's handle for a listing — it is what the console indexes by and
+ * what support asks for on the phone — and putting it in front of the owner as
+ * the way *in* was asking them to look up a number the session already knows.
+ * Worse, the field was decorative (there is nothing on a marketing page to
+ * submit an ID to), so the one thing the page invited you to do did nothing,
+ * which is the failure the "anything shaped like a control has to be one" rule
+ * in the root `CLAUDE.md` exists to prevent.
+ *
+ * So the panel now shows the venue whose numbers these are — read off the
+ * session, not typed — and the button opens the dashboard.
+ *
+ * There is a case with no listing behind it and it is not the owner's: an admin
+ * reads the marketing site exactly as written (see `resolveRoute`), so they can
+ * reach this page with no venue on their account at all. The panel falls back to
+ * naming what the slot is for rather than inventing a venue to fill it with.
  */
 function AnalyticsHero() {
   const copy = useCopy();
+  const { account } = useAuth();
+  const venue = account?.business ?? null;
 
   return (
     <section className="hero analytics-hero" id="analytics-top">
@@ -88,28 +108,32 @@ function AnalyticsHero() {
         <div className="hero-visual analytics-visual" data-reveal>
           <div className="svc-card">
             <div className="svc-head">
-              <span className="pv-logo">{ANALYTICS_SERVICE.logo}</span>
+              {/* The same initial the header chip and the console's service rows
+                  use, so one venue is one letter everywhere on the site. */}
+              <span className="pv-logo">
+                {venue ? venue.name.trim().charAt(0).toUpperCase() || '?' : '·'}
+              </span>
               <div>
-                <b>{copy.analytics.hero.idLabel}</b>
-                <span>{copy.analytics.hero.idNote}</span>
+                <b>{venue ? venue.name : copy.analytics.hero.venueLabel}</b>
+                {/* The city, because it is the one field of a listing that is
+                    the same word in every language and is always filled in by
+                    the time a venue is reporting. The country is a code that
+                    would need the setup form's own table to spell out, and
+                    "Kraków, Poland" on a page an owner in Kraków is reading is
+                    a word doing no work. */}
+                <span>{venue?.city || copy.analytics.hero.venueNone}</span>
               </div>
             </div>
 
-            {/*
-              Not a form. There is nothing to submit to from a marketing page,
-              and a real input here would invite a partner to type their ID into
-              something that cannot do anything with it. It is the field as it
-              looks once filled, which is the state worth showing anyway.
-            */}
-            <div className="svc-field" aria-hidden>
-              <Icon name="qr" size={16} />
-              <span className="svc-id">{ANALYTICS_SERVICE.id}</span>
-              <span className="svc-caret" />
-            </div>
+            <p className="svc-note">{copy.analytics.hero.venueNote}</p>
 
-            <span className="btn btn-solid svc-go" aria-hidden>
-              {copy.analytics.hero.idAction}
-            </span>
+            {/* A real link, unlike the ID field it replaced. It goes where its
+                words say — the same destination as the hero's primary button,
+                which is the honest answer to "how do I see my numbers". */}
+            <a className="btn btn-solid svc-go" href={PATHS.dashboard}>
+              <Icon name="bars" size={16} />
+              {copy.analytics.hero.primary}
+            </a>
           </div>
         </div>
       </div>

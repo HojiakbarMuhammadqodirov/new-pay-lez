@@ -16,19 +16,25 @@ export const en = {
   /*
    * Keyed, not indexed. A business owner sees these in a different order and
    * without Relocate (see `NAV_ORDER_BUSINESS` in `content.ts`), and an array
-   * cannot survive being reordered — the first swap would caption B2B "Wallet".
+   * cannot survive being reordered — the first swap would caption Business
+   * "Wallet".
    */
   nav: {
     home: 'Home',
     learn: 'L-Earn',
     analytics: 'Analytics',
-    b2b: 'B2B',
+    business: 'Business',
+    /* The same route as `learn`, under the word an owner needs. See
+       `NAV_LABEL_BUSINESS` in `content.ts`. */
+    games: 'Games',
     /* The page behind this is still `#/vouchers`; "Wallet" is what it is called
        now, because that is what a player opens it to look at. */
     wallet: 'Wallet',
     contact: 'Contact',
     relocate: 'Relocate',
   },
+  /** The phone burger's label. There is no visible text beside it. */
+  menu: 'Menu',
   signIn: 'Sign in',
   assistant: 'Open the AI assistant',
   languageMenu: 'Change language',
@@ -70,6 +76,13 @@ export const en = {
     typeQuestion: 'Which are you?',
     typeNote: 'You can only pick once for now, so pick the one that fits.',
     signUpSubmit: 'Create account',
+    orDivider: 'or',
+    googleContinue: 'Continue with Google',
+    googleWorking: 'Signing you in…',
+    googleUnreachable:
+      'Google sign-in is not reachable right now. Use your email and password below.',
+    googleRefused:
+      'That Google sign-in could not be completed. Please try again.',
     signUpErrors: {
       name: 'Tell us your name.',
       email: 'That does not look like an email address.',
@@ -402,6 +415,44 @@ export const en = {
     short: 'Not enough points',
     soldOut: 'Back on the 1st',
     left: '{left} of {of} left',
+
+    /* ── stamp cards ──
+       Visits, not points. The distinction is the one sentence about this
+       section that has to survive every rewrite — a player who reads a stamp as
+       a second currency will try to spend it at the next venue on the list. */
+    stamps: {
+      title: 'Stamp cards',
+      lede: 'Each card counts visits to one venue. Visits are not points and cannot be spent anywhere else.',
+      progress: '{done} of {of}',
+      /* Three states, not two: a card nobody has visited yet reads differently
+         from one in progress, and it is the state a new card is always in. */
+      empty: 'No visits yet — {of} visits earn {reward}',
+      going: '{left} more for {reward}',
+      goingOne: 'One more visit for {reward}',
+      full: 'Complete — {reward} is waiting at the counter',
+      cycles: 'Filled {n}× before',
+      none: 'No stamp cards yet. One starts on your first visit to a venue running a card.',
+      visit: 'Add a visit',
+    },
+
+    /* ── hot deals ── */
+    deals: {
+      title: 'Hot deals',
+      lede: 'Live offers near you. Most cost nothing to claim — the venue is paying for them.',
+      held: 'In your wallet',
+      board: 'Claim one',
+      free: 'Free to claim',
+      claim: 'Claim',
+      claimed: 'Claimed {date}',
+      until: 'Until {date}',
+      short: 'Not enough points',
+      none: 'Nothing claimed yet.',
+    },
+
+    /* The gift-card section's own heading. The holdings below it were the whole
+       page once, which is why the tabs above them have no heading of their own. */
+    giftsTitle: 'Gift cards',
+    giftsLede: 'Paid for by Paylez. A fixed amount, spent like money at the place named on the card.',
   },
 
   /* ────────────────────────────────────────────────────────────── games ── */
@@ -567,9 +618,9 @@ export const en = {
     },
   },
 
-  /* ─────────────────────────────────────────────────────────── business ── */
+  /* ──────────────────────────────────────────────────────────── listing ── */
 
-  business: {
+  listing: {
     setupEyebrow: 'Set up your venue',
     setupTitle: 'Tell us about your business.',
     setupLede:
@@ -788,6 +839,24 @@ export const en = {
         { label: 'Average spend per visit', note: 'from your sales, last 30 days' },
         { label: 'Customers new to your venue', note: 'first scan at your counter' },
       ],
+      /* ── reach ──
+         Seen and clicked, above everything else on this screen — because every
+         other figure here starts at a *visit*, and a venue nobody has seen and a
+         venue everybody ignores produce the same screen without it. */
+      reachTitle: 'Who saw you',
+      reachSeen: 'Impressions',
+      reachSeenNote: 'times your venue or one of your offers appeared on a screen',
+      reachClicks: 'Clicks',
+      reachClicksNote: 'times somebody opened it to read more',
+      reachRate: 'Click rate',
+      reachRateNote: 'clicks per hundred impressions',
+      reachSplit: 'Where they came from',
+      reachListing: 'Your listing',
+      reachDeals: 'Your live offers',
+      reachFunnel: '{seen} saw you · {clicks} opened it · {claims} claimed something',
+      reachEmpty: 'Nothing has been seen yet. Publishing an offer is what puts you in the app feed.',
+      reachLive: 'Live figures, counted from your listing and your offers.',
+      reachSample: 'Sample figures — this device is not reading reach from the server.',
       budgetAlert:
         'Your loyalty budget is forecast to run out before the end of {month}. You have {amount} unused in vouchers — move some across?',
       budgetAction: 'Open loyalty budget',
@@ -835,13 +904,13 @@ export const en = {
         {
           text: 'Visits are up 12% but voucher use is down 4%. People are coming in — the rewards are not pulling them back.',
           detail:
-            'Only 27 customers reached the 10% tier this month because it needs 600 points. At 450 points, 61 more of your regulars would have qualified.',
+            'Only {reached} customers reached the {pct}% tier this month because it needs {points} points. At {lower} points, {more} more of your regulars would have qualified.',
           action: 'Change the 10% tier',
         },
         {
           text: 'Your free-item deals get 2.4× more claims than your percentage discounts.',
           detail:
-            '“Free filter with any bake” was claimed 186 times from 4 798 views. “Morning flat white” at 20% off was claimed 149 times from 8 412 views.',
+            '“Free filter with any bake” was claimed {itemClaims} times from {itemSeen} views. “Morning flat white” at {pctBadge} off was claimed {pctClaims} times from {pctSeen} views.',
           action: 'Look at your deals',
         },
         {
@@ -1636,7 +1705,7 @@ export const en = {
 
       asked: 'You asked: “{q}”',
       answerLine:
-        'Voucher use is down 4%, from 158 to 152. The drop is all in the {pct}% tier — {now} customers reached it this month against {before} last month, because the points threshold went up to {points}.',
+        'Voucher use is down {down}%, from {from} to {to}. The drop is all in the {pct}% tier — {now} customers reached it this month against {before} last month, because the points threshold went up to {points}.',
       answerNote:
         'Visits are up 12% over the same period, so people are coming in. Fewer of them are reaching a tier worth using.',
       answerLabel: 'Open the tiers',
@@ -1954,12 +2023,12 @@ export const en = {
     hero: {
       eyebrow: 'Partner Analytics',
       lines: ['Every scan,', 'accounted for.'],
-      lede: 'Enter your Service ID and see what the campaign actually did — impressions, clicks, redemptions and what they were worth, for every deal you run.',
+      lede: 'See what the campaign actually did — impressions, clicks, redemptions and what they were worth, for every deal you run.',
       primary: 'Open the dashboard',
       secondary: 'See what you get',
-      idLabel: 'Service ID',
-      idNote: 'Your unique ID — find it on your partner agreement.',
-      idAction: 'View analytics',
+      venueLabel: 'Your venue',
+      venueNone: 'No listing on this account yet',
+      venueNote: 'Nothing to type in. You are signed in, so the dashboard already knows which venue is yours — the Service ID is ours, and it is what support asks for.',
     },
 
     kpis: {
@@ -2015,16 +2084,16 @@ export const en = {
 
     cta: {
       title: 'It is already running.',
-      lede: 'Every partner deal has been collecting this since the day it went live. Enter your Service ID and the dashboard is there.',
+      lede: 'Every partner deal has been collecting this since the day it went live. The dashboard is already yours, one click away.',
       primary: 'Open the dashboard',
       secondary: 'Talk to us about partnering',
       note: 'Included with every partner account · No extra fee',
     },
   },
 
-  /* ──────────────────────────────────────────────────────────────── b2b ── */
+  /* ─────────────────────────────────────────────────────────── business ── */
 
-  b2b: {
+  business: {
     back: 'Back to paylez',
     hero: {
       eyebrow: 'Play-to-earn rewards, vouchers, marketing & analytics in one platform',
@@ -2611,41 +2680,6 @@ export const en = {
    */
   contact: {
     back: 'Back to paylez',
-    hero: {
-      eyebrow: 'Contact',
-      lines: ['Ask us anything.', 'A person answers.'],
-      lede: 'Support, a partnership, a bug, or something the guide got wrong — all of it reaches the same small team in Kraków. We read every message in English, Polish, Ukrainian, Russian and Uzbek.',
-      stats: ['Working-day reply', 'Languages answered', 'Ways to reach us'],
-    },
-
-    channels: {
-      eyebrow: 'Where to reach us',
-      title: 'Four ways in, and none of them is a ticket queue.',
-      lede: 'Pick whichever suits what you are asking. The two inboxes go to different people on purpose — a rollout question is not a support ticket, and neither should wait behind the other.',
-      items: [
-        {
-          name: 'Support',
-          blurb: 'Points that did not arrive, a voucher that would not scan, an account you cannot get back into. Anything to do with using paylez.',
-          action: 'Email support',
-        },
-        {
-          name: 'Partnerships',
-          blurb: 'You run a venue, or several, and want to know what putting paylez in them looks like. Pricing, rollout, POS questions.',
-          action: 'Email the team',
-        },
-        {
-          name: 'YouTube',
-          blurb: 'How the games work, how a venue sets up, and what is new — the same explanations, in a form you can watch instead of read.',
-          action: 'Watch',
-        },
-        {
-          name: 'Instagram',
-          blurb: 'New venues, new vouchers and the deals that go quickly. The fastest way to see what has landed this week.',
-          action: 'Follow',
-        },
-      ],
-    },
-
     form: {
       eyebrow: 'Send a message',
       title: 'Tell us what happened.',
@@ -2671,6 +2705,22 @@ export const en = {
     },
   },
 
+  /*
+   * The chrome around the two legal documents — not the documents themselves.
+   *
+   * Their bodies stay in English in every language, because a machine-translated
+   * liability cap or GDPR legal basis is a different promise from the one the
+   * company made, and a reader cannot tell which they are looking at. These four
+   * strings are what makes that honest rather than lazy: the page says, in the
+   * reader's own language, what it is holding and why it is in English.
+   */
+  legal: {
+    contents: 'Contents',
+    english:
+      'This document is published in English. The English text is the authoritative version.',
+    privacyVersion: 'Version 1.1 · Effective 28 August 2026 · GDPR compliant',
+    termsVersion: 'Version 1.0 · Effective 24 April 2025',
+  },
   footer: {
     blurb:
       'Play & Earn. Exclusive deals. Real rewards. Discover, save and get rewarded.',
@@ -2690,7 +2740,7 @@ export const en = {
     news: {
       heading: 'Get the best deals first',
       body: 'One short email a week — the new drops and points multipliers worth your time.',
-      success: "You're in — watch your inbox ✦",
+      success: 'Your mail app is open — send it and you are on the list ✦',
       placeholder: 'you@email.com',
       emailLabel: 'Email address',
       subscribe: 'Subscribe',
