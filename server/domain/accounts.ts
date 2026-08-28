@@ -242,11 +242,144 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
   return getUser(db, id);
 }
 
+/**
+ * Sign in with Google — the account half, after the token has been verified.
+ *
+ * `crypto/google.ts` decides whether the identity is real; this decides which
+ * account it *is*, and the order of the two lookups is the whole substance:
+ *
+ * 1. **By `provider_ref`** — Google's `sub`, which is stable and never reused.
+ *    That is the correct key, because an address can change hands and a `sub`
+ *    cannot.
+ * 2. **By verified email**, which links Google to an account somebody already
+ *    opened with a password. Safe only because the caller has already refused
+ *    any token whose `email_verified` is false; without that check this second
+ *    lookup is an account-takeover route, and it is why the check lives at the
+ *    point of verification rather than being left to callers to remember.
+ * 3. Otherwise a new account, provisioned exactly as `signUp` does — same role,
+ *    same consent records, same referral code, same welcome bonus, same player
+ *    state. A Google account that skipped any of those would be a second kind
+ *    of user for every rule downstream to special-case.
+ *
+ * No password is set. `password_hash` stays NULL, which the schema already
+ * allows for exactly this, and `signIn` rejects it because `verifyPassword`
+ * against a null hash fails — so a Google-only account cannot be entered with a
+ * guessed password.
+ */
+export function linkGoogleAccount(
+  db: Db,
+  input: { sub: string; email: string; name: string; language?: string; at?: Iso },
+): User {
+  const at = input.at ?? now();
+  const email = normalise(input.email);
+
+  const byProvider = db.get<User>(
+    `SELECT * FROM users WHERE auth_provider = 'google' AND provider_ref = $s AND deleted_at IS NULL`,
+    { s: input.sub },
+  );
+  if (byProvider) {
+    if (byProvider.status === 'banned') {
+      throw new DomainError('forbidden', 'this account is suspended');
+    }
+    return byProvider;
+  }
+
+  const byEmail = db.get<User>(
+    `SELECT * FROM users WHERE email_norm = $e AND deleted_at IS NULL`,
+    { e: email },
+  );
+  if (byEmail) {
+    if (byEmail.status === 'banned') {
+      throw new DomainError('forbidden', 'this account is suspended');
+    }
+    /* Link, but leave `auth_provider` alone when the account already has a
+       password: it can now be entered either way, and rewriting it to 'google'
+       would claim the password no longer works when it does. */
+    db.run(
+      `UPDATE users
+          SET provider_ref = $s,
+              auth_provider = CASE WHEN password_hash IS NULL THEN 'google' ELSE auth_provider END,
+              updated_at = $t
+        WHERE id = $i`,
+      { s: input.sub, t: at, i: byEmail.id },
+    );
+    return getUser(db, byEmail.id);
+  }
+
+  const id = newId('usr');
+  db.tx(() => {
+    db.run(
+      `INSERT INTO users (id, email, email_norm, display_name, password_hash, auth_provider,
+                          provider_ref, language, status, created_at, updated_at)
+       VALUES ($i, $e, $n, $d, NULL, 'google', $s, $l, 'active', $t, $t)`,
+      {
+        i: id,
+        e: input.email.trim(),
+        n: email,
+        d: input.name.trim() || email.split('@')[0],
+        s: input.sub,
+        l: input.language ?? 'en',
+        t: at,
+      },
+    );
+    grantRole(db, id, 'consumer', at);
+
+    /* §1.3, same as `signUp`. Signing in with Google is still the moment the
+       account comes into existence, so it is still the moment consent is
+       recorded — with the same policy version, so the two paths cannot drift. */
+    consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
+    consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+
+    social.codeFor(db, id);
+
+    ledger.earn(db, {
+      userId: id,
+      points: CONFIG.points.welcomeBonus,
+      reason: 'welcome_bonus',
+      sourceKind: 'signup',
+      sourceRef: id,
+      at,
+    });
+
+    db.run(
+      `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
+       VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
+      { u: id, l: CONFIG.points.dailyLives, t: at },
+    );
+  });
+
+  return getUser(db, id);
+}
+
 export interface SignedIn {
   user: User;
   token: string;
   session: Session;
   roles: Role[];
+}
+
+/** The session half of a Google sign-in, shared with the password path. */
+export function sessionForUser(
+  db: Db,
+  input: { user: User; surface?: 'web' | 'mobile'; deviceFingerprint?: string; at?: Iso },
+): SignedIn {
+  const at = input.at ?? now();
+  const roles = rolesOf(db, input.user.id);
+  const mode: Mode = roles.includes('admin')
+    ? 'admin'
+    : roles.includes('partner_owner')
+      ? 'partner'
+      : 'consumer';
+
+  const session = createSession(db, {
+    userId: input.user.id,
+    mode,
+    surface: input.surface ?? 'web',
+    deviceFingerprint: input.deviceFingerprint,
+    at,
+  });
+
+  return { user: input.user, token: session.token, session: session.session, roles };
 }
 
 /**

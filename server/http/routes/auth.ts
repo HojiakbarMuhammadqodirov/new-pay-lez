@@ -15,6 +15,8 @@ import * as ledger from '../../domain/ledger.ts';
 import * as social from '../../domain/social.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { actor, bool, oneOf, optStr, str } from '../input.ts';
+import { CONFIG } from '../../config.ts';
+import { exchangeGoogleCode, verifyGoogleIdToken } from '../../crypto/google.ts';
 import type { Ctx, Route } from '../router.ts';
 
 const cookieFor = (token: string, maxAgeDays: number): string => {
@@ -95,6 +97,88 @@ export const authRoutes: Route[] = [
         deviceFingerprint: optStr(ctx.body, 'device'),
         at: ctx.at,
       });
+      ctx.res.setHeader('set-cookie', cookieFor(result.token, 30));
+      return {
+        token: result.token,
+        roles: result.roles,
+        mode: result.session.mode,
+        user: { id: result.user.id, name: result.user.display_name, email: result.user.email },
+      };
+    },
+  },
+  {
+    /**
+     * Sign in with Google.
+     *
+     * The browser does the Google half and arrives here holding an ID token;
+     * this verifies it and issues one of *our* sessions. So the token Google
+     * signed never becomes the session — it is evidence, checked once, and
+     * discarded. Everything downstream sees the same session shape the password
+     * path produces, which is what keeps the rest of the API from having to
+     * know that Google exists.
+     *
+     * Both surfaces use this one endpoint: the web app posts the credential
+     * from Google Identity Services, and the Flutter client posts the ID token
+     * from its native sign-in. Same verification, same audience check.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/google',
+    auth: 'none',
+    handler: async (ctx) => {
+      const clientId = CONFIG.auth.googleClientId;
+      if (!clientId) {
+        /* Not configured is a server condition, not a bad request — saying
+           "unauthenticated" here would send a caller off debugging their token. */
+        throw new DomainError('internal', 'google sign-in is not configured on this server');
+      }
+
+      /*
+       * Two ways in, and they are two different clients rather than two ways of
+       * doing the same thing.
+       *
+       * `code` is the web app: it draws its own button, so it runs the
+       * authorisation-code flow and this server does the exchange. `credential`
+       * is a native ID token, which is what the Flutter client already holds
+       * after a platform sign-in and has no code to exchange.
+       *
+       * Both converge on `verifyGoogleIdToken` one line later, so there is a
+       * single place where a Google identity is decided to be real.
+       */
+      const code = optStr(ctx.body, 'code');
+      const credential = code ? '' : str(ctx.body, 'credential');
+
+      if (code && !CONFIG.auth.googleClientSecret) {
+        throw new DomainError('internal', 'google code exchange is not configured on this server');
+      }
+
+      let identity;
+      try {
+        identity = code
+          ? await exchangeGoogleCode(code, clientId, CONFIG.auth.googleClientSecret)
+          : await verifyGoogleIdToken(credential, clientId);
+      } catch (error) {
+        /* The reason is logged, never returned: "token was not issued for this
+           client" and "signature does not verify" tell an attacker which part
+           of a forgery to fix. */
+        console.warn(`google sign-in rejected: ${(error as Error).message}`);
+        throw new DomainError('unauthenticated', 'that Google sign-in could not be verified');
+      }
+
+      const user = accounts.linkGoogleAccount(ctx.db, {
+        sub: identity.sub,
+        email: identity.email,
+        name: identity.name,
+        language: optStr(ctx.body, 'language'),
+        at: ctx.at,
+      });
+
+      const result = accounts.sessionForUser(ctx.db, {
+        user,
+        surface: oneOf(ctx.body, 'surface', ['web', 'mobile'] as const, 'web'),
+        deviceFingerprint: optStr(ctx.body, 'device'),
+        at: ctx.at,
+      });
+
       ctx.res.setHeader('set-cookie', cookieFor(result.token, 30));
       return {
         token: result.token,

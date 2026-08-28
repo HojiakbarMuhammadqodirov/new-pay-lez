@@ -9,6 +9,7 @@
 import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { DomainError } from './errors.ts';
+import { newId } from './ids.ts';
 import { median } from './money.ts';
 import { local, now, plusDays, type Iso } from './time.ts';
 
@@ -152,6 +153,67 @@ export function isOpen(db: Db, venue: Venue, at: Iso = now()): boolean {
   return row.opens_min < row.closes_min
     ? l.minutes >= row.opens_min && l.minutes < row.closes_min
     : l.minutes >= row.opens_min || l.minutes < row.closes_min;
+}
+
+/**
+ * A listing being seen, and a listing being opened.
+ *
+ * The counterpart of `deals.track`, one level up: that one counts what happened
+ * to an *offer*, this counts what happened to the *venue*. An owner asking "is
+ * anybody seeing us" is asking this question, and until now the only answer the
+ * system could give was about the deals they had published — which says nothing
+ * at all about a venue that has not published one.
+ *
+ * Three rules it inherits from the deal funnel and one it does not:
+ *
+ * - **Impression and click only.** A visit is written by the gate from a
+ *   confirmed scan. A "visit" a client could post is footfall a client could
+ *   invent, and footfall is the number the whole dashboard argues from.
+ * - **`user_id` is optional and stays that way.** Most impressions happen to
+ *   somebody who is not signed in; that is a real impression and it counts. The
+ *   column is nullable for exactly this.
+ * - **`source` is where it happened** — a list, a search result, a map pin, the
+ *   guidebook — because "seen 900 times" and "seen 900 times, 850 of them in
+ *   one list nobody scrolls" are different findings.
+ * - Unlike a deal, there is **no counter column to maintain**. `hot_deals` keeps
+ *   `seen_count`/`opened_count` because a deal card renders its own funnel; a
+ *   venue's reach is only ever read through `analytics.reach`, which aggregates
+ *   the rows. One source of truth, and no cache to drift.
+ */
+export function trackListing(
+  db: Db,
+  input: {
+    venueId: string;
+    userId?: string | null;
+    kind: 'impression' | 'click';
+    source?: string;
+    city?: string;
+    language?: string;
+    at?: Iso;
+  },
+): void {
+  /* Reads the venue first so a bad id is a 404 rather than a row pointing at
+     nothing: `service_events.venue_id` is `ON DELETE SET NULL`, so an unchecked
+     insert against a missing venue would be accepted and then be unattributable
+     forever. */
+  const venue = getVenue(db, input.venueId);
+
+  db.run(
+    `INSERT INTO service_events
+       (id, service_id, venue_id, user_id, event_type, source, city, country_code, language, created_at)
+     VALUES ($i, NULL, $v, $u, $e, $s, $c, $cc, $l, $t)`,
+    {
+      i: newId('sev'),
+      v: venue.id,
+      u: input.userId ?? null,
+      e: input.kind,
+      s: input.source ?? null,
+      c: input.city ?? venue.city ?? null,
+      cc: venue.country_code ?? null,
+      l: input.language ?? null,
+      t: input.at ?? now(),
+    },
+  );
 }
 
 /** Great-circle distance in km — what impossible-travel detection measures. */

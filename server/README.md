@@ -61,8 +61,45 @@ holds the points ledger, and a supply chain is a thing that can be compromised.
 | `PAYLEZ_ORIGINS` | `http://localhost:5173` | CORS allow-list. |
 | `PAYLEZ_BILLING` | `local` | `live` refuses to run without a real adapter. |
 | `PAYLEZ_PUSH` | `local` | Same, for FCM/APNs. |
-| `PAYLEZ_LLM` | `off` | The assistant composes deterministically when off. |
+| `PAYLEZ_LLM` | `off` | `live` lets a model reword the assistant's answer. Off, it composes deterministically. |
+| `ANTHROPIC_API_KEY` | unset | **Secret.** The Claude key. Both this and `PAYLEZ_LLM=live` are required; either one alone leaves the model off. |
+| `PAYLEZ_LLM_MODEL` | `claude-haiku-4-5` | Which model does the rewording. |
+| `PAYLEZ_LLM_MAX_TOKENS` / `PAYLEZ_LLM_TIMEOUT_MS` | `400` / `3000` | Ceilings on one rewrite. Past either, the deterministic sentence is sent. |
 | `PAYLEZ_ADMIN_EMAIL` / `PAYLEZ_ADMIN_PASSWORD` | unset | Provisions the one admin at boot. Unset means `/v1/admin/*` is unreachable. |
+
+#### Where the Claude key goes
+
+`paylez.env.example` in this directory is that whole file, ready to fill in and
+copy to the host. The two lines that turn the assistant on are:
+
+```sh
+# /etc/paylez/paylez.env — server-side, never in the repo, never VITE_-prefixed.
+ANTHROPIC_API_KEY=sk-ant-...
+PAYLEZ_LLM=live
+```
+
+and it is installed and pointed at like this:
+
+```sh
+sudo install -d -m 750 -o paylez -g paylez /etc/paylez
+sudo install -m 640 -o root -g paylez server/paylez.env.example /etc/paylez/paylez.env
+sudo -e /etc/paylez/paylez.env          # fill in the secrets
+# systemd unit: EnvironmentFile=/etc/paylez/paylez.env
+```
+
+Mode 640 root:paylez, because every secret in that file is spendable by whoever
+can read it.
+
+It belongs beside `PAYLEZ_SECRET` and `PAYLEZ_GOOGLE_CLIENT_SECRET`, and the
+rule that governs all three is the same one `.env.example` states for the front
+end: **a `VITE_` prefix publishes a value.** Vite bakes those into the browser
+bundle, so a key with that prefix is readable by anyone who opens the site and
+spendable by anyone who reads it. The site never talks to Anthropic — it talks
+to this server, and this server talks to Anthropic.
+
+Two switches rather than one, because they answer different questions: the key
+says a model *can* be called, `PAYLEZ_LLM=live` says this deployment *wants*
+one. A staging box that inherits a production env file does not start spending.
 
 ## Layout
 
@@ -114,7 +151,7 @@ implementation plugs in.
 | --- | --- | --- |
 | `ports/billing.ts` | The whole subscription lifecycle, source reconciliation, entitlement resolution, webhook idempotency | The network call to Stripe / the App Store, and their signature schemes |
 | `ports/push.ts` | Every delivery decision: frequency cap, quiet hours, mode tag, partner quota, the honest reach figure | The FCM / APNs connection |
-| `ports/llm.ts` | Retrieval, grounding, and the deterministic sentence | The model call, plus the post-check that no number appears that the facts do not contain |
+| `ports/llm.ts` | Retrieval, grounding, the deterministic sentence, the model call and the post-check | Nothing — this one is wired. Unset by default; see `PAYLEZ_LLM` above |
 
 NFC is *not* on that list. `crypto/nfc.ts` implements AES-CMAC (checked against
 RFC 4493's own vectors), the PICC decryption, the AN12196 session key and the

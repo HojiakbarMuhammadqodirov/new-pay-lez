@@ -218,6 +218,90 @@ export const CONFIG = {
     minPasswordLength: 6,
     /** Sign-in attempts per address per window, then a cool-off. */
     signInPerHour: 20,
+    /**
+     * The Google OAuth client id, and the audience every ID token must name.
+     *
+     * Unset disables `/v1/auth/google` outright rather than defaulting to
+     * something — the same argument as the admin credentials above. A verifier
+     * with no expected audience accepts tokens Google issued for *any*
+     * application, which is a sign-in endpoint that anyone with a Google
+     * account and a different app can walk through. Absent means off; it never
+     * means "accept anything".
+     *
+     * Public by nature — it ships in the browser bundle — so it is read from
+     * the environment for deployment convenience, not for secrecy.
+     */
+    googleClientId: process.env.PAYLEZ_GOOGLE_CLIENT_ID ?? '',
+    /**
+     * The Google client *secret* — the one value in this pair that is a secret.
+     *
+     * Needed only by the authorisation-code exchange, which is what lets the
+     * site draw its own sign-in button instead of Google's. Unset means the
+     * `code` path is closed and only the direct ID-token path works, which is
+     * the correct behaviour for a deployment that has not been given one: the
+     * alternative is a button that opens a popup and then fails after the
+     * person has already chosen an account.
+     *
+     * Never `VITE_`-prefixed, never in the repo, never in a response body.
+     */
+    googleClientSecret: process.env.PAYLEZ_GOOGLE_CLIENT_SECRET ?? '',
+  },
+
+  /* ────────────────────────────────────────────────── the language model ── */
+
+  /**
+   * The assistant's optional writer — see `ports/llm.ts` for what it may and may
+   * not do, which is the part that matters.
+   *
+   * Off unless *both* `PAYLEZ_LLM=live` and a key are set. Two switches rather
+   * than one because they answer different questions: the key says whether a
+   * model *can* be called, the flag says whether this deployment *wants* one.
+   * A staging box with the production key in its environment should not start
+   * spending on it because someone copied an env file.
+   */
+  llm: {
+    /**
+     * `ANTHROPIC_API_KEY`, and it is a **server-side secret**.
+     *
+     * It lives in `/etc/paylez/paylez.env` beside `PAYLEZ_SECRET` and the Google
+     * client secret, and it must never acquire a `VITE_` prefix: Vite bakes
+     * those into the browser bundle, where a key is readable by anybody who
+     * opens the site and spendable by anybody who reads it. The site never talks
+     * to Anthropic — it talks to this server, which talks to Anthropic.
+     */
+    apiKey: process.env.ANTHROPIC_API_KEY ?? '',
+    /** `live` turns it on; anything else (including unset) leaves it off. */
+    mode: process.env.PAYLEZ_LLM ?? 'off',
+    /**
+     * Claude Haiku 4.5.
+     *
+     * The job is to rewrite one already-correct sentence so it reads like a
+     * person wrote it — the facts, the figures and the action are decided by
+     * `domain/assistant.ts` before the model is called and are re-checked after
+     * it answers. That is a small job, it is on the request path of a chat
+     * panel, and it is the cheapest and fastest model in the family. Overridable
+     * so the model can be changed without a deploy.
+     */
+    model: process.env.PAYLEZ_LLM_MODEL ?? 'claude-haiku-4-5',
+    /**
+     * Ceiling on the rewrite, in tokens.
+     *
+     * Small on purpose: the draft it is rewriting is one or two sentences, and a
+     * ceiling this low is a second, cruder guard against a model that decides to
+     * write an essay. A truncated rewrite fails the post-check below and the
+     * draft is used instead, so the failure mode is "no worse than off".
+     */
+    maxTokens: Number(process.env.PAYLEZ_LLM_MAX_TOKENS ?? 400),
+    /**
+     * How long to wait before giving up and using the draft, ms.
+     *
+     * The assistant is a panel somebody is watching. Three seconds is roughly
+     * the point at which a person decides a chat is broken, and the draft is
+     * always ready — so waiting longer buys nothing but a worse answer later.
+     */
+    timeoutMs: Number(process.env.PAYLEZ_LLM_TIMEOUT_MS ?? 3000),
+    /** The Messages API. Overridable for a proxy or a gateway. */
+    baseUrl: process.env.ANTHROPIC_BASE_URL ?? 'https://api.anthropic.com',
   },
 } as const;
 

@@ -176,6 +176,188 @@ export function overview(db: Db, venueId: string, window: Window = {}): Overview
   };
 }
 
+/* ═════════════════════════════════════════════════════ reach: seen, clicked ══ */
+
+/** One row of the per-deal breakdown. `null` `id` is the listing itself. */
+export interface ReachRow {
+  id: string | null;
+  title: string;
+  impressions: number;
+  clicks: number;
+  claims: number;
+  /** Clicks per impression, 0–1. Zero impressions is a zero rate, not a NaN. */
+  clickRate: number;
+}
+
+export interface Reach {
+  period: string;
+  impressions: number;
+  clicks: number;
+  clickRate: number;
+  /** How many *people* clicked, as opposed to how many clicks there were. */
+  uniqueClickers: Metric;
+  /** Claims, which only a deal can have — the listing has no counterpart. */
+  claims: number;
+  /** Claims per click. The bottom of the funnel, and the only paid step. */
+  claimRate: number;
+  /** Where the impressions came from, most first. */
+  sources: Array<{ source: string; impressions: number; clicks: number }>;
+  /** The listing, then one row per deal that was seen at all this period. */
+  rows: ReachRow[];
+}
+
+/**
+ * How many people saw this venue, and how many of them did something about it.
+ *
+ * The one question the dashboard could not answer. Everything else it reports
+ * starts at a *visit* — a confirmed scan at the counter — which means a venue
+ * whose deals nobody opens and a venue nobody has ever heard of produce exactly
+ * the same screen: zeroes everywhere, with no way to tell "we are invisible"
+ * from "we are seen and ignored". Those two have opposite fixes, and telling
+ * them apart is the whole reason this exists.
+ *
+ * Two sources, one funnel. `service_events` is the *listing* — the venue's card
+ * appearing in a list, a search result or a map, and being opened. `deal_events`
+ * is an *offer* — the same two steps, plus the claim only the gate can write.
+ * They are summed rather than reported separately at the top because an owner
+ * asking "is anybody seeing us" does not care which surface it happened on; the
+ * `rows` breakdown is there for when they do.
+ *
+ * **Rates are not suppressed and `uniqueClickers` is.** An impression is not a
+ * person — it is a card being drawn — so counting them says nothing about
+ * anybody. The moment the question becomes "how many *people*", the min-cohort
+ * floor applies exactly as it does everywhere else on this screen.
+ *
+ * A rate over zero impressions is **0**, not NaN and not null. Null means "we
+ * are not telling you"; this is "nothing happened", and the two must not render
+ * the same way — that is the same lie `suppressed` exists to prevent one metric
+ * over.
+ */
+export function reach(db: Db, venueId: string, window: Window = {}): Reach {
+  const { from, to, period } = rangeFor(db, venueId, window);
+  const bind = { v: venueId, f: from, t: to };
+
+  const listing = db.get<{ impressions: number; clicks: number }>(
+    `SELECT
+        SUM(CASE WHEN event_type = 'impression' THEN 1 ELSE 0 END) AS impressions,
+        SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks
+       FROM service_events
+      WHERE venue_id = $v AND created_at >= $f AND created_at < $t`,
+    bind,
+  );
+
+  const deals = db.all<{
+    id: string;
+    title: string;
+    impressions: number;
+    clicks: number;
+    claims: number;
+  }>(
+    /* The title comes out of `translations`, not off the deal: copy lives in
+       one table so the backend can tell which languages are filled (B3), and a
+       deal row has no title column at all. English is the fallback rather than
+       the answer — this is an owner's own report, and the label only has to name
+       the deal they wrote. */
+    `SELECT d.id,
+            COALESCE(
+              (SELECT value FROM translations
+                WHERE entity = 'hot_deal' AND entity_id = d.id AND field = 'title'
+                ORDER BY (language = 'en') DESC LIMIT 1),
+              d.discount_text, d.id
+            ) AS title,
+            SUM(CASE WHEN e.event_type = 'impression' THEN 1 ELSE 0 END) AS impressions,
+            SUM(CASE WHEN e.event_type = 'open' THEN 1 ELSE 0 END) AS clicks,
+            SUM(CASE WHEN e.event_type = 'claim' THEN 1 ELSE 0 END) AS claims
+       FROM deal_events e JOIN hot_deals d ON d.id = e.deal_id
+      WHERE d.venue_id = $v AND e.created_at >= $f AND e.created_at < $t
+      GROUP BY d.id
+      ORDER BY impressions DESC`,
+    bind,
+  );
+
+  /* Sources are read off both tables and folded together, because "where were
+     we seen" is one question. `deal_events.source` and `service_events` do not
+     share a vocabulary by accident — both are written by the same clients. */
+  const sources = db.all<{ source: string; impressions: number; clicks: number }>(
+    `SELECT source,
+            SUM(CASE WHEN kind = 'impression' THEN 1 ELSE 0 END) AS impressions,
+            SUM(CASE WHEN kind = 'click' THEN 1 ELSE 0 END) AS clicks
+       FROM (
+         SELECT COALESCE(source, 'unknown') AS source,
+                CASE WHEN event_type = 'impression' THEN 'impression' ELSE 'click' END AS kind
+           FROM service_events
+          WHERE venue_id = $v AND created_at >= $f AND created_at < $t
+         UNION ALL
+         SELECT COALESCE(e.source, 'unknown') AS source,
+                CASE WHEN e.event_type = 'impression' THEN 'impression' ELSE 'click' END AS kind
+           FROM deal_events e JOIN hot_deals d ON d.id = e.deal_id
+          WHERE d.venue_id = $v AND e.event_type IN ('impression', 'open')
+            AND e.created_at >= $f AND e.created_at < $t
+       )
+      GROUP BY source
+      ORDER BY impressions DESC`,
+    bind,
+  );
+
+  /* One person who opened the listing *and* two deals is one clicker. Counted
+     across both tables in one pass for that reason — two counts added together
+     would double them. Signed-out clicks have no id and cannot be deduplicated,
+     so they are excluded rather than counted as one anonymous person. */
+  const clickers =
+    db.get<{ n: number }>(
+      `SELECT COUNT(DISTINCT user_id) AS n FROM (
+          SELECT user_id FROM service_events
+           WHERE venue_id = $v AND event_type = 'click' AND user_id IS NOT NULL
+             AND created_at >= $f AND created_at < $t
+          UNION
+          SELECT e.user_id FROM deal_events e JOIN hot_deals d ON d.id = e.deal_id
+           WHERE d.venue_id = $v AND e.event_type = 'open' AND e.user_id IS NOT NULL
+             AND e.created_at >= $f AND e.created_at < $t
+        )`,
+      bind,
+    )?.n ?? 0;
+
+  const listingImpressions = listing?.impressions ?? 0;
+  const listingClicks = listing?.clicks ?? 0;
+  const impressions =
+    listingImpressions + deals.reduce((total, row) => total + row.impressions, 0);
+  const clicks = listingClicks + deals.reduce((total, row) => total + row.clicks, 0);
+  const claims = deals.reduce((total, row) => total + row.claims, 0);
+
+  const rate = (top: number, bottom: number) => (bottom > 0 ? top / bottom : 0);
+
+  const rows: ReachRow[] = [
+    {
+      id: null,
+      title: 'Listing',
+      impressions: listingImpressions,
+      clicks: listingClicks,
+      claims: 0,
+      clickRate: rate(listingClicks, listingImpressions),
+    },
+    ...deals.map((row) => ({
+      id: row.id,
+      title: row.title,
+      impressions: row.impressions,
+      clicks: row.clicks,
+      claims: row.claims,
+      clickRate: rate(row.clicks, row.impressions),
+    })),
+  ];
+
+  return {
+    period,
+    impressions,
+    clicks,
+    clickRate: rate(clicks, impressions),
+    uniqueClickers: guarded(db, clickers, clickers),
+    claims,
+    claimRate: rate(claims, clicks),
+    sources,
+    rows,
+  };
+}
+
 /* ═══════════════════════════════════════════════════════════ B9 findings ══ */
 
 /**

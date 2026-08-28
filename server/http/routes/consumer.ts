@@ -16,7 +16,7 @@ import * as ledger from '../../domain/ledger.ts';
 import * as notifications from '../../domain/notifications.ts';
 import * as social from '../../domain/social.ts';
 import * as vouchers from '../../domain/vouchers.ts';
-import { getVenue } from '../../domain/venues.ts';
+import { getVenue, trackListing } from '../../domain/venues.ts';
 import { linksOf } from '../../domain/partners.ts';
 import { actor, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
@@ -141,6 +141,33 @@ export const consumerRoutes: Route[] = [
         kind: oneOf(ctx.body, 'kind', ['impression', 'open'] as const),
         source: optStr(ctx.body, 'source'),
         pushId: optStr(ctx.body, 'pushId'),
+        at: ctx.at,
+      });
+      return { ok: true };
+    },
+  },
+  {
+    /*
+     * The same two steps, one level up: the *venue* being seen and opened,
+     * rather than one of its offers. `auth: 'none'` for the reason the deal
+     * events above are: most impressions happen to somebody who is not signed
+     * in, and an impression that only counts for members is a reach figure that
+     * under-reports the audience an owner is actually paying to reach.
+     *
+     * A visit is deliberately not postable here, exactly as a claim is not
+     * postable there. It is written by the gate from a confirmed scan, and it
+     * is the number every other figure on the dashboard is derived from.
+     */
+    method: 'POST',
+    pattern: '/v1/venues/:id/events',
+    auth: 'none',
+    handler: (ctx) => {
+      trackListing(ctx.db, {
+        venueId: ctx.params.id,
+        userId: ctx.actor?.user.id ?? null,
+        kind: oneOf(ctx.body, 'kind', ['impression', 'click'] as const),
+        source: optStr(ctx.body, 'source'),
+        language: ctx.language,
         at: ctx.at,
       });
       return { ok: true };
@@ -377,9 +404,12 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/assistant/ask',
     auth: 'user',
-    handler: (ctx) => {
+    /* Async, because the answer may be handed to a language model to reword
+       before it is stored and returned — see `ports/llm.ts`. Everything the
+       sentence *says* was decided synchronously before that. */
+    handler: async (ctx) => {
       const { user } = actor(ctx);
-      return assistant.askConsumer(ctx.db, {
+      return await assistant.askConsumer(ctx.db, {
         sessionId: optStr(ctx.body, 'sessionId'),
         userId: user.id,
         text: str(ctx.body, 'text', { max: 500 }),

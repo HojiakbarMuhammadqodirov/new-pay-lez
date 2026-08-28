@@ -149,11 +149,36 @@ const bound = (params: Record<string, Param> | Param[]) =>
 
 const widen = (value: Param): unknown => (typeof value === 'boolean' ? (value ? 1 : 0) : value);
 
+/**
+ * `ALTER TABLE … ADD COLUMN`, but only when the column is not already there.
+ *
+ * `schema.sql` is idempotent through `CREATE TABLE IF NOT EXISTS`, which makes
+ * a *new* column invisible to every database that already exists — the create
+ * is skipped and the column never arrives, so the first query naming it fails
+ * at runtime on exactly the deployments that have data in them. SQLite has no
+ * `ADD COLUMN IF NOT EXISTS`, so the check is `PRAGMA table_info`.
+ *
+ * Additive only, and deliberately so: adding a nullable column is the one schema
+ * change that is safe to run unattended against a live file. Anything that
+ * renames, drops or retypes needs a real migration with a version number behind
+ * it, and `schema_meta` is where that would go.
+ */
+function addColumn(db: Db, table: string, column: string, definition: string): void {
+  const columns = db.all<{ name: string }>(`PRAGMA table_info(${table})`);
+  if (columns.some((row) => row.name === column)) return;
+  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+}
+
 /** Applied once, on an empty file. The schema is idempotent (`IF NOT EXISTS`). */
 export function migrate(db: Db): void {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
   /* Not inside a transaction: `PRAGMA journal_mode = WAL` cannot run in one. */
   db.exec(sql);
+
+  /* Columns added after the first release. See `addColumn` for why the schema
+     file alone cannot deliver these. */
+  addColumn(db, 'service_events', 'source', 'TEXT');
+
   db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', '1')
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,

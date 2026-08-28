@@ -1170,6 +1170,11 @@ CREATE TABLE IF NOT EXISTS service_events (
   venue_id   TEXT REFERENCES venues (id) ON DELETE SET NULL,
   user_id    TEXT REFERENCES users (id) ON DELETE SET NULL,
   event_type TEXT NOT NULL,
+  -- Where it happened: list | search | map | guidebook | assistant. The same
+  -- vocabulary `deal_events.source` uses, because the two are read together --
+  -- "seen 900 times" and "seen 900 times, 850 of them in one list nobody
+  -- scrolls" are different findings, and an owner is entitled to the second.
+  source     TEXT,
   city       TEXT,
   country_code TEXT,
   language   TEXT,

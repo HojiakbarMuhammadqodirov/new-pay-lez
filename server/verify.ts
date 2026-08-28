@@ -41,6 +41,8 @@ import * as social from './domain/social.ts';
 import * as traffic from './domain/traffic.ts';
 import * as vouchers from './domain/vouchers.ts';
 import * as jobs from './jobs.ts';
+import * as llm from './ports/llm.ts';
+import { trackListing } from './domain/venues.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { DomainError } from './domain/errors.ts';
 import { cmac, truncate } from './crypto/cmac.ts';
@@ -937,6 +939,55 @@ function analyticsRules(): void {
     cost.spendMinor,
   );
 
+  /*
+   * Reach: seen, clicked, claimed.
+   *
+   * The venue starts invisible, which is the state worth checking first — a
+   * venue nobody has heard of and a venue everybody ignores produce the same
+   * screen everywhere else on this dashboard, and telling them apart is the
+   * entire reason this report exists.
+   */
+  const quiet = analytics.reach(w.db, w.venueId, { at });
+  eq('a venue nobody has seen has no impressions', quiet.impressions, 0);
+  eq('and its click rate is zero, not NaN', quiet.clickRate, 0);
+  check('a zero rate is a number', Number.isFinite(quiet.clickRate));
+
+  /* Six impressions, two clicks — on the listing itself, which is the half a
+     venue has before it has published anything at all. */
+  for (let i = 0; i < 6; i += 1) {
+    trackListing(w.db, { venueId: w.venueId, kind: 'impression', source: 'list', at });
+  }
+  trackListing(w.db, { venueId: w.venueId, kind: 'click', source: 'list', userId: w.customerId, at });
+  trackListing(w.db, { venueId: w.venueId, kind: 'click', source: 'map', userId: w.customerId, at });
+
+  /* And a deal, so the two halves are seen to sum. */
+  const seen = partners.createDeal(w.db, {
+    actorId: w.ownerId,
+    draft: { venueId: w.venueId, copy: { en: { title: 'Seen', description: 'x' } } },
+    at,
+  });
+  partners.publishDeal(w.db, { dealId: seen.id, actorId: w.ownerId, at });
+  for (let i = 0; i < 4; i += 1) {
+    deals.track(w.db, { dealId: seen.id, kind: 'impression', source: 'home_widget', at });
+  }
+  deals.track(w.db, { dealId: seen.id, kind: 'open', source: 'home_widget', userId: w.customerId, at });
+
+  const reach = analytics.reach(w.db, w.venueId, { at });
+  eq('the listing and the deals sum into one impression count', reach.impressions, 10);
+  eq('…and into one click count', reach.clicks, 3);
+  eq('the click rate is clicks over impressions', reach.clickRate, 0.3);
+  /* The funnel has to read downward or it is not a funnel. */
+  check('the funnel narrows at every step', reach.impressions >= reach.clicks);
+  check('…all the way down', reach.clicks >= reach.claims);
+  /* One person, three clicks. Counting clicks as people is the mistake this
+     figure exists to avoid, and it is below the cohort floor here. */
+  check('unique clickers is a finding about people, so it is suppressed', reach.uniqueClickers.suppressed);
+  /* The listing is a row like any deal, so a venue with no deals still has a
+     table to read rather than an empty state. */
+  eq('the listing is the first row', reach.rows[0].id, null);
+  eq('and the deal is beside it', reach.rows.length, 2);
+  check('where it was seen is reported', reach.sources.some((row) => row.source === 'list'));
+
   w.db.close();
   many.db.close();
 }
@@ -1001,7 +1052,7 @@ function entitlementRules(): void {
   w.db.close();
 }
 
-function assistantRules(): void {
+async function assistantRules(): Promise<void> {
   describe('§10 / B8 the assistant');
   const w = world();
   const at = now();
@@ -1033,13 +1084,70 @@ function assistantRules(): void {
   campaigns.validateCampaign(config);
   check('the assistant’s draft passes manual validation', true);
 
-  const answer = assistant.askConsumer(w.db, {
+  const answer = await assistant.askConsumer(w.db, {
     userId: w.customerId,
     text: 'how many points do I have',
     at,
   });
   check('a consumer answer is a sentence with a number', /\d/.test(answer.text));
   check('and carries what it was grounded on', Array.isArray(answer.grounding));
+
+  /*
+   * The one safety property in `ports/llm.ts`.
+   *
+   * The system prompt tells the model not to introduce a figure, and an
+   * instruction is a request. `onlyKnownNumbers` is the guarantee: prose that
+   * carries a number nobody retrieved is thrown away and the grounded draft is
+   * sent instead. If this ever passes something it should not, the assistant is
+   * lying with the platform's authority behind it — which is the whole reason
+   * the model is behind a port rather than in the domain.
+   */
+  const facts = [
+    { kind: 'balance', label: 'points', value: 640 },
+    { kind: 'reachable', label: 'venues in reach', value: 12 },
+    { kind: 'quiet', label: 'quietest hour', value: '14:00–16:00' },
+  ];
+  const grounded = 'You have 640 points — enough for 10% off at 12 venues near you.';
+
+  check(
+    'a rewrite that keeps every figure passes',
+    llm.onlyKnownNumbers('640 points gets you 10% off at 12 places nearby.', facts, grounded),
+  );
+  check(
+    'a rewrite that invents a figure is rejected',
+    !llm.onlyKnownNumbers('640 points gets you 25% off at 12 places nearby.', facts, grounded),
+  );
+  /* The failure this argument exists for: the draft is grounded too, and it
+     routinely carries figures that never became a `Fact` — the 10 in "10% off"
+     is one. Checking against the facts alone rejected every rewrite of a
+     sentence like that, which is the shape where the guard is technically sound
+     and the feature never turns on. */
+  check(
+    'a figure the draft carries counts as known',
+    llm.onlyKnownNumbers('Ten per cent off — 10% — is yours at 12 venues.', facts, grounded),
+  );
+  /* A figure *inside* a fact's value is as grounded as the value itself. */
+  check(
+    'a figure inside a fact value counts as known',
+    llm.onlyKnownNumbers('Your quietest window is 14:00–16:00.', facts, grounded),
+  );
+  /* Grouping is the reader's language, not a new number. Rejecting `1,714`
+     because the fact said `1714` throws away correct prose for punctuation. */
+  check(
+    'a grouped figure is the same figure',
+    llm.onlyKnownNumbers('That is 1,714 zloty.', [{ kind: 'x', label: 'spend', value: 1714 }]),
+  );
+  check(
+    'prose with no figures at all is fine',
+    llm.onlyKnownNumbers('Nothing to report yet.', facts, grounded),
+  );
+  /* Off is the default and it must be free: no key, no request, no waiting. */
+  check('the model is off unless it is configured on', llm.mode() === 'off');
+  eq(
+    'and with it off the draft is returned unchanged',
+    await llm.compose({ draft: grounded, facts, language: 'en', side: 'consumer' }),
+    grounded,
+  );
 
   w.db.close();
 }
@@ -1677,7 +1785,7 @@ async function run(): Promise<void> {
   consentRules();
   analyticsRules();
   entitlementRules();
-  assistantRules();
+  await assistantRules();
   socialRules();
   await trafficRules();
   jobRules();

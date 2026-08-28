@@ -20,6 +20,7 @@
  * only rewrites the sentence.
  */
 import type { Db } from '../db/db.ts';
+import * as llm from '../ports/llm.ts';
 import * as analytics from './analytics.ts';
 import * as budget from './budget.ts';
 import * as deals from './deals.ts';
@@ -118,10 +119,26 @@ export const transcript = (db: Db, sessionId: string) =>
  * "I don't know, but here is the nearest real thing" of §10.2 — which is a
  * feature, not a fallback.
  */
-export function askConsumer(
+/**
+ * Async because of two lines near the bottom, and only because of them.
+ *
+ * Everything that decides *what* the answer is stays synchronous and stays
+ * here: the retrieval, the figures, the results and the action are all computed
+ * from the database before anything leaves this process. `llm.compose` is
+ * handed the finished sentence and may return a better-reading one; with no
+ * model configured it returns the string it was given, which is the default and
+ * the state `verify:api` runs in.
+ *
+ * The rewrite happens **before** the transcript is written, and that ordering is
+ * the point. The stored message is the audit trail — its `grounding` is what
+ * lets an answer be traced back to the records that justified it — so persisting
+ * the draft while returning the rewrite would leave the trail describing a
+ * sentence nobody was ever shown.
+ */
+export async function askConsumer(
   db: Db,
   input: { sessionId?: string; userId: string; text: string; language?: string; city?: string; at?: Iso },
-): Answer {
+): Promise<Answer> {
   const at = input.at ?? now();
   const language = input.language ?? 'en';
   const text = input.text.trim().toLowerCase();
@@ -136,6 +153,13 @@ export function askConsumer(
       : /voucher|kupon|ваучер|discount|zniżk/.test(text)
         ? explainVouchers(db, input.userId, balance, input.city, at)
         : searchCatalogue(db, { text, language, city: input.city, userId: input.userId, at });
+
+  answer.text = await llm.compose({
+    draft: answer.text,
+    facts: answer.facts,
+    language,
+    side: 'consumer',
+  });
 
   if (input.sessionId) appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
   return answer;
@@ -548,10 +572,11 @@ export function review(db: Db, venueId: string, at: Iso = now(), limit = 5) {
  * A sentence, a number, and an action — and when the number is suppressed by the
  * minimum cohort, it says so rather than rounding to something reportable.
  */
-export function askPartner(
+/** Async for the one reason `askConsumer` is — see the note there. */
+export async function askPartner(
   db: Db,
   input: { sessionId?: string; venueId: string; userId: string; text: string; at?: Iso },
-): Answer {
+): Promise<Answer> {
   const at = input.at ?? now();
   const text = input.text.trim().toLowerCase();
   if (input.sessionId) appendMessage(db, input.sessionId, 'user', input.text, [], at);
@@ -607,6 +632,15 @@ export function askPartner(
       empty: false,
     };
   }
+
+  answer.text = await llm.compose({
+    draft: answer.text,
+    facts: answer.facts,
+    /* A partner session is opened in one language and stays in it, and this
+       endpoint carries no per-ask language to read. */
+    language: 'en',
+    side: 'partner',
+  });
 
   if (input.sessionId) appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
   return answer;

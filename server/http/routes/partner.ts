@@ -505,6 +505,25 @@ export const partnerRoutes: Route[] = [
     handler: (ctx) => analytics.today(ctx.db, mine(ctx).id, ctx.at),
   },
   {
+    /*
+     * Seen, clicked, claimed — the top of the funnel, which every other figure
+     * on this dashboard sits below. Its own route rather than a key on
+     * `/analytics` because it answers a question an owner asks on its own ("is
+     * anybody seeing us") and because it is the one report that is worth
+     * reading for a venue with no visits at all, which is precisely when the
+     * rest of that response is a screen of zeroes.
+     *
+     * Not gated behind `deep_analytics`. Knowing whether anybody has seen your
+     * listing is not a premium insight — it is whether the product is doing the
+     * thing it was bought for.
+     */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/reach',
+    auth: 'partner',
+    handler: (ctx) =>
+      analytics.reach(ctx.db, mine(ctx).id, { period: qStr(ctx, 'period'), at: ctx.at }),
+  },
+  {
     method: 'GET',
     pattern: '/v1/partner/venues/:id/analytics',
     auth: 'partner',
@@ -601,10 +620,11 @@ export const partnerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/partner/venues/:id/assistant/ask',
     auth: 'partner',
-    handler: (ctx) => {
+    /* Async for the one reason the consumer's ask is — see `ports/llm.ts`. */
+    handler: async (ctx) => {
       const venue = mine(ctx);
       entitlements.requireEntitlement(entOf(ctx, venue.id), 'assistant');
-      return assistant.askPartner(ctx.db, {
+      return await assistant.askPartner(ctx.db, {
         sessionId: optStr(ctx.body, 'sessionId'),
         venueId: venue.id,
         userId: actor(ctx).user.id,
