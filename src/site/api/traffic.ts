@@ -34,22 +34,29 @@ interface QueuedEvent {
 let queue: QueuedEvent[] = [];
 let timer: number | null = null;
 let started = false;
+/* Whether the entry referrer has already gone out. Not a visitor id and not
+   persisted anywhere — it is a module flag that dies with the page, which is
+   exactly the lifetime "this page load" means. */
+let sentReferrer = false;
 
 /** Matches `CONFIG.traffic.maxBatch` on the server, which truncates past it. */
 const MAX_BATCH = 50;
 const FLUSH_MS = 5000;
 
-function flush(useBeacon = false): void {
-  if (queue.length === 0) return;
+function sendBatch(useBeacon: boolean): void {
   const events = queue.slice(0, MAX_BATCH);
   queue = queue.slice(MAX_BATCH);
 
   const body = JSON.stringify({
     events,
-    /* Only where the visitor came from, and only on the first flush of a page
-       load — after that the referrer is stale and the server has it anyway. */
-    referrer: document.referrer || undefined,
+    /* Only where the visitor came from, and only on the first batch of a page
+       load — after that the referrer is stale and the server has it anyway.
+       The flag is what makes the second half of that sentence true: it used to
+       be attached to every batch, so a long visit reported its entry referrer
+       over and over and the server counted one arrival many times. */
+    referrer: (sentReferrer ? '' : document.referrer) || undefined,
   });
+  sentReferrer = true;
 
   /* `sendBeacon` is the only thing that survives the page being closed, which is
      exactly when the last events of a visit are still queued. It cannot carry
@@ -73,6 +80,31 @@ function flush(useBeacon = false): void {
     /* Swallowed. The server being absent is the normal case in development and
        must not produce console noise on every navigation. */
   });
+}
+
+/**
+ * Drain the queue.
+ *
+ * One batch is capped at `MAX_BATCH` because the server truncates past it, and
+ * the remainder used to be left sitting there with nothing scheduled to come
+ * back for it — so a burst of more than fifty events stranded its tail until
+ * some *later* `trackView` happened to restart the timer. On the
+ * `visibilitychange` path that tail was not late, it was gone: the page is
+ * closing, and there is no later call. That is the one moment this file exists
+ * to protect, so the beacon path drains rather than sending a single batch.
+ */
+function flush(useBeacon = false): void {
+  if (queue.length === 0) return;
+
+  if (useBeacon) {
+    while (queue.length > 0) sendBatch(true);
+    return;
+  }
+
+  sendBatch(false);
+  /* Still more than one batch's worth: come back for it rather than waiting on
+     a navigation that may never happen. */
+  if (queue.length > 0) schedule();
 }
 
 function schedule(): void {

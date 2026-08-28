@@ -157,3 +157,17 @@ export async function signIn(email: string, password: string): Promise<SignedIn>
 export function signOut(): void {
   setToken(null);
 }
+
+/**
+ * The bearer header, or nothing.
+ *
+ * Exported for the one caller that cannot go through `call()` — the reach
+ * beacon in `reach.ts`, which builds its own request because it needs
+ * `keepalive` and, when nobody is signed in, `sendBeacon`. It hands back a
+ * header object rather than the token, so the token itself still has exactly
+ * one reader and that reader is in this file.
+ */
+export function authHeader(): Record<string, string> {
+  const token = readToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
+}

@@ -5,7 +5,9 @@ import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill, group as groupDigits } from './i18n/currency';
 import {
   AVG_SPEND,
+  CLAIM_RATIO,
   HEAT_HOURS,
+  PD_ASSIST,
   PD_AUDIENCES,
   PD_CAMPAIGN_MODEL,
   PD_CAMPAIGNS,
@@ -24,17 +26,20 @@ import {
   PD_ROSTER,
   PD_SCAN_NAMES,
   PD_SCAN_PAGE,
-  PD_SCAN_TOTAL,
   PD_SCANS,
   PD_VOUCHER_MODEL,
+  REWARD_RATIO,
   dealNotify,
   metricsFor,
+  reachFor,
+  reachFromApi,
   voucherModelFor,
   polyarea,
   polyline,
   type PartnerDeal,
   type RosterEntry,
 } from './partnerMetrics';
+import { usePartnerVenueId, useReach } from './api/reach';
 import { Assistant } from './dashboardAssistant';
 import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
@@ -177,22 +182,93 @@ function Overview() {
   const campaigns = PD_CAMPAIGN_MODEL;
   const vouchers = PD_VOUCHER_MODEL;
 
+  /*
+   * Reach is the one panel here with a server behind it, so it is the one panel
+   * that can be either.
+   *
+   * `usePartnerVenueId` asks the API whose venue this device's token owns —
+   * `null` when there is no partner session, which is the normal case while the
+   * site's own auth is still `localStorage`. Live, the figures are counted rows
+   * (`api/reach.ts` posts them, `analytics.reach` adds them up); otherwise they
+   * fall back to `reachFor`, which is the demo's floor and stays exactly as it
+   * was.
+   *
+   * **A failed request is not a zero.** `error` and `loading` both fall back to
+   * the seeds and the panel says so, because "we could not ask" and "nobody has
+   * seen you" are opposite findings and this is the panel that exists to tell
+   * those two apart.
+   */
+  const venueId = usePartnerVenueId();
+  const reachApi = useReach(venueId);
+  const liveReach = reachApi.state.status === 'ready' ? reachApi.state.data : null;
+  /* Windowed like everything else on this screen — see `reachFor`, which scales
+     the deals' month-long counters onto the picker's range so a click rate does
+     not quadruple when somebody narrows it. */
+  const reach = liveReach ? reachFromApi(liveReach) : reachFor(metrics.days);
+  /* The server's window is a calendar month and the picker's is a rolling day
+     count, so a live panel states the period it actually answered for rather
+     than borrowing the chip beside a figure it does not describe. */
+  const reachRange = liveReach ? liveReach.period : rangeLabel;
+
+  /*
+   * The figures inside the three "what the month noticed" notes.
+   *
+   * The third already filled itself from the campaign model, and the comment on
+   * the panel said so — the other two were the numbers written out inside the
+   * sentence, in five languages. Two things follow from that, and the first one
+   * had already happened: the 10% tier note claimed **27** customers reached it
+   * while `PD_TIERS` says 59, which is what the assistant one click away prints
+   * from the same seed. Two screens of one dashboard, a click apart, disagreeing
+   * about the same quantity. The second is the standing risk the root
+   * `CLAUDE.md` names — edit a deal's `seen` or `claimed` and this panel goes on
+   * quoting the old one, silently, five times over.
+   *
+   * Found by `kind` rather than by index: which row of `PD_DEALS` is the free
+   * item is a property of the row, not of its position in the table.
+   */
+  const itemDeal = PD_DEALS.find((deal) => deal.kind === 'item') ?? PD_DEALS[0];
+  const pctDeal = PD_DEALS.find((deal) => deal.kind === 'percent') ?? PD_DEALS[0];
+  const tier = PD_TIERS[1];
+  const noticeFigures: Record<string, string>[] = [
+    {
+      reached: num(tier.issued),
+      pct: String(tier.pct),
+      points: num(tier.points),
+      lower: num(PD_ASSIST.tierLower),
+      more: num(PD_ASSIST.tierLowerReached),
+    },
+    {
+      itemClaims: num(itemDeal.claimed),
+      itemSeen: num(itemDeal.seen),
+      pctBadge: pctDeal.badge,
+      pctClaims: num(pctDeal.claimed),
+      pctSeen: num(pctDeal.seen),
+    },
+    {},
+  ];
+
   /* The four tiles' figures and their sparklines. The last has no delta: it is
      a running count for the month rather than a comparison, and inventing a
      previous month to compare it against is the one thing this screen must not
-     do — it is the screen that explains what it is willing to claim. */
+     do — it is the screen that explains what it is willing to claim.
+
+     The two derived shapes read their rate from `partnerMetrics.ts` rather than
+     restating it. Both were literals here — 0.4598 and 0.07 — which is a figure
+     and the shape beside it describing two different venues the moment a seed
+     over there is edited, on the one screen whose subject is what it is willing
+     to stand behind. */
   const tiles = [
     { value: totals.visits, delta: 12.4, series: series.visits.slice(-14) },
     {
       value: totals.claims,
       delta: 8.1,
-      series: series.visits.slice(-14).map((v) => Math.round(v * 0.4598)),
+      series: series.visits.slice(-14).map((v) => Math.round(v * CLAIM_RATIO)),
     },
     { value: totals.redeemed, delta: -3.6, series: series.redeemed.slice(-14) },
     {
       value: campaigns.used,
       delta: null,
-      series: series.visits.slice(-14).map((v) => Math.round(v * 0.07)),
+      series: series.visits.slice(-14).map((v) => Math.round(v * REWARD_RATIO)),
     },
   ];
 
@@ -274,6 +350,106 @@ function Overview() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/*
+        Who saw you — above the cost panel, because it is the top of the funnel
+        every other figure on this screen sits below.
+
+        It is here because without it a venue nobody has heard of and a venue
+        everybody scrolls past render identically: zeroes, or small numbers, with
+        nothing to say which. Those two have opposite fixes — one needs to be
+        seen, the other needs a better offer — and an owner cannot pick between
+        them from a visit count.
+
+        The split underneath is the other half of the answer. "Seen four thousand
+        times" reads well until you find that all of it was the listing and none
+        of it was the offer you are paying to run.
+      */}
+      <div className="pd-glass pd-panel pd-reach" data-reveal>
+        <div className="pd-panel-head">
+          <span className="console-label">{copy.reachTitle}</span>
+          <span className="pd-chip">{reachRange}</span>
+        </div>
+
+        {/*
+          Which of the two this is, in one line.
+
+          It is here because the panel below it can now be counted rows or a
+          worked example and the two look identical — and an owner about to act
+          on "nobody has seen us" needs to know which one they are reading.
+
+          The second sentence deliberately does not say *why*. Two things put
+          the screen there — no partner session on the API, and the server not
+          answering — and from here they collapse into one `null` venue id, so
+          naming either would be a guess in the one panel that exists to stop
+          people guessing.
+
+          Both sentences are dictionary copy in all five languages, like every
+          other user-visible string on this screen — an owner reading the
+          dashboard in Polish must not meet one line of English telling them
+          the numbers beside it are a sample.
+        */}
+        <p className="pd-fine">
+          {liveReach ? copy.reachLive : copy.reachSample}
+        </p>
+
+        {/* Zero *and* nothing clicked. Clicks without impressions is a real
+            state on live data — an offer opened from a push, a listing reached
+            by link — and hiding a click behind "nothing has been seen yet"
+            would be the panel contradicting itself. */}
+        {reach.seen === 0 && reach.clicks === 0 ? (
+          <p className="pd-fine">{copy.reachEmpty}</p>
+        ) : (
+          <>
+            <div className="pd-reach-figures">
+              {/* `data-count` rounds to whole numbers, so the rate — the one
+                  figure here with a decimal in it — is written directly rather
+                  than counted up. See the note on the hook in `useReveal`. */}
+              <div>
+                <b data-count={reach.seen} data-group={digitGroup}>
+                  0
+                </b>
+                <span>{copy.reachSeen}</span>
+                <i>{copy.reachSeenNote}</i>
+              </div>
+              <div>
+                <b data-count={reach.clicks} data-group={digitGroup}>
+                  0
+                </b>
+                <span>{copy.reachClicks}</span>
+                <i>{copy.reachClicksNote}</i>
+              </div>
+              <div>
+                <b>{reach.clickRate.toFixed(1)}%</b>
+                <span>{copy.reachRate}</span>
+                <i>{copy.reachRateNote}</i>
+              </div>
+            </div>
+
+            <p className="pd-fine pd-reach-funnel">
+              {fill(copy.reachFunnel, {
+                seen: num(reach.seen),
+                clicks: num(reach.clicks),
+                claims: num(reach.claims),
+              })}
+            </p>
+
+            <div className="pd-panel-head pd-reach-split-head">
+              <span className="console-label">{copy.reachSplit}</span>
+            </div>
+            <div className="pd-rows">
+              <div>
+                <span>{copy.reachListing}</span>
+                <b>{num(reach.listingSeen)}</b>
+              </div>
+              <div>
+                <span>{copy.reachDeals}</span>
+                <b>{num(reach.dealSeen)}</b>
+              </div>
+            </div>
+          </>
+        )}
       </div>
 
       {/* What it cost, and the verdict. The verdict sentence is picked by the
@@ -404,7 +580,7 @@ function Overview() {
                     })
                   : insight.text}
               </p>
-              <p className="pd-fine">{insight.detail}</p>
+              <p className="pd-fine">{fill(insight.detail, noticeFigures[index])}</p>
             </div>
             <div className="pd-notice-acts">
               <button
@@ -1946,7 +2122,17 @@ function CustomerDetail({ entry, onBack }: { entry: RosterEntry; onBack: () => v
     entry.tier > 0 ? 100 : entry.so > 0 ? Math.min(100, (entry.sg / entry.so) * 100) : 0;
 
   return (
-    <div className="pd-open">
+    /*
+     * `.pd-detail`, not `.pd-open`. `.pd-open` is the *deal drawer's* two-column
+     * grid and expects exactly two children (`.pd-open-main` / `.pd-open-side`);
+     * this view has six, so above 66rem they were being dealt into that grid in
+     * pairs — the back button beside the customer's name, the privacy line
+     * beside the stat tiles — and it inherited the drawer's top hairline and
+     * wash across the head of the roster panel. Under 66rem the drawer's own
+     * media query collapses it to one column, which is why it only looked wrong
+     * on a desktop. `.pd-detail` is the column this screen was written for.
+     */
+    <div className="pd-detail">
       <button type="button" className="btn btn-ghost pd-back" onClick={onBack}>
         <Icon name="chevron" size={15} className="pd-back-ico" />
         {copy.rosterTitle}
@@ -2113,8 +2299,10 @@ function Scans() {
   const [filter, setFilter] = useState(0);
   const [page, setPage] = useState(0);
 
-  /* The count under the table is "48 scans · last 30 days"; only the second
-     half moves, because the scan list itself is today's and is not windowed. */
+  /* The count beside the filters is "48 scans · last 30 days". The window half
+     is the picker's; the count half is whatever the filter left standing, and
+     it has to be — it sits two rows above a pager that says "showing 1–10 of
+     10", and the pair read as a table hiding 38 rows it is not hiding. */
   const rangeLabel = dashboard.rangeLabels[metricsFor(useDashboard().range).index];
 
   const matching = useMemo(
@@ -2153,7 +2341,7 @@ function Scans() {
             ))}
           </div>
           <span className="pd-fine">
-            {fill(copy.count, { n: num(PD_SCAN_TOTAL) })} · {rangeLabel}
+            {fill(copy.count, { n: num(matching.length) })} · {rangeLabel}
           </span>
         </div>
 

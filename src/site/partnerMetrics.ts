@@ -40,6 +40,9 @@ import { FX } from './i18n/fx';
 /* Type-only, so this stays a leaf: `i18n/context.ts` pulls in all five
    dictionaries and nothing here may drag those into a chart. */
 import type { LanguageCode } from './i18n/context';
+/* Type-only for the same reason and one more: `api/reach.ts` imports React, and
+   this module is loaded by `npm run verify` outside a browser. */
+import type { ReachReport } from './api/reach';
 
 const zl = (pln: number) => pln / FX.PLN.rate;
 
@@ -60,9 +63,15 @@ export const PAYLEZ_FEE = zl(1894);
  *
  * `NEW` is the share of visits from someone who had never scanned here before;
  * `CLAIM` the share that carried a deal claim. Both are the prototype's `OV.normal`.
+ *
+ * `CLAIM_RATIO` is exported because the overview draws it twice: the claims
+ * tile's headline is `totals.claims`, and the sparkline under it is the same
+ * rate applied day by day. It was a literal retyped into `dashboardScreens.tsx`
+ * for a while, which is a figure and its own shape describing two different
+ * venues the moment the seed here is edited.
  */
 const NEW_RATIO = 0.2303;
-const CLAIM_RATIO = 0.4598;
+export const CLAIM_RATIO = 0.4598;
 
 /**
  * How much of the claim total is *also* a first visit.
@@ -77,10 +86,10 @@ const CLAIMS_BY_NEW = 0.2;
  *
  * The prototype's four, and its arithmetic with them: a window is *days of the
  * series*, and the series is generated rather than sampled, so seven days is the
- * first seven of the same curve and not a different curve. The quarter draws 45
- * — the prototype clamps there too, and for the same reason: ninety daily points
- * across a chart this wide is a comb, and the shape is the only thing the panel
- * is for.
+ * first seven of the same curve and not a different curve. The quarter *draws*
+ * 45 points — the prototype clamps there too, and for the same reason: ninety
+ * daily points across a chart this wide is a comb, and the shape is the only
+ * thing the panel is for. It still *counts* all ninety; see `MAX_POINTS`.
  */
 export const PD_RANGES = [7, 14, 30, 90] as const;
 export type RangeDays = (typeof PD_RANGES)[number];
@@ -88,7 +97,16 @@ export type RangeDays = (typeof PD_RANGES)[number];
 /** The window everything defaults to, and the one the picker opens on. */
 export const RANGE_DAYS: RangeDays = 30;
 
-/** The most points the chart will draw, however long the window. */
+/**
+ * The most points the chart will draw, however long the window.
+ *
+ * A drawing concern and nothing else. It was applied to the series *before* the
+ * totals were summed from it, which made "last quarter" report 45 days of
+ * activity against a cost side that stayed a whole month — the quarter read as
+ * worse value than the month, which is the exact opposite of what the range
+ * picker is for. `metricsFor` sums the full window and thins a copy for the
+ * chart; nothing but `thin` may read this.
+ */
 const MAX_POINTS = 45;
 
 /** Which day of the month the venue is standing on, for the run-out forecasts. */
@@ -448,6 +466,29 @@ function makeSeries(days: number) {
   return { visits, redeemed };
 }
 
+/**
+ * The same series, thinned to what the chart can draw.
+ *
+ * Evenly spaced samples rather than the first `points` days: a panel headed
+ * "last 90 days" that plotted the first 45 of them would be a month and a half
+ * drawn under a quarter's label, and the run-up to today — the part of the shape
+ * an owner is actually reading — would be missing from it. Both ends are kept,
+ * so the line still starts where the window starts and finishes on today.
+ *
+ * It is a *shape*. Every figure beside it is summed from the unthinned series,
+ * which is what stopped the quarter under-reporting itself by half.
+ */
+function thin(series: ReturnType<typeof makeSeries>, points: number) {
+  const days = series.visits.length;
+  if (days <= points) return series;
+  const pick = (values: number[]) =>
+    Array.from(
+      { length: points },
+      (_, i) => values[Math.round((i * (days - 1)) / (points - 1))],
+    );
+  return { visits: pick(series.visits), redeemed: pick(series.redeemed) };
+}
+
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
 /**
@@ -699,7 +740,9 @@ export interface PartnerMetrics {
   /** The window in days, and its place in `PD_RANGES` for the label arrays. */
   days: RangeDays;
   index: number;
+  /** The window as the chart draws it — thinned to `MAX_POINTS`, never summed. */
   series: ReturnType<typeof makeSeries>;
+  /** The window as it is counted — every day of it, however few are drawn. */
   totals: ReturnType<typeof makeTotals>;
   /** Attributed sales over what the month cost. The overview's verdict line. */
   roi: number;
@@ -719,14 +762,17 @@ export function metricsFor(days: RangeDays): PartnerMetrics {
   const cached = METRICS.get(days);
   if (cached) return cached;
 
-  const series = makeSeries(Math.min(days, MAX_POINTS));
-  const totals = makeTotals(series);
+  /* Counted over the whole window and drawn over a sample of it, in that order.
+     Clamping the series first and summing the clamp is what made the quarter
+     report half its activity against a full month's cost. */
+  const counted = makeSeries(days);
+  const totals = makeTotals(counted);
   const perNew = PD_COST_TOTAL / Math.max(1, totals.newCustomers);
 
   const built: PartnerMetrics = {
     days,
     index: PD_RANGES.indexOf(days),
-    series,
+    series: thin(counted, MAX_POINTS),
     totals,
     roi: totals.attributedMoney / PD_COST_TOTAL,
     perNew,
@@ -750,6 +796,150 @@ const DEFAULT_METRICS = metricsFor(RANGE_DAYS);
 export const PD_SERIES = DEFAULT_METRICS.series;
 export const PD_TOTALS = DEFAULT_METRICS.totals;
 export const PD_PER_NEW = DEFAULT_METRICS.perNew;
+
+/* ═══════════════════════════════════════════════════ reach: seen, clicked ══ */
+
+/**
+ * How often the *listing* is drawn for each visit that eventually comes of it.
+ *
+ * The one number on this screen that is not in the prototype, and it needed a
+ * reason rather than a taste. The deals already carry their own funnel —
+ * `seen`, `opened`, `claimed` on every row of `PD_DEALS` — so the venue's
+ * offers are measured and the venue itself was not, which is the gap that made
+ * "is anybody seeing us" unanswerable for a partner with nothing published.
+ *
+ * A card in a list is drawn far more often than it is acted on: the live deals
+ * average about 1.4% opened of seen, and a listing tile carries less to click on
+ * than an offer does. So the listing is seen roughly a dozen times per resulting
+ * visit and clicked on about one impression in sixteen — a funnel that narrows
+ * hard at the top, which is what a directory listing's does.
+ *
+ * These two are the *only* seeds here. Everything else in `reachFor` is
+ * arithmetic over them and over figures this file already owns, which is the
+ * rule the whole module is built on: a figure shown twice is computed once.
+ */
+const LISTING_SEEN_PER_VISIT = 11.4;
+const LISTING_CLICK_RATE = 0.062;
+
+export interface Reach {
+  /** The listing in a list, a search result or on the map. */
+  listingSeen: number;
+  listingClicks: number;
+  /** The venue's live offers, summed. */
+  dealSeen: number;
+  dealClicks: number;
+  /** Both, which is what an owner means by "seen". */
+  seen: number;
+  clicks: number;
+  /** Clicks per impression and claims per click, as percentages. */
+  clickRate: number;
+  claims: number;
+  claimRate: number;
+}
+
+/**
+ * Impressions and clicks for the window the picker is on.
+ *
+ * **The deals are scaled to the window and this is why.** `PD_DEALS` carries a
+ * month of funnel counters as fixed seeds, and the visits, claims and money on
+ * this screen all move with the range picker. Reading a seven-day claim count
+ * against a thirty-day impression count is the arithmetic that made
+ * `metricsFor` scale its series in the first place, and doing it here would
+ * print a click rate that quadruples when somebody narrows the window.
+ *
+ * So the seeds are treated as a *month* and taken pro rata on the window's own
+ * share of a month's visits — which is the share the series already computed,
+ * so the two cannot disagree about how much of the month this is.
+ */
+export function reachFor(days: RangeDays): Reach {
+  const metrics = metricsFor(days);
+  const month = metricsFor(RANGE_DAYS).totals.visits;
+  const share = month > 0 ? metrics.totals.visits / month : 0;
+
+  const listingSeen = Math.round(metrics.totals.visits * LISTING_SEEN_PER_VISIT);
+  const listingClicks = Math.round(listingSeen * LISTING_CLICK_RATE);
+
+  const live = PD_DEALS.filter((deal) => deal.state === 'live');
+  const dealSeen = Math.round(sum(live.map((deal) => deal.seen)) * share);
+  const dealClicks = Math.round(sum(live.map((deal) => deal.opened)) * share);
+
+  const seen = listingSeen + dealSeen;
+  const clicks = listingClicks + dealClicks;
+  const claims = metrics.totals.claims;
+
+  return {
+    listingSeen,
+    listingClicks,
+    dealSeen,
+    dealClicks,
+    seen,
+    clicks,
+    /* A rate over nothing is 0, not NaN — and not blank, which on this screen
+       means "we are not telling you". */
+    clickRate: seen > 0 ? (clicks / seen) * 100 : 0,
+    claims,
+    claimRate: clicks > 0 ? (claims / clicks) * 100 : 0,
+  };
+}
+
+/**
+ * The same shape, out of the server's own counters.
+ *
+ * `reachFor` above invents its two ratios and derives the rest; this invents
+ * nothing — every figure is a row somebody's browser posted through
+ * `api/reach.ts` and `analytics.reach` counted. Both land in one `Reach` so the
+ * panel has one shape to draw and cannot grow a second layout for the live
+ * case, which is how the two would start disagreeing about what a click is.
+ *
+ * Three things it has to get right, all of them stated by the server:
+ *
+ * - **The rates arrive as 0–1 and this screen speaks percent.** Multiplying
+ *   here rather than at the call site keeps the unit attached to the shape.
+ * - **A rate over nothing is 0**, which the server already guarantees — it is
+ *   not re-derived, only carried, so there is one opinion about it.
+ * - **`uniqueClickers` is not carried at all.** It is the one figure in that
+ *   response that takes the min-cohort floor, its value is `null` when
+ *   suppressed, and `Reach` has no field that can hold "we are not telling
+ *   you". A `?? 0` into a number field is exactly the lie suppression exists to
+ *   prevent, so it stays in `ReachReport` until the panel has words for it.
+ *
+ * `import type` only, so this module stays React-free and `npm run verify` can
+ * go on loading it.
+ */
+export function reachFromApi(report: ReachReport): Reach {
+  /* The listing is the row with no deal id; the server always emits it, but
+     deriving the fallback from the totals means a response that ever stops
+     emitting it still adds up rather than reporting a listing nobody saw. */
+  const dealRows = report.rows.filter((row) => row.id !== null);
+  const dealSeen = sum(dealRows.map((row) => row.impressions));
+  const dealClicks = sum(dealRows.map((row) => row.clicks));
+  const listing = report.rows.find((row) => row.id === null);
+
+  return {
+    listingSeen: listing?.impressions ?? Math.max(0, report.impressions - dealSeen),
+    listingClicks: listing?.clicks ?? Math.max(0, report.clicks - dealClicks),
+    dealSeen,
+    dealClicks,
+    seen: report.impressions,
+    clicks: report.clicks,
+    clickRate: report.clickRate * 100,
+    claims: report.claims,
+    claimRate: report.claimRate * 100,
+  };
+}
+
+/**
+ * The share of visits that ended in a loyalty reward being collected.
+ *
+ * The fourth overview tile is the campaign model's `used` count, and the
+ * sparkline under it is the day's visits at this rate — so the rate is divided
+ * out of those two rather than written down beside them, for the same reason
+ * `CLAIM_RATIO` is exported one tile over. A literal here (it was `0.07`) is a
+ * second opinion about a number this file already knows, and it stops agreeing
+ * with the headline the first time a campaign's `used` is edited.
+ */
+export const REWARD_RATIO =
+  PD_TOTALS.visits > 0 ? PD_CAMPAIGN_MODEL.used / PD_TOTALS.visits : 0;
 
 /**
  * Today's scans at the counter.
@@ -878,6 +1068,38 @@ export const PD_ASSIST = {
   sendAt: '07:30',
   /** Customers whose app language is Russian, as a share — the gap it names. */
   russianShare: 42,
+
+  /*
+   * The three figures below are seeds because the sentences that carry them are
+   * counterfactual or historical, and neither is something the thirty-day model
+   * can derive. They live here rather than as literals at the call site for the
+   * reason the file's header gives and the assistant's own composer note
+   * promises the owner: every number it says comes from this table. Three of
+   * them did not, and an owner who went looking for "61 more regulars" on the
+   * Vouchers screen would have found nothing that produces it.
+   */
+
+  /** The students inside audience 0, and so what dropping them costs its reach. */
+  students: 880,
+  /**
+   * The stamp threshold it offers to lower to, and how many more of this venue's
+   * regulars would have qualified there. A counterfactual: the ledger records
+   * who crossed 600, not who would have crossed 450.
+   */
+  tierLower: 450,
+  tierLowerReached: 61,
+  /** Customers who came twice last month, for the "against N last month" line. */
+  twiceBefore: 46,
+  /**
+   * Vouchers redeemed last month, the figure this month is compared against.
+   *
+   * Only the *previous* month is a seed. This month's total is
+   * `sum(PD_TIERS.redeemed)` and the percentage is the drop between the two, so
+   * the sentence cannot disagree with the tier table it is explaining — which
+   * it was one edit away from doing, with "from 158 to 152" written out in all
+   * five languages.
+   */
+  redeemedBefore: 158,
 } as const;
 
 /** The reward the assistant drafts: a free item, or a share off the bill. */
