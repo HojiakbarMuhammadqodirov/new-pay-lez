@@ -18,7 +18,9 @@
 process.env.PAYLEZ_QUIET = '1';
 
 import { openDb } from './db/db.ts';
+import { seedDemo } from './db/demo.ts';
 import { importLegacy } from './db/import.ts';
+import { boot } from './main.ts';
 import { parseCsv } from './db/csv.ts';
 import { CONFIG } from './config.ts';
 import { allRoutes } from './http/routes/index.ts';
@@ -1763,6 +1765,178 @@ function importRules(): void {
   db.close();
 }
 
+/**
+ * `db/demo.ts` — the catalogue a deployment without `new-data/` gets.
+ *
+ * Three kinds of thing are checked here and they are not the same kind. That the
+ * rows *satisfy the schema* is the least of it, because the foreign keys already
+ * say so. What matters is that they are **reachable** (a listing nobody's query
+ * returns is the empty catalogue with extra steps), that they are **honest**
+ * (marked, unowned, and carrying no invented person), and that seeding them
+ * **cannot happen on a box that has real data** — which is a property of the
+ * ordering in `boot`, not of this module, and is checked as one below.
+ */
+function demoRules(): void {
+  describe('the demo catalogue');
+
+  const db = openDb(':memory:');
+  seedPlatform(db);
+  const summary = seedDemo(db);
+
+  const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
+
+  check('five to eight venues, as the brief asks', summary.venues >= 5 && summary.venues <= 8, summary);
+  check('a couple of deals each', summary.deals >= summary.venues * 2, summary);
+  check('two cities', count(`SELECT COUNT(DISTINCT city) AS n FROM venues`) === 2);
+  check(
+    'and more than one category, which is what the benchmarks read',
+    count(`SELECT COUNT(DISTINCT category) AS n FROM venues`) >= 5,
+  );
+
+  /* Reachable: the exact query `GET /v1/venues` runs, and the exact function
+     `GET /v1/deals` runs. A row that is `live` but filtered out by one of them
+     is a row that fixes nothing. */
+  const listed = db.all<{ id: string }>(
+    `SELECT id FROM venues WHERE status = 'live' AND deleted_at IS NULL`,
+  );
+  eq('every seeded venue is publicly listed', listed.length, summary.venues);
+  const browsed = deals.browse(db, { language: 'en' }, { limit: 100 });
+  eq('every seeded deal is publicly browsable', browsed.length, summary.deals);
+  check(
+    'and each one has copy rather than a blank card',
+    browsed.every((card) => card.copy.title.trim() !== ''),
+  );
+  eq(
+    'a Polish reader gets Polish',
+    deals.copyFor(db, browsed[0]!.id, 'pl')?.language,
+    'pl',
+  );
+  /* Written in two languages, and the completeness tracker says so rather than
+     pretending. Three missing is the honest answer, not a bug. */
+  const filled = deals.completeness(db, browsed[0]!.id).filled;
+  eq('two languages filled, and the gap is reported', filled, ['en', 'pl']);
+
+  /* Honest: marked, unowned, and carrying nobody. */
+  eq(
+    'every venue id says it is a demo',
+    count(`SELECT COUNT(*) AS n FROM venues WHERE id NOT LIKE 'ven!_demo!_%' ESCAPE '!'`),
+    0,
+  );
+  eq(
+    'so does every deal id',
+    count(`SELECT COUNT(*) AS n FROM hot_deals WHERE id NOT LIKE 'del!_demo!_%' ESCAPE '!'`),
+    0,
+  );
+  check(
+    'and the console can see it in the config table',
+    db.get(`SELECT value FROM platform_config WHERE key = 'demo_seed'`) !== undefined,
+  );
+  /* The safety property, and the reason it is stated as a count of *users*
+     rather than a count of nulls: the failure mode worth refusing is not an
+     owned venue, it is a partner account with a password in the repository
+     standing on production. Seeding creates no accounts at all. */
+  eq('no account was created to own them', count(`SELECT COUNT(*) AS n FROM users`), 0);
+  eq(
+    'and no venue claims an owner',
+    count(`SELECT COUNT(*) AS n FROM venues WHERE owner_user_id IS NOT NULL`),
+    0,
+  );
+  eq('no rating is invented', count(`SELECT COUNT(*) AS n FROM venues WHERE rating IS NOT NULL`), 0);
+  eq('no funnel event is invented', count(`SELECT COUNT(*) AS n FROM deal_events`), 0);
+  eq('no visit is invented', count(`SELECT COUNT(*) AS n FROM venue_visits`), 0);
+
+  /* §5.1 and §4.2, on the seeded rows: an exact cost, and a pool whose three
+     states exhaust it. A demo that breaks either teaches the wrong arithmetic. */
+  eq(
+    'every campaign has an exact cost to the partner',
+    count(`SELECT COUNT(*) AS n FROM campaigns WHERE reward_cost_minor <= 0`),
+    0,
+  );
+  for (const venue of listed) {
+    const view = budget.budgetFor(db, venue.id);
+    eq(
+      `${venue.id} — the pools exhaust the budget`,
+      view.loyalty.base + view.voucher.base,
+      view.total,
+    );
+    for (const pool of [view.loyalty, view.voucher]) {
+      eq(
+        `${venue.id} — ${pool.allocation} available is derived`,
+        pool.available,
+        pool.base - pool.spent - pool.reserved,
+      );
+    }
+  }
+
+  /* The reach recorder against a real row, which is the thing that returned 404
+     for every id while the catalogue was empty. */
+  const first = listed[0]!.id;
+  trackListing(db, { venueId: first, kind: 'impression', source: 'guide' });
+  trackListing(db, { venueId: first, kind: 'click', source: 'guide' });
+  const seen = analytics.reach(db, first);
+  eq('an impression lands on a seeded venue', seen.impressions, 1);
+  eq('and so does a click', seen.clicks, 1);
+  eq('the rate over one impression is one', seen.clickRate, 1);
+
+  /* Idempotent. It only runs on an empty catalogue, but a derived id that is not
+     is how `INSERT OR REPLACE` cascades a budget's movements away — the exact
+     bug `reimportRules` above exists for. */
+  const before = {
+    venues: count(`SELECT COUNT(*) AS n FROM venues`),
+    deals: count(`SELECT COUNT(*) AS n FROM hot_deals`),
+    tiers: count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
+    campaigns: count(`SELECT COUNT(*) AS n FROM campaigns`),
+    budgets: count(`SELECT COUNT(*) AS n FROM budgets`),
+    hours: count(`SELECT COUNT(*) AS n FROM venue_hours`),
+    copy: count(`SELECT COUNT(*) AS n FROM translations`),
+  };
+  const budgetId = db.get<{ id: string }>(`SELECT id FROM budgets ORDER BY id LIMIT 1`)!.id;
+  seedDemo(db);
+  eq('a second seeding changes nothing', {
+    venues: count(`SELECT COUNT(*) AS n FROM venues`),
+    deals: count(`SELECT COUNT(*) AS n FROM hot_deals`),
+    tiers: count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
+    campaigns: count(`SELECT COUNT(*) AS n FROM campaigns`),
+    budgets: count(`SELECT COUNT(*) AS n FROM budgets`),
+    hours: count(`SELECT COUNT(*) AS n FROM venue_hours`),
+    copy: count(`SELECT COUNT(*) AS n FROM translations`),
+  }, before);
+  eq('the budget keeps its id, so its movements survive', db.get<{ id: string }>(
+    `SELECT id FROM budgets ORDER BY id LIMIT 1`)?.id, budgetId);
+  eq('and the tracked events are still there', count(`SELECT COUNT(*) AS n FROM service_events`), 2);
+
+  db.close();
+}
+
+/**
+ * The ordering in `boot`, which is the half of this that lives in `main.ts`.
+ *
+ * Written so it is true in both worlds rather than in the one this machine
+ * happens to be: a developer's box has `new-data/` and must take the real
+ * import, a remote does not have it (it is gitignored, and it is the old app's
+ * live personal data) and must take the demo set. Exactly one of the two, and
+ * never an empty catalogue — which is what production was actually serving.
+ */
+function bootOrdering(): void {
+  describe('boot: import first, demo only if still empty');
+
+  const { db } = boot({ file: ':memory:', quiet: true });
+  const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
+
+  const total = count(`SELECT COUNT(*) AS n FROM venues`);
+  const demo = count(`SELECT COUNT(*) AS n FROM venues WHERE id LIKE 'ven!_demo!_%' ESCAPE '!'`);
+  const imported = total - demo;
+
+  check('the catalogue is never empty after boot', total > 0, { total, demo });
+  check(
+    'exactly one of the two ran',
+    imported === 0 ? demo > 0 : demo === 0,
+    { imported, demo },
+  );
+
+  db.close();
+}
+
 /* ══════════════════════════════════════════════════════════════ the run ══ */
 
 async function run(): Promise<void> {
@@ -1775,6 +1949,8 @@ async function run(): Promise<void> {
   countryRules();
   reimportRules();
   importRules();
+  demoRules();
+  bootOrdering();
   ledgerRules();
   budgetRules();
   gateRules();

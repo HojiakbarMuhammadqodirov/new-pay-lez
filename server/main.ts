@@ -4,12 +4,16 @@
  * The import runs only when the database has no venues, so `npm run server` on a
  * fresh clone comes up with the old data in it and a restart does not do it
  * again. `--reimport` forces it; `--import-only` does it and exits.
+ *
+ * And if the catalogue is *still* empty after that, a demo set is written — see
+ * the ordering note in `boot`, and `db/demo.ts` for why it exists at all.
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
+import { seedDemo } from './db/demo.ts';
 import { importLegacy } from './db/import.ts';
 import { provisionAdmin } from './domain/accounts.ts';
 import { seedPlatform } from './domain/settings.ts';
@@ -49,6 +53,35 @@ export function boot(options: BootOptions = {}): { db: Db; routes: Route[] } {
         .join(', ');
       console.log(`imported: ${total || 'nothing (new-data/ not found)'}`);
       for (const note of summary.notes) console.log(`  note: ${note}`);
+    }
+  }
+
+  /*
+   * The demo set, and the ordering is the whole of it: **after** the import has
+   * had its chance, and only if the catalogue is *still* empty.
+   *
+   * A box that has `new-data/` gets the real import, ends up with venues, and
+   * must never see these rows — a demonstration cafe sitting beside migrated
+   * partners is a row nobody can tell from a real one. A box that does not have
+   * it — every remote, because `new-data/` is gitignored and is the old app's
+   * live personal data — would otherwise serve an empty catalogue for ever:
+   * `GET /v1/venues` and `GET /v1/deals` both `[]`, which is what production was
+   * doing. The count is re-read rather than reused, because the import between
+   * the two is exactly the thing that may have changed it.
+   */
+  const stillEmpty = (db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`)?.n ?? 0) === 0;
+  if (stillEmpty) {
+    const demo = seedDemo(db);
+    if (!options.quiet) {
+      const total = Object.entries(demo)
+        .map(([key, value]) => `${key} ${value}`)
+        .join(', ');
+      console.log(`seeded demo: ${total}`);
+      console.log(
+        '  note: the catalogue was empty after the import, so a demonstration set was written. ' +
+          'These are not customer data — every id is prefixed `*_demo_*` and `platform_config.demo_seed` ' +
+          'records when they arrived. Delete them the day real venues are onboarded.',
+      );
     }
   }
 

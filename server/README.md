@@ -27,7 +27,7 @@ files are not found.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 364 checks, no browser, no network
+npm run verify:api     # the test suite — 431 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -114,6 +114,8 @@ db/    schema.sql    every entity in §14 and Part E
        csv.ts        an RFC 4180 reader, for the export
        import.ts     the old database → this schema, plus the two game banks
                      that arrive as hand-delivered CSVs in `updates/`
+       demo.ts       seven demonstration venues, written only when the
+                     catalogue is *still* empty after the import — see below
 
 domain/              the rules. React-free, HTTP-free, testable on their own
        ledger.ts     §2   append-only points, FIFO lots, expiry, caps
@@ -247,6 +249,32 @@ the import writes has a derived id, so a second run updates in place instead of
 delete-and-recreating — which would cascade a budget's movements away — and the
 opening balances insert once and only once. `verify:api` runs a full double
 import and asserts nothing moved.
+
+### When there is nothing to import
+
+`new-data/` is gitignored — it is the old app's *live* data and must never reach
+a remote — so on every deployed box the import correctly reports "nothing
+(new-data/ not found)" and the catalogue stays empty. That is what production was
+actually serving: `GET /v1/venues` and `GET /v1/deals` both `[]`, for ever.
+
+So `boot()` checks the venue count a **second** time, *after* the import has had
+its chance, and only if it is still zero calls `seedDemo` (`db/demo.ts`): seven
+Polish venues across Kraków and Warsaw, seven categories, two live deals each,
+with hours, a voucher ladder, a budget and a stamp campaign. The ordering is the
+whole of it — a box that *has* `new-data/` takes the real import and must never
+see these rows, because a demonstration café standing beside migrated partners is
+a row nobody can tell from a real one.
+
+They are marked rather than disguised. Every id is prefixed `*_demo_*`, every
+name carries `(demo)`, the description says so in both languages it is written
+in, and `platform_config.demo_seed` — which the console lists — records when they
+arrived. Nobody owns them: `owner_user_id` is NULL, because the alternative is a
+partner credential in this repository, and `provisionAdmin` above states exactly
+why that is not on offer. Nothing is invented that would be a lie if believed —
+no ratings, no funnel events, no visits, and districts rather than street
+numbers. **Delete them the day the first real venue is onboarded**;
+`DELETE FROM venues WHERE id LIKE 'ven\_demo\_%' ESCAPE '\'` takes the rest with
+it.
 
 The remittance tables (`Wallet`, `Recipient`, `Transaction`, `PaymentMethod`) are
 imported into `legacy_*` and served read-only: both specs put real money movement
