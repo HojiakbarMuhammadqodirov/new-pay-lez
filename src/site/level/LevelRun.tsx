@@ -2,7 +2,7 @@ import { memo, useEffect, useRef } from 'react';
 import { useReducedMotion } from '../../components/GlobeHero/hooks/useReducedMotion';
 import { roundRect } from '../flight/parrot';
 import type { GlobeTone } from '../theme/context';
-import { LEVEL, type LevelPalette } from './config';
+import { LEVEL, type LevelPalette, type Move } from './config';
 import { COLS, JUMP, RUN } from './sprite';
 
 /**
@@ -60,6 +60,70 @@ function toRgb(hex: string): string {
   const value = Number.parseInt(full, 16);
   return `${(value >> 16) & 255},${(value >> 8) & 255},${value & 255}`;
 }
+
+/* ── which frame he is on ─────────────────────────────────────────────────
+ *
+ * Both of these are pure lookups into the script, deliberately: the level is
+ * scripted rather than simulated (see the header), and a gait that integrated
+ * its own phase would be a second clock to drift out of step with `u`.
+ */
+
+/**
+ * The beats have to sum to the frame count or `stride` stops meaning frames per
+ * tile and the whole cadence moves — silently, since the run would still loop.
+ * Checked once at load, the same bargain `assertFrames` makes in `sprite.ts`.
+ */
+function assertBeats() {
+  const total = LEVEL.runner.beats.reduce((sum, beat) => sum + beat, 0);
+  if (LEVEL.runner.beats.length !== RUN.length || Math.abs(total - RUN.length) > 1e-6) {
+    throw new Error(
+      `level: ${LEVEL.runner.beats.length} beats summing to ${total}, want ${RUN.length} summing to ${RUN.length}`,
+    );
+  }
+}
+assertBeats();
+
+/**
+ * The run pose at a point in the level.
+ *
+ * `u * stride` is the cycle position in frame-widths; walking the beat table
+ * rather than flooring it is what lets stance last longer than flight. The
+ * total is unchanged, so the *stride* still covers exactly the ground it did —
+ * only its internal division moved, which is the whole point: a gait is uneven
+ * and a metronome is not.
+ */
+const runFrame = (at: number) => {
+  let cycle = (at * LEVEL.runner.stride) % RUN.length;
+  if (cycle < 0) cycle += RUN.length;
+  for (let i = 0; i < RUN.length; i += 1) {
+    cycle -= LEVEL.runner.beats[i];
+    if (cycle < 0) return RUN[i];
+  }
+  return RUN[RUN.length - 1];
+};
+
+/**
+ * The airborne pose, chosen by how fast the arc is climbing rather than by how
+ * far through it he is.
+ *
+ * `baseAt`'s height is `line + 4·p·t·(1−t)`, so this is its derivative: the
+ * linear term plus `4p(1 − 2t)`. Velocity and not `t`, because the moves are not
+ * all symmetric — the hop *onto* the platform lands three tiles higher than it
+ * leaves, and reading `t` would have him falling through the second half of a
+ * jump that is still going up. Off velocity, that move rises and then holds the
+ * apex to the end, which is what it looks like.
+ *
+ * The middle band is wide on purpose. The apex pose is the one every block is
+ * struck from, and `LEGS_AIRBORNE` is drawn symmetric precisely because it is
+ * the airborne frame on screen longest.
+ */
+const jumpFrame = (move: Move, t: number) => {
+  const arc = 4 * (move.peak ?? 0);
+  const climb = (move.toBase ?? move.base) - move.base + arc * (1 - 2 * t);
+  if (climb > arc * 0.45) return JUMP.rise;
+  if (climb < -arc * 0.45) return JUMP.fall;
+  return JUMP.apex;
+};
 
 interface LevelRunProps {
   primaryColor: string;
@@ -506,10 +570,11 @@ export const LevelRun = memo(function LevelRun({
       /* Which pose. The run cycle is keyed to *distance*, so the stride is tied
          to the ground speed rather than ticking on a clock of its own — the
          thing that makes a sprite look like it is skating if you get it wrong.
-         One set of art at both sizes: the mushroom scales him, see `sprite.ts`. */
+         The jump is keyed to the arc it is on for the same reason. One set of
+         art at both sizes: the mushroom scales him, see `sprite.ts`. */
       const frame = airborne
-        ? JUMP
-        : RUN[Math.floor(u * LEVEL.runner.stride) % RUN.length];
+        ? jumpFrame(move, (u - move.from) / (move.to - move.from))
+        : runFrame(u);
 
       const stamp = stampFor(frame, palette, skin.current.tone);
       if (!stamp) return;

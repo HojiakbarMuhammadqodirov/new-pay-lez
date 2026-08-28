@@ -108,9 +108,28 @@ export const GlobeHero = memo(function GlobeHero({
       <Canvas
         dpr={RESPONSIVE.dpr}
         gl={{
-          // With bloom on, the composer does its own MSAA — a second AA pass
-          // on the default framebuffer would be paid for and thrown away.
-          antialias: glow <= 0,
+          /*
+           * Unconditional, even though with bloom on the composer does its own
+           * MSAA and this one is largely paid for and thrown away.
+           *
+           * `antialias` is a *context creation* attribute: it is read once,
+           * when the WebGL context is made, and `WebGLRenderer` has no settable
+           * counterpart. R3F re-applies `gl` props onto the existing renderer;
+           * it never re-creates the context. So `glow <= 0` here was frozen at
+           * first paint — load in dark, toggle to light, and the composer
+           * unmounts while the context stays antialias-free, leaving the border
+           * hairlines jagged. On a light page those hairlines *are* the globe,
+           * so it is the most conspicuous surface in the scene.
+           *
+           * The alternative is keying the Canvas on `tone` to force a remount,
+           * and that costs far more than a resolve: a new context (browsers cap
+           * how many a document may hold), every geometry rebuilt and
+           * re-uploaded, every shader recompiled, and a black frame across the
+           * whole viewport on a theme toggle. A multisampled backbuffer that
+           * only ever resolves the composer's full-screen triangle is the
+           * cheaper mistake, and its cost is constant rather than per-vertex.
+           */
+          antialias: true,
           alpha: false,
           powerPreference: 'high-performance',
           // Exact brand hue: any tone mapping would desaturate the accent.

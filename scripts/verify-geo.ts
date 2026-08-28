@@ -19,6 +19,7 @@ import {
   DETECTION,
   GLOBE,
   MOTION,
+  RESPONSIVE,
   ROUTES,
   SCROLL,
   UI,
@@ -52,8 +53,11 @@ import {
   awardRound,
   bankableGaps,
   canAfford,
+  claimDeal,
+  dealsOf,
   flightPoints,
   freezesOf,
+  isCardFull,
   markUsed,
   MAX_FLIGHT_GAPS,
   MAX_FREEZES,
@@ -62,6 +66,9 @@ import {
   redeem,
   refillLives,
   seedPlayer,
+  stampsLeft,
+  stampsOf,
+  stampVisit,
   usedVouchers,
   wordPoints,
 } from '../src/site/auth/player';
@@ -83,7 +90,6 @@ import {
   PD_CAMPAIGN_MODEL,
   PD_COST_ROWS,
   PD_COST_TOTAL,
-  PD_CUSTOMERS,
   PD_DEALS,
   PD_HEAT,
   PD_HEAT_MAX,
@@ -312,6 +318,128 @@ console.log('\nlayout — hero state');
     hero.x + GLOBE.radius < visibleWidth / 2,
     `right edge ${(hero.x + GLOBE.radius).toFixed(3)} vs ${(visibleWidth / 2).toFixed(3)}`,
   );
+  check('a wide viewport does not sink the globe', hero.y === 0);
+}
+
+console.log('\nlayout — hero state in portrait');
+{
+  /*
+   * Portrait stacks the hero copy and reserves `min-height: 46vh` under it for
+   * the globe, so the copy's floor is at 54% of the viewport — this is that
+   * plus the clearance `RESPONSIVE.portraitCopyDepth` buys. Above this line is
+   * text; a globe drawn through it is the bug these checks exist for.
+   */
+  const COPY_FLOOR = 0.55;
+
+  // Screen fraction measured down from the top edge. The globe centre lies on
+  // z = 0, which is where the top and bottom of the disc live too, so no
+  // perspective correction is needed.
+  const fromTop = (y: number, state: { visibleHeight: number }) =>
+    0.5 - y / state.visibleHeight;
+
+  /*
+   * Both prop sets: `Site.tsx` renders the landing globe at 0.18 / 0.62, and
+   * `DEFAULTS` is what any other caller gets. The framing has to hold for the
+   * layout, not for one call site.
+   */
+  for (const [offsetX, heightCoverage, label] of [
+    [0.18, 0.62, 'site props'],
+    [DEFAULTS.offsetX, DEFAULTS.heightCoverage, 'defaults'],
+  ] as const) {
+    const { hero } = resolveLayout(390, 844, offsetX, heightCoverage);
+    const visibleWidth = hero.visibleHeight * (390 / 844);
+    const top = fromTop(hero.y + GLOBE.radius, hero);
+    const bottom = fromTop(hero.y - GLOBE.radius, hero);
+
+    check(
+      `phone ${label}: the globe clears the copy`,
+      top >= COPY_FLOOR - 1e-9,
+      `top edge at ${(top * 100).toFixed(1)}% of the viewport`,
+    );
+    check(
+      `phone ${label}: …and the whole disc is still on screen`,
+      top >= 0 && bottom <= 1 + 1e-9,
+      `${(top * 100).toFixed(1)}% – ${(bottom * 100).toFixed(1)}%`,
+    );
+    check(
+      `phone ${label}: …sideways too`,
+      Math.abs(hero.x) + GLOBE.radius <= visibleWidth / 2 + 1e-9,
+      `half-width ${(Math.abs(hero.x) + GLOBE.radius).toFixed(3)} vs ${(visibleWidth / 2).toFixed(3)}`,
+    );
+    check(
+      `phone ${label}: …and it lands in the reserved slot, not on the fold`,
+      hero.y < 0 && bottom > 0.9,
+      `bottom edge at ${(bottom * 100).toFixed(1)}%`,
+    );
+  }
+
+  /*
+   * A portrait tablet is the case where the vertical cap does the work: the
+   * horizontal clamp would allow 58% of the viewport height, which is a globe
+   * a third taller than the slot it has to fit in.
+   */
+  {
+    const { hero } = resolveLayout(820, 1180, 0.18, 0.62);
+    const top = fromTop(hero.y + GLOBE.radius, hero);
+    const bottom = fromTop(hero.y - GLOBE.radius, hero);
+
+    check(
+      'tablet portrait: the globe is capped to the slot, not to the screen',
+      Math.abs(bottom - top - (1 - RESPONSIVE.portraitCopyDepth)) < 1e-9,
+      `${((bottom - top) * 100).toFixed(1)}% tall`,
+    );
+    check(
+      'tablet portrait: …which puts it exactly between the copy and the fold',
+      Math.abs(top - RESPONSIVE.portraitCopyDepth) < 1e-9 &&
+        Math.abs(bottom - 1) < 1e-9,
+      `${(top * 100).toFixed(1)}% – ${(bottom * 100).toFixed(1)}%`,
+    );
+  }
+
+  /*
+   * Nothing above phone width may move. The last of these is the width gate:
+   * an iPad Pro is portrait by aspect, but the stylesheet keeps its hero in two
+   * columns, so there is no slot to sink into.
+   */
+  for (const [w, h, label] of [
+    [1920, 1080, '16:9'],
+    [1280, 800, '16:10'],
+    [3440, 1440, 'ultrawide'],
+    [1024, 1366, 'portrait tablet, two columns'],
+  ] as const) {
+    const { hero } = resolveLayout(w, h, 0.18, 0.62);
+    check(`${label}: no vertical offset`, hero.y === 0, `y ${hero.y}`);
+  }
+
+  /*
+   * The sink ramps with aspect instead of switching, so a tablet rotating past
+   * square glides. Sweep a fixed width through the whole ramp and check no two
+   * neighbouring aspects disagree by more than a hair of the viewport — a hard
+   * switch would show up here as a single 27.5% step.
+   *
+   * The heights are deliberately left fractional. Rounding them to whole pixels
+   * makes the sample spacing jitter by up to a pixel, which shows up as a step
+   * several times the real one and would have this flake on a threshold tight
+   * enough to be worth asserting. What is under test is the function's
+   * continuity in aspect, so it is sampled in aspect.
+   */
+  {
+    const SAMPLES = 2000;
+    let worst = 0;
+    let prev: number | null = null;
+    for (let i = 0; i <= SAMPLES; i += 1) {
+      const aspect = 1.3 - (i / SAMPLES) * 0.9; // 1.3 → 0.4
+      const { hero } = resolveLayout(800, 800 / aspect, 0.18, 0.62);
+      const centre = fromTop(hero.y, hero);
+      if (prev !== null) worst = Math.max(worst, Math.abs(centre - prev));
+      prev = centre;
+    }
+    check(
+      'the sink ramps in with aspect rather than switching',
+      worst < 0.01,
+      `largest step ${(worst * 100).toFixed(3)}% of the viewport`,
+    );
+  }
 }
 
 console.log('\nlayout — scrolled end state');
@@ -541,8 +669,23 @@ console.log('\naccess control');
     check(`individual keeps ${route}`, resolveRoute(route, person) === route);
   }
 
-  check('anon keeps b2b', resolveRoute('b2b', anon) === 'b2b');
-  check('anon keeps analytics', resolveRoute('analytics', anon) === 'analytics');
+  check('anon keeps business', resolveRoute('business', anon) === 'business');
+  /*
+   * Analytics is a venue owner's screen and nobody else's.
+   *
+   * This assertion used to be its opposite — a visitor "kept" analytics,
+   * because the page was read as part of the pitch. It is a month of a venue's
+   * takings, so a reader who owns no venue is looking at either somebody's real
+   * numbers or invented ones. `landing` rather than `signin`, because signing
+   * in does not earn a player access either: the page is not locked, it is not
+   * theirs.
+   */
+  check('anon is sent away from analytics', resolveRoute('analytics', anon) === 'landing');
+  check(
+    'a player is sent away from analytics',
+    resolveRoute('analytics', person) === 'landing',
+  );
+  check('an owner keeps analytics', resolveRoute('analytics', ownerSet) === 'analytics');
   check('anon is sent from the dashboard to sign-in', resolveRoute('dashboard', anon) === 'signin');
   check('anon is sent from setup to sign-in', resolveRoute('business-setup', anon) === 'signin');
   check('anon is sent from the console to sign-in', resolveRoute('admin', anon) === 'signin');
@@ -551,7 +694,7 @@ console.log('\naccess control');
   check('an undecided account is held at sign-in', resolveRoute('landing', undecided) === 'signin');
   check('…from every route', consumer.every((r) => resolveRoute(r, undecided) === 'signin'));
 
-  check('individual loses b2b', resolveRoute('b2b', person) === 'landing');
+  check('individual loses business', resolveRoute('business', person) === 'landing');
   check('individual loses analytics', resolveRoute('analytics', person) === 'landing');
   check('individual loses the dashboard', resolveRoute('dashboard', person) === 'landing');
   /* The hole this closed: an individual who typed the setup address in reached
@@ -569,14 +712,14 @@ console.log('\naccess control');
   check('admin is sent from setup to the console', resolveRoute('business-setup', admin) === 'admin');
   check(
     'admin reads the marketing site as written',
-    ['landing', 'learn', 'b2b', 'analytics', 'vouchers', 'relocate'].every(
+    ['landing', 'learn', 'business', 'analytics', 'vouchers', 'relocate'].every(
       (r) => resolveRoute(r as Route, admin) === r,
     ),
   );
 
   check('an owner with no listing is sent to setup', resolveRoute('dashboard', ownerNew) === 'business-setup');
   check('an owner with a listing reaches the dashboard', resolveRoute('dashboard', ownerSet) === 'dashboard');
-  check('an owner keeps b2b', resolveRoute('b2b', ownerSet) === 'b2b');
+  check('an owner keeps business', resolveRoute('business', ownerSet) === 'business');
 
   /*
    * Where sign-in lands is the whole of the post-sign-in routing, so it is
@@ -590,7 +733,7 @@ console.log('\naccess control');
   /* Every redirect must land somewhere that does not itself redirect, or the
      effect in `Site` navigates in a loop. */
   const all: Route[] = [
-    'landing', 'learn', 'analytics', 'b2b', 'vouchers', 'relocate', 'contact',
+    'landing', 'learn', 'analytics', 'business', 'vouchers', 'relocate', 'contact',
     'signin', 'business-setup', 'dashboard', 'admin',
   ];
   const accounts = [anon, undecided, person, ownerNew, ownerSet, admin];
@@ -633,7 +776,7 @@ console.log('\nrouting — section anchors');
     ['#learn-games', 'learn'],
     ['#games-top', 'learn'],
     ['#analytics-reports', 'analytics'],
-    ['#b2b-cta', 'b2b'],
+    ['#business-cta', 'business'],
     ['#vouchers-catalogue', 'vouchers'],
     ['#relocate-guide', 'relocate'],
     ['#contact-form', 'contact'],
@@ -764,6 +907,72 @@ console.log('\nbusiness listing');
   );
 }
 
+console.log('\nthe wallet');
+{
+  const seeded = seedPlayer();
+
+  /*
+   * A stamp card rolls over; it does not overflow.
+   *
+   * This is the rule that decides what the number on the card *means*. The
+   * eleventh visit to a ten-visit card is the first stamp of the next card, not
+   * an eleventh stamp on a card that cannot hold one — and `cycles` is what
+   * keeps that from losing anything, because "0 of 6, filled twice before" and
+   * "0 of 6" are different cards in front of different people.
+   */
+  const nearly = stampsOf(seeded).find((card) => stampsLeft(card) === 1);
+  check('a card exists that is one visit from full', Boolean(nearly));
+  const rolled = stampVisit(seeded, nearly!.id);
+  const after = stampsOf(rolled).find((card) => card.id === nearly!.id)!;
+  check('the last stamp rolls the card over', after.stamps === 0, `${after.stamps} stamps`);
+  check('…and the fill is counted', after.cycles === nearly!.cycles + 1);
+  check('…so nothing is lost by it', after.required === nearly!.required);
+
+  const midway = stampsOf(seeded).find((card) => card.stamps > 0 && stampsLeft(card) > 1)!;
+  const stamped = stampsOf(stampVisit(seeded, midway.id)).find((c) => c.id === midway.id)!;
+  check('an ordinary visit just adds one', stamped.stamps === midway.stamps + 1);
+  check('a full card reads as full', isCardFull({ ...midway, stamps: midway.required }));
+  check('and stamps left never goes negative', stampsLeft({ ...midway, stamps: 99 }) === 0);
+
+  /* A stamp is not a point, and adding one must not move the balance. That is
+     the whole of what "visits are not points" means in code. */
+  check('a visit does not touch the balance', stampVisit(seeded, midway.id).points === seeded.points);
+
+  /*
+   * A hot deal is one offer, not stock.
+   *
+   * Two guards, and the second is the one worth having: a button pressed twice
+   * would otherwise put two of the same offer in the wallet and charge for both.
+   */
+  const free = { id: 'd-test-free', venue: 'V', logo: 'V', badge: '2+1', points: 0, expires: '31.12' };
+  const claimed = claimDeal(seeded, free, 'PLZ-TEST', '01.08');
+  check('claiming a free deal costs nothing', claimed.points === seeded.points);
+  check('…and puts it in the wallet', dealsOf(claimed).length === dealsOf(seeded).length + 1);
+  check(
+    'claiming it again changes nothing',
+    dealsOf(claimDeal(claimed, free, 'PLZ-TWICE', '01.08')).length === dealsOf(claimed).length,
+  );
+
+  const paid = { ...free, id: 'd-test-paid', points: seeded.points + 1 };
+  check(
+    'a deal the balance will not cover is refused',
+    claimDeal(seeded, paid, 'PLZ-NOPE', '01.08') === seeded,
+  );
+
+  const affordable = { ...free, id: 'd-test-cheap', points: 50 };
+  check(
+    'and one it will cover is charged for',
+    claimDeal(seeded, affordable, 'PLZ-OK', '01.08').points === seeded.points - 50,
+  );
+
+  /* The two fields postdate the stored shape, so a session saved by an earlier
+     build has neither. Reading a missing one as empty is what stops the wallet
+     throwing on a page somebody is already looking at. */
+  const old = { ...seeded, stamps: undefined, deals: undefined };
+  check('a session that predates stamp cards reads as empty', stampsOf(old).length === 0);
+  check('…and so does one that predates deals', dealsOf(old).length === 0);
+}
+
 console.log('\nplaying');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
@@ -826,15 +1035,32 @@ console.log('\nplaying — streak freezes');
   /* The rule the streak card states, and the one the FAQ's "goes back to zero"
      is now an exception to. Both halves are checked, because a freeze that
      saved the streak but not the balance would be the confusing half-measure —
-     the two have always been one rule. */
-  const saved = awardRound(held(1), win, day('2026-08-09'));
+     the two have always been one rule.
+
+     The 5th and not some later date: a freeze is worth exactly one missed day,
+     so the day it covers is the 4th and the round has to land on the 5th. This
+     fixture used to sit six days out and pass, which is the bug the length test
+     in `awardPoints` closed — see the absence below. */
+  const saved = awardRound(held(1), win, day('2026-08-05'));
   check('a freeze absorbs a missed window', saved.streak === 5, `streak ${saved.streak}`);
   check('…and the balance survives with it', saved.points === 110, `${saved.points} pts`);
   check('…and the freeze is spent', freezesOf(saved) === 0, `${freezesOf(saved)} held`);
 
-  const unsaved = awardRound(held(0), win, day('2026-08-09'));
+  const unsaved = awardRound(held(0), win, day('2026-08-05'));
   check('without one, the streak still resets', unsaved.streak === 1);
   check('…and the balance still clears', unsaved.points === 10, `${unsaved.points} pts`);
+
+  /* One day, and only one. "Lapsed" means no more than "not today and not
+     yesterday", which a two-year absence satisfies exactly as a missed Tuesday
+     does — so a freeze tested on that alone kept a returning player's whole
+     balance and incremented a streak they had not been near for a year. All
+     three are checked because the freeze protects all three. */
+  const away = awardRound(held(1), win, day('2026-08-09'));
+  check('a longer absence is not what a freeze covers', away.streak === 1,
+    `streak ${away.streak}`);
+  check('…so the balance clears with it', away.points === 10, `${away.points} pts`);
+  check('…and the freeze is not spent on it', freezesOf(away) === 1,
+    `${freezesOf(away)} held`);
 
   /* Spent only when there is something to spend it on. */
   const onTime = awardRound(held(1), win, day('2026-08-04'));

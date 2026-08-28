@@ -114,10 +114,22 @@ body writes depth.
 (falling back to the nearest silhouette point when the ray misses on narrow
 viewports), converted to globe-local space — which undoes offset, tilt and spin
 in one step — then resolved to a country by bounding-box reject plus an even-odd
-ring test. Over water it falls back to the nearest coast within 11°, and past
-that shows nothing, so the label disappears over open ocean rather than naming
-something a thousand miles away. It runs on a 120 ms tick with a 260 ms
-debounce, which is what stops border crossings from flickering.
+ring test. Over water it falls back to the nearest coast, and past that shows
+nothing, so the label disappears over open ocean rather than naming something a
+thousand miles away. It runs on a **50 ms** tick with an **80 ms** debounce,
+which is what stops border crossings from flickering.
+
+Both of those numbers, and the reach of that fallback, are set by
+`DETECTION.spotlight` — which ships restricted to `PL UA AZ UZ RU`. Those five
+sit in a 76° band of longitude, so at the default rotation speed the whole set
+sweeps the centre in about 1.6 s and the label then rests until the band comes
+round again: a reveal that short cannot survive a quarter-second debounce, which
+is why the cadence is as tight as it is. The spotlight also widens the ocean
+fallback from `maxOceanDegrees` (11°) to `spotlightFallbackDegrees` (22°) — with
+five countries in play the gaps between them are oceans, and the narrow
+catchment would drop the label between neighbours rather than between
+continents. Empty the array to detect every country, and retune both cadences
+when you do.
 
 ## Performance
 
@@ -129,8 +141,14 @@ debounce, which is what stops border crossings from flickering.
   and does **zero** 3D work. Routing it through React state would re-render the
   whole Canvas tree several times a second.
 - Lighting is analytic in the shader — no lights, no shadow maps.
-- DPR is clamped to 1.75; MSAA happens inside the composer, so the default
-  framebuffer's antialiasing is switched off rather than paid for twice.
+- DPR is clamped to 1.75. MSAA runs inside the composer *and* on the default
+  framebuffer, which is one resolve more than the frame needs while bloom is on.
+  It is deliberate: `antialias` is a context-*creation* attribute, so switching
+  it with `glowStrength` would mean re-creating the WebGL context every time the
+  page changes theme — a new context on a document that caps how many it may
+  hold, every buffer re-uploaded and every shader recompiled. A duplicate
+  resolve of one full-screen triangle is the cheaper of the two, and without it
+  the border hairlines go jagged the moment `tone="ink"` removes the composer.
 - `prefers-reduced-motion: reduce` freezes the globe and the routes.
 
 ## The scroll transition
@@ -196,6 +214,32 @@ In portrait the hero offset is scaled down and `coverage` is clamped to
 `2·aspect·(0.5 − |offset| − margin)`, which is the largest globe that still fits
 horizontally once it has been pushed off-centre. The label card moves from
 bottom-left to bottom-centre at the same breakpoint.
+
+Portrait also **sinks the hero pose**. A stacked hero puts its copy above the
+globe and reserves a slot underneath for it, but the globe is `position: fixed`
+and does not fill that slot by being in the flow — left at `y = 0` it draws dead
+centre, through the copy, with the reserved space empty below it. So the hero
+gains a vertical offset of `−portraitCopyDepth/2` viewport heights, which is the
+centre of the slot `[copyDepth, 1]`, and a second coverage clamp:
+
+```
+coverage ≤ 2·(0.5 − |offsetY|)   =   1 − copyDepth   at full sink
+```
+
+That is the horizontal clamp without its margin term, and it works out to the
+slot's own height. Centring the disc in the slot is what makes it one number
+instead of two: "the top edge clears the copy" and "the bottom edge stays on
+screen" become the same inequality. On a phone the horizontal clamp still binds
+first; on a portrait tablet this one does.
+
+The sink is gated twice — ramped on aspect (nothing at `portraitAspect`, full at
+`portraitSinkAspect`, so a rotating tablet glides instead of jumping) and
+stepped on `portraitStackWidth`, which mirrors the width the page's own
+stylesheet stacks the hero at. The step is deliberate: a viewport that is
+portrait by aspect but still wide enough for two columns has no slot to sink
+into, and the globe and the copy have to move on the same pixel. Everything at
+or above `portraitAspect` resolves to `y = 0` exactly, so no landscape or
+desktop framing changes.
 
 The footer pose is **not** clamped — the 30%/40% framing is honoured exactly at
 every aspect ratio. On a phone that means the globe is about 2.4× wider than the

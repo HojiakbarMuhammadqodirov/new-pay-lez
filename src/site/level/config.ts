@@ -75,8 +75,23 @@ export const LEVEL = {
   tile: { of: 0.048, min: 21, max: 42 },
   /** The ground line, as a fraction of the viewport height. */
   groundY: 0.9,
-  /** How fast the runner crosses the level, tiles per second. */
-  speed: 7.5,
+  /**
+   * How fast the runner crosses the level, tiles per second.
+   *
+   * **This is a cadence setting as much as a pacing one, and that is what got
+   * it lowered from 7.5.** The run cycle is keyed to distance (`runner.stride`
+   * below), so the speed and the leg speed are the same number seen twice: at
+   * 7.5 the eight frames came round 2.6 times a second, which is five and a
+   * quarter steps — flat-out sprint cadence on a figure that is plainly jogging
+   * through the scenery. Legs moving faster than the pose set can describe is
+   * most of what reads as mechanical, and no amount of extra art fixes it.
+   *
+   * At 5.2 the same stride length (2.8 tiles, a little under two body heights —
+   * which is what a running stride is) comes out at about 3.6 steps a second.
+   * That is a run. It is also a calmer backdrop, which is the right direction
+   * for something that sits under a page of copy for as long as this does.
+   */
+  speed: 5.2,
   /**
    * Where the runner sits, as a fraction of the viewport width.
    *
@@ -255,8 +270,9 @@ export const LEVEL = {
     grow: 1.1,
     /**
      * Run-cycle frames per tile travelled. There are eight frames, so at `speed`
-     * 7.5 this is about twenty-one frames and two and a half full strides a
-     * second — a run. Tied to *distance* and not to a clock, so he cannot
+     * 5.2 this is about fifteen frames a second — one full stride every 2.9
+     * tiles, which is a little under two strides and so three and a half steps
+     * a second. A jog. Tied to *distance* and not to a clock, so he cannot
      * moonwalk: the feet always move the same amount as the ground under them.
      *
      * It doubled when the cycle went from four frames to eight, and that is the
@@ -265,6 +281,26 @@ export const LEVEL = {
      * the leg speed over the same ground.
      */
     stride: 2.8,
+    /**
+     * How long each frame of the cycle is held, in frame-widths. One entry per
+     * frame, and they **sum to the frame count** — checked at load in
+     * `LevelRun.tsx`, because a table that sums to anything else silently
+     * rescales the cadence `stride` was set to produce.
+     *
+     * A gait is not a metronome, and dividing the cycle evenly is most of what
+     * was left of the robot after the poses were fixed. A running leg spends
+     * longer bearing weight than it does in the air: contact and down are the
+     * foot planted and the knee absorbing, up and passing are the push-off and
+     * the flight. Holding the first pair and hurrying the second is the
+     * difference between a figure whose feet *land* and one whose legs revolve.
+     *
+     * The four values run in the order the poses do — contact, down, passing,
+     * up — and repeat for the second step, because the legs do (see `sprite.ts`).
+     * The arms are on the eight-frame period and ride the same table, which is
+     * right: a hand slows at the ends of its swing, and the ends of the swing
+     * are where the planted foot is.
+     */
+    beats: [1.3, 1.3, 0.7, 0.7, 1.3, 1.3, 0.7, 0.7],
   },
 
   /** Shards thrown off a broken block: how many, how fast, how long they live. */

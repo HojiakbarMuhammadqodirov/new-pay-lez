@@ -52,7 +52,20 @@ export const PaylezIntro = memo(function PaylezIntro({
   // Decided synchronously so the site never flashes behind a skipped intro.
   const [active, setActive] = useState(() => {
     if (typeof window === 'undefined') return false;
-    if (oncePerSession && sessionStorage.getItem(SESSION_KEY)) return false;
+    /*
+     * Wrapped for the same reason the write below is, and it matters more:
+     * `sessionStorage.getItem` does not return null when site data is blocked
+     * (a sandboxed iframe, Chrome with cookies off, some enterprise policies) —
+     * *accessing the object throws*. This runs inside a state initialiser, so
+     * an unguarded read takes the whole app down during render rather than
+     * costing one replayed intro. It was harmless only while `oncePerSession`
+     * defaulted off and the short-circuit never reached it.
+     */
+    try {
+      if (oncePerSession && sessionStorage.getItem(SESSION_KEY)) return false;
+    } catch {
+      // Storage is unreadable, so "has it played?" is unanswerable. Play it.
+    }
     return true;
   });
 
@@ -74,6 +87,22 @@ export const PaylezIntro = memo(function PaylezIntro({
   useEffect(() => {
     if (reducedMotion && active) finish();
   }, [reducedMotion, active, finish]);
+
+  /*
+   * `onComplete` fires when the sequence is *over*, and a sequence that never
+   * started is over — which is what the prop's own doc comment promises ("or
+   * was skipped") and what the initialiser above quietly broke.
+   *
+   * It matters because the site hides its header, main and footer behind
+   * `.site[data-intro='running']` until this fires. Under `oncePerSession` the
+   * second page load starts at `active === false`, so with no call here the
+   * caller's `introDone` would stay false and the entire page would sit at
+   * `opacity: 0` forever. `finish` is idempotent through `doneRef`, so this
+   * costs nothing on the run that did play.
+   */
+  useEffect(() => {
+    if (!active) finish();
+  }, [active, finish]);
 
   // The one timer in the whole sequence; CSS owns everything visual.
   useEffect(() => {

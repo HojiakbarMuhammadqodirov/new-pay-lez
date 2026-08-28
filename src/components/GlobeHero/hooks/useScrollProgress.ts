@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
 import { clamp01 } from '../geo/math';
 
 interface ScrollProgressOptions {
@@ -43,7 +43,13 @@ export function useScrollProgress({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  useEffect(() => {
+  /*
+   * The measurement is a callback rather than an effect body because it has to
+   * be reachable from two different phases — see the layout effect below. Its
+   * deps are exactly what the measurement is made of, so changing any of them
+   * re-measures immediately *and* re-binds the listeners onto the new closure.
+   */
+  const read = useCallback(() => {
     if (!enabled) {
       progress.current = 0;
       exit.current = 0;
@@ -51,34 +57,52 @@ export function useScrollProgress({
       return;
     }
 
-    const read = () => {
-      const viewport = window.innerHeight;
-      const scrolled = window.scrollY;
+    const viewport = window.innerHeight;
+    const scrolled = window.scrollY;
 
-      const anchor = anchorId ? document.getElementById(anchorId) : null;
+    const anchor = anchorId ? document.getElementById(anchorId) : null;
 
-      let travel = Math.max(1, viewport * rangeVh);
-      let exitStart = Infinity;
+    let travel = Math.max(1, viewport * rangeVh);
+    let exitStart = Infinity;
 
-      if (anchor) {
-        const top = anchor.getBoundingClientRect().top + scrolled;
-        // Settle a little before the section actually arrives, so it is already
-        // in place rather than still moving when the reader gets there.
-        travel = Math.max(1, top - viewport * 0.15);
-        // Retire once the section has nearly finished passing.
-        exitStart = top + anchor.offsetHeight - viewport * 0.8;
-      }
+    if (anchor) {
+      const top = anchor.getBoundingClientRect().top + scrolled;
+      // Settle a little before the section actually arrives, so it is already
+      // in place rather than still moving when the reader gets there.
+      travel = Math.max(1, top - viewport * 0.15);
+      // Retire once the section has nearly finished passing.
+      exitStart = top + anchor.offsetHeight - viewport * 0.8;
+    }
 
-      const nextProgress = clamp01(scrolled / travel);
-      const nextExit = clamp01((scrolled - exitStart) / (viewport * 0.6));
+    const nextProgress = clamp01(scrolled / travel);
+    const nextExit = clamp01((scrolled - exitStart) / (viewport * 0.6));
 
-      if (nextProgress === progress.current && nextExit === exit.current) return;
-      progress.current = nextProgress;
-      exit.current = nextExit;
-      onChangeRef.current?.(nextProgress, nextExit);
-    };
+    if (nextProgress === progress.current && nextExit === exit.current) return;
+    progress.current = nextProgress;
+    exit.current = nextExit;
+    onChangeRef.current?.(nextProgress, nextExit);
+  }, [enabled, rangeVh, anchorId]);
 
-    read();
+  /*
+   * The *first* measurement is a layout effect, and the listeners below are
+   * not, because something is waiting on this number before the first frame:
+   * `useGlobeTransition` reads `progress` to decide the pose the globe starts
+   * in, and on a reload that restores a mid-page scroll position that pose is
+   * the arc under the page rather than the hero.
+   *
+   * A passive effect cannot serve that. The transition hook lives in a separate
+   * React root inside the Canvas, so there is no ordering relationship between
+   * its effects and this one at all — the ref it reads could legitimately still
+   * be the 0 it was constructed with, and the globe would glide down from the
+   * hero pose over half a second on every deep-linked load. A layout effect
+   * runs inside the commit that mounts this component, and the render loop
+   * cannot tick until that commit has finished, which is the guarantee.
+   */
+  useLayoutEffect(read, [read]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
     window.addEventListener('scroll', read, { passive: true });
     window.addEventListener('resize', read);
     // Section heights settle after fonts and images land; re-measure then.
@@ -89,7 +113,7 @@ export function useScrollProgress({
       window.removeEventListener('resize', read);
       window.clearTimeout(settle);
     };
-  }, [enabled, rangeVh, anchorId]);
+  }, [enabled, read]);
 
   return { progress, exit };
 }

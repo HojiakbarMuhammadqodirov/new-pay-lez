@@ -1,5 +1,5 @@
 import { CAMERA, GLOBE, RESPONSIVE, SCROLL } from '../config';
-import { DEG2RAD } from './math';
+import { DEG2RAD, smoothstep } from './math';
 
 /** One resolved layout state: where the globe sits and how far the camera is. */
 export interface GlobeState {
@@ -55,13 +55,61 @@ export function resolveLayout(
   //   ⇒ coverage <= 2·aspect·(0.5 - |offset| - margin)
   const maxCoverage =
     2 * aspect * (0.5 - Math.abs(heroOffset) - RESPONSIVE.horizontalMargin);
-  const heroCoverage = Math.max(0.2, Math.min(heightCoverage, maxCoverage));
+
+  /*
+   * Portrait stacks the copy above the globe and reserves a slot underneath
+   * it, so the globe sinks out of the text and into that slot instead of
+   * sitting on top of it. See the portrait block in `config.ts` for where the
+   * two constants come from; the two gates here are:
+   *
+   *   • aspect, ramped — 0 at `portraitAspect` and full at `portraitSinkAspect`
+   *     so a tablet rotating glides rather than jumping. `smoothstep` clamps,
+   *     which is what makes every landscape and desktop aspect exactly 0 and
+   *     leaves everything above phone width byte-for-byte unchanged;
+   *   • width, stepped — the slot only exists below the width the stylesheet
+   *     stacks at, and a half-sunk globe under an unmoved copy column is worse
+   *     than either end of a ramp.
+   */
+  const sink =
+    width <= RESPONSIVE.portraitStackWidth
+      ? smoothstep(
+          (RESPONSIVE.portraitAspect - aspect) /
+            (RESPONSIVE.portraitAspect - RESPONSIVE.portraitSinkAspect),
+        )
+      : 0;
+
+  // Negative is down. Half the copy's depth puts the centre in the middle of
+  // what the copy left over, in viewport heights.
+  const heroOffsetY = -(RESPONSIVE.portraitCopyDepth / 2) * sink;
+
+  /*
+   * The vertical twin of the clamp above, with no margin term and no aspect
+   * factor — the offset is already in viewport heights, which is the unit
+   * `coverage` is in.
+   *
+   *   |offsetY| + coverage/2 <= 0.5   ⇒   coverage <= 2·(0.5 - |offsetY|)
+   *
+   * Because the disc is centred in the slot, that one inequality is both
+   * "the top edge clears the copy" and "the bottom edge stays on screen", and
+   * at full sink it resolves to the slot's own height (1 − copyDepth). It is
+   * not redundant with the horizontal clamp: on a phone the horizontal one
+   * binds first, but on a portrait tablet (~0.7 aspect) this is the only thing
+   * stopping the globe from growing back out of the slot.
+   */
+  const maxCoverageY = 2 * (0.5 - Math.abs(heroOffsetY));
+
+  const heroCoverage = Math.max(
+    0.2,
+    Math.min(heightCoverage, maxCoverage, maxCoverageY),
+  );
   const heroVisibleHeight = (2 * R) / heroCoverage;
 
   const hero: GlobeState = {
     distance: R / (heroCoverage * tanHalfFov),
+    // `x` picks up an `aspect` factor because its offset is in viewport
+    // *widths*; `y`'s is in heights, which is what `visibleHeight` already is.
     x: heroOffset * heroVisibleHeight * aspect,
-    y: 0,
+    y: heroOffsetY * heroVisibleHeight,
     tilt: CAMERA.tiltDegrees * DEG2RAD,
     coverage: heroCoverage,
     visibleHeight: heroVisibleHeight,
@@ -69,6 +117,14 @@ export function resolveLayout(
 
   /* ---- end: sunk below the fold, only a cap showing ---------------------- */
 
+  /*
+   * Deliberately *not* clamped against aspect the way the hero is — the 30%/40%
+   * framing is honoured exactly at every viewport, which README.md argues for
+   * at length. The portrait sink above changes nothing here: `y` was already
+   * the one axis this pose moved on, so a hero pose that now starts partway
+   * down simply shortens the journey. `useGlobeTransition` lerps the two, and
+   * a lerp between two finite numbers stays continuous however they are set.
+   */
   const { visibleFraction, heightCoverage: capHeight } = SCROLL.end;
 
   // Diameter follows from the two numbers that define the end state, so

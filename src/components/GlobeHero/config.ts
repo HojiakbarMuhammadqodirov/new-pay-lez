@@ -205,6 +205,55 @@ export const RESPONSIVE = {
   portraitOffsetScale: 0.35,
   /** Minimum empty margin on the globe's outer edge, in viewport widths. */
   horizontalMargin: 0.02,
+
+  /*
+   * ---- the portrait sink -------------------------------------------------
+   *
+   * Portrait stacks the hero: the copy goes above and the page reserves a slot
+   * under it for the globe (`.hero-visual { min-height: 46vh }` in the site's
+   * stylesheet). The globe is mounted `position: fixed`, so it does not *fill*
+   * that slot by being in the flow — it has to be aimed at it. Until it was,
+   * it drew dead centre on a phone, straight through the h1, the lede and the
+   * CTA, while 46vh of reserved air sat empty underneath.
+   *
+   * `portraitCopyDepth` is where the copy's floor sits, as a fraction of the
+   * viewport measured from the top. The stylesheet puts it at 100 − 46 = 54%;
+   * this is that plus a viewport-percent of clearance, so the disc's top edge
+   * still misses the last line of the CTA on a viewport where the copy runs a
+   * little long — a translation with a third headline line, say.
+   *
+   * Two numbers fall out of it and neither is separately tunable:
+   *
+   *   • the offset, −copyDepth/2, which is the centre of the slot [depth, 1];
+   *   • the vertical coverage cap, 2·(0.5 − |offset|) = 1 − copyDepth, which is
+   *     the slot's own height.
+   *
+   * That identity is the reason for centring the disc in the slot rather than
+   * resting it on the bottom edge: "clears the copy" and "stays on screen"
+   * become the same constraint, so the vertical clamp in `resolveLayout` is
+   * the horizontal one with the margin term dropped.
+   */
+  portraitCopyDepth: 0.55,
+  /**
+   * Aspect at which the sink reaches full strength, ramping from nothing at
+   * `portraitAspect`. Switching hard at 1.0 would jerk the globe a third of a
+   * viewport the instant a tablet crossed square; 0.8 is below every portrait
+   * tablet in circulation, so the ramp is travel nobody sees rather than a
+   * step everybody does.
+   */
+  portraitSinkAspect: 0.8,
+  /**
+   * Widest viewport whose hero actually stacks — this mirrors the
+   * `max-width: 820px` query in the site's stylesheet that collapses the hero
+   * grid to one column and reserves the slot.
+   *
+   * It is a step rather than a ramp *because the stylesheet is a step*. A
+   * 1024×1366 tablet is portrait by aspect but still two columns, and a globe
+   * sunk under a copy column that has not moved is worse than either end of a
+   * ramp — the two have to jump on the same pixel or not at all.
+   */
+  portraitStackWidth: 820,
+
   /** Device pixel ratio clamp. */
   dpr: [1, 1.75] as [number, number],
 } as const;

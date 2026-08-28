@@ -27,9 +27,29 @@ type CountriesTopology = Topology<{
 let atlasPromise: Promise<Atlas> | null = null;
 
 export function loadAtlas(): Promise<Atlas> {
-  atlasPromise ??= import('world-atlas/countries-110m.json').then((module) =>
-    buildAtlas((module.default ?? module) as unknown as CountriesTopology),
-  );
+  if (!atlasPromise) {
+    /*
+     * The cache has to be *invalidated* on failure, not just populated on
+     * success. A plain `??=` memoises the rejected promise too, and a rejected
+     * promise never retries: one dropped connection during the dynamic import —
+     * or a hashed chunk that 404s because a deploy landed while the tab was
+     * open — would leave every later mount with the same failure, so the globe
+     * stays a bare lit sphere with no borders and no routes until a full
+     * reload. Navigating away and back would not even try again.
+     *
+     * The identity check matters: by the time this runs a *newer* attempt may
+     * already be in flight (a remount after the first one failed), and clearing
+     * the cache unconditionally would evict a promise that is still good and
+     * duplicate the parse.
+     */
+    const attempt: Promise<Atlas> = import('world-atlas/countries-110m.json')
+      .then((module) => buildAtlas((module.default ?? module) as unknown as CountriesTopology))
+      .catch((error: unknown) => {
+        if (atlasPromise === attempt) atlasPromise = null;
+        throw error;
+      });
+    atlasPromise = attempt;
+  }
   return atlasPromise;
 }
 
