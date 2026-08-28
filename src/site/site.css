@@ -314,24 +314,29 @@
   --on-accent: #ffffff;
 
   /*
-   * The solid, and on paper it is near-black with a mint label.
+   * The solid, and on paper it is the accent with a white label.
    *
-   * That is the reference design's own pair (`#0B1512` / `#5FE9C4`), and it does
-   * not cost a third hue: `--solid` is `--text`, the ink already writing every
-   * heading on this page, and `--on-solid` is `:root`'s `--accent`, hex for hex.
-   * A black fill carries the accent that black carries — it is the dark theme
-   * seen through a hole in the paper, not a new colour. Everything that is a
-   * mark rather than a press keeps the deep teal above.
+   * It was the reference dashboard's near-black press (`#0B1512` / `#5FE9C4`)
+   * everywhere but Home, on the argument that a page of white cards reads flat
+   * without a black element on it. That argument holds for the *dashboard*,
+   * which is a wall of white panels and keeps the ink press — see the
+   * `.pd-app` block further down, which is now the only place it survives. It
+   * does not hold for the marketing site: those pages carry a live backdrop and
+   * a mint headline, and a black pill on them is the one element saying nothing
+   * green at all. Home already had this exception; the rest of the site has it
+   * now too, which is one press instead of two.
    *
-   * It also closes the contrast miss the pair above documents: white on
-   * `#089b99` is 3.4:1, under AA for the 15px labels most of these buttons hold.
-   * Mint on this ink is 11.8:1. `--solid-lit` is the same 179deg hue two stops
-   * up, which is the hover the design uses (`#16302A` to its `#0B1512`) — a
-   * near-black button cannot lift by getting darker.
+   * The cost is stated rather than hidden: white on `#089b99` is 3.4:1, which
+   * clears AA for large text and non-text marks but not for a 15px label. The
+   * fill matching `.accent-text` exactly is what is being bought with it — the
+   * same trade `--on-accent` above documents, taken deliberately. `--solid-lit`
+   * is `--accent-ink`, so hover *darkens* (5.25:1) rather than lifting, which
+   * is the direction a fill this light has to move in.
    */
-  --solid-rgb: var(--ink-rgb);
-  --solid-lit: #0f3b39;
-  --on-solid: rgb(var(--ink-on-rgb));
+  --solid-rgb: var(--accent-rgb);
+  --solid: var(--accent);
+  --solid-lit: var(--accent-ink);
+  --on-solid: var(--on-accent);
 
   /* 16:1 against the page, and the muted pair well clear of AA. */
   --text: rgb(var(--ink-rgb));
@@ -576,6 +581,30 @@ button {
   box-shadow: 0 20px 52px -18px rgba(var(--solid-rgb), calc(0.9 * var(--glow-k)));
 }
 
+/*
+ * The one page that keeps the near-black press on paper: the partner dashboard.
+ *
+ * The inversion used to run the other way — the ink everywhere, the accent on
+ * Home only — and it is now the accent everywhere and the ink here. The
+ * dashboard is the one screen the argument for a black button was actually
+ * made about: it is the reference design (`b2b/Paylez Partner Dashboard
+ * v2.dc.html`) ported almost panel for panel, it is a wall of white cards with
+ * no backdrop of its own, and a mint pill on a mint-tinted card is the flatness
+ * the black was spent to avoid. Everywhere else on the site there is a live
+ * backdrop and a mint headline for a press to belong to.
+ *
+ * Four token overrides rather than a `background`/`color` pair, so `:hover` and
+ * the shadow follow without being restated and nothing here names a colour
+ * twice. Scoped to `.pd-app` rather than to a route, because the two app frames
+ * deliberately carry no `data-route` — see `Site.tsx`.
+ */
+:root[data-theme='light'] .pd-app {
+  --solid-rgb: var(--ink-rgb);
+  --solid: rgb(var(--solid-rgb));
+  --solid-lit: #0f3b39;
+  --on-solid: rgb(var(--ink-on-rgb));
+}
+
 .btn-ghost {
   border-color: var(--border-2);
   color: var(--text);
@@ -631,6 +660,25 @@ button {
 
 .site-header[data-scrolled='true']::before {
   opacity: 1;
+}
+
+/*
+ * The two legal documents make the strip nearly solid, and it is the same
+ * argument `data-solid` makes on the dashboard's tables one file over.
+ *
+ * 0.72 is set by the marketing pages, where what passes under the header is a
+ * heading, a paragraph or a canvas — sparse things that read fine at 28%
+ * transparency and look better for it. A GDPR table is the opposite: eight rows
+ * of 0.85rem text with hairline rules, and the nav sitting on top of it collides
+ * word-for-word. The sheet is raised rather than the blur, so the strip is still
+ * the same object, just opaque enough to be a strip.
+ *
+ * `:has()` because the header is a *sibling* of the page — it is rendered by
+ * `Site` above `<main>`, so there is no way down to it from `.legal` and no
+ * reason to thread a prop through the header for a background colour.
+ */
+.site:has(main.legal) .site-header::before {
+  background: rgba(var(--panel-rgb), 0.94);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1022,7 +1070,13 @@ button {
 .assistant-fab {
   position: fixed;
   left: clamp(1rem, 2.5vw, 2rem);
-  bottom: clamp(1rem, 2.5vh, 2rem);
+  /* `max()` against the safe-area inset rather than a plain clamp: on a phone
+     with a home indicator the bottom 34px of the viewport is a gesture strip,
+     and a 3.5rem circle placed 1rem up sits inside it — the swipe wins and the
+     button cannot be pressed. The clamp is still the floor everywhere the inset
+     is 0, so nothing on a desktop moves. `viewport-fit=cover` in `index.html`
+     is what makes the inset non-zero; without it this reads as the clamp. */
+  bottom: max(clamp(1rem, 2.5vh, 2rem), calc(env(safe-area-inset-bottom) + 0.75rem));
   z-index: 45;
 
   display: grid;
@@ -1166,7 +1220,12 @@ button {
   animation: marquee 32s linear infinite;
 }
 
-.marquee:hover .marquee-track {
+/* Hover is the desktop gesture for "hold still, I am reading that one". A
+   touch screen has no hover, so the strip was the one thing on the page a
+   phone could not stop — `:active` is the nearest equivalent, and a press-and-
+   hold is what a finger does when it wants exactly this. */
+.marquee:hover .marquee-track,
+.marquee:active .marquee-track {
   animation-play-state: paused;
 }
 
@@ -1253,9 +1312,29 @@ button {
   justify-content: center;
 }
 
+/*
+ * The clip, and it is load-bearing rather than tidy.
+ *
+ * The track is eight cards wide — around 2300px on a phone — held in place by a
+ * `translateX` that pushes it a further ~1000px right at index 0. Transformed
+ * content still contributes to scrollable overflow, and nothing above this in
+ * the tree clipped it: `.section` is padding, `.site` is `position: relative`,
+ * and neither `html` nor `body` guards the axis. So every phone visitor could
+ * drag the *whole page* three thousand pixels sideways off the carousel alone.
+ *
+ * `clip` rather than `hidden` on purpose. `overflow: hidden` makes the element
+ * a scroll container, which means focusing a card offscreen scrolls it into view
+ * inside the box and silently desynchronises the track from `--index`. `clip`
+ * cuts the paint without creating a scroll port, so the dots stay the only way
+ * the carousel moves. `.marquee` one block up already had this; the carousel
+ * never got it.
+ */
 .carousel {
   position: relative;
   margin-top: clamp(1rem, 4vh, 2.5rem);
+  overflow-x: clip;
+  /* The cards lift on hover, so the vertical axis must not be cut with it. */
+  overflow-y: visible;
 }
 
 .carousel-track {
@@ -1933,6 +2012,291 @@ button {
   color: var(--accent-ink);
 }
 
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+/* ════════════════════════════════════════════════════════════════ legal ══
+   The Privacy Policy and Terms of Use pages (`legal.tsx`).
+
+   The only two pages on the site that are *documents* rather than surfaces:
+   no cards, no glass, no backdrop behind them. Everything here is set for
+   sustained reading of six or seven pages of clauses — a measure near 70
+   characters, generous leading, and headings that are found by scanning a
+   left edge rather than by being large.
+
+   `--legal-measure` is one token because the prose, the tables and the
+   contents list all have to agree about where the column ends; three separate
+   widths is how a document starts looking like three documents. */
+.legal {
+  --legal-measure: 100%;
+  padding: calc(var(--header-h) + 3rem) 1.5rem 6rem;
+}
+
+/*
+ * One column, and everything in it shares an edge.
+ *
+ * This was `var(--maxw)` — the site's 1200px page width — with the prose capped
+ * separately at 70ch. The result was a document with two different right edges:
+ * paragraphs stopping around 700px while the tables beside them ran the full
+ * 1200, so the page read as text pushed into the left corner of something much
+ * wider. A legal document is a single column of reading, so the *column* is
+ * what gets the measure, and the tables, notices and contents list inherit it
+ * by filling their parent — which is why `--legal-measure` is now `100%` rather
+ * than a second, competing width.
+ *
+ * 58rem lands the body copy near 75 characters at the base size, which is the
+ * top of the comfortable range and the right end of it for a document nobody
+ * reads for pleasure.
+ */
+.legal-inner {
+  max-width: 58rem;
+  margin: 0 auto;
+}
+
+.legal-head {
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.legal-head h1 {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: clamp(2rem, 5vw, 2.9rem);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  text-wrap: balance;
+}
+
+.legal-version {
+  margin-top: 0.65rem;
+  font-size: 0.85rem;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+/* Why the body is in English while the chrome is not. Set quietly — it is a
+   note about the document, not part of it. */
+.legal-english {
+  margin-top: 0.85rem;
+  max-width: var(--legal-measure);
+  font-size: 0.83rem;
+  color: var(--text-fnt);
+}
+
+.legal-toc {
+  margin: 2.5rem 0;
+  padding: 1.25rem 1.5rem;
+  max-width: var(--legal-measure);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.legal-toc h2 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 700;
+  color: var(--text-fnt);
+  margin-bottom: 0.85rem;
+}
+
+.legal-toc ol {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-left: 1.2rem;
+}
+
+.legal-toc li::marker {
+  color: var(--text-fnt);
+  font-size: 0.85rem;
+}
+
+.legal-toc a {
+  font-size: 0.92rem;
+  color: var(--text-mut);
+  text-decoration: none;
+}
+
+.legal-toc a:hover {
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.legal-lede {
+  max-width: var(--legal-measure);
+  margin-top: 2rem;
+  font-size: 1.02rem;
+  color: var(--text);
+}
+
+/* The header block both documents open with: controller, contact, governing
+   law. A definition list because that is what it is. */
+.legal-meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem 2rem;
+  margin: 2rem 0;
+  padding: 1.35rem 1.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.legal-meta dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  font-weight: 700;
+  color: var(--text-fnt);
+  margin-bottom: 0.2rem;
+}
+
+.legal-meta dd {
+  font-size: 0.9rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.legal-section {
+  margin-top: 3rem;
+  scroll-margin-top: calc(var(--header-h) + 1rem);
+}
+
+.legal-section h2 {
+  display: flex;
+  gap: 0.7rem;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.35rem;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  text-wrap: balance;
+  margin-bottom: 1rem;
+}
+
+/* The section number sits outside the title so the titles align on one left
+   edge and the document can be scanned down it. */
+.legal-n {
+  color: var(--accent-ink);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.legal-section h3 {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.02rem;
+  margin: 2rem 0 0.75rem;
+  color: var(--text);
+}
+
+.legal-body p {
+  max-width: var(--legal-measure);
+  color: var(--text-mut);
+  line-height: 1.7;
+}
+
+.legal-body p + p {
+  margin-top: 0.9rem;
+}
+
+.legal-body strong {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.legal-body ul {
+  max-width: var(--legal-measure);
+  margin: 0.9rem 0 0;
+  padding-left: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--text-mut);
+  line-height: 1.6;
+}
+
+.legal-body ul li::marker {
+  color: var(--border-2);
+}
+
+.legal-body a {
+  color: var(--accent-ink);
+  overflow-wrap: anywhere;
+}
+
+/* A boxed notice — the "this feature is not operational" warnings, and the
+   points-have-no-cash-value clause. Weighted rather than coloured, because
+   the palette has one accent and a warning cannot be a second hue. */
+.legal-notice {
+  max-width: var(--legal-measure);
+  margin: 1.25rem 0;
+  padding: 1rem 1.25rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-2);
+  border-left-width: 3px;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+}
+
+.legal-notice p {
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+/* Four columns of retention periods do not fit a phone. The table scrolls,
+   never the page. */
+.legal-table-wrap {
+  margin: 1rem 0 1.5rem;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+}
+
+.legal-table {
+  border-collapse: collapse;
+  width: 100%;
+  min-width: 560px;
+  font-size: 0.85rem;
+}
+
+.legal-table th,
+.legal-table td {
+  text-align: left;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+.legal-table thead th {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text-fnt);
+  background: var(--surface-2);
+  white-space: nowrap;
+}
+
+.legal-table td {
+  color: var(--text-mut);
+  line-height: 1.5;
+}
+
+.legal-table td:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.legal-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 /* ═══════════════════════════════════════════════════════════════ l-earn ══
    The L-Earn page.
 
@@ -2299,8 +2663,12 @@ button {
   background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  /* Clips the first and last rows to the corner radius. */
-  overflow: hidden;
+  /* Clips the first and last rows to the corner radius — and on the x axis it
+     is `auto`, not `hidden`, which is a bug fix rather than a preference. Four
+     columns do not fit a 390px phone, and `body { overflow-x: hidden }` in
+     `index.css` means a clipped column is not merely off-screen, it is
+     unreachable: the page will not scroll to it and neither will the box. */
+  overflow: auto hidden;
 }
 
 .board table {
@@ -2515,47 +2883,24 @@ button {
   color: var(--text-fnt);
 }
 
-.svc-field {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0.85rem 1rem;
-  border-radius: var(--r-sm);
-  border: 1px solid var(--border-2);
-  background: var(--surface);
-  color: var(--accent-ink);
+/* What the panel says instead of asking for an ID. Sized like help text
+   rather than like body copy: it is the reason there is no field here, and it
+   is read once. */
+.svc-note {
+  margin-top: 0.95rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-mut);
 }
 
-.svc-id {
-  font-family: var(--font-display);
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  color: var(--text);
-}
-
-/* The caret is the only thing that moves in the panel — enough to read as a
-   live field rather than a picture of one, and cheap enough to be honest. */
-.svc-caret {
-  width: 2px;
-  height: 1.05em;
-  margin-left: -0.25rem;
-  background: var(--accent-lit);
-  animation: svc-blink 1.15s steps(1, end) infinite;
-}
-
-@keyframes svc-blink {
-  50% {
-    opacity: 0;
-  }
-}
-
-/* A `span`, not a button: there is nothing on a marketing page for it to
-   submit to. It borrows `.btn-solid`'s face and gives back the interaction. */
+/* A real link now, and styled like one you press. It used to be a `span`
+   borrowing `.btn-solid`'s face with `cursor: default`, because the ID field
+   above it had nothing to submit to; the panel's action is a navigation, so it
+   gives the interaction back. */
 .svc-go {
   width: 100%;
   margin-top: 1.1rem;
   justify-content: center;
-  cursor: default;
 }
 
 /* ── kpis ─────────────────────────────────────────────────────────────── */
@@ -2779,13 +3124,9 @@ button {
     transform: none;
     transition: none;
   }
-
-  .svc-caret {
-    animation: none;
-  }
 }
 
-/* ═════════════════════════════════════════════════════════════════ b2b ══ */
+/* ═════════════════════════════════════════════════════════════════ business ══ */
 
 /*
  * The consoles.
@@ -3071,7 +3412,7 @@ button {
  * they are looking at one product, and two different-looking mocks would have
  * told them the opposite.
  *
- * All DOM, no canvas and no screenshot, for the reasons at the top of `b2b.tsx`:
+ * All DOM, no canvas and no screenshot, for the reasons at the top of `business.tsx`:
  * it follows the theme, it translates, and it prices itself in the reader's
  * currency. None of which an image does.
  */
@@ -3595,12 +3936,12 @@ button {
 
 /* The console is a card, not a canvas: it wants a column it can fill rather
    than the wider one the globe and the controller need. */
-.b2b-hero .hero-grid {
+.business-hero .hero-grid {
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
   align-items: center;
 }
 
-.b2b-visual {
+.business-visual {
   display: grid;
   place-items: center;
   min-height: 0;
@@ -3608,11 +3949,11 @@ button {
 
 /* Wider than the pillar consoles: this one carries a toolbar, a sentence and
    four tiles, and at 30rem the sentence runs to five lines. */
-.b2b-visual .console {
+.business-visual .console {
   width: min(100%, 34rem);
 }
 
-.b2b-trust {
+.business-trust {
   margin-top: 1.75rem;
   font-size: 0.85rem;
   color: var(--text-fnt);
@@ -3621,13 +3962,13 @@ button {
 /* Four claims, four cards. `.games` is three across, and a fourth card wrapping
    onto its own row under three would read as an afterthought rather than as one
    of a set — which is the opposite of "four systems, one record". */
-.b2b-why-grid {
+.business-why-grid {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 /* A closing line under a section that has just made a claim with numbers in it.
    Centred and faint: it is a footnote, not a conclusion. */
-.b2b-note {
+.business-note {
   margin: 2.25rem auto 0;
   max-width: 46rem;
   text-align: center;
@@ -4146,7 +4487,19 @@ button {
  * number as a bar is read before it is read, which is the whole point of saying
  * that three of ten are left.
  */
-.gift-stock {
+/*
+ * The stock caption in the right slot of `.gift-top`, in both wallets.
+ *
+ * `.gift-stock` is the marketing catalogue's, which carries a depletion bar;
+ * `.gift-left` is the signed-in wallet's, which is the same sentence without
+ * one. They shared everything except that bar and only one of them was written,
+ * so the signed-in card rendered "3 of 10 left" at 17px body type — it inherited
+ * `.site`'s size and line height, wrapped, and shoved the brand tile out of
+ * line. Same card, two different type scales, on the two screens most likely to
+ * be compared.
+ */
+.gift-stock,
+.gift-left {
   position: relative;
   padding-bottom: 0.4rem;
   font-size: 0.68rem;
@@ -4200,7 +4553,7 @@ button {
   color: var(--accent-lit);
 }
 
-/* Three rules, not four — the `.b2b-why-grid` four-up would leave a hole. */
+/* Three rules, not four — the `.business-why-grid` four-up would leave a hole. */
 .rules-grid {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
@@ -4820,14 +5173,33 @@ button {
  * are different lengths in every language, so anything wanting a pixel height up
  * front would be wrong in four of them.
  */
+/*
+ * `visibility`, not just `0fr` — the same construction `.faq-panel` uses, and
+ * for the reason stated there: a zero-height row with `overflow: hidden` is
+ * invisible to the eye and fully present to a screen reader. Relocate has nine
+ * of these and each holds a list of providers, so a reader was hearing every
+ * provider in all nine topics, continuously, while each `aria-expanded="false"`
+ * told them the section was shut. It also puts the links back in the tab order.
+ *
+ * The visibility transition is delayed by the full duration on the way closed
+ * and instant on the way open, so the panel is not hidden out from under its
+ * own collapse animation.
+ */
 .topic-panel {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows 320ms var(--ease);
+  visibility: hidden;
+  transition:
+    grid-template-rows 320ms var(--ease),
+    visibility 0s linear 320ms;
 }
 
 .topic[data-open='true'] .topic-panel {
   grid-template-rows: 1fr;
+  visibility: visible;
+  transition:
+    grid-template-rows 320ms var(--ease),
+    visibility 0s;
 }
 
 .topic-panel > div {
@@ -4876,7 +5248,12 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* The open rule too, or its `visibility 0s` transition survives this block and
+     the closed one's delayed transition does not — which would leave the panel
+     hidden for 320ms after it has finished opening. `.faq-panel` lists both for
+     the same reason. */
   .topic-panel,
+  .topic[data-open='true'] .topic-panel,
   .topic-go {
     transition: none;
   }
@@ -4994,89 +5371,90 @@ button {
    Prefixed `ct-`, like every app screen on the site: `site.css` is one sheet
    with no scoping and three collisions have already shipped bugs here.
    ═══════════════════════════════════════════════════════════════════════ */
-
-/* Four cards, and they are links — the whole card is the target, so a card
-   whose action is "Email support" does not need the reader to find the words. */
-.ct-channels {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
-  gap: 0.9rem;
+/*
+ * One screen, two columns that end on the same line.
+ *
+ * The page is a form and the things a reader needs to know about sending it:
+ * a heading at the top left, the form on the right, and — pushed to the bottom
+ * of the left column by `margin-top: auto` — when it will be answered and the
+ * two places we are otherwise. The push is the whole rule. The left column's
+ * natural height is a heading and a paragraph; the form's is six controls and a
+ * note, which is a great deal taller, so left the two columns simply stopped
+ * wherever they ran out and the page read as unfinished at the bottom. Aligning
+ * them by hand with a margin would be a number that is wrong at the next
+ * breakpoint and in the next language.
+ */
+.ct-page {
+  /* No hero above it any more, so this section carries the top of the page. */
+  padding-top: clamp(6rem, 12vh, 9rem);
 }
 
-.ct-channel {
+.ct-split {
+  align-items: stretch;
+}
+
+.ct-copy {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-  padding: 1.4rem 1.35rem 1.2rem;
-  border: 1px solid var(--border);
-  border-radius: var(--r);
-  background: rgba(var(--panel-rgb), var(--glass));
-  transition:
-    border-color 240ms var(--ease),
-    transform 240ms var(--ease);
+  gap: 2rem;
 }
 
-.ct-channel:hover {
-  border-color: var(--accent-soft);
-  transform: translateY(-3px);
+.ct-head h1 {
+  /* An `h1` in a section head, because this section *is* the page now — the
+     hero that used to carry the page's one top-level heading is gone. The size
+     is the section head's, not the hero's: nothing on this page is competing
+     with it for attention. */
+  font-size: clamp(2rem, 4.2vw, 2.9rem);
+  line-height: 1.08;
+  letter-spacing: -0.02em;
 }
 
-.ct-ico {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 2.6rem;
-  height: 2.6rem;
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--accent-lit);
+.ct-foot {
+  margin-top: auto;
 }
 
-.ct-channel h3 {
-  font-family: var(--font-display);
-  font-size: 1.05rem;
-  font-weight: 600;
+/* The hours panel carries its own top margin for the layout it used to be in —
+   stacked under a section head. Here the flex gap and the auto margin above own
+   the spacing, and leaving it would push the block up off the baseline the two
+   columns are being aligned to. */
+.ct-foot > .ct-hours {
+  margin-top: 0;
 }
 
-.ct-channel p {
-  flex: 1;
-  font-size: 0.875rem;
-  line-height: 1.6;
-  color: var(--text-mut);
+/* The two channels. Ghost buttons rather than the card grid this page used to
+   open with: a channel is a place to go, which is what a button is, and four
+   cards explaining what YouTube is were four cards nobody read. */
+.ct-socials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 0.9rem;
 }
 
-/* The address itself, at the size an address wants to be read at. */
-.ct-meta {
-  font-size: 0.8125rem;
-  color: var(--text-fnt);
-  word-break: break-word;
+.ct-social {
+  /* Square-ish and equal, so the pair reads as one control group. The handle
+     sits beside the mark rather than under it — a two-line button in a row of
+     two-line buttons is a card again. */
+  gap: 0.55rem;
+  padding: 0.7rem 1.05rem;
 }
 
-.ct-go {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
+.ct-social-handle {
   font-size: 0.8125rem;
   font-weight: 700;
-  color: var(--accent-ink);
 }
 
-.ct-channel:hover .ct-go svg {
-  transform: translateX(3px);
-}
-
-.ct-go svg {
-  transition: transform 240ms var(--ease);
-}
-
-/* ── the composer ── */
-
-.ct-form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1.5rem;
-}
+/* ── the composer ──
+ *
+ * `.ct-form` has no rule, and that is now deliberate rather than an oversight.
+ * It used to set `display`, `flex-direction`, `gap` and `padding` — all four of
+ * which `.form-block` sets again, later in this sheet, at equal specificity. So
+ * source order won and the tighter rhythm it was asking for never once applied.
+ * A rule that describes a layout the page does not have is worse than no rule:
+ * the next person edits it and nothing moves. The contact form takes the shared
+ * field kit's block, like every other form here; the class stays on the element
+ * as a marker.
+ */
 
 /* The disclosure that this hands off to a mail app rather than posting. Under
    the button on purpose: it is what the button is about to do. */
@@ -5417,6 +5795,74 @@ button {
   opacity: 0.45;
   cursor: not-allowed;
   transform: none;
+}
+
+/* ── continue with Google ──────────────────────────────────────────────────
+   Google renders its own button into `.auth-google-slot`, so nothing here may
+   style a control — the rule against a picture of a control cuts both ways, and
+   restyling theirs is how you get a button that stops matching the flow behind
+   it. This lays out the divider and centres what Google draws, and that is all.
+
+   The button's own colours come from the `theme` argument in `google.ts`
+   (`filled_black` on dark, `outline` on paper) rather than from here, because a
+   canvas of somebody else's making cannot read our tokens — the same split the
+   WebGL palettes live with. */
+.auth-google {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  margin-top: 0.25rem;
+}
+
+/* A rule with a word in it. The lines are drawn with the border token rather
+   than an `<hr>` so the two halves stay even as the card's width changes. */
+.auth-or {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 0.85rem;
+  color: var(--text-fnt);
+  font-size: 0.76rem;
+  text-transform: lowercase;
+}
+
+.auth-or::before,
+.auth-or::after {
+  content: '';
+  height: 1px;
+  background: var(--border);
+}
+
+/* Our button, so it is `.btn btn-ghost btn-lg` like any other secondary action
+   and inherits the pill, the type and the hover from them. The only thing this
+   adds is the mark's spacing — everything else was already right, which is the
+   whole argument for not using Google's rendered one. */
+.auth-google-btn {
+  justify-content: center;
+  width: 100%;
+  gap: 0.6rem;
+}
+
+.auth-google-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+  transform: none;
+}
+
+/* The four-colour G, unaltered — the fourth sanctioned exception to the
+   two-colour rule, and the same case as a flag emoji: Google's terms forbid
+   recolouring the mark, so the thing depicted *is* its colours. Sized against
+   the label's cap height rather than given a round number, so it reads as part
+   of the word rather than as an icon parked beside it. */
+.auth-google-g {
+  width: 1.15em;
+  height: 1.15em;
+  flex-shrink: 0;
+}
+
+.auth-google-slot[aria-busy='true'] {
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .auth-demo {
@@ -6669,8 +7115,16 @@ button {
   --on-accent: #05201c;
 
   /* A black button on black is not a button, so inside the ink a press is the
-     mint — the same inversion dark runs, for the same reason. */
+     mint — the same inversion dark runs, for the same reason.
+
+     `--solid` is restated rather than left to the base `rgb(var(--solid-rgb))`,
+     and it has to be: a `var()` inside a custom property is substituted where
+     the *declaration* sits, so the base one resolved against `:root`'s triplet
+     and was inherited in here as a finished colour. Overriding only the triplet
+     changed the shadow and nothing else, which on paper meant a press in one of
+     these panels kept the page's fill on a near-black ground. */
   --solid-rgb: var(--ink-on-rgb);
+  --solid: rgb(var(--solid-rgb));
   --solid-lit: var(--solid);
   --on-solid: var(--on-accent);
 
@@ -7149,6 +7603,63 @@ button {
 
 /* ── cost, rows and the verdict ── */
 
+/*
+ * Who saw you.
+ *
+ * Three figures across the top, then the same `.pd-rows` ladder every other
+ * panel here uses for its split. The figures are their own grid rather than the
+ * overview's tile row: a tile carries a sparkline and a delta, and neither
+ * exists for an impression count — there is no previous period to compare the
+ * first month of reach against, and inventing one is the thing this dashboard
+ * has a whole panel of copy about not doing.
+ */
+.pd-reach-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1.1rem;
+  margin-bottom: 0.9rem;
+}
+
+.pd-reach-figures > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pd-reach-figures b {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.pd-reach-figures span {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pd-reach-figures i {
+  font-style: normal;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+/* The funnel sentence sits between the figures and the split, so it needs a
+   rule under it rather than a margin: it is a summary of what is above and an
+   introduction to what is below. */
+.pd-reach-funnel {
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-reach-split-head {
+  margin-top: 0.9rem;
+}
+
 .pd-rows {
   display: flex;
   flex-direction: column;
@@ -7415,11 +7926,28 @@ button {
   height: 8rem;
 }
 
+/*
+ * A grid, not a flex column, and that is the whole chart.
+ *
+ * The bar's height is a percentage set inline, and it has to resolve against a
+ * track that holds *only* the bar. As a flex column it resolved against the
+ * full 8rem while the value and the label were consuming about 52px of that
+ * same 8rem — so flex shrank every bar down to the leftover, and any two bars
+ * above roughly 60% came out the same height. That is not a rounding error on
+ * this panel: the before/after proof is 1.5 against 2.4, the only claim on the
+ * screen that is counted rather than modelled, and it was drawing two identical
+ * columns under a sentence saying one is larger than the other.
+ *
+ * `1fr auto auto` gives the bar a definite track of its own and lets the two
+ * text rows size to themselves. `align-items: end` is what keeps the bar
+ * growing up off the floor. This is the same construction `.chart-col` uses,
+ * which is why that one has never had the problem.
+ */
 .pd-columns span {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  align-items: end;
+  justify-items: center;
   gap: 0.3rem;
   height: 100%;
   font-size: 0.72rem;
@@ -8345,12 +8873,16 @@ button {
   height: 7rem;
 }
 
+/* Same construction, and the same reason, as `.pd-columns span` above — see the
+   note there. The row order differs because this column writes its figure
+   *above* the bar rather than below it: `auto 1fr auto`, so the middle track is
+   the bar's and the percentage has something definite to resolve against. */
 .pd-trend-cols span {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  align-items: end;
+  justify-items: center;
   gap: 0.35rem;
   height: 100%;
   font-size: 0.7rem;
@@ -10430,6 +10962,14 @@ button {
  * The one place on the dashboard that draws the customer's phone rather than
  * the owner's desk, because a notification is the only thing here that arrives
  * uninvited. It is deliberately dark in both themes: a lock screen is.
+ *
+ * "Dark in both themes" is exactly what `data-ink='on'` means, and the element
+ * now carries it — the same treatment `.pd-phone` further down already took. It
+ * used to say the same thing in seven colour literals instead, one of which
+ * (`#1b3129`) was a hand-picked dark green belonging to neither `--accent-rgb`
+ * nor `--ink-rgb`: a third hue, on a page whose whole rule is that there are
+ * two. Inside the scope `--bg` *is* the ink and `--text` is white, so every rule
+ * below reads a token and the block stops being an exception to the sheet.
  */
 
 .pd-lock {
@@ -10439,7 +10979,9 @@ button {
   gap: 1rem;
   padding: 1.3rem 1rem 1.6rem;
   border-radius: 18px;
-  background: linear-gradient(160deg, #1b3129, #0b1512);
+  /* `--bg-2` down to `--bg`: the ink's own one-step-up, which is how the scope
+     already builds a tile sitting on its ground. */
+  background: linear-gradient(160deg, var(--bg-2), var(--bg));
 }
 
 .pd-lock-clock {
@@ -10447,7 +10989,7 @@ button {
   font-weight: 300;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
-  color: #fff;
+  color: var(--text);
 }
 
 .pd-lock-card {
@@ -10457,7 +10999,7 @@ button {
   gap: 0.3rem;
   padding: 0.8rem 0.85rem;
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.14);
+  background: var(--surface-2);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
@@ -10471,26 +11013,26 @@ button {
 
 .pd-lock-head .brand {
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-mut);
 }
 
 .pd-lock-head i {
   margin-left: auto;
   font-style: normal;
   font-size: 0.68rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-fnt);
 }
 
 .pd-lock-card b {
   font-size: 0.82rem;
   font-weight: 700;
-  color: #fff;
+  color: var(--text);
 }
 
 .pd-lock-card p {
   font-size: 0.76rem;
   line-height: 1.5;
-  color: rgba(255, 255, 255, 0.78);
+  color: var(--text-mut);
 }
 
 /* ── the app card ──────────────────────────────────────────────────────────
@@ -10601,21 +11143,39 @@ button {
   text-align: center;
 }
 
-/* The whole form said back in one sentence, on the dark ground the overview
-   uses for the same job: this is the panel that answers "what did I just
-   build". */
+/*
+ * The whole form said back in one sentence, on the dark ground the overview
+ * uses for the same job: this is the panel that answers "what did I just
+ * build".
+ *
+ * It gets there through `data-ink='paper'` on the element, like `.pd-hero` and
+ * `.pd-knows`, rather than by swapping `--text` and `--bg` — which is what it
+ * used to do, and which only worked in one theme. `--text` is near-black on
+ * paper and near-*white* in dark, so the hard swap turned this into a white
+ * slab on the dark page, and the mint kicker on it landed at 1.34:1. The
+ * `[data-ink]` block is the mechanism that exists for exactly this: it is
+ * conditional on the light theme, because in dark the panel is already dark and
+ * glass is the better answer.
+ */
 .pd-summary {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
   padding: 1.1rem 1.2rem;
   border-radius: 14px;
-  background: var(--text);
-  color: var(--bg);
+  /* Solid ink inside the scope (`--panel-rgb` is the ink and `--glass` drops to
+     full opacity there), ordinary panel glass outside it. One declaration,
+     both themes. */
+  background: var(--glass);
+  border: 1px solid var(--border);
 }
 
+/* `--accent-ink` rather than `--accent`: the ink scope re-points it to the mint
+   at 11:1, and outside the scope it is the theme's own mark colour. `--accent`
+   is a *fill* token and is the one thing on a light page that must never become
+   text — see `src/site/CLAUDE.md`. */
 .pd-summary .console-label {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .pd-summary b {
@@ -12137,6 +12697,10 @@ button {
 
 .wal-tabs {
   display: flex;
+  /* Wraps, because the labels are dictionary copy: "Использованные" plus its
+     count is wider than half a phone, and an unwrapped flex row pushes the
+     second tab off the edge of a box that does not scroll. */
+  flex-wrap: wrap;
   gap: 0.4rem;
   margin-bottom: 1rem;
 }
@@ -12252,6 +12816,216 @@ button {
 .wal-empty p {
   max-width: 34ch;
   color: var(--text-mut);
+}
+
+/* ══════════════════════════════════════════ the wallet's other two holdings ══
+   Prefixed `wal-`, like everything else on this screen: `site.css` is one sheet
+   with no scoping, and `.wallet-tabs` on the marketing Vouchers page is exactly
+   the collision this prefix exists to avoid.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * Deals and stamp cards, side by side.
+ *
+ * The one place this page departs from the app's single column, and the reason
+ * is the pairing rather than the width: these two are what a player checks
+ * *before going out* — what have I got, and where am I nearly there — and on a
+ * wide screen that is one look instead of two scrolls. The gift cards below
+ * stay full width because they are a shelf as well as a holding.
+ *
+ * `1fr 1fr` rather than `auto-fit`: the two columns are not interchangeable
+ * cards, they are two named sections, and a track that collapses them into one
+ * at an arbitrary width would reorder the page for no reason. One breakpoint,
+ * chosen where the deal grid stops fitting two across.
+ */
+.wal-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.6rem, 4vw, 3rem);
+  margin-top: 2.5rem;
+}
+
+.wal-col {
+  min-width: 0;
+}
+
+.wal-col .section-head {
+  margin-bottom: 1.1rem;
+}
+
+/* ── hot deals ── */
+
+.wal-deals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 0.8rem;
+}
+
+.wal-deal {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 1rem 1.05rem 1.1rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* A deal already in the wallet is not a thing you can take again, so it stops
+   looking like an offer and starts looking like a holding: the border firms up
+   and the code takes the place the button had. */
+.wal-deal[data-held='true'] {
+  border-color: var(--border-2);
+}
+
+.wal-deal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.35rem;
+}
+
+/* The offer itself, in the venue's own words. Big, because it is the only
+   thing on the card somebody is scanning the grid for. */
+.wal-badge {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-ink);
+}
+
+.wal-deal b {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.wal-deal-when,
+.wal-deal-claimed {
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+}
+
+.wal-deal-claim {
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.55rem;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.78rem;
+}
+
+.wal-deal-claim:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ── stamp cards ── */
+
+.wal-stamps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.wal-stamp {
+  padding: 1.05rem 1.15rem 1.1rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* A full card is the one state on this page that is an *event* rather than a
+   status — there is something waiting at a counter — so it gets the border the
+   rest of the sheet reserves for something you can act on. */
+.wal-stamp[data-full='true'] {
+  border-color: var(--accent-soft);
+}
+
+.wal-stamp-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.8rem;
+}
+
+.wal-stamp-head > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wal-stamp-head b {
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.wal-stamp-head > div > span {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-fnt);
+}
+
+.wal-cycles {
+  margin-left: auto;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+/*
+ * The slots.
+ *
+ * `auto-fill` on a fixed track rather than one column per stamp: a card can ask
+ * for anything from four visits to twelve, and a grid that divides the row by
+ * the count draws twelve tiny discs on one card and four fat ones on the next.
+ * A stamp is a fixed size; how many fit on a line is the layout's business.
+ */
+.wal-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 1.15rem);
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.wal-slots span {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  /* Dashed while empty, solid once filled — the difference has to survive being
+     printed in one ink, and a dashed outline reads as "not yet" at any size. */
+  border: 1px dashed var(--border-2);
+}
+
+.wal-slots span[data-on='true'] {
+  border: 1px solid transparent;
+  background: var(--accent);
+  box-shadow: 0 0 12px -4px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
+}
+
+.wal-stamp-words {
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.wal-stamp[data-full='true'] .wal-stamp-words {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.wal-visit {
+  margin-top: 0.8rem;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.78rem;
 }
 
 .cat-head {
@@ -12392,7 +13166,7 @@ button {
   .games,
   .kpis,
   .tiers,
-  .b2b-why-grid,
+  .business-why-grid,
   .dash-notes,
   .gifts,
   .topics,
@@ -12419,7 +13193,7 @@ button {
      phone. */
   .hero-grid,
   .learn-hero .hero-grid,
-  .b2b-hero .hero-grid {
+  .business-hero .hero-grid {
     grid-template-columns: 1fr;
   }
 
@@ -12505,13 +13279,50 @@ button {
      exactly as tall as they need to be. 46vh of reserved air under them is
      just a gap. */
   .analytics-visual,
-  .b2b-visual {
+  .business-visual {
     min-height: 0;
     margin-top: 2.25rem;
   }
 
   .split {
     grid-template-columns: 1fr;
+  }
+
+  /*
+   * The wallet's two holdings stop being side by side.
+   *
+   * They are paired on a wide screen because "what have I got, and where am I
+   * nearly there" is one question — see `.wal-split`. On a phone the pairing is
+   * unreachable anyway: the two columns are a screen apart vertically whether
+   * they are in one track or two, and half-width deal cards at this size are
+   * two words per line.
+   */
+  .wal-split {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 2rem;
+  }
+
+  /*
+   * Contact stacks, and the bottom alignment goes with it.
+   *
+   * `margin-top: auto` on `.ct-foot` pushes the hours and the channels to the
+   * bottom of a column that is as tall as the form beside it. In one column
+   * there is nothing to align to — the column is exactly as tall as its own
+   * content — so the auto margin resolves to zero and the block would sit
+   * directly under the lede with no air. It gets a real margin instead.
+   */
+  .ct-page {
+    padding-top: clamp(4.5rem, 14vh, 6.5rem);
+  }
+
+  .ct-foot {
+    margin-top: 0.5rem;
+  }
+
+  /* The form comes first on a phone: the page is a form, and the reader who
+     tapped Contact came to write, not to read the opening hours. */
+  .ct-split .split-visual {
+    order: -1;
   }
 
   .tcols {
@@ -12566,7 +13377,7 @@ button {
   .steps,
   .games,
   .tiers,
-  .b2b-why-grid,
+  .business-why-grid,
   .dash-notes,
   .topics,
   .rules-grid {
@@ -13354,11 +14165,17 @@ button {
   height: 9rem;
 }
 
+/* A grid for the reason `.pd-columns span` is one: the bar's percentage has to
+   resolve against a track that holds nothing but the bar. As a flex column the
+   money label under it ate part of the same 9rem, and flex shrank the bar into
+   what was left — which always caught the tallest month, because the peak is
+   the one bar that is exactly 100%. A chart that systematically under-draws its
+   own maximum is drawing a different chart. */
 .adm-months span {
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  align-items: center;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  align-items: end;
+  justify-items: center;
   gap: 0.4rem;
   flex: 1;
   height: 100%;
@@ -13709,7 +14526,12 @@ button {
 /* Two panels side by side where there is room, stacked where there is not. */
 .adm-two {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+  /* `min(100%, 20rem)` rather than a bare `20rem`: an `auto-fit` track cannot go
+     below its own floor, so a 320px minimum against the ~323px a phone leaves
+     inside `.adm-block` fits by three pixels and stops fitting the moment the
+     device is 360px wide or the padding gains a rem. The `min()` lets the track
+     collapse to the column instead of overflowing it. */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 20rem), 1fr));
   gap: 1.5rem;
 }
 
@@ -13791,12 +14613,565 @@ button {
   height: 8rem;
 }
 
+/*
+ * `flex: 1 1 0` and `min-width`, not `min-height`: a day with no visitors keeps
+ * its *slot* on the axis and draws no *bar*. Those are different things and the
+ * distinction is the whole argument of this tab — an empty day used to be given
+ * a floor tick, which drew the same mark for "nobody came" as for "one person
+ * came" on the one screen whose entire point is that absent and present are not
+ * the same state. `adminWebsite.tsx` resolves an empty day to `0%`; the column
+ * below it still holds the day open.
+ */
 .adm-web-trend span {
   flex: 1 1 0;
   min-width: 2px;
   border-radius: 3px 3px 0 0;
   background: var(--accent);
-  /* A day with no visitors is still a day, and reads as a floor tick rather
-     than a gap in the axis. */
   opacity: 0.85;
+}
+
+/* ══════════════════════════════════════════════════════════════ phones ══
+   The tier that was missing.
+
+   Everything sized at the 820px step used to be carried unchanged all the way
+   down to 360px — a 2.3× range with one adjustment in it. These blocks are the
+   narrow end of that range, plus the two things that are about the *input
+   device* rather than the width.
+
+   Ordered by what breaks worst, not by selector. */
+
+/*
+ * Text controls at 16px, on touch.
+ *
+ * Below 16px, iOS Safari zooms the viewport when a field takes focus — and
+ * because it does not zoom back out, every sign-in on an iPhone left the
+ * visitor on a page 1.3× too wide with no obvious way back. Every control in
+ * the shared field kit was 15px or smaller, so this hit sign-in, sign-up,
+ * business setup, contact and the assistant.
+ *
+ * Keyed to `pointer: coarse` rather than a width, because the trigger is the
+ * on-screen keyboard, not the screen size: a small laptop window has the same
+ * width and none of the problem.
+ */
+@media (pointer: coarse) {
+  .field input,
+  .field select,
+  .field textarea,
+  .ai-composer textarea,
+  .news-form input,
+  .fx-search input,
+  .guide-city select,
+  .pd-well input,
+  .pd-composer-well textarea,
+  .pd-search input {
+    font-size: 1rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  :root {
+    /*
+     * 84px of sticky bar is a tenth of a phone screen, and it is also the
+     * subtrahend in `.hero { min-height: calc(100dvh - var(--header-h)) }` and
+     * the `scroll-padding-top` every in-page anchor clears. Shrinking the token
+     * corrects all three at once.
+     */
+    --header-h: 60px;
+  }
+
+  /*
+   * `auto-fit` cannot go below its own `minmax` floor, so a 21rem track on a
+   * ~286px column overflows by about 50px rather than reflowing. One column is
+   * the only thing that fits.
+   */
+  .pd-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /*
+   * A 7px dot is a fifth of the 44px touch target guidance, and the carousel
+   * has no swipe. The dot stays 7px — it is the right size to *look* at — and
+   * grows a transparent square around itself to be hit.
+   */
+  .carousel-dot {
+    position: relative;
+  }
+
+  .carousel-dot::after {
+    content: '';
+    position: absolute;
+    /* (44 - 7) / 2, so the target is centred on the mark. */
+    inset: -18.5px;
+  }
+
+  /*
+   * Deal cards go one-up.
+   *
+   * `auto-fill` with an 11rem floor puts two across a 360px column, which is
+   * about 8rem each once the gap and the page padding are out — narrower than
+   * the floor asked for, so the track overflows rather than reflowing. The same
+   * failure the `.pd-cards` note above describes, on a different grid.
+   */
+  .wal-deals {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* A stamp slot is a touch target on this screen even though it is not
+     interactive — it is the thing a thumb rests on while reading the row — and
+     1.15rem discs at eight across leave no gutter to read them apart by. */
+  .wal-slots {
+    grid-template-columns: repeat(auto-fill, 1.35rem);
+    gap: 0.45rem;
+  }
+
+  .wal-slots span {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  /* The cycle pill wraps under the venue name rather than squeezing it: a
+     venue's own name is the one thing on the card that must stay readable. */
+  .wal-stamp-head {
+    flex-wrap: wrap;
+  }
+
+  .wal-cycles {
+    margin-left: 3.85rem;
+  }
+
+  /*
+   * The two channel buttons fill the row.
+   *
+   * Shrink-wrapped they are two small pills against the left edge of a screen
+   * that is all edge, which reads as leftovers rather than as a pair of
+   * destinations. Half each, so they are a control group.
+   */
+  .ct-socials {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .ct-social {
+    justify-content: center;
+    padding: 0.7rem 0.5rem;
+  }
+
+  /* Three figures at `minmax(9rem, …)` is one across at this width already —
+     but each keeps a full line of caption under it, which stacks into most of
+     a screen. Two across, with the rate on its own line under them. */
+  .pd-reach-figures {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.9rem;
+  }
+
+  .pd-reach-figures i {
+    display: none;
+  }
+
+  /*
+   * ── the dashboard rail becomes a bottom bar ──────────────────────────
+   *
+   * A 4.6rem sidebar is a fifth of a 390px screen, permanently, on the one
+   * screen an owner spends real time in — and it buys nothing a phone cannot
+   * have at the bottom, where the thumb already is. So the grid drops to one
+   * column and the rail leaves the flow.
+   *
+   * It is the same eight destinations, in the same order, with the same
+   * `aria-current` — the navigation is not reduced, it is moved. What goes with
+   * it is the chrome that only made sense in a column: the wordmark (the header
+   * above already carries it), the plan card, and the collapse toggle, which
+   * toggles a width there is no longer any of.
+   *
+   * `overflow-x: auto` rather than a wrap: eight icons at a 44px target is
+   * about 350px, which fits a phone and does not fit a 320px one, and a nav bar
+   * that silently becomes two rows tall moves the page under the reader's
+   * thumb. Scrolling is the honest answer at the narrow end.
+   */
+  .pd-app,
+  .pd-app[data-collapsed='true'] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .rail {
+    position: fixed;
+    inset: auto 0 0 0;
+    z-index: 30;
+    height: auto;
+    flex-direction: row;
+    align-items: center;
+    gap: 0.15rem;
+    padding: 0.35rem 0.5rem;
+    /* The home bar on a modern phone sits under the viewport's bottom edge. */
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+    border-right: 0;
+    border-top: 1px solid var(--border);
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .rail .rail-brand,
+  .rail .rail-foot,
+  .rail .rail-group {
+    display: none;
+  }
+
+  .rail .rail-nav {
+    display: flex;
+    flex-direction: row;
+    gap: 0.15rem;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .rail .rail-group-block {
+    display: contents;
+  }
+
+  .rail .rail-link {
+    /* 44px, which is the touch target guidance and also the height that keeps
+       the bar under a tenth of the screen. */
+    min-width: 2.75rem;
+    height: 2.75rem;
+    margin: 0;
+    padding: 0;
+  }
+
+  /* The badge moves from beside the label to on top of the glyph, because
+     there is no label here any more. */
+  .rail .rail-badge {
+    position: absolute;
+    top: 0.15rem;
+    right: 0.15rem;
+    margin: 0;
+  }
+
+  .rail .rail-link {
+    position: relative;
+  }
+
+  /* The bar floats over the bottom of the page, so the page needs to end above
+     it — otherwise the last panel on every screen is half under the nav. */
+  .pd-main {
+    /* The bar measures 71px; this leaves a real gap under the last panel
+       rather than the one pixel a tight number would. */
+    padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+  }
+
+  /* And the assistant dock has to clear it too: the two are both fixed to the
+     bottom-left corner and would otherwise sit on top of each other. */
+  .site-app .assistant-fab {
+    bottom: calc(4.9rem + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── the phone menu ────────────────────────────────────────────────────────
+   Hidden above 1080px, which is exactly where `.main-nav` reappears — the two
+   are the same navigation at two sizes and must never both be on screen. */
+.nav-burger {
+  display: none;
+  width: 2.55rem;
+  height: 2.55rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* Three bars from one element: the middle is the box, the outer two are its
+   pseudo-elements. Fewer nodes, and the cross is then two transforms. */
+.nav-burger-bars,
+.nav-burger-bars::before,
+.nav-burger-bars::after {
+  display: block;
+  width: 18px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--text);
+  transition:
+    transform 220ms var(--ease),
+    opacity 160ms var(--ease);
+}
+
+.nav-burger-bars {
+  position: relative;
+}
+
+.nav-burger-bars::before,
+.nav-burger-bars::after {
+  content: '';
+  position: absolute;
+  left: 0;
+}
+
+.nav-burger-bars::before {
+  top: -6px;
+}
+.nav-burger-bars::after {
+  top: 6px;
+}
+
+/* Open: the middle bar disappears and the outer two cross on its line. */
+.nav-burger-bars[data-open] {
+  background: transparent;
+}
+.nav-burger-bars[data-open]::before {
+  transform: translateY(6px) rotate(45deg);
+}
+.nav-burger-bars[data-open]::after {
+  transform: translateY(-6px) rotate(-45deg);
+}
+
+.nav-sheet {
+  position: fixed;
+  inset: var(--header-h) 0 0;
+  z-index: 39;
+  padding: 1.5rem 1.25rem 3rem;
+  overflow-y: auto;
+  /* Opaque, not glass. The sheet covers a moving canvas and carries the only
+     navigation on the device — the one place on this site where legibility
+     beats the house style outright. */
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+.nav-sheet nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.nav-sheet-link {
+  padding: 0.95rem 0.75rem;
+  border-radius: var(--r-sm);
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border);
+}
+
+.nav-sheet-link[aria-current='page'] {
+  color: var(--accent-ink);
+}
+
+.nav-sheet-cta {
+  margin-top: 1.25rem;
+  justify-content: center;
+}
+
+@media (max-width: 1080px) {
+  .nav-burger {
+    display: flex;
+  }
+
+  /* Signed out, this moves into the sheet — see the note at its call site.
+     A signed-in chip stays, because it is how you reach your own account. */
+  .header-actions > .sign-in {
+    display: none;
+  }
+}
+
+/* ═══════════════════════════════════════════════ phones, the rest ══
+   The second half of the narrow tier.
+
+   The `══ phones ══` block above took the structural failures — grids that
+   could not reflow, a rail that had to become a bottom bar, the iOS focus
+   zoom. What was left is the quieter half, and it is the half you feel rather
+   than see: eight surfaces whose padding and type were sized at the 820px step
+   and carried unchanged to 360px, two rigid game boards, and a set of controls
+   under the 44px a finger actually needs.
+
+   Ordered the same way: by what breaks worst.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/*
+ * Anything a finger has to hit is at least 44px, and it gets there on padding.
+ *
+ * Keyed to `pointer: coarse` rather than to a width, for the same reason the
+ * 16px field rule above is: the constraint is the input device, not the screen.
+ * A 40px control on a laptop trackpad is fine; the same control under a thumb
+ * is a miss every few taps.
+ *
+ * Padding rather than a bigger mark, the way `.carousel-dot::after` already
+ * does it — growing the burger's bars or the social glyph would change the
+ * drawing, and the drawing is not what is wrong.
+ */
+@media (pointer: coarse) {
+  .nav-burger {
+    width: 2.75rem;
+    height: 2.75rem;
+  }
+
+  .wal-tabs button,
+  .play-tabs button {
+    padding-block: 0.72rem;
+  }
+
+  .fsoc {
+    width: 44px;
+    height: 44px;
+  }
+
+  .fx-chip {
+    padding-block: 0.68rem;
+  }
+
+  /*
+   * A 14px line of text is a 14px target. The column keeps its `gap` for the
+   * look of the list and the links take the rest as padding, so the rows grow
+   * apart without the list growing looser.
+   */
+  .footer-col {
+    gap: 0.1rem;
+  }
+
+  .footer-col a,
+  .footer-link-btn {
+    padding-block: 0.62rem;
+  }
+}
+
+@media (max-width: 30rem) {
+  /*
+   * The padding pass.
+   *
+   * None of these reduce below the 820px step, and every one of them is a card
+   * that ends up about 350px wide on a phone — so 1.75rem each side is 56px of
+   * the 350, a sixth of the card spent on air. The type comes down with the
+   * padding where the figure is the card's whole point; a 2.3rem price on a
+   * 350px card wraps its own currency symbol onto a second line.
+   */
+  .tier {
+    padding: 1.25rem;
+  }
+
+  .tier-price b {
+    font-size: 1.9rem;
+  }
+
+  .funnel,
+  .chart-card {
+    padding: 1.15rem;
+  }
+
+  .balance {
+    padding: 1rem;
+  }
+
+  .adm-block {
+    padding: 1rem;
+  }
+
+  /*
+   * Four stacked footer blocks with 40px between them is most of a screen of
+   * scrolling that carries nothing. The columns are already one-up here, so
+   * the gap is doing separation work a heading already does.
+   */
+  .footer-grid {
+    gap: 1.6rem;
+  }
+
+  /*
+   * Memory Match at four columns lands a card at about 68px with a label
+   * inside it — under the 44px target once the gap and the card's own padding
+   * are taken off, and the label is 0.58rem of text in a box narrower than the
+   * word. Three columns is the same board in a different arrangement: the pair
+   * count does not change, so nothing about the game does.
+   */
+  .mm-grid {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.45rem;
+  }
+
+  /*
+   * The letter tray is the one place a fixed rem width cannot survive: a long
+   * word is eight or nine tiles, and at 2.6rem apiece that is 374px of tiles on
+   * a 360px phone — so the tray wraps to three rows and the word stops reading
+   * as a word. `min()` lets the tile shrink with the viewport instead.
+   */
+  .wb-slot,
+  .wb-key {
+    width: min(2.6rem, 11vw);
+    height: min(3rem, 13vw);
+    font-size: min(1.25rem, 5.4vw);
+  }
+
+  /*
+   * The console's top bar is sticky, and at this width its four items wrap to
+   * two rows — nearly a fifth of the screen permanently spent on a bar that
+   * says who is signed in. The tag goes (the console has exactly one kind of
+   * user and the heading already says where you are) and the bar is held to
+   * one row.
+   */
+  .adm-bar {
+    min-height: 3.25rem;
+    gap: 0.5rem;
+    flex-wrap: nowrap;
+  }
+
+  .adm-tag {
+    display: none;
+  }
+
+  .adm-actions {
+    gap: 0.35rem;
+    flex-wrap: nowrap;
+  }
+
+  /*
+   * The confirmation strip sits 1.6rem off the bottom, which was the whole
+   * viewport edge until the partner rail became a fixed bottom bar above. It
+   * now has to clear the bar, not the screen.
+   */
+  .pd-toast {
+    bottom: calc(5.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+/*
+ * Landscape phone — the tier that was missing from the tier that was missing.
+ *
+ * `max-width: 30rem` is a portrait test. Rotate the same handset and it is
+ * 844 × 390: it falls through every phone rule into the 1080px tablet branch
+ * and takes back the 84px header — a fifth of the available height — on the
+ * one orientation with none to spare. Keyed on height rather than width for
+ * that reason, and paired with `orientation` so a short desktop window (which
+ * has the width to be fine) is not caught by it.
+ */
+@media (orientation: landscape) and (max-height: 30rem) {
+  :root {
+    --header-h: 56px;
+  }
+
+  /*
+   * A hero that reserves a full viewport of height has nothing left for the
+   * copy when the viewport is 390px tall. It becomes as tall as its content,
+   * which on a landscape phone is the two columns side by side anyway.
+   */
+  .hero {
+    min-height: 0;
+    padding-block: 1.5rem 2rem;
+  }
+
+  .hero-visual {
+    min-height: 30vh;
+  }
+
+  .section {
+    padding-block: 2.25rem;
+  }
+
+  /* The sheet is full-height and its links are 3.5rem apart; at 390px of
+     height that is four items and a scroll. Tightened, it is the whole menu. */
+  .nav-sheet {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .nav-sheet-link {
+    padding-block: 0.7rem;
+  }
 }

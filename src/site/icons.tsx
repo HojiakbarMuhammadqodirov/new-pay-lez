@@ -12,7 +12,14 @@ const PATHS = {
   bars: <><path d="M3 21h18" /><rect x="5" y="10" width="3" height="8" rx="1" /><rect x="10.5" y="5" width="3" height="13" rx="1" /><rect x="16" y="13" width="3" height="5" rx="1" /></>,
   briefcase: <><rect x="3" y="7" width="18" height="13" rx="2" /><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></>,
   ticket: <><path d="M3 9a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H5a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z" /><path d="M14 7v10" /></>,
-  bot: <><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 4v4M9 13h.01M15 13h.01M2 12v3M22 12v3" /></>,
+  /* The assistant's avatar. Head, aerial, two eyes — and deliberately no side
+     strokes. It carried `M2 12v3M22 12v3`, a pair of free-floating verticals at
+     x=2 and x=22 while the body only reaches x=4 and x=20. They were drawn as
+     ears; at the 18-26px `AssistantDock` renders them they read as two hands
+     held out from the middle of the torso, which is the same fault the `people`
+     glyph below was corrected for. Nothing in this set may be a limb that ends
+     in mid-air, and a limb in the wrong place is worse than none. */
+  bot: <><rect x="4" y="8" width="16" height="11" rx="3" /><path d="M12 4v4M9 13h.01M15 13h.01" /></>,
   send: <><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z" /></>,
 
   bakery: <><circle cx="12" cy="12" r="9" /><circle cx="9" cy="10" r="1" fill="currentColor" stroke="none" /><circle cx="14.5" cy="9" r="1" fill="currentColor" stroke="none" /><circle cx="13" cy="14" r="1" fill="currentColor" stroke="none" /><circle cx="9.5" cy="14.5" r="1" fill="currentColor" stroke="none" /></>,
@@ -84,8 +91,16 @@ const PATHS = {
      and two suns in one header is one too many. */
   spark: <><path d="M12 3.2 13.9 9 19.8 11l-5.9 2-1.9 5.8L10.1 13 4.2 11 10.1 9Z" /><path d="M18.5 3.6v3M17 5.1h3" /></>,
   /* Customers: a group, not the single figure `assistant` draws. The rail
-     lists both screens, so they cannot share a glyph. */
-  people: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.9" /></>,
+     lists both screens, so they cannot share a glyph.
+
+     Two *whole* figures, and that is a correction rather than a restyle. This
+     was the usual three-stroke group glyph — one head, one body, and a clipped
+     arc off the right hip standing in for a second person behind the first. At
+     the 17px the rail draws it, that arc has no head above it to belong to, so
+     it does not read as a shoulder at all: it reads as a hand growing out of
+     the waist. Nothing in this set may be a limb that ends in mid-air, so the
+     second person was given a head and both bodies were closed. */
+  people: <><circle cx="6.8" cy="8.2" r="2.9" /><path d="M2 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /><circle cx="17.2" cy="8.2" r="2.9" /><path d="M12.4 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   close: <><path d="M18 6 6 18M6 6l12 12" /></>,
   download: <><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></>,
