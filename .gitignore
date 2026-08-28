@@ -36,3 +36,9 @@ server/data
 # found)" and moves on. The two spec PDFs live there too, and go the same way
 # for the simpler reason that they are commercial documents.
 new-data/
+
+# Local build variables. `.env.local` is already covered by `*.local` above, but
+# a plain `.env` was not — and this is the file people actually create.
+.env
+.env.*
+!.env.example

@@ -3,14 +3,18 @@ import { blankBusiness, type BusinessProfile } from './business';
 import { seedPlayer, today, type PlayerState } from './player';
 import { AuthContext, type Account, type AccountType, type AuthValue } from './context';
 import { addUser, listUsers, patchUser, toAccount } from './directory';
+import { exchangeGoogleCredential, forgetGoogle } from './google';
+import { signOut as apiSignOut } from '../api/client';
 import {
   findUser,
   newUser,
+  sameEmail,
   validateSignUp,
   type ChoosableType,
   type SignInError,
   type SignUpDraft,
   type SignUpError,
+  type UserRecord,
 } from './users';
 
 const STORAGE_KEY = 'paylez-session';
@@ -150,9 +154,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  /**
+   * Sign in with Google.
+   *
+   * The server has already verified the token by the time the directory is
+   * touched — `exchangeGoogleCredential` throws otherwise — so the address this
+   * matches on is one Google confirmed the person controls. That is what makes
+   * matching by email safe here and unsafe anywhere else in this file.
+   *
+   * Two outcomes, and the second is the interesting one:
+   *
+   * - **An account with that address already exists**, so this is a returning
+   *   visitor who happens to have used the Google button. They get their row,
+   *   with their type, their venue and their points, exactly as the password
+   *   path would have given it to them.
+   * - **Nobody has that address**, so a row is created — with `type: null`.
+   *   That is not a shortcut: the individual-or-business question genuinely has
+   *   not been asked, because Google does not know the answer and the button
+   *   did not ask. `resolveRoute` already sends `type === null` to `ChooseType`,
+   *   which exists for precisely this state. Defaulting to `individual` instead
+   *   would be the "silently give a business owner the consumer site" failure
+   *   `context.ts` warns about, one screen earlier.
+   */
+  const signInWithGoogle = useCallback(
+    async (credential: string, language: string): Promise<Account> => {
+      const verified = await exchangeGoogleCredential(credential, language);
+      const email = verified.user.email ?? '';
+
+      const existing = listUsers().find((user) => sameEmail(user.email, email));
+      if (existing) {
+        const next = toAccount(existing);
+        setAccount(next);
+        persist(next);
+        return next;
+      }
+
+      const record: UserRecord = {
+        /* The *server's* id, not a locally minted one. The two directories are
+           going to be merged into one, and rows that already agree about who
+           somebody is are rows that will not need reconciling then. */
+        id: verified.user.id,
+        name: verified.user.name.trim() || email.split('@')[0],
+        email,
+        /*
+         * Unguessable, and never shown to anyone.
+         *
+         * `findUser` signs somebody in when `record.password === typed`, so an
+         * empty string here would mean this account could be entered from the
+         * password form by typing the address and leaving the password blank.
+         * A Google account has no password; this is how you say that in a store
+         * whose shape insists on one.
+         */
+        password: `google:${crypto.randomUUID()}`,
+        created: today(),
+        type: null,
+        business: null,
+        player: null,
+      };
+      addUser(record);
+
+      const next = toAccount(record);
+      setAccount(next);
+      persist(next);
+      return next;
+    },
+    [],
+  );
+
   const signOut = useCallback(() => {
     setAccount(null);
     persist(null);
+    /* So the next person at this browser is asked which account to use rather
+       than being signed straight back into the last one. */
+    forgetGoogle();
+    apiSignOut();
   }, []);
 
   /**
@@ -227,8 +302,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo<AuthValue>(
-    () => ({ account, signIn, signUp, signOut, setType, saveBusiness, setPlayer }),
-    [account, signIn, signUp, signOut, setType, saveBusiness, setPlayer],
+    () => ({ account, signIn, signUp, signInWithGoogle, signOut, setType, saveBusiness, setPlayer }),
+    [account, signIn, signUp, signInWithGoogle, signOut, setType, saveBusiness, setPlayer],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

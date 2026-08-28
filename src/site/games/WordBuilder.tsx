@@ -59,7 +59,9 @@ export function WordBuilder({
   /** Tray indices, in the order they were tapped. */
   const [slots, setSlots] = useState<number[]>([]);
   const [status, setStatus] = useState<'open' | 'right' | 'wrong'>('open');
-  const [shake, setShake] = useState(false);
+  /** Wrong attempts so far, across the whole round. A count rather than a flag —
+   *  see the shake effect, which needs a *new value* to restart on. */
+  const [misses, setMisses] = useState(0);
 
   const [solved, setSolved] = useState<Solved[]>([]);
   /** Per-word, reset by `load`: whether anything has gone wrong or been hinted. */
@@ -83,14 +85,39 @@ export function WordBuilder({
     attempt.current = { started: Date.now(), missed: false, hinted: false };
   }, []);
 
+  /* `onQuit` is an inline arrow at the call site, so putting it in the dep array
+     below would rebuild the deck on every render of the page — a new set of five
+     words mid-round. Latched in a ref instead: the build reads whatever the
+     current one is without depending on its identity. */
+  const quit = useRef(onQuit);
+  quit.current = onQuit;
+
   useEffect(() => {
     let live = true;
-    buildWordRound(list, count).then((rows) => {
-      if (!live || rows.length === 0) return;
-      setDeck(rows);
-      setIndex(0);
-      load(rows, 0);
-    });
+    buildWordRound(list, count)
+      .then((rows) => {
+        if (!live) return;
+        /* An empty deck is the same dead end as a failed fetch — `deck` stays
+           null, the panel below says "Loading…" and nothing will ever fill it —
+           so it takes the same way out rather than returning quietly. */
+        if (rows.length === 0) {
+          quit.current();
+          return;
+        }
+        setDeck(rows);
+        setIndex(0);
+        load(rows, 0);
+      })
+      .catch(() => {
+        /* `words.pl.json` / `words.en.json` are code-split and fetched on first
+           play, so they can fail: a tab that dropped offline for a second, a
+           deploy that moved the chunk. Without this the player waits on a
+           "Loading…" that will never resolve and the rejection surfaces as an
+           unhandled one in the console. Back to the cards, which is the answer
+           `games.tsx` gives the quiz path for the same failure and the screen
+           the button that retries it is on. */
+        if (live) quit.current();
+      });
     return () => {
       live = false;
     };
@@ -112,9 +139,14 @@ export function WordBuilder({
     if (built !== word) {
       setStatus('wrong');
       attempt.current.missed = true;
-      setShake(true);
-      const id = window.setTimeout(() => setShake(false), SHAKE_MS);
-      return () => window.clearTimeout(id);
+      /* Count the miss and let the effect below do the animating. Running the
+         shake from here is what the first version did and it could not work:
+         `status` is in this effect's dep array, so setting it re-ran the effect,
+         and the cleanup killed the timeout that was meant to end the shake a few
+         milliseconds after it was set. The row stayed marked shaken for the rest
+         of the round, and every miss after the first animated nothing. */
+      setMisses((n) => n + 1);
+      return;
     }
 
     setStatus('right');
@@ -132,6 +164,33 @@ export function WordBuilder({
       },
     ]);
   }, [built, word, status, deck, tier]);
+
+  /*
+   * The shake, restarted on every miss.
+   *
+   * `.wb-slots[data-shake='true']` in `site.css` is a keyframe animation, and an
+   * animation replays only when the element stops matching the rule and starts
+   * matching it again *with a style flush in between*. React cannot promise that
+   * flush — two commits inside one frame coalesce into no attribute change at
+   * all — so the attribute is written by hand: off, read a layout property to
+   * force the recalculation, on. `misses` in the dep array is what makes a
+   * second identical miss a new run rather than a no-op.
+   *
+   * The removal at `SHAKE_MS` matters as much as the add: it is what leaves the
+   * row unmarked, so the *next* miss starts from a clean element. Reduced motion
+   * is honoured in the stylesheet, which drops the animation to `none` — the
+   * attribute still comes and goes and nothing moves.
+   */
+  const row = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (misses === 0 || !row.current) return;
+    const el = row.current;
+    el.removeAttribute('data-shake');
+    void el.offsetWidth;
+    el.dataset.shake = 'true';
+    const id = window.setTimeout(() => el.removeAttribute('data-shake'), SHAKE_MS);
+    return () => window.clearTimeout(id);
+  }, [misses]);
 
   const tap = (i: number) => {
     if (status === 'right' || tray[i]?.used) return;
@@ -218,8 +277,11 @@ export function WordBuilder({
       <p className="wb-hint">{hint}</p>
 
       {/* The slots. `data-state` carries right/wrong so the whole row can be
-          styled at once rather than each box deciding for itself. */}
-      <div className="wb-slots" data-state={status} data-shake={shake ? 'true' : undefined}>
+          styled at once rather than each box deciding for itself. `data-shake`
+          is deliberately not here: the effect above sets and clears it on the
+          element itself, because restarting a CSS animation needs a style flush
+          that a re-render cannot guarantee. */}
+      <div className="wb-slots" ref={row} data-state={status}>
         {letters.map((_, i) => (
           <span className="wb-slot" key={i}>
             {tray[slots[i]]?.ch ?? ''}

@@ -11,6 +11,15 @@
  * rounds-per-day limit — you play until you run out.
  */
 
+/*
+ * The one import, and it is the catalogue rather than anything React-shaped.
+ * A wallet holds cards off a shelf, so what a card costs and what it is worth
+ * are the shelf's business and not this module's — the four seeded vouchers
+ * below used to carry their own face values and two of them disagreed with the
+ * shelf they were supposedly bought from.
+ */
+import { CHEAPEST_VOUCHER_POINTS, voucherCard } from '../content';
+
 /** How many lives a full tank holds, and what a round can cost. */
 export const MAX_LIVES = 3;
 
@@ -36,8 +45,20 @@ export const MAX_LIVES = 3;
 export const MAX_FREEZES = 2;
 export const FREEZE_EVERY = 7;
 
-/** Points needed for the cheapest voucher, so the wallet can say how far off you are. */
-export const CHEAPEST_VOUCHER = 100;
+/**
+ * Points needed for the cheapest voucher, so the wallet can say how far off you
+ * are.
+ *
+ * Read off the catalogue rather than restated as `100`, which was right only
+ * for as long as nobody moved the shelf. The same figure is the L-Earn hero's
+ * third stat and the vouchers hero's second, and all three are now one
+ * derivation from `VOUCHER_CARDS` — so "you are 40 points short" and the
+ * cheapest card in the grid below it cannot disagree about what enough is.
+ *
+ * Kept under this name because every caller asks the player module what a
+ * balance falls short of, not the content module what a card costs.
+ */
+export const CHEAPEST_VOUCHER = CHEAPEST_VOUCHER_POINTS;
 
 export interface OwnedVoucher {
   id: string;
@@ -55,6 +76,58 @@ export interface OwnedVoucher {
   usedOn: string | null;
 }
 
+/**
+ * A visit card at one venue.
+ *
+ * **Visits are not points and cannot be spent anywhere else**, which is the one
+ * sentence about it that has to survive every rewrite. A stamp is a confirmed
+ * visit to *this* venue and it buys *this* venue's reward; a player who reads it
+ * as a second currency will expect to spend it at the next place on the list.
+ *
+ * `cycles` is how many times the card has been filled and started again, and it
+ * is kept rather than discarded because it is the only thing that separates a
+ * card at 0 of 6 on its first day from one that has already paid out four times.
+ * The card in front of a regular should say so.
+ */
+export interface StampCard {
+  /** Stable across a refill — a card is the venue's, not the cycle's. */
+  id: string;
+  venue: string;
+  /** The letter on the tile. Venue names are never translated. */
+  logo: string;
+  /** What the card earns. The venue wrote this; the app does not translate it. */
+  reward: string;
+  stamps: number;
+  required: number;
+  cycles: number;
+}
+
+/**
+ * A hot deal, as it sits in somebody's wallet.
+ *
+ * The mobile app keeps deals on their own screen and the wallet holds what came
+ * *out* of them; here the two are one page, so a deal is in the wallet from the
+ * moment it is claimed rather than from the moment it is spent. `claimedOn` is
+ * what makes it a holding: an unclaimed deal is a row in the catalogue below,
+ * and the same object with a date on it is a thing you own.
+ *
+ * `points` is what claiming cost, and it is **0 for most of them** — a hot deal
+ * is an offer a venue is running, not something bought with a balance. The
+ * handful that do cost points say so on the card.
+ */
+export interface ClaimedDeal {
+  id: string;
+  venue: string;
+  logo: string;
+  /** The offer itself — "2 for 1", "20% off". Written by the venue. */
+  badge: string;
+  points: number;
+  /** `DD.MM`, like every other date the wallet writes. */
+  expires: string;
+  claimedOn: string;
+  code: string;
+}
+
 export interface PlayerState {
   points: number;
   streak: number;
@@ -69,12 +142,104 @@ export interface PlayerState {
    * missing one as zero rather than as a crash.
    */
   freezes?: number;
+  /**
+   * Gift cards bought off the catalogue.
+   *
+   * The field is named `vouchers` because that is what a stored session from an
+   * earlier build calls it, and renaming it would empty the wallet of everybody
+   * who already has one. What it holds is a *gift card*: a fixed face value at a
+   * named brand, paid for with points. The site's three holdings are that, the
+   * stamp cards below, and the claimed deals beside them.
+   */
   vouchers: OwnedVoucher[];
+  /**
+   * Visit cards, and claimed offers.
+   *
+   * Both optional for the reason `freezes` is: a session saved before they
+   * existed has neither, and `stampsOf` / `dealsOf` read a missing one as an
+   * empty list rather than as a crash on a page somebody was already looking at.
+   */
+  stamps?: StampCard[];
+  deals?: ClaimedDeal[];
+}
+
+/** Stamp cards held, for a state that may predate the field. */
+export const stampsOf = (state: PlayerState): StampCard[] => state.stamps ?? [];
+
+/** Claimed deals held, same. */
+export const dealsOf = (state: PlayerState): ClaimedDeal[] => state.deals ?? [];
+
+/** A card with every slot filled. The reward is waiting at the counter. */
+export const isCardFull = (card: StampCard): boolean => card.stamps >= card.required;
+
+/** How many visits are left on a card. Never negative — a full card is 0. */
+export const stampsLeft = (card: StampCard): number =>
+  Math.max(0, card.required - card.stamps);
+
+/**
+ * Add a visit to a card.
+ *
+ * **A full card rolls over rather than overflowing**, which is the rule that
+ * decides what the number on screen means: the eleventh visit to a ten-visit
+ * card is the first stamp of the next one, not an eleventh stamp on a card that
+ * cannot hold it. `cycles` counts the rollovers, so nothing is lost by it.
+ *
+ * The reward itself is not modelled here. Filling a card is what earns it; a
+ * player collects it at the counter, and a wallet that marked it collected on
+ * the player's own say-so would be a wallet that can pay itself.
+ */
+export function stampVisit(state: PlayerState, cardId: string): PlayerState {
+  return {
+    ...state,
+    stamps: stampsOf(state).map((card) => {
+      if (card.id !== cardId) return card;
+      const filled = card.stamps + 1;
+      return filled >= card.required
+        ? { ...card, stamps: 0, cycles: card.cycles + 1 }
+        : { ...card, stamps: filled };
+    }),
+  };
+}
+
+/**
+ * Claim a hot deal.
+ *
+ * Returns the state unchanged when the balance will not cover it — the same
+ * contract `redeem` has, so a caller may call it optimistically — and unchanged
+ * again when this deal is already in the wallet. The second guard is the one
+ * worth having: a deal is a single offer rather than a stock item, and a button
+ * pressed twice would otherwise put two of it in the wallet and charge for both.
+ */
+export function claimDeal(
+  state: PlayerState,
+  deal: { id: string; venue: string; logo: string; badge: string; points: number; expires: string },
+  code: string,
+  on: string,
+): PlayerState {
+  if (!canAfford(state, deal.points)) return state;
+  if (dealsOf(state).some((held) => held.id === deal.id)) return state;
+  return {
+    ...state,
+    points: state.points - deal.points,
+    deals: [{ ...deal, code, claimedOn: on }, ...dealsOf(state)],
+  };
 }
 
 /** Freezes held, for a state that may predate the field. */
 export const freezesOf = (state: PlayerState): number =>
   typeof state.freezes === 'number' ? Math.max(0, state.freezes) : 0;
+
+/**
+ * A card as it comes out of the catalogue, with the stock counts left behind.
+ *
+ * The projection is the point: `OwnedVoucher` is what a player holds, and
+ * spreading the whole row would quietly store this month's remaining allocation
+ * inside somebody's wallet, where it would be wrong by the next morning.
+ */
+function bought(brand: string): Pick<OwnedVoucher, 'brand' | 'logo' | 'points' | 'eur'> {
+  const { logo, points, eur } = voucherCard(brand);
+  return { brand, logo, points, eur };
+}
 
 /**
  * A new player, with something already in the wallet.
@@ -84,6 +249,13 @@ export const freezesOf = (state: PlayerState): number =>
  * and those are most of what the page is trying to explain now that the
  * explaining paragraphs are gone. Two active and two spent is the smallest set
  * that shows all of it.
+ *
+ * Every row is a real card off the catalogue rather than four hand-written
+ * ones. They were hand-written, and two of the four had drifted: a Zalando card
+ * here read €11.63 while the catalogue a scroll below it charged 500 points for
+ * the same brand, so the wallet and the shelf on one screen quoted the same
+ * voucher at two prices. A seeded wallet is a wallet somebody played for, and
+ * this is what makes it one.
  */
 export function seedPlayer(): PlayerState {
   return {
@@ -99,43 +271,57 @@ export function seedPlayer(): PlayerState {
     vouchers: [
       {
         id: 'v1',
-        brand: 'Zalando',
-        logo: 'Z',
-        points: 500,
-        eur: 11.63,
+        ...bought('Zalando'),
         code: 'PLZ-9F3K',
         expires: '31.08',
         usedOn: null,
       },
       {
         id: 'v2',
-        brand: 'Media Expert',
-        logo: 'M',
-        points: 100,
-        eur: 4.65,
+        ...bought('Media Expert'),
         code: 'PLZ-2B7Q',
         expires: '14.09',
         usedOn: null,
       },
       {
         id: 'v3',
-        brand: 'Douglas',
-        logo: 'D',
-        points: 300,
-        eur: 6.98,
+        ...bought('Douglas'),
         code: 'PLZ-7X1M',
         expires: '02.08',
         usedOn: '21.07',
       },
       {
         id: 'v4',
-        brand: 'Hebe',
-        logo: 'H',
-        points: 100,
-        eur: 4.65,
+        ...bought('Hebe'),
         code: 'PLZ-4K8D',
         expires: '18.07',
         usedOn: '11.07',
+      },
+    ],
+    /*
+     * Three cards at three stages, and that is the smallest set that shows what
+     * a stamp card *is*: one nearly full, one just started, and one that has
+     * already been filled and refilled. A wallet holding three cards all at
+     * 2 of 6 shows a progress bar; this one shows a rule.
+     */
+    stamps: [
+      { id: 's1', venue: 'Dubai Cafe', logo: 'D', reward: 'a free filter coffee', stamps: 5, required: 6, cycles: 1 },
+      { id: 's2', venue: 'Sablewski & Para', logo: 'S', reward: 'a free pastry', stamps: 1, required: 8, cycles: 0 },
+      { id: 's3', venue: 'Hala Forum', logo: 'H', reward: 'a free lunch set', stamps: 3, required: 10, cycles: 0 },
+    ],
+    /* One claimed, so the section is not an empty state on a page whose whole
+       job is to show what the wallet holds. The rest of the board is the
+       catalogue below it. */
+    deals: [
+      {
+        id: 'd-dubai-2for1',
+        venue: 'Dubai Cafe',
+        logo: 'D',
+        badge: '2+1',
+        points: 0,
+        expires: '31.08',
+        claimedOn: '19.07',
+        code: 'PLZ-D2F1',
       },
     ],
   };
@@ -151,6 +337,21 @@ export function today(now: Date = new Date()): string {
 function yesterday(now: Date = new Date()): string {
   const back = new Date(now);
   back.setDate(back.getDate() - 1);
+  return today(back);
+}
+
+/**
+ * The day before yesterday — the only absence a freeze is worth.
+ *
+ * "Missed one day" is a `lastPlayed` two days back: played Monday, playing
+ * Wednesday, absent on the Tuesday. Built by walking a `Date` rather than by
+ * subtracting from the string, for the same reason `yesterday` is: month ends
+ * and daylight saving make arithmetic on `YYYY-MM-DD` the wrong tool, and
+ * `setDate` already knows the day before the 1st of March is in February.
+ */
+function twoDaysBack(now: Date = new Date()): string {
+  const back = new Date(now);
+  back.setDate(back.getDate() - 2);
   return today(back);
 }
 
@@ -198,10 +399,19 @@ export function awardPoints(
   const continued = played === yesterday(now) || played === null;
   const lapsed = !sameDay && !continued;
 
-  /* A lapse is absorbed if there is a freeze to spend on it. The streak then
-     advances exactly as a normal day would, and the balance survives with it. */
+  /* A lapse is absorbed if it is the size a freeze is for *and* there is one to
+     spend on it. The streak then advances exactly as a normal day would, and
+     the balance survives with it.
+
+     The length test is not a detail. `lapsed` says only "not today and not
+     yesterday", so without it a player coming back after two years took the
+     same branch as one who missed a Tuesday: full balance kept, streak
+     incremented as though they had never been away. A freeze is sold as one
+     missed day — on the streak card, and in everything `MAX_FREEZES` reasons
+     about — so it covers exactly one, and a longer absence is the reset the FAQ
+     describes. */
   const held = freezesOf(state);
-  const frozen = lapsed && held > 0;
+  const frozen = lapsed && played === twoDaysBack(now) && held > 0;
 
   const streak = sameDay ? state.streak : lapsed && !frozen ? 1 : state.streak + 1;
   const base = lapsed && !frozen ? 0 : state.points;

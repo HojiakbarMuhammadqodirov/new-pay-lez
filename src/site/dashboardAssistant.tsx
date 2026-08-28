@@ -437,7 +437,7 @@ export function Assistant() {
       changes.push({
         field: copy.revisions.audience,
         from: dashboard.deals.audiences[PD_ASSIST.audience],
-        to: fill(copy.revisions.noStudents, { n: num(audience.reach - 880) }),
+        to: fill(copy.revisions.noStudents, { n: num(audience.reach - PD_ASSIST.students) }),
       });
       next.noStudents = true;
     }
@@ -493,7 +493,7 @@ export function Assistant() {
     `${days}, ${draft.hourFrom}–${draft.hourTo}`,
     fill(copy.weeksValue, { n: String(draft.weeks) }),
     draft.noStudents
-      ? fill(copy.revisions.noStudents, { n: num(audience.reach - 880) })
+      ? fill(copy.revisions.noStudents, { n: num(audience.reach - PD_ASSIST.students) })
       : dashboard.deals.audiences[PD_ASSIST.audience],
   ];
 
@@ -543,6 +543,9 @@ export function Assistant() {
   const winter = PD_CAMPAIGNS.findIndex((campaign) => !campaign.live);
   const lunch = PD_DEALS.findIndex((deal) => deal.state === 'expired');
   const tier = PD_TIERS[1];
+  /* Redemptions this month, across every tier — the same sum the Vouchers page
+     shows, so the answer below explains a number the owner can go and find. */
+  const redeemedNow = PD_TIERS.reduce((total, row) => total + row.redeemed, 0);
 
   return (
     <div className="pd-stack pd-assist">
@@ -1045,8 +1048,8 @@ export function Assistant() {
                 pct: String(tier.pct),
                 points: num(tier.points),
                 reached: num(tier.issued),
-                lower: num(450),
-                more: num(61),
+                lower: num(PD_ASSIST.tierLower),
+                more: num(PD_ASSIST.tierLowerReached),
               }),
               label: copy.review[0].label,
               go: () => goTo('vouchers'),
@@ -1089,9 +1092,17 @@ export function Assistant() {
           </p>
           <p className="pd-proof">
             {fill(copy.answerLine, {
+              /* This month's redemptions are the tier table's own sum and the
+                 drop is the difference — only last month is a seed. The three
+                 used to be written into the sentence in all five languages,
+                 which put the assistant one seed edit away from explaining a
+                 fall that the Vouchers page did not show. */
+              down: String(Math.round((1 - redeemedNow / PD_ASSIST.redeemedBefore) * 100)),
+              from: num(PD_ASSIST.redeemedBefore),
+              to: num(redeemedNow),
               pct: String(tier.pct),
               now: num(tier.issued),
-              before: num(46),
+              before: num(PD_ASSIST.twiceBefore),
               points: num(tier.points),
             })}
           </p>

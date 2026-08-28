@@ -4,6 +4,7 @@ import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
+import { GoogleButton } from './auth/GoogleButton';
 import {
   MIN_PASSWORD,
   type ChoosableType,
@@ -101,6 +102,11 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
       <button type="submit" className="btn btn-solid btn-lg auth-submit">
         {copy.auth.submit}
       </button>
+
+      {/* Under the password form, not above it. The address-and-password pair is
+          what this prototype is still built around; Google is the alternative,
+          and putting an alternative first reads as the main route. */}
+      <GoogleButton />
 
       <p className="auth-swap">
         {copy.auth.noAccount}{' '}
@@ -268,6 +274,11 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
       <button type="submit" className="btn btn-solid btn-lg auth-submit">
         {copy.auth.signUpSubmit}
       </button>
+
+      {/* Also on sign-up: continuing with Google *is* opening an account when
+          the address is new, so making somebody fill the form first to reach
+          the shortcut would be the wrong way round. */}
+      <GoogleButton />
 
       <p className="auth-swap">
         {copy.auth.haveAccount}{' '}

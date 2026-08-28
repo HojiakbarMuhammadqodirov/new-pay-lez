@@ -222,7 +222,51 @@ export function AssistantDock() {
     if (!open) return;
 
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') close();
+      if (event.key === 'Escape') {
+        close();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+
+      /*
+       * The trap, and it is what `aria-modal="true"` on the panel below is
+       * promising. The dock is a *sibling* of `<main>`, the header and the
+       * footer (see `Site.tsx`), so without this, Tab out of the composer walks
+       * straight into the page — content the panel has just told assistive tech
+       * does not exist. The scrim hides it from a pointer and from a screen
+       * reader; only the keyboard could still reach it.
+       *
+       * A live query rather than a list captured on open: the panel's contents
+       * change as the conversation grows, and a stale list would trap focus on
+       * buttons that are no longer there. `:not([disabled])` because the send
+       * button spends most of its life disabled, and it would otherwise be the
+       * boundary the wrap lands on.
+       */
+      const panel = panelRef.current;
+      if (!panel) return;
+      const focusable = panel.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+
+      /* Focus may be on the panel itself (it is `tabIndex={-1}` and is focused
+         on open) or, if something outside stole it, out of the panel entirely.
+         Both are handled by treating "not on the edge we are moving away from"
+         as the ordinary case and letting the browser move. */
+      if (event.shiftKey && (active === first || active === panel)) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      } else if (!panel.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      }
     };
     document.addEventListener('keydown', onKey);
 

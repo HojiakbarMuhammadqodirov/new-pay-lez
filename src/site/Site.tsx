@@ -3,14 +3,13 @@ import { GlobeHero } from '../components/GlobeHero';
 import { PaylezIntro } from '../components/PaylezIntro';
 import { AdminPage } from './admin';
 import { AnalyticsPage } from './analytics';
-import { ArcadeTrail } from './arcade/ArcadeTrail';
 import { AssistantDock } from './AssistantDock';
 import { AuthProvider } from './auth/AuthProvider';
 import { useAuth, useIsPlayer } from './auth/context';
 import { GamesApp } from './games';
 import { WalletApp } from './wallet';
-import { B2bPage } from './b2b';
-import { BusinessSetupPage } from './business';
+import { BusinessPage } from './business';
+import { BusinessSetupPage } from './businessSetup';
 import { ContactPage } from './contact';
 import { DashboardPage } from './dashboard';
 import { LevelRun } from './level/LevelRun';
@@ -19,10 +18,11 @@ import { useLanguage } from './i18n/context';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import { startTraffic, trackView } from './api/traffic';
 import { LearnPage } from './learn';
+import { PrivacyPage, TermsPage } from './legal';
 import { MarketTape } from './market/MarketTape';
 import { NetworkWeb } from './network/NetworkWeb';
 import { RelocatePage } from './relocate';
-import { navigate, resolveRoute, useRoute } from './router';
+import { PATHS, navigate, resolveRoute, useRoute } from './router';
 import { SignInPage } from './signin';
 import { StubDrift } from './stubs/StubDrift';
 import { VouchersPage } from './vouchers';
@@ -59,7 +59,7 @@ import './site.css';
  *
  * L-Earn is the second route. It shares this shell — one header, one footer,
  * one intro — but not the backdrop: L-Earn is about playing, not about paying
- * across borders, so the globe hands over to the arcade trail and the hero's
+ * across borders, so the globe hands over to the platformer and the hero's
  * reserved column gets the controller instead. Swapping the layer does cost a
  * WebGL context teardown and a re-parse of the atlas on the way back, which is
  * why it is the *only* thing that swaps besides `<main>`.
@@ -80,9 +80,11 @@ function SiteContent() {
   const route = resolveRoute(requested, account);
 
   /* The address bar still says otherwise, though, and a refresh would replay
-     the same redirect. Catch it up afterwards, where a navigation is allowed. */
+     the same redirect. Catch it up afterwards, where a navigation is allowed —
+     and *replace* rather than push, because the hash we are correcting away
+     from resolves here again and Back would bounce straight off it. */
   useEffect(() => {
-    if (route !== requested) navigate(route);
+    if (route !== requested) navigate(route, true);
   }, [route, requested]);
 
   /*
@@ -97,7 +99,12 @@ function SiteContent() {
    */
   useEffect(() => startTraffic(), []);
   useEffect(() => {
-    trackView(`#/${route}`);
+    /* `PATHS[route]`, not the route's *name*: four of the eleven names are not
+       hashes this site has — `#/landing`, `#/learn`, `#/signin` and
+       `#/business-setup` are really `#top`, `#/l-earn`, `#/sign-in` and
+       `#/business/setup`. The console's "top pages" table is an operator
+       reading URLs, and it was listing four they could not open. */
+    trackView(PATHS[route]);
   }, [route]);
 
   /*
@@ -152,10 +159,33 @@ function SiteContent() {
   }
 
   return (
-    <div className="site" id="top" data-intro={introDone ? 'done' : 'running'}>
+    /*
+     * `data-route` is a styling hook, not routing: it lets `site.css` reach a
+     * single page without a class per page. The marketing routes share every
+     * component they have, so the only way to say "this button, on Home" is to
+     * name the route on the root and select through it. The two app frames
+     * above deliberately do not carry it — nothing scoped this way may reach
+     * the dashboard or the console.
+     */
+    <div
+      className="site"
+      id="top"
+      data-route={route}
+      data-intro={introDone ? 'done' : 'running'}
+    >
       {/* Two colours and nothing else: the sequence is the wordmark, so it needs
-          the accent and the ground and has no tile to place ink on. */}
+          the accent and the ground and has no tile to place ink on.
+
+          `oncePerSession` is load-bearing rather than a nicety: the dashboard
+          and the console return early above, which *unmounts* this, and a
+          remount with the default would replay the whole 2.8s cold-open over
+          the landing page every time an owner clicked "Back to site" — with
+          `introDone` still true, so the wrapper would claim the intro was done
+          while a fixed, full-viewport overlay covered the page. The component
+          keeps the flag in `sessionStorage`, which is exactly what survives an
+          unmount and not a new tab. */}
       <PaylezIntro
+        oncePerSession
         onComplete={() => setIntroDone(true)}
         primaryColor={palette.primary}
         backgroundColor={palette.background}
@@ -165,26 +195,26 @@ function SiteContent() {
         One backdrop per route, and never two at once: each canvas costs a
         context on a page that already spends one on the controller, and
         browsers cap how many a document may hold. Only one route is ever
-        mounted, which is what makes five canvas components affordable — the
+        mounted, which is what makes four canvas components affordable — the
         document still holds at most one backdrop context at a time, and only
         the globe's is WebGL.
 
         Each backdrop is the page's own subject drawn out: the globe is a
-        border being crossed (landing, Contact); the arcade trail is Squawk's
-        Flight itself, the game L-Earn is selling; the node web is the player
-        base whose behaviour Analytics measures; the market tape is repeat
-        custom compounding into B2B revenue; the stubs are the vouchers,
-        settling into a wallet; Relocate's rings are distance from where you
-        stand. A backdrop that cannot say what it means like that is wallpaper,
-        and does not ship.
+        border being crossed (landing, Contact); the platformer is L-Earn's own
+        promise — play, get bigger, cash out; the node web is the player base
+        whose behaviour Analytics measures; the candle tape is repeat custom
+        compounding into Business revenue; the stubs are the vouchers, settling
+        into a wallet; Relocate's rings are distance from where you stand. A
+        backdrop that cannot say what it means like that is wallpaper, and does
+        not ship.
       */}
       {route === 'analytics' ? (
         /*
          * The node web, moved here from L-Earn. The picture always was
          * "drifting points that wire themselves to their neighbours", and that
-         * is a truer image of this page than of the arcade: every dot a
-         * customer, every link a pattern the dashboards surface. L-Earn got
-         * the arcade trail in exchange — its own game, not borrowed imagery.
+         * is a truer image of this page than of a game: every dot a customer,
+         * every link a pattern the dashboards surface. L-Earn got a level being
+         * played in exchange — its own game, not borrowed imagery.
          */
         <NetworkWeb
           className="site__web"
@@ -209,10 +239,31 @@ function SiteContent() {
          * Relocate no longer spends the document's one WebGL context.
          */
         <div className="site__rings" aria-hidden />
-      ) : route === 'b2b' || route === 'business-setup' ? (
-        /* Business setup takes the market tape, which is already what B2B
-           means: repeat custom compounding into revenue. Describing your venue
-           is the first move in that, and reusing the canvas costs nothing. */
+      ) : route === 'privacy' || route === 'terms' || route === 'contact' ? (
+        /*
+         * No backdrop at all, and that is the point rather than an omission.
+         *
+         * Every other backdrop on this site is the page's own subject drawn out,
+         * and a legal document's subject is the text. There is no honest picture
+         * of a retention schedule, so anything here would be the wallpaper the
+         * rule against one more canvas exists to prevent — and worse, a moving
+         * field under six pages of clauses is a readability cost paid for
+         * decoration.
+         *
+         * Contact joined them when it became one screen. It had the globe, and
+         * the globe was the right picture for it — reachable from anywhere is
+         * the one other thing that shape honestly says — but a fixed backdrop
+         * needs a page long enough to scroll it out of the hero pose, and a
+         * one-section form is not one. A pinned globe sitting on top of the
+         * form is the exact failure `scrollAnchorId` exists to prevent, and no
+         * anchor fixes a page with nothing below the fold.
+         */
+        null
+      ) : route === 'business' || route === 'business-setup' ? (
+        /* Business setup takes the candle tape, which is already what the
+           Business page means: repeat custom compounding into revenue.
+           Describing your venue is the first move in that, and reusing the
+           canvas costs nothing. */
         <MarketTape
           className="site__web"
           primaryColor={palette.primary}
@@ -220,27 +271,26 @@ function SiteContent() {
         />
       ) : route === 'learn' ? (
         /*
-         * L-Earn is the one route whose backdrop turns on who is reading, and
-         * the split is the same one `<main>` already makes. Signed out, the
-         * page is *selling* the arcade, so it shows the arcade. Signed in it is
-         * no longer a pitch — you are the one playing — so it shows a level
-         * being played: a runner breaking blocks, taking a power-up out of a
-         * lucky box, growing, and leaving down a pipe, forever. Still one
-         * context at a time: only ever one of these mounts.
+         * The level, for everybody.
+         *
+         * L-Earn used to be the one route whose backdrop turned on who was
+         * reading — the arcade trail signed out, the platformer signed in — on
+         * the argument that a visitor is being *sold* the games and a player is
+         * playing them. Two backdrops for one page turned out to be the weaker
+         * half of that argument: the platformer is the page's promise in the one
+         * grammar nobody has to be taught — a runner breaks blocks, takes a
+         * power-up out of a lucky box, grows, and leaves down a pipe, which is
+         * play, get bigger, cash out — and that is *more* useful to somebody who
+         * has not signed up than to somebody who already has. A visitor who has
+         * to be told what L-Earn is gets shown it instead.
+         *
+         * Still one context at a time; there is simply only one of these now.
          */
-        isPlayer ? (
-          <LevelRun
-            className="site__web"
-            primaryColor={palette.primary}
-            tone={palette.tone}
-          />
-        ) : (
-          <ArcadeTrail
-            className="site__web"
-            primaryColor={palette.primary}
-            tone={palette.tone}
-          />
-        )
+        <LevelRun
+          className="site__web"
+          primaryColor={palette.primary}
+          tone={palette.tone}
+        />
       ) : (
         <GlobeHero
           className="site__globe"
@@ -263,8 +313,9 @@ function SiteContent() {
           /*
            * Sign-in is one screenful with nothing below it, so there is no
            * scroll for the globe to travel through and it holds the hero pose.
-           * Contact is not that — it has a channel grid and a form under the
-           * fold, and a pinned globe sits straight on top of them.
+           * It is also the only page left in this branch that is like that —
+           * Contact was the other one, and it lost the globe when it lost the
+           * two sections that gave it something to scroll through.
            */
           scrollTransition={route !== 'signin'}
           /*
@@ -275,7 +326,7 @@ function SiteContent() {
            * ends up behind a card rather than under a carousel. Renaming either
            * section changes when it settles.
            */
-          scrollAnchorId={route === 'contact' ? 'contact-form' : 'guide'}
+          scrollAnchorId="guide"
         />
       )}
 
@@ -287,8 +338,8 @@ function SiteContent() {
         <BusinessSetupPage />
       ) : route === 'analytics' ? (
         <AnalyticsPage />
-      ) : route === 'b2b' ? (
-        <B2bPage />
+      ) : route === 'business' ? (
+        <BusinessPage />
       ) : route === 'vouchers' ? (
         /* Signed in as a player, these two stop being pages *about* the product
            and become the product. A business owner keeps the marketing version —
@@ -302,6 +353,10 @@ function SiteContent() {
         <RelocatePage />
       ) : route === 'contact' ? (
         <ContactPage />
+      ) : route === 'privacy' ? (
+        <PrivacyPage />
+      ) : route === 'terms' ? (
+        <TermsPage />
       ) : route === 'learn' ? (
         isPlayer ? (
           <GamesApp />

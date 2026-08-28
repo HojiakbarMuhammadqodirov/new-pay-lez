@@ -4,19 +4,42 @@ import type { GlobeTone } from '../theme/context';
 import { MARKET } from './config';
 
 /**
- * The B2B page's background: a revenue line climbing left to right, scrolling
- * slowly, ticked upward by a field of venues under it — each of which fires on
- * its own rhythm, and fires again when the pointer passes it.
+ * The Business page's background: a candlestick tape printing left to right,
+ * scrolling slowly, ticked upward by a field of venues under it — each of which
+ * fires on its own rhythm, and fires again when the pointer passes it.
+ *
+ * It was a smoothed line, and candles say more with the same ink: a line says
+ * "it went up", a candle says whether the session opened low and closed high or
+ * gave it all back, and a venue firing now visibly *extends a body* instead of
+ * nudging a curve. **Direction is drawn, not coloured** — the palette has one
+ * accent, so up is a filled body and down is a hollow one, which is what a chart
+ * printed in a single ink has always done.
  *
  * Canvas 2D, for the reason the node web is: the page already holds a WebGL
  * context for the controller on another route, browsers cap how many a document
- * may keep alive, and this is one polyline and a few stroked arcs a frame —
- * nothing the 2D rasteriser notices, and no shader compile on first paint.
+ * may keep alive, and this is a few dozen rectangles and a few stroked arcs a
+ * frame — nothing the 2D rasteriser notices, and no shader compile on first
+ * paint.
  *
- * Nothing goes through React state. The tape buffer, the field, the ring pool,
+ * Nothing goes through React state. The candle buffer, the field, the ring pool,
  * the pointer and the clock all live in refs inside one effect, the way the
  * globe's scroll position and the web's node field do.
  */
+
+/**
+ * One session.
+ *
+ * All four are **departures from the trend**, not levels: the climb is added at
+ * draw time from the candle's position across the width. Keeping the walk
+ * centred on zero is what lets the tape rise forever without the buffer
+ * accumulating a value that would eventually leave the band.
+ */
+interface Candle {
+  o: number;
+  c: number;
+  h: number;
+  l: number;
+}
 
 interface Venue {
   x: number;
@@ -47,8 +70,9 @@ interface Ring {
 }
 
 interface TonePalette {
-  line: number;
-  fill: number;
+  body: number;
+  hollow: number;
+  wick: number;
   head: number;
   grid: number;
   ring: number;
@@ -87,7 +111,7 @@ export const MarketTape = memo(function MarketTape({
   /*
    * Colour is read *inside* the loop rather than closed over, so switching
    * theme repaints the running tape instead of tearing the effect down and
-   * starting the line again from a flat buffer.
+   * starting the print again from a flat buffer.
    */
   const skin = useRef({ rgb: toRgb(primaryColor), tone });
 
@@ -110,16 +134,9 @@ export const MarketTape = memo(function MarketTape({
       strength: 1,
     }));
 
-    /**
-     * The tape, oldest sample first.
-     *
-     * These are *departures* from the trend, not levels: the climb is added at
-     * draw time from each sample's position across the width. Keeping the walk
-     * centred on zero is what lets the line rise forever without the buffer
-     * accumulating a value that would eventually leave the band.
-     */
-    let samples: number[] = [];
-    /** How far the tape has scrolled since the last sample was appended, px. */
+    /** The tape, oldest candle first. */
+    let candles: Candle[] = [];
+    /** How far the tape has scrolled since the last candle was printed, px. */
     let phase = 0;
 
     let width = 0;
@@ -130,21 +147,36 @@ export const MarketTape = memo(function MarketTape({
     const pointer = { x: -9999, y: -9999, inside: false };
 
     const between = (min: number, max: number) => min + Math.random() * (max - min);
+    const clamp = (v: number) => Math.max(-1, Math.min(1, v));
 
-    /** The last sample still on screen — where the leading dot sits and where a
+    /** The last candle still on screen — where the head rule sits and where a
      *  venue's tick lands. */
     const headIndex = () =>
       Math.max(
         0,
-        Math.min(samples.length - 1, Math.floor((width + phase) / tape.spacing)),
+        Math.min(candles.length - 1, Math.floor((width + phase) / tape.spacing)),
       );
 
-    /** One more sample, mean-reverting so the walk cannot camp on a rail. */
-    const advance = () => {
-      const last = samples[samples.length - 1] ?? 0;
-      const next = last * (1 - tape.pull) + (Math.random() * 2 - 1) * tape.drift;
-      samples.push(Math.max(-1, Math.min(1, next)));
-      samples.shift();
+    /**
+     * Print one more session.
+     *
+     * The open is the previous close, which is the only rule that makes a tape
+     * a tape rather than a row of unrelated bars — a gap between two candles is
+     * a thing that means something on a real chart, and one that appeared every
+     * two seconds for no reason would mean nothing.
+     */
+    const print = () => {
+      const previous = candles[candles.length - 1];
+      const o = previous ? previous.c : 0;
+      const c = clamp(o * (1 - tape.pull) + (Math.random() * 2 - 1) * tape.drift);
+      const spread = Math.abs(c - o) * tape.wickSpread + tape.wickFloor;
+      candles.push({
+        o,
+        c,
+        h: Math.max(o, c) + Math.random() * spread,
+        l: Math.min(o, c) - Math.random() * spread,
+      });
+      candles.shift();
     };
 
     /**
@@ -200,20 +232,24 @@ export const MarketTape = memo(function MarketTape({
 
       /*
        * The tick, and the reason the two halves are one picture: a visit lands
-       * on the sample under the leading dot, so the ring and the uptick are the
+       * on the candle under the head rule, so the ring and the uptick are the
        * same event drawn in two places rather than two effects that happen to
        * run at once.
        *
-       * On the *visible* head rather than on the newest sample: the newest one
+       * On the *visible* head rather than on the newest candle: the newest one
        * is off the right edge by design — that is where a tape's new data comes
        * from — and a tick that only appeared seven seconds later, once it had
-       * scrolled in, would not read as caused by anything. Bumping a sample
-       * already on screen puts a spike at the edge the instant the venue fires,
-       * which is what a live tape does. Clamped, because a burst under the
-       * cursor would otherwise drive the line through the top of the band.
+       * scrolled in, would not read as caused by anything. Raising a candle
+       * already on screen extends a body at the edge the instant the venue
+       * fires, which is what a live tape does.
+       *
+       * The high follows the close, because a session cannot close above its
+       * own high. Getting that wrong is not a rounding error to anybody who
+       * reads these for a living — it is a candle that cannot exist.
        */
-      const head = headIndex();
-      samples[head] = Math.max(-1, Math.min(1, samples[head] + tape.tick * strength));
+      const candle = candles[headIndex()];
+      candle.c = clamp(candle.c + tape.tick * strength);
+      candle.h = Math.max(candle.h, candle.c);
     };
 
     const resize = () => {
@@ -230,14 +266,17 @@ export const MarketTape = memo(function MarketTape({
       // re-applied — after it, everything below is in CSS pixels.
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      // Two spare samples: one off each end, so the polyline is already drawn
+      // Two spare candles: one off each end, so the tape is already printed
       // past both edges and the scroll never reveals a stub.
       const count = Math.ceil(width / tape.spacing) + 3;
-      const previous = samples;
-      samples = Array.from({ length: count }, (_, i) => previous[i] ?? 0);
-      // A fresh buffer of zeroes is a perfectly straight line, which is the one
-      // shape a market never has. Walk it forward before the first paint.
-      if (!previous.length) for (let i = 0; i < count * 2; i++) advance();
+      const previous = candles;
+      candles = Array.from(
+        { length: count },
+        (_, i) => previous[i] ?? { o: 0, c: 0, h: 0, l: 0 },
+      );
+      // A fresh buffer of zeroes is a row of flat lines, which is the one shape
+      // a market never has. Print it forward before the first paint.
+      if (!previous.length) for (let i = 0; i < count * 2; i++) print();
 
       const target = Math.round((width * height) / field.areaPer);
       seed(Math.max(field.min, Math.min(field.max, target)));
@@ -256,7 +295,7 @@ export const MarketTape = memo(function MarketTape({
       phase += tape.speed * dt;
       while (phase >= tape.spacing) {
         phase -= tape.spacing;
-        advance();
+        print();
       }
 
       for (const venue of venues) {
@@ -284,35 +323,19 @@ export const MarketTape = memo(function MarketTape({
 
     /* ── drawing ──────────────────────────────────────────────────────────── */
 
-    /** Screen position of sample `i`. The climb is applied here, not stored. */
-    const pointAt = (i: number) => {
-      const span = Math.max(samples.length - 1, 1);
-      const t = i / span;
-      const level =
-        tape.band.from +
-        t * (tape.band.to - tape.band.from) +
-        samples[i] * tape.wiggle * (tape.band.to - tape.band.from);
-      return { x: i * tape.spacing - phase, y: height * (1 - level) };
-    };
+    /** Centre x of candle `i`. */
+    const xAt = (i: number) => i * tape.spacing - phase;
 
     /**
-     * Traces the line into the current path.
-     *
-     * Catmull-Rom-ish midpoint smoothing: each segment is a quadratic through
-     * the midpoint of two samples, with the sample itself as the control. A
-     * polyline of straight segments reads as a sawtooth at this spacing, and a
-     * true spline would need a second pass to stay inside the band.
+     * Screen y of one value on candle `i`. The climb is applied here, not
+     * stored — see the note on `Candle`.
      */
-    const trace = () => {
-      const first = pointAt(0);
-      ctx.moveTo(first.x, first.y);
-      for (let i = 1; i < samples.length - 1; i++) {
-        const a = pointAt(i);
-        const b = pointAt(i + 1);
-        ctx.quadraticCurveTo(a.x, a.y, (a.x + b.x) / 2, (a.y + b.y) / 2);
-      }
-      const last = pointAt(samples.length - 1);
-      ctx.lineTo(last.x, last.y);
+    const yAt = (i: number, value: number) => {
+      const span = Math.max(candles.length - 1, 1);
+      const t = i / span;
+      const reach = tape.band.to - tape.band.from;
+      const level = tape.band.from + t * reach + value * tape.wiggle * reach;
+      return height * (1 - level);
     };
 
     const draw = () => {
@@ -325,15 +348,16 @@ export const MarketTape = memo(function MarketTape({
 
       /*
        * The grid is drawn source-over in both tones, before the composite mode
-       * is set. Under `lighter` a full-width hairline crossing the tape's own
-       * fill would brighten it along every rule, and a plot grid that is
-       * brighter where the data is is a grid drawn on top of the reading.
+       * is set. Under `lighter` a full-width hairline crossing a candle body
+       * would brighten it along every rule, and a plot grid that is brighter
+       * where the data is is a grid drawn on top of the reading.
        */
       ctx.globalAlpha = palette.grid;
       ctx.lineWidth = 1;
+      ctx.setLineDash([]);
       ctx.beginPath();
       // Off the clock, not off `phase`: `phase` resets to zero every time a
-      // sample is appended, and a grid keyed to it would snap back twice a
+      // candle is printed, and a grid keyed to it would snap back twice a
       // second. Half speed, so it reads as a scale the tape moves across rather
       // than as a second thing scrolling at the same rate.
       const gridShift = (clock * tape.speed * 0.5) % tape.gridX;
@@ -356,39 +380,81 @@ export const MarketTape = memo(function MarketTape({
       ctx.globalCompositeOperation =
         skin.current.tone === 'glow' ? 'lighter' : 'source-over';
 
-      // The area under the line. Faded to nothing at the bottom of the screen
-      // rather than filled flat: the fill is there to give the line a side to
-      // belong to, and a flat wash to the page edge reads as a second ground.
-      const wash = ctx.createLinearGradient(0, height * (1 - tape.band.to), 0, height);
-      wash.addColorStop(0, `rgba(${skin.current.rgb},${palette.fill})`);
-      wash.addColorStop(1, `rgba(${skin.current.rgb},0)`);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = wash;
-      ctx.beginPath();
-      trace();
-      ctx.lineTo(width, height);
-      ctx.lineTo(pointAt(0).x, height);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = colour;
+      /*
+       * The candles.
+       *
+       * Wicks first, in one path for the whole tape: they are all the same
+       * colour at the same alpha and the same width, so batching them is one
+       * `stroke()` instead of one per candle — and it also puts every wick
+       * *under* every body, which is where the join has to be or a hollow
+       * candle shows the wick crossing its own middle.
+       */
+      const half = tape.width / 2;
+      const left = Math.max(0, Math.floor(phase / tape.spacing) - 1);
+      const right = Math.min(candles.length - 1, headIndex() + 1);
 
-      ctx.globalAlpha = palette.line;
-      ctx.lineWidth = 1.6;
-      ctx.lineJoin = 'round';
+      ctx.globalAlpha = palette.wick;
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      trace();
+      for (let i = left; i <= right; i++) {
+        // Half-pixel so a 1px wick lands on a pixel rather than across two,
+        // which at this alpha is the difference between a line and a smudge.
+        const x = Math.round(xAt(i)) + 0.5;
+        ctx.moveTo(x, yAt(i, candles[i].h));
+        ctx.lineTo(x, yAt(i, candles[i].l));
+      }
       ctx.stroke();
 
-      // The head: where the next tick will land, and the only part of the tape
-      // bright enough to find at a glance.
-      const head = pointAt(headIndex());
+      for (let i = left; i <= right; i++) {
+        const candle = candles[i];
+        const up = candle.c >= candle.o;
+        const top = yAt(i, Math.max(candle.o, candle.c));
+        const bottom = yAt(i, Math.min(candle.o, candle.c));
+        const x = Math.round(xAt(i) - half);
+        const y = Math.round(top);
+        // A doji is a real session and has to be visible; without the floor it
+        // is a zero-height rectangle and simply is not drawn.
+        const h = Math.max(Math.round(bottom - top), tape.minBody);
+
+        if (up) {
+          ctx.globalAlpha = palette.body;
+          ctx.fillRect(x, y, tape.width, h);
+        } else {
+          // Hollow: the page shows through, which is exactly what "down" has to
+          // read as when there is no second colour to say it with. Inset by
+          // half a line width so the 1px outline sits inside the body's own
+          // bounds and an up and a down candle measure the same.
+          ctx.globalAlpha = palette.hollow;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 0.5, y + 0.5, tape.width - 1, Math.max(h - 1, 1));
+        }
+      }
+
+      /*
+       * The head: the last close, as the dashed rule every trading screen puts
+       * there, plus the dot. It is the only part of the tape bright enough to
+       * find at a glance, and it is where the next tick will land.
+       */
+      const head = headIndex();
+      const headY = Math.round(yAt(head, candles[head].c)) + 0.5;
+      ctx.globalAlpha = palette.head * 0.4;
+      ctx.lineWidth = 1;
+      // Spread, because `as const` in the config makes it a readonly tuple and
+      // `setLineDash` wants a mutable array.
+      ctx.setLineDash([...tape.rule]);
+      ctx.beginPath();
+      ctx.moveTo(0, headY);
+      ctx.lineTo(xAt(head), headY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
       ctx.globalAlpha = palette.head * 0.28;
       ctx.beginPath();
-      ctx.arc(head.x, head.y, 11, 0, Math.PI * 2);
+      ctx.arc(xAt(head), headY, 11, 0, Math.PI * 2);
       ctx.fill();
       ctx.globalAlpha = palette.head;
       ctx.beginPath();
-      ctx.arc(head.x, head.y, 2.6, 0, Math.PI * 2);
+      ctx.arc(xAt(head), headY, 2.6, 0, Math.PI * 2);
       ctx.fill();
 
       for (const ring of rings) {
@@ -447,7 +513,7 @@ export const MarketTape = memo(function MarketTape({
      * Reduced motion: one static frame — the tape as it stands, the venues, and
      * no rings at all. Not a slowed-down version: an expanding circle and a
      * scrolling chart are both entirely motion, and there is no gentle version
-     * of either. What is left is a line that has climbed and the venues that
+     * of either. What is left is a market that has climbed and the venues that
      * did it, which is still the right picture for the page.
      */
     if (reduced) {

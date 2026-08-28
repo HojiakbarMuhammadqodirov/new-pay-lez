@@ -43,7 +43,18 @@ re-reads the old database in `new-data/` and exits.
 ## Layout
 
 The site is `src/site/` — one file per route, plus `games/`, `i18n/`, `theme/`
-and `auth/`, and all styling in the single sheet `site.css`. The globe is
+and `auth/`, and all styling in the single sheet `site.css`. Two files are named
+for the route rather than for the pitch: `business.tsx` is `#/business`, the page
+that sells to a venue, and `businessSetup.tsx` is `#/business/setup`, the listing
+form. "B2B" is gone from the code as well as from the page: `copy.business` is
+the pitch page's dictionary block and `copy.listing` is the setup form's. That
+rename had to be done in two steps — `business` → `listing` first, then
+`b2b` → `business` — because the name being moved into was the one being moved
+out of, and doing it the other way round collides. Exactly two things keep the
+old word, and neither is code: the `b2b/` prototype directory and the
+`landing/screenshots/admin-b2b*.png` files. Both are reference material, and
+renaming reference material to match the thing built from it is how you lose the
+ability to check one against the other. The globe is
 `src/components/GlobeHero/` — see `README.md`. `landing/` and `b2b/` are design
 prototypes, not code. `updates/` is inbound material — exports and specs handed
 over to be built from, read by `npm run banks`; nothing in `src/` imports it.
@@ -63,6 +74,31 @@ it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO expiry, the budget pool's three states, the amount-capture
 gate, the min-cohort suppression, the consent gate on identified customers.
 **Run it after touching anything under `server/domain/`.**
+
+Two things a venue owner can now see that they could not: **impressions and
+clicks**. `analytics.reach` sums the venue's *listing* events
+(`venues.trackListing` → `service_events`) and its *deal* events
+(`deals.track` → `deal_events`) into one funnel — seen, clicked, claimed —
+behind `GET /v1/partner/venues/:id/reach`. It exists because every other figure
+on that dashboard starts at a **visit**, and a venue nobody has heard of and a
+venue everybody scrolls past render identically without it: zeroes, with nothing
+to say which. Those two have opposite fixes. Three rules travel with it — a
+*rate over nothing is 0, never null* (null means "we are not telling you");
+`uniqueClickers` is a finding about **people** and takes the min-cohort floor
+while the raw counts do not; and neither a visit nor a claim is postable by a
+client, because both are what the dashboard argues from.
+
+**The assistant can be given a model, and the model may only rewrite.**
+`ports/llm.ts` is wired to the Claude Messages API and is off unless *both*
+`PAYLEZ_LLM=live` and `ANTHROPIC_API_KEY` are set — a server-side secret, never
+`VITE_`-prefixed, because Vite bakes those into the browser bundle. The model is
+handed the facts `domain/assistant.ts` retrieved and the sentence it already
+composed, and every figure in what comes back is checked against those facts
+before it is used (`onlyKnownNumbers`); a rewrite that introduced a number is
+discarded whole and the grounded draft is sent. Timeouts, refusals and errors
+all resolve to the same thing: the draft. Called with `fetch` rather than the
+SDK on purpose — the zero-dependency rule below is worth more than one request
+to one endpoint.
 
 Two things about it are easy to undo by accident and both are checked:
 
@@ -110,7 +146,7 @@ live site, and don't wire them into the build.
 
 Where a prototype and the live site disagree, the live site wins on market and
 palette and the prototype wins on features. `b2b/` is a UK hospitality pitch in
-pounds; `#/b2b` ships its whole feature set — the owner dashboard, portal,
+pounds; `#/business` ships its whole feature set — the owner dashboard, portal,
 Play & Earn placement, campaign tooling, the rollout steps, the three pricing
 tiers — in five languages, each of which prices the page in its own currency
 (see the money rule under Conventions). So the prototype's pounds are not
@@ -122,10 +158,20 @@ discarded, they are what an English reader sees.
 in dark, a cyan on near-white in light. Don't introduce a third hue; derive
 tints from the accent with alpha the way `--surface` / `--border` do.
 
-There are exactly three sanctioned exceptions, and all three are cases where the
+There are exactly four sanctioned exceptions, and all four are cases where the
 thing depicted *is* its colours: flag emoji; the controller's four face buttons
-on the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`); and the
-platformer behind the signed-in Play screen (`LEVEL.palette` in `level/config.ts`).
+on the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`); the
+platformer behind the signed-in Play screen (`LEVEL.palette` in `level/config.ts`);
+and the Google "G" on the sign-in button (`GoogleMark` in `auth/GoogleButton.tsx`).
+
+The G is the narrowest of the four and the easiest to argue with, so: Google's
+brand terms forbid altering the mark, which makes recolouring it not a design
+choice we are declining to make but one that is not ours. It is 1.15em of SVG
+inside a control that is otherwise entirely `--solid`, `--border` and `--text`,
+and it appears on exactly one screen. It arrived when Google's *rendered* button
+was replaced — that button picked its own shape and wording and could not be
+made to match the page, so the flow moved to `requestGoogleCode` and the button
+became ours. Everything about it except those four fills is a token.
 
 The controller is worth the words: on black it is a dark moulding lit by the
 accent, which is the whole look. On paper that same accent became a colour cast
@@ -209,10 +255,18 @@ page — additive blending has no headroom above white and renders an almost
 invisible globe. `tone='ink'` also forces bloom off. See the `TONE` block in
 `GlobeHero/config.ts`.
 
+**A press is the accent; the dashboard is the exception.** `--solid` is
+`--accent` in both themes — mint on black, `#089b99` with a white label on paper
+— and the near-black press the reference design uses survives in exactly one
+place, `.pd-app`. That screen is a wall of white cards with no backdrop of its
+own, which is the argument the black was made for; every other page has a live
+canvas and a mint headline for a button to belong to. The note on `--solid` in
+`src/site/CLAUDE.md` carries the contrast this costs and why it is taken.
+
 **Constants live in config files, not inline.** Every tunable for the globe is
 in `GlobeHero/config.ts`; the intro's timings are in `PaylezIntro/config.ts`;
 the node web's density, link radius and alphas are in `site/network/config.ts`;
-the market tape's scroll speed, band, tick size and venue density are in
+the candle tape's scroll speed, band, wick spread, tick size and venue density are in
 `site/market/config.ts`. If you find yourself typing a magic number into a component, it probably
 belongs in one of those, and the surrounding comment probably explains why the
 current value is what it is.
@@ -285,7 +339,7 @@ sign-in form and the admin deliberately is not.
 
 **Who is signed in decides what exists, and the rule is one pure function.**
 `resolveRoute(route, account)` in `router.ts` is the whole access policy: an
-individual has no B2B, Analytics, dashboard or setup; an owner with no listing
+individual has no Business, Analytics, dashboard or setup; an owner with no listing
 goes to setup; an admin's console *replaces* both partner routes and sign-in;
 an account that has not answered the individual-or-business question is held at
 sign-in. `Site` resolves the route *during render*, so a page this account may
@@ -312,7 +366,7 @@ Three things follow from that, and all three are easy to undo by accident:
 used to mean "the landing page", full stop — so *every in-page link on every
 other page* went Home. "Open the dashboard" on Analytics pointed at
 `#analytics-reports`, missed the route table, and dropped the visitor on the
-marketing front page; the same was true of `#b2b-cta`, `#learn-games`,
+marketing front page; the same was true of `#business-cta`, `#learn-games`,
 `#vouchers-catalogue` and `#relocate-guide`. `ANCHOR_ROUTES` in `router.ts` maps
 each page's section prefix to its route, and the landing page keeps the
 unprefixed ones. **A new page must prefix its section ids with its own name and
@@ -346,6 +400,19 @@ undecided state. `ChooseType` on the sign-in route still exists for the sessions
 that predate that — `resolveRoute` sends `type === null` back there from every
 route — and deleting it would sign those visitors out of a tab they never asked
 to be signed out of.
+
+**The wallet holds three things, and they are three because their rules
+differ.** A *hot deal* is one venue running one offer for a window, and claiming
+it is usually free — the venue is paying. A *gift card* is stock: a fixed face
+value at a named brand, bought with points off a catalogue with a monthly
+allocation. A *stamp card* counts **visits to one venue**, and a visit is not a
+point — it cannot be spent anywhere else, and a full card **rolls over into the
+next one** rather than overflowing, which is why `cycles` exists. The model is
+the Flutter app's (`lib/screens/wallet_screen.dart`) and the arithmetic is pure
+functions in `auth/player.ts`, so `npm run verify` owns it. The one thing that is
+*not* the app's is the layout: the phone stacks all of it and refuses a
+segmented control, and the desktop puts the deals and the stamp cards side by
+side — which is a change to what is on screen at once, not to what is hidden.
 
 **A signed-in individual gets a different page, not a different section.**
 `useIsPlayer()` swaps L-Earn and Vouchers wholesale: `learn.tsx` → `games.tsx`,
@@ -384,8 +451,8 @@ the same question in every language.
 one 6,000-line sheet with no scoping, and three separate collisions have already
 shipped bugs here: `.games` / `.game-ico` / `.board-rank` belong to the L-Earn
 marketing page, `.wallet-tabs` to the Vouchers page, and the whole `.dash-*`
-family to the B2B mock — which silently crushed the dashboard's user pill to
-26px. The app screens are prefixed `play-` (games), `wal-` (wallet), `pd-`
+family to the Business page's dashboard mock — which silently crushed the
+dashboard's user pill to 26px. The app screens are prefixed `play-` (games), `wal-` (wallet), `pd-`
 (partner dashboard) and `adm-` (console) for that reason. Reusing an existing
 class is fine when it is
 the *same component* — the wallet's catalogue deliberately keeps `.gift` — but
@@ -554,29 +621,33 @@ bundled, the flag font copied into `public/`), geometry comes from the
   percentage height against an `auto` parent resolves to nothing — which is
   exactly what the country comparison did before `.adm-compare-cols` was given a
   definite `9rem`. Every chart in `site.css` sets one.
-- **The globe belongs to the landing page, and to Contact.** Relocate had it on
-  the argument that the page was about a border being crossed; it is not — it is
-  a guide to where you have already arrived, plus a currency converter, and it
-  now takes `.site__rings`, CSS contour rings that mean distance from where you
-  are standing. Contact gets it instead: reachable from anywhere is the one other
-  thing the globe honestly says. The document's single WebGL context is still
-  spent on at most one route at a time.
-- **The backdrop is per route — and on L-Earn, per *reader*.** Seven *marketing*
-  routes, six canvas components. Landing *and* Contact get the globe (the only
-  WebGL one); L-Earn gets the arcade trail (`arcade/`) signed out and the
-  platformer (`level/`) signed in, Analytics the node web (`network/`), B2B the
-  market tape (`market/`) and Vouchers the drifting stubs (`stubs/`) — all five
-  canvas-2D, all on `.site__web`; Relocate keeps CSS rings (`.site__rings`).
-  `Site.tsx` renders exactly one, and that is what makes six components
-  affordable: the document holds at most one backdrop context at a time, plus
-  the controller's on L-Earn. Rendering two at once costs a second context on
-  that page; browsers cap how many a document may hold and start dropping the
-  oldest. The five 2D backdrops share one construction — props for
+- **The globe belongs to the landing page, and to nothing else now.** Relocate
+  had it on the argument that the page was about a border being crossed; it is
+  not — it is a guide to where you have already arrived, plus a currency
+  converter, and it takes `.site__rings`, CSS contour rings that mean distance
+  from where you are standing. Contact had it next, on the better argument that
+  "reachable from anywhere" is the one other thing the globe honestly says — and
+  lost it when the page became a single screen. A fixed backdrop needs a page
+  long enough to scroll it out of the hero pose; a one-section form is not one,
+  and a pinned globe sits straight on top of it. The document's single WebGL
+  context is spent on at most one route at a time.
+- **The backdrop is per route, and one route per backdrop.** Landing gets the
+  globe (the only WebGL one); L-Earn gets the platformer (`level/`), Analytics
+  the node web (`network/`), Business the candle tape (`market/`) and Vouchers
+  the drifting stubs (`stubs/`) — all four canvas-2D, all on `.site__web`;
+  Relocate keeps CSS rings (`.site__rings`), and Contact, Privacy and Terms have
+  none at all. `Site.tsx` renders exactly one, and that is what makes five
+  components affordable: the document holds at most one backdrop context at a
+  time, plus the controller's on L-Earn. Rendering two at once costs a second
+  context on that page; browsers cap how many a document may hold and start
+  dropping the oldest. The four 2D backdrops share one construction — props for
   `primaryColor`/`tone`, a config file, nothing per-frame through React state,
   a one-frame still under `prefers-reduced-motion` — so read one before writing
-  a sixth. **L-Earn's split is the only one keyed to the session, and it keys off
-  `isPlayer`, the same test `<main>` uses** — the backdrop and the page it sits
-  behind have to agree about which of the two L-Earns this is.
+  a fifth. **L-Earn's used to be keyed to the session** — the arcade trail signed
+  out, the platformer signed in — and is not any more: the platformer is the
+  page's promise in the one grammar nobody has to be taught, which is *more*
+  use to a visitor who has not signed up than to a player who has. The arcade
+  trail went with the split.
 - **A reused globe still needs its scroll anchor.** `scrollTransition` is off only
   for sign-in, which is one screenful with nothing under it. Any other page that
   takes the globe has content below the fold, and a globe held in the hero pose
@@ -584,21 +655,24 @@ bundled, the flag font copied into `public/`), geometry comes from the
   exactly as long as it took to look. Give the page an anchor at its **third**
   section (`scrollAnchorId` in `Site.tsx`) and let the globe retire into the arc.
 - **Each backdrop has to *mean* something, or it is wallpaper.** The globe is a
-  border being crossed — which is why Contact keeps it rather than inventing a
-  seventh thing; the arcade trail behind L-Earn is the page's own game — gates
-  drifting past, a flyer threading the gaps on autopilot (or chasing your
-  cursor), a pulse where a gate pays; the node web behind Analytics is the
-  customer base being measured (drifting points that link to each other — it
-  moved there from L-Earn, where it was "a player base", when L-Earn got its
-  own game); the market tape is repeat custom compounding into revenue — a line
-  that climbs, and the only thing that moves it is a venue under it firing (on
-  its own rhythm, or because your cursor walked past); the stubs behind
+  border being crossed; the node web behind Analytics is the customer base being
+  measured (drifting points that link to each other — it moved there from L-Earn,
+  where it was "a player base", when L-Earn got its own game); the candle tape
+  behind Business is repeat custom compounding into revenue — a market printing
+  candle by candle, and the only thing that moves it is a venue under it firing
+  (on its own rhythm, or because your cursor walked past); the stubs behind
   Vouchers are the tickets themselves, notched and tear-lined, settling into a
-  wallet; the platformer behind the *signed-in* L-Earn is the page's promise in
-  the one grammar nobody has to be taught — a runner breaks blocks, takes a
-  power-up out of a lucky box, grows, and leaves down a pipe, which is play, get
-  bigger, cash out. They are different pictures on purpose. A new one that is
-  "the node web but different particles" is a reason not to add it.
+  wallet; the platformer behind L-Earn is the page's promise in the one grammar
+  nobody has to be taught — a runner breaks blocks, takes a power-up out of a
+  lucky box, grows, and leaves down a pipe, which is play, get bigger, cash out.
+  They are different pictures on purpose. A new one that is "the node web but
+  different particles" is a reason not to add it.
+
+  **A candle says direction with a fill, not a hue.** Green and red are not
+  available here, so an up candle is solid and a down candle is hollow — the
+  convention a chart printed in one ink has always used, and still the fastest
+  tell on the screen. Reaching for a second colour there is the same mistake as
+  reaching for one on the game cards; see the `[data-texture]` rule above.
 
 - **The runner is a sprite, and sprites are authored as text.** `level/sprite.ts`
   holds each frame as rows of `.o+#-` on an 18 × 27 grid — the source *is* the
@@ -607,7 +681,7 @@ bundled, the flag font copied into `public/`), geometry comes from the
   figure. It has already caught one. He was a stroked stick figure first and that
   was wrong the way a vector logo is wrong on a games console: everything around
   him is cells on a grid, and the one smooth-curved thing in the frame read as a
-  different picture pasted on top. Six things there are not free:
+  different picture pasted on top. Eight things there are not free:
   - **Shading is four colours at one alpha**, never one colour at four alphas.
     Alpha means "brighter" on black and "darker" on paper, so an alpha-built
     highlight inverts in light mode. The four are a *ramp*, not four garments:
@@ -621,11 +695,29 @@ bundled, the flag font copied into `public/`), geometry comes from the
     frames is a march. Four was the next wrong answer: contact and passing only
     is a run with no vertical in it, so the body travels along a flat line with
     its legs swapping under it. Down and up are what put the bounce in.
+  - **The eight are not equal lengths, and the jump is not one frame.**
+    `LEVEL.runner.beats` holds each frame for a share of the cycle — stance
+    (contact, down) roughly twice as long as flight (passing, up) — and must have
+    one entry per frame summing to the frame count, checked at load, or `stride`
+    stops meaning frames per tile. Dividing a gait evenly is a metronome. The
+    jump is `JUMP.rise` / `apex` / `fall`, picked off the arc's vertical velocity
+    rather than off `t`, because the moves that land higher than they leave are
+    still climbing at the end.
   - **The bob is the row count, not an offset.** Each leg block is a different
     height and `pose` pads the top of the frame to `ROWS`, so a shorter block
     settles the whole figure without lifting his feet off the floor — which is
     what a bent knee does. The pad goes at the *top* because `drawRunner` puts
-    the last row on the ground and builds upward.
+    the last row on the ground and builds upward. The head bobs the same way and
+    for the same reason: `HEAD_SUNK` is the same ten rows with the *neck* blanked
+    instead of the crown, so the skull drops a cell on contact without changing
+    the frame's height.
+  - **The lean and the twist are whole-cell slides, never a rotation.** The head
+    is authored one column forward of the hips (that is the lean) and everything
+    above the pelvis slides ±1 with the arm crossing the chest (that is the
+    twist); the pelvis and the legs never move, because they carry the planted
+    boot. A canvas rotate would resample the grid past
+    `imageSmoothingEnabled = false` and stop this being pixel art. `slide` throws
+    rather than clipping a cell off the edge.
   - **The legs repeat every four frames; only the arms run all eight.** Mirroring
     the legs for the second half is the obvious version and it moonwalks: within
     a step the planted boot walks *backwards* under the body, and a mirror runs
@@ -640,7 +732,8 @@ bundled, the flag font copied into `public/`), geometry comes from the
     cell size from `frame.length` and the width from `COLS`, so he lands on
     screen at the same size and the block-striking peaks in `LEVEL.moves` still
     hold. Changing the *frame count* is not free: `LEVEL.runner.stride` is frames
-    per tile and has to scale with it or the cadence moves.
+    per tile and has to scale with it or the cadence moves, and `beats` needs one
+    entry per frame.
 - **The level is scripted, not simulated, and that is not laziness.**
   `LEVEL.moves` is a gapless list of parabolas and the runner's height is a
   lookup into it. There is no gravity, no collision and no fail state, because a
@@ -652,17 +745,17 @@ bundled, the flag font copied into `public/`), geometry comes from the
   **feet** while what has to reach the block is his **head**. Both of those have
   already been wrong once; `config.ts` says so at the point of use.
 - **Charts and product mocks are DOM, not canvas and not images.** Analytics'
-  funnel and week chart, and B2B's owner dashboard and pillar consoles, are divs
-  with a custom property for their size, animated with `transform` off the shared `[data-shown]` reveal.
+  funnel and week chart, and the Business page's owner dashboard and pillar
+  consoles, are divs with a custom property for their size, animated with `transform` off the shared `[data-shown]` reveal.
   That is deliberate: they inherit the theme tokens, they translate into five
   languages, they price themselves in the reader's currency, and they cost no
   context — none of which a screenshot does. `data-count` on the figures rounds to
   whole numbers, so anything wanting a decimal place needs the hook changed first;
   it also takes `data-prefix`, `data-suffix` and `data-group`, which is how a
   money figure gets its symbol on the correct side and its digits separated.
-- **B2B is the only page that sells to a business,** which is why it carries a
-  pricing table and a `mailto:` to `SALES_EMAIL` rather than the app CTAs.
-  Its venues are Polish — the market the rest of the site is in — while the
+- **`#/business` is the only page that sells to a business,** which is why it
+  carries a pricing table and a `mailto:` to `SALES_EMAIL` rather than the app
+  CTAs. Its venues are Polish — the market the rest of the site is in — while the
   prices follow the reader's language, so an English visitor sees Kraków sites
   quoted in pounds. That is the intended split: the operator is where the
   operator is, and the currency is whoever is reading. The original prototype in

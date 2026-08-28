@@ -118,6 +118,11 @@ const CAROUSEL_INTERVAL = 2400;
  * The services advance one at a time rather than sitting in a static grid: the
  * arc below them is already the busiest thing on screen, and a single moving
  * focus keeps the two from competing.
+ *
+ * No reach wiring here, and it is a category error rather than a missing id:
+ * `copy.guide.services` are the *kinds* of service Paylez covers — dictionary
+ * copy — not venues. There is no listing being drawn, so there is nothing whose
+ * impression this would be. See `api/reach.ts`.
  */
 export function Guide() {
   const copy = useCopy();
@@ -278,8 +283,11 @@ export function Value() {
               <span className="pv-logo">{VALUE_CARD.logo}</span>
               <div>
                 <b>{copy.value.card.merchant}</b>
-                {/* The voucher's face value is quoted in whatever the language prices in. */}
-                <span>{fill(copy.value.card.meta, { amount: money(25) })}</span>
+                {/* The voucher's face value is quoted in whatever the language
+                    prices in — and it is the catalogue's, not a literal. The
+                    price under it reads "500 pts", so this is the Zalando row
+                    the wallet would actually charge for. */}
+                <span>{fill(copy.value.card.meta, { amount: money(VALUE_CARD.eur) })}</span>
               </div>
             </div>
             <div className="pv-img">
@@ -468,11 +476,37 @@ export function SiteFooter() {
           <div className="news">
             <h5>{copy.footer.news.heading}</h5>
             <p>{copy.footer.news.body}</p>
+            {/*
+              It hands off to a mail app, exactly as `ContactForm` does, and for
+              the reason that file's own header gives: there is no server behind
+              this, and "the usual way that gets built is a `setTimeout` and a
+              green tick over a message nobody received". That is precisely what
+              this was — `setSubscribed(true)` and a line reading "You're in —
+              watch your inbox", with the address going nowhere at all. A visitor
+              typed a real address, was told they were subscribed, and no email
+              was ever going to arrive.
+
+              The confirmation was reworded in all five languages to match: it
+              now says the mail app is open and the message still has to be sent,
+              which is the true half of what just happened. The field is cleared
+              too — it used to sit there holding the address under a
+              confirmation, which reads as "stored".
+            */}
             <form
               className="news-form"
               onSubmit={(event) => {
                 event.preventDefault();
-                if (emailRef.current?.checkValidity()) setSubscribed(true);
+                const field = emailRef.current;
+                if (!field?.checkValidity()) return;
+
+                const address = field.value.trim();
+                const subject = copy.footer.news.subscribe;
+                window.location.href = `mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent(
+                  subject,
+                )}&body=${encodeURIComponent(address)}`;
+
+                field.value = '';
+                setSubscribed(true);
               }}
             >
               <input
@@ -486,22 +520,37 @@ export function SiteFooter() {
                 <Icon name="arrow" size={18} strokeWidth={2.4} />
               </button>
             </form>
-            <p
-              className="news-ok"
-              data-on={subscribed ? 'true' : undefined}
-              role="status"
-            >
-              {copy.footer.news.success}
+            {/*
+              A live region that is *empty* until there is something to say.
+              It used to render the confirmation from first paint and hide it
+              with `opacity: 0` — which hides it from the eye and from nobody
+              else: a screen reader read "You're in" on page load, and then had
+              nothing to announce when `data-on` flipped, because the text had
+              not changed. A live region only fires on a change to its contents.
+            */}
+            <p className="news-ok" data-on={subscribed ? 'true' : undefined} role="status">
+              {subscribed && copy.footer.news.success}
             </p>
           </div>
         </div>
 
+        {/*
+          Both links point at real routes now.
+
+          They used to be `<a href="#top">` — the same href the wordmark uses —
+          so from Business, Relocate or anywhere else, clicking "Privacy Policy"
+          dropped the reader on the marketing front page. That is the
+          silent-trip-to-Home bug `ANCHOR_ROUTES` was written to end, and it is
+          worse here than on a CTA: a legal link is the one a reader follows
+          because they want the document, not the site. `PATHS` rather than a
+          literal, for the same reason nothing else here hardcodes a hash.
+        */}
         <div className="footer-bottom">
           <span>{copy.footer.legal}</span>
-          <span>
-            <a href="#top">{copy.footer.privacy}</a> ·{' '}
-            <a href="#top">{copy.footer.terms}</a>
-          </span>
+          <nav className="footer-legal" aria-label={copy.footer.legal}>
+            <a href={PATHS.privacy}>{copy.footer.privacy}</a>
+            <a href={PATHS.terms}>{copy.footer.terms}</a>
+          </nav>
         </div>
       </div>
     </footer>

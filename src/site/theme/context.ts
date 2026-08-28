@@ -25,30 +25,49 @@ export type ThemeName = 'dark' | 'light';
 export type GlobeTone = 'glow' | 'ink';
 
 export interface ThemePalette {
-  /** Accent for every 3D layer. Mirrors `--accent-ink`. */
+  /**
+   * Accent for every 3D layer. Mirrors `--accent` — the *fill* step of the
+   * ramp, in both themes.
+   *
+   * Not `--accent-ink`, which is what this used to say and is only true in
+   * dark, where all three steps are one mint. On paper `--accent-ink` is
+   * `#007a78`, two stops down, and these layers are shapes rather than
+   * hairlines: they want the fill. (Light's `--accent` and `--accent-lit` are
+   * the same value, so either name is honest; `--accent` is the one that also
+   * holds in dark.)
+   */
   primary: string;
   /** What the 3D layers treat as "the page". Mirrors `--bg`. */
   background: string;
   /**
    * Legible against `primary`, for the few places something sits *on* the
-   * accent — the intro's brand mark, for one.
+   * accent — the parrot's beak and feet in the flight game, for one. (It used
+   * to say "the intro's brand mark"; the intro is pure type now and takes no
+   * palette beyond `primaryColor` / `backgroundColor`.)
    *
-   * The counterpart of CSS `--on-accent`, but **not a copy of it**, and this is
-   * the field where that matters: `--on-accent` pairs with `--accent`, the mint
-   * fill, and is near-black on it. This one pairs with `primary` above, which is
-   * `--accent-ink` — the darker teal the canvases need — and is the page colour
-   * on it. The two are opposite in light for the same reason both are correct:
-   * they sit on different colours. Kept as its own field precisely so nobody
-   * "fixes" one to match the other.
+   * The counterpart of CSS `--on-accent`, but **not a copy of it**, and light
+   * is where that bites: `--on-accent` there is `#ffffff` and this is
+   * `#04201f`. Both sit on the same `#089b99`, so this is not the two of them
+   * pairing with different colours — it is the two of them answering different
+   * questions about the same one. Near-black wins on contrast (4.2:1 against
+   * white's 3.4:1) and white wins on *looking like a button you press*, which
+   * `site.css` argues for at the point of use. A canvas has no buttons, so a
+   * shape drawn on a filled accent takes the contrast. Kept as its own field
+   * precisely so nobody "fixes" one to match the other.
    */
   onPrimary: string;
   /**
-   * The brand mark for this theme, as a URL.
+   * The brand mark for this theme, as a URL. Mirrors the `--logo` token in
+   * `site.css`; change one and change the other.
    *
-   * Mirrors the `--logo` token in `site.css` and is here for the same reason
-   * every colour beside it is: `PaylezIntro` lives under `components/` and is
-   * driven entirely by props, so it cannot reach into the site's stylesheet for
-   * one. Change one and change the other.
+   * **Nothing reads this today.** It was here because `PaylezIntro` lives under
+   * `components/`, is driven entirely by props, and could not reach into the
+   * site's stylesheet for a tile — but the intro dropped the tile, for the same
+   * reason the header, the footer and the dashboard rail never had one: the
+   * product has never put a mark beside the word. The files and the `--logo`
+   * token survive that decision, so the field survives with them, and a
+   * canvas-side surface that ever wants the mark still has nowhere else to get
+   * it. Delete it only together with the token.
    */
   logo: string;
   tone: GlobeTone;
@@ -84,8 +103,15 @@ export const THEMES: Record<ThemeName, ThemePalette> = {
      */
     primary: '#089b99',
     background: '#f5f9f8',
-    /* Near-black, not the page: the mark is *filled* with `primary` now, and a
-       page-coloured letter on neon is 1.3:1. Mirrors `--on-accent`. */
+    /*
+     * Near-black, not the page: whatever sits here is drawn *on* a `primary`
+     * fill, and a page-coloured mark on it is 1.3:1.
+     *
+     * Mirrors `--ink-rgb`, **not** `--on-accent` — which is what this used to
+     * claim and is the one pairing in the file that inverts between the two
+     * systems. Light's `--on-accent` is `#ffffff`; see the note on `onPrimary`
+     * in `ThemePalette` for why both are right.
+     */
     onPrimary: '#04201f',
     logo: '/logo/logo-light.png',
     tone: 'ink',

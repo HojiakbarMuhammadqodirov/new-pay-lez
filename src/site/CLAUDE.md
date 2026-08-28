@@ -76,17 +76,33 @@ brand's dark things are made of, and the mint that marks it. Dark is already mad
 of them. Paper spends them in four places, and all four come from the reference
 design (`b2b/Paylez Partner Dashboard v2.dc.html`), which is itself a light page:
 
-    --solid       the face of a thing you press. rgb(--solid-rgb), which is
-    --solid-lit   --accent-rgb in dark and --ink-rgb in light. Its label is
-    --on-solid    --on-solid: near-black in dark, the ink's mint on paper.
+    --solid       the face of a thing you press. --accent in both themes, so
+    --solid-lit   its label is --on-accent: near-black on the dark mint, white
+    --on-solid    on paper. --solid-lit darkens on hover rather than lifting.
 
-That is the inversion worth understanding. **The accent is what a mark is made
-of; the ink is what a press is made of**, and on paper those stop being the same
-colour. A page of white cards with a deep-teal button on each reads flat; the
-design's answer is near-black buttons and a green kept for icon strokes,
-eyebrows, one chart line and a 6px dot, and that is what these tokens carry over.
-It also closes a real contrast gap — white on `#089b99` is the 3.4:1 the
-paragraph above admits to, and mint on the ink is 11.8:1.
+**Except on `.pd-app`, where a press is the ink.** That is the inversion worth
+understanding, and it is now scoped to one screen instead of being the default.
+The accent is what a mark is made of; the ink is what a press is made of, and on
+paper those stop being the same colour — a page of white cards with a deep-teal
+button on each reads flat, and the reference design's answer is near-black
+buttons with a green kept for icon strokes, eyebrows, one chart line and a 6px
+dot. That argument is about a page of white cards with nothing behind it, which
+describes the partner dashboard and describes no other page here: the marketing
+routes all carry a live canvas and a mint headline, and a black pill on one of
+them is the single element saying nothing green at all.
+
+The trade is stated rather than hidden. White on `#089b99` is the 3.4:1 the
+paragraph above admits to — AA for large text and non-text marks, under it for a
+15px label — and mint on the ink is 11.8:1. `--solid-lit` is `--accent-ink`, so
+hover *darkens* to 5.25:1 rather than lifting, which is the only direction a
+fill this light can move in.
+
+One mechanical note, because it has already been wrong once: `--solid` has to be
+**restated** wherever `--solid-rgb` is overridden. A `var()` inside a custom
+property is substituted where the declaration sits, so a base
+`--solid: rgb(var(--solid-rgb))` resolves against `:root` and is inherited into
+the scope as a finished colour — overriding only the triplet changes the shadow
+and nothing else.
 
 `[data-ink]` is the same pair at panel size, and it is the third palette block in
 `site.css` — the one place other than the two `:root` blocks where a colour is
@@ -109,7 +125,7 @@ that breaks it is a rule that names a colour instead of reading a token, which i
 the rule this whole file is about.
 
 The canvases take `--accent-lit` (`THEMES.light.primary`, same hex — the globe,
-the controller, the node web, the market tape): they are
+the controller, the node web, the candle tape): they are
 shapes, but `tone: 'ink'` alpha-blends them onto paper and the globe is mostly
 one-pixel coastlines — at the neon the light theme used to fill with, it renders
 as an empty disc.

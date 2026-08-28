@@ -65,7 +65,7 @@ export interface UserRecord {
 const BRATYSLAWSKA: BusinessProfile = {
   name: 'Kawiarnia Bratysławska',
   category: 'cafe',
-  /* `copy.business.subcategories[0][0]` — "Specialty coffee". */
+  /* `copy.listing.subcategories[0][0]` — "Specialty coffee". */
   subcategory: 0,
   description:
     'A twelve-table specialty café a minute from Nowy Kleparz, roasting on a 5 kg drum in the back room. Breakfast until noon, filter flights all day, and the long table fills with AGH students from three.',
@@ -160,7 +160,8 @@ export type SignUpError = 'name' | 'email' | 'taken' | 'password' | 'type';
 /** Short enough to type, long enough not to be a typo. */
 export const MIN_PASSWORD = 6;
 
-const sameEmail = (a: string, b: string) =>
+/** Addresses differing only in case or surrounding space are one address. */
+export const sameEmail = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** Case-insensitive on the address, exact on the secret. */

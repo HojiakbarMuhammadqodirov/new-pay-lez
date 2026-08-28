@@ -437,14 +437,21 @@ function ExchangeCard() {
  */
 function useShortcuts(home: FxCode): Array<[FxCode, FxCode]> {
   return useMemo(() => {
+    /* The key is direction-insensitive, because the card has a swap button:
+       PLN→UAH and UAH→PLN are one shortcut reached two ways, and offering both
+       spends two of only four slots saying the same thing. A plain `join` let
+       the reversed pair through, and three of the five languages showed the
+       duplicate — Polish got PLN→EUR beside EUR→PLN, Uzbek and Ukrainian the
+       same trick with their own currency against złoty. */
+    const key = (pair: [FxCode, FxCode]) => [...pair].sort().join('');
+
     const lead: [FxCode, FxCode] = [home, home === 'PLN' ? 'EUR' : 'PLN'];
-    const seen = new Set([lead.join('')]);
+    const seen = new Set([key(lead)]);
     const out: Array<[FxCode, FxCode]> = [lead];
 
     for (const pair of RELOCATE_PAIRS) {
-      const key = pair.join('');
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (seen.has(key(pair))) continue;
+      seen.add(key(pair));
       out.push(pair);
     }
 
@@ -510,7 +517,7 @@ function RelocateHero() {
             ))}
           </div>
 
-          <p className="b2b-trust" data-reveal>
+          <p className="business-trust" data-reveal>
             {copy.relocate.hero.trust}
           </p>
         </div>
@@ -693,6 +700,14 @@ function RelocateGuide() {
                         {city ? fill(guide.none, { city }) : guide.soon}
                       </p>
                     ) : (
+                      /* No reach wiring on these rows. `RelocateProvider` has a
+                         name, a topic, a city and its languages — and no id at
+                         all, because it is the seed directory the real one
+                         replaces. There is nothing to report an impression
+                         *against*, and keying one on the name would attribute
+                         a stranger's listing to whichever venue happened to be
+                         called that. Wire this the day the guide reads
+                         `GET /v1/venues`; see `api/reach.ts`. */
                       <ul className="topic-list">
                         {providers.map((provider) => (
                           <li key={provider.name}>
@@ -706,7 +721,7 @@ function RelocateGuide() {
                               {provider.languages
                                 .map(
                                   (code) =>
-                                    copy.business.spokenLanguages[
+                                    copy.listing.spokenLanguages[
                                       SPOKEN_LANGUAGES.indexOf(code)
                                     ],
                                 )
@@ -758,7 +773,7 @@ function RelocateCountries() {
           ))}
         </div>
 
-        <p className="b2b-note" data-reveal>
+        <p className="business-note" data-reveal>
           {copy.relocate.countries.note}
         </p>
       </div>

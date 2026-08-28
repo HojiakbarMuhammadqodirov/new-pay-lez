@@ -21,10 +21,12 @@ export type Route =
   | 'landing'
   | 'learn'
   | 'analytics'
-  | 'b2b'
+  | 'business'
   | 'vouchers'
   | 'relocate'
   | 'contact'
+  | 'privacy'
+  | 'terms'
   | 'signin'
   | 'business-setup'
   | 'dashboard'
@@ -33,10 +35,12 @@ export type Route =
 const ROUTES: Record<string, Route> = {
   '#/l-earn': 'learn',
   '#/analytics': 'analytics',
-  '#/b2b': 'b2b',
+  '#/business': 'business',
   '#/vouchers': 'vouchers',
   '#/relocate': 'relocate',
   '#/contact': 'contact',
+  '#/privacy': 'privacy',
+  '#/terms': 'terms',
   '#/sign-in': 'signin',
   '#/business/setup': 'business-setup',
   '#/dashboard': 'dashboard',
@@ -47,10 +51,12 @@ export const PATHS: Record<Route, string> = {
   landing: '#top',
   learn: '#/l-earn',
   analytics: '#/analytics',
-  b2b: '#/b2b',
+  business: '#/business',
   vouchers: '#/vouchers',
   relocate: '#/relocate',
   contact: '#/contact',
+  privacy: '#/privacy',
+  terms: '#/terms',
   signin: '#/sign-in',
   'business-setup': '#/business/setup',
   dashboard: '#/dashboard',
@@ -70,7 +76,7 @@ export const PATHS: Record<Route, string> = {
  * This used to be answered "the landing page, always", and every in-page link on
  * every other page was broken by it: `#analytics-reports` is not in `ROUTES`, so
  * following "Open the dashboard" from Analytics read as a miss and dropped the
- * visitor on Home. Same for `#b2b-cta`, `#learn-games`, `#vouchers-catalogue`
+ * visitor on Home. Same for `#business-cta`, `#learn-games`, `#vouchers-catalogue`
  * and `#relocate-guide` — six pages' worth of anchors that all went Home.
  *
  * Every page already prefixes its section ids with its own name, so the prefix
@@ -85,10 +91,37 @@ export const ANCHOR_ROUTES: Array<[prefix: string, route: Route]> = [
      so its one anchor files under `learn` too. */
   ['games-', 'learn'],
   ['analytics-', 'analytics'],
-  ['b2b-', 'b2b'],
+  ['business-', 'business'],
   ['vouchers-', 'vouchers'],
   ['relocate-', 'relocate'],
   ['contact-', 'contact'],
+  /* The two legal documents. Each is one long page whose headings are its own
+     numbered sections, so the prefixes buy real in-document links — and without
+     them, a table-of-contents jump from inside the Privacy Policy would resolve
+     to `landing` and throw the reader onto the marketing page mid-clause, which
+     is the exact failure the note above describes. */
+  ['privacy-', 'privacy'],
+  ['terms-', 'terms'],
+  /*
+   * The three signed-in / one-card screens. Nothing links to them *yet*, which
+   * is exactly why they were missing and why `verify` could not tell: the check
+   * walks the entries that are in this table, and an id with no entry is
+   * invisible to it. So the first in-page link added to the wallet would have
+   * gone Home — the precise bug this table was written to end — and the person
+   * adding it would have had no failing test to read.
+   *
+   * `wallet-` files under `vouchers` because the wallet *is* `#/vouchers` seen
+   * by a signed-in player; the route is the same one either way.
+   *
+   * The listing form's prefix is `setup-` rather than `business-`, and that is
+   * forced rather than chosen: the page that sells to a venue is `#/business`
+   * now, so `business-` belongs to it. Two routes cannot share a prefix here —
+   * matching is first-hit on the string, so the loser's anchors would all
+   * resolve to the winner's page.
+   */
+  ['wallet-', 'vouchers'],
+  ['signin-', 'signin'],
+  ['setup-', 'business-setup'],
 ];
 
 /** The route a hash names, section anchors included. Exported for `verify`. */
@@ -114,8 +147,29 @@ function readRoute(): Route {
  * being sent to setup because the listing is not finished, being bounced off a
  * page this account cannot see.
  */
-export function navigate(route: Route): void {
-  window.location.hash = PATHS[route];
+export function navigate(route: Route, replace = false): void {
+  if (!replace) {
+    window.location.hash = PATHS[route];
+    return;
+  }
+
+  /*
+   * A *correction* is not a destination, and must not become one.
+   *
+   * `resolveRoute` is pure in `(hash, account)`, so a pushed correction is a
+   * trap: the visitor signs in at `#/sign-in`, the guard pushes `#top`, and
+   * pressing Back returns to `#/sign-in` — where the same function gives the
+   * same answer and pushes `#top` again. Back stops working for the rest of the
+   * tab's life, and it is the primary control on a hash-routed site. The same
+   * loop catches every other bounce: a signed-out visitor following a link to
+   * `#/dashboard`, an individual on `#/business`, a new owner sent to setup.
+   *
+   * `location.replace` rather than `history.replaceState`, because only the
+   * former fires `hashchange` — and `useRoute` listens to nothing else, so the
+   * state variant would leave the address bar and the page disagreeing.
+   */
+  const { pathname, search } = window.location;
+  window.location.replace(`${pathname}${search}${PATHS[route]}`);
 }
 
 /**
@@ -136,6 +190,18 @@ const PRIVATE: Route[] = ['business-setup', 'dashboard', 'admin'];
 
 export function resolveRoute(route: Route, account: Account | null): Route {
   if (account === null) {
+    /*
+     * Analytics is a venue owner's tool, not a public page.
+     *
+     * It used to be in the signed-out nav on the argument that the reporting
+     * was part of the pitch — but the screen is a month of somebody's takings,
+     * and a visitor reading it is reading numbers that either belong to a real
+     * venue or are invented. Neither is a good answer, so the page now exists
+     * only for the person whose venue it describes. Sent to `landing` rather
+     * than `signin`, because signing in does not get a *player* there either;
+     * it is not locked, it is not theirs.
+     */
+    if (route === 'analytics') return 'landing';
     return PRIVATE.includes(route) ? 'signin' : route;
   }
 
@@ -195,7 +261,7 @@ export function resolveRoute(route: Route, account: Account | null): Route {
      * reached the listing form, filled it in, and had it saved onto an account
      * with no dashboard to show it on.
      */
-    return route === 'b2b' || route === 'analytics' || PRIVATE.includes(route)
+    return route === 'business' || route === 'analytics' || PRIVATE.includes(route)
       ? 'landing'
       : route;
   }

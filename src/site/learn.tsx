@@ -8,6 +8,7 @@ import {
   STREAK,
 } from './content';
 import { MAX_FREEZES } from './auth/player';
+import { rulesFor } from './games/rules';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
@@ -24,11 +25,11 @@ import { usePalette } from './theme/context';
  * equivalent of — the step rail, the game cards, the streak card and the board.
  *
  * The backdrop is where the two pages part company. The landing page has the
- * globe; this one has the arcade trail (`arcade/ArcadeTrail`) behind everything
- * — Squawk's Flight played endlessly, gates drifting past and a flyer threading
- * them — and the controller in the hero's right-hand column. Cross-border
- * payments are what the globe is *about*, and none of that is what this page
- * sells; its own game is.
+ * globe; this one has the platformer (`level/LevelRun`) behind everything — a
+ * runner breaking blocks, taking a power-up out of a lucky box, growing, and
+ * leaving down a pipe — and the controller in the hero's right-hand column.
+ * Cross-border payments are what the globe is *about*, and none of that is what
+ * this page sells; play, get bigger, cash out is.
  */
 
 /* ─────────────────────────────────────────────────────────────── hero ── */
@@ -92,7 +93,7 @@ function LearnHero() {
         {/*
           The controller stands in for the globe here. It is in the flow rather
           than in the fixed layer behind the page: it belongs to the hero, and
-          the fixed layer is the arcade trail, which belongs to the whole page.
+          the fixed layer is the platformer, which belongs to the whole page.
         */}
         <div className="hero-visual learn-visual" aria-hidden>
           <Controller3D
@@ -180,30 +181,13 @@ function LearnGames() {
                 <Icon name={entry.icon} size={24} />
               </span>
               <h3>{games.names[i]}</h3>
-              <p>
-                {entry.kind === 'flight'
-                  ? fill(games.flight.rule, { gaps: String(entry.questions) })
-                  : entry.kind === 'memory'
-                    ? fill(games.memory.rule, { pairs: String(entry.questions) })
-                    : entry.kind === 'word'
-                      ? fill(games.wordGame.rule, { words: String(entry.questions) })
-                      : fill(games.rule, {
-                          questions: String(entry.questions),
-                          seconds: String(entry.seconds),
-                        })}
-              </p>
-              <span className="game-meta">
-                {entry.kind === 'flight'
-                  ? fill(games.flight.reward, { points: String(entry.perCorrect) })
-                  : entry.kind === 'memory'
-                    ? fill(games.memory.reward, { points: String(entry.perCorrect) })
-                    : entry.kind === 'word'
-                      ? games.wordGame.reward
-                      : fill(games.reward, {
-                          mistakes: String(entry.allowedMistakes),
-                          points: String(entry.perCorrect),
-                        })}
-              </span>
+              {/* The same two sentences the signed-in Play grid prints, from the
+                  same function. This section already maps `GAMES` so the pitch
+                  cannot claim a game the product does not have; the rule lines
+                  were the half still written out by hand here, which is how a
+                  page starts describing the same seven games two ways. */}
+              <p>{rulesFor(entry, games)[0]}</p>
+              <span className="game-meta">{rulesFor(entry, games)[1]}</span>
             </article>
           ))}
         </div>

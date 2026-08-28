@@ -13,7 +13,7 @@ import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth, initial } from './auth/context';
-import { BusinessForm } from './business';
+import { BusinessForm } from './businessSetup';
 import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
 import { DashboardContext, useDashboard } from './dashboardShell';
@@ -207,25 +207,33 @@ function RangeMenu() {
       </button>
 
       {open && (
-        <ul className="lang-menu pd-range-menu" role="listbox" aria-label={copy.dashboard.rangeMenu}>
+        /* A `div` with the options as direct children — see the note on
+           `LanguageMenu` in `Header.tsx`, whose classes this borrows. A
+           `role="listbox"` may only own `option`s, and an `<li>` in between
+           breaks that; the two controls are one component and have to make the
+           same mistake or neither. */
+        <div
+          className="lang-menu pd-range-menu"
+          role="listbox"
+          aria-label={copy.dashboard.rangeMenu}
+        >
           {PD_RANGES.map((days, index) => (
-            <li key={days}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={days === range}
-                className="lang-option"
-                data-on={days === range ? 'true' : undefined}
-                onClick={() => {
-                  setRange(days);
-                  setOpen(false);
-                }}
-              >
-                {copy.dashboard.ranges[index]}
-              </button>
-            </li>
+            <button
+              key={days}
+              type="button"
+              role="option"
+              aria-selected={days === range}
+              className="lang-option"
+              data-on={days === range ? 'true' : undefined}
+              onClick={() => {
+                setRange(days);
+                setOpen(false);
+              }}
+            >
+              {copy.dashboard.ranges[index]}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );

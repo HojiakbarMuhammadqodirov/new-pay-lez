@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ADMIN_DEALS,
   ADMIN_SERVICES,
@@ -108,6 +108,20 @@ function ServiceCard({
   const [copied, setCopied] = useState(false);
 
   /*
+   * The confirmation un-says itself on a timer, and the timer outlives the card:
+   * the tabs unmount this whole list, so pressing "copy id" and moving to
+   * Analytics inside the second and a half left a `setCopied` pointing at a
+   * component that no longer exists. The handle is held in a ref rather than in
+   * state because nothing renders it, and cleared both on the next press (two
+   * copies in quick succession must not let the first press end the second one's
+   * confirmation) and on unmount.
+   */
+  const revert = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => () => {
+    if (revert.current !== null) clearTimeout(revert.current);
+  }, []);
+
+  /*
    * The clipboard is not guaranteed — it needs a secure context and the user's
    * permission — so the id stays visible and selectable either way, and the
    * button only ever adds a shortcut. A silent failure would be a button that
@@ -117,7 +131,8 @@ function ServiceCard({
     navigator.clipboard?.writeText(service.id).then(
       () => {
         setCopied(true);
-        setTimeout(() => setCopied(false), 1600);
+        if (revert.current !== null) clearTimeout(revert.current);
+        revert.current = setTimeout(() => setCopied(false), 1600);
       },
       () => undefined,
     );
@@ -136,7 +151,7 @@ function ServiceCard({
             the rating comes from the app and an owner cannot type one. */}
         <span className="adm-sub">
           {[
-            dictionary.business.categories[service.category],
+            dictionary.listing.categories[service.category],
             service.city,
             service.rating > 0 ? `★ ${service.rating.toFixed(1)}` : null,
             service.vouchers ? copy.vouchers : null,

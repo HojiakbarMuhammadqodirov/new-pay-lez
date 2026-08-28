@@ -19,6 +19,7 @@
  */
 import type { Account } from './context';
 import { SEED_USERS, type UserRecord } from './users';
+import { seedPlayer } from './player';
 
 const STORAGE_KEY = 'paylez-users';
 
@@ -98,7 +99,21 @@ export function patchUser(id: string, patch: Partial<UserRecord>): void {
   writeAll(listUsers().map((user) => (user.id === id ? { ...user, ...patch } : user)));
 }
 
-/** The session's view of a row: everything except the secret and the join date. */
+/**
+ * The session's view of a row: everything except the secret and the join date.
+ *
+ * The `player` backfill lives here rather than beside the one in
+ * `AuthProvider.stored()`, because there are two boundaries the old shape can
+ * come through and that comment only ever knew about one. `player` arrived
+ * after the first rows were written, `isRecord` above does not check it (it
+ * validates six fields and `player` is not one of them), and *this* is the
+ * function `signIn` uses — so a directory row written by an earlier build gave
+ * an individual an account with no `player` at all. Every screen that reads it
+ * bails: `GamesApp` and `WalletApp` both `return null` on a missing player,
+ * which renders no `<main>`, and `.site > main` is the only element the sheet
+ * gives `z-index: 1`. The symptom is a blank page under a working header, on
+ * sign-in, with nothing in the console.
+ */
 export function toAccount(user: UserRecord): Account {
   return {
     id: user.id,
@@ -106,6 +121,6 @@ export function toAccount(user: UserRecord): Account {
     email: user.email,
     type: user.type,
     business: user.business,
-    player: user.player,
+    player: user.type === 'individual' ? (user.player ?? seedPlayer()) : user.player,
   };
 }

@@ -65,6 +65,18 @@ export interface AuthValue {
    * that state when the form can simply ask first.
    */
   signUp: (draft: SignUpDraft) => { ok: true } | { ok: false; error: SignUpError };
+  /**
+   * Sign in with a Google credential.
+   *
+   * Async where the other two are synchronous, and that is the shape of the
+   * difference: the password paths read a row out of this device's directory,
+   * while this one asks the *server* to verify a token before anybody is signed
+   * in. It is the only identity on this site that something other than the
+   * browser has vouched for.
+   *
+   * Resolves to the local account, or rejects — callers show the message.
+   */
+  signInWithGoogle: (credential: string, language: string) => Promise<Account>;
   signOut: () => void;
   /** Answering the individual-or-business question — the legacy path only. */
   setType: (type: AccountType) => void;

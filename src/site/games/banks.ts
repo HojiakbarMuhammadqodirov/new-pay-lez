@@ -63,11 +63,19 @@ export interface CapitalBank {
 /* ────────────────────────────────────────────────────────────── loading ── */
 
 /**
- * One promise per bank+language, kept forever.
+ * One promise per bank+language, kept forever — as long as it resolves.
  *
  * The cache holds the *promise* rather than the result so two rounds started in
- * the same tick share one fetch. Nothing evicts: a bank is at most 389 kB and
- * the alternative is re-parsing it every time somebody replays a game.
+ * the same tick share one fetch. Nothing evicts a good one: a bank is at most
+ * 389 kB and the alternative is re-parsing it every time somebody replays a
+ * game.
+ *
+ * A *rejected* one is evicted, because it is the answer to a question nobody
+ * asked. Caching a failure forever turns one dropped chunk request — a tab that
+ * went offline for a second, a deploy that moved the file — into a game that
+ * stays unplayable for the life of the tab, while every other game on the page
+ * works. The retry is already on screen: it is the button that started the
+ * round.
  */
 const cache = new Map<string, Promise<unknown>>();
 
@@ -78,7 +86,14 @@ function load(file: string): Promise<unknown> {
   const loader = TEXT[file];
   if (!loader) return Promise.reject(new Error(`No bank at ${file}`));
 
-  const promise = loader();
+  const promise: Promise<unknown> = loader().catch((error: unknown) => {
+    /* Only if this is still the attempt in the map. A retry started while this
+       one was failing has already replaced it, and deleting by key alone would
+       evict a load that is in flight and about to succeed — leaving the next
+       caller to start a third fetch of the same 389 kB. */
+    if (cache.get(file) === promise) cache.delete(file);
+    throw error;
+  });
   cache.set(file, promise);
   return promise;
 }

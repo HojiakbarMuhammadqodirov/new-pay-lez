@@ -130,7 +130,16 @@ function Trend({ rows, label }: { rows: TrafficReport['trend']; label: string })
         {rows.map((row) => (
           <span
             key={row.day}
-            style={{ height: `${peak > 0 ? Math.max(3, (row.visitors / peak) * 100) : 3}%` }}
+            /* A day with nobody on it draws nothing. The 3% floor is there so a
+               day with one visitor is still visible against a peak of four
+               hundred, and it used to catch zero on the way past — which drew
+               the same mark for "nobody came" as for "one person came", on the
+               one tab whose whole argument is that absent and present are
+               different states. The column keeps its slot in the flex row, so
+               the axis still has every day on it; only the bar is gone. */
+            style={{
+              height: `${row.visitors > 0 && peak > 0 ? Math.max(3, (row.visitors / peak) * 100) : 0}%`,
+            }}
             title={`${row.day} — ${row.visitors}`}
           />
         ))}
@@ -260,7 +269,10 @@ export function AdminWebsite() {
             {copy.down.retry}
           </button>
           <button
-            className="btn btn--ghost"
+            /* `btn-ghost`, one dash. `btn--ghost` matched nothing, so the
+               destructive secondary rendered as a bare `.btn` — visually
+               identical to the "Retry" primary beside it. */
+            className="btn btn-ghost"
             type="button"
             onClick={() => {
               signOut();
@@ -373,7 +385,23 @@ export function AdminWebsite() {
           <p>{copy.people.lede}</p>
         </div>
         {users.state.status !== 'ready' ? (
-          <p className="adm-empty">{users.state.status === 'loading' ? copy.loading : copy.empty}</p>
+          /*
+           * Three states, three sentences — `loading | error | ready` is a union
+           * for exactly this reason, and collapsing the first two into one
+           * `!== 'ready'` branch put the *error* case on "Nothing recorded
+           * yet." The panel above only catches a failing `/traffic`; this
+           * endpoint can fail on its own (a 500, or a 403 on an account the
+           * server scopes differently), and the operator would then read a
+           * fully-drawn traffic report next to a confident claim that the
+           * platform has no users. Same lie as rendering `null` as 0.
+           */
+          <p className="adm-empty">
+            {users.state.status === 'loading'
+              ? copy.loading
+              : users.state.status === 'error'
+                ? copy.down.title
+                : copy.empty}
+          </p>
         ) : (
           <div className="adm-scroll">
             <table className="adm-table" data-solid>
@@ -407,8 +435,15 @@ export function AdminWebsite() {
           <p>{copy.feed.lede}</p>
         </div>
         {activity.state.status !== 'ready' ? (
+          /* Same three states as the table above, and the same reason: the
+             next branch down is the *genuine* empty, and a failed request must
+             not borrow its sentence. */
           <p className="adm-empty">
-            {activity.state.status === 'loading' ? copy.loading : copy.empty}
+            {activity.state.status === 'loading'
+              ? copy.loading
+              : activity.state.status === 'error'
+                ? copy.down.title
+                : copy.empty}
           </p>
         ) : activity.state.data.events.length === 0 ? (
           <p className="adm-empty">{copy.empty}</p>

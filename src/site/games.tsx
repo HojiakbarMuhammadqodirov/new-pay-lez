@@ -19,6 +19,7 @@ import {
 import { FlightGame } from './flight/FlightGame';
 import type { WordList } from './games/banks';
 import { MemoryMatch } from './games/MemoryMatch';
+import { rulesFor } from './games/rules';
 import {
   buildCapitalRound,
   buildFlagRound,
@@ -110,46 +111,15 @@ function nextTier(points: number): number {
   return TIERS.find((cost) => cost > points) ?? TIERS[TIERS.length - 1];
 }
 
-/**
- * The two rule lines under a game's name.
+/*
+ * `rulesFor` — the two rule lines under a game's name — used to live here.
  *
- * Each row of `GAMES` reads its own columns (see the table's comment), so the
- * lines are per kind rather than one sentence with four holes in it: a
- * per-question clock means nothing to a round that lasts as long as you do, and
- * "one mistake allowed" means nothing to a board you cannot lose. Lifted out of
- * the card so the featured card and the grid cards cannot describe the same
- * game differently.
+ * It moved to `games/rules.ts` when a third screen turned out to be printing
+ * the same sentences: the L-Earn marketing section, for a signed-out visitor,
+ * had its own hand-written copy of the same four-branch dispatch. Three screens
+ * describing seven games from one function is the point; two of them sharing it
+ * and one restating it is how the page ends up describing the product two ways.
  */
-function rulesFor(entry: Game, games: ReturnType<typeof useCopy>['games']): string[] {
-  if (entry.kind === 'flight') {
-    return [
-      fill(games.flight.rule, { gaps: String(entry.questions) }),
-      fill(games.flight.reward, { points: String(entry.perCorrect) }),
-    ];
-  }
-  if (entry.kind === 'memory') {
-    return [
-      fill(games.memory.rule, { pairs: String(entry.questions) }),
-      fill(games.memory.reward, { points: String(entry.perCorrect) }),
-    ];
-  }
-  if (entry.kind === 'word') {
-    return [
-      fill(games.wordGame.rule, { words: String(entry.questions) }),
-      games.wordGame.reward,
-    ];
-  }
-  return [
-    fill(games.rule, {
-      questions: String(entry.questions),
-      seconds: String(entry.seconds),
-    }),
-    fill(games.reward, {
-      mistakes: String(entry.allowedMistakes),
-      points: String(entry.perCorrect),
-    }),
-  ];
-}
 
 /* ──────────────────────────────────────────────────────────────── the round ── */
 
@@ -219,6 +189,21 @@ function Round({
     return () => window.clearInterval(tick);
   }, [state.index, state.picked, game.seconds, answer]);
 
+  /*
+   * Latched, for the same reason `answer` above is a `useCallback`: the beat
+   * effect below depends on it and must not restart on every render.
+   *
+   * `onDone` is `finish` in `GamesApp`, a plain arrow declared in the render
+   * body — so it is a *new function on every parent render*, and with it in the
+   * dep array each of those renders cleared the 900ms timeout and started it
+   * again. A parent re-rendering faster than the beat would postpone the next
+   * question indefinitely; one re-rendering slower just makes the beat longer
+   * than it reads. A ref is enough because nothing here needs the effect to
+   * re-run when the callback changes — it only needs to call the current one.
+   */
+  const done = useRef(onDone);
+  done.current = onDone;
+
   // A beat on the answer so the right one can be seen, then the next question.
   useEffect(() => {
     if (state.picked === null) return;
@@ -226,14 +211,14 @@ function Round({
       setState((current) => {
         const last = current.index + 1 >= questions.length;
         if (last || current.wrong > game.allowedMistakes) {
-          onDone(current.correct, current.wrong <= game.allowedMistakes);
+          done.current(current.correct, current.wrong <= game.allowedMistakes);
           return current;
         }
         return { ...current, index: current.index + 1, picked: null };
       });
     }, 900);
     return () => window.clearTimeout(next);
-  }, [state.picked, state.index, questions.length, game.allowedMistakes, onDone]);
+  }, [state.picked, state.index, questions.length, game.allowedMistakes]);
 
   const pct = (left / game.seconds) * 100;
 
@@ -315,6 +300,7 @@ function Result({
   balance,
   streak,
   scoreLine,
+  canAgain,
   onAgain,
   onBack,
 }: {
@@ -327,6 +313,10 @@ function Result({
   streak: number;
   /** Replaces the "n / m correct" line for a round that does not ask questions. */
   scoreLine?: string;
+  /** False when the tank is empty. `start` refuses on no lives, so without this
+   *  the one button on the card that a player is certain to press did nothing
+   *  at all and gave no reason — the two start buttons already say `noLives`. */
+  canAgain: boolean;
   onAgain: () => void;
   onBack: () => void;
 }) {
@@ -377,8 +367,13 @@ function Result({
       <p className="result-streak">{fill(copy.resultStreak, { streak: String(streak) })}</p>
 
       <div className="result-actions">
-        <button type="button" className="btn btn-solid" onClick={onAgain}>
-          {copy.again}
+        <button
+          type="button"
+          className="btn btn-solid"
+          disabled={!canAgain}
+          onClick={onAgain}
+        >
+          {canAgain ? copy.again : copy.noLives}
         </button>
         <a className="btn btn-ghost" href={PATHS.vouchers}>
           {copy.resultSpend}
@@ -533,10 +528,10 @@ export function GamesApp() {
   /**
    * Start a round.
    *
-   * Async because the banks are code-split and fetched on first use. `live`
-   * guards the obvious race: quitting or starting another game before a 389 kB
-   * bank lands would otherwise drop a finished round of the wrong game onto the
-   * screen.
+   * Async because the banks are code-split and fetched on first use, which is
+   * what `loading` is for. It is not only a label: it is the guard on the door,
+   * refusing a second start while one is in flight, because two builds racing
+   * would land the loser's questions on the winner's game.
    */
   const start = (id: GameId) => {
     const chosen = GAMES.find((g) => g.id === id);
@@ -550,6 +545,16 @@ export function GamesApp() {
       setPlaying(id);
       return;
     }
+
+    /* Leave the round *before* the build starts, not when it lands.
+       "Again" arrives here with `playing` and `questions` still set from the
+       round that just finished, and a bank is up to 389 kB — so a round view
+       kept alive across the fetch is a live clock over the previous round's
+       questions, answered and scored, with the prompts swapping underneath the
+       player at whatever index they had reached when the bank arrived. The
+       cards, whose buttons already read "Loading…", are the honest screen for
+       those few hundred milliseconds. */
+    setPlaying(null);
 
     setLoading(true);
     const build =
@@ -791,6 +796,7 @@ export function GamesApp() {
                         })
                       : undefined
               }
+              canAgain={player.lives > 0}
               onAgain={() => start(game.id)}
               onBack={() => {
                 setPlaying(null);

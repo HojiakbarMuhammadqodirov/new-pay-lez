@@ -128,7 +128,13 @@ export interface Completeness {
  */
 export function profileCompleteness(profile: BusinessProfile): Completeness {
   const missing = REQUIRED_FIELDS.filter((field) => {
-    const value = profile[field].trim();
+    /* `?? ''` rather than `profile[field].trim()`. The directory's guard admits
+       a listing on `typeof business === 'object'` alone, so a row written
+       before one of these nine fields existed reaches here with it undefined —
+       and `admin.tsx` runs this over *every* listing in the directory, so one
+       stale row would blank the whole console rather than mark itself
+       incomplete. Missing is what "not filled in" means here anyway. */
+    const value = (profile[field] ?? '').trim();
     if (!value) return true;
     return field === 'email' ? !isEmail(value) : false;
   });

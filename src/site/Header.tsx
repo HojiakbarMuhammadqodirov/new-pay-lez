@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useRef,
   useState,
   type CSSProperties,
@@ -8,6 +9,7 @@ import {
 } from 'react';
 import {
   NAV_HIDDEN_INDIVIDUAL,
+  NAV_LABEL_BUSINESS,
   NAV_HREFS,
   NAV_ORDER,
   NAV_ORDER_BUSINESS,
@@ -70,6 +72,10 @@ function NavItem({
       href={href}
       className="nav-link"
       data-active={active ? 'true' : undefined}
+      /* `data-active` is the sheet's hook and says nothing to anyone not looking
+         at the screen — so the nav was marking the current page visually and not
+         programmatically. `aria-current` is the half that carries. */
+      aria-current={active ? 'page' : undefined}
       onPointerMove={onPointerMove}
     >
       <svg
@@ -112,15 +118,34 @@ export function LanguageMenu() {
   const [language, setLanguage] = useLanguage();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const listId = useId();
+
+  /**
+   * Close, and put focus back where it came from.
+   *
+   * Closing unmounts the element that currently holds focus, which drops it on
+   * `<body>` — so the next Tab restarts at the top of the document rather than
+   * carrying on from the header. `AssistantDock` already solves this and says
+   * so; the two menus up here never got the same treatment.
+   *
+   * `restore` is false on the outside-click path, because there the visitor has
+   * just aimed at some *other* control and pulling focus back to the trigger
+   * would take it off whatever they clicked.
+   */
+  const close = useCallback((restore: boolean) => {
+    setOpen(false);
+    if (restore) trigger.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!open) return;
 
     const onPointerDown = (event: globalThis.PointerEvent) => {
-      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+      if (!ref.current?.contains(event.target as Node)) close(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') close(true);
     };
 
     document.addEventListener('pointerdown', onPointerDown);
@@ -129,15 +154,17 @@ export function LanguageMenu() {
       document.removeEventListener('pointerdown', onPointerDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [open]);
+  }, [open, close]);
 
   return (
     <div className="lang" ref={ref}>
       <button
+        ref={trigger}
         type="button"
         className="lang-trigger"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-controls={open ? listId : undefined}
         aria-label={copy.languageMenu}
         onClick={() => setOpen((value) => !value)}
       >
@@ -146,26 +173,37 @@ export function LanguageMenu() {
       </button>
 
       {open && (
-        <ul className="lang-menu" role="listbox" aria-label={copy.languageMenu}>
+        /*
+         * A `div`, not a `ul`, and the options are its direct children.
+         *
+         * `role="listbox"` requires `option` (or `group`) as its *owned*
+         * elements, and this used to put an `<li>` between the two — which
+         * breaks that ownership, so the options are not reliably exposed as one
+         * selectable set and `aria-selected` has nothing to attach to. Dropping
+         * the `<li>` off a `<ul>` would fix the ARIA and break the HTML content
+         * model instead, so the list element goes too. No CSS follows it:
+         * `.lang-menu` sets its own margin and padding and its `list-style` was
+         * only ever turning off markers this no longer has.
+         */
+        <div className="lang-menu" id={listId} role="listbox" aria-label={copy.languageMenu}>
           {LANGUAGE_ORDER.map((code) => (
-            <li key={code}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={code === language}
-                className="lang-option"
-                data-on={code === language ? 'true' : undefined}
-                onClick={() => {
-                  setLanguage(code);
-                  setOpen(false);
-                }}
-              >
-                <span className="lang-code">{LANGUAGES[code].short}</span>
-                {LANGUAGES[code].label}
-              </button>
-            </li>
+            <button
+              key={code}
+              type="button"
+              role="option"
+              aria-selected={code === language}
+              className="lang-option"
+              data-on={code === language ? 'true' : undefined}
+              onClick={() => {
+                setLanguage(code);
+                close(true);
+              }}
+            >
+              <span className="lang-code">{LANGUAGES[code].short}</span>
+              {LANGUAGES[code].label}
+            </button>
           ))}
-        </ul>
+        </div>
       )}
     </div>
   );
@@ -217,6 +255,8 @@ function AccountChip() {
   const { account, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
 
   useEffect(() => {
     if (!open) return;
@@ -225,7 +265,14 @@ function AccountChip() {
       if (!ref.current?.contains(event.target as Node)) setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      /* Escape means "put me back", and closing unmounts whatever menu item had
+         focus — so without this the next Tab restarts at the top of the
+         document. The other two exits do not restore: an outside click has
+         already chosen a new target, and signing out unmounts this whole chip
+         along with the header it sat in. */
+      trigger.current?.focus();
     };
 
     document.addEventListener('pointerdown', onPointerDown);
@@ -241,10 +288,12 @@ function AccountChip() {
   return (
     <div className="account" ref={ref}>
       <button
+        ref={trigger}
         type="button"
         className="account-chip"
         aria-haspopup="menu"
         aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
         aria-label={copy.auth.accountMenu}
         onClick={() => setOpen((value) => !value)}
       >
@@ -258,7 +307,7 @@ function AccountChip() {
       </button>
 
       {open && (
-        <div className="account-menu" role="menu">
+        <div className="account-menu" id={menuId} role="menu">
           {account.type === 'business' && (
             <a className="account-item" role="menuitem" href={PATHS.dashboard}>
               <Icon name="bars" size={15} />
@@ -322,8 +371,34 @@ export function Header({ route }: { route: Route }) {
    * venue; signed out, everything shows, because those pages are still the
    * pitch.
    */
+  const isOwner = account?.type === 'business';
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuId = useId();
+
+  /*
+   * Close on Escape, and lock the page behind it.
+   *
+   * The sheet covers the viewport, so a page that keeps scrolling underneath it
+   * means closing the menu drops you somewhere you never chose to be. Restoring
+   * the previous value rather than clearing it, because `PaylezIntro` sets the
+   * same property and the two can overlap on a first visit.
+   */
+  useEffect(() => {
+    if (!menuOpen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [menuOpen]);
+
   const items: NavKey[] =
-    account?.type === 'business'
+    isOwner
       ? NAV_ORDER_BUSINESS
       : account?.type === 'individual'
         ? NAV_ORDER.filter((key) => !NAV_HIDDEN_INDIVIDUAL.includes(key))
@@ -345,7 +420,9 @@ export function Header({ route }: { route: Route }) {
             <NavItem
               key={key}
               href={NAV_HREFS[key]}
-              label={copy.nav[key]}
+              /* An owner reads "Games" where a visitor reads "L-Earn" — same
+                 route, different word for somebody who is not being sold to. */
+              label={copy.nav[(isOwner && NAV_LABEL_BUSINESS[key]) || key]}
               /* Only the routes can be "current"; `home` is a section anchor,
                  which scrolls rather than navigates. */
               active={NAV_HREFS[key] === PATHS[route]}
@@ -363,8 +440,62 @@ export function Header({ route }: { route: Route }) {
               {copy.signIn}
             </a>
           )}
+
+          {/*
+            The phone's only way through the site.
+
+            `.main-nav` is hidden below 1080px and nothing replaced it, so on a
+            phone the Business page — the one that sells to venues, carrying the
+            pricing table and the sales address — was reachable from no page at
+            all. The footer's four links did not cover it.
+          */}
+          <button
+            type="button"
+            className="nav-burger"
+            aria-label={copy.menu}
+            aria-expanded={menuOpen}
+            aria-controls={menuId}
+            onClick={() => setMenuOpen((value) => !value)}
+          >
+            <span className="nav-burger-bars" data-open={menuOpen ? 'true' : undefined} />
+          </button>
         </div>
       </div>
+
+      {menuOpen && (
+        <div className="nav-sheet" id={menuId}>
+          <nav aria-label={copy.menu}>
+            {items.map((key) => (
+              <a
+                key={key}
+                href={NAV_HREFS[key]}
+                className="nav-sheet-link"
+                aria-current={NAV_HREFS[key] === PATHS[route] ? 'page' : undefined}
+                /* Closing on click rather than on route change: a section
+                   anchor like `#top` does not change the route, so keying off
+                   that would leave the sheet open over the thing it scrolled to. */
+                onClick={() => setMenuOpen(false)}
+              >
+                {copy.nav[(isOwner && NAV_LABEL_BUSINESS[key]) || key]}
+              </a>
+            ))}
+
+            {/* Signed out, the bar is too narrow at 360px to hold this *and*
+                the language menu — in Polish it overflows at 390px. It moves in
+                here, where it also reads as the end of the list rather than as
+                a control competing with the wordmark. */}
+            {!account?.type && (
+              <a
+                className="btn btn-solid btn-lg nav-sheet-cta"
+                href={PATHS.signin}
+                onClick={() => setMenuOpen(false)}
+              >
+                {copy.signIn}
+              </a>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   );
 }

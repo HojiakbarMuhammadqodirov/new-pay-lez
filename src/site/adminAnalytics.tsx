@@ -741,7 +741,7 @@ function Vouchers({ scale }: { scale: number }) {
 function Insights({ scale }: { scale: number }) {
   const dictionary = useCopy();
   const copy = dictionary.admin.analytics;
-  const business = dictionary.business;
+  const listing = dictionary.listing;
   const m = useMemo(() => serviceMetrics(scale), [scale]);
 
   const cityPeak = Math.max(...m.cities.map((city) => city.n), 1);
@@ -790,7 +790,7 @@ function Insights({ scale }: { scale: number }) {
                   key={language.code}
                   /* The venue's own language list, so "Ukrainian" is the same
                      word here as on the listing form. */
-                  label={business.spokenLanguages[SPOKEN_LANGUAGES.indexOf(language.code)]}
+                  label={listing.spokenLanguages[SPOKEN_LANGUAGES.indexOf(language.code)]}
                   value={language.n}
                   of={langPeak}
                   note={String(language.n)}
@@ -860,7 +860,7 @@ export function ServiceAnalytics({
   const totals = [m.engagement, m.vouchers, m.scans];
   /* The listing stores a category id; the word for it lives in the dictionary,
      and `BUSINESS_CATEGORIES` is what maps between them. */
-  const category = dictionary.business.categories[service.category];
+  const category = dictionary.listing.categories[service.category];
 
   return (
     <div className="adm-stack">

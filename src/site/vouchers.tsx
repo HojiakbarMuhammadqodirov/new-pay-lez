@@ -96,7 +96,11 @@ function Wallet() {
 
         <div className="vcard-main">
           <b>{VOUCHER_WALLET.card.brand}</b>
-          <span>{fill(wallet.card.meta, { amount: money(25) })}</span>
+          {/* The face value is the catalogue row's, not a literal. `€25` used
+              to sit here and the catalogue at the bottom of this same page
+              charges 500 points for that card — one page quoting one voucher at
+              two prices is what the `eur` column in `content.ts` closes. */}
+          <span>{fill(wallet.card.meta, { amount: money(VOUCHER_WALLET.card.eur) })}</span>
         </div>
 
         {/* The perforation. It is the one place on the site where a dashed
@@ -138,7 +142,7 @@ function VouchersHero() {
   const moneyParts = useMoneyParts();
 
   return (
-    <section className="hero b2b-hero" id="vouchers-top">
+    <section className="hero business-hero" id="vouchers-top">
       <div className="wrap hero-grid">
         <div className="hero-copy">
           <a className="learn-back" href={PATHS.landing} data-reveal>
@@ -186,8 +190,14 @@ function VouchersHero() {
                 <div className="hero-stat-row" key={copy.vouchers.hero.stats[i]}>
                   {i > 0 && <span className="hero-stat-div" />}
                   <div className="hero-stat">
+                    {/* The count-up target is the *converted* figure, because
+                        the affixes beside it are already the reader's. Counting
+                        `stat.value` up while wearing a pound sign would put the
+                        euro amount under a £ — masked here only because this
+                        one happens to be zero. `DashTiles` in `business.tsx` is the
+                        same line. */}
                     <b
-                      data-count={stat.value}
+                      data-count={parts ? parts.value : stat.value}
                       data-prefix={parts?.prefix}
                       data-suffix={parts ? parts.suffix : stat.suffix}
                       data-group={parts?.group}
@@ -201,12 +211,12 @@ function VouchersHero() {
             })}
           </div>
 
-          <p className="b2b-trust" data-reveal>
+          <p className="business-trust" data-reveal>
             {copy.vouchers.hero.trust}
           </p>
         </div>
 
-        <div className="hero-visual b2b-visual" data-reveal>
+        <div className="hero-visual business-visual" data-reveal>
           <Wallet />
         </div>
       </div>
@@ -256,6 +266,13 @@ function VouchersSteps() {
  * of the month, and the scarcity is a real property of the product rather than a
  * decoration on it.
  */
+/* Nothing on `#/vouchers` reports an impression, and the reason is the same for
+   every card on it: this page has no venue and no deal to report *about*. The
+   wallet above is a mock of somebody else's holdings, and the catalogue below is
+   gift-card stock at a brand — neither has a venue whose funnel an impression
+   would belong to, and the ids in `content.ts` are the site's own. See
+   `api/reach.ts`; a fabricated id is a 404 at best and another venue's numbers
+   at worst. */
 function VouchersCatalogue() {
   const copy = useCopy();
   const catalogue = copy.vouchers.catalogue;
@@ -328,7 +345,7 @@ function VouchersRules() {
           <h2>{copy.vouchers.rules.title}</h2>
         </div>
 
-        <div className="games b2b-why-grid rules-grid">
+        <div className="games business-why-grid rules-grid">
           {copy.vouchers.rules.items.map((item, i) => (
             <article className="game" key={item.title} data-reveal>
               <span className="game-ico">

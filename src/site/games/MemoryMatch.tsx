@@ -64,13 +64,31 @@ export function MemoryMatch({
     [],
   );
 
+  /* `onQuit` is an inline arrow at the call site, so putting it in the dep array
+     below would rebuild the board on every render of the page — a new shuffle
+     mid-game. Latched in a ref instead: the build reads whatever the current one
+     is without depending on its identity. */
+  const quit = useRef(onQuit);
+  quit.current = onQuit;
+
   useEffect(() => {
     let live = true;
-    buildMemoryBoard(pairs, today()).then((board) => {
-      if (!live) return;
-      setCards(board.cards);
-      setFaces(board.cards.map(() => 'down'));
-    });
+    buildMemoryBoard(pairs, today())
+      .then((board) => {
+        if (!live) return;
+        setCards(board.cards);
+        setFaces(board.cards.map(() => 'down'));
+      })
+      .catch(() => {
+        /* `decks.json` is code-split and fetched on first play, so it can fail:
+           a tab that dropped offline for a second, a deploy that moved the
+           chunk. `cards` then stays null, the panel below says "Loading…" for
+           the rest of the tab's life, and the rejection surfaces as an unhandled
+           one in the console. Hand the player back to the cards instead — the
+           same answer `games.tsx` gives the quiz path for the same failure, and
+           the screen the button that retries it is on. */
+        if (live) quit.current();
+      });
     return () => {
       live = false;
     };

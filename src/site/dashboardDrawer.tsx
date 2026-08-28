@@ -605,7 +605,10 @@ function CampaignBody({ onValid }: { onValid: (problems: number) => void }) {
       {/* The whole form said back in one sentence. The prototype ends both
           drawers this way and it is the most useful thing on either: an owner
           who cannot read the fields can still check the sentence. */}
-      <div className="pd-summary">
+      {/* `data-ink='paper'` is what makes it a black slab on the light page and
+          leaves it as glass in dark — the same treatment `.pd-hero` takes, and
+          the reason `site.css` no longer swaps `--text` and `--bg` here. */}
+      <div className="pd-summary" data-ink="paper">
         <span className="console-label">{copy.summaryTitle}</span>
         <b>
           {fill(copy.summary, {
