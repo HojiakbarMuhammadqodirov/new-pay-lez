@@ -1,8 +1,8 @@
 # Paylez API — the flows
 
-`openapi.json` describes every endpoint. This describes the six things a
-generated client cannot tell you: the sequences, the conventions, and the places
-where doing the obvious thing is wrong.
+`openapi.json` describes every endpoint. This describes what a generated client
+cannot tell you: the sequences, the conventions, and the places where doing the
+obvious thing is wrong.
 
 Base URL in development: `http://127.0.0.1:8787`. `GET /v1` returns the live
 endpoint list; `GET /v1/health` is liveness.
@@ -35,6 +35,53 @@ POST /v1/auth/signup     { email, password, name, provisionalId: "<userId>" }
 The merge moves the ledger, not a balance, so what arrives in the new account is
 provably the sum of what was earned. Do not try to carry a number across
 yourself.
+
+### The welcome gift is not paid at sign-up
+
+`POST /v1/auth/signup` mints the account and nothing else. The gift is claimed by
+`POST /v1/me/onboarded`, which takes no body and pays exactly once:
+
+```
+POST /v1/me/onboarded
+   → { granted: true, onboardedAt, points: 100, balance }
+   → { granted: false, onboardedAt, points: 0, balance }   ← every call after
+```
+
+An address and a password can be produced in bulk; finishing onboarding cannot be
+done twice by one account, which is what makes it a reasonable thing to pay for.
+It is safe to send twice — a retry, a second device or a lost response all get
+`granted: false` and the original timestamp. `onboardedAt` on `GET /v1/me` is
+`null` until it succeeds, which is how a client knows whether to offer onboarding
+at all.
+
+### The profile, and the city list
+
+`PATCH /v1/me` takes `name`, `username`, `language`, `city`, `avatar`, `phone`,
+`headline`, `birthDate` and `leaderboardOptIn`. **Nothing on it is verified** —
+there is no code sent to the number and no link clicked in the address, and
+`GET /v1/me` carries no verification flag of any kind. Every field is optional and
+none of them gates anything; filling in all seven answers (photo, username,
+headline, city, email, phone, birthday) pays the completion bonus once and stamps
+`profileCompletedAt`.
+
+Two of them have rules to draw the form around:
+
+- **`username`** is unique platform-wide — 3 to 20 characters of `a-z 0-9 _`, no
+  leading, trailing or doubled underscores, some names reserved. A clash is a
+  `409` naming the field, not a 500.
+- **`birthDate`** is accepted twice: the answer, and one correction. A third
+  *different* day is a `409` naming support. Resending the day already stored
+  costs nothing, so a client may safely PATCH its whole profile on every save.
+  `birthDateChangesLeft` on `GET /v1/me` says how many writes are left — grey the
+  field out on `0` rather than finding out by being refused.
+
+**`city` must be one of `GET /v1/cities`.** That endpoint is public, because the
+sign-up form has to render the choice before an account exists, and it returns the
+whole closed set — 114 cities across Poland, Germany and Uzbekistan — rather than
+a search. Filter it locally and show everything when the box is empty: whether
+Paylez is anywhere near them is the thing a visitor actually wants to know. Send
+the canonical `name` back; the country is derived on the server and returned as
+`countryCode`, never sent by a client.
 
 ---
 
@@ -103,7 +150,7 @@ that makes the customer re-open the app in a queue.
 | `invalid_trigger` | 422 | Not one of our codes. |
 | `conflict` | 409 | This customer already has a gate open at this venue. The response carries `transactionId` — resume it. |
 | `invalid_amount` | 400 | Zero, negative, or above the venue's ceiling. `reason` says which. |
-| `no_lives` | 409 | Games only. Lives reset at local midnight. |
+| `no_lives` | 409 | Games only. The hearts pool is empty. The detail carries `nextAt` — when the next heart lands — and `max`. It does **not** carry `resetsAt`, and hearts do not come back at midnight. |
 | `insufficient_points` | 409 | Carries `required` and `available`. |
 | `budget_exhausted` | 409 | The venue's pool cannot fund this tier right now. Offer a lower one — the ladder tells you which are `available`. |
 | `entitlement_required` | 403 | Carries `entitlement`, and `limit`/`used` where it is a capacity. |
@@ -154,7 +201,7 @@ and is told whether that one move was right — never the key.
 
 ```
 POST /v1/games/sessions            { gameType: "capitals" }
-  → { sessionId, content, livesLeft }
+  → { sessionId, gameType, content, livesLeft }   ← livesLeft is a plain count
 
 POST /v1/games/sessions/{id}/events
      { seq: 0, kind: "answer", payload: { index: 0, choice: 2 } }
@@ -163,7 +210,8 @@ POST /v1/games/sessions/{id}/events
 … one call per move …
 
 POST /v1/games/sessions/{id}/finish
-  → { score, correct, answered, won, streak, freezes, livesLeft, balance }
+  → { score, capped, correct, answered, won, streak, freezes,
+      livesLeft, balance, decay, nearest }
 ```
 
 `seq` is 0-based and must increase. Repeating a `seq` returns
@@ -180,13 +228,65 @@ connection never costs the player a question.
 | `memory_match` | `{cards, pairs}` — the layout stays on the server | `{a, b}` — two card positions |
 | `flight` | `{target}` | none; send `{report:{cleared}}` to `/finish` |
 
-**Lives** are a shared daily pool across all games and reset at local midnight.
-A life is spent on a **loss**, not on starting a round. `GET /v1/games/state` is
-the truth; anything the client tracks is a display.
+**Hearts refill on a clock, not at midnight.** They are a shared pool across all
+seven games, and `GET /v1/games/state` returns them as an **object**:
+
+```json
+{ "lives": 2, "max": 3, "nextAt": "2026-08-29T18:12:44.000Z" }
+```
+
+One heart comes back every `life_regen_minutes` — 240 free, 180 on Pro, 120 on
+Premium — up to `daily_lives`, which is 3, 5 and 7. `nextAt` is `null` when the
+pool is full. A heart is spent by a **lost** round; a won round costs nothing and
+starting one costs nothing. Draw the wait from `nextAt`; a countdown to midnight
+is now simply wrong, and a pool with no visible end is what makes a heart system
+feel broken.
+
+**A hint is metered.** Word Builder hints are capped per day by
+`word_hints_per_day` — 3 free, 6 on Pro, 10 on Premium — and past it the event is
+refused with `entitlement_required` rather than quietly answered with something
+that is not a hint. A hint keeps the word's base point and forfeits its tier
+bonus, which is what makes taking one a decision.
 
 **The score is not sent by the client.** `/finish` computes it from the events
 the server recorded. The only exception is the flight, which has no answer key —
 it reports `cleared` and the server clamps it.
+
+### What a round pays
+
+The raw round, before the two factors below:
+
+| Game | Raw score |
+| --- | --- |
+| `brain`, `flags`, `capitals`, `poland` | 1 per correct answer, **+5** for all five. 5 questions, 2 mistakes survivable |
+| `word_builder` | 1 per word solved, **+** the word's own tier bonus (0/1/2, forfeited by a hint), **+3** for solving all five first-try and hint-free |
+| `memory_match` | **Elapsed time alone**: under 40 s → 12, under 70 s → 8, under 110 s → 4, otherwise → 2. Timed from the server's own event stamps. No fail state; a finished deck always pays |
+| `flight` | 1 per gap cleared, **capped at 20 points**. 5 gaps decides `won`, not what it pays |
+
+Then `score = floor(raw × decay) × points_multiplier`, floored again.
+
+**There is no daily points cap.** A day is bounded by a per-game *decay curve*
+instead, and `decay` comes back on the finish response so the client can explain
+itself:
+
+| Plan | 1st round of that game today | 2nd | 3rd | 4th | 5th+ |
+| --- | --- | --- | --- | --- | --- |
+| Free | 1 | 0.6 | 0.4 | 0.2 | 0 |
+| Pro | 1 | 0.8 | 0.6 | 0.4 | 0.2 |
+| Premium | 1 | 1 | 1 | 1 | 1 |
+
+It is **per game**, so playing five different games is five first rounds. Nothing
+is ever refused for having played too much: at a factor of 0 the round still
+counts for the streak, the leaderboard and the accuracy figures, and only the
+points stop. `1` on a first round, so a client can simply not mention it — but say
+so when it is lower, or two points for five right answers reads as a bug.
+
+`capped` is still on the response and is **always 0**. It is kept so an existing
+client does not break on a missing key; `decay` is where the same question is
+answered now.
+
+`points_multiplier` (1 / 1.25 / 1.75) applies to **game rounds only**. What a
+visit pays is four named entitlements of its own — see §8.
 
 The flag emoji, from a code:
 
@@ -237,21 +337,70 @@ language, and `copy.language` may differ from the one you asked for.
 
 ---
 
-## 8. Entitlements
+## 8. Entitlements, and what a visit pays
 
 Ask what the account is entitled to, never what it paid. `GET /v1/me` returns an
 `entitlements` map resolved from the active plan:
 
 ```json
-{ "daily_lives": "3", "points_multiplier": "1", "exclusive_deals": "false" }
+{ "daily_lives": "3", "life_regen_minutes": "240", "scan_points": "20",
+  "points_multiplier": "1", "exclusive_deals": "false" }
 ```
 
 Values are strings; parse what you need. A missing subscription resolves to the
 free plan, so there is no null case to handle. A lapse restricts capability and
 **never** removes points or vouchers already earned.
 
-Paid-tier analytics are **absent** from partner responses rather than nulled, so
-render what is present instead of branching on a locked flag.
+The consumer plans are **Free, Pro and Premium**. Plus is retired, and **no plan
+is sold with a free trial** — `trial_days` is 0 on every one of them.
+
+| Key | Free | Pro | Premium |
+| --- | --- | --- | --- |
+| `daily_lives` | 3 | 5 | 7 |
+| `life_regen_minutes` | 240 | 180 | 120 |
+| `points_multiplier` *(game rounds only)* | 1 | 1.25 | 1.75 |
+| `round_decay` | `free` | `pro` | `premium` |
+| `scan_points` | 20 | 30 | 50 |
+| `first_visit_points` | 100 | 150 | 250 |
+| `stamp_points` | 100 | 150 | 250 |
+| `new_category_points` | 25 | 50 | 100 |
+| `voucher_validity_days` | 14 | 30 | 60 |
+| `word_hints_per_day` | 3 | 6 | 10 |
+| `assistant_uses_per_day` | 5 | 20 | *uncapped* |
+| `streak_freezes` | 2 | 5 | *uncapped* |
+| `deal_early_access_hours` | 0 | 0 | 24 |
+| `profile_badge` | *(none)* | `star` | `crown` |
+| `exclusive_deals`, `gift_card_priority` | false | true | true |
+| `monthly_stipend`, `priority_support` | 0 / false | 0 / false | 200 / true |
+
+**What a visit pays is four named keys, not a multiplier.** `scan_points`,
+`first_visit_points`, `stamp_points` and `new_category_points` each carry their own
+per-tier figure, and `points_multiplier` is deliberately *not* applied to them —
+doing both would pay a subscriber twice for one scan. A venue's own
+`pointsPerScan`, when it is positive, overrides `scan_points` outright: that is
+the venue's money and its decision.
+
+**There is no spend bonus.** Paying more over the venue minimum used to earn more
+in steps and does not any more. The minimum still decides whether a scan counts as
+a *visit* at all, which is upstream of any of this.
+
+**There is no `points_expiry_months`, and points never expire** — on any plan.
+`GET /v1/wallet` therefore has no `expiringSoon`, and it was removed rather than
+returned empty: an always-`[]` array is a promise about a rule the product
+dropped. A spend still consumes the oldest lot first, because a redemption has to
+come out of something.
+
+Partner entitlements are `live_deals`, `active_campaigns`, `push_quota`, `venues`,
+`team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`,
+`identified_profiles` and `export_csv`. Paid-tier analytics are **absent** from
+partner responses rather than nulled, so render what is present instead of
+branching on a locked flag.
+
+A capacity refusal is a `403 entitlement_required` carrying `entitlement`, `limit`
+and `used` — enough to write "that is your five for today" instead of "something
+went wrong". Three of them reach a consumer client: `assistant_uses_per_day` on
+`POST /v1/assistant/ask`, `word_hints_per_day` on a Word Builder hint event, and
+`gift_card_priority` on priority-only stock.
 
 ---
 

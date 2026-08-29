@@ -3,7 +3,7 @@
   "info": {
     "title": "Paylez API",
     "version": "1.0.0",
-    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n72 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
+    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n74 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
     "contact": {
       "name": "Paylez backend",
       "url": "https://pay-lez.com"
@@ -96,7 +96,7 @@
     "schemas": {
       "Error": {
         "type": "object",
-        "description": "Every failure. `code` is a closed set (see `domain/errors.ts`) and is what a client branches on; `message` is for a human and may change.",
+        "description": "Every failure. `code` is a closed set (see `domain/errors.ts`) and is what a client branches on; `message` is for a human and may change.\n\n`daily_cap` is listed because the set is closed, but nothing throws it any more: there is no daily points ceiling. Do not write a screen for it.",
         "properties": {
           "error": {
             "type": "object",
@@ -195,6 +195,7 @@
       },
       "Me": {
         "type": "object",
+        "description": "The whole account. **Nothing on the profile is verified** — there is no code sent to the number and no link clicked in the address, so there is no `phoneVerified` (or any other verification flag) to branch on.",
         "properties": {
           "user": {
             "type": "object",
@@ -209,13 +210,57 @@
               "name": {
                 "type": "string"
               },
+              "username": {
+                "type": "string",
+                "nullable": true,
+                "description": "The handle, as typed. Unique across the platform, 3–20 characters of `a-z 0-9 _` folded case-insensitively. Null until they pick one."
+              },
               "language": {
                 "type": "string",
                 "description": "The app language they chose. Drives every localised response."
               },
               "city": {
                 "type": "string",
+                "nullable": true,
+                "description": "One of `GET /v1/cities`. A write that is not on that list is refused."
+              },
+              "countryCode": {
+                "type": "string",
+                "nullable": true,
+                "description": "`PL`, `DE` or `UZ`, derived from the city on the server. Never sent by a client — the country is a fact about the city, not a second answer."
+              },
+              "avatar": {
+                "type": "string",
                 "nullable": true
+              },
+              "phone": {
+                "type": "string",
+                "nullable": true,
+                "description": "Optional, and unverified."
+              },
+              "headline": {
+                "type": "string",
+                "nullable": true,
+                "description": "A status line, at most 140 characters."
+              },
+              "birthDate": {
+                "type": "string",
+                "nullable": true,
+                "description": "ISO `YYYY-MM-DD`."
+              },
+              "birthDateChangesLeft": {
+                "type": "integer",
+                "description": "Self-service writes still available: 2 before it is set, 1 after, 0 once the one correction is spent. Grey the field out on 0 rather than letting a form find out by being refused. Resending the day already stored spends nothing."
+              },
+              "profileCompletedAt": {
+                "type": "string",
+                "nullable": true,
+                "description": "When all seven profile answers were first present (photo, username, headline, city, email, phone, birthday) and the completion bonus was paid. A stamp, not a live flag."
+              },
+              "onboardedAt": {
+                "type": "string",
+                "nullable": true,
+                "description": "Null until `POST /v1/me/onboarded` claims the welcome gift."
               },
               "trustTier": {
                 "type": "integer",
@@ -250,6 +295,7 @@
           },
           "plan": {
             "type": "object",
+            "description": "Consumer plans are `free`, `pro`, `premium`. No plan is sold with a trial.",
             "properties": {
               "code": {
                 "type": "string"
@@ -267,12 +313,49 @@
             "additionalProperties": {
               "type": "string"
             },
-            "description": "Resolved server-side from the active plan. Ask what the account is entitled to, never what it paid. Keys: daily_lives, points_multiplier, exclusive_deals, gift_card_priority, points_expiry_months."
+            "description": "Resolved server-side from the active plan. Ask what the account is entitled to, never what it paid. Values are strings; parse what you need.\n\nConsumer keys, free/pro/premium: `daily_lives` 3/5/7, `life_regen_minutes` 240/180/120, `points_multiplier` 1/1.25/1.75 (**game rounds only**), `scan_points` 20/30/50, `first_visit_points` 100/150/250, `stamp_points` 100/150/250, `new_category_points` 25/50/100, `voucher_validity_days` 14/30/60, `word_hints_per_day` 3/6/10, `assistant_uses_per_day` 5/20/unlimited, `streak_freezes` 2/5/unlimited, `round_decay` free/pro/premium, `profile_badge`, `exclusive_deals`, `deal_early_access_hours` 0/0/24, `gift_card_priority`, `monthly_stipend`, `priority_support`, `assistant`.\n\nPartner keys: `live_deals`, `active_campaigns`, `push_quota`, `venues`, `team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`, `identified_profiles`, `export_csv`.\n\nThere is **no** `points_expiry_months` and no daily points cap: points never expire on any plan, and a day is bounded by the per-game decay curve instead."
           },
           "venues": {
             "type": "array",
             "items": {
               "type": "object"
+            }
+          }
+        }
+      },
+      "Cities": {
+        "type": "object",
+        "description": "The closed set of cities a profile may name, and the countries they sit in. Public, because the sign-up form has to render the choice before an account exists.",
+        "properties": {
+          "countries": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PL",
+                "DE",
+                "UZ"
+              ]
+            }
+          },
+          "cities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "The canonical spelling. Store and send this one."
+                },
+                "country": {
+                  "type": "string",
+                  "enum": [
+                    "PL",
+                    "DE",
+                    "UZ"
+                  ]
+                }
+              }
             }
           }
         }
@@ -335,7 +418,7 @@
           },
           "pointsPerScan": {
             "type": "integer",
-            "description": "What a qualifying scan pays here, before any plan multiplier."
+            "description": "What a qualifying scan pays here. When it is positive it **overrides** the reader’s plan `scan_points` — a venue that typed a rate meant it, out of its own budget, and a subscriber does not get to overrule it. `points_multiplier` is a game-round rule and is never applied to a scan."
           }
         }
       },
@@ -601,24 +684,10 @@
       },
       "Wallet": {
         "type": "object",
+        "description": "There is no `expiringSoon`, and it is **removed** rather than returned empty: points do not expire on any plan, so an always-`[]` array would be a promise about a rule the product dropped. A spend still consumes the oldest lot first.",
         "properties": {
           "points": {
             "type": "integer"
-          },
-          "expiringSoon": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "expires_at": {
-                  "type": "string"
-                },
-                "points": {
-                  "type": "integer"
-                }
-              },
-              "description": "Points expire 12 months after they are earned, oldest spent first."
-            }
           },
           "vouchers": {
             "type": "array",
@@ -748,11 +817,8 @@
             "$ref": "#/components/schemas/Transaction"
           },
           "pointsGranted": {
-            "type": "integer"
-          },
-          "pointsCapped": {
             "type": "integer",
-            "description": "Points the daily cap trimmed off. Usually 0; show it if not."
+            "description": "Every point this visit paid, across all of §2b’s venue lines — the scan, a first visit here, a new category, a completed stamp card. The ledger holds them apart; the receipt is one number because a cashier reads it out loud. **There is no spend bonus**: the size of the bill decides whether the scan counts as a visit (the venue minimum) and nothing else."
           },
           "discountMinor": {
             "type": "integer",
@@ -837,15 +903,69 @@
           }
         }
       },
+      "Hearts": {
+        "type": "object",
+        "description": "The hearts pool. **Hearts do not reset at midnight** — they refill on a clock, one every `life_regen_minutes` (free 240, Pro 180, Premium 120) up to `daily_lives` (3/5/7). A **lost** round costs one; a won round costs nothing; starting a round costs nothing.",
+        "properties": {
+          "lives": {
+            "type": "integer",
+            "description": "Whole hearts available right now."
+          },
+          "max": {
+            "type": "integer",
+            "description": "The plan’s ceiling — `daily_lives`."
+          },
+          "nextAt": {
+            "type": "string",
+            "nullable": true,
+            "description": "When the next heart lands, or null when the pool is already full. Render the wait; a heart system with no visible end is the one that feels broken."
+          }
+        }
+      },
+      "GamesState": {
+        "type": "object",
+        "description": "The truth about this player. Anything the client tracks is a display.",
+        "properties": {
+          "lives": {
+            "$ref": "#/components/schemas/Hearts"
+          },
+          "streak": {
+            "type": "integer"
+          },
+          "longestStreak": {
+            "type": "integer"
+          },
+          "freezes": {
+            "type": "integer",
+            "description": "Streak freezes held. One is earned every 7 days, up to `streak_freezes` — 2 free, 5 on Pro, effectively unlimited on Premium."
+          },
+          "answered": {
+            "type": "integer"
+          },
+          "correct": {
+            "type": "integer"
+          },
+          "points": {
+            "type": "integer",
+            "description": "The balance, from the ledger."
+          },
+          "dailyWord": {
+            "type": "object",
+            "nullable": true,
+            "description": "Today’s shared word, for Word Builder."
+          }
+        }
+      },
       "Finish": {
         "type": "object",
         "properties": {
           "score": {
             "type": "integer",
-            "description": "Computed server-side from the recorded events. Never sent by the client."
+            "description": "What was banked, after the decay factor below and the plan’s `points_multiplier`. Computed server-side from the recorded events; never sent by the client."
           },
           "capped": {
-            "type": "integer"
+            "type": "integer",
+            "description": "**Always 0.** There is no daily points ceiling any more — the per-game decay curve replaced it, and it shrinks a round rather than truncating one. The key is kept so an existing client does not break on a missing field; read `decay` instead."
           },
           "correct": {
             "type": "integer"
@@ -854,20 +974,26 @@
             "type": "integer"
           },
           "won": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "False costs one heart. True costs none."
           },
           "streak": {
             "type": "integer"
           },
           "freezes": {
             "type": "integer",
-            "description": "Streak freezes held. One is earned every 7 days, 2 max."
+            "description": "Streak freezes held. One is earned every 7 days, up to `streak_freezes` — 2 free, 5 on Pro, effectively unlimited on Premium."
           },
           "livesLeft": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Hearts left after this round. See `Hearts`."
           },
           "balance": {
             "type": "integer"
+          },
+          "decay": {
+            "type": "number",
+            "description": "The factor the round’s raw score was multiplied by, from how many rounds of **this same game** are already finished today: free `1, .6, .4, .2, 0`, Pro `1, .8, .6, .4, .2`, Premium always `1`; past the end of the list the last rung repeats. `1` on a first round, so a client can simply not mention it — but say so when it is lower, because two points for five right answers reads as a bug otherwise. Play, streaks and the leaderboard keep counting at 0; only the points stop."
           },
           "nearest": {
             "nullable": true,
@@ -886,6 +1012,28 @@
                 "type": "integer"
               }
             }
+          }
+        }
+      },
+      "Onboarded": {
+        "type": "object",
+        "description": "The welcome gift, paid **once ever** and idempotent: a retry, a second device or a lost response all return `granted: false` with the original timestamp.",
+        "properties": {
+          "granted": {
+            "type": "boolean",
+            "description": "True only for the call that actually claimed it."
+          },
+          "onboardedAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When onboarding was first reported. Unchanged by a second report."
+          },
+          "points": {
+            "type": "integer",
+            "description": "What this call paid. 0 on every call after the first."
+          },
+          "balance": {
+            "type": "integer"
           }
         }
       },
@@ -1178,7 +1326,7 @@
     "/v1/auth/signup": {
       "post": {
         "summary": "Create an account",
-        "description": "Records terms and privacy consent with the policy version, mints a referral code, pays the welcome bonus, and — if `provisionalId` is sent — folds the guest identity in so points earned before signing up survive.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "description": "Records terms and privacy consent with the policy version, mints a referral code, and — if `provisionalId` is sent — folds the guest identity in so points earned before signing up survive.\n\n**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, because an address and a password can be produced in bulk and a gift attached to producing them funds a farm.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "postAuthSignup",
         "tags": [
           "auth"
@@ -1204,7 +1352,8 @@
                     "type": "string"
                   },
                   "city": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "One of `GET /v1/cities`."
                   },
                   "partner": {
                     "type": "boolean",
@@ -1488,6 +1637,38 @@
         }
       }
     },
+    "/v1/cities": {
+      "get": {
+        "summary": "The cities a profile may name",
+        "description": "Poland, Germany and Uzbekistan. Public, because sign-up takes a city and the form has to render the choice before anybody has an account. A list rather than a search: it is short and closed, so filter it locally and show the whole set when the box is empty — whether Paylez is anywhere near them is the thing a visitor actually wants to know.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "getCities",
+        "tags": [
+          "me"
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Cities"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/me": {
       "get": {
         "summary": "Who is signed in, and what they are entitled to",
@@ -1536,7 +1717,7 @@
       },
       "patch": {
         "summary": "Update the profile",
-        "description": "**Access:** Any signed-in account.",
+        "description": "Every field is optional and none of them gates anything — an account that answers none of them is a complete account, it just has not been paid for finishing one. **Nothing here is verified**; there is no code sent to the number.\n\nTwo fields have rules worth knowing before the form is drawn. `username` is unique platform-wide (3–20 of `a-z 0-9 _`, single underscores between runs, some names reserved) and a clash is a `409` naming the field. `birthDate` is accepted twice — the answer and one correction — after which a *different* day is a `409` naming support; resending the day already stored costs nothing, so a client may safely PATCH its whole profile on every save. `birthDateChangesLeft` on `GET /v1/me` says how many writes remain.\n\nFilling in all seven answers (photo, username, headline, city, email, phone, birthday) pays `profileComplete` once and stamps `profileCompletedAt`.\n\n**Access:** Any signed-in account.",
         "operationId": "patchMe",
         "tags": [
           "me"
@@ -1551,14 +1732,30 @@
                   "name": {
                     "type": "string"
                   },
+                  "username": {
+                    "type": "string",
+                    "description": "Unique. 3–20 characters of `a-z 0-9 _`."
+                  },
                   "language": {
                     "type": "string"
                   },
                   "city": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "One of `GET /v1/cities`. Anything else is a 400 rather than stored."
                   },
                   "avatar": {
                     "type": "string"
+                  },
+                  "phone": {
+                    "type": "string"
+                  },
+                  "headline": {
+                    "type": "string",
+                    "description": "At most 140 characters."
+                  },
+                  "birthDate": {
+                    "type": "string",
+                    "description": "ISO `YYYY-MM-DD`. Set once, corrected once."
                   },
                   "leaderboardOptIn": {
                     "type": "boolean"
@@ -1584,8 +1781,28 @@
               }
             }
           },
+          "400": {
+            "description": "`validation_failed` — `field` says which: `username`, `city`, `headline`, `phone` or `birthDate`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the username is taken, or the birthday has no corrections left.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1672,11 +1889,11 @@
     },
     "/v1/me/onboarded": {
       "post": {
-        "summary": "POST /v1/me/onboarded",
-        "description": "**Access:** Any signed-in account.",
+        "summary": "Report onboarding finished, and claim the welcome gift",
+        "description": "Takes no body: the server already knows who is asking and whether they have asked before. Safe to send twice — the grant is claimed with an `UPDATE … WHERE onboarded_at IS NULL`, so a retry returns `granted: false` and the original stamp rather than a second bonus or an error. `onboardedAt` on `GET /v1/me` is null until this succeeds, which is how a client knows whether to offer onboarding at all.\n\n**Access:** Any signed-in account.",
         "operationId": "postMeOnboarded",
         "tags": [
-          "other"
+          "me"
         ],
         "security": [
           {
@@ -1684,8 +1901,15 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Onboarded"
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
@@ -2757,8 +2981,8 @@
     },
     "/v1/games/state": {
       "get": {
-        "summary": "Lives, streak, freezes, accuracy, today’s shared word",
-        "description": "Lives reset at local midnight. The client’s view of them is advisory; this is the truth.\n\n**Access:** Any signed-in account.",
+        "summary": "Hearts, streak, freezes, accuracy, today’s shared word",
+        "description": "`lives` is an **object** — `{ lives, max, nextAt }` — not a bare count. Hearts do not reset at midnight: they refill one every `life_regen_minutes` up to `daily_lives`, so the honest thing to draw next to an empty pool is `nextAt`, not a countdown to midnight. The client’s view is advisory; this is the truth.\n\n**Access:** Any signed-in account.",
         "operationId": "getGamesState",
         "tags": [
           "games"
@@ -2774,7 +2998,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "$ref": "#/components/schemas/GamesState"
                 }
               }
             }
@@ -2805,7 +3029,7 @@
     "/v1/games/sessions": {
       "post": {
         "summary": "Start a round",
-        "description": "Refuses with `no_lives` when the tank is empty. A life is spent on a **loss**, not on starting.\n\n**Access:** Any signed-in account.",
+        "description": "Refuses with `no_lives` when the pool is empty. A heart is spent on a **loss**, not on starting, and a won round costs nothing.\n\nNothing refuses a round for having played too much: there is no daily points cap. A repeat of the *same* game the same day simply pays less — see `decay` on the finish response.\n\n**Access:** Any signed-in account.",
         "operationId": "postGamesSessions",
         "tags": [
           "games"
@@ -2864,7 +3088,7 @@
             }
           },
           "409": {
-            "description": "`no_lives` — no lives left today.",
+            "description": "`no_lives` — the pool is empty. The detail carries `nextAt` (when the next heart lands) and `max`. It no longer carries `resetsAt`; hearts are on a clock, not a day.",
             "content": {
               "application/json": {
                 "schema": {
@@ -2889,7 +3113,7 @@
     "/v1/games/sessions/{id}/events": {
       "post": {
         "summary": "Report one move, and be told whether it was right",
-        "description": "Quizzes send `{index, choice}`. Word Builder sends `{index, guess}`, or `kind:\"hint\"` with `{index, position}` to reveal one letter. Memory Match sends `{a, b}` — two card positions. `seq` must increase; a repeat is accepted as a retry and does not count twice.\n\n**Access:** Any signed-in account.",
+        "description": "Quizzes send `{index, choice}`. Word Builder sends `{index, guess}`, or `kind:\"hint\"` with `{index, position}` to reveal one letter. Memory Match sends `{a, b}` — two card positions. `seq` must increase; a repeat is accepted as a retry and does not count twice.\n\nWord Builder hints are metered per day by `word_hints_per_day` (3 free, 6 Pro, 10 Premium) and are refused rather than quietly stopped revealing. A hint keeps the word’s base point and forfeits its tier bonus.\n\n**Access:** Any signed-in account.",
         "operationId": "postGamesSessionsByIdEvents",
         "tags": [
           "games"
@@ -2957,6 +3181,16 @@
               }
             }
           },
+          "403": {
+            "description": "`entitlement_required` on a hint past `word_hints_per_day`. Carries `limit` and `used`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "default": {
             "description": "Error",
             "content": {
@@ -2973,7 +3207,7 @@
     "/v1/games/sessions/{id}/finish": {
       "post": {
         "summary": "Finish the round and bank it",
-        "description": "The score is computed from the events the server recorded — nothing the client totals is trusted. `report` carries `{cleared}` for the flight, which is the one game with no answer key and is clamped instead.\n\n**Access:** Any signed-in account.",
+        "description": "The score is computed from the events the server recorded — nothing the client totals is trusted. `report` carries `{cleared}` for the flight, which is the one game with no answer key and is clamped instead.\n\nThe raw round, before the decay factor and the plan multiplier: a **quiz** pays 1 per correct answer and +5 for all five; **Word Builder** 1 per word solved, plus the word’s own tier bonus (0/1/2, forfeited by a hint), plus 3 for solving all five first-try and hint-free; **Memory Match** is scored on *elapsed time alone* — under 40 s 12, under 70 s 8, under 110 s 4, otherwise 2, timed from the server’s own event stamps; the **flight** pays 1 per gap and is capped at 20 points, with 5 gaps deciding whether the round was won.\n\nThen `score = floor(raw × decay) × points_multiplier`, floored again. `decay` is on the response so a shrunken score can be explained.\n\n**Access:** Any signed-in account.",
         "operationId": "postGamesSessionsByIdFinish",
         "tags": [
           "games"
@@ -3468,7 +3702,7 @@
     "/v1/assistant/ask": {
       "post": {
         "summary": "Ask the assistant",
-        "description": "Two jobs: find things in the catalogue, and explain the account’s own data. Returns structured results, not prose — render the cards, not the sentence alone.\n\n**Access:** Any signed-in account.",
+        "description": "Two jobs: find things in the catalogue, and explain the account’s own data. Returns structured results, not prose — render the cards, not the sentence alone.\n\nMetered per day by `assistant_uses_per_day` — 5 free, 20 on Pro, effectively uncapped on Premium — and **refused, never quietly degraded**, because a worse answer for an invisible reason is how somebody learns to distrust an assistant. An ask that names no `sessionId` is given one, and a `sessionId` belonging to somebody else is a `404`.\n\n**Access:** Any signed-in account.",
         "operationId": "postAssistantAsk",
         "tags": [
           "assistant"
@@ -3481,7 +3715,8 @@
                 "type": "object",
                 "properties": {
                   "text": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "At most 500 characters."
                   },
                   "sessionId": {
                     "type": "string",
@@ -3513,6 +3748,26 @@
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`entitlement_required` past `assistant_uses_per_day`. Carries `limit` and `used`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no such conversation, or it is not yours.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7442,7 +7697,7 @@
     "/v1/plans": {
       "get": {
         "summary": "Available plans and their entitlements",
-        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "description": "Consumer: Free, Pro, Premium. Partner: Starter, Growth, Chain. **No plan is sold with a free trial** — `trial_days` is 0 on all of them. Each plan carries its `terms`, the commitment ladder it is sold on (1, 3, 6 and 12 months, at 0/10/18/25 percent off the monthly price), so a client never has to ask twice for a price.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "getPlans",
         "tags": [
           "billing"

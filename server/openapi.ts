@@ -63,7 +63,9 @@ const SCHEMAS: Record<string, Schema> = {
     type: 'object',
     description:
       'Every failure. `code` is a closed set (see `domain/errors.ts`) and is what a ' +
-      'client branches on; `message` is for a human and may change.',
+      'client branches on; `message` is for a human and may change.\n\n' +
+      '`daily_cap` is listed because the set is closed, but nothing throws it any more: ' +
+      'there is no daily points ceiling. Do not write a screen for it.',
     properties: {
       error: {
         type: 'object',
@@ -103,6 +105,10 @@ const SCHEMAS: Record<string, Schema> = {
 
   Me: {
     type: 'object',
+    description:
+      'The whole account. **Nothing on the profile is verified** — there is no code ' +
+      'sent to the number and no link clicked in the address, so there is no ' +
+      '`phoneVerified` (or any other verification flag) to branch on.',
     properties: {
       user: {
         type: 'object',
@@ -110,8 +116,48 @@ const SCHEMAS: Record<string, Schema> = {
           id: str(),
           email: { type: 'string', nullable: true },
           name: str(),
+          username: {
+            type: 'string',
+            nullable: true,
+            description:
+              'The handle, as typed. Unique across the platform, 3–20 characters of ' +
+              '`a-z 0-9 _` folded case-insensitively. Null until they pick one.',
+          },
           language: str('The app language they chose. Drives every localised response.'),
-          city: { type: 'string', nullable: true },
+          city: {
+            type: 'string',
+            nullable: true,
+            description: 'One of `GET /v1/cities`. A write that is not on that list is refused.',
+          },
+          countryCode: {
+            type: 'string',
+            nullable: true,
+            description:
+              '`PL`, `DE` or `UZ`, derived from the city on the server. Never sent by a client — ' +
+              'the country is a fact about the city, not a second answer.',
+          },
+          avatar: { type: 'string', nullable: true },
+          phone: { type: 'string', nullable: true, description: 'Optional, and unverified.' },
+          headline: { type: 'string', nullable: true, description: 'A status line, at most 140 characters.' },
+          birthDate: { type: 'string', nullable: true, description: 'ISO `YYYY-MM-DD`.' },
+          birthDateChangesLeft: int(
+            'Self-service writes still available: 2 before it is set, 1 after, 0 once the one ' +
+              'correction is spent. Grey the field out on 0 rather than letting a form find out ' +
+              'by being refused. Resending the day already stored spends nothing.',
+          ),
+          profileCompletedAt: {
+            type: 'string',
+            nullable: true,
+            description:
+              'When all seven profile answers were first present (photo, username, headline, ' +
+              'city, email, phone, birthday) and the completion bonus was paid. A stamp, not a ' +
+              'live flag.',
+          },
+          onboardedAt: {
+            type: 'string',
+            nullable: true,
+            description: 'Null until `POST /v1/me/onboarded` claims the welcome gift.',
+          },
           trustTier: int('0–2. New accounts get lower caps (§13).'),
           leaderboardOptIn: bool(),
           referralCode: { type: 'string', nullable: true },
@@ -121,16 +167,49 @@ const SCHEMAS: Record<string, Schema> = {
       roles: arrayOf(str()),
       mode: str(),
       points: int('The balance, summed from the ledger rather than read from a cache.'),
-      plan: { type: 'object', properties: { code: str(), name: str(), audience: str() } },
+      plan: {
+        type: 'object',
+        description: 'Consumer plans are `free`, `pro`, `premium`. No plan is sold with a trial.',
+        properties: { code: str(), name: str(), audience: str() },
+      },
       entitlements: {
         type: 'object',
         additionalProperties: str(),
         description:
           'Resolved server-side from the active plan. Ask what the account is entitled ' +
-          'to, never what it paid. Keys: daily_lives, points_multiplier, exclusive_deals, ' +
-          'gift_card_priority, points_expiry_months.',
+          'to, never what it paid. Values are strings; parse what you need.\n\n' +
+          'Consumer keys, free/pro/premium: `daily_lives` 3/5/7, `life_regen_minutes` ' +
+          '240/180/120, `points_multiplier` 1/1.25/1.75 (**game rounds only**), `scan_points` ' +
+          '20/30/50, `first_visit_points` 100/150/250, `stamp_points` 100/150/250, ' +
+          '`new_category_points` 25/50/100, `voucher_validity_days` 14/30/60, ' +
+          '`word_hints_per_day` 3/6/10, `assistant_uses_per_day` 5/20/unlimited, ' +
+          '`streak_freezes` 2/5/unlimited, `round_decay` free/pro/premium, `profile_badge`, ' +
+          '`exclusive_deals`, `deal_early_access_hours` 0/0/24, `gift_card_priority`, ' +
+          '`monthly_stipend`, `priority_support`, `assistant`.\n\n' +
+          'Partner keys: `live_deals`, `active_campaigns`, `push_quota`, `venues`, ' +
+          '`team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`, ' +
+          '`identified_profiles`, `export_csv`.\n\n' +
+          'There is **no** `points_expiry_months` and no daily points cap: points never ' +
+          'expire on any plan, and a day is bounded by the per-game decay curve instead.',
       },
       venues: arrayOf({ type: 'object' }),
+    },
+  },
+
+  Cities: {
+    type: 'object',
+    description:
+      'The closed set of cities a profile may name, and the countries they sit in. ' +
+      'Public, because the sign-up form has to render the choice before an account exists.',
+    properties: {
+      countries: arrayOf({ type: 'string', enum: ['PL', 'DE', 'UZ'] }),
+      cities: arrayOf({
+        type: 'object',
+        properties: {
+          name: str('The canonical spelling. Store and send this one.'),
+          country: { type: 'string', enum: ['PL', 'DE', 'UZ'] },
+        },
+      }),
     },
   },
 
@@ -152,7 +231,12 @@ const SCHEMAS: Record<string, Schema> = {
       reviewCount: int(),
       phone: { type: 'string', nullable: true },
       acceptsVouchers: bool(),
-      pointsPerScan: int('What a qualifying scan pays here, before any plan multiplier.'),
+      pointsPerScan: int(
+        'What a qualifying scan pays here. When it is positive it **overrides** the ' +
+          'reader’s plan `scan_points` — a venue that typed a rate meant it, out of its own ' +
+          'budget, and a subscriber does not get to overrule it. `points_multiplier` is a ' +
+          'game-round rule and is never applied to a scan.',
+      ),
     },
   },
 
@@ -261,13 +345,12 @@ const SCHEMAS: Record<string, Schema> = {
 
   Wallet: {
     type: 'object',
+    description:
+      'There is no `expiringSoon`, and it is **removed** rather than returned empty: ' +
+      'points do not expire on any plan, so an always-`[]` array would be a promise ' +
+      'about a rule the product dropped. A spend still consumes the oldest lot first.',
     properties: {
       points: int(),
-      expiringSoon: arrayOf({
-        type: 'object',
-        properties: { expires_at: str(), points: int() },
-        description: 'Points expire 12 months after they are earned, oldest spent first.',
-      }),
       vouchers: arrayOf(ref('Voucher')),
       rewards: arrayOf(ref('Reward')),
       giftCards: arrayOf({ type: 'object' }),
@@ -317,8 +400,13 @@ const SCHEMAS: Record<string, Schema> = {
     description: 'What the commit granted. The only response that means value moved.',
     properties: {
       transaction: ref('Transaction'),
-      pointsGranted: int(),
-      pointsCapped: int('Points the daily cap trimmed off. Usually 0; show it if not.'),
+      pointsGranted: int(
+        'Every point this visit paid, across all of §2b’s venue lines — the scan, a first ' +
+          'visit here, a new category, a completed stamp card. The ledger holds them apart; ' +
+          'the receipt is one number because a cashier reads it out loud. **There is no ' +
+          'spend bonus**: the size of the bill decides whether the scan counts as a visit ' +
+          '(the venue minimum) and nothing else.',
+      ),
       discountMinor: minor('The discount actually applied'),
       stamped: bool(),
       reward: { nullable: true, allOf: [ref('Reward')] },
@@ -366,23 +454,94 @@ const SCHEMAS: Record<string, Schema> = {
     },
   },
 
+  Hearts: {
+    type: 'object',
+    description:
+      'The hearts pool. **Hearts do not reset at midnight** — they refill on a clock, one ' +
+      'every `life_regen_minutes` (free 240, Pro 180, Premium 120) up to `daily_lives` ' +
+      '(3/5/7). A **lost** round costs one; a won round costs nothing; starting a round ' +
+      'costs nothing.',
+    properties: {
+      lives: int('Whole hearts available right now.'),
+      max: int('The plan’s ceiling — `daily_lives`.'),
+      nextAt: {
+        type: 'string',
+        nullable: true,
+        description:
+          'When the next heart lands, or null when the pool is already full. Render the ' +
+          'wait; a heart system with no visible end is the one that feels broken.',
+      },
+    },
+  },
+
+  GamesState: {
+    type: 'object',
+    description: 'The truth about this player. Anything the client tracks is a display.',
+    properties: {
+      lives: ref('Hearts'),
+      streak: int(),
+      longestStreak: int(),
+      freezes: int(
+        'Streak freezes held. One is earned every 7 days, up to `streak_freezes` — 2 free, ' +
+          '5 on Pro, effectively unlimited on Premium.',
+      ),
+      answered: int(),
+      correct: int(),
+      points: int('The balance, from the ledger.'),
+      dailyWord: { type: 'object', nullable: true, description: 'Today’s shared word, for Word Builder.' },
+    },
+  },
+
   Finish: {
     type: 'object',
     properties: {
-      score: int('Computed server-side from the recorded events. Never sent by the client.'),
-      capped: int(),
+      score: int(
+        'What was banked, after the decay factor below and the plan’s `points_multiplier`. ' +
+          'Computed server-side from the recorded events; never sent by the client.',
+      ),
+      capped: int(
+        '**Always 0.** There is no daily points ceiling any more — the per-game decay curve ' +
+          'replaced it, and it shrinks a round rather than truncating one. The key is kept ' +
+          'so an existing client does not break on a missing field; read `decay` instead.',
+      ),
       correct: int(),
       answered: int(),
-      won: bool(),
+      won: bool('False costs one heart. True costs none.'),
       streak: int(),
-      freezes: int('Streak freezes held. One is earned every 7 days, 2 max.'),
-      livesLeft: int(),
+      freezes: int(
+        'Streak freezes held. One is earned every 7 days, up to `streak_freezes` — 2 free, ' +
+          '5 on Pro, effectively unlimited on Premium.',
+      ),
+      livesLeft: int('Hearts left after this round. See `Hearts`.'),
       balance: int(),
+      decay: {
+        type: 'number',
+        description:
+          'The factor the round’s raw score was multiplied by, from how many rounds of ' +
+          '**this same game** are already finished today: free `1, .6, .4, .2, 0`, Pro ' +
+          '`1, .8, .6, .4, .2`, Premium always `1`; past the end of the list the last rung ' +
+          'repeats. `1` on a first round, so a client can simply not mention it — but say ' +
+          'so when it is lower, because two points for five right answers reads as a bug ' +
+          'otherwise. Play, streaks and the leaderboard keep counting at 0; only the points stop.',
+      },
       nearest: {
         nullable: true,
         type: 'object',
         properties: { venueId: str(), venueName: str(), discountPct: int(), pointsNeeded: int() },
       },
+    },
+  },
+
+  Onboarded: {
+    type: 'object',
+    description:
+      'The welcome gift, paid **once ever** and idempotent: a retry, a second device or a ' +
+      'lost response all return `granted: false` with the original timestamp.',
+    properties: {
+      granted: bool('True only for the call that actually claimed it.'),
+      onboardedAt: iso('When onboarding was first reported. Unchanged by a second report.'),
+      points: int('What this call paid. 0 on every call after the first.'),
+      balance: int(),
     },
   },
 
@@ -501,12 +660,15 @@ const DOCS: Record<string, Doc> = {
     summary: 'Create an account',
     description:
       'Records terms and privacy consent with the policy version, mints a referral ' +
-      'code, pays the welcome bonus, and — if `provisionalId` is sent — folds the ' +
-      'guest identity in so points earned before signing up survive.',
+      'code, and — if `provisionalId` is sent — folds the guest identity in so points ' +
+      'earned before signing up survive.\n\n' +
+      '**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, ' +
+      'because an address and a password can be produced in bulk and a gift attached to ' +
+      'producing them funds a farm.',
     tags: ['auth'],
     body: {
       email: str(), password: str('At least 6 characters.'), name: str(),
-      language: str(), city: str(),
+      language: str(), city: str('One of `GET /v1/cities`.'),
       partner: bool('Grants the partner_owner role. Never grants admin.'),
       referralCode: str('The code of whoever invited them.'),
       provisionalId: str('The guest account to merge in.'),
@@ -540,12 +702,61 @@ const DOCS: Record<string, Doc> = {
     },
   },
   'POST /v1/auth/signout': { summary: 'Revoke this session', tags: ['auth'], response: { type: 'object' } },
+  'GET /v1/cities': {
+    summary: 'The cities a profile may name',
+    description:
+      'Poland, Germany and Uzbekistan. Public, because sign-up takes a city and the form ' +
+      'has to render the choice before anybody has an account. A list rather than a ' +
+      'search: it is short and closed, so filter it locally and show the whole set when ' +
+      'the box is empty — whether Paylez is anywhere near them is the thing a visitor ' +
+      'actually wants to know.',
+    tags: ['me'],
+    response: ref('Cities'),
+  },
   'GET /v1/me': { summary: 'Who is signed in, and what they are entitled to', tags: ['me'], response: ref('Me') },
   'PATCH /v1/me': {
     summary: 'Update the profile',
+    description:
+      'Every field is optional and none of them gates anything — an account that answers ' +
+      'none of them is a complete account, it just has not been paid for finishing one. ' +
+      '**Nothing here is verified**; there is no code sent to the number.\n\n' +
+      'Two fields have rules worth knowing before the form is drawn. `username` is unique ' +
+      'platform-wide (3–20 of `a-z 0-9 _`, single underscores between runs, some names ' +
+      'reserved) and a clash is a `409` naming the field. `birthDate` is accepted twice — ' +
+      'the answer and one correction — after which a *different* day is a `409` naming ' +
+      'support; resending the day already stored costs nothing, so a client may safely ' +
+      'PATCH its whole profile on every save. `birthDateChangesLeft` on `GET /v1/me` says ' +
+      'how many writes remain.\n\n' +
+      'Filling in all seven answers (photo, username, headline, city, email, phone, ' +
+      'birthday) pays `profileComplete` once and stamps `profileCompletedAt`.',
     tags: ['me'],
-    body: { name: str(), language: str(), city: str(), avatar: str(), leaderboardOptIn: bool() },
+    body: {
+      name: str(),
+      username: str('Unique. 3–20 characters of `a-z 0-9 _`.'),
+      language: str(),
+      city: str('One of `GET /v1/cities`. Anything else is a 400 rather than stored.'),
+      avatar: str(),
+      phone: str(),
+      headline: str('At most 140 characters.'),
+      birthDate: str('ISO `YYYY-MM-DD`. Set once, corrected once.'),
+      leaderboardOptIn: bool(),
+    },
     response: ref('Me'),
+    errors: [
+      [400, '`validation_failed` — `field` says which: `username`, `city`, `headline`, `phone` or `birthDate`.'],
+      [409, '`conflict` — the username is taken, or the birthday has no corrections left.'],
+    ],
+  },
+  'POST /v1/me/onboarded': {
+    summary: 'Report onboarding finished, and claim the welcome gift',
+    description:
+      'Takes no body: the server already knows who is asking and whether they have asked ' +
+      'before. Safe to send twice — the grant is claimed with an `UPDATE … WHERE ' +
+      'onboarded_at IS NULL`, so a retry returns `granted: false` and the original stamp ' +
+      'rather than a second bonus or an error. `onboardedAt` on `GET /v1/me` is null until ' +
+      'this succeeds, which is how a client knows whether to offer onboarding at all.',
+    tags: ['me'],
+    response: ref('Onboarded'),
   },
   'POST /v1/me/password': {
     summary: 'Change the password',
@@ -776,16 +987,23 @@ const DOCS: Record<string, Doc> = {
 
   /* ── games ── */
   'GET /v1/games/state': {
-    summary: 'Lives, streak, freezes, accuracy, today’s shared word',
-    description: 'Lives reset at local midnight. The client’s view of them is advisory; this is the truth.',
+    summary: 'Hearts, streak, freezes, accuracy, today’s shared word',
+    description:
+      '`lives` is an **object** — `{ lives, max, nextAt }` — not a bare count. Hearts do ' +
+      'not reset at midnight: they refill one every `life_regen_minutes` up to ' +
+      '`daily_lives`, so the honest thing to draw next to an empty pool is `nextAt`, not ' +
+      'a countdown to midnight. The client’s view is advisory; this is the truth.',
     tags: ['games'],
-    response: { type: 'object' },
+    response: ref('GamesState'),
   },
   'POST /v1/games/sessions': {
     summary: 'Start a round',
     description:
-      'Refuses with `no_lives` when the tank is empty. A life is spent on a **loss**, ' +
-      'not on starting.',
+      'Refuses with `no_lives` when the pool is empty. A heart is spent on a **loss**, ' +
+      'not on starting, and a won round costs nothing.\n\n' +
+      'Nothing refuses a round for having played too much: there is no daily points cap. ' +
+      'A repeat of the *same* game the same day simply pays less — see `decay` on the ' +
+      'finish response.',
     tags: ['games'],
     body: {
       gameType: {
@@ -795,7 +1013,13 @@ const DOCS: Record<string, Doc> = {
     },
     required: ['gameType'],
     response: ref('Round'),
-    errors: [[409, '`no_lives` — no lives left today.']],
+    errors: [
+      [
+        409,
+        '`no_lives` — the pool is empty. The detail carries `nextAt` (when the next heart ' +
+          'lands) and `max`. It no longer carries `resetsAt`; hearts are on a clock, not a day.',
+      ],
+    ],
   },
   'POST /v1/games/sessions/{id}/events': {
     summary: 'Report one move, and be told whether it was right',
@@ -803,7 +1027,10 @@ const DOCS: Record<string, Doc> = {
       'Quizzes send `{index, choice}`. Word Builder sends `{index, guess}`, or ' +
       '`kind:"hint"` with `{index, position}` to reveal one letter. Memory Match sends ' +
       '`{a, b}` — two card positions. `seq` must increase; a repeat is accepted as a ' +
-      'retry and does not count twice.',
+      'retry and does not count twice.\n\n' +
+      'Word Builder hints are metered per day by `word_hints_per_day` (3 free, 6 Pro, 10 ' +
+      'Premium) and are refused rather than quietly stopped revealing. A hint keeps the ' +
+      'word’s base point and forfeits its tier bonus.',
     tags: ['games'],
     body: {
       seq: int('0-based, monotonic within the session.'),
@@ -812,13 +1039,25 @@ const DOCS: Record<string, Doc> = {
     },
     required: ['seq', 'payload'],
     response: ref('EventResult'),
+    errors: [
+      [403, '`entitlement_required` on a hint past `word_hints_per_day`. Carries `limit` and `used`.'],
+    ],
   },
   'POST /v1/games/sessions/{id}/finish': {
     summary: 'Finish the round and bank it',
     description:
       'The score is computed from the events the server recorded — nothing the client ' +
       'totals is trusted. `report` carries `{cleared}` for the flight, which is the one ' +
-      'game with no answer key and is clamped instead.',
+      'game with no answer key and is clamped instead.\n\n' +
+      'The raw round, before the decay factor and the plan multiplier: a **quiz** pays 1 ' +
+      'per correct answer and +5 for all five; **Word Builder** 1 per word solved, plus ' +
+      'the word’s own tier bonus (0/1/2, forfeited by a hint), plus 3 for solving all five ' +
+      'first-try and hint-free; **Memory Match** is scored on *elapsed time alone* — under ' +
+      '40 s 12, under 70 s 8, under 110 s 4, otherwise 2, timed from the server’s own event ' +
+      'stamps; the **flight** pays 1 per gap and is capped at 20 points, with 5 gaps ' +
+      'deciding whether the round was won.\n\n' +
+      'Then `score = floor(raw × decay) × points_multiplier`, floored again. `decay` is on ' +
+      'the response so a shrunken score can be explained.',
     tags: ['games'],
     body: { report: { type: 'object', description: 'Flight only: `{ "cleared": 14 }`.' } },
     response: ref('Finish'),
@@ -863,11 +1102,20 @@ const DOCS: Record<string, Doc> = {
     summary: 'Ask the assistant',
     description:
       'Two jobs: find things in the catalogue, and explain the account’s own data. ' +
-      'Returns structured results, not prose — render the cards, not the sentence alone.',
+      'Returns structured results, not prose — render the cards, not the sentence alone.\n\n' +
+      'Metered per day by `assistant_uses_per_day` — 5 free, 20 on Pro, effectively ' +
+      'uncapped on Premium — and **refused, never quietly degraded**, because a worse ' +
+      'answer for an invisible reason is how somebody learns to distrust an assistant. ' +
+      'An ask that names no `sessionId` is given one, and a `sessionId` belonging to ' +
+      'somebody else is a `404`.',
     tags: ['assistant'],
-    body: { text: str(), sessionId: str('Keeps the thread; optional.') },
+    body: { text: str('At most 500 characters.'), sessionId: str('Keeps the thread; optional.') },
     required: ['text'],
     response: ref('Answer'),
+    errors: [
+      [403, '`entitlement_required` past `assistant_uses_per_day`. Carries `limit` and `used`.'],
+      [404, '`not_found` — no such conversation, or it is not yours.'],
+    ],
   },
   'GET /v1/assistant/sessions/{id}': { summary: 'The transcript', tags: ['assistant'], response: arrayOf({ type: 'object' }) },
 
@@ -954,7 +1202,17 @@ const DOCS: Record<string, Doc> = {
   'POST /v1/recommendations': { summary: 'Suggest a service for the guidebook', tags: ['guide'], body: { name: str(), city: str(), categoryKey: str() }, required: ['name'], response: { type: 'object' } },
 
   /* ── billing ── */
-  'GET /v1/plans': { summary: 'Available plans and their entitlements', tags: ['billing'], query: [{ name: 'audience', description: '`consumer` or `partner`.' }], response: arrayOf({ type: 'object' }) },
+  'GET /v1/plans': {
+    summary: 'Available plans and their entitlements',
+    description:
+      'Consumer: Free, Pro, Premium. Partner: Starter, Growth, Chain. **No plan is sold ' +
+      'with a free trial** — `trial_days` is 0 on all of them. Each plan carries its ' +
+      '`terms`, the commitment ladder it is sold on (1, 3, 6 and 12 months, at 0/10/18/25 ' +
+      'percent off the monthly price), so a client never has to ask twice for a price.',
+    tags: ['billing'],
+    query: [{ name: 'audience', description: '`consumer` or `partner`.' }],
+    response: arrayOf({ type: 'object' }),
+  },
   'GET /v1/me/subscription': { summary: 'The active subscription and what it entitles', tags: ['billing'], response: { type: 'object' } },
   'POST /v1/billing/receipt': {
     summary: 'Validate an app-store purchase',

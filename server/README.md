@@ -27,7 +27,7 @@ files are not found.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 431 checks, no browser, no network
+npm run verify:api     # the test suite — 440 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -36,7 +36,7 @@ npm run openapi        # regenerate openapi.json from the route table
 - **`API.md`** — the flows a spec file cannot express: the gate's four steps,
   idempotency, offline queueing, the games protocol, what counts as a claim, and
   the money/time/language conventions. Read this first.
-- **`openapi.json`** — 115 paths, 125 operations, generated from `allRoutes` so
+- **`openapi.json`** — 120 paths, 130 operations, generated from `allRoutes` so
   it cannot drift. Point a generator at it rather than hand-writing a client.
 - **`FLUTTER-BRIEF.md`** — the standing instruction for the mobile app, written
   to be handed over whole.
@@ -106,7 +106,7 @@ one. A staging box that inherits a production env file does not start spending.
 ```
 config.ts            every tunable, with the constraint that set it
 main.ts              boot: migrate, seed, import, serve
-jobs.ts              the six scheduled rules (expiry, releases, lifecycle, …)
+jobs.ts              the five scheduled rules (releases, lifecycle, renewals, …)
 verify.ts            the test suite
 
 db/    schema.sql    every entity in §14 and Part E
@@ -118,7 +118,7 @@ db/    schema.sql    every entity in §14 and Part E
                      catalogue is *still* empty after the import — see below
 
 domain/              the rules. React-free, HTTP-free, testable on their own
-       ledger.ts     §2   append-only points, FIFO lots, expiry, caps
+       ledger.ts     §2   append-only points, FIFO lots. Nothing expires
        gate.ts       §3   the universal amount-capture gate
        budget.ts     §4-5 the pools: spent / reserved / available
        vouchers.ts   §4   tiers, reserve-debit-release, gift cards
@@ -208,6 +208,55 @@ counter rule. It needs a master key, not a vendor.
    account already — anonymous traffic is *counted*, identified traffic is
    *attributed*, and nothing joins the two.
 
+## The economy, and the four things it used to do and does not
+
+The numbers live in `CONFIG.points`, `CONFIG.earn` and `CONFIG.games`
+(`config.ts`), and the per-tier figures in the `PLANS` seed in
+`domain/settings.ts`. Each carries the constraint that set it. What is worth
+having here is the shape, because four rules were **removed** and each of them
+left prose behind in more than one file:
+
+- **Points never expire, on any plan.** `runExpiry`, `expiringSoon` and the
+  expiry job are deleted, `points_expiry_months` is not an entitlement, and
+  `GET /v1/wallet` does not carry an expiry list. The FIFO lots survive because a
+  *spend* still has to come out of something — expiry was a consumer of that
+  ordering, never its reason.
+- **There is no daily points cap.** The brake is the per-game **decay curve**
+  (`CONFIG.games.decay`), applied in `games.finish` where it can see what is
+  being played: a repeat of the *same* game the same day pays less — free
+  `1/.6/.4/.2/0`, Pro `1/.8/.6/.4/.2`, Premium always 1 — and the rest of the day
+  is untouched. Playing on is never refused; the streak, the leaderboard and the
+  accuracy figures all keep counting when the factor reaches zero, and only the
+  points stop. `Finish.capped` is kept and is always 0.
+- **There is no spend bonus.** A bigger bill does not earn more. The venue
+  minimum still decides whether a scan counts as a *visit*, which is upstream in
+  `gate.confirm`.
+- **Hearts do not reset at midnight.** They regenerate one every
+  `life_regen_minutes` (free 240, Pro 180, Premium 120) up to `daily_lives`
+  (3/5/7), reconstructed in `games.livesFor` from the `life_spent` column on
+  finished sessions. A **lost** round costs one; a won round and a start cost
+  nothing. `no_lives` carries `nextAt` and `max`, and no longer `resetsAt`.
+
+Two rules about what a paid plan buys, and they are easy to break in opposite
+directions:
+
+- **What a visit pays is four named entitlements, not a multiplier** —
+  `scan_points` 20/30/50, `first_visit_points` and `stamp_points` 100/150/250,
+  `new_category_points` 25/50/100. A venue's own `points_per_scan` overrides the
+  first of them, because that is the venue's money.
+- **`points_multiplier` prices a game round and nothing else** (1 / 1.25 / 1.75).
+  Applying it to a scan as well would pay a subscriber twice for one visit.
+  `entitlements.ts` says so at the top; `games.ts` applies it and `gate.ts` must
+  not.
+
+The consumer plans are **Free / Pro / Premium** (Plus is retired but not deleted
+— a subscription has a foreign key into its plan), and **no plan is sold with a
+trial**: every `trialDays` is 0, which is what keeps a paid subscription out of
+`trialing`, the one status that would renew on the day it started.
+
+Nothing on a profile is verified. `phone_verified` is dropped from `users` by a
+migration in `db/db.ts`, and there is no endpoint that could have set it.
+
 ## Where the spec and the old data disagree
 
 Two places, both resolved in favour of the spec, the first reported by the
@@ -220,10 +269,11 @@ import every time it runs:
   three campaigns want a real reward and a real cost typing in** — the conversion
   keeps the arithmetic honest, it does not invent what the venue gives away.
 - **The lapse wipe.** The old app zeroed a player's points after 24 hours without
-  play — its own hot-deal terms in the export say so. The new ledger gives points
-  a twelve-month life (§2.3) and lists no reason for a negative entry that looks
-  like a wipe, so a lapse resets the *streak* only. `domain/games.ts` says this at
-  the point it happens.
+  play — its own hot-deal terms in the export say so. **Points do not expire here
+  at all**, on any plan, and the ledger lists no reason for a negative entry that
+  looks like a wipe, so a lapse resets the *streak* only. `domain/games.ts` says
+  this at the point it happens. Bringing a wipe back is a product decision that
+  would have to arrive as an `adjustment` entry with a reason on it.
 
 ### The quiz banks
 
@@ -286,7 +336,7 @@ The React site in `src/` still runs on `localStorage` (`src/site/auth/`), which
 its own `users.ts` says must be replaced by a server. The API shapes were chosen
 to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
 fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
-module, not a redesign. `GET /v1` lists all 125 endpoints.
+module, not a redesign. `GET /v1` lists all 130 endpoints.
 
 ### The admin account
 
