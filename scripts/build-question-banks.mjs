@@ -392,8 +392,19 @@ const decks = JSON.parse(
 }));
 writeFileSync(join(OUT, 'decks.json'), JSON.stringify(decks));
 
-/** `[word, hint, tier]`. Tier is 1 easy / 2 medium / 3 hard, and drives both
- *  the difficulty ramp within a round and the per-word bonus. */
+/**
+ * `[word, hint, tier]`. Tier is 1 easy / 2 medium / 3 hard, and drives both the
+ * difficulty ramp within a round and the per-word bonus.
+ *
+ * The tier is **authored in the source file**, not derived here — the bands are
+ * 3–4 / 5–7 / 8+ letters and the note at the top of each list states them. Length
+ * is the whole rule today, but leaving the value in the data means a word that is
+ * short and genuinely hard can be promoted without teaching this script about it.
+ *
+ * `server/domain/settings.ts` seeds its own bank and computes the same bands from
+ * length. The two lists are separate and must not drift: a word that is medium on
+ * the site and hard on the phone pays differently for the same answer.
+ */
 for (const lang of ['en', 'pl']) {
   const words = JSON.parse(
     readFileSync(join(SRC, `paylez-words-${lang}.json`), 'utf8'),

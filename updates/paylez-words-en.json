@@ -1,123 +1,822 @@
 {
   "language": "EN",
-  "note": "Common English words for users improving their English. hint = clue shown to player. tier: 1=easy(3-4 letters), 2=medium(5-6), 3=hard(7+).",
+  "note": "Common English words for users improving their English. hint = clue shown to player. tier: 1=easy(3-4 letters), 2=medium(5-7), 3=hard(8+).",
   "words": [
-    { "word": "COFFEE", "hint": "You order this in a café", "tier": 2, "category": "food_drink" },
-    { "word": "WATER", "hint": "You drink this when thirsty", "tier": 2, "category": "food_drink" },
-    { "word": "BREAD", "hint": "You buy this at a bakery", "tier": 2, "category": "food_drink" },
-    { "word": "MILK", "hint": "Goes in your coffee", "tier": 1, "category": "food_drink" },
-    { "word": "SUGAR", "hint": "Makes your drink sweet", "tier": 2, "category": "food_drink" },
-    { "word": "CHEESE", "hint": "Made from milk, goes on sandwiches", "tier": 2, "category": "food_drink" },
-    { "word": "BUTTER", "hint": "You spread this on toast", "tier": 2, "category": "food_drink" },
-    { "word": "FRUIT", "hint": "Apples and bananas are these", "tier": 2, "category": "food_drink" },
-    { "word": "MEAT", "hint": "Beef and chicken are types of this", "tier": 1, "category": "food_drink" },
-    { "word": "SOUP", "hint": "A hot meal you eat with a spoon", "tier": 1, "category": "food_drink" },
-    { "word": "LUNCH", "hint": "The meal in the middle of the day", "tier": 2, "category": "food_drink" },
-    { "word": "DINNER", "hint": "The evening meal", "tier": 3, "category": "food_drink" },
-    { "word": "BREAKFAST", "hint": "The first meal of the day", "tier": 3, "category": "food_drink" },
-    { "word": "SANDWICH", "hint": "Food between two slices of bread", "tier": 3, "category": "food_drink" },
-    { "word": "SALAD", "hint": "A dish of raw vegetables", "tier": 2, "category": "food_drink" },
-    { "word": "JUICE", "hint": "A drink made from fruit", "tier": 2, "category": "food_drink" },
-    { "word": "CAKE", "hint": "A sweet baked treat for dessert", "tier": 1, "category": "food_drink" },
-    { "word": "PLATE", "hint": "You eat your food off this", "tier": 2, "category": "food_drink" },
-
-    { "word": "SHOP", "hint": "You go here to buy things", "tier": 1, "category": "getting_around" },
-    { "word": "STREET", "hint": "You walk down this in a city", "tier": 3, "category": "getting_around" },
-    { "word": "CITY", "hint": "Kraków is one", "tier": 1, "category": "getting_around" },
-    { "word": "TRAIN", "hint": "Travels on rails between cities", "tier": 2, "category": "getting_around" },
-    { "word": "TRAM", "hint": "Public transport on rails in the city", "tier": 1, "category": "getting_around" },
-    { "word": "BUS", "hint": "Public transport on wheels", "tier": 1, "category": "getting_around" },
-    { "word": "TICKET", "hint": "You need one to ride the tram", "tier": 3, "category": "getting_around" },
-    { "word": "STATION", "hint": "Where trains arrive and depart", "tier": 3, "category": "getting_around" },
-    { "word": "AIRPORT", "hint": "Where planes take off", "tier": 3, "category": "getting_around" },
-    { "word": "SQUARE", "hint": "The main open space in a town", "tier": 3, "category": "getting_around" },
-    { "word": "BRIDGE", "hint": "You cross this over a river", "tier": 3, "category": "getting_around" },
-    { "word": "RIVER", "hint": "The Wisła is one", "tier": 2, "category": "getting_around" },
-    { "word": "PARK", "hint": "A green place to walk in the city", "tier": 1, "category": "getting_around" },
-    { "word": "CHURCH", "hint": "A building where people pray", "tier": 3, "category": "getting_around" },
-    { "word": "CASTLE", "hint": "Wawel is a famous one", "tier": 3, "category": "getting_around" },
-    { "word": "MAP", "hint": "Shows you where places are", "tier": 1, "category": "getting_around" },
-    { "word": "ROAD", "hint": "Cars drive on this", "tier": 1, "category": "getting_around" },
-    { "word": "TAXI", "hint": "A car you pay to ride in", "tier": 1, "category": "getting_around" },
-    { "word": "CORNER", "hint": "Where two streets meet", "tier": 3, "category": "getting_around" },
-    { "word": "MARKET", "hint": "An open place to buy food and goods", "tier": 3, "category": "getting_around" },
-
-    { "word": "HOME", "hint": "The place where you live", "tier": 1, "category": "home_life" },
-    { "word": "DOOR", "hint": "You open this to enter a room", "tier": 1, "category": "home_life" },
-    { "word": "WINDOW", "hint": "You look through this in a wall", "tier": 3, "category": "home_life" },
-    { "word": "TABLE", "hint": "You eat your meals at this", "tier": 2, "category": "home_life" },
-    { "word": "CHAIR", "hint": "You sit on this", "tier": 2, "category": "home_life" },
-    { "word": "BED", "hint": "You sleep on this", "tier": 1, "category": "home_life" },
-    { "word": "KITCHEN", "hint": "The room where you cook", "tier": 3, "category": "home_life" },
-    { "word": "ROOM", "hint": "A space inside a flat", "tier": 1, "category": "home_life" },
-    { "word": "KEY", "hint": "You use this to open a lock", "tier": 1, "category": "home_life" },
-    { "word": "LIGHT", "hint": "You switch this on when it's dark", "tier": 2, "category": "home_life" },
-    { "word": "FLAT", "hint": "A home inside a larger building", "tier": 1, "category": "home_life" },
-    { "word": "RENT", "hint": "You pay this monthly for a flat", "tier": 1, "category": "home_life" },
-    { "word": "FLOOR", "hint": "You walk on this inside", "tier": 2, "category": "home_life" },
-    { "word": "WALL", "hint": "The side of a room", "tier": 1, "category": "home_life" },
-
-    { "word": "DAY", "hint": "The opposite of night", "tier": 1, "category": "time_basics" },
-    { "word": "NIGHT", "hint": "The dark part of the day", "tier": 2, "category": "time_basics" },
-    { "word": "MORNING", "hint": "The early part of the day", "tier": 3, "category": "time_basics" },
-    { "word": "EVENING", "hint": "The end of the day, before night", "tier": 3, "category": "time_basics" },
-    { "word": "WEEK", "hint": "Seven days together", "tier": 1, "category": "time_basics" },
-    { "word": "YEAR", "hint": "365 days", "tier": 1, "category": "time_basics" },
-    { "word": "TIME", "hint": "A clock measures this", "tier": 1, "category": "time_basics" },
-    { "word": "HOUR", "hint": "Sixty minutes", "tier": 1, "category": "time_basics" },
-    { "word": "MONTH", "hint": "There are twelve of these in a year", "tier": 2, "category": "time_basics" },
-    { "word": "TODAY", "hint": "This very day", "tier": 2, "category": "time_basics" },
-    { "word": "TOMORROW", "hint": "The day after today", "tier": 3, "category": "time_basics" },
-
-    { "word": "GOOD", "hint": "The opposite of bad", "tier": 1, "category": "useful_words" },
-    { "word": "BAD", "hint": "The opposite of good", "tier": 1, "category": "useful_words" },
-    { "word": "BIG", "hint": "The opposite of small", "tier": 1, "category": "useful_words" },
-    { "word": "SMALL", "hint": "The opposite of big", "tier": 2, "category": "useful_words" },
-    { "word": "NEW", "hint": "The opposite of old", "tier": 1, "category": "useful_words" },
-    { "word": "OLD", "hint": "The opposite of new", "tier": 1, "category": "useful_words" },
-    { "word": "CHEAP", "hint": "The opposite of expensive", "tier": 2, "category": "useful_words" },
-    { "word": "WARM", "hint": "The opposite of cold", "tier": 1, "category": "useful_words" },
-    { "word": "COLD", "hint": "The opposite of warm", "tier": 1, "category": "useful_words" },
-    { "word": "FAST", "hint": "The opposite of slow", "tier": 1, "category": "useful_words" },
-    { "word": "SLOW", "hint": "The opposite of fast", "tier": 1, "category": "useful_words" },
-    { "word": "OPEN", "hint": "The opposite of closed", "tier": 1, "category": "useful_words" },
-    { "word": "CLOSED", "hint": "The opposite of open", "tier": 3, "category": "useful_words" },
-    { "word": "PLEASE", "hint": "You say this when asking politely", "tier": 3, "category": "useful_words" },
-    { "word": "THANKS", "hint": "You say this to show gratitude", "tier": 3, "category": "useful_words" },
-    { "word": "HELLO", "hint": "You say this to greet someone", "tier": 2, "category": "useful_words" },
-    { "word": "HELP", "hint": "What you ask for in trouble", "tier": 1, "category": "useful_words" },
-    { "word": "FRIEND", "hint": "Someone you like to spend time with", "tier": 3, "category": "useful_words" },
-
-    { "word": "MONEY", "hint": "You use this to buy things", "tier": 2, "category": "money_admin" },
-    { "word": "BANK", "hint": "Where you keep your money", "tier": 1, "category": "money_admin" },
-    { "word": "CARD", "hint": "You pay with this instead of cash", "tier": 1, "category": "money_admin" },
-    { "word": "CASH", "hint": "Physical notes and coins", "tier": 1, "category": "money_admin" },
-    { "word": "PRICE", "hint": "How much something costs", "tier": 2, "category": "money_admin" },
-    { "word": "BILL", "hint": "What you pay at a restaurant", "tier": 1, "category": "money_admin" },
-    { "word": "TAX", "hint": "Money you pay to the government", "tier": 1, "category": "money_admin" },
-    { "word": "WORK", "hint": "Your job", "tier": 1, "category": "money_admin" },
-    { "word": "OFFICE", "hint": "A place where people work at desks", "tier": 3, "category": "money_admin" },
-    { "word": "PASSPORT", "hint": "You need this to travel abroad", "tier": 3, "category": "money_admin" },
-    { "word": "VISA", "hint": "A permit to enter a country", "tier": 1, "category": "money_admin" },
-    { "word": "POINTS", "hint": "You collect these in Paylez", "tier": 3, "category": "money_admin" },
-    { "word": "REWARD", "hint": "What you earn for playing", "tier": 3, "category": "money_admin" },
-    { "word": "WALLET", "hint": "Holds your cards and cash", "tier": 3, "category": "money_admin" },
-
-    { "word": "DOCTOR", "hint": "You see this person when you're ill", "tier": 3, "category": "health_help" },
-    { "word": "NURSE", "hint": "Helps the doctor care for patients", "tier": 2, "category": "health_help" },
-    { "word": "MEDICINE", "hint": "You take this when sick", "tier": 3, "category": "health_help" },
-    { "word": "HELP", "hint": "What you shout in an emergency", "tier": 1, "category": "health_help" },
-    { "word": "POLICE", "hint": "You call them when there's a crime", "tier": 3, "category": "health_help" },
-
-    { "word": "WINTER", "hint": "The coldest season", "tier": 3, "category": "weather_nature" },
-    { "word": "SUMMER", "hint": "The warmest season", "tier": 3, "category": "weather_nature" },
-    { "word": "SPRING", "hint": "The season when flowers bloom", "tier": 3, "category": "weather_nature" },
-    { "word": "RAIN", "hint": "Water falling from the sky", "tier": 1, "category": "weather_nature" },
-    { "word": "SNOW", "hint": "White and cold, falls in winter", "tier": 1, "category": "weather_nature" },
-    { "word": "SUN", "hint": "Shines in the sky on a clear day", "tier": 1, "category": "weather_nature" },
-    { "word": "WIND", "hint": "Moving air you can feel", "tier": 1, "category": "weather_nature" },
-    { "word": "SKY", "hint": "You look up to see this", "tier": 1, "category": "weather_nature" },
-    { "word": "TREE", "hint": "Has leaves and a trunk", "tier": 1, "category": "weather_nature" },
-    { "word": "CLOUD", "hint": "White or grey, floats in the sky", "tier": 2, "category": "weather_nature" }
+    {
+      "word": "COFFEE",
+      "hint": "You order this in a café",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "WATER",
+      "hint": "You drink this when thirsty",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "BREAD",
+      "hint": "You buy this at a bakery",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "MILK",
+      "hint": "Goes in your coffee",
+      "tier": 1,
+      "category": "food_drink"
+    },
+    {
+      "word": "SUGAR",
+      "hint": "Makes your drink sweet",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "CHEESE",
+      "hint": "Made from milk, goes on sandwiches",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "BUTTER",
+      "hint": "You spread this on toast",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "FRUIT",
+      "hint": "Apples and bananas are these",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "MEAT",
+      "hint": "Beef and chicken are types of this",
+      "tier": 1,
+      "category": "food_drink"
+    },
+    {
+      "word": "SOUP",
+      "hint": "A hot meal you eat with a spoon",
+      "tier": 1,
+      "category": "food_drink"
+    },
+    {
+      "word": "LUNCH",
+      "hint": "The meal in the middle of the day",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "DINNER",
+      "hint": "The evening meal",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "BREAKFAST",
+      "hint": "The first meal of the day",
+      "tier": 3,
+      "category": "food_drink"
+    },
+    {
+      "word": "SANDWICH",
+      "hint": "Food between two slices of bread",
+      "tier": 3,
+      "category": "food_drink"
+    },
+    {
+      "word": "SALAD",
+      "hint": "A dish of raw vegetables",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "JUICE",
+      "hint": "A drink made from fruit",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "CAKE",
+      "hint": "A sweet baked treat for dessert",
+      "tier": 1,
+      "category": "food_drink"
+    },
+    {
+      "word": "PLATE",
+      "hint": "You eat your food off this",
+      "tier": 2,
+      "category": "food_drink"
+    },
+    {
+      "word": "SHOP",
+      "hint": "You go here to buy things",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "STREET",
+      "hint": "You walk down this in a city",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "CITY",
+      "hint": "Kraków is one",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "TRAIN",
+      "hint": "Travels on rails between cities",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "TRAM",
+      "hint": "Public transport on rails in the city",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "BUS",
+      "hint": "Public transport on wheels",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "TICKET",
+      "hint": "You need one to ride the tram",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "STATION",
+      "hint": "Where trains arrive and depart",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "AIRPORT",
+      "hint": "Where planes take off",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "SQUARE",
+      "hint": "The main open space in a town",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "BRIDGE",
+      "hint": "You cross this over a river",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "RIVER",
+      "hint": "The Wisła is one",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "PARK",
+      "hint": "A green place to walk in the city",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "CHURCH",
+      "hint": "A building where people pray",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "CASTLE",
+      "hint": "Wawel is a famous one",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "MAP",
+      "hint": "Shows you where places are",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "ROAD",
+      "hint": "Cars drive on this",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "TAXI",
+      "hint": "A car you pay to ride in",
+      "tier": 1,
+      "category": "getting_around"
+    },
+    {
+      "word": "CORNER",
+      "hint": "Where two streets meet",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "MARKET",
+      "hint": "An open place to buy food and goods",
+      "tier": 2,
+      "category": "getting_around"
+    },
+    {
+      "word": "HOME",
+      "hint": "The place where you live",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "DOOR",
+      "hint": "You open this to enter a room",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "WINDOW",
+      "hint": "You look through this in a wall",
+      "tier": 2,
+      "category": "home_life"
+    },
+    {
+      "word": "TABLE",
+      "hint": "You eat your meals at this",
+      "tier": 2,
+      "category": "home_life"
+    },
+    {
+      "word": "CHAIR",
+      "hint": "You sit on this",
+      "tier": 2,
+      "category": "home_life"
+    },
+    {
+      "word": "BED",
+      "hint": "You sleep on this",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "KITCHEN",
+      "hint": "The room where you cook",
+      "tier": 2,
+      "category": "home_life"
+    },
+    {
+      "word": "ROOM",
+      "hint": "A space inside a flat",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "KEY",
+      "hint": "You use this to open a lock",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "LIGHT",
+      "hint": "You switch this on when it's dark",
+      "tier": 2,
+      "category": "home_life"
+    },
+    {
+      "word": "FLAT",
+      "hint": "A home inside a larger building",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "RENT",
+      "hint": "You pay this monthly for a flat",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "FLOOR",
+      "hint": "You walk on this inside",
+      "tier": 2,
+      "category": "home_life"
+    },
+    {
+      "word": "WALL",
+      "hint": "The side of a room",
+      "tier": 1,
+      "category": "home_life"
+    },
+    {
+      "word": "DAY",
+      "hint": "The opposite of night",
+      "tier": 1,
+      "category": "time_basics"
+    },
+    {
+      "word": "NIGHT",
+      "hint": "The dark part of the day",
+      "tier": 2,
+      "category": "time_basics"
+    },
+    {
+      "word": "MORNING",
+      "hint": "The early part of the day",
+      "tier": 2,
+      "category": "time_basics"
+    },
+    {
+      "word": "EVENING",
+      "hint": "The end of the day, before night",
+      "tier": 2,
+      "category": "time_basics"
+    },
+    {
+      "word": "WEEK",
+      "hint": "Seven days together",
+      "tier": 1,
+      "category": "time_basics"
+    },
+    {
+      "word": "YEAR",
+      "hint": "365 days",
+      "tier": 1,
+      "category": "time_basics"
+    },
+    {
+      "word": "TIME",
+      "hint": "A clock measures this",
+      "tier": 1,
+      "category": "time_basics"
+    },
+    {
+      "word": "HOUR",
+      "hint": "Sixty minutes",
+      "tier": 1,
+      "category": "time_basics"
+    },
+    {
+      "word": "MONTH",
+      "hint": "There are twelve of these in a year",
+      "tier": 2,
+      "category": "time_basics"
+    },
+    {
+      "word": "TODAY",
+      "hint": "This very day",
+      "tier": 2,
+      "category": "time_basics"
+    },
+    {
+      "word": "TOMORROW",
+      "hint": "The day after today",
+      "tier": 3,
+      "category": "time_basics"
+    },
+    {
+      "word": "GOOD",
+      "hint": "The opposite of bad",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "BAD",
+      "hint": "The opposite of good",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "BIG",
+      "hint": "The opposite of small",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "SMALL",
+      "hint": "The opposite of big",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "NEW",
+      "hint": "The opposite of old",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "OLD",
+      "hint": "The opposite of new",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "CHEAP",
+      "hint": "The opposite of expensive",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "WARM",
+      "hint": "The opposite of cold",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "COLD",
+      "hint": "The opposite of warm",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "FAST",
+      "hint": "The opposite of slow",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "SLOW",
+      "hint": "The opposite of fast",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "OPEN",
+      "hint": "The opposite of closed",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "CLOSED",
+      "hint": "The opposite of open",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "PLEASE",
+      "hint": "You say this when asking politely",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "THANKS",
+      "hint": "You say this to show gratitude",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "HELLO",
+      "hint": "You say this to greet someone",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "HELP",
+      "hint": "What you ask for in trouble",
+      "tier": 1,
+      "category": "useful_words"
+    },
+    {
+      "word": "FRIEND",
+      "hint": "Someone you like to spend time with",
+      "tier": 2,
+      "category": "useful_words"
+    },
+    {
+      "word": "MONEY",
+      "hint": "You use this to buy things",
+      "tier": 2,
+      "category": "money_admin"
+    },
+    {
+      "word": "BANK",
+      "hint": "Where you keep your money",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "CARD",
+      "hint": "You pay with this instead of cash",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "CASH",
+      "hint": "Physical notes and coins",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "PRICE",
+      "hint": "How much something costs",
+      "tier": 2,
+      "category": "money_admin"
+    },
+    {
+      "word": "BILL",
+      "hint": "What you pay at a restaurant",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "TAX",
+      "hint": "Money you pay to the government",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "WORK",
+      "hint": "Your job",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "OFFICE",
+      "hint": "A place where people work at desks",
+      "tier": 2,
+      "category": "money_admin"
+    },
+    {
+      "word": "PASSPORT",
+      "hint": "You need this to travel abroad",
+      "tier": 3,
+      "category": "money_admin"
+    },
+    {
+      "word": "VISA",
+      "hint": "A permit to enter a country",
+      "tier": 1,
+      "category": "money_admin"
+    },
+    {
+      "word": "POINTS",
+      "hint": "You collect these in Paylez",
+      "tier": 2,
+      "category": "money_admin"
+    },
+    {
+      "word": "REWARD",
+      "hint": "What you earn for playing",
+      "tier": 2,
+      "category": "money_admin"
+    },
+    {
+      "word": "WALLET",
+      "hint": "Holds your cards and cash",
+      "tier": 2,
+      "category": "money_admin"
+    },
+    {
+      "word": "DOCTOR",
+      "hint": "You see this person when you're ill",
+      "tier": 2,
+      "category": "health_help"
+    },
+    {
+      "word": "NURSE",
+      "hint": "Helps the doctor care for patients",
+      "tier": 2,
+      "category": "health_help"
+    },
+    {
+      "word": "MEDICINE",
+      "hint": "You take this when sick",
+      "tier": 3,
+      "category": "health_help"
+    },
+    {
+      "word": "HELP",
+      "hint": "What you shout in an emergency",
+      "tier": 1,
+      "category": "health_help"
+    },
+    {
+      "word": "POLICE",
+      "hint": "You call them when there's a crime",
+      "tier": 2,
+      "category": "health_help"
+    },
+    {
+      "word": "WINTER",
+      "hint": "The coldest season",
+      "tier": 2,
+      "category": "weather_nature"
+    },
+    {
+      "word": "SUMMER",
+      "hint": "The warmest season",
+      "tier": 2,
+      "category": "weather_nature"
+    },
+    {
+      "word": "SPRING",
+      "hint": "The season when flowers bloom",
+      "tier": 2,
+      "category": "weather_nature"
+    },
+    {
+      "word": "RAIN",
+      "hint": "Water falling from the sky",
+      "tier": 1,
+      "category": "weather_nature"
+    },
+    {
+      "word": "SNOW",
+      "hint": "White and cold, falls in winter",
+      "tier": 1,
+      "category": "weather_nature"
+    },
+    {
+      "word": "SUN",
+      "hint": "Shines in the sky on a clear day",
+      "tier": 1,
+      "category": "weather_nature"
+    },
+    {
+      "word": "WIND",
+      "hint": "Moving air you can feel",
+      "tier": 1,
+      "category": "weather_nature"
+    },
+    {
+      "word": "SKY",
+      "hint": "You look up to see this",
+      "tier": 1,
+      "category": "weather_nature"
+    },
+    {
+      "word": "TREE",
+      "hint": "Has leaves and a trunk",
+      "tier": 1,
+      "category": "weather_nature"
+    },
+    {
+      "word": "CLOUD",
+      "hint": "White or grey, floats in the sky",
+      "tier": 2,
+      "category": "weather_nature"
+    },
+    {
+      "word": "RESTAURANT",
+      "hint": "Where you sit down to eat",
+      "tier": 3,
+      "category": "food_drink"
+    },
+    {
+      "word": "VEGETABLE",
+      "hint": "Carrots and cabbage are these",
+      "tier": 3,
+      "category": "food_drink"
+    },
+    {
+      "word": "CHOCOLATE",
+      "hint": "Sweet brown bar",
+      "tier": 3,
+      "category": "food_drink"
+    },
+    {
+      "word": "TIMETABLE",
+      "hint": "It tells you when the bus leaves",
+      "tier": 3,
+      "category": "getting_around"
+    },
+    {
+      "word": "PLATFORM",
+      "hint": "Where you wait for the train",
+      "tier": 3,
+      "category": "getting_around"
+    },
+    {
+      "word": "CROSSING",
+      "hint": "Where you walk over the road",
+      "tier": 3,
+      "category": "getting_around"
+    },
+    {
+      "word": "TERMINAL",
+      "hint": "The building at the airport",
+      "tier": 3,
+      "category": "getting_around"
+    },
+    {
+      "word": "BATHROOM",
+      "hint": "The room with the shower",
+      "tier": 3,
+      "category": "home_life"
+    },
+    {
+      "word": "FURNITURE",
+      "hint": "Tables, chairs and beds",
+      "tier": 3,
+      "category": "home_life"
+    },
+    {
+      "word": "NEIGHBOUR",
+      "hint": "The person living next door",
+      "tier": 3,
+      "category": "home_life"
+    },
+    {
+      "word": "CUPBOARD",
+      "hint": "Where you keep the plates",
+      "tier": 3,
+      "category": "home_life"
+    },
+    {
+      "word": "YESTERDAY",
+      "hint": "The day before today",
+      "tier": 3,
+      "category": "time_basics"
+    },
+    {
+      "word": "AFTERNOON",
+      "hint": "After lunch, before evening",
+      "tier": 3,
+      "category": "time_basics"
+    },
+    {
+      "word": "QUESTION",
+      "hint": "What you ask",
+      "tier": 3,
+      "category": "useful_words"
+    },
+    {
+      "word": "LANGUAGE",
+      "hint": "Polish is one",
+      "tier": 3,
+      "category": "useful_words"
+    },
+    {
+      "word": "SOMETHING",
+      "hint": "Not nothing",
+      "tier": 3,
+      "category": "useful_words"
+    },
+    {
+      "word": "DIFFICULT",
+      "hint": "Hard to do",
+      "tier": 3,
+      "category": "useful_words"
+    },
+    {
+      "word": "DOCUMENT",
+      "hint": "Paper with your details on it",
+      "tier": 3,
+      "category": "money_admin"
+    },
+    {
+      "word": "CONTRACT",
+      "hint": "You sign this before renting",
+      "tier": 3,
+      "category": "money_admin"
+    },
+    {
+      "word": "INSURANCE",
+      "hint": "It covers the doctor's bill",
+      "tier": 3,
+      "category": "money_admin"
+    },
+    {
+      "word": "SIGNATURE",
+      "hint": "Your name, written by you",
+      "tier": 3,
+      "category": "money_admin"
+    },
+    {
+      "word": "PHARMACY",
+      "hint": "Where you buy medicine",
+      "tier": 3,
+      "category": "health_help"
+    },
+    {
+      "word": "HOSPITAL",
+      "hint": "Where the doctors are",
+      "tier": 3,
+      "category": "health_help"
+    },
+    {
+      "word": "EMERGENCY",
+      "hint": "Call 112 for this",
+      "tier": 3,
+      "category": "health_help"
+    },
+    {
+      "word": "UMBRELLA",
+      "hint": "You open it in the rain",
+      "tier": 3,
+      "category": "weather_nature"
+    },
+    {
+      "word": "SUNSHINE",
+      "hint": "What you hope for on a day off",
+      "tier": 3,
+      "category": "weather_nature"
+    }
   ]
 }

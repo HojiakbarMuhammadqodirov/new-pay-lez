@@ -464,7 +464,17 @@ const WORDS: Array<[string, string, string]> = [
 
 function seedWords(db: Db): void {
   for (const [language, word, hint] of WORDS) {
-    const tier = word.length <= 4 ? 1 : word.length <= 6 ? 2 : 3;
+    /*
+     * 3–4 easy, 5–7 medium, 8+ hard — the same bands
+     * `updates/paylez-words-*.json` is authored against, and they have to stay
+     * the same bands: the tier decides both the ramp within a round and the
+     * per-word bonus, so a word that is medium on the site and hard on the
+     * phone pays differently for the same answer.
+     *
+     * Medium used to stop at 6, which put every seven-letter word in with the
+     * nine-letter ones and made the hard rung mostly not hard.
+     */
+    const tier = word.length <= 4 ? 1 : word.length <= 7 ? 2 : 3;
     db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, $l, $w, $t, $h)
          ON CONFLICT (language, word) DO UPDATE SET tier = excluded.tier, hint = excluded.hint`,
