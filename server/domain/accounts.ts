@@ -262,7 +262,7 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
        VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
-      { u: id, l: CONFIG.points.dailyLives, t: at },
+      { u: id, l: CONFIG.points.dailyEnergy, t: at },
     );
   });
 
@@ -367,7 +367,7 @@ export function linkGoogleAccount(
     db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
        VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
-      { u: id, l: CONFIG.points.dailyLives, t: at },
+      { u: id, l: CONFIG.points.dailyEnergy, t: at },
     );
   });
 

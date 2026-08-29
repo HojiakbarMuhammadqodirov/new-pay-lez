@@ -52,7 +52,16 @@ import { mintTap, verifyTap } from './crypto/nfc.ts';
 import { open as openToken, seal } from './crypto/tokens.ts';
 import { hashPassword, verifyPassword } from './crypto/passwords.ts';
 import { discountCost, median, plausibleAmount } from './domain/money.ts';
-import { isoWeek, local, localMonth, now, plusDays, plusMonths, withinDailyWindow } from './domain/time.ts';
+import {
+  isoWeek,
+  local,
+  localMonth,
+  now,
+  plusDays,
+  plusMinutes,
+  plusMonths,
+  withinDailyWindow,
+} from './domain/time.ts';
 import { newId } from './domain/ids.ts';
 import { codeFor, flagOf } from './db/countries.ts';
 import type { Db } from './db/db.ts';
@@ -297,12 +306,11 @@ function ledgerRules(): void {
   );
 
   /*
-   * §2.4 used to trim a game round against a flat daily ceiling. There is no
-   * ceiling any more: a day is bounded by the per-game decay curve in
-   * `domain/games.ts`, which prices a repeat of the same game lower and, on
-   * the free plan, stops paying for it entirely. The ledger no longer knows
-   * anything about it, which is the point — the brake belongs where the round
-   * is scored, not where the entry is written.
+   * §2.4 used to trim a game round against a flat daily ceiling, and for a
+   * while after that a per-game decay curve shrank a repeat instead. Neither
+   * exists: a round banks `floor(raw × points_multiplier)`, and what bounds a
+   * day is energy, spent in `games.finish`. The ledger knows about none of it,
+   * which is the point — `earn` grants what it is handed.
    *
    * What is still worth asserting here is that a large earn arrives whole.
    */
@@ -755,7 +763,12 @@ function gameRules(): void {
     5 * CONFIG.games.quizPerCorrect + CONFIG.games.quizPerfectBonus);
   eq('a clean round is a win', finished.won, true);
   eq('the streak starts at one', finished.streak, 1);
-  eq('and no life was spent', finished.livesLeft, CONFIG.points.dailyLives);
+  /* **A win costs energy too, now.** The pool used to be charged by a loss
+     only, which meant this line read `dailyEnergy` and the assertion said
+     nothing at all about a rule with no writer on this path. One off a full
+     tank is what "every finished round costs one" looks like from outside. */
+  eq('a win spends energy like any other round', finished.energyLeft,
+    CONFIG.points.dailyEnergy - 1);
   eq('the balance moved by the score', ledger.balance(w.db, w.customerId), finished.score);
 
   throws('a finished session cannot be finished again', 'invalid_state', () =>
@@ -790,6 +803,155 @@ function gameRules(): void {
     'but the points are not wiped — expiry is the only way points leave (§2.3)',
     ledger.balance(w.db, w.customerId) > 0,
   );
+
+  w.db.close();
+  energyRules();
+}
+
+/**
+ * §7.2 — what a round costs, and what refuses one.
+ *
+ * Its own world and its own instant, because the streak block above walks the
+ * customer across three weeks and the tank is measured in hours: a fixture that
+ * has been playing since the 3rd cannot say anything about a pool that refills
+ * four times a day.
+ *
+ * The four facts, and they are four because each one used to be a different
+ * answer: **a win spends**, **a loss spends**, **an abandoned round does not**,
+ * and an **empty tank refuses the next start** rather than the next finish.
+ */
+function energyRules(): void {
+  describe('§7.2 energy — every finished round costs one');
+  const w = world();
+  const at = now();
+
+  /** Play a whole round, answering every question right or every one wrong. */
+  const round = (rightly: boolean, when = at) => {
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'capitals',
+      language: 'en',
+      at: when,
+    });
+    const secret = JSON.parse(
+      w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+        i: opened.sessionId,
+      })!.secret,
+    ) as { answers: number[] };
+    secret.answers.forEach((answer, index) => {
+      games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq: index,
+        kind: 'answer',
+        /* Any index that is not the answer is a wrong answer, and 0/1 is always
+           one of each: the options are four, so `answer` cannot be both. */
+        payload: { index, choice: rightly ? answer : answer === 0 ? 1 : 0 },
+        at: when,
+      });
+    });
+    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: when });
+  };
+
+  const full = CONFIG.points.dailyEnergy;
+  eq('a new player starts on a full tank', games.energyFor(w.db, w.customerId, at).energy, full);
+
+  const won = round(true);
+  eq('a won round is a win', won.won, true);
+  eq('…and spends one anyway', won.energyLeft, full - 1);
+
+  const lost = round(false);
+  eq('a lost round is a loss', lost.won, false);
+  eq('…and spends exactly the same one', lost.energyLeft, full - 2);
+
+  /*
+   * Abandoning. `startSession` closes any round still open for the player, so
+   * opening two in a row abandons the first — and the charge lives in `finish`,
+   * which the abandoned one never reaches.
+   *
+   * This is the fact the whole design of "charge at the end" exists to protect:
+   * a connection that drops before the first question must not cost anything,
+   * because that is the one failure the player did not choose.
+   */
+  const dropped = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  const kept = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  eq(
+    'the first of two starts is abandoned',
+    w.db.get<{ state: string }>(`SELECT state FROM game_sessions WHERE id = $i`, {
+      i: dropped.sessionId,
+    })?.state,
+    'abandoned',
+  );
+  eq(
+    'and an abandoned round costs nothing',
+    games.energyFor(w.db, w.customerId, at).energy,
+    full - 2,
+  );
+  eq(
+    'the round that is finished still costs one',
+    games.finish(w.db, { sessionId: kept.sessionId, userId: w.customerId, at }).energyLeft,
+    full - 3,
+  );
+
+  /* An empty tank refuses the *start*. Refusing the finish instead would mean
+     telling somebody the round they just played does not count. */
+  throws('an empty tank refuses the next round', 'no_energy', () =>
+    games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at }),
+  );
+
+  /*
+   * And it refuses with a time, not just a no.
+   *
+   * `nextAt` is the whole of what makes a spend feel like a cost rather than a
+   * lockout, and it is the field the mobile client draws its countdown from.
+   */
+  const empty = games.energyFor(w.db, w.customerId, at);
+  eq('the refusal knows the ceiling', empty.max, full);
+  eq(
+    '…and when the next one lands',
+    empty.nextAt,
+    plusMinutes(at, CONFIG.points.energyRegenMinutes),
+  );
+
+  /*
+   * The refill, which is what pays for charging both sides.
+   *
+   * One per interval and no more — a tank that kept counting would hand back a
+   * week of rounds to somebody returning from holiday — and the whole tank back
+   * at `max × interval`, which on the free plan is twelve hours.
+   */
+  const regen = CONFIG.points.energyRegenMinutes;
+  eq('nothing arrives early', games.energyFor(w.db, w.customerId, plusMinutes(at, regen - 1)).energy, 0);
+  eq('one at the interval', games.energyFor(w.db, w.customerId, plusMinutes(at, regen)).energy, 1);
+  eq('two at twice it', games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2)).energy, 2);
+  eq(
+    'full at the ceiling times it',
+    games.energyFor(w.db, w.customerId, plusMinutes(at, regen * full)).energy,
+    full,
+  );
+  eq(
+    'and never past it',
+    games.energyFor(w.db, w.customerId, plusDays(at, 30)).energy,
+    full,
+  );
+  eq(
+    'a full tank has nothing to count down to',
+    games.energyFor(w.db, w.customerId, plusDays(at, 30)).nextAt,
+    null,
+  );
+
+  /*
+   * **What a day is, now that every round costs.**
+   *
+   * `dailyEnergy + 1440 / energyRegenMinutes` — the tank once, plus what the
+   * clock returns over twenty-four hours. Nine on the free plan from a full
+   * tank, six a day sustained. It is asserted rather than left as arithmetic in
+   * a comment because **it is now the only bound on a day**: the per-game decay
+   * curve that used to sit beside it is gone, so these two constants are the
+   * whole rule and moving either one changes how much a player can earn. This
+   * is what makes somebody notice.
+   */
+  eq('a free day is nine finished rounds', full + Math.floor(1440 / regen), 9);
 
   w.db.close();
 }
@@ -1041,7 +1203,59 @@ function entitlementRules(): void {
 
   const free = entitlements.entitlementsFor(w.db, { userId: w.customerId });
   eq('an account with no subscription resolves to the free plan', free.points_multiplier, '1');
-  check('and the free tier can still play', entitlements.entNumber(free, 'daily_lives', 0) > 0);
+  check('and the free tier can still play', entitlements.entNumber(free, 'daily_energy', 0) > 0);
+
+  /*
+   * A withdrawn key is *removed*, not merely unwritten.
+   *
+   * `seedPlans` upserts and never deletes, so a key that stops appearing in
+   * `PLANS` keeps whatever value the build before it left in the table — and
+   * `entNumber` reads by name, so a stale `daily_lives` would be a live tier
+   * figure nothing in the repo keeps in step. A fresh database has never
+   * written one, which is exactly why the row is *planted* here: the assertion
+   * has to be about the delete, not about a table that was always empty.
+   *
+   * Two of these were renames and the third is a deletion, which is why the
+   * list is worth having rather than a pair of one-off checks. `round_decay`
+   * named which ladder priced a repeat of the same game; there is no such
+   * ladder any more, energy is what bounds a day, and a row saying a plan buys
+   * a curve is how a curve gets written back.
+   */
+  const stale = ['daily_lives', 'life_regen_minutes', 'round_decay'];
+  for (const key of stale) {
+    w.db.run(
+      `INSERT INTO plan_entitlements (plan_id, key, value) VALUES ('pln_consumer_free', $k, '99')
+         ON CONFLICT (plan_id, key) DO UPDATE SET value = excluded.value`,
+      { k: key },
+    );
+  }
+  check(
+    'a database seeded by an older build still has the withdrawn keys',
+    entitlements.entNumber(
+      entitlements.entitlementsFor(w.db, { userId: w.customerId }),
+      'daily_lives',
+      0,
+    ) === 99,
+  );
+
+  seedPlatform(w.db);
+  for (const key of stale) {
+    eq(
+      `re-seeding removes the withdrawn key ${key}`,
+      w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM plan_entitlements WHERE key = $k`, {
+        k: key,
+      })?.n,
+      0,
+    );
+  }
+  check(
+    '…and leaves the key that replaced it',
+    entitlements.entNumber(
+      entitlements.entitlementsFor(w.db, { userId: w.customerId }),
+      'daily_energy',
+      0,
+    ) === CONFIG.points.dailyEnergy,
+  );
 
   entitlements.startSubscription(w.db, {
     subject: { userId: w.customerId },

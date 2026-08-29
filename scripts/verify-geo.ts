@@ -33,7 +33,7 @@ import {
 } from '../src/site/router';
 import { draw, shuffledRange } from '../src/site/games/bag';
 import { flagOf } from '../src/site/games/banks';
-import type { Account } from '../src/site/auth/context';
+import { EMPTY_PROFILE, type Account } from '../src/site/auth/context';
 import {
   blankBusiness,
   isBusinessReady,
@@ -41,11 +41,21 @@ import {
   REQUIRED_FIELDS,
 } from '../src/site/auth/business';
 import {
+  BIRTH_DATE_WRITES,
+  checkBirthDate,
+  checkUsername,
   findUser,
+  HEADLINE_MAX,
+  isPhone,
   MIN_PASSWORD,
   newUser,
+  profileGaps,
+  profilePercent,
   SEED_USERS,
+  USERNAME_MAX,
+  USERNAME_MIN,
   validateSignUp,
+  type UserRecord,
 } from '../src/site/auth/users';
 import {
   activeVouchers,
@@ -62,18 +72,20 @@ import {
   markUsed,
   MAX_FLIGHT_POINTS,
   MAX_FREEZES,
-  MAX_LIVES,
+  MAX_ENERGY,
   memoryPoints,
   redeem,
-  LIFE_REGEN_MINUTES,
-  livesOf,
+  ENERGY_REGEN_MINUTES,
+  energyOf,
   seedPlayer,
   stampsLeft,
   stampsOf,
   stampVisit,
   usedVouchers,
   wordPoints,
+  type PlayerState,
 } from '../src/site/auth/player';
+import { toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
@@ -88,18 +100,16 @@ import {
   PD_ALLOCATION,
   PD_ASSIST,
   PD_ASSIST_COPY,
-  PD_AUDIENCES,
   PD_CAMPAIGN_MODEL,
   PD_COST_ROWS,
   PD_COST_TOTAL,
-  PD_DEALS,
   PD_HEAT,
   PD_HEAT_MAX,
   PD_MAX_PER_VOUCHER,
   PD_PER_NEW,
   PD_RANGES,
-  PD_ROSTER,
-  PD_SCAN_NAMES,
+  PD_SCAN_PAGE,
+  PD_SCAN_TOTAL,
   PD_SCANS,
   PD_SERIES,
   PD_TOTALS,
@@ -107,7 +117,9 @@ import {
   PD_VOUCHER_BUDGET,
   PD_VOUCHER_MODEL,
   RANGE_DAYS,
+  dealFromApi,
   dealNotify,
+  heatFromApi,
   metricsFor,
   voucherModelFor,
   polyarea,
@@ -121,6 +133,7 @@ import {
   redemptionsFor,
   scanRowsFor,
   serviceMetrics,
+  serviceMetricsFrom,
   toCsv,
   voucherRowsFor,
 } from '../src/site/adminMetrics';
@@ -658,11 +671,27 @@ console.log('\naccess control');
   const anon = null;
   const undecided: Account = {
     id: 'u', name: 'A', email: 'a@b.c', type: null, business: null, player: null,
+    profile: EMPTY_PROFILE,
+    /*
+     * A date rather than `null` on the fixtures that stand for *established*
+     * accounts, because `null` now means something: an individual carrying it
+     * is held at onboarding from every route, and every assertion below about
+     * where an individual goes would quietly become an assertion about the
+     * welcome screen. `newPlayer` is the fixture that carries the `null`.
+     */
+    onboardedAt: '2026-01-01',
   };
   const person: Account = { ...undecided, type: 'individual' };
+  const newPlayer: Account = { ...person, onboardedAt: null };
   const ownerNew: Account = { ...undecided, type: 'business' };
   const ownerSet: Account = { ...ownerNew, business: blankBusiness() };
+  /* An owner who has never been through onboarding, because none of them has:
+     it is the player app's first minute and an owner has no player state. The
+     hold must be by *type*, so this account has to behave exactly like
+     `ownerSet`. */
+  const ownerRaw: Account = { ...ownerSet, onboardedAt: null };
   const admin: Account = { ...undecided, type: 'admin' };
+  const adminRaw: Account = { ...admin, onboardedAt: null };
 
   const consumer: Route[] = ['landing', 'learn', 'vouchers', 'relocate'];
 
@@ -732,13 +761,63 @@ console.log('\naccess control');
   check('a new owner lands on setup', resolveRoute('signin', ownerNew) === 'business-setup');
   check('a set-up owner lands on the landing page', resolveRoute('signin', ownerSet) === 'landing');
 
+  /* ── the profile, and the hold at onboarding ─────────────────────────── */
+
+  /*
+   * `#/profile` is private and belongs to *everybody who exists*, including the
+   * operator: the console replaces an admin's venue screens because they have
+   * no venue, and it does not replace their own name and city.
+   */
+  check('anon is sent from the profile to sign-in', resolveRoute('profile', anon) === 'signin');
+  check('anon is sent from onboarding to sign-in', resolveRoute('onboarding', anon) === 'signin');
+  check('an individual keeps the profile', resolveRoute('profile', person) === 'profile');
+  check('an owner keeps the profile', resolveRoute('profile', ownerSet) === 'profile');
+  check('an admin keeps the profile', resolveRoute('profile', admin) === 'profile');
+
+  /*
+   * The hold. A player who has not been through onboarding goes there from
+   * every route — the same shape as the undecided account being held at
+   * sign-in, and for the same reason: it is one short step, and the welcome
+   * gift is paid at the end of it rather than at sign-up, so skipping it would
+   * leave somebody looking at a zero.
+   */
+  check('a new player is held at onboarding', resolveRoute('landing', newPlayer) === 'onboarding');
+  check(
+    '…from every route',
+    ([...consumer, 'business', 'analytics', 'dashboard', 'admin', 'profile', 'signin'] as Route[])
+      .every((r) => resolveRoute(r, newPlayer) === 'onboarding'),
+  );
+  check(
+    'a player who finished it is never sent back',
+    resolveRoute('onboarding', person) === 'landing',
+  );
+
+  /* Exempt by *type*, not by the stamp: neither of these has a player state, so
+     neither has a first minute. Both have to behave exactly as they did before
+     the field existed. */
+  check('an owner is never held at onboarding', resolveRoute('landing', ownerRaw) === 'landing');
+  check('…and reaches their dashboard', resolveRoute('dashboard', ownerRaw) === 'dashboard');
+  check('an admin is never held at onboarding', resolveRoute('admin', adminRaw) === 'admin');
+  check('an owner loses onboarding', resolveRoute('onboarding', ownerSet) === 'landing');
+  check('an admin loses onboarding', resolveRoute('onboarding', admin) === 'admin');
+
+  /* An undecided account is still held at sign-in *first*: it has no type, so
+     "is this an individual who has not onboarded?" has no answer yet. */
+  check(
+    'the type question comes before the welcome',
+    resolveRoute('onboarding', { ...undecided, onboardedAt: null }) === 'signin',
+  );
+
   /* Every redirect must land somewhere that does not itself redirect, or the
      effect in `Site` navigates in a loop. */
-  const all: Route[] = [
-    'landing', 'learn', 'analytics', 'business', 'vouchers', 'relocate', 'contact',
-    'signin', 'business-setup', 'dashboard', 'admin',
+  /* Derived from `PATHS` rather than listed, so a route added tomorrow is in
+     this matrix without anybody remembering to add it. The hand-written list
+     that used to be here had already fallen two behind. */
+  const all = Object.keys(PATHS) as Route[];
+  const accounts = [
+    anon, undecided, { ...undecided, onboardedAt: null },
+    person, newPlayer, ownerNew, ownerSet, ownerRaw, admin, adminRaw,
   ];
-  const accounts = [anon, undecided, person, ownerNew, ownerSet, admin];
   let unstable = '';
   for (const account of accounts) {
     for (const route of all) {
@@ -760,6 +839,156 @@ console.log('\naccess control');
   ] as const) {
     check(`${label} reaches contact`, resolveRoute('contact', account) === 'contact');
   }
+}
+
+console.log('\nthe profile');
+{
+  /*
+   * The seven answers, and the three rules on them that are not "is it a
+   * string". All three are the *server's* rules restated in `auth/users.ts`
+   * (see the banner there), so a check that passes here is a check that the two
+   * halves of Paylez still agree about what a username is.
+   */
+
+  /* The one constant that is written twice, because `context.ts` cannot import
+     it back without a runtime import cycle. */
+  check(
+    'a blank profile carries both birthday writes',
+    EMPTY_PROFILE.birthDateChangesLeft === BIRTH_DATE_WRITES,
+    `${EMPTY_PROFILE.birthDateChangesLeft} vs ${BIRTH_DATE_WRITES}`,
+  );
+
+  /* ── the handle ─────────────────────────────────────────────────────── */
+
+  const directory: UserRecord[] = [
+    { ...SEED_USERS[2] },
+    {
+      id: 'u_other', name: 'B', email: 'b@b.c', password: 'x', created: '2026-01-01',
+      type: 'individual', business: null, player: null,
+      profile: { ...EMPTY_PROFILE, username: 'KasiaPL' },
+      onboardedAt: '2026-01-01',
+    },
+  ];
+
+  const ok = (value: string) => checkUsername(directory, value, 'u_me');
+  const why = (value: string) => {
+    const result = ok(value);
+    return result.ok ? 'ok' : result.error;
+  };
+
+  check('a plain handle passes', why('kasia_pl') === 'ok');
+  check('…and is kept as it was typed', (() => {
+    const result = ok('  KasiaNowa  ');
+    return result.ok && result.username === 'KasiaNowa' && result.norm === 'kasianowa';
+  })());
+  check(`under ${USERNAME_MIN} is refused`, why('ab') === 'length');
+  check(`over ${USERNAME_MAX} is refused`, why('a'.repeat(USERNAME_MAX + 1)) === 'length');
+  /* The three ways to look like somebody else, all invisible at a glance. */
+  check('a leading underscore is refused', why('_kasia') === 'shape');
+  check('a trailing underscore is refused', why('kasia_') === 'shape');
+  check('a doubled underscore is refused', why('kasia__pl') === 'shape');
+  check('a dot is refused', why('kasia.pl') === 'shape');
+  /* ASCII only: a Cyrillic `а` in an otherwise Latin word is a working
+     impersonation that no amount of case folding catches. */
+  check('a non-ASCII letter is refused', why('kаsia') === 'shape');
+  check('a claim about who is speaking is refused', why('support') === 'reserved');
+  check('…in any case', why('AdMiN') === 'reserved');
+  check('a handle somebody else holds is refused', why('kasiapl') === 'taken');
+  check('…ignoring case', why('KASIAPL') === 'taken');
+  check(
+    'and holding it yourself is not a clash',
+    (() => {
+      const result = checkUsername(directory, 'KasiaPL', 'u_other');
+      return result.ok;
+    })(),
+  );
+
+  /* ── the birthday ───────────────────────────────────────────────────── */
+
+  const today = '2026-08-30';
+  const day = (value: string) => {
+    const result = checkBirthDate(value, today);
+    return result.ok ? 'ok' : result.error;
+  };
+
+  check('an ordinary birthday passes', day('1998-03-14') === 'ok');
+  check('a malformed date is refused', day('14/03/1998') === 'format');
+  /*
+   * The one that a regex plus a `new Date` gets wrong: `2026-02-30` does not
+   * throw, it rolls forward to March 2nd — so the naive version accepts a day
+   * that does not exist and then stores a different one.
+   */
+  check('a day that does not exist is refused', day('2025-02-30') === 'nonexistent');
+  check('…and one that does is not', day('2004-02-29') === 'ok');
+  check('today is not a birthday', day(today) === 'future');
+  check('tomorrow is not either', day('2026-08-31') === 'future');
+  check('under thirteen is refused', day('2015-08-30') === 'young');
+  /* Exactly thirteen, on the day: the boundary is inclusive, and the
+     birthday-aware year count is what makes the day before it fail. */
+  check('exactly thirteen passes', day('2013-08-30') === 'ok');
+  check('a day short of thirteen does not', day('2013-08-31') === 'young');
+  check('a typo in the century is refused', day('1825-01-01') === 'old');
+
+  /* ── the rest ───────────────────────────────────────────────────────── */
+
+  check('a phone number passes', isPhone('+48 600 000 000'));
+  check('…in brackets too', isPhone('(0048) 600-000.000'));
+  check('a sentence is not a phone number', !isPhone('call me'));
+  check('four digits is not one', !isPhone('1234'));
+  check('sixteen digits is not one', !isPhone('1234567890123456'));
+
+  /* ── completeness ───────────────────────────────────────────────────── */
+
+  /*
+   * All seven, or it is not finished — the server's own definition, and it has
+   * to be, because the server *pays* for a complete profile. A meter reading
+   * 100% while the bonus had not landed would be the site calling the server
+   * wrong.
+   */
+  const blank = EMPTY_PROFILE;
+  check('a blank profile is missing six of the seven', profileGaps(blank, 'a@b.c').length === 6);
+  check('…and no address makes it seven', profileGaps(blank, '').length === 7);
+  check('a blank profile with an address reads 14%', profilePercent(blank, 'a@b.c') === 14);
+
+  const full = {
+    username: 'kasia', headline: 'hi', city: 'Krakow', countryCode: 'PL',
+    phone: '+48 600 000 000', birthDate: '1998-03-14', birthDateChangesLeft: 1,
+    avatar: 'data:image/jpeg;base64,x',
+  };
+  check('a finished profile has no gaps', profileGaps(full, 'a@b.c').length === 0);
+  check('…and reads 100%', profilePercent(full, 'a@b.c') === 100);
+  /* Six of seven must not round up to 100: a meter that says finished while
+     something is blank is the one reading nobody can act on. */
+  check(
+    'six of the seven does not read 100%',
+    profilePercent({ ...full, phone: '' }, 'a@b.c') === 85,
+  );
+
+  check(
+    'a headline is a line, not a paragraph',
+    HEADLINE_MAX === 140,
+    `${HEADLINE_MAX} characters`,
+  );
+
+  /* The seeded player is furnished for the same reason her wallet is, and she
+     is the account somebody signs in as to look at these screens. */
+  const seeded = SEED_USERS.find((user) => user.type === 'individual');
+  check('the seeded player has a profile', Boolean(seeded?.profile?.username));
+  check('…and has been through onboarding', seeded?.onboardedAt !== null);
+  check(
+    '…with one birthday correction spent',
+    seeded?.profile?.birthDateChangesLeft === BIRTH_DATE_WRITES - 1,
+  );
+
+  /* A brand-new account is the one case where `null` is *known* rather than
+     inferred, and it is what the routing hold reads. */
+  const fresh = newUser(
+    { name: 'N', email: 'n@b.c', password: 'secret', type: 'individual' },
+    'u_new',
+    '2026-08-30',
+  );
+  check('a new account has not been onboarded', fresh.onboardedAt === null);
+  check('…and its profile is blank', profileGaps(fresh.profile!, fresh.email).length === 6);
 }
 
 console.log('\nrouting — section anchors');
@@ -999,7 +1228,12 @@ console.log('\nplaying');
   check('a round scores per correct answer', first.points === 10, `${first.points} pts`);
   check('a first round starts the streak', first.streak === 1);
   check('answered and correct both move', first.answered === 5 && first.correct === 5);
-  check('a win costs no life', first.lives === MAX_LIVES);
+  /* **A win costs energy too.** It costs exactly what a loss costs, which is
+     the whole of the change: the pool used to charge only the player who was
+     losing, and two of the seven games cannot be lost at all, so it bounded a
+     minority and decorated the screen for everybody else. */
+  check('a won round spends one energy', first.energy === MAX_ENERGY - 1,
+    `${first.energy} left`);
 
   const nextDay = awardRound(first, win, day('2026-08-04'));
   check('the next day continues the streak', nextDay.streak === 2);
@@ -1007,11 +1241,14 @@ console.log('\nplaying');
 
   const twice = awardRound(first, win, day('2026-08-03'));
   check('a second round the same day does not advance the streak', twice.streak === 1);
-  /* The decay curve, from the outside: a second round of the *same* game the
-     same day is worth 60% of it, floored. This is the brake that replaced the
-     daily cap, and it is the reason a player rotates through the seven rather
-     than farming whichever one pays best. */
-  check('…but a repeat of the same game pays the curve', twice.points === 16,
+  /* But it pays what it scored, which is the rule that replaced the decay
+     curve. That curve paid a repeat of the *same* game 100/60/40/20/0% and was
+     the only brake there was when play was unlimited; energy is the brake now,
+     and `player.ts` says at length why it must not come back — a result card
+     that has to explain why the same five right answers paid ten and then four
+     is explaining a rule the player never agreed to. This is the check that
+     notices it coming back. */
+  check('…and pays it exactly what the first one paid', twice.points === first.points * 2,
     `${twice.points} pts`);
 
   /* **A lapse no longer takes the balance.** It used to, and the backend
@@ -1023,20 +1260,21 @@ console.log('\nplaying');
   check('missing the window resets the streak', lapsed.streak === 1);
   check('…and the balance survives it', lapsed.points === 20, `${lapsed.points} pts`);
 
-  /* A loss costs a heart again. It stopped costing one when the decay curve
-     arrived, which left the tank inert — a number on screen that never moved.
-     What makes charging fair now is that hearts come back on a clock rather
-     than at midnight, so a bad morning is a wait of hours and not a day. */
+  /* And a loss costs the same one, which is what makes the pips mean "rounds
+     left" rather than "mistakes you are allowed". What makes charging fair at
+     all is that energy comes back on a clock rather than at midnight, so an
+     empty tank is a wait of hours and not a day. */
   const lost = awardRound(base, { ...win, correct: 2, won: false }, day('2026-08-03'));
-  check('a loss costs a heart', lost.lives === MAX_LIVES - 1, `${lost.lives} left`);
+  check('a lost round spends the same one', lost.energy === MAX_ENERGY - 1, `${lost.energy} left`);
   check('…and still banks what was right', lost.points === 2, `${lost.points} pts`);
+  check('a win and a loss cost exactly the same', first.energy === lost.energy);
 
   /*
-   * Hearts regenerate one at a time on a clock, not all at once at midnight.
+   * Energy regenerates one at a time on a clock, not all at once at midnight.
    *
    * The old rule refilled the tank on a new calendar day and only when the Play
-   * screen mounted, which made the wait wildly unfair by hour — lose three at
-   * nine in the morning and you waited fifteen hours; lose them at nine at
+   * screen mounted, which made the wait wildly unfair by hour — empty it at
+   * nine in the morning and you waited fifteen hours; empty it at nine at
    * night and you waited three — and never fired at all in a tab left open
    * past midnight.
    *
@@ -1045,27 +1283,68 @@ console.log('\nplaying');
    */
   const hour = 3_600_000;
   const t0 = day('2026-08-03').getTime();
-  const drained = { ...base, lives: 0, livesAt: t0 };
-  const at = (ms: number) => livesOf(drained, new Date(t0 + ms));
+  const drained = { ...base, energy: 0, energyAt: t0 };
+  const at = (ms: number) => energyOf(drained, new Date(t0 + ms));
 
   check('an empty tank is empty', at(0).count === 0, `${at(0).count}`);
-  check('…and says when the next heart lands', at(0).nextAt === t0 + LIFE_REGEN_MINUTES * 60_000);
+  check('…and says when the next one lands', at(0).nextAt === t0 + ENERGY_REGEN_MINUTES * 60_000);
   check('nothing arrives before the interval is up', at(hour * 3).count === 0);
-  check('one heart at four hours', at(hour * 4).count === 1, `${at(hour * 4).count}`);
+  check('one at four hours', at(hour * 4).count === 1, `${at(hour * 4).count}`);
   check('two at eight', at(hour * 8).count === 2, `${at(hour * 8).count}`);
-  check('full at twelve', at(hour * 12).count === MAX_LIVES, `${at(hour * 12).count}`);
+  check('full at twelve', at(hour * 12).count === MAX_ENERGY, `${at(hour * 12).count}`);
   /* And it stops there — a tank that kept counting would hand back a week of
-     hearts to somebody returning from holiday. */
-  check('and never overfills', at(hour * 200).count === MAX_LIVES, `${at(hour * 200).count}`);
+     rounds to somebody returning from holiday. */
+  check('and never overfills', at(hour * 200).count === MAX_ENERGY, `${at(hour * 200).count}`);
   check('a full tank has nothing to count down to', at(hour * 200).nextAt === null);
 
   /* A state saved before the anchor existed reads as a full tank, never as an
      empty one: punishing an existing player for a schema change is the one
      outcome that is clearly wrong. */
-  const legacy = { ...base } as Record<string, unknown>;
-  delete legacy.livesAt;
+  /* Built by dropping the key rather than by casting to a bag of unknowns and
+     deleting it: `energyAt` is *optional* on `PlayerState`, so a state that
+     genuinely lacks it is a state the type already admits, and the rest pattern
+     is what says so. The cast that used to be here asserted the fixture back
+     into a type it had just been widened out of — which is a cast that can only
+     ever succeed, over a shape nothing checked. */
+  const { energyAt: _noAnchor, ...legacy } = base;
   check('a state with no anchor reads as a full tank',
-    livesOf(legacy as ReturnType<typeof seedPlayer>, new Date(t0)).count === MAX_LIVES);
+    energyOf(legacy, new Date(t0)).count === MAX_ENERGY);
+
+  /* And so does a state stored under the *old* field names, which is the same
+     branch reached for a different reason: `lives` / `livesAt` were what this
+     pair was called before the pool became energy, so a session saved by that
+     build has neither field. It is whole again rather than empty, which is the
+     forgiving direction and the only defensible one — the alternative charges a
+     player for a rename they had no part in. */
+  /* This one is not expressible as a `PlayerState` and must not be pretended
+     into one: `energy` is required and `lives` is not a field at all. That is
+     the whole fixture — it is not a state this build can *construct*, it is a
+     state this build has to be able to *read*, so it is built the way it
+     arrives, parsed out of storage. The round trip is the assertion: whatever
+     survives `JSON` is what a session written by that build actually is. */
+  const renamed = JSON.parse(
+    JSON.stringify({ ...base, energy: undefined, energyAt: undefined, lives: 0, livesAt: t0 }),
+  ) as PlayerState;
+  check('a session stored under the old names reads as a full tank',
+    energyOf(renamed, new Date(t0)).count === MAX_ENERGY);
+
+  /*
+   * **How big a day is, now that every round costs one.**
+   *
+   * The tank once, plus what the clock returns over twenty-four hours. It is
+   * asserted rather than left as arithmetic in a comment because it is the
+   * *whole* bound on a day: the decay curve that used to sit beside it is gone,
+   * so if this number moves nothing else is left to notice.
+   */
+  const perDay = MAX_ENERGY + Math.floor(1440 / ENERGY_REGEN_MINUTES);
+  check('a day is nine finished rounds from a full tank', perDay === 9, `${perDay}`);
+  /* And the payout does not know how many of them have been played. That is the
+     other half of "energy is the only limiter", and the half a reintroduced
+     curve would break first — a whole day of one game pays a flat rate. */
+  let allDay = awardRound(base, win, day('2026-08-03'));
+  for (let i = 1; i < perDay; i += 1) allDay = awardRound(allDay, win, day('2026-08-03'));
+  check('…and every one of them pays the same as the first',
+    allDay.points === first.points * perDay, `${allDay.points} pts over ${perDay} rounds`);
 }
 
 console.log('\nplaying — streak freezes');
@@ -1128,18 +1407,24 @@ console.log('\nplaying — streak freezes');
   const rich = awardRound({ ...sixth, freezes: MAX_FREEZES }, win, day('2026-08-04'));
   check('holdings are capped', freezesOf(rich) === MAX_FREEZES);
 
-  /* A session stored before the field existed. */
-  const old = { ...held(0) } as Record<string, unknown>;
-  delete old.freezes;
-  check('a state with no freezes field reads as zero',
-    freezesOf(old as ReturnType<typeof seedPlayer>) === 0);
+  /* A session stored before the field existed. Optional on `PlayerState`, so
+     the key is dropped rather than cast away — see the anchor fixture above. */
+  const { freezes: _noneHeld, ...old } = held(0);
+  check('a state with no freezes field reads as zero', freezesOf(old) === 0);
 }
 
 console.log('\ncopy that quotes a constant');
 {
   /*
-   * The L-Earn FAQ says, in five languages, that a life comes back "every four
+   * The L-Earn FAQ says, in five languages, that it comes back "every four
    * hours, up to three".
+   *
+   * The two *figures* survived the rename — the interval and the ceiling did
+   * not move — but the sentences around them still call the pool lives, and
+   * `src/site/i18n/` is not this change's to edit. Both checks below are about
+   * the numbers and neither reads the noun, so they hold either way; the copy
+   * pass that renames the word has to leave "four hours" and "up to three"
+   * where they are, and this is what will say so if it does not.
    *
    * Those two figures are written as **words**, not as holes, and that is
    * deliberate against the usual rule. Substituting a numeral where a word
@@ -1152,11 +1437,11 @@ console.log('\ncopy that quotes a constant');
    * it, and this is the thing that says so.
    */
   check(`the FAQ line "every four hours" still matches the code`,
-    LIFE_REGEN_MINUTES === 240,
-    `${LIFE_REGEN_MINUTES} min · the copy says four hours`);
-  check('…and its "up to three" still matches MAX_LIVES',
-    MAX_LIVES === 3,
-    `${MAX_LIVES} · the copy says three`);
+    ENERGY_REGEN_MINUTES === 240,
+    `${ENERGY_REGEN_MINUTES} min · the copy says four hours`);
+  check('…and its "up to three" still matches MAX_ENERGY',
+    MAX_ENERGY === 3,
+    `${MAX_ENERGY} · the copy says three`);
 
   /* And the copy really does still say it, so the check above cannot pass
      against a sentence that was quietly reworded. */
@@ -1225,15 +1510,17 @@ console.log('\nflying — scoring');
 
   const cleared = awardFlight(base, full, day('2026-08-03'));
   check('a cleared flight pays per gap', cleared.points === 5, `${cleared.points} pts`);
-  check('a win costs no life', cleared.lives === MAX_LIVES);
+  check('a cleared flight spends one energy', cleared.energy === MAX_ENERGY - 1,
+    `${cleared.energy} left`);
 
   const crash = awardFlight(base, { ...full, cleared: 3, won: false }, day('2026-08-03'));
-  /* A crash costs a heart, like any other loss. Squawk is the game most likely
-     to empty the tank — it is the only one where crashing *is* the mechanic —
-     which is exactly why it was made gentler at the same time as hearts started
-     costing again: at four hours a heart, three bad flights used to shut the
-     page until tomorrow, and now it is a wait you can sit out. */
-  check('a crash costs a heart', crash.lives === MAX_LIVES - 1, `${crash.lives} left`);
+  /* And a crash spends the same one. Squawk is the game where crashing *is* the
+     mechanic, so it used to be the one that emptied the tank while the other six
+     left it alone — which is exactly the asymmetry that went when every finished
+     round started costing. Four hours a unit is what keeps three bad flights a
+     wait you can sit out rather than the rest of the day. */
+  check('a crashed flight spends the same one', crash.energy === MAX_ENERGY - 1,
+    `${crash.energy} left`);
   check('…and still banks the gaps flown', crash.points === 3, `${crash.points} pts`);
   check('the whole round is charged to answered', crash.answered === 5, `${crash.answered}`);
   check('…and only the gaps flown count as correct', crash.correct === 3, `${crash.correct}`);
@@ -1272,7 +1559,8 @@ console.log('\nflying — scoring');
   check('gaps past the target still pay', long.points === 15, `${long.points} pts`);
   check('…while correct saturates at the target', long.correct === 5, `${long.correct}`);
   check('…and answered still counts one round', long.answered === 5, `${long.answered}`);
-  check('…and the round is banked, so it costs no life', long.lives === MAX_LIVES);
+  check('…and it costs the one energy every finished round costs',
+    long.energy === MAX_ENERGY - 1);
 
   check('the payout helper and the balance agree',
     flightPoints(15, 1) === 15 && bankableGaps(15) === 15);
@@ -1287,14 +1575,16 @@ console.log('\nflying — scoring');
     `${absurd.points} pts`);
 
   /* A `won` the client claims but the gap count does not support is recorded as
-     the loss it was — and now that a loss costs a heart again, that flag is what
-     charges one. It is the only place a modified client could have asked for a
-     free round, since the flight reports a single integer and posts no moves. */
+     the loss it was. The flag no longer decides what the round costs — both
+     sides pay one — so what it still buys a modified client is the streak, the
+     accuracy column and the word on the result card, and it is still worth
+     refusing: the flight reports a single integer and posts no moves, so this
+     is the only claim in the game nothing else can check. */
   const fake = awardFlight(base, { ...full, cleared: 4, won: true }, day('2026-08-03'));
   check('a win that did not reach the target is a loss',
     flightAward({ ...full, cleared: 4, won: true }).won === false);
-  check('…and is charged a heart like any other loss', fake.lives === MAX_LIVES - 1,
-    `${fake.lives} left`);
+  check('…and is charged the same energy either way', fake.energy === MAX_ENERGY - 1,
+    `${fake.energy} left`);
 
   const fractional = awardFlight(base, { ...full, cleared: 3.9, won: false }, day('2026-08-03'));
   check('a fractional score floors', fractional.points === 3, `${fractional.points} pts`);
@@ -1474,9 +1764,10 @@ console.log('\nflying — is it playable');
   /*
    * Both halves matter, and the first build had neither.
    *
-   * Too easy and there is no game; too hard and the bank line is a life
-   * shredder, because crashing is the whole mechanic and three crashes closes
-   * L-Earn for the day. The original is famously brutal, so the bar is not
+   * Too easy and there is no game; too hard and the bank line is an energy
+   * shredder — though less so than it was: every round costs one now whether it
+   * is flown well or badly, so a hard bank line costs points rather than the
+   * tank. The original is famously brutal, so the bar is not
    * "always survives" — it is that a plain rule-following pilot banks a round
    * most of the time and still, eventually, dies.
    */
@@ -1702,10 +1993,16 @@ console.log('\nsession');
     type: 'business',
     business: blankBusiness(),
     player: null,
+    /* Not `EMPTY_PROFILE`: the round trip is only worth running over an object
+       with something in it, and the profile is the second nested object on the
+       account — the first one this check would have missed. */
+    profile: { ...EMPTY_PROFILE, username: 'marta', city: 'Kraków' },
+    onboardedAt: null,
   };
   const back = JSON.parse(JSON.stringify(account)) as Account;
   check('an account survives a round trip', back.id === account.id && back.type === 'business');
   check('…including the listing', back.business?.spoken.join(',') === 'pl,en');
+  check('…and the profile', back.profile.username === 'marta' && back.profile.city === 'Kraków');
 
   const found = findUser(SEED_USERS, 'USER1@PAY-LEZ.COM', 'user123');
   check('the address is matched case-insensitively', found.ok);
@@ -1790,9 +2087,14 @@ console.log('\nsigning up');
 
   const owner = newUser({ ...good, email: 'b@example.com', type: 'business' }, 'u_test2', '2026-08-03');
   check('a new owner starts with no listing', owner.business === null);
-  check('…which is what sends them to setup', resolveRoute('signin', {
-    id: owner.id, name: owner.name, email: owner.email, type: 'business', business: null, player: null,
-  }) === 'business-setup');
+  /* Through `toAccount`, not through a hand-copied literal. The literal that
+     used to be here restated six of the record's fields and was already two
+     short of an account — `profile` and `onboardedAt` postdate it — so it was
+     asserting about a shape the app never builds. `toAccount` is the one
+     conversion the directory actually performs, and the row it is handed is the
+     one `newUser` just produced. */
+  check('…which is what sends them to setup',
+    resolveRoute('signin', toAccount(owner)) === 'business-setup');
   check('…and with no wallet', owner.player === null);
   check('the address is trimmed, the password is not touched', newUser({ ...good, email: ' a@b.co ' }, 'u_t3', '2026-08-03').email === 'a@b.co');
 }
@@ -1800,14 +2102,20 @@ console.log('\nsigning up');
 console.log('\nthe console');
 {
   /*
-   * The analytics view derives a whole month from one number, so the checks here
-   * are the ones that derivation can get wrong: a headline that disagrees with
-   * the cards under it, a quiet venue showing a fraction of a customer, and a
+   * The analytics view used to derive a whole month from one seeded `scale`.
+   * It derives nothing now — `GET /v1/admin/venues` answers a visit count and a
+   * customer count and nothing else — so the checks here are the ones *that*
+   * can get wrong: a headline that disagrees with the cards under it, a figure
+   * nobody counted rendered as a zero somebody could read as a finding, and a
    * date filter that does not filter.
    */
-  const busy = serviceMetrics(1);
-  const quiet = serviceMetrics(0.34);
-  const fresh = serviceMetrics(0);
+  const row = (visits: number, customers: number) => ({
+    id: 'v-test', name: 'Test', city: 'Kraków', category: 'cafe', status: 'live',
+    verified_at: null, created_at: '2026-08-03', owner: null, visits, customers,
+  });
+  const busy = serviceMetricsFrom(row(40, 12));
+  const quiet = serviceMetricsFrom(row(4, 2));
+  const fresh = serviceMetrics();
 
   check(
     'engagement is the sum of its parts',
@@ -1824,33 +2132,74 @@ console.log('\nthe console');
     busy.loyalty.awarded === busy.scans * busy.loyalty.perVisit,
   );
 
-  check('a quieter venue is quieter everywhere', quiet.maps < busy.maps && quiet.scans < busy.scans);
-  check('…including its tables', voucherRowsFor(0.34).length < voucherRowsFor(1).length);
-  check('every count is a whole number', Number.isInteger(quiet.maps) && Number.isInteger(quiet.engagement));
+  /* "Quieter everywhere" was the whole argument for deriving a month from one
+     seed. Three figures have a source now, so it is those three it has to hold
+     across — and it still has to hold, because the header, the card and the
+     venue list all read the same object. */
+  check(
+    'a quieter venue is quieter in every figure that has a source',
+    quiet.scans < busy.scans && quiet.customers < busy.customers &&
+      quiet.engagement < busy.engagement,
+  );
+  check('…and both of them know they were counted', busy.measured && quiet.measured);
+  check('every count is a whole number', Number.isInteger(quiet.scans) && Number.isInteger(quiet.engagement));
 
   /* A venue with no traffic is the state every reference screenshot was taken
      in, and the state the one real listing on this console is genuinely in. */
   check('a new venue has nothing', fresh.engagement === 0 && fresh.scans === 0);
-  check('…no rows', redemptionsFor(0).length === 0 && scanRowsFor(0).length === 0);
+  /* All three tables are empty, and take no argument to be empty with. They
+     were slices of hand-written rows cut to `rows.length × scale`; there is no
+     operator-facing endpoint behind any of them. */
+  check(
+    '…no rows',
+    redemptionsFor().length === 0 && scanRowsFor().length === 0 && voucherRowsFor().length === 0,
+  );
   check('…and no insights', fresh.cities.length === 0 && fresh.languages.length === 0);
-  check('…but it still keeps its settings', fresh.loyalty.perVisit > 0 && fresh.loyalty.cooldown > 0);
-  check('…and does not claim a discount it never gave', fresh.discount === 0);
-  check('…or an average basket nobody filled', fresh.voucherCampaign.basket === 0);
+  /*
+   * And it says so, rather than saying zero.
+   *
+   * The inversion of the check that used to stand here — the unmeasured month
+   * kept its loyalty settings, because a `scale: 0` venue was a real venue with
+   * a real `perVisit`. Nothing on this object came off a count now, so the one
+   * field that is not a number is what every panel branches on, and every field
+   * that *is* a number has to be a plain zero underneath it. A plausible
+   * default (a "1 point per visit" nobody set) is the failure mode: it reads as
+   * a finding, and the console exists to tell an operator things they cannot
+   * see from anywhere else.
+   */
+  const zeroed = (value: unknown): boolean =>
+    typeof value === 'number'
+      ? value === 0
+      : typeof value === 'boolean'
+        ? value === false
+        : Array.isArray(value)
+          ? value.every(zeroed)
+          : typeof value === 'object' && value !== null
+            ? Object.values(value).every(zeroed)
+            : true;
+  check('…and is marked unmeasured rather than empty', fresh.measured === false);
+  check('…with nothing standing in for a figure nobody counted', zeroed(fresh));
+  check('…including a discount it never gave', fresh.discount === 0);
+  check('…and an average basket nobody filled', fresh.voucherCampaign.basket === 0);
 
-  check('the trend is a month long', busy.trend.length === 30 && busy.scanTrend.length === 30);
+  check('the trend is a month long', fresh.trend.length === 30 && fresh.scanTrend.length === 30);
 
   /* The four ranges on every table. Rows carry "days ago", so the filter is the
-     same comparison the table itself runs. */
-  const rows = redemptionsFor(1);
-  check('all time keeps everything', rows.every((row) => inRange(row.ago, RANGES[0])));
+     same comparison the table itself runs — checked against a fixture, because
+     the tables it used to run over are empty and a filter proved on no rows is
+     not proved at all. */
+  const ago = [0, 3, 6, 12, 45, 200];
+  check('all time keeps everything', ago.filter((a) => inRange(a, RANGES[0])).length === ago.length);
   check(
     'last 7 days drops the older rows',
-    rows.filter((row) => inRange(row.ago, RANGES[1])).length < rows.length,
+    ago.filter((a) => inRange(a, RANGES[1])).length < ago.length,
   );
   check(
     'the ranges nest',
-    rows.filter((r) => inRange(r.ago, RANGES[1])).length <=
-      rows.filter((r) => inRange(r.ago, RANGES[2])).length,
+    ago.filter((a) => inRange(a, RANGES[1])).length <=
+      ago.filter((a) => inRange(a, RANGES[2])).length &&
+      ago.filter((a) => inRange(a, RANGES[2])).length <=
+        ago.filter((a) => inRange(a, RANGES[3])).length,
   );
 
   const day = dayLabel(3, new Date('2026-08-03T12:00:00'));
@@ -1977,11 +2326,20 @@ console.log('\nthe partner dashboard');
     'cost per new customer follows the total',
     Math.abs(PD_PER_NEW * totals.newCustomers - PD_COST_TOTAL) < 1e-6,
   );
-  /* The headline figure and the last column of the trend beside it are the same
-     number, not two figures for one thing. */
-  const trend = metricsFor(RANGE_DAYS).perNewTrend;
-  check('the trend ends on that same figure', trend[trend.length - 1] === PD_PER_NEW);
-  check('…and is still three months wide', trend.length === 3);
+  /*
+   * The trend beside that headline is empty, and empty is the finding.
+   *
+   * It used to be three months ending on `PD_PER_NEW` — the same number twice,
+   * which was the property checked here. Three *zeros* would not be the same
+   * bug, it would be a worse one: a cost-per-new-customer history is three
+   * measurements, and three zeros is three months of claiming the venue spent
+   * nothing to win nobody. So the length is what is asserted now, and the
+   * headline it used to end on is covered by the check above it.
+   */
+  check(
+    'the cost-per-new-customer trend is empty rather than zeroed',
+    metricsFor(RANGE_DAYS).perNewTrend.length === 0,
+  );
 
   /*
    * The range picker.
@@ -2027,27 +2385,59 @@ console.log('\nthe partner dashboard');
     'cost per new customer follows the total in every window',
     windows.every((m) => Math.abs(m.perNew * m.totals.newCustomers - PD_COST_TOTAL) < 1e-6),
   );
+  /* Each window is built and memoised separately, so the empty trend has to be
+     empty in all four and not only in the default one. */
   check(
-    'the trend ends on the headline in every window',
-    windows.every((m) => m.perNewTrend[m.perNewTrend.length - 1] === m.perNew),
+    'the trend is empty in every window',
+    windows.every((m) => m.perNewTrend.length === 0),
   );
   check(
     'each window knows its own place in the label arrays',
     windows.every((m, i) => m.index === i),
   );
 
-  /* The heat map is alpha on one accent, so an empty cell and a busy one have
-     to differ by density alone — which needs a real range to work with. */
+  /*
+   * The heat map is alpha on one accent, so an empty cell and a busy one differ
+   * by density alone — which needs a real range to work with. The seeded week
+   * that supplied one is gone: it was three gaussians with a hard cut on
+   * Tuesday and Wednesday afternoons, and the quiet block it invented was
+   * quoted as a *finding* on two screens and by the assistant.
+   *
+   * So the shape is what is checked here, and the narrowing that fills it —
+   * `analytics.heatmap` returns a 7 × 24 grid and this map draws fourteen of
+   * those hours.
+   */
   check('the heat map is a week', PD_HEAT.length === 7);
   check('…fourteen hours wide', PD_HEAT.every((row) => row.length === HEAT_HOURS.length));
-  check('…with a range to shade', PD_HEAT_MAX > Math.min(...PD_HEAT.flat()));
-  /* Tuesday and Wednesday, 14:00–16:00 is the quiet block every "fill your
-     quiet hours" prompt in the product points at. If the generator stops
-     producing it, three sentences on two screens become false. */
+  /* Nothing in it, and a max of 0 is what the screen reads as "no range to
+     shade" — it renders its empty state rather than a uniformly blank grid,
+     which would look like a week nobody came in. */
+  check('…with no range to shade until something is counted', PD_HEAT_MAX === 0);
+
   const hour15 = HEAT_HOURS.indexOf(15);
+  const week = Array.from({ length: 7 }, (_, day) =>
+    Array.from({ length: 24 }, (_, hour) =>
+      /* 04:00 is not a hole in the trade, it is a shut door — the hours outside
+         the map have to be dropped rather than shaded, so the fixture puts its
+         largest number in one. */
+      hour === 3 ? 999 : day === 2 && hour === 15 ? 500 : day + hour,
+    ),
+  );
+  const narrowed = heatFromApi(week);
   check(
-    'Tuesday afternoon is the quiet one',
-    PD_HEAT[1][hour15] < PD_HEAT[0][hour15] && PD_HEAT[2][hour15] < PD_HEAT[3][hour15],
+    'the server week narrows to the hours the map draws',
+    narrowed.length === 7 && narrowed.every((row) => row.length === HEAT_HOURS.length),
+  );
+  check(
+    '…keeping the busiest hour where it happened',
+    narrowed[2][hour15] === 500 && Math.max(...narrowed.flat()) === 500,
+  );
+  check('…and dropping the hours nobody is open for', narrowed.flat().every((n) => n !== 999));
+  /* A grid with a day missing is what a venue open six days a week can return,
+     and an `undefined` row would put `NaN` through the alpha of every cell. */
+  check(
+    '…while a grid short of a day reads as zeros, not as nothing',
+    heatFromApi([[]]).length === 7 && heatFromApi([[]]).flat().every((n) => n === 0),
   );
 
   /* Normalised paths: every point has to land inside the box, or a line clips
@@ -2060,79 +2450,113 @@ console.log('\nthe partner dashboard');
   check('a one-point series draws nothing', polyline([1]) === '');
   check('the area closes to the floor', polyarea(PD_SERIES.visits).endsWith('L0 100 Z'));
 
-  /* Every index in the roster is an index into a dictionary array. A stale one
-     renders `undefined` rather than failing, which is why it is checked here. */
-  check(
-    'roster patterns are in range',
-    PD_ROSTER.every((r) => r.pattern >= 0 && r.pattern < en.dashboard.customers.patterns.length),
-  );
-  check(
-    'roster rewards are in range',
-    PD_ROSTER.every((r) => r.reward >= 0 && r.reward < en.dashboard.customers.rewards.length),
-  );
-  check(
-    'roster deals point at real deals',
-    PD_ROSTER.every((r) => r.deals.every((d) => d >= 0 && d < en.dashboard.deals.rows.length)),
-  );
-  check(
-    'roster campaigns point at real campaigns',
-    PD_ROSTER.every((r) => r.camp === -1 || en.dashboard.campaigns.rows[r.camp] !== undefined),
-  );
-  check(
-    'a customer has a tier or stamps, never both',
-    PD_ROSTER.every((r) => (r.tier > 0) !== (r.so > 0)),
-  );
+  /*
+   * **What used to be here, and why none of it is.**
+   *
+   * The roster and the deals table were checked as index alignments into
+   * `en.dashboard.customers` and `en.dashboard.deals`: a pattern, a reward, an
+   * audience, a campaign, a tier, a name, a window, a forecast date. Nine
+   * checks, all of the form `PD_X.every(...)`.
+   *
+   * `PD_ROSTER` and `PD_DEALS` are `[]` now — an identified customer and a live
+   * deal both arrive from the server carrying their own words, and the
+   * dictionary arrays beside them are unreachable copy — and `RosterEntry` and
+   * `PartnerDeal` no longer have most of the fields those checks read. But
+   * `.every()` over an empty array is `true`, so all nine went on passing by
+   * having nothing to look at. An assertion that cannot fail is worse than no
+   * assertion, so they are deleted rather than re-typed around.
+   *
+   * What replaces them is the part that is still live: the pure functions a
+   * deal goes through on its way to the screen. `dealFromApi` is what
+   * `#/dashboard` calls on every row `GET /v1/partner/venues/:id/deals`
+   * returns — three call sites — and it is what a renamed response field breaks
+   * first.
+   */
+  const dealRow: Parameters<typeof dealFromApi>[0] = {
+    id: 'd_1',
+    venue_id: 'v_1',
+    discount_text: '  Free filter coffee  ',
+    status: 'live',
+    valid_from: '2026-08-01',
+    valid_to: '2026-08-31',
+    target_audience: null,
+    cap_claims: null,
+    spend_minor: 12_300,
+    seen_count: 400,
+    opened_count: 90,
+    claimed_count: 31,
+    funnel: {
+      seen: 400,
+      opened: 90,
+      claimed: 31,
+      openRate: 0.225,
+      claimRate: 0.0775,
+      spendMinor: 12_300,
+      capClaims: null,
+      capSpendMinor: null,
+    },
+    translations: {
+      languages: ['en', 'pl', 'uz', 'ru', 'uk'],
+      filled: ['en', 'pl'],
+      missing: ['uz', 'ru', 'uk'],
+    },
+  };
+  const deal = dealFromApi(dealRow, (minor) => minor / 100);
 
-  /* The deals table is index-aligned with four dictionary arrays at once. */
   check(
-    'every deal has a name, a window, hours and an audience',
-    PD_DEALS.every(
-      (_, i) =>
-        en.dashboard.deals.rows[i] !== undefined &&
-        en.dashboard.deals.windows[i] !== undefined &&
-        en.dashboard.deals.when[i] !== undefined,
-    ),
+    'a server deal keeps its funnel',
+    deal.seen === 400 && deal.opened === 90 && deal.claimed === 31,
+  );
+  /* The mapper takes the row's minor units and the caller's rate, and the two
+     meet exactly once — a second division somewhere down the screen is how a
+     spend figure ends up a hundredth of itself. */
+  check('…with its spend converted once, by the caller', deal.cost === 123, `${deal.cost}`);
+  /* `cap_claims: null` is "no limit", and the screen branches on `limit > 0`.
+     Reading it as anything but 0 would put a forecast on a deal that has
+     nothing to hit. */
+  check('…and no cap reading as no limit', deal.limit === 0);
+  check('…the badge trimmed to the venue’s own words', deal.badge === 'Free filter coffee');
+  /* A deal with nothing written on it says nothing, rather than rendering the
+     empty string as a gap in a bold tag — the `|| ''` in the mapper. */
+  check(
+    '…and an untitled deal staying untitled',
+    dealFromApi({ ...dealRow, discount_text: null }, (m) => m).badge === '',
   );
   check(
-    'every deal aims at a real audience',
-    PD_DEALS.every((d) => PD_AUDIENCES[d.audience] !== undefined),
-  );
-  check(
-    'nobody claims a deal they never saw',
-    PD_DEALS.every((d) => d.claimed <= d.opened || d.seen === 0),
-  );
-  check(
-    'a notification never reaches more than the audience',
-    PD_DEALS.every((d) => d.notify.reach <= d.notify.match),
+    'the language count is what is filled, not what is offered',
+    deal.langs === 2 && deal.missing.length === 3,
   );
 
   /*
    * The expanded row draws the notification as a funnel — notified, opened,
-   * came in — and a funnel that widens is not a funnel. `dealNotify` derives
-   * the middle from the send and the last from the *claims*, so the two are
-   * only guaranteed to stack while the rates keep that order; this is the check
-   * that says so.
+   * came in — and a funnel that widens is not a funnel. `dealNotify` cannot see
+   * the sends (`partners.dealsFor` does not join `deal_pushes`), so every stage
+   * is zero and every claim is unattributed. Both halves are checked, because
+   * the failure that matters is a stage quietly acquiring a share of claims it
+   * cannot account for — and `measured` is what the panel branches on, so a
+   * zero funnel drawn as a *measured* one is the same lie one screen over.
    */
+  const notify = dealNotify(deal);
   check(
     'the notification funnel reads downward',
-    PD_DEALS.every((d) => {
-      const n = dealNotify(d);
-      return n.opened <= n.notified && n.camein <= n.opened;
-    }),
+    notify.opened <= notify.notified && notify.camein <= notify.opened,
   );
   check(
     'a notification never claims more than the deal got',
-    PD_DEALS.every((d) => dealNotify(d).camein + dealNotify(d).alone === d.claimed),
+    notify.camein + notify.alone === deal.claimed,
   );
-  check(
-    'every deal says what it gives away',
-    PD_DEALS.every((d) => en.dashboard.deals.act[d.state] !== undefined),
-  );
-  /* Only a deal with a limit gets the forecast, and the forecast names a date. */
-  check(
-    'a claim limit has a date to forecast against',
-    PD_DEALS.every((d, i) => d.limit === 0 || en.dashboard.deals.limitDates[i] !== ''),
-  );
+  check('…and an unmeasured funnel says so', notify.measured === false);
+
+  /* `en.dashboard.deals.act` — the row's second button, by state — was checked
+     here as `act[d.state] !== undefined` over the empty `PD_DEALS`. It is not
+     re-pointed at the state union because it cannot pass: `PartnerDeal['state']`
+     gained `'draft'` and `'ended'`, and the map still holds four keys. Nothing
+     reads `act` today (the deals table lost its second button with the invented
+     rows), so nothing is broken on screen — but the identical four-of-six gap
+     is in `deals.states`, which the table *does* read, behind a
+     `?? deal.state` fallback that prints the raw lowercase key. Both need the
+     two keys in all five dictionaries before either is worth asserting, and the
+     dictionaries are not this change's to edit. */
 
   /*
    * The assistant writes the deal text in every language the product ships, and
@@ -2162,40 +2586,67 @@ console.log('\nthe partner dashboard');
     en.dashboard.assistant.dayChoices.length === 3,
   );
   /*
-   * The budget warning is not a demo switch here — it fires when the budget
-   * asked for is more than the month has room for. Both halves have to be
-   * reachable or the panel is dead code: the smallest offer must fit and the
-   * largest must not.
+   * The budget warning used to be checked from both sides — the smallest offer
+   * fitting the month's remaining room and the largest not — and `hotRoom` was
+   * the seed that made both reachable. It was also a claim about a venue that
+   * nobody had measured, so it is 0 now, and so is every other claim on this
+   * object.
+   *
+   * That is the state the screen is built for: with nothing measured the
+   * assistant refuses to draft rather than filling a `fill()` hole with a zero
+   * it cannot stand behind, which is exactly the failure CLAUDE.md's rule for
+   * this panel exists to prevent. The refusal itself is a branch in a React
+   * component, so what is checked here is its condition — and the thing that
+   * would silently re-arm the panel is one of these fields quietly acquiring a
+   * plausible default.
    */
+  check('the assistant has nothing measured to quote', PD_ASSIST.measured === false);
   check(
-    'the assistant sizes down a budget it cannot afford',
-    PD_ASSIST.budgets[0] <= PD_ASSIST.hotRoom &&
-      PD_ASSIST.budgets[PD_ASSIST.budgets.length - 1] > PD_ASSIST.hotRoom,
+    '…and no figure standing in for one',
+    Object.entries(PD_ASSIST)
+      .filter(([key]) => key !== 'measured' && key !== 'budgets' && key !== 'weeks')
+      .every(([, value]) =>
+        typeof value === 'number'
+          ? value === 0
+          : typeof value === 'string'
+            ? value === ''
+            : Array.isArray(value) && value.length === 0,
+      ),
+  );
+  /* `budgets` and `weeks` survive the cut because they are not measurements —
+     they are the steps on a chooser, and a chooser with no steps is a broken
+     control rather than an honest one. Checked just above.
+
+     And the panel needs something to say instead of a draft. `empty` is
+     index-aligned with the rail's screens minus the profile — the one screen
+     that is a form rather than a report — and the assistant reads index 5, so a
+     short array renders `undefined` here rather than throwing. */
+  check(
+    'every screen but the profile says what would fill it',
+    en.dashboard.empty.length === en.dashboard.screens.length - 1,
+    `${en.dashboard.empty.length} of ${en.dashboard.screens.length}`,
+  );
+  check(
+    '…including the one the assistant falls back to',
+    en.dashboard.empty.every((e) => e.title.trim() !== '' && e.body.trim() !== ''),
   );
 
-  /* Scans are generated per index, so the whole page has to come out stable and
-     in range — the progress bar divides by `need`. */
-  check('a scan never over-fills its card', PD_SCANS.every((s) => s.done <= s.need));
+  /*
+   * The scan log is the same story as the roster above: forty-eight rows were
+   * generated from the row index — a campaign card with a `done`/`need`
+   * progress bar, a name looked up in `PD_SCAN_NAMES` — and there is no
+   * endpoint that lists a venue's scans, so `PD_SCANS` is `[]` and `ScanRow`
+   * has none of those fields. Three of the five checks read them and would not
+   * compile; the other two passed over nothing. All five are gone, and the
+   * screen says the log is unavailable rather than drawing one.
+   *
+   * `PD_SCAN_TOTAL` is what is left, and it is worth one line: the pager
+   * divides by `PD_SCAN_PAGE`, and a page size of 0 is a division by zero on a
+   * screen with nothing to page.
+   */
   check(
-    'a scan with no campaign has no card',
-    PD_SCANS.every((s) => (s.campaign === -1) === (s.need === 0)),
-  );
-  check(
-    'scan clock times are real',
-    PD_SCANS.every((s) => s.hour >= 0 && s.hour < 24 && s.minute >= 0 && s.minute < 60),
-  );
-  check(
-    'every scan names someone',
-    PD_SCANS.every((s) => PD_SCAN_NAMES[s.who] !== undefined),
-  );
-  /* "Newest first" is the screen's own subtitle, so it has to be true. */
-  check(
-    'scans are newest first',
-    PD_SCANS.every(
-      (s, i) =>
-        i === 0 ||
-        PD_SCANS[i - 1].hour * 60 + PD_SCANS[i - 1].minute >= s.hour * 60 + s.minute,
-    ),
+    'an empty scan log still has a page size to divide by',
+    PD_SCANS.length === 0 && PD_SCAN_TOTAL === 0 && PD_SCAN_PAGE > 0,
   );
 
   /*

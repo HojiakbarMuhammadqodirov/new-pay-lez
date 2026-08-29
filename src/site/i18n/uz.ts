@@ -225,6 +225,14 @@ export const uz: Dictionary = {
       export: 'CSV yuklab olish',
       noRows: 'Bu filtrlarga hech narsa mos kelmadi.',
 
+      unmeasured: {
+        noSource: 'O‘lchanmagan — operator o‘qiy oladigan hech narsa buni hali xabar qilmaydi.',
+        measured:
+          'Tashriflar va mijozlar sanaladi, GET /v1/admin/venues dan. Bu ekrandagi qolgan hamma narsa hamkorga tegishli yoki umuman yig‘ilmaydi va nol emas, «o‘lchanmagan» deb ko‘rsatiladi.',
+        notConnected:
+          'Backend javob bermayapti, shuning uchun hatto tashrif va mijoz sonlarini ham o‘qib bo‘lmaydi. Bu nol emas — biz so‘rab ololmadik.',
+      },
+
       states: { live: 'Faol', paused: 'To‘xtatilgan' },
       status: { used: 'Ishlatilgan', active: 'Ishlatilmagan' },
 
@@ -411,7 +419,8 @@ export const uz: Dictionary = {
 
     score: 'Hisob',
     streak: 'Ketma-ketlik',
-    lives: 'Jonlar',
+    energy: 'Energiya',
+    roundMistakes: 'Qolgan xatolar',
     freezes: 'Muzlatishlar',
     answered: 'Javoblar',
     correctLabel: 'To‘g‘ri',
@@ -444,7 +453,9 @@ export const uz: Dictionary = {
     reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
     start: 'O‘yinni boshlash',
     play: 'O‘ynash',
-    noLives: 'Jonlar tugadi',
+    noEnergy: 'Energiya tugadi',
+    energyFull: 'To‘la — kutadigan narsa yo‘q',
+    energyCost: 'Har raundga 1 ta',
     loading: 'Tarqatilmoqda…',
 
     question: '{total} dan {n}-savol',
@@ -458,8 +469,6 @@ export const uz: Dictionary = {
     resultScore: '{total} dan {correct} tasi to‘g‘ri',
     resultPoints: '+{points} ball',
     resultNone: 'Bu raundda ball yo‘q.',
-    resultDecay: 'Bugun bu o‘yinning {n}-raundi · {scored} to‘plandi, {points} yozildi',
-    resultDecayNone: 'Bugun bu o‘yinning {n}-raundi · takrorlar endi ball bermaydi. Boshqa o‘yin hamon to‘liq to‘laydi.',
     resultToward: 'Yana {points} ball va birinchi vaucher sizniki.',
     resultAfford: 'Vaucher uchun yetarli — borib oling.',
     resultSpend: 'Ballarni sarflash',
@@ -674,6 +683,35 @@ export const uz: Dictionary = {
     ],
     notWired: 'Bu versiyada ulanmagan.',
 
+    unmeasured: {
+      noSession:
+        'Bu qurilma Paylez API’siga kirmagan, shuning uchun bu raqamlarning birortasini ham o‘qib bo‘lmaydi. Saytning o‘z kirishi hali API seansini yaratmaydi — shu paytgacha faqat operator konsoli ulana oladi.',
+      serverSilent:
+        'Server javob bermadi, shuning uchun bu yerda ko‘rsatadigan narsa yo‘q. Bu nol emas — biz so‘rab ololmadik.',
+      asking: 'Raqamlaringiz serverdan o‘qilmoqda…',
+      withheld: 'Berilmadi — buni kimligini oshkor qilmasdan aytish uchun odam juda kam.',
+      noSource: 'Server buni hali xabar qilmaydi, shuning uchun bu panelda ko‘rsatadigan narsa yo‘q.',
+      planLocked: 'Bu joyning tarifiga kirmagan.',
+      monthOnly:
+        'Raqamlar butun kalendar oy uchun beriladi — server shu oynada sanaydi. Yuqoridagi oraliq tanlagichi ularni hali qimirlatmaydi.',
+      noFindings: 'Bu oy hech narsa ajralib turmadi.',
+      tierUnit: 'Ularning har biri hisobdan {unit} chegiradi.',
+      plan: 'Ko‘rsatadigan byudjet yo‘q — bu qurilma Paylez API’siga kirmagan.',
+      assistant:
+        'Biror narsa taklif qilishdan oldin men sizning tinch soatlaringizni, byudjetlaringizni va sizga o‘xshash joylarda nima ishlashini o‘qiyman — bu qurilma esa Paylez API’siga kirmagan, shuning uchun ularning hech birini o‘qiy olmayman. Men raqamni taxmin qilib, ostiga sizning nomingizni qo‘ymayman.',
+      audience:
+        'Bu qancha odamga yetib borishini hali ayta olmaymiz — server auditoriyani e’lon qilingan aksiya uchun hisoblaydi, bu esa hali qoralama.',
+      quota:
+        'Bu tarifda nechta bildirishnoma qolganini o‘qib bo‘lmaydi — bu qurilma Paylez API’siga kirmagan.',
+    },
+
+    findings: {
+      quiet_window: 'Kuningizda to‘ldirishga arziydigan tinch oraliq bor.',
+      cost_per_new_customer: 'Yangi mijoz narxingiz o‘zgardi.',
+      second_visit_rate: 'Ikkinchi tashrif ulushingiz o‘zgardi.',
+      new_customers: 'Ilgari hech qachon kelmagan mijozlar keldi.',
+    },
+
     month: 'avgust',
     rangeLabels: ['oxirgi 7 kun', 'oxirgi 14 kun', 'oxirgi 30 kun', 'oxirgi chorak'],
 
@@ -844,9 +882,16 @@ export const uz: Dictionary = {
         'Joyingiz uchun yangilar',
         'Rus tilida gaplashuvchilar',
       ],
-      states: { live: 'Faol', scheduled: 'Rejalashtirilgan', paused: 'To‘xtatilgan', expired: 'Tugagan' },
+      states: {
+        draft: 'Qoralama',
+        live: 'Faol',
+        scheduled: 'Rejalashtirilgan',
+        paused: 'To‘xtatilgan',
+        expired: 'Muddati tugagan',
+        ended: 'Yakunlangan',
+      },
       search: 'Takliflaringiz orasidan qidirish',
-      filters: ['Hammasi', 'Faol', 'Rejalashtirilgan', 'To‘xtatilgan', 'Tugagan'],
+      filters: ['Hammasi', 'Faol', 'Rejalashtirilgan', 'To‘xtatilgan', 'Muddati tugagan'],
       count: '{total} tadan {n} ta taklif',
       sortNote:
         'Olish ulushi bo‘yicha saralangan, eng yaxshisi yuqorida. Faol va rejalashtirilganlar birinchi turadi.',
@@ -907,7 +952,14 @@ export const uz: Dictionary = {
       retro:
         'U {weeks} hafta davom etdi va {claims} ta olinish berdi — 15% li takliflaringiz o‘rtachasining taxminan uchdan biri. Kattaroq chegirma yoki bepul mahsulotni sinab ko‘ring.',
 
-      act: { live: 'Pauza', paused: 'Davom ettirish', scheduled: 'Pauza', expired: 'Nusxalash' },
+      act: {
+        draft: 'Tahrirlash',
+        live: 'Pauza',
+        paused: 'Davom ettirish',
+        scheduled: 'Pauza',
+        expired: 'Nusxalash',
+        ended: 'Nusxalash',
+      },
       pointsNote: 'Ball taklifi — kassada sizga hech narsaga tushmaydi',
       costEstimate: 'taxmin',
       costNone: 'chegirma xarajatisiz',
@@ -1747,8 +1799,8 @@ export const uz: Dictionary = {
       },
       benefits: [
         {
-          title: 'Har kuni to‘liq qiymat',
-          body: "O‘yin o‘sha kuni birinchi marta o‘ynaganingizda to‘liq to‘laydi, har takrorda esa kamroq. Ertasiga qaytsangiz, har bir o‘yin yana to‘liq qiymatga ega.",
+          title: 'Har bir raund bir xil qiymatda',
+          body: "Hech bir o‘yin ikkinchi marta o‘ynalgani uchun kamroq to‘lamaydi va bugungi raund kechagisidan arzon emas. Kunni cheklaydigan narsa — energiya: zaxirada uchta, har raundga bittadan, va har to‘rt soatda bittasi qaytadi.",
         },
         {
           title: 'Yettinchi kun: muzlatish',
@@ -1779,7 +1831,7 @@ export const uz: Dictionary = {
         },
         {
           q: "Kuniga nechta raund o‘ynay olaman?",
-          a: "Xohlaganingizcha. Raundni boshlash bepul, yutuq ham hech narsa olmaydi — jonni faqat yutqazilgan raund oladi, jonlar esa o‘zi tiklanadi: har to‘rt soatda bittadan, ko‘pi bilan uchtagacha. Cheklov yo‘q — lekin bitta o‘yin bir kun ichida har takrorda kamroq to‘laydi va oxirida umuman to‘lamaydi. Ertaga u yana to‘liq qiymatga ega.",
+          a: "To‘la zaxira bilan uchta, keyin esa qancha tiklansa shuncha. Har bir tugagan raund bitta energiya oladi — yutdingizmi, yutqazdingizmi, farqi yo‘q — energiya esa o‘zi tiklanadi: har to‘rt soatda bittadan, ko‘pi bilan uchtagacha. Takrorlangani uchun hech narsa kamroq to‘lamaydi: kunning o‘ninchi raundi birinchisi qancha bo‘lsa, shuncha turadi.",
         },
         {
           q: 'Vaucher aslida qanchaga arziydi?',
@@ -1805,6 +1857,8 @@ export const uz: Dictionary = {
 
   analytics: {
     back: "paylez’ga qaytish",
+    exampleNote:
+      'Namuna raqamlar — hisobot qanday ko‘rinishini ko‘rsatish uchun. O‘zingizniki boshqaruv panelingizda.',
     hero: {
       eyebrow: 'Hamkor tahlili',
       lines: ['Har bir skan —', 'hisobda.'],
@@ -2251,7 +2305,7 @@ export const uz: Dictionary = {
       items: [
         {
           title: 'Bir necha savolga javob bering',
-          body: "Tramvayda bir-ikki daqiqa. Har bir to‘g‘ri javob — ball, har bir o‘yin esa kuniga bir marta to‘liq to‘laydi — demak ularni yoygan bittasini surunkasiga o‘ynagandan yaxshiroq.",
+          body: "Tramvayda bir-ikki daqiqa. Har bir to‘g‘ri javob — ball, har bir raund esa qaysi o‘yin va kunning nechanchi marta bo‘lishidan qat’i nazar to‘liq to‘laydi — kunni takror emas, energiya cheklaydi.",
         },
         {
           title: 'Vaucher tanlang',
@@ -2488,6 +2542,168 @@ export const uz: Dictionary = {
     privacyVersion: 'Versiya 1.1 · 2026-yil 28-avgustdan kuchga kiradi · GDPR talablariga muvofiq',
     termsVersion: 'Versiya 1.0 · 2025-yil 24-apreldan kuchga kiradi',
   },
+  profile: {
+    eyebrow: 'Hisobingiz',
+    title: 'Profilingiz',
+    lede: 'Buni boshqa o‘yinchilar ko‘radi va biz sizning qayerdaligingizni shundan bilamiz. Bularning hech biri hech narsa bilan tekshirilmaydi — telefoningizga kod yubormaymiz, pochtangizga bosiladigan havola ham kelmaydi.',
+
+    whoLegend: 'Siz kimsiz',
+    whereLegend: 'Qayerdasiz va sizga qanday bog‘lanish mumkin',
+
+    photo: 'Surat',
+    photoChoose: 'Surat tanlang',
+    photoHelp: 'Kvadrat eng yaxshisi. U kichik nusxaga siqiladi va shu qurilmada saqlanadi.',
+    photoRemove: 'Suratni olib tashlash',
+
+    username: 'Foydalanuvchi nomi',
+    usernameHelp:
+      'Harflar, raqamlar va yakka pastki chiziqlar, {min}–{max} belgi. U faqat sizniki bo‘lishi kerak — bu reyting qatoridagi nom.',
+    usernamePlaceholder: 'dilnoza',
+    usernameErrors: {
+      length: 'Foydalanuvchi nomi {min} tadan {max} tagacha belgi bo‘ladi.',
+      shape: 'Harflar, raqamlar va ular orasidagi yakka pastki chiziqlar — ikki chetida hech narsa bo‘lmaydi.',
+      reserved: 'Bu nom band qilingan.',
+      taken: 'Bu nom allaqachon olingan.',
+    },
+
+    headline: 'O‘zingiz haqingizda bir qator',
+    headlineHelp: 'Bir qator, abzas emas. {n} belgi qoldi.',
+    headlinePlaceholder: 'Filtrli qahva, bayroqlar va yo‘qotgim kelmaydigan shtamp kartasi.',
+    headlineLong: 'O‘zingiz haqingizdagi qator ko‘pi bilan {max} belgi bo‘ladi.',
+
+    city: 'Shahar',
+    cityChoose: 'Shahringizni tanlang',
+    cityHelp: 'Paylez Polsha, Germaniya va O‘zbekistonda ishlaydi. Mamlakat shahardan kelib chiqadi.',
+    cityLoading: 'Shaharlar ro‘yxati yuklanmoqda…',
+    cityDown: 'Hozircha mavjud emas.',
+    cityOffline:
+      'Shaharlar ro‘yxati Paylez backendidan keladi, u esa javob bermayapti. Bu sahifada boshqa hech narsa unga muhtoj emas — qolganini saqlang, shaharni esa u qaytganda tanlaysiz.',
+    cityRetry: 'Qayta urinib ko‘ring',
+    cityKept: 'Ro‘yxatdan tanlamaguningizcha shundayligicha qoladi.',
+    country: 'Mamlakat',
+    countries: { PL: 'Polsha', DE: 'Germaniya', UZ: 'O‘zbekiston' },
+
+    phone: 'Telefon',
+    phoneHelp: 'Unga hech kim qo‘ng‘iroq qilmaydi va kod ham yuborilmaydi. Bu — joy olingan aksiya yuzasidan siz bilan bog‘lanadigan yo‘l.',
+    phonePlaceholder: '+48 600 000 000',
+    phoneShape: 'Bu telefon raqamiga o‘xshamaydi.',
+
+    birthday: 'Tug‘ilgan sana',
+    birthdayUnset: 'Buni bir marta qo‘yasiz va bir marta tuzatasiz. Undan keyin qo‘llab-quvvatlashga yozish kerak bo‘ladi.',
+    birthdayOneLeft: 'Buni yana bir marta tuzata olasiz.',
+    birthdaySpent:
+      'Ikkala yozuvni ham ishlatib bo‘ldingiz. Yana o‘zgartirish — qo‘llab-quvvatlashga xat, chunki uchinchi o‘zgarish odamning kimligi haqidagi qaror.',
+    birthdayErrors: {
+      format: 'Tug‘ilgan sana — bu sana.',
+      nonexistent: 'Bunday kun mavjud emas.',
+      future: 'Tug‘ilgan sana o‘tmishda bo‘ladi.',
+      young: 'Hisob egasi kamida 13 yoshda bo‘lishi kerak.',
+      old: 'Bu tug‘ilgan sana to‘g‘riga o‘xshamaydi.',
+    },
+    birthdayNoWrites: 'Tug‘ilgan sanani bir marta tuzatish mumkin — yana o‘zgartirish uchun qo‘llab-quvvatlashga yozing.',
+
+    email: 'E-pochta',
+    emailHelp: 'Siz shu bilan kirasiz. Uni o‘zgartirishni bu versiya uddalay olmaydi.',
+
+    save: 'Profilni saqlash',
+    saved: 'Saqlandi',
+
+    cardTitle: 'Boshqalar nimani ko‘radi',
+    cardNoName: 'Hali nom yo‘q',
+    cardNoLine: 'Hali qator yo‘q.',
+    cardNowhere: 'Hali shahar yo‘q',
+
+    meterTitle: 'Profil',
+    meterDone: 'Yettitasiga ham javob berilgan.',
+    meterStill: 'Hamon bo‘sh',
+    meterProgress: '{pct}% to‘ldirilgan',
+    fieldNames: {
+      avatar: 'Surat',
+      username: 'Foydalanuvchi nomi',
+      headline: 'O‘zingiz haqingizda bir qator',
+      city: 'Shahar',
+      email: 'E-pochta',
+      phone: 'Telefon',
+      birthDate: 'Tug‘ilgan sana',
+    },
+  },
+
+  onboarding: {
+    step: '{total} qadamdan {n}-si',
+
+    langTitle: 'Til tanlang',
+    langLede: 'Keyinroq o‘zgartirsangiz bo‘ladi — u sarlavhadagi almashtirgich.',
+    langNext: 'Davom etish',
+
+    gameTitle: 'Bu qaysi mamlakat?',
+    gameRound: '{total} raunddan {n}-si',
+    gamePts: 'ball',
+    gameNext: 'Keyingisi',
+    gameLast: 'Nima yutganingizni ko‘ring',
+    gameBack: 'Orqaga',
+    gameLoading: 'Bayroqlar olinmoqda…',
+    gameFailed: 'Bayroqlar yuklanmadi.',
+    gameRetry: 'Qayta urinib ko‘ring',
+    gameRight: 'To‘g‘ri',
+    gameWrong: 'Bu safar emas',
+
+    payTitle: 'Bu sizniki bo‘lib qoladi',
+    payEarned: 'Bayroqlardan',
+    payGift: 'Xush kelibsiz sovg‘asi',
+    payTotal: 'ball',
+    payTier: 'Arziydigan birinchi narsa {n} balldan boshlanadi.',
+    payLede:
+      'Ballar o‘yindan va shahringizdagi joylarga borishdan yig‘iladi. Ularning muddati tugamaydi — ular sizni kutib turadi.',
+    payGo: 'O‘ynashni boshlash',
+    payProfile: 'Avval profilingizni to‘ldiring',
+  },
+
+  subscription: {
+    eyebrow: 'Tariflar',
+    title: 'Bepul o‘ynang. Kengroq joy uchun to‘lang.',
+    lede: 'Har bir tarif bir xil o‘yinlarni o‘ynaydi va bir xil joylarda sarflaydi. Pullisi qo‘shimcha erkinlik beradi — ko‘proq energiya, vaucherni sarflashga uzoqroq muddat va o‘sha raund uchun ko‘proq ball.',
+    term: {
+      label: 'Qancha muddatga majburiyat olasiz',
+      one: '1 oy',
+      many: '{n} oy',
+      save: '{pct}% tejang',
+      rolling: 'Majburiyatsiz',
+    },
+    perMonth: 'oyiga',
+    free: 'Bepul',
+    billed: {
+      free: 'Foydalanganingizcha bepul. Karta ham, tugaydigan sinov muddati ham yo‘q.',
+      monthly: 'Har oy hisoblanadi va xohlagan paytingizda to‘xtatiladi.',
+      term: '{n} oy uchun bir marta {total} yechiladi.',
+    },
+    unlimited: 'Cheksiz',
+    included: 'Kiradi',
+    notIncluded: 'Kirmaydi',
+    badges: ['Yulduzcha', 'Toj'],
+    plans: [
+      { name: 'Free', note: 'Butun aylanma, yordamsiz.' },
+      { name: 'Pro', note: 'Har kuni o‘ynaydigan uchun.' },
+      { name: 'Premium', note: 'Ballarini naqdga aylantiradigan uchun.' },
+    ],
+    rows: [
+      'Kuniga energiya',
+      'Bitta energiya tiklanadigan soatlar',
+      'O‘yin raundidagi ballar',
+      'Vaucher amal qiladigan kunlar',
+      'Kuniga «So‘z yig‘» maslahatlari',
+      'Kuniga yordamchiga savollar',
+      'Ketma-ketlik muzlatishlari',
+      'Faqat obunachilar uchun aksiyalar',
+      'Yangi aksiyada ustunlik soatlari',
+      'Sovg‘a kartalarida navbatsizlik',
+      'Har oy yoziladigan ballar',
+      'Ustuvor qo‘llab-quvvatlash',
+      'Nomingiz yonidagi belgi',
+    ],
+    action: 'Hisob yarating',
+    note: 'Hech bir tarifda sinov muddati yo‘q — bepul tarifning o‘zi sinov muddati va u hech qachon tugamaydi. Tarif hisob ochilgach ilovada tanlanadi.',
+  },
+
   footer: {
     blurb:
       "O‘yna va yutib ol. Eksklyuziv takliflar. Haqiqiy mukofotlar. Kashf eting, tejang va mukofot oling.",

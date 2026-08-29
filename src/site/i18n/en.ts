@@ -256,6 +256,23 @@ export const en = {
       export: 'Export CSV',
       noRows: 'Nothing matches those filters.',
 
+      /*
+       * Three sentences for states the seeded console could not be in. A screen
+       * that derives a whole month from one number beside a venue's name never
+       * has to say it has no source; this one does, per panel and once at the
+       * top.
+       */
+      unmeasured: {
+        /** A card, table or chart with no endpoint behind it. */
+        noSource: 'Not measured — nothing an operator can read reports this yet.',
+        /** The banner: what on this screen is real. */
+        measured:
+          'Visits and customers are counted, from GET /v1/admin/venues. Everything else on this screen is partner-scoped or not collected, and is shown as “not measured” rather than as a zero.',
+        /** The banner: the request did not come back. */
+        notConnected:
+          'The backend is not answering, so even the visit and customer counts cannot be read. This is not a zero — we could not ask.',
+      },
+
       states: { live: 'Active', paused: 'Paused' },
       status: { used: 'Used', active: 'Unused' },
 
@@ -463,7 +480,15 @@ export const en = {
 
     score: 'Score',
     streak: 'Streak',
-    lives: 'Lives',
+    /* The gauge on the Play screen. The pool was called lives while a round
+       could be survived; it bounds a day now, so it is energy — and the word
+       had to move with the mechanic, or the screen would explain itself with a
+       noun nothing else on it uses. */
+    energy: 'Energy',
+    /* The hearts above a quiz round, which are **not** the energy pool: they
+       count the mistakes this round still allows. The two wore one key once,
+       and separating them is what the rename was for. */
+    roundMistakes: 'Mistakes left',
     freezes: 'Freezes',
     answered: 'Answered',
     correctLabel: 'Correct',
@@ -518,12 +543,19 @@ export const en = {
     /* The short label, for the cards in the grid — six of them side by side,
        where "Start game" wraps and the surrounding card already says which. */
     play: 'Play',
-    /* The state only, never the wait: lives regenerate one at a time rather
-       than at midnight, and the screen already prints the real countdown
-       beside the pips (`+♥ in 3 hours`, plural-correct per language). A
-       "come back tomorrow" here was both wrong and a second, disagreeing
-       answer to the question the countdown is already answering. */
-    noLives: 'Out of lives',
+    /* The state only, never the wait: energy comes back one at a time rather
+       than all of it at midnight, and the screen already prints the real
+       countdown under the gauge (`+1 in 3 hours`, plural-correct per
+       language). A "come back tomorrow" here was both wrong and a second,
+       disagreeing answer to the question the countdown is already answering. */
+    noEnergy: 'Out of energy',
+    /* The gauge's line when the tank is full and there is nothing to count to. */
+    energyFull: 'Full — nothing to wait for',
+    /* What a round costs, said once on the screen rather than on seven cards.
+       It is the rule the whole page turns on and it was nowhere on it: a player
+       met the cost by running out. Deliberately unitless — the noun is the
+       gauge's own heading two lines above. */
+    energyCost: '1 per round',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
 
@@ -540,15 +572,6 @@ export const en = {
     resultScore: '{correct} of {total} correct',
     resultPoints: '+{points} points',
     resultNone: 'No points this round.',
-    /*
-     * The repeat-play taper, said out loud. A player who answered every
-     * question correctly and banked less than last time will read a smaller
-     * number as their own mistake unless the card says what actually happened,
-     * so these two name the round rather than the score. `{n}` is which time
-     * today this game has been played.
-     */
-    resultDecay: 'Round {n} of this game today · {scored} scored, {points} banked',
-    resultDecayNone: 'Round {n} of this game today · repeats stop paying. Another game still pays in full.',
     /* Never a bare score: what the points are *for* is the reason to play the
        next round, so the card always says how far off the nearest reward is. */
     resultToward: '{points} more and the first voucher is yours.',
@@ -798,6 +821,64 @@ export const en = {
     /* One honest line rather than a fake chart behind each button. */
     notWired: 'Not wired up in this build.',
 
+    /*
+     * What a panel says when the figure behind it cannot be read.
+     *
+     * Every one of these describes a state the seeded dashboard could not be
+     * in: a screen that invents its own numbers never has to say it could not
+     * read any. **None of them is a zero.** "We could not ask" and "we asked,
+     * and the answer is nothing" are different findings, and the union
+     * `useApi` returns exists so a screen cannot confuse them.
+     */
+    unmeasured: {
+      /** Why every figure on the screen is missing, in the normal case. */
+      noSession:
+        'This device is not signed in to the Paylez API, so none of these figures can be read. The site’s own sign-in does not yet create an API session — until it does, only the operator console can connect.',
+      /** The other reason: there is a session, and the server did not answer. */
+      serverSilent:
+        'The server did not answer, so nothing here can be shown. This is not a zero — we could not ask.',
+      /** While the request is in flight. */
+      asking: 'Reading your figures from the server…',
+      /** A metric the min-cohort floor withheld. Never render this as 0. */
+      withheld: 'Withheld — too few people for this to be reported without identifying them.',
+      /** A panel whose question the API does not answer yet. */
+      noSource: 'The server does not report this yet, so this panel has nothing to show.',
+      /** A panel gated behind the venue’s plan rather than behind its data. */
+      planLocked: 'Not included on this venue’s plan.',
+      /** The server reports by calendar month; the bar’s picker is a rolling day count. */
+      monthOnly:
+        'Figures are reported for a whole calendar month, which is the window the server counts in — the range picker above does not move them yet.',
+      /** The server had nothing worth ranking this period. */
+      noFindings: 'Nothing stood out this month.',
+      /** Half of `vouchers.tierDetail` — the half we can stand behind. */
+      tierUnit: 'Each one takes {unit} off a bill.',
+      /** The rail's plan card, with no budget to draw a bar from. */
+      plan: 'No budget to report — this device is not signed in to the Paylez API.',
+      /** The assistant, which will not compose around a figure it cannot read. */
+      assistant:
+        'I read your quiet hours, your budgets and what works at venues like yours before I suggest anything — and this device is not signed in to the Paylez API, so I cannot read any of it. I will not guess at a number and put your name on it.',
+      /** The create drawer: the server sizes an audience per published deal. */
+      audience:
+        'How many people this would reach is not something we can tell you yet — the server sizes an audience per published deal, and this one is still a draft.',
+      /** The create drawer: how much of the notification quota is left. */
+      quota:
+        'How many notifications this plan has left cannot be read — this device is not signed in to the Paylez API.',
+    },
+
+    /*
+     * `analytics.findings` returns at most three keys, already ranked by how
+     * much they deserve attention. The keys are stable; the `detail` payload
+     * differs per key and is deliberately **not** dumped, because a JSON blob on
+     * an owner's dashboard is worse than saying less. Until each has a sentence
+     * with the right holes, this is the whole of what a finding says.
+     */
+    findings: {
+      quiet_window: 'You have a quiet stretch worth filling.',
+      cost_per_new_customer: 'Your cost per new customer moved.',
+      second_visit_rate: 'Your second-visit rate moved.',
+      new_customers: 'You saw customers who had never been in before.',
+    },
+
     /** The month every screen reports on. */
     month: 'August',
     /* The four windows the picker offers, index-aligned with `PD_RANGES`.
@@ -995,11 +1076,16 @@ export const en = {
         'New to your venue',
         'Russian speakers',
       ],
+      /* Keyed by `PartnerDeal['state']`, which is six wide. `draft` and
+         `ended` arrived with the API — a seeded deal was never either — and a
+         missing key here is a raw enum name printed at a venue owner. */
       states: {
+        draft: 'Draft',
         live: 'Live',
         scheduled: 'Scheduled',
         paused: 'Paused',
         expired: 'Expired',
+        ended: 'Ended',
       },
       search: 'Search your deals',
       filters: ['All', 'Live', 'Scheduled', 'Paused', 'Expired'],
@@ -1073,10 +1159,18 @@ export const en = {
       retro:
         'This ran for {weeks} weeks and got {claims} claims — about a third of what your 15% deals average. Try a deeper discount or a free item.',
 
-      /* What a row's second button does, by state. A paused deal resumes; an
-         expired one is copied rather than restarted, because its dates are
-         gone. */
-      act: { live: 'Pause', paused: 'Resume', scheduled: 'Pause', expired: 'Copy' },
+      /* What a row's second button does, by state. A paused deal resumes; a
+         draft is picked back up; an expired or ended one is copied rather than
+         restarted, because its dates are gone. Six states, six labels — the
+         same union `states` above is keyed by. */
+      act: {
+        draft: 'Edit',
+        live: 'Pause',
+        paused: 'Resume',
+        scheduled: 'Pause',
+        expired: 'Copy',
+        ended: 'Copy',
+      },
       pointsNote: 'Points offer — costs you nothing at the till',
       costEstimate: 'estimate',
       costNone: 'no discount cost',
@@ -1976,8 +2070,8 @@ export const en = {
       },
       benefits: [
         {
-          title: 'Fresh value every day',
-          body: 'A game pays full the first time you play it that day, and less every time you repeat it. Sleep on it and every game is worth full again.',
+          title: 'Every round is worth the same',
+          body: 'No game pays less for being played twice, and no round today is worth less than yesterday’s. What bounds a day is energy: three in the tank, one round each, and one back every four hours.',
         },
         {
           title: 'Day seven: a freeze',
@@ -2008,7 +2102,7 @@ export const en = {
         },
         {
           q: 'How many rounds can I play a day?',
-          a: 'As many as you like. Starting a round is free and a win costs nothing — only a round you lose spends a life, and lives come back on their own, one every four hours, up to three. There is no cap — but the same game pays less every time you repeat it in a day, until it pays nothing. Tomorrow it is worth full again.',
+          a: 'Three on a full tank, and more as it fills. Every finished round spends one energy whether you win or lose, and energy comes back on its own — one every four hours, up to three. Nothing pays less for being repeated: the tenth round of the day is worth exactly what the first was.',
         },
         {
           q: 'What is a voucher actually worth?',
@@ -2034,6 +2128,13 @@ export const en = {
 
   analytics: {
     back: 'Back to paylez',
+    /* The three charts on this page are invented figures, and legitimately so:
+       it is a marketing page, and a worked example is how you show somebody
+       what a report looks like before they have one. What was missing is the
+       label — the hero panel names the signed-in owner's venue, and three
+       charts of confident numbers under it read as *that venue's* month. */
+    exampleNote:
+      'Example figures, to show the shape of the report. Your own numbers are on your dashboard.',
     hero: {
       eyebrow: 'Partner Analytics',
       lines: ['Every scan,', 'accounted for.'],
@@ -2464,7 +2565,7 @@ export const en = {
       items: [
         {
           title: 'Answer a few questions',
-          body: 'A couple of minutes on the tram. Every correct answer is points, and every game pays its full value once a day — so spreading them out beats grinding one.',
+          body: 'A couple of minutes on the tram. Every correct answer is points, and every round pays full whichever game it is and however many you have played today — what limits a day is energy, not repetition.',
         },
         {
           title: 'Pick a voucher',
@@ -2735,6 +2836,240 @@ export const en = {
     privacyVersion: 'Version 1.1 · Effective 28 August 2026 · GDPR compliant',
     termsVersion: 'Version 1.0 · Effective 24 April 2025',
   },
+  /* ──────────────────────────────────────────────────────────── profile ── */
+
+  /**
+   * `#/profile` — the seven things a person tells us about themselves.
+   *
+   * The page says out loud that **nothing here is verified**: no code goes to
+   * the number, no link to the address. That sentence is dictionary copy rather
+   * than a component's business precisely because it is a promise, and a
+   * promise kept in one language is made to one reader.
+   *
+   * Three of the seven carry a rule that is not "is it a string", and all three
+   * state it before it is broken rather than on refusal. The figures in those
+   * sentences — the username's bounds, the headline's ceiling, what is left of
+   * it — arrive through `{min}` / `{max}` / `{n}` holes from `auth/users.ts`,
+   * so a constant that moves cannot leave five dictionaries quoting the old one.
+   */
+  profile: {
+    eyebrow: 'Your account',
+    title: 'Your profile',
+    lede: 'This is what other players see, and where we know you are. None of it is checked against anything — there is no code sent to your phone and no link to click in your inbox.',
+
+    whoLegend: 'Who you are',
+    whereLegend: 'Where you are, and how to reach you',
+
+    photo: 'Photo',
+    photoChoose: 'Choose a photo',
+    photoHelp: 'Square works best. It is shrunk to a thumbnail and kept on this device.',
+    photoRemove: 'Remove photo',
+
+    username: 'Username',
+    usernameHelp:
+      'Letters, digits and single underscores, {min}–{max} characters. It has to be yours alone — this is the name on a leaderboard row.',
+    usernamePlaceholder: 'dilnoza',
+    /* Keyed by `UsernameError`. A clash comes back naming the field, the way a
+       409 does. */
+    usernameErrors: {
+      length: 'A username is {min} to {max} characters.',
+      shape: 'Letters, digits and single underscores between them — nothing at either end.',
+      reserved: 'That username is reserved.',
+      taken: 'That username is taken.',
+    },
+
+    headline: 'A line about you',
+    /* One sentence with the remaining count inside it, not a sentence with a
+       figure glued to its end: "12 characters left" and "zostało 12 znaków" do
+       not put the number in the same place. */
+    headlineHelp: 'One line, not a paragraph. {n} characters left.',
+    headlinePlaceholder: 'Filter coffee, flags, and a stamp card I refuse to lose.',
+    headlineLong: 'A line about you is at most {max} characters.',
+
+    city: 'City',
+    cityChoose: 'Choose your city',
+    cityHelp: 'Paylez covers Poland, Germany and Uzbekistan. Your country follows from the city.',
+    cityLoading: 'Loading the list of cities…',
+    /* The short one goes under the field and the long one in the panel beside
+       it. Both said the whole sentence at first, which is the same paragraph
+       twice on one row — the field only has to stop claiming the picker works. */
+    cityDown: 'Not available right now.',
+    cityOffline:
+      'The list of cities comes from the Paylez backend, and it is not answering. Nothing else on this page needs it — save the rest, and choose a city when it is back.',
+    cityRetry: 'Try again',
+    cityKept: 'Kept as it is until you choose from the list.',
+    country: 'Country',
+    /* Keyed by ISO code rather than an array, because the picker groups its
+       options by country and reads them by code, not by position. */
+    countries: { PL: 'Poland', DE: 'Germany', UZ: 'Uzbekistan' },
+
+    phone: 'Phone',
+    phoneHelp: 'Nobody calls it and no code is sent to it. It is how a venue reaches you about a claim.',
+    phonePlaceholder: '+48 600 000 000',
+    phoneShape: 'That does not look like a phone number.',
+
+    birthday: 'Birthday',
+    birthdayUnset: 'You can set this once and correct it once. After that it takes a message to support.',
+    birthdayOneLeft: 'You can correct this once more.',
+    birthdaySpent:
+      'You have used both writes on this. Changing it again is a message to support, because a third change is a decision about who somebody is.',
+    /* Keyed by `BirthDateError`. */
+    birthdayErrors: {
+      format: 'A birthday is a date.',
+      nonexistent: 'That day does not exist.',
+      future: 'A birthday is in the past.',
+      young: 'An account holder has to be at least 13.',
+      old: 'That birthday does not look right.',
+    },
+    birthdayNoWrites: 'A birthday can be corrected once — contact support to have it changed again.',
+
+    email: 'Email',
+    emailHelp: 'What signs you in. Changing it is not something this build can do.',
+
+    save: 'Save profile',
+    saved: 'Saved',
+
+    cardTitle: 'What others see',
+    cardNoName: 'No username yet',
+    cardNoLine: 'No line yet.',
+    cardNowhere: 'No city yet',
+
+    meterTitle: 'Profile',
+    meterDone: 'All seven answered.',
+    meterStill: 'Still blank',
+    /* The percentage sits inside the sentence: "60% answered" and "wypełnione w
+       60%" do not agree about which side of the word the figure goes. */
+    meterProgress: '{pct}% answered',
+    /* Keyed by `ProfileField`, so a field added to the form is a build error
+       here rather than a blank row in the panel beside it. */
+    fieldNames: {
+      avatar: 'Photo',
+      username: 'Username',
+      headline: 'A line about you',
+      city: 'City',
+      email: 'Email',
+      phone: 'Phone',
+      birthDate: 'Birthday',
+    },
+  },
+
+  /* ───────────────────────────────────────────────────────── onboarding ── */
+
+  /**
+   * `#/welcome` — the first minute: a language, three rounds of flags, and what
+   * they paid.
+   *
+   * One string is deliberately **not** here. The language names in step one are
+   * `LANGUAGES[code].label`, read out of each dictionary, because a picker has
+   * to write every option in its own language rather than in the one currently
+   * selected.
+   *
+   * The three counted sentences carry their figures as holes rather than as
+   * words either side of a number. "Step 2 of 3" and "Krok 2 z 3" only agree
+   * because the whole sentence is one string.
+   */
+  onboarding: {
+    step: 'Step {n} of {total}',
+
+    langTitle: 'Pick a language',
+    langLede: 'You can change it later — it is the switcher in the header.',
+    langNext: 'Continue',
+
+    gameTitle: 'Which country is this?',
+    gameRound: 'Round {n} of {total}',
+    gamePts: 'pts',
+    gameNext: 'Next',
+    gameLast: 'See what you won',
+    gameBack: 'Back',
+    gameLoading: 'Getting the flags…',
+    gameFailed: 'The flags did not load.',
+    gameRetry: 'Try again',
+    gameRight: 'Right',
+    gameWrong: 'Not this time',
+
+    payTitle: 'That is yours to keep',
+    payEarned: 'From the flags',
+    payGift: 'Welcome gift',
+    payTotal: 'points',
+    /* The first rung worth having, as one sentence rather than a number with
+       half a clause on either side of it. */
+    payTier: 'The first thing worth having is at {n} points.',
+    /* Points do not expire, on any plan. The line that stood here said
+       "nothing here expires this week", which promised that something
+       eventually does. */
+    payLede:
+      'Points come from playing and from turning up at the venues in your city. They do not expire — they wait for you.',
+    payGo: 'Start playing',
+    payProfile: 'Finish your profile first',
+  },
+
+  /* ─────────────────────────────────────────────────────── subscription ── */
+
+  /**
+   * What a plan costs, and what each one is.
+   *
+   * **No string here carries a currency symbol or an amount.** Every price on
+   * the section arrives through `useMoney`; `billed.term` takes the total as a
+   * `{total}` hole already written in the reader's currency.
+   *
+   * `plans` is index-aligned with `SUB_PLANS` in `content.ts`, `rows` with
+   * `SUB_ROWS`, and `badges` with the `badge` row's values 1 and 2. **The unit
+   * lives in the row label** — "Hours to refill one energy", never an "h"
+   * welded to the figure — so the unit stays translatable copy instead of a
+   * letter typed into a component.
+   */
+  subscription: {
+    eyebrow: 'Plans',
+    title: 'Play free. Pay for headroom.',
+    lede: 'Every plan plays the same games and spends at the same venues. What a paid one buys is room to move — more energy, longer to spend a voucher, and more points for the same round.',
+    term: {
+      /** Names the rung picker for a screen reader. */
+      label: 'How long you commit for',
+      one: '1 month',
+      many: '{n} months',
+      save: 'Save {pct}%',
+      /** The chip on the rung that is not a commitment at all. */
+      rolling: 'No commitment',
+    },
+    perMonth: 'a month',
+    free: 'Free',
+    billed: {
+      free: 'Free for as long as you use it. No card, and no trial to expire.',
+      monthly: 'Billed every month, and stopped whenever you like.',
+      term: '{total} charged once, for {n} months.',
+    },
+    unlimited: 'Unlimited',
+    /** Read instead of the tick and the dash, which say nothing out loud. */
+    included: 'Included',
+    notIncluded: 'Not included',
+    /** Index-aligned with the `badge` row's values 1 and 2. */
+    badges: ['Star', 'Crown'],
+    /** Index-aligned with `SUB_PLANS`. */
+    plans: [
+      { name: 'Free', note: 'The whole loop, unaided.' },
+      { name: 'Pro', note: 'For the player who is on it daily.' },
+      { name: 'Premium', note: 'For the one who cashes out.' },
+    ],
+    /** Index-aligned with `SUB_ROWS`. The unit lives here; see the note above. */
+    rows: [
+      'Energy a day',
+      'Hours to refill one energy',
+      'Points on a game round',
+      'Days a voucher stays spendable',
+      'Word Builder hints a day',
+      'Assistant questions a day',
+      'Streak freezes',
+      'Exclusive deals',
+      'Hours’ head start on a deal',
+      'Priority on gift cards',
+      'Points credited every month',
+      'Priority support',
+      'Mark beside your name',
+    ],
+    action: 'Create an account',
+    note: 'No plan has a trial — the free tier is the trial, and it does not expire. Plans are chosen in the app once you have an account.',
+  },
+
   footer: {
     blurb:
       'Play & Earn. Exclusive deals. Real rewards. Discover, save and get rewarded.',

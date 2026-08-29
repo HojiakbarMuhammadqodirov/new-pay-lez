@@ -230,6 +230,14 @@ export const pl: Dictionary = {
       export: 'Eksport CSV',
       noRows: 'Nic nie pasuje do tych filtrów.',
 
+      unmeasured: {
+        noSource: 'Nie mierzone — nic, co operator mógłby odczytać, jeszcze tego nie raportuje.',
+        measured:
+          'Wizyty i klienci są liczone, z GET /v1/admin/venues. Wszystko inne na tym ekranie należy do partnera albo nie jest zbierane i pokazujemy to jako „nie mierzone”, a nie jako zero.',
+        notConnected:
+          'Backend nie odpowiada, więc nawet liczby wizyt i klientów nie da się odczytać. To nie jest zero — nie udało się zapytać.',
+      },
+
       states: { live: 'Aktywna', paused: 'Wstrzymana' },
       status: { used: 'Wykorzystany', active: 'Niewykorzystany' },
 
@@ -416,7 +424,8 @@ export const pl: Dictionary = {
 
     score: 'Wynik',
     streak: 'Seria',
-    lives: 'Życia',
+    energy: 'Energia',
+    roundMistakes: 'Pozostałe błędy',
     freezes: 'Zamrożenia',
     answered: 'Odpowiedzi',
     correctLabel: 'Poprawnych',
@@ -449,7 +458,9 @@ export const pl: Dictionary = {
     reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
     start: 'Zacznij grę',
     play: 'Zagraj',
-    noLives: 'Koniec żyć',
+    noEnergy: 'Koniec energii',
+    energyFull: 'Pełna — nie ma na co czekać',
+    energyCost: '1 na rundę',
     loading: 'Rozdajemy…',
 
     question: 'Pytanie {n} z {total}',
@@ -463,8 +474,6 @@ export const pl: Dictionary = {
     resultScore: '{correct} z {total} poprawnie',
     resultPoints: '+{points} punktów',
     resultNone: 'W tej rundzie bez punktów.',
-    resultDecay: 'Runda {n} tej gry dzisiaj · zdobyte {scored}, zapisane {points}',
-    resultDecayNone: 'Runda {n} tej gry dzisiaj · powtórki przestają płacić. Inna gra wciąż płaci pełną stawkę.',
     resultToward: 'Jeszcze {points} i pierwszy voucher jest Twój.',
     resultAfford: 'Masz już dość na voucher — idź go odebrać.',
     resultSpend: 'Wydaj punkty',
@@ -679,6 +688,35 @@ export const pl: Dictionary = {
     ],
     notWired: 'Niepodłączone w tej wersji.',
 
+    unmeasured: {
+      noSession:
+        'To urządzenie nie jest zalogowane do API Paylez, więc żadnej z tych liczb nie da się odczytać. Logowanie na samej stronie nie zakłada jeszcze sesji API — do tego czasu połączyć się może tylko konsola operatora.',
+      serverSilent:
+        'Serwer nie odpowiedział, więc nie ma tu czego pokazać. To nie jest zero — nie udało się zapytać.',
+      asking: 'Wczytujemy Twoje liczby z serwera…',
+      withheld: 'Wstrzymane — zbyt mało osób, by podać to bez ujawnienia, kim są.',
+      noSource: 'Serwer jeszcze tego nie raportuje, więc ten panel nie ma czego pokazać.',
+      planLocked: 'Poza planem tego lokalu.',
+      monthOnly:
+        'Liczby są raportowane za cały miesiąc kalendarzowy — to okno, w którym liczy serwer. Wybór zakresu powyżej jeszcze nimi nie porusza.',
+      noFindings: 'W tym miesiącu nic się nie wyróżniło.',
+      tierUnit: 'Każdy z nich zdejmuje {unit} z rachunku.',
+      plan: 'Brak budżetu do pokazania — to urządzenie nie jest zalogowane do API Paylez.',
+      assistant:
+        'Zanim cokolwiek zaproponuję, czytam Twoje ciche godziny, Twoje budżety i to, co działa w lokalach podobnych do Twojego — a to urządzenie nie jest zalogowane do API Paylez, więc nie mogę odczytać niczego z tego. Nie będę zgadywać liczby i podpisywać jej Twoim nazwiskiem.',
+      audience:
+        'Ilu ludzi to obejmie, nie jesteśmy jeszcze w stanie powiedzieć — serwer wylicza grupę odbiorców dla opublikowanej oferty, a ta jest wciąż szkicem.',
+      quota:
+        'Ile powiadomień zostało w tym planie, nie da się odczytać — to urządzenie nie jest zalogowane do API Paylez.',
+    },
+
+    findings: {
+      quiet_window: 'Masz cichy fragment dnia, który warto zapełnić.',
+      cost_per_new_customer: 'Twój koszt nowego klienta się zmienił.',
+      second_visit_rate: 'Twój odsetek drugich wizyt się zmienił.',
+      new_customers: 'Pojawili się klienci, których wcześniej u Ciebie nie było.',
+    },
+
     month: 'sierpień',
     rangeLabels: ['ostatnie 7 dni', 'ostatnie 14 dni', 'ostatnie 30 dni', 'ostatni kwartał'],
 
@@ -848,9 +886,16 @@ export const pl: Dictionary = {
         'Nowi w Twoim lokalu',
         'Rosyjskojęzyczni',
       ],
-      states: { live: 'Aktywna', scheduled: 'Zaplanowana', paused: 'Wstrzymana', expired: 'Zakończona' },
+      states: {
+        draft: 'Szkic',
+        live: 'Aktywna',
+        scheduled: 'Zaplanowana',
+        paused: 'Wstrzymana',
+        expired: 'Wygasła',
+        ended: 'Zakończona',
+      },
       search: 'Szukaj wśród swoich okazji',
-      filters: ['Wszystkie', 'Aktywne', 'Zaplanowane', 'Wstrzymane', 'Zakończone'],
+      filters: ['Wszystkie', 'Aktywne', 'Zaplanowane', 'Wstrzymane', 'Wygasłe'],
       count: '{n} z {total} okazji',
       sortNote:
         'Sortowane po odsetku odebrań, najlepsze u góry. Aktywne i zaplanowane okazje idą pierwsze.',
@@ -911,7 +956,14 @@ export const pl: Dictionary = {
       retro:
         'Trwała {weeks} tygodni i dała {claims} odebrań — mniej więcej jedną trzecią tego, co średnio dają Twoje okazje 15%. Spróbuj większego rabatu albo darmowej pozycji.',
 
-      act: { live: 'Wstrzymaj', paused: 'Wznów', scheduled: 'Wstrzymaj', expired: 'Skopiuj' },
+      act: {
+        draft: 'Edytuj',
+        live: 'Wstrzymaj',
+        paused: 'Wznów',
+        scheduled: 'Wstrzymaj',
+        expired: 'Skopiuj',
+        ended: 'Skopiuj',
+      },
       pointsNote: 'Oferta punktowa — nic Cię nie kosztuje przy kasie',
       costEstimate: 'szacunek',
       costNone: 'bez kosztu rabatu',
@@ -1751,8 +1803,8 @@ export const pl: Dictionary = {
       },
       benefits: [
         {
-          title: 'Codziennie pełna stawka',
-          body: 'Gra płaci pełną stawkę za pierwszym razem danego dnia, a za każdym powtórzeniem mniej. Prześpij się z tym, a każda znów jest warta pełnię.',
+          title: 'Każda runda warta tyle samo',
+          body: 'Żadna gra nie płaci mniej za drugie podejście i żadna dzisiejsza runda nie jest warta mniej niż wczorajsza. Dzień ogranicza energia: trzy w zapasie, po jednej na rundę, i jedna wraca co cztery godziny.',
         },
         {
           title: 'Dzień siódmy: zamrożenie',
@@ -1783,7 +1835,7 @@ export const pl: Dictionary = {
         },
         {
           q: 'Ile rund mogę zagrać dziennie?',
-          a: 'Tyle, ile chcesz. Rozpoczęcie rundy nic nie kosztuje i wygrana też nie — życie zabiera tylko runda przegrana, a życia wracają same, po jednym co cztery godziny, maksymalnie do trzech. Limitu nie ma — ale ta sama gra płaci mniej z każdym powtórzeniem w ciągu dnia, aż przestaje płacić. Jutro znów jest warta pełnię.',
+          a: 'Trzy przy pełnym zapasie, a potem tyle, ile zdąży wrócić. Każda skończona runda kosztuje jedną energię — wszystko jedno, wygrana czy przegrana — a energia wraca sama, po jednej co cztery godziny, maksymalnie do trzech. Nic nie płaci mniej za powtórzenie: dziesiąta runda dnia jest warta dokładnie tyle, co pierwsza.',
         },
         {
           q: 'Ile naprawdę wart jest voucher?',
@@ -1809,6 +1861,8 @@ export const pl: Dictionary = {
 
   analytics: {
     back: 'Wróć do paylez',
+    exampleNote:
+      'Liczby przykładowe, żeby pokazać kształt raportu. Twoje własne są na Twoim panelu.',
     hero: {
       eyebrow: 'Analityka partnera',
       lines: ['Każde skanowanie,', 'rozliczone.'],
@@ -2251,7 +2305,7 @@ export const pl: Dictionary = {
       items: [
         {
           title: 'Odpowiedz na kilka pytań',
-          body: 'Kilka minut w tramwaju. Każda poprawna odpowiedź to punkty, a każda gra płaci pełną stawkę raz dziennie — więc lepiej je rozłożyć, niż męczyć jedną.',
+          body: 'Kilka minut w tramwaju. Każda poprawna odpowiedź to punkty, a każda runda płaci pełną stawkę — obojętne, w którą grę i który raz dziennie. Dzień ogranicza energia, nie powtórki.',
         },
         {
           title: 'Wybierz voucher',
@@ -2488,6 +2542,168 @@ export const pl: Dictionary = {
     privacyVersion: 'Wersja 1.1 · Obowiązuje od 28 sierpnia 2026 · Zgodna z RODO',
     termsVersion: 'Wersja 1.0 · Obowiązuje od 24 kwietnia 2025',
   },
+  profile: {
+    eyebrow: 'Twoje konto',
+    title: 'Twój profil',
+    lede: 'To widzą inni gracze i stąd wiemy, gdzie jesteś. Nic z tego nie jest z niczym weryfikowane — nie wysyłamy kodu na telefon ani linku do kliknięcia na skrzynkę.',
+
+    whoLegend: 'Kim jesteś',
+    whereLegend: 'Gdzie jesteś i jak Cię złapać',
+
+    photo: 'Zdjęcie',
+    photoChoose: 'Wybierz zdjęcie',
+    photoHelp: 'Najlepiej kwadratowe. Zmniejszamy je do miniatury i trzymamy na tym urządzeniu.',
+    photoRemove: 'Usuń zdjęcie',
+
+    username: 'Nazwa użytkownika',
+    usernameHelp:
+      'Litery, cyfry i pojedyncze podkreślniki, od {min} do {max} znaków. Musi być tylko Twoja — to nazwa w wierszu rankingu.',
+    usernamePlaceholder: 'dilnoza',
+    usernameErrors: {
+      length: 'Nazwa użytkownika ma od {min} do {max} znaków.',
+      shape: 'Litery, cyfry i pojedyncze podkreślniki pomiędzy nimi — nic na żadnym końcu.',
+      reserved: 'Ta nazwa jest zastrzeżona.',
+      taken: 'Ta nazwa jest zajęta.',
+    },
+
+    headline: 'Linijka o Tobie',
+    headlineHelp: 'Jedna linijka, nie akapit. Zostało {n} znaków.',
+    headlinePlaceholder: 'Kawa przelewowa, flagi i karta pieczątek, której nie zamierzam zgubić.',
+    headlineLong: 'Linijka o Tobie ma najwyżej {max} znaków.',
+
+    city: 'Miasto',
+    cityChoose: 'Wybierz swoje miasto',
+    cityHelp: 'Paylez działa w Polsce, Niemczech i Uzbekistanie. Kraj wynika z miasta.',
+    cityLoading: 'Wczytujemy listę miast…',
+    cityDown: 'Chwilowo niedostępne.',
+    cityOffline:
+      'Lista miast pochodzi z backendu Paylez, a on nie odpowiada. Nic innego na tej stronie jej nie potrzebuje — zapisz resztę, a miasto wybierz, gdy wróci.',
+    cityRetry: 'Spróbuj ponownie',
+    cityKept: 'Zostaje bez zmian, dopóki nie wybierzesz z listy.',
+    country: 'Kraj',
+    countries: { PL: 'Polska', DE: 'Niemcy', UZ: 'Uzbekistan' },
+
+    phone: 'Telefon',
+    phoneHelp: 'Nikt na niego nie dzwoni i nie wysyłamy na niego żadnego kodu. Tak lokal skontaktuje się z Tobą w sprawie odebranej oferty.',
+    phonePlaceholder: '+48 600 000 000',
+    phoneShape: 'To nie wygląda na numer telefonu.',
+
+    birthday: 'Data urodzenia',
+    birthdayUnset: 'Możesz ją ustawić raz i raz poprawić. Potem trzeba już napisać do wsparcia.',
+    birthdayOneLeft: 'Możesz to poprawić jeszcze jeden raz.',
+    birthdaySpent:
+      'Wykorzystałeś oba zapisy. Kolejna zmiana to wiadomość do wsparcia, bo trzecia zmiana jest decyzją o tym, kim ktoś jest.',
+    birthdayErrors: {
+      format: 'Data urodzenia to data.',
+      nonexistent: 'Taki dzień nie istnieje.',
+      future: 'Data urodzenia jest w przeszłości.',
+      young: 'Właściciel konta musi mieć co najmniej 13 lat.',
+      old: 'Ta data urodzenia nie wygląda poprawnie.',
+    },
+    birthdayNoWrites: 'Datę urodzenia można poprawić raz — kolejną zmianę zgłoś do wsparcia.',
+
+    email: 'E-mail',
+    emailHelp: 'To, czym się logujesz. Zmiany tego ta wersja nie potrafi.',
+
+    save: 'Zapisz profil',
+    saved: 'Zapisano',
+
+    cardTitle: 'Co widzą inni',
+    cardNoName: 'Jeszcze bez nazwy',
+    cardNoLine: 'Jeszcze bez opisu.',
+    cardNowhere: 'Jeszcze bez miasta',
+
+    meterTitle: 'Profil',
+    meterDone: 'Wszystkie siedem uzupełnione.',
+    meterStill: 'Wciąż puste',
+    meterProgress: 'Uzupełnione w {pct}%',
+    fieldNames: {
+      avatar: 'Zdjęcie',
+      username: 'Nazwa użytkownika',
+      headline: 'Linijka o Tobie',
+      city: 'Miasto',
+      email: 'E-mail',
+      phone: 'Telefon',
+      birthDate: 'Data urodzenia',
+    },
+  },
+
+  onboarding: {
+    step: 'Krok {n} z {total}',
+
+    langTitle: 'Wybierz język',
+    langLede: 'Możesz go później zmienić — to przełącznik w nagłówku.',
+    langNext: 'Dalej',
+
+    gameTitle: 'Jaki to kraj?',
+    gameRound: 'Runda {n} z {total}',
+    gamePts: 'pkt',
+    gameNext: 'Dalej',
+    gameLast: 'Zobacz, co wygrałeś',
+    gameBack: 'Wstecz',
+    gameLoading: 'Pobieramy flagi…',
+    gameFailed: 'Flagi się nie wczytały.',
+    gameRetry: 'Spróbuj ponownie',
+    gameRight: 'Dobrze',
+    gameWrong: 'Tym razem nie',
+
+    payTitle: 'To już Twoje',
+    payEarned: 'Za flagi',
+    payGift: 'Prezent na start',
+    payTotal: 'punktów',
+    payTier: 'Pierwsza rzecz warta zachodu jest za {n} punktów.',
+    payLede:
+      'Punkty biorą się z grania i z pojawiania się w lokalach w Twoim mieście. Nie tracą ważności — czekają na Ciebie.',
+    payGo: 'Zacznij grać',
+    payProfile: 'Najpierw uzupełnij profil',
+  },
+
+  subscription: {
+    eyebrow: 'Plany',
+    title: 'Graj za darmo. Płać za zapas.',
+    lede: 'Każdy plan gra w te same gry i wydaje w tych samych lokalach. Płatny kupuje zapas ruchu — więcej energii, więcej czasu na wydanie vouchera i więcej punktów za tę samą rundę.',
+    term: {
+      label: 'Na jak długo się zobowiązujesz',
+      one: '1 mies.',
+      many: '{n} mies.',
+      save: 'Oszczędzasz {pct}%',
+      rolling: 'Bez zobowiązań',
+    },
+    perMonth: 'miesięcznie',
+    free: 'Za darmo',
+    billed: {
+      free: 'Za darmo tak długo, jak z niego korzystasz. Bez karty i bez okresu próbnego, który się kończy.',
+      monthly: 'Rozliczane co miesiąc i przerywane, kiedy zechcesz.',
+      term: 'Jednorazowo {total} za {n} mies.',
+    },
+    unlimited: 'Bez limitu',
+    included: 'W pakiecie',
+    notIncluded: 'Poza pakietem',
+    badges: ['Gwiazdka', 'Korona'],
+    plans: [
+      { name: 'Free', note: 'Cała pętla, bez wspomagania.' },
+      { name: 'Pro', note: 'Dla grającego codziennie.' },
+      { name: 'Premium', note: 'Dla tego, kto wypłaca.' },
+    ],
+    rows: [
+      'Energia na dzień',
+      'Godziny na odnowienie jednej energii',
+      'Punkty za rundę gry',
+      'Dni ważności vouchera',
+      'Podpowiedzi w Ułóż słowo dziennie',
+      'Pytania do asystenta dziennie',
+      'Zamrożenia serii',
+      'Oferty na wyłączność',
+      'Godziny przewagi przy nowej ofercie',
+      'Pierwszeństwo przy kartach podarunkowych',
+      'Punkty dopisywane co miesiąc',
+      'Wsparcie priorytetowe',
+      'Znak przy Twojej nazwie',
+    ],
+    action: 'Załóż konto',
+    note: 'Żaden plan nie ma okresu próbnego — plan darmowy jest okresem próbnym i nigdy się nie kończy. Plan wybiera się w aplikacji, gdy masz już konto.',
+  },
+
   footer: {
     blurb:
       'Graj i zarabiaj. Ekskluzywne oferty. Prawdziwe nagrody. Odkrywaj, oszczędzaj i zgarniaj nagrody.',
