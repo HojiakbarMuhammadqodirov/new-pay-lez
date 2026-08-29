@@ -36,7 +36,14 @@ import { bool, json, num, opt, readCsv, str, ts, type CsvRow } from './csv.ts';
 import { CONFIG } from '../config.ts';
 import { assertComplete, codeFor, flagOf } from './countries.ts';
 import { newId, referralCode } from '../domain/ids.ts';
-import { localMonth, now, plusDays } from '../domain/time.ts';
+import { localMonth, now } from '../domain/time.ts';
+
+/* Mirrors the sentinel in `domain/ledger.ts`: `points_lots.expires_at` is NOT
+   NULL and FIFO spending orders by it, so a lot that never expires needs a date
+   that sorts last rather than an absent one. Duplicated rather than exported
+   because the ledger keeps it private and one constant is a smaller coupling
+   than widening that module's surface for an importer that runs once. */
+const NEVER = '9999-12-31T23:59:59.999Z';
 
 /** Every language any table in the export carries copy in. */
 const LANGS = ['en', 'pl', 'uz', 'ru', 'uk', 'tr', 'az'] as const;
@@ -979,14 +986,24 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
       `INSERT OR IGNORE INTO points_ledger
          (id, user_id, delta, reason, source_ref, source_kind, status, created_at, expires_at)
        VALUES ($i, $u, $d, 'adjustment', 'base44', 'legacy_import', 'committed', $c, $e)`,
-      { i: ledgerId, u: user, d: points, c: at, e: plusDays(at, 365) },
+      /* No expiry date. Points do not expire on any plan, and this was the
+         last place still stamping one — a legacy opening balance carrying a
+         365-day clock nothing reads is a date waiting to be believed by the
+         next thing that looks at the column. */
+      { i: ledgerId, u: user, d: points, c: at, e: null },
     ).changes;
     if (inserted === 0) continue;
 
     db.run(
       `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount)
        VALUES ($i, $u, $c, $e, $a)`,
-      { i: ledgerId, u: user, c: at, e: plusDays(at, 365), a: points },
+      /* The lot's `expires_at` is NOT NULL, so it takes the same far-future
+         sentinel `ledger.ts` uses rather than a null: FIFO spending orders by
+         that column, and a null would sort unpredictably against the rows the
+         ledger writes. The entry above takes a real null, because nothing
+         orders by it and a date nobody reads is a date somebody eventually
+         believes. */
+      { i: ledgerId, u: user, c: at, e: NEVER, a: points },
     );
     db.run(`UPDATE users SET points_cache = points_cache + $d WHERE id = $u`, {
       d: points,

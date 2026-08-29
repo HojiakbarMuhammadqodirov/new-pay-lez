@@ -18,6 +18,16 @@
  *   * **The free tier resolves to a real plan**, not to `null`. A missing
  *     subscription is not "no entitlements", it is the free plan's entitlements
  *     — otherwise every caller would need a fallback and they would disagree.
+ *
+ * One key is narrower than its name suggests and nothing here can enforce it, so
+ * it is written down where every reader of an entitlement passes:
+ * **`points_multiplier` prices a game round and nothing else.** What a visit
+ * pays is four named keys of its own — `scan_points`, `first_visit_points`,
+ * `stamp_points`, `new_category_points` — and a paid plan already collects the
+ * higher figure from those, so scaling them by the multiplier as well would pay
+ * it twice for one scan. There is no code in this file that assumes otherwise
+ * (nothing here reads the key); the rule belongs to `games.ts`, which should
+ * apply it, and to `gate.ts`, which should not.
  */
 import type { Db } from '../db/db.ts';
 import { DomainError } from './errors.ts';
@@ -55,7 +65,17 @@ export interface Subscription {
   ended_at: string | null;
 }
 
-/** The statuses that grant a plan's perks. `past_due` deliberately does not. */
+/**
+ * The statuses that grant a plan's perks. `past_due` deliberately does not.
+ *
+ * `trialing` stays in the set although no plan is sold with a trial any more
+ * (every `trialDays` in `settings.ts` is 0). Two reasons: a store can put a
+ * subscription into it from the outside, and taking it out would strip the
+ * perks off any row that is still in it rather than resolving it — which is the
+ * clawback §12a.3 forbids. `settleWithdrawnTrials` in `settings.ts` is what
+ * actually empties the state, by moving those rows to `active` and leaving
+ * their renewal date alone.
+ */
 const ENTITLED = new Set(['trialing', 'active', 'grace']);
 
 /* ────────────────────────────────────────────── the commitment ladder ── */
@@ -255,6 +275,20 @@ export function startSubscription(
     }
 
     const id = newId('sub');
+    /*
+     * **A trial needs days, or it is not a trial.**
+     *
+     * Nothing is sold with one now — every `trialDays` in `settings.ts` is 0 —
+     * so this is false for every plan in the catalogue and the branch below
+     * always takes the billing period. It is a derivation rather than a
+     * constant because the tempting simplification is the bug: opening a paid
+     * subscription as `trialing` with `plan.trial_days` of 0 sets `renews_at`
+     * to the instant it started, and `runRenewals` sweeps everything whose
+     * renewal date has passed — so the first pass after the purchase drops a
+     * customer who has just paid into `grace`, and the pass a week later
+     * expires them. The status would be wrong for a fortnight before anybody
+     * could tell it from a card that failed.
+     */
     const trialing = plan.trial_days > 0;
     db.run(
       `INSERT INTO subscriptions

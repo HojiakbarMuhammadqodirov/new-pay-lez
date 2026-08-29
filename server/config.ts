@@ -34,25 +34,19 @@ export const CONFIG = {
 
   /* ───────────────────────────────────────────── §2 the points economy ── */
   points: {
-    /**
-     * §2.3. How long points live, FIFO. This is the *floor*: a plan may buy a
-     * longer window through the `points_expiry_months` entitlement, and on
-     * Premium it buys no expiry at all. `ledger.ts` reads the entitlement and
-     * falls back to this — it used to read this and ignore the entitlement,
-     * which is why a paying subscriber's points still expired at twelve months.
-     */
-    expiryMonths: 12,
-    /** How far ahead the "points expiring soon" notification fires. */
-    expiryWarningDays: 30,
-    /**
-     * §7.2. Shared across every game, reset at the user's local midnight. A
-     * plan may raise it (`daily_lives`), and Premium removes it entirely.
+    /*
+     * §7.2 Hearts. The floor; a plan raises it (`daily_lives`).
      *
-     * It is no longer the primary brake on earning: only a *loss* ever spent
-     * one, and two of the seven games cannot be lost. `games.decay` is what
-     * actually bounds a day now — see the note there.
+     * A lost round costs one again. It stopped costing anything when the decay
+     * curve arrived, which left the pool inert — a number on screen that never
+     * moved. What makes charging for a loss fair now is that hearts come back
+     * on a clock rather than at midnight: lose three at nine in the morning and
+     * the wait is hours, not the rest of the day.
      */
     dailyLives: 3,
+    /** Minutes to regenerate one heart, on the free plan. Paid plans are
+     *  faster (`life_regen_minutes`). */
+    lifeRegenMinutes: 240,
   },
 
   /* ─────────────────────────────────────────────── §2b what pays, and how much ──
@@ -66,17 +60,31 @@ export const CONFIG = {
    * for, so it is anchored first and the games are priced under it.
    */
   earn: {
-    /** A scan or tap, before the venue's own rate and the plan multiplier. */
-    scan: 25,
-    /** Spending over the venue minimum: this many points per step, capped. */
-    spendStepMinor: 1000,
-    spendStepPoints: 5,
-    spendMaxSteps: 5,
-    /** One-offs at a venue. */
+    /*
+     * Every value here is the **free-plan** figure. Where a paid plan pays more
+     * it does so through a named entitlement rather than a multiplier — `scan_points`,
+     * `first_visit_points`, `stamp_points`, `new_category_points` — because a
+     * table anybody can read beats an arithmetic rule nobody can predict. The
+     * multiplier survives for **game rounds only**; applying it on top of these
+     * would pay a paid plan twice for the same visit.
+     */
+
+    /** A scan or tap, before the venue's own rate. Pro 30, Premium 50. */
+    scan: 20,
+
+    /*
+     * There is no spend bonus. Paying more used to earn more, in steps over the
+     * venue minimum, and it was the one line here that made the reward depend
+     * on the size of the bill rather than on the visit — which is the wrong
+     * thing for a scheme whose whole argument to a venue is repeat custom.
+     */
+
+    /** One-offs at a venue. Pro/Premium raise all three. */
     firstVisitToVenue: 100,
-    stampCardComplete: 200,
-    newCategory: 50,
+    stampCardComplete: 100,
+    newCategory: 25,
     reviewAfterVisit: 25,
+
     /** Bringing people in. Flat on every plan, so nobody subscribes for a day
         and harvests them. */
     referrerFirstVisit: 100,
@@ -85,21 +93,33 @@ export const CONFIG = {
     friendMilestone: 500,
     dealShared: 25,
     dealSharedPerDay: 3,
+
     /** Turning up. */
     dailyCheckIn: 5,
     /** Streak day → points. Paid once, when the streak first reaches it. */
     streakMilestones: { 7: 50, 30: 250, 100: 1000 } as Record<number, number>,
-    comeback: 25,
+    /** Coming back after a lapse, once a month. Worth having rather than
+        token: the round it accompanies is the one that restarts the habit. */
+    comeback: 100,
     comebackEveryDays: 30,
-    /** Getting started, once each, the same on every plan. */
+
+    /*
+     * Getting started, once each, the same on every plan.
+     *
+     * There is no bonus for verifying an address or a number, because nothing
+     * is verified any more — finishing the profile is the whole of it, and a
+     * reward for clicking a link in an email was paying for a formality rather
+     * than for anything a venue or a player gets.
+     */
     onboarding: 100,
-    verifyContact: 25,
     profileComplete: 50,
     categoriesPicked: 25,
     firstScanEver: 100,
+
     /** Occasions. */
     birthday: 200,
     anniversary: 200,
+
     /** Premium's monthly credit. It must stay worth clearly less than the
         subscription costs, or the plan refunds itself and becomes a coupon. */
     premiumStipend: 200,

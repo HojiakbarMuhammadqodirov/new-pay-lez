@@ -1,13 +1,18 @@
 /**
  * The scheduled work.
  *
- * Six of the specs' rules only exist if something runs on a clock: points expire
- * (§2.3), unredeemed vouchers and rewards release their reserves (§4.3, §5.3),
- * deals go live and expire on their window (B3), pending transactions time out
- * (§3.1), subscriptions renew and lapse (D3), and the weekly leaderboard is
- * snapshotted and reset (§8.2). Without them the system is subtly wrong in the
- * direction nobody notices: budgets that look exhausted while nothing was ever
- * discounted, and points that never expire.
+ * Five of the specs' rules only exist if something runs on a clock: unredeemed
+ * vouchers and rewards release their reserves (§4.3, §5.3), deals go live and
+ * expire on their window (B3), pending transactions time out (§3.1),
+ * subscriptions renew and lapse (D3), and the weekly leaderboard is snapshotted
+ * and reset (§8.2). Without them the system is subtly wrong in the direction
+ * nobody notices: budgets that look exhausted while nothing was ever discounted.
+ *
+ * There were six. **Points expiry is gone** — the job that collected them and
+ * the notification that warned about them both — because points do not expire
+ * any more; `CONFIG.points` has no window left for either to read. Nothing is
+ * kept inert in its place: a job that runs and collects nothing is a job that
+ * starts collecting again the day somebody puts a number back.
  *
  * Each job is idempotent and safe to run at any cadence — they all work from
  * "what is due at this instant" rather than from a cursor — so a missed run
@@ -57,10 +62,11 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
 }
 
 /**
- * Runs daily. Expiry, the notifications that warn about it, and the averages.
+ * Runs daily. Retention, the averages, and the reconciliation.
  *
- * The warning goes out *before* the expiry job takes the points, which is the
- * only order that makes it a warning. `expiryWarningDays` is the window.
+ * It used to open with an expiry warning and close with the collection it warned
+ * about — in that order, which was the only order that made it a warning. Both
+ * are gone with the window they read.
  */
 export function runDaily(db: Db, at: Iso = now()): JobReport {
   const detail: Record<string, unknown> = {};
@@ -68,31 +74,6 @@ export function runDaily(db: Db, at: Iso = now()): JobReport {
   /* Retention is a job rather than a query filter: rows nobody deletes are rows
      that eventually have to be explained to a regulator. */
   detail.trafficPruned = traffic.prune(db, at);
-
-  let warned = 0;
-  const players = db.all<{ id: string }>(
-    `SELECT id FROM users WHERE status = 'active' AND deleted_at IS NULL AND points_cache > 0`,
-  );
-  for (const player of players) {
-    const soon = ledger.expiringSoon(db, player.id, at);
-    const total = soon.reduce((sum, row) => sum + row.points, 0);
-    if (total <= 0) continue;
-    notifications.notify(db, {
-      userId: player.id,
-      kind: 'points_expiring',
-      title: `${total} points expire soon`,
-      body: 'Points last twelve months from the day they are earned. Spend them before they go.',
-      actionUrl: '#/vouchers',
-      push: true,
-      at,
-    });
-    warned += 1;
-  }
-  detail.expiryWarnings = warned;
-
-  /* Expiry runs after the warnings, so nobody is told about points that have
-     already gone. */
-  detail.expiry = ledger.runExpiry(db, at);
 
   /* §4.5: recompute the median check, and tell the partner when the source flips
      from the category default to their own tills — the estimate they read every
@@ -134,7 +115,7 @@ export function runDaily(db: Db, at: Iso = now()): JobReport {
   }
   detail.reconciledDrift = drifted;
 
-  return { at, ran: ['expiry', 'average_check', 'reconcile'], detail };
+  return { at, ran: ['traffic', 'average_check', 'reconcile'], detail };
 }
 
 /** Runs weekly, on Monday. The leaderboard snapshot and the benchmarks. */

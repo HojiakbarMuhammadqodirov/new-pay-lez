@@ -36,23 +36,34 @@ export interface User {
   id: string;
   email: string | null;
   display_name: string;
+  /** The handle as typed, and the folded form everything compares on. */
+  username: string | null;
+  username_norm: string | null;
   password_hash: string | null;
   language: string;
+  /** One of `CITIES`, or whatever the old database carried. See `resolveCity`. */
   city: string | null;
   country_code: string | null;
   /* Contact and profile. All optional, none of them gates anything, and an
      account that answers none of them is a complete account — the schema says
      so at the columns and this shape has to keep saying it, because a field
-     typed `string` here is a field somebody will eventually make required. */
+     typed `string` here is a field somebody will eventually make required.
+
+     **None of them is verified.** There is no code sent to the number and no
+     link clicked in the address; the address is how the account signs in, which
+     is a different question. */
   phone: string | null;
-  /** 0 or 1. A fact about *this* number, reset the moment the number changes. */
-  phone_verified: number;
-  /** ISO `YYYY-MM-DD`, and write-once — see `updateProfile`. */
+  /** ISO `YYYY-MM-DD`. Set once, corrected once — see `updateProfile`. */
   birth_date: string | null;
   birth_date_set_at: string | null;
+  /** Accepted writes, not corrections: 0 unset, 1 set, 2 spent. */
+  birth_date_changes: number;
   headline: string | null;
+  display_avatar: string | null;
   /** When onboarding was reported finished; the welcome gift's once-only guard. */
   onboarded_at: string | null;
+  /** The same guard for `CONFIG.earn.profileComplete`. */
+  profile_completed_at: string | null;
   points_cache: number;
   leaderboard_opt_in: number;
   referral_code: string | null;
@@ -205,14 +216,19 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
   /* Hashing is the only await in the flow and it happens *before* the
      transaction opens: a 100ms scrypt inside `BEGIN IMMEDIATE` would hold the
      write lock for the whole of it. */
+  /* The same closed set `updateProfile` writes against, checked here too —
+     otherwise sign-up is the hole in it, and the first thing every account holds
+     is a city nothing else in the product will accept. */
+  const city = input.city === undefined ? null : resolveCity(input.city);
+
   const hash = await hashPassword(input.password);
   const id = newId('usr');
 
   db.tx(() => {
     db.run(
       `INSERT INTO users (id, email, email_norm, display_name, password_hash, auth_provider,
-                          language, city, status, created_at, updated_at)
-       VALUES ($i, $e, $n, $d, $h, 'email', $l, $c, 'active', $t, $t)`,
+                          language, city, country_code, status, created_at, updated_at)
+       VALUES ($i, $e, $n, $d, $h, 'email', $l, $c, $cc, 'active', $t, $t)`,
       {
         i: id,
         e: input.email.trim(),
@@ -220,7 +236,8 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
         d: input.name.trim(),
         h: hash,
         l: input.language ?? 'en',
-        c: input.city ?? null,
+        c: city?.name ?? null,
+        cc: city?.country ?? null,
         t: at,
       },
     );
@@ -730,6 +747,22 @@ export async function changePassword(
 /* ════════════════════════════════════════════════════════ the profile ══ */
 
 /**
+ * A profile is seven answers: a photo, a username, a status line, a city, an
+ * email address, a phone number and a birthday.
+ *
+ * **Nothing here is verified.** No code is sent to the number, no link is
+ * clicked in the address, and neither pays anything. The address is what the
+ * account signs in with, which is authentication and a different question — a
+ * bonus for proving you can read your own email was paying for a formality, and
+ * a `phone_verified` column that nothing could ever set to 1 was worse than not
+ * asking, because a reader cannot tell "not verified" from "we stopped asking".
+ *
+ * Three of the seven have rules that are not "is it a string", and they are what
+ * the rest of this section is: the username is unique across the product, the
+ * city is a choice from a closed set, and the birthday may be corrected once.
+ */
+
+/**
  * The age a self-registered account is allowed to be.
  *
  * Thirteen is the floor a service that profiles its users may take a
@@ -789,11 +822,12 @@ function checkBirthDate(value: string, at: Iso): string {
 /**
  * A phone number, loosely.
  *
- * Deliberately loose, and that is the design rather than a gap: the only thing
- * that establishes a number is a code sent to it, which is what
- * `phone_verified` records. A strict pattern here would reject real numbers in
- * formats nobody thought of while doing nothing at all about a well-formed
- * number belonging to somebody else.
+ * Deliberately loose, and that is the design rather than a gap. The only thing
+ * that could establish a number is a code sent to it, and nothing here sends
+ * one — so a strict pattern would buy nothing it does not already lack. It would
+ * reject real numbers in formats nobody thought of, and it would still accept a
+ * perfectly well-formed number belonging to somebody else. What is being checked
+ * is that the field holds a phone number rather than a sentence.
  */
 function checkPhone(value: string): string {
   const digits = value.replace(/\D/g, '');
@@ -808,37 +842,441 @@ function checkPhone(value: string): string {
 /** A line, not a paragraph. A column with no ceiling is where a novel lands. */
 const HEADLINE_MAX = 140;
 
+/* ─────────────────────────────────────────────────────────── the handle ── */
+
+/**
+ * Three to twenty, `a-z 0-9 _`, starting and ending on a letter or a digit and
+ * never two underscores together.
+ *
+ * The ceiling is a display constraint — a handle has to fit beside an avatar on
+ * a leaderboard row — and the floor is that two characters is not a name, it is
+ * a landgrab on a namespace with one of each. The rest is about *telling two
+ * handles apart*: leading, trailing and doubled underscores are invisible at a
+ * glance, so `kasia_`, `_kasia` and `kasia__pl` are three ways to look like
+ * somebody else, and refusing them costs nobody a name they wanted.
+ *
+ * ASCII only, and that is the point rather than an oversight. The handle is
+ * quoted back at other people — in a leaderboard, in a referral, in a report —
+ * and a Cyrillic `а` in an otherwise Latin word is a working impersonation that
+ * no amount of case folding catches. The display name beside it is free text in
+ * any script the player likes; that one is what they are called, this one is
+ * what they *are*.
+ */
+const USERNAME_MIN = 3;
+const USERNAME_MAX = 20;
+const USERNAME_SHAPE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
+
+/**
+ * Handles the product needs to keep, or that would be a lie to hand out.
+ *
+ * Two kinds, and it is worth keeping them apart when adding to the list.
+ * `admin`, `support`, `security` and `billing` are **claims about who is
+ * speaking**, and a player holding one of them is a phishing message that needs
+ * no forgery. The rest are surfaces — `api`, `me`, `settings` — that a URL or a
+ * client route may want later; giving one away costs a rename with somebody's
+ * name on it.
+ */
+const RESERVED_USERNAMES = new Set([
+  'admin', 'administrator', 'moderator', 'mod', 'staff', 'team', 'official',
+  'support', 'help', 'helpdesk', 'security', 'billing', 'payments', 'sales',
+  'paylez', 'paylezteam', 'paylezsupport', 'operations', 'ops', 'system',
+  'root', 'superuser', 'owner', 'partner', 'venue', 'merchant',
+  'api', 'www', 'me', 'my', 'settings', 'account', 'login', 'signin', 'signup',
+  'about', 'contact', 'privacy', 'terms', 'legal', 'press',
+  'null', 'undefined', 'none', 'anonymous', 'guest', 'user', 'everyone', 'all',
+  'noreply', 'no_reply', 'postmaster', 'webmaster',
+]);
+
+/** The comparison key. Lowercase is total here because the shape is ASCII. */
+const foldUsername = (value: string): string => value.trim().toLowerCase();
+
+/**
+ * A handle, or a refusal naming the field.
+ *
+ * Returns both forms because both are stored: what the player typed, so
+ * `KasiaPL` is shown back the way she wrote it, and the folded key, so nobody
+ * else can be `kasiapl`. That is the arrangement `email` / `email_norm` already
+ * uses on this table, and the reason to copy it rather than invent a second one
+ * is that the second one is where the two drift.
+ */
+function checkUsername(value: string): { username: string; norm: string } {
+  const username = value.trim();
+  const norm = foldUsername(username);
+  const invalid = (message: string): never => {
+    throw new DomainError('validation_failed', message, { field: 'username' });
+  };
+
+  if (norm.length < USERNAME_MIN || norm.length > USERNAME_MAX) {
+    invalid(`a username is ${USERNAME_MIN} to ${USERNAME_MAX} characters`);
+  }
+  if (!USERNAME_SHAPE.test(norm)) {
+    invalid('a username is letters, digits and single underscores between them');
+  }
+  if (RESERVED_USERNAMES.has(norm)) invalid('that username is reserved');
+
+  return { username, norm };
+}
+
+/* ───────────────────────────────────────────────────────────── the city ── */
+
+/**
+ * Where Paylez operates, and therefore the only cities a profile may name.
+ *
+ * **A served constant rather than a table**, and the choice is not arbitrary.
+ * The set is a product decision that ships with the code — it changes when the
+ * business enters a country, which is a deploy either way — and the matching
+ * below is a *rule* rather than data, so a table would hold half the answer and
+ * leave the half that actually decides things in TypeScript anyway. A table
+ * would also drift: a row added to a live database is a city the validator
+ * accepts and nothing else in the product has ever heard of. `GET /v1/cities`
+ * serves this list so a client can render the picker from the same source the
+ * write is checked against.
+ *
+ * The reason a closed set exists at all is one query. The city weekly board
+ * (`domain/social.ts`) groups on `users.city` with a literal `=`, so free text
+ * does not produce a messy board — it produces *several* boards, one per
+ * spelling, and every player is alone on theirs.
+ *
+ * Names are the ASCII form already in this database (`venues.city` is `Krakow`
+ * and `Warsaw`), because that same literal `=` has to match across the two
+ * tables. The local and native spellings are not lost: they are how the entry is
+ * *found*, either by folding (`Kraków` → `krakow`) or by the aliases below, for
+ * the ones where folding is not enough (`Warszawa`, `München`, `Toshkent`).
+ */
+export type CityCountry = 'PL' | 'DE' | 'UZ';
+
+interface CityEntry {
+  name: string;
+  country: CityCountry;
+  /** Spellings that do not fold onto `name` — exonyms and endonyms, not typos. */
+  also?: readonly string[];
+}
+
+const CITY_TABLE: readonly CityEntry[] = [
+  /* Poland — the market the rest of the product is written for. */
+  { name: 'Warsaw', country: 'PL', also: ['Warszawa'] },
+  { name: 'Krakow', country: 'PL', also: ['Cracow'] },
+  { name: 'Lodz', country: 'PL' },
+  { name: 'Wroclaw', country: 'PL', also: ['Breslau'] },
+  { name: 'Poznan', country: 'PL' },
+  { name: 'Gdansk', country: 'PL', also: ['Danzig'] },
+  { name: 'Gdynia', country: 'PL' },
+  { name: 'Sopot', country: 'PL' },
+  { name: 'Szczecin', country: 'PL' },
+  { name: 'Bydgoszcz', country: 'PL' },
+  { name: 'Lublin', country: 'PL' },
+  { name: 'Bialystok', country: 'PL' },
+  { name: 'Katowice', country: 'PL' },
+  { name: 'Czestochowa', country: 'PL' },
+  { name: 'Radom', country: 'PL' },
+  { name: 'Torun', country: 'PL' },
+  { name: 'Sosnowiec', country: 'PL' },
+  { name: 'Rzeszow', country: 'PL' },
+  { name: 'Kielce', country: 'PL' },
+  { name: 'Gliwice', country: 'PL' },
+  { name: 'Zabrze', country: 'PL' },
+  { name: 'Bytom', country: 'PL' },
+  { name: 'Olsztyn', country: 'PL' },
+  { name: 'Bielsko-Biala', country: 'PL' },
+  { name: 'Rybnik', country: 'PL' },
+  { name: 'Opole', country: 'PL' },
+  { name: 'Tychy', country: 'PL' },
+  { name: 'Zielona Gora', country: 'PL' },
+  { name: 'Gorzow Wielkopolski', country: 'PL' },
+  { name: 'Plock', country: 'PL' },
+  { name: 'Elblag', country: 'PL' },
+  { name: 'Walbrzych', country: 'PL' },
+  { name: 'Wloclawek', country: 'PL' },
+  { name: 'Tarnow', country: 'PL' },
+  { name: 'Chorzow', country: 'PL' },
+  { name: 'Koszalin', country: 'PL' },
+  { name: 'Legnica', country: 'PL' },
+  { name: 'Kalisz', country: 'PL' },
+  { name: 'Slupsk', country: 'PL' },
+  { name: 'Jelenia Gora', country: 'PL' },
+  { name: 'Nowy Sacz', country: 'PL' },
+  { name: 'Przemysl', country: 'PL' },
+  { name: 'Zamosc', country: 'PL' },
+  { name: 'Suwalki', country: 'PL' },
+  { name: 'Zakopane', country: 'PL' },
+
+  /* Germany. */
+  { name: 'Berlin', country: 'DE' },
+  { name: 'Hamburg', country: 'DE' },
+  { name: 'Munich', country: 'DE', also: ['München', 'Muenchen'] },
+  { name: 'Cologne', country: 'DE', also: ['Köln', 'Koeln'] },
+  { name: 'Frankfurt', country: 'DE', also: ['Frankfurt am Main'] },
+  { name: 'Stuttgart', country: 'DE' },
+  { name: 'Dusseldorf', country: 'DE', also: ['Duesseldorf'] },
+  { name: 'Leipzig', country: 'DE' },
+  { name: 'Dortmund', country: 'DE' },
+  { name: 'Essen', country: 'DE' },
+  { name: 'Bremen', country: 'DE' },
+  { name: 'Dresden', country: 'DE' },
+  { name: 'Hanover', country: 'DE', also: ['Hannover'] },
+  { name: 'Nuremberg', country: 'DE', also: ['Nürnberg', 'Nuernberg'] },
+  { name: 'Duisburg', country: 'DE' },
+  { name: 'Bochum', country: 'DE' },
+  { name: 'Wuppertal', country: 'DE' },
+  { name: 'Bielefeld', country: 'DE' },
+  { name: 'Bonn', country: 'DE' },
+  { name: 'Munster', country: 'DE', also: ['Muenster'] },
+  { name: 'Karlsruhe', country: 'DE' },
+  { name: 'Mannheim', country: 'DE' },
+  { name: 'Augsburg', country: 'DE' },
+  { name: 'Wiesbaden', country: 'DE' },
+  { name: 'Monchengladbach', country: 'DE', also: ['Moenchengladbach'] },
+  { name: 'Braunschweig', country: 'DE', also: ['Brunswick'] },
+  { name: 'Kiel', country: 'DE' },
+  { name: 'Chemnitz', country: 'DE' },
+  { name: 'Aachen', country: 'DE' },
+  { name: 'Halle', country: 'DE', also: ['Halle an der Saale'] },
+  { name: 'Magdeburg', country: 'DE' },
+  { name: 'Freiburg', country: 'DE', also: ['Freiburg im Breisgau'] },
+  { name: 'Krefeld', country: 'DE' },
+  { name: 'Mainz', country: 'DE' },
+  { name: 'Lubeck', country: 'DE', also: ['Luebeck'] },
+  { name: 'Erfurt', country: 'DE' },
+  { name: 'Rostock', country: 'DE' },
+  { name: 'Kassel', country: 'DE' },
+  { name: 'Potsdam', country: 'DE' },
+  { name: 'Saarbrucken', country: 'DE', also: ['Saarbruecken'] },
+  { name: 'Heidelberg', country: 'DE' },
+  { name: 'Regensburg', country: 'DE' },
+  { name: 'Wurzburg', country: 'DE', also: ['Wuerzburg'] },
+  { name: 'Ulm', country: 'DE' },
+  { name: 'Jena', country: 'DE' },
+
+  /* Uzbekistan. Canonical is the international Latin form, because that is what
+     the guidebook and the old database already carry; the Uzbek spellings are
+     aliases rather than second entries, so one city is one board. */
+  { name: 'Tashkent', country: 'UZ', also: ['Toshkent'] },
+  { name: 'Samarkand', country: 'UZ', also: ['Samarqand'] },
+  { name: 'Bukhara', country: 'UZ', also: ['Buxoro', 'Bukhoro'] },
+  { name: 'Namangan', country: 'UZ' },
+  { name: 'Andijan', country: 'UZ', also: ['Andijon'] },
+  { name: 'Nukus', country: 'UZ' },
+  /* One spelling each for the two with an apostrophe in them: the fold strips
+     it, so `Farg'ona` and `Fargona` are already the same key. */
+  { name: 'Fergana', country: 'UZ', also: ["Farg'ona"] },
+  { name: 'Qarshi', country: 'UZ', also: ['Karshi'] },
+  { name: 'Kokand', country: 'UZ', also: ["Qo'qon"] },
+  { name: 'Margilan', country: 'UZ', also: ['Margilon'] },
+  { name: 'Jizzakh', country: 'UZ', also: ['Jizzax'] },
+  { name: 'Urgench', country: 'UZ', also: ['Urganch'] },
+  { name: 'Navoiy', country: 'UZ', also: ['Navoi'] },
+  { name: 'Termez', country: 'UZ', also: ['Termiz'] },
+  { name: 'Angren', country: 'UZ' },
+  { name: 'Chirchik', country: 'UZ', also: ['Chirchiq'] },
+  { name: 'Gulistan', country: 'UZ', also: ['Guliston'] },
+  { name: 'Nurafshon', country: 'UZ' },
+  { name: 'Khiva', country: 'UZ', also: ['Xiva'] },
+  { name: 'Shahrisabz', country: 'UZ' },
+  { name: 'Zarafshan', country: 'UZ', also: ['Zarafshon'] },
+  { name: 'Bekabad', country: 'UZ', also: ['Bekobod'] },
+  { name: 'Denau', country: 'UZ', also: ['Denov'] },
+  { name: 'Kagan', country: 'UZ', also: ['Kogon'] },
+];
+
+/** The three countries, in the order the table lists them. */
+export const CITY_COUNTRIES: readonly CityCountry[] = ['PL', 'DE', 'UZ'];
+
+/** What `GET /v1/cities` serves, and the only shape a client needs. */
+export const CITIES: readonly { name: string; country: CityCountry }[] = CITY_TABLE.map(
+  ({ name, country }) => ({ name, country }),
+);
+
+/**
+ * Fold a place name to the key two spellings of it share.
+ *
+ * NFD-and-strip handles every accented letter that *decomposes* — `ó`, `ą`, `ń`,
+ * `ü` — which is most of them and costs nothing to maintain. Three do not, and
+ * each is a whole language's worth of near-misses: Polish `ł` has no
+ * decomposition at all (`Łódź` would fold to `łodz` and match nothing), German
+ * `ß` is two letters, and the Uzbek `ʻ`/`'` in `Farg'ona` is a modifier letter
+ * that a keyboard on a phone will and will not produce.
+ *
+ * Everything else collapses to single spaces, so `Bielsko-Biala`,
+ * `Bielsko Biala` and `bielsko—biala` are one place.
+ */
+const foldCity = (value: string): string =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/ł/g, 'l')
+    .replace(/ß/g, 'ss')
+    .replace(/['‘’ʻ`.]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+
+/** Every spelling that resolves, built once — and every collision named. */
+const CITY_INDEX = new Map<string, CityEntry>();
+const CITY_CLASHES: string[] = [];
+for (const entry of CITY_TABLE) {
+  for (const spelling of [entry.name, ...(entry.also ?? [])]) {
+    const key = foldCity(spelling);
+    const taken = CITY_INDEX.get(key);
+    /* Only a clash between *different* cities is a fault. One entry listing two
+       spellings that fold together — `Farg'ona` and `Fargona`, which differ only by
+       the apostrophe the fold strips — is redundant and harmless, and demanding
+       the author pre-apply the fold would defeat the point of an alias list. */
+    if (taken && taken !== entry) {
+      CITY_CLASHES.push(`${spelling} (${entry.country}) collides with ${taken.name} (${taken.country}) on "${key}"`);
+    }
+    CITY_INDEX.set(key, entry);
+  }
+}
+
+/* Two cities folding onto one key would silently make one of them
+   unreachable — the picker would offer it and the write would store its
+   neighbour. Cheaper to refuse to load than to explain later, and it is the same
+   guard `db/countries.ts` earned the hard way on `Congo, Rep.`. */
+if (CITY_CLASHES.length > 0) {
+  throw new Error('CITY_TABLE has folding spellings: ' + CITY_CLASHES.join('; '));
+}
+
+/**
+ * A city, or a refusal naming the field.
+ *
+ * Returns the country with it, because the country is not a second answer: it is
+ * a fact about the city, and a profile that could be asked for both is a profile
+ * that can hold `Krakow, DE`. `users.country_code` is written from here and
+ * never from the request.
+ *
+ * **Nothing revalidates a row that is already stored.** The old database's
+ * cities came over as whatever it held, and a rule applied backwards would make
+ * those accounts unsaveable — every PATCH refused over a field the player never
+ * touched. The set governs writes; what is already there stays until its owner
+ * picks from the list.
+ */
+export function resolveCity(value: string): { name: string; country: CityCountry } {
+  const entry = CITY_INDEX.get(foldCity(value));
+  if (!entry) {
+    throw new DomainError('validation_failed', 'that city is not one Paylez covers yet', {
+      field: 'city',
+      countries: CITY_COUNTRIES,
+    });
+  }
+  return { name: entry.name, country: entry.country };
+}
+
+/* ────────────────────────────────────────────────────────── the birthday ── */
+
+/**
+ * How many times a player may write their own birthday: once to set it, once to
+ * fix it.
+ *
+ * The reason for a limit has not changed — `CONFIG.earn.birthday` pays for one,
+ * so an unlimited edit is a bonus collectable every day of the year. What
+ * changed is the recognition that a date picker on a phone is a machine for
+ * being one day out, and that "contact support" as the answer to a typo made in
+ * the first thirty seconds of using the product is a support queue nobody wanted
+ * and a player who does not bother. One correction costs the scheme nothing: the
+ * second write cannot pay twice, because the occasion pays on the *day*, not on
+ * the edit.
+ *
+ * Counted rather than inferred. `birth_date_set_at` is equally true after one
+ * write and after two, so a rule reading it can only ever enforce write-once.
+ */
+export const BIRTH_DATE_WRITES = 2;
+
 export interface ProfilePatch {
   name?: string;
+  username?: string;
   language?: string;
   city?: string;
   avatar?: string | null;
   phone?: string;
   headline?: string;
-  /** ISO `YYYY-MM-DD`. Accepted **once** in the life of the account. */
+  /** ISO `YYYY-MM-DD`. Accepted twice: the answer, and one correction. */
   birthDate?: string;
+}
+
+/**
+ * What makes a profile complete: all seven answers present.
+ *
+ * Photo, username, status line, city, email, phone, birthday — the whole of what
+ * a profile *is*, which is the only definition that survives a field being
+ * added. "Most of it" would have to be renegotiated every time the form grows,
+ * and a threshold nobody can state is one the client and the server will
+ * eventually disagree about.
+ *
+ * The email is on the list even though every password account has one, because
+ * a Google account has one too and a provisional guest has none — so it is the
+ * line that says a guest who filled in six fields has not finished, which is
+ * true: they have no account yet.
+ */
+const isProfileComplete = (user: User): boolean =>
+  Boolean(
+    user.display_avatar &&
+      user.username &&
+      user.headline &&
+      user.city &&
+      user.email &&
+      user.phone &&
+      user.birth_date,
+  );
+
+/**
+ * Pay for a finished profile, **exactly once**.
+ *
+ * The same construction as `completeOnboarding`, and for the same reason: the
+ * guard is the `UPDATE … WHERE profile_completed_at IS NULL`, evaluated while
+ * SQLite holds the write lock, so two saves arriving together race for one row
+ * and one of them wins. A read followed by an `if` is the same code with a gap
+ * in it wide enough to pay twice.
+ *
+ * The stamp is never cleared. A profile that has once been complete has been
+ * complete, and a grant that could be re-earned by deleting a photo and adding
+ * it back is not a grant, it is a faucet.
+ */
+function payForACompleteProfile(db: Db, user: User, at: Iso): void {
+  if (user.profile_completed_at !== null || !isProfileComplete(user)) return;
+
+  const claimed =
+    db.run(
+      `UPDATE users SET profile_completed_at = $t WHERE id = $u AND profile_completed_at IS NULL`,
+      { t: at, u: user.id },
+    ).changes === 1;
+  if (!claimed) return;
+
+  ledger.earn(db, {
+    userId: user.id,
+    points: CONFIG.earn.profileComplete,
+    reason: 'profile_bonus',
+    sourceKind: 'profile',
+    sourceRef: user.id,
+    at,
+  });
 }
 
 /**
  * Edit the profile.
  *
- * Two of these fields are not like the others, and both rules are in the schema
- * at the column they belong to:
+ * Four of these fields are not "is it a string", and each rule is also in the
+ * schema at the column it belongs to:
  *
- * **A changed number is an unverified number.** `phone_verified` is a fact about
- * *this* number, not about the account having once verified one, so writing a
- * different number clears it in the same statement — one statement, because a
- * write followed by a separate reset is a window in which an unverified number
- * is trusted. Writing the *same* number back is not a change and does not clear
- * it, which is what stops a client that PATCHes its whole profile from
- * un-verifying somebody on every save.
+ * **A username is unique, ignoring case.** Checked here for the refusal a client
+ * can act on — a `conflict` naming the field — and enforced by
+ * `idx_users_username_norm` for the case this check cannot see: two people
+ * claiming one handle in the same millisecond. The unique index is what is
+ * *true*; the lookup is what is *helpful*, and the `catch` below is what stops
+ * the race surfacing as a raw SQLite constraint message.
  *
- * **A birthday is write-once.** `CONFIG.earn.birthday` pays for one; an editable
- * one is a bonus collectable every day of the year, and the fix is not a
- * cooldown but a column that can only be filled in. The refusal names support
- * rather than pretending the correction is impossible — it is a human decision
- * about somebody's identity, which is exactly the kind that does not belong on
- * an endpoint.
+ * **A city is a choice.** `resolveCity` maps whatever was typed onto one of
+ * `CITIES` and hands back the country with it, so `country_code` is written from
+ * the city rather than answered separately and the two cannot disagree.
+ *
+ * **A birthday may be corrected once.** The counter is the rule; see
+ * `BIRTH_DATE_WRITES`. The refusal names support rather than pretending the
+ * correction is impossible, because a third change is a human decision about
+ * somebody's identity and that is exactly the kind that does not belong on an
+ * endpoint.
+ *
+ * **Finishing it pays.** `CONFIG.earn.profileComplete`, once, inside the same
+ * transaction as the write that finished it — so the grant and the fact it is
+ * paid for either both happened or neither did.
  */
 export function updateProfile(
   db: Db,
@@ -856,49 +1294,93 @@ export function updateProfile(
     });
   }
 
-  let birthDate: string | null = null;
-  if (patch.birthDate !== undefined) {
-    if (user.birth_date !== null) {
-      throw new DomainError(
-        'conflict',
-        'a birthday can only be set once — contact support to have it corrected',
-        { field: 'birthDate' },
-      );
+  const handle = patch.username === undefined ? null : checkUsername(patch.username);
+  if (handle && handle.norm !== user.username_norm) {
+    const taken = db.get(`SELECT 1 FROM users WHERE username_norm = $n AND id <> $u`, {
+      n: handle.norm,
+      u: userId,
+    });
+    if (taken) {
+      throw new DomainError('conflict', 'that username is taken', { field: 'username' });
     }
-    birthDate = checkBirthDate(patch.birthDate.trim(), at);
   }
 
-  db.run(
-    `UPDATE users
-        SET display_name = COALESCE($n, display_name),
-            language = COALESCE($l, language),
-            city = COALESCE($c, city),
-            display_avatar = COALESCE($a, display_avatar),
-            headline = COALESCE($hd, headline),
-            phone = COALESCE($ph, phone),
-            /* Every right-hand side reads the row as it was, so the bare column
-               here is the OLD number: this is a comparison, not a tautology.
-               (No backticks in this string — one ends the template literal and
-               the syntax error surfaces a dozen lines later.) */
-            phone_verified = CASE
-              WHEN $ph IS NULL OR $ph = phone THEN phone_verified ELSE 0 END,
-            birth_date = COALESCE($bd, birth_date),
-            /* Only ever written beside the first birthday, which the refusal
-               above is what guarantees. */
-            birth_date_set_at = CASE WHEN $bd IS NULL THEN birth_date_set_at ELSE $t END,
-            updated_at = $t
-      WHERE id = $u`,
-    {
-      n: patch.name?.trim() || null,
-      l: patch.language ?? null,
-      c: patch.city ?? null,
-      a: patch.avatar ?? null,
-      hd: headline || null,
-      ph: patch.phone === undefined ? null : checkPhone(patch.phone.trim()),
-      bd: birthDate,
-      t: at,
-      u: userId,
-    },
-  );
-  return getUser(db, userId);
+  const city = patch.city === undefined ? null : resolveCity(patch.city);
+  const phone = patch.phone === undefined ? null : checkPhone(patch.phone.trim());
+
+  let birthDate: string | null = null;
+  if (patch.birthDate !== undefined) {
+    const wanted = checkBirthDate(patch.birthDate.trim(), at);
+    /* Writing the same day back is not a change and does not spend anything.
+       That is what lets a client PATCH its whole profile on every save — the
+       alternative is an account whose one correction was consumed by a form
+       resending a field nobody touched, which is a support ticket caused
+       entirely by the rule meant to avoid them. */
+    if (wanted !== user.birth_date) {
+      if (user.birth_date_changes >= BIRTH_DATE_WRITES) {
+        throw new DomainError(
+          'conflict',
+          'a birthday can be corrected once — contact support to have it changed again',
+          { field: 'birthDate' },
+        );
+      }
+      birthDate = wanted;
+    }
+  }
+
+  return db.tx(() => {
+    try {
+      db.run(
+        `UPDATE users
+            SET display_name = COALESCE($n, display_name),
+                username = COALESCE($un, username),
+                username_norm = COALESCE($unn, username_norm),
+                language = COALESCE($l, language),
+                city = COALESCE($c, city),
+                /* From the city, never from the request: see resolveCity. */
+                country_code = COALESCE($cc, country_code),
+                display_avatar = COALESCE($a, display_avatar),
+                headline = COALESCE($hd, headline),
+                phone = COALESCE($ph, phone),
+                birth_date = COALESCE($bd, birth_date),
+                /* When it was last written, which is now one of two moments. */
+                birth_date_set_at = CASE WHEN $bd IS NULL THEN birth_date_set_at ELSE $t END,
+                /* The right-hand side reads the row as it was, so this counts
+                   the write that is happening. The ceiling is checked above; the
+                   column is the record, not the guard. */
+                birth_date_changes = birth_date_changes + CASE WHEN $bd IS NULL THEN 0 ELSE 1 END,
+                updated_at = $t
+          WHERE id = $u`,
+        {
+          n: patch.name?.trim() || null,
+          un: handle?.username ?? null,
+          unn: handle?.norm ?? null,
+          l: patch.language ?? null,
+          c: city?.name ?? null,
+          cc: city?.country ?? null,
+          a: patch.avatar ?? null,
+          hd: headline || null,
+          ph: phone,
+          bd: birthDate,
+          t: at,
+          u: userId,
+        },
+      );
+    } catch (error) {
+      /* The race the lookup above cannot see. Re-thrown as the same refusal the
+         lookup would have given, so a client never has to read SQLite's own
+         wording to find out which field it was. Anything else is somebody
+         else's problem and is rethrown untouched. */
+      if (String((error as Error).message).includes('users.username_norm')) {
+        throw new DomainError('conflict', 'that username is taken', { field: 'username' });
+      }
+      throw error;
+    }
+
+    /* Read back before deciding: completeness is a fact about the row as it now
+       is, and half of it may have arrived in this very patch. */
+    const updated = getUser(db, userId);
+    payForACompleteProfile(db, updated, at);
+    return getUser(db, userId);
+  });
 }

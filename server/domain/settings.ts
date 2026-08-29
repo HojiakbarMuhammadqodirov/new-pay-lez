@@ -76,12 +76,30 @@ interface PlanSeed {
  * `entNumber` hands every caller a number and every caller compares against it,
  * so the top tier needs a figure no real account reaches rather than a second
  * type in `plan_entitlements` for the one row that means "no ceiling". Ten
- * thousand lives is ten thousand rounds between two midnights; the sentinel is
- * honest about being a bound, because it *is* one — just not one anybody will
- * find. Anything that has to distinguish "high" from "infinite" should read the
- * key it means (`points_expiry_months: 0`) rather than test against this.
+ * thousand assistant questions is one every nine seconds from one midnight to
+ * the next; the sentinel is honest about being a bound, because it *is* one —
+ * just not one anybody will find.
+ *
+ * It is spent on exactly two keys now — `streak_freezes` and
+ * `assistant_uses_per_day` — and the tiered numbers everywhere else are real
+ * numbers a customer can be told. That is the direction to keep travelling: a
+ * perk written as a figure ("seven hearts", "ten hints") is one a plan card can
+ * print, and a sentinel is what you reach for only when the honest answer is
+ * that nobody will ever hit the ceiling.
  */
 const UNLIMITED = 9999;
+
+/**
+ * The free plan's assistant allowance, exported because two files need it and
+ * `config.ts` has no home for it.
+ *
+ * `plan_entitlements` *is* the config for this one (C6: tiers change without a
+ * deploy), so the number lives in the seed below — but the route that enforces
+ * it needs a fallback for a database whose plan rows predate the key, and a
+ * fallback that disagrees with the seed is a limit nobody can predict. One
+ * constant, read by the seed and by `routes/consumer.ts`.
+ */
+export const FREE_ASSISTANT_USES_PER_DAY = 5;
 
 /**
  * Rank order is entitlement order: `freePlan()` takes rank 0 and
@@ -97,23 +115,62 @@ const PLANS: PlanSeed[] = [
     trialDays: 0,
     rank: 0,
     entitlements: {
-      /* The free tier is genuinely useful: earning, redeeming, games and deals
-         all work. What paid tiers add is headroom, never access (§12a.1). */
+      /*
+       * The free tier is genuinely useful: earning, redeeming, games and deals
+       * all work. What paid tiers add is headroom, never access (§12a.1).
+       *
+       * Every key below is the **free** figure and every one of them is also
+       * the floor the code falls back to when a row is missing, so this block
+       * and `config.ts` have to keep saying the same thing — which is why the
+       * ones that have a home there are read from it rather than retyped.
+       *
+       * The three plans list their keys in the same order on purpose: the whole
+       * commercial argument for a tier is the column diff, and a reader who has
+       * to hunt for `word_hints_per_day` in three differently-ordered blocks
+       * cannot see it.
+       */
       daily_lives: CONFIG.points.dailyLives,
+      /* Hearts come back on a clock, and the clock is what a plan buys: four
+         hours free, three on Pro, two on Premium. A faster refill is worth
+         more than a bigger pool to the player who runs out at nine in the
+         morning, which is the player this key exists for. */
+      life_regen_minutes: CONFIG.points.lifeRegenMinutes,
+      /* **Game rounds only** — see the note in `entitlements.ts`. The venue
+         lines below have their own per-tier figures, and multiplying those as
+         well would pay a paid plan twice for one visit. */
       points_multiplier: 1,
-      points_expiry_months: CONFIG.points.expiryMonths,
-      streak_freezes: 2,
+      /* What a visit is worth, per tier, as four named numbers rather than as
+         the multiplier applied twice. A table anybody can read beats an
+         arithmetic rule nobody can predict — `config.ts` says the same thing
+         from the other end, and these four are its free-plan row. */
+      scan_points: CONFIG.earn.scan,
+      first_visit_points: CONFIG.earn.firstVisitToVenue,
+      stamp_points: CONFIG.earn.stampCardComplete,
+      new_category_points: CONFIG.earn.newCategory,
+      /* How long a bought voucher stays spendable. Two weeks is long enough to
+         plan a meal around and short enough that the venue's reserve is not
+         held for a season by somebody who has forgotten they have it —
+         `CONFIG.vouchers.validityDays` is the fallback, not this number. */
+      voucher_validity_days: 14,
       word_hints_per_day: 3,
-      exclusive_deals: false,
-      deal_early_access_hours: 0,
-      gift_card_priority: false,
-      monthly_stipend: 0,
+      /* Questions the assistant answers in a day. It costs a model call and a
+         retrieval pass per ask, so this is the one consumer key whose ceiling
+         is a real running cost rather than a design choice. */
+      assistant_uses_per_day: FREE_ASSISTANT_USES_PER_DAY,
+      /* The mark beside the name on a leaderboard. Empty is not "no key set" —
+         it is the free tier's badge, which is none. */
+      profile_badge: '',
+      streak_freezes: 2,
       /* Which curve in `CONFIG.games.decay` prices a repeat of the same game
          today. The *value* is a key of that table, so a code here that the table
          does not know silently buys the free curve — see `decayFor`. Keeping the
          three values equal to the three plan codes is what makes that
          impossible to get wrong. */
       round_decay: 'free',
+      exclusive_deals: false,
+      deal_early_access_hours: 0,
+      gift_card_priority: false,
+      monthly_stipend: 0,
       priority_support: false,
       assistant: true,
     },
@@ -123,22 +180,33 @@ const PLANS: PlanSeed[] = [
     code: 'pro',
     name: 'Pro',
     priceMinor: 1999,
-    trialDays: 7,
+    /*
+     * **No trial, on any plan.** See `startSubscription`: the status a
+     * subscription opens in is derived from this number, and a zero here is
+     * what keeps a paid subscription out of `trialing` — which is the state
+     * that would otherwise renew on the day it started.
+     */
+    trialDays: 0,
     rank: 1,
     terms: true,
     entitlements: {
-      daily_lives: 6,
-      points_multiplier: 1.2,
-      /* Twice the free window rather than no window: expiry is what keeps the
-         liability finite, and only the top tier is sold out of it. */
-      points_expiry_months: 24,
-      streak_freezes: 5,
+      daily_lives: 5,
+      life_regen_minutes: 180,
+      points_multiplier: 1.25,
+      scan_points: 30,
+      first_visit_points: 150,
+      stamp_points: 150,
+      new_category_points: 50,
+      voucher_validity_days: 30,
       word_hints_per_day: 6,
+      assistant_uses_per_day: 20,
+      profile_badge: 'star',
+      streak_freezes: 5,
+      round_decay: 'pro',
       exclusive_deals: true,
       deal_early_access_hours: 0,
       gift_card_priority: true,
       monthly_stipend: 0,
-      round_decay: 'pro',
       priority_support: false,
       assistant: true,
     },
@@ -148,18 +216,28 @@ const PLANS: PlanSeed[] = [
     code: 'premium',
     name: 'Premium',
     priceMinor: 3999,
-    trialDays: 7,
+    trialDays: 0,
     rank: 2,
     terms: true,
     entitlements: {
-      daily_lives: UNLIMITED,
-      points_multiplier: 1.6,
-      /* **Zero means never.** `ledger.ts` writes a NULL `expires_at` for it,
-         which is the only value the expiry job cannot misread — so this is not
-         "a very long window", it is the absence of one. */
-      points_expiry_months: 0,
+      daily_lives: 7,
+      life_regen_minutes: 120,
+      points_multiplier: 1.75,
+      scan_points: 50,
+      first_visit_points: 250,
+      stamp_points: 250,
+      new_category_points: 100,
+      /* Two months. The reserve it holds against a venue's pool is the cost of
+         this one, which is why the top tier is where it stops rather than
+         somewhere it keeps growing. */
+      voucher_validity_days: 60,
+      /* Ten, not the sentinel: a hint per word is five a round, and a number a
+         card can print is worth more than "unlimited" here. */
+      word_hints_per_day: 10,
+      assistant_uses_per_day: UNLIMITED,
+      profile_badge: 'crown',
       streak_freezes: UNLIMITED,
-      word_hints_per_day: UNLIMITED,
+      round_decay: 'premium',
       exclusive_deals: true,
       /* A day's head start on a deal, which is the perk that costs the platform
          nothing and is worth the most on a deal with a claim ceiling. */
@@ -169,7 +247,6 @@ const PLANS: PlanSeed[] = [
          gift are priced against each other in one place: it must stay worth
          clearly less than the plan costs, or the plan refunds itself. */
       monthly_stipend: CONFIG.earn.premiumStipend,
-      round_decay: 'premium',
       priority_support: true,
       assistant: true,
     },
@@ -203,7 +280,7 @@ const PLANS: PlanSeed[] = [
     code: 'growth',
     name: 'Growth',
     priceMinor: 29900,
-    trialDays: 30,
+    trialDays: 0,
     rank: 1,
     entitlements: {
       live_deals: 5,
@@ -225,7 +302,7 @@ const PLANS: PlanSeed[] = [
     code: 'chain',
     name: 'Chain',
     priceMinor: 79900,
-    trialDays: 30,
+    trialDays: 0,
     rank: 2,
     entitlements: {
       live_deals: 20,
@@ -304,7 +381,33 @@ function seedPlans(db: Db, at: Iso): void {
       { a: plan.audience, c: plan.code },
     );
   }
-  void at;
+
+  settleWithdrawnTrials(db, at);
+}
+
+/**
+ * Subscriptions left sitting in `trialing` after the trial was withdrawn.
+ *
+ * No plan is sold with one any more, so `startSubscription` cannot mint that
+ * status — but a database seeded before the change still holds rows in it, and
+ * they would stay there for as long as the subscription lives: nothing resolves
+ * `trialing` except the renewal sweep, which moves it on the renewal date the
+ * *trial* set, and the admin console's "trials" list would keep reporting
+ * customers on a trial the product no longer offers.
+ *
+ * `trialing` and `active` are both in `ENTITLED`, and `renews_at` is left
+ * exactly where it was, so nobody gains or loses a day of anything — this
+ * changes the *word* on the row and nothing else. The `trial_days = 0` clause
+ * makes it self-limiting: put a trial back on a plan and its subscriptions stop
+ * being touched, which is what makes running this on every boot safe.
+ */
+function settleWithdrawnTrials(db: Db, at: Iso): void {
+  db.run(
+    `UPDATE subscriptions SET status = 'active', updated_at = $t
+      WHERE status = 'trialing'
+        AND plan_id IN (SELECT id FROM plans WHERE trial_days = 0)`,
+    { t: at },
+  );
 }
 
 /**

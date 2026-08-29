@@ -450,26 +450,31 @@ export function confirm(
 
     /* ── earning ── */
     if (txn.intent === 'earn' && visitCounted && venue.loyalty_active) {
-      const ent = entitlements.entitlementsFor(db, { userId: txn.user_id });
-      const multiplier = entitlements.entNumber(ent, 'points_multiplier', 1);
       pointsGranted = grantEarnings(db, {
         txn,
         venue,
-        amountMinor: amount,
-        multiplier,
+        ent: entitlements.entitlementsFor(db, { userId: txn.user_id }),
         at,
       });
     }
 
     /* ── stamps ── */
     if (visitCounted) {
-      reward = campaigns.applyVisit(db, {
+      /* A completed card pays points as well as a reward, and the grant lives
+         where the completion is detected rather than here — the winner among
+         several cards is decided in there, and a caller that re-derived it
+         would be a second definition of "one reward per visit". They are added
+         to the receipt's one number because the cashier reads one number out
+         loud; the ledger keeps them apart. */
+      const stamps = campaigns.applyVisit(db, {
         userId: txn.user_id,
         venue,
         amountMinor: amount,
         transactionId: txn.id,
         at,
       });
+      reward = stamps.reward;
+      pointsGranted += stamps.points;
       stamped = true;
     }
 
@@ -653,38 +658,56 @@ function recordVisit(
 /**
  * §2b. What a confirmed earn-intent visit pays.
  *
- * Four lines, and they are four ledger entries rather than one sum. An owner
+ * Three lines, and they are three ledger entries rather than one sum. An owner
  * reading a customer's history has to be able to see *which* of them fired:
- * "100 for a first visit here" is a sentence a venue can act on and "205" is
+ * "100 for a first visit here" is a sentence a venue can act on and "145" is
  * not, and the moment they are added together the information is gone for good —
  * a ledger row is the only place it was ever recorded. The receipt adds them
  * back up, because that is a different reader with a different question.
  *
- * The plan multiplier is applied to the two lines that *scale* — the scan and
- * the spend steps — and not to the two that are once-ever. That is the config's
- * own argument about referrals ("flat on every plan, so nobody subscribes for a
- * day and harvests them"), and a once-ever bonus is precisely what a month of
- * the top tier could be spent touring the city collecting.
+ * **Every line is a named entitlement, and none of them is multiplied.** A paid
+ * plan pays more by having a different number in `plan_entitlements`
+ * (`scan_points`, `first_visit_points`, `new_category_points`) than by having
+ * the free figure scaled at the counter: a table anybody can read beats an
+ * arithmetic rule nobody can predict, and `points_multiplier` is now a *game
+ * round* rule only — applying both would pay a subscriber twice for one visit.
+ * `CONFIG.earn` is the fallback for a plan whose row is silent, which is also
+ * exactly the free-plan figure.
  *
- * Every line is written inside the commit's transaction, so all four land or
+ * There is no spend bonus. Paying more over the venue minimum used to earn more
+ * in steps, and it was the one line here that made the reward depend on the size
+ * of the bill rather than on the visit — the wrong shape for a scheme whose
+ * whole argument to a venue is repeat custom. The minimum still decides whether
+ * the scan is a visit at all; that is upstream, in `confirm`.
+ *
+ * Every line is written inside the commit's transaction, so all three land or
  * none of them do; and the two once-ever lines each carry a guard that survives
  * the transaction, because "once, ever" is a claim about every scan this account
  * will ever make and not just about this one.
  */
 function grantEarnings(
   db: Db,
-  input: { txn: Transaction; venue: Venue; amountMinor: number; multiplier: number; at: Iso },
+  input: { txn: Transaction; venue: Venue; ent: entitlements.Entitlements; at: Iso },
 ): number {
-  const { txn, venue, amountMinor, multiplier, at } = input;
+  const { txn, venue, ent, at } = input;
   const user = txn.user_id;
   let total = 0;
 
-  /* The venue's own rate when it has set one, and the platform default when it
-     has not. `points_per_scan` is a NOT NULL column with a schema default, so
-     "unset" cannot be read as null here — it is read as "not a positive number",
-     which is also the right answer for a venue that has been zeroed out by hand
-     and left `loyalty_active` on. */
-  const perScan = venue.points_per_scan > 0 ? venue.points_per_scan : CONFIG.earn.scan;
+  /* Two overrides on one number, and the venue's is the stronger of them.
+     `points_per_scan` is what *this* venue decided a scan at its counter is
+     worth, out of its own budget; `scan_points` is what the customer's plan pays
+     where nobody has decided. A venue that typed a rate meant it, and a
+     subscriber does not get to overrule it — the plan buys a better default, not
+     a claim on a partner's money.
+
+     `points_per_scan` is a NOT NULL column with a schema default, so "unset"
+     cannot be read as null here — it is read as "not a positive number", which
+     is also the right answer for a venue that has been zeroed out by hand and
+     left `loyalty_active` on. */
+  const perScan =
+    venue.points_per_scan > 0
+      ? venue.points_per_scan
+      : entitlements.entNumber(ent, 'scan_points', CONFIG.earn.scan);
   total += ledger.earn(db, {
     userId: user,
     points: perScan,
@@ -692,33 +715,8 @@ function grantEarnings(
     sourceKind: 'transaction',
     sourceRef: txn.id,
     venueId: venue.id,
-    multiplier,
     at,
   }).entry.delta;
-
-  /* Spending over the venue's minimum, in whole steps and capped at five of
-     them. Stepped rather than proportional because a percentage of the bill is
-     cashback, which is a different product with a different regulator; and
-     capped because the ceiling is what stops one large corporate lunch from
-     out-earning a month of turning up. The visit only counted at all because
-     `amountMinor >= min_spend_minor`, so the subtraction cannot go negative —
-     the guard below is there for the day that stops being true. */
-  const steps = Math.min(
-    CONFIG.earn.spendMaxSteps,
-    Math.floor((amountMinor - venue.min_spend_minor) / CONFIG.earn.spendStepMinor),
-  );
-  if (steps > 0) {
-    total += ledger.earn(db, {
-      userId: user,
-      points: steps * CONFIG.earn.spendStepPoints,
-      reason: 'spend_bonus',
-      sourceKind: 'transaction',
-      sourceRef: txn.id,
-      venueId: venue.id,
-      multiplier,
-      at,
-    }).entry.delta;
-  }
 
   /* First visit to *this* venue, ever — the line the whole discovery pitch rests
      on, and the one that must never pay twice.
@@ -735,10 +733,10 @@ function grantEarnings(
     `SELECT visits FROM venue_customers WHERE venue_id = $v AND user_id = $u`,
     { v: venue.id, u: user },
   );
-  if ((customer?.visits ?? 0) <= 1 && !alreadyPaid(db, user, 'first_visit', venue.id)) {
+  if ((customer?.visits ?? 0) <= 1 && !ledger.alreadyPaid(db, user, 'first_visit', venue.id)) {
     total += ledger.earn(db, {
       userId: user,
-      points: CONFIG.earn.firstVisitToVenue,
+      points: entitlements.entNumber(ent, 'first_visit_points', CONFIG.earn.firstVisitToVenue),
       reason: 'venue_bonus',
       sourceKind: 'first_visit',
       sourceRef: venue.id,
@@ -757,10 +755,10 @@ function grantEarnings(
       WHERE vv.user_id = $u AND v.category = $c AND vv.transaction_id <> $x`,
     { u: user, c: venue.category, x: txn.id },
   );
-  if ((seen?.n ?? 0) === 0 && !alreadyPaid(db, user, 'new_category', venue.category)) {
+  if ((seen?.n ?? 0) === 0 && !ledger.alreadyPaid(db, user, 'new_category', venue.category)) {
     total += ledger.earn(db, {
       userId: user,
-      points: CONFIG.earn.newCategory,
+      points: entitlements.entNumber(ent, 'new_category_points', CONFIG.earn.newCategory),
       reason: 'venue_bonus',
       sourceKind: 'new_category',
       sourceRef: venue.category,
@@ -770,29 +768,6 @@ function grantEarnings(
   }
 
   return total;
-}
-
-/**
- * Has this account already been paid a once-ever bonus of this kind?
- *
- * The ledger is the record of what was paid, so it is also the lock on paying it
- * again — the same move `reverse()` makes when it refuses to write a second
- * compensating entry against one original. For these grants `source_ref` carries
- * **the thing that must be unique** (the venue, the category, the milestone)
- * rather than the transaction that happened to trigger it; that is what makes
- * this one indexed lookup on `idx_ledger_source` instead of a scan, and it is
- * why the transaction id is deliberately not there. Which visit paid a first-
- * visit bonus is answerable from `venue_id` and `created_at`; whether one was
- * ever paid has to be answerable in a single row.
- */
-function alreadyPaid(db: Db, userId: string, sourceKind: string, sourceRef: string): boolean {
-  return (
-    db.get<{ id: string }>(
-      `SELECT id FROM points_ledger
-        WHERE user_id = $u AND source_kind = $k AND source_ref = $r LIMIT 1`,
-      { u: userId, k: sourceKind, r: sourceRef },
-    ) !== undefined
-  );
 }
 
 /**
@@ -911,7 +886,7 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
   );
   if (
     (completed?.n ?? 0) >= CONFIG.earn.friendMilestoneAt &&
-    !alreadyPaid(db, bond.referrer_id, 'friend_milestone', milestone)
+    !ledger.alreadyPaid(db, bond.referrer_id, 'friend_milestone', milestone)
   ) {
     ledger.earn(db, {
       userId: bond.referrer_id,

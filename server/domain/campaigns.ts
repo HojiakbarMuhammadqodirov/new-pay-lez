@@ -11,9 +11,19 @@
  * The second rule is one reward per visit (§5.1). When a customer qualifies
  * under several campaigns at once, priority decides, and only the winner fires.
  * Without it, three overlapping campaigns turn one coffee into three.
+ *
+ * A completed card pays **points as well as the reward**, and that grant lives
+ * here rather than in the gate for the same reason the reward does: this is the
+ * only place that knows a card completed, and which of several cards the visit
+ * was spent on. The two currencies come out of different pockets — the reward is
+ * the venue's budget, the points are the platform's — so the reward can fail on
+ * an empty pool while the points still land.
  */
 import type { Db } from '../db/db.ts';
+import { CONFIG } from '../config.ts';
 import * as budget from './budget.ts';
+import * as entitlements from './entitlements.ts';
+import * as ledger from './ledger.ts';
 import { DomainError } from './errors.ts';
 import { newId, shortCode } from './ids.ts';
 import { now, plusDays, type Iso } from './time.ts';
@@ -158,15 +168,27 @@ export function cardsFor(db: Db, userId: string) {
   );
 }
 
+/** What one qualifying visit did to this customer's cards. */
+export interface VisitStamps {
+  /** The reward the winning completion earned, if the loyalty pool funded one. */
+  reward: EarnedReward | null;
+  /** §2b's `stamp_points` line, for the receipt's single figure. */
+  points: number;
+}
+
 /**
  * A confirmed qualifying visit, applied to the stamp cards (§5.2).
  *
  * Called from inside the gate's commit. It stamps *every* active campaign the
  * visit qualifies for — a customer's progress on a second card should not stall
  * because a first one paid out — but only the highest-priority *completion*
- * becomes a reward, which is where "one reward per visit" bites.
+ * pays, which is where "one reward per visit" bites. The points line follows the
+ * reward rather than every card that happened to fill up: the visit was spent on
+ * the winner, the others keep their stamps, and they will be paid on the visit
+ * that spends itself on them.
  *
- * Returns the reward if one fired, so the gate can put it in the receipt.
+ * Returns both halves, so the gate can put the reward in the receipt and add the
+ * points to the one figure the cashier reads out.
  */
 export function applyVisit(
   db: Db,
@@ -177,10 +199,14 @@ export function applyVisit(
     transactionId: string;
     at?: Iso;
   },
-): EarnedReward | null {
+): VisitStamps {
   const at = input.at ?? now();
   const campaigns = activeCampaigns(db, input.venue.id);
-  const completed: Campaign[] = [];
+  /* The cycle count is carried alongside the campaign because it is read
+     *before* the completion increments it, and it is the idempotency key below:
+     "the Nth completed card" is a thing that happens once, where "this card
+     completed" happens again every time a recurring card fills up. */
+  const completed: Array<{ campaign: Campaign; cycles: number }> = [];
 
   for (const campaign of campaigns) {
     const minSpend = campaign.min_spend_minor ?? input.venue.min_spend_minor;
@@ -194,25 +220,39 @@ export function applyVisit(
       { i: newId('stc'), u: input.userId, v: input.venue.id, c: campaign.id, t: at },
     );
 
-    const card = db.get<{ stamps: number }>(
-      `SELECT stamps FROM stamp_cards WHERE user_id = $u AND campaign_id = $c`,
+    const card = db.get<{ stamps: number; cycles: number }>(
+      `SELECT stamps, cycles FROM stamp_cards WHERE user_id = $u AND campaign_id = $c`,
       { u: input.userId, c: campaign.id },
     );
-    if ((card?.stamps ?? 0) >= campaign.visits_required) completed.push(campaign);
+    if ((card?.stamps ?? 0) >= campaign.visits_required) {
+      completed.push({ campaign, cycles: card?.cycles ?? 0 });
+    }
   }
 
-  if (completed.length === 0) return null;
+  if (completed.length === 0) return { reward: null, points: 0 };
 
   /* Highest priority wins; ties break on the *shorter* card, because that is the
      one the customer is more likely to have been counting. */
-  completed.sort((a, b) => b.priority - a.priority || a.visits_required - b.visits_required);
-  const winner = completed[0];
+  completed.sort(
+    (a, b) =>
+      b.campaign.priority - a.campaign.priority ||
+      a.campaign.visits_required - b.campaign.visits_required,
+  );
+  const winner = completed[0].campaign;
 
   const reward = grantReward(db, {
     userId: input.userId,
     venue: input.venue,
     campaign: winner,
     transactionId: input.transactionId,
+    at,
+  });
+
+  const points = grantStampPoints(db, {
+    userId: input.userId,
+    venue: input.venue,
+    campaign: winner,
+    cycle: completed[0].cycles,
     at,
   });
 
@@ -227,7 +267,50 @@ export function applyVisit(
     { rec: winner.recurring, need: winner.visits_required, t: at, u: input.userId, c: winner.id },
   );
 
-  return reward;
+  return { reward, points };
+}
+
+/**
+ * §2b. What finishing a stamp card pays, on top of the reward it earns.
+ *
+ * A named entitlement (`stamp_points`) rather than the free figure multiplied:
+ * `points_multiplier` is a game-round rule now, and a paid plan that both
+ * multiplied and read its own figure would be paid twice for one card. The
+ * `CONFIG.earn` value is the fallback for a plan whose row is silent, which is
+ * also the free-plan figure.
+ *
+ * Paid **once per completed card**, and the key says which card rather than
+ * which campaign: a recurring card fills up again and again and is supposed to
+ * pay again each time, so `campaign:cycle` is the unique thing and the campaign
+ * id alone is not. `cycle` is read before the `cycles + 1` above, so the first
+ * completion is `…:0`. Inside the gate's transaction like everything else, and
+ * `confirm` already refuses a transaction that is no longer pending — the ledger
+ * guard is the lock that survives both, the same one the gate's once-ever visit
+ * bonuses use.
+ *
+ * Unfunded is not unpaid. `grantReward` returns null when the venue's loyalty
+ * pool is empty; these points are the platform's and are granted anyway, because
+ * the customer completed the card either way and a budget decision they cannot
+ * see is not theirs to be punished for (§5.3 makes the same argument about the
+ * stamp itself).
+ */
+function grantStampPoints(
+  db: Db,
+  input: { userId: string; venue: Venue; campaign: Campaign; cycle: number; at: Iso },
+): number {
+  const key = `${input.campaign.id}:${input.cycle}`;
+  if (ledger.alreadyPaid(db, input.userId, 'stamp_complete', key)) return 0;
+
+  const ent = entitlements.entitlementsFor(db, { userId: input.userId });
+  return ledger.earn(db, {
+    userId: input.userId,
+    points: entitlements.entNumber(ent, 'stamp_points', CONFIG.earn.stampCardComplete),
+    reason: 'stamp_complete',
+    sourceKind: 'stamp_complete',
+    sourceRef: key,
+    venueId: input.venue.id,
+    at: input.at,
+  }).entry.delta;
 }
 
 /**

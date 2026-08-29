@@ -196,8 +196,18 @@ export function eraseUser(db: Db, userId: string, at: Iso = now()): { erased: tr
 
   db.tx(() => {
     db.run(
+      /* The username goes with the rest, and both halves of it.
+
+         It is the one field here a person chooses for themselves, so it is the
+         one most likely to be their real name or a handle they use elsewhere —
+         leaving it on an erased row is the leak this routine exists to prevent.
+         And `username_norm` is what the unique index is on, so keeping it would
+         also reserve the handle for ever against an account nobody can sign
+         into: erasure would quietly cost the next person their name. */
       `UPDATE users
           SET email = NULL, email_norm = NULL, display_name = 'Deleted account',
+              username = NULL, username_norm = NULL,
+              phone = NULL, birth_date = NULL, birth_date_set_at = NULL, headline = NULL,
               password_hash = NULL, city = NULL, country_code = NULL, display_avatar = NULL,
               referral_code = NULL, leaderboard_opt_in = 0, status = 'erased',
               deleted_at = $t, updated_at = $t

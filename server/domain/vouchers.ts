@@ -15,6 +15,7 @@
 import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import * as budget from './budget.ts';
+import * as entitlements from './entitlements.ts';
 import { DomainError } from './errors.ts';
 import { newId, voucherCode } from './ids.ts';
 import * as ledger from './ledger.ts';
@@ -148,7 +149,31 @@ export function issue(
     });
 
     const id = newId('ivc');
-    const expires = plusDays(at, CONFIG.vouchers.validityDays);
+    /*
+     * §4.3 + §12a: how long the voucher lives is the **buyer's** entitlement —
+     * 14 days free, 30 on Pro, 60 on Premium — with `CONFIG.vouchers` as the
+     * floor for a database whose plan rows predate the key.
+     *
+     * Read here rather than handed in by the caller, the way
+     * `gift_card_priority` is: this is the only place a voucher is issued, and
+     * an entitlement a caller has to remember to look up is one that eventually
+     * is not applied.
+     *
+     * **Stamped, not derived.** The date goes on the row now and every later
+     * reader — `redeem`'s expiry check, `expireVouchers`' sweep, the wallet —
+     * reads that column and never recomputes it. A plan is a thing people
+     * leave, and recomputing would quietly shorten a voucher somebody bought
+     * with sixty days on it the moment their subscription lapsed: a clawback of
+     * something already paid for, which is the one thing §12a.3 says a lapse may
+     * never do. It cuts the other way too — a voucher bought on the free plan
+     * does not grow a month because the buyer upgraded the next day.
+     */
+    const validityDays = entitlements.entNumber(
+      entitlements.entitlementsFor(db, { userId: input.userId }),
+      'voucher_validity_days',
+      CONFIG.vouchers.validityDays,
+    );
+    const expires = plusDays(at, validityDays);
     db.run(
       `INSERT INTO issued_vouchers
          (id, user_id, venue_id, tier_id, discount_pct, max_discount_minor, points_spent,

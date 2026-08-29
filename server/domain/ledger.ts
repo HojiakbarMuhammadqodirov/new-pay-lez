@@ -7,27 +7,26 @@
  * only alongside the entry that justifies it, and `reconcile()` proves it right
  * from the ledger whenever anyone asks. Nothing outside this file may touch it.
  *
- * The second rule is FIFO (§2.3). Points expire a fixed window after they are
- * *earned*, so a spend has to know which earning it came out of; otherwise a
- * player who earns 100 in January and 100 in June, then spends 100, has a
- * balance that expires on a date nobody can name. `points_lots` is that
- * bookkeeping: one lot per positive entry, consumed oldest-first, so a spend
- * leaves the newest points standing and the expiry job knows exactly what is
- * left of each batch.
+ * **Points do not expire.** They used to — twelve months FIFO, with a longer
+ * window sold on the paid plans and none at all on the top one — and the whole
+ * apparatus is gone: `CONFIG.points` has no window left to read, nothing writes
+ * an `expires_at` on an entry, and no job collects. A balance that quietly
+ * drains is the thing a loyalty scheme is least forgiven for.
  *
- * The window is the *plan's*, not this file's — see `expiryFor` at the bottom.
- * §12a sells a longer one, and on the top tier sells none at all.
+ * The second rule survives that, and it is FIFO. `points_lots` is still one lot
+ * per positive entry, consumed oldest-first, because a *spend* has to come out
+ * of something: the lots are what make "you have 300 points" and "these are the
+ * 300 points" the same claim, which is what a support ticket about a redemption
+ * is asking. Expiry was a consumer of that ordering, never its reason.
  *
  * The ledger table itself is append-only. There is no UPDATE in this file
  * against `points_ledger` — a reversal is a compensating entry (§C3), because a
  * ledger you can edit is not evidence of anything.
  */
 import type { Db } from '../db/db.ts';
-import { CONFIG } from '../config.ts';
-import * as entitlements from './entitlements.ts';
 import { newId } from './ids.ts';
 import { DomainError } from './errors.ts';
-import { now, plusMonths, type Iso } from './time.ts';
+import { now, type Iso } from './time.ts';
 
 /**
  * Why a points entry exists, in the ledger's own words.
@@ -182,12 +181,11 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
     db.run(
       `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount)
        VALUES ($i, $u, $e, $x, $a)`,
-      /* The entry's `expires_at` is NULL when the plan says these points never
-         expire; the lot's column is NOT NULL, and the lot has to exist anyway or
-         a spend could not consume points the balance says are there. So a
-         never-expiring lot carries the sentinel instead: `runExpiry` asks for
-         `expires_at <= now` and a date eight thousand years out never answers. */
-      { i: entry.id, u: input.userId, e: at, x: entry.expires_at ?? NEVER, a: points },
+      /* The entry's `expires_at` is NULL — nothing expires any more — and the
+         lot's column is NOT NULL, so "never" is written there as the sentinel
+         instead. The lot has to exist whatever its date: a spend consumes lots,
+         and a lot that is not there is a balance that cannot be spent. */
+      { i: entry.id, u: input.userId, e: at, x: NEVER, a: points },
     );
     db.run(`UPDATE users SET points_cache = points_cache + $p WHERE id = $u`, {
       p: points,
@@ -269,59 +267,30 @@ export function spend(
 }
 
 /**
- * The expiry job (§2.3).
+ * Has this account already been paid a once-ever bonus of this kind?
  *
- * Runs over every lot past its anniversary, writes one negative `expiry` entry
- * per lot for what is left of it, and marks the lot closed. One entry per lot
- * rather than one per user, because "which points expired" is a question a
- * support ticket asks and a summed entry cannot answer.
+ * The ledger is the record of what was paid, so it is also the lock on paying it
+ * again — the same move `reverse()` makes when it refuses to write a second
+ * compensating entry against one original. For these grants `source_ref` carries
+ * **the thing that must be unique** (the venue, the category, the milestone, the
+ * completed card) rather than the transaction that happened to trigger it; that
+ * is what makes this one indexed lookup on `idx_ledger_source` instead of a
+ * scan, and it is why the transaction id is deliberately not there. Which visit
+ * paid a first-visit bonus is answerable from `venue_id` and `created_at`;
+ * whether one was ever paid has to be answerable in a single row.
+ *
+ * It lives here rather than beside any one caller because two modules now hold
+ * once-ever grants — the gate's visit bonuses and the stamp-card completion in
+ * `campaigns.ts` — and a guard against double payment written twice is a guard
+ * that eventually disagrees with itself.
  */
-export function runExpiry(db: Db, at: Iso = now()): { entries: number; points: number } {
-  const due = db.all<{ ledger_id: string; user_id: string; amount: number; consumed: number }>(
-    `SELECT ledger_id, user_id, amount, consumed FROM points_lots
-      WHERE expired = 0 AND expires_at <= $t`,
-    { t: at },
-  );
-
-  let entries = 0;
-  let points = 0;
-  db.tx(() => {
-    for (const lot of due) {
-      const left = lot.amount - lot.consumed;
-      db.run(`UPDATE points_lots SET expired = 1 WHERE ledger_id = $i`, { i: lot.ledger_id });
-      if (left <= 0) continue;
-      writeEntry(
-        db,
-        lot.user_id,
-        -left,
-        'expiry',
-        { sourceKind: 'points_lot', sourceRef: lot.ledger_id },
-        at,
-        1,
-      );
-      db.run(`UPDATE users SET points_cache = points_cache - $p WHERE id = $u`, {
-        p: left,
-        u: lot.user_id,
-      });
-      entries += 1;
-      points += left;
-    }
-  });
-  return { entries, points };
-}
-
-/** Lots expiring inside the warning window, for the §9.1 notification. */
-export function expiringSoon(db: Db, userId: string, at: Iso = now()) {
-  const horizon = plusMonths(at, 0);
-  const until = new Date(
-    new Date(horizon).getTime() + CONFIG.points.expiryWarningDays * 86_400_000,
-  ).toISOString();
-  return db.all<{ expires_at: string; points: number }>(
-    `SELECT expires_at, SUM(amount - consumed) AS points FROM points_lots
-      WHERE user_id = $u AND expired = 0 AND consumed < amount
-        AND expires_at > $now AND expires_at <= $until
-      GROUP BY expires_at ORDER BY expires_at`,
-    { u: userId, now: at, until },
+export function alreadyPaid(db: Db, userId: string, sourceKind: string, sourceRef: string): boolean {
+  return (
+    db.get<{ id: string }>(
+      `SELECT id FROM points_ledger
+        WHERE user_id = $u AND source_kind = $k AND source_ref = $r LIMIT 1`,
+      { u: userId, k: sourceKind, r: sourceRef },
+    ) !== undefined
   );
 }
 
@@ -410,43 +379,18 @@ export function history(db: Db, userId: string, limit = 50, before?: string): Le
 /* ───────────────────────────────────────────────────────────────── private ── */
 
 /**
- * The far end of time, for a lot that never expires.
+ * The far end of time, for a lot — which is now every lot.
  *
  * `points_lots.expires_at` is NOT NULL and the lot has to be in the FIFO pool
- * whatever its expiry — a spend consumes lots, so a lot that is not there is a
- * balance that cannot be spent. "Never" therefore cannot be written as NULL the
- * way it can on the ledger entry, and a sentinel is the same statement in a
- * column that will not hold the honest one. Every query that collects or warns
- * about a lot asks for a date at or before some real moment (`runExpiry`,
- * `expiringSoon`), and this answers none of them; FIFO order is `earned_at`, so
- * it does not disturb which points a spend takes either.
+ * regardless, because a spend consumes lots and a lot that is not there is a
+ * balance that cannot be spent. So "never" cannot be written as the NULL the
+ * ledger entry carries, and this sentinel is the same statement in a column that
+ * will not hold the honest one. It is kept rather than removed with the expiry
+ * job: the column outlives this process, the rows the old job left behind still
+ * carry real dates, and a sentinel is what tells a reader of the table which
+ * batches predate the change.
  */
 const NEVER: Iso = '9999-12-31T23:59:59.999Z';
-
-/**
- * When this earning expires — §2.3 crossed with §12a.
- *
- * The window is a *plan entitlement* (`points_expiry_months`), not a constant.
- * This file used to read `CONFIG.points.expiryMonths` and stop there, which
- * meant a subscriber who was sold a longer window did not get one: the config
- * value is the floor the free plan sits on, and the fallback for an account
- * whose plan is silent about it.
- *
- * **Zero months means never**, and it is written as a NULL `expires_at` rather
- * than as a distant date, because NULL is the only value the expiry job cannot
- * misread. That is what the top tier buys.
- */
-function expiryFor(db: Db, userId: string, at: Iso): Iso | null {
-  const months = entitlements.entNumber(
-    entitlements.entitlementsFor(db, { userId }),
-    'points_expiry_months',
-    CONFIG.points.expiryMonths,
-  );
-  /* `<= 0` rather than `=== 0`: a negative window is a typo in a config row, and
-     the safe reading of a typo is "do not collect somebody's points", not "they
-     expired before they were earned". */
-  return months <= 0 ? null : plusMonths(at, months);
-}
 
 function writeEntry(
   db: Db,
@@ -459,11 +403,13 @@ function writeEntry(
   _note?: string,
 ): LedgerEntry {
   const id = newId('led');
-  /* §2.3: the expiry date belongs to the *earning*. A spend has none, and a
-     negative entry with one would be a lot that could expire twice. The plan is
-     only consulted for a positive delta, so a reversal or an expiry entry costs
-     no extra reads. */
-  const expires = delta > 0 ? expiryFor(db, userId, at) : null;
+  /* Always NULL. Points do not expire, and NULL is the only value that says so
+     in a column whose other rows carry dates: a far-future date would read as a
+     window somebody chose, and would come back to life the moment anything
+     started asking `expires_at <= now` again. The column stays because the rows
+     the old twelve-month rule wrote are still in the live database and a ledger
+     is not rewritten to match a new policy. */
+  const expires = null;
   db.run(
     `INSERT INTO points_ledger
        (id, user_id, delta, reason, source_ref, source_kind, multiplier, status, venue_id,

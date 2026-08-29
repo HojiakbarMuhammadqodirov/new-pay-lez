@@ -18,6 +18,8 @@ import * as social from '../../domain/social.ts';
 import * as vouchers from '../../domain/vouchers.ts';
 import { getVenue, trackListing } from '../../domain/venues.ts';
 import { linksOf } from '../../domain/partners.ts';
+import { DomainError } from '../../domain/errors.ts';
+import { FREE_ASSISTANT_USES_PER_DAY } from '../../domain/settings.ts';
 import { actor, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
@@ -27,6 +29,75 @@ const viewerOf = (ctx: Ctx) => ({
   city: qStr(ctx, 'city') ?? ctx.actor?.user.city ?? undefined,
   at: ctx.at,
 });
+
+/* ────────────────────────────────────────────────── the assistant's meter ── */
+
+/**
+ * How many questions this account has already put to the consumer assistant
+ * today.
+ *
+ * Counted from the transcript rather than from a counter column: the transcript
+ * is already the record of what was asked, and a second tally beside it is a
+ * second thing that can drift. `substr(created_at, 1, 10)` is the user's own
+ * local day — the same slice the lives pool refills on and the round-decay curve
+ * resets on (`dayOf` in `domain/games.ts`) — because two daily resets an hour
+ * apart is a bug report nobody can reproduce.
+ *
+ * `side = 'consumer'` keeps a venue owner's dashboard conversations out of it.
+ * The two assistants answer out of different data and are sold on different
+ * plans, so one allowance spanning both would let a busy afternoon writing deal
+ * copy eat the questions the wallet was paid for.
+ */
+function assistantAsksToday(ctx: Ctx, userId: string): number {
+  return (
+    ctx.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM assistant_messages m
+         JOIN assistant_sessions s ON s.id = m.session_id
+        WHERE s.user_id = $u AND s.side = 'consumer' AND m.role = 'user'
+          AND substr(m.created_at, 1, 10) = $d`,
+      { u: userId, d: ctx.at.slice(0, 10) },
+    )?.n ?? 0
+  );
+}
+
+/**
+ * The conversation an ask belongs to: the one the client named, or a new one.
+ *
+ * Resolved here rather than left to `askConsumer`, because the meter above is
+ * read off the transcript and both of the ways an ask can miss the transcript
+ * are ways to make the cap stop existing. An ask with no `sessionId` writes
+ * nothing at all, so an unlimited number of them cost nothing to make; and an
+ * ask carrying *somebody else's* session id writes into their history, where it
+ * counts against their allowance instead of the asker's — as well as putting one
+ * customer's question in another customer's transcript.
+ *
+ * So a named session is checked against who is asking, and an ask that names
+ * none is given one. The extra row is the price of every ask being on the
+ * record, which is what §10.2's "an answer can be traced back to what grounded
+ * it" wanted of it anyway.
+ */
+function conversationFor(ctx: Ctx, userId: string): string {
+  const named = optStr(ctx.body, 'sessionId');
+  if (!named) {
+    return assistant.startConversation(ctx.db, {
+      userId,
+      side: 'consumer',
+      language: ctx.language,
+      at: ctx.at,
+    });
+  }
+
+  const session = ctx.db.get<{ user_id: string; side: string }>(
+    `SELECT user_id, side FROM assistant_sessions WHERE id = $s`,
+    { s: named },
+  );
+  if (!session || session.user_id !== userId || session.side !== 'consumer') {
+    /* One answer for "no such conversation" and for "not yours", deliberately:
+       a 403 that only fires on real ids tells the caller which ids are real. */
+    throw new DomainError('not_found', 'conversation not found');
+  }
+  return named;
+}
 
 export const consumerRoutes: Route[] = [
   /* ═══════════════════════════════════════════════════════ the catalogue ══ */
@@ -183,7 +254,12 @@ export const consumerRoutes: Route[] = [
       const { user } = actor(ctx);
       return {
         points: ledger.balance(ctx.db, user.id),
-        expiringSoon: ledger.expiringSoon(ctx.db, user.id, ctx.at),
+        /* There is no `expiringSoon` any more, and it is *removed* rather than
+           returned empty: points do not expire on any plan now, so the field
+           would be an array that is always `[]` — a promise the wallet keeps
+           making about a thing that cannot happen, and the client that renders
+           "nothing expiring soon" off it is telling the customer about a rule
+           the product dropped. `domain/ledger.ts` took the job with it. */
         vouchers: vouchers.activeVouchers(ctx.db, user.id),
         rewards: campaigns.availableRewards(ctx.db, user.id),
         /* The cards in progress, across every venue. The venue screen answers
@@ -409,8 +485,34 @@ export const consumerRoutes: Route[] = [
        sentence *says* was decided synchronously before that. */
     handler: async (ctx) => {
       const { user } = actor(ctx);
+
+      /*
+       * §12a: the assistant is metered — five questions a day free, twenty on
+       * Pro, effectively uncapped on Premium.
+       *
+       * It is the one consumer entitlement whose ceiling is a running cost
+       * rather than a design choice: every ask is a retrieval pass, and with
+       * `PAYLEZ_LLM=live` it is also a model call. `requireCapacity` throws the
+       * same 403 the gift-card tier does, naming the key, the limit and what has
+       * been spent, so the app can say "that is your five for today" instead of
+       * "something went wrong".
+       *
+       * **Refused, never quietly degraded.** Answering the sixth question from a
+       * cheaper path — a canned line, a shorter retrieval, yesterday's answer —
+       * gives the person a worse answer for a reason they cannot see, and an
+       * assistant somebody has learned to distrust is worth less than one that
+       * says no.
+       */
+      const ent = entitlements.entitlementsFor(ctx.db, { userId: user.id });
+      entitlements.requireCapacity(
+        ent,
+        'assistant_uses_per_day',
+        assistantAsksToday(ctx, user.id),
+        FREE_ASSISTANT_USES_PER_DAY,
+      );
+
       return await assistant.askConsumer(ctx.db, {
-        sessionId: optStr(ctx.body, 'sessionId'),
+        sessionId: conversationFor(ctx, user.id),
         userId: user.id,
         text: str(ctx.body, 'text', { max: 500 }),
         language: ctx.language,

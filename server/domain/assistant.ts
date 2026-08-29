@@ -147,11 +147,11 @@ export async function askConsumer(
 
   const balance = ledger.balance(db, input.userId);
   const answer = /point|balance|punkt|баланс|ball/.test(text)
-    ? explainBalance(db, input.userId, balance, input.city, at)
+    ? explainBalance(db, balance, input.city)
     : /streak|seria|стрик/.test(text)
       ? explainStreak(db, input.userId)
       : /voucher|kupon|ваучер|discount|zniżk/.test(text)
-        ? explainVouchers(db, input.userId, balance, input.city, at)
+        ? explainVouchers(db, input.userId, balance, input.city)
         : searchCatalogue(db, { text, language, city: input.city, userId: input.userId, at });
 
   answer.text = await llm.compose({
@@ -165,7 +165,7 @@ export async function askConsumer(
   return answer;
 }
 
-function explainBalance(db: Db, userId: string, balance: number, city: string | undefined, at: Iso): Answer {
+function explainBalance(db: Db, balance: number, city: string | undefined): Answer {
   /* §10.2's recommendation shape — "640 points is enough for 10% off at 12
      venues near you" — computed from the balance and the tiers, never generated. */
   const reachable = db.all<{ venue_id: string; name: string; discount_pct: number; points_cost: number }>(
@@ -176,7 +176,6 @@ function explainBalance(db: Db, userId: string, balance: number, city: string | 
       ORDER BY t.discount_pct DESC`,
     { b: balance, city: city ?? null },
   );
-  const expiring = ledger.expiringSoon(db, userId, at);
   const best = reachable[0];
 
   return {
@@ -186,9 +185,12 @@ function explainBalance(db: Db, userId: string, balance: number, city: string | 
     facts: [
       { kind: 'balance', label: 'points', value: balance },
       { kind: 'reachable', label: 'venues in reach', value: reachable.length },
-      ...(expiring.length
-        ? [{ kind: 'expiry', label: 'points expiring soon', value: expiring[0].points }]
-        : []),
+      /* There was a third fact here — "points expiring soon" — and it is gone
+         with the expiry itself. Points do not expire on any plan now, so the
+         honest thing is to stop saying it rather than to say it about zero:
+         a nudge to spend before a deadline that no longer exists is the
+         assistant inventing urgency, which is the one thing this file is
+         built not to do. */
     ],
     results: reachable.slice(0, 6),
     action: best
@@ -222,14 +224,14 @@ function explainStreak(db: Db, userId: string): Answer {
   };
 }
 
-function explainVouchers(db: Db, userId: string, balance: number, city: string | undefined, at: Iso): Answer {
+function explainVouchers(db: Db, userId: string, balance: number, city: string | undefined): Answer {
   const held = db.all<{ id: string; code: string; discount_pct: number; expires_at: string; name: string }>(
     `SELECT i.id, i.code, i.discount_pct, i.expires_at, v.name FROM issued_vouchers i
        JOIN venues v ON v.id = i.venue_id
       WHERE i.user_id = $u AND i.status = 'active' ORDER BY i.expires_at`,
     { u: userId },
   );
-  if (held.length === 0) return explainBalance(db, userId, balance, city, at);
+  if (held.length === 0) return explainBalance(db, balance, city);
 
   const next = held[0];
   return {

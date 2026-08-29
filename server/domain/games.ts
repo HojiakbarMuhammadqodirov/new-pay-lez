@@ -23,9 +23,11 @@
  * (`decayFor`). What a repeat of the same game pays today depends on how many
  * rounds of it are already finished today, which is a fact about the account
  * rather than about the round — a second device, or a reinstall, and the client
- * has no idea. It is also the only brake left on earning, so it is the last
- * number that should be computable anywhere a player can edit it. `finish`
- * returns the factor it used precisely because the client cannot derive it.
+ * has no idea. It is the brake on *earning*, and the hearts pool is not a second
+ * one: a heart is spent by a loss and two of the seven games cannot be lost, so
+ * the two bound different players. That makes the curve the last number that
+ * should be computable anywhere a player can edit it. `finish` returns the
+ * factor it used precisely because the client cannot derive it.
  */
 import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
@@ -33,7 +35,7 @@ import * as entitlements from './entitlements.ts';
 import * as ledger from './ledger.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
-import { now, type Iso } from './time.ts';
+import { iso, now, type Iso } from './time.ts';
 
 export type GameType =
   | 'flags'
@@ -58,9 +60,9 @@ export interface PlayerState {
   difficulty: number;
 }
 
-/* ═══════════════════════════════════════════════════════ §7.2 the lives pool ══ */
+/* ═════════════════════════════════════════════════════ §7.2 the hearts pool ══ */
 
-/** The user's own local day. Their midnight is when lives come back. */
+/** The user's own local day. What a *daily* allowance is counted in. */
 const dayOf = (at: Iso): string => at.slice(0, 10);
 
 export function playerState(db: Db, userId: string, at: Iso = now()): PlayerState {
@@ -69,6 +71,9 @@ export function playerState(db: Db, userId: string, at: Iso = now()): PlayerStat
     db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
        VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
+      /* `lives` is seeded and then left alone. It is not the tank — `livesFor`
+         derives that below — and keeping a second number in step with a count
+         nothing stores is exactly the drift this design removes. */
       { u: userId, l: CONFIG.points.dailyLives, t: at },
     );
     state = db.get<PlayerState>(`SELECT * FROM player_states WHERE user_id = $u`, { u: userId })!;
@@ -76,34 +81,132 @@ export function playerState(db: Db, userId: string, at: Iso = now()): PlayerStat
   return state;
 }
 
+export interface Hearts {
+  /** Whole hearts available at the instant asked about. */
+  lives: number;
+  /** The plan's ceiling — `daily_lives`, free 3. */
+  max: number;
+  /**
+   * When the next one lands, or `null` at the ceiling.
+   *
+   * Carried by the `no_lives` refusal *and* by `/v1/games/state`, because a wait
+   * with no visible end is the thing that makes a heart system feel broken
+   * rather than strict. It is the whole of what buys the spend back.
+   */
+  nextAt: Iso | null;
+}
+
 /**
- * Lives remaining today, refilled if the day turned.
+ * How many hearts, and when the next one arrives.
  *
- * "Lives come back with a new day rather than on a timer nobody can see" — the
- * site's own rule, and the server is where it has to be true, because a client
- * that decides when midnight was decides how many rounds it may play.
+ * **A lost round costs a heart again.** The charge was taken out when the decay
+ * curve arrived, and that left the pool inert: a number on screen that never
+ * moved, a `no_lives` gate that could not fire, and a counter with no writer.
+ * The curve prices a *repeat* of a game — it has nothing to say to somebody who
+ * loses a first round four times over — so dropping the charge did not move the
+ * brake onto the curve, it removed one.
  *
- * Nothing spends one any more. Lives were only ever charged on a *loss*, and two
- * of the seven games have no fail state — so the pool bounded a player who was
- * bad at quizzes and nobody else. `decayFor` below is the brake now: it prices
- * the fourth round of a game rather than refusing it, which bounds the earning
- * without ever telling somebody to stop playing. The pool, the counter and the
- * `no_lives` gate are all still here and still honest — `lives_used` simply has
- * no writer today, so the gate binds only if something starts spending again.
+ * What makes charging fair is the refill, and it is the half that changed with
+ * it. Hearts used to come back at midnight, which is the rule that makes the
+ * pool punitive rather than strict: lose three at nine in the morning and the
+ * day is over. They come back **one per `life_regen_minutes`** now — four hours
+ * on the free plan, faster on a paid one — so an empty tank is a wait measured
+ * in hours, and the pool bounds a run of losses instead of a calendar day.
+ *
+ * **Nothing runs on a clock; the count is read off the spends.** There is no
+ * scheduler in this process and a refill job would be one, so the tank is a
+ * bucket that fills at a rate and is drained by the losses already recorded in
+ * `game_sessions.life_spent`, evaluated at the instant somebody asks. That is
+ * the answer a timer would give with none of the moving parts, and it is the
+ * house rule one table over: the balance is derived, never stored (§2.1).
+ *
+ * The record it reads is that column plus the row's `finished_at` — an existing
+ * pair that already says a heart went and when. `daily_counters.lives_used`
+ * cannot stand in: it is bucketed by day, and a regen clock needs an instant.
+ * Had those two columns not existed, the ask would have been one more —
+ * `player_states.last_life_spent_at TEXT` — and the count beside it.
  */
-export function livesFor(db: Db, userId: string, at: Iso = now()): { lives: number; max: number } {
-  const state = playerState(db, userId, at);
+export function livesFor(db: Db, userId: string, at: Iso = now()): Hearts {
   const ent = entitlements.entitlementsFor(db, { userId });
+  /* Both fall back to the free tier's own figure, so a deployment that has not
+     seeded the keys yet plays like the free plan rather than like Premium. */
   const max = entitlements.entNumber(ent, 'daily_lives', CONFIG.points.dailyLives);
+  const regen = entitlements.entNumber(ent, 'life_regen_minutes', CONFIG.points.lifeRegenMinutes);
+  return heartsAt(db, userId, at, max, regen);
+}
 
-  const used =
-    db.get<{ lives_used: number }>(
-      `SELECT lives_used FROM daily_counters WHERE user_id = $u AND day = $d`,
-      { u: userId, d: dayOf(at) },
-    )?.lives_used ?? 0;
+/**
+ * How many spends back the walk below will read before it gives up looking for a
+ * gap long enough to have refilled the tank.
+ *
+ * That gap is `max × interval` and it is usually one or two rows in: a player
+ * who has not lost a round in twelve hours is full, and nothing older than the
+ * loss that broke that run can affect the count. The limit bounds the
+ * pathological case instead — somebody who has lost a round every three hours
+ * for a fortnight, where no such gap exists — and there the fold starts from a
+ * full tank further back than it should, which the very next spend in the fold
+ * takes back off. It bounds the query, never the rule.
+ */
+const HEART_LOOKBACK = 64;
 
-  void state;
-  return { lives: Math.max(0, max - used), max };
+/**
+ * The bucket: fill at one heart per interval, capped, drained one per loss.
+ *
+ * Worked in **milliseconds of regeneration** rather than in fractional hearts.
+ * The fraction is the part that matters — a loss at three hours fifty-nine into
+ * a four-hour interval must leave that minute of progress on the clock, not
+ * restart it, or a second loss can cost four hours it did not earn — and integer
+ * milliseconds carry it exactly where a float carries it to the last bit and
+ * then floors to the wrong heart.
+ */
+function heartsAt(db: Db, userId: string, at: Iso, plan: number, regenMinutes: number): Hearts {
+  /* Floored: half a heart is not a thing the screen can draw, and a fractional
+     ceiling never compares equal to a whole count, so `nextAt` would count down
+     for ever to a heart that never lands. */
+  const max = Math.max(0, Math.floor(plan));
+  const interval = Math.max(1, Math.round(regenMinutes)) * 60_000;
+  const full = max * interval;
+  const asked = Date.parse(at);
+
+  const rows = db.all<{ finished_at: string }>(
+    `SELECT finished_at FROM game_sessions
+      WHERE user_id = $u AND life_spent > 0 AND finished_at IS NOT NULL AND finished_at <= $t
+      ORDER BY finished_at DESC LIMIT $n`,
+    { u: userId, t: at, n: HEART_LOOKBACK },
+  );
+
+  /* Newest first, stopping at the last moment the tank was provably full. */
+  const spends: number[] = [];
+  let newer = asked;
+  for (const row of rows) {
+    const spent = Date.parse(row.finished_at);
+    if (!Number.isFinite(spent)) continue;
+    if (newer - spent >= full) break;
+    spends.push(spent);
+    newer = spent;
+  }
+  spends.reverse();
+
+  let credit = full;
+  let mark = spends[0] ?? asked;
+  for (const spent of spends) {
+    const filled = Math.min(full, credit + (spent - mark));
+    /* A loss with no whole heart to spend costs nothing at all — it neither
+       borrows against the next refill nor confiscates the progress towards it.
+       The gate refuses to *start* a round on an empty tank, so the only round
+       that lands here is one that began with a heart and outlived it, and that
+       player has already waited for the heart they are about to be given. */
+    credit = filled >= interval ? filled - interval : filled;
+    mark = spent;
+  }
+  credit = Math.min(full, credit + (asked - mark));
+
+  const lives = Math.floor(credit / interval);
+  return {
+    lives,
+    max,
+    nextAt: lives >= max ? null : iso(new Date(asked + ((lives + 1) * interval - credit))),
+  };
 }
 
 /* ══════════════════════════════════════════════════════ §7.1 game sessions ══ */
@@ -119,11 +222,15 @@ export interface Round {
 /**
  * Open a round.
  *
- * A life is *not* spent here, and since the loss no longer charges one either,
- * nothing spends them at all — see `livesFor`. The check at the top stays
- * because the pool is still the pool: if anything ever starts spending again,
- * refusing to *start* a round on an empty tank is where that has to be enforced,
- * and enforcing it at the end instead means a player finds out after the round.
+ * A heart is *not* spent here; a **loss** spends one, in `finish`. Charging at
+ * the start would take one from a player whose connection dropped before the
+ * first question, which is the one failure they definitely did not choose. What
+ * the check at the top does is refuse to *start* a round on an empty tank, and
+ * that is the side it has to be enforced from: finding out at the end means
+ * finding out after the round was played.
+ *
+ * The refusal carries `nextAt`, because a gate that only says no is one a player
+ * reads as a bug, and a gate that says when is one they wait out.
  */
 export function startSession(
   db: Db,
@@ -135,7 +242,13 @@ export function startSession(
   return db.tx(() => {
     const lives = livesFor(db, input.userId, at);
     if (lives.lives <= 0) {
-      throw new DomainError('no_lives', 'no lives left today', { resetsAt: `${dayOf(at)}T24:00` });
+      /* `nextAt` rather than the midnight this used to quote: hearts do not come
+         back with the day any more, and a reset time that is not when the thing
+         resets is worse than no time at all. */
+      throw new DomainError('no_lives', 'no hearts left', {
+        nextAt: lives.nextAt,
+        max: lives.max,
+      });
     }
 
     /* An abandoned round is closed rather than left open: two live sessions of
@@ -320,6 +433,48 @@ export interface EventResult {
 }
 
 /**
+ * The day's Word Builder hints, which are a plan entitlement.
+ *
+ * Counted off the events themselves rather than off a counter, for the same
+ * reason the hearts are: the rows are already written, and a second tally of one
+ * fact is a second thing to be wrong. Per *local* day — `dayOf`, the same slice
+ * every other daily rule in this module uses, because two daily resets an hour
+ * apart is a bug report nobody can reproduce.
+ *
+ * **The event being submitted is excluded from the count**, and that is what
+ * keeps a retry idempotent. `submitEvent` swallows the duplicate-key insert and
+ * returns `accepted: false`; if the row it is replaying counted against the
+ * allowance, a hint allowed the first time would be refused the second and a
+ * dropped response would cost the player a reveal they had already spent.
+ *
+ * Refused rather than quietly answered with something that is not a hint: a
+ * reveal that silently stops revealing is a broken button, and `requireCapacity`
+ * throws the 403 that names the key — which is what lets the client say "your
+ * plan allows three a day" instead of "something went wrong".
+ */
+function requireHint(db: Db, userId: string, sessionId: string, seq: number, at: Iso): void {
+  const used =
+    db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM game_events e
+         JOIN game_sessions s ON s.id = e.session_id
+        WHERE s.user_id = $u AND e.kind = 'hint'
+          AND substr(e.created_at, 1, 10) = $d
+          AND NOT (e.session_id = $s AND e.seq = $q)`,
+      { u: userId, d: dayOf(at), s: sessionId, q: seq },
+    )?.n ?? 0;
+
+  /* The fallback is the free tier's own figure, so a deployment that has not
+     seeded `word_hints_per_day` behaves like the free plan rather than like
+     Premium — the same argument as `streak_freezes` below. */
+  entitlements.requireCapacity(
+    entitlements.entitlementsFor(db, { userId }),
+    'word_hints_per_day',
+    used,
+    3,
+  );
+}
+
+/**
  * Validate one reported event against the stored secret.
  *
  * The reply says whether *this* answer was right and nothing about the next one.
@@ -361,8 +516,12 @@ export function submitEvent(
         throw new DomainError('bad_request', 'no such word');
       }
       correct = words[index] === guess;
-      /* A hint reveals one letter and nothing else — the position asked for. */
+      /* A hint reveals one letter and nothing else — the position asked for, and
+         only while the day's allowance holds. Checked before the letter is read
+         rather than before the insert, so a hint that is refused is a hint that
+         never happened: nothing is written and nothing is revealed. */
       if (input.kind === 'hint') {
+        requireHint(db, input.userId, input.sessionId, input.seq, at);
         const position = Math.min(Math.max(0, Number(input.payload.position ?? 0)), words[index].length - 1);
         answer = words[index][position];
         correct = undefined;
@@ -525,13 +684,27 @@ export function finish(
         c: scored.correct,
         t: at,
         l: banked.entry.id,
-        /* Always zero: nothing spends a life any more, and a column called
-           `life_spent` that records one anyway is a row that disagrees with
-           `daily_counters.lives_used` about the same event. */
-        ls: 0,
+        /* **The heart is spent here, and this row is the record of it.** A loss
+           costs one, a win costs nothing — which is why the charge cannot live
+           in `startSession`, where nobody knows yet. `livesFor` reconstructs the
+           whole tank from these rows and their `finished_at`, so this column is
+           not bookkeeping beside the truth, it *is* the truth. */
+        ls: scored.won ? 0 : 1,
         i: session.id,
       },
     );
+
+    /* The day's tally, written from the same branch as the row above so the two
+       cannot disagree about one loss. It answers a different question — how many
+       hearts went today — and it deliberately answers nothing about the tank: a
+       day is a bucket and a refill clock needs an instant. */
+    if (!scored.won) {
+      db.run(
+        `INSERT INTO daily_counters (user_id, day, lives_used) VALUES ($u, $d, 1)
+           ON CONFLICT (user_id, day) DO UPDATE SET lives_used = lives_used + 1`,
+        { u: input.userId, d: dayOf(at) },
+      );
+    }
 
     const streak = applyStreak(db, input.userId, scored, ent, at);
     const lives = livesFor(db, input.userId, at);
@@ -556,18 +729,20 @@ export function finish(
 /**
  * What a repeat of the same game is worth today.
  *
- * This is the brake on farming and it is now the only one — the daily points
- * ceiling is a plan's business and lives never bounded much, because only a loss
- * ever spent one and two of the seven games cannot be lost. Pricing the fourth
- * round rather than refusing it is the whole point: play, streaks and the
- * leaderboard keep counting when the factor reaches zero, and only the points
- * stop, so nobody is ever told the game is closed for the day.
+ * This is the brake on *earning*, and the hearts pool is not a second one: a
+ * heart is spent by a loss and two of the seven games cannot be lost, so the
+ * pool bounds somebody having a bad afternoon and this curve bounds somebody
+ * having a good one. The daily points ceiling that used to do both is gone.
+ * Pricing the fourth round rather than refusing it is the whole point: play,
+ * streaks and the leaderboard keep counting when the factor reaches zero, and
+ * only the points stop, so nobody is ever told the game is closed for the day.
  *
  * Counted from `game_sessions` rather than from `daily_counters.plays`, because
  * that counter is one number across every game and this curve is per game:
  * playing five different games is five first rounds, and it should be. The day
- * is `dayOf` — the user's own local day, the same slice `livesFor` refills on,
- * because two daily resets an hour apart is a bug report nobody can reproduce.
+ * is `dayOf` — the user's own local day, the same slice the hint allowance is
+ * counted in, because two daily resets an hour apart is a bug report nobody can
+ * reproduce. The hearts are the one thing here on a clock rather than a day.
  */
 function decayFor(db: Db, userId: string, gameType: GameType, at: Iso): number {
   const played =
@@ -766,19 +941,20 @@ function scoreFlight(report: Record<string, unknown>): Scored {
 }
 
 /**
- * The streak, the lapse and the freeze — the one place they are decided.
+ * The streak, the lapse, the freeze and the comeback — the one place they are
+ * decided.
  *
  * Ported from `src/site/auth/player.ts`, with one deliberate difference: a lapse
  * resets the **streak** and does not touch the balance. The old app wiped points
- * on a missed day (its own hot-deal terms in the imported data say so), and the
- * new spec replaces that with expiry: §2.1 makes the ledger the auditable source
- * of truth and §2.3 gives points a twelve-month life. Deleting a year of
- * earnings because somebody had a bad week is not one of the reasons §2.1 lists
- * for a negative entry.
+ * on a missed day (its own hot-deal terms in the imported data say so), and §2.1
+ * makes the ledger the auditable source of truth — deleting a year of earnings
+ * because somebody had a bad week is not one of the reasons it lists for a
+ * negative entry, and nothing else takes points off a player either.
  *
  * `CONFIG` has no switch for this on purpose — bringing the wipe back is a
  * product decision that should arrive as an `adjustment` entry with a reason,
  * which is exactly what `ledger.reverse` and `earn(..., 'adjustment')` are for.
+ * The lapse pays in the other direction instead: `payComeback` below.
  */
 function applyStreak(
   db: Db,
@@ -822,7 +998,58 @@ function applyStreak(
       WHERE user_id = $u`,
     { s: streak, f: freezes, a: scored.answered, c: scored.correct, d: today, t: at, u: userId },
   );
+
+  /* This is the round that restarts the habit, so it is the round §2b pays for.
+     Paid on the lapse whether or not a freeze absorbed it: a freeze protects the
+     *streak*, not the fact that somebody was away and came back, and the two are
+     different things to be pleased about. */
+  if (lapsed) payComeback(db, userId, at);
+
   return { streak, freezes };
+}
+
+/**
+ * "Welcome back" — `CONFIG.earn.comeback`, at most once every
+ * `comebackEveryDays`.
+ *
+ * **Its own ledger entry, not points folded into the round.** A round that pays
+ * 110 with no line saying why is a number the player cannot check, and §2.1
+ * makes the ledger the thing that answers where points came from. It is also why
+ * this is worth having rather than token: the round it arrives on is the one
+ * that ends an absence.
+ *
+ * **Once per window, not once per lapse.** A lapse is a fact that recurs — play
+ * every third day and every third day is one — so keying the guard on the lapse
+ * pays a monthly bonus ten times a month. `source_ref` carries the *window* the
+ * day falls in instead, a fixed grid rather than "thirty days since the last
+ * one", which is what lets both the payment and the check compute the same key
+ * and makes `alreadyPaid` one indexed lookup rather than a scan. The grid costs
+ * one thing and it is worth naming: two lapses either side of a boundary are two
+ * payments a few days apart. A rolling window would need the date of the last
+ * one and a second concept to hold it; a bounded, occasional extra hundred for
+ * somebody who did come back twice is the cheaper mistake.
+ *
+ * **Flat, with no plan multiplier.** The earn table files it beside the referral
+ * and invite one-offs and for the same reason: nobody should subscribe for a day
+ * to harvest the bonus for a month they were not here. `earn` defaults the
+ * multiplier to 1, so this is expressed by not passing one.
+ */
+function payComeback(db: Db, userId: string, at: Iso): void {
+  const days = Math.floor(Date.parse(at) / 86_400_000);
+  const ref = `comeback:${Math.floor(days / Math.max(1, CONFIG.earn.comebackEveryDays))}`;
+  if (ledger.alreadyPaid(db, userId, 'comeback', ref)) return;
+
+  ledger.earn(db, {
+    userId,
+    points: CONFIG.earn.comeback,
+    /* `occasion` is the reason a customer reads in their history; `comeback` is
+       the `source_kind` the arithmetic keys off. That split is the ledger's, and
+       it is why a new bonus is not a new reason and not a migration. */
+    reason: 'occasion',
+    sourceKind: 'comeback',
+    sourceRef: ref,
+    at,
+  });
 }
 
 /** "You're 60 from 10% off at Café Bratysławska" — from the real balance. */
