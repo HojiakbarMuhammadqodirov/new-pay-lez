@@ -28,6 +28,8 @@ export type Route =
   | 'privacy'
   | 'terms'
   | 'signin'
+  | 'profile'
+  | 'onboarding'
   | 'business-setup'
   | 'dashboard'
   | 'admin';
@@ -42,6 +44,8 @@ const ROUTES: Record<string, Route> = {
   '#/privacy': 'privacy',
   '#/terms': 'terms',
   '#/sign-in': 'signin',
+  '#/profile': 'profile',
+  '#/welcome': 'onboarding',
   '#/business/setup': 'business-setup',
   '#/dashboard': 'dashboard',
   '#/admin': 'admin',
@@ -58,6 +62,8 @@ export const PATHS: Record<Route, string> = {
   privacy: '#/privacy',
   terms: '#/terms',
   signin: '#/sign-in',
+  profile: '#/profile',
+  onboarding: '#/welcome',
   'business-setup': '#/business/setup',
   dashboard: '#/dashboard',
   admin: '#/admin',
@@ -122,6 +128,16 @@ export const ANCHOR_ROUTES: Array<[prefix: string, route: Route]> = [
   ['wallet-', 'vouchers'],
   ['signin-', 'signin'],
   ['setup-', 'business-setup'],
+  /*
+   * The two personal routes, registered before either has a second section to
+   * link to — which is the point. An id with no entry in this table is
+   * invisible to `verify`, so the first in-page link somebody adds to the
+   * profile form would silently go Home and there would be no failing test to
+   * read. The prefixes follow the *hash* rather than the class namespace:
+   * `#/profile` and `#/welcome`, not `prof-` and `onb-`.
+   */
+  ['profile-', 'profile'],
+  ['welcome-', 'onboarding'],
 ];
 
 /** The route a hash names, section anchors included. Exported for `verify`. */
@@ -186,7 +202,7 @@ export function navigate(route: Route, replace = false): void {
  * disagree on a refresh.
  */
 /** The three routes that only exist for somebody in particular. */
-const PRIVATE: Route[] = ['business-setup', 'dashboard', 'admin'];
+const PRIVATE: Route[] = ['business-setup', 'dashboard', 'admin', 'profile', 'onboarding'];
 
 export function resolveRoute(route: Route, account: Account | null): Route {
   if (account === null) {
@@ -228,8 +244,41 @@ export function resolveRoute(route: Route, account: Account | null): Route {
    * else sees.
    */
   if (account.type === 'admin') {
+    /* The one private route an operator keeps. The console replaces the
+       partner screens because an admin has no venue; it does not replace
+       their own name and city. Onboarding is not theirs — it is the new
+       player's first minute, and an operator provisioned by the server never
+       had one. */
+    if (route === 'profile') return 'profile';
+    if (route === 'onboarding') return 'admin';
     return PRIVATE.includes(route) || route === 'signin' ? 'admin' : route;
   }
+
+  /*
+   * A new player finishes onboarding before anything else.
+   *
+   * Held here the same way an undecided account is held at sign-in, and for
+   * the same reason: it is one step, it is short, and every other screen
+   * reads better once the language is chosen and there are points on the
+   * balance. The welcome gift is paid at the *end* of it rather than at
+   * sign-up, which is a rule about farming rather than about generosity — an
+   * address and a password can be produced in bulk, and a bonus attached to
+   * producing them funds a farm. Skippable onboarding would be a gift nobody
+   * ever collects.
+   *
+   * Business owners and operators are exempt: onboarding is the player app's
+   * first minute and neither of them has one. The operator is already handled
+   * above; an owner falls past this clause because of the `type` test.
+   *
+   * **"Before anything else" is load-bearing, and it has already been wrong
+   * once.** This clause sat below the two redirects underneath it, and the
+   * `admin` one is not conditional on the account — so a new player who typed
+   * `#/admin` got `landing`, which resolves to `onboarding`, which is a
+   * resolution that is not a fixed point and an effect in `Site` that
+   * navigates twice. `npm run verify` walks the whole account × route matrix
+   * against exactly that and caught it.
+   */
+  if (account.type === 'individual' && account.onboardedAt === null) return 'onboarding';
 
   /* Nobody else has a console. Checked before the sign-in clause below so the
      answer does not depend on which of the two the address bar happens to say. */
@@ -253,6 +302,9 @@ export function resolveRoute(route: Route, account: Account | null): Route {
       : 'landing';
   }
 
+  /* Everyone past the clause above has finished it, or was never asked to. */
+  if (route === 'onboarding') return 'landing';
+
   if (account.type === 'individual') {
     /*
      * The consumer site is everything except what belongs to a venue: the two
@@ -261,6 +313,7 @@ export function resolveRoute(route: Route, account: Account | null): Route {
      * reached the listing form, filled it in, and had it saved onto an account
      * with no dashboard to show it on.
      */
+    if (route === 'profile') return 'profile';
     return route === 'business' || route === 'analytics' || PRIVATE.includes(route)
       ? 'landing'
       : route;

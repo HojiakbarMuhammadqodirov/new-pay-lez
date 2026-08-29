@@ -17,7 +17,7 @@
  * See `users.ts` for why none of this is authentication. Passwords are written
  * here in plain text, next to the ones already in the bundle.
  */
-import type { Account } from './context';
+import { EMPTY_PROFILE, type Account } from './context';
 import { SEED_USERS, type UserRecord } from './users';
 import { seedPlayer } from './player';
 
@@ -102,17 +102,18 @@ export function patchUser(id: string, patch: Partial<UserRecord>): void {
 /**
  * The session's view of a row: everything except the secret and the join date.
  *
- * The `player` backfill lives here rather than beside the one in
- * `AuthProvider.stored()`, because there are two boundaries the old shape can
- * come through and that comment only ever knew about one. `player` arrived
- * after the first rows were written, `isRecord` above does not check it (it
- * validates six fields and `player` is not one of them), and *this* is the
- * function `signIn` uses — so a directory row written by an earlier build gave
- * an individual an account with no `player` at all. Every screen that reads it
- * bails: `GamesApp` and `WalletApp` both `return null` on a missing player,
- * which renders no `<main>`, and `.site > main` is the only element the sheet
- * gives `z-index: 1`. The symptom is a blank page under a working header, on
- * sign-in, with nothing in the console.
+ * **Every backfill for an old shape lives here, and here only.** It used to be
+ * two places — this and `AuthProvider.stored()` — and the split was the bug:
+ * `player` arrived after the first rows were written, `isRecord` above does not
+ * check it (it validates six fields and `player` is not one of them), and the
+ * copy in `stored()` only guarded the *session* boundary. A directory row
+ * written by an earlier build therefore gave an individual an account with no
+ * `player` at all on the sign-in path. Every screen that reads it bails:
+ * `GamesApp` and `WalletApp` both `return null` on a missing player, which
+ * renders no `<main>`, and `.site > main` is the only element the sheet gives
+ * `z-index: 1` — a blank page under a working header, with nothing in the
+ * console. `stored()` now rebuilds the session through this function rather
+ * than parsing its own copy, so there is one boundary and one answer.
  */
 export function toAccount(user: UserRecord): Account {
   return {
@@ -122,5 +123,23 @@ export function toAccount(user: UserRecord): Account {
     type: user.type,
     business: user.business,
     player: user.type === 'individual' ? (user.player ?? seedPlayer()) : user.player,
+    /* Same backfill, same reason: the profile postdates the stored shape and
+       every field on it is a string the form is about to render. A missing one
+       is an empty profile, not a page that throws reading `.username` of
+       undefined. */
+    profile: user.profile ?? EMPTY_PROFILE,
+    /*
+     * The one backfill where absent and `null` are **different answers**, and
+     * getting it the other way round is a bug with a face on it: reading a
+     * missing stamp as `null` would take every individual who signed up before
+     * onboarding existed — a week of streak, a wallet with vouchers in it — and
+     * hold them at a welcome tour they have already outgrown, then pay them the
+     * once-only gift for finishing it.
+     *
+     * So absent is read as the day they joined, which is a date that is true.
+     * `null` is left exactly as it is, because a row that says `null` was
+     * written by a build that knew the difference.
+     */
+    onboardedAt: user.onboardedAt === undefined ? user.created : user.onboardedAt,
   };
 }

@@ -1,12 +1,26 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { blankBusiness, type BusinessProfile } from './business';
 import { seedPlayer, today, type PlayerState } from './player';
-import { AuthContext, type Account, type AccountType, type AuthValue } from './context';
+import {
+  AuthContext,
+  EMPTY_PROFILE,
+  type Account,
+  type AccountType,
+  type AuthValue,
+  type ProfilePatch,
+  type ProfileResult,
+  type UserProfile,
+} from './context';
 import { addUser, listUsers, patchUser, toAccount } from './directory';
 import { exchangeGoogleCredential, forgetGoogle } from './google';
 import { signOut as apiSignOut } from '../api/client';
 import {
+  HEADLINE_MAX,
+  WELCOME_POINTS,
+  checkBirthDate,
+  checkUsername,
   findUser,
+  isPhone,
   newUser,
   sameEmail,
   validateSignUp,
@@ -59,21 +73,24 @@ function stored(): Account | null {
      * signed into, whose every write would be merged into a row that does not
      * exist and silently dropped. Signing them out is the honest answer.
      */
-    if (!listUsers().some((user) => user.id === parsed.id)) return null;
+    const row = listUsers().find((user) => user.id === parsed.id);
+    if (!row) return null;
 
     /*
-     * Backfill, not validation.
+     * …and the row is then the *whole* answer, not just a permission slip.
      *
-     * `player` arrived after the first sessions were written, so a stored
-     * individual can legitimately have none — and every screen that reads it
-     * renders nothing at all when it is missing, which is a blank page rather
-     * than an error anyone can act on. Seeding here fixes it once, at the only
-     * boundary the old shape can come through, instead of making nine callers
-     * defend against `null`. Any future field wants the same treatment.
+     * Everything the session carries beyond the id is written back to that row
+     * as it happens (see `commit`), so `toAccount(row)` and the stored blob
+     * agree by construction — and where they do not, the row is the copy the
+     * admin console reads and the copy signing out and back in would restore.
+     * Rebuilding through it also means the backfills for an old shape live in
+     * exactly one place. There used to be a second copy here, guarding only
+     * this boundary, and the `player` field it was written for could still
+     * arrive missing through `signIn`; `directory.ts` says what that looked
+     * like. Two new fields have just landed, and neither of them needs a note
+     * in two files.
      */
-    return parsed.type === 'individual' && !parsed.player
-      ? { ...parsed, player: seedPlayer() }
-      : parsed;
+    return toAccount(row);
   } catch {
     // Private mode, or a shape this code no longer understands. Signed out is
     // the safe reading of both.
@@ -210,6 +227,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         type: null,
         business: null,
         player: null,
+        /* Google hands over a name and an address and nothing else — no handle,
+           no city, no birthday. The profile is empty rather than half-guessed,
+           and `null` rather than absent for the onboarding stamp: this account
+           is genuinely new, which is exactly the case the two states exist to
+           tell apart. */
+        profile: { ...EMPTY_PROFILE },
+        onboardedAt: null,
       };
       addUser(record);
 
@@ -247,6 +271,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       type: next.type,
       business: next.business,
       player: next.player,
+      /* Both of the new fields go through here, and both have to: the profile
+         because signing out and back in must restore a handle somebody chose,
+         and the stamp because a player who finished onboarding on Monday and
+         signs in again on Tuesday must not be walked through it a second time
+         — the welcome gift is once-only, and this row is the only record of
+         that anywhere on this device. */
+      profile: next.profile,
+      onboardedAt: next.onboardedAt,
     });
   }, []);
 
@@ -301,9 +333,168 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [commit],
   );
 
+  /**
+   * Save the profile — validate first, write second.
+   *
+   * Everything is checked *before* `setAccount`, and that ordering is the whole
+   * of why this is not inside the updater: React may invoke an updater twice in
+   * development, and a rule with a side effect in it — spending one of two
+   * birthday corrections — would spend both. The updater below is a pure merge
+   * of a patch that has already been proved good.
+   *
+   * The rules themselves are pure functions in `users.ts`, so `npm run verify`
+   * owns them; this is only the part that needs the directory and the session.
+   */
+  const saveProfile = useCallback(
+    (patch: ProfilePatch): ProfileResult => {
+      const current = account;
+      if (!current) return { ok: true };
+      const was = current.profile;
+
+      let username: string | undefined;
+      if (patch.username !== undefined && patch.username.trim() !== was.username) {
+        const handle = checkUsername(listUsers(), patch.username, current.id);
+        if (!handle.ok) return { ok: false, field: 'username', error: handle.error };
+        username = handle.username;
+      }
+
+      const headline = patch.headline?.trim();
+      if (headline !== undefined && headline.length > HEADLINE_MAX) {
+        return { ok: false, field: 'headline', error: 'long' };
+      }
+
+      const phone = patch.phone?.trim();
+      if (phone !== undefined && phone !== '' && !isPhone(phone)) {
+        return { ok: false, field: 'phone', error: 'shape' };
+      }
+
+      /*
+       * The birthday, and the one rule on this form that costs something.
+       *
+       * Writing the same day back is not a change and spends nothing — which is
+       * what lets the form submit all seven fields on every save. The refusal
+       * for a third *different* day names support rather than pretending the
+       * correction is impossible, because deciding whether somebody's birthday
+       * is really the 14th is a human question and not an endpoint's.
+       */
+      let birthDate: string | undefined;
+      const wanted = patch.birthDate?.trim();
+      if (wanted !== undefined && wanted !== '' && wanted !== was.birthDate) {
+        const checked = checkBirthDate(wanted, today());
+        if (!checked.ok) return { ok: false, field: 'birthDate', error: checked.error };
+        if (was.birthDateChangesLeft <= 0) {
+          return { ok: false, field: 'birthDate', error: 'spent' };
+        }
+        birthDate = checked.date;
+      }
+
+      setAccount((live) => {
+        if (!live) return live;
+        const profile: UserProfile = {
+          ...live.profile,
+          ...(username === undefined ? {} : { username }),
+          ...(headline === undefined ? {} : { headline }),
+          ...(phone === undefined ? {} : { phone }),
+          ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }),
+          ...(patch.place === undefined
+            ? {}
+            : { city: patch.place.city, countryCode: patch.place.countryCode }),
+          ...(birthDate === undefined
+            ? {}
+            : {
+                birthDate,
+                /* Spent here and nowhere else. `Math.max` rather than a bare
+                   subtraction so a row that arrived at 0 through some older
+                   shape cannot go negative and start reading as "minus one
+                   corrections left". */
+                birthDateChangesLeft: Math.max(0, live.profile.birthDateChangesLeft - 1),
+              }),
+        };
+        const next: Account = { ...live, profile };
+        commit(next);
+        return next;
+      });
+
+      return { ok: true };
+    },
+    [account, commit],
+  );
+
+  /**
+   * Finish onboarding: stamp it, bank what the flow earned, pay the gift.
+   *
+   * ── which side of the wire this is ────────────────────────────────────────
+   * The server does this at `POST /v1/me/onboarded`
+   * (`accounts.completeOnboarding`): it claims the row with
+   * `UPDATE … WHERE onboarded_at IS NULL` so two simultaneous reports race for
+   * one row and exactly one pays, and the flag game's points arrive separately
+   * — earned by a provisional identity and repointed at the real account by
+   * `accounts.merge`, so they survive as *ledger entries* rather than as a
+   * number copied across.
+   *
+   * **This is the local half, and it is not that.** There is no provisional
+   * identity here because the site's sign-up creates the account before
+   * onboarding runs, so the round's points are simply banked onto the player
+   * state that already exists; and there is no write lock, because the only
+   * writer is this tab. What survives the translation is the property that
+   * matters: the stamp is the guard, so a second call pays nothing. When
+   * `auth/` moves to the server this function becomes one request.
+   *
+   * The round's points do **not** go through `awardPoints`. That function owns
+   * the streak, the 24-hour window and the per-game decay curve, and the
+   * onboarding round is none of those — it is a first-run demo with fixed
+   * per-round values, paid on the server as ledger entries against an identity
+   * that has never played. Running it through the streak would start a streak
+   * on a game that is not one of the seven.
+   */
+  const finishOnboarding = useCallback(
+    (earned: number) => {
+      setAccount((live) => {
+        if (!live) return live;
+        /* The guard, and the reason a second call is safe rather than an
+           error: the honest answer to "did I finish onboarding?" is yes, and
+           this call is simply not the one that paid for it. */
+        if (live.onboardedAt !== null) return live;
+
+        const next: Account = {
+          ...live,
+          onboardedAt: new Date().toISOString(),
+          player: live.player
+            ? { ...live.player, points: live.player.points + earned + WELCOME_POINTS }
+            : live.player,
+        };
+        commit(next);
+        return next;
+      });
+    },
+    [commit],
+  );
+
   const value = useMemo<AuthValue>(
-    () => ({ account, signIn, signUp, signInWithGoogle, signOut, setType, saveBusiness, setPlayer }),
-    [account, signIn, signUp, signInWithGoogle, signOut, setType, saveBusiness, setPlayer],
+    () => ({
+      account,
+      signIn,
+      signUp,
+      signInWithGoogle,
+      signOut,
+      setType,
+      saveBusiness,
+      setPlayer,
+      saveProfile,
+      finishOnboarding,
+    }),
+    [
+      account,
+      signIn,
+      signUp,
+      signInWithGoogle,
+      signOut,
+      setType,
+      saveBusiness,
+      setPlayer,
+      saveProfile,
+      finishOnboarding,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

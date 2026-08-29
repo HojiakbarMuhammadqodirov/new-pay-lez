@@ -24,7 +24,8 @@
  */
 import { isEmail, type BusinessProfile } from './business';
 import { seedPlayer, type PlayerState } from './player';
-import type { AccountType } from './context';
+import { EMPTY_PROFILE } from './context';
+import type { AccountType, UserProfile } from './context';
 
 /**
  * One row of the directory: an account plus the two things a session does not
@@ -46,6 +47,27 @@ export interface UserRecord {
   type: AccountType | null;
   business: BusinessProfile | null;
   player: PlayerState | null;
+  /**
+   * What this person has told us about themselves.
+   *
+   * Optional for the reason `PlayerState.freezes` is: it postdates the stored
+   * shape, so a row written by an earlier build has no such field, and
+   * `toAccount` reads a missing one as `EMPTY_PROFILE` rather than as a crash
+   * on a page somebody was already looking at.
+   */
+  profile?: UserProfile;
+  /**
+   * When onboarding was finished, or `null` if it has not been.
+   *
+   * Optional *and* nullable, and the two states are different answers rather
+   * than one written twice. `null` is "this account has not been through it",
+   * which is what `resolveRoute` holds a new player on. **Absent** is "this row
+   * predates onboarding existing", and `toAccount` reads that as the day the
+   * account was opened — because sending a returning player with a week's
+   * streak through a welcome tour, and paying them the welcome gift for it, is
+   * the wrong reading of a schema change they had no part in.
+   */
+  onboardedAt?: string | null;
 }
 
 /**
@@ -108,6 +130,26 @@ function seededPlayer(): PlayerState {
   };
 }
 
+/**
+ * …and her profile, filled in for the same reason her wallet is.
+ *
+ * A demo account whose profile page is seven empty fields demonstrates a form,
+ * not a profile. `birthDateChangesLeft` is 1 rather than 2 because a birthday
+ * that is *set* has had one of its two writes spent — the counter is writes
+ * remaining, and an account showing a birthday and two corrections left would
+ * be showing a state the rule cannot produce.
+ */
+const DILNOZA: UserProfile = {
+  username: 'dilnoza',
+  headline: 'Filter coffee, flags, and a stamp card I refuse to lose.',
+  city: 'Krakow',
+  countryCode: 'PL',
+  phone: '+48 668 214 907',
+  birthDate: '1998-03-14',
+  birthDateChangesLeft: 1,
+  avatar: '',
+};
+
 export const SEED_USERS: UserRecord[] = [
   {
     id: 'u_admin',
@@ -139,6 +181,12 @@ export const SEED_USERS: UserRecord[] = [
     type: 'individual',
     business: null,
     player: seededPlayer(),
+    profile: DILNOZA,
+    /* Explicit, and it has to be: she is the account somebody signs in as to
+       look at the wallet, and `resolveRoute` holds an individual with a null
+       stamp at onboarding from every route. A seeded player who cannot reach
+       the screens she was seeded to demonstrate is not a seed. */
+    onboardedAt: '2026-05-19',
   },
 ];
 
@@ -240,5 +288,237 @@ export function newUser(
     type: draft.type,
     business: null,
     player: draft.type === 'individual' ? seedPlayer() : null,
+    profile: { ...EMPTY_PROFILE },
+    /*
+     * `null` and not absent, and the difference is the whole of the onboarding
+     * hold. Absent means "this row predates the field" and is read as the join
+     * date; `null` means "has not been through it", which is what
+     * `resolveRoute` sends a new individual to `#/welcome` on. A new account is
+     * the one case where we *know* which of the two it is.
+     *
+     * Set for a business account too, which is not dead weight: an owner is
+     * exempt from the hold by type rather than by this field, so writing
+     * `null` here keeps the row honest — nobody has been through onboarding —
+     * without claiming an owner ever will be.
+     */
+    onboardedAt: null,
   };
 }
+
+/* ═══════════════════════════════════════════════════════════ the profile ══ */
+
+/**
+ * The rules the seven profile answers have to satisfy.
+ *
+ * **These are the server's rules, restated.** `server/domain/accounts.ts` is
+ * where they are enforced against a real database; this file is where the
+ * prototype's `localStorage` directory enforces them, because there is nowhere
+ * else for it to ask. The two copies exist for as long as the two directories
+ * do — see the banner at the top of this file — and the day the site's auth
+ * moves to the server, this section is what stops being read. **Until then a
+ * change to one is a change to the other**, and the failure of forgetting is
+ * quiet in one direction only: a value this file accepts and the server refuses
+ * is a save that works today and breaks on the wire later.
+ *
+ * Pure and storage-free, like everything else here, so `npm run verify` owns
+ * them rather than a browser.
+ */
+
+/** A line, not a paragraph. `HEADLINE_MAX` on the server. */
+export const HEADLINE_MAX = 140;
+
+/**
+ * How many times a player may write their own birthday: once to set it, once to
+ * fix it. `BIRTH_DATE_WRITES` on the server, and the reason is the same — a
+ * date picker is a machine for being one day out, and "contact support" as the
+ * answer to a typo made in the first minute is a queue nobody wanted.
+ */
+export const BIRTH_DATE_WRITES = 2;
+
+/** The floor a self-declared sign-up may be, and the typo ceiling above it. */
+export const MIN_AGE = 13;
+export const MAX_AGE = 120;
+
+/* Three to twenty, `a-z 0-9 _`, starting and ending on a letter or digit and
+   never two underscores together. The ceiling is a display constraint — a
+   handle has to fit beside an avatar on a leaderboard row — and the rest is
+   about telling two handles apart: `kasia_`, `_kasia` and `kasia__pl` are three
+   ways to look like somebody else. */
+export const USERNAME_MIN = 3;
+export const USERNAME_MAX = 20;
+const USERNAME_SHAPE = /^[a-z0-9]+(?:_[a-z0-9]+)*$/;
+
+/**
+ * Handles the product keeps, copied from `RESERVED_USERNAMES` on the server.
+ *
+ * Verbatim rather than shortened, and that is the point: a *subset* would
+ * contradict nothing and still hand somebody a name that is refused the first
+ * time this account is written to a real server. Two kinds in it — `admin`,
+ * `support`, `security` and `billing` are claims about who is speaking, and a
+ * player holding one is a phishing message that needs no forgery; the rest are
+ * surfaces a URL may want later.
+ */
+const RESERVED_USERNAMES = new Set([
+  'admin', 'administrator', 'moderator', 'mod', 'staff', 'team', 'official',
+  'support', 'help', 'helpdesk', 'security', 'billing', 'payments', 'sales',
+  'paylez', 'paylezteam', 'paylezsupport', 'operations', 'ops', 'system',
+  'root', 'superuser', 'owner', 'partner', 'venue', 'merchant',
+  'api', 'www', 'me', 'my', 'settings', 'account', 'login', 'signin', 'signup',
+  'about', 'contact', 'privacy', 'terms', 'legal', 'press',
+  'null', 'undefined', 'none', 'anonymous', 'guest', 'user', 'everyone', 'all',
+  'noreply', 'no_reply', 'postmaster', 'webmaster',
+]);
+
+/** The comparison key. Lowercasing is total here because the shape is ASCII. */
+export const foldUsername = (value: string): string => value.trim().toLowerCase();
+
+export type UsernameError = 'length' | 'shape' | 'reserved' | 'taken';
+
+/**
+ * A handle, or the reason it is not one.
+ *
+ * Returns both forms because both are stored: what was typed, so `KasiaPL` is
+ * shown back the way she wrote it, and the folded key, so nobody else can be
+ * `kasiapl`. Taking the directory as an argument rather than reading it keeps
+ * this pure — uniqueness is a fact about a set of rows, and the set is the
+ * caller's to supply.
+ *
+ * `self` is the id of the account doing the writing, so saving a profile
+ * without changing the handle is not a clash with oneself.
+ */
+export function checkUsername(
+  users: UserRecord[],
+  value: string,
+  self: string,
+): { ok: true; username: string; norm: string } | { ok: false; error: UsernameError } {
+  const username = value.trim();
+  const norm = foldUsername(username);
+
+  if (norm.length < USERNAME_MIN || norm.length > USERNAME_MAX) {
+    return { ok: false, error: 'length' };
+  }
+  if (!USERNAME_SHAPE.test(norm)) return { ok: false, error: 'shape' };
+  if (RESERVED_USERNAMES.has(norm)) return { ok: false, error: 'reserved' };
+
+  const taken = users.some(
+    (user) => user.id !== self && foldUsername(user.profile?.username ?? '') === norm,
+  );
+  if (taken) return { ok: false, error: 'taken' };
+
+  return { ok: true, username, norm };
+}
+
+export type BirthDateError = 'format' | 'nonexistent' | 'future' | 'young' | 'old';
+
+/** Whole years elapsed between two `YYYY-MM-DD` days, birthday-aware. */
+function wholeYears(from: string, to: string): number {
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  const beforeBirthday = tm < fm || (tm === fm && td < fd);
+  return ty - fy - (beforeBirthday ? 1 : 0);
+}
+
+/**
+ * A birthday, or the reason it is not one.
+ *
+ * The round-trip through `Date.UTC` is the part that is not decoration:
+ * `new Date('2026-02-30')` does not fail, it rolls forward to March 2nd — so a
+ * regex plus a parse accepts a day that does not exist and then stores a
+ * different one. Comparing the components back out is what turns that into a
+ * refusal. Everything else is string comparison, exact for ISO days.
+ *
+ * `today` is passed rather than read off a clock, for the same reason `newUser`
+ * takes its date: a function that reads the time cannot be checked.
+ */
+export function checkBirthDate(
+  value: string,
+  today: string,
+): { ok: true; date: string } | { ok: false; error: BirthDateError } {
+  const date = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { ok: false, error: 'format' };
+
+  const [y, m, d] = date.split('-').map(Number);
+  const round = new Date(Date.UTC(y, m - 1, d));
+  if (round.getUTCFullYear() !== y || round.getUTCMonth() !== m - 1 || round.getUTCDate() !== d) {
+    return { ok: false, error: 'nonexistent' };
+  }
+
+  if (date >= today) return { ok: false, error: 'future' };
+
+  const age = wholeYears(date, today);
+  if (age < MIN_AGE) return { ok: false, error: 'young' };
+  if (age > MAX_AGE) return { ok: false, error: 'old' };
+
+  return { ok: true, date };
+}
+
+/**
+ * A phone number, loosely — and the looseness is the design rather than a gap.
+ *
+ * The only thing that could establish a number is a code sent to it, and
+ * nothing here sends one, so a strict pattern would buy nothing it does not
+ * already lack: it would reject real numbers in formats nobody thought of, and
+ * still accept a well-formed number belonging to somebody else. What is checked
+ * is that the field holds a phone number rather than a sentence.
+ */
+export function isPhone(value: string): boolean {
+  const digits = value.replace(/\D/g, '');
+  return digits.length >= 6 && digits.length <= 15 && /^[+()\-\s\d.]+$/.test(value);
+}
+
+/** The seven answers, in the order the form asks them. */
+export type ProfileField =
+  | 'avatar'
+  | 'username'
+  | 'headline'
+  | 'city'
+  | 'email'
+  | 'phone'
+  | 'birthDate';
+
+/**
+ * Which of the seven are still blank.
+ *
+ * **All seven, or it is not finished.** That is the only definition of complete
+ * that survives a field being added: "most of it" has to be renegotiated every
+ * time the form grows, and a threshold nobody can state is one the client and
+ * the server will eventually disagree about. It is also the server's own
+ * definition (`isProfileComplete`), which matters because the server *pays* for
+ * a complete profile — a meter here that read 100% while the bonus had not
+ * landed would be the site calling the server wrong.
+ *
+ * `email` is one of the seven and is not on `UserProfile`: it lives on the
+ * account, because it is what signs in. It is on the list anyway, for the case
+ * the server has and this prototype does not — an identity with no address at
+ * all — so the two lists stay the same list.
+ */
+export function profileGaps(profile: UserProfile, email: string): ProfileField[] {
+  const answered: Record<ProfileField, string> = {
+    avatar: profile.avatar,
+    username: profile.username,
+    headline: profile.headline,
+    city: profile.city,
+    email,
+    phone: profile.phone,
+    birthDate: profile.birthDate,
+  };
+  return (Object.keys(answered) as ProfileField[]).filter((field) => !answered[field]);
+}
+
+/** Whole percent of the seven that are answered. Rounded down, so 6/7 is 85 —
+ *  a meter that reads 100 while something is missing is worse than one that
+ *  rounds mean. */
+export const profilePercent = (profile: UserProfile, email: string): number =>
+  Math.floor(((7 - profileGaps(profile, email).length) / 7) * 100);
+
+/**
+ * What the welcome gift is worth, mirroring `CONFIG.earn.onboarding`.
+ *
+ * It is paid for *finishing onboarding* rather than for signing up, and that is
+ * a rule about farming rather than about generosity: an address and a password
+ * can be produced in bulk, and a bonus attached to producing them funds a farm.
+ * Finishing onboarding cannot be done twice by one account, which is what makes
+ * it a reasonable thing to pay for — provided "cannot be done twice" is
+ * actually enforced, which is `finishOnboarding` in `AuthProvider`.
+ */
+export const WELCOME_POINTS = 100;

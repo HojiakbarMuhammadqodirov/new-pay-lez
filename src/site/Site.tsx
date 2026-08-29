@@ -21,6 +21,8 @@ import { LearnPage } from './learn';
 import { PrivacyPage, TermsPage } from './legal';
 import { MarketTape } from './market/MarketTape';
 import { NetworkWeb } from './network/NetworkWeb';
+import { OnboardingPage } from './onboarding';
+import { ProfilePage } from './profile';
 import { RelocatePage } from './relocate';
 import { PATHS, navigate, resolveRoute, useRoute } from './router';
 import { SignInPage } from './signin';
@@ -35,6 +37,7 @@ import {
   Hero,
   Proof,
   SiteFooter,
+  Subscription,
   Value,
   Voices,
 } from './sections';
@@ -158,6 +161,30 @@ function SiteContent() {
     );
   }
 
+  /*
+   * Onboarding is the third frame, and it is one for a reason the other two do
+   * not have: `resolveRoute` holds a new player *here from every route*, so a
+   * marketing header above it would be a nav bar whose every link bounces
+   * straight back to this page. A footer sitemap under a gate is the same
+   * mistake the sign-in page already refuses.
+   *
+   * No backdrop either — the frames have never had one — and no assistant dock.
+   * The dock answers out of your points, your vouchers and your city, and
+   * somebody on this screen has none of the three yet; it is the same argument
+   * the console's missing dock makes, one screen earlier in the account's life.
+   *
+   * It still renders a `<main>`, and must: `.site > main` is the only thing the
+   * sheet gives `z-index: 1`, so a frame in a plain `<div>` sits behind the
+   * page background.
+   */
+  if (route === 'onboarding') {
+    return (
+      <div className="site site-app" id="top" data-intro="done">
+        <OnboardingPage />
+      </div>
+    );
+  }
+
   return (
     /*
      * `data-route` is a styling hook, not routing: it lets `site.css` reach a
@@ -239,7 +266,7 @@ function SiteContent() {
          * Relocate no longer spends the document's one WebGL context.
          */
         <div className="site__rings" aria-hidden />
-      ) : route === 'privacy' || route === 'terms' || route === 'contact' ? (
+      ) : route === 'privacy' || route === 'terms' || route === 'contact' || route === 'profile' ? (
         /*
          * No backdrop at all, and that is the point rather than an omission.
          *
@@ -257,6 +284,13 @@ function SiteContent() {
          * one-section form is not one. A pinned globe sitting on top of the
          * form is the exact failure `scrollAnchorId` exists to prevent, and no
          * anchor fixes a page with nothing below the fold.
+         *
+         * The profile is the fourth, on both counts at once. It is one section
+         * — a form and a rail — so there is nothing for the globe to travel
+         * through and it would sit straight on top of the fields; and the
+         * subject is somebody's own name, city and photograph, which no
+         * backdrop on this site is a picture of. A globe behind it would be the
+         * wallpaper the one-backdrop-per-route rule exists to prevent.
          */
         null
       ) : route === 'business' || route === 'business-setup' ? (
@@ -351,6 +385,11 @@ function SiteContent() {
         )
       ) : route === 'relocate' ? (
         <RelocatePage />
+      ) : route === 'profile' ? (
+        /* A page rather than a frame, unlike the three above it: an account
+           reading its own record is still inside the site, and the header is
+           how it got here and how it leaves. */
+        <ProfilePage />
       ) : route === 'contact' ? (
         <ContactPage />
       ) : route === 'privacy' ? (
@@ -370,6 +409,7 @@ function SiteContent() {
           <Guide />
           <Features />
           <Value />
+          <Subscription />
           <Voices />
           <FinalCta />
         </main>

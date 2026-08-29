@@ -12,7 +12,13 @@
 import { createContext, useContext } from 'react';
 import type { BusinessProfile } from './business';
 import type { PlayerState } from './player';
-import type { SignInError, SignUpDraft, SignUpError } from './users';
+import type {
+  BirthDateError,
+  SignInError,
+  SignUpDraft,
+  SignUpError,
+  UsernameError,
+} from './users';
 
 /**
  * Three, and only two of them are choosable.
@@ -40,13 +46,86 @@ export interface Account {
   type: AccountType | null;
   /** The listing. `null` until the owner has been through setup. */
   business: BusinessProfile | null;
-  /** Points, streak, lives and the wallet. `null` for a business account. */
+  /** Points, streak, energy and the wallet. `null` for a business account. */
   player: PlayerState | null;
+  /**
+   * What this person has told us about themselves. Separate from `name` and
+   * `email`, which are what the account was created with and what signs it in.
+   */
+  profile: UserProfile;
+  /**
+   * When onboarding was finished. `null` means it has not been, and
+   * `resolveRoute` holds an individual there until it is.
+   */
+  onboardedAt: string | null;
 }
 
-/** The first letter of the name, for the header chip's avatar. */
-export function initial(account: Account): string {
-  return account.name.trim().charAt(0).toUpperCase() || '?';
+/**
+ * The seven things a profile is.
+ *
+ * Mirrors the columns the server grew for it. Everything is optional except
+ * that the *set* is fixed: "complete" means all of it, because "most of it" has
+ * to be renegotiated every time the form gains a field.
+ */
+export interface UserProfile {
+  /** Unique, chosen once and editable; the handle other players see. */
+  username: string;
+  /** A short line the player writes about themselves. */
+  headline: string;
+  /** Chosen from the served list — Poland, Germany or Uzbekistan. */
+  city: string;
+  countryCode: string;
+  phone: string;
+  /** ISO `YYYY-MM-DD`. Settable, then correctable once, then support. */
+  birthDate: string;
+  /** How many self-service corrections are left on the birthday. */
+  birthDateChangesLeft: number;
+  /**
+   * The photo, as a small square data URL — or `''`.
+   *
+   * A data URL and not a filename, which is the *opposite* of what the business
+   * listing does with its logo, and the difference is the size. That field
+   * stores `logo` as a name because there is nowhere to upload to and a
+   * full-size image in `localStorage` would eat an origin's 5 MB; this one is
+   * downscaled to `AVATAR_PX` square before it is ever stored, which is a few
+   * kilobytes. A profile photo nobody can see is not a profile photo, and the
+   * quota argument is answered by the downscale rather than ignored.
+   */
+  avatar: string;
+}
+
+/**
+ * A profile nobody has filled in yet.
+ *
+ * `birthDateChangesLeft` is the literal 2 rather than `BIRTH_DATE_WRITES` from
+ * `users.ts`, and that is forced rather than sloppy: `users.ts` imports this
+ * constant, so reading its export back would be a runtime import cycle between
+ * two modules that currently only pass types across. `npm run verify` checks
+ * the two agree, which is the same guarantee with none of the cycle.
+ */
+export const EMPTY_PROFILE: UserProfile = {
+  username: '',
+  headline: '',
+  city: '',
+  countryCode: '',
+  phone: '',
+  birthDate: '',
+  birthDateChangesLeft: 2,
+  avatar: '',
+};
+
+/**
+ * The first letter of the name, for the header chip's avatar.
+ *
+ * Takes a name-shaped thing rather than an `Account`, because the console draws
+ * the same disc for a *directory row* and a `UserRecord` is not an `Account` —
+ * it carries a secret and a join date and no session state. It used to be
+ * assignable by accident, which is a different thing from being intended: the
+ * two shapes only agreed for as long as every field on one was on the other,
+ * and the profile is the field that ended that.
+ */
+export function initial(who: { name: string }): string {
+  return who.name.trim().charAt(0).toUpperCase() || '?';
 }
 
 export interface AuthValue {
@@ -91,7 +170,56 @@ export interface AuthValue {
    * one testable place instead of half here.
    */
   setPlayer: (next: PlayerState) => void;
+  /**
+   * Merge a patch into the profile, or refuse it naming the field.
+   *
+   * Refusals name a field for the same reason the server's do: a form with
+   * seven inputs and one error message has to know which input to put it
+   * under. Uniqueness is checked here rather than in the page because it is a
+   * fact about the *directory*, and a page cannot see one.
+   */
+  saveProfile: (patch: ProfilePatch) => ProfileResult;
+  /**
+   * Onboarding is finished — stamp it, bank what the flow earned, and pay the
+   * welcome gift.
+   *
+   * One call rather than three, and **idempotent**: the stamp is the guard, so
+   * a second report pays nothing. That is the same shape as
+   * `POST /v1/me/onboarded`, which answers `granted: false` on every call after
+   * the first; see `AuthProvider` for which side of the wire this one is.
+   */
+  finishOnboarding: (earned: number) => void;
 }
+
+/**
+ * What a save may change, which is not quite what a profile holds.
+ *
+ * Two of the eight fields are deliberately not writable, and both would be a
+ * bug if they were:
+ *
+ * - **`countryCode` is not a second answer.** It is a fact about the city, so
+ *   the two travel as one `place`. A patch that could set a country on its own
+ *   is a patch that can store `Krakow, DE`, which is exactly what the server
+ *   refuses by deriving it in `resolveCity`; saying it in the type is the same
+ *   rule, one layer earlier.
+ * - **`birthDateChangesLeft` is spent, not set.** The provider decrements it
+ *   when a birthday actually *changes*, so a form that resends the day already
+ *   stored costs nothing — the failure otherwise is an account whose one
+ *   correction was consumed by a field nobody touched.
+ */
+export interface ProfilePatch
+  extends Partial<Omit<UserProfile, 'city' | 'countryCode' | 'birthDateChangesLeft'>> {
+  /** A city from the served list, with the country it belongs to. */
+  place?: { city: string; countryCode: string };
+}
+
+/** Which field a refusal is about, and what is wrong with it. */
+export type ProfileResult =
+  | { ok: true }
+  | { ok: false; field: 'username'; error: UsernameError }
+  | { ok: false; field: 'birthDate'; error: BirthDateError | 'spent' }
+  | { ok: false; field: 'headline'; error: 'long' }
+  | { ok: false; field: 'phone'; error: 'shape' };
 
 export const AuthContext = createContext<AuthValue | null>(null);
 

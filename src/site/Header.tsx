@@ -308,6 +308,29 @@ function AccountChip() {
 
       {open && (
         <div className="account-menu" id={menuId} role="menu">
+          {/* Unconditional, and the only item here that is: `#/profile` is the
+              one page every signed-in account has, an admin included — the
+              console replaces an operator's *venue* screens, not their own
+              name. It sits above the two conditional items for the same reason
+              it has no condition: it is about whoever the chip just named.
+
+              `people` is the glyph the profile form itself uses for the photo
+              picker, which is the nearest thing to a person in the icon set. */}
+          <a
+            className="account-item"
+            role="menuitem"
+            href={PATHS.profile}
+            /* The two items below it do not close on click and do not need to:
+               `#/dashboard` and `#/admin` are frames that replace this header
+               wholesale, so the menu unmounts with the chip it hangs off.
+               `#/profile` is an ordinary page and keeps the header, so without
+               this the menu is left open on top of the page it just opened —
+               the same reason the phone sheet's links close themselves. */
+            onClick={() => setOpen(false)}
+          >
+            <Icon name="people" size={15} />
+            {copy.profile.title}
+          </a>
           {account.type === 'business' && (
             <a className="account-item" role="menuitem" href={PATHS.dashboard}>
               <Icon name="bars" size={15} />

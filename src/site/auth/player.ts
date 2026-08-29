@@ -6,21 +6,29 @@
  * needs a hook belongs in `AuthProvider`.
  *
  * The model is the one the old paylez app used (see
- * `landing/screenshots/learn1.png`): a score, a daily streak, three lives, and
+ * `landing/screenshots/learn1.png`): a score, a daily streak, three energy, and
  * running answered/correct counts.
  *
- * What bounds a day is two rules, and they bound two different players.
- * `DAILY_DECAY` below prices a *repeat* of the same game — the fifth pays
- * nothing — which is the brake on somebody farming one round all evening; it
- * prices the round rather than refusing it. Lives are the other, and they do
- * refuse one: a lost round spends one, and an empty tank is a shut door. What
- * keeps that from being a locked door is the clock — the tank gains one life
- * every `LIFE_REGEN_MINUTES` rather than all three at midnight, so a bad
- * morning is paid off by the afternoon and not by tomorrow.
+ * **What bounds a day is energy, and nothing else.** Every finished round
+ * spends one, win or lose, and an empty tank is a shut door. What keeps it from
+ * being a locked one is the clock — the tank gains one every
+ * `ENERGY_REGEN_MINUTES` rather than all three at midnight — and what that
+ * arithmetic comes to is nine finished rounds in a day from a full tank, six a
+ * day sustained.
  *
- * Both mirror the server's **free** plan (`CONFIG.points`,
- * `CONFIG.games.decay.free`), which is the only plan this site can resolve:
- * there are no subscriptions here to read a faster regen off.
+ * A second rule used to sit beside it: a `DAILY_DECAY` curve that paid a
+ * *repeat* of the same game 100/60/40/20/0%. It was written when play was
+ * unlimited and it was the only brake there was. Once energy became one the
+ * curve stopped reaching — it was per game, its zero rung was the fifth round
+ * of one game, and a player rotating the seven spent the whole tank without
+ * ever getting there — so a round now pays what it scored, first of the day or
+ * ninth. Do not put it back: a result card that has to explain why the same
+ * five right answers paid ten and then four is a card explaining a rule the
+ * player never agreed to, and the door they actually hit is the tank.
+ *
+ * The two energy numbers mirror the server's **free** plan (`CONFIG.points`),
+ * which is the only plan this site can resolve: there are no subscriptions here
+ * to read a faster regen off.
  */
 
 /*
@@ -32,27 +40,31 @@
  */
 import { CHEAPEST_VOUCHER_POINTS, voucherCard, type GameId } from '../content';
 
-/** How many lives a full tank holds, and what a round can cost. */
-export const MAX_LIVES = 3;
+/** How much energy a full tank holds, and what a round costs. */
+export const MAX_ENERGY = 3;
 
 /**
- * How long one life takes to come back.
+ * How long one energy takes to come back.
  *
- * Mirrors `CONFIG.points.lifeRegenMinutes`, the free-plan figure — the server
+ * Mirrors `CONFIG.points.energyRegenMinutes`, the free-plan figure — the server
  * sells a faster regen with a plan and this site has no plan to read.
  *
- * Four hours is what makes charging for a loss fair, and the two numbers have
- * to be read together: three lives at four hours is twelve hours from empty to
- * full, so somebody who loses three rounds at nine in the morning is playing
- * again by one and whole again by nine — where a midnight refill charged the
- * same three losses the entire rest of the day. A cost that expires while you
- * are still on the page is a cost; one that expires when you are asleep is a
- * lockout.
+ * Four hours is what makes charging every round fair, and the two numbers have
+ * to be read together: three at four hours is twelve hours from empty to full,
+ * so somebody who spends the tank at nine in the morning is playing again by one
+ * and whole again by nine — where a midnight refill would have shut the page for
+ * the rest of the day. A cost that expires while you are still on the page is a
+ * cost; one that expires when you are asleep is a lockout.
+ *
+ * The pair is also the size of a day, and it is worth writing down because
+ * nothing else in the module states it: three in the tank plus one every four
+ * hours is **nine finished rounds in twenty-four hours** from full, and six a
+ * day at the steady rate.
  */
-export const LIFE_REGEN_MINUTES = 240;
+export const ENERGY_REGEN_MINUTES = 240;
 
 /** The same interval in milliseconds, which is what every clock here is in. */
-const LIFE_REGEN_MS = LIFE_REGEN_MINUTES * 60_000;
+const ENERGY_REGEN_MS = ENERGY_REGEN_MINUTES * 60_000;
 
 /**
  * Streak freezes.
@@ -165,24 +177,24 @@ export interface PlayerState {
   points: number;
   streak: number;
   /**
-   * Lives **as of `livesAt`**, not as of now — see the field below, and read
-   * the pair through `livesOf` rather than this number on its own.
+   * Energy **as of `energyAt`**, not as of now — see the field below, and read
+   * the pair through `energyOf` rather than this number on its own.
    */
-  lives: number;
+  energy: number;
   answered: number;
   correct: number;
   /** `YYYY-MM-DD` of the last finished round, for the 24-hour streak rule. */
   lastPlayed: string | null;
   /**
-   * When `lives` above was last true, in epoch milliseconds — the anchor the
-   * regeneration clock counts from, rewritten every time a life is spent.
+   * When `energy` above was last true, in epoch milliseconds — the anchor the
+   * regeneration clock counts from, rewritten every time energy is spent.
    *
    * The pair is the whole model, and the model is: **the tank is derived, never
-   * ticked.** A timer that adds a life every four hours only runs while a tab
-   * is open, and the tab left open all evening and the one closed at nine have
-   * to agree in the morning; `livesOf` does the arithmetic on demand instead,
+   * ticked.** A timer that adds one every four hours only runs while a tab is
+   * open, and the tab left open all evening and the one closed at nine have to
+   * agree in the morning; `energyOf` does the arithmetic on demand instead,
    * which is the same answer with none of the moving parts. That is also why
-   * `lives` on its own is *stale by design* — a state that has been sitting in
+   * `energy` on its own is *stale by design* — a state that has been sitting in
    * `localStorage` for six hours still says 0.
    *
    * Epoch milliseconds rather than the `YYYY-MM-DD` the rest of this module
@@ -193,11 +205,18 @@ export interface PlayerState {
    *
    * Optional for the reason `freezes`, `stamps` and `deals` are, and read the
    * generous way round: a session saved before the clock existed has no anchor,
-   * and `livesOf` reads a missing one as a **full tank**. The alternative is
-   * charging an existing player three lives for a schema change they had no
+   * and `energyOf` reads a missing one as a **full tank**. The alternative is
+   * charging an existing player three rounds for a schema change they had no
    * part in, against a wait they never started.
+   *
+   * That is also what carries a session stored under the *old* field names —
+   * `lives` / `livesAt`, from before the pool was called energy. It has neither
+   * field, so it takes the same generous branch and is whole again, and its
+   * first spend writes both. Nothing here has to know the old names, because
+   * the only thing that would have been read off them is a wait, and the rule
+   * for a wait we cannot prove is that it did not happen.
    */
-  livesAt?: number | null;
+  energyAt?: number | null;
   /**
    * Freezes held. Optional because it postdates the stored shape: a session
    * saved by an earlier build has no such field, and `freezesOf` below reads a
@@ -223,22 +242,19 @@ export interface PlayerState {
    */
   stamps?: StampCard[];
   deals?: ClaimedDeal[];
-  /**
-   * Rounds finished per game **today**, for the decay curve below.
+
+  /*
+   * There was a `rounds` field here — a per-game tally of what had been played
+   * today, read by the decay curve to price a repeat. The curve is gone and so
+   * is the field; energy is what bounds a day, and it is counted in `energy` /
+   * `energyAt` above.
    *
-   * One day's tally and not a history, which is the whole design of the field:
-   * the curve only ever asks "how many of *this* game already, *today*", so a
-   * `Record<day, …>` would grow in `localStorage` for the life of the account to
-   * answer a question nothing asks. The day is stored beside the counts rather
-   * than inferred, because a tally with no date on it is indistinguishable from
-   * yesterday's — and yesterday's, read as today's, silently pays a returning
-   * player nothing for their first round.
-   *
-   * Optional for the reason `freezes`, `stamps` and `deals` are: a session saved
-   * by an earlier build has no such field, and `roundsToday` reads a missing one
-   * as zero rather than as a crash on a page somebody was already looking at.
+   * A state stored by that build still has the key. Nothing validates the shape
+   * on the way in (`directory.ts` parses and casts), so it loads, rides along
+   * unread through every `{...state}` spread, and means nothing. Leaving it is
+   * the right trade: a migration to delete one dead object from a page nobody
+   * is looking at costs more than the fossil does.
    */
-  rounds?: { day: string; byGame: Partial<Record<GameId, number>> };
 }
 
 /** Stamp cards held, for a state that may predate the field. */
@@ -339,13 +355,13 @@ export function seedPlayer(): PlayerState {
   return {
     points: 340,
     streak: 3,
-    lives: MAX_LIVES,
+    energy: MAX_ENERGY,
     answered: 45,
     correct: 38,
     lastPlayed: null,
     /* No anchor, because a full tank has no clock running. Stated rather than
        left off so the field is visible to anyone reading what a player is. */
-    livesAt: null,
+    energyAt: null,
     /* One in hand. A freeze nobody has ever held is a rule nobody has read, and
        the streak card is where the rule is explained. */
     freezes: 1,
@@ -438,8 +454,8 @@ function twoDaysBack(now: Date = new Date()): string {
 
 /* ────────────────────────────────────────────────────────────── the tank ── */
 
-export interface LifeTank {
-  /** Lives available now, 0..`MAX_LIVES`. */
+export interface EnergyTank {
+  /** Energy available now, 0..`MAX_ENERGY`. */
   count: number;
   /**
    * When the next one lands, epoch ms — `null` on a full tank, which is the one
@@ -451,36 +467,37 @@ export interface LifeTank {
 /**
  * The tank as of `now`: what is in it, and when it next gains.
  *
- * The only honest reader of `lives` and `livesAt` — see the note on the field.
+ * The only honest reader of `energy` and `energyAt` — see the note on the field.
  * Pure and deterministic on the injected `now`, so `npm run verify` owns it and
  * a screen can ask it once per render without running a timer of its own.
  *
  * **Both answers come out together**, because a screen needs both and computing
  * them apart is how they come to disagree: the count is the floor of a division
  * whose remainder is the wait, and two functions each doing that division end up
- * showing a full tank counting down to a life it already has.
+ * showing a full tank counting down to one it already has.
  */
-export function livesOf(state: PlayerState, now: Date = new Date()): LifeTank {
-  const anchor = state.livesAt;
+export function energyOf(state: PlayerState, now: Date = new Date()): EnergyTank {
+  const anchor = state.energyAt;
   /* No anchor is no clock, and no clock means nothing is pending — which is a
      full tank. Every session saved before the clock existed takes this branch,
-     and it is the forgiving direction on purpose: the stored `lives` of such a
-     state was last true at some unknown time, and reading it as "true now"
-     would open an account on a wait it never incurred. */
-  if (typeof anchor !== 'number') return { count: MAX_LIVES, nextAt: null };
+     and so does every session saved under the old `lives` / `livesAt` names. It
+     is the forgiving direction on purpose: the stored count of such a state was
+     last true at some unknown time, and reading it as "true now" would open an
+     account on a wait it never incurred. */
+  if (typeof anchor !== 'number') return { count: MAX_ENERGY, nextAt: null };
 
-  const held = Math.min(MAX_LIVES, Math.max(0, Math.floor(state.lives)));
+  const held = Math.min(MAX_ENERGY, Math.max(0, Math.floor(state.energy)));
   /* A clock that has gone backwards — a laptop waking with the wrong time, a
      timezone dragged across an ocean — earns nothing rather than un-earning
      what is already there. */
-  const earned = Math.max(0, Math.floor((now.getTime() - anchor) / LIFE_REGEN_MS));
-  const count = Math.min(MAX_LIVES, held + earned);
+  const earned = Math.max(0, Math.floor((now.getTime() - anchor) / ENERGY_REGEN_MS));
+  const count = Math.min(MAX_ENERGY, held + earned);
 
   /* The cap is on the count and not on the clock: an anchor a week old is a
-     full tank, and the lives past the third are simply never granted. */
-  return count >= MAX_LIVES
-    ? { count: MAX_LIVES, nextAt: null }
-    : { count, nextAt: anchor + (earned + 1) * LIFE_REGEN_MS };
+     full tank, and everything past the third is simply never granted. */
+  return count >= MAX_ENERGY
+    ? { count: MAX_ENERGY, nextAt: null }
+    : { count, nextAt: anchor + (earned + 1) * ENERGY_REGEN_MS };
 }
 
 /**
@@ -491,77 +508,36 @@ export function livesOf(state: PlayerState, now: Date = new Date()): LifeTank {
  *
  * The anchor is the part worth reading twice. A **full** tank has no clock
  * running, so the spend starts one at `now`. A tank that is already filling has
- * one, and its new anchor is the moment the life sitting in it arrived —
- * `nextAt - LIFE_REGEN_MS` — never `now`. Restarting it on every spend would
+ * one, and its new anchor is the moment the unit sitting in it arrived —
+ * `nextAt - ENERGY_REGEN_MS` — never `now`. Restarting it on every spend would
  * quietly confiscate the three hours somebody had already waited, and the third
- * loss of an afternoon would cost strictly more than the first.
+ * round of an afternoon would cost strictly more than the first.
  */
-export function spendLife(state: PlayerState, now: Date = new Date()): PlayerState {
-  const tank = livesOf(state, now);
+export function spendEnergy(state: PlayerState, now: Date = new Date()): PlayerState {
+  const tank = energyOf(state, now);
   if (tank.count <= 0) return state;
   return {
     ...state,
-    lives: tank.count - 1,
-    livesAt: tank.nextAt === null ? now.getTime() : tank.nextAt - LIFE_REGEN_MS,
+    energy: tank.count - 1,
+    energyAt: tank.nextAt === null ? now.getTime() : tank.nextAt - ENERGY_REGEN_MS,
   };
 }
 
-/* ──────────────────────────────────────────── what a repeat of a game pays ── */
-
-/**
- * The day's decay curve: 100%, 60%, 40%, 20%, then nothing.
- *
- * **This is the brake on the player who is winning.** Lives are the brake on
- * the one who is not, and the two bound different people, which is why both
- * exist: a life is spent only on a *loss*, two of the seven games cannot be
- * lost at all, and somebody answering correctly never touches the tank — so
- * with lives alone, what stopped one round being farmed all evening was in
- * practice nothing.
- *
- * This prices the repeat instead of refusing it: the round still runs, the
- * streak still counts, the answered/correct columns still move, and only the
- * points taper. Nobody is ever told to stop playing for playing well.
- *
- * The tail ends at zero on purpose. A curve that pays twenty percent for ever
- * is not a bound at all — unlimited play still makes unlimited points.
- *
- * Indexed by rounds of *that game* already finished today; past the end of the
- * list the last entry repeats. It mirrors `CONFIG.games.decay.free` in
- * `server/config.ts`, which is the free curve of three: the server prices paid
- * plans off the same table and this site has no plans to price.
- */
-export const DAILY_DECAY = [1, 0.6, 0.4, 0.2, 0] as const;
-
-/** The multiplier for a round with `playedToday` of the same game behind it. */
-export function decayFactor(playedToday: number): number {
-  const at = Math.max(0, Math.floor(playedToday));
-  return DAILY_DECAY[Math.min(at, DAILY_DECAY.length - 1)];
-}
-
-/**
- * Rounds of one game already finished today.
- *
- * Zero for a state saved before the field existed **and** for a tally left over
- * from an earlier day — the second case is the one that matters, because a
- * stale tally read as today's would hand a player back from yesterday a fifth
- * round's payout for their first.
- */
-export function roundsToday(state: PlayerState, game: GameId, day: string): number {
-  const tally = state.rounds;
-  if (!tally || tally.day !== day) return 0;
-  return tally.byGame[game] ?? 0;
-}
-
-/** The tally with one more round of `game` on it, discarding any earlier day's. */
-function countRound(state: PlayerState, game: GameId, day: string): PlayerState['rounds'] {
-  const kept = state.rounds?.day === day ? state.rounds.byGame : {};
-  return { day, byGame: { ...kept, [game]: (kept[game] ?? 0) + 1 } };
-}
+/* ─────────────────────────────────────────────────── what a round is worth ── */
 
 export interface Award {
-  /** Which game it was, so a repeat of *this* one can be priced. */
+  /** Which game it was. */
   game: GameId;
-  /** What the round scored, **before** the day's decay. */
+  /**
+   * What the round is worth, and therefore what it banks.
+   *
+   * **One number, not two.** A decay curve used to sit between this and the
+   * balance, so the result card had a "scored" figure and a "banked" figure and
+   * a `bankedPoints` helper existed to stop them drifting apart. With the curve
+   * gone they are the same number and this field is it: `awardPoints` adds
+   * exactly this to the balance, and a card that wants to say what a round paid
+   * reads it directly. Nothing between here and the ledger multiplies it.
+   */
   points: number;
   /** How many questions, gaps, words or pairs the round put to the player. */
   answered: number;
@@ -570,34 +546,14 @@ export interface Award {
   /**
    * True when the player stayed inside the game's mistake allowance.
    *
-   * **This is the flag a life is charged on.** The result card reads it too,
-   * but the charge is what it is for: `awardPoints` spends one on a false and
-   * nothing else in the module spends at all. The server's `life_spent` column
-   * is written off exactly this, which is what keeps the two halves agreeing
-   * about what a round cost.
+   * **It no longer decides what the round costs.** Every finished round spends
+   * one energy either way, so this is what the result card says and what the
+   * streak and the accuracy columns are computed from, and nothing else. It was
+   * the flag the charge hung on, which is why the note is here rather than
+   * deleted: a reader who remembers the old rule needs to be told it changed at
+   * the field they would have looked at.
    */
   won: boolean;
-}
-
-/**
- * What a round actually banks: what it scored, priced by today's curve.
- *
- * Its own exported function because **two callers need the same answer** — this
- * module, to move the balance, and the result card, to say what the round paid.
- * Reading the payout off the difference between two balances is the shortcut
- * that looks equivalent and is not: it silently reports whatever else moved the
- * points in the same call.
- *
- * Floored, not rounded, and floored *here* rather than anywhere else: the server
- * floors at the same point (`Math.floor(scored.score * decay)`), and a client
- * that rounded would show a player one more point than they were credited.
- */
-export function bankedPoints(
-  state: PlayerState,
-  award: Award,
-  now: Date = new Date(),
-): number {
-  return Math.floor(award.points * decayFactor(roundsToday(state, award.game, today(now))));
 }
 
 /**
@@ -625,8 +581,8 @@ export function bankedPoints(
  * freeze?" would arrive a day late, on the round *after* the one that was
  * missed, about a decision the player can no longer change.
  *
- * **And a lost round costs a life**, which is the other thing this function
- * decides. See the note at the spend itself for why that came back.
+ * **And every finished round costs one energy**, which is the other thing this
+ * function decides. See the note at the spend itself for why both sides pay.
  */
 export function awardPoints(
   state: PlayerState,
@@ -671,36 +627,36 @@ export function awardPoints(
   }
 
   /*
-   * A lost round costs a life. A won one costs nothing, and never has.
+   * **Every finished round costs one energy, win or lose.**
    *
-   * The reversal is deliberate, and the clock above is what pays for it. A loss
-   * stopped costing anything when the decay curve arrived, on the argument that
-   * the pool only ever charged the player who was bad at quizzes and that two
-   * of the seven games cannot be lost. What that actually left on the screen
-   * was three hearts that never moved — a rule with no consequences, which
-   * reads as a broken feature rather than as a kindness, and which the two
-   * games with no fail state are not made any fairer by.
+   * Charging only the loss was the version before this, and it was the same
+   * mistake as charging nothing, one step smaller: two of the seven games have
+   * no fail state and a player answering correctly never touched the tank, so
+   * the pool was a tax on being bad at quizzes and a bound on nobody. Three
+   * pips that only ever moved for the struggling player read as a punishment;
+   * three pips that mean "rounds left" read as a budget, and everybody has the
+   * same one.
    *
-   * The objection was really to the *refill*, not to the charge: under a
-   * midnight tank a third loss shut the page for the rest of the day. Under
-   * `LIFE_REGEN_MINUTES` it shuts it for four hours, and the decay curve is
-   * still the brake on the player who is winning. This is the only spend in the
-   * module.
+   * A round *abandoned* still costs nothing — this is the only spend in the
+   * module and it is reached only by a finished round.
+   *
+   * The clock above is what pays for it. Under a midnight tank a third round
+   * shut the page for the rest of the day; under `ENERGY_REGEN_MINUTES` it
+   * shuts it for four hours.
    */
-  const spent = result.won ? state : spendLife(state, now);
+  const spent = spendEnergy(state, now);
 
-  /* Priced against the state as it *arrives*, so the first round of a day reads
-     zero prior rounds of that game and pays in full. Counting first and pricing
-     afterwards would start every player on the second rung. */
+  /* The round banks what it scored. Nothing here asks how much has been played
+     today — a decay curve used to, and the tally it counted went with it. What
+     the day costs is the energy above; what it pays is this. */
   return {
     ...spent,
-    points: spent.points + bankedPoints(state, result, now),
+    points: spent.points + result.points,
     streak,
     freezes,
     answered: spent.answered + result.answered,
     correct: spent.correct + result.correct,
     lastPlayed: day,
-    rounds: countRound(state, result.game, day),
   };
 }
 
@@ -718,7 +674,7 @@ export function awardPoints(
 export const QUIZ_PERFECT_BONUS = 5;
 
 export interface RoundResult {
-  /** Which of the four quizzes, for the decay curve. */
+  /** Which of the four quizzes. */
   game: GameId;
   correct: number;
   total: number;
@@ -729,7 +685,7 @@ export interface RoundResult {
 }
 
 /**
- * What a quiz round scored, before the day's curve.
+ * What a quiz round is worth.
  *
  * Split out from `awardRound` because the result card needs the same number the
  * balance gets, and the two must not be two sums. Every right answer is worth
@@ -797,7 +753,7 @@ export function flightPoints(cleared: number, perGap: number): number {
 }
 
 /**
- * What a finished flight scored, before the day's curve.
+ * What a finished flight is worth.
  *
  * An `Award` rather than a call through `quizAward`, and that is deliberate: a
  * flight that reaches its bank line is not a clean sweep of five questions and
@@ -923,8 +879,8 @@ export function memoryPoints(seconds: number): number {
  * `refillLives` is gone. It restored the whole tank on a new calendar day and
  * had two problems: it fired on mount only, so a tab left open past midnight
  * never refilled at all, and a refill is a *write* — a rule that only takes
- * effect when somebody happens to load the page. `livesOf` above replaced both
- * with one division. Nothing writes a life back now; the tank is read.
+ * effect when somebody happens to load the page. `energyOf` above replaced both
+ * with one division. Nothing writes energy back now; the tank is read.
  */
 
 export function canAfford(state: PlayerState, points: number): boolean {
