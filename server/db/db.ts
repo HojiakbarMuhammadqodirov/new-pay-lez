@@ -209,8 +209,11 @@ export const LEDGER_REASONS = [
  *
  * 1 → 2 widened the ledger's reason vocabulary, which a CHECK constraint cannot
  * do in place.
+ * 2 → 3 retired contact verification — a column drop — and backfilled the
+ * birthday's edit counter, which is a rewrite of existing rows. Neither is
+ * additive, so neither can be an `addColumn`.
  */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 
 const schemaVersion = (db: Db): number => {
   const row = db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
@@ -323,6 +326,79 @@ function widenLedgerReasons(db: Db): void {
   }
 }
 
+const userCount = (db: Db): number =>
+  db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM users`)?.n ?? 0;
+
+/**
+ * Version 3: nothing is verified any more, and a birthday may be corrected once.
+ *
+ * Two changes to `users` that `addColumn` cannot make, which is the whole reason
+ * they are down here behind a version rather than up there with the additions.
+ *
+ * **The drop.** `phone_verified` recorded a fact — "a code was sent to *this*
+ * number and came back" — that nothing produces any more: there is no
+ * verification flow, no earn for one, and no route to start one. Leaving the
+ * column would leave every row saying `0` and a reader with no way to tell "not
+ * verified" from "we stopped asking", which is the same lie `suppressed` exists
+ * to prevent one layer up. `ALTER TABLE … DROP COLUMN` is safe here precisely
+ * because the column carries nothing else: it is in no index, no CHECK, no view
+ * and no foreign key, which are the four things SQLite refuses the drop for.
+ *
+ * **The backfill.** `birth_date_changes` counts accepted writes, and its default
+ * is 0 — which on a live database would hand every account that *already* has a
+ * birthday two more edits instead of one. Rows with a birthday have spent their
+ * first write by definition, so they start at 1. This is the whole argument for
+ * keeping a count rather than reading `birth_date_set_at`: the timestamp is
+ * equally true after one write and after two, and the rule needs to tell them
+ * apart.
+ *
+ * Guarded the way version 2 is — on the stored version *and* on what is actually
+ * in the file, so a database created fresh from `schema.sql` (which never had
+ * the column, and whose `birth_date_changes` is already right because it has no
+ * rows) does nothing. And proved rather than assumed: `users` is counted inside
+ * the transaction, before and after, and a difference throws and rolls the whole
+ * thing back. A drop is a table rewrite, and a rewrite that cannot show it kept
+ * every row is not one worth running against production.
+ */
+function retireContactVerification(db: Db): void {
+  if (schemaVersion(db) >= 3) return;
+  if (!db.get(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`)) return;
+
+  const columns = db.all<{ name: string }>(`PRAGMA table_info(users)`).map((row) => row.name);
+  const hasVerified = columns.includes('phone_verified');
+  /* `addColumn` above has already added the counter, so the only question is
+     whether any row is still sitting on its default with a birthday in place.
+     Asking that rather than assuming it keeps the migration a no-op on the
+     fresh file, where there are no rows at all. */
+  const needsBackfill =
+    columns.includes('birth_date_changes') &&
+    Boolean(db.get(`SELECT 1 FROM users WHERE birth_date IS NOT NULL AND birth_date_changes = 0`));
+  if (!hasVerified && !needsBackfill) return;
+
+  db.tx(() => {
+    const before = userCount(db);
+
+    if (needsBackfill) {
+      /* Only where the counter is still at its default: re-running this after a
+         player has already used their correction must not walk it backwards. */
+      db.run(
+        `UPDATE users SET birth_date_changes = 1
+          WHERE birth_date IS NOT NULL AND birth_date_changes = 0`,
+      );
+    }
+    if (hasVerified) db.exec('ALTER TABLE users DROP COLUMN phone_verified');
+
+    const after = userCount(db);
+    if (after !== before) {
+      throw new Error(`profile migration lost rows: users ${before} → ${after}`);
+    }
+    const orphans = db.all(`PRAGMA foreign_key_check`);
+    if (orphans.length > 0) {
+      throw new Error(`profile migration left ${orphans.length} broken references`);
+    }
+  });
+}
+
 /**
  * The SQL constraint and `LEDGER_REASONS` must be the same set, both ways.
  *
@@ -356,19 +432,41 @@ export function migrate(db: Db): void {
      file alone cannot deliver these. */
   addColumn(db, 'service_events', 'source', 'TEXT');
   addColumn(db, 'users', 'phone', 'TEXT');
-  addColumn(db, 'users', 'phone_verified', 'INTEGER NOT NULL DEFAULT 0');
-  /* Write-once, enforced in `domain/accounts.ts`. Nullable because "has not
-     told us" is the state most accounts are in, and the *set* one is what pays
-     `CONFIG.earn.birthday`. */
+  /* Nullable because "has not told us" is the state most accounts are in, and
+     the *set* one is what pays `CONFIG.earn.birthday`. One correction is
+     allowed; `birth_date_changes` counts, and the version-3 migration below is
+     what stops its `DEFAULT 0` handing an existing birthday a second one. */
   addColumn(db, 'users', 'birth_date', 'TEXT');
   addColumn(db, 'users', 'birth_date_set_at', 'TEXT');
+  addColumn(db, 'users', 'birth_date_changes', 'INTEGER NOT NULL DEFAULT 0');
   addColumn(db, 'users', 'headline', 'TEXT');
   addColumn(db, 'users', 'onboarded_at', 'TEXT');
+  /* The once-only guard on `CONFIG.earn.profileComplete`, claimed by an
+     `UPDATE … WHERE profile_completed_at IS NULL` the way `onboarded_at` is. */
+  addColumn(db, 'users', 'profile_completed_at', 'TEXT');
+  addColumn(db, 'users', 'username', 'TEXT');
+  addColumn(db, 'users', 'username_norm', 'TEXT');
+
+  /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
+     `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an
+     existing database can only be given the rule as an index, and writing it
+     inline as well would leave fresh and migrated files with two different
+     schemas. It must run *after* the `addColumn` above: on a database that
+     already exists `CREATE TABLE IF NOT EXISTS` is a no-op, so at the top of
+     this function the column it indexes does not exist yet.
+
+     Case-insensitivity is the *stored* value's job, not the index's: the domain
+     layer writes `username_norm` folded, exactly as `email_norm` is, rather than
+     this being `COLLATE NOCASE`. One pattern for one problem — and a column
+     holding the answer is a column every lookup, export and report can compare
+     on, where a collation is a rule each of them has to remember to repeat. */
+  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)');
 
   /* Anything that renames, drops or retypes goes here instead, behind the
      version — which is the line `addColumn` above draws. */
   widenLedgerReasons(db);
   assertLedgerReasons(db);
+  retireContactVerification(db);
 
   db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)

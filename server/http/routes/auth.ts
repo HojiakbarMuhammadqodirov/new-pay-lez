@@ -47,14 +47,24 @@ function me(ctx: Ctx, fresh?: accounts.User) {
       id: user.id,
       email: user.email,
       name: user.display_name,
+      /* The handle, as typed. Null until they pick one. */
+      username: user.username,
       language: user.language,
       city: user.city,
+      countryCode: user.country_code,
+      avatar: user.display_avatar,
       phone: user.phone,
-      /* Sent beside the number, never instead of it: a client that shows a
-         number with no verification state has told the reader it is verified. */
-      phoneVerified: user.phone_verified === 1,
       headline: user.headline,
       birthDate: user.birth_date,
+      /* How many self-service writes are left, so a form can grey the field out
+         *before* somebody spends their last one — the alternative is a client
+         that finds out by being refused, which is the same information delivered
+         after it is useful. */
+      birthDateChangesLeft: Math.max(0, accounts.BIRTH_DATE_WRITES - user.birth_date_changes),
+      /* A stamp, not a live flag: `CONFIG.earn.profileComplete` is paid once and
+         a client showing "complete" is reading the moment it was, not a
+         re-derivation that a cleared field could undo. */
+      profileCompletedAt: user.profile_completed_at,
       /* Null means "not yet", which is the only way a client can know whether
          to offer onboarding — and `POST /v1/me/onboarded` is idempotent
          precisely so a client that guesses wrong costs nothing. */
@@ -236,6 +246,28 @@ export const authRoutes: Route[] = [
       return { token: session.token, userId: user.id, provisional: true };
     },
   },
+  {
+    /**
+     * The cities a profile may name — the picker's options, served from the
+     * same constant the write is checked against.
+     *
+     * Public, and it has to be: `POST /v1/auth/signup` takes a city, so a form
+     * that has to render the choice before anybody has an account cannot be
+     * asked for a token to see it.
+     *
+     * It is a list rather than a search because it is short and closed. A client
+     * that filters it locally shows the whole set when the box is empty, which
+     * is the thing a visitor actually wants to know: whether Paylez is anywhere
+     * near them yet.
+     */
+    method: 'GET',
+    pattern: '/v1/cities',
+    auth: 'none',
+    handler: () => ({
+      countries: accounts.CITY_COUNTRIES,
+      cities: accounts.CITIES,
+    }),
+  },
   { method: 'GET', pattern: '/v1/me', auth: 'user', handler: me },
   {
     method: 'PATCH',
@@ -253,14 +285,19 @@ export const authRoutes: Route[] = [
         user.id,
         {
           name: optStr(ctx.body, 'name'),
+          /* Taken already is a 409 naming the field, not a 500 quoting SQLite. */
+          username: optStr(ctx.body, 'username'),
           language: optStr(ctx.body, 'language'),
+          /* One of `GET /v1/cities`, or a 400. Anything else is refused rather
+             than stored, because the city board matches on it literally. */
           city: optStr(ctx.body, 'city'),
           avatar: optStr(ctx.body, 'avatar') ?? null,
           phone: optStr(ctx.body, 'phone'),
           headline: optStr(ctx.body, 'headline'),
-          /* Sending this a second time is refused with a 409, not ignored — a
-             birthday is write-once and a client that resends its whole profile
-             on every save has to leave this key out once it is set. */
+          /* Set once, corrected once; a third *different* day is a 409 naming
+             support. Resending the day already stored costs nothing, which is
+             what lets a client PATCH its whole profile on every save without
+             spending somebody's one correction on a value it did not change. */
           birthDate: optStr(ctx.body, 'birthDate'),
         },
         ctx.at,

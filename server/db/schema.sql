@@ -49,29 +49,60 @@ CREATE TABLE IF NOT EXISTS users (
   email         TEXT UNIQUE,               -- NULL while provisional
   email_norm    TEXT UNIQUE,               -- lower(trim(email)); the lookup key
   display_name  TEXT NOT NULL DEFAULT '',
+  -- The handle, as the player typed it, and the key everything compares on.
+  -- Exactly the `email` / `email_norm` arrangement one line up, for exactly the
+  -- same reason: two people cannot both be `Kasia` and `kasia`, and a
+  -- case-sensitive column would let them. NULL until the player picks one —
+  -- most accounts arrive without a handle and are complete accounts anyway.
+  --
+  -- The uniqueness is a **named index** created by `migrate()` in `db.ts`
+  -- (`idx_users_username_norm`) rather than the `UNIQUE` written above, and it
+  -- has to be: `ALTER TABLE … ADD COLUMN` cannot carry a UNIQUE constraint, so a
+  -- database that already has rows can only be given one as a separate index —
+  -- and declaring it inline here as well would leave a fresh file and a migrated
+  -- file with two different schemas for one rule. `migrate()` creates it after
+  -- the `addColumn`, which is the only order that works on both.
+  username      TEXT,
+  username_norm TEXT,
   -- scrypt, `salt:hash` hex. NULL for provisional and for OAuth-only accounts.
   password_hash TEXT,
   auth_provider TEXT NOT NULL DEFAULT 'email'
                 CHECK (auth_provider IN ('email', 'google', 'apple', 'provisional')),
   provider_ref  TEXT,
   language      TEXT NOT NULL DEFAULT 'en',
+  -- A **closed set**, not free text: `CITIES` in `domain/accounts.ts` lists the
+  -- cities of the three countries Paylez operates in, and `country_code` is
+  -- written from the chosen city rather than answered separately, so the two can
+  -- never disagree. The constraint is in the domain layer and deliberately not a
+  -- CHECK here — a CHECK would retroactively invalidate every city already
+  -- imported from the old database, and a row that cannot be updated because of
+  -- a value nobody can now change is worse than a spelling.
+  --
+  -- The reason a set exists at all is one query: the city weekly board
+  -- (`domain/social.ts`) groups on `users.city` with a literal `=`, so free text
+  -- splits one city into a board per spelling and nobody is on the one they
+  -- expect.
   city          TEXT,
   country_code  TEXT,
   -- Contact and profile, all optional: none of them gates anything, and an
   -- account that answers none of them is a complete account.
+  --
+  -- **Nothing here is verified.** There is no code sent to a number, no link
+  -- clicked in an address, and no points for either — the account's email is
+  -- how it signs in, which is authentication rather than verification. A
+  -- `phone_verified` column recorded the old rule and is dropped by the
+  -- version-3 migration in `db.ts`.
   phone         TEXT,
-  -- A changed number is an unverified number, so this is reset by the same
-  -- statement that writes `phone` (`domain/accounts.ts`). It is separate from
-  -- the number because verification is a fact about *this* number, not about
-  -- the account having ever verified one.
-  phone_verified INTEGER NOT NULL DEFAULT 0,
-  -- ISO `YYYY-MM-DD`, and **write-once** — see the refusal in
-  -- `domain/accounts.ts` that enforces it. A birthday pays
-  -- `CONFIG.earn.birthday`; an editable one is a bonus collectable every day of
-  -- the year, so the column recording when it was fixed is part of the rule
-  -- rather than bookkeeping.
+  -- ISO `YYYY-MM-DD`. Set once and corrected **once**, by the player; a third
+  -- write is refused and names support. A birthday pays `CONFIG.earn.birthday`,
+  -- so an unlimited edit is a bonus collectable every day of the year — which is
+  -- the rule, and the correction is the concession to having fat fingers on a
+  -- date picker. `birth_date_changes` is what enforces it: the count is *kept*
+  -- rather than inferred from `birth_date_set_at`, because a timestamp can only
+  -- ever say "has been written", not how often.
   birth_date    TEXT,
   birth_date_set_at TEXT,
+  birth_date_changes INTEGER NOT NULL DEFAULT 0,
   -- The player's own line about themselves. Named `headline` because `status`
   -- below is already taken by the account state, and two columns meaning
   -- different things under one name is how a moderation query ends up reading a
@@ -83,6 +114,15 @@ CREATE TABLE IF NOT EXISTS users (
   -- `UPDATE … WHERE onboarded_at IS NULL`, so two concurrent reports race for
   -- one row and only one of them wins.
   onboarded_at  TEXT,
+  -- When the profile was first complete, and the once-only guard on
+  -- `CONFIG.earn.profileComplete` — the same construction as `onboarded_at`
+  -- above and for the same reason: the grant is claimed by an
+  -- `UPDATE … WHERE profile_completed_at IS NULL`, so two saves arriving
+  -- together race for one row and one of them pays. What "complete" means is
+  -- stated at `isProfileComplete` in `domain/accounts.ts`; it is a stamp rather
+  -- than a live flag, because a profile that has once been finished has been
+  -- finished, and a bonus that could be re-earned by clearing a field would be.
+  profile_completed_at TEXT,
   -- §2.1: derived from the ledger, cached for read speed, reconciled nightly.
   points_cache  INTEGER NOT NULL DEFAULT 0,
   -- §8.2: the city weekly board lists only opted-in users. Everyone still sees
