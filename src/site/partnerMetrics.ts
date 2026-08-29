@@ -1,95 +1,69 @@
 /**
- * The partner dashboard's month, derived.
+ * The partner dashboard's month — measured, or admitted to be absent.
  *
- * `b2b/Paylez Partner Dashboard v2.dc.html` is a working React prototype, not a
- * screenshot: its numbers come from a handful of seeds and a page of arithmetic
- * that turns them into every figure on all seven screens. This file is that
- * arithmetic, ported — the seeds below are the prototype's `SCEN` / `CUST` /
- * `CAMP_BASE` / `CSCEN` tables verbatim, and everything under `── derived ──`
- * recomputes what it recomputed.
+ * This file used to be the `b2b/` prototype's seeds and arithmetic ported
+ * wholesale: an average transaction of 34.1 zł, six hot deals with claim
+ * counts, four loyalty campaigns, three voucher tiers, sixteen named customers,
+ * forty-eight till receipts, and a heat map built from three gaussians. Every
+ * figure on all seven screens fell out of those. It hung together beautifully
+ * and it was a measurement of nothing — an owner reading "149 claims" was
+ * reading a number typed into a prototype, under their own venue's name.
  *
- * Porting the *formulas* rather than the *outputs* is the same call
- * `adminMetrics.ts` makes one screen over, and for the same reason: a month has
- * to hang together. The overview's claim count, the deals table's claim rates,
- * the customers screen's cost-per-new-customer and the campaign cards' set-aside
- * money are four views of one venue, and five separately transcribed figure sets
- * would drift apart the first time one of them was edited. Here, editing a seed
- * moves every screen that depends on it, together.
+ * **All of it is gone.** What is left is three kinds of thing:
  *
- * **Money is euros**, like everything else the site prices. The prototype quotes
- * a Kraków café in złoty; each amount is divided by `PLN` once, at the seed, and
- * converted back out by `useMoney` — so a Polish reader sees the prototype's own
- * figures and everyone else sees theirs. A złoty literal below the seed block is
- * the bug this arrangement exists to prevent.
+ *  1. **Structure.** The windows the range picker offers, the hours the heat map
+ *     covers, the shape of a polyline. None of it is data about anybody.
+ *  2. **Pure derivations**, which now take their inputs as arguments instead of
+ *     reading module seeds — `voucherModelFor` prices a ladder, `campaignModel`
+ *     splits a pool, `totalsFrom` turns the server's overview into the six
+ *     numbers the screen shows. These are the arithmetic worth keeping: they
+ *     are what makes a figure shown twice computed once, and they are what
+ *     `npm run verify` can hold to an invariant.
+ *  3. **The empty month** — `PD_TOTALS`, `PD_DEALS`, `PD_CAMPAIGN_MODEL` and the
+ *     rest, every one of them at zero or empty. That is not a placeholder for a
+ *     better seed. It is the true state of a venue this device has no
+ *     measurements for, which is *every* venue while the site's own auth is
+ *     still `localStorage`, and `scale: 0` on the operator's console has always
+ *     modelled exactly the same thing.
  *
- * Nothing here is user-visible text. Every label, sentence and column heading is
- * dictionary copy, filled with these numbers at render.
+ * ── the empty month is not the same as a zero on the screen ───────────────
+ *
+ * The screens do not render these constants as findings. `dashboardScreens.tsx`
+ * asks `api/partner.ts` first, and renders one of three things: the measured
+ * figure, a "still asking" state, or a panel saying what would put a number
+ * there. **A failed request is a state, not a zero** — that rule is the whole
+ * reason the empty model here is safe to have at all. If a screen ever reads
+ * `PD_TOTALS.visits` and prints it as "your visits this month", it has undone
+ * the rewrite.
+ *
+ * ── money ────────────────────────────────────────────────────────────────
+ *
+ * Amounts are euros, as everywhere else on the site, and are converted on the
+ * way out by `useMoney`. The server sends minor units of the *venue's* currency;
+ * `minorToEuro` in `api/partner.ts` is the single seam between the two, and it
+ * reads its divisor from `i18n/fx.ts` like everything else that touches a rate.
  */
 
-/* ───────────────────────────────────────────────────────────────── seeds ── */
-
-/**
- * The prototype's złoty, in euros.
- *
- * `i18n/fx.ts` is the one rate table in the building (root `CLAUDE.md`), so the
- * divisor is read from it rather than written again: the whole point of storing
- * euros is that `useMoney` in Polish gives the złoty figure back, and it can
- * only do that if the two directions use one number.
- */
-import { FX } from './i18n/fx';
-/* Type-only, so this stays a leaf: `i18n/context.ts` pulls in all five
-   dictionaries and nothing here may drag those into a chart. */
 import type { LanguageCode } from './i18n/context';
-/* Type-only for the same reason and one more: `api/reach.ts` imports React, and
-   this module is loaded by `npm run verify` outside a browser. */
+/* Type-only: `api/reach.ts` and `api/partner.ts` import React, and this module
+   is loaded by `npm run verify` outside a browser. */
 import type { ReachReport } from './api/reach';
+import type {
+  CampaignResponse,
+  DealResponse,
+  Metric,
+  OverviewBody,
+  Pool,
+} from './api/partner';
 
-const zl = (pln: number) => pln / FX.PLN.rate;
-
-/**
- * The venue's own average transaction, from its sales rather than from Paylez.
- *
- * It is the multiplier behind every money estimate on the overview, which is why
- * the screen says so out loud: an estimate built on a number the owner did not
- * recognise would be worth nothing to them.
- */
-export const AVG_SPEND = zl(34.1);
-
-/** What Paylez charged this month. A flat fee, not a rate on turnover. */
-export const PAYLEZ_FEE = zl(1894);
-
-/**
- * How the visit total splits.
- *
- * `NEW` is the share of visits from someone who had never scanned here before;
- * `CLAIM` the share that carried a deal claim. Both are the prototype's `OV.normal`.
- *
- * `CLAIM_RATIO` is exported because the overview draws it twice: the claims
- * tile's headline is `totals.claims`, and the sparkline under it is the same
- * rate applied day by day. It was a literal retyped into `dashboardScreens.tsx`
- * for a while, which is a figure and its own shape describing two different
- * venues the moment the seed here is edited.
- */
-const NEW_RATIO = 0.2303;
-export const CLAIM_RATIO = 0.4598;
-
-/**
- * How much of the claim total is *also* a first visit.
- *
- * It has to come out of the attribution sum once, not twice — a newcomer who
- * claimed a deal is one visit Paylez can claim credit for, not two.
- */
-const CLAIMS_BY_NEW = 0.2;
+/* ══════════════════════════════════════════════════════════════ structure ══ */
 
 /**
  * The windows the range picker offers, in the order it lists them.
  *
- * The prototype's four, and its arithmetic with them: a window is *days of the
- * series*, and the series is generated rather than sampled, so seven days is the
- * first seven of the same curve and not a different curve. The quarter *draws*
- * 45 points — the prototype clamps there too, and for the same reason: ninety
- * daily points across a chart this wide is a comb, and the shape is the only
- * thing the panel is for. It still *counts* all ninety; see `MAX_POINTS`.
+ * Structure, not data: which windows a reader may choose between is a property
+ * of the control, and it survives the seeds going. What each window *contains*
+ * is now a question for the server.
  */
 export const PD_RANGES = [7, 14, 30, 90] as const;
 export type RangeDays = (typeof PD_RANGES)[number];
@@ -100,385 +74,48 @@ export const RANGE_DAYS: RangeDays = 30;
 /**
  * The most points the chart will draw, however long the window.
  *
- * A drawing concern and nothing else. It was applied to the series *before* the
- * totals were summed from it, which made "last quarter" report 45 days of
- * activity against a cost side that stayed a whole month — the quarter read as
- * worse value than the month, which is the exact opposite of what the range
- * picker is for. `metricsFor` sums the full window and thins a copy for the
- * chart; nothing but `thin` may read this.
+ * A drawing concern and nothing else — ninety daily points across a card this
+ * wide is a comb, and the shape is the only thing the panel is for. It is
+ * applied to a *copy* for the chart and never to the series a total is summed
+ * from; doing it the other way round once made "last quarter" report 45 days of
+ * activity against a whole month's cost.
  */
 const MAX_POINTS = 45;
-
-/** Which day of the month the venue is standing on, for the run-out forecasts. */
-const TODAY = 14;
-
-/** How many days August has, for the same forecasts. */
-const MONTH_DAYS = 31;
-
-/**
- * The six hot deals, from the prototype's `rawDeals()`.
- *
- * `cost` is what the discounts on the claims have cost so far, in euros.
- * `trend` is seven days of claims, drawn as the row's sparkline — it is a shape
- * rather than a scale, so it is left as the prototype's own small integers.
- */
-export interface PartnerDeal {
-  id: string;
-  badge: string;
-  state: 'live' | 'scheduled' | 'paused' | 'expired';
-  /** What the deal gives away, which decides how its cost is written. */
-  kind: 'percent' | 'item' | 'points';
-  /** Index into `copy.dashboard.deals.audiences`. */
-  audience: number;
-  /** How many of the five languages the deal is written in. */
-  langs: number;
-  /** Reach lost to the languages it is missing, as a percentage. */
-  reachLoss: number;
-  seen: number;
-  opened: number;
-  claimed: number;
-  cost: number;
-  /** Claims the deal stops after; 0 is no limit. */
-  limit: number;
-  trend: number[];
-  /** How the deal's one notification stands. */
-  notify: { state: 'none' | 'scheduled' | 'sent'; reach: number; match: number };
-  /** How many weeks it ran, for the retrospective on an expired deal. */
-  weeks: number;
-}
-
-/**
- * What a deal's one notification did.
- *
- * Derived rather than seeded, and derived from the *claims* rather than from
- * the sends: the sentence the panel prints is "N of this deal's M claims came
- * from the notification", so making N a share of M is what stops the two halves
- * of that sentence disagreeing. Opens are a share of the send, which is the
- * only other figure the panel needs — and is always larger than N here, which
- * it has to be for the funnel to read downward.
- */
-const NOTIFY_OPEN_RATE = 0.31;
-const NOTIFY_CLAIM_SHARE = 0.42;
-const NOTIFY_BLOCKED_RATE = 0.09;
-
-export function dealNotify(deal: PartnerDeal) {
-  const notified = deal.notify.reach;
-  const opened = Math.round(notified * NOTIFY_OPEN_RATE);
-  const camein = Math.round(deal.claimed * NOTIFY_CLAIM_SHARE);
-  return {
-    notified,
-    opened,
-    camein,
-    /* Matched the audience but had had another notification recently, so this
-       one was held back. It is the number that keeps the reach honest. */
-    blocked: Math.round(deal.notify.match * NOTIFY_BLOCKED_RATE),
-    /** The rest of the claims: people who found it in the app on their own. */
-    alone: Math.max(0, deal.claimed - camein),
-    openPct: notified > 0 ? (opened / notified) * 100 : 0,
-    cameinPct: opened > 0 ? (camein / opened) * 100 : 0,
-  };
-}
-
-export const PD_DEALS: PartnerDeal[] = [
-  {
-    id: 'flat',
-    badge: '20%',
-    state: 'live',
-    kind: 'percent',
-    audience: 0,
-    langs: 3,
-    reachLoss: 34,
-    seen: 8412,
-    opened: 612,
-    claimed: 149,
-    cost: zl(274),
-    limit: 300,
-    trend: [22, 26, 24, 31, 38, 34, 42],
-    notify: { state: 'scheduled', reach: 3133, match: 4820 },
-    weeks: 4,
-  },
-  {
-    id: 'students',
-    badge: '15%',
-    state: 'live',
-    kind: 'percent',
-    audience: 1,
-    langs: 5,
-    reachLoss: 0,
-    seen: 6134,
-    opened: 548,
-    claimed: 214,
-    cost: zl(418),
-    limit: 0,
-    trend: [31, 28, 34, 30, 36, 41, 44],
-    notify: { state: 'sent', reach: 938, match: 1400 },
-    weeks: 13,
-  },
-  {
-    id: 'filter',
-    badge: 'FREE',
-    state: 'live',
-    kind: 'item',
-    audience: 0,
-    langs: 5,
-    reachLoss: 0,
-    seen: 4798,
-    opened: 291,
-    claimed: 186,
-    cost: zl(930),
-    limit: 0,
-    trend: [18, 21, 19, 17, 22, 20, 24],
-    notify: { state: 'sent', reach: 2968, match: 4820 },
-    weeks: 4,
-  },
-  {
-    id: 'points',
-    badge: '2×',
-    state: 'scheduled',
-    kind: 'points',
-    audience: 0,
-    langs: 5,
-    reachLoss: 0,
-    seen: 0,
-    opened: 0,
-    claimed: 0,
-    cost: 0,
-    limit: 0,
-    trend: [0, 0, 0, 0, 0, 0, 0],
-    notify: { state: 'none', reach: 3133, match: 4820 },
-    weeks: 9,
-  },
-  {
-    id: 'neighbour',
-    badge: '10%',
-    state: 'paused',
-    kind: 'percent',
-    audience: 2,
-    langs: 5,
-    reachLoss: 0,
-    seen: 3164,
-    opened: 187,
-    claimed: 61,
-    cost: zl(143),
-    limit: 0,
-    trend: [14, 16, 13, 11, 12, 10, 9],
-    notify: { state: 'none', reach: 320, match: 940 },
-    weeks: 9,
-  },
-  {
-    id: 'lunch',
-    badge: '5%',
-    state: 'expired',
-    kind: 'percent',
-    audience: 0,
-    langs: 4,
-    reachLoss: 11,
-    seen: 9211,
-    opened: 402,
-    claimed: 38,
-    cost: zl(71),
-    limit: 0,
-    trend: [26, 22, 19, 16, 12, 9, 6],
-    notify: { state: 'sent', reach: 2104, match: 4820 },
-    weeks: 4,
-  },
-];
-
-/**
- * The four loyalty campaigns, from `CAMP_BASE` and `CSCEN.normal`.
- *
- * `cost` is what one reward costs the venue; `earned` / `used` / `expired` are
- * counts of rewards. Everything else about a campaign — what it has spent, what
- * it is holding, its gap — falls out of those four and is derived below.
- */
-export const PD_CAMPAIGNS = [
-  { visits: 4, cost: zl(5), priority: 1, live: true, earned: 62, used: 51, expired: 4 },
-  { visits: 10, cost: zl(9), priority: 2, live: true, earned: 33, used: 20, expired: 3 },
-  { visits: 6, cost: zl(10), priority: 3, live: true, earned: 18, used: 6, expired: 1 },
-  { visits: 6, cost: zl(7), priority: 4, live: false, earned: 12, used: 3, expired: 2 },
-];
-
-/** Regulars who have earned a reward and are within a visit of the next one. */
-export const PD_NEAR = 18;
-
-/** The last reminder that went out to lapsed campaign members. */
-export const PD_REMIND = { back: 14, of: 38 };
-
-/**
- * The month's whole discount budget, split between the two pools.
- *
- * One number the owner sets, and a share of it earmarked for loyalty. Vouchers
- * get the remainder — which is what makes the overview's "move some across"
- * banner a real offer rather than a slogan.
- */
-export const PD_ALLOCATION = { total: zl(3900), loyalty: zl(2000) };
-
-/** What came back this month from voucher discounts that expired unused. */
-const VOUCHERS_RETURNED = zl(168);
-
-/**
- * The three voucher tiers.
- *
- * A tier holds no money. Points decide who reaches it, and what it costs is the
- * discount times how many people used it — so raising `points` sends less of the
- * budget that way, which is the sentence the screen leads with.
- */
-export const PD_TIERS = [
-  { pct: 5, points: 250, issued: 124, redeemed: 95 },
-  { pct: 10, points: 600, issued: 59, redeemed: 45 },
-  { pct: 15, points: 1200, issued: 16, redeemed: 12 },
-];
-
-/** The most any one voucher may take off a bill, however large the order. */
-export const PD_MAX_PER_VOUCHER = zl(25);
-
-/** Who comes in, from the prototype's `CUST`. Counts, not percentages. */
-export const PD_CUSTOMERS = {
-  total: 642,
-  /** Percentages — index-aligned with `copy.dashboard.customers.langs`. */
-  langs: [42, 24, 19, 11, 4],
-  /** Percentages — index-aligned with `…customers.ages`. */
-  ages: [31, 44, 17, 8],
-  /** Percentages — index-aligned with `…customers.settled`. */
-  settled: [27, 38, 35],
-  /** Index-aligned with `…customers.months`. */
-  cohorts: [
-    { first: 268, back: 96 },
-    { first: 291, back: 112 },
-    { first: 284, back: 108 },
-    { first: 312, back: 129 },
-  ],
-  /** Regulars who have not been in for over 30 days. */
-  lapsed: 84,
-  /**
-   * Cost per new customer over the last three months, in euros.
-   *
-   * Only the first two are seeds. This month's is `PD_PER_NEW`, spliced in
-   * below — the prototype carried a third seed here and it disagreed with its
-   * own headline by a few pence, because one was written down and the other
-   * divided the cost total by the new-customer count. Two figures for one thing
-   * on one panel is the drift this file exists to prevent.
-   */
-  /* Two months, not three. The third column *is* the cost-per-new-customer
-     headline beside it, and it moves with the range picker, so the trend is
-     built in `metricsFor` rather than seeded with a hole and patched. */
-  perNewPrev: [zl(21.4), zl(18.9)],
-  /** What the average Kraków café on Paylez pays for one, in euros. */
-  benchmark: zl(24.6),
-  /** The same venues' average deal claim rate, as a percentage. */
-  benchClaim: 2.1,
-  /** …and their average second-visit-within-30-days rate. */
-  benchSecond: 34,
-  /** How many other venues the comparison is averaged over. */
-  peers: 34,
-};
-
-/**
- * The customers who turned profile sharing on.
- *
- * Everyone else stays in the grouped figures above and is never shown by name —
- * which is the whole reason this is a separate, much shorter list than `total`.
- * `sg` / `so` are stamps got and stamps needed; `tier` is a discount tier, and a
- * customer has one or the other, never both.
- */
-export interface RosterEntry {
-  id: number;
-  name: string;
-  init: string;
-  /** Euros. */
-  spent: number;
-  visits: number;
-  /** Days since the last scan. */
-  last: number;
-  status: 'regular' | 'lapsed' | 'new';
-  /** High value — one of the venue's top spenders. */
-  hv: boolean;
-  sg: number;
-  so: number;
-  tier: number;
-  trend: 'up' | 'flat' | 'down';
-  /** Months since they started sharing; drives the six-month spend chart. */
-  tenure: number;
-  /** Index into `copy.dashboard.customers.monthNames`. */
-  since: number;
-  /** Indices into `copy.dashboard.deals.rows`. */
-  deals: number[];
-  /** Index into `copy.dashboard.campaigns.rows`, or −1. */
-  camp: number;
-  /** Index into `copy.dashboard.customers.patterns`. */
-  pattern: number;
-  /** Index into `copy.dashboard.customers.rewards`. */
-  reward: number;
-}
-
-export const PD_ROSTER: RosterEntry[] = [
-  { id: 1, name: 'Andrii P.', init: 'AP', spent: zl(1180), visits: 14, last: 3, status: 'regular', hv: true, sg: 0, so: 0, tier: 15, trend: 'up', tenure: 5, since: 3, deals: [0, 2], camp: 0, pattern: 0, reward: 0 },
-  { id: 2, name: 'Marta K.', init: 'MK', spent: zl(340), visits: 6, last: 4, status: 'regular', hv: false, sg: 3, so: 4, tier: 0, trend: 'up', tenure: 6, since: 2, deals: [0], camp: 0, pattern: 1, reward: 1 },
-  { id: 3, name: 'Kateryna B.', init: 'KB', spent: zl(705), visits: 11, last: 6, status: 'regular', hv: true, sg: 0, so: 0, tier: 10, trend: 'flat', tenure: 4, since: 4, deals: [2], camp: 0, pattern: 2, reward: 2 },
-  { id: 4, name: 'Giorgi M.', init: 'GM', spent: zl(610), visits: 9, last: 32, status: 'lapsed', hv: false, sg: 0, so: 0, tier: 10, trend: 'down', tenure: 4, since: 3, deals: [0], camp: 0, pattern: 3, reward: 3 },
-  { id: 5, name: 'Dilnoza Y.', init: 'DY', spent: zl(95), visits: 2, last: 5, status: 'new', hv: false, sg: 1, so: 4, tier: 0, trend: 'up', tenure: 1, since: 7, deals: [], camp: -1, pattern: 4, reward: 4 },
-  { id: 6, name: 'Oleksandr H.', init: 'OH', spent: zl(892), visits: 13, last: 9, status: 'regular', hv: true, sg: 0, so: 0, tier: 10, trend: 'up', tenure: 5, since: 3, deals: [2, 0], camp: 0, pattern: 5, reward: 2 },
-  { id: 7, name: 'Nino K.', init: 'NK', spent: zl(418), visits: 7, last: 14, status: 'regular', hv: false, sg: 4, so: 4, tier: 0, trend: 'flat', tenure: 3, since: 5, deals: [0], camp: 0, pattern: 6, reward: 5 },
-  { id: 8, name: 'Mehmet A.', init: 'MA', spent: zl(233), visits: 4, last: 3, status: 'regular', hv: false, sg: 2, so: 4, tier: 0, trend: 'up', tenure: 2, since: 6, deals: [0], camp: 0, pattern: 7, reward: 6 },
-  { id: 9, name: 'Yulia S.', init: 'YS', spent: zl(1024), visits: 15, last: 2, status: 'regular', hv: true, sg: 0, so: 0, tier: 15, trend: 'up', tenure: 5, since: 3, deals: [2, 0], camp: 0, pattern: 8, reward: 7 },
-  { id: 10, name: 'Aziz R.', init: 'AR', spent: zl(156), visits: 3, last: 21, status: 'new', hv: false, sg: 1, so: 4, tier: 0, trend: 'flat', tenure: 2, since: 6, deals: [], camp: -1, pattern: 9, reward: 4 },
-  { id: 11, name: 'Sofiia M.', init: 'SM', spent: zl(487), visits: 8, last: 41, status: 'lapsed', hv: false, sg: 0, so: 0, tier: 10, trend: 'down', tenure: 4, since: 3, deals: [0], camp: 0, pattern: 10, reward: 8 },
-  { id: 12, name: 'Davit T.', init: 'DT', spent: zl(372), visits: 6, last: 7, status: 'regular', hv: false, sg: 3, so: 4, tier: 0, trend: 'up', tenure: 3, since: 5, deals: [0], camp: 0, pattern: 1, reward: 1 },
-  { id: 13, name: 'Anna W.', init: 'AW', spent: zl(268), visits: 5, last: 18, status: 'regular', hv: false, sg: 2, so: 4, tier: 0, trend: 'flat', tenure: 3, since: 5, deals: [0], camp: 0, pattern: 11, reward: 6 },
-  { id: 14, name: 'Farrukh N.', init: 'FN', spent: zl(61), visits: 1, last: 2, status: 'new', hv: false, sg: 1, so: 4, tier: 0, trend: 'flat', tenure: 1, since: 7, deals: [], camp: -1, pattern: 12, reward: 4 },
-  { id: 15, name: 'Tamar G.', init: 'TG', spent: zl(549), visits: 9, last: 28, status: 'regular', hv: false, sg: 0, so: 0, tier: 10, trend: 'down', tenure: 4, since: 3, deals: [2], camp: 0, pattern: 13, reward: 9 },
-  { id: 16, name: 'Ivan D.', init: 'ID', spent: zl(815), visits: 12, last: 11, status: 'regular', hv: true, sg: 0, so: 0, tier: 10, trend: 'flat', tenure: 5, since: 3, deals: [0], camp: 0, pattern: 1, reward: 2 },
-];
-
-/** The five audiences a deal or notification can be aimed at. */
-export const PD_AUDIENCES = [
-  { reach: 4820, notifiable: 3133, sendAt: '07:30' },
-  { reach: 1400, notifiable: 938, sendAt: '12:20' },
-  { reach: 940, notifiable: 320, sendAt: '17:40' },
-  { reach: 2310, notifiable: 1340, sendAt: '18:10' },
-  { reach: 1680, notifiable: 1193, sendAt: '08:50' },
-];
-
-/** Notifications the plan allows a month, and how many are left. */
-export const PD_NOTIFY_QUOTA = { total: 4, left: 2 };
 
 /** The hours the heat map covers, 07:00 to 20:00. */
 export const HEAT_HOURS = [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20];
 
-/* ─────────────────────────────────────────────────────────────── derived ── */
+/* ════════════════════════════════════════════════════════════════ shapes ══ */
 
 /**
- * Thirty days of visits and voucher redemptions.
+ * A day-by-day series.
  *
- * Two overlaid sine waves, which is the prototype's own generator. It is not
- * random and must not be: the same call runs on every render and on the verify
- * pass, and a series that moved between them would make the chart, the totals
- * and the sparklines disagree with each other on the same screen.
+ * There is no endpoint behind this yet. `GET /v1/partner/venues/:id/export`
+ * returns a day-by-day roll-up as CSV and `analytics.overview` returns monthly
+ * totals as JSON, but nothing returns a daily series a chart could draw, so the
+ * chart panel says so rather than drawing a straight line through zero. When
+ * that endpoint exists this is the shape it fills.
  */
-function makeSeries(days: number) {
-  const visits: number[] = [];
-  const redeemed: number[] = [];
-  for (let i = 0; i < days; i++) {
-    const w = 1 + 0.3 * Math.sin(i / 2.4) + 0.14 * Math.sin(i / 6.1);
-    visits.push(Math.round(38 * w) + (i % 5 === 0 ? 4 : 0));
-    redeemed.push(Math.round(8 * w * (0.82 + 0.2 * Math.sin(i / 3.1)) * 0.719));
-  }
-  return { visits, redeemed };
+export interface Series {
+  visits: number[];
+  redeemed: number[];
 }
+
+/** Days of nothing, which is what a venue with no measured visits has. */
+const emptySeries = (days: number): Series => ({
+  visits: Array.from({ length: days }, () => 0),
+  redeemed: Array.from({ length: days }, () => 0),
+});
 
 /**
  * The same series, thinned to what the chart can draw.
  *
  * Evenly spaced samples rather than the first `points` days: a panel headed
  * "last 90 days" that plotted the first 45 of them would be a month and a half
- * drawn under a quarter's label, and the run-up to today — the part of the shape
- * an owner is actually reading — would be missing from it. Both ends are kept,
- * so the line still starts where the window starts and finishes on today.
- *
- * It is a *shape*. Every figure beside it is summed from the unthinned series,
- * which is what stopped the quarter under-reporting itself by half.
+ * drawn under a quarter's label, and the run-up to today — the part an owner is
+ * actually reading — would be missing. Both ends are kept.
  */
-function thin(series: ReturnType<typeof makeSeries>, points: number) {
+function thin(series: Series, points: number): Series {
   const days = series.visits.length;
   if (days <= points) return series;
   const pick = (values: number[]) =>
@@ -495,65 +132,150 @@ const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
  * The month in six numbers.
  *
  * `attributed` is the one worth reading twice, because it is the only figure on
- * the overview the venue can put in front of an accountant: visits from someone
- * new, plus visits with a claim behind them, minus the overlap. Everything else
- * on that screen is either counted (`visits`) or explicitly an estimate.
+ * the overview a venue can put in front of an accountant. It is no longer a
+ * ratio applied to a visit count — the server counts it directly
+ * (`overview.attributedVisits`, a `COUNT` over committed transactions that
+ * carried a deal or were not a plain earn), which is what "attributed" was
+ * always supposed to mean and what the two invented share constants here were
+ * standing in for.
  */
-function makeTotals(series: ReturnType<typeof makeSeries>) {
-  const visits = sum(series.visits);
-  const redeemed = sum(series.redeemed);
-  const claims = Math.round(visits * CLAIM_RATIO);
-  const newCustomers = Math.round(visits * NEW_RATIO);
-  const attributed = newCustomers + Math.max(0, claims - Math.round(claims * CLAIMS_BY_NEW));
+export interface Totals {
+  visits: number;
+  redeemed: number;
+  claims: number;
+  newCustomers: number;
+  attributed: number;
+  /** What every visit through Paylez was probably worth. An estimate. */
+  estimate: number;
+  /** The share of that we can actually stand behind. */
+  attributedMoney: number;
+  /**
+   * Whether any of the above is a measurement.
+   *
+   * The one field that is not a number, and the reason the rest are safe to be
+   * numbers. `false` means nobody counted anything and the screen must not
+   * print these as findings.
+   */
+  measured: boolean;
+}
+
+const EMPTY_TOTALS: Totals = {
+  visits: 0,
+  redeemed: 0,
+  claims: 0,
+  newCustomers: 0,
+  attributed: 0,
+  estimate: 0,
+  attributedMoney: 0,
+  measured: false,
+};
+
+/**
+ * The server's `Metric` as a plain number, or `null`.
+ *
+ * `suppressed` and a genuine zero arrive in the same field and mean opposite
+ * things, so this returns `null` for the first and the number for the second.
+ * **Never write `?? 0` at a call site** — that is the lie the min-cohort floor
+ * exists to prevent, restated as a default.
+ */
+export const metricValue = (metric: Metric | undefined): number | null =>
+  metric === undefined || metric.suppressed ? null : metric.value;
+
+/** The same, for the places that genuinely want "nothing happened" as zero. */
+const counted = (metric: Metric | undefined): number => metricValue(metric) ?? 0;
+
+/* ═══════════════════════════════════════════════════════════ the deals ══ */
+
+/**
+ * A hot deal as the dashboard draws it.
+ *
+ * Every field is a column of `hot_deals` or a figure `deals.funnel` returns.
+ * What is *not* here is what the prototype's row carried and the server does not
+ * measure: a seven-day claim sparkline, a "reach lost to missing languages"
+ * percentage, and an audience size. The first two were invented; the third is
+ * real but lives behind `deals.audienceFor`, which the list endpoint does not
+ * call. A row that cannot say those things says nothing about them.
+ */
+export interface PartnerDeal {
+  id: string;
+  /** What the deal gives away, in the venue's own words. */
+  badge: string;
+  state: 'draft' | 'live' | 'scheduled' | 'paused' | 'expired' | 'ended';
+  seen: number;
+  opened: number;
+  claimed: number;
+  /** What the discounts on those claims have cost, in euros. */
+  cost: number;
+  /** Claims the deal stops after; 0 is no limit. */
+  limit: number;
+  /** How many of the five languages the deal is written in, and which are missing. */
+  langs: number;
+  missing: string[];
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * What a deal's one notification did.
+ *
+ * Three of these four used to be a share of the claim count times an invented
+ * rate — `NOTIFY_OPEN_RATE = 0.31` and friends — which drew a plausible funnel
+ * for a notification that may never have been sent. The server records the real
+ * thing in `deal_pushes` (`sent`, `opened`, and the claims that carried the push
+ * id), but `partners.dealsFor` does not join it, so the honest answer today is
+ * that only `alone` is known: every claim the deal got, none of them
+ * attributable to a push we cannot see.
+ *
+ * `measured` is what the panel branches on. The funnel still reads downward at
+ * zero, which is what `npm run verify` holds it to.
+ */
+export function dealNotify(deal: PartnerDeal) {
   return {
-    visits,
-    redeemed,
-    claims,
-    newCustomers,
-    attributed,
-    /** What every visit through Paylez was probably worth. An estimate. */
-    estimate: visits * AVG_SPEND,
-    /** The share of that we can actually stand behind. */
-    attributedMoney: attributed * AVG_SPEND,
+    notified: 0,
+    opened: 0,
+    camein: 0,
+    blocked: 0,
+    /** The claims we can see: all of them, until a push join says otherwise. */
+    alone: deal.claimed,
+    openPct: 0,
+    cameinPct: 0,
+    measured: false,
   };
 }
 
-
-/**
- * An average week at the counter, by day and hour.
- *
- * Three gaussians — a morning peak at 9, a lunch one at 13, an evening one at 18
- * — thinned at the weekend and cut hard on Tuesday and Wednesday afternoons,
- * which is the quiet stretch every "fill your quiet hours" prompt in the
- * prototype points at. Normalised so the week sums to 278 scans.
- */
-function makeHeat() {
-  const raw: number[][] = [];
-  let total = 0;
-  for (let day = 0; day < 7; day++) {
-    const row: number[] = [];
-    for (const hour of HEAT_HOURS) {
-      let v =
-        5 +
-        15 * Math.exp(-((hour - 9) ** 2) / 4) +
-        9 * Math.exp(-((hour - 13) ** 2) / 5) +
-        5 * Math.exp(-((hour - 18) ** 2) / 6);
-      if (day >= 5) v *= 0.86;
-      if ((day === 1 || day === 2) && hour >= 14 && hour <= 16) v *= 0.34;
-      row.push(v);
-      total += v;
-    }
-    raw.push(row);
-  }
-  const k = 278 / total;
-  return raw.map((row) => row.map((v) => Math.round(v * k)));
+/** One server deal row, as the dashboard's shape. */
+export function dealFromApi(row: DealResponse, currencyToEuro: (minor: number) => number): PartnerDeal {
+  return {
+    id: row.id,
+    badge: row.discount_text?.trim() || '',
+    state: row.status,
+    seen: row.funnel.seen,
+    opened: row.funnel.opened,
+    claimed: row.funnel.claimed,
+    cost: currencyToEuro(row.funnel.spendMinor),
+    limit: row.funnel.capClaims ?? 0,
+    langs: row.translations.filled.length,
+    missing: row.translations.missing,
+    from: row.valid_from,
+    to: row.valid_to,
+  };
 }
 
-export const PD_HEAT = makeHeat();
-export const PD_HEAT_MAX = Math.max(...PD_HEAT.flat());
+/**
+ * The empty deal list.
+ *
+ * Six invented deals used to live here, and the dictionaries still carry
+ * index-aligned names for them (`copy.dashboard.deals.rows`). Those names are
+ * now unreachable copy rather than labels for data — a live deal is named by its
+ * own `discount_text` and its own translations, because a real venue's offer is
+ * not the fourth row of a prototype's table.
+ */
+export const PD_DEALS: PartnerDeal[] = [];
+
+/* ═══════════════════════════════════════════════════════════ the pools ══ */
 
 /**
- * The loyalty pool.
+ * A loyalty campaign as the dashboard draws it, and what it has committed.
  *
  * `aside` is the number the campaigns screen is built around: money already
  * committed to rewards a customer has earned and not collected. It is not spent
@@ -561,8 +283,64 @@ export const PD_HEAT_MAX = Math.max(...PD_HEAT.flat());
  * budget bar that showed only "spent" would let an owner commit the same złoty
  * twice.
  */
-function makeCampaignModel() {
-  const list = PD_CAMPAIGNS.map((c) => {
+export interface CampaignRow {
+  id: string;
+  name: string;
+  /** What the reward is, in the owner's own words. */
+  reward: string;
+  visits: number;
+  /** What one reward costs the venue, in euros. */
+  cost: number;
+  priority: number;
+  live: boolean;
+  earned: number;
+  used: number;
+  expired: number;
+}
+
+export interface CampaignModel {
+  list: Array<
+    CampaignRow & {
+      outstanding: number;
+      spent: number;
+      aside: number;
+      returned: number;
+      rate: number;
+      gap: number;
+    }
+  >;
+  allocation: number;
+  earned: number;
+  used: number;
+  holding: number;
+  returned: number;
+  spent: number;
+  aside: number;
+  available: number;
+  /** Which campaign has the widest earned-but-unused gap, or −1 for none. */
+  widest: number;
+  widestGap: number;
+  /** True only when the server told us what this pool holds. */
+  measured: boolean;
+}
+
+/**
+ * The loyalty pool, from the venue's campaigns and the server's own pool row.
+ *
+ * The pool figures are **not** re-derived from the campaign counts. `Pool`
+ * arrives from `budget.budgetFor`, which is the money that actually moved
+ * through `budget_movements`, and the server's own rule is that
+ * `base − spent − reserved` exhausts it. Recomputing `spent` from
+ * `used × cost` here would produce a second opinion about the same money, which
+ * is the exact failure this file's original header warned about — one screen
+ * short by whatever rounding or top-up the ledger knows about and this does not.
+ *
+ * The per-campaign `spent` / `aside` are still derived, because they are a
+ * *split* of the pool the server does not break down, and they are labelled as
+ * an apportionment rather than as a ledger figure on the screen.
+ */
+export function campaignModel(rows: CampaignRow[], pool: Pool | null): CampaignModel {
+  const list = rows.map((c) => {
     const outstanding = Math.max(0, c.earned - c.used - c.expired);
     return {
       ...c,
@@ -576,47 +354,84 @@ function makeCampaignModel() {
     };
   });
 
-  const spent = sum(list.map((c) => c.spent));
-  const aside = sum(list.map((c) => c.aside));
-  const available = PD_ALLOCATION.loyalty - spent - aside;
-  const perDay = spent / TODAY;
-  const daysLeft = perDay > 0 ? Math.max(0, available) / perDay : Infinity;
-
-  /* The widest gap is computed, not written down: a seed edit must not leave
-     the sentence on the screen naming the wrong campaign. */
-  const widest = list.reduce((a, b) => (b.gap > a.gap ? b : a));
+  /* Empty is not a special case, but `reduce` without a seed on an empty array
+     throws — which is how an honest empty state becomes a white screen. */
+  let widest = -1;
+  let widestGap = 0;
+  list.forEach((c, index) => {
+    if (widest === -1 || c.gap > widestGap) {
+      widest = index;
+      widestGap = c.gap;
+    }
+  });
 
   return {
     list,
-    allocation: PD_ALLOCATION.loyalty,
+    allocation: pool?.base ?? 0,
     earned: sum(list.map((c) => c.earned)),
     used: sum(list.map((c) => c.used)),
     holding: sum(list.map((c) => c.outstanding)),
     returned: sum(list.map((c) => c.returned)),
-    spent,
-    aside,
-    available,
-    daysLeft,
-    /**
-     * Which day of *this* month the pool empties on.
-     *
-     * Only meaningful when it empties at all: a forecast that runs past the end
-     * of August produces day 66, and "66 August" is what a date looks like when
-     * nobody checked. `outlasts` is the flag the screen reads instead, and it
-     * gets its own sentence rather than a rolled-over September date — the
-     * forecast is a rate extrapolated over two weeks, and quoting a day six
-     * weeks out claims a precision it has not got.
-     */
-    runOut: TODAY + Math.round(Math.min(daysLeft, 400)),
-    outlasts: TODAY + daysLeft >= MONTH_DAYS,
-    widest: list.indexOf(widest),
-    widestGap: widest.gap,
-    /** Forecast to run dry before the month ends — what the alert banner keys off. */
-    tight: daysLeft < MONTH_DAYS - TODAY,
+    spent: pool?.spent ?? 0,
+    aside: pool?.reserved ?? 0,
+    available: pool?.available ?? 0,
+    widest,
+    widestGap,
+    measured: pool !== null,
   };
 }
 
-export const PD_CAMPAIGN_MODEL = makeCampaignModel();
+/**
+ * The empty campaign list.
+ *
+ * Four invented campaigns used to be here — a visit threshold, a reward cost,
+ * and earned/used/expired counts each — and the dictionaries still carry
+ * index-aligned names for them. A live venue's campaigns are whatever it
+ * created through `POST /v1/partner/venues/:id/campaigns`, named by the owner.
+ */
+export const PD_CAMPAIGNS: CampaignRow[] = [];
+
+/** The pool a device with no partner session knows about: none of one. */
+export const PD_CAMPAIGN_MODEL: CampaignModel = campaignModel(PD_CAMPAIGNS, null);
+
+/** One server campaign row, as the dashboard's shape. */
+export const campaignFromApi = (
+  row: CampaignResponse,
+  currencyToEuro: (minor: number) => number,
+): CampaignRow => ({
+  id: row.id,
+  name: row.name,
+  reward: row.reward_label,
+  visits: row.visits_required,
+  cost: currencyToEuro(row.reward_cost_minor),
+  priority: row.priority,
+  live: row.status === 'active',
+  earned: row.earned,
+  used: row.redeemed,
+  /* The list endpoint counts earned and redeemed and nothing between them, so
+     "expired" is not a figure this screen has. Zero here is the count of
+     expiries *we can see*, and the screen does not label it as a total. */
+  expired: 0,
+});
+
+/**
+ * A voucher tier, and what one costs.
+ *
+ * `issued` / `redeemed` are counts the server does not break down per tier — the
+ * ladder endpoint returns the tier's *settings* and an estimate of how many the
+ * remaining pool could still fund, not how many went out. So they default to
+ * zero and the screen shows the settings rather than inventing a take-up.
+ */
+export interface TierRow {
+  pct: number;
+  points: number;
+  issued: number;
+  redeemed: number;
+  /** The most this tier may take off one bill, in euros. */
+  cap: number;
+  /** What the pool could still fund at this tier, per the server's own estimate. */
+  remaining: number;
+}
 
 /**
  * The voucher pool.
@@ -627,23 +442,20 @@ export const PD_CAMPAIGN_MODEL = makeCampaignModel();
  * an unusually large order would take an unbounded bite out of a fixed monthly
  * budget.
  *
- * All three of its inputs are arguments rather than module constants, because
- * all three are fields the owner can move: the whole pool — spent, set aside,
- * available, the run-out date, and what the remainder still buys — is recomputed
- * from them on this device. That is what makes those fields honest without a
- * server behind them. `PD_VOUCHER_MODEL` below is this same function at the
- * seeded values, which is what the checks and every other screen read.
- *
- * The invariant survives the move: `available` is `budget - spent - reserved`,
- * so the three states exhaust the pool at *any* budget the owner types, not just
- * the seeded one.
+ * All four inputs are arguments rather than module constants, because all four
+ * are things the owner can move or the server can tell us. **The invariant
+ * survives**: `available` is `budget − spent − reserved`, so the three states
+ * exhaust the pool at any budget, including zero — which is what `npm run
+ * verify` holds this function to, and the reason that check is on the function
+ * rather than on a seeded value.
  */
 export function voucherModelFor(
   budget: number,
   avgSpend: number,
   maxPerVoucher: number,
+  rows: TierRow[] = PD_TIERS,
 ) {
-  const tiers = PD_TIERS.map((t) => {
+  const tiers = rows.map((t) => {
     const unit = Math.min((avgSpend * t.pct) / 100, maxPerVoucher);
     return {
       ...t,
@@ -663,10 +475,14 @@ export function voucherModelFor(
      land — not the mean of the three, which would price a mix nobody issues. */
   const mixCost = issued > 0 ? sum(tiers.map((t) => t.unit * t.issued)) / issued : 0;
 
-  const perDay = spent / TODAY;
-  const daysLeft = perDay > 0 ? Math.max(0, available) / perDay : Infinity;
-
-  const biggest = tiers.reduce((a, b) => (b.spent > a.spent ? b : a));
+  let biggest = -1;
+  let biggestSpent = 0;
+  tiers.forEach((t, index) => {
+    if (biggest === -1 || t.spent > biggestSpent) {
+      biggest = index;
+      biggestSpent = t.spent;
+    }
+  });
 
   return {
     budget,
@@ -676,150 +492,361 @@ export function voucherModelFor(
     available,
     issued,
     held,
-    returned: VOUCHERS_RETURNED,
-    daysLeft,
-    /** As above: only a date when the pool actually runs out this month. */
-    runOut: TODAY + Math.round(Math.min(daysLeft, 400)),
-    outlasts: TODAY + daysLeft >= MONTH_DAYS,
-    /** What is left buys this many more vouchers at the current mix. */
+    /** What one more voucher buys, at the mix actually being issued. */
     moreVouchers: mixCost > 0 ? Math.max(0, Math.floor(Math.max(0, available) / mixCost)) : 0,
-    /** Which tier is eating the budget — the suggestion card names it. */
-    biggest: tiers.indexOf(biggest),
-    tight: daysLeft < MONTH_DAYS - TODAY,
+    biggest,
   };
 }
 
-/** The pool the three fields on that screen start from. */
+export type VoucherModel = ReturnType<typeof voucherModelFor>;
+
+/**
+ * The voucher pool, from the server's own pool row rather than from the tiers.
+ *
+ * Same argument as `campaignModel`: `spent` and `reserved` are ledger figures
+ * and must come from `budget_movements`, not from a tier table times a unit
+ * price. The per-tier unit cost is still derived, because it is what the ladder
+ * is *for* — "raising the points on this tier sends less of the budget that
+ * way" is the sentence the screen leads with, and it needs a price per tier.
+ */
+export function voucherModelFrom(
+  pool: Pool | null,
+  tiers: TierRow[],
+  avgSpend: number,
+  maxPerVoucher: number,
+) {
+  const derived = voucherModelFor(pool?.base ?? 0, avgSpend, maxPerVoucher, tiers);
+  if (pool === null) return { ...derived, measured: false };
+  return {
+    ...derived,
+    spent: pool.spent,
+    reserved: pool.reserved,
+    available: pool.available,
+    measured: true,
+  };
+}
+
+/**
+ * The empty tier ladder.
+ *
+ * Three tiers with issue and redemption counts used to live here. A venue's real
+ * ladder is whatever it configured through `PUT /v1/partner/venues/:id/tiers`,
+ * and a venue that has configured none has none.
+ */
+export const PD_TIERS: TierRow[] = [];
+
+/**
+ * The whole discount budget, and the loyalty share of it.
+ *
+ * Zero, because nobody has told us. On a live venue it is `budget.total` and
+ * `budget.loyalty.base` from `GET /v1/partner/venues/:id/budget`, which is the
+ * figure the owner set through the same endpoint's `PUT`.
+ */
+export const PD_ALLOCATION = { total: 0, loyalty: 0 };
+
+/** The remainder of the allocation, which is what vouchers get. */
 export const PD_VOUCHER_BUDGET = PD_ALLOCATION.total - PD_ALLOCATION.loyalty;
 
-export const PD_VOUCHER_MODEL = voucherModelFor(
-  PD_VOUCHER_BUDGET,
-  AVG_SPEND,
-  PD_MAX_PER_VOUCHER,
-);
-
-/** What the month cost, line by line. Index-aligned with `…overview.costRows`. */
-export const PD_COST_ROWS = [
-  PAYLEZ_FEE,
-  PD_CAMPAIGN_MODEL.spent,
-  PD_VOUCHER_MODEL.spent,
-  sum(PD_DEALS.map((d) => d.cost)),
-];
-
-export const PD_COST_TOTAL = sum(PD_COST_ROWS);
-
 /**
- * The venue's deal claim rate, for the comparison table.
+ * The most any one voucher may take off a bill.
  *
- * Claims over views across the deals that are actually running — an expired deal
- * still carries its views, and leaving them in would quietly halve the figure.
+ * A *setting*, not a measurement — but it is a setting of the venue's, stored
+ * per tier as `max_discount_minor`, so with no venue there is no value for it
+ * and zero is the honest one. The live screen reads it off the ladder.
  */
-const liveSeen = sum(PD_DEALS.filter((d) => d.state === 'live').map((d) => d.seen));
+export const PD_MAX_PER_VOUCHER = 0;
+
+export const PD_VOUCHER_MODEL = voucherModelFrom(null, PD_TIERS, 0, PD_MAX_PER_VOUCHER);
 
 /**
- * Everything the range picker moves — and deliberately nothing else.
+ * The venue's own average transaction.
  *
- * What a window changes is how much *counted activity* falls inside it: the
- * series, its sums, and every figure derived from them. What it does not change
- * is what the month cost. `PAYLEZ_FEE` is a monthly charge and the two budget
- * pools are a monthly allocation; scaling those to a seven-day window would say
- * the venue paid a seventh of its subscription, and it would break the invariant
- * the pools are checked against — that spent, set aside and available exhaust
- * the budget.
+ * It was `34.1 zł` — the prototype's café, quoted at every owner as though it
+ * were theirs, and the multiplier behind every money estimate on the overview.
+ * The server computes the real one (`averageCheck`, returned with the budget)
+ * and the live screen reads it from there; with no venue there is no average,
+ * and every estimate built on it is withheld rather than scaled from zero.
+ */
+export const AVG_SPEND = 0;
+
+/* ═══════════════════════════════════════════════════════════ the window ══ */
+
+/**
+ * Everything the range picker moves.
  *
- * So the cost side is fixed and the return side moves, and that asymmetry is
- * what makes the short windows worth opening: a seven-day view is honest about
- * having earned back a fraction of a fee it has still paid in full. Reading a
- * good ROI on every window would mean the picker was decoration.
- *
- * Memoised on the window because this is called during render on three screens
- * and the identity has to be stable — a fresh object per frame would re-run
- * every `useMemo` downstream and restart the count-up animations on every tick.
+ * The window changes how much *counted activity* falls inside it. What it does
+ * not change is what the month cost: a subscription is a monthly charge and the
+ * two budget pools are a monthly allocation, and scaling those to a seven-day
+ * window would say the venue paid a seventh of its subscription.
  */
 export interface PartnerMetrics {
-  /** The window in days, and its place in `PD_RANGES` for the label arrays. */
   days: RangeDays;
   index: number;
   /** The window as the chart draws it — thinned to `MAX_POINTS`, never summed. */
-  series: ReturnType<typeof makeSeries>;
+  series: Series;
   /** The window as it is counted — every day of it, however few are drawn. */
-  totals: ReturnType<typeof makeTotals>;
-  /** Attributed sales over what the month cost. The overview's verdict line. */
+  totals: Totals;
+  /**
+   * Attributed sales over what the month cost; what one new customer cost; and
+   * claims over views.
+   *
+   * All three are `0` in the empty month rather than `null`, and the field that
+   * carries "we cannot say" is `totals.measured` beside them. That split is
+   * deliberate: a ratio is a number wherever it is a ratio at all, and the
+   * screens never read these — `Overview` computes its own `roi` from the
+   * server's cost breakdown and keeps it `null` until it has both terms, which
+   * is where the distinction actually has to be made.
+   */
   roi: number;
-  /** What one new customer cost. */
   perNew: number;
-  /** Claims over views on the live deals, as a percentage. */
   claimRate: number;
-  /** Where each of the three tools' money went. Index-aligned with `…roi.rows`. */
-  roiRows: { cost: number; units: number }[];
-  /** Three months, the last of which is `perNew` rather than a copy of it. */
+  /** Where each tool's money went. Index-aligned with `…roi.rows`. */
+  roiRows: Array<{ cost: number; units: number }>;
+  /** The cost-per-new-customer history. Empty until somebody measures one. */
   perNewTrend: number[];
 }
 
 const METRICS = new Map<number, PartnerMetrics>();
 
+/**
+ * The window, with nothing measured in it.
+ *
+ * Kept as a function of the window — and memoised on it — because a fresh
+ * object per call would re-run every `useMemo` that reads one. Nothing on the
+ * dashboard renders this any more; `totals.measured` is `false`, and the
+ * screens branch on the live request's state long before they would reach it.
+ * What it is still good for is the *shape*: thirty days long, so a chart has
+ * something to size against, and pools that exhaust themselves at zero.
+ */
 export function metricsFor(days: RangeDays): PartnerMetrics {
   const cached = METRICS.get(days);
   if (cached) return cached;
 
-  /* Counted over the whole window and drawn over a sample of it, in that order.
-     Clamping the series first and summing the clamp is what made the quarter
-     report half its activity against a full month's cost. */
-  const counted = makeSeries(days);
-  const totals = makeTotals(counted);
-  const perNew = PD_COST_TOTAL / Math.max(1, totals.newCustomers);
-
   const built: PartnerMetrics = {
     days,
     index: PD_RANGES.indexOf(days),
-    series: thin(counted, MAX_POINTS),
-    totals,
-    roi: totals.attributedMoney / PD_COST_TOTAL,
-    perNew,
-    claimRate: liveSeen > 0 ? (totals.claims / liveSeen) * 100 : 0,
-    roiRows: [
-      { cost: PD_CAMPAIGN_MODEL.spent, units: 148 },
-      { cost: sum(PD_DEALS.map((d) => d.cost)), units: totals.claims },
-      { cost: PD_VOUCHER_MODEL.spent, units: totals.redeemed },
-    ],
-    perNewTrend: [...PD_CUSTOMERS.perNewPrev, perNew],
+    series: thin(emptySeries(days), MAX_POINTS),
+    totals: EMPTY_TOTALS,
+    roi: 0,
+    perNew: 0,
+    claimRate: 0,
+    roiRows: [],
+    /* Empty, not three zeros. A cost-per-new-customer *history* is three
+       measurements; three zeros would be three months of claiming the venue
+       spent nothing to win nobody. */
+    perNewTrend: [],
   };
 
   METRICS.set(days, built);
   return built;
 }
 
-/* The default window, named so the checks and anything outside the dashboard
-   can reach one set of figures without asking for a window first. */
+/**
+ * The month, from the server's overview and its cost breakdown.
+ *
+ * Two things it does that the seeded version could not. The estimate uses the
+ * venue's *own* average check rather than a prototype café's, so the sentence
+ * "an estimate at your average transaction" is true. And `attributed` is the
+ * server's own count rather than a ratio of visits minus an overlap constant —
+ * which means it can be smaller than a naive derivation, and should be.
+ */
+export function totalsFrom(
+  overview: OverviewBody,
+  claims: number,
+  redeemed: number,
+  avgSpendEuro: number,
+): Totals {
+  const visits = counted(overview.visits);
+  const attributed = counted(overview.attributedVisits);
+  const newCustomers = metricValue(overview.newCustomers);
+
+  return {
+    visits,
+    redeemed,
+    claims,
+    /* Suppressed by the min-cohort floor is not zero. The screen prints the
+       withheld marker for a `null`, so it has to survive to here — but the
+       shape is a number, so this is the one place it collapses, and it
+       collapses to a *count of what we may say*, which is genuinely 0. */
+    newCustomers: newCustomers ?? 0,
+    attributed,
+    estimate: visits * avgSpendEuro,
+    attributedMoney: attributed * avgSpendEuro,
+    measured: true,
+  };
+}
+
+/* Named so anything outside the dashboard can reach one set of figures without
+   asking for a window first. All three are the empty month. */
 const DEFAULT_METRICS = metricsFor(RANGE_DAYS);
 
 export const PD_SERIES = DEFAULT_METRICS.series;
 export const PD_TOTALS = DEFAULT_METRICS.totals;
 export const PD_PER_NEW = DEFAULT_METRICS.perNew;
 
-/* ═══════════════════════════════════════════════════ reach: seen, clicked ══ */
+/**
+ * What the month cost, line by line. Index-aligned with `…overview.costRows`.
+ *
+ * Empty rather than four zeros, because the four rows named a subscription fee,
+ * two pools and a deal spend that this device knows nothing about. The live
+ * screen builds them from `costPerNewCustomer.breakdown`, which is the server
+ * summing exactly those four out of `subscriptions`, `budget_movements` and
+ * `transactions`.
+ */
+export const PD_COST_ROWS: number[] = [];
+export const PD_COST_TOTAL = sum(PD_COST_ROWS);
+
+/* ═══════════════════════════════════════════════════ the heat map ══ */
 
 /**
- * How often the *listing* is drawn for each visit that eventually comes of it.
+ * An average week at the counter.
  *
- * The one number on this screen that is not in the prototype, and it needed a
- * reason rather than a taste. The deals already carry their own funnel —
- * `seen`, `opened`, `claimed` on every row of `PD_DEALS` — so the venue's
- * offers are measured and the venue itself was not, which is the gap that made
- * "is anybody seeing us" unanswerable for a partner with nothing published.
+ * It was three gaussians with a hard cut on Tuesday and Wednesday afternoons,
+ * normalised to 278 scans — and the quiet block it produced was quoted as a
+ * finding on two screens and by the assistant. The server has the real one:
+ * `analytics.heatmap` groups `venue_visits` by venue-local weekday and hour and
+ * names the quietest *open* hour, which is the part the generator could never
+ * do, because 04:00 on a Monday is not a hole in the trade.
  *
- * A card in a list is drawn far more often than it is acted on: the live deals
- * average about 1.4% opened of seen, and a listing tile carries less to click on
- * than an offer does. So the listing is seen roughly a dozen times per resulting
- * visit and clicked on about one impression in sixteen — a funnel that narrows
- * hard at the top, which is what a directory listing's does.
- *
- * These two are the *only* seeds here. Everything else in `reachFor` is
- * arithmetic over them and over figures this file already owns, which is the
- * rule the whole module is built on: a figure shown twice is computed once.
+ * Empty here is a 7 × 14 grid of zeros: the shape the screen expects, with
+ * nothing in it. `PD_HEAT_MAX` is 0, and the screen reads that as "no range to
+ * shade" and renders its empty state rather than a uniformly blank grid that
+ * looks like a quiet week.
  */
-const LISTING_SEEN_PER_VISIT = 11.4;
-const LISTING_CLICK_RATE = 0.062;
+export const PD_HEAT: number[][] = Array.from({ length: 7 }, () =>
+  Array.from({ length: HEAT_HOURS.length }, () => 0),
+);
+export const PD_HEAT_MAX = Math.max(...PD_HEAT.flat());
+
+/** The server's 7 × 24 grid, narrowed to the hours this map draws. */
+export const heatFromApi = (grid: number[][]): number[][] =>
+  Array.from({ length: 7 }, (_, day) =>
+    HEAT_HOURS.map((hour) => grid[day]?.[hour] ?? 0),
+  );
+
+/* ═══════════════════════════════════════════════════════ the customers ══ */
+
+/**
+ * Who comes in.
+ *
+ * Every field was a seed: 642 customers, a language split, an age split, four
+ * monthly cohorts, a cost-per-new-customer benchmark and a peer count. Three of
+ * those the server measures (`languageMix`, `cohorts`, `costPerNewCustomer`);
+ * one it measures but only for venues in a large enough group
+ * (`benchmarksFor`); and **two it does not collect at all, deliberately** — age
+ * and settled-status are not fields Paylez holds, because the language a
+ * customer chose for themselves is the only demographic signal the spec allows.
+ * Those two are gone rather than zeroed: a bar chart of a thing we do not
+ * measure has no honest empty state.
+ */
+export const PD_CUSTOMERS = {
+  total: 0,
+  /** Percentages — index-aligned with `copy.dashboard.customers.langs`. */
+  langs: [] as number[],
+  /** Monthly cohorts: first-timers, and how many came back inside 30 days. */
+  cohorts: [] as Array<{ first: number; back: number }>,
+  /** Regulars who have not been in for over 30 days. */
+  lapsed: 0,
+  /** The venue's own cost per new customer, over as many months as we have. */
+  perNewPrev: [] as number[],
+  /**
+   * What comparable venues pay for one, and how many they are.
+   *
+   * `null` rather than 0: the server withholds a benchmark until enough venues
+   * are in the group, precisely so a partner cannot back out a competitor's
+   * figure, and "we are not telling you" must not render as "they pay nothing".
+   */
+  benchmark: null as number | null,
+  benchClaim: null as number | null,
+  benchSecond: null as number | null,
+  peers: 0,
+};
+
+/**
+ * A customer who turned profile sharing on.
+ *
+ * Sixteen invented people used to be here, with names, spend, visit counts and
+ * a "tenure" driving a six-month spend chart. The server's `customerTable` is
+ * the real list and it is gated twice — by the `identified_profiles`
+ * entitlement, and by an unrevoked `data_sharing_consents` row per person. Both
+ * gates are the reason this list is much shorter than the customer count beside
+ * it, and the screen says so.
+ */
+export interface RosterEntry {
+  id: string;
+  name: string;
+  init: string;
+  /** Euros, at this venue only. */
+  spent: number;
+  visits: number;
+  /** Days since the last scan. */
+  last: number;
+  status: string;
+  stamps: number;
+  vouchers: number;
+  since: string;
+}
+
+export const PD_ROSTER: RosterEntry[] = [];
+
+/* ═══════════════════════════════════════════════════════════ the scans ══ */
+
+/**
+ * A scan at the counter.
+ *
+ * Forty-eight were generated from the row index — a name from a list of
+ * sixteen, a receipt code, a spend, a campaign — and paged twelve at a time.
+ * There is no endpoint that lists a venue's scans: `analytics.today` counts
+ * them and `GET /v1/venues/:id/pending` lists the ones waiting to be confirmed,
+ * and neither is a till log. So the screen reports the counts it can get and
+ * says the log itself is not available, rather than generating one.
+ */
+export interface ScanRow {
+  hour: number;
+  minute: number;
+  who: string;
+  first: boolean;
+  spent: number;
+  points: number;
+  receipt: string;
+}
+
+export const PD_SCANS: ScanRow[] = [];
+/** Display names, so they are structure rather than copy — nobody translates a name. */
+export const PD_SCAN_NAMES: string[] = [];
+export const PD_SCAN_TOTAL = 0;
+export const PD_SCAN_PAGE = 12;
+
+/* ═════════════════════════════════════════════════════ audiences & quota ══ */
+
+/**
+ * The audiences a deal or notification can be aimed at.
+ *
+ * Five, with a reach, a notifiable count and a send time each — all invented.
+ * The server computes a real audience per deal (`deals.audienceFor`, which is
+ * the honest figure §9.1 asks for: who a push should reach against who it
+ * actually will, after the platform-level frequency cap), but there is no
+ * endpoint that lists the audiences a venue could pick from, so the create
+ * drawer has no sizes to show and says so.
+ */
+export const PD_AUDIENCES: Array<{ reach: number; notifiable: number; sendAt: string }> = [];
+
+/**
+ * Notifications the plan allows a month, and how many are left.
+ *
+ * Real, and reachable: `GET /v1/partner/venues/:id/push-quota` returns exactly
+ * this out of `push_quotas` and the plan's `push_quota` entitlement. Zero here
+ * is the no-session state; `usePartnerPushQuota` is the live one.
+ */
+export const PD_NOTIFY_QUOTA = { total: 0, left: 0, measured: false };
+
+/** Regulars who have earned a reward and are within a visit of the next one. */
+export const PD_NEAR = 0;
+
+/** The last reminder that went out to lapsed campaign members. */
+export const PD_REMIND = { back: 0, of: 0 };
+
+/* ═════════════════════════════════════════════════════ reach: the funnel ══ */
 
 export interface Reach {
   /** The listing in a list, a search result or on the map. */
@@ -838,73 +865,24 @@ export interface Reach {
 }
 
 /**
- * Impressions and clicks for the window the picker is on.
+ * Reach, out of the server's own counters.
  *
- * **The deals are scaled to the window and this is why.** `PD_DEALS` carries a
- * month of funnel counters as fixed seeds, and the visits, claims and money on
- * this screen all move with the range picker. Reading a seven-day claim count
- * against a thirty-day impression count is the arithmetic that made
- * `metricsFor` scale its series in the first place, and doing it here would
- * print a click rate that quadruples when somebody narrows the window.
+ * This is the one panel that was already live before the rewrite, and the
+ * pattern the rest now follows. It invents nothing: every figure is a row
+ * somebody's browser posted through `api/reach.ts` and `analytics.reach` added
+ * up. Its twin — `reachFor`, which multiplied visits by an invented
+ * impressions-per-visit ratio — is gone.
  *
- * So the seeds are treated as a *month* and taken pro rata on the window's own
- * share of a month's visits — which is the share the series already computed,
- * so the two cannot disagree about how much of the month this is.
- */
-export function reachFor(days: RangeDays): Reach {
-  const metrics = metricsFor(days);
-  const month = metricsFor(RANGE_DAYS).totals.visits;
-  const share = month > 0 ? metrics.totals.visits / month : 0;
-
-  const listingSeen = Math.round(metrics.totals.visits * LISTING_SEEN_PER_VISIT);
-  const listingClicks = Math.round(listingSeen * LISTING_CLICK_RATE);
-
-  const live = PD_DEALS.filter((deal) => deal.state === 'live');
-  const dealSeen = Math.round(sum(live.map((deal) => deal.seen)) * share);
-  const dealClicks = Math.round(sum(live.map((deal) => deal.opened)) * share);
-
-  const seen = listingSeen + dealSeen;
-  const clicks = listingClicks + dealClicks;
-  const claims = metrics.totals.claims;
-
-  return {
-    listingSeen,
-    listingClicks,
-    dealSeen,
-    dealClicks,
-    seen,
-    clicks,
-    /* A rate over nothing is 0, not NaN — and not blank, which on this screen
-       means "we are not telling you". */
-    clickRate: seen > 0 ? (clicks / seen) * 100 : 0,
-    claims,
-    claimRate: clicks > 0 ? (claims / clicks) * 100 : 0,
-  };
-}
-
-/**
- * The same shape, out of the server's own counters.
- *
- * `reachFor` above invents its two ratios and derives the rest; this invents
- * nothing — every figure is a row somebody's browser posted through
- * `api/reach.ts` and `analytics.reach` counted. Both land in one `Reach` so the
- * panel has one shape to draw and cannot grow a second layout for the live
- * case, which is how the two would start disagreeing about what a click is.
- *
- * Three things it has to get right, all of them stated by the server:
+ * Three things it has to get right, all stated by the server:
  *
  * - **The rates arrive as 0–1 and this screen speaks percent.** Multiplying
- *   here rather than at the call site keeps the unit attached to the shape.
- * - **A rate over nothing is 0**, which the server already guarantees — it is
- *   not re-derived, only carried, so there is one opinion about it.
- * - **`uniqueClickers` is not carried at all.** It is the one figure in that
- *   response that takes the min-cohort floor, its value is `null` when
- *   suppressed, and `Reach` has no field that can hold "we are not telling
- *   you". A `?? 0` into a number field is exactly the lie suppression exists to
- *   prevent, so it stays in `ReachReport` until the panel has words for it.
- *
- * `import type` only, so this module stays React-free and `npm run verify` can
- * go on loading it.
+ *   here keeps the unit attached to the shape.
+ * - **A rate over nothing is 0**, which the server already guarantees; it is
+ *   carried rather than re-derived, so there is one opinion about it.
+ * - **`uniqueClickers` is not carried at all.** It takes the min-cohort floor,
+ *   its value is `null` when suppressed, and `Reach` has no field that can hold
+ *   "we are not telling you". A `?? 0` into a number field is the lie
+ *   suppression exists to prevent, so it stays in `ReachReport`.
  */
 export function reachFromApi(report: ReachReport): Reach {
   /* The listing is the row with no deal id; the server always emits it, but
@@ -928,179 +906,56 @@ export function reachFromApi(report: ReachReport): Reach {
   };
 }
 
-/**
- * The share of visits that ended in a loyalty reward being collected.
- *
- * The fourth overview tile is the campaign model's `used` count, and the
- * sparkline under it is the day's visits at this rate — so the rate is divided
- * out of those two rather than written down beside them, for the same reason
- * `CLAIM_RATIO` is exported one tile over. A literal here (it was `0.07`) is a
- * second opinion about a number this file already knows, and it stops agreeing
- * with the headline the first time a campaign's `used` is edited.
- */
-export const REWARD_RATIO =
-  PD_TOTALS.visits > 0 ? PD_CAMPAIGN_MODEL.used / PD_TOTALS.visits : 0;
-
-/**
- * Today's scans at the counter.
- *
- * The prototype generates 48 and pages them twelve at a time; this keeps the
- * generator and the first page, because a page-2 button with no server behind it
- * is a control that lies. The arithmetic is its own — every field is a function
- * of the row index, so the list is stable across renders.
- */
-export interface ScanRow {
-  /** Minutes before the most recent scan, turned into a clock time at render. */
-  hour: number;
-  minute: number;
-  /** Index into `PD_SCAN_NAMES`. */
-  who: number;
-  first: boolean;
-  /** Euros. */
-  spent: number;
-  points: number;
-  receipt: string;
-  /** Index into `copy.dashboard.scans.places`. */
-  place: number;
-  /** Index into `copy.dashboard.campaigns.rows`, or −1 for no campaign. */
-  campaign: number;
-  need: number;
-  done: number;
-}
-
-/** Display names, so they are structure rather than copy — nobody translates a name. */
-export const PD_SCAN_NAMES = [
-  'Marta Kowalczyk', 'Dmytro Savchenko', 'Anna Nowak', 'Kerem Yılmaz',
-  'Olena Bondar', 'Piotr Zieliński', 'Nigora Rashidova', 'Aylin Demir',
-  'Jakub Wiśniewski', 'Sofia Petrenko', 'Tomasz Lewandowski', 'Rustam Aliyev',
-  'Katarzyna Wójcik', 'Iryna Melnyk', 'Michał Dąbrowski', 'Elif Kaya',
-];
-
-/** How many scans the counter took in the window, of which the table shows twelve. */
-export const PD_SCAN_TOTAL = 48;
-export const PD_SCAN_PAGE = 12;
-
-function makeScans(count: number): ScanRow[] {
-  const alpha = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-  /* Campaign, and how many visits its reward needs. −1 is a scan that earned
-     points but belongs to no campaign, which most of them do. */
-  const camps: Array<[number, number]> = [
-    [1, 5], [0, 8], [-1, 0], [3, 4], [-1, 0], [1, 5],
-  ];
-  const rows: ScanRow[] = [];
-  for (let i = 0; i < count; i++) {
-    let receipt = '';
-    for (let k = 0; k < 3; k++) receipt += alpha[(i * 5 + k * 9) % alpha.length];
-    const [campaign, need] = camps[i % camps.length];
-    rows.push({
-      hour: Math.max(18 - Math.floor(i / 4), 7),
-      minute: (9 + i * 17) % 60,
-      who: (i * 5 + Math.floor(i / 3)) % PD_SCAN_NAMES.length,
-      first: i % 5 === 0,
-      spent: zl((1780 + ((i * 6421) % 4900)) / 100),
-      points: 9 + (i % 7) * 4,
-      receipt: `${receipt}${i % 9}`,
-      place: i % 3,
-      campaign,
-      need,
-      done: need ? 1 + ((i * 3) % need) : 0,
-    });
-  }
-  /* Newest first, which is what the screen's own lede promises. The generator
-     walks the hour down every four rows but the minute up within each four, so
-     unsorted it reads 18:09, 18:26, 18:43, 18:00 — a till log that goes
-     backwards three times a page. */
-  return rows.sort((a, b) => b.hour * 60 + b.minute - (a.hour * 60 + a.minute));
-}
-
-/**
- * All forty-eight, not the first twelve.
- *
- * This used to build one page, on the argument that a "Next" button with no
- * server behind it is a control that lies. It is the generator that settles
- * that: every field is a pure function of the row index, so asking it for 48
- * rows costs nothing and the prototype's pager becomes true rather than
- * decorative. The screen still shows `PD_SCAN_PAGE` at a time.
- */
-export const PD_SCANS = makeScans(PD_SCAN_TOTAL);
-
 /* ────────────────────────────────────────────────────────────── assistant ── */
 
 /**
- * The numbers the assistant quotes.
+ * The numbers the assistant is allowed to quote.
  *
- * It is the one screen that talks, so every figure it says out loud has to come
- * from somewhere the rest of the dashboard can be checked against — the
- * prototype's own rule, stated in its composer note: *every figure I use comes
- * from your own numbers or cafés like yours, I will not make one up*. These are
- * that second half, the seeds the prototype quotes at the owner; the first half
- * it reads out of the models above.
+ * CLAUDE.md's rule for this screen is that every figure in every sentence it
+ * says arrives through a `fill()` hole from this file — which is exactly what
+ * stops it inventing one. The corollary, now that the seeds are gone, is that
+ * **it has nothing to quote and must say so**: an assistant that fills a hole
+ * with 0 because it cannot know is the failure the rule exists to prevent, so
+ * `measured` is false and the screen refuses to draft rather than drafting
+ * around blanks.
+ *
+ * `budgets` and `weeks` survive because they are not measurements — they are the
+ * sizes the assistant *offers*, the steps on a chooser, and a chooser with no
+ * steps is a broken control rather than an honest one. Everything else here was
+ * a claim about this venue: a quiet window, a peer count, a free-item multiple,
+ * how much room the month has left, what share of customers read Russian, how
+ * many regulars would have qualified at a lower tier. Every one of those is
+ * something the server can answer once there is a session
+ * (`assistant.venueContext`, `analytics.heatmap`, `analytics.languageMix`,
+ * `budget.budgetFor`), and none of them is something this device can.
  */
 export const PD_ASSIST = {
+  /** False until a venue's own context has been fetched. Gate every sentence on it. */
+  measured: false,
   /** The quietest stretch, and how far below the weekly average it runs. */
-  quietDays: [1, 2] as const,
-  quietFrom: '14:00',
-  quietTo: '16:00',
-  quietBelow: 60,
-  /** How many cafés in the city the free-item comparison is drawn from. */
-  peers: 47,
-  /** Free-item deals against percentage ones, in claims. */
-  itemMultiple: 2.4,
-  /** What one free filter coffee costs the venue. */
-  itemCost: zl(5),
-  /**
-   * How much room the month has left before a hot deal eats into margin.
-   *
-   * Hot deals have no pool of their own — the loyalty and voucher budgets do not
-   * cover them — so this is the one figure that decides whether the assistant
-   * takes the budget you asked for or quietly builds a smaller version and says
-   * so. The prototype makes it a demo switch; here it is a number the three
-   * budget chips are compared against, so the warning appears when it is true.
-   */
-  hotRoom: zl(260),
-  /** The three budgets it offers, and the three durations. */
-  budgets: [zl(200), zl(400), zl(700)],
+  quietDays: [] as number[],
+  quietFrom: '',
+  quietTo: '',
+  quietBelow: 0,
+  /** How many venues a comparison is drawn from. */
+  peers: 0,
+  itemMultiple: 0,
+  itemCost: 0,
+  /** How much room the month has left before a hot deal eats into margin. */
+  hotRoom: 0,
+  /** The three budgets it offers, and the three durations. Structure, not data. */
+  budgets: [200, 400, 700],
   weeks: [2, 4, 8],
-  /** Where the draft starts: audience 0 is everyone near the venue. */
   audience: 0,
-  /** The claim ceiling it proposes, and the hour it would send at. */
-  stopAfter: 80,
-  sendAt: '07:30',
-  /** Customers whose app language is Russian, as a share — the gap it names. */
-  russianShare: 42,
-
-  /*
-   * The three figures below are seeds because the sentences that carry them are
-   * counterfactual or historical, and neither is something the thirty-day model
-   * can derive. They live here rather than as literals at the call site for the
-   * reason the file's header gives and the assistant's own composer note
-   * promises the owner: every number it says comes from this table. Three of
-   * them did not, and an owner who went looking for "61 more regulars" on the
-   * Vouchers screen would have found nothing that produces it.
-   */
-
-  /** The students inside audience 0, and so what dropping them costs its reach. */
-  students: 880,
-  /**
-   * The stamp threshold it offers to lower to, and how many more of this venue's
-   * regulars would have qualified there. A counterfactual: the ledger records
-   * who crossed 600, not who would have crossed 450.
-   */
-  tierLower: 450,
-  tierLowerReached: 61,
-  /** Customers who came twice last month, for the "against N last month" line. */
-  twiceBefore: 46,
-  /**
-   * Vouchers redeemed last month, the figure this month is compared against.
-   *
-   * Only the *previous* month is a seed. This month's total is
-   * `sum(PD_TIERS.redeemed)` and the percentage is the drop between the two, so
-   * the sentence cannot disagree with the tier table it is explaining — which
-   * it was one edit away from doing, with "from 158 to 152" written out in all
-   * five languages.
-   */
-  redeemedBefore: 158,
-} as const;
+  stopAfter: 0,
+  sendAt: '',
+  russianShare: 0,
+  students: 0,
+  tierLower: 0,
+  tierLowerReached: 0,
+  twiceBefore: 0,
+  redeemedBefore: 0,
+};
 
 /** The reward the assistant drafts: a free item, or a share off the bill. */
 export type AssistReward = 'item' | 'percent';
@@ -1108,16 +963,13 @@ export type AssistReward = 'item' | 'percent';
 /**
  * The deal text the assistant writes, in all five languages at once.
  *
- * Not dictionary copy, and the one table in the building that deliberately is
- * not: the point of the language tabs on the draft is that an owner reading in
- * Polish sees what a Russian-speaking customer will read. Copy that lived in
- * `pl.ts` would be the Polish *for* five languages, which is a different thing
- * and a useless one. The prototype makes the same call — its own set is fixed
- * and its UI language is a separate control.
- *
- * The languages are the site's five, not the prototype's (which offers Turkish
- * and Azerbaijani): a draft cannot promise a translation the product does not
- * ship.
+ * **Copy, not data**, and the reason it survived the cut. The point of the
+ * language tabs on the draft is that an owner reading in Polish sees what a
+ * Russian-speaking customer will read; copy that lived in `pl.ts` would be the
+ * Polish *for* five languages, which is a different thing and a useless one.
+ * The prototype makes the same call. Nothing here is a claim about a venue —
+ * it is the wording of an offer, and it is as true of an empty dashboard as of
+ * a busy one.
  */
 export const PD_ASSIST_COPY: Record<
   AssistReward,
@@ -1168,6 +1020,8 @@ export const PD_ASSIST_COPY: Record<
     },
   },
 };
+
+/* ═══════════════════════════════════════════════════════════════ drawing ══ */
 
 /**
  * A polyline through a series, as an SVG `d` string in a 0–100 × 0–100 box.

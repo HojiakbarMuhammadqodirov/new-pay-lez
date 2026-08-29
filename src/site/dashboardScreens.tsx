@@ -1,73 +1,77 @@
 import { useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
-import { Icon } from './icons';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill, group as groupDigits } from './i18n/currency';
 import {
-  AVG_SPEND,
-  CLAIM_RATIO,
   HEAT_HOURS,
-  PD_ASSIST,
-  PD_AUDIENCES,
-  PD_CAMPAIGN_MODEL,
-  PD_CAMPAIGNS,
-  PD_COST_ROWS,
-  PD_COST_TOTAL,
-  PD_CUSTOMERS,
-  PD_DEALS,
-  PD_HEAT,
-  PD_HEAT_MAX,
-  PD_MAX_PER_VOUCHER,
-  PD_NEAR,
-  PD_TIERS,
-  PD_VOUCHER_BUDGET,
-  PD_NOTIFY_QUOTA,
-  PD_REMIND,
-  PD_ROSTER,
-  PD_SCAN_NAMES,
-  PD_SCAN_PAGE,
-  PD_SCANS,
-  PD_VOUCHER_MODEL,
-  REWARD_RATIO,
-  dealNotify,
-  metricsFor,
-  reachFor,
+  campaignFromApi,
+  campaignModel,
+  dealFromApi,
+  heatFromApi,
+  metricValue,
   reachFromApi,
-  voucherModelFor,
-  polyarea,
-  polyline,
+  totalsFrom,
+  voucherModelFrom,
+  type CampaignRow,
   type PartnerDeal,
-  type RosterEntry,
+  type TierRow,
 } from './partnerMetrics';
-import { usePartnerVenueId, useReach } from './api/reach';
+import {
+  chain,
+  isNoSession,
+  minorToEuro,
+  usePartnerAnalytics,
+  usePartnerBudget,
+  usePartnerCampaigns,
+  usePartnerCustomers,
+  usePartnerDeals,
+  usePartnerOverview,
+  usePartnerToday,
+  usePartnerVenueId,
+  type Metric,
+} from './api/partner';
+import { useReach } from './api/reach';
+import type { ApiError } from './api/client';
+import type { ApiState } from './api/useApi';
 import { Assistant } from './dashboardAssistant';
-import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
 
 /**
- * The seven dashboard screens that are not the profile form.
+ * The six dashboard screens that are not the assistant or the profile form.
  *
- * This is `b2b/Paylez Partner Dashboard v2.dc.html` rebuilt — the same screens,
- * the same panels in the same order, the same sentences, and the same figures,
- * which come from `partnerMetrics.ts` running that file's own arithmetic on that
- * file's own seeds. What is *not* carried over is its palette: the prototype is
- * ink-on-bone with a mint accent and no theme, and every colour here comes from
- * `site.css` instead, which is what buys the dark theme, five languages and the
- * reader's own currency.
+ * This was `b2b/Paylez Partner Dashboard v2.dc.html` rebuilt: the same panels
+ * in the same order, filled with that file's own seeds run through that file's
+ * own arithmetic. **Every one of those figures is gone.** A venue owner opening
+ * this page used to read "1,247 visits · about 9,900 zł in sales · 149 claims"
+ * under their own venue's name, and not one of those numbers had been measured
+ * anywhere. The panels remain; what fills them now is either a row the server
+ * counted or a sentence saying nobody has counted anything yet.
  *
- * **Glass is the surface.** Every panel is `.pd-glass` over the aurora on
- * `.pd-app` — the prototype's white cards on a bone page, restated as sheets
- * with the page showing through. Two things follow and both are load-bearing:
- * the sheet opacity is one token (`--pd-glass`, set by the worst case, which is
- * a paragraph over the brightest part of the wash and not a card over an empty
- * corner), and a panel that carries dense numbers — the tables, the heat map —
- * takes `data-solid` and drops the blur, because tabular figures at 0.78rem over
- * a moving gradient is exactly the reading the glass rule exists to protect.
+ * ── three states, and one of them is not a number ─────────────────────────
  *
- * Charts are divs and inline SVG paths, as everywhere else on this site. A bar
- * is a width, a column is a height, a line is a normalised `d` string; that is
- * the whole technique, and it buys theme tokens and translation where a canvas
- * or a screenshot would buy neither.
+ * Every screen resolves an `ApiState` — `loading | ready | error` — and renders
+ * one of three things:
+ *
+ *  - **ready** → the measured figures, from `api/partner.ts`.
+ *  - **loading** → "still asking". Not a skeleton full of zeros.
+ *  - **error** → a panel that says *what would put a number here*, and, when the
+ *    reason is that this device has no partner session at all, says that too.
+ *
+ * **A failed request is never a zero.** The whole reason `useApi` returns a
+ * discriminated union rather than `{ data, error, loading }` is that "we could
+ * not ask" and "we asked and the answer is nothing" are opposite findings, and
+ * a venue owner acts differently on each. Anything below that writes `?? 0` on
+ * a metric has undone the rewrite.
+ *
+ * ── most of the time the answer is "no session", and that is honest ───────
+ *
+ * The site's own auth is `localStorage` (`src/site/auth/users.ts`), so an owner
+ * who signed in on `#/signin` has no API token and every request here resolves
+ * to `no-partner-session`. That is the true state of the product today. The
+ * empty copy is `copy.dashboard.empty`, which already existed in all five
+ * languages and had never been rendered — it is written for exactly this: what
+ * this screen is for, and the one thing to do that would start filling it.
+ *
+ * Charts are divs and inline SVG paths, as everywhere else on this site.
  */
 
 /* ─────────────────────────────────────────────────────────────── shared ── */
@@ -86,81 +90,137 @@ function useNum() {
 }
 
 /**
- * The same separator, for `[data-count]`.
+ * A metric that may have been withheld.
  *
- * The count-up rewrites `textContent` every frame, so it takes the separator as
- * an attribute rather than a formatted string. It has to be the *same* one
- * `useNum` uses or the headline and the tile beside it break their thousands
- * differently — which is exactly what happened when this was a hardcoded space.
+ * The single place a `Metric` becomes text, so there is one opinion about what
+ * `suppressed` looks like. It is **not** a zero and not a blank: a blank reads
+ * as a rendering bug, and a zero reads as a finding.
  */
-function useGroup() {
-  return useCurrency().group;
+function Figure({ metric, format }: { metric: Metric | undefined; format?: (n: number) => string }) {
+  const dashboard = useCopy().dashboard;
+  const value = metricValue(metric);
+  if (value === null) {
+    return (
+      <b className="pd-withheld" title={dashboard.unmeasured.withheld}>
+        —
+      </b>
+    );
+  }
+  return <b>{format ? format(value) : String(value)}</b>;
 }
 
-/** Signed, never coloured — one accent means a fall cannot be red. */
-function Delta({ value, note }: { value: number; note: string }) {
+/** A labelled proportion bar. One accent, so the parts differ by width alone. */
+function Bar({ label, value, of, note }: { label: string; value: number; of: number; note: string }) {
   return (
-    <span className="pd-delta" data-dir={value >= 0 ? 'up' : 'down'}>
-      <b>
-        {value >= 0 ? '↑' : '↓'} {Math.abs(value)}%
-      </b>
-      <i>{note}</i>
+    <div className="pd-bar-row">
+      <span>{label}</span>
+      <span className="pd-bar">
+        <i style={{ width: `${of > 0 ? Math.max(1, Math.min(100, (value / of) * 100)) : 0}%` }} />
+      </span>
+      <b>{note}</b>
+    </div>
+  );
+}
+
+/** Live / paused, used / unused — the one chip the screens repeat. */
+function State({ on, children }: { on: boolean; children: string }) {
+  return (
+    <span className="pd-state" data-on={on ? 'true' : undefined}>
+      {children}
     </span>
   );
 }
 
-/** A labelled proportion bar — the workhorse of four of these screens. */
-function Bar({
-  label,
-  value,
-  of,
-  note,
-  muted,
-}: {
-  label: string;
-  value: number;
-  of: number;
-  note?: string;
-  muted?: boolean;
-}) {
+/**
+ * The panel an owner sees when there is nothing measured.
+ *
+ * Deliberately not a blank card. `copy.dashboard.empty` is seven entries, one
+ * per screen, each of them a title, a sentence about what this screen is for,
+ * and the single action that would start filling it — written in five languages
+ * and, until now, never rendered. A dashboard that cannot show a figure should
+ * still tell an owner what the figure would be and how to get one.
+ *
+ * The second paragraph is the *reason*, and it has to distinguish the two. "No
+ * partner session on this device" is a property of the build; "the server did
+ * not answer" is a fault. An owner about to conclude that nobody has visited
+ * them needs to know it is neither.
+ */
+function Unmeasured({ index, error }: { index: number; error?: ApiError }) {
+  const dashboard = useCopy().dashboard;
+  const { openDrawer, toast } = useDashboard();
+  const copy = dashboard.empty[index];
+
+  const reason = error === undefined
+    ? null
+    : isNoSession(error)
+      ? dashboard.unmeasured.noSession
+      : dashboard.unmeasured.serverSilent;
+
   return (
-    <div className="pd-bar-row">
-      <span className="pd-bar-label">{label}</span>
-      <span className="pd-bar-track">
-        <i
-          data-muted={muted ? 'true' : undefined}
-          style={{ width: `${of > 0 ? Math.min(100, (value / of) * 100) : 0}%` }}
-        />
-      </span>
-      <b>{note ?? value}</b>
+    <div className="pd-glass pd-panel pd-empty" data-reveal>
+      <h3>{copy.title}</h3>
+      <p className="pd-fine">{copy.body}</p>
+      {reason && <p className="pd-fine">{reason}</p>}
+      <button
+        type="button"
+        className="btn btn-solid"
+        onClick={() => (index === 1 ? openDrawer('deal') : index === 2 ? openDrawer('campaign') : toast(dashboard.notWired))}
+      >
+        {copy.action}
+      </button>
+    </div>
+  );
+}
+
+/** In flight. One line, and never a zero standing in for an answer. */
+function Asking() {
+  const dashboard = useCopy().dashboard;
+
+  return (
+    <div className="pd-glass pd-panel pd-empty" data-reveal>
+      <p className="pd-fine">{dashboard.unmeasured.asking}</p>
     </div>
   );
 }
 
 /**
- * A seven-day trend, drawn in a 100 × 100 box and stretched to the cell.
+ * A screen, folded over its state.
  *
- * `preserveAspectRatio="none"` is what makes one normalised path fit any width;
- * the stroke is kept at its authored weight by `vector-effect` in `site.css`,
- * without which a path squashed into a 76 × 30 cell draws a wedge.
+ * Every screen below is `<Screen state={…} index={…}>{(data) => …}</Screen>`,
+ * which means the "we could not ask" branch is written once. A screen added
+ * later cannot forget it and quietly render zeros.
  */
-function Spark({ values }: { values: number[] }) {
-  const [line, area] = useMemo(() => [polyline(values), polyarea(values)], [values]);
-  if (!line) return null;
-  return (
-    <svg className="pd-spark" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-      <path className="pd-spark-fill" d={area} />
-      <path className="pd-spark-line" d={line} />
-    </svg>
-  );
+function Screen<T>({
+  state,
+  index,
+  children,
+}: {
+  state: ApiState<T>;
+  index: number;
+  children: (data: T) => React.ReactNode;
+}) {
+  if (state.status === 'loading') return <div className="pd-stack"><Asking /></div>;
+  if (state.status === 'error') {
+    return (
+      <div className="pd-stack">
+        <Unmeasured index={index} error={state.error} />
+      </div>
+    );
+  }
+  return <>{children(state.data)}</>;
 }
 
-/** The pill every state in the product wears — deal, campaign, scan. */
-function State({ state, label }: { state: string; label: string }) {
+/** A panel whose question the API does not answer. Says which, and stops. */
+function NoSource({ title, detail }: { title: string; detail?: string }) {
+  const dashboard = useCopy().dashboard;
+
   return (
-    <span className="pd-state" data-state={state}>
-      {label}
-    </span>
+    <div className="pd-glass pd-panel" data-reveal>
+      <div className="pd-panel-head">
+        <span className="console-label">{title}</span>
+      </div>
+      <p className="pd-fine">{detail ?? dashboard.unmeasured.noSource}</p>
+    </div>
   );
 }
 
@@ -171,1065 +231,629 @@ function Overview() {
   const copy = dashboard.overview;
   const money = useMoney();
   const num = useNum();
-  const digitGroup = useGroup();
-  /* Every figure below is a figure *in the window*, so they come from the
-     picker in the bar rather than from a module constant. What is not in here
-     is the cost side — see the note on `metricsFor`. */
-  const metrics = metricsFor(useDashboard().range);
-  const { totals, series, roi } = metrics;
-  const rangeLabel = dashboard.rangeLabels[metrics.index];
 
-  const campaigns = PD_CAMPAIGN_MODEL;
-  const vouchers = PD_VOUCHER_MODEL;
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
 
-  /*
-   * Reach is the one panel here with a server behind it, so it is the one panel
-   * that can be either.
-   *
-   * `usePartnerVenueId` asks the API whose venue this device's token owns —
-   * `null` when there is no partner session, which is the normal case while the
-   * site's own auth is still `localStorage`. Live, the figures are counted rows
-   * (`api/reach.ts` posts them, `analytics.reach` adds them up); otherwise they
-   * fall back to `reachFor`, which is the demo's floor and stays exactly as it
-   * was.
-   *
-   * **A failed request is not a zero.** `error` and `loading` both fall back to
-   * the seeds and the panel says so, because "we could not ask" and "nobody has
-   * seen you" are opposite findings and this is the panel that exists to tell
-   * those two apart.
-   */
-  const venueId = usePartnerVenueId();
+  const overviewApi = usePartnerOverview(venueId);
+  const analyticsApi = usePartnerAnalytics(venueId);
+  const dealsApi = usePartnerDeals(venueId);
+  const campaignsApi = usePartnerCampaigns(venueId);
   const reachApi = useReach(venueId);
-  const liveReach = reachApi.state.status === 'ready' ? reachApi.state.data : null;
-  /* Windowed like everything else on this screen — see `reachFor`, which scales
-     the deals' month-long counters onto the picker's range so a click rate does
-     not quadruple when somebody narrows it. */
-  const reach = liveReach ? reachFromApi(liveReach) : reachFor(metrics.days);
-  /* The server's window is a calendar month and the picker's is a rolling day
-     count, so a live panel states the period it actually answered for rather
-     than borrowing the chip beside a figure it does not describe. */
-  const reachRange = liveReach ? liveReach.period : rangeLabel;
 
-  /*
-   * The figures inside the three "what the month noticed" notes.
-   *
-   * The third already filled itself from the campaign model, and the comment on
-   * the panel said so — the other two were the numbers written out inside the
-   * sentence, in five languages. Two things follow from that, and the first one
-   * had already happened: the 10% tier note claimed **27** customers reached it
-   * while `PD_TIERS` says 59, which is what the assistant one click away prints
-   * from the same seed. Two screens of one dashboard, a click apart, disagreeing
-   * about the same quantity. The second is the standing risk the root
-   * `CLAUDE.md` names — edit a deal's `seen` or `claimed` and this panel goes on
-   * quoting the old one, silently, five times over.
-   *
-   * Found by `kind` rather than by index: which row of `PD_DEALS` is the free
-   * item is a property of the row, not of its position in the table.
-   */
-  const itemDeal = PD_DEALS.find((deal) => deal.kind === 'item') ?? PD_DEALS[0];
-  const pctDeal = PD_DEALS.find((deal) => deal.kind === 'percent') ?? PD_DEALS[0];
-  const tier = PD_TIERS[1];
-  const noticeFigures: Record<string, string>[] = [
-    {
-      reached: num(tier.issued),
-      pct: String(tier.pct),
-      points: num(tier.points),
-      lower: num(PD_ASSIST.tierLower),
-      more: num(PD_ASSIST.tierLowerReached),
-    },
-    {
-      itemClaims: num(itemDeal.claimed),
-      itemSeen: num(itemDeal.seen),
-      pctBadge: pctDeal.badge,
-      pctClaims: num(pctDeal.claimed),
-      pctSeen: num(pctDeal.seen),
-    },
-    {},
-  ];
+  const state = chain(venue, overviewApi);
 
-  /* The four tiles' figures and their sparklines. The last has no delta: it is
-     a running count for the month rather than a comparison, and inventing a
-     previous month to compare it against is the one thing this screen must not
-     do — it is the screen that explains what it is willing to claim.
+  /* Reach is its own request and its own state: it is the one report worth
+     reading for a venue with no visits at all, which is precisely when the rest
+     of this screen is a screen of "nothing yet". */
+  const reach = reachApi.state.status === 'ready' ? reachFromApi(reachApi.state.data) : null;
+  const reachPeriod = reachApi.state.status === 'ready' ? reachApi.state.data.period : null;
 
-     The two derived shapes read their rate from `partnerMetrics.ts` rather than
-     restating it. Both were literals here — 0.4598 and 0.07 — which is a figure
-     and the shape beside it describing two different venues the moment a seed
-     over there is edited, on the one screen whose subject is what it is willing
-     to stand behind. */
-  const tiles = [
-    { value: totals.visits, delta: 12.4, series: series.visits.slice(-14) },
-    {
-      value: totals.claims,
-      delta: 8.1,
-      series: series.visits.slice(-14).map((v) => Math.round(v * CLAIM_RATIO)),
-    },
-    { value: totals.redeemed, delta: -3.6, series: series.redeemed.slice(-14) },
-    {
-      value: campaigns.used,
-      delta: null,
-      series: series.visits.slice(-14).map((v) => Math.round(v * REWARD_RATIO)),
-    },
-  ];
-
-  const support = [
-    num(totals.visits),
-    money(AVG_SPEND, 'unit'),
-    num(totals.newCustomers),
-  ];
-
-  /* The three deals customers can see today, plus the top campaign and the
-     voucher tiers — which is what "running right now" means: everything with a
-     customer-facing surface, not everything in the database. */
-  const live = PD_DEALS.filter((deal) => deal.state === 'live');
+  const analytics = analyticsApi.state.status === 'ready' ? analyticsApi.state.data : null;
+  const deals = dealsApi.state.status === 'ready' ? dealsApi.state.data : null;
+  const campaigns = campaignsApi.state.status === 'ready' ? campaignsApi.state.data : null;
 
   return (
-    <div className="pd-stack">
-      {campaigns.tight && (
-        <div className="pd-glass pd-alert" data-reveal>
-          <Icon name="arrow" size={18} />
-          <p>
-            {fill(copy.budgetAlert, {
-              month: dashboard.month,
-              amount: money(Math.max(0, vouchers.available), 'exact'),
-            })}
-          </p>
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            {copy.budgetAction}
-          </button>
-        </div>
-      )}
+    <Screen state={state} index={0}>
+      {(data) => {
+        const toEuro = (minor: number) => minorToEuro(minor, data.budget.currency);
+        /* The venue's *own* average transaction, from `budget.averageCheck` —
+           which is the median of its own confirmed scans. The seeded version
+           quoted a prototype café's 34.1 zł at every owner as though it were
+           theirs, and it was the multiplier behind every money estimate here. */
+        const avgSpend = toEuro(data.budget.averageCheck.minor);
+        /* Redemptions come off `roiByFeature`, which counts `issued_vouchers`
+           with a `redeemed_at` in the window. Zero when that report is not on
+           the plan — and the tile that shows it renders a dash in that case
+           rather than reading this, because the two mean different things. */
+        const redeemed =
+          analytics?.roi?.find((row) => row.feature === 'vouchers')?.outcome ?? 0;
+        const totals = totalsFrom(data.overview, reach?.claims ?? 0, redeemed, avgSpend);
 
-      {/* The headline panel. Three claims at three strengths, in descending
-          order of how much we can stand behind them: counted, estimated, and
-          the subset we would defend. Stacking them is the design — a dashboard
-          that shows only the estimate is a brochure. */}
-      <div className="pd-glass pd-hero" data-ink="paper" data-reveal>
-        <div className="pd-hero-main">
-          <span className="console-label">
-            {fill(copy.kicker, { range: rangeLabel })}
-          </span>
+        const loyalty = campaignModel(
+          (campaigns ?? []).map((row) => campaignFromApi(row, toEuro)),
+          data.budget.loyalty,
+        );
+        const tiers: TierRow[] = data.budget.tiers.map((tier) => ({
+          pct: tier.discountPct,
+          points: tier.pointsCost,
+          issued: 0,
+          redeemed: 0,
+          cap: toEuro(tier.maxDiscountMinor),
+          remaining: tier.estimatedRemaining,
+        }));
+        const vouchers = voucherModelFrom(
+          data.budget.voucher,
+          tiers,
+          avgSpend,
+          Math.max(0, ...tiers.map((t) => t.cap)),
+        );
 
-          <span className="pd-hero-eyebrow">{copy.countedLabel}</span>
-          <p className="pd-counted">
-            <b data-count={totals.visits} data-group={digitGroup}>
-              0
-            </b>
-            <span>{copy.counted}</span>
-          </p>
-          <p className="pd-fine pd-counted-new">
-            {fill(copy.countedNew, { n: num(totals.newCustomers) })}
-          </p>
+        const liveDeals = (deals ?? [])
+          .map((row) => dealFromApi(row, toEuro))
+          .filter((deal) => deal.state === 'live');
 
-          <div className="pd-estimate">
-            <span className="pd-tag">{copy.estimateTag}</span>
-            <b>{fill(copy.estimate, { amount: money(totals.estimate, 'soft') })}</b>
-            <p className="pd-fine">
-              {fill(copy.estimateNote, { avg: money(AVG_SPEND, 'unit') })}
-            </p>
-          </div>
+        /* What the month cost, from the server's own four-way breakdown —
+           subscription, loyalty, vouchers, deals — which is `costPerNewCustomer`
+           summing `subscriptions`, `budget_movements` and `transactions`. The
+           four seeded rows here were a flat fee somebody typed and three pool
+           figures derived from it. */
+        const cost = analytics?.costPerNewCustomer ?? null;
+        const costRows = cost
+          ? [
+              toEuro(cost.breakdown.subscription),
+              toEuro(cost.breakdown.loyalty),
+              toEuro(cost.breakdown.vouchers),
+              toEuro(cost.breakdown.deals),
+            ]
+          : null;
+        const costTotal = cost ? toEuro(cost.spendMinor) : null;
+        /* A ratio nobody has both terms for is null, not zero — and never
+           "Paylez lost you money", which is what a 0 in this slot reads as. */
+        const roi =
+          costTotal !== null && costTotal > 0 ? totals.attributedMoney / costTotal : null;
 
-          <div className="pd-claim">
-            <span className="console-label">{copy.claimTitle}</span>
-            <b>
-              {fill(copy.claim, {
-                visits: num(totals.attributed),
-                amount: money(totals.attributedMoney, 'soft'),
-              })}
-            </b>
-            <p className="pd-fine">{copy.claimNote}</p>
-          </div>
-        </div>
-
-        <div className="pd-support">
-          {copy.support.map((row, index) => (
-            <div key={row.label}>
-              <span>{row.label}</span>
-              <b>{support[index]}</b>
-              <i>{row.note}</i>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/*
-        Who saw you — above the cost panel, because it is the top of the funnel
-        every other figure on this screen sits below.
-
-        It is here because without it a venue nobody has heard of and a venue
-        everybody scrolls past render identically: zeroes, or small numbers, with
-        nothing to say which. Those two have opposite fixes — one needs to be
-        seen, the other needs a better offer — and an owner cannot pick between
-        them from a visit count.
-
-        The split underneath is the other half of the answer. "Seen four thousand
-        times" reads well until you find that all of it was the listing and none
-        of it was the offer you are paying to run.
-      */}
-      <div className="pd-glass pd-panel pd-reach" data-reveal>
-        <div className="pd-panel-head">
-          <span className="console-label">{copy.reachTitle}</span>
-          <span className="pd-chip">{reachRange}</span>
-        </div>
-
-        {/*
-          Which of the two this is, in one line.
-
-          It is here because the panel below it can now be counted rows or a
-          worked example and the two look identical — and an owner about to act
-          on "nobody has seen us" needs to know which one they are reading.
-
-          The second sentence deliberately does not say *why*. Two things put
-          the screen there — no partner session on the API, and the server not
-          answering — and from here they collapse into one `null` venue id, so
-          naming either would be a guess in the one panel that exists to stop
-          people guessing.
-
-          Both sentences are dictionary copy in all five languages, like every
-          other user-visible string on this screen — an owner reading the
-          dashboard in Polish must not meet one line of English telling them
-          the numbers beside it are a sample.
-        */}
-        <p className="pd-fine">
-          {liveReach ? copy.reachLive : copy.reachSample}
-        </p>
-
-        {/* Zero *and* nothing clicked. Clicks without impressions is a real
-            state on live data — an offer opened from a push, a listing reached
-            by link — and hiding a click behind "nothing has been seen yet"
-            would be the panel contradicting itself. */}
-        {reach.seen === 0 && reach.clicks === 0 ? (
-          <p className="pd-fine">{copy.reachEmpty}</p>
-        ) : (
-          <>
-            <div className="pd-reach-figures">
-              {/* `data-count` rounds to whole numbers, so the rate — the one
-                  figure here with a decimal in it — is written directly rather
-                  than counted up. See the note on the hook in `useReveal`. */}
-              <div>
-                <b data-count={reach.seen} data-group={digitGroup}>
-                  0
-                </b>
-                <span>{copy.reachSeen}</span>
-                <i>{copy.reachSeenNote}</i>
-              </div>
-              <div>
-                <b data-count={reach.clicks} data-group={digitGroup}>
-                  0
-                </b>
-                <span>{copy.reachClicks}</span>
-                <i>{copy.reachClicksNote}</i>
-              </div>
-              <div>
-                <b>{reach.clickRate.toFixed(1)}%</b>
-                <span>{copy.reachRate}</span>
-                <i>{copy.reachRateNote}</i>
-              </div>
-            </div>
-
-            <p className="pd-fine pd-reach-funnel">
-              {fill(copy.reachFunnel, {
-                seen: num(reach.seen),
-                clicks: num(reach.clicks),
-                claims: num(reach.claims),
-              })}
-            </p>
-
-            <div className="pd-panel-head pd-reach-split-head">
-              <span className="console-label">{copy.reachSplit}</span>
-            </div>
-            <div className="pd-rows">
-              <div>
-                <span>{copy.reachListing}</span>
-                <b>{num(reach.listingSeen)}</b>
-              </div>
-              <div>
-                <span>{copy.reachDeals}</span>
-                <b>{num(reach.dealSeen)}</b>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      {/* What it cost, and the verdict. The verdict sentence is picked by the
-          arithmetic, not written down — a month where Paylez cost more than it
-          can be shown to have returned has to say so. */}
-      <div className="pd-glass pd-panel" data-reveal>
-        <div className="pd-panel-head">
-          <span className="console-label">{copy.costTitle}</span>
-          <span className="pd-chip">{dashboard.month}</span>
-        </div>
-        <div className="pd-rows">
-          {copy.costRows.map((label, index) => (
-            <div key={label}>
-              <span>{label}</span>
-              <b>{money(PD_COST_ROWS[index], 'exact')}</b>
-            </div>
-          ))}
-          <div data-total="true">
-            <span>{copy.costTotal}</span>
-            <b>{money(PD_COST_TOTAL, 'exact')}</b>
-          </div>
-        </div>
-
-        <div className="pd-return">
-          <span>{copy.returnLabel}</span>
-          <b>{money(totals.attributedMoney, 'soft')}</b>
-        </div>
-        <p className="pd-verdict" data-good={roi >= 1 ? 'true' : 'false'}>
-          {roi >= 1
-            ? fill(copy.roiGood, {
-                cost: money(PD_COST_TOTAL, 'exact'),
-                month: dashboard.month,
-                revenue: money(totals.attributedMoney, 'soft'),
-                n: roi.toFixed(1),
-              })
-            : fill(copy.roiBad, {
-                cost: money(PD_COST_TOTAL, 'exact'),
-                month: dashboard.month,
-                revenue: money(totals.attributedMoney, 'soft'),
-                gap: money(PD_COST_TOTAL - totals.attributedMoney, 'exact'),
-              })}
-        </p>
-      </div>
-
-      <div className="pd-tiles">
-        {tiles.map((tile, index) => (
-          <div className="pd-glass pd-tile" key={copy.tiles[index]} data-reveal>
-            <span>{copy.tiles[index]}</span>
-            <div className="pd-tile-body">
-              <div>
-                <b data-count={tile.value} data-group={digitGroup}>
-                  0
-                </b>
-                {tile.delta == null ? (
-                  <span className="pd-delta" data-dir="flat">
-                    <i>{fill(copy.inMonth, { month: dashboard.month })}</i>
-                  </span>
-                ) : (
-                  <Delta value={tile.delta} note={copy.since} />
-                )}
-              </div>
-              <Spark values={tile.series} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* The one claim on this screen that is counted rather than modelled, and
-          the reason it gets a panel to itself. */}
-      <div className="pd-glass pd-panel pd-proof-panel" data-reveal>
-        <div>
-          <span className="console-label">{copy.proofTitle}</span>
-          <p className="pd-proof">
-            {fill(copy.proof, { after: '2.4', before: '1.5' })}
-          </p>
-          <p className="pd-fine">{copy.proofNote}</p>
-        </div>
-        <div className="pd-columns">
-          <span>
-            <i style={{ height: `${(1.5 / 2.4) * 100}%` }} />
-            <b>1.5</b>
-            {copy.before}
-          </span>
-          <span data-on="true">
-            <i style={{ height: '100%' }} />
-            <b>2.4</b>
-            {copy.now}
-          </span>
-        </div>
-      </div>
-
-      <Chart />
-
-      <div className="pd-glass pd-panel pd-holding" data-reveal>
-        <div>
-          <span className="console-label">{copy.holdingTitle}</span>
-          <p className="pd-proof">
-            {fill(copy.holding, {
-              rewards: num(campaigns.holding),
-              vouchers: num(vouchers.held),
-              amount: money(campaigns.aside + vouchers.reserved, 'exact'),
-            })}
-          </p>
-          <p className="pd-fine">{copy.holdingNote}</p>
-        </div>
-        <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-          <Icon name="coin" size={16} />
-          {dashboard.words.remind}
-        </button>
-      </div>
-
-      {/* Three things the month noticed, each with the change already named.
-          The third counts itself out of the campaign model rather than quoting
-          a number, so it cannot go stale. */}
-      <div className="pd-glass pd-notices" data-reveal>
-        <div className="pd-notice-head">
-          <i aria-hidden />
-          <span className="console-label">{copy.noticed}</span>
-        </div>
-        {copy.insights.map((insight, index) => (
-          <div className="pd-notice" key={insight.action}>
-            <div>
-              <p>
-                {index === 2
-                  ? fill(insight.text, {
-                      n: num(campaigns.holding),
-                      amount: money(campaigns.aside, 'exact'),
-                    })
-                  : insight.text}
-              </p>
-              <p className="pd-fine">{fill(insight.detail, noticeFigures[index])}</p>
-            </div>
-            <div className="pd-notice-acts">
-              <button
-                type="button"
-                className="btn btn-solid"
-                disabled
-                title={dashboard.notWired}
-              >
-                {insight.action}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled
-                title={dashboard.notWired}
-              >
-                {dashboard.words.ask}
-              </button>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Everything a customer could walk in and use today. */}
-      <div className="pd-glass pd-running" data-reveal>
-        <div className="pd-panel-head">
-          <div>
-            <span className="console-label">{copy.runningTitle}</span>
-            <p className="pd-fine">{copy.runningNote}</p>
-          </div>
-          <span className="pd-chip" data-warn={PD_NOTIFY_QUOTA.left === 0 ? 'true' : undefined}>
-            <Icon name="coin" size={13} />
-            {PD_NOTIFY_QUOTA.left === 0
-              ? copy.quotaOut
-              : fill(copy.quota, {
-                  n: String(PD_NOTIFY_QUOTA.left),
-                  total: String(PD_NOTIFY_QUOTA.total),
-                })}
-          </span>
-        </div>
-
-        {live.map((deal) => {
-          const index = PD_DEALS.indexOf(deal);
-          return (
-            <div className="pd-run-row" key={deal.id}>
-              <span className="pd-kind" data-kind="deal">
-                {copy.kinds.deal}
-              </span>
-              <div className="pd-run-name">
-                <b>{dashboard.deals.rows[index]}</b>
-                <span className="pd-fine">
-                  {dashboard.deals.when[index]} · {dashboard.deals.windows[index]}
+        return (
+          <div className="pd-stack">
+            {/* The headline. Three claims at three strengths, in descending
+                order of how much we can stand behind them: counted, estimated,
+                and the subset we would defend. */}
+            <div className="pd-glass pd-hero" data-ink="paper" data-reveal>
+              <div className="pd-hero-main">
+                <span className="console-label">
+                  {fill(copy.kicker, { range: data.overview.period })}
                 </span>
-                {deal.notify.state !== 'none' && (
-                  <span className="pd-notif" data-on={deal.notify.state === 'sent' ? 'true' : undefined}>
-                    {deal.notify.state === 'sent' ? copy.notifySent : copy.notifySet}
-                  </span>
-                )}
+                {/* The bar's picker is a rolling day count and the server counts
+                    in calendar months. Quoting one under the other's label is
+                    exactly the mismatch this panel exists to avoid, so the
+                    period is stated and the difference is named once. */}
+                <p className="pd-fine">{dashboard.unmeasured.monthOnly}</p>
+
+                <span className="pd-hero-eyebrow">{copy.countedLabel}</span>
+                <p className="pd-counted">
+                  <b>{num(totals.visits)}</b>
+                  <span>{copy.counted}</span>
+                </p>
+                <p className="pd-fine pd-counted-new">
+                  {data.overview.newCustomers.suppressed
+                    ? dashboard.unmeasured.withheld
+                    : fill(copy.countedNew, { n: num(totals.newCustomers) })}
+                </p>
+
+                <div className="pd-estimate">
+                  <span className="pd-tag">{copy.estimateTag}</span>
+                  <b>{fill(copy.estimate, { amount: money(totals.estimate, 'soft') })}</b>
+                  <p className="pd-fine">
+                    {fill(copy.estimateNote, { avg: money(avgSpend, 'unit') })}
+                  </p>
+                </div>
+
+                <div className="pd-claim">
+                  <span className="console-label">{copy.claimTitle}</span>
+                  <b>
+                    {fill(copy.claim, {
+                      visits: num(totals.attributed),
+                      amount: money(totals.attributedMoney, 'soft'),
+                    })}
+                  </b>
+                  <p className="pd-fine">{copy.claimNote}</p>
+                </div>
               </div>
-              <div className="pd-run-stat">
-                <b>{num(deal.claimed)}</b>
-                <i>{copy.claims}</i>
-              </div>
-              <div className="pd-run-acts">
-                <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-                  {dashboard.words.edit}
-                </button>
-                <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-                  {dashboard.words.pause}
-                </button>
+
+              <div className="pd-support">
+                <div>
+                  <span>{copy.support[0].label}</span>
+                  <b>{num(totals.visits)}</b>
+                  <i>{copy.support[0].note}</i>
+                </div>
+                <div>
+                  <span>{copy.support[1].label}</span>
+                  <b>{money(avgSpend, 'unit')}</b>
+                  <i>{copy.support[1].note}</i>
+                </div>
+                <div>
+                  <span>{copy.support[2].label}</span>
+                  <Figure metric={data.overview.newCustomers} format={num} />
+                  <i>{copy.support[2].note}</i>
+                </div>
               </div>
             </div>
-          );
-        })}
 
-        <div className="pd-run-row">
-          <span className="pd-kind" data-kind="campaign">
-            {copy.kinds.campaign}
-          </span>
-          <div className="pd-run-name">
-            <b>{dashboard.campaigns.rows[0]}</b>
-            <span className="pd-fine">
-              {fill(dashboard.campaigns.rule, {
-                visits: String(PD_CAMPAIGNS[0].visits),
-                reward: dashboard.campaigns.rewards[0],
-              })}{' '}
-              · {fill(dashboard.words.each, { amount: money(PD_CAMPAIGNS[0].cost, 'unit') })}
-            </span>
-          </div>
-          <div className="pd-run-stat">
-            <b>
-              {num(PD_CAMPAIGNS[0].used)} / {num(PD_CAMPAIGNS[0].earned)}
-            </b>
-            <i>{copy.usedEarned}</i>
-          </div>
-          <div className="pd-run-acts">
-            <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-              {dashboard.words.edit}
-            </button>
-          </div>
-        </div>
+            {/*
+              Who saw you — above the cost panel, because it is the top of the
+              funnel every other figure on this screen sits below.
 
-        <div className="pd-run-row">
-          <span className="pd-kind" data-kind="vouchers">
-            {copy.kinds.vouchers}
-          </span>
-          <div className="pd-run-name">
-            <b>{copy.tierBundle}</b>
-            <span className="pd-fine">{copy.tierBundleRule}</span>
-          </div>
-          <div className="pd-run-stat">
-            <b>{money(vouchers.spent, 'exact')}</b>
-            <i>{copy.givenAway}</i>
-          </div>
-          <div className="pd-run-acts">
-            <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-              {dashboard.words.edit}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+              Without it a venue nobody has heard of and a venue everybody
+              scrolls past render identically: zeroes, with nothing to say
+              which. Those two have opposite fixes.
+            */}
+            <div className="pd-glass pd-panel pd-reach" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.reachTitle}</span>
+                {reachPeriod && <span className="pd-chip">{reachPeriod}</span>}
+              </div>
 
-/**
- * Thirty days of visits against redemptions.
- *
- * Both lines share one vertical scale — visits are eight times redemptions and
- * normalising them separately would draw two lines of the same height and tell
- * a lie about the ratio, which is the whole thing this chart is for.
- */
-function Chart() {
-  const copy = useCopy().dashboard.overview;
-  const { series } = metricsFor(useDashboard().range);
-  const max = Math.max(...series.visits) * 1.12;
-  const visits = polyline(series.visits, max);
-  const area = polyarea(series.visits, max);
-  const redeemed = polyline(series.redeemed, max);
+              {reach === null ? (
+                <p className="pd-fine">
+                  {reachApi.state.status === 'loading' ? dashboard.unmeasured.asking : dashboard.unmeasured.serverSilent}
+                </p>
+              ) : reach.seen === 0 && reach.clicks === 0 ? (
+                <p className="pd-fine">{copy.reachEmpty}</p>
+              ) : (
+                <>
+                  <p className="pd-fine">{copy.reachLive}</p>
+                  <div className="pd-reach-figures">
+                    <div>
+                      <b>{num(reach.seen)}</b>
+                      <span>{copy.reachSeen}</span>
+                      <i>{copy.reachSeenNote}</i>
+                    </div>
+                    <div>
+                      <b>{num(reach.clicks)}</b>
+                      <span>{copy.reachClicks}</span>
+                      <i>{copy.reachClicksNote}</i>
+                    </div>
+                    <div>
+                      <b>{reach.clickRate.toFixed(1)}%</b>
+                      <span>{copy.reachRate}</span>
+                      <i>{copy.reachRateNote}</i>
+                    </div>
+                  </div>
 
-  return (
-    <div className="pd-glass pd-panel pd-chart-panel" data-reveal>
-      <div className="pd-panel-head">
-        <div>
-          <span className="console-label">{copy.chartTitle}</span>
-          <p className="pd-fine">{copy.chartNote}</p>
-        </div>
-        <div className="pd-legend">
-          <span>
-            <i data-part="spent" />
-            {copy.chartVisits}
-          </span>
-          <span>
-            <i data-part="held" />
-            {copy.chartRedeemed}
-          </span>
-        </div>
-      </div>
-      {/* The height is stated here and not left to the SVG: a percentage inside
-          an `auto` parent resolves to nothing, which is the bug `.adm-compare-cols`
-          was fixed for one screen over. */}
-      <div className="pd-chart">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden>
-          {[0, 25, 50, 75, 100].map((y) => (
-            <path key={y} className="pd-chart-grid" d={`M0 ${y} L100 ${y}`} />
-          ))}
-          <path className="pd-chart-fill" d={area} />
-          <path className="pd-chart-line" d={visits} />
-          <path className="pd-chart-line" data-second="true" d={redeemed} />
-        </svg>
-      </div>
-    </div>
+                  <p className="pd-fine pd-reach-funnel">
+                    {fill(copy.reachFunnel, {
+                      seen: num(reach.seen),
+                      clicks: num(reach.clicks),
+                      claims: num(reach.claims),
+                    })}
+                  </p>
+
+                  <div className="pd-panel-head pd-reach-split-head">
+                    <span className="console-label">{copy.reachSplit}</span>
+                  </div>
+                  <div className="pd-rows">
+                    <div>
+                      <span>{copy.reachListing}</span>
+                      <b>{num(reach.listingSeen)}</b>
+                    </div>
+                    <div>
+                      <span>{copy.reachDeals}</span>
+                      <b>{num(reach.dealSeen)}</b>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* What it cost, and the verdict. The verdict is picked by the
+                arithmetic — a month where Paylez cost more than it can be shown
+                to have returned has to say so — but only when both halves are
+                known, which is what the null branch is for. */}
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.costTitle}</span>
+                <span className="pd-chip">{data.overview.period}</span>
+              </div>
+
+              {costRows === null || costTotal === null ? (
+                <p className="pd-fine">
+                  {analyticsApi.state.status === 'loading'
+                    ? dashboard.unmeasured.asking
+                    : dashboard.unmeasured.serverSilent}
+                </p>
+              ) : (
+                <>
+                  <div className="pd-rows">
+                    {copy.costRows.map((label, index) => (
+                      <div key={label}>
+                        <span>{label}</span>
+                        <b>{money(costRows[index], 'exact')}</b>
+                      </div>
+                    ))}
+                    <div data-total="true">
+                      <span>{copy.costTotal}</span>
+                      <b>{money(costTotal, 'exact')}</b>
+                    </div>
+                  </div>
+
+                  <div className="pd-return">
+                    <span>{copy.returnLabel}</span>
+                    <b>{money(totals.attributedMoney, 'soft')}</b>
+                  </div>
+                  {roi !== null && (
+                    <p className="pd-verdict" data-good={roi >= 1 ? 'true' : 'false'}>
+                      {roi >= 1
+                        ? fill(copy.roiGood, {
+                            cost: money(costTotal, 'exact'),
+                            month: data.overview.period,
+                            revenue: money(totals.attributedMoney, 'soft'),
+                            n: roi.toFixed(1),
+                          })
+                        : fill(copy.roiBad, {
+                            cost: money(costTotal, 'exact'),
+                            month: data.overview.period,
+                            revenue: money(totals.attributedMoney, 'soft'),
+                            gap: money(costTotal - totals.attributedMoney, 'exact'),
+                          })}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Four counts. No deltas: comparing to a previous period needs a
+                second request nobody makes yet, and a delta invented to fill
+                the slot is the thing this rewrite removed. No sparklines
+                either — there is no daily series endpoint. */}
+            <div className="pd-tiles">
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{copy.tiles[0]}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <b>{num(totals.visits)}</b>
+                    <span className="pd-delta" data-dir="flat">
+                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{copy.tiles[1]}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <b>{reach ? num(reach.claims) : '—'}</b>
+                    <span className="pd-delta" data-dir="flat">
+                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{copy.tiles[2]}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <b>
+                      {analytics?.roi
+                        ? num(analytics.roi.find((r) => r.feature === 'vouchers')?.outcome ?? 0)
+                        : '—'}
+                    </b>
+                    <span className="pd-delta" data-dir="flat">
+                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{copy.tiles[3]}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <b>
+                      {analytics?.roi
+                        ? num(analytics.roi.find((r) => r.feature === 'loyalty')?.outcome ?? 0)
+                        : '—'}
+                    </b>
+                    <span className="pd-delta" data-dir="flat">
+                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/*
+              The one claim on this screen that is counted rather than modelled.
+
+              It used to read "1.5 before, 2.4 now" as two literals in the JSX.
+              `analytics.repeatMultiple` is the real thing — every campaign
+              member's own visit rate before and after they joined, averaged —
+              and it is cohort-suppressed, because it is a finding about people.
+              Absent from the response entirely on a plan without deep
+              analytics, which is a third state and gets its own sentence.
+            */}
+            {analytics === undefined || analytics === null ? null : analytics.repeatMultiple === undefined ? (
+              <NoSource title={copy.proofTitle} detail={dashboard.unmeasured.planLocked} />
+            ) : analytics.repeatMultiple.suppressed ? (
+              <NoSource title={copy.proofTitle} detail={dashboard.unmeasured.withheld} />
+            ) : (
+              <div className="pd-glass pd-panel pd-proof-panel" data-reveal>
+                <div>
+                  <span className="console-label">{copy.proofTitle}</span>
+                  <p className="pd-proof">
+                    {fill(copy.proof, {
+                      after: (analytics.repeatMultiple.value ?? 0).toFixed(1),
+                      before: '1.0',
+                    })}
+                  </p>
+                  <p className="pd-fine">{copy.proofNote}</p>
+                </div>
+                <div className="pd-columns">
+                  <span>
+                    <i style={{ height: `${100 / Math.max(1, analytics.repeatMultiple.value ?? 1)}%` }} />
+                    <b>1.0</b>
+                    {copy.before}
+                  </span>
+                  <span data-on="true">
+                    <i style={{ height: '100%' }} />
+                    <b>{(analytics.repeatMultiple.value ?? 0).toFixed(1)}</b>
+                    {copy.now}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* The chart the prototype drew from two overlaid sine waves. There
+                is no daily-series endpoint, so it says so rather than drawing a
+                flat line through zero — which reads as a month of no trade. */}
+            <NoSource title={copy.chartTitle} detail={dashboard.unmeasured.noSource} />
+
+            <div className="pd-glass pd-panel pd-holding" data-reveal>
+              <div>
+                <span className="console-label">{copy.holdingTitle}</span>
+                <p className="pd-proof">
+                  {fill(copy.holding, {
+                    rewards: num(loyalty.holding),
+                    vouchers: num(vouchers.held),
+                    amount: money(toEuro(data.budget.loyalty.reserved + data.budget.voucher.reserved), 'exact'),
+                  })}
+                </p>
+                <p className="pd-fine">{copy.holdingNote}</p>
+              </div>
+            </div>
+
+            {/*
+              What the month noticed.
+
+              Three invented sentences with invented figures used to sit here.
+              `analytics.findings` is the server's own ranked list — the quiet
+              window, the cost per new customer, the second-visit rate, the new
+              customer count — and it returns at most three, already ordered by
+              how much they deserve attention. A venue with nothing worth saying
+              gets an empty list, which is a finding of its own.
+            */}
+            <div className="pd-glass pd-notices" data-reveal>
+              <div className="pd-notice-head">
+                <i aria-hidden />
+                <span className="console-label">{copy.noticed}</span>
+              </div>
+              {data.findings.length === 0 ? (
+                <p className="pd-fine">{dashboard.unmeasured.noFindings}</p>
+              ) : (
+                data.findings.map((finding) => (
+                  <div className="pd-notice" key={finding.key}>
+                    <div>
+                      <p>
+                        {dashboard.findings[
+                          finding.key as keyof typeof dashboard.findings
+                        ] ?? finding.key.replace(/_/g, ' ')}
+                      </p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Everything a customer could walk in and use today. */}
+            <div className="pd-glass pd-running" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{copy.runningTitle}</span>
+                  <p className="pd-fine">{copy.runningNote}</p>
+                </div>
+              </div>
+
+              {liveDeals.length === 0 && loyalty.list.length === 0 ? (
+                <p className="pd-fine">{dashboard.empty[0].body}</p>
+              ) : (
+                <>
+                  {liveDeals.map((deal) => (
+                    <div className="pd-run-row" key={deal.id}>
+                      <span className="pd-kind" data-kind="deal">
+                        {copy.kinds.deal}
+                      </span>
+                      <div className="pd-run-name">
+                        <b>{deal.badge}</b>
+                      </div>
+                      <div className="pd-run-stat">
+                        <b>{num(deal.claimed)}</b>
+                        <i>{copy.claims}</i>
+                      </div>
+                    </div>
+                  ))}
+                  {loyalty.list.filter((c) => c.live).map((campaign) => (
+                    <div className="pd-run-row" key={campaign.id}>
+                      <span className="pd-kind" data-kind="campaign">
+                        {copy.kinds.campaign}
+                      </span>
+                      <div className="pd-run-name">
+                        <b>{campaign.name}</b>
+                        <span className="pd-fine">
+                          {fill(dashboard.campaigns.rule, {
+                            visits: String(campaign.visits),
+                            reward: campaign.reward,
+                          })}{' '}
+                          · {fill(dashboard.words.each, { amount: money(campaign.cost, 'unit') })}
+                        </span>
+                      </div>
+                      <div className="pd-run-stat">
+                        <b>
+                          {num(campaign.used)} / {num(campaign.earned)}
+                        </b>
+                        <i>{copy.usedEarned}</i>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      }}
+    </Screen>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────── deals ── */
 
 /**
- * One deal, opened out.
+ * The venue's hot deals, as the server has them.
  *
- * The prototype's row expansion, which is the densest thing on the screen and
- * the reason the table is worth clicking: three panels that answer the three
- * questions the columns raise but cannot fit. Where did the people go, what did
- * the one notification actually do, and what is going to stop this.
- *
- * The notification panel has four shapes because a notification has four states
- * — sent, scheduled, never set, and not applicable because the deal has expired
- * — and each of them is a different thing to tell an owner. Collapsing them into
- * one "notification: yes/no" line is what this panel exists instead of.
+ * Six invented rows used to be here, with a claim sparkline, a "reach lost to
+ * missing languages" percentage and a notification funnel derived from three
+ * invented rates. What survives is what `hot_deals` and `deals.funnel` actually
+ * carry: seen, opened, claimed, what the discounts cost, the claim cap, and how
+ * many of the five languages the deal is written in — which is a real
+ * completeness check over the `translations` table and the one column here that
+ * tells an owner something they can fix.
  */
-function DealDetail({ deal, index }: { deal: PartnerDeal; index: number }) {
-  const dashboard = useCopy().dashboard;
-  const copy = dashboard.deals;
-  const num = useNum();
-  const { openDrawer, toast } = useDashboard();
-
-  const started = deal.seen > 0;
-  const openRate = started ? (deal.opened / deal.seen) * 100 : 0;
-  const claimRate = started ? (deal.claimed / deal.seen) * 100 : 0;
-  const useRate = deal.opened ? (deal.claimed / deal.opened) * 100 : 0;
-  const notify = dealNotify(deal);
-  const audience = PD_AUDIENCES[deal.audience];
-
-  /* Seen is the whole width by definition; the other two are shares of it. The
-     bar has a 3% floor so a step that happened at all is still a mark. */
-  const steps = [
-    { value: deal.seen, width: 100, note: copy.funnelNotes[0] },
-    {
-      value: deal.opened,
-      width: openRate,
-      note: fill(copy.funnelNotes[1], { pct: openRate.toFixed(1) }),
-    },
-    {
-      value: deal.claimed,
-      width: claimRate,
-      note: fill(copy.funnelNotes[2], { pct: useRate.toFixed(0) }),
-    },
-  ];
-
-  return (
-    <div className="pd-open">
-      <div className="pd-open-main">
-        <span className="console-label">{copy.funnelTitle}</span>
-        <div className="pd-funnel">
-          {copy.funnel.map((label, step) => (
-            <div key={label}>
-              <span>{label}</span>
-              <b data-lead={step === 2 ? 'true' : undefined}>
-                {started ? num(steps[step].value) : '—'}
-              </b>
-              <i style={{ width: `${Math.max(3, steps[step].width)}%` }} data-step={step} />
-              <em>{started ? steps[step].note : copy.notStarted}</em>
-            </div>
-          ))}
-        </div>
-        <p className="pd-fine">
-          {started
-            ? fill(copy.drop, {
-                seen: num(deal.seen - deal.opened),
-                opened: num(deal.opened - deal.claimed),
-              })
-            : copy.dropNone}
-        </p>
-
-        {deal.notify.state === 'sent' && (
-          <>
-            <span className="console-label">{copy.notifyTitle}</span>
-            <div className="pd-funnel">
-              {copy.notifySteps.map((label, step) => (
-                <div key={label}>
-                  <span>{label}</span>
-                  <b data-lead={step === 2 ? 'true' : undefined}>
-                    {num([notify.notified, notify.opened, notify.camein][step])}
-                  </b>
-                  <em>
-                    {step === 0
-                      ? copy.notifyStepNotes[0]
-                      : fill(copy.notifyStepNotes[step], {
-                          pct: (step === 1 ? notify.openPct : notify.cameinPct).toFixed(0),
-                        })}
-                  </em>
-                </div>
-              ))}
-            </div>
-            <p className="pd-fine">
-              {fill(copy.notifySplit, {
-                camein: num(notify.camein),
-                claims: num(deal.claimed),
-                alone: num(notify.alone),
-              })}
-            </p>
-            <p className="pd-fine">
-              {fill(copy.notifyBlocked, {
-                n: num(notify.notified),
-                blocked: num(notify.blocked),
-              })}
-            </p>
-          </>
-        )}
-      </div>
-
-      <div className="pd-open-side">
-        {deal.limit > 0 && deal.state === 'live' && (
-          <p className="pd-brief pd-brief-warn">
-            <Icon name="clock" size={15} />
-            {fill(copy.limitForecast, {
-              limit: num(deal.limit),
-              date: copy.limitDates[index],
-            })}
-          </p>
-        )}
-
-        {deal.notify.state === 'scheduled' && (
-          <div className="pd-brief">
-            <Icon name="bell" size={16} />
-            <div>
-              <p>
-                {fill(copy.notifyScheduled, {
-                  at: PD_AUDIENCES[deal.audience].sendAt,
-                  n: num(deal.notify.reach),
-                })}
-              </p>
-              <div className="pd-brief-acts">
-                <button type="button" className="btn btn-ghost" onClick={() => openDrawer('deal')}>
-                  {copy.notifyChange}
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => toast(dashboard.notWired)}
-                >
-                  {copy.notifyCancel}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {deal.notify.state === 'none' && deal.state !== 'expired' && (
-          <p className="pd-brief">
-            {fill(copy.notifyNone, {
-              n: num(deal.notify.reach),
-              total: num(deal.notify.match),
-            })}
-          </p>
-        )}
-
-        {deal.state === 'expired' && (
-          <p className="pd-brief">
-            <Icon name="bulb" size={15} />
-            {fill(copy.retro, { weeks: String(deal.weeks), claims: num(deal.claimed) })}
-          </p>
-        )}
-
-        <div className="pd-brief">
-          <span className="console-label">{copy.whoTitle}</span>
-          <b>{copy.when[index]}</b>
-          <p>{copy.audiences[deal.audience]}</p>
-          <p className="pd-fine">
-            {fill(copy.reach, {
-              n: num(audience.notifiable),
-              total: num(audience.reach),
-            })}
-          </p>
-          <p className="pd-fine">
-            {deal.langs === 5
-              ? copy.langsAll
-              : fill(copy.langsSome, {
-                  n: String(deal.langs),
-                  pct: String(deal.reachLoss),
-                })}
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/** Which column the table is ordered by. `rank` is the prototype's default. */
-type DealSort = 'rank' | 'seen' | 'opened' | 'claimed' | 'rate' | 'cost';
-
 function Deals() {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.deals;
   const money = useMoney();
   const num = useNum();
-  const { openDrawer, toast } = useDashboard();
-
-  const [search, setSearch] = useState('');
   const [filter, setFilter] = useState(0);
-  const [open, setOpen] = useState<string | null>(null);
-  const [sort, setSort] = useState<DealSort>('rank');
-  const [descending, setDescending] = useState(true);
 
-  /* The prototype's own order: live and scheduled first, then by claim rate.
-     A paused deal with a brilliant rate is still not the row you act on. */
-  const rows = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    const states = ['all', 'live', 'scheduled', 'paused', 'expired'] as const;
-    const wanted = states[filter];
-    const rate = (deal: PartnerDeal) => (deal.seen ? deal.claimed / deal.seen : 0);
-    const rank = (deal: PartnerDeal) =>
-      deal.state === 'live' || deal.state === 'scheduled' ? 0 : 1;
-    const key = (deal: PartnerDeal) =>
-      sort === 'seen'
-        ? deal.seen
-        : sort === 'opened'
-          ? deal.opened
-          : sort === 'claimed'
-            ? deal.claimed
-            : sort === 'cost'
-              ? deal.cost
-              : rate(deal);
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const dealsApi = usePartnerDeals(venueId);
+  const budgetApi = usePartnerBudget(venueId);
+  const state = chain(venue, dealsApi);
 
-    return PD_DEALS.map((deal, index) => ({ deal, index }))
-      .filter(({ deal, index }) => {
-        if (wanted !== 'all' && deal.state !== wanted) return false;
-        if (!q) return true;
-        return `${copy.rows[index]} ${deal.badge} ${copy.states[deal.state]}`
-          .toLowerCase()
-          .includes(q);
-      })
-      .sort((a, b) => {
-        /* The default keeps its two-level order; any chosen column replaces it
-           outright, because a column header that only sorts within a group is a
-           control that half works. */
-        if (sort === 'rank') return rank(a.deal) - rank(b.deal) || rate(b.deal) - rate(a.deal);
-        const delta = key(a.deal) - key(b.deal);
-        return descending ? -delta : delta;
-      });
-  }, [search, filter, copy, sort, descending]);
-
-  /* Index into `copy.columns` → the key it sorts by. The last column is a
-     sparkline and the first two are words, so neither is sortable. */
-  const sortKeys: Array<DealSort | null> = [
-    null,
-    null,
-    'seen',
-    'opened',
-    'claimed',
-    'rate',
-    'cost',
-    null,
-  ];
+  const currency =
+    budgetApi.state.status === 'ready' ? budgetApi.state.data.currency : 'EUR';
 
   return (
-    <div className="pd-stack">
-      <p className="pd-glass pd-insight" data-reveal>
-        <Icon name="bulb" size={16} />
-        {copy.insight}
-      </p>
+    <Screen state={state} index={1}>
+      {(rows) => {
+        const deals: PartnerDeal[] = rows.map((row) =>
+          dealFromApi(row, (minor) => minorToEuro(minor, currency)),
+        );
+        const states: Array<PartnerDeal['state'] | null> = [
+          null,
+          'live',
+          'scheduled',
+          'paused',
+          'expired',
+        ];
+        const shown = deals.filter(
+          (deal) => states[filter] === null || deal.state === states[filter],
+        );
 
-      <div className="pd-glass pd-table-wrap" data-solid="true" data-reveal>
-        <div className="pd-toolbar">
-          <label className="pd-search">
-            <Icon name="search" size={15} />
-            <input
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder={copy.search}
-              aria-label={copy.search}
-            />
-          </label>
-
-          <div className="pd-seg">
-            {copy.filters.map((label, index) => (
-              <button
-                key={label}
-                type="button"
-                data-on={filter === index ? 'true' : undefined}
-                onClick={() => setFilter(index)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <span className="pd-chip" data-warn={PD_NOTIFY_QUOTA.left === 0 ? 'true' : undefined}>
-            <Icon name="bell" size={13} />
-            {fill(dashboard.overview.quota, {
-              n: String(PD_NOTIFY_QUOTA.left),
-              total: String(PD_NOTIFY_QUOTA.total),
-            })}
-          </span>
-
-          <span className="pd-fine">
-            {fill(copy.count, { n: String(rows.length), total: String(PD_DEALS.length) })}
-          </span>
-        </div>
-
-        <p className="pd-sort-note">{copy.sortNote}</p>
-
-        {rows.length === 0 ? (
-          /* Not a zero row and not a blank table: the filter is the reason, so
-             the way out of it is the button. */
-          <div className="pd-empty">
-            <span className="pd-empty-ico" aria-hidden>
-              <Icon name="ticket" size={21} />
-            </span>
-            <b>{copy.emptyFiltered}</b>
-            <p>{copy.emptyFilteredBody}</p>
-            <div className="pd-empty-acts">
-              <button type="button" className="btn btn-solid" onClick={() => openDrawer('deal')}>
-                {dashboard.actions.newDeal}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => {
-                  setSearch('');
-                  setFilter(0);
-                }}
-              >
-                {copy.clearFilters}
-              </button>
+        if (deals.length === 0) {
+          return (
+            <div className="pd-stack">
+              <Unmeasured index={1} />
             </div>
-          </div>
-        ) : (
-          <div className="pd-scroll">
-            <table className="pd-table pd-table-deals">
-              <thead>
-                <tr>
-                  {copy.columns.map((column, index) => {
-                    const key = sortKeys[index];
-                    const on = key != null && sort === key;
-                    return (
-                      <th key={column} data-align={index >= 2 && index <= 6 ? 'right' : undefined}>
-                        {key ? (
-                          <button
-                            type="button"
-                            className="pd-sort"
-                            data-on={on ? 'true' : undefined}
-                            title={fill(copy.sortBy, { column })}
-                            onClick={() => {
-                              if (on) setDescending((d) => !d);
-                              else {
-                                setSort(key);
-                                setDescending(true);
-                              }
-                            }}
-                          >
-                            {column}
-                            <i aria-hidden>{on ? (descending ? '▾' : '▴') : ''}</i>
-                          </button>
-                        ) : (
-                          column
-                        )}
-                      </th>
-                    );
-                  })}
-                  <th />
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(({ deal, index }) => {
-                  const rate = deal.seen ? (deal.claimed / deal.seen) * 100 : 0;
-                  const isOpen = open === deal.id;
-                  const notify = dealNotify(deal);
-                  return [
-                    <tr
-                      key={deal.id}
-                      data-open={isOpen ? 'true' : undefined}
-                      data-dim={deal.state === 'expired' ? 'true' : undefined}
-                      onClick={() => setOpen(isOpen ? null : deal.id)}
+          );
+        }
+
+        return (
+          <div className="pd-stack">
+            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{dashboard.screens[1].name}</span>
+                  <p className="pd-fine">
+                    {fill(copy.count, { n: String(shown.length), total: String(deals.length) })}
+                  </p>
+                </div>
+                <div className="pd-filters">
+                  {copy.filters.map((label, index) => (
+                    <button
+                      key={label}
+                      type="button"
+                      className="pd-filter"
+                      data-on={index === filter ? 'true' : undefined}
+                      onClick={() => setFilter(index)}
                     >
-                      <td>
-                        <span className="pd-deal">
-                          <i data-kind={deal.kind} data-live={deal.state === 'live' ? 'true' : undefined}>
-                            {deal.badge}
-                          </i>
-                          <span>
-                            <b>{copy.rows[index]}</b>
-                            <em>
-                              {copy.windows[index]} · {copy.when[index]} ·{' '}
-                              {copy.audiences[deal.audience]}
-                            </em>
-                            <span className="pd-row-chips">
-                              <i className="pd-notif" data-state={deal.notify.state}>
-                                {deal.notify.state === 'sent'
-                                  ? fill(copy.notifyChips.sent, { n: num(notify.camein) })
-                                  : deal.notify.state === 'scheduled'
-                                    ? fill(copy.notifyChips.scheduled, {
-                                        at: PD_AUDIENCES[deal.audience].sendAt,
-                                      })
-                                    : copy.notifyChips.none}
-                              </i>
-                              {deal.kind === 'points' && (
-                                <i className="pd-notif" data-state="points">
-                                  {copy.pointsNote}
-                                </i>
-                              )}
-                            </span>
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {shown.length === 0 ? (
+                <p className="pd-fine">{copy.emptyFiltered}</p>
+              ) : (
+                <table className="pd-table">
+                  <thead>
+                    <tr>
+                      <th>{copy.columns[0]}</th>
+                      <th>{copy.funnel[0]}</th>
+                      <th>{copy.funnel[1]}</th>
+                      <th>{copy.funnel[2]}</th>
+                      <th>{dashboard.words.costSoFar}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shown.map((deal) => (
+                      <tr key={deal.id}>
+                        <td>
+                          <b>{deal.badge}</b>
+                          <span className="pd-fine">
+                            <State on={deal.state === 'live'}>
+                              {copy.states[deal.state]}
+                            </State>
+                            {' · '}
+                            {deal.langs === 5
+                              ? copy.langsAll
+                              : fill(copy.langsSome, {
+                                  n: String(deal.langs),
+                                  /* The share of the five languages the deal is
+                                     *not* written in. The seeded column called
+                                     this "reach lost" and quoted a percentage
+                                     nobody had measured; this is a count of
+                                     missing translations, which is a fact. */
+                                  pct: String(Math.round((deal.missing.length / 5) * 100)),
+                                })}
                           </span>
-                        </span>
-                      </td>
-                      <td>
-                        <State state={deal.state} label={copy.states[deal.state]} />
-                      </td>
-                      <td data-align="right">{deal.seen ? num(deal.seen) : '—'}</td>
-                      <td data-align="right">{deal.seen ? num(deal.opened) : '—'}</td>
-                      <td data-align="right">
-                        <b>{deal.seen ? num(deal.claimed) : '—'}</b>
-                        {deal.limit > 0 && (
-                          <span className="pd-limit">
-                            <i>
-                              <b
-                                style={{
-                                  width: `${Math.min(100, (deal.claimed / deal.limit) * 100)}%`,
-                                }}
-                              />
-                            </i>
-                            {fill(copy.limitAllowed, { limit: num(deal.limit) })}
-                          </span>
-                        )}
-                      </td>
-                      <td data-align="right">
-                        <b>{deal.seen ? `${rate.toFixed(1)}%` : '—'}</b>
-                      </td>
-                      <td data-align="right">
-                        {deal.kind === 'points' ? '—' : money(deal.cost, 'exact')}
-                        {(deal.kind === 'points' || (deal.kind === 'percent' && deal.seen > 0)) && (
-                          <em className="pd-cost-note">
-                            {deal.kind === 'points' ? copy.costNone : copy.costEstimate}
-                          </em>
-                        )}
-                      </td>
-                      <td className="pd-trend-cell">
-                        <Spark values={deal.trend} />
-                      </td>
-                      <td data-align="right">
-                        <span className="pd-row-acts">
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              openDrawer('deal');
-                            }}
-                          >
-                            {dashboard.words.edit}
-                          </button>
-                          <button
-                            type="button"
-                            className="btn btn-ghost"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              toast(dashboard.notWired);
-                            }}
-                          >
-                            {copy.act[deal.state]}
-                          </button>
-                        </span>
-                      </td>
-                    </tr>,
-                    isOpen ? (
-                      <tr className="pd-drawer-row" key={`${deal.id}-open`}>
-                        <td colSpan={9}>
-                          <DealDetail deal={deal} index={index} />
                         </td>
+                        <td>{num(deal.seen)}</td>
+                        <td>{num(deal.opened)}</td>
+                        <td>
+                          {num(deal.claimed)}
+                          {deal.limit > 0 && (
+                            <span className="pd-fine">
+                              {' '}
+                              {fill(copy.limitAllowed, { limit: String(deal.limit) })}
+                            </span>
+                          )}
+                        </td>
+                        <td>{money(deal.cost, 'exact')}</td>
                       </tr>
-                    ) : null,
-                  ];
-                })}
-              </tbody>
-            </table>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* The notification funnel the prototype drew. `deal_pushes` holds
+                the real sends and opens; `partners.dealsFor` does not join it,
+                so there is nothing to draw and the panel says which. */}
+            <NoSource title={copy.notifyTitle} />
           </div>
-        )}
-      </div>
-    </div>
+        );
+      }}
+    </Screen>
   );
 }
 
@@ -1238,546 +862,294 @@ function Deals() {
 function Campaigns() {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.campaigns;
-  const states = dashboard.deals.states;
   const money = useMoney();
   const num = useNum();
 
-  const model = PD_CAMPAIGN_MODEL;
-  const pct = (value: number) =>
-    model.allocation > 0 ? Math.max(0, Math.min(100, (value / model.allocation) * 100)) : 0;
-  const runOut = `${model.runOut} ${dashboard.month}`;
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const campaignsApi = usePartnerCampaigns(venueId);
+  const budgetApi = usePartnerBudget(venueId);
+  const state = chain(venue, campaignsApi);
+
+  const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : null;
 
   return (
-    <div className="pd-stack">
-      {model.tight && (
-        <div className="pd-glass pd-alert" data-reveal>
-          <Icon name="arrow" size={18} />
-          <p>
-            {fill(copy.rebalance, {
-              date: runOut,
-              amount: money(Math.max(0, PD_VOUCHER_MODEL.available), 'exact'),
-            })}
-          </p>
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            {copy.rebalanceAction}
-          </button>
-        </div>
-      )}
+    <Screen state={state} index={2}>
+      {(rows) => {
+        const toEuro = (minor: number) => minorToEuro(minor, budget?.currency ?? 'EUR');
+        const list: CampaignRow[] = rows.map((row) => campaignFromApi(row, toEuro));
+        const model = campaignModel(list, budget?.loyalty ?? null);
 
-      {/* The gap panel. Earned minus used is the only number on this screen that
-          is a person rather than a złoty: someone qualified and did not come. */}
-      <div className="pd-glass pd-panel" data-reveal>
-        <div className="pd-gap-head">
-          <div>
-            <span className="console-label">{copy.gapTitle}</span>
-            <p className="pd-fine">{copy.gapLede}</p>
-            <p className="pd-proof">
-              {fill(copy.gap, {
-                name: copy.rows[model.widest],
-                n: String(model.widestGap),
-              })}
-            </p>
-          </div>
-          <div className="pd-gap-totals">
-            {copy.totals.map((label, index) => (
-              <div key={label}>
-                <span>{label}</span>
-                <b>{num([model.earned, model.used, model.holding][index])}</b>
+        if (list.length === 0) {
+          return (
+            <div className="pd-stack">
+              <Unmeasured index={2} />
+            </div>
+          );
+        }
+
+        return (
+          <div className="pd-stack">
+            {/* The pool. Three states that exhaust it — spent, set aside,
+                available — read straight off `budget_movements` rather than
+                re-derived from the reward counts, so the bar cannot let an
+                owner commit the same money twice. */}
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.budgetTitle}</span>
+                {budget && <span className="pd-chip">{budget.period}</span>}
               </div>
-            ))}
-          </div>
-        </div>
+              {model.measured ? (
+                <>
+                  <p className="pd-fine">{copy.budgetLede}</p>
+                  <Bar
+                    label={dashboard.words.spent}
+                    value={toEuro(budget!.loyalty.spent)}
+                    of={toEuro(budget!.loyalty.base)}
+                    note={money(toEuro(budget!.loyalty.spent), 'exact')}
+                  />
+                  <Bar
+                    label={dashboard.words.aside}
+                    value={toEuro(budget!.loyalty.reserved)}
+                    of={toEuro(budget!.loyalty.base)}
+                    note={money(toEuro(budget!.loyalty.reserved), 'exact')}
+                  />
+                  <Bar
+                    label={dashboard.words.available}
+                    value={Math.max(0, toEuro(budget!.loyalty.available))}
+                    of={toEuro(budget!.loyalty.base)}
+                    note={money(toEuro(budget!.loyalty.available), 'exact')}
+                  />
+                  <p className="pd-fine">{copy.availableNote}</p>
+                </>
+              ) : (
+                <p className="pd-fine">
+                  {budgetApi.state.status === 'loading' ? dashboard.unmeasured.asking : dashboard.unmeasured.serverSilent}
+                </p>
+              )}
+            </div>
 
-        <div className="pd-remind">
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            <Icon name="coin" size={16} />
-            {fill(copy.remindLabel, { n: num(model.holding) })}
-          </button>
-          <div>
-            <b>{copy.remindNote}</b>
-            <span className="pd-fine">
-              {fill(copy.remindResult, {
-                back: String(PD_REMIND.back),
-                of: String(PD_REMIND.of),
-              })}
-            </span>
-          </div>
-          <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-            {copy.remindSetup}
-          </button>
-        </div>
+            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{dashboard.screens[2].name}</span>
+                <p className="pd-fine">{copy.visitRule}</p>
+              </div>
+              <table className="pd-table">
+                <thead>
+                  <tr>
+                    <th>{dashboard.screens[2].name}</th>
+                    <th>{copy.earned}</th>
+                    <th>{copy.used}</th>
+                    <th>{copy.totals[2]}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {model.list.map((campaign) => (
+                    <tr key={campaign.id}>
+                      <td>
+                        <b>{campaign.name}</b>
+                        <span className="pd-fine">
+                          {fill(copy.rule, {
+                            visits: String(campaign.visits),
+                            reward: campaign.reward,
+                          })}
+                          {' · '}
+                          {fill(dashboard.words.each, { amount: money(campaign.cost, 'unit') })}
+                          {' · '}
+                          <State on={campaign.live}>
+                            {campaign.live ? dashboard.deals.states.live : dashboard.deals.states.paused}
+                          </State>
+                        </span>
+                      </td>
+                      <td>{num(campaign.earned)}</td>
+                      <td>{num(campaign.used)}</td>
+                      <td>{num(campaign.outstanding)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
-        <p className="pd-near">
-          <Icon name="assistant" size={15} />
-          {fill(copy.near, { n: String(PD_NEAR) })}
-        </p>
-      </div>
-
-      {/* The pool. Three slices, and the middle one is the one that needs the
-          explanation — money committed but not gone. */}
-      <div className="pd-glass pd-panel" data-reveal>
-        <div className="pd-panel-head">
-          <div>
-            <span className="console-label">{copy.budgetTitle}</span>
-            <p className="pd-fine">{copy.budgetLede}</p>
-          </div>
-          <b className="pd-budget-total">{money(model.allocation, 'exact')}</b>
-        </div>
-
-        <div className="pd-stacked">
-          <i data-part="spent" style={{ width: `${pct(model.spent)}%` }} />
-          <i data-part="held" style={{ width: `${pct(model.aside)}%` }} />
-        </div>
-
-        <div className="pd-legend pd-legend-wide">
-          <span>
-            <i data-part="spent" />
-            <em>{dashboard.words.spent}</em>
-            <b>{money(model.spent, 'exact')}</b>
-            <p className="pd-fine">{copy.spentNote}</p>
-          </span>
-          <span>
-            <i data-part="held" />
-            <em>{dashboard.words.aside}</em>
-            <b>{money(model.aside, 'exact')}</b>
-            <p className="pd-fine">{copy.asideNote}</p>
-          </span>
-          <span>
-            <i data-part="free" />
-            <em>{dashboard.words.available}</em>
-            <b>{money(Math.max(0, model.available), 'exact')}</b>
-            <p className="pd-fine">{copy.availableNote}</p>
-          </span>
-        </div>
-
-        <div className="pd-forecast">
-          <span className="pd-chip" data-warn={model.available <= 0 ? 'true' : undefined}>
-            <Icon name="coin" size={13} />
-            {model.available <= 0
-              ? copy.forecastOut
-              : model.outlasts
-                ? fill(copy.forecastSafe, { month: dashboard.month })
-                : fill(copy.forecast, { date: runOut })}
-          </span>
-          <span className="pd-fine">
-            {fill(dashboard.words.returned, { amount: money(model.returned, 'exact') })}
-          </span>
-        </div>
-      </div>
-
-      <div className="pd-cards">
-        {model.list.map((campaign, index) => (
-          <div className="pd-glass pd-card" key={copy.rows[index]} data-reveal>
-            <div className="pd-card-top">
-              <div>
-                <b>{copy.rows[index]}</b>
-                <span className="pd-card-rule">
-                  {fill(copy.rule, {
-                    visits: String(campaign.visits),
-                    /* The reward is filled too: one of the four is money off
-                       rather than a free item, and the amount it takes off is
-                       the same figure as what it costs the venue. A złoty typed
-                       into the dictionary is the bug `useMoney` exists to
-                       prevent, and `fill` leaves the other three untouched. */
-                    reward: fill(copy.rewards[index], {
-                      amount: money(campaign.cost, 'unit'),
-                    }),
+            {/* The gap — earned and never collected — is the number to watch,
+                and it is computed rather than written down so a rewards count
+                that moves takes the sentence with it. */}
+            {model.widest >= 0 && model.widestGap > 0 && (
+              <div className="pd-glass pd-panel" data-reveal>
+                <div className="pd-panel-head">
+                  <span className="console-label">{copy.gapTitle}</span>
+                </div>
+                <p className="pd-fine">{copy.gapLede}</p>
+                <p className="pd-proof">
+                  {fill(copy.gap, {
+                    name: model.list[model.widest].name,
+                    n: String(model.widestGap),
                   })}
-                  <em>{fill(dashboard.words.each, { amount: money(campaign.cost, 'unit') })}</em>
-                </span>
+                </p>
               </div>
-              <State
-                state={campaign.live ? 'live' : 'paused'}
-                label={campaign.live ? states.live : states.paused}
-              />
-            </div>
-
-            <div className="pd-split">
-              <div>
-                <span>{copy.earned}</span>
-                <b>{campaign.earned}</b>
-              </div>
-              <div>
-                <span>{copy.used}</span>
-                <b>{campaign.used}</b>
-              </div>
-            </div>
-
-            <span className="pd-bar-track">
-              <i style={{ width: `${campaign.rate * 100}%` }} />
-            </span>
-            <div className="pd-card-meta">
-              <span>{fill(copy.unused, { n: String(campaign.gap) })}</span>
-              <span>{fill(copy.usedRate, { pct: String(Math.round(campaign.rate * 100)) })}</span>
-            </div>
-
-            <div className="pd-split pd-split-money">
-              <div>
-                <span>{dashboard.words.costSoFar}</span>
-                <b>{money(campaign.spent, 'exact')}</b>
-              </div>
-              <div>
-                <span>{dashboard.words.aside}</span>
-                <b>{money(campaign.aside, 'exact')}</b>
-              </div>
-            </div>
-
-            <p className="pd-fine">{copy.visitRule}</p>
-            {!campaign.live && <p className="pd-fine">{copy.pausedNote}</p>}
-
-            {/* The two buttons are one group, so a narrow card drops both to the
-                next line together rather than leaving "Pause" orphaned under
-                "Edit" on whichever card happens to have the shortest date. */}
-            <div className="pd-card-foot">
-              <span>{fill(dashboard.words.priority, { n: String(campaign.priority) })}</span>
-              <span>{copy.since[index]}</span>
-              <span className="pd-card-acts">
-                <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-                  {dashboard.words.edit}
-                </button>
-                <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-                  {campaign.live ? dashboard.words.pause : states.live}
-                </button>
-              </span>
-            </div>
+            )}
           </div>
-        ))}
-      </div>
-    </div>
+        );
+      }}
+    </Screen>
   );
 }
 
 /* ───────────────────────────────────────────────────────────── vouchers ── */
 
+/**
+ * The voucher ladder and the pool behind it.
+ *
+ * The prototype made the budget, the average transaction and the per-voucher
+ * cap into three editable fields, and recomputed the pool from them on this
+ * device — which was honest while there was no server, because the whole pool
+ * was invented anyway. There is a server now, and nothing here writes to it, so
+ * the rule in `CLAUDE.md` applies in the other direction: **a figure the screen
+ * cannot honestly make editable is shown as a fact rather than a field.** All
+ * three are read off `GET /v1/partner/venues/:id/budget`.
+ *
+ * Take-up per tier — how many were issued and how many used — is *not* on that
+ * response, so the "given out" and "used" columns are gone rather than zeroed.
+ * What the ladder does carry is the server's own `estimatedRemaining`: how many
+ * more of this tier the remaining pool could fund, explicitly an estimate and
+ * not a cap.
+ */
 function Vouchers() {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.vouchers;
   const money = useMoney();
   const num = useNum();
 
-  const currency = useCurrency();
-
-  /* Which tier the ladder is showing. It opens on the tier eating the most of
-     the pool, which is the one the suggestion card at the bottom is about. */
-  const [tierPick, setTierPick] = useState(PD_VOUCHER_MODEL.biggest);
-
-  /*
-   * The three figures the pool is computed from, and the points thresholds
-   * beside them.
-   *
-   * These are held in **euros**, which is the one place on the dashboard that
-   * differs from the drawer's rule (a money control holds the reader's
-   * currency). The reason is what is behind them: the drawer's fields feed one
-   * sentence, so keeping złoty and dividing once at that sentence is simplest;
-   * these three feed a *model* whose every output is money, and holding the
-   * reader's currency would mean converting at a dozen call sites and carrying a
-   * stale number when the language — and so the currency — changes underneath.
-   * The owner still types złoty: the well is handed `local()` and hands back
-   * `eur()`, so the conversion happens at the control instead of at the reading.
-   */
-  const [budget, setBudget] = useState(PD_VOUCHER_BUDGET);
-  const [avgSpend, setAvgSpend] = useState(AVG_SPEND);
-  const [maxPer, setMaxPer] = useState(PD_MAX_PER_VOUCHER);
-  const [points, setPoints] = useState(() => PD_TIERS.map((t) => t.points));
-
-  const eur = (local: number) => local / currency.rate;
-  /* Two decimals because the round trip through euros is not exact in binary
-     and 34.10 would otherwise render as 34.099999999999994 the moment it was
-     read back. Whole units for the pool, which is a four-figure sum. */
-  const local = (value: number, whole?: boolean) =>
-    whole
-      ? Math.round(value * currency.rate)
-      : Math.round(value * currency.rate * 100) / 100;
-
-  const model = voucherModelFor(budget, avgSpend, maxPer);
-
-  /* A deeper discount cannot be cheaper to reach than a shallower one. Nothing
-     downstream depends on the thresholds — they decide who qualifies, which is
-     a question about customers this screen has no counted answer to — so the
-     check is the whole of what this field can honestly do, and it does it. */
-  const pointsOutOfOrder = points.some((n, i) => i > 0 && n <= points[i - 1]);
-  /* Every bar is drawn against the widest, not against the pool: the question
-     is who reaches each tier, and that is a comparison between the tiers. */
-  const widest = Math.max(...model.tiers.map((t) => t.issued));
-  const pct = (value: number) =>
-    model.budget > 0 ? Math.max(0, Math.min(100, (value / model.budget) * 100)) : 0;
-  const runOut = `${model.runOut} ${dashboard.month}`;
-  const spendTotal = model.tiers.reduce((a, t) => a + t.spent, 0);
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const budgetApi = usePartnerBudget(venueId);
+  const state = chain(venue, budgetApi);
 
   return (
-    <div className="pd-stack">
-      {model.tight && (
-        <div className="pd-glass pd-alert" data-reveal>
-          <Icon name="arrow" size={18} />
-          <div>
-            <b>{copy.alertTitle}</b>
-            <p className="pd-fine">{fill(copy.alertBody, { date: runOut })}</p>
-          </div>
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            {copy.alertAction}
-          </button>
-        </div>
-      )}
+    <Screen state={state} index={3}>
+      {(budget) => {
+        const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
+        const avgSpend = toEuro(budget.averageCheck.minor);
+        const tiers: TierRow[] = budget.tiers.map((tier) => ({
+          pct: tier.discountPct,
+          points: tier.pointsCost,
+          issued: 0,
+          redeemed: 0,
+          cap: toEuro(tier.maxDiscountMinor),
+          remaining: tier.estimatedRemaining,
+        }));
+        const model = voucherModelFrom(
+          budget.voucher,
+          tiers,
+          avgSpend,
+          Math.max(0, ...tiers.map((t) => t.cap)),
+        );
 
-      <div className="pd-glass pd-hero pd-budget" data-reveal>
-        <div className="pd-panel-head">
-          <div>
-            <span className="console-label">{copy.budgetTitle}</span>
-            <p className="pd-fine">{copy.budgetLede}</p>
-          </div>
-          <div className="pd-budget-figure">
-            <span>{copy.budgetLabel}</span>
-            <NumberWell
-              value={local(budget, true)}
-              onChange={(next) => setBudget(Math.max(0, eur(next)))}
-              unit={currency.symbol}
-              label={copy.budgetLabel}
-              min={0}
-            />
-          </div>
-        </div>
-
-        <p className="pd-fine">{copy.allocNote}</p>
-        <div className="pd-stacked" data-tall="true">
-          <i data-part="spent" style={{ width: `${pct(model.spent)}%` }} />
-          <i data-part="held" style={{ width: `${pct(model.reserved)}%` }} />
-        </div>
-
-        <div className="pd-legend pd-legend-wide">
-          <span>
-            <i data-part="spent" />
-            <em>{copy.spent}</em>
-            <b>{money(model.spent, 'exact')}</b>
-            <p className="pd-fine">{copy.spentNote}</p>
-          </span>
-          <span>
-            <i data-part="held" />
-            <em>{copy.held}</em>
-            <b>{money(model.reserved, 'exact')}</b>
-            <p className="pd-fine">{copy.heldNote}</p>
-          </span>
-          <span>
-            <i data-part="free" />
-            <em>{copy.free}</em>
-            <b>{money(Math.max(0, model.available), 'exact')}</b>
-            <p className="pd-fine">{copy.freeNote}</p>
-          </span>
-        </div>
-
-        <span className="pd-chip" data-warn={model.available <= 0 ? 'true' : undefined}>
-          <Icon name="coin" size={13} />
-          {model.available <= 0
-            ? copy.forecastOut
-            : model.outlasts
-              ? fill(copy.forecastSafe, { month: dashboard.month })
-              : fill(copy.forecast, { date: runOut })}
-        </span>
-
-        {/* The two figures the pool is computed from, and what the remainder
-            still buys at the current mix — which is the reading that tells you
-            whether the number you just typed was a good one. Every figure on
-            this panel above recomputes as they move. */}
-        <div className="pd-inputs">
-          <div>
-            <span className="console-label">{copy.buysTitle}</span>
-            <b>{fill(copy.buys, { n: num(model.moreVouchers) })}</b>
-            <p className="pd-fine">{copy.buysNote}</p>
-          </div>
-          <div>
-            <span className="console-label">{copy.avgTitle}</span>
-            <NumberWell
-              value={local(avgSpend)}
-              onChange={(next) => setAvgSpend(Math.max(0, eur(next)))}
-              unit={currency.symbol}
-              label={copy.avgTitle}
-              step={0.5}
-              min={0}
-              wide
-            />
-            <p className="pd-fine">{copy.avgNote}</p>
-          </div>
-          <div>
-            <span className="console-label">{copy.maxTitle}</span>
-            <NumberWell
-              value={local(maxPer)}
-              onChange={(next) => setMaxPer(Math.max(0, eur(next)))}
-              unit={currency.symbol}
-              label={copy.maxTitle}
-              step={0.5}
-              min={0}
-              wide
-            />
-            <p className="pd-fine">{copy.maxNote}</p>
-          </div>
-        </div>
-
-        {/* The one thing these fields cannot do, said out loud. Every other
-            control on this frame carries `notWired` for the same reason. */}
-        <p className="pd-fine pd-try-note">{copy.tryNote}</p>
-      </div>
-
-      {/*
-        A ladder rather than a table, because the answer to "who reaches each
-        tier" is a *shape* — 124 vouchers at 5%, 59 at 10%, 16 at 15% — and five
-        columns of digits make the reader rebuild that shape in their head. Each
-        bar is the tier's reach against the widest one, and the solid head
-        inside it is the part that came back used, so reach and conversion are
-        one mark instead of two columns.
-
-        Picking a tier is the interaction, and it does something rather than
-        highlighting itself: the line underneath says what that tier costs per
-        voucher and what share of the pool it has eaten, and the "where the
-        money went" panel below dims to the same tier. Two panels, one subject.
-      */}
-      <div className="pd-glass pd-panel" data-solid="true" data-reveal>
-        <div className="pd-panel-head">
-          <div>
-            <span className="console-label">{copy.tiersTitle}</span>
-            <p className="pd-fine">{copy.tiersLede}</p>
-          </div>
-        </div>
-
-        {/* The column names, once, above rows that are buttons rather than
-            cells. `aria-hidden` because each row already names its own figures
-            to a screen reader through the labels below. */}
-        <div className="pd-ladder-head" aria-hidden>
-          <span>{copy.columns[0]}</span>
-          <span>{copy.columns[1]}</span>
-          <span />
-          <span>{copy.columns[2]}</span>
-          <span>{copy.columns[3]}</span>
-          <span>{copy.columns[4]}</span>
-        </div>
-
-        <div className="pd-ladder">
-          {model.tiers.map((tier, index) => {
-            const reach = widest > 0 ? (tier.issued / widest) * 100 : 0;
-            const used = tier.issued > 0 ? (tier.redeemed / tier.issued) * 100 : 0;
-            const on = index === tierPick;
-            return (
-              /* A div with a role rather than a <button>: the points field
-                 lives inside this row, and a form control nested in a button is
-                 invalid HTML that browsers resolve by dropping the field. */
-              <div
-                key={tier.pct}
-                className="pd-tier-row"
-                role="button"
-                tabIndex={0}
-                data-step={index}
-                data-on={on ? 'true' : undefined}
-                aria-pressed={on}
-                onClick={() => setTierPick(index)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' || event.key === ' ') {
-                    event.preventDefault();
-                    setTierPick(index);
-                  }
-                }}
-              >
-                <span className="pd-tier">{fill(copy.tier, { n: String(tier.pct) })}</span>
-                {/* A field inside a row that is itself a button: the click has
-                    to stop here, or typing a threshold would also re-pick the
-                    tier under the caret. */}
-                <span
-                  className="pd-tier-pts"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <NumberWell
-                    value={points[index]}
-                    onChange={(next) =>
-                      setPoints((was) =>
-                        was.map((n, i) => (i === index ? Math.max(0, Math.round(next)) : n)),
-                      )
-                    }
-                    unit={copy.pointsUnit}
-                    label={`${fill(copy.tier, { n: String(tier.pct) })} — ${copy.columns[1]}`}
-                    step={50}
-                    min={0}
-                    wide
-                  />
-                </span>
-                <span className="pd-tier-track">
-                  <i style={{ '--reach': `${reach}%` } as CSSProperties}>
-                    <b style={{ '--used': `${used}%` } as CSSProperties} />
-                  </i>
-                </span>
-                <em>
-                  <span className="pd-tier-key">{copy.columns[2]}</span>
-                  {num(tier.issued)}
-                </em>
-                <em>
-                  <span className="pd-tier-key">{copy.columns[3]}</span>
-                  {num(tier.redeemed)}
-                </em>
-                <em>
-                  <span className="pd-tier-key">{copy.columns[4]}</span>
-                  {money(tier.spent, 'exact')}
-                </em>
-              </div>
-            );
-          })}
-        </div>
-
-        {pointsOutOfOrder && <p className="field-error">{copy.pointsOrder}</p>}
-
-        <p className="pd-fine pd-ladder-note">
-          {fill(copy.tierDetail, {
-            unit: money(model.tiers[tierPick].unit, 'unit'),
-            pct: String(
-              spendTotal > 0
-                ? Math.round((model.tiers[tierPick].spent / spendTotal) * 100)
-                : 0,
-            ),
-          })}
-        </p>
-      </div>
-
-      <div className="pd-two">
-        <div className="pd-glass pd-panel" data-reveal>
-          <div className="pd-panel-head">
-            <span className="console-label">{copy.mixTitle}</span>
-            <b>{money(spendTotal, 'exact')}</b>
-          </div>
-          <div className="pd-stacked">
-            {model.tiers.map((tier, index) => (
-              <i
-                key={tier.pct}
-                data-part={['spent', 'held', 'free'][index]}
-                data-dim={index === tierPick ? undefined : 'true'}
-                style={{ width: `${spendTotal > 0 ? (tier.spent / spendTotal) * 100 : 0}%` }}
-              />
-            ))}
-          </div>
-          {model.tiers.map((tier, index) => (
-            <div
-              className="pd-mix-row"
-              key={tier.pct}
-              data-dim={index === tierPick ? undefined : 'true'}
-            >
-              <i data-part={['spent', 'held', 'free'][index]} />
-              <span>{fill(copy.tier, { n: String(tier.pct) })}</span>
-              <em>{money(tier.spent, 'exact')}</em>
-              <b>{spendTotal > 0 ? Math.round((tier.spent / spendTotal) * 100) : 0}%</b>
+        if (budget.voucher.base === 0 && tiers.length === 0) {
+          return (
+            <div className="pd-stack">
+              <Unmeasured index={3} />
             </div>
-          ))}
-        </div>
+          );
+        }
 
-        <div className="pd-side">
-          <div className="pd-glass pd-panel" data-reveal>
-            <span className="console-label">{copy.returnedTitle}</span>
-            <b className="pd-big">{money(model.returned, 'exact')}</b>
-            <p className="pd-fine">{copy.returnedNote}</p>
+        return (
+          <div className="pd-stack">
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.budgetTitle}</span>
+                <span className="pd-chip">{budget.period}</span>
+              </div>
+              <p className="pd-fine">{copy.budgetLede}</p>
+
+              <Bar
+                label={copy.spent}
+                value={toEuro(budget.voucher.spent)}
+                of={toEuro(budget.voucher.base)}
+                note={money(toEuro(budget.voucher.spent), 'exact')}
+              />
+              <Bar
+                label={copy.held}
+                value={toEuro(budget.voucher.reserved)}
+                of={toEuro(budget.voucher.base)}
+                note={money(toEuro(budget.voucher.reserved), 'exact')}
+              />
+              <Bar
+                label={copy.free}
+                value={Math.max(0, toEuro(budget.voucher.available))}
+                of={toEuro(budget.voucher.base)}
+                note={money(toEuro(budget.voucher.available), 'exact')}
+              />
+
+              {/* Facts, not fields. Nothing on this screen writes, and the
+                  three inputs the prototype offered here are all things the
+                  server owns. */}
+              <div className="pd-rows">
+                <div>
+                  <span>{copy.budgetLabel}</span>
+                  <b>{money(toEuro(budget.total), 'exact')}</b>
+                </div>
+                <div>
+                  <span>{copy.avgTitle}</span>
+                  <b>{money(avgSpend, 'unit')}</b>
+                </div>
+                <div>
+                  <span>{copy.maxTitle}</span>
+                  <b>
+                    {tiers.length === 0
+                      ? '—'
+                      : money(Math.max(...tiers.map((t) => t.cap)), 'unit')}
+                  </b>
+                </div>
+              </div>
+              <p className="pd-fine">{copy.avgNote}</p>
+            </div>
+
+            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.tiersTitle}</span>
+                <p className="pd-fine">{copy.tiersLede}</p>
+              </div>
+              {tiers.length === 0 ? (
+                <p className="pd-fine">{dashboard.empty[3].body}</p>
+              ) : (
+                <table className="pd-table">
+                  <thead>
+                    <tr>
+                      <th>{copy.columns[0]}</th>
+                      <th>{copy.columns[1]}</th>
+                      <th>{copy.buysTitle}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {model.tiers.map((tier) => (
+                      <tr key={tier.pct}>
+                        <td>
+                          <b>{fill(copy.tier, { n: String(tier.pct) })}</b>
+                          {/* `copy.tierDetail` also states what share of the
+                              pool this tier has spent, and no endpoint groups
+                              spend by tier — so the sentence that needs both is
+                              replaced by the half that is true. */}
+                          <span className="pd-fine">
+                            {fill(dashboard.unmeasured.tierUnit, { unit: money(tier.unit, 'unit') })}
+                          </span>
+                        </td>
+                        <td>{fill(copy.points, { n: num(tier.points) })}</td>
+                        <td>{num(tier.remaining)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="pd-fine">{copy.buysNote}</p>
+            </div>
+
+            {/* Per-tier take-up: `issued_vouchers` has it, no partner endpoint
+                returns it grouped by tier. Named rather than zeroed. */}
+            <NoSource title={copy.mixTitle} />
           </div>
-          <div className="pd-glass pd-panel pd-suggestion" data-reveal>
-            <span className="console-label">
-              <Icon name="trophy" size={14} />
-              {copy.suggestion}
-            </span>
-            <p>{fill(copy.insight, { n: String(model.tiers[model.biggest].pct) })}</p>
-          </div>
-        </div>
-      </div>
-    </div>
+        );
+      }}
+    </Screen>
   );
 }
 
@@ -1789,687 +1161,368 @@ function Customers() {
   const money = useMoney();
   const num = useNum();
 
-  const [filter, setFilter] = useState(0);
-  const [detail, setDetail] = useState<number | null>(null);
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const analyticsApi = usePartnerAnalytics(venueId);
+  const customersApi = usePartnerCustomers(venueId);
+  const budgetApi = usePartnerBudget(venueId);
+  const state = chain(venue, analyticsApi);
 
-  /* The cost-per-new-customer headline, the trend column beside it and the two
-     comparison rows are all one window's worth of arithmetic. */
-  const { totals, perNew, claimRate, roiRows, perNewTrend } = metricsFor(
-    useDashboard().range,
-  );
-
-  const last = PD_CUSTOMERS.cohorts[PD_CUSTOMERS.cohorts.length - 1];
-  const lastPct = Math.round((last.back / last.first) * 100);
-  const trendMax = Math.max(...perNewTrend);
-
-  const roster = useMemo(() => {
-    const wanted = ['all', 'regular', 'lapsed', 'new'][filter];
-    return PD_ROSTER.filter((r) => wanted === 'all' || r.status === wanted).sort(
-      (a, b) => b.spent - a.spent,
-    );
-  }, [filter]);
-
-  const open = detail == null ? null : (PD_ROSTER.find((r) => r.id === detail) ?? null);
+  const roster = customersApi.state.status === 'ready' ? customersApi.state.data : null;
+  const currency = budgetApi.state.status === 'ready' ? budgetApi.state.data.currency : 'EUR';
 
   return (
-    <div className="pd-stack">
-      {/* What a new customer costs. One number, its four parts, and the trend —
-          which is the honest version of "customer acquisition cost": everything
-          Paylez charged plus every discount given, over everyone new. */}
-      <div className="pd-glass pd-hero" data-ink="paper" data-reveal>
-        <div className="pd-hero-main">
-          <span className="console-label">{copy.costKicker}</span>
-          <p className="pd-counted">
-            <b>{money(perNew, 'unit')}</b>
-            <span>{fill(copy.costUnit, { month: dashboard.month })}</span>
-          </p>
-          <p className="pd-proof">
-            {fill(copy.costLine, {
-              cost: money(PD_COST_TOTAL, 'exact'),
-              month: dashboard.month,
-              n: num(totals.newCustomers),
-              each: money(perNew, 'unit'),
-            })}
-          </p>
+    <Screen state={state} index={4}>
+      {(data) => {
+        const toEuro = (minor: number) => minorToEuro(minor, currency);
+        const heat = heatFromApi(data.heatmap.grid);
+        const heatMax = Math.max(...heat.flat());
+        const cost = data.costPerNewCustomer;
 
-          <div className="pd-breakdown">
-            {copy.costBreakdown.map((label, index) => (
-              <div key={label}>
-                <span>{label}</span>
-                <b>{money(PD_COST_ROWS[index], 'exact')}</b>
-              </div>
-            ))}
-          </div>
-
-          <div className="pd-finding">
-            <p className="pd-fine">
-              {fill(copy.costFinding, {
-                now: money(perNew, 'unit'),
-                month: dashboard.month,
-                then: money(perNewTrend[0], 'unit'),
-              })}
-            </p>
-            <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-              {copy.costAction}
-            </button>
-          </div>
-        </div>
-
-        <div className="pd-trend">
-          <span className="console-label">{copy.trendTitle}</span>
-          <div className="pd-trend-cols">
-            {perNewTrend.map((value, index) => (
-              <span key={copy.trendMonths[index]} data-on={index === 2 ? 'true' : undefined}>
-                <em>{money(value, 'unit')}</em>
-                <i style={{ height: `${(value / trendMax) * 100}%` }} />
-                {copy.trendMonths[index]}
-              </span>
-            ))}
-          </div>
-          <p className="pd-fine">
-            {fill(copy.benchmark, { amount: money(PD_CUSTOMERS.benchmark, 'unit') })}
-          </p>
-        </div>
-      </div>
-
-      {/* The roster. Everyone here chose to be here — which is why the panel
-          says so twice, once at the top and once at the bottom. */}
-      <div className="pd-glass pd-table-wrap" data-solid="true" data-reveal>
-        {open ? (
-          <CustomerDetail entry={open} onBack={() => setDetail(null)} />
-        ) : (
-          <>
-            <div className="pd-panel-head">
-              <div>
-                <span className="console-label">{copy.rosterTitle}</span>
-                <p className="pd-fine">
-                  {fill(copy.rosterIntro, {
-                    n: String(PD_ROSTER.length),
-                    total: num(PD_CUSTOMERS.total),
-                  })}
-                </p>
-              </div>
-              <span className="pd-chip">
-                <Icon name="shield" size={13} />
-                {fill(copy.rosterCount, { n: String(PD_ROSTER.length) })}
-              </span>
-            </div>
-
-            <div className="pd-seg">
-              {copy.rosterFilters.map((label, index) => (
-                <button
-                  key={label}
-                  type="button"
-                  data-on={filter === index ? 'true' : undefined}
-                  onClick={() => setFilter(index)}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="pd-scroll">
-              <table className="pd-table">
-                <thead>
-                  <tr>
-                    {copy.rosterColumns.map((column, index) => (
-                      <th key={column} data-align={index === 1 || index === 2 ? 'right' : undefined}>
-                        {column}
-                      </th>
+        return (
+          <div className="pd-stack">
+            {/* What a new customer costs. One figure, computed once — the
+                server sums the subscription, both pools and the deal discounts
+                and divides by the new customers it counted. It is
+                cohort-suppressed, because "we spent 300 zł to win 2 customers"
+                is a fact about two people. */}
+            <div className="pd-glass pd-panel" data-ink="paper" data-reveal>
+              <span className="console-label">{copy.costKicker}</span>
+              {cost.costPerNewCustomerMinor.suppressed ? (
+                <p className="pd-fine">{dashboard.unmeasured.withheld}</p>
+              ) : (
+                <>
+                  <p className="pd-counted">
+                    <b>{money(toEuro(cost.costPerNewCustomerMinor.value ?? 0), 'unit')}</b>
+                    <span>{fill(copy.costUnit, { month: cost.period })}</span>
+                  </p>
+                  <div className="pd-rows">
+                    {copy.costBreakdown.map((label, index) => (
+                      <div key={label}>
+                        <span>{label}</span>
+                        <b>
+                          {money(
+                            toEuro(
+                              [
+                                cost.breakdown.subscription,
+                                cost.breakdown.loyalty,
+                                cost.breakdown.vouchers,
+                                cost.breakdown.deals,
+                              ][index] ?? 0,
+                            ),
+                            'exact',
+                          )}
+                        </b>
+                      </div>
                     ))}
-                    <th />
-                  </tr>
-                </thead>
-                <tbody>
-                  {roster.map((entry) => (
-                    <tr key={entry.id} onClick={() => setDetail(entry.id)}>
-                      <td>
-                        <span className="pd-person">
-                          <i data-hv={entry.hv ? 'true' : undefined}>{entry.init}</i>
-                          <span>
-                            <b>{entry.name}</b>
-                            <em>
-                              {entry.tier > 0
-                                ? fill(copy.tierProgress, { n: String(entry.tier) })
-                                : fill(copy.stamps, {
-                                    done: String(entry.sg),
-                                    of: String(entry.so),
-                                  })}
-                            </em>
-                          </span>
-                        </span>
-                      </td>
-                      <td data-align="right">
-                        <span className="pd-trend-mark" data-dir={entry.trend}>
-                          {entry.trend === 'up' ? '↑' : entry.trend === 'down' ? '↓' : '→'}
-                        </span>
-                        <b>{money(entry.spent, 'exact')}</b>
-                      </td>
-                      <td data-align="right">{entry.visits}</td>
-                      <td>
-                        {entry.last === 0
-                          ? copy.today
-                          : entry.last === 1
-                            ? copy.dayAgo
-                            : fill(copy.daysAgo, { n: String(entry.last) })}
-                      </td>
-                      <td>
-                        <State state={entry.status} label={copy.statuses[entry.status]} />
-                      </td>
-                      <td data-align="right">
-                        <Icon name="chevron" size={15} className="pd-row-chevron" />
-                      </td>
-                    </tr>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Do they come back — real monthly cohorts, each suppressed on its
+                own size. The seeded version had four invented cohorts. */}
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{copy.backTitle}</span>
+                  <p className="pd-fine">{copy.backLede}</p>
+                </div>
+              </div>
+              {data.cohorts === undefined ? (
+                <p className="pd-fine">{dashboard.unmeasured.planLocked}</p>
+              ) : data.cohorts.length === 0 ? (
+                <p className="pd-fine">{dashboard.empty[4].body}</p>
+              ) : (
+                data.cohorts.map((cohort) => (
+                  <Bar
+                    key={cohort.cohort}
+                    label={cohort.cohort}
+                    value={cohort.returned.value ?? 0}
+                    of={1}
+                    note={
+                      cohort.returned.suppressed
+                        ? '—'
+                        : `${Math.round((cohort.returned.value ?? 0) * 100)}%`
+                    }
+                  />
+                ))
+              )}
+            </div>
+
+            {/* When they come in. The server's own grid, in venue-local hours,
+                and its own quietest *open* hour — which the seeded generator
+                could never do, because 04:00 on a Monday is a closed café and
+                not a hole in the trade. */}
+            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{copy.whenTitle}</span>
+                  <p className="pd-fine">{copy.whenLede}</p>
+                </div>
+              </div>
+              {heatMax === 0 ? (
+                <p className="pd-fine">{dashboard.empty[4].body}</p>
+              ) : (
+                <div className="pd-heat">
+                  {heat.map((row, day) => (
+                    <div className="pd-heat-row" key={copy.days[day]}>
+                      <span>{copy.days[day]}</span>
+                      {row.map((value, hour) => (
+                        <i
+                          key={HEAT_HOURS[hour]}
+                          style={{ opacity: 0.08 + (value / heatMax) * 0.92 }}
+                          title={fill(copy.heatCell, { n: String(value) })}
+                        />
+                      ))}
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              )}
+              {data.heatmap.quietest && data.heatmap.total > 0 && (
+                <p className="pd-fine">
+                  {copy.days[data.heatmap.quietest.weekday]}{' '}
+                  {String(data.heatmap.quietest.hour).padStart(2, '0')}:00 ·{' '}
+                  {num(data.heatmap.quietest.visits)}
+                </p>
+              )}
             </div>
 
-            <p className="pd-fine">{copy.withdrew}</p>
-          </>
-        )}
-      </div>
-
-      <Heat />
-
-      {/* One panel and not two. "Where they are from" sat beside this one and
-          was the same six bars asking a question this dashboard has no use for:
-          an owner acts on the language a customer reads, which is the panel that
-          survived, and not on the passport behind it. */}
-      <div className="pd-glass pd-panel" data-reveal>
-        <span className="console-label">{copy.readTitle}</span>
-        <p className="pd-fine">{copy.readLede}</p>
-        {PD_CUSTOMERS.langs.map((pct, index) => (
-          <Bar
-            key={copy.langs[index]}
-            label={copy.langs[index]}
-            value={pct}
-            of={PD_CUSTOMERS.langs[0]}
-            muted={index === PD_CUSTOMERS.langs.length - 1}
-            note={
-              index === PD_CUSTOMERS.langs.length - 1
-                ? `${pct}%`
-                : fill(copy.nationCount, {
-                    n: num(Math.round((pct / 100) * PD_CUSTOMERS.total)),
-                    pct: String(pct),
-                  })
-            }
-          />
-        ))}
-        <div className="pd-finding">
-          <p className="pd-fine">{copy.langFinding}</p>
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            {copy.langAction}
-          </button>
-        </div>
-      </div>
-
-      <div className="pd-glass pd-panel" data-reveal>
-        <span className="console-label">{copy.backTitle}</span>
-        <p className="pd-fine">{copy.backLede}</p>
-        <p className="pd-proof">
-          {fill(copy.backFinding, {
-            first: num(last.first),
-            month: copy.months[copy.months.length - 1],
-            back: num(last.back),
-            pct: String(lastPct),
-          })}
-        </p>
-        {PD_CUSTOMERS.cohorts.map((cohort, index) => (
-          <Bar
-            key={copy.months[index]}
-            label={copy.months[index]}
-            value={cohort.back}
-            of={cohort.first}
-            note={fill(copy.cohort, {
-              back: num(cohort.back),
-              first: num(cohort.first),
-              pct: String(Math.round((cohort.back / cohort.first) * 100)),
-            })}
-          />
-        ))}
-        <div className="pd-finding">
-          <p className="pd-fine">
-            {fill(copy.lapsedFinding, { n: num(PD_CUSTOMERS.lapsed) })}
-          </p>
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            <Icon name="coin" size={16} />
-            {dashboard.words.remind}
-          </button>
-        </div>
-      </div>
-
-      <div className="pd-two">
-        <div className="pd-glass pd-panel" data-reveal>
-          <span className="console-label">{copy.compareTitle}</span>
-          <p className="pd-fine">
-            {fill(copy.compareNote, { n: String(PD_CUSTOMERS.peers) })}
-          </p>
-          {[
-            {
-              you: `${claimRate.toFixed(1)}%`,
-              them: `${PD_CUSTOMERS.benchClaim.toFixed(1)}%`,
-              better: claimRate > PD_CUSTOMERS.benchClaim,
-            },
-            {
-              you: `${lastPct}%`,
-              them: `${PD_CUSTOMERS.benchSecond}%`,
-              better: lastPct > PD_CUSTOMERS.benchSecond,
-            },
-            {
-              you: money(perNew, 'unit'),
-              them: money(PD_CUSTOMERS.benchmark, 'unit'),
-              better: perNew < PD_CUSTOMERS.benchmark,
-            },
-          ].map((row, index) => (
-            <div className="pd-compare" key={copy.compareRows[index]}>
-              <span>{copy.compareRows[index]}</span>
-              <div>
-                <b data-better={row.better ? 'true' : undefined}>{row.you}</b>
-                <i>{fill(copy.compareThem, { amount: row.them })}</i>
+            {/* Language mix — the only demographic signal collected, and the
+                reason it is collectable at all is that it is a preference the
+                customer chose rather than an origin. Suppressed below the
+                cohort floor, wholesale. */}
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{copy.readTitle}</span>
+                  <p className="pd-fine">{copy.readLede}</p>
+                </div>
               </div>
+              {data.languageMix.suppressed ? (
+                <p className="pd-fine">{dashboard.unmeasured.withheld}</p>
+              ) : data.languageMix.rows.length === 0 ? (
+                <p className="pd-fine">{dashboard.empty[4].body}</p>
+              ) : (
+                data.languageMix.rows.map((row) => (
+                  <Bar
+                    key={row.language}
+                    label={row.language.toUpperCase()}
+                    value={row.share}
+                    of={1}
+                    note={`${Math.round(row.share * 100)}%`}
+                  />
+                ))
+              )}
+              <p className="pd-fine">{copy.privacy}</p>
             </div>
-          ))}
-        </div>
 
-        <div className="pd-glass pd-panel" data-reveal>
-          <span className="console-label">{copy.roiTitle}</span>
-          <p className="pd-fine">{fill(copy.roiLede, { month: dashboard.month })}</p>
-          {roiRows.map((row, index) => (
-            <div className="pd-compare" key={copy.roiRows[index]}>
-              <span>
-                <b>{copy.roiRows[index]}</b>
-                <i>
-                  {fill(copy.roiLine, {
-                    cost: money(row.cost, 'exact'),
-                    n: num(row.units),
-                    unit: copy.roiUnits[index],
-                  })}
-                </i>
-              </span>
-              <div>
-                <b>{money(row.cost / Math.max(1, row.units), 'unit')}</b>
-                <i>{copy.roiPer[index]}</i>
+            {/* Where the money works. Three tools, three different outcomes —
+                normalising them into one "outcome" would produce a
+                comparable-looking number that compares nothing. */}
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{copy.roiTitle}</span>
+                  <p className="pd-fine">{fill(copy.roiLede, { month: cost.period })}</p>
+                </div>
               </div>
+              {data.roi === undefined ? (
+                <p className="pd-fine">{dashboard.unmeasured.planLocked}</p>
+              ) : (
+                <div className="pd-rows">
+                  {data.roi.map((row, index) => (
+                    <div key={row.feature}>
+                      <span>{copy.roiRows[index]}</span>
+                      <b>
+                        {fill(copy.roiLine, {
+                          cost: money(toEuro(row.spendMinor), 'exact'),
+                          n: num(row.outcome),
+                          unit: copy.roiUnits[index],
+                        })}
+                      </b>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      </div>
 
-      <p className="pd-fine">{copy.privacy}</p>
-    </div>
-  );
-}
+            {/* How you compare. Withheld until enough venues are in the group —
+                two thresholds, not one: the min-cohort protects customers, the
+                min-venues protects businesses, because with four venues in a
+                category a benchmark plus your own number is a calculator away
+                from a competitor's. */}
+            <div className="pd-glass pd-panel" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.compareTitle}</span>
+              </div>
+              {data.benchmarks === undefined || data.benchmarks.length === 0 ? (
+                <p className="pd-fine">{dashboard.unmeasured.withheld}</p>
+              ) : (
+                <div className="pd-rows">
+                  {data.benchmarks.map((row) => (
+                    <div key={row.metric}>
+                      <span>{row.metric}</span>
+                      <b>{row.value.toFixed(2)}</b>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="pd-fine">{copy.compareNote}</p>
+            </div>
 
-/** One shared customer, opened out of the roster. */
-function CustomerDetail({ entry, onBack }: { entry: RosterEntry; onBack: () => void }) {
-  const dashboard = useCopy().dashboard;
-  const copy = dashboard.customers;
-  const money = useMoney();
-
-  /* Six months of spend, back-filled from the total: the prototype does the
-     same, and the alternative is a per-customer time series nobody would read. */
-  const months = 6;
-  const trend = Array.from({ length: months }, (_, i) => {
-    const age = months - 1 - i;
-    if (age >= entry.tenure) return 0;
-    const share = (entry.tenure - age) / ((entry.tenure * (entry.tenure + 1)) / 2);
-    return entry.spent * share;
-  });
-  const trendMax = Math.max(...trend, 1);
-
-  const progress =
-    entry.tier > 0 ? 100 : entry.so > 0 ? Math.min(100, (entry.sg / entry.so) * 100) : 0;
-
-  return (
-    /*
-     * `.pd-detail`, not `.pd-open`. `.pd-open` is the *deal drawer's* two-column
-     * grid and expects exactly two children (`.pd-open-main` / `.pd-open-side`);
-     * this view has six, so above 66rem they were being dealt into that grid in
-     * pairs — the back button beside the customer's name, the privacy line
-     * beside the stat tiles — and it inherited the drawer's top hairline and
-     * wash across the head of the roster panel. Under 66rem the drawer's own
-     * media query collapses it to one column, which is why it only looked wrong
-     * on a desktop. `.pd-detail` is the column this screen was written for.
-     */
-    <div className="pd-detail">
-      <button type="button" className="btn btn-ghost pd-back" onClick={onBack}>
-        <Icon name="chevron" size={15} className="pd-back-ico" />
-        {copy.rosterTitle}
-      </button>
-
-      <div className="pd-detail-head">
-        <i data-hv={entry.hv ? 'true' : undefined}>{entry.init}</i>
-        <div>
-          <h2>{entry.name}</h2>
-          <State state={entry.status} label={copy.statuses[entry.status]} />
-        </div>
-      </div>
-
-      <p className="pd-fine pd-privacy">
-        <Icon name="shield" size={15} />
-        {copy.withdrew}
-      </p>
-
-      <div className="pd-detail-stats">
-        <div>
-          <span>{copy.rosterColumns[1]}</span>
-          <b>{money(entry.spent, 'exact')}</b>
-        </div>
-        <div>
-          <span>{copy.rosterColumns[2]}</span>
-          <b>{entry.visits}</b>
-        </div>
-        <div>
-          {/* The product's own name for this quantity, borrowed rather than
-              restated: it is the same average the voucher pool is priced off. */}
-          <span>{dashboard.vouchers.avgTitle}</span>
-          <b>{money(entry.spent / entry.visits, 'unit')}</b>
-        </div>
-        <div>
-          <span>{copy.rosterColumns[3]}</span>
-          <b>
-            {entry.last === 0
-              ? copy.today
-              : entry.last === 1
-                ? copy.dayAgo
-                : fill(copy.daysAgo, { n: String(entry.last) })}
-          </b>
-        </div>
-      </div>
-
-      <div className="pd-two">
-        <div className="pd-sub">
-          <span className="console-label">{copy.spendByMonth}</span>
-          <div className="pd-trend-cols">
-            {trend.map((value, index) => (
-              <span key={index}>
-                <i style={{ height: `${(value / trendMax) * 100}%` }} />
-              </span>
-            ))}
+            {/* The roster. Gated twice — by the plan's `identified_profiles`
+                entitlement and by an unrevoked sharing consent per person — and
+                that gap is the whole reason the count beside it is smaller than
+                the customer total. Sixteen invented people used to be here. */}
+            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+              <div className="pd-panel-head">
+                <div>
+                  <span className="console-label">{copy.rosterTitle}</span>
+                  <p className="pd-fine">{copy.rosterIntro}</p>
+                </div>
+                {roster && (
+                  <span className="pd-chip">
+                    {fill(copy.rosterCount, { n: String(roster.sharedCustomers) })}
+                  </span>
+                )}
+              </div>
+              {roster === null ? (
+                <p className="pd-fine">
+                  {customersApi.state.status === 'loading'
+                    ? dashboard.unmeasured.asking
+                    : customersApi.state.status === 'error' &&
+                        customersApi.state.error.status === 403
+                      ? dashboard.unmeasured.planLocked
+                      : dashboard.unmeasured.serverSilent}
+                </p>
+              ) : roster.rows.length === 0 ? (
+                <p className="pd-fine">{copy.privacy}</p>
+              ) : (
+                <table className="pd-table">
+                  <thead>
+                    <tr>
+                      {copy.rosterColumns.map((label) => (
+                        <th key={label}>{label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {roster.rows.map((row) => (
+                      <tr key={row.userId}>
+                        <td>{row.name}</td>
+                        <td>{money(toEuro(row.spendMinor), 'exact')}</td>
+                        <td>{num(row.visits)}</td>
+                        <td>
+                          {row.daysSince === 0
+                            ? copy.today
+                            : row.daysSince === 1
+                              ? copy.dayAgo
+                              : fill(copy.daysAgo, { n: String(row.daysSince) })}
+                        </td>
+                        <td>{row.status}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
           </div>
-        </div>
-
-        <div className="pd-sub">
-          <span className="console-label">{copy.rewards[entry.reward]}</span>
-          <span className="pd-bar-track">
-            <i style={{ width: `${progress}%` }} />
-          </span>
-          <p className="pd-fine">
-            {entry.tier > 0
-              ? fill(copy.tierProgress, { n: String(entry.tier) })
-              : fill(copy.stamps, { done: String(entry.sg), of: String(entry.so) })}
-          </p>
-          {entry.deals.map((deal) => (
-            <p className="pd-fine pd-used" key={deal}>
-              <Icon name="check" size={14} />
-              {dashboard.deals.rows[deal]}
-            </p>
-          ))}
-          {entry.camp >= 0 && (
-            <p className="pd-fine">{dashboard.campaigns.rows[entry.camp]}</p>
-          )}
-        </div>
-      </div>
-
-      <div className="pd-finding">
-        <p className="pd-proof">{copy.patterns[entry.pattern]}</p>
-        <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-          {copy.langAction}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/**
- * An average week at the counter.
- *
- * Alpha on one accent, not a colour ramp: the palette has one hue and a heat map
- * is exactly the case where a second one would be reached for. Density carries
- * it — the quiet Tuesday–Wednesday afternoon block is visible because it is the
- * only pale patch in a warm field, which is all this chart has to say.
- */
-function Heat() {
-  const dashboard = useCopy().dashboard;
-  const copy = dashboard.customers;
-
-  return (
-    <div className="pd-glass pd-panel" data-solid="true" data-reveal>
-      <span className="console-label">{copy.whenTitle}</span>
-      <p className="pd-fine">{copy.whenLede}</p>
-
-      <div className="pd-scroll">
-        <div className="pd-heat">
-          <span />
-          <div className="pd-heat-hours">
-            {HEAT_HOURS.map((hour, index) => (
-              <span key={hour}>{index % 2 === 0 ? `${String(hour).padStart(2, '0')}:00` : ''}</span>
-            ))}
-          </div>
-          {PD_HEAT.map((row, day) => (
-            <FragmentRow key={copy.days[day]} label={copy.days[day]} row={row} note={copy.heatCell} />
-          ))}
-        </div>
-      </div>
-
-      <div className="pd-finding">
-        <p className="pd-proof">{copy.quietFinding}</p>
-        <div className="pd-notice-acts">
-          <button type="button" className="btn btn-solid" disabled title={dashboard.notWired}>
-            {copy.quietAction}
-          </button>
-          <button type="button" className="btn btn-ghost" disabled title={dashboard.notWired}>
-            {copy.quietSelf}
-          </button>
-        </div>
-      </div>
-      <p className="pd-fine">{copy.peakFinding}</p>
-    </div>
-  );
-}
-
-function FragmentRow({ label, row, note }: { label: string; row: number[]; note: string }) {
-  return (
-    <>
-      <span className="pd-heat-day">{label}</span>
-      <div className="pd-heat-row">
-        {row.map((value, index) => (
-          <i
-            key={HEAT_HOURS[index]}
-            title={fill(note, { n: String(value) })}
-            /* One custom property, one rule. The floor keeps an empty cell
-               visible as a cell rather than a hole in the grid. */
-            style={{ '--v': (0.07 + (value / PD_HEAT_MAX) * 0.83).toFixed(2) } as React.CSSProperties}
-          />
-        ))}
-      </div>
-    </>
+        );
+      }}
+    </Screen>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────── scans ── */
 
+/**
+ * Today at the counter.
+ *
+ * Forty-eight receipts used to be generated here from the row index — names
+ * from a list of sixteen, a spend, a campaign, a receipt code — and paged
+ * twelve at a time. `analytics.today` counts the real thing: visits, distinct
+ * customers, sales and the transactions still waiting to be confirmed. There is
+ * no endpoint that *lists* a venue's scans, so the counts are shown and the log
+ * is named as missing rather than manufactured.
+ */
 function Scans() {
   const dashboard = useCopy().dashboard;
-  const copy = dashboard.scans;
   const money = useMoney();
   const num = useNum();
 
-  const [filter, setFilter] = useState(0);
-  const [page, setPage] = useState(0);
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const todayApi = usePartnerToday(venueId);
+  const budgetApi = usePartnerBudget(venueId);
+  const state = chain(venue, todayApi);
 
-  /* The count beside the filters is "48 scans · last 30 days". The window half
-     is the picker's; the count half is whatever the filter left standing, and
-     it has to be — it sits two rows above a pager that says "showing 1–10 of
-     10", and the pair read as a table hiding 38 rows it is not hiding. */
-  const rangeLabel = dashboard.rangeLabels[metricsFor(useDashboard().range).index];
-
-  const matching = useMemo(
-    () =>
-      PD_SCANS.filter((scan) =>
-        filter === 0 ? true : filter === 1 ? scan.first : !scan.first,
-      ),
-    [filter],
-  );
-
-  /* Twelve at a time, the prototype's page size. The filter changing has to
-     take the pager back to the top with it, or a narrow filter lands you on an
-     empty page four. */
-  const pages = Math.max(1, Math.ceil(matching.length / PD_SCAN_PAGE));
-  const current = Math.min(page, pages - 1);
-  const from = current * PD_SCAN_PAGE;
-  const rows = matching.slice(from, from + PD_SCAN_PAGE);
+  const currency = budgetApi.state.status === 'ready' ? budgetApi.state.data.currency : 'EUR';
 
   return (
-    <div className="pd-stack">
-      <div className="pd-glass pd-table-wrap" data-solid="true" data-reveal>
-        <div className="pd-toolbar">
-          <div className="pd-seg">
-            {copy.filters.map((label, index) => (
-              <button
-                key={label}
-                type="button"
-                data-on={filter === index ? 'true' : undefined}
-                onClick={() => {
-                  setFilter(index);
-                  setPage(0);
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <span className="pd-fine">
-            {fill(copy.count, { n: num(matching.length) })} · {rangeLabel}
-          </span>
-        </div>
+    <Screen state={state} index={6}>
+      {(today) => {
+        const visits = metricValue(today.visits) ?? 0;
+        if (visits === 0 && today.pendingConfirmations === 0) {
+          return (
+            <div className="pd-stack">
+              <Unmeasured index={6} />
+            </div>
+          );
+        }
 
-        <div className="pd-scroll">
-          <table className="pd-table">
-            <thead>
-              <tr>
-                {copy.columns.map((column, index) => (
-                  <th key={column} data-align={index === 3 || index === 4 ? 'right' : undefined}>
-                    {column}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((scan) => {
-                const name = PD_SCAN_NAMES[scan.who];
-                const initials = name
-                  .split(' ')
-                  .map((word) => word[0])
-                  .join('')
-                  .slice(0, 2);
-                const left = scan.need - scan.done;
-                return (
-                  <tr key={scan.receipt}>
-                    <td>
-                      {copy.today}{' '}
-                      {String(scan.hour).padStart(2, '0')}:{String(scan.minute).padStart(2, '0')}
-                    </td>
-                    <td>
-                      <span className="pd-person">
-                        <i>{initials}</i>
-                        <b>{name}</b>
-                      </span>
-                    </td>
-                    <td>
-                      <State
-                        state={scan.first ? 'live' : 'paused'}
-                        label={scan.first ? copy.first : copy.again}
-                      />
-                    </td>
-                    <td data-align="right">{money(scan.spent, 'unit')}</td>
-                    <td data-align="right">+{scan.points}</td>
-                    <td className="pd-code">#{scan.receipt}</td>
-                    {/* Pinned, and the second line names the till rather than
-                        the prototype's latitude and longitude: a coordinate
-                        pair under every row is six decimal places of precision
-                        about where a customer stood, which is not a thing this
-                        screen should be printing. */}
-                    <td>
-                      <span className="pd-place">
-                        <Icon name="pin" size={12} strokeWidth={2} />
-                        <b>{copy.places[scan.place]}</b>
-                        <em>{copy.coords}</em>
-                      </span>
-                    </td>
-                    <td>
-                      {scan.need > 0 ? (
-                        <span className="pd-progress">
-                          <span>
-                            {fill(copy.progress, {
-                              done: String(scan.done),
-                              need: String(scan.need),
-                            })}
-                            <em>
-                              {left === 0 ? copy.ready : fill(copy.toGo, { n: String(left) })}
-                            </em>
-                          </span>
-                          <i>
-                            <b style={{ width: `${(scan.done / scan.need) * 100}%` }} />
-                          </i>
-                        </span>
-                      ) : (
-                        <span className="pd-fine">{copy.noCampaign}</span>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        return (
+          <div className="pd-stack">
+            <div className="pd-tiles">
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{dashboard.overview.tiles[0]}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <Figure metric={today.visits} format={num} />
+                  </div>
+                </div>
+              </div>
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{dashboard.customers.rosterTitle}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <Figure metric={today.customers} format={num} />
+                  </div>
+                </div>
+              </div>
+              <div className="pd-glass pd-tile" data-reveal>
+                <span>{dashboard.overview.returnLabel}</span>
+                <div className="pd-tile-body">
+                  <div>
+                    <Figure
+                      metric={today.salesMinor}
+                      format={(minor) => money(minorToEuro(minor, currency), 'exact')}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
 
-        <div className="pd-pager">
-          <span className="pd-fine">
-            {fill(copy.page, {
-              from: String(from + 1),
-              to: String(from + rows.length),
-              total: num(matching.length),
-            })}
-          </span>
-          <div>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={current === 0}
-              onClick={() => setPage(current - 1)}
-            >
-              {copy.prev}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={current >= pages - 1}
-              onClick={() => setPage(current + 1)}
-            >
-              {copy.next}
-            </button>
+            <NoSource title={dashboard.screens[6].name} />
           </div>
-        </div>
-      </div>
-    </div>
+        );
+      }}
+    </Screen>
   );
 }
 
 /* ───────────────────────────────────────────────────────────────── index ── */
 
-/*
- * Index-aligned with `DASH_SCREENS`; the profile is handled by its own form and
- * so has no entry. Kept module-private and reached through the component below
- * rather than exported: a file that exports both components and a plain value
- * loses React fast refresh, which is the same rule `theme/` and `i18n/` are
- * split for.
- */
 const SCREENS = [Overview, Deals, Campaigns, Vouchers, Customers, Assistant, Scans];
 
-/** The rail's current screen, whichever that is. */
+/**
+ * The screen the rail is pointing at.
+ *
+ * Memoised on the index so switching screens does not re-run every hook in the
+ * one being left — each screen owns its own requests, and remounting is what
+ * fires them.
+ */
 export function DashboardScreen({ index }: { index: number }) {
-  const Panel = SCREENS[index];
-  return Panel ? <Panel /> : null;
+  const Body = useMemo(() => SCREENS[index] ?? SCREENS[0], [index]);
+  return <Body />;
 }

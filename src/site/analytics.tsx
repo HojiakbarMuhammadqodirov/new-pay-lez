@@ -176,6 +176,10 @@ function AnalyticsKpis() {
             </article>
           ))}
         </div>
+
+        <p className="cta-note" data-reveal>
+          {copy.analytics.exampleNote}
+        </p>
       </div>
     </section>
   );
@@ -220,6 +224,7 @@ function AnalyticsFunnel() {
               </div>
             ))}
           </div>
+          <p className="cta-note">{copy.analytics.exampleNote}</p>
         </div>
       </div>
     </section>
@@ -277,6 +282,8 @@ function AnalyticsWeek() {
               </div>
             ))}
           </div>
+
+          <p className="cta-note">{copy.analytics.exampleNote}</p>
         </div>
       </div>
     </section>

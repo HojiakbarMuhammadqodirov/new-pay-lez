@@ -6,7 +6,7 @@ import {
   type AdminService,
 } from './content';
 import { Icon } from './icons';
-import { useCopy, useMoney, useMoneyParts } from './i18n/context';
+import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import {
   dayLabel,
@@ -15,9 +15,13 @@ import {
   redemptionsFor,
   scanRowsFor,
   serviceMetrics,
+  serviceMetricsFrom,
   toCsv,
   voucherRowsFor,
+  type AdminVenueRow,
+  type ServiceMetrics,
 } from './adminMetrics';
+import { useApi } from './api/useApi';
 import { useCountUp, useReveal } from './useReveal';
 
 /**
@@ -43,17 +47,14 @@ import { useCountUp, useReveal } from './useReveal';
 
 /* ────────────────────────────────────────────────────────────── helpers ── */
 
-/** A column chart from divs: a bar is a height, and that is the whole trick. */
-function Columns({ values, label }: { values: number[]; label: string }) {
-  const peak = Math.max(...values, 1);
-  return (
-    <div className="adm-cols" role="img" aria-label={label}>
-      {values.map((value, index) => (
-        <span key={index} style={{ height: `${Math.max(2, (value / peak) * 100)}%` }} />
-      ))}
-    </div>
-  );
-}
+/*
+ * `Columns` lived here — a column chart built from divs, one `<span>` per day
+ * with a height. Every series it drew (`trend`, `scanTrend`, `salesTrend`) was
+ * `ADMIN_BASE` times a venue's `scale`, and no operator-facing route returns a
+ * day-by-day anything, so it has no caller left. It is deleted rather than kept
+ * warm: the day a series exists, the chart is eight lines, and a helper with no
+ * source is how a chart gets quietly refilled from a seed.
+ */
 
 /** A labelled proportion bar — cities, languages, tier caps. */
 function Bar({ label, value, of, note }: { label: string; value: number; of: number; note: string }) {
@@ -81,26 +82,10 @@ function State({ on, children }: { on: boolean; children: string }) {
   );
 }
 
-/**
- * A money figure the count-up can animate.
- *
- * It rewrites `textContent` every frame, so it needs the target as a number and
- * the symbol as an affix to re-apply — a formatted string would be parsed back
- * out on the first frame. See `useMoneyParts`.
+/*
+ * `MoneyFigure` lived here, for the same reason and with the same fate: every
+ * money figure on this screen was partner-scoped and is now a dash.
  */
-function MoneyFigure({ eur }: { eur: number }) {
-  const parts = useMoneyParts()(eur, 'exact');
-  return (
-    <b
-      data-count={parts.value}
-      data-prefix={parts.prefix}
-      data-suffix={parts.suffix}
-      data-group={parts.group}
-    >
-      0
-    </b>
-  );
-}
 
 /**
  * The filter strip every table carries: a search box, the four ranges, and the
@@ -198,23 +183,40 @@ function download(name: string, csv: string): void {
 
 /* ─────────────────────────────────────────────────────────── dashboard ── */
 
-function Dashboard({ scale }: { scale: number }) {
+function Dashboard({ m }: { m: ServiceMetrics }) {
   const copy = useCopy().admin.analytics;
-  const m = useMemo(() => serviceMetrics(scale), [scale]);
 
-  /* Index-aligned with `copy.admin.analytics.cards` and `ADMIN_CARD_ICONS`, in
-     the order the original lays them out: the four ways a customer can tap a
-     venue's details, then what that turned into. */
-  const cards: Array<{ value: number; note: Record<string, string>; percent?: true }> = [
-    { value: m.maps, note: {} },
-    { value: m.website, note: {} },
-    { value: m.phone, note: {} },
-    { value: m.instagram, note: {} },
-    { value: m.vouchersUsed + m.vouchersActive, note: { used: String(m.vouchersUsed), active: String(m.vouchersActive) } },
-    { value: m.loyaltyUsed + m.loyaltyActive, note: { used: String(m.loyaltyUsed), active: String(m.loyaltyActive) } },
-    { value: m.discount, note: {}, percent: true },
-    { value: m.engagement, note: {} },
-    { value: m.scans, note: {} },
+  /*
+   * Index-aligned with `copy.admin.analytics.cards` and `ADMIN_CARD_ICONS`, in
+   * the order the original lays them out: the four ways a customer can tap a
+   * venue's details, then what that turned into.
+   *
+   * **`source` is the field that matters now.** Seven of these nine have no
+   * measurement behind them at all — map opens, website clicks, phone taps and
+   * Instagram taps are not collected, and the voucher, loyalty and discount
+   * splits are partner-scoped and unreachable with an operator's token. Only
+   * engagement and scans come off a `COUNT`, and only when the request that
+   * carried them succeeded.
+   *
+   * A card with no source renders an em dash rather than a zero. That is the
+   * whole distinction: an operator reading "0 map opens" concludes nobody is
+   * finding this venue, which is a claim nothing here can make.
+   */
+  const cards: Array<{
+    value: number;
+    note: Record<string, string>;
+    percent?: true;
+    source: boolean;
+  }> = [
+    { value: m.maps, note: {}, source: false },
+    { value: m.website, note: {}, source: false },
+    { value: m.phone, note: {}, source: false },
+    { value: m.instagram, note: {}, source: false },
+    { value: m.vouchersUsed + m.vouchersActive, note: { used: String(m.vouchersUsed), active: String(m.vouchersActive) }, source: false },
+    { value: m.loyaltyUsed + m.loyaltyActive, note: { used: String(m.loyaltyUsed), active: String(m.loyaltyActive) }, source: false },
+    { value: m.discount, note: {}, percent: true, source: false },
+    { value: m.engagement, note: {}, source: m.measured },
+    { value: m.scans, note: {}, source: m.measured },
   ];
 
   return (
@@ -228,10 +230,16 @@ function Dashboard({ scale }: { scale: number }) {
                 <Icon name={ADMIN_CARD_ICONS[index]} size={16} />
               </i>
             </div>
-            <b data-count={card.value} data-suffix={card.percent ? '%' : ''} data-group=" ">
-              0
-            </b>
-            <span className="adm-sub">{fill(copy.cards[index].note, card.note)}</span>
+            {card.source ? (
+              <b data-count={card.value} data-suffix={card.percent ? '%' : ''} data-group=" ">
+                0
+              </b>
+            ) : (
+              <b title={copy.unmeasured.noSource}>—</b>
+            )}
+            <span className="adm-sub">
+              {card.source ? fill(copy.cards[index].note, card.note) : copy.unmeasured.noSource}
+            </span>
           </div>
         ))}
       </div>
@@ -241,11 +249,11 @@ function Dashboard({ scale }: { scale: number }) {
           <h2>{copy.trend.title}</h2>
           <p>{copy.trend.lede}</p>
         </div>
-        {m.engagement > 0 ? (
-          <Columns values={m.trend} label={copy.trend.title} />
-        ) : (
-          <Empty>{copy.trend.empty}</Empty>
-        )}
+        {/* The thirty-day trend was `ADMIN_BASE.trend` times the venue's
+            `scale`. Nothing an operator can call returns a day-by-day series,
+            so the panel says so rather than drawing a flat line through zero,
+            which reads as a month of no trade. */}
+        <Empty>{copy.unmeasured.noSource}</Empty>
       </section>
     </div>
   );
@@ -253,10 +261,10 @@ function Dashboard({ scale }: { scale: number }) {
 
 /* ─────────────────────────────────────────────────────────── hot deals ── */
 
-function HotDeals({ scale }: { scale: number }) {
+function HotDeals() {
   const copy = useCopy().admin.analytics;
   const money = useMoney();
-  const rows = useMemo(() => redemptionsFor(scale), [scale]);
+  const rows = useMemo(() => redemptionsFor(), []);
   const [query, setQuery] = useState('');
   const [range, setRange] = useState(0);
 
@@ -266,13 +274,23 @@ function HotDeals({ scale }: { scale: number }) {
       `${row.deal} ${row.user} ${row.code}`.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
-  /* Three deals at a venue of scale 1, and one of them paused — the original's
-     own mix, scaled the way everything else here is. */
-  const deals = scale > 0 ? [
-    { badge: '2+1', points: 2, live: false, ago: -28, redemptions: Math.round(48 * scale) },
-    { badge: '20%', points: 250, live: true, ago: -14, redemptions: Math.round(126 * scale) },
-    { badge: '15%', points: 1200, live: true, ago: -45, redemptions: Math.round(31 * scale) },
-  ] : [];
+  /*
+   * A venue's hot deals.
+   *
+   * Three were written out here — a 2+1, a 20% and a 15%, with redemption
+   * counts multiplied by the venue's `scale`. `hot_deals` holds the real ones
+   * and `partners.dealsFor` returns them with their funnel, but that route is
+   * partner-scoped and gated on ownership (`requireStaff`), which an operator's
+   * token does not satisfy. There is no admin-side deal listing, so this is
+   * empty and the panel below says which.
+   */
+  const deals: Array<{
+    badge: string;
+    points: number;
+    live: boolean;
+    ago: number;
+    redemptions: number;
+  }> = [];
 
   const counts = [
     deals.filter((deal) => deal.live).length,
@@ -386,11 +404,10 @@ function HotDeals({ scale }: { scale: number }) {
 
 /* ────────────────────────────────────────────────────────── loyalty ── */
 
-function Loyalty({ scale }: { scale: number }) {
+function Loyalty({ m }: { m: ServiceMetrics }) {
   const copy = useCopy().admin.analytics;
   const money = useMoney();
-  const m = useMemo(() => serviceMetrics(scale), [scale]);
-  const rows = useMemo(() => scanRowsFor(scale), [scale]);
+  const rows = useMemo(() => scanRowsFor(), []);
   const [query, setQuery] = useState('');
   const [range, setRange] = useState(0);
 
@@ -427,19 +444,13 @@ function Loyalty({ scale }: { scale: number }) {
           <h2>{copy.loyalty.settingsTitle}</h2>
           <p>{copy.loyalty.settingsLede}</p>
         </div>
-        <div className="adm-setting-row">
-          <span>
-            <Icon name="coin" size={16} />
-            <b>{m.loyalty.perVisit}</b> {copy.loyalty.perVisit}
-          </span>
-          <span>
-            <Icon name="qr" size={16} />
-            <b>{fill(copy.loyalty.hours, { n: String(m.loyalty.cooldown) })}</b> {copy.loyalty.cooldown}
-          </span>
-          <State on={m.loyalty.active}>
-            {m.loyalty.active ? copy.states.live : copy.states.paused}
-          </State>
-        </div>
+        {/* Settings are settings, and a venue with no scans still has a rule
+            about what a scan is worth — which is why these used to be shown
+            even at `scale: 0`. What changed is where they came from: these were
+            `ADMIN_BASE.loyalty`, three numbers typed once and shown against
+            every venue. The real ones live in `venue_settings` and no
+            operator-facing route returns them. */}
+        <Empty>{copy.unmeasured.noSource}</Empty>
       </section>
 
       <section className="adm-block" data-reveal>
@@ -468,17 +479,15 @@ function Loyalty({ scale }: { scale: number }) {
       </section>
 
       <div className="adm-kpis">
-        {tiles.map((tile, index) => (
+        {tiles.map((_tile, index) => (
           <div className="adm-kpi" key={copy.loyalty.tiles[index].label} data-reveal>
-            {tile.eur ? (
-              <MoneyFigure eur={tile.value} />
-            ) : (
-              <b data-count={tile.value} data-group=" ">
-                0
-              </b>
-            )}
+            {/* Points awarded, loyalty-attributed sales and the average basket
+                are all partner-scoped figures. An operator's token cannot reach
+                any of them, so all three are dashes rather than zeros — a
+                zero here says the loyalty programme handed out nothing. */}
+            <b title={copy.unmeasured.noSource}>—</b>
             <span>{copy.loyalty.tiles[index].label}</span>
-            <span className="adm-sub">{fill(copy.loyalty.tiles[index].note, tile.note)}</span>
+            <span className="adm-sub">{copy.unmeasured.noSource}</span>
           </div>
         ))}
       </div>
@@ -536,11 +545,9 @@ function Loyalty({ scale }: { scale: number }) {
           <h2>{copy.loyalty.trendTitle}</h2>
           <p>{copy.loyalty.trendLede}</p>
         </div>
-        {m.scans > 0 ? (
-          <Columns values={m.scanTrend} label={copy.loyalty.trendTitle} />
-        ) : (
-          <Empty>{copy.loyalty.trendEmpty}</Empty>
-        )}
+        {/* A day-by-day scan series. `venue_visits` carries one, and nothing
+            an operator can call returns it. */}
+        <Empty>{copy.unmeasured.noSource}</Empty>
       </section>
     </div>
   );
@@ -548,11 +555,10 @@ function Loyalty({ scale }: { scale: number }) {
 
 /* ───────────────────────────────────────────────────────────── vouchers ── */
 
-function Vouchers({ scale }: { scale: number }) {
+function Vouchers({ m }: { m: ServiceMetrics }) {
   const copy = useCopy().admin.analytics;
   const money = useMoney();
-  const m = useMemo(() => serviceMetrics(scale), [scale]);
-  const rows = useMemo(() => voucherRowsFor(scale), [scale]);
+  const rows = useMemo(() => voucherRowsFor(), []);
   const [query, setQuery] = useState('');
   const [range, setRange] = useState(0);
 
@@ -638,17 +644,17 @@ function Vouchers({ scale }: { scale: number }) {
       </div>
 
       <div className="adm-kpis">
+        {/* Voucher-attributed sales and the average basket behind them are
+            partner-scoped, like everything else on this tab. */}
         <div className="adm-kpi" data-reveal>
-          <MoneyFigure eur={campaign.sales} />
+          <b title={copy.unmeasured.noSource}>—</b>
           <span>{copy.vouchers.tiles[0].label}</span>
-          <span className="adm-sub">
-            {fill(copy.vouchers.tiles[0].note, { n: String(campaign.redemptions) })}
-          </span>
+          <span className="adm-sub">{copy.unmeasured.noSource}</span>
         </div>
         <div className="adm-kpi" data-reveal>
-          <MoneyFigure eur={campaign.basket} />
+          <b title={copy.unmeasured.noSource}>—</b>
           <span>{copy.vouchers.tiles[1].label}</span>
-          <span className="adm-sub">{copy.vouchers.tiles[1].note}</span>
+          <span className="adm-sub">{copy.unmeasured.noSource}</span>
         </div>
       </div>
 
@@ -706,11 +712,7 @@ function Vouchers({ scale }: { scale: number }) {
             <h2>{copy.vouchers.dailyTitle}</h2>
             <p>{copy.vouchers.dailyLede}</p>
           </div>
-          {campaign.sales > 0 ? (
-            <Columns values={m.salesTrend} label={copy.vouchers.dailyTitle} />
-          ) : (
-            <Empty>{copy.vouchers.dailyEmpty}</Empty>
-          )}
+          <Empty>{copy.unmeasured.noSource}</Empty>
         </section>
 
         <section className="adm-block" data-reveal>
@@ -718,18 +720,7 @@ function Vouchers({ scale }: { scale: number }) {
             <h2>{copy.vouchers.monthlyTitle}</h2>
             <p>{copy.vouchers.monthlyLede}</p>
           </div>
-          {campaign.sales > 0 ? (
-            <div className="adm-months">
-              {m.monthly.map((value, index) => (
-                <span key={index}>
-                  <i style={{ height: `${(value / Math.max(...m.monthly)) * 100}%` }} />
-                  <em>{money(value, 'soft')}</em>
-                </span>
-              ))}
-            </div>
-          ) : (
-            <Empty>{copy.vouchers.dailyEmpty}</Empty>
-          )}
+          <Empty>{copy.unmeasured.noSource}</Empty>
         </section>
       </div>
     </div>
@@ -738,24 +729,14 @@ function Vouchers({ scale }: { scale: number }) {
 
 /* ───────────────────────────────────────────────────────────── insights ── */
 
-function Insights({ scale }: { scale: number }) {
+function Insights({ m }: { m: ServiceMetrics }) {
   const dictionary = useCopy();
   const copy = dictionary.admin.analytics;
   const listing = dictionary.listing;
-  const m = useMemo(() => serviceMetrics(scale), [scale]);
 
   const cityPeak = Math.max(...m.cities.map((city) => city.n), 1);
   const langPeak = Math.max(...m.languages.map((language) => language.n), 1);
 
-  /* Three ways in, mine against the country's average. Grouped columns rather
-     than two lines: there are three categories, and a line chart of three points
-     is a table with extra steps. */
-  const compare = [
-    { mine: m.maps, avg: m.country.maps },
-    { mine: m.website, avg: m.country.website },
-    { mine: m.phone, avg: m.country.phone },
-  ];
-  const comparePeak = Math.max(...compare.flatMap((pair) => [pair.mine, pair.avg]), 1);
 
   return (
     <div className="adm-stack">
@@ -807,22 +788,13 @@ function Insights({ scale }: { scale: number }) {
           <p>{copy.insights.compareLede}</p>
         </div>
 
-        <div className="adm-compare">
-          {compare.map((pair, index) => (
-            <div className="adm-compare-group" key={copy.insights.axis[index]}>
-              <div className="adm-compare-cols">
-                <span data-on="true" style={{ height: `${Math.max(2, (pair.mine / comparePeak) * 100)}%` }} />
-                <span style={{ height: `${Math.max(2, (pair.avg / comparePeak) * 100)}%` }} />
-              </div>
-              <span className="adm-sub">{copy.insights.axis[index]}</span>
-            </div>
-          ))}
-        </div>
+        {/* Three ways in — map, website, phone — mine against the country's
+            average. Neither half exists: the three channels are not collected,
+            and `ADMIN_BASE.country` was three numbers typed once. A chart of a
+            venue at zero against a country at zero is not an empty chart, it is
+            a claim that nobody in the country does any of this. */}
+        <Empty>{copy.unmeasured.noSource}</Empty>
 
-        <div className="adm-legend">
-          <span data-on="true">{copy.insights.mine}</span>
-          <span>{copy.insights.avg}</span>
-        </div>
       </section>
     </div>
   );
@@ -843,7 +815,26 @@ export function ServiceAnalytics({
   const dictionary = useCopy();
   const copy = dictionary.admin;
   const [tab, setTab] = useState(0);
-  const m = useMemo(() => serviceMetrics(service.scale), [service.scale]);
+  /*
+   * The venue's month, from the one source an operator has.
+   *
+   * `GET /v1/admin/venues` is the only admin route that answers anything about
+   * a specific venue, and it answers two things: a visit count and a customer
+   * count. Everything else this screen used to show came out of `service.scale`
+   * — a number beside the venue's name in `content.ts`, multiplied through a
+   * table of invented figures. `serviceMetrics()` is now the unmeasured month
+   * and `serviceMetricsFrom` fills in the two that exist.
+   *
+   * **A failed request is a state, not a zero**, the same rule the website tab
+   * next door follows: `venues.state` stays a union, and the banner below says
+   * "not connected" rather than letting a venue look dead.
+   */
+  const venues = useApi<AdminVenueRow[]>('/v1/admin/venues');
+  const m = useMemo(() => {
+    if (venues.state.status !== 'ready') return serviceMetrics();
+    const row = venues.state.data.find((venue) => venue.id === service.id);
+    return row ? serviceMetricsFrom(row) : serviceMetrics();
+  }, [venues.state, service.id]);
 
   /*
    * A rescan per tab, and per venue.
@@ -896,14 +887,34 @@ export function ServiceAnalytics({
         <div className="adm-totals">
           {copy.analytics.totals.map((label, index) => (
             <span key={label}>
-              <b data-count={totals[index]} data-group=" ">
-                0
-              </b>
+              {/* Engagement and scans are counted; the voucher total in the
+                  middle has no operator-facing source, so it is a dash. */}
+              {index === 1 || !m.measured ? (
+                <b title={copy.analytics.unmeasured.noSource}>—</b>
+              ) : (
+                <b data-count={totals[index]} data-group=" ">
+                  0
+                </b>
+              )}
               <i>{label}</i>
             </span>
           ))}
         </div>
       </section>
+
+      {/*
+        What on this screen is real, said once and at the top.
+
+        Every figure below used to be `service.scale` multiplied through a table
+        of invented base figures, and it hung together well enough that an
+        operator had no way to tell. Two counts survive that; the banner names
+        them, and names the reason the rest are dashes.
+      */}
+      <p className="adm-empty" data-reveal>
+        {venues.state.status === 'error'
+          ? copy.analytics.unmeasured.notConnected
+          : copy.analytics.unmeasured.measured}
+      </p>
 
       <div className="adm-tabs" role="tablist" aria-label={copy.analytics.back}>
         {copy.analytics.tabs.map((name, index) => (
@@ -927,15 +938,15 @@ export function ServiceAnalytics({
           dashboard keys its screens. */}
       <div key={tab}>
         {tab === 0 ? (
-          <Dashboard scale={service.scale} />
+          <Dashboard m={m} />
         ) : tab === 1 ? (
-          <HotDeals scale={service.scale} />
+          <HotDeals />
         ) : tab === 2 ? (
-          <Loyalty scale={service.scale} />
+          <Loyalty m={m} />
         ) : tab === 3 ? (
-          <Vouchers scale={service.scale} />
+          <Vouchers m={m} />
         ) : (
-          <Insights scale={service.scale} />
+          <Insights m={m} />
         )}
       </div>
     </div>

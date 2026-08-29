@@ -1,14 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DASH_SCREENS } from './content';
-import {
-  PD_ALLOCATION,
-  PD_CAMPAIGN_MODEL,
-  PD_DEALS,
-  PD_RANGES,
-  PD_VOUCHER_MODEL,
-  RANGE_DAYS,
-} from './partnerMetrics';
+import { PD_RANGES, RANGE_DAYS, dealFromApi } from './partnerMetrics';
 import type { RangeDays } from './partnerMetrics';
+import {
+  minorToEuro,
+  usePartnerBudget,
+  usePartnerCampaigns,
+  usePartnerDeals,
+  usePartnerVenueId,
+} from './api/partner';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -37,12 +37,13 @@ import { useCountUp, useReveal } from './useReveal';
  * see the `── the screens: glass ──` block in `site.css` for what that costs and
  * where it is turned off.
  *
- * **All eight screens open.** Seven report a full month rather than the empty
- * state a brand-new venue is in — `partnerMetrics.ts` carries the prototype's
- * seeds *and* its arithmetic, so the overview's attribution, the deal claim
- * rates, the two budget pools and the cost per new customer are one calculation
- * seen from four screens. The eighth is the profile, the only one with a form
- * behind it.
+ * **All eight screens open, and none of them invents a figure.** Every number
+ * on every one of them is either a row the server counted (`api/partner.ts`) or
+ * an explicit "nothing measured yet" panel — see the header of
+ * `dashboardScreens.tsx`. The rail's own two badges and its plan card follow the
+ * same rule: with no partner session on this device there is no budget to draw a
+ * bar for, and the card says so rather than filling it to zero. The eighth
+ * screen is the profile, the only one with a form behind it.
  *
  * Two things belong to the frame rather than to any screen, and both are here
  * for the same reason the prototype puts them here: **the create drawer** —
@@ -67,24 +68,49 @@ function Rail({
 }) {
   const copy = useCopy();
   const money = useMoney();
-  /*
-   * The plan card reads the same pool the Campaigns and Vouchers screens do.
-   * It used to carry its own two numbers, which was fine while those screens
-   * showed a venue's empty state and became a contradiction the moment they
-   * started reporting: the rail said one budget was spent and the screen one
-   * click away said another.
-   */
-  const spent = PD_CAMPAIGN_MODEL.spent + PD_VOUCHER_MODEL.spent;
-  const used = spent / PD_ALLOCATION.total;
 
   /*
-   * The two counts in the rail, and both are counted rather than written down.
-   * The prototype hardcodes "3" against each; a badge that has to be edited by
-   * hand when a deal is paused is a badge that will be wrong by Thursday.
+   * The plan card reads the same pool the Campaigns and Vouchers screens do —
+   * which is now the server's, not a seed. It used to carry its own two
+   * numbers, which was a contradiction waiting to happen: the rail said one
+   * budget was spent and the screen one click away said another.
+   *
+   * With no partner session there is no budget, and `budget` is `null`. The
+   * card then shows no bar and no figures rather than a bar filled to zero
+   * against a total of zero — which is both a division by zero and a claim
+   * that the venue has spent nothing, and only one of those is a rendering
+   * bug.
    */
-  const badges: Record<string, number> = {
-    deals: PD_DEALS.filter((deal) => deal.state === 'live').length,
-    campaigns: PD_CAMPAIGN_MODEL.list.filter((campaign) => campaign.live).length,
+  const venue = usePartnerVenueId();
+  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const budgetApi = usePartnerBudget(venueId);
+  const dealsApi = usePartnerDeals(venueId);
+  const campaignsApi = usePartnerCampaigns(venueId);
+
+  const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : null;
+  const toEuro = (minor: number) => minorToEuro(minor, budget?.currency ?? 'EUR');
+  const spent = budget ? toEuro(budget.loyalty.spent + budget.voucher.spent) : null;
+  const total = budget ? toEuro(budget.total) : null;
+  const used = spent !== null && total !== null && total > 0 ? spent / total : null;
+
+  /*
+   * The two counts in the rail, counted rather than written down — the
+   * prototype hardcodes "3" against each, and a badge edited by hand when a
+   * deal is paused is a badge that will be wrong by Thursday. `undefined` when
+   * nobody has answered, which is what keeps the badge off rather than
+   * asserting that nothing is running.
+   */
+  const badges: Record<string, number | undefined> = {
+    deals:
+      dealsApi.state.status === 'ready'
+        ? dealsApi.state.data
+            .map((row) => dealFromApi(row, toEuro))
+            .filter((deal) => deal.state === 'live').length
+        : undefined,
+    campaigns:
+      campaignsApi.state.status === 'ready'
+        ? campaignsApi.state.data.filter((campaign) => campaign.status === 'active').length
+        : undefined,
   };
 
   const group = (which: 'grow' | 'workspace') =>
@@ -114,7 +140,9 @@ function Rail({
               >
                 <Icon name={entry.icon} size={18} />
                 <span>{copy.dashboard.screens[index].name}</span>
-                {badges[entry.id] > 0 && <i className="rail-badge">{badges[entry.id]}</i>}
+                {(badges[entry.id] ?? 0) > 0 && (
+                  <i className="rail-badge">{badges[entry.id]}</i>
+                )}
               </button>
             ))}
           </div>
@@ -128,16 +156,21 @@ function Rail({
             <span className="plan-state">{copy.dashboard.plan.state}</span>
           </div>
           <p>{copy.dashboard.plan.caption}</p>
-          <div className="plan-bar">
-            {/* Amber is not available — the palette has one accent — so a budget
-                running out is shown by the bar filling, not by changing hue. */}
-            <i style={{ width: `${Math.min(100, used * 100).toFixed(1)}%` }} />
-          </div>
+          {used !== null && (
+            <div className="plan-bar">
+              {/* Amber is not available — the palette has one accent — so a
+                  budget running out is shown by the bar filling, not by
+                  changing hue. */}
+              <i style={{ width: `${Math.min(100, used * 100).toFixed(1)}%` }} />
+            </div>
+          )}
           <span className="plan-usage">
-            {fill(copy.dashboard.plan.usage, {
-              used: money(spent, 'exact'),
-              total: money(PD_ALLOCATION.total, 'exact'),
-            })}
+            {spent === null || total === null
+              ? copy.dashboard.unmeasured.plan
+              : fill(copy.dashboard.plan.usage, {
+                  used: money(spent, 'exact'),
+                  total: money(total, 'exact'),
+                })}
           </span>
         </div>
 

@@ -4,7 +4,8 @@ import { Icon } from './icons';
 import { useAuth } from './auth/context';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
-import { PD_AUDIENCES, PD_NOTIFY_QUOTA } from './partnerMetrics';
+import { PD_AUDIENCES } from './partnerMetrics';
+import { usePartnerPushQuota, usePartnerVenueId } from './api/partner';
 import { FX } from './i18n/fx';
 import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
@@ -111,9 +112,36 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
   const [stopClaims, setStopClaims] = useState(200);
   const [stopMoney, setStopMoney] = useState(400);
 
-  const reach = PD_AUDIENCES[audience];
-  const suggested = reach.sendAt;
-  const quotaOut = PD_NOTIFY_QUOTA.left === 0;
+  /*
+   * How big the chosen audience is — and, more often, the admission that we
+   * cannot say.
+   *
+   * `PD_AUDIENCES` used to be five invented rows: a reach, a notifiable count
+   * and a suggested send time each. The server computes the real thing per deal
+   * (`deals.audienceFor`, which is the honest figure — who a push should reach
+   * against who it actually will, after the platform frequency cap) but there
+   * is no endpoint listing the audiences a venue can choose between, so the
+   * list is empty and the estimate paragraph says so. A drawer that sized an
+   * audience from a seed was telling an owner how many people their offer would
+   * reach, which is the single most consequential number on this panel.
+   */
+  const reach = PD_AUDIENCES[audience] ?? null;
+  const suggested = reach?.sendAt ?? notifyTime;
+
+  /*
+   * The notification quota is real and reachable:
+   * `GET /v1/partner/venues/:id/push-quota` counts `push_quotas` against the
+   * plan's entitlement. With no partner session there is no quota — and the
+   * switch is disabled for that reason rather than for the "you have used them
+   * all" reason, which is a different sentence and a different fix.
+   */
+  const quotaVenue = usePartnerVenueId();
+  const quotaApi = usePartnerPushQuota(
+    quotaVenue.state.status === 'ready' ? quotaVenue.state.data : null,
+  );
+  const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : null;
+  const quotaOut = quota !== null && quota.remaining === 0;
+  const quotaUnknown = quota === null;
 
   const dayNames = useCopy().dashboard.customers.days;
   const whenDays =
@@ -238,10 +266,14 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
           ))}
         </div>
         <p className="pd-brief">
-          {fill(copy.audienceEstimate, {
-            n: reach.reach.toLocaleString('en-US').replace(/,/g, currency.group),
-            notifiable: reach.notifiable.toLocaleString('en-US').replace(/,/g, currency.group),
-          })}
+          {reach === null
+            ? dashboard.unmeasured.audience
+            : fill(copy.audienceEstimate, {
+                n: reach.reach.toLocaleString('en-US').replace(/,/g, currency.group),
+                notifiable: reach.notifiable
+                  .toLocaleString('en-US')
+                  .replace(/,/g, currency.group),
+              })}
         </p>
       </Block>
 
@@ -250,10 +282,12 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
           <div>
             <b>{copy.notifySwitch}</b>
             <span className="pd-fine">
-              {fill(copy.notifyQuota, {
-                n: String(PD_NOTIFY_QUOTA.left),
-                total: String(PD_NOTIFY_QUOTA.total),
-              })}
+              {quota === null
+                ? dashboard.unmeasured.quota
+                : fill(copy.notifyQuota, {
+                    n: String(quota.remaining),
+                    total: String(quota.quota),
+                  })}
             </span>
           </div>
           {/*
@@ -265,7 +299,7 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
             <input
               type="checkbox"
               checked={notify}
-              disabled={quotaOut}
+              disabled={quotaOut || quotaUnknown}
               onChange={(event) => setNotify(event.target.checked)}
             />
             <i aria-hidden />
@@ -275,7 +309,7 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
 
         {quotaOut && (
           <div className="pd-brief pd-brief-warn">
-            <b>{fill(copy.notifyOutTitle, { total: String(PD_NOTIFY_QUOTA.total) })}</b>
+            <b>{fill(copy.notifyOutTitle, { total: String(quota?.quota ?? 0) })}</b>
             <p>{copy.notifyOutBody}</p>
             <button type="button" className="btn btn-ghost" onClick={() => toast(dashboard.notWired)}>
               {copy.notifyPlan}
@@ -315,10 +349,12 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
               <div>
                 <b>{dealCopy.audiences[audience]}</b>
                 <span className="pd-fine">
-                  {fill(copy.notifyReach, {
-                    n: String(reach.notifiable),
-                    total: String(reach.reach),
-                  })}
+                  {reach === null
+                    ? dashboard.unmeasured.audience
+                    : fill(copy.notifyReach, {
+                        n: String(reach.notifiable),
+                        total: String(reach.reach),
+                      })}
                 </span>
               </div>
               <span className="pd-fine">{copy.notifyWhoNote}</span>

@@ -1,37 +1,56 @@
 /**
- * What the console's analytics view is actually reading.
+ * What the console's analytics view is actually reading — which, for most of it,
+ * is nothing.
  *
- * React-free and pure, like `auth/business.ts` and `auth/player.ts`: one venue's
- * whole month is *derived* from its `scale`, so `npm run verify` can check that
- * the headline agrees with the cards under it, that a venue with no traffic
- * produces zeroes rather than a fraction of a customer, and that the date filters
- * on the tables mean what they say.
+ * This file used to derive a venue's whole month from one seed. `ADMIN_SERVICES`
+ * gave each listing a `scale`, and `serviceMetrics(scale)` multiplied a table of
+ * invented base figures by it: map opens, website clicks, phone calls, Instagram
+ * taps, scans, vouchers issued and used, a thirty-day trend, a sales curve, a
+ * city split, a language split and a country comparison. It was internally
+ * consistent — a quiet venue was quiet everywhere, which was the whole argument
+ * for deriving rather than transcribing — and none of it had been measured. An
+ * operator reading "Sultan Barbers · 1,284 engagements" was reading `0.62`
+ * multiplied by a number somebody typed in `content.ts`.
  *
- * Derivation rather than five hundred hand-written numbers is the point. The
- * original admin panel showed one venue at a time and every screen of it agreed
- * with every other; the only way to keep that true across five seeded venues is
- * to compute them from one seed. A quiet venue is then quiet *everywhere* — its
- * trend, its tables and its country comparison all fall together.
+ * ── what is actually available ───────────────────────────────────────────
  *
- * `scale: 0` is not a special case, it is the same arithmetic: every count lands
- * on zero, every table empties, and the view falls back to the "nothing yet"
- * states — which is exactly the state the reference screenshots were taken in,
- * and the state the one real listing on this console is genuinely in.
+ * One endpoint answers anything about a specific venue to an operator:
+ * `GET /v1/admin/venues` returns, per venue, a **visit count** and a **customer
+ * count**, both `COUNT`s over `venue_visits` and `venue_customers`. That is the
+ * whole of it. Everything else this screen showed — the four link channels, the
+ * voucher and loyalty splits, the trends, the tables, the city and language
+ * breakdowns — is either partner-scoped (`/v1/partner/venues/:id/analytics`,
+ * which an admin token cannot call: `requireStaff` gates it on ownership) or is
+ * not collected at all.
+ *
+ * So `serviceMetrics()` returns the **unmeasured month** and
+ * `serviceMetricsFrom()` fills in the two figures that exist. `measured` is the
+ * field every panel branches on, and it is `false` by construction rather than
+ * by a value happening to be zero — because "nobody has counted this" and "the
+ * count is zero" are different findings and the console is the screen that
+ * exists to tell an operator things they cannot see from anywhere else.
+ *
+ * React-free and pure, like `auth/business.ts` and `auth/player.ts`, so
+ * `npm run verify` can hold it to its invariants outside a browser.
  */
 import type { SpokenLanguage } from './auth/business';
-import {
-  ADMIN_BASE,
-  ADMIN_REDEMPTIONS,
-  ADMIN_SCAN_ROWS,
-  ADMIN_VOUCHER_ROWS,
-} from './content';
-
-/** Counts are whole; a venue does not get 0.6 of a phone call. */
-const whole = (value: number, scale: number) => Math.round(value * scale);
-/** Money keeps its cents until the formatter decides what to do with them. */
-const money = (value: number, scale: number) => Math.round(value * scale * 100) / 100;
 
 export interface ServiceMetrics {
+  /**
+   * Whether any figure below was counted by anything.
+   *
+   * The one field that is not a number, and the reason the rest are safe to be
+   * numbers. A panel that prints a zero from an unmeasured month has told an
+   * operator that a venue had no visitors, which is a different claim from "we
+   * have not asked".
+   */
+  measured: boolean;
+
+  /* ── the two that a real source answers ── */
+  scans: number;
+  customers: number;
+
+  /* ── the rest: no source, kept so the panels have a shape to render ── */
   maps: number;
   website: number;
   phone: number;
@@ -41,13 +60,12 @@ export interface ServiceMetrics {
   loyaltyUsed: number;
   loyaltyActive: number;
   discount: number;
-  scans: number;
   /**
    * Every interaction, and a sum rather than a seeded figure.
    *
-   * The original shows this twice — once in the service header and once as the
-   * ninth card — and two independently invented numbers would eventually
-   * disagree. Adding the parts costs nothing and cannot.
+   * The console shows this twice — once in the service header and once as a
+   * card — and two independently invented numbers would eventually disagree.
+   * Adding the parts costs nothing and cannot.
    */
   engagement: number;
   vouchers: number;
@@ -83,73 +101,103 @@ export interface ServiceMetrics {
   country: { maps: number; website: number; phone: number };
 }
 
-/** The whole month for one venue. */
-export function serviceMetrics(scale: number): ServiceMetrics {
-  const b = ADMIN_BASE;
+/** A month of nothing measured. Thirty days long, so a chart still has a shape. */
+const MONTH_DAYS = 30;
+const flat = (days = MONTH_DAYS) => Array.from({ length: days }, () => 0);
 
-  const maps = whole(b.maps, scale);
-  const website = whole(b.website, scale);
-  const phone = whole(b.phone, scale);
-  const instagram = whole(b.instagram, scale);
-  const scans = whole(b.scans, scale);
-
-  const vouchersUsed = whole(b.vouchersUsed, scale);
-  const vouchersActive = whole(b.vouchersActive, scale);
-  const loyaltyUsed = whole(b.loyaltyUsed, scale);
-  const loyaltyActive = whole(b.loyaltyActive, scale);
-
+/**
+ * The whole month for one venue, with no source behind it.
+ *
+ * Deliberately takes no argument. It used to take a `scale`, and the whole
+ * point of the rewrite is that a venue's month is not a function of a number
+ * somebody typed beside its name. Every count is 0 and `measured` is `false`;
+ * the view reads the flag, not the zeros.
+ */
+export function serviceMetrics(): ServiceMetrics {
   return {
-    maps,
-    website,
-    phone,
-    instagram,
-    vouchersUsed,
-    vouchersActive,
-    loyaltyUsed,
-    loyaltyActive,
-    /* A percentage is a ratio, not a quantity: a quiet venue gives the same
-       proportion away as a busy one. It only collapses when there is nothing to
-       discount at all. */
-    discount: scans === 0 && vouchersUsed === 0 ? 0 : b.discount,
-    scans,
-    engagement: maps + website + phone + instagram + scans,
-    vouchers: vouchersUsed + vouchersActive + loyaltyUsed + loyaltyActive,
+    measured: false,
+    scans: 0,
+    customers: 0,
+    maps: 0,
+    website: 0,
+    phone: 0,
+    instagram: 0,
+    vouchersUsed: 0,
+    vouchersActive: 0,
+    loyaltyUsed: 0,
+    loyaltyActive: 0,
+    discount: 0,
+    engagement: 0,
+    vouchers: 0,
 
-    trend: b.trend.map((value) => whole(value, scale)),
-    scanTrend: b.scanTrend.map((value) => whole(value, scale)),
-    salesTrend: b.salesTrend.map((value) => money(value, scale)),
-    monthly: b.monthly.map((value) => money(value, scale)),
+    trend: flat(),
+    scanTrend: flat(),
+    salesTrend: flat(),
+    monthly: flat(12),
 
     loyalty: {
-      perVisit: b.loyalty.perVisit,
-      cooldown: b.loyalty.cooldown,
-      /* Settings are settings. A venue with no scans yet still has a rule about
-         what a scan is worth, and blanking it would read as "not configured". */
-      active: b.loyalty.active,
-      campaigns: scale > 0 ? b.loyalty.campaigns : [],
-      awarded: scans * b.loyalty.perVisit,
-      sales: money(b.loyalty.sales, scale),
-      avg: scans === 0 ? 0 : b.loyalty.avg,
+      /* Settings, not measurements — but they are the *venue's* settings, held
+         in `venue_settings` on the server, and nothing an operator can reach
+         returns them. Zero with `measured: false` beside it is honest; a
+         plausible "1 point per visit" is not. */
+      perVisit: 0,
+      cooldown: 0,
+      active: false,
+      campaigns: [],
+      awarded: 0,
+      sales: 0,
+      avg: 0,
     },
 
     voucherCampaign: {
-      budget: b.vouchers.budget,
-      spent: money(b.vouchers.spent, scale),
-      issued: whole(b.vouchers.issued, scale),
-      sales: money(b.vouchers.sales, scale),
-      basket: vouchersUsed === 0 ? 0 : b.vouchers.basket,
-      redemptions: vouchersUsed + loyaltyUsed,
+      budget: 0,
+      spent: 0,
+      issued: 0,
+      sales: 0,
+      basket: 0,
+      redemptions: 0,
     },
 
-    tiers: b.tiers.map((tier) => ({ ...tier, issued: whole(tier.issued, scale) })),
+    tiers: [],
+    cities: [],
+    languages: [],
+    country: { maps: 0, website: 0, phone: 0 },
+  };
+}
 
-    cities: b.cities
-      .map((city) => ({ ...city, n: whole(city.n, scale) }))
-      .filter((city) => city.n > 0),
-    languages: b.languages
-      .map((language) => ({ ...language, n: whole(language.n, scale) }))
-      .filter((language) => language.n > 0),
-    country: b.country,
+/** One row of `GET /v1/admin/venues`, as far as this view uses it. */
+export interface AdminVenueRow {
+  id: string;
+  name: string;
+  city: string;
+  category: string;
+  status: string;
+  verified_at: string | null;
+  created_at: string;
+  owner: string | null;
+  visits: number;
+  customers: number;
+}
+
+/**
+ * The two figures an operator can actually get, folded into the same shape.
+ *
+ * `engagement` stays the sum of its parts, which now means it is the scan count
+ * — the three other channels it used to include (map opens, website clicks,
+ * phone taps) are not collected, and adding zeros for them would make a total
+ * that quietly under-reports itself the day they are. It is a sum either way,
+ * which is the property that stops the header and the card disagreeing.
+ *
+ * `measured` is `true` here and only here: these two came off a `COUNT`.
+ */
+export function serviceMetricsFrom(row: AdminVenueRow): ServiceMetrics {
+  const base = serviceMetrics();
+  return {
+    ...base,
+    measured: true,
+    scans: row.visits,
+    customers: row.customers,
+    engagement: row.visits,
   };
 }
 
@@ -159,14 +207,10 @@ export function serviceMetrics(scale: number): ServiceMetrics {
  * How many days back a filter reaches. `null` is "all time".
  *
  * Index-aligned with `copy.admin.analytics.ranges`, in the original's order.
+ * Structure, not data — the control keeps its four choices whether or not there
+ * is a row to apply them to.
  */
 export const RANGES: Array<number | null> = [null, 7, 30, 90];
-
-/** Rows a venue actually has: none at all when it has no traffic. */
-function take<T>(rows: T[], scale: number): T[] {
-  if (scale <= 0) return [];
-  return rows.slice(0, Math.max(1, Math.min(rows.length, Math.round(rows.length * scale))));
-}
 
 export interface Redemption {
   ago: number;
@@ -179,11 +223,40 @@ export interface Redemption {
   cheque: number;
 }
 
-export const redemptionsFor = (scale: number): Redemption[] =>
-  take(ADMIN_REDEMPTIONS, scale).map((row) => ({ ...row, cheque: money(row.cheque, 1) }));
-
-export const scanRowsFor = (scale: number) => take(ADMIN_SCAN_ROWS, scale);
-export const voucherRowsFor = (scale: number) => take(ADMIN_VOUCHER_ROWS, scale);
+/**
+ * The three tables, and all three are empty.
+ *
+ * They were slices of hand-written row sets in `content.ts`, cut to
+ * `rows.length × scale` — so a venue with `scale: 0.62` showed the first
+ * eighteen of thirty invented redemptions, under a real venue's name, with
+ * invented customer names in them.
+ *
+ * There is no operator-facing endpoint for any of the three. Voucher
+ * redemptions, scans and issued vouchers are all venue-scoped and live behind
+ * `/v1/partner/…`, which an admin token cannot call — `requireStaff` gates
+ * those on ownership, deliberately, and widening that gate so a console could
+ * fill a table is not a rendering decision.
+ */
+export const redemptionsFor = (): Redemption[] => [];
+export const scanRowsFor = (): Array<{
+  ago: number;
+  user: string;
+  points: number;
+  spent: number;
+  receipt: string;
+  city: string;
+  progress: [number, number];
+}> => [];
+export const voucherRowsFor = (): Array<{
+  ago: number;
+  code: string;
+  loyalty: boolean;
+  user: string;
+  pct: number;
+  points: number;
+  used: boolean;
+  cheque: number;
+}> => [];
 
 /** Whether a row falls inside the chosen range. */
 export const inRange = (ago: number, days: number | null): boolean =>
@@ -192,9 +265,9 @@ export const inRange = (ago: number, days: number | null): boolean =>
 /**
  * The date a row happened, as `DD.MM`.
  *
- * Computed from "days ago" at render rather than stored, so a demo left open
- * over a weekend does not start showing last week as today. `now` is a parameter
- * for the same reason it is one in `player.ts`: so this is testable.
+ * Computed from "days ago" at render rather than stored, so a screen left open
+ * over a weekend does not start showing last week as today. `now` is a
+ * parameter for the same reason it is one in `player.ts`: so this is testable.
  */
 export function dayLabel(ago: number, now: Date = new Date()): string {
   const day = new Date(now);

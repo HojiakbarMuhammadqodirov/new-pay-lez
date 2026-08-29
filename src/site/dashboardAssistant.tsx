@@ -174,6 +174,17 @@ function parseWeeks(text: string): number | null {
   );
 }
 
+/** A deal's run length in whole weeks, or 0 when its window is open-ended. */
+const weeksOf = (deal: { from: string | null; to: string | null }): number =>
+  deal.from && deal.to
+    ? Math.max(
+        1,
+        Math.round(
+          (new Date(deal.to).getTime() - new Date(deal.from).getTime()) / 604_800_000,
+        ),
+      )
+    : 0;
+
 /* ─────────────────────────────────────────────────────────────── the screen ── */
 
 export function Assistant() {
@@ -537,6 +548,33 @@ export function Assistant() {
               c: money(PD_ASSIST.budgets[2], 'exact'),
             })
           : copy.placeholders[draft.stage];
+
+  /*
+   * With nothing measured, it has nothing to say — and says that.
+   *
+   * The rule for this screen (root `CLAUDE.md`) is that **every figure in every
+   * sentence arrives through a `fill()` hole from `partnerMetrics.ts`**, which
+   * is what stops it inventing one. The seeds behind those holes are gone, so
+   * the corollary now bites: an assistant that fills a hole with 0 or a blank
+   * because it cannot know is exactly the failure that rule exists to prevent.
+   * `PD_ASSIST.measured` is false until a venue's own context has been fetched
+   * from `GET /v1/partner/venues/:id/assistant/context`, and until then this
+   * refuses to draft rather than drafting around holes.
+   *
+   * It sits after every hook, so the hook order is unchanged.
+   */
+  if (!PD_ASSIST.measured) {
+    const empty = dashboard.empty[5];
+    return (
+      <div className="pd-stack pd-assist">
+        <div className="pd-glass pd-panel pd-empty" data-reveal>
+          <h3>{empty.title}</h3>
+          <p className="pd-fine">{empty.body}</p>
+          <p className="pd-fine">{dashboard.unmeasured.assistant}</p>
+        </div>
+      </div>
+    );
+  }
 
   /* ── screens the conversation can end on ── */
 
@@ -1066,7 +1104,11 @@ export function Assistant() {
             {
               text: fill(copy.review[2].text, {
                 name: dashboard.deals.rows[lunch],
-                weeks: String(PD_DEALS[lunch].weeks),
+                /* How long it ran, from the deal's own window. `PartnerDeal`
+                   carried a `weeks` seed and no longer does — the server sends
+                   `valid_from` / `valid_to`, and a run length is the two
+                   subtracted rather than a third figure to keep in step. */
+                weeks: String(weeksOf(PD_DEALS[lunch])),
                 claims: num(PD_DEALS[lunch].claimed),
               }),
               label: copy.review[2].label,
