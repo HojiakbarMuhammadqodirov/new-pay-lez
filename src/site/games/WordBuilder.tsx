@@ -15,9 +15,19 @@ import { buildWordRound } from './rounds';
  * **A wrong attempt does not end the word.** That is the rule that makes this
  * the thinking game of the set rather than a reflex test: getting it wrong
  * shakes the row, keeps the letters where they are, and lets the player undo
- * back to where they went astray. What it costs is the first-try bonus and,
- * usually, the speed one — see `wordPoints`, which is where all of the scoring
- * lives.
+ * back to where they went astray. What it costs is the **round's** perfect
+ * bonus, and nothing else — `wordPoints` scores what the word was worth rather
+ * than how the player got there, so a word fought for pays exactly what the same
+ * word guessed first time does. The one thing that costs the word itself is a
+ * *hint*, which forfeits the tier bonus and leaves the base: somebody who needed
+ * it still earns for having finished the word, they just do not earn for it
+ * having been hard.
+ *
+ * **Nothing here is timed.** A speed term and a first-try term used to sit in
+ * that score and between them they were worth twice the word — which made the
+ * one game on the page meant to be thought about into a race against the same
+ * clock as the other five. Nothing in this component measures how long a word
+ * takes any more.
  *
  * **The list is the language being practised, not the language being read.**
  * Polish or English, chosen on the card, with the clues written in English in
@@ -34,7 +44,14 @@ const SHAKE_MS = 450;
 
 interface Solved {
   points: number;
-  firstTry: boolean;
+  /**
+   * No wrong guess and no hint.
+   *
+   * Not "first try" any more, because a first try is no longer worth anything on
+   * its own — this is only ever read by the perfect-round bonus below, which
+   * needs every word in the round to have gone in clean.
+   */
+  clean: boolean;
 }
 
 export function WordBuilder({
@@ -65,7 +82,7 @@ export function WordBuilder({
 
   const [solved, setSolved] = useState<Solved[]>([]);
   /** Per-word, reset by `load`: whether anything has gone wrong or been hinted. */
-  const attempt = useRef({ started: 0, missed: false, hinted: false });
+  const attempt = useRef({ missed: false, hinted: false });
 
   const word = deck?.[index]?.[0] ?? '';
   const hint = deck?.[index]?.[1] ?? '';
@@ -82,7 +99,7 @@ export function WordBuilder({
     setTray(letters.map((ch) => ({ ch, used: false })));
     setSlots([]);
     setStatus('open');
-    attempt.current = { started: Date.now(), missed: false, hinted: false };
+    attempt.current = { missed: false, hinted: false };
   }, []);
 
   /* `onQuit` is an inline arrow at the call site, so putting it in the dep array
@@ -150,17 +167,14 @@ export function WordBuilder({
     }
 
     setStatus('right');
-    const seconds = (Date.now() - attempt.current.started) / 1000;
+    /* The tier and the hint are the whole of it. What is deliberately *not* here
+       is how many attempts it took or how long they took — the word is worth
+       what the word is worth. `clean` is kept anyway, for the round's bonus. */
     setSolved((current) => [
       ...current,
       {
-        points: wordPoints({
-          tier,
-          firstTry: !attempt.current.missed,
-          hinted: attempt.current.hinted,
-          seconds,
-        }),
-        firstTry: !attempt.current.missed && !attempt.current.hinted,
+        points: wordPoints({ tier, hinted: attempt.current.hinted }),
+        clean: !attempt.current.missed && !attempt.current.hinted,
       },
     ]);
   }, [built, word, status, deck, tier]);
@@ -216,7 +230,8 @@ export function WordBuilder({
     setStatus('open');
   };
 
-  /** Fills the next correct letter. Costs the first-try and speed bonuses. */
+  /** Fills the next correct letter. Costs this word its tier bonus, and the
+   *  round its perfect one. */
   const reveal = () => {
     if (status === 'right') return;
     const need = [...word][slots.length];
@@ -230,9 +245,12 @@ export function WordBuilder({
     if (!deck) return;
     const at = index + 1;
     if (at >= deck.length) {
+      /* Every word solved, every one of them clean. Both halves are load-bearing:
+         `every` over an incomplete round would pay the bonus to somebody who
+         quit after two perfect words. */
       const points =
         solved.reduce((sum, entry) => sum + entry.points, 0) +
-        (solved.length === deck.length && solved.every((entry) => entry.firstTry)
+        (solved.length === deck.length && solved.every((entry) => entry.clean)
           ? WORD_PERFECT_BONUS
           : 0);
       /* Won means every word went in. Anything less still banks what it earned —

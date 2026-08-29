@@ -535,6 +535,15 @@ export const en = {
     resultScore: '{correct} of {total} correct',
     resultPoints: '+{points} points',
     resultNone: 'No points this round.',
+    /*
+     * The repeat-play taper, said out loud. A player who answered every
+     * question correctly and banked less than last time will read a smaller
+     * number as their own mistake unless the card says what actually happened,
+     * so these two name the round rather than the score. `{n}` is which time
+     * today this game has been played.
+     */
+    resultDecay: 'Round {n} of this game today · {scored} scored, {points} banked',
+    resultDecayNone: 'Round {n} of this game today · repeats stop paying. Another game still pays in full.',
     /* Never a bare score: what the points are *for* is the reason to play the
        next round, so the card always says how far off the nearest reward is. */
     resultToward: '{points} more and the first voucher is yours.',
@@ -561,7 +570,7 @@ export const en = {
      */
     flight: {
       rule: 'Fly as far as Squawk can · {gaps} gaps banks the round',
-      reward: 'One crash ends it · +{points} per gap',
+      reward: 'One crash ends it · +{points} per gap · up to {max} a flight',
       goal: '{target} to bank the round',
       hint: 'Tap the screen to flap',
       resume: 'Tap to pick up where you left off',
@@ -586,8 +595,8 @@ export const en = {
      * 196 capitals, drawn through a bag that exhausts before it repeats.
      */
     memory: {
-      rule: '{pairs} pairs · no clock',
-      reward: 'Fewer moves scores higher · +{points} per pair',
+      rule: '{pairs} pairs · no time limit',
+      reward: 'Faster clears score more · up to {points}',
       pairs: 'Pairs {found} / {total}',
       moves: '{n} moves',
       facedown: 'Face-down card',
@@ -604,7 +613,7 @@ export const en = {
      */
     wordGame: {
       rule: '{words} words · easy to hard',
-      reward: 'First try and quick scores more · hints cost the bonus',
+      reward: 'Harder words score more · a hint costs the bonus',
       list: 'Language to practise',
       lists: { pl: 'Polish', en: 'English' },
       tier: 'Level {n}',
@@ -950,7 +959,7 @@ export const en = {
         'Morning flat white',
         'Student Tuesdays',
         'Free filter with any bake',
-        'Rainy day double points',
+        'Rainy day double stamp',
         'Neighbour discount',
         'Lunch bundle',
       ],
@@ -1372,7 +1381,7 @@ export const en = {
         translateNote: 'Paylez translates this for customers reading in another language.',
         copyError: 'A deal needs a title and a description before it can go live.',
         kindTitle: 'What kind of deal',
-        kinds: ['Percentage off', 'Free item', 'Money off', 'Double points'],
+        kinds: ['Percentage off', 'Free item', 'Money off', 'Extra stamp'],
         discountTitle: 'Discount and dates',
         badgeLabel: 'Discount text',
         badgeNote: 'Short and clear. Customers see this first. 14 characters at most.',
@@ -1790,7 +1799,7 @@ export const en = {
     lede: 'Discover, play and get rewarded.',
     primary: 'Play & Earn',
     secondary: 'How it works',
-    stats: ['Per game win', 'Partner stores', 'Cities live'],
+    stats: ['Buys a voucher', 'Partner stores', 'Cities live'],
   },
 
   proof: 'Redeem points at leading partner stores',
@@ -1830,7 +1839,7 @@ export const en = {
       },
       {
         title: 'Scan QR codes, earn extra points',
-        body: 'Scan partner QR codes in-store to unlock bonus points and instant voucher drops — right from your phone.',
+        body: 'Scan partner QR codes in-store to add points to your balance without answering a single question — right from your phone.',
       },
       {
         title: 'AI Assistant',
@@ -1865,7 +1874,7 @@ export const en = {
       },
       {
         title: 'Climb the Paylez Champions board',
-        body: 'Invite friends, keep your streak alive and rise up the monthly leaderboard for bigger prizes.',
+        body: 'Invite friends, keep your streak alive and climb the monthly board. It starts from zero on the first, so the top is never far off.',
       },
     ],
   },
@@ -1917,7 +1926,7 @@ export const en = {
       lede: 'A few quick questions a day. Points that turn into vouchers at shops you already use.',
       primary: 'Start playing',
       secondary: 'See the games',
-      stats: ['Per game win', 'Streak bonus', 'Buys a voucher'],
+      stats: ['Best round', 'Earns a freeze', 'Buys a voucher'],
     },
 
     steps: {
@@ -1927,15 +1936,15 @@ export const en = {
       items: [
         {
           title: 'Pick a game',
-          body: 'Capitals, flags, or life in Poland. Ten questions a round, and none of them take long.',
+          body: 'Capitals, flags, or life in Poland. Five questions a round, and none of them take long.',
         },
         {
           title: 'Answer',
-          body: 'Every correct answer scores, and answering quickly scores more — the clock is part of the game.',
+          body: 'Every correct answer scores, and getting the whole round right pays a bonus on top of them.',
         },
         {
           title: 'Keep the streak',
-          body: 'Come back tomorrow. A streak multiplies everything you score, and seven days running pays a bonus of its own.',
+          body: 'Come back tomorrow. One round a day keeps the streak alive, and seven days running earns a freeze that covers the day you miss.',
         },
         {
           title: 'Redeem',
@@ -1953,21 +1962,21 @@ export const en = {
     streak: {
       eyebrow: 'Streaks',
       title: 'The streak is where the points are.',
-      lede: 'One round every 24 hours keeps it alive. Miss that window and the streak — and the points you built with it — go back to zero, unless you are holding a freeze. A freeze covers one missed day, you earn one every seventh, and you can hold two. That is the whole rule.',
+      lede: 'One round every 24 hours keeps it alive. Miss that window and the streak goes back to zero — your points stay exactly where they are — unless you are holding a freeze. A freeze covers one missed day, you earn one every seventh, and you can hold two. That is the whole rule.',
       card: {
         label: 'Current streak',
         unit: 'days',
-        reward: '+250 pts on day seven',
+        reward: 'A freeze on day seven',
         freeze: 'Freezes held · each covers one missed day',
       },
       benefits: [
         {
-          title: 'Day three: 1.5×',
-          body: 'Every point you score is worth half as much again, across every game on the page.',
+          title: 'Fresh value every day',
+          body: 'A game pays full the first time you play it that day, and less every time you repeat it. Sleep on it and every game is worth full again.',
         },
         {
-          title: 'Day seven: 250 pts',
-          body: 'A flat bonus on top of the multiplier, paid the moment the seventh round lands.',
+          title: 'Day seven: a freeze',
+          body: 'A week of showing up buys you a day off. A freeze absorbs one missed day and the streak carries on as if you had played.',
         },
         {
           title: 'It counts the day, not the game',
@@ -1979,7 +1988,7 @@ export const en = {
     board: {
       eyebrow: 'Paylez Champions',
       title: 'The monthly board.',
-      lede: 'Everyone starts at zero on the first. The top three share the month’s prize pool; everyone else starts the next one on the same footing.',
+      lede: 'Everyone starts at zero on the first. The top three finish the month named at the top of the board; everyone else starts the next one on the same footing.',
       columns: { rank: '#', player: 'Player', points: 'Points' },
       note: 'Sample board — yours resets on the 1st.',
     },
@@ -1990,11 +1999,11 @@ export const en = {
       items: [
         {
           q: 'Do points expire?',
-          a: 'Yes. Play at least one round every 24 hours to keep them — miss that window and your points and your streak both reset to zero.',
+          a: 'No. Your balance keeps what it has earned, even through a week off — it is the streak that has a clock on it. Miss that window and the streak goes back to zero; the points are still yours to spend.',
         },
         {
           q: 'How many rounds can I play a day?',
-          a: 'As many as your lives allow. Every round costs a life and lives come back over time, so there is no daily cap — only however many you have left.',
+          a: 'As many as you like. Losing a round no longer costs a life, and the lives you spend to start one come back over time. There is no cap — but the same game pays less every time you repeat it in a day, until it pays nothing. Tomorrow it is worth full again.',
         },
         {
           q: 'What is a voucher actually worth?',
@@ -2263,7 +2272,7 @@ export const en = {
           bullets: [
             {
               title: 'Six ways to reach them',
-              body: 'Push, limited offers, promo codes, gift cards, bonus-point drops and email.',
+              body: 'Push, limited offers, promo codes, gift cards, in-store QR codes and email.',
             },
             {
               title: 'Audiences that are already built',
@@ -2379,7 +2388,7 @@ export const en = {
         {
           name: 'Growth',
           note: 'Up to 5 sites',
-          body: 'The full marketing toolkit, per-site logins and bonus-point drops.',
+          body: 'The full marketing toolkit, per-site logins and in-store QR campaigns.',
           features: [
             'Everything in Single site',
             'Push, offers, promo codes and gift cards',
@@ -2450,7 +2459,7 @@ export const en = {
       items: [
         {
           title: 'Answer a few questions',
-          body: 'Three scoring rounds a day across the three games. Every correct answer is points, and a streak is worth more than a single good day.',
+          body: 'A couple of minutes on the tram. Every correct answer is points, and every game pays its full value once a day — so spreading them out beats grinding one.',
         },
         {
           title: 'Pick a voucher',
@@ -2491,8 +2500,8 @@ export const en = {
           body: 'The voucher moves to Used the moment the code exists, whether or not anyone scans it. Have the shop in front of you first.',
         },
         {
-          title: 'Points reset if you stop playing',
-          body: 'Play at least one round every 24 hours and your points and your streak carry on. Miss that window and both go back to zero. Vouchers you have already claimed carry their own expiry date, printed on the card before you spend anything.',
+          title: 'The streak resets if you stop playing',
+          body: 'Play at least one round every 24 hours and the streak carries on. Miss that window and it goes back to zero — your points do not. Vouchers you have already claimed carry their own expiry date, printed on the card before you spend anything.',
         },
       ],
     },
@@ -2521,8 +2530,8 @@ export const en = {
     },
 
     cta: {
-      title: 'Your next voucher is about four minutes away.',
-      lede: 'That is three rounds of questions. Start today and the streak starts counting too.',
+      title: 'Your next voucher is a handful of rounds away.',
+      lede: 'A few minutes a day, spread across a few different games. Start today and the streak starts counting too.',
       primary: 'Play & Earn',
       secondary: 'See the games',
       note: 'Free to start · Available across Poland',
@@ -2739,7 +2748,7 @@ export const en = {
     ],
     news: {
       heading: 'Get the best deals first',
-      body: 'One short email a week — the new drops and points multipliers worth your time.',
+      body: 'One short email a week — the new drops and partner deals worth your time.',
       success: 'Your mail app is open — send it and you are on the list ✦',
       placeholder: 'you@email.com',
       emailLabel: 'Email address',

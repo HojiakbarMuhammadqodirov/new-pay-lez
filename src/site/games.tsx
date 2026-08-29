@@ -1,19 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS } from './content';
+import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS, type GameId } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
-  awardFlight,
   awardPoints,
-  awardRound,
+  bankedPoints,
   CHEAPEST_VOUCHER,
-  flightPoints,
+  flightAward,
   freezesOf,
   MAX_FREEZES,
   MAX_LIVES,
+  quizAward,
   refillLives,
+  roundsToday,
+  today,
+  type Award,
   type PlayerState,
 } from './auth/player';
 import { FlightGame } from './flight/FlightGame';
@@ -67,7 +70,6 @@ import '../components/GlobeHero/ui/flagFont.css';
  * state on the card that starts one, and hence `useReveal` below.
  */
 
-type GameId = (typeof GAMES)[number]['id'];
 type Game = (typeof GAMES)[number];
 
 /**
@@ -297,6 +299,8 @@ function Result({
   correct,
   total,
   points,
+  scored,
+  round,
   balance,
   streak,
   scoreLine,
@@ -307,7 +311,12 @@ function Result({
   won: boolean;
   correct: number;
   total: number;
+  /** What the round **banked**, after the day's curve. The headline figure. */
   points: number;
+  /** What it **scored**, before it. Equal to `points` on a first round. */
+  scored: number;
+  /** Which round of this game today this was — 1 for the first. */
+  round: number;
   /** The balance *after* the round, for the line about what it is worth. */
   balance: number;
   streak: number;
@@ -332,6 +341,20 @@ function Result({
    */
   const short = Math.max(0, CHEAPEST_VOUCHER - balance);
 
+  /*
+   * Whether the day's curve took anything, and therefore whether the card owes
+   * the player an explanation.
+   *
+   * It always does when it did. The same round, answered the same way, pays 10
+   * and then 6 and then 4 — and with nothing but the figure on screen that
+   * reads as the game being broken rather than as a rule anybody agreed to. The
+   * fifth round is the case that forces it: it pays nothing, and `resultNone`
+   * below says "no points this round", which a player who got all five right
+   * would read as an accusation. Two branches, because they are two different
+   * pieces of news.
+   */
+  const decayed = scored > points;
+
   return (
     <div className="round round-result">
       {/*
@@ -355,10 +378,24 @@ function Result({
       <p className="result-score">
         {scoreLine ?? fill(copy.resultScore, { correct: String(correct), total: String(total) })}
       </p>
-      {/* Only the empty round needs saying in words. `resultPoints` restated
-          the figure directly above it, which was fine as a line of body copy
-          and is noise under a 4.5rem one. */}
-      {points === 0 && <p className="result-points">{copy.resultNone}</p>}
+      {/* Only a round that needs explaining says anything in words. `resultPoints`
+          restated the figure directly above it, which was fine as a line of body
+          copy and is noise under a 4.5rem one.
+
+          `.result-points` rather than a class of its own: this is the same
+          component doing the same job — the note under the figure that says why
+          the figure is what it is — and the sheet has one style for it. */}
+      {decayed ? (
+        <p className="result-points">
+          {fill(points === 0 ? copy.resultDecayNone : copy.resultDecay, {
+            n: String(round),
+            scored: String(scored),
+            points: String(points),
+          })}
+        </p>
+      ) : (
+        points === 0 && <p className="result-points">{copy.resultNone}</p>
+      )}
       <p className="result-toward">
         {short > 0
           ? fill(copy.resultToward, { points: String(short) })
@@ -481,7 +518,12 @@ export function GamesApp() {
   const [result, setResult] = useState<{
     won: boolean;
     correct: number;
+    /** Banked, after the day's curve. */
     points: number;
+    /** Scored, before it — the card compares the two. */
+    scored: number;
+    /** Which round of that game today it was. */
+    round: number;
     balance: number;
   } | null>(null);
 
@@ -583,59 +625,76 @@ export function GamesApp() {
       .finally(() => setLoading(false));
   };
 
-  /** Bank whatever the round scored and show the card. One path for all seven. */
-  const bank = (
-    next: PlayerState,
-    { won, correct, points }: { won: boolean; correct: number; points: number },
-  ) => {
+  /**
+   * Bank a finished round and show the card. One path for all seven.
+   *
+   * The award arrives priced at what it **scored**; what it **banks** is that
+   * through the day's curve, and the card is handed both because they are two
+   * different things to say. `bankedPoints` is asked for the second rather than
+   * this file multiplying it out again: it used to compute `correct × perCorrect`
+   * for the figure on the card while `awardRound` computed the balance, which is
+   * the duplicate `player.ts` warns about at `bankedPoints` — and it is now wrong
+   * twice over, missing the clean-sweep bonus and missing the curve.
+   *
+   * One `now` for all three calls, because each of them defaults to a fresh
+   * `new Date()`. Three of those either side of midnight would price the round
+   * against one day, count it against the next, and report a third figure to
+   * the player.
+   */
+  const bank = (award: Award, correct: number) => {
+    const now = new Date();
+    /* Read *before* the round is counted, so the first round of a day reports
+       itself as round 1 rather than as round 2. */
+    const before = roundsToday(player, award.game, today(now));
+    const points = bankedPoints(player, award, now);
+    const next = awardPoints(player, award, now);
     setPlayer(next);
-    setResult({ won, correct, points, balance: next.points });
+    setResult({
+      won: award.won,
+      correct,
+      points,
+      scored: award.points,
+      round: before + 1,
+      balance: next.points,
+    });
   };
 
   /** The quiz and arcade path: the round reports right answers, not points. */
   const finish = (correct: number, won: boolean) => {
     if (!game) return;
-    const next =
+    bank(
       game.kind === 'flight'
-        ? awardFlight(player, {
+        ? flightAward({
+            game: game.id,
             cleared: correct,
             target: game.questions,
             perGap: game.perCorrect,
             won,
           })
-        : awardRound(player, {
+        : quizAward({
+            game: game.id,
             correct,
             total: game.questions,
             perCorrect: game.perCorrect,
             won,
-          });
-    /* A flight past its target pays for gaps that `correct` deliberately does
-       not count, so `correct * perCorrect` is no longer the whole story there. */
-    bank(next, {
-      won,
+          }),
       correct,
-      points:
-        game.kind === 'flight'
-          ? flightPoints(correct, game.perCorrect)
-          : correct * game.perCorrect,
-    });
+    );
   };
 
   /**
    * The two that score themselves.
    *
    * Word Builder's total is five per-word scores plus a perfect-round bonus and
-   * Memory Match's is a base plus an efficiency curve — neither is
-   * `correct × perCorrect`, so they hand over the number rather than the count.
+   * Memory Match's is a single band read off the clock — neither is
+   * `correct × perCorrect`, and the memory row does not even carry a per-pair
+   * figure any more, so they hand over the number rather than the count.
    * `awardPoints` still owns everything that happens to the account, which is
    * why the streak, the lapse and the freeze are not restated in either game.
    */
   const finishScored = (points: number, correct: number, won: boolean) => {
     if (!game) return;
-    bank(
-      awardPoints(player, { points, answered: game.questions, correct, won }),
-      { won, correct, points },
-    );
+    bank({ game: game.id, points, answered: game.questions, correct, won }, correct);
   };
 
   return (
@@ -782,6 +841,8 @@ export function GamesApp() {
               correct={result.correct}
               total={game.questions}
               points={result.points}
+              scored={result.scored}
+              round={result.round}
               balance={result.balance}
               streak={player.streak}
               scoreLine={

@@ -286,15 +286,48 @@ export const ASSISTANT_OPEN_EVENT = 'paylez:assistant-open';
 /* ───────────────────────────────────────────────────────────────── games ── */
 
 /**
+ * Which game a round was.
+ *
+ * Written out here rather than derived from the table below, because the table
+ * is now typed *by* it: a row with a misspelt id is a build error at the row
+ * rather than a game nothing can ever find. `auth/player.ts` imports it to key
+ * the day's per-game tally — the decay curve prices a repeat of *this* game, so
+ * every award has to say which one it was.
+ */
+export type GameId =
+  | 'brain'
+  | 'flag'
+  | 'capital'
+  | 'poland'
+  | 'flight'
+  | 'memory'
+  | 'word';
+
+/**
  * The seven games, index-aligned with `copy.games.names`.
  *
  * Rules per game rather than one shared rule, because the old app varied them
- * and the variation is the point: the flag round is quick and worth more, the
- * Poland round is slower and worth less because it is the one you are meant to
- * think about. `kind` is what the round generator switches on.
+ * and the variation is the point: the flag round gives you six seconds a
+ * question and the Poland round eight, because one is recognition and the other
+ * is the one you are meant to think about. What no longer varies is the
+ * **price** — see `perCorrect` below. `kind` is what the round generator
+ * switches on.
  *
- * `perCorrect` is the score per right answer; `allowedMistakes` is how many you
- * may get wrong and still bank the round.
+ * `perCorrect` is the score per right answer, and it is **1 for all four
+ * quizzes**. The 5/2/2/1 spread it used to carry priced the same five questions
+ * and the same two minutes of somebody's evening at 25, 10, 10 and 5 — so the
+ * general quiz was the only one worth opening, and the Poland round, the one
+ * this site most wants a newcomer to think about, paid least of the four. What
+ * separates them now is the questions rather than the price; what gives a round
+ * its shape is `QUIZ_PERFECT_BONUS`, which is worth as much as all five answers
+ * put together and lands on the last question.
+ *
+ * `allowedMistakes` is how many you may get wrong and still bank the round.
+ *
+ * Every figure here is what a round scores **before the day's curve**. A repeat
+ * of the same game pays a fraction of it and the fifth pays nothing — see
+ * `DAILY_DECAY` in `auth/player.ts`, which is the only brake on this screen now
+ * that a loss costs no life.
  *
  * **The last three read those columns differently rather than making them
  * optional**, so this stays one homogeneous table instead of a union of five
@@ -308,7 +341,7 @@ export const ASSISTANT_OPEN_EVENT = 'paylez:assistant-open';
  * `games/bag.ts`, so a bank is exhausted before anything in it repeats.
  */
 export const GAMES: Array<{
-  id: 'brain' | 'flag' | 'capital' | 'poland' | 'flight' | 'memory' | 'word';
+  id: GameId;
   kind: 'text' | 'flag' | 'capital' | 'flight' | 'memory' | 'word';
   icon: IconName;
   questions: number;
@@ -316,9 +349,9 @@ export const GAMES: Array<{
   perCorrect: number;
   allowedMistakes: number;
 }> = [
-  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 5, allowedMistakes: 1 },
-  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
-  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 2, allowedMistakes: 1 },
+  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1, allowedMistakes: 1 },
+  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
+  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
   { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
   /*
    * The arcade round, and the only one that is played rather than answered.
@@ -328,28 +361,45 @@ export const GAMES: Array<{
    *
    * Five gaps to bank, matching the quizzes' five questions, so a round is worth
    * the same wherever you spend it. Unlike a quiz the run does not stop there —
-   * every gap past five pays another two, so a good flight can out-earn any
-   * round on the page. That is deliberate: it is the only game here where the
-   * ceiling is skill rather than the question count.
+   * every gap past five pays another point — but the *payout* does stop:
+   * `MAX_FLIGHT_POINTS` in `auth/player.ts` caps a flight at 20, which is twice
+   * a clean quiz and the same order as everything else in the set. At two a gap
+   * with no ceiling at all, which is what this row said before, one lucky run
+   * out-earned four days of the rest of the page — a jackpot rather than a
+   * bound. Skill is still paid for past the bank line; it stops being paid at
+   * twenty.
    */
-  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 2, allowedMistakes: 0 },
+  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 1, allowedMistakes: 0 },
   /*
-   * Memory Match. `questions` is pairs on the board, `perCorrect` is points per
-   * pair found, and both of the other two are zero and mean it: there is no
-   * clock and there is no fail state.
+   * Memory Match. `questions` is pairs on the board, and both of the other two
+   * are zero and mean it: there is no countdown and there is no fail state.
    *
-   * That is the one accessibility decision in the set and it is deliberate —
-   * every other game here is timed, and a game that rewards patience rather than
-   * speed is the one a non-native reader or an older player can actually win.
-   * The real scoring is `memoryPoints` in `auth/player.ts`: the base is
-   * guaranteed and the bonus is on how few moves it took.
+   * **`perCorrect` prices nothing on this row** and is the one dead number in
+   * the table. The board is scored by `MEMORY_BANDS` in `auth/player.ts` — 12,
+   * 8, 4 or 2 for the whole board on how long it took — so there is no
+   * per-pair figure to state, and the card reads the top band out of `player.ts`
+   * rather than this column (see `rulesFor`). It is left at 6 rather than
+   * dropped because the row is one shape with six others and a nullable column
+   * would be a union of shapes for every consumer to narrow; a number nothing
+   * reads is the cheaper of the two.
+   *
+   * Being measured is not being raced, and the difference is the whole
+   * accessibility argument for this game: nothing ticks on screen, nothing ends
+   * the board, and the slowest band still pays. What time buys is the honest
+   * measure of the skill actually being tested — remembering where a card was is
+   * what makes you fast — where the move count it used to be scored on paid a
+   * guaranteed 36 for six pairs that cannot be lost, the richest round on the
+   * page for the least asked of anybody.
    */
   { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6, allowedMistakes: 0 },
   /*
-   * Word Builder. `questions` is words in the round and `perCorrect` is the base
-   * a solved word pays before its tier, first-try and speed bonuses — see
-   * `wordPoints`. `seconds` is 0 because the clock scores rather than limits:
-   * running long costs the speed bonus and nothing else.
+   * Word Builder. `questions` is words in the round; `perCorrect` is dead here
+   * for the same reason it is on the memory row above, and `seconds` is 0
+   * because **there is no clock at all any more** — not a limit and not a
+   * score. A word is worth `WORD_BASE` plus its own tier (`wordPoints`), and a
+   * hint forfeits the tier and leaves the base. The speed term that used to sit
+   * in there made the thinking game of the set a race, which is what the other
+   * five already are.
    */
   { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
 ];
@@ -751,8 +801,20 @@ export const DASH_SCREENS: Array<{
  * had stopped being the cheapest one long before anybody noticed, which is the
  * whole reason `CHEAPEST_VOUCHER_POINTS` exists.
  */
+/*
+ * Index-aligned with `copy.learn.hero.stats`, which now reads
+ * ['Best round', 'Earns a freeze', 'Buys a voucher'].
+ *
+ * The first was 100 under the label "per game win", and both halves of that
+ * were wrong at once: nothing pays 100 a round any more, and the biggest round
+ * on the page is a full flight at `MAX_FLIGHT_POINTS`. It is written here
+ * rather than imported from `auth/player.ts` because this file is the
+ * marketing model and importing the app's scoring into it would make the two
+ * one thing — but it is the same number, and it is the number to change if the
+ * ceiling moves.
+ */
 export const LEARN_STATS = [
-  { value: 100, suffix: ' pts' },
+  { value: 20, suffix: ' pts' },
   { value: 7, suffix: '-day' },
   { value: CHEAPEST_VOUCHER_POINTS, suffix: ' pts' },
 ];

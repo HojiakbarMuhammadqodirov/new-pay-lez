@@ -463,6 +463,8 @@ export const pl: Dictionary = {
     resultScore: '{correct} z {total} poprawnie',
     resultPoints: '+{points} punktów',
     resultNone: 'W tej rundzie bez punktów.',
+    resultDecay: 'Runda {n} tej gry dzisiaj · zdobyte {scored}, zapisane {points}',
+    resultDecayNone: 'Runda {n} tej gry dzisiaj · powtórki przestają płacić. Inna gra wciąż płaci pełną stawkę.',
     resultToward: 'Jeszcze {points} i pierwszy voucher jest Twój.',
     resultAfford: 'Masz już dość na voucher — idź go odebrać.',
     resultSpend: 'Wydaj punkty',
@@ -482,7 +484,7 @@ export const pl: Dictionary = {
 
     flight: {
       rule: 'Leć tak daleko, jak zdoła Squawk · {gaps} bram zalicza rundę',
-      reward: 'Jedno zderzenie kończy grę · +{points} za bramę',
+      reward: 'Jedno zderzenie kończy grę · +{points} za bramę · do {max} za lot',
       goal: '{target} zalicza rundę',
       hint: 'Dotknij ekranu, aby zamachać skrzydłami',
       resume: 'Dotknij, aby wrócić do gry',
@@ -497,8 +499,8 @@ export const pl: Dictionary = {
     },
 
     memory: {
-      rule: '{pairs} par · bez zegara',
-      reward: 'Mniej ruchów to więcej punktów · +{points} za parę',
+      rule: '{pairs} par · bez limitu czasu',
+      reward: 'Szybsze ułożenie to więcej punktów · do {points}',
       pairs: 'Pary {found} / {total}',
       moves: 'Ruchy: {n}',
       facedown: 'Zakryta karta',
@@ -508,7 +510,7 @@ export const pl: Dictionary = {
 
     wordGame: {
       rule: '{words} słów · od łatwych do trudnych',
-      reward: 'Za pierwszym razem i szybko daje więcej · podpowiedź kosztuje bonus',
+      reward: 'Trudniejsze słowa dają więcej · podpowiedź kosztuje bonus',
       list: 'Język do ćwiczenia',
       lists: { pl: 'Polski', en: 'Angielski' },
       tier: 'Poziom {n}',
@@ -819,7 +821,7 @@ export const pl: Dictionary = {
         'Poranna flat white',
         'Studenckie wtorki',
         'Darmowy przelew do wypieku',
-        'Deszczowe podwójne punkty',
+        'Deszczowa podwójna pieczątka',
         'Zniżka sąsiedzka',
         'Zestaw lunchowy',
       ],
@@ -1193,7 +1195,7 @@ export const pl: Dictionary = {
         translateNote: 'Paylez przetłumaczy to dla klientów czytających w innym języku.',
         copyError: 'Okazja potrzebuje tytułu i opisu, zanim ruszy.',
         kindTitle: 'Jaki to rodzaj okazji',
-        kinds: ['Rabat procentowy', 'Darmowa pozycja', 'Kwota zniżki', 'Podwójne punkty'],
+        kinds: ['Rabat procentowy', 'Darmowa pozycja', 'Kwota zniżki', 'Dodatkowa pieczątka'],
         discountTitle: 'Rabat i daty',
         badgeLabel: 'Tekst rabatu',
         badgeNote: 'Krótko i jasno. Klienci widzą to najpierw. Najwyżej 14 znaków.',
@@ -1582,7 +1584,7 @@ export const pl: Dictionary = {
     lede: 'Odkrywaj, graj i zgarniaj nagrody.',
     primary: 'Graj i zarabiaj',
     secondary: 'Jak to działa',
-    stats: ['Za wygraną w grze', 'Sklepów partnerskich', 'Miast dostępnych'],
+    stats: ['Wystarczy na voucher', 'Sklepów partnerskich', 'Miast dostępnych'],
   },
 
   proof: 'Wymieniaj punkty w czołowych sklepach partnerskich',
@@ -1622,7 +1624,7 @@ export const pl: Dictionary = {
       },
       {
         title: 'Skanuj kody QR, zgarniaj dodatkowe punkty',
-        body: 'Skanuj kody QR partnerów w sklepie, aby odblokować punkty bonusowe i natychmiastowe vouchery — prosto z telefonu.',
+        body: 'Skanuj kody QR partnerów w sklepie, żeby dopisać punkty do salda bez ani jednego pytania — prosto z telefonu.',
       },
       {
         title: 'Asystent AI',
@@ -1654,7 +1656,7 @@ export const pl: Dictionary = {
       },
       {
         title: 'Wspinaj się w rankingu Paylez Champions',
-        body: 'Zapraszaj znajomych, utrzymuj serię i pnij się w miesięcznym rankingu po większe nagrody.',
+        body: 'Zapraszaj znajomych, utrzymuj serię i pnij się w miesięcznym rankingu. Pierwszego dnia miesiąca startuje od zera, więc do czołówki nigdy nie jest daleko.',
       },
     ],
   },
@@ -1704,7 +1706,7 @@ export const pl: Dictionary = {
       lede: 'Kilka szybkich pytań dziennie. Punkty, które zamieniają się w vouchery w sklepach, z których i tak korzystasz.',
       primary: 'Zacznij grać',
       secondary: 'Zobacz gry',
-      stats: ['Za wygraną w grze', 'Bonus za serię', 'Wystarczy na voucher'],
+      stats: ['Najlepsza runda', 'Daje zamrożenie', 'Wystarczy na voucher'],
     },
 
     steps: {
@@ -1714,15 +1716,15 @@ export const pl: Dictionary = {
       items: [
         {
           title: 'Wybierz grę',
-          body: 'Stolice, flagi albo życie w Polsce. Dziesięć pytań na rundę i żadne nie zajmuje długo.',
+          body: 'Stolice, flagi albo życie w Polsce. Pięć pytań na rundę i żadne nie zajmuje długo.',
         },
         {
           title: 'Odpowiadaj',
-          body: 'Każda poprawna odpowiedź daje punkty, a szybka odpowiedź daje ich więcej — zegar jest częścią gry.',
+          body: 'Każda poprawna odpowiedź daje punkty, a cała runda bez pomyłki daje bonus na dokładkę.',
         },
         {
           title: 'Utrzymaj serię',
-          body: 'Wróć jutro. Seria mnoży wszystko, co zdobywasz, a siedem dni z rzędu to osobny bonus.',
+          body: 'Wróć jutro. Jedna runda dziennie utrzymuje serię, a siedem dni z rzędu daje zamrożenie, które pokrywa opuszczony dzień.',
         },
         {
           title: 'Wymień punkty',
@@ -1740,21 +1742,21 @@ export const pl: Dictionary = {
     streak: {
       eyebrow: 'Serie',
       title: 'To w serii są punkty.',
-      lede: 'Jedna runda co 24 godziny utrzymuje ją przy życiu. Przegapisz to okno, a seria — i punkty, które z nią zbudowałeś — wracają do zera, chyba że masz zamrożenie. Zamrożenie pokrywa jeden opuszczony dzień, dostajesz je co siódmy dzień i możesz mieć dwa. To cała zasada.',
+      lede: 'Jedna runda co 24 godziny utrzymuje ją przy życiu. Przegapisz to okno, a seria wraca do zera — punkty zostają dokładnie tam, gdzie są — chyba że masz zamrożenie. Zamrożenie pokrywa jeden opuszczony dzień, dostajesz je co siódmy dzień i możesz mieć dwa. To cała zasada.',
       card: {
         label: 'Aktualna seria',
         unit: 'dni',
-        reward: '+250 pkt siódmego dnia',
+        reward: 'Zamrożenie siódmego dnia',
         freeze: 'Zamrożenia w zapasie · każde pokrywa jeden opuszczony dzień',
       },
       benefits: [
         {
-          title: 'Dzień trzeci: 1,5×',
-          body: 'Każdy zdobyty punkt jest wart o połowę więcej, we wszystkich grach na tej stronie.',
+          title: 'Codziennie pełna stawka',
+          body: 'Gra płaci pełną stawkę za pierwszym razem danego dnia, a za każdym powtórzeniem mniej. Prześpij się z tym, a każda znów jest warta pełnię.',
         },
         {
-          title: 'Dzień siódmy: 250 pkt',
-          body: 'Stały bonus ponad mnożnik, wypłacany w chwili zakończenia siódmej rundy.',
+          title: 'Dzień siódmy: zamrożenie',
+          body: 'Tydzień obecności kupuje Ci dzień wolnego. Zamrożenie wchłania jeden opuszczony dzień, a seria leci dalej, jakbyś zagrał.',
         },
         {
           title: 'Liczy się dzień, nie gra',
@@ -1766,7 +1768,7 @@ export const pl: Dictionary = {
     board: {
       eyebrow: 'Paylez Champions',
       title: 'Ranking miesiąca.',
-      lede: 'Pierwszego dnia miesiąca wszyscy zaczynają od zera. Najlepsza trójka dzieli pulę nagród; reszta zaczyna kolejny miesiąc na tych samych zasadach.',
+      lede: 'Pierwszego dnia miesiąca wszyscy zaczynają od zera. Najlepsza trójka kończy miesiąc na szczycie rankingu; reszta zaczyna kolejny miesiąc na tych samych zasadach.',
       columns: { rank: '#', player: 'Gracz', points: 'Punkty' },
       note: 'Przykładowy ranking — Twój zeruje się 1. dnia miesiąca.',
     },
@@ -1777,11 +1779,11 @@ export const pl: Dictionary = {
       items: [
         {
           q: 'Czy punkty tracą ważność?',
-          a: 'Tak. Zagraj co najmniej jedną rundę w ciągu 24 godzin, żeby je zachować — przegapisz to okno, a punkty i seria wracają do zera.',
+          a: 'Nie. Saldo zachowuje to, co już zdobyłeś, nawet przez tydzień przerwy — zegar tyka serii, nie punktom. Przegapisz to okno, a seria wraca do zera; punkty dalej są Twoje do wydania.',
         },
         {
           q: 'Ile rund mogę zagrać dziennie?',
-          a: 'Tyle, na ile pozwalają Twoje życia. Każda runda kosztuje jedno życie, a życia odnawiają się z czasem — nie ma więc dziennego limitu, jest tylko tyle, ile Ci zostało.',
+          a: 'Tyle, ile chcesz. Przegrana runda nie kosztuje już życia, a życia, które wydajesz na start, odnawiają się z czasem. Limitu nie ma — ale ta sama gra płaci mniej z każdym powtórzeniem w ciągu dnia, aż przestaje płacić. Jutro znów jest warta pełnię.',
         },
         {
           q: 'Ile naprawdę wart jest voucher?',
@@ -2058,7 +2060,7 @@ export const pl: Dictionary = {
           bullets: [
             {
               title: 'Sześć sposobów dotarcia',
-              body: 'Push, oferty czasowe, kody promocyjne, karty podarunkowe, bonusy punktowe i e-mail.',
+              body: 'Push, oferty czasowe, kody promocyjne, karty podarunkowe, kody QR w lokalu i e-mail.',
             },
             {
               title: 'Grupy, które są już zbudowane',
@@ -2179,7 +2181,7 @@ export const pl: Dictionary = {
         {
           name: 'Growth',
           note: 'Do 5 lokali',
-          body: 'Pełne narzędzia marketingowe, logowania dla lokali i bonusy punktowe.',
+          body: 'Pełne narzędzia marketingowe, logowania dla lokali i kampanie z kodem QR w lokalu.',
           features: [
             'Wszystko z planu Jeden lokal',
             'Push, oferty, kody promocyjne i karty podarunkowe',
@@ -2249,7 +2251,7 @@ export const pl: Dictionary = {
       items: [
         {
           title: 'Odpowiedz na kilka pytań',
-          body: 'Trzy punktowane rundy dziennie w trzech grach. Każda poprawna odpowiedź to punkty, a seria jest warta więcej niż jeden dobry dzień.',
+          body: 'Kilka minut w tramwaju. Każda poprawna odpowiedź to punkty, a każda gra płaci pełną stawkę raz dziennie — więc lepiej je rozłożyć, niż męczyć jedną.',
         },
         {
           title: 'Wybierz voucher',
@@ -2290,8 +2292,8 @@ export const pl: Dictionary = {
           body: 'Voucher przechodzi do Wykorzystanych w chwili, gdy kod powstaje — niezależnie od tego, czy ktoś go zeskanował. Najpierw stań przy kasie.',
         },
         {
-          title: 'Punkty przepadają, jeśli przestaniesz grać',
-          body: 'Zagraj co najmniej jedną rundę w ciągu 24 godzin, a punkty i seria lecą dalej. Przegapisz to okno i oba wracają do zera. Odebrane już vouchery mają własną datę ważności, wypisaną na karcie, zanim cokolwiek wydasz.',
+          title: 'Seria przepada, jeśli przestaniesz grać',
+          body: 'Zagraj co najmniej jedną rundę w ciągu 24 godzin, a seria leci dalej. Przegapisz to okno i wraca do zera — punkty nie. Odebrane już vouchery mają własną datę ważności, wypisaną na karcie, zanim cokolwiek wydasz.',
         },
       ],
     },
@@ -2320,8 +2322,8 @@ export const pl: Dictionary = {
     },
 
     cta: {
-      title: 'Twój następny voucher jest jakieś cztery minuty stąd.',
-      lede: 'To trzy rundy pytań. Zacznij dzisiaj, a seria zacznie się liczyć od razu.',
+      title: 'Twój następny voucher jest kilka rund stąd.',
+      lede: 'Kilka minut dziennie, rozłożonych na kilka różnych gier. Zacznij dzisiaj, a seria zacznie się liczyć od razu.',
       primary: 'Play & Earn',
       secondary: 'Zobacz gry',
       note: 'Start za darmo · Dostępne w całej Polsce',
@@ -2503,7 +2505,7 @@ export const pl: Dictionary = {
     ],
     news: {
       heading: 'Poznaj najlepsze oferty jako pierwszy',
-      body: 'Jeden krótki e-mail w tygodniu — nowe okazje i mnożniki punktów warte Twojego czasu.',
+      body: 'Jeden krótki e-mail w tygodniu — nowe okazje i oferty partnerów warte Twojego czasu.',
       success: 'Twój program pocztowy jest otwarty — wyślij wiadomość i jesteś na liście ✦',
       placeholder: 'ty@email.com',
       emailLabel: 'Adres e-mail',

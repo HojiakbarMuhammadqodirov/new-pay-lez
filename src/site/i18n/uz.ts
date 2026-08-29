@@ -458,6 +458,8 @@ export const uz: Dictionary = {
     resultScore: '{total} dan {correct} tasi to‘g‘ri',
     resultPoints: '+{points} ball',
     resultNone: 'Bu raundda ball yo‘q.',
+    resultDecay: 'Bugun bu o‘yinning {n}-raundi · {scored} to‘plandi, {points} yozildi',
+    resultDecayNone: 'Bugun bu o‘yinning {n}-raundi · takrorlar endi ball bermaydi. Boshqa o‘yin hamon to‘liq to‘laydi.',
     resultToward: 'Yana {points} ball va birinchi vaucher sizniki.',
     resultAfford: 'Vaucher uchun yetarli — borib oling.',
     resultSpend: 'Ballarni sarflash',
@@ -477,7 +479,7 @@ export const uz: Dictionary = {
 
     flight: {
       rule: 'Squawk qancha uchsa, shuncha · {gaps} ta darvoza raundni hisobga oladi',
-      reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza uchun +{points}',
+      reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza uchun +{points} · bir parvozda {max} gacha',
       goal: '{target} ta raundni hisobga oladi',
       hint: 'Qanot qoqish uchun ekranga bosing',
       resume: 'Davom ettirish uchun bosing',
@@ -492,8 +494,8 @@ export const uz: Dictionary = {
     },
 
     memory: {
-      rule: '{pairs} juftlik · soatsiz',
-      reward: 'Kamroq harakat — ko‘proq ball · har juftlik uchun +{points}',
+      rule: '{pairs} juftlik · vaqt cheklovi yo‘q',
+      reward: 'Tezroq yig‘sangiz ko‘proq ball · {points} gacha',
       pairs: 'Juftliklar {found} / {total}',
       moves: '{n} harakat',
       facedown: 'Yopiq karta',
@@ -503,7 +505,7 @@ export const uz: Dictionary = {
 
     wordGame: {
       rule: '{words} so‘z · osondan qiyingacha',
-      reward: 'Birinchi urinishda va tez bo‘lsa ko‘proq · maslahat bonusni oladi',
+      reward: 'Qiyinroq so‘z ko‘proq ball beradi · maslahat bonusni oladi',
       list: 'Mashq qilinadigan til',
       lists: { pl: 'Polyakcha', en: 'Inglizcha' },
       tier: '{n}-daraja',
@@ -815,7 +817,7 @@ export const uz: Dictionary = {
         'Ertalabki flat white',
         'Talabalar seshanbasi',
         'Pishiriqqa bepul filtr',
-        'Yomg‘irli kunda ikki barobar ball',
+        'Yomg‘irli kunda ikki barobar shtamp',
         'Qo‘shni chegirmasi',
         'Tushlik to‘plami',
       ],
@@ -1189,7 +1191,7 @@ export const uz: Dictionary = {
         translateNote: 'Paylez buni boshqa tilda o‘qiydigan mijozlar uchun tarjima qiladi.',
         copyError: 'Taklif ishga tushishidan oldin unga sarlavha va tavsif kerak.',
         kindTitle: 'Qanday taklif',
-        kinds: ['Foizli chegirma', 'Bepul mahsulot', 'Summali chegirma', 'Ikki barobar ball'],
+        kinds: ['Foizli chegirma', 'Bepul mahsulot', 'Summali chegirma', 'Qo‘shimcha shtamp'],
         discountTitle: 'Chegirma va sanalar',
         badgeLabel: 'Chegirma matni',
         badgeNote: 'Qisqa va aniq. Mijozlar avval shuni ko‘radi. Ko‘pi bilan 14 belgi.',
@@ -1578,7 +1580,7 @@ export const uz: Dictionary = {
     lede: 'Kashf eting, o‘ynang va mukofot oling.',
     primary: "O‘yna va yutib ol",
     secondary: 'Bu qanday ishlaydi',
-    stats: ["Har g‘alaba uchun", "Hamkor do‘konlar", 'Faol shaharlar'],
+    stats: ['Vaucherga yetadi', "Hamkor do‘konlar", 'Faol shaharlar'],
   },
 
   proof: "Ballaringizni yetakchi hamkor do‘konlarda ishlating",
@@ -1618,7 +1620,7 @@ export const uz: Dictionary = {
       },
       {
         title: 'QR kodlarni skanerlang, qo‘shimcha ball oling',
-        body: "Bonus ballar va tezkor vaucherlar uchun do‘konda hamkor QR kodlarini skanerlang — to‘g‘ridan-to‘g‘ri telefoningizdan.",
+        body: "Do‘konda hamkor QR kodlarini skanerlang va bitta ham savolga javob bermay balansingizga ball qo‘shing — to‘g‘ridan-to‘g‘ri telefoningizdan.",
       },
       {
         title: 'AI yordamchi',
@@ -1650,7 +1652,7 @@ export const uz: Dictionary = {
       },
       {
         title: 'Paylez Champions jadvalida ko‘tariling',
-        body: "Do‘stlaringizni taklif qiling, ketma-ketligingizni saqlang va kattaroq sovrinlar uchun oylik reytingda ko‘tariling.",
+        body: "Do‘stlaringizni taklif qiling, ketma-ketligingizni saqlang va oylik reytingda ko‘tariling. Jadval har oyning birinchi kuni noldan boshlanadi, shuning uchun cho‘qqi hech qachon uzoq emas.",
       },
     ],
   },
@@ -1700,7 +1702,7 @@ export const uz: Dictionary = {
       lede: "Kuniga bir nechta tezkor savol. Siz allaqachon foydalanadigan do‘konlarda vaucherga aylanadigan ballar.",
       primary: "O‘ynashni boshlash",
       secondary: "O‘yinlarni ko‘rish",
-      stats: ["Har g‘alaba uchun", 'Ketma-ketlik bonusi', 'Vaucherga yetadi'],
+      stats: ['Eng yaxshi raund', 'Muzlatish beradi', 'Vaucherga yetadi'],
     },
 
     steps: {
@@ -1710,15 +1712,15 @@ export const uz: Dictionary = {
       items: [
         {
           title: "O‘yin tanlang",
-          body: "Poytaxtlar, bayroqlar yoki Polshadagi hayot. Har raundda o‘nta savol va ularning hech biri uzoq davom etmaydi.",
+          body: "Poytaxtlar, bayroqlar yoki Polshadagi hayot. Har raundda beshta savol va ularning hech biri uzoq davom etmaydi.",
         },
         {
           title: 'Javob bering',
-          body: "Har bir to‘g‘ri javob ball keltiradi, tez javob esa ko‘proq — soat ham o‘yinning bir qismi.",
+          body: "Har bir to‘g‘ri javob ball keltiradi, butun raundni xatosiz yopsangiz esa ustiga bonus qo‘shiladi.",
         },
         {
           title: 'Ketma-ketlikni saqlang',
-          body: "Ertaga qayting. Ketma-ketlik yig‘gan ballaringizni ko‘paytiradi, ketma-ket yetti kun esa alohida bonus beradi.",
+          body: "Ertaga qayting. Kuniga bitta raund ketma-ketlikni tirik saqlaydi, ketma-ket yetti kun esa o‘tkazib yuborilgan kunni qoplaydigan muzlatish beradi.",
         },
         {
           title: 'Almashtiring',
@@ -1736,21 +1738,21 @@ export const uz: Dictionary = {
     streak: {
       eyebrow: 'Ketma-ketlik',
       title: 'Ballar aynan ketma-ketlikda.',
-      lede: "Har 24 soatda bitta raund uni tirik saqlaydi. Shu oraliqni o‘tkazib yuborsangiz, ketma-ketlik ham, u bilan yig‘gan ballaringiz ham nolga qaytadi — agar muzlatishingiz bo‘lmasa. Muzlatish bitta o‘tkazib yuborilgan kunni qoplaydi, uni har yettinchi kuni olasiz va ikkitagacha saqlab turishingiz mumkin. Qoida shu, xolos.",
+      lede: "Har 24 soatda bitta raund uni tirik saqlaydi. Shu oraliqni o‘tkazib yuborsangiz, ketma-ketlik nolga qaytadi — ballaringiz esa turgan joyida qoladi — agar muzlatishingiz bo‘lmasa. Muzlatish bitta o‘tkazib yuborilgan kunni qoplaydi, uni har yettinchi kuni olasiz va ikkitagacha saqlab turishingiz mumkin. Qoida shu, xolos.",
       card: {
         label: 'Joriy ketma-ketlik',
         unit: 'kun',
-        reward: "Yettinchi kuni +250 ball",
+        reward: "Yettinchi kuni muzlatish",
         freeze: "Zaxiradagi muzlatishlar · har biri bitta kunni qoplaydi",
       },
       benefits: [
         {
-          title: 'Uchinchi kun: 1,5×',
-          body: "Yig‘gan har bir ballingiz bir yarim baravar qimmatga aylanadi — sahifadagi barcha o‘yinlarda.",
+          title: 'Har kuni to‘liq qiymat',
+          body: "O‘yin o‘sha kuni birinchi marta o‘ynaganingizda to‘liq to‘laydi, har takrorda esa kamroq. Ertasiga qaytsangiz, har bir o‘yin yana to‘liq qiymatga ega.",
         },
         {
-          title: 'Yettinchi kun: 250 ball',
-          body: "Ko‘paytirgich ustiga qat’iy bonus, yettinchi raund tugagan zahoti beriladi.",
+          title: 'Yettinchi kun: muzlatish',
+          body: "Bir haftalik davomiylik sizga bir kun dam sotib beradi. Muzlatish bitta o‘tkazib yuborilgan kunni yutadi, ketma-ketlik esa o‘ynagandek davom etadi.",
         },
         {
           title: "O‘yin emas, kun hisoblanadi",
@@ -1762,7 +1764,7 @@ export const uz: Dictionary = {
     board: {
       eyebrow: 'Paylez Champions',
       title: 'Oylik jadval.',
-      lede: "Oyning birinchi kuni hamma noldan boshlaydi. Uchta eng yaxshisi oylik sovrin jamg‘armasini bo‘lishadi; qolganlar keyingi oyni teng sharoitda boshlaydi.",
+      lede: "Oyning birinchi kuni hamma noldan boshlaydi. Uchta eng yaxshisi oyni jadval boshida yakunlaydi; qolganlar keyingi oyni teng sharoitda boshlaydi.",
       columns: { rank: '#', player: "O‘yinchi", points: 'Ballar' },
       note: "Namunaviy jadval — sizniki har oyning 1-kunida noldan boshlanadi.",
     },
@@ -1773,11 +1775,11 @@ export const uz: Dictionary = {
       items: [
         {
           q: 'Ballarning muddati tugaydimi?',
-          a: "Ha. Ularni saqlab qolish uchun har 24 soatda kamida bitta raund o‘ynang — shu oraliqni o‘tkazib yuborsangiz, ballaringiz ham, ketma-ketligingiz ham nolga qaytadi.",
+          a: "Yo‘q. Bir hafta tanaffus qilsangiz ham balansingiz yig‘ganini saqlaydi — soat ketma-ketlikka tegishli, ballarga emas. Shu oraliqni o‘tkazib yuborsangiz, ketma-ketlik nolga qaytadi; ballar esa sarflash uchun sizniki bo‘lib qoladi.",
         },
         {
           q: "Kuniga nechta raund o‘ynay olaman?",
-          a: "Jonlaringiz yetgunicha. Har raund bitta jon oladi, jonlar esa vaqt o‘tishi bilan tiklanadi — ya’ni kunlik cheklov yo‘q, faqat qolgan jonlaringiz bor.",
+          a: "Xohlaganingizcha. Yutqazilgan raund endi jon olmaydi, raundni boshlash uchun sarflagan jonlaringiz esa vaqt o‘tishi bilan tiklanadi. Cheklov yo‘q — lekin bitta o‘yin bir kun ichida har takrorda kamroq to‘laydi va oxirida umuman to‘lamaydi. Ertaga u yana to‘liq qiymatga ega.",
         },
         {
           q: 'Vaucher aslida qanchaga arziydi?',
@@ -2058,7 +2060,7 @@ export const uz: Dictionary = {
           bullets: [
             {
               title: 'Ularga yetib borishning olti yo‘li',
-              body: 'Push, muddatli takliflar, promokodlar, sovg‘a kartalari, bonus ballar va e-pochta.',
+              body: 'Push, muddatli takliflar, promokodlar, sovg‘a kartalari, do‘kondagi QR kodlar va e-pochta.',
             },
             {
               title: 'Allaqachon yig‘ilgan auditoriyalar',
@@ -2179,7 +2181,7 @@ export const uz: Dictionary = {
         {
           name: 'Growth',
           note: '5 tagacha filial',
-          body: "To‘liq marketing to‘plami, filial kirishlari va bonus ballar.",
+          body: "To‘liq marketing to‘plami, filial kirishlari va do‘kondagi QR kampaniyalar.",
           features: [
             '«Bitta filial»dagi hamma narsa',
             'Push, takliflar, promokodlar va sovg‘a kartalari',
@@ -2249,7 +2251,7 @@ export const uz: Dictionary = {
       items: [
         {
           title: 'Bir necha savolga javob bering',
-          body: "Uchta o‘yinda kuniga uchta hisobli raund. Har bir to‘g‘ri javob — ball, seriya esa bitta yaxshi kundan qimmatroq.",
+          body: "Tramvayda bir-ikki daqiqa. Har bir to‘g‘ri javob — ball, har bir o‘yin esa kuniga bir marta to‘liq to‘laydi — demak ularni yoygan bittasini surunkasiga o‘ynagandan yaxshiroq.",
         },
         {
           title: 'Vaucher tanlang',
@@ -2290,8 +2292,8 @@ export const uz: Dictionary = {
           body: "Kod paydo bo‘lgan zahoti vaucher «Ishlatilgan»ga o‘tadi — kimdir uni skanerladimi yoki yo‘qmi, farqi yo‘q. Avval kassaga yeting.",
         },
         {
-          title: "O‘ynashni to‘xtatsangiz, ballar yonadi",
-          body: "Har 24 soatda kamida bitta raund o‘ynang — ballaringiz ham, ketma-ketligingiz ham davom etadi. Shu oraliqni o‘tkazib yuborsangiz, ikkalasi ham nolga qaytadi. Allaqachon olingan vaucherlarning esa o‘z muddati bor va u siz biror narsa sarflashdan oldin kartada yozilgan turadi.",
+          title: "O‘ynashni to‘xtatsangiz, ketma-ketlik yonadi",
+          body: "Har 24 soatda kamida bitta raund o‘ynang — ketma-ketligingiz davom etadi. Shu oraliqni o‘tkazib yuborsangiz, u nolga qaytadi — ballaringiz esa qoladi. Allaqachon olingan vaucherlarning esa o‘z muddati bor va u siz biror narsa sarflashdan oldin kartada yozilgan turadi.",
         },
       ],
     },
@@ -2320,8 +2322,8 @@ export const uz: Dictionary = {
     },
 
     cta: {
-      title: 'Keyingi vaucheringizgacha taxminan to‘rt daqiqa.',
-      lede: "Bu — uchta raund savol. Bugun boshlang, seriya ham sanashni boshlaydi.",
+      title: 'Keyingi vaucheringizgacha bir necha raund.',
+      lede: "Kuniga bir necha daqiqa, bir necha xil o‘yinga bo‘lib. Bugun boshlang, seriya ham sanashni boshlaydi.",
       primary: 'Play & Earn',
       secondary: 'O‘yinlarni ko‘rish',
       note: 'Boshlash bepul · Butun Polshada mavjud',
@@ -2503,7 +2505,7 @@ export const uz: Dictionary = {
     ],
     news: {
       heading: "Eng yaxshi takliflarni birinchi bo‘lib oling",
-      body: "Haftasiga bitta qisqa xat — vaqtingizga arziydigan yangi takliflar va ball ko‘paytirgichlari.",
+      body: "Haftasiga bitta qisqa xat — vaqtingizga arziydigan yangi takliflar va hamkor chegirmalari.",
       success: 'Pochta ilovangiz ochildi — xatni yuboring va ro‘yxatdasiz ✦',
       placeholder: 'you@email.com',
       emailLabel: 'Elektron pochta manzili',

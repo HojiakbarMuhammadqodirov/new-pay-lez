@@ -8,12 +8,20 @@ import { buildMemoryBoard, type MemoryCard } from './rounds';
 /**
  * Memory Match.
  *
- * Twelve cards, six pairs, and the only round on the page with no clock and no
- * way to lose. That is the accessibility decision in the set: every other game
- * here rewards speed, and this is the one a non-native reader or an older player
- * can win by being careful. Scoring is on *efficiency* instead — `memoryPoints`
- * in `auth/player.ts` pays a guaranteed base per pair plus a bonus that falls
- * away as the move count climbs.
+ * Twelve cards, six pairs, and the only round on the page with no countdown and
+ * no way to lose. It is **timed**, which is not the same thing: `memoryPoints`
+ * in `auth/player.ts` reads the elapsed seconds into one of four bands, and
+ * none of that is on screen — nothing ticks, nothing ends, and the slowest band
+ * still pays. The accessibility decision survives the change intact, because it
+ * was never about being untimed: this is still the game a non-native reader or
+ * an older player wins by being careful, and being careful is what being quick
+ * at it *is*.
+ *
+ * What changed is that the round stopped paying a guaranteed 36 for six pairs
+ * that cannot be lost — the richest round on the page for the least asked of
+ * anybody. It was scored on the move count, which a player turning cards at
+ * random spends just as freely; time is the measure of the thing actually being
+ * tested, because remembering where a card was is what makes you fast.
  *
  * The L-Earn payload is the label revealed on a match: the deck is a themed set
  * of Kraków landmarks, Polish food, transport or everyday words, so matching two
@@ -94,6 +102,21 @@ export function MemoryMatch({
     };
   }, [pairs]);
 
+  /*
+   * When the first card was turned over.
+   *
+   * **A ref, not state.** Nothing on screen reads it — there is no countdown and
+   * no fail state — so a clock through `useState` would re-render twelve cards
+   * several times a second for a number nobody is being shown, which is the one
+   * pattern the root `CLAUDE.md` rules out outright.
+   *
+   * Started by the first flip rather than on mount, because opening the tab is
+   * not playing: somebody who opens the page and goes to answer the door has not
+   * had a slow round, and a clock started at mount would charge them for the
+   * door. `null` until a card turns.
+   */
+  const startedAt = useRef<number | null>(null);
+
   const after = useCallback((ms: number, run: () => void) => {
     const id = window.setTimeout(run, ms);
     timers.current.push(id);
@@ -101,6 +124,11 @@ export function MemoryMatch({
 
   const flip = (index: number) => {
     if (!cards || busy || faces[index] !== 'down') return;
+
+    /* The clock starts on the first card that actually turns, which is why it is
+       here and not above the guard: a tap on a matched card, or during a
+       flip-back, is not the round starting. */
+    if (startedAt.current === null) startedAt.current = Date.now();
 
     const nextFaces = faces.map((face, i) => (i === index ? 'up' : face) as Face);
     const nextFlipped = [...flipped, index];
@@ -135,19 +163,34 @@ export function MemoryMatch({
   };
 
   /*
-   * The board is cleared.
+   * The board is cleared, and the clock stops.
    *
-   * Watched here rather than reported from inside `flip`, because `moves` is set
+   * Watched here rather than reported from inside `flip`, because `found` is set
    * through an updater in the same batch and reading it there would be one
-   * behind — the flawless bonus turns on `moves === pairs` exactly, so being one
-   * out is the difference between earning it and not.
+   * behind — the last pair would score as the second to last.
+   *
+   * The reading is taken *now* and not inside the 700ms beat below. That beat is
+   * the last pair finishing its animation, and charging it to the player would
+   * put every round most of a second closer to the next band down for watching
+   * something they cannot skip.
    */
   const reported = useRef(false);
   useEffect(() => {
     if (found < pairs || reported.current) return;
     reported.current = true;
-    after(700, () => onDone(memoryPoints(pairs, moves), pairs, true));
-  }, [found, pairs, moves, onDone, after]);
+    /* Whole seconds, floored, the way a stopwatch reads: `MEMORY_BANDS` is a
+       list of ceilings and a 39.9-second board is a 39-second board.
+
+       The fallback is unreachable — `startedAt` is set by the first flip and no
+       board is cleared without one — and it is the *slowest* reading rather than
+       the fastest, because a clock that never ran must not be worth more than
+       one that did. */
+    const seconds =
+      startedAt.current === null
+        ? Number.POSITIVE_INFINITY
+        : Math.floor((Date.now() - startedAt.current) / 1000);
+    after(700, () => onDone(memoryPoints(seconds), pairs, true));
+  }, [found, pairs, onDone, after]);
 
   if (!cards) {
     return (
