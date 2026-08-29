@@ -39,9 +39,10 @@ const viewerOf = (ctx: Ctx) => ({
  * Counted from the transcript rather than from a counter column: the transcript
  * is already the record of what was asked, and a second tally beside it is a
  * second thing that can drift. `substr(created_at, 1, 10)` is the user's own
- * local day — the same slice the lives pool refills on and the round-decay curve
- * resets on (`dayOf` in `domain/games.ts`) — because two daily resets an hour
- * apart is a bug report nobody can reproduce.
+ * local day — the same slice the word-hint allowance resets on (`dayOf` in
+ * `domain/games.ts`) — because two daily resets an hour apart is a bug report
+ * nobody can reproduce. Energy is the one allowance in the product that is *not*
+ * on this clock: it refills on an interval, not at a boundary.
  *
  * `side = 'consumer'` keeps a venue owner's dashboard conversations out of it.
  * The two assistants answer out of different data and are sold on different
@@ -333,7 +334,7 @@ export const consumerRoutes: Route[] = [
       const { user } = actor(ctx);
       const state = games.playerState(ctx.db, user.id, ctx.at);
       return {
-        lives: games.livesFor(ctx.db, user.id, ctx.at),
+        energy: games.energyFor(ctx.db, user.id, ctx.at),
         streak: state.streak,
         longestStreak: state.longest_streak,
         freezes: state.freezes,

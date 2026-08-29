@@ -83,7 +83,7 @@ interface PlanSeed {
  * It is spent on exactly two keys now — `streak_freezes` and
  * `assistant_uses_per_day` — and the tiered numbers everywhere else are real
  * numbers a customer can be told. That is the direction to keep travelling: a
- * perk written as a figure ("seven hearts", "ten hints") is one a plan card can
+ * perk written as a figure ("seven energy", "ten hints") is one a plan card can
  * print, and a sentinel is what you reach for only when the honest answer is
  * that nobody will ever hit the ceiling.
  */
@@ -129,12 +129,16 @@ const PLANS: PlanSeed[] = [
        * to hunt for `word_hints_per_day` in three differently-ordered blocks
        * cannot see it.
        */
-      daily_lives: CONFIG.points.dailyLives,
-      /* Hearts come back on a clock, and the clock is what a plan buys: four
+      daily_energy: CONFIG.points.dailyEnergy,
+      /* Energy comes back on a clock, and the clock is what a plan buys: four
          hours free, three on Pro, two on Premium. A faster refill is worth
          more than a bigger pool to the player who runs out at nine in the
-         morning, which is the player this key exists for. */
-      life_regen_minutes: CONFIG.points.lifeRegenMinutes,
+         morning, which is the player this key exists for — and now that every
+         finished round costs one, that is every player, not just the one
+         losing. The two keys together are what a day is: from a full tank,
+         `daily_energy + 1440 / energy_regen_minutes` rounds, so 9 here, 13 on
+         Pro, 19 on Premium. */
+      energy_regen_minutes: CONFIG.points.energyRegenMinutes,
       /* **Game rounds only** — see the note in `entitlements.ts`. The venue
          lines below have their own per-tier figures, and multiplying those as
          well would pay a paid plan twice for one visit. */
@@ -161,12 +165,6 @@ const PLANS: PlanSeed[] = [
          it is the free tier's badge, which is none. */
       profile_badge: '',
       streak_freezes: 2,
-      /* Which curve in `CONFIG.games.decay` prices a repeat of the same game
-         today. The *value* is a key of that table, so a code here that the table
-         does not know silently buys the free curve — see `decayFor`. Keeping the
-         three values equal to the three plan codes is what makes that
-         impossible to get wrong. */
-      round_decay: 'free',
       exclusive_deals: false,
       deal_early_access_hours: 0,
       gift_card_priority: false,
@@ -190,8 +188,8 @@ const PLANS: PlanSeed[] = [
     rank: 1,
     terms: true,
     entitlements: {
-      daily_lives: 5,
-      life_regen_minutes: 180,
+      daily_energy: 5,
+      energy_regen_minutes: 180,
       points_multiplier: 1.25,
       scan_points: 30,
       first_visit_points: 150,
@@ -202,7 +200,6 @@ const PLANS: PlanSeed[] = [
       assistant_uses_per_day: 20,
       profile_badge: 'star',
       streak_freezes: 5,
-      round_decay: 'pro',
       exclusive_deals: true,
       deal_early_access_hours: 0,
       gift_card_priority: true,
@@ -220,8 +217,8 @@ const PLANS: PlanSeed[] = [
     rank: 2,
     terms: true,
     entitlements: {
-      daily_lives: 7,
-      life_regen_minutes: 120,
+      daily_energy: 7,
+      energy_regen_minutes: 120,
       points_multiplier: 1.75,
       scan_points: 50,
       first_visit_points: 250,
@@ -237,7 +234,6 @@ const PLANS: PlanSeed[] = [
       assistant_uses_per_day: UNLIMITED,
       profile_badge: 'crown',
       streak_freezes: UNLIMITED,
-      round_decay: 'premium',
       exclusive_deals: true,
       /* A day's head start on a deal, which is the perk that costs the platform
          nothing and is worth the most on a deal with a claim ceiling. */
@@ -330,15 +326,48 @@ const PLANS: PlanSeed[] = [
  * on it keeps the entitlements they bought — which is the same "a lapse
  * restricts, it never claws back" rule read from the other end.
  *
- * One thing does change for a grandfathered subscriber: `decayFor` keys the
- * round-decay curve on the plan *code*, and `plus` is not a key of
- * `CONFIG.games.decay`, so it falls back to the free curve. That is the
- * documented behaviour of an unrecognised code rather than a new decision, and
- * it is the argument for retiring a paid tier only when nobody is on it.
+ * Nothing in the product reads a plan *code* to decide what something is worth
+ * any more, so a grandfathered subscriber is exactly their entitlement rows and
+ * nothing else. That used to be untrue: the round-decay curve was keyed on the
+ * code, and `plus` — not being one of the three the curve knew — silently
+ * bought the free ladder. Keep it that way. A rule that switches on the code
+ * makes retiring a tier a change to what its subscribers get.
  */
 const RETIRED: ReadonlyArray<{ audience: 'consumer' | 'partner'; code: string }> = [
   /* Free / Plus / Premium became Free / Pro / Premium. */
   { audience: 'consumer', code: 'plus' },
+];
+
+/**
+ * Entitlement keys no plan grants any more.
+ *
+ * **This list is the difference between renaming a key and adding one.** The
+ * seed upserts every key in `PLANS` on every boot and has no idea what it wrote
+ * last time, so a key that stops appearing in the seed does not stop existing —
+ * it sits in `plan_entitlements` at whatever value the build before the rename
+ * left there. That is not inert. `entNumber` reads a key by name and returns the
+ * first row it finds, so a stale `daily_lives` is a live tier figure that no
+ * file in the repo mentions and nothing keeps in step with the key that
+ * replaced it: change Premium's energy to 9 and the ghost still says 7.
+ *
+ * Deleted by key across every plan rather than per plan, because the question is
+ * "does this key exist anywhere" and a key withdrawn from one tier and left on
+ * another is the same drift one row smaller. Nothing has a foreign key into
+ * `plan_entitlements`, so the row can simply go — and running the delete on
+ * every boot is what makes a database seeded by an older build converge without
+ * a migration.
+ */
+const RETIRED_ENTITLEMENTS: readonly string[] = [
+  /* Hearts became energy, and both keys moved with the word. */
+  'daily_lives',
+  'life_regen_minutes',
+  /* The per-game decay curve is gone — a round pays the same whether it is the
+     first of the day or the ninth, and energy is what bounds the day. This key
+     named which ladder priced a repeat, so a row left behind would be the only
+     surviving trace of a mechanism with no reader: harmless to `entNumber`,
+     which never asks for it, and exactly the kind of ghost that gets a curve
+     re-implemented around it because the table still says a plan buys one. */
+  'round_decay',
 ];
 
 function seedPlans(db: Db, at: Iso): void {
@@ -368,6 +397,13 @@ function seedPlans(db: Db, at: Iso): void {
       );
     }
     seedTerms(db, id, plan.priceMinor, plan.terms === true);
+  }
+
+  /* After the upsert loop, never before it: a key deleted first would be put
+     straight back by a plan that still listed it, which is exactly the failure
+     this is here to catch if one ever does. */
+  for (const key of RETIRED_ENTITLEMENTS) {
+    db.run(`DELETE FROM plan_entitlements WHERE key = $k`, { k: key });
   }
 
   for (const plan of RETIRED) {

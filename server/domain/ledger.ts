@@ -140,10 +140,13 @@ export function gamePointsToday(db: Db, userId: string, day: string): number {
  * that this function applied to `game_win` by cutting the last round of the day
  * down to whatever was left, and it is gone: a flat ceiling can only say "no
  * more today" to a player who has done nothing wrong, and it says it identically
- * to somebody grinding one game and somebody enjoying seven. The bound moved to
- * where it can see what is being played — the per-game decay curve in `games.ts`
- * (`CONFIG.games.decay`), which pays a fourth round of the *same* game less than
- * the first and leaves the rest of the day alone. `earn` grants what it is
+ * to somebody grinding one game and somebody enjoying seven.
+ *
+ * A per-game decay curve replaced it for a day and is gone too, for the
+ * opposite reason: once every finished round cost energy, a free player got
+ * six rounds and the curve never reached the rung that bit. **Energy is the
+ * whole bound now** — one per finished round, refilling on a clock — and it
+ * sits in `games.ts` where the round is scored. `earn` grants what it is
  * handed; deciding how much that should be belongs to the caller.
  */
 export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
@@ -160,11 +163,11 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
     throw new DomainError('bad_request', 'earn takes a finite amount', { points: input.points });
   }
 
-  /* The counter is still written, and it is written *before* the zero check: a
-     round the decay curve paid nothing for is still a round played, and `plays`
-     is what says so. Skipping it — which is what the old early return for a
-     zero-point entry did — was harmless while zero was an edge case and is a
-     miscount now that it is the fifth round of anything. */
+  /* The counter is written *before* the zero check, because a round that scored
+     nothing is still a round played and `plays` is what says so — a quiz where
+     every answer was wrong pays zero and cost a full energy. Skipping it, which
+     is what the old early return for a zero-point entry did, undercounts exactly
+     the days somebody had a bad run. */
   if (input.reason === 'game_win') {
     db.run(
       `INSERT INTO daily_counters (user_id, day, game_points, plays)
