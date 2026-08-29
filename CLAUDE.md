@@ -71,9 +71,26 @@ Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 it (migrating, seeding and importing the old database on an empty file);
 `npm run verify:api` is its test suite, the counterpart of `npm run verify`, and
 it is what checks the rules that are arithmetic rather than rendering — the
-points ledger's FIFO expiry, the budget pool's three states, the amount-capture
-gate, the min-cohort suppression, the consent gate on identified customers.
-**Run it after touching anything under `server/domain/`.**
+points ledger's FIFO ordering, the budget pool's three states, the amount-capture
+gate, the energy tank's regeneration clock, the min-cohort suppression, the
+consent gate on identified customers. **Run it after touching anything under
+`server/domain/`.** (FIFO *ordering*, not expiry: nothing expires, and a spend
+still has to come out of something.)
+
+**Energy is the single limiter on a day, and every finished round costs one.**
+Win or lose — an abandoned round still costs nothing, because the charge is
+written in `games.finish` and nowhere else. It refills one per
+`energy_regen_minutes` up to `daily_energy`, so a day is
+`daily_energy + 1440 / energy_regen_minutes` rounds from a full tank: free 6
+sustained and 9 in a burst, Pro 8/13, Premium 12/19. Three other brakes have
+lived here and all three are gone — points expiry, a daily points cap, and a
+per-game decay curve that paid a repeat of the same game less. Charging only a
+*loss* was the version before this one and it bounded nobody: two of the seven
+games cannot be lost. **If a day needs to be smaller, move `CONFIG.points`** —
+two overlapping limiters where only one binds is one more than a player can be
+told about, and the pair a player can see on the screen is where the rule
+belongs. `server/README.md` carries the arithmetic and the two column names
+(`life_spent`, `lives_used`) that are historical and stay that way.
 
 Two things a venue owner can now see that they could not: **impressions and
 clicks**. `analytics.reach` sums the venue's *listing* events
@@ -161,7 +178,7 @@ tints from the accent with alpha the way `--surface` / `--border` do.
 There are exactly four sanctioned exceptions, and all four are cases where the
 thing depicted *is* its colours: flag emoji; the controller's four face buttons
 on the light page (`BUTTON_COLORS` in `controller/Controller3D.tsx`); the
-platformer behind the signed-in Play screen (`LEVEL.palette` in `level/config.ts`);
+platformer behind L-Earn (`LEVEL.palette` in `level/config.ts`);
 and the Google "G" on the sign-in button (`GoogleMark` in `auth/GoogleButton.tsx`).
 
 The G is the narrowest of the four and the easiest to argue with, so: Google's
@@ -179,14 +196,14 @@ on pale grey plastic — a photo with the white balance wrong — so light mode
 lights it with white and puts the colour where a gamepad actually keeps it.
 
 The level is worth more of them, because it is the largest of the three. It
-draws a brick, a lucky box, a mushroom and a pipe, and a backdrop has no labels
-— so on one accent they are four identical rectangles and the thing stops being
-a level at all. The four hues are the Play mock's own
+draws a brick, a lucky box (and a spent one), a mushroom and a pipe, and a
+backdrop has no labels — so on one accent they are five identical rectangles and
+the thing stops being a level at all. The hues are the Play mock's own
 (`b2b/Paylez Play.dc.html`), which spends them on exactly the same problem one
 layer up. Three constraints keep it from leaking: the **ground** is drawn in
 `primaryColor`; the **runner** is drawn in it too, at four lightnesses, because
 he is the product moving through the level rather than part of the scenery; and
-the `ink` row is those same four hues taken down to where they read on paper —
+the `ink` row is those same hues taken down to where they read on paper —
 it is **not** a second accent ramp and nothing in `site.css` may reach for it.
 The exception is the *set*, not the cast.
 
@@ -419,17 +436,31 @@ side — which is a change to what is on screen at once, not to what is hidden.
 `vouchers.tsx` → `wallet.tsx`. The marketing pages are untouched and still serve
 everyone else, including business owners — those pages describe the *customer's*
 experience, which an owner is reading about rather than living. The rules that
-decide points, streak, lives and the wallet are pure functions in
+decide points, streak, energy and the wallet are pure functions in
 `auth/player.ts`, so `npm run verify` owns them; the components only call them.
 
 **One function decides what a finished round does to the account.**
-`awardPoints` owns the streak, the 24-hour window, the lapse that takes the
-balance with it, and the freeze that absorbs one missed day. Seven games score
-seven different ways — a quiz pays per right answer, a flight pays per gap past
-an endless target, Word Builder totals five per-word scores plus a perfect-round
-bonus, Memory Match pays a base plus an efficiency curve — and **none of them
-restates what a streak is.** They compute a number and hand it over. There were
-two copies of that rule once and it would be five by now.
+`awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that
+absorbs one missed day. Seven games score seven different ways — a quiz pays per
+right answer, a flight pays per gap past an endless target, Word Builder totals
+five per-word scores plus a perfect-round bonus, Memory Match reads its elapsed
+seconds into one of four bands — and **none of them restates what a streak is.**
+They compute a number and hand it over. There were two copies of that rule once
+and it would be five by now.
+
+**A lapse takes the streak and nothing else.** It used to take the balance with
+it — the old app's own hot-deal terms say so — and the server does not do that
+either: points never expire, and there is no ledger reason for a negative entry
+that looks like a wipe. Bringing one back is a product decision, not a tidy-up.
+
+**Energy is what bounds a day, and it is not called lives.** `MAX_ENERGY` and
+`ENERGY_REGEN_MINUTES` mirror the server's *free-plan* figures (`CONFIG.points`),
+and `energyOf` derives the tank from `energy` + `energyAt` on demand rather than
+storing a count that would be stale the moment the tab was left open — the same
+construction `games.energyFor` uses one repo over, for the same reason. Every
+finished round costs one, win or lose; `spendEnergy` is the only spend, so an
+abandoned round costs nothing. A state saved under the old `lives` / `livesAt`
+names still reads, and a missing anchor reads as a full tank.
 
 **Questions come from `games/data/`, through a bag.** The four quiz rounds no
 longer read a handful of items out of the dictionaries: `scripts/build-question-banks.mjs`

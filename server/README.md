@@ -27,7 +27,7 @@ files are not found.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 440 checks, no browser, no network
+npm run verify:api     # the test suite — 463 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -208,34 +208,72 @@ counter rule. It needs a master key, not a vendor.
    account already — anonymous traffic is *counted*, identified traffic is
    *attributed*, and nothing joins the two.
 
-## The economy, and the four things it used to do and does not
+## The economy: energy is the single limiter on a day
 
 The numbers live in `CONFIG.points`, `CONFIG.earn` and `CONFIG.games`
 (`config.ts`), and the per-tier figures in the `PLANS` seed in
-`domain/settings.ts`. Each carries the constraint that set it. What is worth
-having here is the shape, because four rules were **removed** and each of them
-left prose behind in more than one file:
+`domain/settings.ts`. Each carries the constraint that set it. The shape is what
+is worth having here, and it is one sentence:
+
+> **Every finished round costs one energy, win or lose, and nothing else bounds
+> a day.** Energy refills one per `energy_regen_minutes` up to `daily_energy`, so
+> a day is `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank:
+> **free 6 sustained and 9 in a burst, Pro 8/13, Premium 12/19.**
+
+Both halves of that are recent and both replaced something. Charging a *win* is
+what makes the pool a limiter rather than a decoration — losses only was a tax on
+being bad at quizzes, and two of the seven games cannot be lost at all, so it
+bounded the struggling player and nobody else. Refilling on a clock is what makes
+charging fair: spend the tank at nine in the morning and the wait is hours, not
+the rest of the day. A round that is *abandoned* still costs nothing, because the
+charge is written in `games.finish` and nowhere else.
+
+`games.energyFor` reconstructs the tank from `game_sessions.life_spent` and
+`finished_at` at the instant somebody asks — no scheduler, no refill job, the
+same house rule as the balance one table over: derived, never stored.
+`no_energy` carries `nextAt` and `max`, and never `resetsAt`.
+
+**Two column names are historical and stay that way**, which is the thing most
+likely to confuse the next reader of `db/schema.sql`:
+`game_sessions.life_spent` is the one energy charge for a finished round, and
+`daily_counters.lives_used` is the day's tally of them. Renaming a column needs a
+version-guarded table rebuild against a live database and buys nothing a player
+can see. Both carry a comment saying so at the point of use. No API field, config
+key or entitlement is named after either of them — `daily_counters.lives_used`
+also cannot stand in for the tank for a reason that is not about its name: it is
+bucketed by day, and a regen clock needs an instant.
+
+### The five rules this economy used to have and does not
+
+Each of them left prose behind in more than one file, which is why they are
+listed rather than simply absent:
 
 - **Points never expire, on any plan.** `runExpiry`, `expiringSoon` and the
   expiry job are deleted, `points_expiry_months` is not an entitlement, and
   `GET /v1/wallet` does not carry an expiry list. The FIFO lots survive because a
   *spend* still has to come out of something — expiry was a consumer of that
   ordering, never its reason.
-- **There is no daily points cap.** The brake is the per-game **decay curve**
-  (`CONFIG.games.decay`), applied in `games.finish` where it can see what is
-  being played: a repeat of the *same* game the same day pays less — free
-  `1/.6/.4/.2/0`, Pro `1/.8/.6/.4/.2`, Premium always 1 — and the rest of the day
-  is untouched. Playing on is never refused; the streak, the leaderboard and the
-  accuracy figures all keep counting when the factor reaches zero, and only the
-  points stop. `Finish.capped` is kept and is always 0.
+- **There is no daily points cap.** `Finish.capped` is kept so a client does not
+  break on a missing key, and is always 0.
+- **There is no per-game decay curve.** A round pays `floor(raw ×
+  points_multiplier)` and nothing else, whether it is the first of the day or the
+  ninth. `CONFIG.games.decay`, `decayFor` and the `decay` field on the finish
+  response are gone, and `round_decay` is in `RETIRED_ENTITLEMENTS` so a row
+  seeded by an older build is deleted on boot rather than left as a live tier
+  figure no file mentions. It was written when play was unlimited and it was the
+  only brake there was; once energy became one it stopped reaching, because per
+  *game* its free zero rung was the fifth round of one game and a player rotating
+  the seven never got near it. Two overlapping limiters where only one binds is
+  one more than a player can be told about.
 - **There is no spend bonus.** A bigger bill does not earn more. The venue
   minimum still decides whether a scan counts as a *visit*, which is upstream in
   `gate.confirm`.
-- **Hearts do not reset at midnight.** They regenerate one every
-  `life_regen_minutes` (free 240, Pro 180, Premium 120) up to `daily_lives`
-  (3/5/7), reconstructed in `games.livesFor` from the `life_spent` column on
-  finished sessions. A **lost** round costs one; a won round and a start cost
-  nothing. `no_lives` carries `nextAt` and `max`, and no longer `resetsAt`.
+- **Energy does not reset at midnight** — and it is not called hearts. The word
+  changed with the rule: `CONFIG.points.dailyEnergy` / `energyRegenMinutes`, the
+  entitlements `daily_energy` (3/5/7) and `energy_regen_minutes` (240/180/120),
+  `games.energyFor`, `energyLeft` on both game bodies, `energy` on
+  `GET /v1/games/state`, and `no_energy`. `daily_lives` and `life_regen_minutes`
+  are retired alongside `round_decay`.
 
 Two rules about what a paid plan buys, and they are easy to break in opposite
 directions:
@@ -254,8 +292,31 @@ The consumer plans are **Free / Pro / Premium** (Plus is retired but not deleted
 trial**: every `trialDays` is 0, which is what keeps a paid subscription out of
 `trialing`, the one status that would renew on the day it started.
 
-Nothing on a profile is verified. `phone_verified` is dropped from `users` by a
-migration in `db/db.ts`, and there is no endpoint that could have set it.
+### The profile, and the two things it will not do
+
+`users` carries `username` (unique, folded case-insensitively by
+`idx_users_username_norm` rather than by the column's own `UNIQUE`), `headline`,
+`phone`, `birth_date` and `profile_completed_at`; `GET /v1/cities` is the closed
+list of 114 places a `city` may name, public because sign-up has to render the
+choice before an account exists, and `country_code` is derived from it here and
+never sent by a client. Filling in all seven answers pays the completion bonus
+once and stamps `profile_completed_at`, claimed with
+`UPDATE … WHERE profile_completed_at IS NULL` so two saves cannot pay twice —
+which is the same shape `POST /v1/me/onboarded` uses for the welcome gift, and
+for the same reason.
+
+Two things that surface is deliberately not:
+
+- **Nothing on it is verified.** `phone_verified` is dropped from `users` by a
+  migration in `db/db.ts`, and there is no endpoint that could have set it. A
+  reward for clicking a link in an email pays for a formality rather than for
+  anything a venue or a player gets, so `CONFIG.earn` has no line for one.
+- **A birthday is settable and then correctable once**, enforced by
+  `birth_date_changes` — a *kept count*, not a timestamp comparison, because a
+  timestamp can only say when the last write happened and the rule is about how
+  many there have been. `birthDateChangesLeft` is on `GET /v1/me` so a form can
+  grey the field out rather than find out by being refused, and resending the day
+  already stored spends nothing.
 
 ## Where the spec and the old data disagree
 

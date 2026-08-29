@@ -150,7 +150,7 @@ that makes the customer re-open the app in a queue.
 | `invalid_trigger` | 422 | Not one of our codes. |
 | `conflict` | 409 | This customer already has a gate open at this venue. The response carries `transactionId` — resume it. |
 | `invalid_amount` | 400 | Zero, negative, or above the venue's ceiling. `reason` says which. |
-| `no_lives` | 409 | Games only. The hearts pool is empty. The detail carries `nextAt` — when the next heart lands — and `max`. It does **not** carry `resetsAt`, and hearts do not come back at midnight. |
+| `no_energy` | 409 | Games only, and it was `no_lives`. The energy tank is empty. The detail carries `nextAt` — when the next energy lands — and `max`. It does **not** carry `resetsAt`, and energy does not come back at midnight. |
 | `insufficient_points` | 409 | Carries `required` and `available`. |
 | `budget_exhausted` | 409 | The venue's pool cannot fund this tier right now. Offer a lower one — the ladder tells you which are `available`. |
 | `entitlement_required` | 403 | Carries `entitlement`, and `limit`/`used` where it is a capacity. |
@@ -201,7 +201,7 @@ and is told whether that one move was right — never the key.
 
 ```
 POST /v1/games/sessions            { gameType: "capitals" }
-  → { sessionId, gameType, content, livesLeft }   ← livesLeft is a plain count
+  → { sessionId, gameType, content, energyLeft }  ← energyLeft is a plain count
 
 POST /v1/games/sessions/{id}/events
      { seq: 0, kind: "answer", payload: { index: 0, choice: 2 } }
@@ -211,7 +211,7 @@ POST /v1/games/sessions/{id}/events
 
 POST /v1/games/sessions/{id}/finish
   → { score, capped, correct, answered, won, streak, freezes,
-      livesLeft, balance, decay, nearest }
+      energyLeft, balance, nearest }
 ```
 
 `seq` is 0-based and must increase. Repeating a `seq` returns
@@ -228,19 +228,42 @@ connection never costs the player a question.
 | `memory_match` | `{cards, pairs}` — the layout stays on the server | `{a, b}` — two card positions |
 | `flight` | `{target}` | none; send `{report:{cleared}}` to `/finish` |
 
-**Hearts refill on a clock, not at midnight.** They are a shared pool across all
-seven games, and `GET /v1/games/state` returns them as an **object**:
+### Energy is the whole of what bounds a day
+
+Hearts became **energy**, and **every finished round costs one, win or lose**. It
+was losses only, which bounded nobody: two of the seven games cannot be lost, and
+a player who answers correctly never touched the pool. There is nothing else —
+no daily points cap, no per-game decay curve — so the number on the screen means
+one thing, *rounds left*, and it is the only thing a client has to explain.
+
+An **abandoned** round still costs nothing. The charge is written when the round
+is banked, so a connection that drops mid-round takes nothing with it.
+
+It is a shared pool across all seven games, and `GET /v1/games/state` returns it
+under `energy` as an **object**:
 
 ```json
-{ "lives": 2, "max": 3, "nextAt": "2026-08-29T18:12:44.000Z" }
+{ "energy": 2, "max": 3, "nextAt": "2026-08-29T18:12:44.000Z" }
 ```
 
-One heart comes back every `life_regen_minutes` — 240 free, 180 on Pro, 120 on
-Premium — up to `daily_lives`, which is 3, 5 and 7. `nextAt` is `null` when the
-pool is full. A heart is spent by a **lost** round; a won round costs nothing and
-starting one costs nothing. Draw the wait from `nextAt`; a countdown to midnight
-is now simply wrong, and a pool with no visible end is what makes a heart system
-feel broken.
+One comes back every `energy_regen_minutes` — 240 free, 180 on Pro, 120 on
+Premium — up to `daily_energy`, which is 3, 5 and 7. `nextAt` is `null` when the
+tank is full. Draw the wait from it; a countdown to midnight is simply wrong, and
+a pool with no visible end is what makes an energy system feel broken.
+
+Read the two keys together and they give the size of a day —
+`daily_energy + 1440 / energy_regen_minutes` rounds from a full tank:
+
+| Plan | Sustained, per day | From a full tank |
+| --- | --- | --- |
+| Free | 6 | 9 |
+| Pro | 8 | 13 |
+| Premium | 12 | 19 |
+
+`POST /v1/games/sessions` refuses with `no_energy` on an empty tank — enforced at
+the start, because finding out at the end means finding out after the round was
+played. `energyLeft` on that response is therefore what the player holds
+*before* paying for the round; the one on `/finish` is one lower.
 
 **A hint is metered.** Word Builder hints are capped per day by
 `word_hints_per_day` — 3 free, 6 on Pro, 10 on Premium — and past it the event is
@@ -254,7 +277,7 @@ it reports `cleared` and the server clamps it.
 
 ### What a round pays
 
-The raw round, before the two factors below:
+The raw round, before the one factor below:
 
 | Game | Raw score |
 | --- | --- |
@@ -263,27 +286,18 @@ The raw round, before the two factors below:
 | `memory_match` | **Elapsed time alone**: under 40 s → 12, under 70 s → 8, under 110 s → 4, otherwise → 2. Timed from the server's own event stamps. No fail state; a finished deck always pays |
 | `flight` | 1 per gap cleared, **capped at 20 points**. 5 gaps decides `won`, not what it pays |
 
-Then `score = floor(raw × decay) × points_multiplier`, floored again.
+Then `score = floor(raw × points_multiplier)`, and that is the whole of it.
 
-**There is no daily points cap.** A day is bounded by a per-game *decay curve*
-instead, and `decay` comes back on the finish response so the client can explain
-itself:
+**A round pays the same whether it is your first of the day or your ninth.**
+There is no daily points cap and no per-game decay curve — a curve lived here
+that paid a repeat of the same game 100/60/40/20/0 percent on free, and it is
+gone along with the `decay` field on the finish response and the `round_decay`
+entitlement. Energy is the brake now, and it is the only one: two overlapping
+limiters where only one binds is one more than a player can be told about.
 
-| Plan | 1st round of that game today | 2nd | 3rd | 4th | 5th+ |
-| --- | --- | --- | --- | --- | --- |
-| Free | 1 | 0.6 | 0.4 | 0.2 | 0 |
-| Pro | 1 | 0.8 | 0.6 | 0.4 | 0.2 |
-| Premium | 1 | 1 | 1 | 1 | 1 |
-
-It is **per game**, so playing five different games is five first rounds. Nothing
-is ever refused for having played too much: at a factor of 0 the round still
-counts for the streak, the leaderboard and the accuracy figures, and only the
-points stop. `1` on a first round, so a client can simply not mention it — but say
-so when it is lower, or two points for five right answers reads as a bug.
-
-`capped` is still on the response and is **always 0**. It is kept so an existing
-client does not break on a missing key; `decay` is where the same question is
-answered now.
+`capped` is still on the response and is **always 0** — it always was. It is kept
+so an existing client does not break on a missing key, and there is nothing
+behind it to read instead: nothing trims a round.
 
 `points_multiplier` (1 / 1.25 / 1.75) applies to **game rounds only**. What a
 visit pays is four named entitlements of its own — see §8.
@@ -343,7 +357,7 @@ Ask what the account is entitled to, never what it paid. `GET /v1/me` returns an
 `entitlements` map resolved from the active plan:
 
 ```json
-{ "daily_lives": "3", "life_regen_minutes": "240", "scan_points": "20",
+{ "daily_energy": "3", "energy_regen_minutes": "240", "scan_points": "20",
   "points_multiplier": "1", "exclusive_deals": "false" }
 ```
 
@@ -356,10 +370,9 @@ is sold with a free trial** — `trial_days` is 0 on every one of them.
 
 | Key | Free | Pro | Premium |
 | --- | --- | --- | --- |
-| `daily_lives` | 3 | 5 | 7 |
-| `life_regen_minutes` | 240 | 180 | 120 |
+| `daily_energy` | 3 | 5 | 7 |
+| `energy_regen_minutes` | 240 | 180 | 120 |
 | `points_multiplier` *(game rounds only)* | 1 | 1.25 | 1.75 |
-| `round_decay` | `free` | `pro` | `premium` |
 | `scan_points` | 20 | 30 | 50 |
 | `first_visit_points` | 100 | 150 | 250 |
 | `stamp_points` | 100 | 150 | 250 |
@@ -389,6 +402,13 @@ a *visit* at all, which is upstream of any of this.
 returned empty: an always-`[]` array is a promise about a rule the product
 dropped. A spend still consumes the oldest lot first, because a redemption has to
 come out of something.
+
+**Four keys are gone from that map, not renamed in place.** `daily_lives` and
+`life_regen_minutes` became `daily_energy` and `energy_regen_minutes`;
+`round_decay` and `points_expiry_months` describe mechanisms that no longer
+exist. The server deletes retired keys from `plan_entitlements` on every boot, so
+a client still reading one gets a missing key rather than a stale number left
+behind by the build before the rename.
 
 Partner entitlements are `live_deals`, `active_campaigns`, `push_quota`, `venues`,
 `team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`,

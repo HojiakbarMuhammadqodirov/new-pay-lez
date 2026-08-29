@@ -77,7 +77,7 @@ const SCHEMAS: Record<string, Schema> = {
               'bad_request', 'invalid_amount', 'invalid_state', 'validation_failed',
               'unauthenticated', 'forbidden', 'not_verified', 'entitlement_required',
               'consent_required', 'not_found', 'conflict', 'already_used', 'expired',
-              'insufficient_points', 'budget_exhausted', 'cap_reached', 'no_lives',
+              'insufficient_points', 'budget_exhausted', 'cap_reached', 'no_energy',
               'daily_cap', 'quota_exceeded', 'quiet_hours', 'invalid_trigger',
               'replay_detected', 'rate_limited', 'internal',
             ],
@@ -178,19 +178,24 @@ const SCHEMAS: Record<string, Schema> = {
         description:
           'Resolved server-side from the active plan. Ask what the account is entitled ' +
           'to, never what it paid. Values are strings; parse what you need.\n\n' +
-          'Consumer keys, free/pro/premium: `daily_lives` 3/5/7, `life_regen_minutes` ' +
+          'Consumer keys, free/pro/premium: `daily_energy` 3/5/7, `energy_regen_minutes` ' +
           '240/180/120, `points_multiplier` 1/1.25/1.75 (**game rounds only**), `scan_points` ' +
           '20/30/50, `first_visit_points` 100/150/250, `stamp_points` 100/150/250, ' +
           '`new_category_points` 25/50/100, `voucher_validity_days` 14/30/60, ' +
           '`word_hints_per_day` 3/6/10, `assistant_uses_per_day` 5/20/unlimited, ' +
-          '`streak_freezes` 2/5/unlimited, `round_decay` free/pro/premium, `profile_badge`, ' +
+          '`streak_freezes` 2/5/unlimited, `profile_badge`, ' +
           '`exclusive_deals`, `deal_early_access_hours` 0/0/24, `gift_card_priority`, ' +
           '`monthly_stipend`, `priority_support`, `assistant`.\n\n' +
           'Partner keys: `live_deals`, `active_campaigns`, `push_quota`, `venues`, ' +
           '`team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`, ' +
           '`identified_profiles`, `export_csv`.\n\n' +
-          'There is **no** `points_expiry_months` and no daily points cap: points never ' +
-          'expire on any plan, and a day is bounded by the per-game decay curve instead.',
+          'Four keys are **gone**, not renamed in place: `points_expiry_months` (points ' +
+          'never expire on any plan), `round_decay` (the per-game repeat curve is deleted) ' +
+          'and the pair `daily_lives` / `life_regen_minutes`, which became the two energy ' +
+          'keys above. The server deletes retired rows on boot, so a client that still ' +
+          'reads one gets a missing key rather than a stale number. **The energy pair is ' +
+          'the only thing that bounds a day**: every finished round costs one, so a full ' +
+          'tank plus a day of refill is 9 rounds free, 13 on Pro, 19 on Premium.',
       },
       venues: arrayOf({ type: 'object' }),
     },
@@ -441,7 +446,10 @@ const SCHEMAS: Record<string, Schema> = {
           'tier,letters,hint}]}`. Memory Match: `{cards,pairs}` — the layout stays on ' +
           'the server. Flight: `{target}`.',
       },
-      livesLeft: int(),
+      energyLeft: int(
+        'Energy in the tank *before* this round is paid for — starting costs nothing, ' +
+          'finishing costs one. Was `livesLeft`.',
+      ),
     },
   },
 
@@ -454,22 +462,26 @@ const SCHEMAS: Record<string, Schema> = {
     },
   },
 
-  Hearts: {
+  Energy: {
     type: 'object',
     description:
-      'The hearts pool. **Hearts do not reset at midnight** — they refill on a clock, one ' +
-      'every `life_regen_minutes` (free 240, Pro 180, Premium 120) up to `daily_lives` ' +
-      '(3/5/7). A **lost** round costs one; a won round costs nothing; starting a round ' +
-      'costs nothing.',
+      'The energy pool — what hearts became, and the **only** thing that bounds a day.\n\n' +
+      '**Every finished round costs one, win or lose.** Losses only was the rule before, ' +
+      'and it bounded nobody: two of the seven games cannot be lost. An *abandoned* round ' +
+      'still costs nothing, and starting one costs nothing — the charge is written when ' +
+      'the round is banked.\n\n' +
+      'It **does not reset at midnight**: one refills every `energy_regen_minutes` (free ' +
+      '240, Pro 180, Premium 120) up to `daily_energy` (3/5/7). From a full tank that is ' +
+      '9 rounds in a day free, 13 on Pro, 19 on Premium; 6/8/12 at the sustained rate.',
     properties: {
-      lives: int('Whole hearts available right now.'),
-      max: int('The plan’s ceiling — `daily_lives`.'),
+      energy: int('Whole energy available right now. Was `lives`.'),
+      max: int('The plan’s ceiling — `daily_energy`.'),
       nextAt: {
         type: 'string',
         nullable: true,
         description:
-          'When the next heart lands, or null when the pool is already full. Render the ' +
-          'wait; a heart system with no visible end is the one that feels broken.',
+          'When the next one lands, or null when the tank is already full. Render the ' +
+          'wait; a pool with no visible end is the one that feels broken.',
       },
     },
   },
@@ -478,7 +490,7 @@ const SCHEMAS: Record<string, Schema> = {
     type: 'object',
     description: 'The truth about this player. Anything the client tracks is a display.',
     properties: {
-      lives: ref('Hearts'),
+      energy: ref('Energy'),
       streak: int(),
       longestStreak: int(),
       freezes: int(
@@ -496,34 +508,31 @@ const SCHEMAS: Record<string, Schema> = {
     type: 'object',
     properties: {
       score: int(
-        'What was banked, after the decay factor below and the plan’s `points_multiplier`. ' +
-          'Computed server-side from the recorded events; never sent by the client.',
+        '`floor(raw × points_multiplier)`, and that is the whole of it. Computed ' +
+          'server-side from the recorded events; never sent by the client.',
       ),
       capped: int(
-        '**Always 0.** There is no daily points ceiling any more — the per-game decay curve ' +
-          'replaced it, and it shrinks a round rather than truncating one. The key is kept ' +
-          'so an existing client does not break on a missing field; read `decay` instead.',
+        '**Always 0, and it always has been.** Nothing trims a round: there is no daily ' +
+          'points ceiling and no per-game decay curve — a round pays the same whether it ' +
+          'is the first of the day or the ninth. The key is kept only so an existing ' +
+          'client does not break on a missing field.',
       ),
       correct: int(),
       answered: int(),
-      won: bool('False costs one heart. True costs none.'),
+      won: bool(
+        'Whether the round was won. It **does not decide what the round cost** — every ' +
+          'finished round spends one energy either way.',
+      ),
       streak: int(),
       freezes: int(
         'Streak freezes held. One is earned every 7 days, up to `streak_freezes` — 2 free, ' +
           '5 on Pro, effectively unlimited on Premium.',
       ),
-      livesLeft: int('Hearts left after this round. See `Hearts`.'),
+      energyLeft: int(
+        'Energy left after this round, which is one lower than the round started with. ' +
+          'Was `livesLeft`. See `Energy`.',
+      ),
       balance: int(),
-      decay: {
-        type: 'number',
-        description:
-          'The factor the round’s raw score was multiplied by, from how many rounds of ' +
-          '**this same game** are already finished today: free `1, .6, .4, .2, 0`, Pro ' +
-          '`1, .8, .6, .4, .2`, Premium always `1`; past the end of the list the last rung ' +
-          'repeats. `1` on a first round, so a client can simply not mention it — but say ' +
-          'so when it is lower, because two points for five right answers reads as a bug ' +
-          'otherwise. Play, streaks and the leaderboard keep counting at 0; only the points stop.',
-      },
       nearest: {
         nullable: true,
         type: 'object',
@@ -987,11 +996,12 @@ const DOCS: Record<string, Doc> = {
 
   /* ── games ── */
   'GET /v1/games/state': {
-    summary: 'Hearts, streak, freezes, accuracy, today’s shared word',
+    summary: 'Energy, streak, freezes, accuracy, today’s shared word',
     description:
-      '`lives` is an **object** — `{ lives, max, nextAt }` — not a bare count. Hearts do ' +
-      'not reset at midnight: they refill one every `life_regen_minutes` up to ' +
-      '`daily_lives`, so the honest thing to draw next to an empty pool is `nextAt`, not ' +
+      'The key is `energy` and it holds an **object** — `{ energy, max, nextAt }` — not a ' +
+      'bare count. Both halves moved: it was `lives: { lives, max, nextAt }`.\n\n' +
+      'Energy does not reset at midnight: one refills every `energy_regen_minutes` up to ' +
+      '`daily_energy`, so the honest thing to draw next to an empty tank is `nextAt`, not ' +
       'a countdown to midnight. The client’s view is advisory; this is the truth.',
     tags: ['games'],
     response: ref('GamesState'),
@@ -999,11 +1009,13 @@ const DOCS: Record<string, Doc> = {
   'POST /v1/games/sessions': {
     summary: 'Start a round',
     description:
-      'Refuses with `no_lives` when the pool is empty. A heart is spent on a **loss**, ' +
-      'not on starting, and a won round costs nothing.\n\n' +
-      'Nothing refuses a round for having played too much: there is no daily points cap. ' +
-      'A repeat of the *same* game the same day simply pays less — see `decay` on the ' +
-      'finish response.',
+      'Refuses with `no_energy` when the tank is empty. **Starting costs nothing and ' +
+      'finishing costs one, win or lose** — so `energyLeft` on this response is what the ' +
+      'player has *before* paying for the round they are about to play, and the refusal ' +
+      'is enforced here because finding out at the end means finding out after the round ' +
+      'was played. An abandoned round costs nothing.\n\n' +
+      'Nothing else refuses or shrinks a round: there is no daily points cap and no ' +
+      'per-game decay curve. Energy is the whole limiter.',
     tags: ['games'],
     body: {
       gameType: {
@@ -1016,8 +1028,10 @@ const DOCS: Record<string, Doc> = {
     errors: [
       [
         409,
-        '`no_lives` — the pool is empty. The detail carries `nextAt` (when the next heart ' +
-          'lands) and `max`. It no longer carries `resetsAt`; hearts are on a clock, not a day.',
+        '`no_energy` — the tank is empty. Was `no_lives`: a client switching on the ' +
+          'string stops recognising the refusal. The detail carries `nextAt` (when the ' +
+          'next energy lands) and `max`, and never `resetsAt` — energy is on a clock, not ' +
+          'a day.',
       ],
     ],
   },
@@ -1049,15 +1063,19 @@ const DOCS: Record<string, Doc> = {
       'The score is computed from the events the server recorded — nothing the client ' +
       'totals is trusted. `report` carries `{cleared}` for the flight, which is the one ' +
       'game with no answer key and is clamped instead.\n\n' +
-      'The raw round, before the decay factor and the plan multiplier: a **quiz** pays 1 ' +
+      'The raw round, before the plan multiplier: a **quiz** pays 1 ' +
       'per correct answer and +5 for all five; **Word Builder** 1 per word solved, plus ' +
       'the word’s own tier bonus (0/1/2, forfeited by a hint), plus 3 for solving all five ' +
       'first-try and hint-free; **Memory Match** is scored on *elapsed time alone* — under ' +
       '40 s 12, under 70 s 8, under 110 s 4, otherwise 2, timed from the server’s own event ' +
       'stamps; the **flight** pays 1 per gap and is capped at 20 points, with 5 gaps ' +
       'deciding whether the round was won.\n\n' +
-      'Then `score = floor(raw × decay) × points_multiplier`, floored again. `decay` is on ' +
-      'the response so a shrunken score can be explained.',
+      'Then `score = floor(raw × points_multiplier)`, and that is all — no decay factor, ' +
+      'no daily ceiling, and `capped` is always 0. A round pays the same whether it is ' +
+      'the first of the day or the ninth.\n\n' +
+      '**This is where the energy is spent**, one per finished round, win or lose. ' +
+      '`energyLeft` on the response is therefore one lower than the `energyLeft` the ' +
+      'start returned.',
     tags: ['games'],
     body: { report: { type: 'object', description: 'Flight only: `{ "cleared": 14 }`.' } },
     response: ref('Finish'),
