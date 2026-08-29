@@ -1347,6 +1347,31 @@
         }
       }
     },
+    "/v1/auth/google": {
+      "post": {
+        "summary": "POST /v1/auth/google",
+        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "postAuthGoogle",
+        "tags": [
+          "other"
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/signout": {
       "post": {
         "summary": "Revoke this session",
@@ -1621,6 +1646,46 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/onboarded": {
+      "post": {
+        "summary": "POST /v1/me/onboarded",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postMeOnboarded",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "401": {
             "description": "Not signed in",
@@ -2304,6 +2369,41 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/venues/{id}/events": {
+      "post": {
+        "summary": "POST /v1/venues/:id/events",
+        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "postVenuesByIdEvents",
+        "tags": [
+          "other"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "default": {
             "description": "Error",
@@ -5675,6 +5775,56 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/reach": {
+      "get": {
+        "summary": "GET /v1/partner/venues/:id/reach",
+        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdReach",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "401": {
             "description": "Not signed in",

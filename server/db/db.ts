@@ -169,6 +169,183 @@ function addColumn(db: Db, table: string, column: string, definition: string): v
   db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
+/**
+ * The reasons a points entry may carry, in the order `schema.sql` lists them.
+ *
+ * Two copies of one vocabulary, which is a thing this repo otherwise refuses —
+ * but the CHECK constraint has to live in SQL (the ledger outlives every process
+ * that writes to it) and the version-2 migration below has to *write* a CHECK,
+ * so it needs the list in TypeScript. They are reconciled rather than trusted:
+ * `assertLedgerReasons` reads the live constraint on every boot and throws if
+ * the two disagree, which turns a silent drift into a server that will not
+ * start.
+ *
+ * Fourteen ways up, four ways down. Adding one is a migration, not an edit —
+ * see `widenLedgerReasons`.
+ */
+export const LEDGER_REASONS = [
+  'game_win',
+  'scan_earn',
+  'spend_bonus',
+  'venue_bonus',
+  'stamp_complete',
+  'review',
+  'referral',
+  'welcome_bonus',
+  'profile_bonus',
+  'check_in',
+  'streak_milestone',
+  'occasion',
+  'stipend',
+  'adjustment',
+  'voucher_redeem',
+  'gift_card_redeem',
+  'expiry',
+  'reversal',
+] as const;
+
+/**
+ * What `schema_meta.version` reads once every migration below has run.
+ *
+ * 1 → 2 widened the ledger's reason vocabulary, which a CHECK constraint cannot
+ * do in place.
+ */
+const SCHEMA_VERSION = 2;
+
+const schemaVersion = (db: Db): number => {
+  const row = db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
+  const parsed = row ? Number(row.value) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+/** The quoted values inside a table's `CHECK (reason IN (…))`, in file order. */
+function reasonsInTable(sql: string): string[] {
+  const clause = /CHECK \(reason IN \(([\s\S]*?)\)\)/.exec(sql);
+  if (!clause) return [];
+  return [...clause[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
+}
+
+const ledgerCounts = (db: Db): { entries: number; lots: number } => ({
+  entries: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_ledger`)?.n ?? 0,
+  lots: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_lots`)?.n ?? 0,
+});
+
+/**
+ * Version 2: the ledger's reason vocabulary, nine values widened to eighteen.
+ *
+ * A SQLite CHECK cannot be altered in place, so this is the documented table
+ * rebuild — new table, copy, drop, rename — and the dangerous part of it is
+ * `points_lots`.
+ *
+ * **`points_lots.ledger_id` is `REFERENCES points_ledger (id) ON DELETE
+ * CASCADE`.** With foreign keys enabled, `DROP TABLE` performs an implicit
+ * `DELETE FROM` first and fires exactly that cascade — so the careless rebuild
+ * takes every FIFO lot with it and leaves a ledger that still sums to the right
+ * balance while none of it can be spent. `PRAGMA foreign_keys = OFF` around the
+ * rebuild is what prevents that, and it sits *outside* the transaction because
+ * the pragma is a no-op inside one. The rename afterwards re-points the
+ * surviving `REFERENCES points_ledger` clause at the new table, because SQLite
+ * rewrites references to a table it renames.
+ *
+ * **And it is proved rather than assumed.** Both tables are counted inside the
+ * transaction, before and after; a difference throws, which rolls the whole
+ * thing back and leaves the original table exactly as it was. `foreign_key_check`
+ * runs before the commit for the same reason — a migration that cannot show its
+ * work on a ledger with real rows in it is not one worth running.
+ *
+ * Guarded twice, so it runs once and never again: on the stored version, and on
+ * the constraint already in the file, because a database created fresh from
+ * `schema.sql` has the new vocabulary and nothing to rebuild.
+ */
+function widenLedgerReasons(db: Db): void {
+  if (schemaVersion(db) >= 2) return;
+
+  const table = db.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'points_ledger'`,
+  );
+  if (!table) return;
+  const present = new Set(reasonsInTable(table.sql));
+  if (LEDGER_REASONS.every((reason) => present.has(reason))) return;
+
+  const list = LEDGER_REASONS.map((reason) => `'${reason}'`).join(', ');
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.tx(() => {
+      const before = ledgerCounts(db);
+
+      db.exec(`
+        CREATE TABLE points_ledger_v2 (
+          id         TEXT PRIMARY KEY,
+          user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          delta      INTEGER NOT NULL,
+          reason     TEXT NOT NULL CHECK (reason IN (${list})),
+          source_ref TEXT,
+          source_kind TEXT,
+          multiplier REAL NOT NULL DEFAULT 1.0,
+          status     TEXT NOT NULL DEFAULT 'committed'
+                     CHECK (status IN ('committed', 'reversed')),
+          venue_id   TEXT REFERENCES venues (id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL,
+          expires_at TEXT
+        )`);
+      db.exec(`
+        INSERT INTO points_ledger_v2
+          (id, user_id, delta, reason, source_ref, source_kind, multiplier, status,
+           venue_id, created_at, expires_at)
+        SELECT id, user_id, delta, reason, source_ref, source_kind, multiplier, status,
+               venue_id, created_at, expires_at
+          FROM points_ledger`);
+      db.exec('DROP TABLE points_ledger');
+      db.exec('ALTER TABLE points_ledger_v2 RENAME TO points_ledger');
+      /* The old table's indexes went down with it. */
+      db.exec('CREATE INDEX IF NOT EXISTS idx_ledger_user ON points_ledger (user_id, created_at)');
+      db.exec(
+        'CREATE INDEX IF NOT EXISTS idx_ledger_source ON points_ledger (source_kind, source_ref)',
+      );
+
+      const after = ledgerCounts(db);
+      if (after.entries !== before.entries || after.lots !== before.lots) {
+        throw new Error(
+          `ledger migration lost rows: entries ${before.entries} → ${after.entries}, ` +
+            `lots ${before.lots} → ${after.lots}`,
+        );
+      }
+      const orphans = db.all(`PRAGMA foreign_key_check`);
+      if (orphans.length > 0) {
+        throw new Error(`ledger migration left ${orphans.length} broken references`);
+      }
+    });
+  } finally {
+    /* Restored whether the rebuild committed or threw: the constructor turned
+       them on and every other statement in the process assumes they are. */
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+/**
+ * The SQL constraint and `LEDGER_REASONS` must be the same set, both ways.
+ *
+ * On every boot rather than in the test suite, because what it catches is a
+ * reason the domain layer writes happily and the database rejects at 3am — or
+ * worse, one the database accepts and no report knows how to name.
+ */
+function assertLedgerReasons(db: Db): void {
+  const table = db.get<{ sql: string }>(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'points_ledger'`,
+  );
+  if (!table) return;
+  const inTable = reasonsInTable(table.sql);
+  const missing = LEDGER_REASONS.filter((reason) => !inTable.includes(reason));
+  const extra = inTable.filter((reason) => !(LEDGER_REASONS as readonly string[]).includes(reason));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      'points_ledger.reason disagrees with LEDGER_REASONS ' +
+        `(missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
+    );
+  }
+}
+
 /** Applied once, on an empty file. The schema is idempotent (`IF NOT EXISTS`). */
 export function migrate(db: Db): void {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
@@ -178,10 +355,25 @@ export function migrate(db: Db): void {
   /* Columns added after the first release. See `addColumn` for why the schema
      file alone cannot deliver these. */
   addColumn(db, 'service_events', 'source', 'TEXT');
+  addColumn(db, 'users', 'phone', 'TEXT');
+  addColumn(db, 'users', 'phone_verified', 'INTEGER NOT NULL DEFAULT 0');
+  /* Write-once, enforced in `domain/accounts.ts`. Nullable because "has not
+     told us" is the state most accounts are in, and the *set* one is what pays
+     `CONFIG.earn.birthday`. */
+  addColumn(db, 'users', 'birth_date', 'TEXT');
+  addColumn(db, 'users', 'birth_date_set_at', 'TEXT');
+  addColumn(db, 'users', 'headline', 'TEXT');
+  addColumn(db, 'users', 'onboarded_at', 'TEXT');
+
+  /* Anything that renames, drops or retypes goes here instead, behind the
+     version — which is the line `addColumn` above draws. */
+  widenLedgerReasons(db);
+  assertLedgerReasons(db);
 
   db.run(
-    `INSERT INTO schema_meta (key, value) VALUES ('version', '1')
+    `INSERT INTO schema_meta (key, value) VALUES ('version', $v)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
+    { v: String(SCHEMA_VERSION) },
   );
 }
 

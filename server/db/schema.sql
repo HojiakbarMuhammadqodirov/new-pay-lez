@@ -57,6 +57,32 @@ CREATE TABLE IF NOT EXISTS users (
   language      TEXT NOT NULL DEFAULT 'en',
   city          TEXT,
   country_code  TEXT,
+  -- Contact and profile, all optional: none of them gates anything, and an
+  -- account that answers none of them is a complete account.
+  phone         TEXT,
+  -- A changed number is an unverified number, so this is reset by the same
+  -- statement that writes `phone` (`domain/accounts.ts`). It is separate from
+  -- the number because verification is a fact about *this* number, not about
+  -- the account having ever verified one.
+  phone_verified INTEGER NOT NULL DEFAULT 0,
+  -- ISO `YYYY-MM-DD`, and **write-once** — see the refusal in
+  -- `domain/accounts.ts` that enforces it. A birthday pays
+  -- `CONFIG.earn.birthday`; an editable one is a bonus collectable every day of
+  -- the year, so the column recording when it was fixed is part of the rule
+  -- rather than bookkeeping.
+  birth_date    TEXT,
+  birth_date_set_at TEXT,
+  -- The player's own line about themselves. Named `headline` because `status`
+  -- below is already taken by the account state, and two columns meaning
+  -- different things under one name is how a moderation query ends up reading a
+  -- sentence somebody wrote about their cat.
+  headline      TEXT,
+  -- When onboarding was reported finished. The welcome gift
+  -- (`CONFIG.earn.onboarding`) is paid here rather than at sign-up, and this
+  -- column is what makes "exactly once" atomic: the grant is guarded by an
+  -- `UPDATE … WHERE onboarded_at IS NULL`, so two concurrent reports race for
+  -- one row and only one of them wins.
+  onboarded_at  TEXT,
   -- §2.1: derived from the ledger, cached for read speed, reconciled nightly.
   points_cache  INTEGER NOT NULL DEFAULT 0,
   -- §8.2: the city weekly board lists only opted-in users. Everyone still sees
@@ -275,9 +301,20 @@ CREATE TABLE IF NOT EXISTS points_ledger (
   id         TEXT PRIMARY KEY,
   user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
   delta      INTEGER NOT NULL,
+  -- The vocabulary is closed, and it is closed here rather than in TypeScript
+  -- because the ledger outlives every process that writes to it: a reason this
+  -- table has never heard of is a row nobody can attribute afterwards. The list
+  -- is duplicated as `LEDGER_REASONS` in `db/db.ts`, which is what the
+  -- version-2 rebuild writes and what `migrate()` asserts this table matches —
+  -- so the two cannot drift without the server refusing to boot.
+  --
+  -- Fourteen ways up, four ways down. Nothing here says *how much*: that is
+  -- `CONFIG.earn`.
   reason     TEXT NOT NULL CHECK (reason IN (
-               'game_win', 'scan_earn', 'referral', 'welcome_bonus',
-               'voucher_redeem', 'gift_card_redeem', 'expiry', 'adjustment', 'reversal')),
+               'game_win', 'scan_earn', 'spend_bonus', 'venue_bonus', 'stamp_complete',
+               'review', 'referral', 'welcome_bonus', 'profile_bonus', 'check_in',
+               'streak_milestone', 'occasion', 'stipend', 'adjustment',
+               'voucher_redeem', 'gift_card_redeem', 'expiry', 'reversal')),
   source_ref TEXT,                 -- game session, transaction, referral, voucher…
   source_kind TEXT,
   -- §12a.4: a paid tier's earn multiplier is recorded *on the entry* so earning
@@ -868,6 +905,26 @@ CREATE TABLE IF NOT EXISTS plan_entitlements (
   key     TEXT NOT NULL,
   value   TEXT NOT NULL,              -- number | boolean | JSON, read by key
   PRIMARY KEY (plan_id, key)
+);
+
+-- How long the plan is bought for, and what that costs. A longer commitment is
+-- cheaper per month, so the same plan has several prices and the price on the
+-- card is not the price on the invoice.
+--
+-- Both figures are stored because both are shown, and they are stored *derived
+-- from one function* (`termPricing` in `domain/entitlements.ts`) rather than
+-- typed in twice: `total_minor` is exactly `price_minor * months`, so the
+-- monthly figure a customer compares plans by and the amount that leaves their
+-- account cannot disagree by a rounding. Nothing reads `plans.price_minor`
+-- against a term — that column is the one-month price and the ladder's top rung.
+CREATE TABLE IF NOT EXISTS plan_terms (
+  plan_id     TEXT NOT NULL REFERENCES plans (id) ON DELETE CASCADE,
+  months      INTEGER NOT NULL CHECK (months > 0),
+  -- Basis points off the list monthly price. 0 for the rolling month.
+  discount_bp INTEGER NOT NULL DEFAULT 0 CHECK (discount_bp >= 0 AND discount_bp < 10000),
+  price_minor INTEGER NOT NULL,       -- per month, after the discount
+  total_minor INTEGER NOT NULL,       -- price_minor * months, charged up front
+  PRIMARY KEY (plan_id, months)
 );
 
 CREATE TABLE IF NOT EXISTS subscriptions (

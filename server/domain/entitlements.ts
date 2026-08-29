@@ -58,10 +58,84 @@ export interface Subscription {
 /** The statuses that grant a plan's perks. `past_due` deliberately does not. */
 const ENTITLED = new Set(['trialing', 'active', 'grace']);
 
-export const plansFor = (db: Db, audience: Audience): Plan[] =>
-  db.all<Plan>(`SELECT * FROM plans WHERE audience = $a AND active = 1 ORDER BY rank`, {
-    a: audience,
-  });
+/* ────────────────────────────────────────────── the commitment ladder ── */
+
+/**
+ * How long a plan may be bought for, and what the length takes off the price.
+ *
+ * A longer commitment is cheaper per month because it is worth more: the
+ * discount is the price of the customer not leaving. Basis points rather than
+ * percentages so the arithmetic stays in integers as far as the one rounding.
+ *
+ * This is the shape of the ladder; which plans are sold on it is
+ * `domain/settings.ts`, and it is not every plan — a free tier has nothing to
+ * commit to.
+ */
+export const TERM_LADDER: ReadonlyArray<{ months: number; discountBp: number }> = [
+  { months: 1, discountBp: 0 },
+  { months: 3, discountBp: 1000 },
+  { months: 6, discountBp: 1800 },
+  { months: 12, discountBp: 2500 },
+];
+
+export interface PlanTerm {
+  months: number;
+  discountBp: number;
+  /** Per month, after the discount, in the plan's minor units. */
+  priceMinor: number;
+  /** What is actually charged for the term: `priceMinor * months`. */
+  totalMinor: number;
+}
+
+/**
+ * The one place a term's price is worked out — the seeder, the catalogue and
+ * any checkout all come through here.
+ *
+ * **The monthly figure is rounded and the total is derived from it**, never the
+ * other way round. The monthly price is what a customer compares plans by and
+ * what the card prints; the total is what leaves their account. Rounding the
+ * total and dividing back gives a monthly figure that does not multiply up, and
+ * "16.39 a month" beside a charge of 98.35 is the kind of few-grosze
+ * disagreement nobody can explain at the counter. Doing it in this order makes
+ * the two agree by construction rather than by testing.
+ *
+ * Half-up to whole minor units (`Math.round`), because a discount that rounds
+ * down for ever is a discount the customer never quite gets, and the unit is
+ * already the smallest one the currency has.
+ */
+export function termPricing(monthlyMinor: number, months: number, discountBp: number): PlanTerm {
+  const priceMinor = Math.round((monthlyMinor * (10_000 - discountBp)) / 10_000);
+  return { months, discountBp, priceMinor, totalMinor: priceMinor * months };
+}
+
+/** The terms a plan is sold on, cheapest commitment first. Empty means monthly only. */
+export const termsFor = (db: Db, planId: string): PlanTerm[] =>
+  db
+    .all<{ months: number; discount_bp: number; price_minor: number; total_minor: number }>(
+      `SELECT months, discount_bp, price_minor, total_minor FROM plan_terms
+        WHERE plan_id = $p ORDER BY months`,
+      { p: planId },
+    )
+    .map((row) => ({
+      months: row.months,
+      discountBp: row.discount_bp,
+      priceMinor: row.price_minor,
+      totalMinor: row.total_minor,
+    }));
+
+/**
+ * The catalogue.
+ *
+ * Terms come with the plan rather than from a second endpoint: a price with no
+ * term beside it is only one of the four prices this plan has, and a client
+ * that has to ask twice will eventually render the first answer on its own.
+ */
+export const plansFor = (db: Db, audience: Audience): Array<Plan & { terms: PlanTerm[] }> =>
+  db
+    .all<Plan>(`SELECT * FROM plans WHERE audience = $a AND active = 1 ORDER BY rank`, {
+      a: audience,
+    })
+    .map((plan) => ({ ...plan, terms: termsFor(db, plan.id) }));
 
 export const freePlan = (db: Db, audience: Audience): Plan => {
   const plan = db.get<Plan>(

@@ -15,6 +15,7 @@
  */
 import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
+import { TERM_LADDER, termPricing } from './entitlements.ts';
 import { now, type Iso } from './time.ts';
 
 export function configValue(db: Db, key: string, fallback: number): number {
@@ -37,8 +38,9 @@ export const minCohort = (db: Db): number => configValue(db, 'min_cohort', CONFI
 export const minVenues = (db: Db): number => configValue(db, 'min_venues', CONFIG.privacy.minVenues);
 
 /**
- * The plans, their perks, the category average checks, and a small gift-card
- * catalogue. Idempotent: safe to run on every boot.
+ * The plans, their perks, the terms they are sold on, the category average
+ * checks, and a small gift-card catalogue. Idempotent: safe to run on every
+ * boot.
  */
 export function seedPlatform(db: Db, at: Iso = now()): void {
   db.tx(() => {
@@ -56,8 +58,30 @@ interface PlanSeed {
   priceMinor: number;
   trialDays: number;
   rank: number;
+  /**
+   * Whether the plan is also sold on the commitment ladder (`TERM_LADDER`).
+   *
+   * A property of the seed rather than a rule, because "which plans commit" is a
+   * commercial decision and this file is where those are made. A free tier has
+   * nothing to commit to; the partner tiers are invoiced monthly and their
+   * contract length is a conversation, not a button.
+   */
+  terms?: boolean;
   entitlements: Record<string, string | number | boolean>;
 }
+
+/**
+ * "Unlimited", written in a column whose values are text.
+ *
+ * `entNumber` hands every caller a number and every caller compares against it,
+ * so the top tier needs a figure no real account reaches rather than a second
+ * type in `plan_entitlements` for the one row that means "no ceiling". Ten
+ * thousand lives is ten thousand rounds between two midnights; the sentinel is
+ * honest about being a bound, because it *is* one — just not one anybody will
+ * find. Anything that has to distinguish "high" from "infinite" should read the
+ * key it means (`points_expiry_months: 0`) rather than test against this.
+ */
+const UNLIMITED = 9999;
 
 /**
  * Rank order is entitlement order: `freePlan()` takes rank 0 and
@@ -78,24 +102,44 @@ const PLANS: PlanSeed[] = [
       daily_lives: CONFIG.points.dailyLives,
       points_multiplier: 1,
       points_expiry_months: CONFIG.points.expiryMonths,
+      streak_freezes: 2,
+      word_hints_per_day: 3,
       exclusive_deals: false,
+      deal_early_access_hours: 0,
       gift_card_priority: false,
+      monthly_stipend: 0,
+      /* Which curve in `CONFIG.games.decay` prices a repeat of the same game
+         today. The *value* is a key of that table, so a code here that the table
+         does not know silently buys the free curve — see `decayFor`. Keeping the
+         three values equal to the three plan codes is what makes that
+         impossible to get wrong. */
+      round_decay: 'free',
+      priority_support: false,
       assistant: true,
     },
   },
   {
     audience: 'consumer',
-    code: 'plus',
-    name: 'Plus',
-    priceMinor: 1499,
+    code: 'pro',
+    name: 'Pro',
+    priceMinor: 1999,
     trialDays: 7,
     rank: 1,
+    terms: true,
     entitlements: {
-      daily_lives: 5,
-      points_multiplier: 1.25,
-      points_expiry_months: 18,
+      daily_lives: 6,
+      points_multiplier: 1.2,
+      /* Twice the free window rather than no window: expiry is what keeps the
+         liability finite, and only the top tier is sold out of it. */
+      points_expiry_months: 24,
+      streak_freezes: 5,
+      word_hints_per_day: 6,
       exclusive_deals: true,
-      gift_card_priority: false,
+      deal_early_access_hours: 0,
+      gift_card_priority: true,
+      monthly_stipend: 0,
+      round_decay: 'pro',
+      priority_support: false,
       assistant: true,
     },
   },
@@ -103,15 +147,30 @@ const PLANS: PlanSeed[] = [
     audience: 'consumer',
     code: 'premium',
     name: 'Premium',
-    priceMinor: 2999,
+    priceMinor: 3999,
     trialDays: 7,
     rank: 2,
+    terms: true,
     entitlements: {
-      daily_lives: 8,
-      points_multiplier: 1.5,
-      points_expiry_months: 24,
+      daily_lives: UNLIMITED,
+      points_multiplier: 1.6,
+      /* **Zero means never.** `ledger.ts` writes a NULL `expires_at` for it,
+         which is the only value the expiry job cannot misread — so this is not
+         "a very long window", it is the absence of one. */
+      points_expiry_months: 0,
+      streak_freezes: UNLIMITED,
+      word_hints_per_day: UNLIMITED,
       exclusive_deals: true,
+      /* A day's head start on a deal, which is the perk that costs the platform
+         nothing and is worth the most on a deal with a claim ceiling. */
+      deal_early_access_hours: 24,
       gift_card_priority: true,
+      /* The monthly credit, from the earn table so the subscription and the
+         gift are priced against each other in one place: it must stay worth
+         clearly less than the plan costs, or the plan refunds itself. */
+      monthly_stipend: CONFIG.earn.premiumStipend,
+      round_decay: 'premium',
+      priority_support: true,
       assistant: true,
     },
   },
@@ -184,6 +243,27 @@ const PLANS: PlanSeed[] = [
   },
 ];
 
+/**
+ * Plans that were sold once and are not on the shelf any more.
+ *
+ * Withdrawn rather than deleted, and the difference is a foreign key: a
+ * subscription points at its plan `ON DELETE RESTRICT`, so removing the row
+ * would either fail or take somebody's subscription with it. `active = 0` takes
+ * it out of the catalogue and out of `freePlan`'s ordering while anybody still
+ * on it keeps the entitlements they bought — which is the same "a lapse
+ * restricts, it never claws back" rule read from the other end.
+ *
+ * One thing does change for a grandfathered subscriber: `decayFor` keys the
+ * round-decay curve on the plan *code*, and `plus` is not a key of
+ * `CONFIG.games.decay`, so it falls back to the free curve. That is the
+ * documented behaviour of an unrecognised code rather than a new decision, and
+ * it is the argument for retiring a paid tier only when nobody is on it.
+ */
+const RETIRED: ReadonlyArray<{ audience: 'consumer' | 'partner'; code: string }> = [
+  /* Free / Plus / Premium became Free / Pro / Premium. */
+  { audience: 'consumer', code: 'plus' },
+];
+
 function seedPlans(db: Db, at: Iso): void {
   for (const plan of PLANS) {
     const id = `pln_${plan.audience}_${plan.code}`;
@@ -210,8 +290,59 @@ function seedPlans(db: Db, at: Iso): void {
         { p: id, k: key, v: String(value) },
       );
     }
+    seedTerms(db, id, plan.priceMinor, plan.terms === true);
+  }
+
+  for (const plan of RETIRED) {
+    db.run(`UPDATE plans SET active = 0 WHERE audience = $a AND code = $c`, {
+      a: plan.audience,
+      c: plan.code,
+    });
+    db.run(
+      `DELETE FROM plan_terms WHERE plan_id IN
+         (SELECT id FROM plans WHERE audience = $a AND code = $c)`,
+      { a: plan.audience, c: plan.code },
+    );
   }
   void at;
+}
+
+/**
+ * The commitment ladder for one plan, rebuilt from `TERM_LADDER` and the list
+ * price.
+ *
+ * **Rebuilt rather than reconciled**, which is safe here and nowhere else in
+ * this file: nothing has a foreign key into `plan_terms`, and a subscription
+ * records what it was charged rather than pointing at the rung it was bought on.
+ * So the table is a pure projection of the ladder times the price, and a rung
+ * taken off the ladder — or a price cut — has to leave no trace behind it. An
+ * upsert would leave the stale rung sitting in the catalogue for ever.
+ *
+ * Every figure comes back out of `termPricing`, which is the one place the
+ * arithmetic lives: the monthly price is rounded half-up to whole minor units
+ * and the total is `price × months` derived from it, never the other way round.
+ * That is what makes the per-month figure on the card and the amount on the
+ * invoice agree by construction — 16.39 a month beside a charge of 98.35 is the
+ * few-grosze disagreement nobody can explain at the counter.
+ */
+function seedTerms(db: Db, planId: string, monthlyMinor: number, sold: boolean): void {
+  db.run(`DELETE FROM plan_terms WHERE plan_id = $p`, { p: planId });
+  if (!sold) return;
+
+  for (const rung of TERM_LADDER) {
+    const term = termPricing(monthlyMinor, rung.months, rung.discountBp);
+    db.run(
+      `INSERT INTO plan_terms (plan_id, months, discount_bp, price_minor, total_minor)
+       VALUES ($p, $m, $d, $pm, $tm)`,
+      {
+        p: planId,
+        m: term.months,
+        d: term.discountBp,
+        pm: term.priceMinor,
+        tm: term.totalMinor,
+      },
+    );
+  }
 }
 
 /**

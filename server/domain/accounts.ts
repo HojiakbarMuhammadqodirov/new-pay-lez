@@ -40,6 +40,19 @@ export interface User {
   language: string;
   city: string | null;
   country_code: string | null;
+  /* Contact and profile. All optional, none of them gates anything, and an
+     account that answers none of them is a complete account — the schema says
+     so at the columns and this shape has to keep saying it, because a field
+     typed `string` here is a field somebody will eventually make required. */
+  phone: string | null;
+  /** 0 or 1. A fact about *this* number, reset the moment the number changes. */
+  phone_verified: number;
+  /** ISO `YYYY-MM-DD`, and write-once — see `updateProfile`. */
+  birth_date: string | null;
+  birth_date_set_at: string | null;
+  headline: string | null;
+  /** When onboarding was reported finished; the welcome gift's once-only guard. */
+  onboarded_at: string | null;
   points_cache: number;
   leaderboard_opt_in: number;
   referral_code: string | null;
@@ -223,14 +236,11 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     if (input.provisionalId) merge(db, input.provisionalId, id, at);
     if (input.referralCode) social.bind(db, { code: input.referralCode, newUserId: id, at });
 
-    ledger.earn(db, {
-      userId: id,
-      points: CONFIG.points.welcomeBonus,
-      reason: 'welcome_bonus',
-      sourceKind: 'signup',
-      sourceRef: id,
-      at,
-    });
+    /* **Sign-up grants nothing.** The welcome gift used to be paid here and is
+       paid by `completeOnboarding` now, which is a different moment: an address
+       and a password cost nothing to produce, and a bonus attached to producing
+       them is a bonus payable in bulk. Onboarding is the first thing that asks
+       for effort, and `users.onboarded_at` is what makes it once-only. */
 
     db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
@@ -257,9 +267,10 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
  *    lookup is an account-takeover route, and it is why the check lives at the
  *    point of verification rather than being left to callers to remember.
  * 3. Otherwise a new account, provisioned exactly as `signUp` does — same role,
- *    same consent records, same referral code, same welcome bonus, same player
- *    state. A Google account that skipped any of those would be a second kind
- *    of user for every rule downstream to special-case.
+ *    same consent records, same referral code, same player state, and the same
+ *    nothing in the ledger. A Google account that skipped any of those would be
+ *    a second kind of user for every rule downstream to special-case, and one
+ *    that *arrived* with points would be the cheapest way to mint them.
  *
  * No password is set. `password_hash` stays NULL, which the schema already
  * allows for exactly this, and `signIn` rejects it because `verifyPassword`
@@ -332,14 +343,9 @@ export function linkGoogleAccount(
 
     social.codeFor(db, id);
 
-    ledger.earn(db, {
-      userId: id,
-      points: CONFIG.points.welcomeBonus,
-      reason: 'welcome_bonus',
-      sourceKind: 'signup',
-      sourceRef: id,
-      at,
-    });
+    /* No welcome grant here either, for the reason `signUp` gives: the gift is
+       onboarding's, and the two paths have to agree or one of them is the
+       cheaper way in. */
 
     db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
@@ -349,6 +355,82 @@ export function linkGoogleAccount(
   });
 
   return getUser(db, id);
+}
+
+/* ══════════════════════════════════════════════════════════ onboarding ══ */
+
+export interface Onboarded {
+  /** True only for the call that actually claimed the row — see below. */
+  granted: boolean;
+  /** When onboarding was first reported. Unchanged by a second report. */
+  onboardedAt: Iso;
+  /** What this call paid. `0` on every call after the first. */
+  points: number;
+  balance: number;
+}
+
+/**
+ * Report onboarding finished, and pay for it — **exactly once**.
+ *
+ * The gift moved here from sign-up because this is the first moment that costs
+ * the person anything: an address and a password can be produced in bulk, and a
+ * bonus attached to producing them is a bonus that funds a farm. Finishing
+ * onboarding cannot be done twice by one account, which is what makes it a
+ * reasonable thing to pay for — provided "cannot be done twice" is actually
+ * enforced, and that is the whole substance of this function.
+ *
+ * The guard is the `UPDATE`, not a read: `WHERE onboarded_at IS NULL` is
+ * evaluated by SQLite while it holds the write lock on the row, so two
+ * simultaneous reports — a phone and a browser, a client that retried a request
+ * it had already sent — race for one row and exactly one of them sees
+ * `changes === 1`. A `SELECT` followed by an `if` is the same code with a window
+ * between the two statements wide enough to pay the bonus twice, and it is a
+ * window a slow ledger write makes wider.
+ *
+ * No plan multiplier. `CONFIG.earn` files this with the getting-started one-offs
+ * that are "the same on every plan": a multiplier on a once-in-a-lifetime grant
+ * is a reason to subscribe for a day before finishing the tour.
+ *
+ * A second report is not an error. The client that sends it is a client that
+ * lost its response or reinstalled, and the honest answer to "did I finish
+ * onboarding?" is yes, plus a `granted: false` saying this call is not what paid
+ * for it.
+ */
+export function completeOnboarding(db: Db, userId: string, at: Iso = now()): Onboarded {
+  /* Resolve first, so an unknown id is a 404 rather than a silent
+     `granted: false` — zero changed rows would otherwise mean both "already
+     onboarded" and "no such account". */
+  getUser(db, userId);
+
+  return db.tx(() => {
+    const claimed =
+      db.run(
+        `UPDATE users SET onboarded_at = $t, updated_at = $t
+          WHERE id = $u AND onboarded_at IS NULL`,
+        { t: at, u: userId },
+      ).changes === 1;
+
+    if (claimed) {
+      ledger.earn(db, {
+        userId,
+        points: CONFIG.earn.onboarding,
+        reason: 'welcome_bonus',
+        sourceKind: 'onboarding',
+        sourceRef: userId,
+        at,
+      });
+    }
+
+    const user = getUser(db, userId);
+    return {
+      granted: claimed,
+      /* Read back rather than assumed: on the losing side of a race the stamp is
+         the winner's timestamp, and that is the one the client should hold. */
+      onboardedAt: user.onboarded_at ?? at,
+      points: claimed ? CONFIG.earn.onboarding : 0,
+      balance: ledger.balance(db, userId),
+    };
+  });
 }
 
 export interface SignedIn {
@@ -645,18 +727,165 @@ export async function changePassword(
   });
 }
 
+/* ════════════════════════════════════════════════════════ the profile ══ */
+
+/**
+ * The age a self-registered account is allowed to be.
+ *
+ * Thirteen is the floor a service that profiles its users may take a
+ * self-declared sign-up at without a parent in the flow; a hundred and twenty is
+ * a typo ceiling — nobody is refused by it who is not also refused by physics.
+ *
+ * They live here rather than in `CONFIG` on purpose: `config.ts` holds what an
+ * operator may retune without a deploy, and neither of these is a dial. Moving
+ * the floor is a legal decision and moving the ceiling is meaningless.
+ */
+const MIN_AGE = 13;
+const MAX_AGE = 120;
+
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Whole years elapsed between two `YYYY-MM-DD` days, birthday-aware. */
+function wholeYears(from: string, to: string): number {
+  const [fy, fm, fd] = from.split('-').map(Number);
+  const [ty, tm, td] = to.split('-').map(Number);
+  const beforeBirthday = tm < fm || (tm === fm && td < fd);
+  return ty - fy - (beforeBirthday ? 1 : 0);
+}
+
+/**
+ * A birthday, or a refusal naming the field.
+ *
+ * The round-trip through `Date.UTC` is the part that is not decoration:
+ * `new Date('2026-02-30')` does not fail, it rolls forward to March 2nd — so a
+ * regex plus a parse accepts a date that does not exist and then silently stores
+ * a different one. Comparing the components back out is what turns that into a
+ * refusal. Everything else is string comparison, which is exact for ISO days and
+ * needs no clock.
+ */
+function checkBirthDate(value: string, at: Iso): string {
+  const invalid = (message: string): never => {
+    throw new DomainError('validation_failed', message, { field: 'birthDate' });
+  };
+
+  if (!DATE_ONLY.test(value)) invalid('a birthday is a date, written YYYY-MM-DD');
+
+  const [y, m, d] = value.split('-').map(Number);
+  const round = new Date(Date.UTC(y, m - 1, d));
+  if (round.getUTCFullYear() !== y || round.getUTCMonth() !== m - 1 || round.getUTCDate() !== d) {
+    invalid('that day does not exist');
+  }
+
+  const today = at.slice(0, 10);
+  if (value >= today) invalid('a birthday is in the past');
+
+  const age = wholeYears(value, today);
+  if (age < MIN_AGE) invalid(`an account holder has to be at least ${MIN_AGE}`);
+  if (age > MAX_AGE) invalid('that birthday does not look right');
+
+  return value;
+}
+
+/**
+ * A phone number, loosely.
+ *
+ * Deliberately loose, and that is the design rather than a gap: the only thing
+ * that establishes a number is a code sent to it, which is what
+ * `phone_verified` records. A strict pattern here would reject real numbers in
+ * formats nobody thought of while doing nothing at all about a well-formed
+ * number belonging to somebody else.
+ */
+function checkPhone(value: string): string {
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 6 || digits.length > 15 || !/^[+()\-\s\d.]+$/.test(value)) {
+    throw new DomainError('validation_failed', 'that does not look like a phone number', {
+      field: 'phone',
+    });
+  }
+  return value;
+}
+
+/** A line, not a paragraph. A column with no ceiling is where a novel lands. */
+const HEADLINE_MAX = 140;
+
+export interface ProfilePatch {
+  name?: string;
+  language?: string;
+  city?: string;
+  avatar?: string | null;
+  phone?: string;
+  headline?: string;
+  /** ISO `YYYY-MM-DD`. Accepted **once** in the life of the account. */
+  birthDate?: string;
+}
+
+/**
+ * Edit the profile.
+ *
+ * Two of these fields are not like the others, and both rules are in the schema
+ * at the column they belong to:
+ *
+ * **A changed number is an unverified number.** `phone_verified` is a fact about
+ * *this* number, not about the account having once verified one, so writing a
+ * different number clears it in the same statement — one statement, because a
+ * write followed by a separate reset is a window in which an unverified number
+ * is trusted. Writing the *same* number back is not a change and does not clear
+ * it, which is what stops a client that PATCHes its whole profile from
+ * un-verifying somebody on every save.
+ *
+ * **A birthday is write-once.** `CONFIG.earn.birthday` pays for one; an editable
+ * one is a bonus collectable every day of the year, and the fix is not a
+ * cooldown but a column that can only be filled in. The refusal names support
+ * rather than pretending the correction is impossible — it is a human decision
+ * about somebody's identity, which is exactly the kind that does not belong on
+ * an endpoint.
+ */
 export function updateProfile(
   db: Db,
   userId: string,
-  patch: { name?: string; language?: string; city?: string; avatar?: string | null },
+  patch: ProfilePatch,
   at: Iso = now(),
 ): User {
+  const user = getUser(db, userId);
+
+  const headline = patch.headline?.trim();
+  if (headline !== undefined && headline.length > HEADLINE_MAX) {
+    throw new DomainError('validation_failed', `a headline is at most ${HEADLINE_MAX} characters`, {
+      field: 'headline',
+      max: HEADLINE_MAX,
+    });
+  }
+
+  let birthDate: string | null = null;
+  if (patch.birthDate !== undefined) {
+    if (user.birth_date !== null) {
+      throw new DomainError(
+        'conflict',
+        'a birthday can only be set once — contact support to have it corrected',
+        { field: 'birthDate' },
+      );
+    }
+    birthDate = checkBirthDate(patch.birthDate.trim(), at);
+  }
+
   db.run(
     `UPDATE users
         SET display_name = COALESCE($n, display_name),
             language = COALESCE($l, language),
             city = COALESCE($c, city),
             display_avatar = COALESCE($a, display_avatar),
+            headline = COALESCE($hd, headline),
+            phone = COALESCE($ph, phone),
+            /* Every right-hand side reads the row as it was, so the bare column
+               here is the OLD number: this is a comparison, not a tautology.
+               (No backticks in this string — one ends the template literal and
+               the syntax error surfaces a dozen lines later.) */
+            phone_verified = CASE
+              WHEN $ph IS NULL OR $ph = phone THEN phone_verified ELSE 0 END,
+            birth_date = COALESCE($bd, birth_date),
+            /* Only ever written beside the first birthday, which the refusal
+               above is what guarantees. */
+            birth_date_set_at = CASE WHEN $bd IS NULL THEN birth_date_set_at ELSE $t END,
             updated_at = $t
       WHERE id = $u`,
     {
@@ -664,6 +893,9 @@ export function updateProfile(
       l: patch.language ?? null,
       c: patch.city ?? null,
       a: patch.avatar ?? null,
+      hd: headline || null,
+      ph: patch.phone === undefined ? null : checkPhone(patch.phone.trim()),
+      bd: birthDate,
       t: at,
       u: userId,
     },

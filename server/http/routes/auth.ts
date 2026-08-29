@@ -26,8 +26,19 @@ const cookieFor = (token: string, maxAgeDays: number): string => {
   }`;
 };
 
-function me(ctx: Ctx) {
-  const { user, session, roles } = actor(ctx);
+/**
+ * The whole account, as the app reads it.
+ *
+ * `fresh` exists because `ctx.actor.user` is the row as it was when the *token*
+ * was resolved, at the top of the request — so a `PATCH` that renders its result
+ * through here echoes the profile back unchanged and the client believes the
+ * write was ignored. Anything that writes to the user row passes the row it
+ * wrote; everything else reads the one already in hand rather than paying for a
+ * second `SELECT`.
+ */
+function me(ctx: Ctx, fresh?: accounts.User) {
+  const { user: resolved, session, roles } = actor(ctx);
+  const user = fresh ?? resolved;
   const ent = entitlements.entitlementsFor(ctx.db, { userId: user.id });
   const plan = entitlements.planFor(ctx.db, { userId: user.id });
 
@@ -38,6 +49,16 @@ function me(ctx: Ctx) {
       name: user.display_name,
       language: user.language,
       city: user.city,
+      phone: user.phone,
+      /* Sent beside the number, never instead of it: a client that shows a
+         number with no verification state has told the reader it is verified. */
+      phoneVerified: user.phone_verified === 1,
+      headline: user.headline,
+      birthDate: user.birth_date,
+      /* Null means "not yet", which is the only way a client can know whether
+         to offer onboarding — and `POST /v1/me/onboarded` is idempotent
+         precisely so a client that guesses wrong costs nothing. */
+      onboardedAt: user.onboarded_at,
       trustTier: user.trust_tier,
       leaderboardOptIn: user.leaderboard_opt_in === 1,
       referralCode: user.referral_code,
@@ -222,17 +243,52 @@ export const authRoutes: Route[] = [
     auth: 'user',
     handler: (ctx) => {
       const { user } = actor(ctx);
-      accounts.updateProfile(ctx.db, user.id, {
-        name: optStr(ctx.body, 'name'),
-        language: optStr(ctx.body, 'language'),
-        city: optStr(ctx.body, 'city'),
-        avatar: optStr(ctx.body, 'avatar') ?? null,
-      });
+      /* The opt-in first, the profile second, because the profile write is the
+         one whose returned row is rendered — and it has to have seen both. */
       if (ctx.body.leaderboardOptIn !== undefined) {
         social.setLeaderboardOptIn(ctx.db, user.id, bool(ctx.body, 'leaderboardOptIn'));
       }
-      return me(ctx);
+      const updated = accounts.updateProfile(
+        ctx.db,
+        user.id,
+        {
+          name: optStr(ctx.body, 'name'),
+          language: optStr(ctx.body, 'language'),
+          city: optStr(ctx.body, 'city'),
+          avatar: optStr(ctx.body, 'avatar') ?? null,
+          phone: optStr(ctx.body, 'phone'),
+          headline: optStr(ctx.body, 'headline'),
+          /* Sending this a second time is refused with a 409, not ignored — a
+             birthday is write-once and a client that resends its whole profile
+             on every save has to leave this key out once it is set. */
+          birthDate: optStr(ctx.body, 'birthDate'),
+        },
+        ctx.at,
+      );
+      return me(ctx, updated);
     },
+  },
+  {
+    /**
+     * Onboarding is finished — a route of its own, not a field on `PATCH /v1/me`.
+     *
+     * Three reasons it is not a field. It **grants points**, and a profile edit
+     * that can move the ledger as a side effect of a key the client happened to
+     * include is the kind of coupling nobody remembers at the call site. It is
+     * **once-only**, so its answer is not the new profile but whether *this*
+     * call was the one that paid — a shape `PATCH` has nowhere to put. And it
+     * takes **no input at all**: the server already knows who is asking and
+     * whether they have asked before.
+     *
+     * Safe to send twice. `accounts.completeOnboarding` claims the row with an
+     * `UPDATE … WHERE onboarded_at IS NULL`, so a retry, a second device or a
+     * lost response all get `granted: false` and the same timestamp rather than
+     * a second bonus or an error.
+     */
+    method: 'POST',
+    pattern: '/v1/me/onboarded',
+    auth: 'user',
+    handler: (ctx) => accounts.completeOnboarding(ctx.db, actor(ctx).user.id, ctx.at),
   },
   {
     method: 'POST',
