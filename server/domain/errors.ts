@@ -32,7 +32,7 @@ export type ErrorCode =
   | 'insufficient_points'
   | 'budget_exhausted'
   | 'cap_reached'
-  | 'no_lives'
+  | 'no_energy'
   | 'daily_cap'
   | 'quota_exceeded'
   | 'quiet_hours'
@@ -61,7 +61,7 @@ const STATUS: Record<ErrorCode, number> = {
   insufficient_points: 409,
   budget_exhausted: 409,
   cap_reached: 409,
-  no_lives: 409,
+  no_energy: 409,
   daily_cap: 409,
   quota_exceeded: 409,
   quiet_hours: 409,

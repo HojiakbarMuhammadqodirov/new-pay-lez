@@ -35,18 +35,31 @@ export const CONFIG = {
   /* ───────────────────────────────────────────── §2 the points economy ── */
   points: {
     /*
-     * §7.2 Hearts. The floor; a plan raises it (`daily_lives`).
+     * §7.2 Energy. The floor; a plan raises it (`daily_energy`).
      *
-     * A lost round costs one again. It stopped costing anything when the decay
-     * curve arrived, which left the pool inert — a number on screen that never
-     * moved. What makes charging for a loss fair now is that hearts come back
-     * on a clock rather than at midnight: lose three at nine in the morning and
-     * the wait is hours, not the rest of the day.
+     * **Every finished round costs one, win or lose.** It used to be losses
+     * only, which made the pool a tax on being bad at quizzes and no bound at
+     * all on anybody else: two of the seven games cannot be lost, and a player
+     * answering correctly never touched it. Charging both sides is what makes
+     * this the limiter rather than a decoration.
+     *
+     * What makes charging fair is that energy comes back on a clock rather than
+     * at midnight: spend the tank at nine in the morning and the wait is hours,
+     * not the rest of the day. Read the two numbers below together — three at
+     * four hours is twelve hours from empty to full, and nine finished rounds
+     * in a day from a full start; six a day at the steady rate. Pro is eight
+     * sustained and Premium twelve.
+     *
+     * **This pair is the whole of what bounds a day.** There is no daily points
+     * cap and no per-game taper: both existed once and both are gone. Anything
+     * that wants to limit play belongs here, in the two numbers a player can
+     * see on the screen, rather than in a second rule that shrinks the reward
+     * for reasons nobody can count.
      */
-    dailyLives: 3,
-    /** Minutes to regenerate one heart, on the free plan. Paid plans are
-     *  faster (`life_regen_minutes`). */
-    lifeRegenMinutes: 240,
+    dailyEnergy: 3,
+    /** Minutes to regenerate one energy, on the free plan. Paid plans are
+     *  faster (`energy_regen_minutes`). */
+    energyRegenMinutes: 240,
   },
 
   /* ─────────────────────────────────────────────── §2b what pays, and how much ──
@@ -276,25 +289,21 @@ export const CONFIG = {
     freezeEvery: 7,
 
     /*
-     * What a repeat of the same game pays, on the same day.
+     * **A round pays the same whether it is your first of the day or your
+     * ninth.** There is no per-game decay curve and no daily points cap; a
+     * round's score is `floor(raw × points_multiplier)` and nothing else.
      *
-     * This is the brake, and it is the only one: the daily points ceiling is
-     * gone and lives never bounded anything much, because only a loss spent
-     * one and two of the seven games cannot be lost.
-     *
-     * The free curve ends at zero on purpose. A tail that pays twenty percent
-     * for ever is not a bound — unlimited play still makes unlimited points.
-     * Playing on is never blocked; scores, streaks and the leaderboard all
-     * keep counting. Only the points stop.
-     *
-     * Indexed by how many rounds of that game are already finished today; past
-     * the end of the list the last entry repeats.
+     * A curve lived here that paid a repeat of the *same* game 100/60/40/20/0%
+     * on free. It was written when play was unlimited and it was the only brake
+     * there was. Energy is that now — every finished round costs one, which is
+     * six rounds a day sustained on free (nine in a burst), eight on Pro,
+     * twelve on Premium — and the curve stopped reaching: per *game*, its free
+     * zero rung was the fifth round of one game, so a player rotating the seven
+     * never got near it, and on Pro and Premium it never bit under any pattern
+     * of play at all. Two overlapping limiters where only one binds is one more
+     * than a player can be told about. If a day needs to be smaller, move
+     * `CONFIG.points` — that is the number this rule is now made of.
      */
-    decay: {
-      free: [1, 0.6, 0.4, 0.2, 0],
-      pro: [1, 0.8, 0.6, 0.4, 0.2],
-      premium: [1],
-    } as Record<string, readonly number[]>,
   },
 
   /* ──────────────────────────────────────── §1.3 / B9 privacy thresholds ── */

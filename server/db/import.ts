@@ -396,7 +396,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         u: user,
         s: num(row, 'current_streak'),
         l: num(row, 'longest_streak'),
-        li: Math.min(CONFIG.points.dailyLives, num(row, 'lives', CONFIG.points.dailyLives)),
+        li: Math.min(CONFIG.points.dailyEnergy, num(row, 'lives', CONFIG.points.dailyEnergy)),
         a: num(row, 'questions_answered'),
         c: num(row, 'correct_answers'),
         lp: (ts(row, 'last_played', null) ?? '').slice(0, 10) || null,
