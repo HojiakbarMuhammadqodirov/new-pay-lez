@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS, type GameId } from './content';
 import { Icon } from './icons';
-import { useCopy, useLanguage } from './i18n/context';
+import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
@@ -10,10 +10,10 @@ import {
   CHEAPEST_VOUCHER,
   flightAward,
   freezesOf,
+  livesOf,
   MAX_FREEZES,
   MAX_LIVES,
   quizAward,
-  refillLives,
   roundsToday,
   today,
   type Award,
@@ -111,6 +111,36 @@ const TIERS = [...new Set(VOUCHER_CARDS.map((card) => card.points))].sort((a, b)
  */
 function nextTier(points: number): number {
   return TIERS.find((cost) => cost > points) ?? TIERS[TIERS.length - 1];
+}
+
+/**
+ * "in 3 hours", in the reader's own language.
+ *
+ * A tank that fills on a clock has to say when, or it is a wait with no end on
+ * it — which is the one way a lives system reads as broken rather than as a
+ * cost. The pips say how many; this says how long.
+ *
+ * The words come from `Intl` rather than from a dictionary key, and this is the
+ * one place in the site where that is the *better* owner. A duration belongs to
+ * the reader's language — five dictionaries would each have to carry a
+ * singular, a plural and, in Russian and Ukrainian, the third form the numbers
+ * ending 2, 3 and 4 take, and the platform already knows all of them. Compare
+ * `fx.ts`, which refuses `Intl.NumberFormat` for money on the opposite ground:
+ * a currency's symbol placement belongs to the *currency*, not to whoever is
+ * reading it.
+ *
+ * One unit, never two. "in 3 hours 12 minutes" is a stopwatch; what a player
+ * wants off this line is whether to wait or to go and do something else.
+ */
+function untilNextLife(at: number, now: number, language: LanguageCode): string {
+  const rtf = new Intl.RelativeTimeFormat(language, { numeric: 'always' });
+  /* Never "in 0 minutes": a life forty seconds away is still a minute away to a
+     line that counts in minutes, and rounding it to nothing would show the wait
+     as over while the button is still disabled. */
+  const minutes = Math.max(1, Math.ceil((at - now) / 60_000));
+  return minutes >= 60
+    ? rtf.format(Math.round(minutes / 60), 'hour')
+    : rtf.format(minutes, 'minute');
 }
 
 /*
@@ -533,15 +563,41 @@ export function GamesApp() {
 
   const player = account?.player;
 
-  /* Lives come back with a new day. Done on mount rather than on a timer:
-     nothing else can change the answer while the page is open. */
-  const refilled = useRef(false);
+  /*
+   * The tank, derived on every render rather than stored — `livesOf` in
+   * `player.ts` carries the reasoning. Read here, above the early return
+   * below, because the timer that watches it is a hook and hooks cannot sit
+   * under a conditional.
+   */
+  const tank = player ? livesOf(player) : null;
+  const lives = tank?.count ?? 0;
+  const nextLifeAt = tank?.nextAt ?? null;
+
+  /*
+   * Wake the screen when a life lands, and once a minute until it does.
+   *
+   * Nothing is *written* here and nothing needs to be: the tank is a division
+   * against the clock, so the only thing a timer has to do is cause a render.
+   * That is the whole of what replaced `refillLives`, which fired on mount and
+   * therefore never fired at all in a tab left open past midnight.
+   *
+   * It is not per-frame work and it is kept that way: one `setState` a minute,
+   * which is as often as a line counting in minutes can say anything new — and
+   * none at all while a round is running, because nobody is reading the strip
+   * mid-round and there is a canvas game mounted under this component. An
+   * arrival during a round is picked up by the next render either way.
+   */
+  const [beat, setBeat] = useState(0);
   useEffect(() => {
-    if (!player || refilled.current) return;
-    refilled.current = true;
-    const next = refillLives(player);
-    if (next !== player) setPlayer(next);
-  }, [player, setPlayer]);
+    if (playing || nextLifeAt === null) return;
+    const wait = Math.max(500, Math.min(60_000, nextLifeAt - Date.now()));
+    const id = window.setTimeout(() => setBeat((n) => n + 1), wait);
+    return () => window.clearTimeout(id);
+    /* `beat` is the dependency that makes this reschedule: the effect re-runs
+       because the tick changed it, not because the parent re-rendered — which
+       is what stops an unrelated render from postponing the next one for ever,
+       the same trap the `done` ref in `Round` above sidesteps. */
+  }, [playing, nextLifeAt, beat]);
 
   /*
    * Re-run the reveal scan whenever this screen swaps what it is showing.
@@ -577,7 +633,7 @@ export function GamesApp() {
    */
   const start = (id: GameId) => {
     const chosen = GAMES.find((g) => g.id === id);
-    if (!chosen || player.lives <= 0 || loading) return;
+    if (!chosen || lives <= 0 || loading) return;
 
     setResult(null);
 
@@ -765,13 +821,26 @@ export function GamesApp() {
               </span>
               <span className="play-stat">
                 <em>{games.lives}</em>
-                <b className="play-pips" aria-label={`${player.lives}/${MAX_LIVES}`}>
+                <b className="play-pips" aria-label={`${lives}/${MAX_LIVES}`}>
                   {Array.from({ length: MAX_LIVES }, (_, i) => (
-                    <i key={i} data-spent={i >= player.lives ? 'true' : undefined}>
+                    <i key={i} data-spent={i >= lives ? 'true' : undefined}>
                       ♥
                     </i>
                   ))}
                 </b>
+                {/*
+                  When the next one lands, next to the pips that are short of it
+                  and nowhere else — this is the only place on the screen that is
+                  always visible, in play and on the result card alike.
+
+                  A second `<em>`, which is the strip's own muted label style, so
+                  the line needs nothing added to `site.css`. The `+♥` is the
+                  label: a glyph rather than a word, because it has to read the
+                  same in five languages and the sentence around it is `Intl`'s.
+                */}
+                {nextLifeAt !== null && (
+                  <em>{`+♥ ${untilNextLife(nextLifeAt, Date.now(), language)}`}</em>
+                )}
               </span>
               <span className="play-stat">
                 <Icon name="freeze" size={15} />
@@ -857,7 +926,7 @@ export function GamesApp() {
                         })
                       : undefined
               }
-              canAgain={player.lives > 0}
+              canAgain={lives > 0}
               onAgain={() => start(game.id)}
               onBack={() => {
                 setPlaying(null);
@@ -916,15 +985,15 @@ export function GamesApp() {
                       <button
                         type="button"
                         className="btn btn-solid play-feature-cta"
-                        disabled={player.lives <= 0 || loading}
+                        disabled={lives <= 0 || loading}
                         onClick={() => start(entry.id)}
                       >
                         {loading
                           ? games.loading
-                          : player.lives > 0
+                          : lives > 0
                             ? games.start
                             : games.noLives}
-                        {player.lives > 0 && !loading && (
+                        {lives > 0 && !loading && (
                           <Icon name="arrow" size={16} strokeWidth={2.4} />
                         )}
                       </button>
@@ -987,12 +1056,12 @@ export function GamesApp() {
                       <button
                         type="button"
                         className="btn btn-solid play-start"
-                        disabled={player.lives <= 0 || loading}
+                        disabled={lives <= 0 || loading}
                         onClick={() => start(entry.id)}
                       >
                         {loading
                           ? games.loading
-                          : player.lives > 0
+                          : lives > 0
                             ? games.play
                             : games.noLives}
                       </button>

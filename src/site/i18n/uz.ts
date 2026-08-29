@@ -444,7 +444,7 @@ export const uz: Dictionary = {
     reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
     start: 'O‘yinni boshlash',
     play: 'O‘ynash',
-    noLives: 'Jonlar tugadi — ertaga qayting',
+    noLives: 'Jonlar tugadi',
     loading: 'Tarqatilmoqda…',
 
     question: '{total} dan {n}-savol',
@@ -1779,7 +1779,7 @@ export const uz: Dictionary = {
         },
         {
           q: "Kuniga nechta raund o‘ynay olaman?",
-          a: "Xohlaganingizcha. Yutqazilgan raund endi jon olmaydi, raundni boshlash uchun sarflagan jonlaringiz esa vaqt o‘tishi bilan tiklanadi. Cheklov yo‘q — lekin bitta o‘yin bir kun ichida har takrorda kamroq to‘laydi va oxirida umuman to‘lamaydi. Ertaga u yana to‘liq qiymatga ega.",
+          a: "Xohlaganingizcha. Raundni boshlash bepul, yutuq ham hech narsa olmaydi — jonni faqat yutqazilgan raund oladi, jonlar esa o‘zi tiklanadi: har to‘rt soatda bittadan, ko‘pi bilan uchtagacha. Cheklov yo‘q — lekin bitta o‘yin bir kun ichida har takrorda kamroq to‘laydi va oxirida umuman to‘lamaydi. Ertaga u yana to‘liq qiymatga ega.",
         },
         {
           q: 'Vaucher aslida qanchaga arziydi?',

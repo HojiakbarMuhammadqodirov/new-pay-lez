@@ -56,21 +56,32 @@ export const FLIGHT = {
   },
 
   /**
-   * Gravity and the flap: 1080 px/s² and 390 px/s over a 708px screen.
+   * Gravity and the flap, softened on purpose.
    *
-   * What makes them *these* numbers rather than any other pair with the same
-   * ratio is the arc they cut against the gap. apex = flap²/2·gravity = 55²/304
-   * ≈ 9.9 units against a gap of 18.4 — **one flap covers 54% of the hole.**
+   * This file used to carry Flappy Bird's constants to three decimal places —
+   * 1080 px/s² and 390 px/s over a 708px screen — and argued that the tension
+   * of the original *is* that a single flap nearly overshoots the hole, so you
+   * are always correcting rather than steering. That argument is correct about
+   * the original and wrong about this product: the original was built to make
+   * people put the phone down, and this one sits behind a reward.
    *
-   * That number is the game. Tune the apex down to a third of the gap and every
-   * hole becomes a comfortable two-flap glide; the tension of the original is
-   * that a single flap nearly overshoots, so you are always correcting rather
-   * than steering. `verify-geo.ts` holds the ratio in a band for exactly this
-   * reason — an earlier build of this file asserted apex < 0.6·gap as a *safety*
-   * rule and in doing so asserted the real game out of existence.
+   * apex = flap²/2·gravity = 45²/236 ≈ 8.6 units against a gap of 24, so **one
+   * flap covers 36% of the hole** where it used to cover 52%. The number that
+   * matters more is apex against *half* the gap: it was 1.05, meaning a flap
+   * taken dead-centre clipped the roof, and the only way to fly was to fall
+   * 2.6 units below centre first — a technique nothing on screen teaches and no
+   * casual player discovers. It is now 0.72, so the obvious play works.
+   *
+   * The cost is real and is the one the old comment named: this is a
+   * two-flap glide rather than a permanent correction, and an expert has less
+   * to chew on. That is the trade — the ceiling on a run is 20 points either
+   * way, and a game nobody clears five gaps on pays nothing at all.
+   *
+   * `verify-geo.ts` holds this ratio in a band; the band moved with these
+   * numbers rather than being widened to accommodate them.
    */
-  gravity: 152,
-  flap: -55,
+  gravity: 118,
+  flap: -45,
   /**
    * Terminal fall, ~600 px/s. Without it a long dive arrives at a speed no
    * single flap can arrest, so a moment's inattention is unrecoverable rather
@@ -79,14 +90,22 @@ export const FLIGHT = {
   maxFall: 85,
 
   pipe: {
-    /** Column width — the original's 52px of a 288px-wide screen. */
-    width: 13,
-    /** The hole: 130px of 708. Roughly three and a half birds. */
-    gap: 19,
-    /** Seconds between spawns — at `speed` that is 35 units apart, two on screen. */
-    interval: 1.38,
-    /** World units per second: 180 px/s over 708. */
-    speed: 25.4,
+    /*
+     * Column width. Thirteen was the original's 52px — but normalised by screen
+     * *width*, while every other constant here is normalised by height, so the
+     * columns were 1.3–1.8× too thick and a gate took 685ms to cross. Nine is
+     * the same 52px taken the same way as everything else.
+     */
+    width: 9,
+    /** The hole. Five and a half birds wide, against three and a half before —
+     *  9.8 units of clearance either side of the hitbox rather than 7.3. */
+    gap: 24,
+    /** Seconds between spawns — at `speed` that is 38.5 units apart. */
+    interval: 1.75,
+    /** World units per second. Slower than the original's 180px/708, which is
+     *  most of what "make it easier" actually means: it buys thinking time on
+     *  every gate rather than making any single one wider. */
+    speed: 22,
     /**
      * How close a gap edge may come to the ceiling or the floor.
      *
@@ -94,23 +113,29 @@ export const FLIGHT = {
      * which is only reachable from a climb you had no way to know you needed —
      * unfair in the specific sense that no play of the previous second could
      * have prepared for it.
+     *
+     * Fourteen rather than twelve, because the hole grew: a centre 12 from the
+     * edge would put a 24-unit gap flush against it, leaving no column at all
+     * on that side and nothing to read the gate by.
      */
-    margin: 12,
+    margin: 14,
     /**
      * How far a gap may move from the one before it.
      *
      * Not a difficulty dial — a solvability one. Between two columns there are
      * `interval` seconds, and a bird flapping as fast as it usefully can climbs
-     * about 27 units/s sustained, so roughly 37 units of altitude are available
-     * before the next gate arrives. Leave the generator free to swing the full
-     * 57-unit band and it will periodically deal a course no flying can answer,
-     * which reads to the player as the game cheating rather than as a hard
-     * course. Twenty-six leaves a third of the climb in hand.
+     * about 22.5 units/s sustained, so roughly 39 units of altitude are
+     * available before the next gate arrives. Leave the generator free to swing
+     * the full band and it will periodically deal a course no flying can
+     * answer, which reads to the player as the game cheating rather than as a
+     * hard course. Twenty leaves half the climb in hand — more headroom than
+     * the old twenty-six did, which is part of the same softening as the
+     * gravity above: the courses themselves are gentler, not just the bird.
      *
      * Falling is cheaper than climbing, but the limit is symmetric: an
      * asymmetric one produces courses that drift steadily downward.
      */
-    maxStep: 26,
+    maxStep: 20,
     /** The accent band across the mouth of each column. */
     cap: 2.4,
     /** Corner radius on the column mouths. */

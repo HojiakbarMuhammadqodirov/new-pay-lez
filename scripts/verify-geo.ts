@@ -65,7 +65,8 @@ import {
   MAX_LIVES,
   memoryPoints,
   redeem,
-  refillLives,
+  LIFE_REGEN_MINUTES,
+  livesOf,
   seedPlayer,
   stampsLeft,
   stampsOf,
@@ -1022,17 +1023,49 @@ console.log('\nplaying');
   check('missing the window resets the streak', lapsed.streak === 1);
   check('…and the balance survives it', lapsed.points === 20, `${lapsed.points} pts`);
 
-  /* A loss costs no life either. The pool only ever charged the player who was
-     bad at quizzes — two of the seven games have no fail state at all — so as a
-     brake it was noise. The tank stays, in case anything ever spends from it
-     again; nothing does today. */
+  /* A loss costs a heart again. It stopped costing one when the decay curve
+     arrived, which left the tank inert — a number on screen that never moved.
+     What makes charging fair now is that hearts come back on a clock rather
+     than at midnight, so a bad morning is a wait of hours and not a day. */
   const lost = awardRound(base, { ...win, correct: 2, won: false }, day('2026-08-03'));
-  check('a loss costs no life', lost.lives === MAX_LIVES);
+  check('a loss costs a heart', lost.lives === MAX_LIVES - 1, `${lost.lives} left`);
   check('…and still banks what was right', lost.points === 2, `${lost.points} pts`);
 
-  const empty = { ...base, lives: 0, lastPlayed: '2026-08-03' };
-  check('lives do not refill on the same day', refillLives(empty, day('2026-08-03')).lives === 0);
-  check('lives refill on a new day', refillLives(empty, day('2026-08-04')).lives === MAX_LIVES);
+  /*
+   * Hearts regenerate one at a time on a clock, not all at once at midnight.
+   *
+   * The old rule refilled the tank on a new calendar day and only when the Play
+   * screen mounted, which made the wait wildly unfair by hour — lose three at
+   * nine in the morning and you waited fifteen hours; lose them at nine at
+   * night and you waited three — and never fired at all in a tab left open
+   * past midnight.
+   *
+   * Counted from a stored anchor rather than a running timer: the same answer
+   * with none of the moving parts, and it survives a closed laptop.
+   */
+  const hour = 3_600_000;
+  const t0 = day('2026-08-03').getTime();
+  const drained = { ...base, lives: 0, livesAt: t0 };
+  const at = (ms: number) => livesOf(drained, new Date(t0 + ms));
+
+  check('an empty tank is empty', at(0).count === 0, `${at(0).count}`);
+  check('…and says when the next heart lands', at(0).nextAt === t0 + LIFE_REGEN_MINUTES * 60_000);
+  check('nothing arrives before the interval is up', at(hour * 3).count === 0);
+  check('one heart at four hours', at(hour * 4).count === 1, `${at(hour * 4).count}`);
+  check('two at eight', at(hour * 8).count === 2, `${at(hour * 8).count}`);
+  check('full at twelve', at(hour * 12).count === MAX_LIVES, `${at(hour * 12).count}`);
+  /* And it stops there — a tank that kept counting would hand back a week of
+     hearts to somebody returning from holiday. */
+  check('and never overfills', at(hour * 200).count === MAX_LIVES, `${at(hour * 200).count}`);
+  check('a full tank has nothing to count down to', at(hour * 200).nextAt === null);
+
+  /* A state saved before the anchor existed reads as a full tank, never as an
+     empty one: punishing an existing player for a schema change is the one
+     outcome that is clearly wrong. */
+  const legacy = { ...base } as Record<string, unknown>;
+  delete legacy.livesAt;
+  check('a state with no anchor reads as a full tank',
+    livesOf(legacy as ReturnType<typeof seedPlayer>, new Date(t0)).count === MAX_LIVES);
 }
 
 console.log('\nplaying — streak freezes');
@@ -1102,6 +1135,36 @@ console.log('\nplaying — streak freezes');
     freezesOf(old as ReturnType<typeof seedPlayer>) === 0);
 }
 
+console.log('\ncopy that quotes a constant');
+{
+  /*
+   * The L-Earn FAQ says, in five languages, that a life comes back "every four
+   * hours, up to three".
+   *
+   * Those two figures are written as **words**, not as holes, and that is
+   * deliberate against the usual rule. Substituting a numeral where a word
+   * stands breaks agreement in three of the five languages the moment the value
+   * changes — Russian wants "часа" at four and "часов" at five, Polish
+   * "godziny" against "godzin" — so a hole would trade a sentence that goes
+   * stale for one that goes ungrammatical, and nothing would catch the second.
+   *
+   * This catches the first. If either constant moves, five strings move with
+   * it, and this is the thing that says so.
+   */
+  check(`the FAQ line "every four hours" still matches the code`,
+    LIFE_REGEN_MINUTES === 240,
+    `${LIFE_REGEN_MINUTES} min · the copy says four hours`);
+  check('…and its "up to three" still matches MAX_LIVES',
+    MAX_LIVES === 3,
+    `${MAX_LIVES} · the copy says three`);
+
+  /* And the copy really does still say it, so the check above cannot pass
+     against a sentence that was quietly reworded. */
+  const faq = en.learn.faq.items.map((item) => item.a).join(' ');
+  check('…and the English FAQ still quotes both figures',
+    /four hours/.test(faq) && /up to three/.test(faq));
+}
+
 console.log('\nplaying — the two scored games');
 {
   /*
@@ -1165,10 +1228,12 @@ console.log('\nflying — scoring');
   check('a win costs no life', cleared.lives === MAX_LIVES);
 
   const crash = awardFlight(base, { ...full, cleared: 3, won: false }, day('2026-08-03'));
-  /* A crash costs no life either — see the note in `awardPoints`. Squawk was
-     the only game that could empty the tank, so the hardest round on the page
-     was also the one that could shut the others down for the rest of the day. */
-  check('a crash costs no life', crash.lives === MAX_LIVES);
+  /* A crash costs a heart, like any other loss. Squawk is the game most likely
+     to empty the tank — it is the only one where crashing *is* the mechanic —
+     which is exactly why it was made gentler at the same time as hearts started
+     costing again: at four hours a heart, three bad flights used to shut the
+     page until tomorrow, and now it is a wait you can sit out. */
+  check('a crash costs a heart', crash.lives === MAX_LIVES - 1, `${crash.lives} left`);
   check('…and still banks the gaps flown', crash.points === 3, `${crash.points} pts`);
   check('the whole round is charged to answered', crash.answered === 5, `${crash.answered}`);
   check('…and only the gaps flown count as correct', crash.correct === 3, `${crash.correct}`);
@@ -1221,11 +1286,15 @@ console.log('\nflying — scoring');
   check('an impossible score is capped', absurd.points === MAX_FLIGHT_POINTS,
     `${absurd.points} pts`);
 
-  /* A `won` that did not reach the bank line is still recorded as the loss it
-     was — it buys no life back now, but the flag is what a result card reads. */
+  /* A `won` the client claims but the gap count does not support is recorded as
+     the loss it was — and now that a loss costs a heart again, that flag is what
+     charges one. It is the only place a modified client could have asked for a
+     free round, since the flight reports a single integer and posts no moves. */
   const fake = awardFlight(base, { ...full, cleared: 4, won: true }, day('2026-08-03'));
-  check('a win that did not reach the target is a loss', flightAward(
-    { ...full, cleared: 4, won: true }).won === false);
+  check('a win that did not reach the target is a loss',
+    flightAward({ ...full, cleared: 4, won: true }).won === false);
+  check('…and is charged a heart like any other loss', fake.lives === MAX_LIVES - 1,
+    `${fake.lives} left`);
 
   const fractional = awardFlight(base, { ...full, cleared: 3.9, won: false }, day('2026-08-03'));
   check('a fractional score floors', fractional.points === 3, `${fractional.points} pts`);
@@ -1310,7 +1379,19 @@ console.log('\nflying — is it playable');
    * when it is sinking below that line, and cannot flap faster than a thumb.
    * If a rule that crude cannot clear the target, the tuning is wrong.
    */
-  const play = (seed: number, frames: number) => {
+  /*
+   * `slop` is how imprecise the pilot is, in world units of aim error and in
+   * frames of reaction delay. Zero is the ideal pilot — a rule follower with
+   * perfect timing — and it is the right thing to ask "is this game beatable?"
+   *
+   * It is the wrong thing to ask "can this game still kill?". Once the hole is
+   * wide enough, a pilot that never mistimes a flap simply never dies, and the
+   * check reads as "too easy" when what it has actually measured is that the
+   * simulation has no hands. A human misses by a few units and a few frames;
+   * that is the failure mode the game has to punish, so that is what the
+   * killable check flies.
+   */
+  const play = (seed: number, frames: number, slop = 0) => {
     let rand = seed;
     const next = () => {
       // A small LCG: the pilot must beat a repeatable course, not a lucky one.
@@ -1351,9 +1432,13 @@ console.log('\nflying — is it playable');
       const ahead = pipes
         .filter((p) => p.x + FLIGHT.pipe.width > FLIGHT.bird.x - 2)
         .sort((a, b) => a.x - b.x)[0];
-      const aim = ahead ? ahead.gapY : FLIGHT.worldHeight / 2;
+      /* The aim error is redrawn from the same LCG, so a seeded course is
+         still exactly reproducible — a flaky physics test is worse than none. */
+      const wobble = slop === 0 ? 0 : (next() - 0.5) * 2 * slop;
+      const delay = slop === 0 ? 6 : 6 + Math.floor(slop);
+      const aim = (ahead ? ahead.gapY : FLIGHT.worldHeight / 2) + wobble;
       const arc = (FLIGHT.flap * FLIGHT.flap) / (2 * FLIGHT.gravity);
-      if (bird.vy > 0 && bird.y > aim + arc / 2 && i - lastFlap >= 6) {
+      if (bird.vy > 0 && bird.y > aim + arc / 2 && i - lastFlap >= delay) {
         bird = flap(bird);
         lastFlap = i;
       }
@@ -1399,10 +1484,22 @@ console.log('\nflying — is it playable');
     reached >= Math.ceil(runs.length * 0.6), `${reached} of ${runs.length}: ${scores.join(', ')}`);
   check('…and its median run is past the bank line', median >= target,
     `median ${median}`);
-  check('…but it does not fly forever, so the game can still kill',
-    runs.some((r) => !r.survived), `${runs.filter((r) => !r.survived).length} crashed`);
+  /*
+   * Killability is measured on a pilot with hands. The precise one above no
+   * longer dies at all, and that is not the game being broken — the hole was
+   * widened and the scroll slowed on purpose, so a player who times every flap
+   * correctly *should* be able to fly indefinitely. What must still be true is
+   * that being a few units and a few frames out kills you, because that is the
+   * only thing standing between this and an idle animation.
+   */
+  const sloppy = [1, 7, 42, 1337, 90210, 555, 8675309, 31337].map((seed) =>
+    play(seed, 60 * 120, 6));
+  const crashed = sloppy.filter((r) => !r.survived).length;
+  check('…but an imprecise pilot still dies, so the game can kill',
+    crashed > 0, `${crashed} of ${sloppy.length} crashed`);
   check('…and the courses differ, so that is not one lucky seed',
-    new Set(scores).size > 2, scores.join(', '));
+    new Set(sloppy.map((r) => r.cleared)).size > 2,
+    sloppy.map((r) => r.cleared).join(', '));
 
   /* The other half of playable: it must be possible to lose. A pilot that never
      flaps has to hit the floor, or gravity is not doing anything. */
@@ -1480,20 +1577,33 @@ console.log('\nflying — tuning');
     `${FLIGHT.pipe.gap} vs ${FLIGHT.bird.size * 2}`);
 
   /*
-   * The ratio that IS the game, and the check this file previously got exactly
-   * backwards.
+   * The ratio that shapes the game, and the band has now been moved twice — in
+   * opposite directions, for reasons worth keeping.
    *
-   * It used to assert `apex < 0.6 * gap` as a fairness rule, on the reasoning
-   * that a flap which crosses the whole gap leaves no room to correct. That is
-   * true and it is also the point: in the original, one flap covers a little
-   * over half the hole (390²/(2*1080) = 70px against a 130px gap = 0.54), which
-   * is why the game is a constant correction rather than a glide. Tuned to a
-   * third the whole thing goes floaty, which is what shipped first. A band, not
-   * a ceiling — and the floor is the load-bearing half.
+   * It began as `apex < 0.6 * gap`, a fairness rule on the reasoning that a flap
+   * crossing the whole hole leaves no room to correct. That was raised to a
+   * 0.45–0.65 band around the original's 0.54, because at 0.54 a single flap
+   * *nearly overshoots* and the game becomes a constant correction rather than
+   * a glide — which is what makes the original the original.
+   *
+   * It is now 0.30–0.45, and that is a deliberate departure rather than drift.
+   * At 0.54 the apex was 1.05× the gap's half-height, so a flap taken in the
+   * middle of the hole clipped the roof and the only way to fly was to fall
+   * below centre first — a technique nothing teaches and few players find. The
+   * game sits behind a reward here, and one nobody clears five gaps on pays
+   * nothing at all.
+   *
+   * The floor is still the load-bearing half: below 0.30 the bird is floaty and
+   * the hole stops mattering. What replaces the old ceiling as the guard
+   * against "too easy" is the imprecise pilot above — a rule follower with
+   * perfect timing is *meant* to be able to fly this forever now.
    */
   const ratio = apex / FLIGHT.pipe.gap;
-  check('one flap covers about half the gap, as the original does',
-    ratio > 0.45 && ratio < 0.65, `${ratio.toFixed(2)} (original ≈ 0.54)`);
+  check('one flap covers about a third of the gap, so the obvious play works',
+    ratio > 0.3 && ratio < 0.45, `${ratio.toFixed(2)} (the original ≈ 0.54)`);
+  /* The number that actually decides whether a centred flap is survivable. */
+  check('…and a flap from the middle of the hole does not clip the roof',
+    apex < FLIGHT.pipe.gap / 2, `apex ${apex.toFixed(1)} vs half-gap ${(FLIGHT.pipe.gap / 2).toFixed(1)}`);
 
   check('columns never touch',
     FLIGHT.pipe.interval * FLIGHT.pipe.speed > FLIGHT.pipe.width * 2);

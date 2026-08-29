@@ -518,7 +518,12 @@ export const en = {
     /* The short label, for the cards in the grid — six of them side by side,
        where "Start game" wraps and the surrounding card already says which. */
     play: 'Play',
-    noLives: 'Out of lives — come back tomorrow',
+    /* The state only, never the wait: lives regenerate one at a time rather
+       than at midnight, and the screen already prints the real countdown
+       beside the pips (`+♥ in 3 hours`, plural-correct per language). A
+       "come back tomorrow" here was both wrong and a second, disagreeing
+       answer to the question the countdown is already answering. */
+    noLives: 'Out of lives',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
 
@@ -2003,7 +2008,7 @@ export const en = {
         },
         {
           q: 'How many rounds can I play a day?',
-          a: 'As many as you like. Losing a round no longer costs a life, and the lives you spend to start one come back over time. There is no cap — but the same game pays less every time you repeat it in a day, until it pays nothing. Tomorrow it is worth full again.',
+          a: 'As many as you like. Starting a round is free and a win costs nothing — only a round you lose spends a life, and lives come back on their own, one every four hours, up to three. There is no cap — but the same game pays less every time you repeat it in a day, until it pays nothing. Tomorrow it is worth full again.',
         },
         {
           q: 'What is a voucher actually worth?',

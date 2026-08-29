@@ -449,7 +449,7 @@ export const pl: Dictionary = {
     reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
     start: 'Zacznij grę',
     play: 'Zagraj',
-    noLives: 'Koniec żyć — wróć jutro',
+    noLives: 'Koniec żyć',
     loading: 'Rozdajemy…',
 
     question: 'Pytanie {n} z {total}',
@@ -1783,7 +1783,7 @@ export const pl: Dictionary = {
         },
         {
           q: 'Ile rund mogę zagrać dziennie?',
-          a: 'Tyle, ile chcesz. Przegrana runda nie kosztuje już życia, a życia, które wydajesz na start, odnawiają się z czasem. Limitu nie ma — ale ta sama gra płaci mniej z każdym powtórzeniem w ciągu dnia, aż przestaje płacić. Jutro znów jest warta pełnię.',
+          a: 'Tyle, ile chcesz. Rozpoczęcie rundy nic nie kosztuje i wygrana też nie — życie zabiera tylko runda przegrana, a życia wracają same, po jednym co cztery godziny, maksymalnie do trzech. Limitu nie ma — ale ta sama gra płaci mniej z każdym powtórzeniem w ciągu dnia, aż przestaje płacić. Jutro znów jest warta pełnię.',
         },
         {
           q: 'Ile naprawdę wart jest voucher?',

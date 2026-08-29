@@ -319,9 +319,18 @@ function ledgerRules(): void {
   ledger.earn(w2.db, { userId: w2.customerId, points: 200, reason: 'adjustment', at: plusDays(old, -400) });
   ledger.earn(w2.db, { userId: w2.customerId, points: 60, reason: 'scan_earn', at: old });
   ledger.spend(w2.db, { userId: w2.customerId, points: 50, reason: 'gift_card_redeem', at: old });
-  const expired = ledger.runExpiry(w2.db, old);
-  eq('expiry takes what is left of the old batch', expired.points, 150);
-  eq('and leaves the new one alone', ledger.balance(w2.db, w2.customerId), 60);
+  /*
+   * **Points do not expire.** `runExpiry` and its job are deleted, so what is
+   * asserted here now is the opposite of what used to be: a batch earned four
+   * hundred days ago is still spendable, and a balance left alone stays where
+   * it was. The FIFO lots survive because spending still walks them oldest
+   * first — that is the half of the machinery that had a job.
+   */
+  eq('a four-hundred-day-old batch is still there', ledger.balance(w2.db, w2.customerId), 210);
+  check('and nothing on the ledger carries an expiry date',
+    w2.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM points_ledger WHERE expires_at IS NOT NULL`,
+    )?.n === 0);
   eq('the ledger still balances against its cache', ledger.reconcile(w2.db, w2.customerId), 0);
 
   /* C3: a reversal is a compensating entry, never a mutation. */
@@ -401,19 +410,21 @@ function gateRules(): void {
    * A first scan at a venue now pays four things, and the receipt reports the
    * sum. Spelled out as the sum rather than as 165, so that a change to any
    * one of them names itself here instead of failing as an unexplained total:
-   *   the venue’s own rate (5 — the seed sets it, not `CONFIG.earn.scan`),
-   *   the spend bonus for 4200 against a 1500 minimum (two whole steps),
+   *   the venue’s own rate (5 — the seed sets it, and a venue's own number
+   *   beats the plan's `scan_points`: the plan buys a better default, not a
+   *   claim on a partner's money),
    *   the first visit to this venue, and
    *   the first visit in this category.
+   *
+   * **There is no spend bonus.** Paying more used to earn more in steps over
+   * the minimum, and it was the one line that made the reward depend on the
+   * size of the bill rather than on the visit — wrong for a scheme whose whole
+   * argument to a venue is repeat custom. The minimum still decides whether a
+   * scan counts as a visit at all; only the bonus went.
    */
-  const spendSteps = Math.min(
-    CONFIG.earn.spendMaxSteps,
-    Math.floor((4200 - CONFIG.gate.minSpendMinor) / CONFIG.earn.spendStepMinor),
-  );
-  eq('a confirmed scan grants the venue’s points and its bonuses',
+  eq('a confirmed scan grants the venue’s points and its one-offs',
     receipt.pointsGranted,
-    5 + spendSteps * CONFIG.earn.spendStepPoints +
-      CONFIG.earn.firstVisitToVenue + CONFIG.earn.newCategory);
+    5 + CONFIG.earn.firstVisitToVenue + CONFIG.earn.newCategory);
   check('and counts as a visit', receipt.visitCounted);
   eq('the transaction is committed', receipt.transaction.status, 'committed');
   eq('the amount is stored in minor units', receipt.transaction.amount_minor, 4200);
@@ -1039,7 +1050,7 @@ function entitlementRules(): void {
     at,
   });
   const pro = entitlements.entitlementsFor(w.db, { userId: w.customerId });
-  eq('a paid plan raises the multiplier', pro.points_multiplier, '1.2');
+  eq('a paid plan raises the multiplier', pro.points_multiplier, '1.25');
 
   /* §12a.4: the multiplier is applied at commit and recorded on the entry. */
   const receipt = scan(w, 5000, at);
@@ -1054,22 +1065,31 @@ function entitlementRules(): void {
    * Written as the sum so that this stays a statement about *which* lines
    * scale, rather than about the number 174.
    */
-  const proSteps = Math.min(
-    CONFIG.earn.spendMaxSteps,
-    Math.floor((5000 - CONFIG.gate.minSpendMinor) / CONFIG.earn.spendStepMinor),
-  );
-  eq('the multiplier is applied to the lines that scale',
+  /*
+   * **No multiplier reaches a scan any more.** It is a game-round rule; the
+   * venue lines carry their paid figure in their own entitlements instead,
+   * because scaling those as well would pay a subscriber twice for one visit.
+   *
+   * This venue sets `points_per_scan` itself, so the scan line is its 5 and not
+   * Pro's `scan_points` of 30 — a subscriber does not get to overrule a
+   * partner's own number. The two one-offs are the plan's, and on Pro they are
+   * 150 and 50.
+   */
+  eq('a scan is the venue’s rate plus the plan’s one-offs, unmultiplied',
     receipt.pointsGranted,
-    Math.floor(5 * 1.2) +
-      Math.floor(proSteps * CONFIG.earn.spendStepPoints * 1.2) +
-      CONFIG.earn.firstVisitToVenue + CONFIG.earn.newCategory);
+    5 + entitlements.entNumber(pro, 'first_visit_points', 0) +
+      entitlements.entNumber(pro, 'new_category_points', 0));
   eq(
-    'and recorded on the ledger entry',
+    'and the entry records no multiplier at all',
     w.db.get<{ multiplier: number }>(
       `SELECT multiplier FROM points_ledger WHERE source_ref = $r`,
       { r: receipt.transaction.id },
     )?.multiplier,
-    1.2,
+    /* One, not 1.25. The column still exists and a game round still uses it;
+       a scan does not, and the entry says so. Asserting the *absence* here is
+       the point — this is the row that would prove a subscriber had been paid
+       twice for one visit. */
+    1,
   );
 
   /* A lapse restricts; it never claws back. */
@@ -1508,12 +1528,24 @@ async function httpSurface(): Promise<void> {
   eq('…leaving the balance where it was', (await call('GET', '/v1/me', { token })).body.points,
     CONFIG.earn.onboarding);
 
-  /* A birthday is write-once because it pays: an editable one is a bonus
-     collectable every day of the year. */
+  /*
+   * A birthday may be set and then corrected once; the third different date is
+   * refused and told to ask support.
+   *
+   * The limit exists because a birthday pays points, so an unlimited edit is a
+   * bonus collectable every day of the year. One correction is the concession:
+   * a typo in a date somebody enters once should not need a support ticket.
+   */
   const bday = await call('PATCH', '/v1/me', { token, body: { birthDate: '1996-04-11' } });
   eq('a birthday can be set', bday.status, 200);
+  const bdayFix = await call('PATCH', '/v1/me', { token, body: { birthDate: '1996-04-12' } });
+  eq('…and corrected once', bdayFix.status, 200);
+  /* Re-sending the same date is a no-op, so a client that PATCHes the whole
+     profile on every save does not spend the correction on nothing. */
+  const bdaySame = await call('PATCH', '/v1/me', { token, body: { birthDate: '1996-04-12' } });
+  eq('…and resending the same date costs nothing', bdaySame.status, 200);
   const bdayAgain = await call('PATCH', '/v1/me', { token, body: { birthDate: '1990-01-01' } });
-  eq('…and only once', bdayAgain.status, 409);
+  eq('…but not a second time', bdayAgain.status, 409);
   eq('…naming the field', bdayAgain.body.error.field, 'birthDate');
 
   const anonymous = await call('GET', '/v1/me');
