@@ -296,16 +296,26 @@ function ledgerRules(): void {
     ledger.spend(db, { userId: customerId, points: 1000, reason: 'voucher_redeem' }),
   );
 
-  /* §2.4: the daily game cap trims rather than refusing the round. */
-  const capped = ledger.earn(db, { userId: customerId, points: 500, reason: 'game_win' });
-  eq('the daily cap trims the excess', capped.entry.delta, CONFIG.points.dailyGameCap - 100);
-  check('…and says how much it took', capped.capped > 0);
+  /*
+   * §2.4 used to trim a game round against a flat daily ceiling. There is no
+   * ceiling any more: a day is bounded by the per-game decay curve in
+   * `domain/games.ts`, which prices a repeat of the same game lower and, on
+   * the free plan, stops paying for it entirely. The ledger no longer knows
+   * anything about it, which is the point — the brake belongs where the round
+   * is scored, not where the entry is written.
+   *
+   * What is still worth asserting here is that a large earn arrives whole.
+   */
+  const big = ledger.earn(db, { userId: customerId, points: 500, reason: 'game_win' });
+  eq('a game round is banked in full', big.entry.delta, 500);
+  eq('…and the counter still records the day', big.entry.reason, 'game_win');
 
   /* §2.3: expiry is per-batch, FIFO, and only takes what is left of a lot. */
   const old = now();
   const w2 = world();
-  /* `adjustment`, not `game_win`: the daily cap would trim a 200-point game
-     round to 150 and the batch under test would not be the size it says. */
+  /* `adjustment` rather than `game_win` is now only a labelling choice — the
+     cap that used to trim this to 150 is gone — but the batch reads more
+     clearly as an opening balance than as a quiz somebody played in 2025. */
   ledger.earn(w2.db, { userId: w2.customerId, points: 200, reason: 'adjustment', at: plusDays(old, -400) });
   ledger.earn(w2.db, { userId: w2.customerId, points: 60, reason: 'scan_earn', at: old });
   ledger.spend(w2.db, { userId: w2.customerId, points: 50, reason: 'gift_card_redeem', at: old });
@@ -387,7 +397,23 @@ function gateRules(): void {
   const at = now();
 
   const receipt = scan(w, 4200, at);
-  eq('a confirmed scan grants the venue’s points', receipt.pointsGranted, 5);
+  /*
+   * A first scan at a venue now pays four things, and the receipt reports the
+   * sum. Spelled out as the sum rather than as 165, so that a change to any
+   * one of them names itself here instead of failing as an unexplained total:
+   *   the venue’s own rate (5 — the seed sets it, not `CONFIG.earn.scan`),
+   *   the spend bonus for 4200 against a 1500 minimum (two whole steps),
+   *   the first visit to this venue, and
+   *   the first visit in this category.
+   */
+  const spendSteps = Math.min(
+    CONFIG.earn.spendMaxSteps,
+    Math.floor((4200 - CONFIG.gate.minSpendMinor) / CONFIG.earn.spendStepMinor),
+  );
+  eq('a confirmed scan grants the venue’s points and its bonuses',
+    receipt.pointsGranted,
+    5 + spendSteps * CONFIG.earn.spendStepPoints +
+      CONFIG.earn.firstVisitToVenue + CONFIG.earn.newCategory);
   check('and counts as a visit', receipt.visitCounted);
   eq('the transaction is committed', receipt.transaction.status, 'committed');
   eq('the amount is stored in minor units', receipt.transaction.amount_minor, 4200);
@@ -712,7 +738,10 @@ function gameRules(): void {
   check('a repeated event is not counted twice', !replay.accepted);
 
   const finished = games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
-  eq('the score is computed server-side', finished.score, 5 * CONFIG.games.quizPerCorrect);
+  /* Five right at one apiece, plus the clean-sweep bonus that makes the last
+     question worth answering. */
+  eq('the score is computed server-side', finished.score,
+    5 * CONFIG.games.quizPerCorrect + CONFIG.games.quizPerfectBonus);
   eq('a clean round is a win', finished.won, true);
   eq('the streak starts at one', finished.streak, 1);
   eq('and no life was spent', finished.livesLeft, CONFIG.points.dailyLives);
@@ -1005,23 +1034,42 @@ function entitlementRules(): void {
 
   entitlements.startSubscription(w.db, {
     subject: { userId: w.customerId },
-    planCode: 'plus',
+    planCode: 'pro',
     source: 'stripe',
     at,
   });
-  const plus = entitlements.entitlementsFor(w.db, { userId: w.customerId });
-  eq('a paid plan raises the multiplier', plus.points_multiplier, '1.25');
+  const pro = entitlements.entitlementsFor(w.db, { userId: w.customerId });
+  eq('a paid plan raises the multiplier', pro.points_multiplier, '1.2');
 
   /* §12a.4: the multiplier is applied at commit and recorded on the entry. */
   const receipt = scan(w, 5000, at);
-  eq('the multiplier is applied to a scan', receipt.pointsGranted, 6);
+  /*
+   * **Only the lines that scale take the multiplier.** The scan itself and the
+   * spend steps do; the two once-ever bonuses — a first visit to this venue and
+   * a first visit in this category — do not. `grantEarnings` states the reason:
+   * a once-ever bonus is exactly what a single month of the top tier could be
+   * spent touring the city to collect, which is the same argument the earn
+   * table makes for keeping referrals flat.
+   *
+   * Written as the sum so that this stays a statement about *which* lines
+   * scale, rather than about the number 174.
+   */
+  const proSteps = Math.min(
+    CONFIG.earn.spendMaxSteps,
+    Math.floor((5000 - CONFIG.gate.minSpendMinor) / CONFIG.earn.spendStepMinor),
+  );
+  eq('the multiplier is applied to the lines that scale',
+    receipt.pointsGranted,
+    Math.floor(5 * 1.2) +
+      Math.floor(proSteps * CONFIG.earn.spendStepPoints * 1.2) +
+      CONFIG.earn.firstVisitToVenue + CONFIG.earn.newCategory);
   eq(
     'and recorded on the ledger entry',
     w.db.get<{ multiplier: number }>(
       `SELECT multiplier FROM points_ledger WHERE source_ref = $r`,
       { r: receipt.transaction.id },
     )?.multiplier,
-    1.25,
+    1.2,
   );
 
   /* A lapse restricts; it never claws back. */
@@ -1167,7 +1215,11 @@ function socialRules(): void {
   eq('and pays nothing yet', ledger.balance(w.db, w.ownerId), 0);
 
   scan(w, 4000, at);
-  eq('the first confirmed scan pays both sides', ledger.balance(w.db, w.ownerId), CONFIG.points.referralReward);
+  /* Both sides are paid on the invitee's first *confirmed* scan and not at
+     sign-up, so an invite only pays for somebody who actually turned up. The
+     two halves are separate constants now: the referrer is paid for bringing
+     someone who visits, the invitee for joining. */
+  eq('the first confirmed scan pays the referrer', ledger.balance(w.db, w.ownerId), CONFIG.earn.referrerFirstVisit);
   eq(
     'and the bond is completed',
     w.db.get<{ status: string }>(`SELECT status FROM referrals WHERE referred_id = $u`, {
@@ -1438,8 +1490,31 @@ async function httpSurface(): Promise<void> {
 
   const me = await call('GET', '/v1/me', { token });
   eq('/v1/me answers for a session', me.status, 200);
-  eq('the welcome bonus is in the balance', me.body.points, CONFIG.points.welcomeBonus);
+  /* **Signing up pays nothing.** The welcome gift moved to the end of
+     onboarding, so it is earned by finishing something rather than by
+     existing — which is also what stops a throwaway address being worth a
+     gift card. */
+  eq('sign-up alone banks nothing', me.body.points, 0);
   eq('and the free plan is resolved', me.body.plan.code, 'free');
+
+  /* Onboarding pays once and is idempotent: two clients reporting it must not
+     pay twice, which is why the grant is guarded by the same UPDATE that
+     stamps `onboarded_at`. */
+  const onboard = await call('POST', '/v1/me/onboarded', { token });
+  eq('finishing onboarding pays the welcome gift', onboard.status, 200);
+  eq('…the full amount', onboard.body.points, CONFIG.earn.onboarding);
+  const onboardAgain = await call('POST', '/v1/me/onboarded', { token });
+  eq('…and reporting it twice pays nothing', onboardAgain.body.points, 0);
+  eq('…leaving the balance where it was', (await call('GET', '/v1/me', { token })).body.points,
+    CONFIG.earn.onboarding);
+
+  /* A birthday is write-once because it pays: an editable one is a bonus
+     collectable every day of the year. */
+  const bday = await call('PATCH', '/v1/me', { token, body: { birthDate: '1996-04-11' } });
+  eq('a birthday can be set', bday.status, 200);
+  const bdayAgain = await call('PATCH', '/v1/me', { token, body: { birthDate: '1990-01-01' } });
+  eq('…and only once', bdayAgain.status, 409);
+  eq('…naming the field', bdayAgain.body.error.field, 'birthDate');
 
   const anonymous = await call('GET', '/v1/me');
   eq('without a token it is 401', anonymous.status, 401);
@@ -1506,7 +1581,7 @@ async function httpSurface(): Promise<void> {
   eq(
     'and spent the points only once',
     (await call('GET', '/v1/me', { token })).body.points,
-    CONFIG.points.welcomeBonus - 100,
+    CONFIG.earn.onboarding - 100,
   );
 
   const conflict = await call('POST', '/v1/gift-cards', {
@@ -1589,7 +1664,9 @@ async function accountRules(): Promise<void> {
   eq(
     'the points survive the merge',
     ledger.balance(w.db, real.id),
-    60 + CONFIG.points.welcomeBonus,
+    /* Exactly what the guest earned, and nothing added: signing up grants
+       nothing now, so the merge is a pure carry-over. */
+    60,
   );
   eq('the guest is closed', w.db.get<{ status: string }>(`SELECT status FROM users WHERE id = $u`, {
     u: guest.id,

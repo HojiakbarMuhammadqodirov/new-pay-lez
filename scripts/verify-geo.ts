@@ -55,11 +55,12 @@ import {
   canAfford,
   claimDeal,
   dealsOf,
+  flightAward,
   flightPoints,
   freezesOf,
   isCardFull,
   markUsed,
-  MAX_FLIGHT_GAPS,
+  MAX_FLIGHT_POINTS,
   MAX_FREEZES,
   MAX_LIVES,
   memoryPoints,
@@ -987,7 +988,11 @@ console.log('\nplaying');
        every lapse below — which is the freeze block's business, not this one's. */
     freezes: 0,
   };
-  const win = { correct: 5, total: 5, perCorrect: 2, won: true };
+  /* One point an answer and five for a clean sweep, so a perfect round is ten.
+     `perCorrect` comes from the game's own row and is now 1 for all four
+     quizzes — the 5/2/2/1 spread is what made Poland the worst-paying game on
+     the page for exactly the same five questions. */
+  const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, won: true };
 
   const first = awardRound(base, win, day('2026-08-03'));
   check('a round scores per correct answer', first.points === 10, `${first.points} pts`);
@@ -1001,17 +1006,29 @@ console.log('\nplaying');
 
   const twice = awardRound(first, win, day('2026-08-03'));
   check('a second round the same day does not advance the streak', twice.streak === 1);
-  check('…but still scores', twice.points === 20);
+  /* The decay curve, from the outside: a second round of the *same* game the
+     same day is worth 60% of it, floored. This is the brake that replaced the
+     daily cap, and it is the reason a player rotates through the seven rather
+     than farming whichever one pays best. */
+  check('…but a repeat of the same game pays the curve', twice.points === 16,
+    `${twice.points} pts`);
 
-  /* The rule the FAQ and the vouchers page both now state. If this stops being
-     true, three pieces of copy become lies. */
+  /* **A lapse no longer takes the balance.** It used to, and the backend
+     deliberately never did — points are an auditable ledger there and a bad
+     week is not a reason it recognises for a negative entry. The two halves of
+     one product cannot disagree about that, so this half moved. The streak
+     still resets; that is the whole punishment. */
   const lapsed = awardRound(first, win, day('2026-08-06'));
   check('missing the window resets the streak', lapsed.streak === 1);
-  check('…and clears the balance before scoring', lapsed.points === 10, `${lapsed.points} pts`);
+  check('…and the balance survives it', lapsed.points === 20, `${lapsed.points} pts`);
 
+  /* A loss costs no life either. The pool only ever charged the player who was
+     bad at quizzes — two of the seven games have no fail state at all — so as a
+     brake it was noise. The tank stays, in case anything ever spends from it
+     again; nothing does today. */
   const lost = awardRound(base, { ...win, correct: 2, won: false }, day('2026-08-03'));
-  check('a loss costs a life', lost.lives === MAX_LIVES - 1);
-  check('…and still banks what was right', lost.points === 4);
+  check('a loss costs no life', lost.lives === MAX_LIVES);
+  check('…and still banks what was right', lost.points === 2, `${lost.points} pts`);
 
   const empty = { ...base, lives: 0, lastPlayed: '2026-08-03' };
   check('lives do not refill on the same day', refillLives(empty, day('2026-08-03')).lives === 0);
@@ -1021,7 +1038,7 @@ console.log('\nplaying');
 console.log('\nplaying — streak freezes');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
-  const win = { correct: 5, total: 5, perCorrect: 2, won: true };
+  const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, won: true };
   const held = (n: number) => ({
     ...seedPlayer(),
     points: 100,
@@ -1048,7 +1065,7 @@ console.log('\nplaying — streak freezes');
 
   const unsaved = awardRound(held(0), win, day('2026-08-05'));
   check('without one, the streak still resets', unsaved.streak === 1);
-  check('…and the balance still clears', unsaved.points === 10, `${unsaved.points} pts`);
+  check('…and the balance survives anyway', unsaved.points === 110, `${unsaved.points} pts`);
 
   /* One day, and only one. "Lapsed" means no more than "not today and not
      yesterday", which a two-year absence satisfies exactly as a missed Tuesday
@@ -1058,7 +1075,7 @@ console.log('\nplaying — streak freezes');
   const away = awardRound(held(1), win, day('2026-08-09'));
   check('a longer absence is not what a freeze covers', away.streak === 1,
     `streak ${away.streak}`);
-  check('…so the balance clears with it', away.points === 10, `${away.points} pts`);
+  check('…and the balance survives even that', away.points === 110, `${away.points} pts`);
   check('…and the freeze is not spent on it', freezesOf(away) === 1,
     `${freezesOf(away)} held`);
 
@@ -1087,30 +1104,43 @@ console.log('\nplaying — streak freezes');
 
 console.log('\nplaying — the two scored games');
 {
-  /* Straight off the supplied spec's worked examples. */
-  check('an easy word, first try and fast',
-    wordPoints({ tier: 1, firstTry: true, hinted: false, seconds: 8 }) === 11,
-    `${wordPoints({ tier: 1, firstTry: true, hinted: false, seconds: 8 })} pts`);
-  check('a hard word, first try and fast',
-    wordPoints({ tier: 3, firstTry: true, hinted: false, seconds: 8 }) === 15);
-  check('a medium word, missed once and slow',
-    wordPoints({ tier: 2, firstTry: false, hinted: false, seconds: 40 }) === 7);
-  check('a hint caps it at base plus tier',
-    wordPoints({ tier: 3, firstTry: true, hinted: true, seconds: 1 }) === 9);
-  check('the middle speed band pays one',
-    wordPoints({ tier: 1, firstTry: false, hinted: false, seconds: 20 }) === 6);
-  check('no word is ever worth nothing',
-    wordPoints({ tier: 1, firstTry: false, hinted: true, seconds: 999 }) === 5);
+  /*
+   * Word Builder pays a base and the word's own difficulty, and nothing else.
+   * The speed and first-try terms are gone: between them they were worth twice
+   * the word, which made the game a reflex test — which is what the other five
+   * already are.
+   */
+  check('an easy word is worth its base', wordPoints({ tier: 1, hinted: false }) === 1,
+    `${wordPoints({ tier: 1, hinted: false })} pts`);
+  check('a medium word adds one', wordPoints({ tier: 2, hinted: false }) === 2);
+  check('a hard word adds two', wordPoints({ tier: 3, hinted: false }) === 3);
+  /* A hint forfeits the difficulty and leaves the base: somebody who needed it
+     still earns for finishing the word, just not for it having been hard. */
+  check('a hint costs the difficulty, not the word',
+    wordPoints({ tier: 3, hinted: true }) === 1, `${wordPoints({ tier: 3, hinted: true })} pts`);
+  check('no solved word is ever worth nothing', wordPoints({ tier: 1, hinted: true }) === 1);
+  check('an out-of-range tier clamps', wordPoints({ tier: 9, hinted: false }) === 3);
 
-  check('a flawless board pays base, efficiency and the bonus',
-    memoryPoints(6, 6) === 58, `${memoryPoints(6, 6)} pts`);
-  check('ten moves is base plus a partial bonus',
-    memoryPoints(6, 10) === 43, `${memoryPoints(6, 10)} pts`);
-  check('a scrappy board still pays its base',
-    memoryPoints(6, 18) === 36, `${memoryPoints(6, 18)} pts`);
-  check('the bonus never goes negative', memoryPoints(6, 400) === 36);
-  check('the two games land in the same band',
-    memoryPoints(6, 12) >= 35 && memoryPoints(6, 12) <= 70);
+  /*
+   * Memory Match is scored on elapsed seconds and nothing else. It used to pay a
+   * guaranteed 36 for six pairs that cannot be lost, which made it the richest
+   * round on the page for the least asked of anybody.
+   *
+   * Both sides of a boundary are checked because a band is a `<`, and an
+   * off-by-one there is the difference between a player's best board paying 12
+   * and paying 8.
+   */
+  check('a fast board takes the top band', memoryPoints(10) === 12, `${memoryPoints(10)} pts`);
+  check('…up to the boundary', memoryPoints(39) === 12);
+  check('…and the boundary itself drops a band', memoryPoints(40) === 8);
+  check('the middle band pays eight', memoryPoints(55) === 8);
+  check('the slow band pays four', memoryPoints(90) === 4);
+  check('past the last boundary pays the floor', memoryPoints(300) === 2);
+  /* Finishing always pays something — that is what keeps the board the
+     approachable one of the set now that it is measured rather than counted. */
+  check('the floor is never nothing', memoryPoints(99_999) === 2);
+  check('an instant board still scores', memoryPoints(0) === 12);
+  check('a negative clock cannot pay more than the top band', memoryPoints(-5) === 12);
 }
 
 console.log('\nflying — scoring');
@@ -1125,16 +1155,22 @@ console.log('\nflying — scoring');
     lastPlayed: null,
     freezes: 0,
   };
-  const full = { cleared: 12, target: 12, perGap: 2, won: true };
+  /* Five gaps banks the round and each pays one, so the bank line is worth 5
+     and the ceiling is reached at twenty. The site and the server agree on
+     both numbers now; they used to bank at 5 and 12 respectively. */
+  const full = { game: 'flight' as const, cleared: 5, target: 5, perGap: 1, won: true };
 
   const cleared = awardFlight(base, full, day('2026-08-03'));
-  check('a cleared flight pays per gap', cleared.points === 24, `${cleared.points} pts`);
+  check('a cleared flight pays per gap', cleared.points === 5, `${cleared.points} pts`);
   check('a win costs no life', cleared.lives === MAX_LIVES);
 
   const crash = awardFlight(base, { ...full, cleared: 3, won: false }, day('2026-08-03'));
-  check('a crash costs exactly one life', crash.lives === MAX_LIVES - 1);
-  check('…and still banks the gaps flown', crash.points === 6, `${crash.points} pts`);
-  check('the whole round is charged to answered', crash.answered === 12, `${crash.answered}`);
+  /* A crash costs no life either — see the note in `awardPoints`. Squawk was
+     the only game that could empty the tank, so the hardest round on the page
+     was also the one that could shut the others down for the rest of the day. */
+  check('a crash costs no life', crash.lives === MAX_LIVES);
+  check('…and still banks the gaps flown', crash.points === 3, `${crash.points} pts`);
+  check('the whole round is charged to answered', crash.answered === 5, `${crash.answered}`);
   check('…and only the gaps flown count as correct', crash.correct === 3, `${crash.correct}`);
 
   /*
@@ -1143,14 +1179,18 @@ console.log('\nflying — scoring');
    * stated in the FAQ and on the vouchers page, and a second implementation of
    * them is how one of the three quietly becomes a lie.
    */
-  const quizArgs = { correct: 12, total: 12, perCorrect: 2, won: true };
+  /* Ten points each way: a clean five-question quiz is 5 + 5, and ten gaps at
+     one apiece is ten. The two have to arrive at the same balance for the
+     comparison below to be about the streak rather than about the scoring. */
+  const quizArgs = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, won: true };
+  const tenGaps = { ...full, cleared: 10 };
   for (const [label, on] of [
     ['a fresh account', '2026-08-03'],
     ['the next day', '2026-08-04'],
     ['after a missed window', '2026-08-09'],
   ] as const) {
     const seeded = { ...base, streak: 4, points: 60, lastPlayed: '2026-08-03' };
-    const byFlight = awardFlight(seeded, full, day(on));
+    const byFlight = awardFlight(seeded, tenGaps, day(on));
     const byQuiz = awardRound(seeded, quizArgs, day(on));
     check(
       `flight and quiz agree on streak and balance — ${label}`,
@@ -1163,39 +1203,46 @@ console.log('\nflying — scoring');
    * The run is endless, so gaps past the target still pay. `correct` saturates
    * — 20/12 is not a sensible accuracy — while the balance keeps counting.
    */
-  const long = awardFlight(base, { ...full, cleared: 20 }, day('2026-08-03'));
-  check('gaps past the target still pay', long.points === 40, `${long.points} pts`);
-  check('…while correct saturates at the target', long.correct === 12, `${long.correct}`);
-  check('…and answered still counts one round', long.answered === 12, `${long.answered}`);
+  const long = awardFlight(base, { ...full, cleared: 15 }, day('2026-08-03'));
+  check('gaps past the target still pay', long.points === 15, `${long.points} pts`);
+  check('…while correct saturates at the target', long.correct === 5, `${long.correct}`);
+  check('…and answered still counts one round', long.answered === 5, `${long.answered}`);
   check('…and the round is banked, so it costs no life', long.lives === MAX_LIVES);
 
   check('the payout helper and the balance agree',
-    flightPoints(20, 2) === 40 && bankableGaps(20) === 20);
+    flightPoints(15, 1) === 15 && bankableGaps(15) === 15);
+  /* The ceiling, which is the whole reason the old 99-gap clamp is gone: one
+     lucky run used to be worth four days of every other game on the page. */
+  check('a long flight stops at the ceiling', flightPoints(40, 1) === MAX_FLIGHT_POINTS,
+    `${flightPoints(40, 1)} pts`);
 
   /* What `awardFlight` owns on top: a score that arrived from a rAF loop. */
   const absurd = awardFlight(base, { ...full, cleared: 10_000 }, day('2026-08-03'));
-  check('an impossible score is capped', absurd.points === MAX_FLIGHT_GAPS * 2,
+  check('an impossible score is capped', absurd.points === MAX_FLIGHT_POINTS,
     `${absurd.points} pts`);
 
+  /* A `won` that did not reach the bank line is still recorded as the loss it
+     was — it buys no life back now, but the flag is what a result card reads. */
   const fake = awardFlight(base, { ...full, cleared: 4, won: true }, day('2026-08-03'));
-  check('a win that did not reach the target is a loss', fake.lives === MAX_LIVES - 1);
+  check('a win that did not reach the target is a loss', flightAward(
+    { ...full, cleared: 4, won: true }).won === false);
 
   const fractional = awardFlight(base, { ...full, cleared: 3.9, won: false }, day('2026-08-03'));
-  check('a fractional score floors', fractional.points === 6, `${fractional.points} pts`);
+  check('a fractional score floors', fractional.points === 3, `${fractional.points} pts`);
 
   const negative = awardFlight(base, { ...full, cleared: -2, won: false }, day('2026-08-03'));
   check('a negative score clamps to nothing', negative.points === 0 && negative.correct === 0);
 
-  /* The shortcut this deliberately avoids: a lapsed streak zeroes the balance
-     before scoring, so the change in balance is not what the round paid. */
+  /* A lapse resets the streak and leaves the balance alone, so the change in
+     balance *is* what the round paid — which it was not before. */
   const lapsedFlight = awardFlight(
     { ...base, points: 900, streak: 5, lastPlayed: '2026-07-20', freezes: 0 },
     { ...full, cleared: 5, won: false },
     day('2026-08-03'),
   );
   check('a lapsed flight still reports what it earned',
-    lapsedFlight.points === 10 && flightPoints(5, 2) === 10,
-    `balance ${lapsedFlight.points}, earned ${flightPoints(5, 2)}`);
+    lapsedFlight.points === 905 && flightPoints(5, 1) === 5,
+    `balance ${lapsedFlight.points}, earned ${flightPoints(5, 1)}`);
 }
 
 console.log('\nflying — physics');
