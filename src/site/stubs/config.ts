@@ -43,6 +43,93 @@ export const STUBS = {
   },
 
   /**
+   * Tearing one.
+   *
+   * A stub has a perforation down it and the page is about redeeming vouchers,
+   * so the one gesture the backdrop owes a visitor is the one the object is
+   * for: click a ticket and it comes apart along its own tear line. The two
+   * halves are the same picture one step further on — a stub torn is a stub
+   * spent.
+   */
+  torn: {
+    /**
+     * Slack around a stub's own rectangle that still counts as a hit, CSS px.
+     * Set by the *smallest* ticket and a finger, not by a mouse: a 46 px stub
+     * is 21 px tall, and a 21 px target is under every touch guideline there
+     * is. Padding the rectangle is cheaper than a second hit shape and keeps
+     * the test to a rotate and two compares.
+     */
+    hitPad: 10,
+    /**
+     * How much brighter the stub under the pointer is than the proximity
+     * highlight around it. The backdrop cannot show a cursor — it is
+     * `pointer-events: none` — so the only way it can say "this one" is with
+     * the ink it already spends.
+     */
+    hover: 1.7,
+
+    /**
+     * Halves alive at once. Two per tear, and pooled rather than allocated:
+     * this is the only object the loop would churn, and the ring pool in
+     * `market/` exists for the same reason.
+     */
+    maxHalves: 16,
+
+    /**
+     * Outward speed along the ticket's own long axis, CSS px/s. Read with
+     * `drag`: an exponential fall-off travels `impulse / drag`, so this pair
+     * separates the halves by about 55 px each — a ticket's width, which is
+     * what "came apart" has to look like at this size.
+     */
+    impulse: { min: 120, max: 175 },
+    /** Velocity decay per second, exponential. See `impulse`. */
+    drag: 2.6,
+    /**
+     * Vertical scatter added at the tear, CSS px/s. Asymmetric on purpose: a
+     * torn half is more likely to be dropped than flicked upward.
+     */
+    lift: { min: -34, max: 12 },
+    /** Downward pull on a loose half, CSS px/s². Paper, not gravel. */
+    gravity: 110,
+    /**
+     * Tumble, rad/s — the halves take opposite signs, because the tear is what
+     * spun them and it pushed them apart. Capped where a half still reads as a
+     * ticket over its whole life rather than as a rotating streak.
+     */
+    spin: { min: 0.6, max: 1.9 },
+    /** Seconds from tear to gone. Quick: this is a flick, not a leaf. */
+    life: 1.1,
+
+    /**
+     * The torn edge: `teeth` segments, each offset by up to `ragged` of the
+     * ticket's height. Both halves are cut from **one** profile, so they would
+     * still fit back together — a tear is one event with two sides, and two
+     * independently jittered edges read as two unrelated shreds.
+     */
+    teeth: 7,
+    ragged: 0.1,
+    /**
+     * The fresh edge flashes: the accent at `boost`× the resting line alpha,
+     * decaying over `life` seconds. It is the one place the accent is spent
+     * loudly, and it is spent on the fibres — which is the whole gesture.
+     */
+    flash: { boost: 3.6, life: 0.24 },
+  },
+
+  /**
+   * What separates a tap from a scroll. The listeners are passive and on the
+   * window, so nothing can be prevented: the only defence against tearing a
+   * ticket every time a phone starts a flick is to measure the gesture and let
+   * a moved or held pointer through untouched.
+   */
+  tap: {
+    /** Movement between down and up that is still a tap, CSS px. */
+    slop: 10,
+    /** And the longest a tap may take, ms. Past this it is a press. */
+    holdMs: 500,
+  },
+
+  /**
    * Alpha budget per tone, and the pointer's boost on top — same shape and
    * same philosophy as `WEB.tone`: resting values below what looks best on an
    * empty canvas, because the page's copy sits straight on this.

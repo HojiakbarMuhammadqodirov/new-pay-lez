@@ -8,11 +8,18 @@ import {
   PARTNERS,
   SERVICE_ICONS,
   SOCIALS,
+  SUB_DEFAULT_TERM,
+  SUB_PLANS,
+  SUB_ROWS,
+  SUB_TERMS,
+  subTermPrice,
   VALUE_CARD,
+  type SubRowKind,
+  type SubValue,
 } from './content';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
-import { useCopy, useMoney } from './i18n/context';
+import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PATHS } from './router';
 import { usePalette } from './theme/context';
@@ -329,6 +336,200 @@ export function Value() {
               </li>
             ))}
           </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ────────────────────────────────────────────────────────── subscription ── */
+
+/** The nothing-mark, and what it is read as. See `SubRowKind` in `content.ts`. */
+function SubNone() {
+  const copy = useCopy().subscription;
+
+  return (
+    <span className="sub-val" data-none="true" aria-label={copy.notIncluded}>
+      —
+    </span>
+  );
+}
+
+/** One plan's answer to one row. */
+function SubCell({ kind, value }: { kind: SubRowKind; value: SubValue }) {
+  const copy = useCopy().subscription;
+
+  if (value === null) return <b className="sub-val">{copy.unlimited}</b>;
+
+  if (kind === 'flag') {
+    return value === 0 ? (
+      <SubNone />
+    ) : (
+      <b className="sub-val" data-yes="true" aria-label={copy.included}>
+        <Icon name="check" size={14} strokeWidth={3} />
+      </b>
+    );
+  }
+
+  if (kind === 'badge') {
+    return value === 0 ? <SubNone /> : <b className="sub-val">{copy.badges[value - 1]}</b>;
+  }
+
+  /* A `number` row writes zero as nothing: no hours of head start and no points
+     credited are the absence of a perk, not a quantity of one. */
+  if (value === 0) return <SubNone />;
+
+  return <b className="sub-val">{kind === 'multiplier' ? `${value}×` : value}</b>;
+}
+
+/**
+ * What a subscription costs, and what each one is.
+ *
+ * It sits directly under "your points are real money" because that section is
+ * the argument this one prices: the reader has just been told a point is worth
+ * something, and the next honest question is what it costs to earn them faster.
+ *
+ * **The plans are the server's, not the page's.** `SUB_PLANS` and `SUB_ROWS` in
+ * `content.ts` mirror `PLANS` in `server/domain/settings.ts` row for row, and
+ * the four rungs mirror `TERM_LADDER`. Nothing here is a round number chosen
+ * because it looked convincing — there is no subscriber count, no "most
+ * popular" ribbon and no headline saving, because none of those is a figure the
+ * product could show its working for. The one claim on the section is the
+ * discount, and that is arithmetic.
+ *
+ * **Money never appears as a literal.** Every amount is euros in `content.ts`
+ * and is converted on the way out by `money()`, because the language the
+ * visitor chose is what picks the currency — an English reader is quoted the
+ * same plan in pounds. `'unit'` is the rounding mode and it is not optional
+ * here: `price` snaps to the currency's shelf step, which flattens the whole
+ * four-rung ladder onto one number in every currency with a step above a
+ * pound. See `subTermPrice`, which is where that is argued at length.
+ *
+ * The term is React state and the prices are derived during render — four
+ * multiplications on a click, not per frame, so it does not go near the rule
+ * about continuous updates.
+ */
+export function Subscription() {
+  const copy = useCopy().subscription;
+  const money = useMoney();
+  const currency = useCurrency();
+  const [term, setTerm] = useState(SUB_DEFAULT_TERM);
+  const rung = SUB_TERMS[term];
+
+  return (
+    <section className="section" id="subscription">
+      <div className="wrap">
+        <div className="section-head" data-reveal>
+          <span className="eyebrow">{copy.eyebrow}</span>
+          <h2>{copy.title}</h2>
+          <p>{copy.lede}</p>
+        </div>
+
+        {/* The ladder. A rung is a whole control edge to edge — the label, the
+            chip and the space around both put the same rung under the cursor,
+            which is the rule the Relocate converter's amount field was fixed
+            against. */}
+        <div
+          className="sub-ladder"
+          role="radiogroup"
+          aria-label={copy.term.label}
+          data-reveal
+        >
+          {SUB_TERMS.map((option, index) => (
+            <button
+              key={option.months}
+              type="button"
+              role="radio"
+              aria-checked={index === term}
+              className="sub-rung"
+              data-on={index === term ? 'true' : undefined}
+              onClick={() => setTerm(index)}
+            >
+              <b>
+                {option.months === 1
+                  ? copy.term.one
+                  : fill(copy.term.many, { n: String(option.months) })}
+              </b>
+              <span className="sub-rung-note">
+                {option.discountBp === 0
+                  ? copy.term.rolling
+                  : fill(copy.term.save, { pct: String(option.discountBp / 100) })}
+              </span>
+            </button>
+          ))}
+        </div>
+
+        <div className="sub-grid">
+          {SUB_PLANS.map((plan, planIndex) => {
+            const named = copy.plans[planIndex];
+            /* The free plan is not on the ladder, so it is not priced by one —
+               `terms` is a property of the plan on the server for exactly this
+               reason, rather than a rule about which plans cost nothing. */
+            const priced = plan.terms
+              ? subTermPrice(plan.eur, rung.months, rung.discountBp, currency)
+              : null;
+
+            return (
+              <article className="sub-card" key={plan.id} data-reveal>
+                <div className="sub-card-in">
+                  <span className="sub-ico">
+                    <Icon name={plan.icon} size={20} />
+                  </span>
+                  <h3>{named.name}</h3>
+                  <span className="sub-note">{named.note}</span>
+
+                  {/* Keyed on the term so a new price animates in rather than
+                      swapping under the eye. Remounting one `<p>` is the whole
+                      cost of it. */}
+                  <p className="sub-price" key={term}>
+                    {priced === null ? (
+                      <b>{copy.free}</b>
+                    ) : (
+                      <>
+                        <b>{money(priced.perMonth, 'unit')}</b>
+                        <span>{copy.perMonth}</span>
+                      </>
+                    )}
+                  </p>
+
+                  {/* What is actually charged, which is what makes opening on
+                      the twelve-month rung honest rather than sly. */}
+                  <p className="sub-billed">
+                    {priced === null
+                      ? copy.billed.free
+                      : rung.months === 1
+                        ? copy.billed.monthly
+                        : fill(copy.billed.term, {
+                            total: money(priced.total, 'unit'),
+                            n: String(rung.months),
+                          })}
+                  </p>
+
+                  <ul className="sub-rows">
+                    {SUB_ROWS.map((row, rowIndex) => (
+                      <li className="sub-row" key={rowIndex}>
+                        <span className="sub-row-label">{copy.rows[rowIndex]}</span>
+                        <SubCell kind={row.kind} value={row.values[planIndex]} />
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+
+        {/* One press for the section rather than one per card. There is no
+            checkout behind any of this, so three buttons reading "Get Pro"
+            would be three buttons that do not — and a button goes where its
+            words say. An account is the step the site can actually take you
+            through, and it is the step a plan is chosen after. */}
+        <div className="sub-foot" data-reveal>
+          <a href={PATHS.signin} className="btn btn-solid btn-lg">
+            <Icon name="arrow" size={18} strokeWidth={2.2} />
+            {copy.action}
+          </a>
+          <p className="sub-foot-note">{copy.note}</p>
         </div>
       </div>
     </section>

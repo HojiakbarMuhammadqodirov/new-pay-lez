@@ -11278,6 +11278,28 @@ button {
   color: var(--text-mut);
 }
 
+/* ── the deck: points and energy ───────────────────────────────────────────
+ *
+ * Two panels on one row, and they are on one row because they answer one
+ * question between them: whether it is worth playing, and whether it is
+ * possible to. The points panel is the wider of the two because its sentence is
+ * a sentence; the gauge is three cells and a countdown and does not need the
+ * space.
+ *
+ * `align-items: stretch` is load-bearing rather than incidental. The gauge's
+ * cost line is pinned to the bottom of its panel with `margin-top: auto`, and
+ * against an `auto`-height panel there is no bottom for it to be pinned to —
+ * the same failure the charts here keep having with percentage heights.
+ */
+
+.play-deck {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
 /* ── the points panel ──────────────────────────────────────────────────────
  *
  * The screen's first object, and the only filled one on it: the balance, the
@@ -11442,6 +11464,249 @@ button {
   font-size: 0.95rem;
   font-weight: 700;
   box-shadow: 0 14px 34px rgba(var(--solid-rgb), calc(0.22 * var(--glow-k)));
+}
+
+/*
+ * Inside the deck the panel stacks rather than wrapping.
+ *
+ * At full width the balance and the press sit side by side, which is right. In
+ * a column of a two-column deck they do not fit, and `flex-wrap` drops the
+ * press onto its own line at its own width — a shrink-wrapped button left-
+ * aligned under a bar that spans the card, which the 820px rule further down
+ * already calls an afterthought. Stacking it deliberately and letting it span
+ * is the same fix applied one breakpoint earlier.
+ */
+.play-deck .play-hero {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1.1rem;
+  margin-bottom: 0;
+}
+
+/* `flex-basis: 22rem` is a *width* in the row the panel normally is, and a
+   height the moment it becomes a column — 352px of empty panel under the bar.
+   The basis has done its job by the time we get here; the column sizes to its
+   content. */
+.play-deck .play-hero-main {
+  flex: 0 1 auto;
+}
+
+.play-deck .play-hero-cta {
+  justify-content: center;
+}
+
+/* ── the energy gauge ──────────────────────────────────────────────────────
+ *
+ * The count, the cap, and when the next one lands — which is the whole economy
+ * of this screen and used to be three 15px hearts in a strip of four readings.
+ *
+ * The figure is set at poster size for the same reason the balance beside it
+ * is: it is the number a returning player is here to check. Everything under it
+ * is the detail that number implies — how many of three, how far into the next
+ * one, how long that is, and what a round costs.
+ *
+ * Glass rather than the tint the points panel takes. Two lit slabs side by side
+ * is two headlines, and this is the second one.
+ */
+
+.play-energy {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(1.25rem, 3vw, 1.6rem);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.play-energy-glow {
+  position: absolute;
+  top: -6rem;
+  left: -3rem;
+  width: 14rem;
+  height: 14rem;
+  border-radius: 50%;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(var(--glow-rgb), calc(0.18 * var(--glow-k))) 0%,
+    rgba(var(--glow-rgb), 0) 70%
+  );
+}
+
+/* The panel's heading, matched to the points panel's so the deck reads as one
+   object with two halves rather than as two unrelated cards. */
+.play-energy-kicker {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.play-energy-kicker i {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 7px;
+  background: rgba(var(--tint-rgb), 0.2);
+  color: var(--accent-lit);
+}
+
+.play-energy-count {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 0.15rem;
+  margin-bottom: 0.85rem;
+  font-family: var(--font-display);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.play-energy-count b {
+  font-size: clamp(2.4rem, 6vw, 3.1rem);
+  font-weight: 600;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.play-energy-count span {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+/* An empty tank is not a celebration. Same figure, same place, no accent —
+   the one honest way to say bad news in a palette with a single hue, and the
+   rule `.result-gain[data-zero]` already follows two hundred lines down. */
+.play-energy[data-empty='true'] .play-energy-count b {
+  color: var(--text-fnt);
+}
+
+/*
+ * Three cells, not a single bar, and they stand up.
+ *
+ * A bar says "40% charged", which is not what a player needs off this panel:
+ * the unit is a *round*, it is indivisible, and half of one buys nothing. Cells
+ * say two rounds are ready and a third is on its way, which is the sentence the
+ * screen is actually making.
+ *
+ * Vertical, and filling from the floor, because that is what a tank does and
+ * because it is what makes this panel the height of the one beside it. Laid
+ * flat, the gauge was 10px of a panel stretched to match the points card and
+ * the rest was a void with a footnote at the bottom of it. `flex: 1` hands the
+ * slack to the one element that can spend it honestly — a taller cell is more
+ * gauge, not more padding.
+ */
+.play-energy-cells {
+  position: relative;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.45rem;
+  flex: 1;
+  min-height: 4rem;
+  margin-bottom: 0.9rem;
+}
+
+/* The well is drawn, not implied. A 12% tint is a shadow on black and almost
+   nothing on paper, and a gauge whose empty cells are invisible is a gauge with
+   no cap on it — "one" and "one of three" are different readings. The hairline
+   is what makes the third cell exist while it is empty. */
+.play-energy-cells > span {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: rgba(var(--tint-rgb), 0.12);
+}
+
+.play-energy-cells > span[data-state='full'] {
+  border-color: transparent;
+  background: var(--accent);
+  box-shadow: 0 0 14px rgba(var(--glow-rgb), calc(0.4 * var(--glow-k)));
+}
+
+/*
+ * The cell being earned, filling in real time and costing nothing to do it.
+ *
+ * `--charge-span` is how long one takes and `--charge-delay` is how far in we
+ * already are, negative — so the animation starts partway through and the bar
+ * is at the right place on the first frame and keeps going without anything in
+ * React watching it. `--charge` is the same fraction as a plain transform,
+ * which is what the reduced-motion rule below falls back to and what shows if
+ * the animation is ever dropped.
+ *
+ * Held at an alpha rather than the full accent: this one is *pending*, and a
+ * cell that painted itself the same as the two beside it would be claiming a
+ * round the player does not have.
+ */
+.play-energy-cells i {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  opacity: 0.5;
+  transform-origin: bottom center;
+  transform: scaleY(var(--charge, 0));
+  animation: play-charge var(--charge-span, 0ms) linear var(--charge-delay, 0ms)
+    1 forwards;
+}
+
+@keyframes play-charge {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+/* Frozen at the fraction it is actually at, not hidden: the reading is the
+   point and only its motion is motion. */
+@media (prefers-reduced-motion: reduce) {
+  .play-energy-cells i {
+    animation: none;
+  }
+}
+
+/* The state, before the wait. A player who has just been refused a round is
+   not yet asking when the next one lands. */
+.play-energy-out {
+  position: relative;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.play-energy-line {
+  position: relative;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* What a round costs, pinned to the bottom of the panel. Said once here rather
+   than on seven cards: it is the same figure for every game, and a chip on each
+   of them would be the same number printed seven times. */
+.play-energy-cost {
+  position: relative;
+  margin-top: auto;
+  padding-top: 0.7rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-fnt);
 }
 
 /* ── the stats strip ──────────────────────────────────────────────────────
@@ -11672,12 +11937,45 @@ button {
   color: var(--accent-lit);
 }
 
-/* ── the rest of the catalogue ── */
+/* ── the rest of the catalogue ─────────────────────────────────────────────
+ *
+ * Six cards at three weights on a six-column grid, and the weight is a fact
+ * about the game rather than a ranking of it — `PLAY_SIZES` in `games.tsx`
+ * carries the argument. `auto-fit` with one `minmax` was what made this a wall
+ * of identical tiles: it can only produce cards that are all the same, so seven
+ * different rounds arrived as seven of the same object and the only thing
+ * telling them apart was a texture at four percent.
+ *
+ *   sm  span 2   the three sibling quizzes — same shape, same clock, same
+ *                allowance; a set, read by scanning down them
+ *   md  span 3   Squawk's Flight and Memory Match — each its own board and its
+ *                own loop, so each gets a poster with the glyph at poster size
+ *   lg  span 6   Word Builder, the only card carrying a control: the list it
+ *                teaches is chosen here, before the round
+ */
 
 .play-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 1rem;
+}
+
+.play-card[data-size='sm'] {
+  grid-column: span 2;
+}
+
+.play-card[data-size='md'] {
+  grid-column: span 3;
+  min-height: 15rem;
+  padding: 1.6rem 1.5rem;
+}
+
+.play-card[data-size='lg'] {
+  grid-column: span 6;
+  flex-direction: row;
+  align-items: center;
+  gap: clamp(1rem, 4vw, 2.4rem);
+  padding: 1.5rem;
 }
 
 .play-card {
@@ -11685,9 +11983,8 @@ button {
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 0.4rem;
-  padding: 1.4rem 1.25rem;
+  gap: 0.9rem;
+  padding: 1.35rem 1.25rem;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
   background: var(--glass);
@@ -11705,23 +12002,100 @@ button {
   transform: translateY(-3px);
 }
 
+/*
+ * The grid arrives as a cascade, not as one block.
+ *
+ * An `animation` rather than a `transition-delay`, and the difference matters:
+ * `.play-card` transitions its own `transform` for the hover lift, so a delay
+ * on the element would delay *that* too and the card would take a third of a
+ * second to notice the cursor. The animation runs once, fills `backwards` so
+ * the card stays down during its delay, and then gets out of the way entirely —
+ * leaving hover to the transition it belongs to.
+ *
+ * `--i` is the card's index in `GAMES`, set at the call site.
+ */
+.play-grid > [data-reveal][data-shown='true'] {
+  animation: play-in 520ms var(--ease) calc(var(--i, 0) * 55ms) backwards;
+}
+
+@keyframes play-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 16px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-grid > [data-reveal][data-shown='true'] {
+    animation: none;
+  }
+}
+
+/* A press has to feel like one. The lift is hover's; this is the push back. */
+.play-card:active {
+  transform: translateY(-1px);
+}
+
+.play-card-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  /* Takes the slack, which is what lines the buttons up along the bottom of a
+     row of cards whose names wrap to different heights. */
+  flex: 1;
+  min-width: 0;
+}
+
+.play-card-side {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.play-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.35rem;
+}
+
 .play-ico {
   position: relative;
+  flex: 0 0 auto;
   display: grid;
   place-items: center;
-  width: 3.1rem;
-  height: 3.1rem;
-  margin-bottom: 0.55rem;
-  border-radius: 15px;
+  width: 2.8rem;
+  height: 2.8rem;
+  border-radius: 14px;
   border: 1px solid var(--border-2);
   background: rgba(var(--tint-rgb), 0.08);
   color: var(--accent-lit);
+}
+
+.play-card[data-size='sm'] .play-ico {
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 11px;
 }
 
 .play-card b {
   position: relative;
   font-family: var(--font-display);
   font-size: 1.05rem;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+
+.play-card[data-size='sm'] b {
+  font-size: 0.95rem;
+}
+
+.play-card[data-size='md'] b,
+.play-card[data-size='lg'] b {
+  font-size: 1.25rem;
 }
 
 .play-rule {
@@ -11729,26 +12103,118 @@ button {
   font-size: 0.78rem;
   line-height: 1.5;
   color: var(--text-mut);
+  text-wrap: pretty;
 }
 
-/* Pushes the button to the bottom, so a two-line name and a three-line one
-   still line their CTAs up across the row. */
-.play-fill {
-  flex: 1;
-  min-height: 0.6rem;
+/*
+ * The glyph again, at poster size, on the two cards with room for it.
+ *
+ * It sits in the texture's register rather than the icon tile's — a mark on the
+ * surface at low opacity, bled off two edges, with the content painted over it.
+ * That is what stops a medium card reading as a small one that grew: it has a
+ * subject, and the subject is the game. `opacity` and not a second colour: the
+ * stroke is `--accent-lit` diluted, which is the same thing every wash on this
+ * page is made of.
+ */
+.play-mark {
+  position: absolute;
+  right: -1.2rem;
+  bottom: -1.4rem;
+  display: block;
+  pointer-events: none;
+  color: var(--accent-lit);
+  opacity: 0.13;
 }
 
 .play-start {
   position: relative;
   width: 100%;
   justify-content: center;
-  margin-top: 0.4rem;
 }
 
 .play-start:disabled {
   opacity: 0.4;
   cursor: not-allowed;
   transform: none;
+}
+
+/* The wide card's controls take a column of their own, which is the whole
+   reason it is the wide one. */
+.play-card[data-size='lg'] .play-card-side {
+  flex: 0 0 auto;
+  min-width: 14rem;
+}
+
+/*
+ * ── the deck and the grid, narrow ──
+ *
+ * Here rather than in the `══ responsive ══` block below, because these three
+ * steps are not adjustments to a layout defined elsewhere — they *are* the
+ * layout, and a span declared six hundred lines from the one that overrides it
+ * is how a grid quietly stops adding up. The one narrow rule this screen keeps
+ * down there is `.play-hero-cta`, which is a padding decision about a button.
+ *
+ * There is only one step, and that is deliberate. The column count is what the
+ * spans are written against, so an intermediate tier that moved one weight and
+ * not the others just makes a different grid to keep in your head — and the
+ * three weights hold their proportions all the way down: at the narrowest the
+ * wrap allows, a quiz tile is about 230px and a poster about 350px, which is
+ * what they are at full width minus a little. Below that the whole thing is one
+ * column, which is the only honest answer on a phone.
+ */
+
+@media (max-width: 760px) {
+  /* The deck stops being two panels and becomes two, stacked. Points first:
+     it is the one that says whether any of this is worth doing. */
+  .play-deck {
+    grid-template-columns: 1fr;
+  }
+
+  /* The cells are as tall as they are to fill a panel matched to the one beside
+     it. Stacked there is nothing to match, and a 4rem gauge for a figure with
+     one digit in it is the games pushed another screenful down. */
+  .play-energy-cells {
+    min-height: 2.6rem;
+  }
+
+  /* Every card takes the row. Three quiz tiles at a third of a phone are a
+     column of icons with the words underneath them. */
+  .play-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .play-card[data-size='sm'],
+  .play-card[data-size='md'],
+  .play-card[data-size='lg'] {
+    grid-column: auto;
+  }
+
+  /* The wide card gives up its second column with the width that justified it,
+     and its picker goes back above the button. */
+  .play-card[data-size='lg'] {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 1.35rem 1.25rem;
+  }
+
+  .play-card[data-size='lg'] .play-card-side {
+    min-width: 0;
+  }
+
+  /* A 112px glyph bled off two corners of a full-width card is wallpaper, not
+     a subject. */
+  .play-mark {
+    display: none;
+  }
+
+  /* The poster's framed glyph goes with it. It is the right-hand column of a
+     wide card, and once the card has no columns it wraps to the bottom and
+     lands *under the CTA* as a 6rem box with nothing to do with anything —
+     which is worse than not drawing it. The badge, the name, the rules and the
+     press are the card. */
+  .play-feature-ico {
+    display: none;
+  }
 }
 
 /* ── card textures ─────────────────────────────────────────────────────────
@@ -11947,6 +12413,12 @@ button {
   border-color: var(--accent-ink);
 }
 
+/* A press that is also a wager should feel like one going down. Transform is
+   not in the transition above, so it lands on the frame it is asked for. */
+.round-option:not(:disabled):active {
+  transform: translateY(1px);
+}
+
 /*
  * Right is the accent fill; wrong is the accent *removed* — no border, no
  * tint, ink at half strength. With one hue that is the only honest pair, and it
@@ -12057,6 +12529,12 @@ button {
   flex-wrap: wrap;
   justify-content: center;
   margin-top: 0.6rem;
+}
+
+/* The way out, at the weight of a way out. See the note at the call site. */
+.result-back {
+  align-self: center;
+  margin-top: 0.2rem;
 }
 
 /* ── memory match, word builder ───────────────────────────────────────────
@@ -12654,44 +13132,125 @@ button {
   gap: 0.6rem;
 }
 
-/* ══════════════════════════════════════════════════════════════ wallet ══ */
+/* ══════════════════════════════════════════════════════════════ wallet ══
+   The signed-in wallet.
 
+   Everything a player *holds* is drawn in one card, and the card is the app's:
+   `Pay-lez mobile`, `lib/screens/deals_screen.dart`, `_DealCard`. A clipped
+   24px shell; a band across the top carrying the card's subject; a status pill
+   sitting on the band; then the name at `w800`, a line of accent copy, a line of
+   muted copy, and a 44px pill of an action pinned to the foot.
+
+   Three things about the port are worth stating, because all three were
+   decisions rather than transcription.
+
+   **The band's photograph is a plate.** The app's band is a 150px photo slot —
+   and the photo is load-bearing, it is how six cards in a column stop being the
+   same card six times. Nothing in `src/` ships an image asset and a CDN
+   placeholder is a third-party runtime request, so the band carries the card's
+   own subject at plate size instead: a deal puts its offer there (`2+1`, `20%`),
+   a gift card its face value, a stamp card the row of discs, which is a picture
+   already.
+
+   **The differentiation is texture, not hue.** The app tints its pills per
+   status — `tealSoft`, `warnBg`, `surface` — and this palette has one accent, so
+   `[data-texture]` on `.wal-band` paints a repeating pattern from
+   `--accent-rgb` behind the plate, cycled by position. Same substitution
+   `.play-card` makes for the Play mock's six hues, same seven names. The alphas
+   are **not** the same, and that is deliberate: `.play-card`'s 3–5% is set by
+   its worst case, a texture read under two lines of 0.78rem body copy. Nothing
+   but a display figure and a glass pill ever sits on a band, so the number here
+   is set by the case that actually exists and runs roughly double. Body copy
+   lives below the band, where there is no texture at all.
+
+   **A band is what a thing you hold gets.** The catalogue below (`.gift`) does
+   not have one, and the absence is the hierarchy: those are stock on a shelf,
+   and giving them the same plate would make the page one run of identical
+   objects with nothing to say which are yours.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── the balance ───────────────────────────────────────────────────────────
+ *
+ * The screen's first object and the only filled one on it. Same construction
+ * `.play-hero` uses one route over, because the two really are the same object
+ * on two screens: a balance, lit, above a page of glass — and the dot field ties
+ * it to the plates that start immediately below it.
+ */
 .balance {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 1rem 1.5rem;
   flex-wrap: wrap;
-  padding: 1.25rem;
+  padding: clamp(1.2rem, 3vw, 1.65rem);
   border-radius: var(--r-lg);
   border: 1px solid var(--border-2);
-  background: var(--surface-2);
+  background: linear-gradient(
+    115deg,
+    rgba(var(--tint-rgb), 0.16) 0%,
+    rgba(var(--tint-rgb), 0.05) 45%,
+    var(--glass) 100%
+  );
   margin-bottom: 1.5rem;
 }
 
+.balance::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(
+    rgba(var(--accent-rgb), 0.14) 1.4px,
+    transparent 1.4px
+  );
+  background-size: 22px 22px;
+}
+
+/* Above the dot field. Without this the texture paints over the figure. */
+.balance > * {
+  position: relative;
+}
+
 .balance > div > span {
-  font-size: 0.78rem;
-  font-weight: 600;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   color: var(--accent-ink);
 }
 
 .balance b {
   display: block;
+  margin-top: 0.15rem;
   font-family: var(--font-display);
-  font-size: 2.1rem;
+  font-size: clamp(2.1rem, 5vw, 2.6rem);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
 }
 
 .balance b i {
   font-style: normal;
   font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0;
   color: var(--text-mut);
 }
 
+/* The note is a pill, not a caption — the same object the cards below wear, so
+   "enough for a voucher" reads as a status rather than as small print. */
 .balance-note {
-  font-size: 0.82rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.42rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), 0.5);
+  font-size: 0.78rem;
+  font-weight: 700;
   color: var(--text-mut);
 }
 
@@ -12718,6 +13277,15 @@ button {
   font-size: 0.85rem;
   font-weight: 700;
   cursor: pointer;
+  transition:
+    background 240ms var(--ease),
+    border-color 240ms var(--ease),
+    color 240ms var(--ease);
+}
+
+.wal-tabs button:hover {
+  border-color: var(--accent-soft);
+  color: var(--text);
 }
 
 .wal-tabs button[data-on='true'] {
@@ -12729,25 +13297,488 @@ button {
 .wal-tabs button i {
   font-style: normal;
   font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
   opacity: 0.7;
 }
 
-.wcards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
+@media (prefers-reduced-motion: reduce) {
+  .wal-tabs button {
+    transition: none;
+  }
 }
 
+/* ══════════════════════════════════════════════ a holding, in one card ══
+   The shell the three holdings share. Prefixed `wal-` like everything else on
+   this screen: `site.css` is one sheet with no scoping, and `.wallet-tabs` on
+   the marketing Vouchers page is exactly the collision this prefix exists to
+   avoid.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.wal-deal,
+.wal-stamp,
 .wcard {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  padding: 1rem 1.15rem;
-  border-radius: var(--r);
+  flex-direction: column;
+  /* The band takes the card's own top corners — the app's
+     `clipBehavior: Clip.antiAlias` on a rounded shell. Without it the band
+     paints square corners over the radius and the card stops being one object. */
+  overflow: hidden;
+  border-radius: var(--r-lg);
   border: 1px solid var(--border);
   background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  transition:
+    border-color 320ms var(--ease),
+    transform 320ms var(--ease);
+}
+
+.wal-deal:hover,
+.wal-stamp:hover,
+.wcard:hover {
+  border-color: var(--border-2);
+  transform: translateY(-3px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wal-deal,
+  .wal-stamp,
+  .wcard {
+    transition: none;
+  }
+
+  .wal-deal:hover,
+  .wal-stamp:hover,
+  .wcard:hover {
+    transform: none;
+  }
+}
+
+/* ── the band ── */
+
+.wal-band {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  /* The app's band is 150 of a 360px card. This is the same proportion at the
+     width these tracks actually resolve to, and it is a floor: a stamp card
+     whose slots wrap to a second row grows it. */
+  min-height: 6.75rem;
+  padding: 0.85rem 0.95rem 0.95rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.wal-band-top {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+/*
+ * The plate, pushed to the foot of the band.
+ *
+ * `margin-top: auto` rather than a fixed offset: the pill above it is dictionary
+ * copy and wraps to two lines in Russian, and a figure positioned from the top
+ * would move with it. From the bottom, every card in a row lines its figure up
+ * with its neighbours' whatever the pill does.
+ */
+.wal-fig,
+.wal-band .wal-slots {
+  position: relative;
+  margin-top: auto;
+}
+
+.wal-fig {
+  font-family: var(--font-display);
+  font-size: clamp(1.55rem, 4.5vw, 2.05rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-ink);
+}
+
+/* ── band textures ─────────────────────────────────────────────────────────
+ *
+ * What stands in for the app's photograph, and for the per-status hues it tints
+ * its pills with. Each is a repeating paint on a pseudo-element behind the
+ * band's content — `pointer-events: none`, and everything above it carries
+ * `position: relative`, because a texture that swallowed a button would be a
+ * very silly bug.
+ *
+ * The alphas run 7–22%, against `.play-card`'s 3–5%. That is not a drift: those
+ * were set by body copy read over the texture, and no body copy is ever on a
+ * band. What sits here is a display figure at 2rem and a pill with its own
+ * sheet, both of which clear a pattern this faint without help — and at 4% the
+ * six cards in a column go back to being the same card six times, which is the
+ * only thing the texture is for.
+ */
+.wal-band::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wal-band[data-texture='dots']::before {
+  background-image: radial-gradient(
+    rgba(var(--accent-rgb), 0.22) 1.4px,
+    transparent 1.4px
+  );
+  background-size: 22px 22px;
+}
+
+.wal-band[data-texture='stripe']::before {
+  background-image: repeating-linear-gradient(
+    180deg,
+    rgba(var(--accent-rgb), 0.075) 0 7px,
+    transparent 7px 21px
+  );
+}
+
+/* The one that had to come *down* rather than up: concentric rings are the only
+   pattern here whose lines are all different lengths, so the same alpha reads
+   louder than the six straight ones and the band starts looking like a radar. */
+.wal-band[data-texture='orbit']::before {
+  background-image: repeating-radial-gradient(
+    circle at 82% 14%,
+    rgba(var(--accent-rgb), 0.085) 0 1.2px,
+    transparent 1.2px 19px
+  );
+}
+
+.wal-band[data-texture='weave']::before {
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--accent-rgb), 0.08) 0 1.5px,
+      transparent 1.5px 18px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(var(--accent-rgb), 0.08) 0 1.5px,
+      transparent 1.5px 18px
+    );
+}
+
+.wal-band[data-texture='chevron']::before {
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.09) 0 1.5px,
+    transparent 1.5px 20px
+  );
+}
+
+.wal-band[data-texture='grid']::before {
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(var(--accent-rgb), 0.085) 0 1px,
+      transparent 1px 26px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(var(--accent-rgb), 0.085) 0 1px,
+      transparent 1px 26px
+    );
+}
+
+.wal-band[data-texture='hatch']::before {
+  background-image: repeating-linear-gradient(
+    58deg,
+    rgba(var(--accent-rgb), 0.1) 0 1.5px,
+    transparent 1.5px 15px
+  );
+}
+
+/* ── the status pill ───────────────────────────────────────────────────────
+ *
+ * The app's `_DealPill`: `right:12px;top:12px`, `padding:7px 12px`, a 6px dot on
+ * `pl-pulse 2s ease-in-out infinite`, and the whole thing over the band rather
+ * than in the body. Its own sheet, because it sits on a texture.
+ *
+ * The dot is the only per-status difference available in one ink — the app
+ * swaps the pill's *fill* between three tinted pairs, and this palette has one
+ * accent — so the live pill takes the accent hairline and its ink, and every
+ * other state stays the muted default.
+ */
+.wal-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  padding: 0.34rem 0.62rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--text-mut);
+  text-align: right;
+}
+
+.wal-pill[data-live='true'] {
+  border-color: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+.wal-pill i {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  animation: wal-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wal-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.3;
+    transform: scale(0.6);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wal-pill i {
+    animation: none;
+  }
+}
+
+/* ── the body ── */
+
+.wal-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.9rem 1rem 1rem;
+}
+
+.wal-name-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+/* The app's title line: `16.5 / w800 / -.015`. Heavier and tighter than
+   anything else on the card, so the venue is the first thing read after the
+   plate. `balance` rather than `pretty`: these are two or three words, and the
+   failure to avoid is a one-word second line, not a widow at the end of a
+   paragraph. */
+.wal-name {
+  min-width: 0;
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  text-wrap: balance;
+}
+
+/* The app's teal line — what the reader gets, said once. */
+.wal-offer {
+  font-size: 0.84rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--accent-ink);
+}
+
+.wal-meta {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+/*
+ * The action, pinned to the foot.
+ *
+ * `margin-top: auto` against a grid row that stretches its cards to one height:
+ * a free deal carries an accent line a priced one does not, and without this the
+ * two buttons beside each other sit at different heights, which is the first
+ * thing the eye picks up in a grid of cards.
+ */
+.wal-act {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: auto;
+  padding-top: 0.85rem;
+}
+
+/* 44px — the app's `minHeight: 44` on the same button, and the target size a
+   thumb needs. Full width, because it is the card's one control. */
+.wal-cta {
+  flex: 1;
+  justify-content: center;
+  min-height: 2.75rem;
+  padding: 0.5rem 0.85rem;
+  font-size: 0.83rem;
+}
+
+.wal-cta:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ══════════════════════════════════════════ the two columns of holdings ══
+ *
+ * Deals and stamp cards, side by side.
+ *
+ * The one place this page departs from the app's single column, and the reason
+ * is the pairing rather than the width: these two are what a player checks
+ * *before going out* — what have I got, and where am I nearly there — and on a
+ * wide screen that is one look instead of two scrolls. The gift cards below
+ * stay full width because they are a shelf as well as a holding.
+ *
+ * `1fr 1fr` rather than `auto-fit`: the two columns are not interchangeable
+ * cards, they are two named sections, and a track that collapses them into one
+ * at an arbitrary width would reorder the page for no reason. One breakpoint,
+ * chosen where the deal grid stops fitting two across.
+ * ═══════════════════════════════════════════════════════════════════════ */
+.wal-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(1.6rem, 4vw, 3rem);
+  margin-top: 2.5rem;
+}
+
+.wal-col {
+  min-width: 0;
+}
+
+.wal-col .section-head {
+  margin-bottom: 1.1rem;
+}
+
+/* ── hot deals ─────────────────────────────────────────────────────────────
+ *
+ * `13.5rem` rather than the `11rem` this grid used to floor at. The band is the
+ * card now and the app's is 150 of 360 — a proportion an 11rem track cannot
+ * hold without the plate and the pill colliding — so the track was widened to
+ * fit the object rather than the object squeezed to fit the track. Two across a
+ * half-width column, three once the split has collapsed.
+ */
+.wal-deals {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+  gap: 0.85rem;
+}
+
+/* A deal already in the wallet is not a thing you can take again, so it stops
+   looking like an offer and starts looking like a holding: the border firms up,
+   the band goes quiet, and the code takes the place the button had. */
+.wal-deal[data-held='true'] {
+  border-color: var(--border-2);
+}
+
+.wal-deal[data-held='true'] .wal-band {
+  background: var(--surface);
+}
+
+/* ── stamp cards ── */
+
+.wal-stamps {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+/* A full card is the one state on this page that is an *event* rather than a
+   status — there is something waiting at a counter — so it gets the border the
+   rest of the sheet reserves for something you can act on, and the pill on its
+   band is the one that pulses. */
+.wal-stamp[data-full='true'] {
+  border-color: var(--accent-soft);
+}
+
+/*
+ * The slots, which are this card's plate.
+ *
+ * `auto-fill` on a fixed track rather than one column per stamp: a card can ask
+ * for anything from four visits to twelve, and a grid that divides the row by
+ * the count draws twelve tiny discs on one card and four fat ones on the next.
+ * A stamp is a fixed size; how many fit on a line is the layout's business, and
+ * a second line grows the band rather than shrinking the discs.
+ */
+.wal-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 1.3rem);
+  gap: 0.45rem;
+}
+
+.wal-slots span {
+  width: 1.3rem;
+  height: 1.3rem;
+  border-radius: 999px;
+  /* Dashed while empty, solid once filled — the difference has to survive being
+     printed in one ink, and a dashed outline reads as "not yet" at any size. */
+  border: 1px dashed var(--border-2);
+}
+
+.wal-slots span[data-on='true'] {
+  border-style: solid;
+  border-color: transparent;
+  background: var(--accent);
+  box-shadow: 0 0 12px -4px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
+}
+
+/* Filled `n×` before. Sits on the name row rather than the band, because it is
+   the card's history and the band is its present. */
+.wal-cycles {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.wal-stamp-words {
+  margin-top: 0.15rem;
+  font-size: 0.83rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+.wal-stamp[data-full='true'] .wal-stamp-words {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ── gift cards held ───────────────────────────────────────────────────────
+ *
+ * A grid of cards, where this was a column of rows.
+ *
+ * The row was the honest shape while a holding was a line of text with a button
+ * on the end of it. A gift card is an object — a fixed face value at a named
+ * brand — and once the face value is on a plate, laying three of them out as
+ * full-width rows wastes the whole right half of the page on nothing. The
+ * catalogue below is still eight cards to a shelf; these are the three that are
+ * yours, and they are wider and taller for it.
+ */
+.wcards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.85rem;
 }
 
 /* A spent voucher stays in the list at half strength — it is a receipt now, not
@@ -12756,52 +13787,19 @@ button {
   opacity: 0.6;
 }
 
-.wcard-tx {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
+.wcard[data-spent='true'] .wal-band {
+  background: var(--surface);
 }
 
-.wcard-tx b {
-  font-family: var(--font-display);
-  font-size: 1rem;
-}
-
-.wcard-tx > span {
-  font-size: 0.85rem;
-  color: var(--accent-ink);
-}
-
-.wcard-when {
-  font-size: 0.75rem;
-  color: var(--text-fnt);
-}
-
-.wcard-act {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.4rem;
-  flex: 0 0 auto;
-}
-
-.wcard-cost {
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--text-fnt);
-}
-
+/* The code, which is the receipt. Display face and open tracking because it is
+   read out loud at a till, one character at a time. */
 .wcard-code {
   font-family: var(--font-display);
-  font-size: 0.85rem;
-  letter-spacing: 0.06em;
+  font-size: 0.92rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
   color: var(--text-mut);
-}
-
-.wcard-show {
-  padding: 0.5rem 0.9rem;
-  font-size: 0.8rem;
 }
 
 .wal-empty {
@@ -12818,232 +13816,34 @@ button {
   color: var(--text-mut);
 }
 
-/* ══════════════════════════════════════════ the wallet's other two holdings ══
-   Prefixed `wal-`, like everything else on this screen: `site.css` is one sheet
-   with no scoping, and `.wallet-tabs` on the marketing Vouchers page is exactly
-   the collision this prefix exists to avoid.
-   ═════════════════════════════════════════════════════════════════════════ */
-
-/*
- * Deals and stamp cards, side by side.
- *
- * The one place this page departs from the app's single column, and the reason
- * is the pairing rather than the width: these two are what a player checks
- * *before going out* — what have I got, and where am I nearly there — and on a
- * wide screen that is one look instead of two scrolls. The gift cards below
- * stay full width because they are a shelf as well as a holding.
- *
- * `1fr 1fr` rather than `auto-fit`: the two columns are not interchangeable
- * cards, they are two named sections, and a track that collapses them into one
- * at an arbitrary width would reorder the page for no reason. One breakpoint,
- * chosen where the deal grid stops fitting two across.
- */
-.wal-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: clamp(1.6rem, 4vw, 3rem);
-  margin-top: 2.5rem;
-}
-
-.wal-col {
-  min-width: 0;
-}
-
-.wal-col .section-head {
-  margin-bottom: 1.1rem;
-}
-
-/* ── hot deals ── */
-
-.wal-deals {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
-  gap: 0.8rem;
-}
-
-.wal-deal {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  padding: 1rem 1.05rem 1.1rem;
-  border-radius: var(--r);
-  border: 1px solid var(--border);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-/* A deal already in the wallet is not a thing you can take again, so it stops
-   looking like an offer and starts looking like a holding: the border firms up
-   and the code takes the place the button had. */
-.wal-deal[data-held='true'] {
-  border-color: var(--border-2);
-}
-
-.wal-deal-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin-bottom: 0.35rem;
-}
-
-/* The offer itself, in the venue's own words. Big, because it is the only
-   thing on the card somebody is scanning the grid for. */
-.wal-badge {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1;
-  color: var(--accent-ink);
-}
-
-.wal-deal b {
-  font-size: 0.9rem;
-  font-weight: 600;
-}
-
-.wal-deal-when,
-.wal-deal-claimed {
-  font-size: 0.75rem;
-  color: var(--text-fnt);
-}
-
-.wal-deal-claim {
-  width: 100%;
-  justify-content: center;
-  margin-top: 0.55rem;
-  padding: 0.5rem 0.7rem;
-  font-size: 0.78rem;
-}
-
-.wal-deal-claim:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* ── stamp cards ── */
-
-.wal-stamps {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-
-.wal-stamp {
-  padding: 1.05rem 1.15rem 1.1rem;
-  border-radius: var(--r);
-  border: 1px solid var(--border);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-/* A full card is the one state on this page that is an *event* rather than a
-   status — there is something waiting at a counter — so it gets the border the
-   rest of the sheet reserves for something you can act on. */
-.wal-stamp[data-full='true'] {
-  border-color: var(--accent-soft);
-}
-
-.wal-stamp-head {
-  display: flex;
-  align-items: center;
-  gap: 0.7rem;
-  margin-bottom: 0.8rem;
-}
-
-.wal-stamp-head > div {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.wal-stamp-head b {
-  font-size: 0.92rem;
-  font-weight: 600;
-}
-
-.wal-stamp-head > div > span {
-  font-size: 0.78rem;
-  font-variant-numeric: tabular-nums;
-  color: var(--text-fnt);
-}
-
-.wal-cycles {
-  margin-left: auto;
-  padding: 0.2rem 0.5rem;
-  border-radius: 999px;
-  border: 1px solid var(--border);
-  font-size: 0.68rem;
-  color: var(--text-fnt);
-  white-space: nowrap;
-}
-
-/*
- * The slots.
- *
- * `auto-fill` on a fixed track rather than one column per stamp: a card can ask
- * for anything from four visits to twelve, and a grid that divides the row by
- * the count draws twelve tiny discs on one card and four fat ones on the next.
- * A stamp is a fixed size; how many fit on a line is the layout's business.
- */
-.wal-slots {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 1.15rem);
-  gap: 0.4rem;
-  margin-bottom: 0.7rem;
-}
-
-.wal-slots span {
-  width: 1.15rem;
-  height: 1.15rem;
-  border-radius: 999px;
-  /* Dashed while empty, solid once filled — the difference has to survive being
-     printed in one ink, and a dashed outline reads as "not yet" at any size. */
-  border: 1px dashed var(--border-2);
-}
-
-.wal-slots span[data-on='true'] {
-  border: 1px solid transparent;
-  background: var(--accent);
-  box-shadow: 0 0 12px -4px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
-}
-
-.wal-stamp-words {
-  font-size: 0.82rem;
-  line-height: 1.55;
-  color: var(--text-mut);
-}
-
-.wal-stamp[data-full='true'] .wal-stamp-words {
-  font-weight: 700;
-  color: var(--text);
-}
-
-.wal-visit {
-  margin-top: 0.8rem;
-  padding: 0.45rem 0.75rem;
-  font-size: 0.78rem;
-}
-
 .cat-head {
   margin-top: 2.5rem;
   margin-bottom: 1.1rem;
 }
 
+/* The face value, and the thing that pushes the shelf's buttons onto one line.
+   `margin-top: auto` on the figure rather than on the button: eight brand names
+   are eight different lengths and two of them wrap, and without it the row of
+   Redeem buttons steps up and down across the grid. Only the signed-in wallet
+   renders this element — the marketing catalogue's figure is `.gift-cost`, which
+   carries the same auto margin for the same reason. */
 .gift-value {
-  font-size: 0.85rem;
+  margin-top: auto;
+  padding-top: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
   color: var(--accent-ink);
 }
 
+/* 44px, like every other action on this screen. */
 .gift-buy {
   width: 100%;
   justify-content: center;
+  min-height: 2.75rem;
   margin-top: 0.7rem;
-  padding: 0.55rem 0.8rem;
-  font-size: 0.8rem;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.82rem;
 }
 
 .gift-buy:disabled {
@@ -13219,15 +14019,6 @@ button {
      have wrapped: on its own line, hard right is just far from everything. */
   .play-stats-toggle {
     margin-left: 0;
-  }
-
-  .wcard {
-    flex-wrap: wrap;
-  }
-
-  .wcard-act {
-    align-items: flex-start;
-    width: 100%;
   }
 
   /* Full width, because a 27rem drawer on a 24rem phone leaves a sliver of
@@ -14705,38 +15496,37 @@ button {
   }
 
   /*
-   * Deal cards go one-up.
+   * Every holding goes one-up.
    *
-   * `auto-fill` with an 11rem floor puts two across a 360px column, which is
-   * about 8rem each once the gap and the page padding are out — narrower than
-   * the floor asked for, so the track overflows rather than reflowing. The same
-   * failure the `.pd-cards` note above describes, on a different grid.
+   * Stated rather than left to `auto-fill`, which would arrive at the same
+   * answer at 390px and not at 430: a 15rem floor and a 0.85rem gap fit two
+   * tracks in 30.9rem, so the wider phones would get two 15rem cards — and a
+   * 240px card cannot hold a band, a 40px tile, a pill and a 44px button
+   * without the pill landing on the plate.
    */
-  .wal-deals {
+  .wal-deals,
+  .wcards {
     grid-template-columns: minmax(0, 1fr);
   }
 
   /* A stamp slot is a touch target on this screen even though it is not
      interactive — it is the thing a thumb rests on while reading the row — and
-     1.15rem discs at eight across leave no gutter to read them apart by. */
+     1.3rem discs at eight across leave no gutter to read them apart by. */
   .wal-slots {
-    grid-template-columns: repeat(auto-fill, 1.35rem);
-    gap: 0.45rem;
+    grid-template-columns: repeat(auto-fill, 1.45rem);
+    gap: 0.5rem;
   }
 
   .wal-slots span {
-    width: 1.35rem;
-    height: 1.35rem;
+    width: 1.45rem;
+    height: 1.45rem;
   }
 
   /* The cycle pill wraps under the venue name rather than squeezing it: a
      venue's own name is the one thing on the card that must stay readable. */
-  .wal-stamp-head {
+  .wal-name-row {
     flex-wrap: wrap;
-  }
-
-  .wal-cycles {
-    margin-left: 3.85rem;
+    gap: 0.3rem 0.6rem;
   }
 
   /*
@@ -15173,5 +15963,964 @@ button {
 
   .nav-sheet-link {
     padding-block: 0.7rem;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   Subscription — the landing page's plan section (`#subscription`).
+
+   Appended as one block at the end of the sheet, and namespaced `sub-`, for
+   the reason the root `CLAUDE.md` gives: this file has no scoping, and three
+   separate collisions have already shipped bugs here. `.sub` was free — the
+   only `sub` in 15,000 lines was the word "subscribe" inside the footer's
+   newsletter classes.
+
+   Three things about it are decisions rather than styling:
+
+   - **The cards are a tray and a plate.** `.sub-card` is a translucent shell
+     with 6px of padding and `.sub-card-in` is the glass panel sitting in it,
+     with a radius 6px smaller so the two curves are concentric. A pricing card
+     is the densest thing on this page — a name, a price, a commitment and
+     thirteen rows — and the nested enclosure is what stops it reading as a
+     rectangle of text laid on the globe.
+   - **Hover marks the card with a border, never with a lift.** That is
+     `.tier`'s own rule from the Business page, and the argument is the same:
+     raising one card out of a row of three costs the row its shared baseline,
+     and a card carrying a comparison table is exactly the thing that must stay
+     on it. It also keeps the reveal's transform to itself — a `transition`
+     shorthand on `[data-reveal]`'s own element would have silently retimed the
+     700ms scroll reveal to 260ms.
+   - **The value column never wraps and the label column may.** All three cards
+     carry the same thirteen labels at the same width, so their wrapping is
+     identical and the rows line up across the grid without a subgrid. That
+     only holds while the *values* are one line — hence `white-space: nowrap`
+     on `.sub-val` and `min-width: 0` on the label beside it.
+
+   Every colour is a token. The glass sheet is `--glass`, the same one the
+   voucher preview and the game cards take, because these cards float over the
+   globe and carry body copy: the number is set by the worst frame, not by how
+   a card looks over an empty stretch of sky.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── the commitment ladder ────────────────────────────────────────────────
+   A well with four rungs in it. The rung is the whole control — label, chip
+   and the space around both — because a picture of a control that only
+   responds on its text is the bug the Relocate converter shipped twice. */
+
+.sub-ladder {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  width: min(100%, 36rem);
+  margin: 0 auto clamp(2rem, 4vh, 2.75rem);
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--r) + 4px);
+  background: var(--surface);
+}
+
+.sub-rung {
+  display: grid;
+  gap: 0.15rem;
+  padding: 0.6rem 0.5rem;
+  border: 1px solid transparent;
+  border-radius: var(--r);
+  background: none;
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  text-align: center;
+  cursor: pointer;
+  transition:
+    background 220ms var(--ease),
+    border-color 220ms var(--ease),
+    color 220ms var(--ease);
+}
+
+.sub-rung b {
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sub-rung-note {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--text-fnt);
+}
+
+.sub-rung:hover {
+  color: var(--text);
+}
+
+.sub-rung[data-on='true'] {
+  background: var(--surface-2);
+  border-color: var(--border-2);
+  color: var(--text);
+}
+
+/* The saving is the one claim this section makes, and it is arithmetic — the
+   discount the backend's own ladder sells the rung at. It is the only place
+   the accent is spent inside the well. */
+.sub-rung[data-on='true'] .sub-rung-note {
+  color: var(--accent-ink);
+}
+
+/* ── the plans ──────────────────────────────────────────────────────────── */
+
+.sub-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.1rem;
+  align-items: stretch;
+}
+
+.sub-card {
+  padding: 6px;
+  border-radius: calc(var(--r-lg) + 6px);
+  background: var(--surface);
+}
+
+.sub-card-in {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 1.55rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  /* The plate's own top highlight, so it reads as sitting *in* the tray rather
+     than as a second rectangle drawn on it. Accent at a tenth, not white: a
+     white inset is a third colour on a two-colour page and inverts on paper. */
+  box-shadow: inset 0 1px 0 rgba(var(--accent-rgb), 0.1);
+  transition:
+    border-color 260ms var(--ease),
+    box-shadow 260ms var(--ease);
+}
+
+.sub-card:hover .sub-card-in {
+  border-color: var(--border-2);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--accent-rgb), 0.1),
+    0 26px 70px -50px rgba(var(--glow-rgb), calc(0.85 * var(--glow-k)));
+}
+
+.sub-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  margin-bottom: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--accent-lit);
+}
+
+.sub-card h3 {
+  font-size: 1.05rem;
+}
+
+.sub-note {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.sub-price {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0;
+  /* Re-mounted on every rung change (`key={term}` in `sections.tsx`), so the
+     new figure arrives rather than swapping under the eye. */
+  animation: sub-price-in 380ms var(--ease) both;
+}
+
+.sub-price b {
+  font-family: var(--font-display);
+  font-size: clamp(1.7rem, 2.4vw, 2.1rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-lit);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-price span {
+  font-size: 0.8rem;
+  color: var(--text-fnt);
+}
+
+@keyframes sub-price-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/*
+ * What is actually charged. It is given two lines of height whatever it says,
+ * because it is the last thing above the comparison rows and three cards whose
+ * rows start at three different heights stop being a comparison.
+ */
+.sub-billed {
+  min-height: 2.9em;
+  margin-top: 0.55rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+.sub-rows {
+  list-style: none;
+  margin: 1.1rem 0 0;
+  padding: 0.45rem 0 0;
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * Centred rather than baseline-aligned, and both halves are given the same
+ * line box.
+ *
+ * A tick is a 14px `<svg>` and a figure is a line of text, and an inline box
+ * built around the first is a pixel or two shorter than one built around the
+ * second. Over thirteen rows that compounds: the Free column, which is all
+ * dashes, ended seven pixels below the Premium column, which is half ticks —
+ * three cards that no longer read straight across, which is the one thing a
+ * comparison has to do. Pinning `min-height` to the same `1.35em` both columns
+ * of text already occupy makes every cell the same height whatever is in it.
+ */
+.sub-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  padding-block: 0.5rem;
+  font-size: 0.82rem;
+}
+
+.sub-row + .sub-row {
+  border-top: 1px solid var(--border);
+}
+
+.sub-row-label {
+  min-width: 0;
+  line-height: 1.35;
+  color: var(--text-mut);
+}
+
+.sub-val {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  min-height: 1.35em;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Not "0", and not blank. A dash is the mark a table uses for a cell that has
+   no value, and the cell carries the words for it on `aria-label`. */
+.sub-val[data-none='true'] {
+  font-weight: 500;
+  color: var(--text-fnt);
+}
+
+.sub-val[data-yes='true'] {
+  color: var(--accent-lit);
+}
+
+/* ── the one press ──────────────────────────────────────────────────────── */
+
+.sub-foot {
+  display: grid;
+  justify-items: center;
+  gap: 0.9rem;
+  margin-top: clamp(1.75rem, 4vh, 2.5rem);
+  text-align: center;
+}
+
+.sub-foot-note {
+  max-width: 44rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-fnt);
+}
+
+/* ── narrow ─────────────────────────────────────────────────────────────── */
+
+/*
+ * Three columns of thirteen rows need roughly 290px each before the labels
+ * start wrapping into the values. Below that the cards stack and take a
+ * readable measure rather than the full width of the wrap — a comparison row
+ * whose label and value are 700px apart is not one.
+ */
+@media (max-width: 60rem) {
+  .sub-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1rem;
+  }
+
+  .sub-card {
+    width: min(100%, 30rem);
+    margin-inline: auto;
+  }
+}
+
+/*
+ * Four rungs across a 390px screen is 85px each, which is not enough for
+ * "12 months" over "Save 25%" at a legible size. Two by two is.
+ */
+@media (max-width: 30rem) {
+  .sub-ladder {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sub-card-in {
+    padding: 1.25rem;
+  }
+
+  .sub-row {
+    font-size: 0.8rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sub-rung,
+  .sub-card-in {
+    transition: none;
+  }
+
+  .sub-price {
+    animation: none;
+  }
+}
+
+/* ══════════════════════════════════ the profile, and the first minute ══
+   `#/profile` (`prof-`) and `#/welcome` (`onb-`).
+
+   Two prefixes because they are two screens, and prefixed at all because this
+   sheet has no scoping and three separate collisions have already shipped bugs
+   here — `.dash-*` crushing the dashboard's user pill being the loudest. Both
+   names were grepped: neither existed.
+
+   Almost nothing below is a control. The profile form is the `══ forms ══`
+   field kit end to end — `.field`, `.field-row`, `.field-label`, `.field-help`,
+   `.field-error`, `.file-pick`, `.form-block`, `.form-actions` — and the rail's
+   two panels are `.console`, which is the same primitive the listing form's
+   rail uses. What is here is the layout around them, the avatar disc, and the
+   onboarding screen, which is a frame rather than a page and therefore owns its
+   own vertical rhythm.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ───────────────────────────────────────────────────────── #/profile ── */
+
+/* Form and rail, and the rail goes under on anything narrow. `minmax(0, 1fr)`
+   on the form column rather than `1fr`: a `<select>` sized to `Gorzow
+   Wielkopolski` would otherwise widen the track past the grid. */
+.prof-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  gap: clamp(1.25rem, 3vw, 2.25rem);
+  align-items: start;
+}
+
+.prof-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.prof-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  /* The card and the meter follow the reader down a form that is twice their
+     height — the meter is about the form, so it should be beside the field
+     being filled rather than beside the top of the page. */
+  position: sticky;
+  top: calc(var(--header-h) + 1rem);
+}
+
+@media (max-width: 62rem) {
+  .prof-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prof-rail {
+    position: static;
+  }
+}
+
+/* The photo row: disc, picker, and the remove link once there is something to
+   remove. Wraps rather than shrinking — three items on a 320px screen is two
+   lines, not three squeezed ones. */
+.prof-photo {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+/*
+ * The avatar disc.
+ *
+ * A tinted disc carrying the initial when there is no photo, which is the same
+ * fallback the header chip draws, and the same one the card in the rail draws —
+ * so an account with no photo looks like an account with no photo everywhere
+ * rather than like a broken image in one place.
+ */
+.prof-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1;
+  overflow: hidden;
+}
+
+.prof-avatar-lg {
+  width: 3.6rem;
+  height: 3.6rem;
+  font-size: 1.35rem;
+}
+
+.prof-avatar img {
+  width: 100%;
+  height: 100%;
+  /* The stored data URL is already a centre crop at `AVATAR_PX`, so this only
+     has to stop a browser letterboxing it inside the disc. */
+  object-fit: cover;
+  display: block;
+}
+
+/*
+ * A fact, not a field.
+ *
+ * The country, the spent birthday and the sign-in address are all shown in a
+ * well that is deliberately *not* the field kit's: same size and rhythm, no
+ * border, no background. A read-only value drawn as an input is a control that
+ * invites a tap and does nothing, which is the exact bug Relocate's decorative
+ * ask box shipped.
+ */
+.prof-fact {
+  margin: 0;
+  padding: 0.7rem 0;
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* The "the backend is not answering" line under the city picker. Weighted
+   rather than coloured — the palette has one accent and a warning cannot be a
+   second hue, which is the same rule `.field-error` follows. */
+.prof-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px dashed var(--border-2);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.prof-note svg {
+  flex: none;
+  margin-top: 0.15rem;
+  color: var(--accent-ink);
+}
+
+/* ── the rail's two panels ─────────────────────────────────────────────── */
+
+.prof-card-who {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.prof-card-who b {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.prof-handle {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.8125rem;
+  color: var(--accent-ink);
+}
+
+.prof-card-line {
+  margin: 0.9rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.prof-card-where {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-fnt);
+}
+
+.prof-pct {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--accent-lit);
+  /* The number changes as fields are filled; without this the panel reflows a
+     little on every save. */
+  font-variant-numeric: tabular-nums;
+}
+
+.prof-bar {
+  height: 7px;
+  margin-top: 0.7rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.prof-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 400ms var(--ease);
+}
+
+.prof-still {
+  display: block;
+  margin-top: 0.9rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.prof-list {
+  margin: 0.5rem 0 0;
+  padding-left: 1.1rem;
+  font-size: 0.8125rem;
+  line-height: 1.7;
+  color: var(--text-mut);
+}
+
+.prof-done {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.9rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* ───────────────────────────────────────────────────────── #/welcome ── */
+
+/*
+ * A frame, not a page: no header above it and no footer under it, because
+ * `resolveRoute` holds a new player here from every route and a nav bar whose
+ * links all bounce back is worse than no nav bar. So this owns the whole
+ * viewport, and centres one column in it.
+ */
+.onb {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: clamp(1.5rem, 5vh, 3rem) 1.25rem;
+}
+
+.onb-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+  width: 100%;
+  max-width: 30rem;
+}
+
+.onb-head {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.onb-pips,
+.onb-rounds {
+  display: flex;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.onb-pips i,
+.onb-rounds i {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+  /* Reached steps are the accent; the rest are the same colour at a fraction,
+     rather than a second hue. */
+  opacity: 0.18;
+  transition: opacity 260ms var(--ease);
+}
+
+.onb-pips i[data-on],
+.onb-rounds i[data-on] {
+  opacity: 1;
+}
+
+.onb-count,
+.onb-round {
+  flex: none;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+}
+
+.onb-title {
+  margin: 0.3rem 0 0;
+  font-size: clamp(1.5rem, 4.5vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.onb-lede {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  color: var(--text-mut);
+}
+
+.onb-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  width: 100%;
+  margin-top: 0.6rem;
+}
+
+/* ── step one: the language ────────────────────────────────────────────── */
+
+.onb-langs {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.onb-lang {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease);
+}
+
+.onb-lang b {
+  font-size: 0.9375rem;
+  font-weight: 700;
+}
+
+.onb-lang span {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.onb-lang:hover {
+  border-color: var(--accent-soft);
+  background: var(--surface-2);
+}
+
+/* Selected is the accent as a fill, which is the one unambiguous reading in a
+   grid where every other card is a surface. */
+.onb-lang[data-on] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.onb-lang[data-on] span {
+  color: var(--on-accent);
+  opacity: 0.75;
+}
+
+/* ── step two: the flags ───────────────────────────────────────────────── */
+
+.onb-scoreline {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.onb-score {
+  flex: none;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.onb-score b {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The flag is the question, so it is the biggest thing on the screen.
+ *
+ * Emoji from the self-hosted Twemoji subset rather than an image — `flagOf`
+ * builds the regional-indicator pair from the ISO code, and this site makes no
+ * third-party runtime requests. The four sanctioned colour exceptions include
+ * flag emoji for exactly this: the thing depicted *is* its colours.
+ */
+.onb-flag {
+  align-self: center;
+  margin: 0.4rem 0;
+  /* Without the family, Chromium on Windows draws each flag as the two
+     regional-indicator letters it is built from — the question becomes "which
+     country is UZ?", which answers itself. Same rule as `.flag-chip i`. */
+  font-family: 'GH Country Flags', var(--font-body);
+  font-size: clamp(4rem, 22vw, 6rem);
+  line-height: 1;
+}
+
+/* A press that reads as live and does nothing is worse than no press. "Next"
+   is disabled until the round has been answered, and has to look it — the same
+   rule the partner dashboard states for its own disabled controls. */
+.onb-actions .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.onb-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+@media (max-width: 26rem) {
+  .onb-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.onb-option {
+  padding: 0.9rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease),
+    opacity 200ms var(--ease);
+}
+
+.onb-option:hover:not(:disabled) {
+  border-color: var(--accent-soft);
+  background: var(--surface-2);
+}
+
+.onb-option:disabled {
+  cursor: default;
+}
+
+/*
+ * Right, wrong and neither — and none of the three is a hue.
+ *
+ * Green and red are not available here, so the right answer is the accent as a
+ * *fill* and the wrong one is the same weight in outline with the tint dropped:
+ * louder by contrast, which is the rule `.field-error` already follows. The
+ * unpicked options fade, which is what makes the pair being compared the only
+ * two things still at full strength.
+ */
+.onb-option[data-state='right'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.onb-option[data-state='wrong'] {
+  border-color: var(--text-mut);
+  background: transparent;
+  text-decoration: line-through;
+}
+
+.onb-option[data-state='dim'] {
+  opacity: 0.4;
+}
+
+.onb-verdict {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.onb-verdict b {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.onb-verdict span {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+/* ── step three: the payoff ────────────────────────────────────────────── */
+
+.onb-total {
+  align-self: center;
+  font-family: var(--font-display);
+  font-size: clamp(3.5rem, 16vw, 5.5rem);
+  font-weight: 600;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--accent-lit);
+  font-variant-numeric: tabular-nums;
+}
+
+.onb-split {
+  width: 100%;
+  margin: 0.6rem 0 0;
+  padding: 0.85rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  list-style: none;
+}
+
+.onb-split li {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.25rem 0;
+  font-size: 0.875rem;
+  color: var(--text-mut);
+}
+
+.onb-split b {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The sum, ruled off from what it is a sum of. */
+.onb-split li[data-total] {
+  margin-top: 0.35rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.onb-tier {
+  width: 100%;
+  margin-top: 0.6rem;
+}
+
+.onb-tier span {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-fnt);
+}
+
+.onb-bar {
+  height: 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.onb-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 600ms var(--ease);
+}
+
+/*
+ * Reduced motion.
+ *
+ * Nothing here moves position, so there is nothing to freeze — what there is,
+ * is three widths and an opacity that animate on their own. Under the
+ * preference they arrive at their value instead of travelling to it, which is
+ * the same treatment the site's reveals get: the state still changes, it simply
+ * does not perform.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .prof-bar i,
+  .onb-bar i,
+  .onb-pips i,
+  .onb-rounds i,
+  .onb-option {
+    transition: none;
   }
 }

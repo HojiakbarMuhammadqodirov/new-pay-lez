@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS, type GameId } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
@@ -6,16 +13,14 @@ import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
   awardPoints,
-  bankedPoints,
   CHEAPEST_VOUCHER,
+  ENERGY_REGEN_MINUTES,
   flightAward,
   freezesOf,
-  livesOf,
+  energyOf,
   MAX_FREEZES,
-  MAX_LIVES,
+  MAX_ENERGY,
   quizAward,
-  roundsToday,
-  today,
   type Award,
   type PlayerState,
 } from './auth/player';
@@ -38,12 +43,25 @@ import '../components/GlobeHero/ui/flagFont.css';
  * L-Earn, for someone who is signed in — the games themselves rather than a page
  * describing them.
  *
- * The layout follows `b2b/Paylez Play.dc.html`, the Play mock: a points panel
- * that leads with the balance and the bar it is filling, a stats strip that
- * folds the detail away until asked, one featured game given the width it
- * deserves, and the rest as a grid of cards. The reasoning behind that shape is
- * the mock's and it is right — the old version opened with four equal figures
+ * The layout follows `b2b/Paylez Play.dc.html`, the Play mock: a panel that
+ * leads with the balance and the bar it is filling, a stats strip that folds
+ * the detail away until asked, one featured game given the width it deserves,
+ * and the rest as a grid of cards. The reasoning behind that shape is the
+ * mock's and it is right — the version before it opened with four equal figures
  * in a box, which told a player what they had and nothing about what to do next.
+ *
+ * Two things here are not the mock's, because the product has moved since it was
+ * drawn, and both are answers to the same complaint: the screen was flat.
+ *
+ *   - **The deck.** The points panel has the energy gauge beside it. Energy is
+ *     the only limiter on this page now — a round costs one whether it is won or
+ *     lost — so it is the figure that decides whether any of the rest of the
+ *     screen is reachable, and it was three 15px hearts in a strip of four
+ *     readings. It is a count, a cap, and a countdown, at the size of what it
+ *     governs.
+ *   - **Three card weights.** `PLAY_SIZES` gives the six remaining games a span
+ *     apiece, on facts about the games rather than on a ranking of them. Six
+ *     interchangeable tiles said every round was the same round.
  *
  * What is *not* carried over is the mock's palette: it gives every game its own
  * hue (amber, lime, violet, coral, sky) and this site has one accent. The cards
@@ -92,6 +110,28 @@ const PLAY_TEXTURES = [
   'hatch',
 ] as const;
 
+/**
+ * How much of the grid each game takes, index-aligned with `GAMES` like the
+ * textures above. `FEATURED`'s entry is unused — that game is the poster and
+ * has its own element — and is kept so the two arrays index the same way.
+ *
+ * **The size is a fact about the game, not a ranking of it.** Seven cards of
+ * identical weight was the flat thing this screen was: a grid of interchangeable
+ * tiles says every round is the same round, and they are not. The three quizzes
+ * left over after the featured one genuinely *are* siblings — five questions, a
+ * clock per question, one mistake allowed, differing only in what is asked — so
+ * they read as one set of three small tiles. Squawk's Flight and Memory Match
+ * each bring their own board and their own loop, so each gets a half-width
+ * poster. Word Builder gets the full width because it is the only card carrying
+ * a **control**: the list it is teaching is chosen here, before the round, and a
+ * segmented picker crushed into a third of a row is the thing that breaks first.
+ *
+ * Nothing here is per-player. A layout that reshuffled itself by what you had
+ * played would move the card you were reaching for, which is the one thing a
+ * grid of buttons must never do.
+ */
+const PLAY_SIZES = ['lg', 'sm', 'sm', 'sm', 'md', 'md', 'lg'] as const;
+
 /** The game the screen leads with — the first row of `GAMES`, the general quiz. */
 const FEATURED = 0;
 
@@ -114,11 +154,44 @@ function nextTier(points: number): number {
 }
 
 /**
+ * How far the tank is through the unit it is currently earning, plus the two
+ * times a CSS animation needs to finish the job without React.
+ *
+ * The fraction is what the gauge is *at*; `span` and `into` are what let it
+ * keep moving between renders. A bar that only advances when React re-renders
+ * would step once a minute and read as broken; a bar driven by a per-frame
+ * timer would be exactly the thing the root `CLAUDE.md` forbids. Handing CSS a
+ * duration and a **negative delay** gets a genuinely live gauge for one
+ * declaration and no JavaScript at all — the animation is simply already
+ * partway through when it starts, and each re-render re-syncs it.
+ *
+ * Derived from `nextAt` rather than by asking `energyOf` again: the remainder of
+ * its division is exactly this, and computing the count and the wait apart is
+ * how the two come to disagree — see the note on `energyOf` itself.
+ *
+ * A backgrounded tab freezes the document timeline and the animation with it,
+ * so a bar left running behind another window comes back a few minutes short.
+ * Nothing extra is needed for that: the minute beat below re-renders, the delay
+ * is written again, and the animation re-syncs to the real clock. Which is also
+ * the answer to a laptop lid closed for a week.
+ */
+function chargeOf(nextAt: number, now: number): { span: number; into: number; at: number } {
+  const span = ENERGY_REGEN_MINUTES * 60_000;
+  /* Clamped both ways: a clock dragged backwards must not run the bar past its
+     own cell, and a `nextAt` already in the past is a full cell, not a negative
+     one. */
+  const left = Math.max(0, Math.min(span, nextAt - now));
+  return { span, into: span - left, at: (span - left) / span };
+}
+
+/**
  * "in 3 hours", in the reader's own language.
  *
  * A tank that fills on a clock has to say when, or it is a wait with no end on
- * it — which is the one way a lives system reads as broken rather than as a
- * cost. The pips say how many; this says how long.
+ * it — which is the one way an energy system reads as broken rather than as a
+ * cost. The pips say how many; this says how long. It matters more now that
+ * every round spends one: an empty tank is a state every player reaches, not
+ * only the one losing.
  *
  * The words come from `Intl` rather than from a dictionary key, and this is the
  * one place in the site where that is the *better* owner. A duration belongs to
@@ -132,9 +205,9 @@ function nextTier(points: number): number {
  * One unit, never two. "in 3 hours 12 minutes" is a stopwatch; what a player
  * wants off this line is whether to wait or to go and do something else.
  */
-function untilNextLife(at: number, now: number, language: LanguageCode): string {
+function untilNextEnergy(at: number, now: number, language: LanguageCode): string {
   const rtf = new Intl.RelativeTimeFormat(language, { numeric: 'always' });
-  /* Never "in 0 minutes": a life forty seconds away is still a minute away to a
+  /* Never "in 0 minutes": energy forty seconds away is still a minute away to a
      line that counts in minutes, and rounding it to nothing would show the wait
      as over while the button is still disabled. */
   const minutes = Math.max(1, Math.ceil((at - now) / 60_000));
@@ -272,7 +345,7 @@ function Round({
         <i style={{ width: `${pct}%` }} />
       </div>
 
-      <div className="round-hearts" aria-label={copy.lives}>
+      <div className="round-hearts" aria-label={copy.roundMistakes}>
         {Array.from({ length: game.allowedMistakes + 1 }, (_, i) => (
           <span key={i} data-spent={i < state.wrong ? 'true' : undefined}>
             ♥
@@ -329,8 +402,6 @@ function Result({
   correct,
   total,
   points,
-  scored,
-  round,
   balance,
   streak,
   scoreLine,
@@ -341,20 +412,19 @@ function Result({
   won: boolean;
   correct: number;
   total: number;
-  /** What the round **banked**, after the day's curve. The headline figure. */
+  /** What the round paid. The headline figure. */
   points: number;
-  /** What it **scored**, before it. Equal to `points` on a first round. */
-  scored: number;
-  /** Which round of this game today this was — 1 for the first. */
-  round: number;
   /** The balance *after* the round, for the line about what it is worth. */
   balance: number;
   streak: number;
   /** Replaces the "n / m correct" line for a round that does not ask questions. */
   scoreLine?: string;
-  /** False when the tank is empty. `start` refuses on no lives, so without this
+  /** False when the tank is empty. `start` refuses on no energy, so without this
    *  the one button on the card that a player is certain to press did nothing
-   *  at all and gave no reason — the two start buttons already say `noLives`. */
+   *  at all and gave no reason — the two start buttons already say `noEnergy`.
+   *  It fires far more often now: the round that just finished spent one
+   *  whether it was won or lost, so "Again" is the press that finds the tank
+   *  empty. */
   canAgain: boolean;
   onAgain: () => void;
   onBack: () => void;
@@ -370,20 +440,6 @@ function Result({
    * so it is on every result card rather than only on the good ones.
    */
   const short = Math.max(0, CHEAPEST_VOUCHER - balance);
-
-  /*
-   * Whether the day's curve took anything, and therefore whether the card owes
-   * the player an explanation.
-   *
-   * It always does when it did. The same round, answered the same way, pays 10
-   * and then 6 and then 4 — and with nothing but the figure on screen that
-   * reads as the game being broken rather than as a rule anybody agreed to. The
-   * fifth round is the case that forces it: it pays nothing, and `resultNone`
-   * below says "no points this round", which a player who got all five right
-   * would read as an accusation. Two branches, because they are two different
-   * pieces of news.
-   */
-  const decayed = scored > points;
 
   return (
     <div className="round round-result">
@@ -408,24 +464,12 @@ function Result({
       <p className="result-score">
         {scoreLine ?? fill(copy.resultScore, { correct: String(correct), total: String(total) })}
       </p>
-      {/* Only a round that needs explaining says anything in words. `resultPoints`
-          restated the figure directly above it, which was fine as a line of body
-          copy and is noise under a 4.5rem one.
-
-          `.result-points` rather than a class of its own: this is the same
-          component doing the same job — the note under the figure that says why
-          the figure is what it is — and the sheet has one style for it. */}
-      {decayed ? (
-        <p className="result-points">
-          {fill(points === 0 ? copy.resultDecayNone : copy.resultDecay, {
-            n: String(round),
-            scored: String(scored),
-            points: String(points),
-          })}
-        </p>
-      ) : (
-        points === 0 && <p className="result-points">{copy.resultNone}</p>
-      )}
+      {/* Only a round that needs explaining says anything in words, and with the
+          repeat-play taper gone there is exactly one such round left: the one
+          that paid nothing. `resultPoints` used to restate the figure directly
+          above it, which was fine as a line of body copy and is noise under a
+          4.5rem one. */}
+      {points === 0 && <p className="result-points">{copy.resultNone}</p>}
       <p className="result-toward">
         {short > 0
           ? fill(copy.resultToward, { points: String(short) })
@@ -440,15 +484,18 @@ function Result({
           disabled={!canAgain}
           onClick={onAgain}
         >
-          {canAgain ? copy.again : copy.noLives}
+          {canAgain ? copy.again : copy.noEnergy}
         </button>
         <a className="btn btn-ghost" href={PATHS.vouchers}>
           {copy.resultSpend}
         </a>
-        <button type="button" className="btn btn-ghost" onClick={onBack}>
-          {copy.backToGames}
-        </button>
       </div>
+      {/* Three filled-and-outlined buttons in a row is three offers of equal
+          weight, and they are not: one is what you came to do, one is what the
+          points are for, and one is a way back. The way back is a link. */}
+      <button type="button" className="link-btn result-back" onClick={onBack}>
+        {copy.backToGames}
+      </button>
     </div>
   );
 }
@@ -548,12 +595,8 @@ export function GamesApp() {
   const [result, setResult] = useState<{
     won: boolean;
     correct: number;
-    /** Banked, after the day's curve. */
+    /** What the round paid. */
     points: number;
-    /** Scored, before it — the card compares the two. */
-    scored: number;
-    /** Which round of that game today it was. */
-    round: number;
     balance: number;
   } | null>(null);
 
@@ -564,17 +607,20 @@ export function GamesApp() {
   const player = account?.player;
 
   /*
-   * The tank, derived on every render rather than stored — `livesOf` in
+   * The tank, derived on every render rather than stored — `energyOf` in
    * `player.ts` carries the reasoning. Read here, above the early return
    * below, because the timer that watches it is a hook and hooks cannot sit
    * under a conditional.
    */
-  const tank = player ? livesOf(player) : null;
-  const lives = tank?.count ?? 0;
-  const nextLifeAt = tank?.nextAt ?? null;
+  const tank = player ? energyOf(player) : null;
+  const energy = tank?.count ?? 0;
+  const nextEnergyAt = tank?.nextAt ?? null;
+  /* The cell in the gauge that is currently filling. `null` on a full tank,
+     which is the one state with nothing to draw. */
+  const charge = nextEnergyAt === null ? null : chargeOf(nextEnergyAt, Date.now());
 
   /*
-   * Wake the screen when a life lands, and once a minute until it does.
+   * Wake the screen when energy lands, and once a minute until it does.
    *
    * Nothing is *written* here and nothing needs to be: the tank is a division
    * against the clock, so the only thing a timer has to do is cause a render.
@@ -589,15 +635,15 @@ export function GamesApp() {
    */
   const [beat, setBeat] = useState(0);
   useEffect(() => {
-    if (playing || nextLifeAt === null) return;
-    const wait = Math.max(500, Math.min(60_000, nextLifeAt - Date.now()));
+    if (playing || nextEnergyAt === null) return;
+    const wait = Math.max(500, Math.min(60_000, nextEnergyAt - Date.now()));
     const id = window.setTimeout(() => setBeat((n) => n + 1), wait);
     return () => window.clearTimeout(id);
     /* `beat` is the dependency that makes this reschedule: the effect re-runs
        because the tick changed it, not because the parent re-rendered — which
        is what stops an unrelated render from postponing the next one for ever,
        the same trap the `done` ref in `Round` above sidesteps. */
-  }, [playing, nextLifeAt, beat]);
+  }, [playing, nextEnergyAt, beat]);
 
   /*
    * Re-run the reveal scan whenever this screen swaps what it is showing.
@@ -633,7 +679,7 @@ export function GamesApp() {
    */
   const start = (id: GameId) => {
     const chosen = GAMES.find((g) => g.id === id);
-    if (!chosen || lives <= 0 || loading) return;
+    if (!chosen || energy <= 0 || loading) return;
 
     setResult(null);
 
@@ -684,33 +730,22 @@ export function GamesApp() {
   /**
    * Bank a finished round and show the card. One path for all seven.
    *
-   * The award arrives priced at what it **scored**; what it **banks** is that
-   * through the day's curve, and the card is handed both because they are two
-   * different things to say. `bankedPoints` is asked for the second rather than
-   * this file multiplying it out again: it used to compute `correct × perCorrect`
-   * for the figure on the card while `awardRound` computed the balance, which is
-   * the duplicate `player.ts` warns about at `bankedPoints` — and it is now wrong
-   * twice over, missing the clean-sweep bonus and missing the curve.
+   * `award.points` is the whole story now. There were two figures here — what a
+   * round *scored* and what the day's curve let it *bank* — and the card
+   * existed partly to explain the gap between them. The curve is gone: energy
+   * is spent by every finished round and is the only limiter left, so a round
+   * pays what it scored and the card has one number to show.
    *
-   * One `now` for all three calls, because each of them defaults to a fresh
-   * `new Date()`. Three of those either side of midnight would price the round
-   * against one day, count it against the next, and report a third figure to
-   * the player.
+   * The `now` is still built once and passed in, because `awardPoints` defaults
+   * to a fresh `new Date()` and the streak arithmetic is day-boundary work.
    */
   const bank = (award: Award, correct: number) => {
-    const now = new Date();
-    /* Read *before* the round is counted, so the first round of a day reports
-       itself as round 1 rather than as round 2. */
-    const before = roundsToday(player, award.game, today(now));
-    const points = bankedPoints(player, award, now);
-    const next = awardPoints(player, award, now);
+    const next = awardPoints(player, award, new Date());
     setPlayer(next);
     setResult({
       won: award.won,
       correct,
-      points,
-      scored: award.points,
-      round: before + 1,
+      points: award.points,
       balance: next.points,
     });
   };
@@ -763,54 +798,146 @@ export function GamesApp() {
           </div>
 
           {/*
-            ── the points panel ──
+            ── the deck ──
 
-            The balance, what it is short of, and the bar between the two, in
-            one object that is itself the link to spending it. The old screen
-            opened with four equal figures in a box and a separate strip
-            underneath saying "redeem"; a player reading that had to assemble
-            "I have 340, a voucher is 400, so the button is for me" out of three
-            places. Here it is one sentence and one bar.
+            The two things a player arrives holding, side by side and at the
+            size of the decisions they drive: what the balance is worth, and how
+            many rounds are left in the tank.
+
+            They are one row rather than two because they answer one question
+            between them. The balance says whether it is worth playing; the
+            energy says whether it is *possible* to. A player who reads the
+            first and not the second presses a Play button that is disabled and
+            is told "out of lives" by a card that cannot say when they come
+            back — which is what this screen did, with the whole economy of the
+            page rendered as three 15px hearts in a strip of four readings.
           */}
-          <a className="play-hero" href={PATHS.vouchers} data-reveal>
-            <span className="play-hero-glow" aria-hidden />
-            <div className="play-hero-main">
-              <span className="play-hero-kicker">
-                <i>
-                  <Icon name="coin" size={13} strokeWidth={2} />
-                </i>
-                {games.pointsKicker}
+          <div className="play-deck">
+            <a className="play-hero" href={PATHS.vouchers} data-reveal>
+              <span className="play-hero-glow" aria-hidden />
+              <div className="play-hero-main">
+                <span className="play-hero-kicker">
+                  <i>
+                    <Icon name="coin" size={13} strokeWidth={2} />
+                  </i>
+                  {games.pointsKicker}
+                </span>
+                <p className="play-hero-line">
+                  <b>{fill(games.pointsUnit, { points: String(player.points) })}</b>
+                  <span aria-hidden> · </span>
+                  {short > 0
+                    ? fill(games.pointsGoal, { points: String(short) })
+                    : games.pointsHave}
+                </p>
+                <div className="play-hero-bar">
+                  <i style={{ width: `${pct}%` }} />
+                </div>
+                <div className="play-hero-scale">
+                  <span>{player.points}</span>
+                  <span>{fill(games.pointsTarget, { points: String(target) })}</span>
+                </div>
+              </div>
+              <span className="play-hero-cta">
+                {games.redeemTitle}
+                <Icon name="arrow" size={16} strokeWidth={2.4} />
               </span>
-              <p className="play-hero-line">
-                <b>{fill(games.pointsUnit, { points: String(player.points) })}</b>
-                <span aria-hidden> · </span>
-                {short > 0
-                  ? fill(games.pointsGoal, { points: String(short) })
-                  : games.pointsHave}
+            </a>
+
+            {/*
+              ── the energy gauge ──
+
+              Three cells, the count above them, and the one sentence that makes a
+              wait a wait rather than a fault: when the next one lands.
+
+              It is a *reading*, not a control — nothing here is pressable, and
+              that is why it is a `<section>` and not the link its neighbour is.
+              The cells carry the state twice on purpose: `data-state` paints
+              them, and the `aria-label` on the row says "2/3" for anyone who is
+              not looking at paint. The count above is the same figure a third
+              time, at the size that lets it be read from across the room, which
+              is the whole difference between this and the pips it replaces.
+
+              The middle cell fills *live*, against the real clock, and it does it
+              in CSS — see `chargeOf`. Nothing here re-renders to move it.
+            */}
+            <section
+              className="play-energy"
+              data-empty={energy === 0 ? 'true' : undefined}
+              data-reveal
+            >
+              <span className="play-energy-glow" aria-hidden />
+              <span className="play-energy-kicker">
+                <i>
+                  <Icon name="spark" size={13} strokeWidth={2} />
+                </i>
+                {games.energy}
+              </span>
+
+              <p className="play-energy-count">
+                <b>{energy}</b>
+                <span aria-hidden>/{MAX_ENERGY}</span>
               </p>
-              <div className="play-hero-bar">
-                <i style={{ width: `${pct}%` }} />
+
+              <div
+                className="play-energy-cells"
+                role="img"
+                aria-label={`${energy}/${MAX_ENERGY}`}
+              >
+                {Array.from({ length: MAX_ENERGY }, (_, i) => {
+                  const charging = i === energy && charge !== null;
+                  return (
+                    <span
+                      key={i}
+                      data-state={i < energy ? 'full' : charging ? 'charging' : 'empty'}
+                    >
+                      {charging && (
+                        <i
+                          style={
+                            {
+                              '--charge': charge.at,
+                              '--charge-span': `${charge.span}ms`,
+                              '--charge-delay': `-${charge.into}ms`,
+                            } as CSSProperties
+                          }
+                        />
+                      )}
+                    </span>
+                  );
+                })}
               </div>
-              <div className="play-hero-scale">
-                <span>{player.points}</span>
-                <span>{fill(games.pointsTarget, { points: String(target) })}</span>
-              </div>
-            </div>
-            <span className="play-hero-cta">
-              {games.redeemTitle}
-              <Icon name="arrow" size={16} strokeWidth={2.4} />
-            </span>
-          </a>
+
+              {/* An empty tank says so in words before it says when. The
+                  countdown alone answers a question a player who has just been
+                  refused a round has not asked yet. */}
+              {energy === 0 && <p className="play-energy-out">{games.noEnergy}</p>}
+
+              <p className="play-energy-line">
+                {nextEnergyAt === null
+                  ? games.energyFull
+                  : `+1 ${untilNextEnergy(nextEnergyAt, Date.now(), language)}`}
+              </p>
+              <p className="play-energy-cost">{games.energyCost}</p>
+            </section>
+          </div>
 
           {/*
             ── the stats strip ──
 
-            One line of the four readings a player checks constantly, and a
-            disclosure for the four they do not. Freezes stay in the top line
-            next to the streak they protect, because the whole point of a freeze
-            is knowing you have one *before* the day you need it. Spending is
-            automatic (see `awardPoints`), so every figure here is a reading and
-            none of them is a control.
+            The readings a player checks constantly, and a disclosure for the
+            four they do not. Freezes stay in the top line next to the streak
+            they protect, because the whole point of a freeze is knowing you
+            have one *before* the day you need it. Spending is automatic (see
+            `awardPoints`), so every figure here is a reading and none of them
+            is a control.
+
+            **Energy is no longer one of them.** It was the fourth pill in this
+            row and it is the gauge in the deck above now: it is the only
+            reading here that decides whether the rest of the page works, and a
+            figure that gates every button on the screen cannot be the same size
+            as the count of questions you have ever answered. What is left in
+            the row are three readings that are genuinely glanceable — and they
+            fit the line without wrapping in five languages now that the pips
+            and their countdown have gone.
           */}
           <div className="play-strip" data-reveal>
             <div className="play-strip-row">
@@ -818,29 +945,6 @@ export function GamesApp() {
                 <Icon name="coin" size={15} />
                 <em>{games.streak}</em>
                 <b>{player.streak}</b>
-              </span>
-              <span className="play-stat">
-                <em>{games.lives}</em>
-                <b className="play-pips" aria-label={`${lives}/${MAX_LIVES}`}>
-                  {Array.from({ length: MAX_LIVES }, (_, i) => (
-                    <i key={i} data-spent={i >= lives ? 'true' : undefined}>
-                      ♥
-                    </i>
-                  ))}
-                </b>
-                {/*
-                  When the next one lands, next to the pips that are short of it
-                  and nowhere else — this is the only place on the screen that is
-                  always visible, in play and on the result card alike.
-
-                  A second `<em>`, which is the strip's own muted label style, so
-                  the line needs nothing added to `site.css`. The `+♥` is the
-                  label: a glyph rather than a word, because it has to read the
-                  same in five languages and the sentence around it is `Intl`'s.
-                */}
-                {nextLifeAt !== null && (
-                  <em>{`+♥ ${untilNextLife(nextLifeAt, Date.now(), language)}`}</em>
-                )}
               </span>
               <span className="play-stat">
                 <Icon name="freeze" size={15} />
@@ -910,8 +1014,6 @@ export function GamesApp() {
               correct={result.correct}
               total={game.questions}
               points={result.points}
-              scored={result.scored}
-              round={result.round}
               balance={result.balance}
               streak={player.streak}
               scoreLine={
@@ -926,7 +1028,7 @@ export function GamesApp() {
                         })
                       : undefined
               }
-              canAgain={lives > 0}
+              canAgain={energy > 0}
               onAgain={() => start(game.id)}
               onBack={() => {
                 setPlaying(null);
@@ -985,15 +1087,15 @@ export function GamesApp() {
                       <button
                         type="button"
                         className="btn btn-solid play-feature-cta"
-                        disabled={lives <= 0 || loading}
+                        disabled={energy <= 0 || loading}
                         onClick={() => start(entry.id)}
                       >
                         {loading
                           ? games.loading
-                          : lives > 0
+                          : energy > 0
                             ? games.start
-                            : games.noLives}
-                        {lives > 0 && !loading && (
+                            : games.noEnergy}
+                        {energy > 0 && !loading && (
                           <Icon name="arrow" size={16} strokeWidth={2.4} />
                         )}
                       </button>
@@ -1005,66 +1107,115 @@ export function GamesApp() {
                 );
               })()}
 
-              {/* ── the rest of the catalogue ── */}
+              {/*
+                ── the rest of the catalogue ──
+
+                Three sizes rather than six identical tiles — see `PLAY_SIZES`
+                for which game gets which and why. The size decides the
+                *composition*, not just the span: a small card stacks, a medium
+                one puts its framed icon beside the copy the way the poster
+                above does, and the wide one gives its picker a column of its
+                own. Six cards that differ only in their texture were still six
+                of the same object.
+
+                `--i` is the card's place in the row, and the sheet turns it
+                into a reveal delay — the grid arrives as a cascade rather than
+                as one block. `useReveal` already skips the whole thing under
+                `prefers-reduced-motion`.
+              */}
               <div className="play-grid">
                 {GAMES.map((entry, index) => {
                   if (index === FEATURED) return null;
                   const rules = rulesFor(entry, games);
+                  const size = PLAY_SIZES[index];
 
                   return (
                     <article
                       className="play-card"
                       key={entry.id}
+                      data-size={size}
                       data-texture={PLAY_TEXTURES[index]}
                       data-reveal
+                      style={{ '--i': index } as CSSProperties}
                     >
-                      <span className="play-ico">
-                        <Icon name={entry.icon} size={24} />
-                      </span>
-                      <b>{games.names[index]}</b>
-                      {rules.map((rule) => (
-                        <span className="play-rule" key={rule}>
-                          {rule}
-                        </span>
-                      ))}
-
-                      <span className="play-fill" aria-hidden />
-
-                      {/* Word Builder picks the language it is teaching, on the
-                          card, before the round starts — the choice belongs to
-                          the game rather than to the site's own switcher, which
-                          decides what you *read*, not what you are learning. */}
-                      {entry.kind === 'word' && (
-                        <div
-                          className="play-pick"
-                          role="group"
-                          aria-label={games.wordGame.list}
-                        >
-                          {(['pl', 'en'] as const).map((option) => (
-                            <button
-                              key={option}
-                              type="button"
-                              data-on={wordList === option ? 'true' : undefined}
-                              onClick={() => setWordList(option)}
-                            >
-                              {games.wordGame.lists[option]}
-                            </button>
-                          ))}
+                      <div className="play-card-main">
+                        <div className="play-card-head">
+                          <span className="play-ico">
+                            <Icon name={entry.icon} size={size === 'sm' ? 20 : 24} />
+                          </span>
+                          <b>{games.names[index]}</b>
                         </div>
-                      )}
 
-                      <button
-                        type="button"
-                        className="btn btn-solid play-start"
-                        disabled={lives <= 0 || loading}
-                        onClick={() => start(entry.id)}
-                      >
-                        {loading
-                          ? games.loading
-                          : lives > 0
-                            ? games.play
-                            : games.noLives}
-                      </button>
+                        {/* One line on a small tile, two on the others. The
+                            rules are the same pair either way — `rulesFor` is
+                            the only thing that says what a game is — but three
+                            tiles in a row are read by scanning down them, and a
+                            two-line block per tile turns that scan into
+                            reading. */}
+                        {size === 'sm' ? (
+                          <span className="play-rule">{rules.join(' · ')}</span>
+                        ) : (
+                          rules.map((rule) => (
+                            <span className="play-rule" key={rule}>
+                              {rule}
+                            </span>
+                          ))
+                        )}
+                      </div>
+
+                      {/* `.play-card-main` above takes the slack, which is what
+                          lines the buttons up along the bottom of a row of
+                          cards whose names wrap to different heights. */}
+                      <div className="play-card-side">
+                        {/* Word Builder picks the language it is teaching, on the
+                            card, before the round starts — the choice belongs to
+                            the game rather than to the site's own switcher, which
+                            decides what you *read*, not what you are learning.
+                            It is why this card is the wide one. */}
+                        {entry.kind === 'word' && (
+                          <div
+                            className="play-pick"
+                            role="group"
+                            aria-label={games.wordGame.list}
+                          >
+                            {(['pl', 'en'] as const).map((option) => (
+                              <button
+                                key={option}
+                                type="button"
+                                data-on={wordList === option ? 'true' : undefined}
+                                onClick={() => setWordList(option)}
+                              >
+                                {games.wordGame.lists[option]}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          className="btn btn-solid play-start"
+                          disabled={energy <= 0 || loading}
+                          onClick={() => start(entry.id)}
+                        >
+                          {loading
+                            ? games.loading
+                            : energy > 0
+                              ? games.play
+                              : games.noEnergy}
+                        </button>
+                      </div>
+
+                      {/* The glyph again, at poster size, on the two cards that
+                          have the room for it. It is the card's own icon rather
+                          than a second drawing, and it is drawn in the texture's
+                          own register — a mark on the surface, not an object on
+                          it — so a medium card reads as a place rather than as a
+                          taller tile. */}
+                      {size === 'md' && (
+                        <span className="play-mark" aria-hidden>
+                          <Icon name={entry.icon} size={112} strokeWidth={1} />
+                        </span>
+                      )}
                     </article>
                   );
                 })}

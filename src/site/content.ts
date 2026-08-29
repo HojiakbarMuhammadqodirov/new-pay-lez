@@ -14,7 +14,8 @@ import type {
   SpokenLanguage,
 } from './auth/business';
 import type { IconName } from './icons';
-import type { FxCode } from './i18n/fx';
+import type { Currency } from './i18n/currency';
+import { FX, type FxCode } from './i18n/fx';
 import { PATHS } from './router';
 
 /**
@@ -227,6 +228,196 @@ export const LEARN_VOUCHER_EUR = CHEAPEST_VOUCHER_CARD.eur;
 
 /** The card on Home's value section. Its face value comes off the shelf. */
 export const VALUE_CARD = { brand: 'zalando', logo: 'Z', eur: voucherCard('Zalando').eur };
+
+/* ─────────────────────────────────────────────────────── subscription ── */
+
+/*
+ * The consumer plans, and the four commitments the paid ones are sold on.
+ *
+ * Mirrored from the backend rather than composed for the page: `PLANS` in
+ * `server/domain/settings.ts` seeds Free / Pro / Premium with exactly these
+ * entitlements, and `TERM_LADDER` in `server/domain/entitlements.ts` sells the
+ * two paid tiers on exactly these four rungs at exactly these discounts. A
+ * marketing section promising a perk the entitlement table does not grant is
+ * the same class of failure as a hardcoded price: it reads fine right up until
+ * somebody pays for it.
+ *
+ * **There is no trial on any plan**, and that is a decision rather than an
+ * omission — `trialDays` is 0 on every seeded row, and `settleWithdrawnTrials`
+ * exists in that file to clear the subscriptions an earlier seed left sitting
+ * in `trialing`. Nothing here may print one back onto the page.
+ */
+
+/**
+ * What the backend charges per month, in złoty.
+ *
+ * The server prices in PLN (`plans.currency` is `'PLN'` on every row) and this
+ * site holds every amount in euros, so one of the two has to be converted — and
+ * it is this one, at the rate the whole building shares. Converting *here*
+ * rather than typing a euro figure is what pins the Polish column to the price
+ * a Polish customer is actually charged: 19.99 zł stays 19.99 zł across a
+ * rate-sheet update, because the euro amount is derived from it rather than the
+ * other way round. Every other language is then a conversion of a real price
+ * instead of a conversion of a rounding of one.
+ */
+const SUB_PLN_PER_MONTH = { pro: 19.99, premium: 39.99 };
+
+/** Złoty to the unit everything in this file is written in. */
+const eurFromPln = (pln: number): number => pln / FX.PLN.rate;
+
+/** Index-aligned with `copy.subscription.plans`, in the server's `rank` order. */
+export const SUB_PLANS: Array<{
+  id: 'free' | 'pro' | 'premium';
+  /** Monthly list price in euros. Zero on the plan that is not sold. */
+  eur: number;
+  /**
+   * Whether the plan is also sold on the commitment ladder.
+   *
+   * A property of the plan rather than a rule, exactly as it is on the server:
+   * `terms` is set on the two paid seeds and left off the free one, because a
+   * free tier has nothing to commit to.
+   */
+  terms: boolean;
+  icon: IconName;
+}> = [
+  { id: 'free', eur: 0, terms: false, icon: 'spark' },
+  { id: 'pro', eur: eurFromPln(SUB_PLN_PER_MONTH.pro), terms: true, icon: 'coin' },
+  { id: 'premium', eur: eurFromPln(SUB_PLN_PER_MONTH.premium), terms: true, icon: 'trophy' },
+];
+
+/** `TERM_LADDER`, verbatim. Basis points, because that is the column's unit. */
+export const SUB_TERMS: Array<{ months: number; discountBp: number }> = [
+  { months: 1, discountBp: 0 },
+  { months: 3, discountBp: 1000 },
+  { months: 6, discountBp: 1800 },
+  { months: 12, discountBp: 2500 },
+];
+
+/**
+ * The rung the picker opens on, and it is the last one.
+ *
+ * The year is the offer — a quarter off is the whole reason the ladder is on
+ * the page — so it is what the cards are priced at when the section is first
+ * read. Nothing is hidden by that: every card states the commitment and the
+ * amount actually charged for it under the monthly figure, which is the line
+ * that makes opening on the cheapest rung honest rather than sly.
+ */
+export const SUB_DEFAULT_TERM = SUB_TERMS.length - 1;
+
+/**
+ * A rung's price, in euros, snapped to the currency the reader is quoted in.
+ *
+ * This is `termPricing` in `server/domain/entitlements.ts` ported, and the
+ * order of operations is the whole of it: **the monthly figure is rounded and
+ * the total is derived from it**, never the other way round. The monthly price
+ * is what the card prints and what a reader compares plans by; the total is
+ * what would leave their account. Round the total instead and the per-month
+ * figure stops multiplying up — "16.39 a month" beside a charge of 98.35 is the
+ * few-grosze disagreement nobody can explain at the counter.
+ *
+ * The rounding has to happen in the **reader's** currency, because that is
+ * where the minor unit is. A euro amount rounded to euro cents is 4.65 in every
+ * language and converts to 19.98 zł, a grosz under the price the server would
+ * charge; snapping in local units and handing the result back as euros gets
+ * 19.99 / 17.99 / 16.39 / 14.99 exactly, which is the ladder the backend
+ * seeded. The round trip through the rate is what keeps `useMoney(…, 'unit')`
+ * the only thing in the building that ever writes a currency symbol.
+ *
+ * `'unit'` and not `'price'`, at the call site: `price` snaps to the currency's
+ * shelf step, and a step of 5 turns £3.99 / £3.59 / £3.27 / £2.99 into £5 four
+ * times over. The ladder is the one thing on the card that cannot survive that
+ * mode — see the note on `MoneyRound` in `i18n/currency.ts`, which is about
+ * exactly this failure one screen over.
+ */
+export function subTermPrice(
+  eurPerMonth: number,
+  months: number,
+  discountBp: number,
+  currency: Currency,
+): { perMonth: number; total: number } {
+  const discounted = (eurPerMonth * (10_000 - discountBp)) / 10_000;
+  const local = Number((discounted * currency.rate).toFixed(currency.decimals));
+  const snapped = local / currency.rate;
+  return { perMonth: snapped, total: snapped * months };
+}
+
+/**
+ * `null` is "no ceiling".
+ *
+ * The server writes 9999 into `plan_entitlements` for `assistant_uses_per_day`
+ * and `streak_freezes` on Premium, because that column holds text and every
+ * caller compares against a number — the sentinel is honest about being a
+ * bound. A card cannot print a sentinel, so here it is the absence of one and
+ * the page writes the word.
+ */
+export type SubValue = number | null;
+
+/**
+ * How a row's three values are written.
+ *
+ * - `number` — a bare figure, with the unit carried by the row's *label* so
+ *   that "days" and "hours" stay translatable copy rather than a suffix typed
+ *   into a component. **Zero renders as the nothing-mark**, because no hours of
+ *   head start and no points credited are the absence of a perk rather than a
+ *   quantity of it.
+ * - `multiplier` — the same, written against `×`, which is a symbol and not a
+ *   word in any of the five languages.
+ * - `flag` — has it or does not.
+ * - `badge` — 0 is none; 1 and 2 index `copy.subscription.badges`, which is the
+ *   one row whose value is a word.
+ */
+export type SubRowKind = 'number' | 'multiplier' | 'flag' | 'badge';
+
+/**
+ * The entitlement table, one row per key, index-aligned with
+ * `copy.subscription.rows` — and the three values are index-aligned with
+ * `SUB_PLANS`, so a row is read straight across.
+ *
+ * Every figure is the seeded one. The order runs from the loop a player is
+ * actually in (energy, what it refills at, what a round pays) outward to what a
+ * plan adds around it, because the first three are the difference somebody
+ * feels on the first evening and the rest is the difference they feel in a
+ * month.
+ */
+export const SUB_ROWS: Array<{ kind: SubRowKind; values: [SubValue, SubValue, SubValue] }> = [
+  /* `daily_energy` — finished rounds a day from a full tank. */
+  { kind: 'number', values: [3, 5, 7] },
+  /* `energy_regen_minutes`, in hours: 240 / 180 / 120. A faster refill is worth
+     more than a bigger pool to the player who empties it at nine in the
+     morning, which is what the server's own note says it is for. */
+  { kind: 'number', values: [4, 3, 2] },
+  /* `points_multiplier`. **Game rounds only** — the venue lines are their own
+     per-tier figures on the server, and multiplying those as well would pay a
+     paid plan twice for one visit. The row's label has to say so. */
+  { kind: 'multiplier', values: [1, 1.25, 1.75] },
+  /* `voucher_validity_days`. */
+  { kind: 'number', values: [14, 30, 60] },
+  /* `word_hints_per_day`. Ten and not the sentinel: a hint per word is five a
+     round, so the top of this one is a number a card can print. */
+  { kind: 'number', values: [3, 6, 10] },
+  /* `assistant_uses_per_day`. The one consumer key whose ceiling is a running
+     cost rather than a design choice — a model call and a retrieval pass per
+     ask. */
+  { kind: 'number', values: [5, 20, null] },
+  /* `streak_freezes`. */
+  { kind: 'number', values: [2, 5, null] },
+  /* `exclusive_deals`. */
+  { kind: 'flag', values: [0, 1, 1] },
+  /* `deal_early_access_hours`. Zero on two tiers, which is why a `number` row
+     writes zero as nothing: "0" in a column of hours reads as a broken figure. */
+  { kind: 'number', values: [0, 0, 24] },
+  /* `gift_card_priority`. */
+  { kind: 'flag', values: [0, 1, 1] },
+  /* `monthly_stipend`, from `CONFIG.earn.premiumStipend`. It is deliberately
+     worth clearly less than the plan costs; a credit that covered the fee would
+     be a subscription that refunds itself. */
+  { kind: 'number', values: [0, 0, 200] },
+  /* `priority_support`. */
+  { kind: 'flag', values: [0, 0, 1] },
+  /* `profile_badge` — '', 'star', 'crown'. The mark beside your name on the
+     board, and the only row here whose value is a word. */
+  { kind: 'badge', values: [0, 1, 2] },
+];
 
 /**
  * Where the footer's two columns go, index-aligned with

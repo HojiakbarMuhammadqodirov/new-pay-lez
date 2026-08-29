@@ -52,24 +52,95 @@ import { PATHS } from './router';
  * of those rules is one a player will otherwise learn by being wrong at a
  * counter. So: three sections, and each states its own rule under its heading.
  *
- * ── the layout is the one thing that is not the app's ────────────────────
+ * ── the card is the app's; the layout is not ─────────────────────────────
  *
- * The phone puts all of it in a single scroll and explicitly refuses a
- * segmented control — "a tab would hide two thirds of what somebody opened the
- * wallet to check". That argument is about *hiding*, not about scrolling, and
- * it survives the move to a wide screen intact: nothing here is behind a tab
- * that is not already visible somewhere else on the page. What changes is that
- * a desktop can put the deals and the stamp cards side by side instead of a
- * screen apart, so the two are one glance rather than two.
+ * What a holding *looks like* is ported from the app's deals screen
+ * (`lib/screens/deals_screen.dart`, `_DealCard`), which is the richest card in
+ * the product: a clipped 24px shell, a band across the top carrying the card's
+ * subject, a status pill sitting on that band, then the name, a line of accent
+ * copy, a line of muted copy, and a 44px pill of an action. All three holdings
+ * here are built out of that one grammar — see `.wal-band` in `site.css` for
+ * what stands in for the band's photograph, and what each card puts on its
+ * plate.
+ *
+ * The *layout* is the one thing that is not the app's. The phone puts all of it
+ * in a single scroll and explicitly refuses a segmented control — "a tab would
+ * hide two thirds of what somebody opened the wallet to check". That argument
+ * is about *hiding*, not about scrolling, and it survives the move to a wide
+ * screen intact: nothing here is behind a tab that is not already visible
+ * somewhere else on the page. What changes is that a desktop can put the deals
+ * and the stamp cards side by side instead of a screen apart, so the two are
+ * one glance rather than two.
  */
+
+/*
+ * ── strings ──
+ *
+ * There are none. Every word on this screen comes out of `copy.wallet`, and the
+ * redesign was written against that dictionary rather than around it: the two
+ * keys the old layout never rendered — `deals.held` ("In your wallet") and
+ * `deals.free` ("Free to claim") — are exactly the status pill and the accent
+ * line the app's card wants, in all five languages already. If a slot on a card
+ * had no key it was left empty rather than filled with English, which is what
+ * the app's own card does when a line has nothing to say.
+ */
+
+/**
+ * The band textures, cycled by position.
+ *
+ * The app's card leads with a **photograph**, and the photograph is doing work a
+ * decoration would not: it is how six cards in a column stop being the same card
+ * six times. There are no photographs here — nothing in `src/` ships an image
+ * asset, and a CDN placeholder is a third-party runtime request — so the band
+ * carries the card's own subject at plate size instead, over a repeating pattern
+ * drawn from `--accent-rgb`.
+ *
+ * That is the same substitution `PLAY_TEXTURES` makes for the Play mock's six
+ * hues, and it is index-aligned the same way. Modulo rather than a fixed length,
+ * because a player can hold any number of stamp cards and gift cards; the names
+ * are the same seven as L-Earn's so the vocabulary is one.
+ */
+const WAL_TEXTURES = ['dots', 'stripe', 'orbit', 'weave', 'chevron', 'grid', 'hatch'] as const;
+
+const textureAt = (index: number): string => WAL_TEXTURES[index % WAL_TEXTURES.length];
+
+/**
+ * The status pill that sits on the band — the app's `_DealPill`.
+ *
+ * `live` is the pulsing 6px dot, and it means **takeable now**: an offer still
+ * on the board, a card with a reward waiting at the counter, a voucher that has
+ * not been spent. The app's dot means "open now" and reads it off the venue's
+ * published week; nothing on this page carries a week, and deriving one from a
+ * `DD.MM` with no year would be a guess dressed as a fact. So the dot says the
+ * one thing this page actually knows, and the label beside it says which.
+ */
+function BandPill({ text, live }: { text: string; live: boolean }) {
+  return (
+    <span className="wal-pill" data-live={live ? 'true' : undefined}>
+      {live && <i aria-hidden />}
+      {text}
+    </span>
+  );
+}
 
 /* ────────────────────────────────────────────────────────────── gift card ── */
 
+/**
+ * A gift card in the wallet.
+ *
+ * The plate is the **face value**, because that is what the object is: a fixed
+ * amount at a named brand. It is `money(voucher.eur)` like every other amount on
+ * the site — euros in the model, converted on the way out — so a Polish reader
+ * sees złoty on the plate and the catalogue below quotes the same card in the
+ * same currency.
+ */
 function GiftCardRow({
   voucher,
+  texture,
   onShow,
 }: {
   voucher: OwnedVoucher;
+  texture: string;
   onShow: (id: string) => void;
 }) {
   const copy = useCopy().wallet;
@@ -78,31 +149,39 @@ function GiftCardRow({
 
   return (
     <article className="wcard" data-spent={spent ? 'true' : undefined} data-reveal>
-      <span className="pv-logo" aria-hidden>
-        {voucher.logo}
-      </span>
-
-      <div className="wcard-tx">
-        <b>{voucher.brand}</b>
-        <span>{money(voucher.eur)}</span>
-        <span className="wcard-when">
-          {spent
-            ? fill(copy.usedOn, { date: voucher.usedOn! })
-            : fill(copy.valid, { date: voucher.expires })}
-        </span>
+      <div className="wal-band" data-texture={texture}>
+        <div className="wal-band-top">
+          <span className="pv-logo" aria-hidden>
+            {voucher.logo}
+          </span>
+          <BandPill
+            live={!spent}
+            text={
+              spent
+                ? fill(copy.usedOn, { date: voucher.usedOn! })
+                : fill(copy.valid, { date: voucher.expires })
+            }
+          />
+        </div>
+        <span className="wal-fig">{money(voucher.eur)}</span>
       </div>
 
-      <div className="wcard-act">
-        <span className="wcard-cost">{fill(copy.cost, { n: String(voucher.points) })}</span>
-        {spent ? (
-          /* The code stays visible once spent — it is the receipt, and the till
-             may still want to see it. */
-          <span className="wcard-code">{voucher.code}</span>
-        ) : (
-          <button type="button" className="btn btn-solid wcard-show" onClick={() => onShow(voucher.id)}>
-            {copy.show}
-          </button>
-        )}
+      <div className="wal-body">
+        <b className="wal-name">{voucher.brand}</b>
+        <span className="wal-meta">{fill(copy.cost, { n: String(voucher.points) })}</span>
+
+        <div className="wal-act">
+          {spent ? (
+            /* The code stays visible once spent — it is the receipt, and the till
+               may still want to see it. */
+            <span className="wcard-code">{voucher.code}</span>
+          ) : (
+            <button type="button" className="btn btn-solid wal-cta" onClick={() => onShow(voucher.id)}>
+              <Icon name="qr" size={15} />
+              {copy.show}
+            </button>
+          )}
+        </div>
       </div>
     </article>
   );
@@ -119,11 +198,24 @@ function GiftCardRow({
  * the branch count — **three states, not two**. A card with no visits on it
  * reads differently from one in progress, and it is the state every card starts
  * in, so "0 of 6" on its own is the least useful thing the card could say.
+ *
+ * The slots are what goes on the plate. They are the one holding whose subject
+ * is already a picture, so the band does not need a figure invented for it —
+ * where a deal puts its offer and a gift card puts its face value, this puts the
+ * row of discs, and the count moves up into the pill beside them.
  */
 /* No reach wiring here on purpose: `card.id` is a *stamp card*, not the venue
    it belongs to, and nothing on this row carries a venue id to report against.
    Inventing one would put another venue's impressions in somebody's funnel. */
-function StampRow({ card, onVisit }: { card: StampCard; onVisit: (id: string) => void }) {
+function StampRow({
+  card,
+  texture,
+  onVisit,
+}: {
+  card: StampCard;
+  texture: string;
+  onVisit: (id: string) => void;
+}) {
   const copy = useCopy().wallet;
   const full = isCardFull(card);
   const left = stampsLeft(card);
@@ -138,59 +230,96 @@ function StampRow({ card, onVisit }: { card: StampCard; onVisit: (id: string) =>
 
   return (
     <article className="wal-stamp" data-full={full ? 'true' : undefined} data-reveal>
-      <div className="wal-stamp-head">
-        <span className="pv-logo" aria-hidden>
-          {card.logo}
-        </span>
-        <div>
-          <b>{card.venue}</b>
-          <span>{fill(copy.stamps.progress, { done: String(card.stamps), of: String(card.required) })}</span>
+      <div className="wal-band" data-texture={texture}>
+        <div className="wal-band-top">
+          <span className="pv-logo" aria-hidden>
+            {card.logo}
+          </span>
+          {/* The dot fires on a full card and on nothing else. That is the one
+              state on this page that is an *event* rather than a status — there
+              is something waiting at a counter. */}
+          <BandPill
+            live={full}
+            text={fill(copy.stamps.progress, {
+              done: String(card.stamps),
+              of: String(card.required),
+            })}
+          />
         </div>
-        {/* Only on a card that has been round at least once. On a first card it
-            would be "filled 0× before", which is a sentence about nothing. */}
-        {card.cycles > 0 && (
-          <span className="wal-cycles">{fill(copy.stamps.cycles, { n: String(card.cycles) })}</span>
-        )}
+
+        {/*
+          The slots. `aria-hidden` with the count in the pill above doing the
+          work for a screen reader: a row of discs is a picture of a number that
+          is already written out beside it, and reading it out as a list of eight
+          items is worse than not reading it at all.
+        */}
+        <div className="wal-slots" aria-hidden>
+          {Array.from({ length: card.required }, (_, i) => (
+            <span key={i} data-on={i < card.stamps ? 'true' : undefined} />
+          ))}
+        </div>
       </div>
 
-      {/*
-        The slots. `aria-hidden` with the count in the heading above doing the
-        work for a screen reader: a row of discs is a picture of a number that
-        is already written out two lines up, and reading it out as a list of
-        eight items is worse than not reading it at all.
-      */}
-      <div className="wal-slots" aria-hidden>
-        {Array.from({ length: card.required }, (_, i) => (
-          <span key={i} data-on={i < card.stamps ? 'true' : undefined} />
-        ))}
+      <div className="wal-body">
+        <div className="wal-name-row">
+          <b className="wal-name">{card.venue}</b>
+          {/* Only on a card that has been round at least once. On a first card it
+              would be "filled 0× before", which is a sentence about nothing. */}
+          {card.cycles > 0 && (
+            <span className="wal-cycles">{fill(copy.stamps.cycles, { n: String(card.cycles) })}</span>
+          )}
+        </div>
+
+        <p className="wal-stamp-words">{words}</p>
+
+        {/*
+          A visit is added by scanning at the counter, which this page cannot do.
+          The button is here because the rule it demonstrates — a full card rolls
+          over into the next one rather than overflowing — is invisible without a
+          way to reach it, and it is the one thing about a stamp card somebody is
+          likely to get wrong.
+        */}
+        <div className="wal-act">
+          <button type="button" className="btn btn-ghost wal-cta" onClick={() => onVisit(card.id)}>
+            <Icon name="qr" size={15} />
+            {copy.stamps.visit}
+          </button>
+        </div>
       </div>
-
-      <p className="wal-stamp-words">{words}</p>
-
-      {/*
-        A visit is added by scanning at the counter, which this page cannot do.
-        The button is here because the rule it demonstrates — a full card rolls
-        over into the next one rather than overflowing — is invisible without a
-        way to reach it, and it is the one thing about a stamp card somebody is
-        likely to get wrong.
-      */}
-      <button type="button" className="btn btn-ghost wal-visit" onClick={() => onVisit(card.id)}>
-        <Icon name="qr" size={15} />
-        {copy.stamps.visit}
-      </button>
     </article>
   );
 }
 
 /* ──────────────────────────────────────────────────────────────── hot deal ── */
 
+/**
+ * A hot deal, in the app's own card.
+ *
+ * Every slot maps to one the app's `_DealCard` has, and nothing is said twice:
+ *
+ * - the **plate** is the offer — `2+1`, `20%`, `FREE` — which is what the
+ *   photograph is for on the phone, the thing you scan a column of cards for;
+ * - the **pill** is the window (`Until 15.09`), or `In your wallet` once it is
+ *   held. That is the app's pill exactly: a time status, with the live dot on
+ *   the ones still going;
+ * - the **accent line** is `Free to claim`, which is the offer's most notable
+ *   property and the only one of these that is not the price on the button. A
+ *   priced deal leaves the line empty rather than repeating its own button, the
+ *   way the app's card omits the offer line when the venue has already taken it;
+ *   a *held* deal replaces it with the date it was taken, because what an offer
+ *   costs stops being news once it has been paid;
+ * - the **action** is the claim, or — once held — the code, which is the thing
+ *   the till wants.
+ */
 function DealCard({
   deal,
+  texture,
   held,
   onClaim,
   afford,
 }: {
   deal: { id: string; venue: string; logo: string; badge: string; points: number; expires: string };
+  texture: string;
   held: ClaimedDeal | undefined;
   onClaim: () => void;
   afford: boolean;
@@ -203,47 +332,55 @@ function DealCard({
   const seen = useImpressionRef('deal', deal.id, 'wallet');
 
   return (
-    <article
-      ref={seen}
-      className="wal-deal"
-      data-held={held ? 'true' : undefined}
-      data-reveal
-    >
-      <div className="wal-deal-top">
-        <span className="pv-logo" aria-hidden>
-          {deal.logo}
-        </span>
-        <span className="wal-badge">{deal.badge}</span>
-      </div>
-      <b>{deal.venue}</b>
-      <span className="wal-deal-when">{fill(copy.deals.until, { date: deal.expires })}</span>
-
-      {held ? (
-        <>
-          <span className="wcard-code">{held.code}</span>
-          <span className="wal-deal-claimed">
-            {fill(copy.deals.claimed, { date: held.claimedOn })}
+    <article ref={seen} className="wal-deal" data-held={held ? 'true' : undefined} data-reveal>
+      <div className="wal-band" data-texture={texture}>
+        <div className="wal-band-top">
+          <span className="pv-logo" aria-hidden>
+            {deal.logo}
           </span>
-        </>
-      ) : (
-        <button
-          type="button"
-          className="btn btn-solid wal-deal-claim"
-          disabled={!afford}
-          /* An open, not a claim: a claim is written by the gate from a
-             confirmed scan and is deliberately not postable by a client. */
-          onClick={() => {
-            dealOpen(deal.id, 'wallet');
-            onClaim();
-          }}
-        >
-          {deal.points === 0
-            ? copy.deals.claim
-            : afford
-              ? `${copy.deals.claim} · ${fill(copy.cost, { n: String(deal.points) })}`
-              : copy.deals.short}
-        </button>
-      )}
+          <BandPill
+            live={!held}
+            text={held ? copy.deals.held : fill(copy.deals.until, { date: deal.expires })}
+          />
+        </div>
+        <span className="wal-fig">{deal.badge}</span>
+      </div>
+
+      <div className="wal-body">
+        <b className="wal-name">{deal.venue}</b>
+        {/* Only while it is still an offer. "Free to claim" on a deal already in
+            the wallet is a sentence in the wrong tense — what it cost is
+            settled, and what the card has to say now is when it was taken. */}
+        {held ? (
+          <span className="wal-meta">{fill(copy.deals.claimed, { date: held.claimedOn })}</span>
+        ) : (
+          deal.points === 0 && <span className="wal-offer">{copy.deals.free}</span>
+        )}
+
+        <div className="wal-act">
+          {held ? (
+            <span className="wcard-code">{held.code}</span>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-solid wal-cta"
+              disabled={!afford}
+              /* An open, not a claim: a claim is written by the gate from a
+                 confirmed scan and is deliberately not postable by a client. */
+              onClick={() => {
+                dealOpen(deal.id, 'wallet');
+                onClaim();
+              }}
+            >
+              {deal.points === 0
+                ? copy.deals.claim
+                : afford
+                  ? `${copy.deals.claim} · ${fill(copy.cost, { n: String(deal.points) })}`
+                  : copy.deals.short}
+            </button>
+          )}
+        </div>
+      </div>
     </article>
   );
 }
@@ -318,12 +455,13 @@ export function WalletApp() {
               </div>
 
               <div className="wal-deals">
-                {WALLET_DEALS.map((deal) => {
+                {WALLET_DEALS.map((deal, index) => {
                   const held = claimed.find((row) => row.id === deal.id);
                   return (
                     <DealCard
                       key={deal.id}
                       deal={deal}
+                      texture={textureAt(index)}
                       held={held}
                       afford={canAfford(player, deal.points)}
                       onClaim={() =>
@@ -354,10 +492,15 @@ export function WalletApp() {
                 </div>
               ) : (
                 <div className="wal-stamps">
-                  {cards.map((card) => (
+                  {cards.map((card, index) => (
                     <StampRow
                       key={card.id}
                       card={card}
+                      /* Offset so the first stamp card and the first deal do not
+                         land on the same pattern in the two columns beside each
+                         other. Any constant does; this one is the deal grid's
+                         row length. */
+                      texture={textureAt(index + 2)}
                       onVisit={(id) => setPlayer(stampVisit(player, id))}
                     />
                   ))}
@@ -397,16 +540,27 @@ export function WalletApp() {
             </div>
           ) : (
             <div className="wcards">
-              {shown.map((voucher) => (
-                <GiftCardRow key={voucher.id} voucher={voucher} onShow={show} />
+              {shown.map((voucher, index) => (
+                <GiftCardRow
+                  key={voucher.id}
+                  voucher={voucher}
+                  texture={textureAt(index + 4)}
+                  onShow={show}
+                />
               ))}
             </div>
           )}
 
           {/* ── the catalogue ──
-              No reach wiring: a gift card is *stock at a brand* (`gift_card_stock`),
-              not a venue with a listing, so there is no venue whose funnel these
-              impressions would belong to. */}
+              No band, and that is the hierarchy: a band is what a thing you
+              *hold* gets. These are stock on a shelf — the point of the grid is
+              comparing eight of them by price — and giving them the same plate
+              as the three cards above would make the page one long run of
+              identical objects with nothing to say which are yours.
+
+              No reach wiring either: a gift card is *stock at a brand*
+              (`gift_card_stock`), not a venue with a listing, so there is no
+              venue whose funnel these impressions would belong to. */}
           <div className="section-head left cat-head" data-reveal>
             <h2>{wallet.catalogue}</h2>
             <p>{wallet.catalogueLede}</p>
