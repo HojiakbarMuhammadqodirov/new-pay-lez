@@ -7,8 +7,14 @@
  *
  * The model is the one the old paylez app used (see
  * `landing/screenshots/learn1.png`): a score, a daily streak, three lives, and
- * running answered/correct counts. Lives are what cap a session rather than a
- * rounds-per-day limit — you play until you run out.
+ * running answered/correct counts.
+ *
+ * What bounds a day is no longer the lives, and that is the one place this has
+ * moved away from the old app. Nothing spends a life now — only a loss ever did,
+ * and two of the seven games cannot be lost — so the brake is `DAILY_DECAY`
+ * below: a repeat of the same game pays less, and the fifth pays nothing. It
+ * prices the round rather than refusing it, which is the difference between a
+ * bound and a locked door.
  */
 
 /*
@@ -18,7 +24,7 @@
  * below used to carry their own face values and two of them disagreed with the
  * shelf they were supposedly bought from.
  */
-import { CHEAPEST_VOUCHER_POINTS, voucherCard } from '../content';
+import { CHEAPEST_VOUCHER_POINTS, voucherCard, type GameId } from '../content';
 
 /** How many lives a full tank holds, and what a round can cost. */
 export const MAX_LIVES = 3;
@@ -37,10 +43,12 @@ export const MAX_LIVES = 3;
  * `MAX_FREEZES` held. So a freeze always costs a week of showing up, and a
  * player cannot bank enough of them to stop the streak meaning anything.
  *
- * A freeze absorbs the *lapse*, which means it protects the balance too — see
- * `awardPoints`, where a lapse zeroes the points as well as the streak. That is
- * deliberate: those two have always been one rule, and a freeze that saved the
- * number but not the points would be the confusing half-measure.
+ * What a freeze protects is the **streak**, and that is now the whole of what
+ * there is to protect. A lapse used to take the balance with it; it does not any
+ * more, because the server deliberately does not do that (`applyStreak` in
+ * `server/domain/games.ts` says so) and the two halves of one product cannot
+ * disagree about whether a bad week costs a year of earnings. Points are earned,
+ * and the only thing that removes an earning is expiry on its own clock.
  */
 export const MAX_FREEZES = 2;
 export const FREEZE_EVERY = 7;
@@ -161,6 +169,22 @@ export interface PlayerState {
    */
   stamps?: StampCard[];
   deals?: ClaimedDeal[];
+  /**
+   * Rounds finished per game **today**, for the decay curve below.
+   *
+   * One day's tally and not a history, which is the whole design of the field:
+   * the curve only ever asks "how many of *this* game already, *today*", so a
+   * `Record<day, …>` would grow in `localStorage` for the life of the account to
+   * answer a question nothing asks. The day is stored beside the counts rather
+   * than inferred, because a tally with no date on it is indistinguishable from
+   * yesterday's — and yesterday's, read as today's, silently pays a returning
+   * player nothing for their first round.
+   *
+   * Optional for the reason `freezes`, `stamps` and `deals` are: a session saved
+   * by an earlier build has no such field, and `roundsToday` reads a missing one
+   * as zero rather than as a crash on a page somebody was already looking at.
+   */
+  rounds?: { day: string; byGame: Partial<Record<GameId, number>> };
 }
 
 /** Stamp cards held, for a state that may predate the field. */
@@ -355,15 +379,93 @@ function twoDaysBack(now: Date = new Date()): string {
   return today(back);
 }
 
+/* ──────────────────────────────────────────── what a repeat of a game pays ── */
+
+/**
+ * The day's decay curve: 100%, 60%, 40%, 20%, then nothing.
+ *
+ * **This is the brake, and it is the only one.** Lives never bounded much —
+ * only a *loss* ever spent one, and two of the seven games cannot be lost — so
+ * what stopped a player farming one round all evening was, in practice, nothing.
+ * This prices the repeat instead of refusing it: the round still runs, the
+ * streak still counts, the answered/correct columns still move, and only the
+ * points taper. Nobody is ever told to stop playing.
+ *
+ * The tail ends at zero on purpose. A curve that pays twenty percent for ever
+ * is not a bound at all — unlimited play still makes unlimited points.
+ *
+ * Indexed by rounds of *that game* already finished today; past the end of the
+ * list the last entry repeats. It mirrors `CONFIG.games.decay.free` in
+ * `server/config.ts`, which is the free curve of three: the server prices paid
+ * plans off the same table and this site has no plans to price.
+ */
+export const DAILY_DECAY = [1, 0.6, 0.4, 0.2, 0] as const;
+
+/** The multiplier for a round with `playedToday` of the same game behind it. */
+export function decayFactor(playedToday: number): number {
+  const at = Math.max(0, Math.floor(playedToday));
+  return DAILY_DECAY[Math.min(at, DAILY_DECAY.length - 1)];
+}
+
+/**
+ * Rounds of one game already finished today.
+ *
+ * Zero for a state saved before the field existed **and** for a tally left over
+ * from an earlier day — the second case is the one that matters, because a
+ * stale tally read as today's would hand a player back from yesterday a fifth
+ * round's payout for their first.
+ */
+export function roundsToday(state: PlayerState, game: GameId, day: string): number {
+  const tally = state.rounds;
+  if (!tally || tally.day !== day) return 0;
+  return tally.byGame[game] ?? 0;
+}
+
+/** The tally with one more round of `game` on it, discarding any earlier day's. */
+function countRound(state: PlayerState, game: GameId, day: string): PlayerState['rounds'] {
+  const kept = state.rounds?.day === day ? state.rounds.byGame : {};
+  return { day, byGame: { ...kept, [game]: (kept[game] ?? 0) + 1 } };
+}
+
 export interface Award {
-  /** Points the round earned, already totalled by whatever scored it. */
+  /** Which game it was, so a repeat of *this* one can be priced. */
+  game: GameId;
+  /** What the round scored, **before** the day's decay. */
   points: number;
   /** How many questions, gaps, words or pairs the round put to the player. */
   answered: number;
   /** How many of them they got. */
   correct: number;
-  /** True when the player stayed inside the game's mistake allowance. */
+  /**
+   * True when the player stayed inside the game's mistake allowance.
+   *
+   * Nothing here spends it any more — a loss costs no life. It is kept because
+   * the result card is the thing that reads it, and because the lives pool is
+   * still the pool: if anything ever starts charging one again, this is the flag
+   * it charges on. The server's `life_spent` column is in exactly this position.
+   */
   won: boolean;
+}
+
+/**
+ * What a round actually banks: what it scored, priced by today's curve.
+ *
+ * Its own exported function because **two callers need the same answer** — this
+ * module, to move the balance, and the result card, to say what the round paid.
+ * Reading the payout off the difference between two balances is the shortcut
+ * that looks equivalent and is not: it silently reports whatever else moved the
+ * points in the same call.
+ *
+ * Floored, not rounded, and floored *here* rather than anywhere else: the server
+ * floors at the same point (`Math.floor(scored.score * decay)`), and a client
+ * that rounded would show a player one more point than they were credited.
+ */
+export function bankedPoints(
+  state: PlayerState,
+  award: Award,
+  now: Date = new Date(),
+): number {
+  return Math.floor(award.points * decayFactor(roundsToday(state, award.game, today(now))));
 }
 
 /**
@@ -375,12 +477,18 @@ export interface Award {
  * all score differently and none of them has any business restating what a
  * streak is. They compute a number; this decides what it does to the account.
  *
- * The streak rule is the one the site states in its own FAQ: play inside 24
- * hours and it continues, miss the window and it — and the points with it — go
- * back to zero. Playing twice in one day does not advance it twice, which is why
- * `lastPlayed` is a date rather than a count.
+ * The streak rule: play inside 24 hours and it continues, miss the window and it
+ * goes back to zero. Playing twice in one day does not advance it twice, which
+ * is why `lastPlayed` is a date rather than a count.
  *
- * The one thing that can stand between a missed window and that reset is a
+ * **A lapse no longer takes the balance with it.** It used to — the old app
+ * wiped points on a missed day — and the backend deliberately does not, because
+ * points are an auditable ledger there and deleting a year of earnings over a
+ * bad week is not one of the reasons it recognises for a negative entry. Two
+ * halves of one product cannot disagree about that, so this half moved. Points
+ * now leave only by being spent or by expiring on their own clock.
+ *
+ * The one thing that can stand between a missed window and the streak reset is a
  * freeze. It is spent here, silently and automatically: a dialog asking "use a
  * freeze?" would arrive a day late, on the round *after* the one that was
  * missed, about a decision the player can no longer change.
@@ -400,21 +508,18 @@ export function awardPoints(
   const lapsed = !sameDay && !continued;
 
   /* A lapse is absorbed if it is the size a freeze is for *and* there is one to
-     spend on it. The streak then advances exactly as a normal day would, and
-     the balance survives with it.
+     spend on it. The streak then advances exactly as a normal day would.
 
      The length test is not a detail. `lapsed` says only "not today and not
      yesterday", so without it a player coming back after two years took the
-     same branch as one who missed a Tuesday: full balance kept, streak
-     incremented as though they had never been away. A freeze is sold as one
-     missed day — on the streak card, and in everything `MAX_FREEZES` reasons
-     about — so it covers exactly one, and a longer absence is the reset the FAQ
-     describes. */
+     same branch as one who missed a Tuesday: streak incremented as though they
+     had never been away. A freeze is sold as one missed day — on the streak
+     card, and in everything `MAX_FREEZES` reasons about — so it covers exactly
+     one, and a longer absence is the reset. */
   const held = freezesOf(state);
   const frozen = lapsed && played === twoDaysBack(now) && held > 0;
 
   const streak = sameDay ? state.streak : lapsed && !frozen ? 1 : state.streak + 1;
-  const base = lapsed && !frozen ? 0 : state.points;
 
   /*
    * Freezes earned, then the one spent.
@@ -430,20 +535,42 @@ export function awardPoints(
     freezes = Math.min(MAX_FREEZES, freezes + 1);
   }
 
+  /* Priced against the state as it *arrives*, so the first round of a day reads
+     zero prior rounds of that game and pays in full. Counting first and pricing
+     afterwards would start every player on the second rung. */
   return {
     ...state,
-    points: base + result.points,
+    points: state.points + bankedPoints(state, result, now),
     streak,
     freezes,
     answered: state.answered + result.answered,
     correct: state.correct + result.correct,
     lastPlayed: day,
-    /* A loss costs a life; the tank refills the next day a round is played. */
-    lives: result.won ? state.lives : Math.max(0, state.lives - 1),
+    rounds: countRound(state, result.game, day),
+    /* `lives` is untouched, and deliberately: **a loss no longer costs one.**
+       The pool only ever charged the player who was bad at quizzes — two of the
+       seven games have no fail state — so as a brake it was noise, and the decay
+       curve above is the real one. `MAX_LIVES` and `refillLives` stay because the
+       tank is still the tank: if anything starts spending again, it spends here. */
   };
 }
 
+/**
+ * All five right.
+ *
+ * The whole job of this bonus is to make the last question worth answering. One
+ * point an answer is otherwise a flat line — the fifth question pays exactly
+ * what the first did, whatever has happened in between — and five on the end is
+ * what turns a round into something with a shape. It is also most of what a quiz
+ * round is worth: 5 for the answers, 5 for having got them all.
+ *
+ * Mirrors `CONFIG.games.quizPerfectBonus`.
+ */
+export const QUIZ_PERFECT_BONUS = 5;
+
 export interface RoundResult {
+  /** Which of the four quizzes, for the decay curve. */
+  game: GameId;
   correct: number;
   total: number;
   /** Points the round is worth per correct answer, from the game's own table. */
@@ -452,26 +579,36 @@ export interface RoundResult {
   won: boolean;
 }
 
-/** A quiz round: every right answer is worth the same, and the game says how
- *  much. Kept as its own name because four callers read better for it. */
+/**
+ * What a quiz round scored, before the day's curve.
+ *
+ * Split out from `awardRound` because the result card needs the same number the
+ * balance gets, and the two must not be two sums. Every right answer is worth
+ * the same and the game says how much; a clean sweep adds the bonus above.
+ */
+export function quizAward(result: RoundResult): Award {
+  const perfect = result.correct >= result.total ? QUIZ_PERFECT_BONUS : 0;
+  return {
+    game: result.game,
+    points: result.correct * result.perCorrect + perfect,
+    answered: result.total,
+    correct: result.correct,
+    won: result.won,
+  };
+}
+
+/** A quiz round, banked. Kept as its own name because four callers read better
+ *  for it. */
 export function awardRound(
   state: PlayerState,
   result: RoundResult,
   now: Date = new Date(),
 ): PlayerState {
-  return awardPoints(
-    state,
-    {
-      points: result.correct * result.perCorrect,
-      answered: result.total,
-      correct: result.correct,
-      won: result.won,
-    },
-    now,
-  );
+  return awardPoints(state, quizAward(result), now);
 }
 
 export interface FlightResult {
+  game: GameId;
   /** Gaps flown through this attempt. The run is endless, so this is unbounded. */
   cleared: number;
   /** Gaps that bank the round, from the game's own row in `GAMES`. */
@@ -482,46 +619,42 @@ export interface FlightResult {
 }
 
 /**
- * Most gaps a single flight may bank.
+ * Most points a single flight may pay.
  *
- * Not a rule of the game — a flight is endless and nobody is getting near this
- * — but `cleared` arrives from an animation loop rather than a question index,
- * and an unbounded number multiplied into a balance is the kind of thing a
- * server would refuse. Ninety-nine gaps is about four minutes of clean flying.
+ * The ceiling is on the **payout**, not on the gaps, and that is the change
+ * worth understanding: capping the gaps at ninety-nine was a cap in name only —
+ * at two points each it let one lucky run out-earn four days of everything else
+ * on the page, which is not a bound, it is a jackpot. A flight is still endless
+ * and skill is still paid for past the bank line; it stops being paid at twenty,
+ * which is the same order as every other round in the set.
+ *
+ * It also does the job the gap clamp was really there for. `cleared` arrives
+ * from an animation loop rather than from a question index, and an unbounded
+ * number multiplied into a balance is the kind of thing a server would refuse.
+ *
+ * Mirrors `CONFIG.games.flightMaxPoints`.
  */
-export const MAX_FLIGHT_GAPS = 99;
+export const MAX_FLIGHT_POINTS = 20;
 
-/**
- * Gaps a flight may bank, floored and clamped.
- *
- * Its own function because the score arrives from an animation loop rather than
- * a question index, and because two callers need the same answer: `awardFlight`
- * to move the balance, and the result card to say what was earned. Reading the
- * payout off the difference between two balances would be the obvious shortcut
- * and is wrong — a lapsed streak zeroes the balance before scoring, so the
- * difference can be a large negative number on the round a player earned most.
- */
+/** Gaps a flight may bank: floored, and never negative. A rAF loop can hand
+ *  over either. */
 export function bankableGaps(cleared: number): number {
-  return Math.max(0, Math.min(Math.floor(cleared), MAX_FLIGHT_GAPS));
+  return Math.max(0, Math.floor(cleared));
 }
 
 /** What a flight pays, wherever it is asked. */
 export function flightPoints(cleared: number, perGap: number): number {
-  return bankableGaps(cleared) * perGap;
+  return Math.min(bankableGaps(cleared) * perGap, MAX_FLIGHT_POINTS);
 }
 
 /**
- * Bank a finished flight.
+ * What a finished flight scored, before the day's curve.
  *
- * Delegates to `awardRound` rather than restating it. The streak window, the
- * lapse that takes the balance with it, and the life a loss costs are rules the
- * site states in its own FAQ — a second copy of them is how one of the two
- * quietly becomes a lie.
- *
- * What this function owns is the translation and the clamp. `cleared` arrives
- * from an animation loop rather than from a question index, so it is floored and
- * capped at the target, and a `won` that did not actually reach the target is
- * recorded as the loss it was.
+ * An `Award` rather than a call through `quizAward`, and that is deliberate: a
+ * flight that reaches its bank line is not a clean sweep of five questions and
+ * must not collect the quiz's perfect bonus. What the two share is
+ * `awardPoints` below, which is where the streak, the lapse and the freeze live
+ * — a second copy of *those* is how one of them quietly becomes a lie.
  *
  * A gap flown is a gate cleared and a gap hit is a gate failed, so the round is
  * charged to `answered` in full and only the gaps flown count as `correct` —
@@ -530,30 +663,31 @@ export function flightPoints(cleared: number, perGap: number): number {
  * last on a leaderboard they are actively competing on, which is a worse lie
  * than a mixed accuracy column.
  *
- * Gaps past the target are the one place the two paths genuinely differ. The
- * flight does not stop at the target — it is endless, and stopping it there
- * would be the tuning equivalent of ending a quiz because it was going well —
- * so `correct` saturates at the target while the *points* keep counting. A
- * fifteen-gap flight is 15/12 of nothing sensible, but it is unarguably 30
- * points.
+ * `correct` saturates at the target while the points keep counting to the
+ * ceiling: the flight does not stop at the bank line — stopping it there would
+ * be the tuning equivalent of ending a quiz because it was going well — so a
+ * fifteen-gap flight is 15/5 of nothing sensible, but it is unarguably 15
+ * points. And a `won` that did not actually reach the target is recorded as the
+ * loss it was.
  */
+export function flightAward(result: FlightResult): Award {
+  const banked = bankableGaps(result.cleared);
+  return {
+    game: result.game,
+    points: flightPoints(result.cleared, result.perGap),
+    answered: result.target,
+    correct: Math.min(banked, result.target),
+    won: result.won && banked >= result.target,
+  };
+}
+
+/** A finished flight, banked. */
 export function awardFlight(
   state: PlayerState,
   result: FlightResult,
   now: Date = new Date(),
 ): PlayerState {
-  const banked = bankableGaps(result.cleared);
-  const counted = Math.min(banked, result.target);
-  const won = result.won && banked >= result.target;
-
-  const base = awardRound(
-    state,
-    { correct: counted, total: result.target, perCorrect: result.perGap, won },
-    now,
-  );
-
-  const surplus = (banked - counted) * result.perGap;
-  return surplus > 0 ? { ...base, points: base.points + surplus } : base;
+  return awardPoints(state, flightAward(result), now);
 }
 
 /* ────────────────────────────────────────────────────── the two new games ── */
@@ -561,71 +695,79 @@ export function awardFlight(
 /**
  * What one solved word is worth in Word Builder.
  *
- * Straight from the supplied spec, and the shape of it is the point: a flat
- * points-per-word would pay the same for guessing KAWA and for building
- * PRZEPRASZAM, so the score is base plus what the player actually did — how hard
- * the word was, whether they got it first time, and how long it took.
+ * Base plus the word's own difficulty, and nothing else. There is no speed term
+ * and no first-try term any more: both used to sit here, and between them they
+ * were worth twice the word — which made the game a race and a reflex test,
+ * which is precisely what the other five already are. The clock is gone from the
+ * component with them; nothing measures how long a word took.
  *
- * A hint is not a penalty, it is a ceiling: taking one removes the first-try and
- * speed bonuses for that word and leaves the base and the tier bonus. Somebody
- * who needs the hint still earns; they just do not earn the mastery part.
+ * A hint forfeits the tier bonus and leaves the base. That is the whole penalty,
+ * and it is the right shape: somebody who needed the hint still earns for having
+ * finished the word, they just do not earn for it having been hard.
  *
  * An unsolved word is worth nothing and is simply not passed here.
+ *
+ * Mirrors `CONFIG.games.wordBase` / `wordTierBonus`.
  */
 export interface WordScore {
-  /** 1 easy (3–4 letters), 2 medium (5–6), 3 hard (7+). */
+  /** 1 easy (3–4 letters), 2 medium (5–6), 3 hard (7+). The bank carries it. */
   tier: number;
-  /** No wrong attempt on this word. */
-  firstTry: boolean;
   /** A letter was revealed. */
   hinted: boolean;
-  /** Wall-clock seconds spent on this word. */
-  seconds: number;
 }
 
-/** +0 / +2 / +4 for tiers 1 / 2 / 3. */
-const TIER_BONUS = [0, 2, 4];
+export const WORD_BASE = 1;
+/** +0 / +1 / +2 for tiers 1 / 2 / 3. */
+export const WORD_TIER_BONUS = [0, 1, 2];
 
 export function wordPoints(word: WordScore): number {
-  const base = 5;
-  const tier = TIER_BONUS[Math.min(Math.max(word.tier, 1), 3) - 1];
-  if (word.hinted) return base + tier;
-
-  const first = word.firstTry ? 3 : 0;
-  const speed = word.seconds < 15 ? 3 : word.seconds <= 30 ? 1 : 0;
-  return base + tier + first + speed;
+  const tier = WORD_TIER_BONUS[Math.min(Math.max(word.tier, 1), 3) - 1];
+  return WORD_BASE + (word.hinted ? 0 : tier);
 }
 
-/** Every word first-try. A target to chase rather than an expectation. */
-export const WORD_PERFECT_BONUS = 10;
+/**
+ * The whole round solved with no wrong guess and no hint.
+ *
+ * Worth three, which is between a quarter and a third of the round — the same
+ * proportion the quizzes' perfect bonus is, for the same reason: it is what the
+ * fifth word is for. Mirrors `CONFIG.games.wordPerfectBonus`.
+ */
+export const WORD_PERFECT_BONUS = 3;
 
 /**
- * What a finished Memory Match round is worth.
+ * What a finished Memory Match round is worth — **time, and nothing else.**
  *
- * The skill in this game is efficiency — fewer flips means better memory — so
- * that is what the bonus is on. The base is per pair and is guaranteed: there is
- * no fail state here, and a slow player still earns, just less. That is
- * deliberate, and it is the reason this round has no clock: the deliberately
- * accessible one of the set.
+ * The board was scored on move count and paid a guaranteed 36 for six pairs that
+ * cannot be lost, which made it the richest round on the page for the least
+ * asked of anybody. Time is the honest measure of the skill it actually tests:
+ * remembering where a card was is what makes you fast, and a player turning
+ * cards at random is slow whatever their move count says.
  *
- * `moves` is completed *pairs* of flips, not individual card taps, so the floor
- * is `pairs` — one move per pair, every one of them a match.
+ * Bands rather than a curve, so a result screen can say which one you landed in
+ * and what the next one was worth — a continuous score off a hidden stopwatch is
+ * a number nobody can aim at. The last band has no ceiling and still pays two:
+ * finishing is always worth something, which is what keeps the board the
+ * approachable one of the set now that it is measured. It is still not *raced* —
+ * there is no countdown, no fail state, and nothing on screen ticking.
+ *
+ * Mirrors `CONFIG.games.memoryBands`.
  */
-export const MEMORY_PER_PAIR = 6;
-export const MEMORY_FLAWLESS_BONUS = 10;
+export const MEMORY_BANDS = [
+  { underSeconds: 40, points: 12 },
+  { underSeconds: 70, points: 8 },
+  { underSeconds: 110, points: 4 },
+  { underSeconds: null, points: 2 },
+] as const;
 
-export function memoryPoints(pairs: number, moves: number): number {
-  const base = pairs * MEMORY_PER_PAIR;
-
-  /* Past sixteen moves on a six-pair board the player is turning cards over at
-     random, and the bonus is zero rather than negative — nobody goes backwards
-     here. */
-  const reasonable = 16;
-  const span = Math.max(1, reasonable - pairs);
-  const efficiency = Math.min(1, Math.max(0, (reasonable - moves) / span));
-
-  const flawless = moves === pairs ? MEMORY_FLAWLESS_BONUS : 0;
-  return base + Math.round(efficiency * 12) + flawless;
+export function memoryPoints(seconds: number): number {
+  const taken = Math.max(0, seconds);
+  for (const band of MEMORY_BANDS) {
+    if (band.underSeconds === null || taken < band.underSeconds) return band.points;
+  }
+  /* Unreachable — the last band's `null` catches everything — but the list is
+     data and a list edited down to bands that all have a ceiling should still
+     pay rather than return nothing. */
+  return MEMORY_BANDS[MEMORY_BANDS.length - 1].points;
 }
 
 /** Lives come back with a new day rather than on a timer nobody can see. */

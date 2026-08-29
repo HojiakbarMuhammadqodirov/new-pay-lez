@@ -536,7 +536,12 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         ver: ts(service, 'created_date', at),
         ms: CONFIG.gate.minSpendMinor,
         mx: CONFIG.gate.maxAmountMinor,
-        pps: loyalty ? num(loyalty, 'points_per_scan', CONFIG.points.scanEarn) : CONFIG.points.scanEarn,
+        /* The venue's own rate when the old LoyaltyConfig carried one, and the
+           §2b platform default when it did not. That default is `CONFIG.earn.scan`
+           now; it used to be a row under `points` worth a fifth as much, and an
+           import still quoting the old figure would land every legacy venue on a
+           rate nobody chose and nobody could see was stale. */
+        pps: loyalty ? num(loyalty, 'points_per_scan', CONFIG.earn.scan) : CONFIG.earn.scan,
         cool: loyalty ? num(loyalty, 'scan_cooldown_hours', 24) : 24,
         lact: loyalty ? bool(loyalty, 'is_active') : true,
         cr: ts(service, 'created_date', at),

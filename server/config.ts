@@ -34,23 +34,75 @@ export const CONFIG = {
 
   /* ───────────────────────────────────────────── §2 the points economy ── */
   points: {
-    /** §2.3. Points expire twelve months after they are earned, FIFO. */
+    /**
+     * §2.3. How long points live, FIFO. This is the *floor*: a plan may buy a
+     * longer window through the `points_expiry_months` entitlement, and on
+     * Premium it buys no expiry at all. `ledger.ts` reads the entitlement and
+     * falls back to this — it used to read this and ignore the entitlement,
+     * which is why a paying subscriber's points still expired at twelve months.
+     */
     expiryMonths: 12,
     /** How far ahead the "points expiring soon" notification fires. */
     expiryWarningDays: 30,
     /**
-     * §2.4. A backstop, not the primary limit — the lives pool is that. It
-     * exists for the exploit that slips past lives, so it is set well above a
-     * normal day's play (three rounds at ~50) and well below a grind.
+     * §7.2. Shared across every game, reset at the user's local midnight. A
+     * plan may raise it (`daily_lives`), and Premium removes it entirely.
+     *
+     * It is no longer the primary brake on earning: only a *loss* ever spent
+     * one, and two of the seven games cannot be lost. `games.decay` is what
+     * actually bounds a day now — see the note there.
      */
-    dailyGameCap: 150,
-    /** §8.1. Both sides of a referral, paid on the invited user's first scan. */
-    referralReward: 200,
-    welcomeBonus: 100,
-    /** §7.2. Shared across every game, reset at the user's local midnight. */
     dailyLives: 3,
-    /** What a scan pays before any venue-specific multiplier. */
-    scanEarn: 5,
+  },
+
+  /* ─────────────────────────────────────────────── §2b what pays, and how much ──
+   *
+   * Every earning source in the product, in one table, so that changing what a
+   * visit is worth is one edit rather than a hunt. Values are points and are
+   * deliberately *relative* — the whole table scales by one factor the day an
+   * exchange rate is set, and nothing here encodes money.
+   *
+   * The ordering principle: a venue visit is the only line somebody is paying
+   * for, so it is anchored first and the games are priced under it.
+   */
+  earn: {
+    /** A scan or tap, before the venue's own rate and the plan multiplier. */
+    scan: 25,
+    /** Spending over the venue minimum: this many points per step, capped. */
+    spendStepMinor: 1000,
+    spendStepPoints: 5,
+    spendMaxSteps: 5,
+    /** One-offs at a venue. */
+    firstVisitToVenue: 100,
+    stampCardComplete: 200,
+    newCategory: 50,
+    reviewAfterVisit: 25,
+    /** Bringing people in. Flat on every plan, so nobody subscribes for a day
+        and harvests them. */
+    referrerFirstVisit: 100,
+    inviteeJoin: 100,
+    friendMilestoneAt: 5,
+    friendMilestone: 500,
+    dealShared: 25,
+    dealSharedPerDay: 3,
+    /** Turning up. */
+    dailyCheckIn: 5,
+    /** Streak day → points. Paid once, when the streak first reaches it. */
+    streakMilestones: { 7: 50, 30: 250, 100: 1000 } as Record<number, number>,
+    comeback: 25,
+    comebackEveryDays: 30,
+    /** Getting started, once each, the same on every plan. */
+    onboarding: 100,
+    verifyContact: 25,
+    profileComplete: 50,
+    categoriesPicked: 25,
+    firstScanEver: 100,
+    /** Occasions. */
+    birthday: 200,
+    anniversary: 200,
+    /** Premium's monthly credit. It must stay worth clearly less than the
+        subscription costs, or the plan refunds itself and becomes a coupon. */
+    premiumStipend: 200,
   },
 
   /* ──────────────────────────────────────────── §3 the amount-capture gate ── */
@@ -137,34 +189,92 @@ export const CONFIG = {
      *  game. The site's own bag rule is stricter (every item once before any
      *  twice); this is the server-side floor under it. */
     recentWindow: 40,
+
+    /*
+     * A round is a round.
+     *
+     * Roughly a minute of attention is worth roughly the same in every game,
+     * so a player picks the one they enjoy instead of the one that pays. The
+     * old table did the opposite: Poland maxed at 5 for the same five
+     * questions Brain paid 25 for, and Memory Match paid a guaranteed 36 for a
+     * board that cannot be lost.
+     */
+
     /** Questions in a quiz round, and the mistakes a round survives. */
     quizQuestions: 5,
     quizMistakes: 2,
-    quizPerCorrect: 5,
-    /** Word Builder (§7.3), matching `src/site/auth/player.ts` exactly — the
-     *  client's copy is the display, this one decides the points. */
-    wordBase: 5,
-    wordTierBonus: [0, 2, 4],
-    wordFirstTry: 3,
-    wordSpeedFast: 3,
-    wordSpeedOk: 1,
-    wordFastSeconds: 15,
-    wordOkSeconds: 30,
-    wordPerfectBonus: 10,
+    quizPerCorrect: 1,
+    /** All five right. The last question is worth having, which is the whole
+     *  job of this bonus. */
+    quizPerfectBonus: 5,
+
+    /*
+     * Word Builder. The tier is the word's own difficulty, read from
+     * `word_bank.tier` — this is the only bank in the product that carries one,
+     * and the server used to recompute it from the word's length instead.
+     *
+     * There is deliberately no speed bonus any more. Three constants existed
+     * for one and none of them was ever read: every answer scored the same
+     * flat point whatever the clock said.
+     */
+    wordBase: 1,
+    wordTierBonus: [0, 1, 2],
+    wordPerfectBonus: 3,
     wordsPerRound: 5,
-    /** Memory Match. */
-    memoryPerPair: 6,
-    memoryFlawlessBonus: 10,
-    memoryReasonableMoves: 16,
+
+    /*
+     * Memory Match is scored on time and nothing else.
+     *
+     * Bands rather than a curve, so the result screen can say which one you
+     * landed in and what the next one was worth. The last band has no ceiling
+     * and still pays: finishing is always worth something, which is what keeps
+     * the board approachable now that it is timed.
+     *
+     * Timed from the first move to the last, from the timestamps the server
+     * already writes on every event — the client has no clock to borrow, and a
+     * client-reported duration is one a modified client can invent.
+     */
     memoryPairs: 6,
-    /** The endless flight: gaps a single run may bank, so an animation loop
-     *  cannot multiply an unbounded number into a balance. */
-    flightPerGap: 2,
-    flightTarget: 12,
-    maxFlightGaps: 99,
-    /** Streak freezes: earned one per this many days, this many held. */
+    memoryBands: [
+      { underSeconds: 40, points: 12 },
+      { underSeconds: 70, points: 8 },
+      { underSeconds: 110, points: 4 },
+      { underSeconds: null, points: 2 },
+    ] as ReadonlyArray<{ underSeconds: number | null; points: number }>,
+
+    /*
+     * The endless flight. `flightTarget` gaps banks the round; every gap past it
+     * still pays, up to a hard ceiling — one lucky run used to be worth four
+     * days of everything else.
+     */
+    flightPerGap: 1,
+    flightTarget: 5,
+    flightMaxPoints: 20,
+
+    /** Streak freezes: earned one per this many days. The count held is a
+     *  plan entitlement (`streak_freezes`); Premium never breaks a streak. */
     freezeEvery: 7,
-    maxFreezes: 2,
+
+    /*
+     * What a repeat of the same game pays, on the same day.
+     *
+     * This is the brake, and it is the only one: the daily points ceiling is
+     * gone and lives never bounded anything much, because only a loss spent
+     * one and two of the seven games cannot be lost.
+     *
+     * The free curve ends at zero on purpose. A tail that pays twenty percent
+     * for ever is not a bound — unlimited play still makes unlimited points.
+     * Playing on is never blocked; scores, streaks and the leaderboard all
+     * keep counting. Only the points stop.
+     *
+     * Indexed by how many rounds of that game are already finished today; past
+     * the end of the list the last entry repeats.
+     */
+    decay: {
+      free: [1, 0.6, 0.4, 0.2, 0],
+      pro: [1, 0.8, 0.6, 0.4, 0.2],
+      premium: [1],
+    } as Record<string, readonly number[]>,
   },
 
   /* ──────────────────────────────────────── §1.3 / B9 privacy thresholds ── */

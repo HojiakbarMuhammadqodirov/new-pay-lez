@@ -132,9 +132,24 @@ export const FLIGHT = {
    * paid for past it rather than gated behind it.
    */
   target: 5,
-  perGap: 2,
-  /** Ceiling on a single flight's payout, against a score that cannot be trusted. */
-  maxGaps: 99,
+  /*
+   * One point a gap, matching the row in `content.ts` and `CONFIG.games`.
+   *
+   * It was two, which made a long run the richest thing on the page by a wide
+   * margin — twenty gaps paid more than four days of every other game put
+   * together. Skill still sets the ceiling here, which is what makes this the
+   * one round worth chasing; the ceiling is now somewhere a good player can
+   * actually reach rather than an accident of how long they survived.
+   */
+  perGap: 1,
+  /*
+   * Ceiling on a single flight's payout, against a score that cannot be
+   * trusted: this game reports one integer and posts no per-move events, so it
+   * is the one place a modified client can simply claim a number. The bound is
+   * points rather than gaps now — `MAX_FLIGHT_POINTS` in `auth/player.ts` is
+   * the value that actually applies, and this is its statement here.
+   */
+  maxPoints: 20,
 
   /** Wing beats per second. Two frames, so this is also the flap-cycle rate. */
   wingHz: 5.5,

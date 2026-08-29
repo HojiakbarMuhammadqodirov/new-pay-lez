@@ -11,13 +11,21 @@
  * the stored secret, and `finish` computes the score from the events it accepted
  * rather than from anything the client totals up. The one exception is the
  * endless flight, which is a physics loop rather than a set of answers — it is
- * clamped and capped instead, and the comment on `finishFlight` says exactly how
- * much that is worth.
+ * capped instead, and the comment on `scoreFlight` says exactly how much that is
+ * worth.
  *
  * The scoring tables are the same ones `src/site/auth/player.ts` implements on
  * the client, kept in `config.ts`. That duplication is deliberate and one-way:
  * the client's copy decides what the *animation* says, this one decides what the
  * balance does.
+ *
+ * One thing has no client copy at all, and cannot: **the decay curve**
+ * (`decayFor`). What a repeat of the same game pays today depends on how many
+ * rounds of it are already finished today, which is a fact about the account
+ * rather than about the round — a second device, or a reinstall, and the client
+ * has no idea. It is also the only brake left on earning, so it is the last
+ * number that should be computable anywhere a player can edit it. `finish`
+ * returns the factor it used precisely because the client cannot derive it.
  */
 import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
@@ -74,6 +82,14 @@ export function playerState(db: Db, userId: string, at: Iso = now()): PlayerStat
  * "Lives come back with a new day rather than on a timer nobody can see" — the
  * site's own rule, and the server is where it has to be true, because a client
  * that decides when midnight was decides how many rounds it may play.
+ *
+ * Nothing spends one any more. Lives were only ever charged on a *loss*, and two
+ * of the seven games have no fail state — so the pool bounded a player who was
+ * bad at quizzes and nobody else. `decayFor` below is the brake now: it prices
+ * the fourth round of a game rather than refusing it, which bounds the earning
+ * without ever telling somebody to stop playing. The pool, the counter and the
+ * `no_lives` gate are all still here and still honest — `lives_used` simply has
+ * no writer today, so the gate binds only if something starts spending again.
  */
 export function livesFor(db: Db, userId: string, at: Iso = now()): { lives: number; max: number } {
   const state = playerState(db, userId, at);
@@ -90,14 +106,6 @@ export function livesFor(db: Db, userId: string, at: Iso = now()): { lives: numb
   return { lives: Math.max(0, max - used), max };
 }
 
-function spendLife(db: Db, userId: string, at: Iso): void {
-  db.run(
-    `INSERT INTO daily_counters (user_id, day, lives_used) VALUES ($u, $d, 1)
-       ON CONFLICT (user_id, day) DO UPDATE SET lives_used = lives_used + 1`,
-    { u: userId, d: dayOf(at) },
-  );
-}
-
 /* ══════════════════════════════════════════════════════ §7.1 game sessions ══ */
 
 export interface Round {
@@ -111,11 +119,11 @@ export interface Round {
 /**
  * Open a round.
  *
- * A life is *not* spent here. The site's rule is that a life is lost on a loss,
- * and charging one at the start would punish a player whose connection dropped
- * before the first question — which is the one failure they definitely did not
- * choose. What the check at the top does is refuse to *start* a round with an
- * empty tank, which is the same rule from the other side.
+ * A life is *not* spent here, and since the loss no longer charges one either,
+ * nothing spends them at all — see `livesFor`. The check at the top stays
+ * because the pool is still the pool: if anything ever starts spending again,
+ * refusing to *start* a round on an empty tank is where that has to be enforced,
+ * and enforcing it at the end instead means a player finds out after the round.
  */
 export function startSession(
   db: Db,
@@ -266,7 +274,11 @@ function buildWords(db: Db, userId: string, language: string): Built {
 
   return {
     seed: rows.map((r) => r.id).join(','),
-    secret: { kind: 'words', words: rows.map((r) => r.word.toUpperCase()) },
+    /* The tiers travel with the words because the *bank* owns difficulty and the
+       scorer must not re-derive it. Carrying them here rather than re-reading
+       `word_bank` at the end also means an edited or deleted row cannot change
+       what a round in flight is worth. */
+    secret: { kind: 'words', words: rows.map((r) => r.word.toUpperCase()), tiers: rows.map((r) => r.tier) },
     /* The client gets the scrambled letters and the length, which is the game;
        it does not get the word, which is the answer. */
     content: {
@@ -394,6 +406,15 @@ export function submitEvent(
 
 export interface Finish {
   score: number;
+  /**
+   * How many points the daily ceiling trimmed — now always 0, and kept.
+   *
+   * There is no daily game ceiling any more; the decay curve replaced it, and it
+   * shrinks a round rather than truncating one. The field stays because the app
+   * reads this body and dropping a key is a protocol change for a fact that is
+   * simply "nothing was trimmed". `decay` below is where the same question is
+   * answered now.
+   */
   capped: number;
   correct: number;
   answered: number;
@@ -402,6 +423,16 @@ export interface Finish {
   freezes: number;
   livesLeft: number;
   balance: number;
+  /**
+   * The factor the round's raw score was multiplied by before it was banked.
+   *
+   * Returned rather than left implicit because a number that shrinks with no
+   * explanation reads as a bug: a player on their fourth quiz of the day sees
+   * two points for five right answers, and the only honest way to say why is to
+   * hand the client the figure and let it write the sentence. `1` on a first
+   * round, so a client can simply not mention it.
+   */
+  decay: number;
   /** §7.4's reward connection, computed from the real balance. */
   nearest: { venueId: string; venueName: string; discountPct: number; pointsNeeded: number } | null;
 }
@@ -435,8 +466,17 @@ export function finish(
     if (session.user_id !== input.userId) throw new DomainError('forbidden', 'not your session');
     if (session.state !== 'active') throw new DomainError('invalid_state', 'session already finished');
 
-    const events = db.all<{ seq: number; kind: string; payload: string; correct: number | null }>(
-      `SELECT seq, kind, payload, correct FROM game_events WHERE session_id = $s ORDER BY seq`,
+    /* `created_at` is selected because Memory Match is scored on it. It is the
+       server's stamp, written when the event arrived — the client has no clock
+       this module is willing to read. */
+    const events = db.all<{
+      seq: number;
+      kind: string;
+      payload: string;
+      correct: number | null;
+      created_at: string;
+    }>(
+      `SELECT seq, kind, payload, correct, created_at FROM game_events WHERE session_id = $s ORDER BY seq`,
       { s: session.id },
     );
     const secret = JSON.parse(session.secret) as Record<string, unknown>;
@@ -445,7 +485,7 @@ export function finish(
       secret.kind === 'quiz'
         ? scoreQuiz(events, (secret.answers as number[]).length)
         : secret.kind === 'words'
-          ? scoreWords(events, secret.words as string[])
+          ? scoreWords(events, secret.words as string[], (secret.tiers as number[] | undefined) ?? [])
           : secret.kind === 'deck'
             ? scoreDeck(events, CONFIG.games.memoryPairs)
             : scoreFlight(input.clientReport ?? {});
@@ -453,9 +493,20 @@ export function finish(
     const ent = entitlements.entitlementsFor(db, { userId: input.userId });
     const multiplier = entitlements.entNumber(ent, 'points_multiplier', 1);
 
+    /* Counted while this session is still `active`, so the first round of the
+       day reads zero prior rounds and pays in full.
+
+       Decay is applied *here* and the plan multiplier inside `ledger.earn`, and
+       the order is not cosmetic — both steps round down, and which one rounds
+       first decides whether a plan can buy its way back up the curve. Four raw
+       points on a 0.4 rung is one point; multiplying Plus's 1.25 in first makes
+       it two. The curve is the brake, and a paid plan raises what a round is
+       worth rather than softening it. */
+    const decay = decayFor(db, input.userId, session.game_type, at);
+
     const banked = ledger.earn(db, {
       userId: input.userId,
-      points: scored.score,
+      points: Math.floor(scored.score * decay),
       reason: 'game_win',
       sourceKind: 'game_session',
       sourceRef: session.id,
@@ -474,20 +525,21 @@ export function finish(
         c: scored.correct,
         t: at,
         l: banked.entry.id,
-        ls: scored.won ? 0 : 1,
+        /* Always zero: nothing spends a life any more, and a column called
+           `life_spent` that records one anyway is a row that disagrees with
+           `daily_counters.lives_used` about the same event. */
+        ls: 0,
         i: session.id,
       },
     );
 
-    if (!scored.won) spendLife(db, input.userId, at);
-
-    const streak = applyStreak(db, input.userId, scored, at);
+    const streak = applyStreak(db, input.userId, scored, ent, at);
     const lives = livesFor(db, input.userId, at);
     const balance = ledger.balance(db, input.userId);
 
     return {
       score: banked.entry.delta,
-      capped: banked.capped,
+      capped: 0,
       correct: scored.correct,
       answered: scored.answered,
       won: scored.won,
@@ -495,9 +547,49 @@ export function finish(
       freezes: streak.freezes,
       livesLeft: lives.lives,
       balance,
+      decay,
       nearest: nearestReward(db, input.userId, balance),
     };
   });
+}
+
+/**
+ * What a repeat of the same game is worth today.
+ *
+ * This is the brake on farming and it is now the only one — the daily points
+ * ceiling is a plan's business and lives never bounded much, because only a loss
+ * ever spent one and two of the seven games cannot be lost. Pricing the fourth
+ * round rather than refusing it is the whole point: play, streaks and the
+ * leaderboard keep counting when the factor reaches zero, and only the points
+ * stop, so nobody is ever told the game is closed for the day.
+ *
+ * Counted from `game_sessions` rather than from `daily_counters.plays`, because
+ * that counter is one number across every game and this curve is per game:
+ * playing five different games is five first rounds, and it should be. The day
+ * is `dayOf` — the user's own local day, the same slice `livesFor` refills on,
+ * because two daily resets an hour apart is a bug report nobody can reproduce.
+ */
+function decayFor(db: Db, userId: string, gameType: GameType, at: Iso): number {
+  const played =
+    db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM game_sessions
+        WHERE user_id = $u AND game_type = $g AND state = 'finished'
+          AND finished_at IS NOT NULL AND substr(finished_at, 1, 10) = $d`,
+      { u: userId, g: gameType, d: dayOf(at) },
+    )?.n ?? 0;
+
+  /* An unrecognised plan code falls back to the free curve rather than throwing.
+     A plan added to the billing table without a curve is a configuration gap,
+     and the safe reading of a gap is the strictest ladder — the alternative is a
+     500 on the finish call, which loses the round the player just played. */
+  const code = entitlements.planFor(db, { userId }).code;
+  const curve = CONFIG.games.decay[code] ?? CONFIG.games.decay.free;
+  if (curve.length === 0) return 1;
+
+  /* Past the end of the list the last entry repeats, which is what lets the free
+     curve's tail be a real zero: a tail that keeps paying a fifth of a round is
+     not a bound, because unlimited play still makes unlimited points. */
+  return curve[Math.min(played, curve.length - 1)];
 }
 
 interface Scored {
@@ -507,12 +599,21 @@ interface Scored {
   won: boolean;
 }
 
+/**
+ * A quiz: a point a question, and a bonus for taking all five.
+ *
+ * The bonus is what makes the last question worth thinking about. At a flat
+ * point apiece the difference between four right and five is one point, which is
+ * not a reason to slow down — so five right is worth ten and four is worth four,
+ * and the fifth question is the round.
+ */
 function scoreQuiz(events: Array<{ correct: number | null }>, total: number): Scored {
   const answers = events.filter((e) => e.correct !== null);
   const correct = answers.filter((e) => e.correct === 1).length;
   const wrong = answers.length - correct;
+  const perfect = wrong === 0 && correct >= total ? CONFIG.games.quizPerfectBonus : 0;
   return {
-    score: correct * CONFIG.games.quizPerCorrect,
+    score: correct * CONFIG.games.quizPerCorrect + perfect,
     correct,
     answered: total,
     won: wrong <= CONFIG.games.quizMistakes,
@@ -520,20 +621,36 @@ function scoreQuiz(events: Array<{ correct: number | null }>, total: number): Sc
 }
 
 /**
- * Word Builder (§7.3): base + tier + first-try + speed, minus the bonuses a hint
- * removes, plus the perfect-round bonus.
+ * Word Builder (§7.3): a point per word solved, the word's own tier on top, and
+ * a bonus for a clean sweep.
  *
- * The timings come from the *server's* record of when each event arrived, not
- * from a duration the client reports. A speed bonus a client can claim is a
- * speed bonus every client claims.
+ * **The tier is the bank's, not the scorer's.** `word_bank.tier` is the only
+ * difficulty rating in the product that a human set, and it is carried through
+ * the round's secret from the row the word came from. This used to recompute it
+ * as `ceil(length / 2) - 1` — a guess about a table that already knows the
+ * answer. The seeded banks happen to agree with that guess, which is exactly why
+ * it survived; the moment a curator calls a four-letter word hard, or a long
+ * word easy, the guess pays the wrong bonus and nothing fails loudly.
+ *
+ * A hint forfeits that tier bonus and keeps the base point. That is what makes
+ * taking one a decision rather than a free reveal, and it is also why the base
+ * survives: a word solved with help is still a word solved, and a hint that
+ * zeroes the word is a hint nobody presses even when they are stuck.
+ *
+ * There is deliberately no speed bonus. Three constants existed for one and none
+ * of them was ever read against a clock — every answer scored the same flat
+ * bonus whatever the timings said, which is not a bonus, it is a base rate with
+ * extra words.
  */
 function scoreWords(
   events: Array<{ seq: number; kind: string; payload: string; correct: number | null }>,
   words: string[],
+  tiers: number[],
 ): Scored {
+  const bonuses = CONFIG.games.wordTierBonus;
   let score = 0;
   let solved = 0;
-  let allFirstTry = true;
+  let clean = true;
 
   words.forEach((_, index) => {
     const mine = events.filter((e) => {
@@ -545,7 +662,7 @@ function scoreWords(
     });
     const win = mine.find((e) => e.correct === 1);
     if (!win) {
-      allFirstTry = false;
+      clean = false;
       return;
     }
     solved += 1;
@@ -553,33 +670,66 @@ function scoreWords(
     const attempts = mine.filter((e) => e.kind !== 'hint');
     const hinted = mine.some((e) => e.kind === 'hint');
     const firstTry = attempts.length === 1;
-    if (!firstTry || hinted) allFirstTry = false;
+    if (!firstTry || hinted) clean = false;
 
-    const tier = Math.min(3, Math.max(1, Math.ceil(words[index].length / 2) - 1));
-    score += CONFIG.games.wordBase + CONFIG.games.wordTierBonus[tier - 1];
+    score += CONFIG.games.wordBase;
     if (hinted) return;
-    if (firstTry) score += CONFIG.games.wordFirstTry;
-    /* Speed is measured between the round's own events, so a slow network
-       costs at most the gap it actually introduced. */
-    score += CONFIG.games.wordSpeedOk;
+    /* Clamped into the bonus table rather than trusted: the table is the range
+       of tiers this scoring understands, and a bank row outside it — or a
+       session opened before tiers travelled in the secret, which reads as
+       `undefined` — must land on the easiest rung rather than index past the
+       end and pay `NaN`. */
+    const tier = Math.min(bonuses.length, Math.max(1, Math.round(tiers[index] ?? 1)));
+    score += bonuses[tier - 1];
   });
 
-  if (solved === words.length && allFirstTry) score += CONFIG.games.wordPerfectBonus;
+  if (solved === words.length && clean) score += CONFIG.games.wordPerfectBonus;
   return { score, correct: solved, answered: words.length, won: solved > 0 };
 }
 
-function scoreDeck(events: Array<{ correct: number | null }>, pairs: number): Scored {
-  const moves = events.filter((e) => e.correct !== null).length;
+/**
+ * Memory Match: the clock, and nothing else.
+ *
+ * Moves decided it before, through an efficiency curve — and moves are the one
+ * thing a player can optimise away entirely by writing the board down, which
+ * made the one game in the set with no fail state also the best-paying minute in
+ * the product. A stopwatch cannot be beaten with a pencil.
+ *
+ * The clock is the server's. `game_events.created_at` is stamped when the event
+ * arrived, so the span is the earliest stamp to the latest — a client-reported
+ * duration is one a modified client invents, and this game has no answer key to
+ * check it against. Earliest and latest *by time* rather than by `seq`, because
+ * the client picks the sequence numbers and the server picks the stamps: a round
+ * whose first move is submitted last would otherwise measure as a negative
+ * duration and take the top band.
+ *
+ * Bands rather than a curve so the result screen can name the one you landed in
+ * and what the next one was worth, and the last band pays rather than zeroing —
+ * finishing is always worth something, which is what keeps the accessible game
+ * accessible now that it is timed.
+ */
+function scoreDeck(
+  events: Array<{ correct: number | null; created_at: string }>,
+  pairs: number,
+): Scored {
   const matched = events.filter((e) => e.correct === 1).length;
-  const base = matched * CONFIG.games.memoryPerPair;
+  const bands = CONFIG.games.memoryBands;
+  const floor = bands[bands.length - 1];
 
-  const reasonable = CONFIG.games.memoryReasonableMoves;
-  const span = Math.max(1, reasonable - pairs);
-  const efficiency = Math.min(1, Math.max(0, (reasonable - moves) / span));
-  const flawless = moves === pairs && matched === pairs ? CONFIG.games.memoryFlawlessBonus : 0;
+  const stamps = events.map((e) => Date.parse(e.created_at)).filter((t) => Number.isFinite(t));
+  /* Fewer than two events is a round with no elapsed time to read, not a fast
+     one. It takes the floor band rather than throwing: a finished deck always
+     pays, and a scoring function is the wrong place to reject a session the
+     player has already played. */
+  const seconds =
+    stamps.length >= 2
+      ? (Math.max(...stamps) - Math.min(...stamps)) / 1000
+      : Number.POSITIVE_INFINITY;
+
+  const band = bands.find((b) => b.underSeconds !== null && seconds < b.underSeconds) ?? floor;
 
   return {
-    score: base + Math.round(efficiency * 12) + flawless,
+    score: band.points,
     correct: matched,
     answered: pairs,
     /* There is no fail state in Memory Match — it is the deliberately accessible
@@ -593,16 +743,22 @@ function scoreDeck(events: Array<{ correct: number | null }>, pairs: number): Sc
  *
  * This one is honestly weaker than the rest and the comment says so: a physics
  * loop has no answer key, so the server cannot recompute the score, only bound
- * it. Three things bound it — the per-run gap cap, the daily points cap (§2.4),
- * and the fact that the flight pays two points a gap. A client that lies about
- * gaps gets at most `maxFlightGaps × flightPerGap` before the daily cap catches
- * it, and the case is visible in the ledger as an implausible run.
+ * it. `flightMaxPoints` is that bound and it is now the whole defence — the
+ * points a run can be worth are capped directly, so a client claiming a thousand
+ * gaps banks exactly what a good honest run banks, and the claim is still
+ * visible in the ledger as an implausible run. Capping the *points* rather than
+ * the gaps is the stronger version of the same rule: it does not have to guess
+ * how far a real player could fly.
+ *
+ * `flightTarget` decides whether the round was a *win*, not what it pays — five
+ * gaps, matching the number the site's own screen shows the player. A win the
+ * server and the client disagree about is worse than a hard target.
  */
 function scoreFlight(report: Record<string, unknown>): Scored {
-  const cleared = Math.max(0, Math.min(Math.floor(Number(report.cleared) || 0), CONFIG.games.maxFlightGaps));
+  const cleared = Math.max(0, Math.floor(Number(report.cleared) || 0));
   const target = CONFIG.games.flightTarget;
   return {
-    score: cleared * CONFIG.games.flightPerGap,
+    score: Math.min(cleared * CONFIG.games.flightPerGap, CONFIG.games.flightMaxPoints),
     correct: Math.min(cleared, target),
     answered: target,
     won: cleared >= target,
@@ -624,7 +780,13 @@ function scoreFlight(report: Record<string, unknown>): Scored {
  * product decision that should arrive as an `adjustment` entry with a reason,
  * which is exactly what `ledger.reverse` and `earn(..., 'adjustment')` are for.
  */
-function applyStreak(db: Db, userId: string, scored: Scored, at: Iso): { streak: number; freezes: number } {
+function applyStreak(
+  db: Db,
+  userId: string,
+  scored: Scored,
+  ent: entitlements.Entitlements,
+  at: Iso,
+): { streak: number; freezes: number } {
   const state = playerState(db, userId, at);
   const today = dayOf(at);
   const yesterday = dayOf(new Date(new Date(at).getTime() - 86_400_000).toISOString());
@@ -638,10 +800,19 @@ function applyStreak(db: Db, userId: string, scored: Scored, at: Iso): { streak:
 
   const streak = sameDay ? state.streak : lapsed && !frozen ? 1 : state.streak + 1;
 
+  /* How many freezes may be *held* is the plan's, not a constant: Free keeps a
+     couple, the paid tiers keep more, and Premium's number is simply large
+     enough that a streak never breaks. It is read as an ordinary number and not
+     special-cased as "unlimited" — a cap nobody can reach and no cap at all
+     behave identically, and only one of them needs a branch at every comparison
+     that touches it. The fallback matches the free tier so a deployment that has
+     not seeded the key yet behaves like the free plan rather than like Premium. */
+  const maxFreezes = entitlements.entNumber(ent, 'streak_freezes', 2);
+
   let freezes = held;
   if (frozen) freezes -= 1;
   if (!sameDay && streak % CONFIG.games.freezeEvery === 0) {
-    freezes = Math.min(CONFIG.games.maxFreezes, freezes + 1);
+    freezes = Math.min(maxFreezes, freezes + 1);
   }
 
   db.run(

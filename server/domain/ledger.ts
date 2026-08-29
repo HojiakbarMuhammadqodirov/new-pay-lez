@@ -7,7 +7,7 @@
  * only alongside the entry that justifies it, and `reconcile()` proves it right
  * from the ledger whenever anyone asks. Nothing outside this file may touch it.
  *
- * The second rule is FIFO (§2.3). Points expire twelve months after they are
+ * The second rule is FIFO (§2.3). Points expire a fixed window after they are
  * *earned*, so a spend has to know which earning it came out of; otherwise a
  * player who earns 100 in January and 100 in June, then spends 100, has a
  * balance that expires on a date nobody can name. `points_lots` is that
@@ -15,17 +15,48 @@
  * leaves the newest points standing and the expiry job knows exactly what is
  * left of each batch.
  *
+ * The window is the *plan's*, not this file's — see `expiryFor` at the bottom.
+ * §12a sells a longer one, and on the top tier sells none at all.
+ *
  * The ledger table itself is append-only. There is no UPDATE in this file
  * against `points_ledger` — a reversal is a compensating entry (§C3), because a
  * ledger you can edit is not evidence of anything.
  */
 import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
+import * as entitlements from './entitlements.ts';
 import { newId } from './ids.ts';
 import { DomainError } from './errors.ts';
 import { now, plusMonths, type Iso } from './time.ts';
 
-export type EarnReason = 'game_win' | 'scan_earn' | 'referral' | 'welcome_bonus' | 'adjustment';
+/**
+ * Why a points entry exists, in the ledger's own words.
+ *
+ * One reason per *kind* of thing that pays, and `source_kind` carries the finer
+ * detail underneath it — `venue_bonus` + `first_visit`, `venue_bonus` +
+ * `new_category`, `occasion` + `birthday`. The split matters because the reason
+ * is what a customer reads in their history and what the schema's CHECK
+ * constrains, while `source_kind` is what the arithmetic keys off; inventing a
+ * top-level reason per bonus would mean a migration every time §2b grows a row.
+ *
+ * This union and the CHECK on `points_ledger.reason` are one list written twice.
+ * They must agree, or the insert fails at the counter rather than in a test.
+ */
+export type EarnReason =
+  | 'game_win'
+  | 'scan_earn'
+  | 'spend_bonus'
+  | 'venue_bonus'
+  | 'stamp_complete'
+  | 'review'
+  | 'referral'
+  | 'welcome_bonus'
+  | 'profile_bonus'
+  | 'check_in'
+  | 'streak_milestone'
+  | 'occasion'
+  | 'stipend'
+  | 'adjustment';
 export type SpendReason = 'voucher_redeem' | 'gift_card_redeem';
 
 export interface EarnInput {
@@ -82,11 +113,13 @@ export function reconcile(db: Db, userId: string): number {
 }
 
 /**
- * Points earned today from games, for the §2.4 backstop cap.
+ * Points earned today from games.
  *
- * Games only: a scan, a referral and a welcome bonus are all gated by something
- * a client cannot forge (a cashier's confirmation, another human signing up), so
- * capping them would only punish a busy day.
+ * Games only, and it no longer gates anything: it is the *record* of a day's
+ * play, which the streak, the profile screen and the console all read. A scan, a
+ * referral and a welcome bonus are each gated by something a client cannot forge
+ * (a cashier's confirmation, another human signing up), so they were never
+ * counted here and still are not.
  */
 export function gamePointsToday(db: Db, userId: string, day: string): number {
   return (
@@ -104,36 +137,42 @@ export function gamePointsToday(db: Db, userId: string, day: string): number {
  * of them, which is why it must be called inside a transaction (the gate's
  * commit already is one; `db.tx` nests).
  *
- * The daily cap is applied by *trimming*, not by refusing: a player whose last
- * round of the day crosses 150 keeps what fits and is told. Refusing the round
- * outright would throw away a game they actually played, which is a worse answer
- * to an anti-inflation backstop that is not supposed to bind in normal use.
+ * **Nothing is trimmed here any more.** There used to be a daily points ceiling
+ * that this function applied to `game_win` by cutting the last round of the day
+ * down to whatever was left, and it is gone: a flat ceiling can only say "no
+ * more today" to a player who has done nothing wrong, and it says it identically
+ * to somebody grinding one game and somebody enjoying seven. The bound moved to
+ * where it can see what is being played — the per-game decay curve in `games.ts`
+ * (`CONFIG.games.decay`), which pays a fourth round of the *same* game less than
+ * the first and leaves the rest of the day alone. `earn` grants what it is
+ * handed; deciding how much that should be belongs to the caller.
  */
-export function earn(db: Db, input: EarnInput): { entry: LedgerEntry; capped: number } {
+export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
   const at = input.at ?? now();
   const multiplier = input.multiplier ?? 1;
-  let points = Math.floor(input.points * multiplier);
-  let capped = 0;
+  const points = Math.floor(input.points * multiplier);
 
   if (points < 0) throw new DomainError('bad_request', 'earn takes a positive amount');
-  if (points === 0) {
-    return { entry: writeEntry(db, input.userId, 0, input.reason, input, at, multiplier), capped: 0 };
+  /* `points < 0` is false for NaN, and a NaN delta reaches SQLite as a NOT NULL
+     violation two frames deeper — which reads as a corrupt schema rather than as
+     the missing config row that actually caused it. The ledger is evidence; it
+     refuses to write something that is not a number at the door. */
+  if (!Number.isFinite(points)) {
+    throw new DomainError('bad_request', 'earn takes a finite amount', { points: input.points });
   }
 
+  /* The counter is still written, and it is written *before* the zero check: a
+     round the decay curve paid nothing for is still a round played, and `plays`
+     is what says so. Skipping it — which is what the old early return for a
+     zero-point entry did — was harmless while zero was an edge case and is a
+     miscount now that it is the fifth round of anything. */
   if (input.reason === 'game_win') {
-    const day = at.slice(0, 10);
-    const spent = gamePointsToday(db, input.userId, day);
-    const room = Math.max(0, CONFIG.points.dailyGameCap - spent);
-    if (points > room) {
-      capped = points - room;
-      points = room;
-    }
     db.run(
       `INSERT INTO daily_counters (user_id, day, game_points, plays)
        VALUES ($u, $d, $p, 1)
        ON CONFLICT (user_id, day) DO UPDATE
          SET game_points = game_points + $p, plays = plays + 1`,
-      { u: input.userId, d: day, p: points },
+      { u: input.userId, d: at.slice(0, 10), p: points },
     );
   }
 
@@ -143,7 +182,12 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry; capped: nu
     db.run(
       `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount)
        VALUES ($i, $u, $e, $x, $a)`,
-      { i: entry.id, u: input.userId, e: at, x: entry.expires_at, a: points },
+      /* The entry's `expires_at` is NULL when the plan says these points never
+         expire; the lot's column is NOT NULL, and the lot has to exist anyway or
+         a spend could not consume points the balance says are there. So a
+         never-expiring lot carries the sentinel instead: `runExpiry` asks for
+         `expires_at <= now` and a date eight thousand years out never answers. */
+      { i: entry.id, u: input.userId, e: at, x: entry.expires_at ?? NEVER, a: points },
     );
     db.run(`UPDATE users SET points_cache = points_cache + $p WHERE id = $u`, {
       p: points,
@@ -151,7 +195,7 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry; capped: nu
     });
   }
 
-  return { entry, capped };
+  return { entry };
 }
 
 /**
@@ -365,6 +409,45 @@ export function history(db: Db, userId: string, limit = 50, before?: string): Le
 
 /* ───────────────────────────────────────────────────────────────── private ── */
 
+/**
+ * The far end of time, for a lot that never expires.
+ *
+ * `points_lots.expires_at` is NOT NULL and the lot has to be in the FIFO pool
+ * whatever its expiry — a spend consumes lots, so a lot that is not there is a
+ * balance that cannot be spent. "Never" therefore cannot be written as NULL the
+ * way it can on the ledger entry, and a sentinel is the same statement in a
+ * column that will not hold the honest one. Every query that collects or warns
+ * about a lot asks for a date at or before some real moment (`runExpiry`,
+ * `expiringSoon`), and this answers none of them; FIFO order is `earned_at`, so
+ * it does not disturb which points a spend takes either.
+ */
+const NEVER: Iso = '9999-12-31T23:59:59.999Z';
+
+/**
+ * When this earning expires — §2.3 crossed with §12a.
+ *
+ * The window is a *plan entitlement* (`points_expiry_months`), not a constant.
+ * This file used to read `CONFIG.points.expiryMonths` and stop there, which
+ * meant a subscriber who was sold a longer window did not get one: the config
+ * value is the floor the free plan sits on, and the fallback for an account
+ * whose plan is silent about it.
+ *
+ * **Zero months means never**, and it is written as a NULL `expires_at` rather
+ * than as a distant date, because NULL is the only value the expiry job cannot
+ * misread. That is what the top tier buys.
+ */
+function expiryFor(db: Db, userId: string, at: Iso): Iso | null {
+  const months = entitlements.entNumber(
+    entitlements.entitlementsFor(db, { userId }),
+    'points_expiry_months',
+    CONFIG.points.expiryMonths,
+  );
+  /* `<= 0` rather than `=== 0`: a negative window is a typo in a config row, and
+     the safe reading of a typo is "do not collect somebody's points", not "they
+     expired before they were earned". */
+  return months <= 0 ? null : plusMonths(at, months);
+}
+
 function writeEntry(
   db: Db,
   userId: string,
@@ -377,8 +460,10 @@ function writeEntry(
 ): LedgerEntry {
   const id = newId('led');
   /* §2.3: the expiry date belongs to the *earning*. A spend has none, and a
-     negative entry with one would be a lot that could expire twice. */
-  const expires = delta > 0 ? plusMonths(at, CONFIG.points.expiryMonths) : null;
+     negative entry with one would be a lot that could expire twice. The plan is
+     only consulted for a positive delta, so a reversal or an expiry entry costs
+     no extra reads. */
+  const expires = delta > 0 ? expiryFor(db, userId, at) : null;
   db.run(
     `INSERT INTO points_ledger
        (id, user_id, delta, reason, source_ref, source_kind, multiplier, status, venue_id,

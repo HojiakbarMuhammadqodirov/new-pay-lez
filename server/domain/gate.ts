@@ -366,8 +366,12 @@ export function submitAmount(
 
 export interface Receipt {
   transaction: Transaction;
+  /**
+   * Every point this visit paid, across all four §2b venue lines. The ledger
+   * holds them apart (see `grantEarnings`); a receipt is one number because a
+   * cashier handing back a phone is reading it out loud.
+   */
   pointsGranted: number;
-  pointsCapped: number;
   discountMinor: number;
   stamped: boolean;
   reward: campaigns.EarnedReward | null;
@@ -411,7 +415,6 @@ export function confirm(
 
     const amount = txn.amount_minor;
     let pointsGranted = 0;
-    let pointsCapped = 0;
     let discountMinor = 0;
     let reward: campaigns.EarnedReward | null = null;
     let stamped = false;
@@ -449,18 +452,13 @@ export function confirm(
     if (txn.intent === 'earn' && visitCounted && venue.loyalty_active) {
       const ent = entitlements.entitlementsFor(db, { userId: txn.user_id });
       const multiplier = entitlements.entNumber(ent, 'points_multiplier', 1);
-      const result = ledger.earn(db, {
-        userId: txn.user_id,
-        points: venue.points_per_scan,
-        reason: 'scan_earn',
-        sourceKind: 'transaction',
-        sourceRef: txn.id,
-        venueId: venue.id,
+      pointsGranted = grantEarnings(db, {
+        txn,
+        venue,
+        amountMinor: amount,
         multiplier,
         at,
       });
-      pointsGranted = result.entry.delta;
-      pointsCapped = result.capped;
     }
 
     /* ── stamps ── */
@@ -500,7 +498,6 @@ export function confirm(
     return {
       transaction: getTransaction(db, txn.id),
       pointsGranted,
-      pointsCapped,
       discountMinor,
       stamped,
       reward,
@@ -654,6 +651,151 @@ function recordVisit(
 }
 
 /**
+ * §2b. What a confirmed earn-intent visit pays.
+ *
+ * Four lines, and they are four ledger entries rather than one sum. An owner
+ * reading a customer's history has to be able to see *which* of them fired:
+ * "100 for a first visit here" is a sentence a venue can act on and "205" is
+ * not, and the moment they are added together the information is gone for good —
+ * a ledger row is the only place it was ever recorded. The receipt adds them
+ * back up, because that is a different reader with a different question.
+ *
+ * The plan multiplier is applied to the two lines that *scale* — the scan and
+ * the spend steps — and not to the two that are once-ever. That is the config's
+ * own argument about referrals ("flat on every plan, so nobody subscribes for a
+ * day and harvests them"), and a once-ever bonus is precisely what a month of
+ * the top tier could be spent touring the city collecting.
+ *
+ * Every line is written inside the commit's transaction, so all four land or
+ * none of them do; and the two once-ever lines each carry a guard that survives
+ * the transaction, because "once, ever" is a claim about every scan this account
+ * will ever make and not just about this one.
+ */
+function grantEarnings(
+  db: Db,
+  input: { txn: Transaction; venue: Venue; amountMinor: number; multiplier: number; at: Iso },
+): number {
+  const { txn, venue, amountMinor, multiplier, at } = input;
+  const user = txn.user_id;
+  let total = 0;
+
+  /* The venue's own rate when it has set one, and the platform default when it
+     has not. `points_per_scan` is a NOT NULL column with a schema default, so
+     "unset" cannot be read as null here — it is read as "not a positive number",
+     which is also the right answer for a venue that has been zeroed out by hand
+     and left `loyalty_active` on. */
+  const perScan = venue.points_per_scan > 0 ? venue.points_per_scan : CONFIG.earn.scan;
+  total += ledger.earn(db, {
+    userId: user,
+    points: perScan,
+    reason: 'scan_earn',
+    sourceKind: 'transaction',
+    sourceRef: txn.id,
+    venueId: venue.id,
+    multiplier,
+    at,
+  }).entry.delta;
+
+  /* Spending over the venue's minimum, in whole steps and capped at five of
+     them. Stepped rather than proportional because a percentage of the bill is
+     cashback, which is a different product with a different regulator; and
+     capped because the ceiling is what stops one large corporate lunch from
+     out-earning a month of turning up. The visit only counted at all because
+     `amountMinor >= min_spend_minor`, so the subtraction cannot go negative —
+     the guard below is there for the day that stops being true. */
+  const steps = Math.min(
+    CONFIG.earn.spendMaxSteps,
+    Math.floor((amountMinor - venue.min_spend_minor) / CONFIG.earn.spendStepMinor),
+  );
+  if (steps > 0) {
+    total += ledger.earn(db, {
+      userId: user,
+      points: steps * CONFIG.earn.spendStepPoints,
+      reason: 'spend_bonus',
+      sourceKind: 'transaction',
+      sourceRef: txn.id,
+      venueId: venue.id,
+      multiplier,
+      at,
+    }).entry.delta;
+  }
+
+  /* First visit to *this* venue, ever — the line the whole discovery pitch rests
+     on, and the one that must never pay twice.
+
+     `recordVisit` has already upserted `venue_customers` by the time this runs,
+     so the row exists and its `visits` is 1 on exactly the visit that created it
+     (`first_seen_at` is that same moment). That is the trigger. `alreadyPaid` is
+     the lock: the counter says "this is their first" and the ledger says "and we
+     have not paid for it", and only both together spend anything. Either alone
+     has a failure mode — a counter can be rebuilt, and a ledger with no trigger
+     would pay a fiftieth visit for a bonus that was introduced after the first
+     forty-nine. */
+  const customer = db.get<{ visits: number }>(
+    `SELECT visits FROM venue_customers WHERE venue_id = $v AND user_id = $u`,
+    { v: venue.id, u: user },
+  );
+  if ((customer?.visits ?? 0) <= 1 && !alreadyPaid(db, user, 'first_visit', venue.id)) {
+    total += ledger.earn(db, {
+      userId: user,
+      points: CONFIG.earn.firstVisitToVenue,
+      reason: 'venue_bonus',
+      sourceKind: 'first_visit',
+      sourceRef: venue.id,
+      venueId: venue.id,
+      at,
+    }).entry.delta;
+  }
+
+  /* A category this account has never spent in. The visit for this scan is
+     *already* in `venue_visits`, so it has to be excluded by its transaction id
+     — counting it would make every category look visited and this line would
+     pay nothing, ever, which is the sort of bug that reads as "the feature is
+     off" rather than as a fault. */
+  const seen = db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM venue_visits vv JOIN venues v ON v.id = vv.venue_id
+      WHERE vv.user_id = $u AND v.category = $c AND vv.transaction_id <> $x`,
+    { u: user, c: venue.category, x: txn.id },
+  );
+  if ((seen?.n ?? 0) === 0 && !alreadyPaid(db, user, 'new_category', venue.category)) {
+    total += ledger.earn(db, {
+      userId: user,
+      points: CONFIG.earn.newCategory,
+      reason: 'venue_bonus',
+      sourceKind: 'new_category',
+      sourceRef: venue.category,
+      venueId: venue.id,
+      at,
+    }).entry.delta;
+  }
+
+  return total;
+}
+
+/**
+ * Has this account already been paid a once-ever bonus of this kind?
+ *
+ * The ledger is the record of what was paid, so it is also the lock on paying it
+ * again — the same move `reverse()` makes when it refuses to write a second
+ * compensating entry against one original. For these grants `source_ref` carries
+ * **the thing that must be unique** (the venue, the category, the milestone)
+ * rather than the transaction that happened to trigger it; that is what makes
+ * this one indexed lookup on `idx_ledger_source` instead of a scan, and it is
+ * why the transaction id is deliberately not there. Which visit paid a first-
+ * visit bonus is answerable from `venue_id` and `created_at`; whether one was
+ * ever paid has to be answerable in a single row.
+ */
+function alreadyPaid(db: Db, userId: string, sourceKind: string, sourceRef: string): boolean {
+  return (
+    db.get<{ id: string }>(
+      `SELECT id FROM points_ledger
+        WHERE user_id = $u AND source_kind = $k AND source_ref = $r LIMIT 1`,
+      { u: userId, k: sourceKind, r: sourceRef },
+    ) !== undefined
+  );
+}
+
+/**
  * §6.3. A claim is a user who *opened* a deal completing a qualifying scan
  * inside the window — not a tap on "claim" in a list.
  *
@@ -709,7 +851,16 @@ function claimDeal(
  *
  * Not on signup, which is the whole point: a referral that pays at signup is a
  * referral that pays for throwaway accounts, and paying for those is how a
- * points economy is farmed. Both parties are paid at the same moment.
+ * points economy is farmed. Both parties are still paid at the same moment, out
+ * of two rows in `CONFIG.earn` rather than one — the figures happen to be equal
+ * today and are two settings because the two acts are not the same act, and an
+ * operator tuning "what is an invite worth to us" should not be forced to change
+ * what the invitee is welcomed with.
+ *
+ * The idempotency is the bond's own status. It is selected `pending` and set
+ * `completed` inside the commit's transaction, so the second confirm for this
+ * account finds nothing to pay — and a *retried* confirm never reaches here at
+ * all, because `confirm` refuses a transaction that is no longer pending.
  */
 function completeReferral(db: Db, userId: string, at: Iso): void {
   const bond = db.get<{ id: string; referrer_id: string }>(
@@ -718,10 +869,9 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
   );
   if (!bond) return;
 
-  const reward = CONFIG.points.referralReward;
   ledger.earn(db, {
     userId: bond.referrer_id,
-    points: reward,
+    points: CONFIG.earn.referrerFirstVisit,
     reason: 'referral',
     sourceKind: 'referral',
     sourceRef: bond.id,
@@ -729,16 +879,49 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
   });
   ledger.earn(db, {
     userId,
-    points: reward,
+    points: CONFIG.earn.inviteeJoin,
     reason: 'referral',
     sourceKind: 'referral',
     sourceRef: bond.id,
     at,
   });
+  /* `points_awarded` is what the bond *cost*, both sides together. It used to be
+     one figure paid twice, so either reading gave the same answer; now that the
+     two sides can differ, the total is the only one that answers the question an
+     operator summing this column is asking. */
   db.run(
-    `UPDATE referrals SET status = 'completed', points_awarded = $p, completed_at = $t WHERE id = $i`,
-    { p: reward, t: at, i: bond.id },
+    `UPDATE referrals SET status = 'completed', points_awarded = $p, completed_at = $t
+      WHERE id = $i AND status = 'pending'`,
+    { p: CONFIG.earn.referrerFirstVisit + CONFIG.earn.inviteeJoin, t: at, i: bond.id },
   );
+
+  /* §8.1's milestone: bringing in five people who each actually turned up is a
+     different achievement from bringing in five people, and it is paid once.
+     Counted from `referrals.status`, which is only ever `completed` by the line
+     above — so "invitees who have each made a first visit" is exactly what the
+     count means and there is no second definition of it anywhere.
+
+     The threshold is the idempotency key rather than a flag, so raising the bar
+     to ten later adds a *new* milestone for everybody instead of silently
+     re-paying the one they already have. */
+  const milestone = String(CONFIG.earn.friendMilestoneAt);
+  const completed = db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM referrals WHERE referrer_id = $r AND status = 'completed'`,
+    { r: bond.referrer_id },
+  );
+  if (
+    (completed?.n ?? 0) >= CONFIG.earn.friendMilestoneAt &&
+    !alreadyPaid(db, bond.referrer_id, 'friend_milestone', milestone)
+  ) {
+    ledger.earn(db, {
+      userId: bond.referrer_id,
+      points: CONFIG.earn.friendMilestone,
+      reason: 'referral',
+      sourceKind: 'friend_milestone',
+      sourceRef: milestone,
+      at,
+    });
+  }
 }
 
 /** §7.4's "you're 60 from 10% off" — computed from the real balance and tiers. */
