@@ -27,7 +27,7 @@ files are not found.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 463 checks, no browser, no network
+npm run verify:api     # the test suite — 537 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -295,15 +295,66 @@ trial**: every `trialDays` is 0, which is what keeps a paid subscription out of
 ### The profile, and the two things it will not do
 
 `users` carries `username` (unique, folded case-insensitively by
-`idx_users_username_norm` rather than by the column's own `UNIQUE`), `headline`,
-`phone`, `birth_date` and `profile_completed_at`; `GET /v1/cities` is the closed
-list of 114 places a `city` may name, public because sign-up has to render the
-choice before an account exists, and `country_code` is derived from it here and
-never sent by a client. Filling in all seven answers pays the completion bonus
-once and stamps `profile_completed_at`, claimed with
-`UPDATE … WHERE profile_completed_at IS NULL` so two saves cannot pay twice —
-which is the same shape `POST /v1/me/onboarded` uses for the welcome gift, and
-for the same reason.
+`idx_users_username_norm` rather than by the column's own `UNIQUE`),
+`occupation`, `phone`, `birth_date` and `profile_completed_at`. Filling in all
+seven answers pays the completion bonus once and stamps `profile_completed_at`,
+claimed with `UPDATE … WHERE profile_completed_at IS NULL` so two saves cannot pay
+twice — which is the same shape `POST /v1/me/onboarded` uses for the welcome gift,
+and for the same reason.
+
+**`occupation` is the field the UI labels "Status", and it cannot be called
+that.** `users.status` is the account state — `provisional`, `active`, `banned`,
+`erased` — and two columns meaning different things under one name is how a
+moderation query ends up reading somebody's job. The label belongs to the person
+reading the form and the name belongs to whoever is reading a query at 3am. It is
+one of five values (`student`, `worker`, `business`, `freelancer`, `other`) and it
+replaced a free-text `headline`, which the version-4 migration in `db/db.ts`
+drops: a sentence somebody wrote about themselves is unsearchable, unsegmentable,
+untranslatable and a moderation surface, and it earned the product none of those.
+The drop counts and reports the non-empty lines it discards before performing it —
+a warning rather than a refusal, because a server that will not boot over one
+person's "hi about me" is the worse outcome, and what must not happen is losing
+them *silently*.
+
+**There is deliberately no `CHECK` on it.** SQLite cannot alter a CHECK in place,
+so the day the picker gains a sixth value it would cost a full rebuild of `users`
+— the most-referenced table in this schema, with cascades hanging off nearly every
+other one — to widen a dropdown. `points_ledger.reason` pays that price because
+the ledger outlives every process that writes to it and holds money; a
+self-reported status does not. One code path writes the column (`updateProfile`)
+and it validates against `OCCUPATIONS`, the same exported tuple the picker is
+rendered from, so there is one list rather than two.
+
+**`GET /v1/cities` is a suggestion source, not a whitelist.** It still serves the
+same 114 places and is still public — sign-up has to render the choice before an
+account exists — but `PATCH /v1/me` and `POST /v1/auth/signup` now take a city
+that is not on it, provided a `countryCode` comes with it. A whitelist told
+somebody the product has not reached yet that their own city does not exist, over
+a field that gates nothing.
+
+What made that safe is `resolveCity`, and its two halves are worth knowing
+because both have a cost:
+
+- **A city that matches the table stores the table's own spelling and country,
+  and any `countryCode` the client sent is ignored.** That is what keeps `Kraków`,
+  `Krakow` and `krakow` on one weekly board — `domain/social.ts` groups on
+  `users.city` with a literal `=`, so free text does not produce a *messy* board,
+  it produces several, each with one player on it — and it is what stops a client
+  writing `Krakow, US`. The cost is one mis-filed country: the table's `Halle` is
+  the German one, so somebody in Halle, Belgium is recorded in Germany with no way
+  to correct it, on a display-only field.
+- **A city off the table is folded and title-cased**, so diacritics, hyphens and
+  apostrophes do not survive: `Saint-Étienne` is stored `Saint Etienne`. That is
+  the price of `Saint Etienne` and `saint-etienne` being one board rather than
+  two, and it is the price the 114 already pay — their canonical names are ASCII
+  for exactly this reason. The country is checked for *shape* and never against a
+  registry; the only one here is the quiz export's 196 sovereign states, which has
+  no Hong Kong, Greenland or Puerto Rico in it.
+
+Nothing revalidates a row already stored — the old database's cities came over as
+whatever it held, and a rule applied backwards would make those accounts
+unsaveable. Re-sending a legacy value succeeds, because it takes the off-list path
+and canonicalises to itself.
 
 Two things that surface is deliberately not:
 
@@ -317,6 +368,35 @@ Two things that surface is deliberately not:
   many there have been. `birthDateChangesLeft` is on `GET /v1/me` so a form can
   grey the field out rather than find out by being refused, and resending the day
   already stored spends nothing.
+
+### The two GDPR rights are generated from one table
+
+`USER_COLUMNS` in `domain/consent.ts` lists every column of `users` with what the
+export discloses and what the erasure writes, and both statements are built from
+it. They were two hand-written pieces of SQL and had already drifted: the erasure
+cleared `username`, `phone`, `birth_date`, `display_avatar` and `occupation`, and
+the export mentioned none of them. That is the worse direction of the two — an
+erasure that misses a column at least leaves somebody something to complain about
+later, while an export that under-reports is read as complete, because nothing in
+the document says a column exists.
+
+The `account` block went from 12 keys to **25**, of the table's 28 columns. Three
+are withheld and each carries its reason in the list rather than being quietly
+absent: `password_hash` is a credential, and `email_norm` / `username_norm` are
+normalised duplicates of columns the export does carry. `verify.ts` checks three
+invariants against `PRAGMA table_info(users)` rather than against a copy of the
+list — that it covers the table exactly, that everything the erasure clears is
+disclosed unless it states one of those two reasons, and that everything which
+*survives* an erasure is disclosed too. So a column added to the schema fails the
+suite until somebody decides where it belongs, once, for both rights.
+
+The column that fix caught: **`provider_ref`, the Google `sub`, was surviving
+erasure entirely.** It is a permanent cross-service identifier of a natural person
+and the single most identifying thing on the row, and it went unnoticed for
+exactly the reason it was dangerous — nothing reads it on an erased account, so it
+was invisible rather than harmless. It is now cleared, and disclosed as well: the
+column it would be worst to leave out of an access request is the one whose
+absence is hardest to notice.
 
 ## Where the spec and the old data disagree
 

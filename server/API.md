@@ -54,17 +54,21 @@ It is safe to send twice — a retry, a second device or a lost response all get
 `null` until it succeeds, which is how a client knows whether to offer onboarding
 at all.
 
-### The profile, and the city list
+### The profile, and the city
 
-`PATCH /v1/me` takes `name`, `username`, `language`, `city`, `avatar`, `phone`,
-`headline`, `birthDate` and `leaderboardOptIn`. **Nothing on it is verified** —
-there is no code sent to the number and no link clicked in the address, and
-`GET /v1/me` carries no verification flag of any kind. Every field is optional and
-none of them gates anything; filling in all seven answers (photo, username,
-headline, city, email, phone, birthday) pays the completion bonus once and stamps
-`profileCompletedAt`.
+`PATCH /v1/me` takes `name`, `username`, `language`, `city`, `countryCode`,
+`avatar`, `phone`, `occupation`, `birthDate` and `leaderboardOptIn`. **Nothing on
+it is verified** — there is no code sent to the number and no link clicked in the
+address, and `GET /v1/me` carries no verification flag of any kind. Every field is
+optional and none of them gates anything; filling in all seven answers (photo,
+username, status, city, email, phone, birthday) pays the completion bonus once and
+stamps `profileCompletedAt`.
 
-Two of them have rules to draw the form around:
+There is no `headline`. The free-text line about yourself is **gone** — the column
+was dropped, not emptied — and `occupation` took its place in both the request and
+`GET /v1/me`.
+
+Four of them have rules to draw the form around:
 
 - **`username`** is unique platform-wide — 3 to 20 characters of `a-z 0-9 _`, no
   leading, trailing or doubled underscores, some names reserved. A clash is a
@@ -74,14 +78,67 @@ Two of them have rules to draw the form around:
   costs nothing, so a client may safely PATCH its whole profile on every save.
   `birthDateChangesLeft` on `GET /v1/me` says how many writes are left — grey the
   field out on `0` rather than finding out by being refused.
+- **`occupation`** is one of `student`, `worker`, `business`, `freelancer`,
+  `other`. **The UI labels it "Status", and the wire field is not called that** —
+  `status` is the account state (`provisional` / `active` / `banned` / `erased`),
+  which is a different fact about a different thing, and the two would eventually
+  be read for each other. Anything outside the five is a `400` whose `allowed`
+  carries the whole set, so a client that has drifted is told what it may send.
+  The set is served nowhere else: five values a client has to translate anyway do
+  not need a round trip.
+- **`city`** is canonicalised, not restricted — see below.
 
-**`city` must be one of `GET /v1/cities`.** That endpoint is public, because the
-sign-up form has to render the choice before an account exists, and it returns the
-whole closed set — 114 cities across Poland, Germany and Uzbekistan — rather than
-a search. Filter it locally and show everything when the box is empty: whether
-Paylez is anywhere near them is the thing a visitor actually wants to know. Send
-the canonical `name` back; the country is derived on the server and returned as
-`countryCode`, never sent by a client.
+#### `GET /v1/cities` suggests; it no longer decides
+
+That endpoint is unchanged in shape and changed in standing. It is public, because
+the sign-up form has to render the choice before an account exists, and it returns
+114 cities across Poland, Germany and Uzbekistan as a list rather than a search —
+filter it locally and show everything when the box is empty, since whether Paylez
+is anywhere near them is the thing a visitor actually wants to know.
+
+What changed is that it is now a **suggestion source**. `PATCH /v1/me` and
+`POST /v1/auth/signup` both take a city that is not on it, as long as a
+`countryCode` comes with it. Somebody the product has not reached yet was being
+told their own city does not exist, over a field that gates nothing.
+
+**What you send is not necessarily what is stored**, and a form that assumes
+otherwise will show the wrong thing until it reloads. Two rules, both in
+`resolveCity`:
+
+- **On the list:** the entry's own spelling and the entry's own country are
+  stored, and any `countryCode` you sent is **ignored**. `Kraków`, `Cracow` and
+  `krakow` all store `Krakow` / `PL`. That is what keeps one place on one weekly
+  board — the board groups on `users.city` with a literal `=`, so free text does
+  not produce a messy board, it produces several, each with one player on it — and
+  it is what stops a client writing `Krakow, US`.
+- **Off the list:** `countryCode` becomes required, and the name is stored as the
+  title-cased fold. Diacritics, hyphens and apostrophes do not survive:
+  `Saint-Étienne` is stored `Saint Etienne`. That is the cost of the same rule,
+  and it is the cost the 114 already pay — their canonical names are ASCII for
+  exactly this reason.
+
+So: read `city` and `countryCode` back off the response and display those. Three
+refusals on `PATCH /v1/me`, all `400 validation_failed`:
+
+| What was sent | `field` |
+| --- | --- |
+| A city we do not know, with no `countryCode` | `countryCode` — show the country picker, do not argue about the city |
+| A `countryCode` with no `city` | `city` — a country is half of one answer, not a field of its own |
+| An `occupation` outside the five | `occupation`, with `allowed` |
+
+`POST /v1/auth/signup` shares the first of those and neither of the other two: it
+takes no `occupation` at all, and a `countryCode` sent without a `city` there has
+no city to be a fact about and is dropped rather than refused.
+
+The country code is checked for *shape* — two letters — and never against a
+registry. The only one here is the quiz export's 196 sovereign states, which has
+no Hong Kong, Greenland or Puerto Rico in it, so checking against it would refuse
+real people to catch a typo in a field nothing joins on.
+
+Nothing revalidates a row that is already stored. The old database's cities came
+over as whatever it held, and a rule applied backwards would make those accounts
+unsaveable; re-sending a legacy value now succeeds, because it takes the off-list
+path and canonicalises to itself.
 
 ---
 
@@ -447,8 +504,37 @@ account terms: it lets one venue see this customer individually. It must be
 asked for on its own, per venue, and `DELETE` must be as easy to reach as the
 grant. Never bundle it into sign-up.
 
-`GET /v1/me/export` and `DELETE /v1/me` are the GDPR routines. Erasure requires
-the account email as confirmation.
+`GET /v1/me/export` and `DELETE /v1/me` are the GDPR routines — Article 15 and
+Article 17, which are one question asked from two sides. Erasure requires the
+account email as confirmation, and anonymises rather than deleting so the ledger
+stays verifiable.
+
+**Both are generated from one table**, `USER_COLUMNS` in `domain/consent.ts`, so
+they cannot disagree about what is personal. They were two hand-written pieces of
+SQL and had already drifted: the erasure cleared `username`, `phone`,
+`birth_date`, `display_avatar` and `occupation`, and the export mentioned none of
+them. That is the worse direction — an erasure that misses a column at least
+leaves somebody something to complain about, while an export that under-reports is
+read as complete, because nothing in the document says a column exists.
+
+Two things follow that a client showing the document should say out loud:
+
+- The `account` block now carries **25 of the 28 columns of `users`**, up from 12.
+  Three are withheld with a stated reason: `password_hash`, because a scrypt hash
+  in a file sitting in a downloads folder is an offline cracking target for an
+  account that still works (Art. 15(4)); and `email_norm` / `username_norm`,
+  because they are normalised duplicates of columns the export does carry.
+- **`provider_ref` — the Google `sub` — was surviving erasure and is now
+  cleared.** It is a permanent cross-service identifier of a natural person, and
+  it went unnoticed for exactly the reason it was dangerous: nothing reads it on an
+  erased account, so it was invisible rather than harmless. It is disclosed as well
+  as cleared, on the same argument — the column it would be worst to leave out of
+  an access request is the one whose absence is hardest to notice.
+
+What survives an erasure is accounting: the two once-only grant guards, the trust
+tier, the balance cache, the timestamps. All of it is in the export, which is the
+third invariant — a column that is neither disclosed nor cleared is data held
+about a person that neither right reaches.
 
 ## 11. Traffic — counting visitors without tracking them
 

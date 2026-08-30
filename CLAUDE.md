@@ -15,10 +15,11 @@ This file covers the repo as a whole.
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite: it exercises the
-pure maths — atlas parsing, projection round-trips, country hit-testing, ribbon
-geometry invariants, route baking determinism, hero/footer framing across five
-aspect ratios, and the rotation accumulator over an hour of simulated frames.
+There is no test runner. `npm run verify` is the test suite — 531 checks: it
+exercises the pure maths — atlas parsing, projection round-trips, country
+hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
+framing across five aspect ratios, and the rotation accumulator over an hour of
+simulated frames.
 **Run it after touching anything under `geo/`, `config.ts`, or the rotation and
 layout hooks.** Run `npm run build` for a type check (`tsc -b` is part of it).
 
@@ -69,7 +70,8 @@ before changing anything under it.
 Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 `node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
 it (migrating, seeding and importing the old database on an empty file);
-`npm run verify:api` is its test suite, the counterpart of `npm run verify`, and
+`npm run verify:api` is its test suite — 537 checks, the counterpart of
+`npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture
 gate, the energy tank's regeneration clock, the min-cohort suppression, the
@@ -125,6 +127,26 @@ Two things about it are easy to undo by accident and both are checked:
 - **A pool has exactly three states and they exhaust it** — spent, set aside,
   available — which is the same rule `partnerMetrics.ts` states on the front end,
   enforced here on the money that actually moves.
+
+**The profile's "Status" is `occupation`, and the column cannot be called
+`status`.** `users.status` is the account state — `provisional`, `active`,
+`banned`, `erased` — so the field a person picks from five values (`student`,
+`worker`, `business`, `freelancer`, `other`) carries the other name everywhere:
+the column, the API field and the patch key. The UI label is the dictionary's
+job. This repo has already paid once for two things sharing a name — `.dash-*` on
+the front end — and a moderation query reading somebody's job is the version of
+that bug which is hard to see. It replaced a free-text `headline`, which is
+dropped by a version-guarded migration in `db/db.ts` rather than left as a column
+nobody writes.
+
+**A city is canonicalised, not restricted, and what is stored is not what was
+typed.** `GET /v1/cities` is a suggestion source now; `resolveCity` folds a match
+onto the table's own spelling and country (ignoring any `countryCode` the client
+sent) and folds anything else to a title-cased ASCII form that needs a country
+with it. The reason is one query: the city weekly board groups on `users.city`
+with a literal `=`, so free text does not make a messy board, it makes one board
+per spelling with one player on each. `server/README.md` carries both costs — a
+mis-filed `Halle`, and `Saint-Étienne` stored as `Saint Etienne`.
 
 Two of the four question banks do not come from `new-data/`. The capitals and
 flags banks are derived from the `CountryCapital` export; **the general and

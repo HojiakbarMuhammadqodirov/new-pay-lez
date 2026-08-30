@@ -48,7 +48,7 @@ Run the backend locally:
 ```bash
 npm install
 npm run server        # http://127.0.0.1:8787 — migrates, seeds and imports on first run
-npm run verify:api    # 463 checks, if you want to see what it guarantees
+npm run verify:api    # 521 checks, if you want to see what it guarantees
 ```
 
 > **A large economy change has landed since the last copy of this brief.** Points
@@ -63,6 +63,11 @@ npm run verify:api    # 463 checks, if you want to see what it guarantees
 > ordered by how much of the app each one touches, and it is what your
 > `test/live_test.dart` and `test/protocol_test.dart` will fail on first. Read
 > that before you read anything else here.
+>
+> **The profile has moved since then too.** `headline` is gone — the column was
+> dropped, not emptied — and `occupation`, which the UI labels "Status", took its
+> place; the city field stopped being a closed list; and the GDPR export got much
+> bigger. Those are §5, §6 and §9 of the same list.
 
 ---
 
@@ -310,17 +315,26 @@ Two rendering rules that matter (`API.md` §9):
   which means a client that guesses wrong costs nothing. `onboardedAt` on
   `GET /v1/me` is null until it lands, and that is how you know whether to offer
   onboarding at all.
-- **The city picker reads `GET /v1/cities`** — public, so the sign-up form can
-  render it before an account exists. 114 cities across Poland, Germany and
-  Uzbekistan, as a closed list rather than a search: filter locally and show the
-  whole set when the box is empty. Send the canonical `name` back; `countryCode`
-  is derived on the server and never sent by the client. Anything not on the list
-  is refused rather than stored.
-- **The profile has more fields and none of them is verified.** `PATCH /v1/me`
-  takes `name`, `username`, `language`, `city`, `avatar`, `phone`, `headline`,
-  `birthDate` and `leaderboardOptIn`. There is no `phoneVerified` and no
-  verification flow of any kind — delete any "verify your number" screen. Two
-  rules shape the form:
+- **`GET /v1/cities` suggests; it no longer decides.** Same shape, same 114
+  cities across Poland, Germany and Uzbekistan, still public so the sign-up form
+  can render it before an account exists, still a list rather than a search —
+  filter locally and show the whole set when the box is empty. What changed is
+  that a city *not* on it is now accepted, by both `PATCH /v1/me` and
+  `POST /v1/auth/signup`, as long as a `countryCode` comes with it. The picker
+  becomes a type-ahead with a free-text fallback and a country picker behind it,
+  not a dropdown that refuses.
+
+  **Do not assume what you sent is what was stored.** A city on the list is
+  stored with the list's own spelling and country and your `countryCode` is
+  ignored (`Kraków` → `Krakow` / `PL`); a city off it is folded and title-cased,
+  so `Saint-Étienne` comes back `Saint Etienne`. Read `city` and `countryCode` off
+  the response and render those. One place has to have one spelling, because the
+  weekly board groups on it literally.
+- **The profile has more fields, one is gone, and none of them is verified.**
+  `PATCH /v1/me` takes `name`, `username`, `language`, `city`, `countryCode`,
+  `avatar`, `phone`, `occupation`, `birthDate` and `leaderboardOptIn`. There is no
+  `phoneVerified` and no verification flow of any kind — delete any "verify your
+  number" screen. Three rules shape the form:
   - `username` is unique platform-wide, 3–20 of `a-z 0-9 _`, single underscores
     between runs, some names reserved. A clash is a 409 naming the field.
   - `birthDate` is settable once and correctable once; a third *different* day is
@@ -328,14 +342,30 @@ Two rendering rules that matter (`API.md` §9):
     is safe to PATCH the whole profile on every save. `birthDateChangesLeft` on
     `GET /v1/me` says how many writes remain — grey the field out at 0 instead of
     letting somebody find out by being refused.
+  - `occupation` is one of `student`, `worker`, `business`, `freelancer`,
+    `other`. **Label it "Status" in the UI and never name the field `status` in
+    your models** — `status` is the account state on the server, and the two will
+    be read for each other the first time somebody greps. It is a picker, not a
+    text field; anything else is a 400 whose `allowed` carries the five. The
+    labels are yours to translate — the server sends the five raw values and
+    nothing else.
 
-  Filling all seven answers (photo, username, headline, city, email, phone,
+  **`headline` is gone.** The free-text line about yourself was dropped, not
+  emptied, in both directions — a model that requires it throws on decode, and
+  sending it is ignored. Delete the field, its screen and its 140-character
+  counter.
+
+  Filling all seven answers (photo, username, status, city, email, phone,
   birthday) pays the completion bonus once and stamps `profileCompletedAt`.
 - **Data sharing is a separate consent, per venue** — `POST /v1/me/sharing/{venueId}`.
   It must be asked for on its own, never bundled into sign-up, and revoking must
   be as easy to find as granting.
 - GDPR: export `GET /v1/me/export`, erase `DELETE /v1/me` (requires the account
-  email typed as confirmation).
+  email typed as confirmation). The export's `account` block got much bigger —
+  see §9 of the response-shape list. Show the document or hand over the file;
+  **do not map it to a model with a fixed field list**, because that is the same
+  under-reporting bug one layer up, and it will silently hide the next column
+  anybody adds.
 - Subscriptions: the consumer plans are **Free, Pro and Premium** — Plus is
   retired — and **none of them has a free trial**, so no screen should offer one.
   App-store purchase → `POST /v1/billing/receipt` with the receipt. **Send the
@@ -358,6 +388,10 @@ Two rendering rules that matter (`API.md` §9):
 - Nothing on screen says points expire, that there is a daily points cap, that a
   repeat round pays less, that energy comes back at midnight, or that a number
   has been verified. Nothing says "heart" at all.
+- No screen offers a free-text `headline`, and no screen refuses a city because
+  it is not on `GET /v1/cities`. The profile's "Status" is a five-value picker
+  reading `occupation`, and every city and country shown is the one the server
+  returned rather than the one that was typed.
 
 ## What to ask about rather than guess
 
@@ -378,12 +412,12 @@ the list below, and they are *supposed* to — that is the check working. Fix th
 fixtures against a freshly booted `npm run server`, not against this list; this is
 the map of where to look.
 
-**Ordered by how much of the app each one touches.** The first three are new
-since the last copy of this brief and are one economy change in three parts; the
-rest were in it already, so if you have worked through them once they are here as
-a checklist rather than as news. Read §2 whatever else you skip: it is the only
-item on the list with no shape to fail on, which means nothing on either side
-will tell you it happened.
+**Ordered by how much of the app each one touches.** Two batches are new since
+the last copy of this brief: the economy change, which is §1–§3, and the profile
+change, which is §5, §6 and §9. The rest were in it already, so if you have
+worked through them once they are here as a checklist rather than as news. Read
+§2 whatever else you skip: it is the only item on the list with no shape to fail
+on, which means nothing on either side will tell you it happened.
 
 ### 1. Hearts became **energy** — one rename, five places
 
@@ -555,19 +589,21 @@ client rendering "nothing expiring soon" off an empty array is telling the
 customer about a rule that no longer exists. Removed rather than emptied for
 exactly that reason. **A model that requires the key will throw on decode.**
 
-### 5. `GET /v1/me` — five fields added, one **removed**
+### 5. `GET /v1/me` — `headline` is **gone**, `occupation` arrived
 
 ```diff
   "user": {
     "id": "usr_…", "email": "…", "name": "…",
 +   "username": "kasia_pl",
     "language": "pl",
-    "city": "Kraków",
+-   "city": "Kraków",
++   "city": "Krakow",
 +   "countryCode": "PL",
 +   "avatar": "…",
     "phone": "+48…",
 -   "phoneVerified": false,
-    "headline": "…",
+-   "headline": "a sentence somebody typed",
++   "occupation": "freelancer",
     "birthDate": "1994-03-11",
 +   "birthDateChangesLeft": 1,
 +   "profileCompletedAt": "2026-08-14T09:02:11.000Z",
@@ -577,15 +613,39 @@ exactly that reason. **A model that requires the key will throw on decode.**
   }
 ```
 
+**`headline` is gone, not nullable.** The column was dropped — a free-text line
+about yourself is unsearchable, unsegmentable, untranslatable and a moderation
+surface, and it earned the product none of those. **A model with a required
+`headline` throws on decode**, on the profile screen and on everything that
+renders a profile header. Delete the field, its editor and its character counter.
+
+**`occupation` replaces it** and is one of `student`, `worker`, `business`,
+`freelancer`, `other`, or `null`. Two things about the name, and both will
+otherwise cost somebody an afternoon:
+
+- **The UI label is "Status". The field is not.** `status` on the server is the
+  account state — `provisional`, `active`, `banned`, `erased` — so a Dart model
+  with a `status` getter on the user is a name collision waiting for the first
+  person who greps for it. Keep the wire name.
+- **The five labels are yours to translate.** The server sends the raw values and
+  there is no endpoint that serves the set — five strings a client has to
+  translate anyway are not worth a round trip. The 400 in §6 carries them in
+  `allowed`, which is where a drifted client finds out.
+
 `phoneVerified` is **removed**, because nothing is verified any more — there is no
 code sent to the number and no endpoint that could ever have set it true. Any
-"verify your number" screen, badge or gate goes with it. `countryCode` is derived
-from the city on the server and must never be sent by a client.
+"verify your number" screen, badge or gate goes with it.
 
-If your fixture is older than a few weeks, `phone`, `headline`, `birthDate` and
-`onboardedAt` will be missing from it too — they are shown as unchanged above
-because they arrived in the step before this one. `plan.code` is now one of
-`free`, `pro`, `premium`; a fixture holding `plus` is on a retired plan.
+`city` is worth recapturing even if you think you have it: what comes back is the
+**canonical** spelling, not what was typed. A fixture holding `Kraków` was already
+wrong before this change — the list's own spelling is `Krakow` — and §6 is where
+that rule now bites, because the field accepts far more than it used to.
+`countryCode` comes back beside it and is the server's answer for a city it knows.
+
+If your fixture is older than a few weeks, `phone`, `birthDate` and `onboardedAt`
+will be missing from it too — they are shown as unchanged above because they
+arrived in the step before this one. `plan.code` is now one of `free`, `pro`,
+`premium`; a fixture holding `plus` is on a retired plan.
 
 The `entitlements` map in the same response gained `scan_points`,
 `first_visit_points`, `stamp_points`, `new_category_points`,
@@ -594,7 +654,76 @@ The `entitlements` map in the same response gained `scan_points`,
 `priority_support` and `streak_freezes`, and **lost `points_expiry_months`**.
 The energy pair and `round_decay` are §1e.
 
-### 6. `POST /v1/gate/transactions/{id}/confirm` — the receipt lost a field
+### 6. `PATCH /v1/me` — one field gone, one arrived, and the city opened up
+
+The request side of §5, plus the change that actually needs a form redesign.
+
+```diff
+  PATCH /v1/me
+  {
+    "name": "Kasia", "username": "kasia_pl", "language": "pl",
+-   "city": "Kraków",
++   "city": "Kryvyi Rih",
++   "countryCode": "UA",
+    "avatar": "…", "phone": "+48…",
+-   "headline": "a sentence somebody typed",
++   "occupation": "freelancer",
+    "birthDate": "1994-03-11", "leaderboardOptIn": true
+  }
+```
+
+`Kraków` was the only kind of answer the field took: one of the 114, or a 400.
+`Kryvyi Rih` is not on that list and is now accepted, because `countryCode` came
+with it, and it comes back as `Kryvyi Rih` / `UA`. Send `Kraków` and it still
+works — and comes back `Krakow` / `PL`, with any `countryCode` you sent thrown
+away.
+
+**`city` is canonicalised, not restricted.** `GET /v1/cities` is unchanged in
+shape — same 114 places, still public, still a list you filter locally — but it is
+now a *suggestion source*. A city that is not on it is accepted as long as
+`countryCode` comes with it, which is the point: a whitelist told somebody the
+product has not reached yet that their own home town does not exist, over a field
+that gates nothing.
+
+So the field is a type-ahead over the 114 with a free-text fallback, and a country
+picker that appears when nothing matched. **What you send is not what is stored**,
+in both directions:
+
+- **On the list.** The list's own spelling and the list's own country win, and
+  the `countryCode` you sent is **ignored**. `Kraków`, `Cracow` and `krakow` all
+  store `Krakow` / `PL`. That is what keeps one place on one weekly board — the
+  board groups on `users.city` with a literal `=`, so free text would not make a
+  messy board, it would make several, each with one player on it — and it is what
+  stops a client writing `Krakow, US`.
+- **Off the list.** The name is folded and title-cased, so diacritics, hyphens and
+  apostrophes do not survive: `Saint-Étienne` is stored, and returned, as
+  `Saint Etienne`. That is the price of one board per place. It is the price the
+  114 already pay — their canonical names are ASCII for the same reason.
+
+**Render `city` and `countryCode` from the response, never from the text field.**
+A form that keeps showing what was typed is showing something the server does not
+have, and it will disagree with the leaderboard on the next screen.
+
+Three refusals, all `400 validation_failed`, and each names the field a form
+should point at:
+
+| What was sent | `field` | What the form should do |
+| --- | --- | --- |
+| A city we do not know, with no `countryCode` | `countryCode` | Show the country picker. Do **not** mark the city field invalid — the city is fine, it is the answer that is incomplete. |
+| A `countryCode` with no `city` | `city` | Send both or neither; a country is half of one answer. |
+| An `occupation` outside the five | `occupation` | The body carries the allowed set in `allowed`. Reaching this means the picker has drifted from the server. |
+
+`POST /v1/auth/signup` takes `city` and `countryCode` under the same rule, so the
+sign-up form gets the same treatment and the first row of that table applies
+there too. The other two do not: sign-up takes no `occupation` at all, and a
+`countryCode` sent there without a `city` has no city to be a fact about and is
+dropped rather than refused.
+
+`headline` is no longer read at all — sending it is ignored rather than refused,
+which means a client that keeps the field will look like it is working and quietly
+save nothing.
+
+### 7. `POST /v1/gate/transactions/{id}/confirm` — the receipt lost a field
 
 ```diff
   {
@@ -616,7 +745,7 @@ because **there is no spend bonus**. A bigger bill no longer earns more; the ven
 minimum still decides whether the scan counts as a visit at all, and that is the
 only thing the amount decides. Nothing else about the gate changed.
 
-### 7. `POST /v1/auth/signup` — the body is the same, the behaviour is not
+### 8. `POST /v1/auth/signup` — the body is the same, the behaviour is not
 
 It no longer pays the welcome bonus. The balance immediately after sign-up is 0
 (or whatever a merged guest identity brought), not 100. Call
@@ -628,34 +757,81 @@ It no longer pays the welcome bonus. The balance immediately after sign-up is 0
 
 A test asserting "a new account has 100 points" fails until it makes that call.
 
-### 8. New endpoints
+### 9. `GET /v1/me/export` — the `account` block gained 13 keys
+
+The GDPR export's `account` block went from **12 keys to 25**, of the 28 columns
+`users` has. Nothing was removed.
+
+```diff
+  "account": {
+    "id": "usr_…", "email": "…", "display_name": "Kasia",
+    "language": "pl", "city": "Krakow", "country_code": "PL",
++   "username": "kasia_pl",
++   "auth_provider": "email",
++   "provider_ref": null,
++   "phone": "+48…",
++   "birth_date": "1994-03-11",
++   "birth_date_set_at": "…",
++   "birth_date_changes": 1,
++   "occupation": "freelancer",
++   "onboarded_at": "…",
++   "profile_completed_at": "…",
++   "display_avatar": "…",
++   "updated_at": "…",
++   "deleted_at": null,
+    "points_cache": 1240, "leaderboard_opt_in": 1, "referral_code": "…",
+    "trust_tier": 1, "status": "active", "created_at": "…"
+  }
+```
+
+It was under-reporting: `username`, `phone`, `birth_date`, `display_avatar` and
+`occupation` were cleared by the erasure and absent from the export. Both are now
+generated from one table, so they cannot disagree about what is personal.
+
+Three columns are deliberately withheld and the reason is part of the design
+rather than an oversight: `password_hash` is a credential, and `email_norm` /
+`username_norm` are normalised duplicates of columns the export does carry. If a
+screen lists what is held, those three are what it should be able to explain.
+
+For the client this is one instruction: **show the document, do not map it.** A
+model with a fixed field list is the same under-reporting bug one layer up, and it
+will hide the next column silently. Render the JSON, or hand over the file.
+
+`DELETE /v1/me` is unchanged in shape and now clears one more column —
+`provider_ref`, the Google `sub`, which was surviving erasure entirely.
+
+### 10. New endpoints
 
 | Endpoint | Auth | Response |
 | --- | --- | --- |
-| `GET /v1/cities` | public | `{ countries: ["PL","DE","UZ"], cities: [{ name, country }] }` — 114 entries |
+| `GET /v1/cities` | public | `{ countries: ["PL","DE","UZ"], cities: [{ name, country }] }` — 114 entries, and now a suggestion source rather than a whitelist (§6) |
 | `POST /v1/me/onboarded` | user | `{ granted, onboardedAt, points, balance }` |
 
-### 9. New refusals on endpoints that used to always succeed
+### 11. New refusals on endpoints that used to always succeed
 
 | Call | New failure |
 | --- | --- |
 | `POST /v1/assistant/ask` | `403 entitlement_required`, `entitlement: "assistant_uses_per_day"`, with `limit` and `used`, past 5 asks a day on free |
 | `POST /v1/games/sessions/{id}/events` with `kind: "hint"` | `403 entitlement_required`, `entitlement: "word_hints_per_day"`, past 3 a day on free |
 | `POST /v1/assistant/ask` with someone else's `sessionId` | `404 not_found` |
-| `PATCH /v1/me` | `409 conflict` on a taken `username`, or on a third different `birthDate`; `400 validation_failed` with `field` on a city outside `GET /v1/cities` |
+| `PATCH /v1/me` | `409 conflict` on a taken `username`, or on a third different `birthDate`; `400 validation_failed` naming `countryCode`, `city` or `occupation` — the three in §6 |
 
 A test fixture that asks the assistant six times in one run, or takes four hints
-in a round, now fails on the sixth and the fourth.
+in a round, now fails on the sixth and the fourth. One that asserts a city off
+`GET /v1/cities` is refused now **passes** the write and fails the assertion:
+that refusal is gone, and only the missing `countryCode` is still a 400.
 
 ### What did **not** change
 
 The gate's *sequence* — `/gate/scan`, `/amount`, `/confirm`, the polling and the
-error codes — is exactly as it was; only `pointsCapped` left the receipt (§6).
+error codes — is exactly as it was; only `pointsCapped` left the receipt (§7).
 Vouchers, gift cards, stamp cards, rewards, deals and their funnel, the guidebook,
 the converter, referrals, leaderboards, notifications, push registration, the
-consent and GDPR routines, and every partner endpoint are untouched. So is
-`GET /v1/wallet/history`: the ledger entries still carry an `expires_at` field,
-and every new one is `null`. Do not render it.
+per-venue consent routines, and every partner endpoint are untouched. The two
+GDPR *endpoints* are unchanged too — same paths, same request bodies; what moved
+is how much the export discloses (§9). So is `GET /v1/wallet/history`: the ledger
+entries still carry an `expires_at` field, and every new one is `null`. Do not
+render it.
 
 Two names on the server side are **deliberately** unchanged, and they will
 confuse anybody who reads a schema dump: `game_sessions.life_spent` and
@@ -670,12 +846,19 @@ after either of them.
       `/v1/games/sessions`, `/v1/games/sessions/{id}/finish`, `/v1/wallet`,
       `/v1/me` and `/v1/gate/…/confirm` from a freshly booted server. Those six
       are the ones whose keys moved.
-- [ ] Any model with a required `expiringSoon`, `pointsCapped`, `phoneVerified`
-      or `decay` field: make it gone, not optional. A field that is never sent is
-      not a nullable field, it is a field that does not exist.
+- [ ] Any model with a required `expiringSoon`, `pointsCapped`, `phoneVerified`,
+      `decay` or `headline` field: make it gone, not optional. A field that is
+      never sent is not a nullable field, it is a field that does not exist.
 - [ ] Grep the app for `no_lives`, `livesLeft`, `daily_lives`,
       `life_regen_minutes`, `round_decay` and `resetsAt`. Every hit is a bug, and
       the first of them is the one that fails silently.
+- [ ] Grep the app for `headline`. Every hit is a field the server neither sends
+      nor reads — the write side fails silently, which is the worse half.
+- [ ] Grep the user model for `status`. If it has one, it is either the account
+      state or somebody's mis-named `occupation`; the two must not merge.
+- [ ] Any assertion that a city off `GET /v1/cities` is refused: it is accepted
+      now, with a `countryCode`. And any assertion that `city` comes back as it
+      was sent — it comes back canonicalised (§6).
 - [ ] `test/live_test.dart`: the journey now needs `POST /v1/me/onboarded` before
       it can assert a non-zero starting balance, and its game assertions need the
       new raw scores with no decay factor applied to them.

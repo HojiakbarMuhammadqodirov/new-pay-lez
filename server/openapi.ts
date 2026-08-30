@@ -84,6 +84,15 @@ const SCHEMAS: Record<string, Schema> = {
           },
           message: str(),
           field: str('Present on `validation_failed`: which input was wrong.'),
+          allowed: {
+            type: 'array',
+            items: str(),
+            description:
+              'Present on a `validation_failed` against a closed vocabulary — currently ' +
+              'only `occupation` — and it carries the whole set. A client that has drifted ' +
+              'is told what it may send at the one moment that matters, which is why the ' +
+              'five values are not also served from an endpoint of their own.',
+          },
         },
       },
       requestId: str('Echoed in the `x-request-id` header. Quote it in a support ticket.'),
@@ -127,18 +136,37 @@ const SCHEMAS: Record<string, Schema> = {
           city: {
             type: 'string',
             nullable: true,
-            description: 'One of `GET /v1/cities`. A write that is not on that list is refused.',
+            description:
+              'The **canonical** spelling, which is also the name of the weekly board this ' +
+              'account lands on. Never simply what was typed: a city that matches ' +
+              '`GET /v1/cities` is stored the way that list spells it (`Kraków` → `Krakow`), ' +
+              'and one that does not is folded and title-cased (`Saint-Étienne` → ' +
+              '`Saint Etienne`). Echo this value back rather than the input; the board ' +
+              'matches on it with a literal `=`, so one place has to have one spelling.',
           },
           countryCode: {
             type: 'string',
             nullable: true,
             description:
-              '`PL`, `DE` or `UZ`, derived from the city on the server. Never sent by a client — ' +
-              'the country is a fact about the city, not a second answer.',
+              'ISO 3166-1 alpha-2, upper case. For a city on `GET /v1/cities` it is the ' +
+              'list’s own country and **any `countryCode` sent with it is ignored** — that ' +
+              'is what stops a client writing `Krakow, US`. For a city off the list it is ' +
+              'the code the client sent, and sending one is required; see `PATCH /v1/me`.',
           },
           avatar: { type: 'string', nullable: true },
           phone: { type: 'string', nullable: true, description: 'Optional, and unverified.' },
-          headline: { type: 'string', nullable: true, description: 'A status line, at most 140 characters.' },
+          occupation: {
+            type: 'string',
+            nullable: true,
+            enum: ['student', 'worker', 'business', 'freelancer', 'other'],
+            description:
+              'What the person does — **the field the UI labels "Status"**. It is not called ' +
+              '`status` on the wire or in the schema, because that name is taken: the account ' +
+              'state (`provisional` / `active` / `banned` / `erased`) is `users.status`, and ' +
+              'two things meaning different things under one name is how a query ends up ' +
+              'reading somebody’s job. It replaced a free-text `headline`, which is **gone** ' +
+              'rather than nullable — a model that requires it throws on decode.',
+          },
           birthDate: { type: 'string', nullable: true, description: 'ISO `YYYY-MM-DD`.' },
           birthDateChangesLeft: int(
             'Self-service writes still available: 2 before it is set, 1 after, 0 once the one ' +
@@ -149,7 +177,7 @@ const SCHEMAS: Record<string, Schema> = {
             type: 'string',
             nullable: true,
             description:
-              'When all seven profile answers were first present (photo, username, headline, ' +
+              'When all seven profile answers were first present (photo, username, status, ' +
               'city, email, phone, birthday) and the completion bonus was paid. A stamp, not a ' +
               'live flag.',
           },
@@ -204,14 +232,20 @@ const SCHEMAS: Record<string, Schema> = {
   Cities: {
     type: 'object',
     description:
-      'The closed set of cities a profile may name, and the countries they sit in. ' +
-      'Public, because the sign-up form has to render the choice before an account exists.',
+      'The 114 places Paylez operates in, and the countries they sit in — **a suggestion ' +
+      'source, not a whitelist**. A profile may name a city that is not here as long as a ' +
+      '`countryCode` comes with it; see `PATCH /v1/me`. Public, because the sign-up form ' +
+      'has to render the choice before an account exists.',
     properties: {
       countries: arrayOf({ type: 'string', enum: ['PL', 'DE', 'UZ'] }),
       cities: arrayOf({
         type: 'object',
         properties: {
-          name: str('The canonical spelling. Store and send this one.'),
+          name: str(
+            'The canonical spelling, and the one to send back. A match is found by folding, ' +
+              'so `Kraków`, `Cracow` and `krakow` all resolve to this entry — but what is ' +
+              'stored is this string.',
+          ),
           country: { type: 'string', enum: ['PL', 'DE', 'UZ'] },
         },
       }),
@@ -677,7 +711,16 @@ const DOCS: Record<string, Doc> = {
     tags: ['auth'],
     body: {
       email: str(), password: str('At least 6 characters.'), name: str(),
-      language: str(), city: str('One of `GET /v1/cities`.'),
+      language: str(),
+      city: str(
+        'Suggested by `GET /v1/cities`, not restricted to it. A city off that list needs ' +
+          '`countryCode` beside it, and is stored folded and title-cased — the same rule as ' +
+          '`PATCH /v1/me`, checked here so sign-up is not the hole in it.',
+      ),
+      countryCode: str(
+        'ISO 3166-1 alpha-2. Read only alongside `city`, and **ignored** when the city is ' +
+          'one of `GET /v1/cities` — those own their country.',
+      ),
       partner: bool('Grants the partner_owner role. Never grants admin.'),
       referralCode: str('The code of whoever invited them.'),
       provisionalId: str('The guest account to merge in.'),
@@ -686,7 +729,10 @@ const DOCS: Record<string, Doc> = {
     },
     required: ['email', 'password', 'name'],
     response: ref('Session'),
-    errors: [[409, 'That address already has an account.']],
+    errors: [
+      [400, '`validation_failed` — `field` is `email`, `password`, `name`, `city` or `countryCode`. The last of those is a city we do not know sent without the country it is in.'],
+      [409, 'That address already has an account.'],
+    ],
   },
   'POST /v1/auth/signin': {
     summary: 'Sign in',
@@ -712,13 +758,19 @@ const DOCS: Record<string, Doc> = {
   },
   'POST /v1/auth/signout': { summary: 'Revoke this session', tags: ['auth'], response: { type: 'object' } },
   'GET /v1/cities': {
-    summary: 'The cities a profile may name',
+    summary: 'The cities the profile form suggests',
     description:
-      'Poland, Germany and Uzbekistan. Public, because sign-up takes a city and the form ' +
-      'has to render the choice before anybody has an account. A list rather than a ' +
-      'search: it is short and closed, so filter it locally and show the whole set when ' +
-      'the box is empty — whether Paylez is anywhere near them is the thing a visitor ' +
-      'actually wants to know.',
+      '114 places across Poland, Germany and Uzbekistan. Public, because sign-up takes a ' +
+      'city and the form has to render the choice before anybody has an account.\n\n' +
+      '**Unchanged in shape, changed in standing.** It was the closed set a profile had to ' +
+      'pick from; it is now a suggestion source, and `PATCH /v1/me` takes a city that is ' +
+      'not on it as long as a `countryCode` comes with it. Somebody the product has not ' +
+      'reached yet was being told their own city does not exist, over a field that gates ' +
+      'nothing.\n\n' +
+      'Still a list rather than a search, because it is short: filter it locally and show ' +
+      'the whole set when the box is empty — whether Paylez is anywhere near them is the ' +
+      'thing a visitor actually wants to know, and a search endpoint would be a round trip ' +
+      'per keystroke to narrow a hint.',
     tags: ['me'],
     response: ref('Cities'),
   },
@@ -729,30 +781,53 @@ const DOCS: Record<string, Doc> = {
       'Every field is optional and none of them gates anything — an account that answers ' +
       'none of them is a complete account, it just has not been paid for finishing one. ' +
       '**Nothing here is verified**; there is no code sent to the number.\n\n' +
-      'Two fields have rules worth knowing before the form is drawn. `username` is unique ' +
-      'platform-wide (3–20 of `a-z 0-9 _`, single underscores between runs, some names ' +
-      'reserved) and a clash is a `409` naming the field. `birthDate` is accepted twice — ' +
-      'the answer and one correction — after which a *different* day is a `409` naming ' +
-      'support; resending the day already stored costs nothing, so a client may safely ' +
-      'PATCH its whole profile on every save. `birthDateChangesLeft` on `GET /v1/me` says ' +
-      'how many writes remain.\n\n' +
-      'Filling in all seven answers (photo, username, headline, city, email, phone, ' +
+      'Four fields have rules worth knowing before the form is drawn.\n\n' +
+      '`username` is unique platform-wide (3–20 of `a-z 0-9 _`, single underscores between ' +
+      'runs, some names reserved) and a clash is a `409` naming the field.\n\n' +
+      '`birthDate` is accepted twice — the answer and one correction — after which a ' +
+      '*different* day is a `409` naming support; resending the day already stored costs ' +
+      'nothing, so a client may safely PATCH its whole profile on every save. ' +
+      '`birthDateChangesLeft` on `GET /v1/me` says how many writes remain.\n\n' +
+      '`occupation` is the field the UI labels **"Status"** and is one of five values; ' +
+      'anything else is a `400` whose `allowed` carries the whole set. It replaced the ' +
+      'free-text `headline`, which no longer exists in either direction.\n\n' +
+      '`city` is **canonicalised, not restricted.** A city that matches `GET /v1/cities` is ' +
+      'stored with that list’s own spelling and country, and a `countryCode` sent with it ' +
+      'is ignored — which is what keeps `Kraków`, `Krakow` and `krakow` on one weekly board ' +
+      'and stops a client writing `Krakow, US`. A city that does not match is accepted with ' +
+      'a `countryCode` beside it and is stored folded and title-cased, so diacritics, ' +
+      'hyphens and apostrophes do not survive (`Saint-Étienne` → `Saint Etienne`). That is ' +
+      'the price of one board per place rather than one per spelling: read `city` back off ' +
+      'the response rather than assuming what was sent was stored.\n\n' +
+      'Filling in all seven answers (photo, username, status, city, email, phone, ' +
       'birthday) pays `profileComplete` once and stamps `profileCompletedAt`.',
     tags: ['me'],
     body: {
       name: str(),
       username: str('Unique. 3–20 characters of `a-z 0-9 _`.'),
       language: str(),
-      city: str('One of `GET /v1/cities`. Anything else is a 400 rather than stored.'),
+      city: str(
+        'Suggested by `GET /v1/cities`, not restricted to it. Off that list, send ' +
+          '`countryCode` too. 2–60 characters measured on the fold.',
+      ),
+      countryCode: str(
+        'ISO 3166-1 alpha-2, checked for shape and not against a registry. Read only ' +
+          'alongside `city` — sending it alone is a `400`, not a silent discard — and ' +
+          'ignored when the city is one of `GET /v1/cities`.',
+      ),
       avatar: str(),
       phone: str(),
-      headline: str('At most 140 characters.'),
+      occupation: {
+        type: 'string',
+        enum: ['student', 'worker', 'business', 'freelancer', 'other'],
+        description: 'The UI’s "Status". Not `status`, which is the account state.',
+      },
       birthDate: str('ISO `YYYY-MM-DD`. Set once, corrected once.'),
       leaderboardOptIn: bool(),
     },
     response: ref('Me'),
     errors: [
-      [400, '`validation_failed` — `field` says which: `username`, `city`, `headline`, `phone` or `birthDate`.'],
+      [400, '`validation_failed` — `field` says which: `username`, `phone`, `birthDate`, `occupation` (with the five values in `allowed`), `countryCode` (a city we do not know, sent without one) or `city` (a `countryCode` sent without a city, or a name that is not one).'],
       [409, '`conflict` — the username is taken, or the birthday has no corrections left.'],
     ],
   },
@@ -804,10 +879,40 @@ const DOCS: Record<string, Doc> = {
     tags: ['privacy'],
     response: { type: 'object' },
   },
-  'GET /v1/me/export': { summary: 'GDPR export — everything held about this account', tags: ['privacy'], response: { type: 'object' } },
+  'GET /v1/me/export': {
+    summary: 'GDPR export — everything held about this account',
+    description:
+      'Article 15, as a JSON document: the `account` block, roles, consents, per-venue ' +
+      'data-sharing grants, the points ledger, and the rest of what the platform holds.\n\n' +
+      '**The `account` block is generated from the same table the erasure is** ' +
+      '(`USER_COLUMNS` in `domain/consent.ts`), so the two rights cannot disagree about ' +
+      'what is personal. It used to be hand-written and had already drifted — `username`, ' +
+      '`phone`, `birth_date`, `display_avatar` and `occupation` were cleared by the erasure ' +
+      'and absent from the export, which is the worse direction of the two: an export that ' +
+      'under-reports reads as complete, because nothing in the document says a column ' +
+      'exists. It now carries **25 of the 28 columns of `users`**, up from 12.\n\n' +
+      'Three are withheld and the reason is stated rather than left to be noticed. ' +
+      '`password_hash` is a credential — an export is a document that ends up in a ' +
+      'downloads folder, and a scrypt hash in one is an offline cracking target for an ' +
+      'account that still works (Art. 15(4)). `email_norm` and `username_norm` are ' +
+      'normalised duplicates of columns the export does carry, and including them would ' +
+      'imply four identifiers where there are two.',
+    tags: ['privacy'],
+    response: { type: 'object' },
+  },
   'DELETE /v1/me': {
     summary: 'GDPR erasure',
-    description: 'Anonymises rather than deleting, so the ledger stays verifiable. Requires the account email as confirmation.',
+    description:
+      'Article 17. Anonymises rather than deleting, so the ledger stays verifiable. ' +
+      'Requires the account email as confirmation.\n\n' +
+      'Generated from `USER_COLUMNS` alongside the export, which is what fixed the column ' +
+      'it was missing: **`provider_ref` — the Google `sub` — survived erasure entirely and ' +
+      'is now cleared.** It is a permanent cross-service identifier of a natural person and ' +
+      'the single most identifying thing on the row; it went unnoticed because nothing ' +
+      'reads it on an erased account, which made it invisible rather than harmless. What ' +
+      'survives is accounting — the once-only grant guards, the trust tier, the balance ' +
+      'cache, the created-at — and it is disclosed by the export, so nothing is held that ' +
+      'neither right reaches.',
     tags: ['privacy'],
     body: { confirmEmail: str() },
     required: ['confirmEmail'],
