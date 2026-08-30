@@ -54,7 +54,10 @@ function me(ctx: Ctx, fresh?: accounts.User) {
       countryCode: user.country_code,
       avatar: user.display_avatar,
       phone: user.phone,
-      headline: user.headline,
+      /* The field the UI labels "Status". It is not `status` here for the same
+         reason it is not `status` in the schema: `users.status` is the account
+         state. One of `accounts.OCCUPATIONS`, or null. */
+      occupation: user.occupation,
       birthDate: user.birth_date,
       /* How many self-service writes are left, so a form can grey the field out
          *before* somebody spends their last one — the alternative is a client
@@ -97,9 +100,21 @@ export const authRoutes: Route[] = [
       const user = await accounts.signUp(ctx.db, {
         email: str(ctx.body, 'email'),
         password: str(ctx.body, 'password'),
-        name: str(ctx.body, 'name', { max: 120 }),
+        /* No `max` here. The ceiling is `accounts.checkName`'s, which
+           `PATCH /v1/me` writes through as well — stated at one of the two
+           routes it was a ceiling the other did not have, and a 5,000-character
+           display name was a 400 on sign-up and a 200 on the patch. `str` still
+           owns "required", which is a property of *this* endpoint. */
+        name: str(ctx.body, 'name'),
         language: optStr(ctx.body, 'language'),
+        /* Suggested by `GET /v1/cities`, not restricted to it — a city off that
+           list needs `countryCode` beside it, and a `countryCode` with no city
+           is refused rather than quietly discarded. Not "the same rule as
+           `PATCH /v1/me`" but the *same function* (`resolveCityAnswer`): the two
+           were written at different times, agreed in prose, and disagreed in
+           code on exactly that second clause. */
         city: optStr(ctx.body, 'city'),
+        countryCode: optStr(ctx.body, 'countryCode'),
         partner: bool(ctx.body, 'partner'),
         referralCode: optStr(ctx.body, 'referralCode'),
         provisionalId: optStr(ctx.body, 'provisionalId'),
@@ -248,17 +263,22 @@ export const authRoutes: Route[] = [
   },
   {
     /**
-     * The cities a profile may name — the picker's options, served from the
-     * same constant the write is checked against.
+     * The cities the field **suggests** — unchanged in shape, changed in
+     * standing. It was the closed set a profile had to pick from; it is now the
+     * 114 places Paylez operates in, offered as somebody types, with
+     * `PATCH /v1/me` accepting a city that is not on it as long as a country
+     * comes with it.
      *
      * Public, and it has to be: `POST /v1/auth/signup` takes a city, so a form
      * that has to render the choice before anybody has an account cannot be
      * asked for a token to see it.
      *
-     * It is a list rather than a search because it is short and closed. A client
-     * that filters it locally shows the whole set when the box is empty, which
-     * is the thing a visitor actually wants to know: whether Paylez is anywhere
-     * near them yet.
+     * It is a list rather than a search because it is short. A client that
+     * filters it locally suggests as fast as the keyboard and shows the whole
+     * set when the box is empty, which is the thing a visitor actually wants to
+     * know: whether Paylez is anywhere near them yet. Nothing here is a
+     * *constraint* any more, so a search endpoint would be a round trip per
+     * keystroke to narrow a hint.
      */
     method: 'GET',
     pattern: '/v1/cities',
@@ -284,16 +304,29 @@ export const authRoutes: Route[] = [
         ctx.db,
         user.id,
         {
+          /* Non-blank and bounded, by the same `checkName` sign-up uses. A
+             whitespace name used to reach the `COALESCE` and be read as "not
+             sent", so the request succeeded and the account kept its old one. */
           name: optStr(ctx.body, 'name'),
           /* Taken already is a 409 naming the field, not a 500 quoting SQLite. */
           username: optStr(ctx.body, 'username'),
           language: optStr(ctx.body, 'language'),
-          /* One of `GET /v1/cities`, or a 400. Anything else is refused rather
-             than stored, because the city board matches on it literally. */
+          /* Anything, but stored canonically — the city board matches on this
+             value literally, so `resolveCity` folds every spelling of one place
+             onto one. A city that is not one of `GET /v1/cities` needs
+             `countryCode` with it, and the 400 for a missing one names
+             `countryCode` so the form knows to show the country picker rather
+             than to argue about the city. Sending `countryCode` without `city`
+             is also a 400: it cannot mean anything on its own — and it is the
+             same 400 `POST /v1/auth/signup` gives, because both go through
+             `accounts.resolveCityAnswer`. */
           city: optStr(ctx.body, 'city'),
+          countryCode: optStr(ctx.body, 'countryCode'),
           avatar: optStr(ctx.body, 'avatar') ?? null,
           phone: optStr(ctx.body, 'phone'),
-          headline: optStr(ctx.body, 'headline'),
+          /* The UI's "Status": one of `accounts.OCCUPATIONS`, or a 400 that
+             carries the whole set in `allowed`. */
+          occupation: optStr(ctx.body, 'occupation'),
           /* Set once, corrected once; a third *different* day is a 409 naming
              support. Resending the day already stored costs nothing, which is
              what lets a client PATCH its whole profile on every save without

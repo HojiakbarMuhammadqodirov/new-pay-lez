@@ -131,11 +131,187 @@ export const hasSharingGrant = (db: Db, userId: string, venueId: string): boolea
 /* ══════════════════════════════════════════════════════════ §1.3 GDPR ══ */
 
 /**
+ * What an erasure writes into one column of `users`.
+ *
+ * `null` is the interesting one: it means *this column is personal data*, which
+ * is the same fact the export reads off this table one field over.
+ */
+export type ErasureRule =
+  /** Personal, and nullable, so it simply goes. */
+  | { readonly write: 'null' }
+  /** Personal but `NOT NULL` — a neutral constant stands in for it. */
+  | { readonly write: 'value'; readonly value: string | number }
+  /** The tombstone: written with the erasure's own instant. */
+  | { readonly write: 'at' }
+  /**
+   * Survives. Four kinds of survivor qualify and nothing else does;
+   * `ERASURE_KEEPS` in `verify.ts` names them, and is the independently written
+   * statement of this same set.
+   */
+  | { readonly write: 'keep' };
+
+/** Whether the export carries the column, and — when it does not — why not. */
+export type DisclosureRule =
+  | { readonly show: true }
+  /**
+   * An authentication secret rather than a fact about the person. An export is
+   * a document that gets emailed to whoever asked for it and left in a
+   * downloads folder; a scrypt hash in one is an offline cracking target for an
+   * account that still works. Article 15(4) is the hook — a copy must not
+   * adversely affect the rights and freedoms of others, and the others here are
+   * everyone who shares that password on some other service.
+   */
+  | { readonly show: false; readonly reason: 'credential' }
+  /**
+   * A normalised copy of another column, which the export *does* carry. Adding
+   * it would write one fact twice and imply the platform holds four identifiers
+   * where it holds two. `of` is checked: a duplicate must name a column that is
+   * itself disclosed, or the omission is hiding something.
+   */
+  | { readonly show: false; readonly reason: 'duplicate'; readonly of: string };
+
+export interface UserColumn {
+  /** Exactly as `PRAGMA table_info(users)` spells it. */
+  readonly column: string;
+  readonly erase: ErasureRule;
+  readonly disclose: DisclosureRule;
+}
+
+const SHOW: DisclosureRule = { show: true };
+const NULLED: ErasureRule = { write: 'null' };
+const KEPT: ErasureRule = { write: 'keep' };
+const STAMPED: ErasureRule = { write: 'at' };
+
+/**
+ * Every column of `users`, and what each of the two GDPR routines does with it.
+ *
+ * **Article 15 and Article 17 are one question asked from two sides** — *what do
+ * you hold about me*, and *stop holding it* — so they act on one set of columns,
+ * and both statements are generated from this list. They used to be two
+ * hand-written pieces of SQL in this file and they had already drifted: the
+ * erasure cleared `username`, `phone`, `birth_date`, `display_avatar` and
+ * `occupation`, and the export did not mention any of them. That is the worse
+ * direction of the two. An erasure that misses a column at least leaves the
+ * person something to complain about later; an export that under-reports is
+ * read as complete, because nothing in the document says a column exists.
+ *
+ * Three invariants tie the two halves together, and `verify.ts` checks all three
+ * against `PRAGMA table_info(users)` rather than against a copy of this list:
+ *
+ *   1. this list covers the table exactly — every column once, no strangers;
+ *   2. everything the erasure clears is in the export, unless it carries one of
+ *      the two stated reasons above;
+ *   3. everything that *survives* an erasure is in the export too — a column
+ *      that is neither disclosed nor cleared is data held about a person that
+ *      neither right reaches, which is the shape of the bug this replaced.
+ *
+ * So a column added to the schema fails the suite until somebody decides where
+ * it belongs, and the decision is made once, for both rights.
+ */
+export const USER_COLUMNS: readonly UserColumn[] = [
+  { column: 'id', erase: KEPT, disclose: SHOW },
+  { column: 'email', erase: NULLED, disclose: SHOW },
+  { column: 'email_norm', erase: NULLED, disclose: { show: false, reason: 'duplicate', of: 'email' } },
+  /* Personal, and `NOT NULL`, so erasure writes the absence of a name rather
+     than removing one. 'Deleted account' is not data about anybody. */
+  { column: 'display_name', erase: { write: 'value', value: 'Deleted account' }, disclose: SHOW },
+  /* The handle goes on erasure, and both halves of it.
+
+     It is the one field here a person chooses for themselves, so it is the one
+     most likely to be their real name or a handle they use elsewhere — leaving
+     it on an erased row is the leak that routine exists to prevent. And
+     `username_norm` is what the unique index is on, so keeping it would also
+     reserve the handle for ever against an account nobody can sign into:
+     erasure would quietly cost the next person their name. */
+  { column: 'username', erase: NULLED, disclose: SHOW },
+  { column: 'username_norm', erase: NULLED, disclose: { show: false, reason: 'duplicate', of: 'username' } },
+  { column: 'password_hash', erase: NULLED, disclose: { show: false, reason: 'credential' } },
+  { column: 'auth_provider', erase: KEPT, disclose: SHOW },
+  /* Google's `sub` — a permanent, cross-service identifier of a natural person,
+     and the single most identifying thing on this row. It was the column the
+     erasure was missing once already, and it survived unnoticed because nothing
+     reads it on an erased account: it was invisible rather than useful.
+
+     Which is exactly why it is disclosed as well as cleared. The column it
+     would be worst to leave out of an access request is the one whose absence
+     is hardest to notice. */
+  { column: 'provider_ref', erase: NULLED, disclose: SHOW },
+  { column: 'language', erase: KEPT, disclose: SHOW },
+  { column: 'city', erase: NULLED, disclose: SHOW },
+  { column: 'country_code', erase: NULLED, disclose: SHOW },
+  { column: 'phone', erase: NULLED, disclose: SHOW },
+  { column: 'birth_date', erase: NULLED, disclose: SHOW },
+  { column: 'birth_date_set_at', erase: NULLED, disclose: SHOW },
+  /* A bare count, on a row that no longer holds a birthday. `NOT NULL`, and it
+     discloses only that one was once written. */
+  { column: 'birth_date_changes', erase: KEPT, disclose: SHOW },
+  { column: 'occupation', erase: NULLED, disclose: SHOW },
+  /* The two once-only grant guards. They are accounting — what stops a welcome
+     gift and a completion bonus being paid twice — which is the category this
+     module's erasure note says survives. */
+  { column: 'onboarded_at', erase: KEPT, disclose: SHOW },
+  { column: 'profile_completed_at', erase: KEPT, disclose: SHOW },
+  { column: 'points_cache', erase: KEPT, disclose: SHOW },
+  /* `NOT NULL`, and erasure turns it off rather than keeping a preference on
+     behalf of somebody who is no longer on any board. */
+  { column: 'leaderboard_opt_in', erase: { write: 'value', value: 0 }, disclose: SHOW },
+  { column: 'display_avatar', erase: NULLED, disclose: SHOW },
+  { column: 'referral_code', erase: NULLED, disclose: SHOW },
+  { column: 'trust_tier', erase: KEPT, disclose: SHOW },
+  { column: 'status', erase: { write: 'value', value: 'erased' }, disclose: SHOW },
+  { column: 'created_at', erase: KEPT, disclose: SHOW },
+  { column: 'updated_at', erase: STAMPED, disclose: SHOW },
+  { column: 'deleted_at', erase: STAMPED, disclose: SHOW },
+];
+
+/* Both statements below interpolate these names into SQL. They are literals in
+   the list above rather than input, but the guard costs one pass at module load
+   and turns a future typo — or a name arriving from somewhere less trustworthy
+   — into a crash on boot rather than a malformed query at the moment somebody
+   exercises a right. */
+for (const { column } of USER_COLUMNS) {
+  if (!/^[a-z][a-z0-9_]*$/.test(column)) throw new Error(`unsafe column name: ${column}`);
+}
+
+/** The `SELECT` list of the export's `account` block, in schema order. */
+const DISCLOSED = USER_COLUMNS.filter((c) => c.disclose.show)
+  .map((c) => c.column)
+  .join(', ');
+
+/** The erasure's whole `SET` clause, and the constants it substitutes. */
+const ERASURE = ((): { set: string; params: Record<string, string | number> } => {
+  const clauses: string[] = [];
+  const params: Record<string, string | number> = {};
+  for (const { column, erase } of USER_COLUMNS) {
+    switch (erase.write) {
+      case 'keep':
+        break;
+      case 'null':
+        clauses.push(`${column} = NULL`);
+        break;
+      case 'at':
+        clauses.push(`${column} = $t`);
+        break;
+      case 'value':
+        params[`v_${column}`] = erase.value;
+        clauses.push(`${column} = $v_${column}`);
+        break;
+    }
+  }
+  return { set: clauses.join(', '), params };
+})();
+
+/**
  * Everything the platform holds about one person, as a JSON document.
  *
  * Explicitly includes the consent records themselves — a data export that
  * cannot tell you what you agreed to and when is missing the part somebody
  * exercising their rights is most likely asking about.
+ *
+ * The `account` block is generated from `USER_COLUMNS` rather than written out,
+ * which is what stops it falling behind the erasure the way it had: five
+ * columns the erasure knew were personal were simply absent from it, and an
+ * export that under-reports is the one failure its reader cannot detect.
  */
 export function exportUser(db: Db, userId: string): Record<string, unknown> {
   const one = (sql: string) => db.get(sql, { u: userId });
@@ -144,9 +320,7 @@ export function exportUser(db: Db, userId: string): Record<string, unknown> {
   return {
     exportedAt: now(),
     policyVersion: CONFIG.privacy.policyVersion,
-    account: one(`SELECT id, email, display_name, language, city, country_code, points_cache,
-                         leaderboard_opt_in, referral_code, trust_tier, status, created_at
-                    FROM users WHERE id = $u`),
+    account: one(`SELECT ${DISCLOSED} FROM users WHERE id = $u`),
     roles: many(`SELECT role, granted_at FROM user_roles WHERE user_id = $u`),
     consents: many(`SELECT kind, policy_version, granted, recorded_at, source
                       FROM consent_records WHERE user_id = $u ORDER BY recorded_at`),
@@ -195,25 +369,17 @@ export function eraseUser(db: Db, userId: string, at: Iso = now()): { erased: tr
   if (!user) throw new DomainError('not_found', 'user not found');
 
   db.tx(() => {
-    db.run(
-      /* The username goes with the rest, and both halves of it.
-
-         It is the one field here a person chooses for themselves, so it is the
-         one most likely to be their real name or a handle they use elsewhere —
-         leaving it on an erased row is the leak this routine exists to prevent.
-         And `username_norm` is what the unique index is on, so keeping it would
-         also reserve the handle for ever against an account nobody can sign
-         into: erasure would quietly cost the next person their name. */
-      `UPDATE users
-          SET email = NULL, email_norm = NULL, display_name = 'Deleted account',
-              username = NULL, username_norm = NULL,
-              phone = NULL, birth_date = NULL, birth_date_set_at = NULL, headline = NULL,
-              password_hash = NULL, city = NULL, country_code = NULL, display_avatar = NULL,
-              referral_code = NULL, leaderboard_opt_in = 0, status = 'erased',
-              deleted_at = $t, updated_at = $t
-        WHERE id = $u`,
-      { t: at, u: userId },
-    );
+    /* The `SET` clause is `USER_COLUMNS` above rather than a list written out
+       here, and that is a fix for the class of bug rather than for one instance
+       of it: a column personal enough to clear is by that fact personal enough
+       to disclose, and two hand-written statements cannot stay agreed about
+       which columns those are. Every column that used to be named on this line
+       still is — read the table. */
+    db.run(`UPDATE users SET ${ERASURE.set} WHERE id = $u`, {
+      ...ERASURE.params,
+      t: at,
+      u: userId,
+    });
     db.run(`DELETE FROM community_profiles WHERE user_id = $u`, { u: userId });
     db.run(`DELETE FROM notifications WHERE user_id = $u`, { u: userId });
     db.run(`DELETE FROM push_tokens WHERE user_id = $u`, { u: userId });

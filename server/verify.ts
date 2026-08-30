@@ -61,6 +61,7 @@ import {
   plusMinutes,
   plusMonths,
   withinDailyWindow,
+  type Iso,
 } from './domain/time.ts';
 import { newId } from './domain/ids.ts';
 import { codeFor, flagOf } from './db/countries.ts';
@@ -103,6 +104,25 @@ function throws(what: string, code: string, fn: () => unknown): void {
   }
 }
 
+/**
+ * The `DomainError` a call throws, for the checks that are about its *detail*.
+ *
+ * `throws` above asserts the code, which is what decides the status. Which
+ * **field** a refusal names is a separate promise and a load-bearing one — it is
+ * the difference between a form highlighting the country picker and a form
+ * telling somebody their home town is wrong — so it needs to be reachable.
+ * Returns null rather than throwing when the call succeeds, so the check that
+ * follows fails on the value instead of taking the suite down.
+ */
+function refusal(fn: () => unknown): DomainError | null {
+  try {
+    fn();
+    return null;
+  } catch (error) {
+    return error instanceof DomainError ? error : null;
+  }
+}
+
 /** The same, for a promise. `throws` cannot await, and a rejected promise it
  *  never sees is a check that silently passes. */
 async function rejects(what: string, fn: () => Promise<unknown>, code: string): Promise<void> {
@@ -118,6 +138,37 @@ async function rejects(what: string, fn: () => Promise<unknown>, code: string): 
 /* ─────────────────────────────────────────────────────────── the fixture ── */
 
 const SECRET = 'verify-secret';
+
+/**
+ * The fixture venue's clock, and therefore the clock every budget period in
+ * this suite is a calendar month of. Written into the venue row in `world()`
+ * below and read back by `midMonth` — one constant, because a fixture whose
+ * period is a Kraków month and whose dates are picked in UTC disagree for two
+ * hours at the end of every month.
+ */
+const VENUE_TZ = 'Europe/Warsaw';
+
+/**
+ * The 15th of the fixture venue's *current* budget period, at midday UTC.
+ *
+ * A section that starts at `now()` and steps a day or two forward is asserting
+ * a rule; on the last days of a month it is also asserting the calendar, and
+ * loses. §5's third visit is `plusDays(at, 2)`, which lands in the *next*
+ * month's budget while the assertion reads this month's pool — so the suite
+ * failed on the 30th and 31st, passed on the other twenty-eight days, and
+ * taught whoever saw it to re-run rather than to read. A test that passes
+ * twenty-eight days in thirty is worse than one that fails.
+ *
+ * Pinning to the middle of the month leaves the fixture saying what it means: a
+ * rule about visits, not about dates. Still derived from `now()` rather than
+ * written as a literal, because `world()` seeds the venue's budget for the
+ * period containing `now()` and the two have to name the same period — a
+ * hard-coded month would quietly start exercising an auto-created empty budget
+ * the month after it was written. And built from `localMonth` in the venue's
+ * zone rather than from the UTC date, because the last two hours of a UTC month
+ * are already the next month in Kraków, which is where the budget lives.
+ */
+const midMonth = (): Iso => `${localMonth(now(), VENUE_TZ)}-15T12:00:00.000Z`;
 
 interface World {
   db: Db;
@@ -162,9 +213,9 @@ function world(): World {
                            status, verified_at, amount_entry, min_spend_minor, max_amount_minor,
                            avg_check_minor, avg_check_source, accepts_vouchers, points_per_scan,
                            scan_cooldown_hours, loyalty_active, created_at, updated_at)
-       VALUES ($i, $o, 'Verify Café', 'cafe', 'Krakow', 'PL', 'Europe/Warsaw', 'PLN',
+       VALUES ($i, $o, 'Verify Café', 'cafe', 'Krakow', 'PL', $tz, 'PLN',
                'live', $t, 'cashier', 1500, 100000, 4000, 'category', 1, 5, 24, 1, $t, $t)`,
-      { i: venueId, o: ownerId, t: at },
+      { i: venueId, o: ownerId, tz: VENUE_TZ, t: at },
     );
     for (const [pct, points, cap] of [
       [5, 100, 1000],
@@ -181,7 +232,7 @@ function world(): World {
     db.run(
       `INSERT INTO budgets (id, venue_id, period, currency, total_minor, loyalty_bp, created_at, updated_at)
        VALUES ($i, $v, $p, 'PLN', 100000, 6000, $t, $t)`,
-      { i: newId('bdg'), v: venueId, p: localMonth(at, 'Europe/Warsaw'), t: at },
+      { i: newId('bdg'), v: venueId, p: localMonth(at, VENUE_TZ), t: at },
     );
   });
 
@@ -575,7 +626,14 @@ function voucherRules(): void {
     });
   });
 
-  /* §4.3 phase three: an unredeemed voucher gives its reserve back. */
+  /* §4.3 phase three: an unredeemed voucher gives its reserve back.
+
+     This one steps a whole validity period forward and still reads the pool at
+     `at`, which looks like the calendar bug `midMonth` exists for and is not:
+     `expireVouchers` releases against `issued_vouchers.budget_id`, the budget
+     that took the reserve, not the one the clock is in when it expires. A
+     reserve released into next month's pool would be a leak in the money rather
+     than in the fixture, which is why the column is stored. */
   const w2 = world();
   ledger.earn(w2.db, { userId: w2.customerId, points: 1000, reason: 'adjustment', at });
   const tier2 = w2.db.get<{ id: string }>(
@@ -600,7 +658,11 @@ function voucherRules(): void {
 function campaignRules(): void {
   describe('§5 campaigns and stamp cards');
   const w = world();
-  const at = now();
+  /* Mid-month, not `now()`: this section walks a customer through three visits
+     two days apart and then reads one pool, and a reward earned on the 1st is
+     reserved against a different budget than one earned on the 30th. See
+     `midMonth`. */
+  const at = midMonth();
 
   throws('a percentage reward is not a campaign', 'validation_failed', () =>
     campaigns.validateCampaign({
@@ -1762,6 +1824,135 @@ async function httpSurface(): Promise<void> {
   eq('…but not a second time', bdayAgain.status, 409);
   eq('…naming the field', bdayAgain.body.error.field, 'birthDate');
 
+  /*
+   * The profile's two open questions, as a client meets them.
+   *
+   * `GET /v1/cities` still serves the 114 and is still public, but it is a
+   * *suggestion* now: the write below names a city that is not on it and is
+   * accepted, because the country came with it.
+   */
+  const cities = await call('GET', '/v1/cities');
+  eq('the city suggestions are public', cities.status, 200);
+  check('and there are 114 of them', cities.body.cities.length === 114);
+
+  const status = await call('PATCH', '/v1/me', { token, body: { occupation: 'freelancer' } });
+  eq('a status can be chosen', status.status, 200);
+  eq('…and comes back on the account', status.body.user.occupation, 'freelancer');
+  const badStatus = await call('PATCH', '/v1/me', { token, body: { occupation: 'ceo' } });
+  eq('but only from the closed set', badStatus.status, 400);
+  eq('…naming the field', badStatus.body.error.field, 'occupation');
+
+  const known = await call('PATCH', '/v1/me', { token, body: { city: 'Kraków' } });
+  eq('a suggested city needs no country', known.status, 200);
+  eq('…and is stored the way the list spells it', known.body.user.city, 'Krakow');
+  eq('…with the list’s country', known.body.user.countryCode, 'PL');
+
+  const elsewhere = await call('PATCH', '/v1/me', {
+    token,
+    body: { city: 'kryvyi rih', countryCode: 'ua' },
+  });
+  eq('a city off the list is accepted with a country', elsewhere.status, 200);
+  eq('…canonicalised', elsewhere.body.user.city, 'Kryvyi Rih');
+  eq('…and upper-cased', elsewhere.body.user.countryCode, 'UA');
+
+  const orphan = await call('PATCH', '/v1/me', { token, body: { city: 'Kryvyi Rih' } });
+  eq('without one it is refused', orphan.status, 400);
+  eq(
+    '…naming the country, so the form knows to ask for it',
+    orphan.body.error.field,
+    'countryCode',
+  );
+
+  /*
+   * ── the same body, the same answer, on both paths that write a profile ──
+   *
+   * `POST /v1/auth/signup` and `PATCH /v1/me` write the same columns and were
+   * written at different times, which is how they came to disagree. A
+   * `countryCode` sent without a `city` was a 400 naming the field on the patch
+   * and was **silently dropped** at sign-up — the same lie as a control that
+   * does nothing, told at the one moment a client is most likely to be posting a
+   * half-filled form. A blank name was refused at sign-up and swallowed by the
+   * patch's `COALESCE`. A 5,000-character name was refused at sign-up's route
+   * and stored by the patch.
+   *
+   * All three are one function each now (`resolveCityAnswer`, `checkName`), and
+   * this is what keeps it that way: each body is put to sign-up, and then the
+   * patch's answer is compared **with sign-up's own** rather than with a second
+   * hand-written expectation — so a rule added to one side only fails here
+   * instead of waiting to be found by somebody whose country went missing.
+   *
+   * The triple compared is `{status, code, field}`, which is what a client acts
+   * on. The prose is allowed to differ where the endpoints genuinely do: "name
+   * is required" is sign-up's alone, because only sign-up requires one.
+   */
+  type Answer = Awaited<ReturnType<typeof call>>;
+  const shapeOf = (answer: Answer) => ({
+    status: answer.status,
+    code: answer.body?.error?.code ?? null,
+    field: answer.body?.error?.field ?? null,
+  });
+  const bothRefuse = async (what: string, body: Record<string, unknown>, field: string) => {
+    const viaSignUp = await call('POST', '/v1/auth/signup', {
+      /* One address for all of them, and it stays free: every one of these
+         bodies is refused, so no account is ever created to collide with. */
+      body: { email: 'refused@verify.test', password: 'hunter22', name: 'Refused', ...body },
+    });
+    const viaPatch = await call('PATCH', '/v1/me', { token, body });
+    eq(`sign-up refuses ${what}`, shapeOf(viaSignUp), {
+      status: 400,
+      code: 'validation_failed',
+      field,
+    });
+    eq('…and PATCH /v1/me refuses it identically', shapeOf(viaPatch), shapeOf(viaSignUp));
+  };
+
+  await bothRefuse('a country with no city', { countryCode: 'DE' }, 'city');
+  await bothRefuse('a city off the list with no country', { city: 'Kryvyi Rih' }, 'countryCode');
+  await bothRefuse('a blank name', { name: '   ' }, 'name');
+  await bothRefuse('a name longer than a leaderboard row', { name: 'x'.repeat(121) }, 'name');
+
+  /*
+   * The third field worth the same comparison, and the honest answer is not
+   * symmetry: **sign-up does not take an occupation at all.** It is not in
+   * `SignUpInput`, the route does not read it, and the fix for that is not to
+   * add it — closing a gap by widening the side that accepts less is the wrong
+   * direction, and a status is a thing you pick once you have an account.
+   *
+   * So the pair is asserted as what it is rather than made to match: a valid one
+   * does not land on the account, and an invalid one is not refused, because
+   * neither is read. Both fail the day somebody wires the field into the sign-up
+   * route — the first if it starts being stored, the second if it starts being
+   * validated — which is exactly when it has to join `bothRefuse` above.
+   */
+  const withStatus = await call('POST', '/v1/auth/signup', {
+    body: {
+      email: 'status-at-signup@verify.test',
+      password: 'hunter22',
+      name: 'Status',
+      occupation: 'freelancer',
+    },
+  });
+  eq('sign-up does not take an occupation', withStatus.status, 200);
+  eq(
+    '…so a valid one does not reach the account',
+    (await call('GET', '/v1/me', { token: withStatus.body.token as string })).body.user.occupation,
+    null,
+  );
+  const junkStatus = await call('POST', '/v1/auth/signup', {
+    body: {
+      email: 'junk-status@verify.test',
+      password: 'hunter22',
+      name: 'Junk',
+      occupation: 'ceo',
+    },
+  });
+  eq('…and an invalid one is not refused, because nothing reads it', junkStatus.status, 200);
+  eq(
+    '…while the one path that does take it refuses that same value',
+    shapeOf(await call('PATCH', '/v1/me', { token, body: { occupation: 'ceo' } })),
+    { status: 400, code: 'validation_failed', field: 'occupation' },
+  );
+
   const anonymous = await call('GET', '/v1/me');
   eq('without a token it is 401', anonymous.status, 401);
 
@@ -1929,6 +2120,362 @@ async function accountRules(): Promise<void> {
   check('and stops resolving once revoked', accounts.resolveSession(w.db, signedIn.token) === null);
 
   w.db.close();
+}
+
+/* ─────────────────────────────────────────── the profile: status and city ── */
+
+/**
+ * Every column on `users` that an erasure is allowed to leave behind, and why.
+ *
+ * The keep-list is the point of the check that reads it. Asserting ten named
+ * fields are null is a test the eleventh column silently walks past — which is
+ * exactly what happened: `provider_ref` held Google's permanent identifier for a
+ * person on every erased row and nothing noticed, because nothing was looking at
+ * the *set* of columns. Reading `PRAGMA table_info(users)` and demanding that
+ * everything outside this list is null turns "somebody remembered" into "the
+ * suite noticed", and adding a column now forces a decision here.
+ *
+ * Four kinds of survivor, and nothing else belongs:
+ *
+ *   * **The key and the tombstone** — `id`, `status`, `deleted_at`. The row has
+ *     to stay for the ledger and the transactions that reference it; that is
+ *     what erasure-by-anonymisation *is*.
+ *   * **A constant** — `display_name` is set to 'Deleted account', which is not
+ *     personal data, it is the absence of it rendered.
+ *   * **NOT NULL columns carrying no identity** — `auth_provider`, `language`,
+ *     `points_cache`, `leaderboard_opt_in` (zeroed), `trust_tier`,
+ *     `created_at`, `updated_at`, `birth_date_changes`. None of them can be
+ *     nulled without a schema change and none of them names anybody. The
+ *     weakest is `birth_date_changes`: a bare count that discloses only that a
+ *     birthday was once written, on a row that no longer holds one.
+ *   * **Once-only guards** — `onboarded_at` and `profile_completed_at` are the
+ *     stamps that stop a grant being paid twice. They are accounting, which is
+ *     the category this routine's own note says survives.
+ */
+const ERASURE_KEEPS = new Set([
+  'id',
+  'display_name',
+  'auth_provider',
+  'language',
+  'birth_date_changes',
+  'onboarded_at',
+  'profile_completed_at',
+  'points_cache',
+  'leaderboard_opt_in',
+  'trust_tier',
+  'status',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+]);
+
+async function profileRules(): Promise<void> {
+  describe('the profile — a chosen status, and a city that is a suggestion');
+  const db = openDb(':memory:');
+  const at = now();
+
+  const user = await accounts.signUp(db, {
+    email: 'profile@verify.test',
+    password: 'hunter22',
+    name: 'Profile',
+    at,
+  });
+
+  /* ── the status ──
+     Five values and no sixth. The whole reason the column is not called
+     `status` is checked below: setting one must not touch the account state. */
+  for (const value of accounts.OCCUPATIONS) {
+    const saved = accounts.updateProfile(db, user.id, { occupation: value }, at);
+    eq(`a status may be "${value}"`, saved.occupation, value);
+  }
+  throws('but not one off the list', 'validation_failed', () =>
+    accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at),
+  );
+  eq(
+    '…naming the field',
+    refusal(() => accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at))?.detail.field,
+    'occupation',
+  );
+  eq(
+    '…and handing back the whole set, so a drifted client is told what it may send',
+    refusal(() => accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at))?.detail.allowed,
+    accounts.OCCUPATIONS,
+  );
+  eq(
+    'case is not a different answer',
+    accounts.updateProfile(db, user.id, { occupation: 'Student' }, at).occupation,
+    'student',
+  );
+  /* The collision this column was renamed to avoid. `users.status` is the
+     account state and a person's occupation is not; if these two ever share a
+     name again, this is the check that says so. */
+  eq(
+    'and writing a status leaves the *account* status alone',
+    accounts.getUser(db, user.id).status,
+    'active',
+  );
+
+  /* ── the city ──
+     It is a suggestion now, but the stored value is still canonical, because the
+     weekly board groups on it with a literal `=`. */
+  eq('a city on the list keeps the list’s spelling', accounts.resolveCity('Kraków'), {
+    name: 'Krakow',
+    country: 'PL',
+    custom: false,
+  });
+  eq('…and the list’s country, whatever the request says', accounts.resolveCity('Krakow', 'US'), {
+    name: 'Krakow',
+    country: 'PL',
+    custom: false,
+  });
+
+  eq('a city we do not cover is accepted with a country', accounts.resolveCity('Kryvyi Rih', 'ua'), {
+    name: 'Kryvyi Rih',
+    country: 'UA',
+    custom: true,
+  });
+  /* The whole reason a canonical form exists: three spellings, one board. */
+  eq(
+    '…and every spelling of it lands on one name',
+    [
+      accounts.resolveCity('kryvyi rih', 'UA').name,
+      accounts.resolveCity('KRYVYÏ-RIH', 'UA').name,
+      accounts.resolveCity('  Kryvyi   Rih ', 'UA').name,
+    ],
+    ['Kryvyi Rih', 'Kryvyi Rih', 'Kryvyi Rih'],
+  );
+
+  throws('without a country it is refused', 'validation_failed', () =>
+    accounts.resolveCity('Kryvyi Rih'),
+  );
+  eq(
+    '…naming the country, not the city — the form shows a picker, not an argument',
+    refusal(() => accounts.resolveCity('Kryvyi Rih'))?.detail.field,
+    'countryCode',
+  );
+  throws('a country that is not two letters is refused', 'validation_failed', () =>
+    accounts.resolveCity('Kryvyi Rih', 'Ukraine'),
+  );
+  throws('and a city that is not a place name is refused', 'validation_failed', () =>
+    accounts.resolveCity('!!!', 'UA'),
+  );
+  eq(
+    '…naming the city, because no country would save it',
+    refusal(() => accounts.resolveCity('!!!', 'UA'))?.detail.field,
+    'city',
+  );
+  throws('a city with no ceiling is where an essay goes', 'validation_failed', () =>
+    accounts.resolveCity('x'.repeat(61), 'UA'),
+  );
+
+  /* Through the write, not just the resolver. */
+  const moved = accounts.updateProfile(db, user.id, { city: 'kryvyi rih', countryCode: 'ua' }, at);
+  eq('the write stores the canonical name', moved.city, 'Kryvyi Rih');
+  eq('…and the country it was given', moved.country_code, 'UA');
+  throws('a country on its own means nothing and is refused', 'validation_failed', () =>
+    accounts.updateProfile(db, user.id, { countryCode: 'DE' }, at),
+  );
+  /* And sign-up gives the same refusal, because it is the same function. It used
+     to drop the country instead — the endpoint most likely to be handed a
+     half-filled form was the one that said nothing about it. The HTTP surface
+     compares the two answers over the wire; this is the domain half, and the
+     row count is what says "dropped" has not come back as "created anyway". */
+  await rejects(
+    'and sign-up refuses it too rather than dropping it',
+    () =>
+      accounts.signUp(db, {
+        email: 'orphan@verify.test',
+        password: 'hunter22',
+        name: 'Orphan',
+        countryCode: 'DE',
+        at,
+      }),
+    'validation_failed',
+  );
+  eq(
+    '…having created no account at all',
+    db.get(`SELECT 1 FROM users WHERE email_norm = 'orphan@verify.test'`) ?? null,
+    null,
+  );
+  /* The name, on the same terms: one function, so a blank is a refusal on both
+     rather than a 400 on one and a 200-that-changed-nothing on the other. */
+  throws('a blank name is refused by the patch', 'validation_failed', () =>
+    accounts.updateProfile(db, user.id, { name: '   ' }, at),
+  );
+  eq(
+    '…leaving the name it had',
+    accounts.getUser(db, user.id).display_name,
+    'Profile',
+  );
+
+  /* The failure the closed set used to prevent, now prevented by the fold: two
+     people typing the same place must not produce two boards. `social.cityBoard`
+     matches `users.city` with `=`, so one distinct value is the whole property. */
+  const second = await accounts.signUp(db, {
+    email: 'second@verify.test',
+    password: 'hunter22',
+    name: 'Second',
+    city: 'Kryvyï  Rih',
+    countryCode: 'UA',
+    at,
+  });
+  eq('sign-up canonicalises too, or it is the hole in the rule', second.city, 'Kryvyi Rih');
+  eq(
+    'two spellings of one place are one board',
+    db.all<{ city: string }>(
+      `SELECT DISTINCT city FROM users WHERE country_code = 'UA' ORDER BY city`,
+    ),
+    [{ city: 'Kryvyi Rih' }],
+  );
+  /* And the old database's own spellings stay writable rather than being
+     revalidated out of existence — `Bayern` is really in the live `users` table. */
+  eq(
+    'a legacy value can be written back unchanged',
+    accounts.updateProfile(db, second.id, { city: 'Bayern', countryCode: 'DE' }, at).city,
+    'Bayern',
+  );
+
+  /* ── the seven answers ──
+     `occupation` took the seventh slot from `headline`, so the completion bonus
+     is what proves the swap reached `isProfileComplete`. */
+  const before = ledger.balance(db, user.id);
+  const finished = accounts.updateProfile(
+    db,
+    user.id,
+    {
+      username: 'kasia_pl',
+      avatar: 'https://example.test/a.png',
+      occupation: 'freelancer',
+      city: 'Krakow',
+      phone: '+48 600 100 200',
+      birthDate: '1996-04-11',
+    },
+    at,
+  );
+  check('all seven answers stamps the profile complete', finished.profile_completed_at !== null);
+  eq('…and pays once', ledger.balance(db, user.id) - before, CONFIG.earn.profileComplete);
+  accounts.updateProfile(db, user.id, { occupation: 'other' }, at);
+  eq(
+    '…and only once, however often it is saved after',
+    ledger.balance(db, user.id) - before,
+    CONFIG.earn.profileComplete,
+  );
+
+  /* ── erasure leaves nothing behind ──
+     Read off the schema rather than written out, so a personal column added
+     later cannot slip past by not being on somebody's list. Filled first and
+     checked *before* as well as after: a column that was already null would pass
+     the "is null" half without erasure having done anything, and the "was set"
+     half is what makes whoever adds the next column decide where it belongs. */
+  const doomed = await accounts.signUp(db, {
+    email: 'doomed@verify.test',
+    password: 'hunter22',
+    name: 'Doomed',
+    at,
+  });
+  accounts.updateProfile(
+    db,
+    doomed.id,
+    {
+      username: 'doomed_one',
+      avatar: 'https://example.test/d.png',
+      occupation: 'worker',
+      city: 'Warsaw',
+      phone: '+48 600 300 400',
+      birthDate: '1990-02-03',
+    },
+    at,
+  );
+  /* Set directly because the only route to it is a verified Google token, and
+     what is being checked is the erasure rather than the sign-in. */
+  db.run(`UPDATE users SET provider_ref = 'google-sub-12345' WHERE id = $u`, { u: doomed.id });
+
+  const columns = db
+    .all<{ name: string }>(`PRAGMA table_info(users)`)
+    .map((row) => row.name)
+    .filter((name) => !ERASURE_KEEPS.has(name));
+  const rowOf = (id: string) =>
+    db.get<Record<string, unknown>>(`SELECT * FROM users WHERE id = $u`, { u: id }) ?? {};
+
+  const populated = rowOf(doomed.id);
+  const unset = columns.filter((name) => populated[name] === null || populated[name] === undefined);
+  check(
+    'the fixture fills every column erasure is meant to clear',
+    unset.length === 0,
+    /* If this fails, a column was added to `users` and nobody decided whether it
+       survives an erasure. Fill it above, or put it in `ERASURE_KEEPS` with the
+       reason. */
+    unset,
+  );
+
+  /* ── the export and the erasure are one list ──
+     Article 15 and Article 17 act on the same columns, so `USER_COLUMNS` in
+     `domain/consent.ts` is where both are decided and both statements are
+     generated from it. What is checked here is the *list*, against the schema —
+     the bug it replaced was five columns the erasure cleared and the export
+     never mentioned, and an export that under-reports is the one failure its
+     reader cannot detect: nothing in the document says a column exists. */
+  const schema = db.all<{ name: string }>(`PRAGMA table_info(users)`).map((row) => row.name);
+  const listed = consent.USER_COLUMNS.map((c) => c.column);
+  eq('every column of `users` is decided about, and only those', [...listed].sort(), [...schema].sort());
+  eq('…once each', listed.length, new Set(listed).size);
+  eq(
+    'the keep-list and the column table are the same statement, written twice',
+    consent.USER_COLUMNS.filter((c) => c.erase.write !== 'null')
+      .map((c) => c.column)
+      .sort(),
+    [...ERASURE_KEEPS].sort(),
+  );
+
+  const disclosed = consent.USER_COLUMNS.filter((c) => c.disclose.show).map((c) => c.column);
+  check(
+    'a column that survives an erasure is one the export carries',
+    consent.USER_COLUMNS.every((c) => c.erase.write === 'null' || c.disclose.show),
+    consent.USER_COLUMNS.filter((c) => c.erase.write !== 'null' && !c.disclose.show).map((c) => c.column),
+  );
+  /* The census, not just the rule. A new personal column fails the coverage
+     check above until it is listed, and fails *this* one if it is listed as an
+     omission — so hiding one is a decision somebody has to come here and argue
+     for, rather than a line nobody reads. */
+  eq(
+    'and exactly three columns are personal but withheld, each saying why',
+    consent.USER_COLUMNS.filter((c) => !c.disclose.show).map((c) => c.column),
+    ['email_norm', 'username_norm', 'password_hash'],
+  );
+  const duplicates = consent.USER_COLUMNS.flatMap(({ column, disclose }) =>
+    disclose.show === false && disclose.reason === 'duplicate' ? [{ column, of: disclose.of }] : [],
+  );
+  eq(
+    'a column withheld as a duplicate names one the export does carry',
+    duplicates.filter((d) => !disclosed.includes(d.of)),
+    [],
+  );
+
+  /* And the document itself, on an account with every column filled in. */
+  const account = (consent.exportUser(db, doomed.id) as { account: Record<string, unknown> }).account;
+  eq('the export’s account block is exactly the disclosed set', Object.keys(account).sort(), [...disclosed].sort());
+  eq(
+    '…including the five it used to drop',
+    [account.username, account.phone, account.birth_date, account.display_avatar, account.occupation],
+    ['doomed_one', '+48 600 300 400', '1990-02-03', 'https://example.test/d.png', 'worker'],
+  );
+  /* The one it would be worst to omit, for the same reason it was the one the
+     erasure missed: nothing else reads it, so nothing else notices. */
+  eq('…and Google’s subject id', account.provider_ref, 'google-sub-12345');
+  /* The one thing this document must never grow. An export is written to be
+     forwarded, and a scrypt hash inside one is an offline cracking target for
+     an account that still works. */
+  check('and the credential is not in it', !('password_hash' in account));
+
+  consent.eraseUser(db, doomed.id, at);
+  const erased = rowOf(doomed.id);
+  const left = columns.filter((name) => erased[name] !== null);
+  check('and erasure leaves none of them behind', left.length === 0, left);
+  eq('…including Google’s subject id', erased.provider_ref, null);
+  eq('…and the status the UI calls Status', erased.occupation, null);
+  eq('…while the row itself stays, for the ledger that references it', erased.status, 'erased');
+
+  db.close();
 }
 
 function countryRules(): void {
@@ -2289,6 +2836,7 @@ async function run(): Promise<void> {
   await trafficRules();
   jobRules();
   await accountRules();
+  await profileRules();
   await httpSurface();
 
   const ms = Date.now() - started;

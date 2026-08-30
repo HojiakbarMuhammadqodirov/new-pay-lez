@@ -41,8 +41,13 @@ export interface User {
   username_norm: string | null;
   password_hash: string | null;
   language: string;
-  /** One of `CITIES`, or whatever the old database carried. See `resolveCity`. */
+  /**
+   * The canonical spelling of a place, which is also the name of the weekly
+   * board this account lands on. One of `CITIES`, a title-cased fold of
+   * whatever was typed, or whatever the old database carried. See `resolveCity`.
+   */
   city: string | null;
+  /** ISO 3166-1 alpha-2. From the city when the city is known; see `resolveCity`. */
   country_code: string | null;
   /* Contact and profile. All optional, none of them gates anything, and an
      account that answers none of them is a complete account — the schema says
@@ -58,7 +63,14 @@ export interface User {
   birth_date_set_at: string | null;
   /** Accepted writes, not corrections: 0 unset, 1 set, 2 spent. */
   birth_date_changes: number;
-  headline: string | null;
+  /**
+   * What they do — the field the UI labels **Status**. Narrowed to the union
+   * rather than left `string` the way `city` and `status` are, and the
+   * difference is that this column is *new*: nothing was imported into it, one
+   * function writes it, and that function validates. `city` cannot make the
+   * same promise because the old database filled it in first.
+   */
+  occupation: Occupation | null;
   display_avatar: string | null;
   /** When onboarding was reported finished; the welcome gift's once-only guard. */
   onboarded_at: string | null;
@@ -186,13 +198,24 @@ export interface SignUpInput {
   password: string;
   name: string;
   language?: string;
+  /** Anything: one of `CITIES`, or a place of your own with a `countryCode`. */
   city?: string;
+  /**
+   * The second half of `city`, and required when the city is not one of
+   * `CITIES`. Read **only alongside `city`** and refused rather than dropped
+   * when it arrives alone — the same rule, through the same function, as
+   * `ProfilePatch.countryCode`. See `resolveCityAnswer`.
+   */
+  countryCode?: string;
   /** §1.2. `partner_owner` is chosen at sign-up; `admin` never is. */
   partner?: boolean;
   referralCode?: string;
   /** A guest identity to fold in, if the visitor played before signing up. */
   provisionalId?: string;
-  deviceFingerprint?: string;
+  /* No `deviceFingerprint`. The device belongs to the *session*, and the session
+     is minted by `createSession` one call later — a field here would be one this
+     function reads nowhere, which is the same silent drop the country used to
+     be, waiting for somebody to fill it in. */
   at?: Iso;
 }
 
@@ -206,9 +229,7 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
   if (input.password.length < CONFIG.auth.minPasswordLength) {
     throw new DomainError('validation_failed', 'password is too short', { field: 'password' });
   }
-  if (!input.name.trim()) {
-    throw new DomainError('validation_failed', 'a name is needed', { field: 'name' });
-  }
+  const name = checkName(input.name);
   if (db.get(`SELECT 1 FROM users WHERE email_norm = $e`, { e: email })) {
     throw new DomainError('conflict', 'that address already has an account', { field: 'email' });
   }
@@ -216,10 +237,11 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
   /* Hashing is the only await in the flow and it happens *before* the
      transaction opens: a 100ms scrypt inside `BEGIN IMMEDIATE` would hold the
      write lock for the whole of it. */
-  /* The same closed set `updateProfile` writes against, checked here too —
-     otherwise sign-up is the hole in it, and the first thing every account holds
-     is a city nothing else in the product will accept. */
-  const city = input.city === undefined ? null : resolveCity(input.city);
+  /* The same canonicalisation `updateProfile` writes through — and through the
+     *same function*, not a second copy of the rule. Sign-up used to hold its own
+     one-line version of it, which is how it came to drop a `countryCode` sent
+     without a `city` that the patch refuses. See `resolveCityAnswer`. */
+  const city = resolveCityAnswer(input.city, input.countryCode);
 
   const hash = await hashPassword(input.password);
   const id = newId('usr');
@@ -233,7 +255,7 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
         i: id,
         e: input.email.trim(),
         n: email,
-        d: input.name.trim(),
+        d: name,
         h: hash,
         l: input.language ?? 'en',
         c: city?.name ?? null,
@@ -839,8 +861,92 @@ function checkPhone(value: string): string {
   return value;
 }
 
-/** A line, not a paragraph. A column with no ceiling is where a novel lands. */
-const HEADLINE_MAX = 140;
+/* ───────────────────────────────────────────────────── the display name ── */
+
+/**
+ * The longest a display name may be.
+ *
+ * A display constraint rather than a data one: it is what fits on a leaderboard
+ * row and in a partner's customer table. It lives here rather than at the two
+ * routes because a ceiling stated at one of two call sites is a ceiling half the
+ * callers do not have — which is exactly what it was, capped on sign-up's route
+ * and unbounded on the patch.
+ */
+const NAME_MAX = 120;
+
+/**
+ * A display name, or a refusal naming the field — for **both** paths that write
+ * one.
+ *
+ * The two halves of this rule used to live on one path each, so the same body
+ * got two answers. A blank name was refused at sign-up and *silently ignored* by
+ * the patch (`COALESCE($n, display_name)` reads a blank as "not sent", so the
+ * request succeeded and changed nothing), and the length ceiling was the
+ * sign-up route's alone. Neither is a property of the endpoint; both are
+ * properties of the column, so they belong in one function that both call.
+ *
+ * Free text in any script, deliberately: this is what somebody is *called*, and
+ * `username` — ASCII, unique, quoted back at other people — is what they *are*.
+ */
+function checkName(value: string): string {
+  const name = value.trim();
+  if (!name) {
+    throw new DomainError('validation_failed', 'a name is needed', { field: 'name' });
+  }
+  if (name.length > NAME_MAX) {
+    throw new DomainError('validation_failed', 'that name is too long', {
+      field: 'name',
+      max: NAME_MAX,
+    });
+  }
+  return name;
+}
+
+/* ─────────────────────────────────────────────────────── the occupation ── */
+
+/**
+ * What a person does, chosen rather than written.
+ *
+ * It replaced a free-text `headline`, and the reason is what a profile field is
+ * *for*: a sentence somebody wrote about themselves is unsearchable,
+ * unsegmentable, untranslatable and a moderation surface, and it earned the
+ * product none of those. Five values are a filter a venue could one day target
+ * on and a picker that needs no keyboard.
+ *
+ * **The column is `occupation`, and the UI calls it "Status".** It cannot be
+ * called `status` here: `users.status` is the account state — `provisional`,
+ * `active`, `banned`, `erased` — and this repo has already paid once for two
+ * things sharing a name (`.dash-*` on the front end, which silently crushed the
+ * dashboard's user pill). The label belongs to the person reading the form and
+ * the name belongs to whoever is reading a query at 3am.
+ *
+ * `business` rather than `business_owner` because it is a value, not a
+ * sentence, and the label is the dictionary's job; `other` is on the list
+ * because a closed set without an escape hatch is a set that lies.
+ *
+ * **The set is served nowhere.** A client renders five labels it has to
+ * translate anyway, so an endpoint returning five untranslated strings is a
+ * round trip that buys nothing — but the refusal below carries the whole set in
+ * `allowed`, so a client that has drifted is told what it may send at the one
+ * moment it matters.
+ */
+export const OCCUPATIONS = ['student', 'worker', 'business', 'freelancer', 'other'] as const;
+export type Occupation = (typeof OCCUPATIONS)[number];
+
+const isOccupation = (value: string): value is Occupation =>
+  (OCCUPATIONS as readonly string[]).includes(value);
+
+/** One of `OCCUPATIONS`, or a refusal naming the field and listing the set. */
+function checkOccupation(value: string): Occupation {
+  const folded = value.trim().toLowerCase();
+  if (!isOccupation(folded)) {
+    throw new DomainError('validation_failed', `a status is one of ${OCCUPATIONS.join(', ')}`, {
+      field: 'occupation',
+      allowed: OCCUPATIONS,
+    });
+  }
+  return folded;
+}
 
 /* ─────────────────────────────────────────────────────────── the handle ── */
 
@@ -920,22 +1026,28 @@ function checkUsername(value: string): { username: string; norm: string } {
 /* ───────────────────────────────────────────────────────────── the city ── */
 
 /**
- * Where Paylez operates, and therefore the only cities a profile may name.
+ * Where Paylez operates — **the cities the picker suggests, not the only ones a
+ * profile may name.**
+ *
+ * It used to be a whitelist and it is not any more: a person the product has not
+ * reached yet was told their own city does not exist, which is a refusal over a
+ * field that gates nothing. `GET /v1/cities` serves this list so a form can
+ * suggest as somebody types, and `resolveCity` below takes anything else as long
+ * as a country comes with it.
  *
  * **A served constant rather than a table**, and the choice is not arbitrary.
  * The set is a product decision that ships with the code — it changes when the
  * business enters a country, which is a deploy either way — and the matching
  * below is a *rule* rather than data, so a table would hold half the answer and
  * leave the half that actually decides things in TypeScript anyway. A table
- * would also drift: a row added to a live database is a city the validator
- * accepts and nothing else in the product has ever heard of. `GET /v1/cities`
- * serves this list so a client can render the picker from the same source the
- * write is checked against.
+ * would also drift: a row added to a live database is a city the suggester
+ * offers and nothing else in the product has ever heard of.
  *
- * The reason a closed set exists at all is one query. The city weekly board
- * (`domain/social.ts`) groups on `users.city` with a literal `=`, so free text
- * does not produce a messy board — it produces *several* boards, one per
- * spelling, and every player is alone on theirs.
+ * The reason the *canonical spelling* still matters is one query. The city
+ * weekly board (`domain/social.ts`) groups on `users.city` with a literal `=`,
+ * so free text does not produce a messy board — it produces *several* boards,
+ * one per spelling, and every player is alone on theirs. Opening the field up
+ * without answering that would have been the bug; `resolveCity` is the answer.
  *
  * Names are the ASCII form already in this database (`venues.city` is `Krakow`
  * and `Warsaw`), because that same literal `=` has to match across the two
@@ -1078,10 +1190,10 @@ const CITY_TABLE: readonly CityEntry[] = [
   { name: 'Kagan', country: 'UZ', also: ['Kogon'] },
 ];
 
-/** The three countries, in the order the table lists them. */
+/** The three countries the suggestions cover, in the order the table lists them. */
 export const CITY_COUNTRIES: readonly CityCountry[] = ['PL', 'DE', 'UZ'];
 
-/** What `GET /v1/cities` serves, and the only shape a client needs. */
+/** What `GET /v1/cities` suggests, and the only shape a client needs. */
 export const CITIES: readonly { name: string; country: CityCountry }[] = CITY_TABLE.map(
   ({ name, country }) => ({ name, country }),
 );
@@ -1137,28 +1249,155 @@ if (CITY_CLASHES.length > 0) {
 }
 
 /**
- * A city, or a refusal naming the field.
+ * The one representative of a folded key, so a typed city can be *shown* as well
+ * as matched.
  *
- * Returns the country with it, because the country is not a second answer: it is
- * a fact about the city, and a profile that could be asked for both is a profile
- * that can hold `Krakow, DE`. `users.country_code` is written from here and
- * never from the request.
+ * The fold is the grouping key and the stored value has to be the grouping key —
+ * the board compares `users.city` with `=` and has no second column to consult —
+ * so the display form cannot be "what the first person typed" or the board key
+ * stops being a function of the input. Title-casing the fold is the only
+ * deterministic choice: every spelling of one place produces exactly one of
+ * these, and it reads like a place name rather than like a database key.
+ */
+const titleCase = (folded: string): string =>
+  folded.replace(/(^|\s)([a-z0-9])/g, (_match, lead: string, first: string) => lead + first.toUpperCase());
+
+/** Two ASCII letters. A country code is not the word "Poland". */
+const COUNTRY_SHAPE = /^[A-Za-z]{2}$/;
+
+/* A typed city is between these two, measured on the fold rather than on the
+   input, so trailing spaces and punctuation cannot buy length. The ceiling is
+   the longest thing that is still a place name — `Gorzow Wielkopolski` is 19 —
+   with room to spare; without one, `users.city` is where somebody's essay goes
+   and the weekly board is named after it. */
+const CITY_MIN = 2;
+const CITY_MAX = 60;
+
+export interface ResolvedCity {
+  /**
+   * What goes in `users.city` — and therefore, because the board matches on it
+   * with a literal `=`, the name of the board this account lands on.
+   */
+  name: string;
+  /** ISO 3166-1 alpha-2, upper case. */
+  country: string;
+  /** True when the name was typed rather than taken off `CITY_TABLE`. */
+  custom: boolean;
+}
+
+/**
+ * A city and its country, canonicalised — or a refusal naming the field.
+ *
+ * Two paths, and which one you are on is decided by the fold, never by the
+ * caller:
+ *
+ * **On the table.** The entry's own spelling and the entry's own country are
+ * returned, and `countryCode` is *ignored*. That is what keeps `Kraków`,
+ * `Krakow` and `krakow` on one board and stops a client writing `Krakow, US`.
+ * It has a cost and it is worth naming: the table has a `Halle` and it is the
+ * German one, so somebody in Halle, Belgium who types their city and picks BE is
+ * recorded in Germany with no way to correct it. That is the trade — one
+ * mis-filed country on a display-only field, against a client being able to
+ * invent a country for a city we actually operate in.
+ *
+ * **Off the table.** The country becomes required, because a place nobody has
+ * heard of with no country to put it in is not an answer — and the refusal names
+ * `countryCode` rather than `city`, so a form knows to show the country picker
+ * instead of telling somebody their home town is wrong. The name is stored as
+ * `titleCase(foldCity(value))`: the fold is what makes two people typing the same
+ * place land on the same board, and the title-casing is what makes it printable.
+ * The cost of *that* is the fold's own: diacritics, hyphens and apostrophes do
+ * not survive, so `Saint-Étienne` is stored `Saint Etienne`. Losing the hyphen is
+ * the price of `Saint Etienne` and `saint-etienne` being one board rather than
+ * two, and it is the same price the 114 already pay — the table's canonical
+ * names are ASCII for exactly this reason.
+ *
+ * One thing the country is deliberately *not* checked against: a registry. The
+ * only one in this repo is `db/countries.ts`, which is 196 sovereign states from
+ * the quiz export and has no Hong Kong, Greenland or Puerto Rico in it — so
+ * checking against it would refuse real people in order to catch a typo in a
+ * field that gates nothing and that nothing joins on. The *shape* is checked
+ * because a client sending `"Poland"` should be told so rather than stored.
  *
  * **Nothing revalidates a row that is already stored.** The old database's
- * cities came over as whatever it held, and a rule applied backwards would make
- * those accounts unsaveable — every PATCH refused over a field the player never
- * touched. The set governs writes; what is already there stays until its owner
- * picks from the list.
+ * cities came over as whatever it held — `Bayern` is in there — and a rule
+ * applied backwards would make those accounts unsaveable. This governs writes;
+ * what is already there stays until its owner writes over it. Re-sending a
+ * legacy value now *succeeds* rather than being refused, because the value takes
+ * the custom path and canonicalises to itself.
  */
-export function resolveCity(value: string): { name: string; country: CityCountry } {
-  const entry = CITY_INDEX.get(foldCity(value));
-  if (!entry) {
-    throw new DomainError('validation_failed', 'that city is not one Paylez covers yet', {
+export function resolveCity(value: string, countryCode?: string): ResolvedCity {
+  const folded = foldCity(value);
+
+  const entry = CITY_INDEX.get(folded);
+  if (entry) return { name: entry.name, country: entry.country, custom: false };
+
+  /* The text first: `!!!` is not a place whatever country you attach to it, and
+     naming `city` there is more use than asking for a country it will not save. */
+  if (!/[a-z]/.test(folded)) {
+    throw new DomainError('validation_failed', 'that does not look like a city', { field: 'city' });
+  }
+  if (folded.length < CITY_MIN || folded.length > CITY_MAX) {
+    throw new DomainError('validation_failed', `a city is ${CITY_MIN} to ${CITY_MAX} characters`, {
       field: 'city',
-      countries: CITY_COUNTRIES,
+      max: CITY_MAX,
     });
   }
-  return { name: entry.name, country: entry.country };
+
+  if (countryCode === undefined) {
+    throw new DomainError(
+      'validation_failed',
+      'we do not know that city — pick the country it is in',
+      { field: 'countryCode', suggestions: '/v1/cities' },
+    );
+  }
+  if (!COUNTRY_SHAPE.test(countryCode)) {
+    throw new DomainError('validation_failed', 'a country is a two-letter code, like PL', {
+      field: 'countryCode',
+    });
+  }
+
+  return { name: titleCase(folded), country: countryCode.toUpperCase(), custom: true };
+}
+
+/**
+ * The city *answer* — both halves of it, as a body carries them — for the two
+ * writes that take one.
+ *
+ * `resolveCity` above decides what a city **is**. This decides what a **body
+ * means**, which is the part `POST /v1/auth/signup` and `PATCH /v1/me` used to
+ * answer differently: a `countryCode` with no `city` was a 400 naming the field
+ * on the patch and was *dropped on the floor* at sign-up, so the same
+ * half-filled form was a refusal on one path and a silent success on the other.
+ * It is the same lie as a control that does nothing, told at the one moment a
+ * client is most likely to be posting half a form.
+ *
+ * Made to agree by refusing on both, never by loosening the patch: a country on
+ * its own cannot mean anything, because `users.country_code` is written from the
+ * city rather than from the request, and there would be no city for it to be a
+ * fact about. It is not reachable by an honest client either — a profile with a
+ * country has a city, and a client echoing its whole profile back sends both.
+ *
+ * One function rather than two guards that happen to match, because two guards
+ * that happen to match is what this was, minus one of them.
+ */
+export function resolveCityAnswer(
+  city: string | undefined,
+  countryCode: string | undefined,
+): ResolvedCity | null {
+  if (city === undefined) {
+    if (countryCode !== undefined) {
+      /* Named `city` rather than `countryCode`: the missing half is the city,
+         and a form told "countryCode" would highlight the field that *was*
+         filled in. The mirror of the refusal inside `resolveCity`, which names
+         `countryCode` for exactly the same reason. */
+      throw new DomainError('validation_failed', 'a country is part of a city — send both', {
+        field: 'city',
+      });
+    }
+    return null;
+  }
+  return resolveCity(city, countryCode);
 }
 
 /* ────────────────────────────────────────────────────────── the birthday ── */
@@ -1182,13 +1421,26 @@ export function resolveCity(value: string): { name: string; country: CityCountry
 export const BIRTH_DATE_WRITES = 2;
 
 export interface ProfilePatch {
+  /** What they are called. Free text, non-blank, `NAME_MAX` at most — the same
+   *  `checkName` sign-up writes through. */
   name?: string;
   username?: string;
   language?: string;
+  /** Anything: one of `CITIES`, or a place of your own with a `countryCode`. */
   city?: string;
+  /**
+   * ISO 3166-1 alpha-2. Read **only alongside `city`**, because a country is the
+   * second half of one answer rather than a field of its own — sending it alone
+   * is refused rather than ignored, since a value silently discarded is the same
+   * lie as a control that does nothing. Ignored when the city is one of the 114,
+   * which own their country. `SignUpInput` says the same thing because it is the
+   * same function: see `resolveCityAnswer`, then `resolveCity`.
+   */
+  countryCode?: string;
   avatar?: string | null;
   phone?: string;
-  headline?: string;
+  /** One of `OCCUPATIONS`. The UI labels this "Status"; see the tuple. */
+  occupation?: string;
   /** ISO `YYYY-MM-DD`. Accepted twice: the answer, and one correction. */
   birthDate?: string;
 }
@@ -1196,7 +1448,7 @@ export interface ProfilePatch {
 /**
  * What makes a profile complete: all seven answers present.
  *
- * Photo, username, status line, city, email, phone, birthday — the whole of what
+ * Photo, username, status, city, email, phone, birthday — the whole of what
  * a profile *is*, which is the only definition that survives a field being
  * added. "Most of it" would have to be renegotiated every time the form grows,
  * and a threshold nobody can state is one the client and the server will
@@ -1211,7 +1463,7 @@ const isProfileComplete = (user: User): boolean =>
   Boolean(
     user.display_avatar &&
       user.username &&
-      user.headline &&
+      user.occupation &&
       user.city &&
       user.email &&
       user.phone &&
@@ -1254,8 +1506,13 @@ function payForACompleteProfile(db: Db, user: User, at: Iso): void {
 /**
  * Edit the profile.
  *
- * Four of these fields are not "is it a string", and each rule is also in the
- * schema at the column it belongs to:
+ * Five of these fields are not "is it a string", and each rule is also in the
+ * schema at the column it belongs to. Two of the five — the name and the city —
+ * are shared verbatim with `signUp`, because both endpoints write the same
+ * columns and a rule that lives on one of them is a rule the other contradicts:
+ *
+ * **A name is non-blank and bounded.** `checkName`, which sign-up calls too. A
+ * blank one used to be swallowed here by the `COALESCE` and refused there.
  *
  * **A username is unique, ignoring case.** Checked here for the refusal a client
  * can act on — a `conflict` naming the field — and enforced by
@@ -1264,9 +1521,17 @@ function payForACompleteProfile(db: Db, user: User, at: Iso): void {
  * *true*; the lookup is what is *helpful*, and the `catch` below is what stops
  * the race surfacing as a raw SQLite constraint message.
  *
- * **A city is a choice.** `resolveCity` maps whatever was typed onto one of
- * `CITIES` and hands back the country with it, so `country_code` is written from
- * the city rather than answered separately and the two cannot disagree.
+ * **A city is canonicalised, not restricted.** `resolveCity` maps whatever was
+ * typed onto one of `CITIES` where it can and onto the single title-cased form
+ * of its fold where it cannot, and hands back the country either way — so
+ * `country_code` is still written from the city rather than answered separately,
+ * and the weekly board still has one entry per place rather than one per
+ * spelling. A city we have never heard of needs a `countryCode` with it, and a
+ * `countryCode` with no city is refused rather than dropped — both through
+ * `resolveCityAnswer`, which sign-up calls as well.
+ *
+ * **A status is one of five.** `OCCUPATIONS`, checked here, and the refusal
+ * carries the whole set so a client that has drifted is told what it may send.
  *
  * **A birthday may be corrected once.** The counter is the rule; see
  * `BIRTH_DATE_WRITES`. The refusal names support rather than pretending the
@@ -1286,13 +1551,11 @@ export function updateProfile(
 ): User {
   const user = getUser(db, userId);
 
-  const headline = patch.headline?.trim();
-  if (headline !== undefined && headline.length > HEADLINE_MAX) {
-    throw new DomainError('validation_failed', `a headline is at most ${HEADLINE_MAX} characters`, {
-      field: 'headline',
-      max: HEADLINE_MAX,
-    });
-  }
+  /* Both through `checkName`, which sign-up also calls: a blank name here used
+     to be swallowed by the `COALESCE` below — a 200 that changed nothing — while
+     the same body was a 400 at sign-up. */
+  const name = patch.name === undefined ? null : checkName(patch.name);
+  const occupation = patch.occupation === undefined ? null : checkOccupation(patch.occupation);
 
   const handle = patch.username === undefined ? null : checkUsername(patch.username);
   if (handle && handle.norm !== user.username_norm) {
@@ -1305,7 +1568,11 @@ export function updateProfile(
     }
   }
 
-  const city = patch.city === undefined ? null : resolveCity(patch.city);
+  /* The city and its country are one answer in two halves, and what a body
+     carrying only one of them means is `resolveCityAnswer`'s to say — the same
+     function sign-up calls, so the two cannot give different replies to the same
+     form again. */
+  const city = resolveCityAnswer(patch.city, patch.countryCode);
   const phone = patch.phone === undefined ? null : checkPhone(patch.phone.trim());
 
   let birthDate: string | null = null;
@@ -1340,7 +1607,7 @@ export function updateProfile(
                 /* From the city, never from the request: see resolveCity. */
                 country_code = COALESCE($cc, country_code),
                 display_avatar = COALESCE($a, display_avatar),
-                headline = COALESCE($hd, headline),
+                occupation = COALESCE($oc, occupation),
                 phone = COALESCE($ph, phone),
                 birth_date = COALESCE($bd, birth_date),
                 /* When it was last written, which is now one of two moments. */
@@ -1352,14 +1619,14 @@ export function updateProfile(
                 updated_at = $t
           WHERE id = $u`,
         {
-          n: patch.name?.trim() || null,
+          n: name,
           un: handle?.username ?? null,
           unn: handle?.norm ?? null,
           l: patch.language ?? null,
           c: city?.name ?? null,
           cc: city?.country ?? null,
           a: patch.avatar ?? null,
-          hd: headline || null,
+          oc: occupation,
           ph: phone,
           bd: birthDate,
           t: at,
