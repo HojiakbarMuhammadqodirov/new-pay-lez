@@ -19,6 +19,7 @@ import {
   type CityList,
 } from './api/profile';
 import { useAuth } from './auth/context';
+import { Face } from './auth/Avatar';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
 import {
@@ -772,11 +773,7 @@ export function ProfilePage() {
                   <Field label={copy.photo} help={copy.photoHelp} wraps={false}>
                     <div className="prof-photo">
                       <span className="prof-avatar prof-avatar-lg" aria-hidden>
-                        {draft.avatar ? (
-                          <img src={draft.avatar} alt="" />
-                        ) : (
-                          initialOf(account.name)
-                        )}
+                        <Face name={account.name} photo={draft.avatar} />
                       </span>
                       <label className="file-pick">
                         <input
@@ -1006,11 +1003,7 @@ export function ProfilePage() {
                 <span className="console-label">{copy.cardTitle}</span>
                 <div className="prof-card-who">
                   <span className="prof-avatar" aria-hidden>
-                    {profile.avatar ? (
-                      <img src={profile.avatar} alt="" />
-                    ) : (
-                      initialOf(account.name)
-                    )}
+                    <Face name={account.name} photo={profile.avatar} />
                   </span>
                   <div>
                     <b>{account.name}</b>
@@ -1062,8 +1055,6 @@ export function ProfilePage() {
 }
 
 /* ────────────────────────────────────────────────────────────── helpers ── */
-
-const initialOf = (name: string): string => name.trim().charAt(0).toUpperCase() || '?';
 
 /**
  * The country a code names, or whatever was written when it is not a code.

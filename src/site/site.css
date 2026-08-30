@@ -5998,6 +5998,30 @@ button {
   line-height: 1;
 }
 
+/*
+ * The photo on an identity disc, wherever one is drawn.
+ *
+ * Five discs render `<Face>` — the header chip, the dashboard rail, the
+ * console's badge, a row in the console's user table, and the profile form's
+ * own preview — and they disagree about size, colour and border on purpose,
+ * because each belongs to its own screen. What they must not disagree about is
+ * what a photograph does inside them, which is this.
+ *
+ * `border-radius: inherit` rather than `overflow: hidden` on five parents:
+ * the image takes whatever curve the disc it landed in has, so a disc added
+ * later is round without anybody remembering to clip it. `object-fit: cover`
+ * is only defence — the stored data URL is already a centre crop at
+ * `AVATAR_PX` — but a browser letterboxing somebody's face inside a circle is
+ * the ugliest way to find that out.
+ */
+.avatar-face {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  border-radius: inherit;
+}
+
 /* Name over role, both small — the chip is an identity badge, not a heading. */
 .account-who {
   display: flex;
@@ -17839,14 +17863,8 @@ button {
   --disc: 5.75rem;
 }
 
-.prof-avatar img {
-  width: 100%;
-  height: 100%;
-  /* The stored data URL is already a centre crop at `AVATAR_PX`, so this only
-     has to stop a browser letterboxing it inside the disc. */
-  object-fit: cover;
-  display: block;
-}
+/* The face is `auth/Avatar.tsx`, and it is one rule because it is one
+   decision — see `.avatar-face` up in the header block. */
 
 /*
  * A fact, not a field.

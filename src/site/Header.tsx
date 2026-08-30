@@ -20,7 +20,8 @@ import { Icon } from './icons';
 import { LANGUAGE_ORDER, LANGUAGES, useCopy, useLanguage } from './i18n/context';
 import { PATHS, type Route } from './router';
 import { useTheme } from './theme/context';
-import { initial, useAuth } from './auth/context';
+import { useAuth } from './auth/context';
+import { Face } from './auth/Avatar';
 
 /**
  * One nav item: a glass pane that fractures around the pointer.
@@ -298,7 +299,7 @@ function AccountChip() {
         onClick={() => setOpen((value) => !value)}
       >
         <span className="account-avatar" aria-hidden>
-          {initial(account)}
+          <Face name={account.name} photo={account.profile.avatar} />
         </span>
         <span className="account-who">
           <b>{account.name}</b>

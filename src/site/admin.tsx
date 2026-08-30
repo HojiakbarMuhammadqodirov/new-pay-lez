@@ -13,7 +13,8 @@ import { ThemeToggle } from './Header';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
-import { initial, useAuth } from './auth/context';
+import { useAuth } from './auth/context';
+import { Face } from './auth/Avatar';
 import { profileCompleteness } from './auth/business';
 import { listUsers } from './auth/directory';
 import type { UserRecord } from './auth/users';
@@ -278,7 +279,9 @@ export function AdminPage() {
           </a>
           {account && (
             <span className="adm-user">
-              <i aria-hidden>{initial(account)}</i>
+              <i aria-hidden>
+                <Face name={account.name} photo={account.profile.avatar} />
+              </i>
               <span>
                 <b>{account.name.split(' ')[0]}</b>
                 <span>{dictionary.auth.roles.admin}</span>
@@ -429,7 +432,12 @@ export function AdminPage() {
                             <tr key={user.id}>
                               <td>
                                 <span className="adm-who">
-                                  <i aria-hidden>{initial(user)}</i>
+                                  <i aria-hidden>
+                                    {/* `?? ''` because `UserRecord.profile` is optional  a row
+                                        written before the profile existed has none,
+                                        which is a letter, not a crash. */}
+                                    <Face name={user.name} photo={user.profile?.avatar ?? ''} />
+                                  </i>
                                   <b>{user.name}</b>
                                 </span>
                               </td>

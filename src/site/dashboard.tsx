@@ -12,7 +12,8 @@ import {
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
-import { useAuth, initial } from './auth/context';
+import { useAuth } from './auth/context';
+import { Face } from './auth/Avatar';
 import { BusinessForm } from './businessSetup';
 import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
@@ -312,7 +313,9 @@ function TopBar({ screen }: { screen: number }) {
         */}
         {account?.type && (
           <span className="pd-user">
-            <i aria-hidden>{initial(account)}</i>
+            <i aria-hidden>
+              <Face name={account.name} photo={account.profile.avatar} />
+            </i>
             <span className="pd-who">
               <b>{account.name.split(' ')[0]}</b>
               <span>{copy.auth.roles[account.type]}</span>
