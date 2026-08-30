@@ -10,6 +10,7 @@ import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS, type GameId } from './con
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
+import { fxForCountry } from './i18n/fx';
 import { useAuth } from './auth/context';
 import {
   awardPoints,
@@ -21,13 +22,15 @@ import {
   MAX_FREEZES,
   MAX_ENERGY,
   quizAward,
+  streakWeek,
   type Award,
   type PlayerState,
 } from './auth/player';
 import { FlightGame } from './flight/FlightGame';
-import type { WordList } from './games/banks';
+import { wordListFor, type WordList } from './games/banks';
 import { MemoryMatch } from './games/MemoryMatch';
-import { rulesFor } from './games/rules';
+import { GamePreview } from './games/preview';
+import { gameName, rulesFor } from './games/rules';
 import {
   buildCapitalRound,
   buildFlagRound,
@@ -44,45 +47,49 @@ import '../components/GlobeHero/ui/flagFont.css';
  * describing them.
  *
  * The layout follows `b2b/Paylez Play.dc.html`, the Play mock: a panel that
- * leads with the balance and the bar it is filling, a stats strip that folds
- * the detail away until asked, one featured game given the width it deserves,
- * and the rest as a grid of cards. The reasoning behind that shape is the
- * mock's and it is right — the version before it opened with four equal figures
- * in a box, which told a player what they had and nothing about what to do next.
+ * leads with the balance and the bar it is filling, one featured game given the
+ * width it deserves, and the rest as a grid of cards. The reasoning behind that
+ * shape is the mock's and it is right — the version before it opened with four
+ * equal figures in a box, which told a player what they had and nothing about
+ * what to do next.
  *
- * Two things here are not the mock's, because the product has moved since it was
- * drawn, and both are answers to the same complaint: the screen was flat.
+ * Four things here are not the mock's, because the product has moved since it
+ * was drawn.
  *
- *   - **The deck.** The points panel has the energy gauge beside it. Energy is
- *     the only limiter on this page now — a round costs one whether it is won or
- *     lost — so it is the figure that decides whether any of the rest of the
- *     screen is reachable, and it was three 15px hearts in a strip of four
- *     readings. It is a count, a cap, and a countdown, at the size of what it
- *     governs.
- *   - **Three card weights.** `PLAY_SIZES` gives the six remaining games a span
- *     apiece, on facts about the games rather than on a ranking of them. Six
- *     interchangeable tiles said every round was the same round.
- *
- * What is *not* carried over is the mock's palette: it gives every game its own
- * hue (amber, lime, violet, coral, sky) and this site has one accent. The cards
- * are told apart by a **texture** instead — a hatch, a grid, a stripe, a dot
- * field, drawn in the accent at a few percent — which does the same job of
- * making six cards six different objects at a glance without a second colour
- * family on the page. `data-texture` on `.play-card` is the whole mechanism; the
- * index into `PLAY_TEXTURES` is positional, like everything else keyed to
- * `GAMES`.
+ *   - **The deck.** The points panel has the battery beside it. Energy is the
+ *     only limiter on this page — a round costs one whether it is won or lost —
+ *     so it is the figure that decides whether any of the rest of the screen is
+ *     reachable, and it was three 15px hearts in a strip of four readings. It is
+ *     a count, a cap and a countdown, drawn as the object everybody already
+ *     knows how to read: cells in a case, filling.
+ *   - **The week.** The streak was a number in a strip. It is seven circles now,
+ *     Monday to Sunday, with a **currency mark** in each day kept — because the
+ *     streak's whole argument is that showing up is worth money, and a bare
+ *     integer makes that argument to nobody. The freezes sit beside it at the
+ *     same size, on the same line and inside no box, because a freeze is only
+ *     any use if you know you have one *before* the day you need it.
+ *   - **One card, one press.** Every tile in the grid is a `<button>`. That is
+ *     what allowed the hover to take the description and the Play label away —
+ *     there is nothing left to aim at, because the card itself is the target —
+ *     and it is why Word Builder is two rows in `GAMES` rather than one row with
+ *     a picker on it (see the table's own note).
+ *   - **The preview.** A hovered card blurs its neighbours and plays a small,
+ *     wordless picture of its own round underneath the name. It replaced a set
+ *     of repeating background textures whose only job was to stop six tiles
+ *     looking like one tile six times — which they did, at the cost of saying
+ *     nothing about the games. A picture of the round says both.
  *
  * The four *quiz* rounds run through one engine. They differ only in how a
  * question is built (`kind` in `GAMES`) and what it pays, so there is one timer
  * and one scoring path rather than four of each.
  *
- * Three rounds are not quizzes and each brings its own loop: `flight`
- * (`flight/FlightGame.tsx`), `memory` and `word` (`games/`). All three rejoin
- * the others at `onDone` and end on the same result card, so everything
- * downstream of a finished round is one path.
+ * Four rounds are not quizzes and each brings its own loop: `flight`
+ * (`flight/FlightGame.tsx`), `memory` and the two `word` rows (`games/`). All of
+ * them rejoin the others at `onDone` and end on the same result card, so
+ * everything downstream of a finished round is one path.
  *
- * **Building a round is asynchronous now.** The questions used to be a handful
- * of items sitting in the dictionaries; they come from the generated banks in
+ * **Building a round is asynchronous.** The questions used to be a handful of
+ * items sitting in the dictionaries; they come from the generated banks in
  * `games/data/` — 2102 general questions and 196 flags among them — which are
  * code-split and fetched the first time a game is opened. Hence the `loading`
  * state on the card that starts one, and hence `useReveal` below.
@@ -91,48 +98,14 @@ import '../components/GlobeHero/ui/flagFont.css';
 type Game = (typeof GAMES)[number];
 
 /**
- * The card textures, index-aligned with `GAMES`.
+ * The game the screen leads with: `GAMES[0]`, whatever that row is.
  *
- * This is what stands in for the mock's six hues. Each name is a pattern in
- * `site.css` drawn from `--accent-rgb` at a few percent — the point is only that
- * neighbouring cards do not look like the same card twice, so the values are
- * chosen to sit next to each other rather than to mean anything. The featured
- * card takes `GAMES[0]`'s, which is why `dots` is first: it is the quietest of
- * the six and the featured card is the largest surface on the page.
+ * A constant rather than a search, because the order in `content.ts` *is* the
+ * layout — the first row is the poster and the rest fill the grid — and the two
+ * facts are one fact. Nothing picks a featured game at render, and nothing
+ * should: "today's game" changing under somebody who came back for the card
+ * they saw yesterday is the same failure as a grid that reshuffles itself.
  */
-const PLAY_TEXTURES = [
-  'dots',
-  'stripe',
-  'orbit',
-  'weave',
-  'chevron',
-  'grid',
-  'hatch',
-] as const;
-
-/**
- * How much of the grid each game takes, index-aligned with `GAMES` like the
- * textures above. `FEATURED`'s entry is unused — that game is the poster and
- * has its own element — and is kept so the two arrays index the same way.
- *
- * **The size is a fact about the game, not a ranking of it.** Seven cards of
- * identical weight was the flat thing this screen was: a grid of interchangeable
- * tiles says every round is the same round, and they are not. The three quizzes
- * left over after the featured one genuinely *are* siblings — five questions, a
- * clock per question, one mistake allowed, differing only in what is asked — so
- * they read as one set of three small tiles. Squawk's Flight and Memory Match
- * each bring their own board and their own loop, so each gets a half-width
- * poster. Word Builder gets the full width because it is the only card carrying
- * a **control**: the list it is teaching is chosen here, before the round, and a
- * segmented picker crushed into a third of a row is the thing that breaks first.
- *
- * Nothing here is per-player. A layout that reshuffled itself by what you had
- * played would move the card you were reaching for, which is the one thing a
- * grid of buttons must never do.
- */
-const PLAY_SIZES = ['lg', 'sm', 'sm', 'sm', 'md', 'md', 'lg'] as const;
-
-/** The game the screen leads with — the first row of `GAMES`, the general quiz. */
 const FEATURED = 0;
 
 /** The voucher ladder, cheapest first and deduplicated. */
@@ -225,6 +198,218 @@ function untilNextEnergy(at: number, now: number, language: LanguageCode): strin
  * describing seven games from one function is the point; two of them sharing it
  * and one restating it is how the page ends up describing the product two ways.
  */
+
+/* ─────────────────────────────────────────────────────────────── the card ── */
+
+/**
+ * One game in the catalogue — the poster and the grid tiles are the same
+ * component at two sizes.
+ *
+ * **It is a `<button>`, and the whole surface is the press.** That is the
+ * change the hover depends on: at rest the card carries its rules and a Play
+ * label, and on hover both slide down and out while the name takes their place,
+ * which is only honest if there is nothing left that had to be aimed at. A card
+ * with a real button inside it would have hidden its own target.
+ *
+ * The name landing exactly where the Play label was is a **grid row going from
+ * `0fr` to `1fr`**, not a hand-tuned `translateY`. The distance between the two
+ * depends on how many lines the game's name wraps to, which is a different
+ * number in each of five languages and on every card — so a fixed offset is
+ * wrong somewhere by construction. Letting the empty row above the name take
+ * the slack the collapsing row below it gives up is the same movement with
+ * nothing to keep in step. The tail's contents translate *down* as their row
+ * closes, because a row collapsing on its own would slide them up and out of
+ * the top, which reads as the card eating them.
+ *
+ * `disabled` is the empty tank and the moment a bank is being fetched. A
+ * disabled button takes no hover, so a card that cannot be played does not
+ * animate either — which is the right answer and is free.
+ */
+function PlayCard({
+  entry,
+  index,
+  name,
+  rules,
+  list,
+  featured,
+  badge,
+  label,
+  disabled,
+  onStart,
+}: {
+  entry: Game;
+  index: number;
+  name: string;
+  rules: [string, string];
+  /** Which list the local Word Builder deals — the preview shows that word. */
+  list: WordList;
+  featured?: boolean;
+  /** The "today's game" line. Only the poster has one. */
+  badge?: string;
+  /** What the press says — "Play", "Dealing…" or "Out of energy". */
+  label: string;
+  disabled: boolean;
+  onStart: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className={featured ? 'play-card play-card-lead' : 'play-card'}
+      data-reveal
+      disabled={disabled}
+      onClick={onStart}
+      style={{ '--i': index } as CSSProperties}
+    >
+      <GamePreview id={entry.id} list={list} />
+
+      <span className="play-card-main">
+        <span className="play-card-head">
+          <span className="play-ico">
+            <Icon name={entry.icon} size={featured ? 26 : 22} />
+          </span>
+          {badge && <span className="play-badge">{badge}</span>}
+        </span>
+
+        {/* The row that grows as the tail closes. Empty, and it has to be an
+            element rather than a `gap`: a `gap` cannot be animated to take up
+            the space a sibling is giving back. */}
+        <span className="play-card-lift" />
+
+        <b className="play-card-name">{name}</b>
+
+        <span className="play-card-tail">
+          <span className="play-card-rules">
+            {rules.map((rule) => (
+              <span className="play-rule" key={rule}>
+                {rule}
+              </span>
+            ))}
+          </span>
+          <span className="play-start">{label}</span>
+        </span>
+      </span>
+    </button>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── the week ── */
+
+/**
+ * The streak, as seven days, and the freezes that protect it.
+ *
+ * One section and one line, and neither half is in a box. That is the point of
+ * it: the streak and the freeze are one reading — how long you have kept this
+ * up, and how much slack you have left — and drawing a border round each made
+ * them two unrelated statistics in two panels. A freeze is only worth having if
+ * you know about it *before* the morning you sleep in.
+ *
+ * **A day that was kept shows the money.** The centre of a kept circle is the
+ * currency mark of wherever this person lives — złoty in Kraków, hryvnia in
+ * Kyiv — because the whole argument a streak makes is that turning up is worth
+ * something, and a row of ticks makes that argument to nobody. The mark comes
+ * off the **country of the city on the profile** (`fxForCountry`), not off the
+ * language switcher, which says what somebody reads and not where they are
+ * standing. A country the rate sheet does not carry falls back to `$`, which is
+ * read as "money" nearly everywhere and is honest about knowing no more.
+ *
+ * The weekday letters come from `Intl` rather than from the dictionaries, for
+ * the reason `untilNextEnergy` above gives at length: a weekday belongs to the
+ * reader's language, the platform already knows all five, and thirty-five
+ * hand-written initials are thirty-five chances to be wrong in a language
+ * nobody on the team reads.
+ */
+function StreakRow({ player }: { player: PlayerState }) {
+  const copy = useCopy().games;
+  const [language] = useLanguage();
+  const { account } = useAuth();
+
+  const week = useMemo(() => streakWeek(player, new Date()), [player]);
+  const held = freezesOf(player);
+
+  /* The mark itself. `null` from `fxForCountry` is "we do not know where this
+     person is", which is a different thing from "we know, and it is dollars" —
+     and both draw a `$`, because there is nothing better to draw. What must not
+     happen is inventing a currency for the first one. */
+  const mark = fxForCountry(account?.profile?.countryCode)?.symbol ?? '$';
+
+  /* Monday first, in the reader's own language. `narrow` is one or two
+     characters, which is what fits under a circle; the position in the row is
+     what disambiguates English's two Ts and two Ss, exactly as it does on every
+     calendar ever printed. */
+  const days = useMemo(() => {
+    const narrow = new Intl.DateTimeFormat(language, { weekday: 'narrow' });
+    const long = new Intl.DateTimeFormat(language, { weekday: 'long' });
+    return week.map((day) => {
+      const date = new Date(`${day.date}T12:00:00`);
+      return { short: narrow.format(date), full: long.format(date) };
+    });
+  }, [week, language]);
+
+  return (
+    <section className="play-run" data-reveal>
+      <div className="play-run-part">
+        <span className="play-run-kicker">
+          <Icon name="calendar" size={13} strokeWidth={2} />
+          {copy.streak}
+        </span>
+        <p className="play-run-count">
+          <b>{player.streak}</b>
+        </p>
+        {/* How long the mark is, so the sheet can size it. `£` and `zł` are one
+            and two characters; `so'm` is four and `CHF` three, and a circle
+            drawn for a pound sign with four characters in it is a circle with
+            the money spilling out of both sides. A data attribute rather than
+            an inline font size, because *which* size is a design decision and
+            those live in `site.css`. */}
+        <ol className="play-run-week" data-mark={mark.length > 2 ? 'long' : undefined}>
+          {week.map((day, i) => (
+            <li
+              key={day.date}
+              data-state={day.kept ? 'kept' : day.ahead ? 'ahead' : 'missed'}
+              data-now={day.now ? 'true' : undefined}
+              style={{ '--p': i } as CSSProperties}
+            >
+              <span className="play-run-dot">
+                <em aria-hidden>{day.kept ? mark : ''}</em>
+              </span>
+              <span className="play-run-day" aria-hidden>
+                {days[i].short}
+              </span>
+              <span className="visually-hidden">
+                {days[i].full} ·{' '}
+                {day.kept
+                  ? copy.streakKept
+                  : day.ahead
+                    ? copy.streakAhead
+                    : copy.streakMissed}
+              </span>
+            </li>
+          ))}
+        </ol>
+        <p className="play-run-note">{copy.streakHint}</p>
+      </div>
+
+      <div className="play-run-part play-run-freeze">
+        <span className="play-run-kicker">
+          <Icon name="freeze" size={13} strokeWidth={2} />
+          {copy.freezes}
+        </span>
+        <p className="play-run-count">
+          <b>{held}</b>
+          <span aria-hidden>/{MAX_FREEZES}</span>
+        </p>
+        <div className="play-run-flakes" role="img" aria-label={`${held}/${MAX_FREEZES}`}>
+          {Array.from({ length: MAX_FREEZES }, (_, i) => (
+            <i key={i} data-spent={i >= held ? 'true' : undefined}>
+              <Icon name="freeze" size={34} strokeWidth={1.4} />
+            </i>
+          ))}
+        </div>
+        <p className="play-run-note">{copy.freezesHint}</p>
+      </div>
+    </section>
+  );
+}
 
 /* ──────────────────────────────────────────────────────────────── the round ── */
 
@@ -600,9 +785,22 @@ export function GamesApp() {
     balance: number;
   } | null>(null);
 
-  /** Which word list Word Builder is practising. Polish by default: this is a
-   *  site for people who have moved to Poland. */
-  const [wordList, setWordList] = useState<WordList>('pl');
+  /*
+   * Which list the **local** Word Builder deals.
+   *
+   * Derived from the profile rather than held in state, because it is not a
+   * choice made on this screen: it is the language of the city this account
+   * says it lives in, and the place to change it is the profile form. The
+   * segmented picker that used to sit on the Word Builder card — and made that
+   * card the one tile in the grid whose surface could not be the button — is
+   * what this replaced, along with the second row in `GAMES`.
+   *
+   * `wordListFor` falls back to Polish for a profile with no city yet, which is
+   * the market this site is a guide to. It never falls back to English: English
+   * already has a card, and two cards dealing one list under two names is worse
+   * than offering a newcomer the language of the queue in front of them.
+   */
+  const localList = wordListFor(account?.profile?.countryCode);
 
   const player = account?.player;
 
@@ -826,15 +1024,24 @@ export function GamesApp() {
                   <b>{fill(games.pointsUnit, { points: String(player.points) })}</b>
                   <span aria-hidden> · </span>
                   {short > 0
-                    ? fill(games.pointsGoal, { points: String(short) })
+                    ? fill(games.pointsGoal, {
+                        points: String(short),
+                        target: String(target),
+                      })
                     : games.pointsHave}
                 </p>
                 <div className="play-hero-bar">
                   <i style={{ width: `${pct}%` }} />
                 </div>
+                {/* Both ends of the bar, as bare figures. The right-hand one
+                    used to carry a clause of its own — "400 unlocks the next
+                    one" — which was fine when the sentence above it said
+                    "the next discount" and became the same number written
+                    twice the moment that sentence started naming the rung. A
+                    scale prints numbers. */}
                 <div className="play-hero-scale">
                   <span>{player.points}</span>
-                  <span>{fill(games.pointsTarget, { points: String(target) })}</span>
+                  <span>{target}</span>
                 </div>
               </div>
               <span className="play-hero-cta">
@@ -844,31 +1051,47 @@ export function GamesApp() {
             </a>
 
             {/*
-              ── the energy gauge ──
+              ── the battery ──
 
-              Three cells, the count above them, and the one sentence that makes a
-              wait a wait rather than a fault: when the next one lands.
+              The tank drawn as the object it is. Four cells in a case with a
+              terminal on the end, the count above them, and the one sentence
+              that makes a wait a wait rather than a fault: when the next one
+              lands.
+
+              **A battery rather than a row of pips**, and the reason is that a
+              row of pips has to be counted and a battery is read. Everybody in
+              every market this ships to has spent twenty years reading exactly
+              this shape in the corner of a screen — full, half, nearly out — and
+              the reading that matters here is precisely that one: whether there
+              is an evening's play left. The cells inside it are square-ended
+              blocks rather than a continuous fill because the quantity really is
+              discrete: a round costs a whole one, and a bar three-quarters full
+              would be promising a round that is not there.
 
               It is a *reading*, not a control — nothing here is pressable, and
               that is why it is a `<section>` and not the link its neighbour is.
-              The cells carry the state twice on purpose: `data-state` paints
-              them, and the `aria-label` on the row says "2/3" for anyone who is
-              not looking at paint. The count above is the same figure a third
-              time, at the size that lets it be read from across the room, which
-              is the whole difference between this and the pips it replaces.
+              The state is carried twice on purpose: `data-state` paints each
+              cell, and the `aria-label` says "2/4" for anyone who is not looking
+              at paint. The count above is the same figure a third time, at the
+              size that lets it be read from across the room.
 
-              The middle cell fills *live*, against the real clock, and it does it
-              in CSS — see `chargeOf`. Nothing here re-renders to move it.
+              The cell that is filling does so *live*, against the real clock,
+              and it does it in CSS — see `chargeOf`. Nothing here re-renders to
+              move it. The bolt beside the count is on the same footing: it is
+              two `<i>`s and a keyframe, lit while the tank is charging and still
+              when it is full, because a charge indicator that flickers on a full
+              battery is telling you about work nobody is doing.
             */}
             <section
               className="play-energy"
               data-empty={energy === 0 ? 'true' : undefined}
+              data-charging={nextEnergyAt === null ? undefined : 'true'}
               data-reveal
             >
               <span className="play-energy-glow" aria-hidden />
               <span className="play-energy-kicker">
                 <i>
-                  <Icon name="spark" size={13} strokeWidth={2} />
+                  <Icon name="bolt" size={13} strokeWidth={2} />
                 </i>
                 {games.energy}
               </span>
@@ -879,31 +1102,43 @@ export function GamesApp() {
               </p>
 
               <div
-                className="play-energy-cells"
+                className="play-battery"
                 role="img"
                 aria-label={`${energy}/${MAX_ENERGY}`}
               >
-                {Array.from({ length: MAX_ENERGY }, (_, i) => {
-                  const charging = i === energy && charge !== null;
-                  return (
-                    <span
-                      key={i}
-                      data-state={i < energy ? 'full' : charging ? 'charging' : 'empty'}
-                    >
-                      {charging && (
-                        <i
-                          style={
-                            {
-                              '--charge': charge.at,
-                              '--charge-span': `${charge.span}ms`,
-                              '--charge-delay': `-${charge.into}ms`,
-                            } as CSSProperties
-                          }
-                        />
-                      )}
-                    </span>
-                  );
-                })}
+                <span className="play-battery-case">
+                  {Array.from({ length: MAX_ENERGY }, (_, i) => {
+                    const charging = i === energy && charge !== null;
+                    return (
+                      <span
+                        key={i}
+                        className="play-battery-cell"
+                        data-state={i < energy ? 'full' : charging ? 'charging' : 'empty'}
+                        style={{ '--p': i } as CSSProperties}
+                      >
+                        {charging && (
+                          <i
+                            style={
+                              {
+                                '--charge': charge.at,
+                                '--charge-span': `${charge.span}ms`,
+                                '--charge-delay': `-${charge.into}ms`,
+                              } as CSSProperties
+                            }
+                          />
+                        )}
+                      </span>
+                    );
+                  })}
+                  {/* The spark over the case. Decorative, and the only thing on
+                      this panel that is: it is what makes four blocks in a box
+                      read as *charge* rather than as a progress bar lying on its
+                      side. Two of them, offset, so the loop does not read as one
+                      thing blinking. */}
+                  <i className="play-battery-bolt" aria-hidden />
+                  <i className="play-battery-bolt" aria-hidden />
+                </span>
+                <span className="play-battery-tip" aria-hidden />
               </div>
 
               {/* An empty tank says so in words before it says when. The
@@ -921,64 +1156,46 @@ export function GamesApp() {
           </div>
 
           {/*
+            ── the week, and the slack ──
+
+            The streak and the freezes, out of the strip they used to be pills
+            in and into a section of their own. See `StreakRow`; the short of it
+            is that a streak is the one reading on this page that is *about* the
+            player rather than about the balance, and it was a three-character
+            number in a row of three three-character numbers.
+          */}
+          <StreakRow player={player} />
+
+          {/*
             ── the stats strip ──
 
-            The readings a player checks constantly, and a disclosure for the
-            four they do not. Freezes stay in the top line next to the streak
-            they protect, because the whole point of a freeze is knowing you
-            have one *before* the day you need it. Spending is automatic (see
-            `awardPoints`), so every figure here is a reading and none of them
-            is a control.
+            What is left after the streak and the freezes moved out: the history,
+            behind one disclosure. Shut by default, because five figures a player
+            checks occasionally should not push the games below the fold every
+            visit — and there is nothing in here that decides whether the rest of
+            the screen works. The two readings that do are the panels above.
 
-            **Energy is no longer one of them.** It was the fourth pill in this
-            row and it is the gauge in the deck above now: it is the only
-            reading here that decides whether the rest of the page works, and a
-            figure that gates every button on the screen cannot be the same size
-            as the count of questions you have ever answered. What is left in
-            the row are three readings that are genuinely glanceable — and they
-            fit the line without wrapping in five languages now that the pips
-            and their countdown have gone.
+            Every figure is a reading and none of them is a control. Spending is
+            automatic (see `awardPoints`), and there has never been anything to
+            press.
           */}
           <div className="play-strip" data-reveal>
-            <div className="play-strip-row">
-              <span className="play-stat">
-                <Icon name="coin" size={15} />
-                <em>{games.streak}</em>
-                <b>{player.streak}</b>
-              </span>
-              <span className="play-stat">
-                <Icon name="freeze" size={15} />
-                <em>{games.freezes}</em>
-                <b
-                  className="play-pips"
-                  aria-label={`${freezesOf(player)}/${MAX_FREEZES}`}
-                >
-                  {Array.from({ length: MAX_FREEZES }, (_, i) => (
-                    <i key={i} data-spent={i >= freezesOf(player) ? 'true' : undefined}>
-                      <Icon name="freeze" size={15} strokeWidth={2} />
-                    </i>
-                  ))}
-                </b>
-              </span>
-              <span className="play-stat">
-                <Icon name="trophy" size={15} />
-                <em>{games.score}</em>
-                <b>{player.points}</b>
-              </span>
-
-              <button
-                type="button"
-                className="play-stats-toggle"
-                aria-expanded={statsOpen}
-                onClick={() => setStatsOpen((open) => !open)}
-              >
-                {games.statsToggle}
-                <Icon name="chevron" size={14} strokeWidth={2.2} />
-              </button>
-            </div>
+            <button
+              type="button"
+              className="play-stats-toggle"
+              aria-expanded={statsOpen}
+              onClick={() => setStatsOpen((open) => !open)}
+            >
+              {games.statsToggle}
+              <Icon name="chevron" size={14} strokeWidth={2.2} />
+            </button>
 
             {statsOpen && (
               <div className="play-stats">
+                <div>
+                  <span>{games.score}</span>
+                  <b>{player.points}</b>
+                </div>
                 <div>
                   <span>{games.answered}</span>
                   <b>{player.answered}</b>
@@ -1046,7 +1263,7 @@ export function GamesApp() {
           ) : playing && game && game.kind === 'word' ? (
             <WordBuilder
               words={game.questions}
-              list={wordList}
+              list={game.id === 'wordLocal' ? localList : 'en'}
               onDone={finishScored}
               onQuit={() => setPlaying(null)}
             />
@@ -1058,169 +1275,50 @@ export function GamesApp() {
               onQuit={() => setPlaying(null)}
             />
           ) : (
-            <>
-              {/*
-                ── the featured game ──
+            /*
+              ── the catalogue ──
 
-                One game given the width of the page, the way the mock leads
-                with its daily quiz. It is `GAMES[FEATURED]` rather than a row
-                of its own, so the featured card and the grid card below it read
-                the same table and cannot disagree about what the game pays.
-              */}
-              {(() => {
-                const entry = GAMES[FEATURED];
-                const rules = rulesFor(entry, games);
+              The poster and the grid, inside one element on purpose: hovering
+              any card blurs **every other card on the screen**, which needs a
+              common ancestor for `:has()` to hang off. They were siblings of the
+              page wrapper before, and a rule written against that would have
+              blurred the balance panel and the leaderboard with them.
+
+              `GAMES[FEATURED]` is the first row of the same table the grid maps,
+              so the poster and a grid tile cannot disagree about what a game
+              pays — and the poster is the same `PlayCard` component at a larger
+              size, so they cannot disagree about how a card behaves either.
+              Being told twice how to draw a card is how the two ended up with
+              different hovers the last time they were written out separately.
+            */
+            <div className="play-catalogue">
+              {GAMES.map((entry, index) => {
+                const featured = index === FEATURED;
                 return (
-                  <article
-                    className="play-feature"
-                    data-texture={PLAY_TEXTURES[FEATURED]}
-                    data-reveal
-                  >
-                    <span className="play-feature-glow" aria-hidden />
-                    <div className="play-feature-main">
-                      <span className="play-badge">
-                        <Icon name="coin" size={13} strokeWidth={2} />
-                        {games.featured}
-                      </span>
-                      <h2>{games.names[FEATURED]}</h2>
-                      <p className="play-feature-rules">{rules.join(' · ')}</p>
-                      <button
-                        type="button"
-                        className="btn btn-solid play-feature-cta"
-                        disabled={energy <= 0 || loading}
-                        onClick={() => start(entry.id)}
-                      >
-                        {loading
-                          ? games.loading
-                          : energy > 0
+                  <PlayCard
+                    key={entry.id}
+                    entry={entry}
+                    index={index}
+                    name={gameName(index, games, localList)}
+                    list={localList}
+                    rules={rulesFor(entry, games)}
+                    featured={featured}
+                    badge={featured ? games.featured : undefined}
+                    label={
+                      loading
+                        ? games.loading
+                        : energy > 0
+                          ? featured
                             ? games.start
-                            : games.noEnergy}
-                        {energy > 0 && !loading && (
-                          <Icon name="arrow" size={16} strokeWidth={2.4} />
-                        )}
-                      </button>
-                    </div>
-                    <span className="play-feature-ico" aria-hidden>
-                      <Icon name={entry.icon} size={64} strokeWidth={1.3} />
-                    </span>
-                  </article>
+                            : games.play
+                          : games.noEnergy
+                    }
+                    disabled={energy <= 0 || loading}
+                    onStart={() => start(entry.id)}
+                  />
                 );
-              })()}
-
-              {/*
-                ── the rest of the catalogue ──
-
-                Three sizes rather than six identical tiles — see `PLAY_SIZES`
-                for which game gets which and why. The size decides the
-                *composition*, not just the span: a small card stacks, a medium
-                one puts its framed icon beside the copy the way the poster
-                above does, and the wide one gives its picker a column of its
-                own. Six cards that differ only in their texture were still six
-                of the same object.
-
-                `--i` is the card's place in the row, and the sheet turns it
-                into a reveal delay — the grid arrives as a cascade rather than
-                as one block. `useReveal` already skips the whole thing under
-                `prefers-reduced-motion`.
-              */}
-              <div className="play-grid">
-                {GAMES.map((entry, index) => {
-                  if (index === FEATURED) return null;
-                  const rules = rulesFor(entry, games);
-                  const size = PLAY_SIZES[index];
-
-                  return (
-                    <article
-                      className="play-card"
-                      key={entry.id}
-                      data-size={size}
-                      data-texture={PLAY_TEXTURES[index]}
-                      data-reveal
-                      style={{ '--i': index } as CSSProperties}
-                    >
-                      <div className="play-card-main">
-                        <div className="play-card-head">
-                          <span className="play-ico">
-                            <Icon name={entry.icon} size={size === 'sm' ? 20 : 24} />
-                          </span>
-                          <b>{games.names[index]}</b>
-                        </div>
-
-                        {/* One line on a small tile, two on the others. The
-                            rules are the same pair either way — `rulesFor` is
-                            the only thing that says what a game is — but three
-                            tiles in a row are read by scanning down them, and a
-                            two-line block per tile turns that scan into
-                            reading. */}
-                        {size === 'sm' ? (
-                          <span className="play-rule">{rules.join(' · ')}</span>
-                        ) : (
-                          rules.map((rule) => (
-                            <span className="play-rule" key={rule}>
-                              {rule}
-                            </span>
-                          ))
-                        )}
-                      </div>
-
-                      {/* `.play-card-main` above takes the slack, which is what
-                          lines the buttons up along the bottom of a row of
-                          cards whose names wrap to different heights. */}
-                      <div className="play-card-side">
-                        {/* Word Builder picks the language it is teaching, on the
-                            card, before the round starts — the choice belongs to
-                            the game rather than to the site's own switcher, which
-                            decides what you *read*, not what you are learning.
-                            It is why this card is the wide one. */}
-                        {entry.kind === 'word' && (
-                          <div
-                            className="play-pick"
-                            role="group"
-                            aria-label={games.wordGame.list}
-                          >
-                            {(['pl', 'en'] as const).map((option) => (
-                              <button
-                                key={option}
-                                type="button"
-                                data-on={wordList === option ? 'true' : undefined}
-                                onClick={() => setWordList(option)}
-                              >
-                                {games.wordGame.lists[option]}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-
-                        <button
-                          type="button"
-                          className="btn btn-solid play-start"
-                          disabled={energy <= 0 || loading}
-                          onClick={() => start(entry.id)}
-                        >
-                          {loading
-                            ? games.loading
-                            : energy > 0
-                              ? games.play
-                              : games.noEnergy}
-                        </button>
-                      </div>
-
-                      {/* The glyph again, at poster size, on the two cards that
-                          have the room for it. It is the card's own icon rather
-                          than a second drawing, and it is drawn in the texture's
-                          own register — a mark on the surface, not an object on
-                          it — so a medium card reads as a place rather than as a
-                          taller tile. */}
-                      {size === 'md' && (
-                        <span className="play-mark" aria-hidden>
-                          <Icon name={entry.icon} size={112} strokeWidth={1} />
-                        </span>
-                      )}
-                    </article>
-                  );
-                })}
-              </div>
-            </>
+              })}
+            </div>
           )}
 
           <Board player={player} />

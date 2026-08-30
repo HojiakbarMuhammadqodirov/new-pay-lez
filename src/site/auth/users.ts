@@ -23,7 +23,7 @@
  * in `directory.ts`.
  */
 import { isEmail, type BusinessProfile } from './business';
-import { seedPlayer, type PlayerState } from './player';
+import { seedPlayer, today, type PlayerState } from './player';
 import { EMPTY_PROFILE } from './context';
 import type { AccountType, UserProfile } from './context';
 
@@ -115,18 +115,39 @@ const BRATYSLAWSKA: BusinessProfile = {
  *
  * Further along than `seedPlayer()`'s brand-new state — a week of streak, a
  * balance that can afford the top of the catalogue, and a history that shows the
- * accuracy figure meaning something. `lastPlayed` stays `null` for the reason it
- * does in `seedPlayer`: a date older than yesterday is a *lapsed* streak, and
- * the first round this account plays would correctly wipe the balance this seed
- * exists to show.
+ * accuracy figure meaning something.
+ *
+ * **`lastPlayed` is yesterday, computed when the directory is first written.**
+ * It used to be `null`, which was the right answer while a streak was only ever
+ * a number: `null` is the one value that cannot lapse, and the note here said
+ * so. It stopped being the right answer when the Play screen started drawing
+ * the streak as *seven days* — `streakWeek` reads the run back off
+ * `streak` + `lastPlayed`, and a seven-day streak with no last day played is a
+ * claim with no days behind it, so the row came out empty under a great big 7.
+ * Two records of one fact, disagreeing on the screen.
+ *
+ * Yesterday is safe as well as honest. Yesterday is exactly the day that
+ * *continues* a streak (`awardPoints`), so this account's next round takes it to
+ * eight rather than resetting it — which is the property `null` was chosen for
+ * — and it is now a state the app could actually have produced, which `null`
+ * beside a 7 never was.
+ *
+ * Computed rather than written as a literal because the alternative is a date
+ * that is correct on the day it is typed and a lapsed streak by the end of the
+ * week. It is evaluated once, when this device first seeds its directory; from
+ * then on the row lives in `localStorage` and ages like any other player's.
  */
 function seededPlayer(): PlayerState {
+  const back = new Date();
+  back.setDate(back.getDate() - 1);
+
   return {
     ...seedPlayer(),
     points: 1240,
     streak: 7,
     answered: 132,
     correct: 108,
+    lastPlayed: today(back),
   };
 }
 

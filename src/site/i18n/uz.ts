@@ -466,23 +466,29 @@ export const uz: Dictionary = {
 
     pointsKicker: 'Sizning ballaringiz',
     pointsUnit: '{points} ball',
-    pointsGoal: 'keyingi chegirmagacha yana {points}',
+    pointsGoal: '{target} gacha yana {points}',
     pointsHave: 'chegirma uchun allaqachon yetarli',
-    pointsTarget: '{points} keyingisini ochadi',
 
     statsToggle: 'Statistikangiz',
     accuracy: 'Aniqlik',
 
     featured: 'Bugungi o‘yin · ketma-ketlikni saqlaydi',
 
+    streakHint: 'Kuniga bitta raund uni saqlaydi',
+    freezesHint: 'Har biri o‘tkazib yuborilgan bir kunni qoplaydi',
+    streakKept: 'saqlandi',
+    streakMissed: 'o‘tkazib yuborildi',
+    streakAhead: 'hali oldinda',
+
     names: [
-      'Aql o‘yinlari',
+      'Juftini top',
+      'Squawk parvozi',
       'Bayroqni top',
       'Davlat va poytaxt',
+      'Aql o‘yinlari',
       'Polsha viktorinasi',
-      'Squawk parvozi',
-      'Juftini top',
-      'So‘z yig‘',
+      'So‘z yig‘ · Inglizcha',
+      'So‘z yig‘ · {language}',
     ],
     rule: '{questions} savol · har biri {seconds} soniya',
     reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
@@ -492,6 +498,22 @@ export const uz: Dictionary = {
     energyFull: 'To‘la — kutadigan narsa yo‘q',
     energyCost: 'Har raundga 1 ta',
     loading: 'Tarqatilmoqda…',
+
+    /* Fixed samples of the kind of question each bank asks — short enough to
+       read at preview size. `options[0]` is the right answer everywhere here,
+       so keep the order; `capital.country` is filled into `whichCapital`. */
+    preview: {
+      flag: ['Polsha', 'Ukraina', 'Ispaniya'],
+      capital: { country: 'Polsha', options: ['Varshava', 'Krakov', 'Gdansk'] },
+      brain: {
+        q: 'Qaysi sayyora Qizil sayyora deyiladi?',
+        options: ['Mars', 'Venera', 'Yupiter'],
+      },
+      poland: {
+        q: 'Polsha valyutasi qaysi?',
+        options: ['Zlotiy', 'Yevro', 'Krona'],
+      },
+    },
 
     question: '{total} dan {n}-savol',
     whichCountry: 'Bu qaysi davlat?',
@@ -550,7 +572,6 @@ export const uz: Dictionary = {
     wordGame: {
       rule: '{words} so‘z · osondan qiyingacha',
       reward: 'Qiyinroq so‘z ko‘proq ball beradi · maslahat bonusni oladi',
-      list: 'Mashq qilinadigan til',
       lists: { pl: 'Polyakcha', en: 'Inglizcha' },
       tier: '{n}-daraja',
       undo: 'Orqaga',
@@ -1835,7 +1856,7 @@ export const uz: Dictionary = {
       benefits: [
         {
           title: 'Har bir raund bir xil qiymatda',
-          body: "Hech bir o‘yin ikkinchi marta o‘ynalgani uchun kamroq to‘lamaydi va bugungi raund kechagisidan arzon emas. Kunni cheklaydigan narsa — energiya: zaxirada uchta, har raundga bittadan, va har to‘rt soatda bittasi qaytadi.",
+          body: "Hech bir o‘yin ikkinchi marta o‘ynalgani uchun kamroq to‘lamaydi va bugungi raund kechagisidan arzon emas. Kunni cheklaydigan narsa — energiya: zaxirada to‘rtta, har raundga bittadan, va har to‘rt soatda bittasi qaytadi.",
         },
         {
           title: 'Yettinchi kun: muzlatish',
@@ -1866,7 +1887,7 @@ export const uz: Dictionary = {
         },
         {
           q: "Kuniga nechta raund o‘ynay olaman?",
-          a: "To‘la zaxira bilan uchta, keyin esa qancha tiklansa shuncha. Har bir tugagan raund bitta energiya oladi — yutdingizmi, yutqazdingizmi, farqi yo‘q — energiya esa o‘zi tiklanadi: har to‘rt soatda bittadan, ko‘pi bilan uchtagacha. Takrorlangani uchun hech narsa kamroq to‘lamaydi: kunning o‘ninchi raundi birinchisi qancha bo‘lsa, shuncha turadi.",
+          a: "To‘la zaxira bilan to‘rtta, keyin esa qancha tiklansa shuncha. Har bir tugagan raund bitta energiya oladi — yutdingizmi, yutqazdingizmi, farqi yo‘q — energiya esa o‘zi tiklanadi: har to‘rt soatda bittadan, ko‘pi bilan to‘rttagacha. Takrorlangani uchun hech narsa kamroq to‘lamaydi: kunning o‘ninchi raundi birinchisi qancha bo‘lsa, shuncha turadi.",
         },
         {
           q: 'Vaucher aslida qanchaga arziydi?',

@@ -7,6 +7,7 @@
  *
  *   npm run verify
  */
+import { readFileSync } from 'node:fs';
 import { loadAtlas } from '../src/components/GlobeHero/geo/atlas';
 import { locateCountry } from '../src/components/GlobeHero/geo/locate';
 import { buildRouteGeometry } from '../src/components/GlobeHero/geo/routeGeometry';
@@ -83,6 +84,8 @@ import {
   ENERGY_REGEN_MINUTES,
   energyOf,
   seedPlayer,
+  streakWeek,
+  today,
   stampsLeft,
   stampsOf,
   stampVisit,
@@ -95,12 +98,12 @@ import { toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
-import { DEAL_CATEGORIES, GAMES, WALLET_DEALS, type HotDeal } from '../src/site/content';
+import { DEAL_CATEGORIES, GAMES, PREVIEW, WALLET_DEALS, type HotDeal } from '../src/site/content';
 /* The source dictionary, read for its *shapes* rather than its words: the
    dashboard's arrays are index-aligned with the seeds below, and a stale index
    renders `undefined` instead of throwing. */
 import { en } from '../src/site/i18n/en';
-import { CURRENCIES, money } from '../src/site/i18n/currency';
+import { CURRENCIES, fill, money } from '../src/site/i18n/currency';
 import {
   HEAT_HOURS,
   PD_ALLOCATION,
@@ -1507,7 +1510,8 @@ console.log('\nplaying');
   check('nothing arrives before the interval is up', at(hour * 3).count === 0);
   check('one at four hours', at(hour * 4).count === 1, `${at(hour * 4).count}`);
   check('two at eight', at(hour * 8).count === 2, `${at(hour * 8).count}`);
-  check('full at twelve', at(hour * 12).count === MAX_ENERGY, `${at(hour * 12).count}`);
+  check('three at twelve', at(hour * 12).count === 3, `${at(hour * 12).count}`);
+  check('full at sixteen', at(hour * 16).count === MAX_ENERGY, `${at(hour * 16).count}`);
   /* And it stops there — a tank that kept counting would hand back a week of
      rounds to somebody returning from holiday. */
   check('and never overfills', at(hour * 200).count === MAX_ENERGY, `${at(hour * 200).count}`);
@@ -1553,7 +1557,7 @@ console.log('\nplaying');
    * so if this number moves nothing else is left to notice.
    */
   const perDay = MAX_ENERGY + Math.floor(1440 / ENERGY_REGEN_MINUTES);
-  check('a day is nine finished rounds from a full tank', perDay === 9, `${perDay}`);
+  check('a day is ten finished rounds from a full tank', perDay === 10, `${perDay}`);
   /* And the payout does not know how many of them have been played. That is the
      other half of "energy is the only limiter", and the half a reintroduced
      curve would break first — a whole day of one game pays a flat rate. */
@@ -1629,17 +1633,135 @@ console.log('\nplaying — streak freezes');
   check('a state with no freezes field reads as zero', freezesOf(old) === 0);
 }
 
+console.log('\nplaying — the week the streak draws');
+{
+  /*
+   * `streakWeek` is the seven circles on the Play screen, and it is **derived**
+   * — a `streak` of five ending on Thursday already says "Sunday through
+   * Thursday", so the row reads that back rather than keeping a second history
+   * beside it. Two records of one fact disagree the first time either is
+   * written without the other, and the number printed next to those circles is
+   * the one they would disagree with.
+   *
+   * Which makes this the block that owns the reading-back. Every case below is
+   * a thing the row got wrong at some point on paper: a week that starts on
+   * Sunday, a future day drawn as a missed one, a streak longer than the week
+   * it is being drawn in, and a run that crosses a month end.
+   */
+  const at = (iso: string) => new Date(`${iso}T12:00:00`);
+  const player = (streak: number, lastPlayed: string | null): PlayerState => ({
+    ...seedPlayer(),
+    streak,
+    lastPlayed,
+  });
+
+  /* Wednesday 2026-08-05. */
+  const week = streakWeek(player(3, '2026-08-05'), at('2026-08-05'));
+
+  check('the week is seven days', week.length === 7, `${week.length}`);
+  /* Monday first, in every language this site is read in. `getDay()` puts
+     Sunday first and would have shifted the whole row by one. */
+  check('…starting on Monday', week[0].date === '2026-08-03', week[0].date);
+  check('…and ending on Sunday', week[6].date === '2026-08-09', week[6].date);
+  check('…with the weekday index matching the position',
+    week.every((day, i) => day.weekday === i));
+
+  check('exactly one day is today', week.filter((day) => day.now).length === 1);
+  check('…and it is the right one',
+    week.find((day) => day.now)?.date === '2026-08-05');
+
+  /* Three days ending today: Monday, Tuesday, Wednesday. */
+  check('the streak fills backwards, covering exactly `streak` days',
+    week.filter((day) => day.kept).length === 3,
+    `${week.filter((day) => day.kept).length}`);
+  check('…and ending on the day it was last played',
+    week[2].kept && !week[3].kept);
+
+  /*
+   * A day that has not happened is `ahead`, not missed. Thursday onward on a
+   * Wednesday is not a week already lost, and drawing it flat says it is — the
+   * row would tell a player who has kept every single day so far that they have
+   * missed four.
+   */
+  check('the rest of the week is still to come',
+    week.slice(3).every((day) => day.ahead && !day.kept));
+  check('…and nothing before today is', week.slice(0, 3).every((day) => !day.ahead));
+
+  /* A genuine miss: played Monday, back on Wednesday, streak restarted. */
+  const missed = streakWeek(player(1, '2026-08-05'), at('2026-08-05'));
+  check('a missed day is neither kept nor ahead',
+    !missed[0].kept && !missed[0].ahead && !missed[1].kept && !missed[1].ahead);
+
+  /* A streak longer than the week it is drawn in fills the week and stops
+     there — the row is seven circles, not a scrollbar. */
+  const long = streakWeek(player(40, '2026-08-05'), at('2026-08-05'));
+  check('a long streak fills every day up to today',
+    long.slice(0, 3).every((day) => day.kept) && long.slice(3).every((day) => !day.kept));
+
+  /*
+   * A run that crosses a month end. The first day covered is computed by
+   * walking a `Date` rather than by subtracting from the `YYYY-MM-DD` string,
+   * and this is what says so: five days ending 2026-09-02 starts on 2026-08-29,
+   * which string arithmetic would have put at 2026-09--2.
+   */
+  const across = streakWeek(player(5, '2026-09-02'), at('2026-09-02'));
+  check('a run reaches back across a month end',
+    across[0].date === '2026-08-31' && across[0].kept, across[0].date);
+
+  /* A brand-new account has never played, so nothing is kept and nothing
+     crashes on the `null`. */
+  const fresh = streakWeek(player(0, null), at('2026-08-05'));
+  check('a player who has never played keeps no days',
+    fresh.every((day) => !day.kept));
+  check('…and their week still has a today', fresh.filter((day) => day.now).length === 1);
+
+  /*
+   * A **live streak with no last day played** — `streak: 7`, `lastPlayed: null`.
+   *
+   * The app cannot produce it, because a finished round always writes
+   * `lastPlayed`. Stored directories can and do: it is what `seededPlayer` wrote
+   * before it started dating the seed, and one is sitting in the
+   * `localStorage` of every device that has opened this site. Found on the
+   * deployed build, where the demo account drew a great big 7 over seven empty
+   * circles.
+   *
+   * It reads as ending **yesterday**, because that is the reading `awardPoints`
+   * already gives it — `played === null` takes the same `continued` branch an
+   * actual yesterday does. The row must not contradict the number beside it, and
+   * the number is what the next round will act on.
+   */
+  const undated = streakWeek(player(7, null), at('2026-08-05'));
+  check('a live streak with no last day played still fills its week',
+    undated.filter((day) => day.kept).length > 0,
+    `${undated.filter((day) => day.kept).length} kept`);
+  check('…ending yesterday, which is where `awardPoints` already puts it',
+    undated[1].kept && !undated[2].kept,
+    undated.map((day) => (day.kept ? 'x' : '.')).join(''));
+  check('…and today is left open rather than claimed',
+    !undated.find((day) => day.now)?.kept);
+  /* And a *dead* streak with no last day played keeps nothing, which is the
+     genuinely new account and must not be swept into the same branch. */
+  check('…while a zero streak with no last day played keeps nothing',
+    streakWeek(player(0, null), at('2026-08-05')).every((day) => !day.kept));
+
+  /* Sunday is the last circle, not the first. The off-by-one this guards is the
+     one that only shows up one day in seven. */
+  const sunday = streakWeek(player(1, '2026-08-09'), at('2026-08-09'));
+  check('a Sunday is the seventh circle',
+    sunday[6].now && sunday[6].kept && sunday[0].date === '2026-08-03');
+}
+
 console.log('\ncopy that quotes a constant');
 {
   /*
    * The L-Earn FAQ says, in five languages, that it comes back "every four
-   * hours, up to three".
+   * hours, up to four".
    *
    * The two *figures* survived the rename — the interval and the ceiling did
    * not move — but the sentences around them still call the pool lives, and
    * `src/site/i18n/` is not this change's to edit. Both checks below are about
    * the numbers and neither reads the noun, so they hold either way; the copy
-   * pass that renames the word has to leave "four hours" and "up to three"
+   * pass that renames the word has to leave "four hours" and "up to four"
    * where they are, and this is what will say so if it does not.
    *
    * Those two figures are written as **words**, not as holes, and that is
@@ -1655,15 +1777,15 @@ console.log('\ncopy that quotes a constant');
   check(`the FAQ line "every four hours" still matches the code`,
     ENERGY_REGEN_MINUTES === 240,
     `${ENERGY_REGEN_MINUTES} min · the copy says four hours`);
-  check('…and its "up to three" still matches MAX_ENERGY',
-    MAX_ENERGY === 3,
-    `${MAX_ENERGY} · the copy says three`);
+  check('…and its "up to four" still matches MAX_ENERGY',
+    MAX_ENERGY === 4,
+    `${MAX_ENERGY} · the copy says four`);
 
   /* And the copy really does still say it, so the check above cannot pass
      against a sentence that was quietly reworded. */
   const faq = en.learn.faq.items.map((item) => item.a).join(' ');
   check('…and the English FAQ still quotes both figures',
-    /four hours/.test(faq) && /up to three/.test(faq));
+    /four hours/.test(faq) && /up to four/.test(faq));
 }
 
 console.log('\nplaying — the two scored games');
@@ -2156,6 +2278,113 @@ console.log('\nflying — the sprite');
   check('every part has a positive size', PARROT_PARTS.every((p) => p.w > 0 && p.h > 0));
 }
 
+console.log('\nthe card previews show real game content');
+{
+  /*
+   * A hovered card plays a **working miniature of its own round**, and the
+   * whole claim it makes is that what you are looking at is the game.
+   *
+   * That claim is one edit away from being false at any time. `PREVIEW` in
+   * `content.ts` copies three cards out of a deck and one row out of each word
+   * list rather than pulling 3.5 kB and two 5.4 kB files into the main bundle
+   * for a decoration — a copy is the right trade there, and it is also the kind
+   * of copy that is true on the day it is typed and quietly wrong a fortnight
+   * later. This block reads the real files and holds it to it.
+   *
+   * `readFileSync` rather than an `import` of the JSON, so the test reads what
+   * is actually on disk — which is the thing the claim is about.
+   */
+  const dataFile = (name: string): unknown =>
+    JSON.parse(
+      readFileSync(new URL(`../src/site/games/data/${name}`, import.meta.url), 'utf8'),
+    );
+
+  const decks = dataFile('decks.json') as Array<{
+    pairs: Array<{ icon: string; label: string }>;
+  }>;
+  const inDecks = new Set(
+    decks.flatMap((deck) => deck.pairs.map((pair) => `${pair.icon}|${pair.label}`)),
+  );
+
+  for (const card of PREVIEW.memory) {
+    check(`the memory preview's ${card.label} is a real deck card`,
+      inDecks.has(`${card.icon}|${card.label}`), `${card.icon} ${card.label}`);
+  }
+  /* Three *different* cards, and it is worth asserting: the board draws six
+     tiles as three pairs, and a duplicate would quietly make it two pairs and a
+     lie. The board in `preview.tsx` is `[0, 1, 2, 1, 0, 2]`, which only indexes
+     safely while there are exactly three. */
+  check('…and the three are three',
+    new Set(PREVIEW.memory.map((card) => card.label)).size === 3
+      && PREVIEW.memory.length === 3);
+
+  for (const list of ['en', 'pl'] as const) {
+    const rows = dataFile(`words.${list}.json`) as Array<[string, string, number]>;
+    const row = PREVIEW.word[list];
+    const real = rows.find((entry) => entry[0] === row.word);
+    check(`the ${list} word preview builds a real word`, real !== undefined, row.word);
+    check(`…carrying that word's own hint`, real?.[1] === row.hint, row.hint);
+  }
+  /* The two cards must not preview the same word: they are two rows of `GAMES`
+     precisely because they deal two different lists, and a catalogue that
+     previewed one word twice would be arguing against itself. */
+  /* Widened on the way in, because `PREVIEW` is `as const`: with two different
+     literals TypeScript calls the comparison unintentional and refuses to
+     compile it, and with two identical ones it compiles and this fires. The
+     cast keeps the check that matters and drops the one the compiler already
+     owns. */
+  check('…and the two lists preview different words',
+    (PREVIEW.word.en.word as string) !== PREVIEW.word.pl.word);
+
+  /* The flag is built from the code rather than fetched — `flagOf` turns two
+     letters into the two regional indicators the self-hosted font draws. A
+     malformed code renders as nothing at all, which on a card whose whole
+     subject is the flag is the one failure worth a check. */
+  check('the flag preview shows a real flag',
+    flagOf(PREVIEW.flagCode).length === 4,
+    `${PREVIEW.flagCode} → ${flagOf(PREVIEW.flagCode)}`);
+
+  /*
+   * Every language answers, and answers with the same number of chips.
+   *
+   * `options[0]` is the right answer **by position** — the preview lights the
+   * first one and there is no second field naming it — so a translation that
+   * reordered the options would mark the wrong answer correct with nothing to
+   * notice it. That one needs a reader. What a test can hold is the shape: a
+   * set that changed size is the same edit half-done.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    const dict = LANGUAGES[code];
+    const preview = dict.games.preview;
+
+    check(`${code} previews three countries`, preview.flag.length === 3);
+    check(`${code} previews three capitals`, preview.capital.options.length === 3);
+    check(`${code} previews three answers on both quizzes`,
+      preview.brain.options.length === 3 && preview.poland.options.length === 3);
+
+    /* The capital preview asks with the round's own prompt, so the country has
+       to be a hole that prompt actually has — otherwise the card asks a
+       question with a `{country}` printed in it. */
+    check(`${code}'s capital preview fills the round's own question`,
+      dict.games.whichCapital.includes('{country}')
+        && fill(dict.games.whichCapital, { country: preview.capital.country })
+          .includes(preview.capital.country));
+
+    /* Nothing may be blank: an empty chip is a card advertising a round with a
+       missing answer in it. */
+    check(`${code} leaves nothing blank`,
+      [
+        ...preview.flag,
+        ...preview.capital.options,
+        ...preview.brain.options,
+        ...preview.poland.options,
+        preview.brain.q,
+        preview.poland.q,
+        preview.capital.country,
+      ].every((text) => text.trim().length > 0));
+  }
+}
+
 console.log('\nevery game is named in every language');
 {
   /*
@@ -2256,9 +2485,31 @@ console.log('\nthe directory');
     'the player has something to spend and something to show',
     Boolean(player?.player && player.player.points > 0 && player.player.vouchers.length > 0),
   );
-  /* A `lastPlayed` older than yesterday is a *lapsed* streak, and the first
-     round this account plays would correctly wipe the balance above. */
-  check('…and no stale streak to lose it to', player?.player?.lastPlayed === null);
+  /*
+   * The seed's streak has days behind it, and they are the right days.
+   *
+   * `lastPlayed` was `null` here, which is the one value that cannot lapse and
+   * was the right answer while a streak was only a number. It stopped being one
+   * when the Play screen started drawing the week: `streakWeek` reads the run
+   * back off `streak` + `lastPlayed`, so a seven-day streak with no last day
+   * played rendered as a great big 7 over seven empty circles.
+   *
+   * Yesterday is the only date that satisfies both — it is exactly the day that
+   * *continues* a streak, so this account's next round takes it to eight rather
+   * than resetting it, and it is a state the app could actually have produced.
+   * Checked against `today()` on a fresh `Date` rather than against a literal,
+   * because the seed computes it when the directory is first written.
+   */
+  const seedDay = new Date();
+  seedDay.setDate(seedDay.getDate() - 1);
+  check('…and a streak with days behind it',
+    player?.player?.lastPlayed === today(seedDay),
+    `${player?.player?.lastPlayed}`);
+  check('…which the next round continues rather than resets',
+    awardRound(player!.player!, { game: 'brain', correct: 5, total: 5, perCorrect: 1, won: true })
+      .streak === 8);
+  check('…and a week the row can actually draw',
+    streakWeek(player!.player!, new Date()).some((day) => day.kept));
 
   const ids = new Set(SEED_USERS.map((u) => u.id));
   const emails = new Set(SEED_USERS.map((u) => u.email.toLowerCase()));

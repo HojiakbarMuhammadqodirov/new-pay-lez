@@ -566,15 +566,24 @@ export const en = {
      * exactly one of them is shown. Each carries its whole clause rather than a
      * fragment glued to `pointsUnit`, because "60 more for" does not sit in the
      * same order in five languages.
+     *
+     * `pointsGoal` **names the rung**, and that is the whole of the change from
+     * what it used to say — "39 more for the next discount". What a discount
+     * costs is the number the player is actually working toward, and the
+     * sentence was the only place on the screen it could have appeared; the bar
+     * underneath already says "you are partway to a thing", which is the half
+     * the words were repeating.
      */
     pointsKicker: 'Your points',
     pointsUnit: '{points} points',
-    pointsGoal: '{points} more for the next discount',
+    pointsGoal: '{points} more to reach {target}',
     pointsHave: 'enough for a discount already',
-    /* The right-hand end of the progress bar: the rung it is filling toward. */
-    pointsTarget: '{points} unlocks the next one',
 
-    /* The stats strip, and the four figures it opens onto. */
+    /* The stats strip. Five figures behind one disclosure now: the streak and
+       the freezes that were in its top line have a section of their own, at the
+       size of things a player actually looks at, and the balance is the
+       headline of the panel above. What is left here is the history — the
+       readings that are worth having and are worth nobody's first glance. */
     statsToggle: 'Your stats',
     accuracy: 'Accuracy',
 
@@ -585,15 +594,51 @@ export const en = {
      */
     featured: 'Today’s game · keeps your streak',
 
-    /* Index-aligned with `GAMES` in `content.ts`. */
+    /*
+     * ── the streak row ──
+     *
+     * Seven circles, one per day of this week, and a currency mark in every one
+     * that was kept. The words are few on purpose: the row is a picture, and
+     * the two hints below it are the only things it cannot draw — what keeps a
+     * streak, and what a freeze is for.
+     *
+     * There are **no weekday names here**, and that is deliberate rather than
+     * missing. A weekday belongs to the reader's language and `Intl` already
+     * knows all five of them; five dictionaries carrying seven initials each is
+     * thirty-five strings to keep in step for something the platform hands over
+     * correct. Compare `untilNextEnergy` in `games.tsx`, which takes the same
+     * side for the same reason — and `fx.ts`, which refuses `Intl` for money on
+     * the opposite ground.
+     */
+    streakHint: 'One round a day keeps it',
+    freezesHint: 'Each one covers a day you miss',
+    /* The three states a circle can be in, for the label a screen reader gets.
+       Lower case because they are read as a fragment after the day's name. */
+    streakKept: 'kept',
+    streakMissed: 'missed',
+    streakAhead: 'still to come',
+
+    /*
+     * Index-aligned with `GAMES` in `content.ts`, which means **this is the
+     * order the screen draws them in** — the first is the featured card and the
+     * rest fill the grid. Reordering here without reordering there renames
+     * every game on the page.
+     *
+     * The last entry carries a `{language}` hole rather than a language: it is
+     * the local Word Builder, and which list that is depends on the country on
+     * the player's profile (`wordListFor` in `games/banks.ts`). Every name is
+     * run through `fill()` at the call site, so the seven without a hole are
+     * unaffected.
+     */
     names: [
-      'Brain Games',
+      'Memory Match',
+      'Squawk’s Flight',
       'Guess the Flag',
       'Country & Capital',
+      'Brain Games',
       'Poland Quiz',
-      'Squawk’s Flight',
-      'Memory Match',
-      'Word Builder',
+      'Word Builder · English',
+      'Word Builder · {language}',
     ],
     /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
        game's own row, so a rules line never disagrees with the game it labels. */
@@ -618,6 +663,42 @@ export const en = {
     energyCost: '1 per round',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
+
+    /*
+     * ── the card previews ──
+     *
+     * The words in the working miniature a card plays when it is hovered. The
+     * structural half — the flag's code, the deck cards, the words — is
+     * `PREVIEW` in `content.ts`, and its comment carries the reasoning.
+     *
+     * These are **real questions of the kind the banks ask**, and they are fixed
+     * samples rather than draws from them: the general bank is 220 kB and a
+     * pointer crossing a card must not fetch it. What a sample can promise that
+     * a draw cannot is that it is short enough to read at preview size, which
+     * is the constraint that actually decides these.
+     *
+     * `options[0]` is the right answer everywhere here — the preview lights the
+     * first one — so a translation must keep the order, not just the words.
+     *
+     * The two prompts that already exist are reused rather than restated:
+     * `whichCountry` and `whichCapital` are what the real rounds ask, so the
+     * flag and capital previews ask them too and cannot drift from the game.
+     */
+    preview: {
+      /* The three answers under the flag. The first names `PREVIEW.flagCode`,
+         which is `PL` — translate the country, not the code. */
+      flag: ['Poland', 'Ukraine', 'Spain'],
+      /* `country` is filled into `whichCapital`; the first option answers it. */
+      capital: { country: 'Poland', options: ['Warsaw', 'Kraków', 'Gdańsk'] },
+      brain: {
+        q: 'Which planet is called the Red Planet?',
+        options: ['Mars', 'Venus', 'Jupiter'],
+      },
+      poland: {
+        q: 'What is the currency of Poland?',
+        options: ['Złoty', 'Euro', 'Koruna'],
+      },
+    },
 
     /* In play. */
     question: 'Question {n} of {total}',
@@ -702,7 +783,11 @@ export const en = {
     wordGame: {
       rule: '{words} words · easy to hard',
       reward: 'Harder words score more · a hint costs the bonus',
-      list: 'Language to practise',
+      /* Names the list being practised, which is what tells the catalogue's two
+         Word Builder cards apart — one is always English, the other is the
+         language of the city on the profile. It is *not* the language the site
+         is being read in. The picker this used to label is gone: the choice is
+         two cards now, so every card in the grid is one press. */
       lists: { pl: 'Polish', en: 'English' },
       tier: 'Level {n}',
       undo: 'Undo',
@@ -2131,7 +2216,7 @@ export const en = {
       benefits: [
         {
           title: 'Every round is worth the same',
-          body: 'No game pays less for being played twice, and no round today is worth less than yesterday’s. What bounds a day is energy: three in the tank, one round each, and one back every four hours.',
+          body: 'No game pays less for being played twice, and no round today is worth less than yesterday’s. What bounds a day is energy: four in the tank, one round each, and one back every four hours.',
         },
         {
           title: 'Day seven: a freeze',
@@ -2162,7 +2247,7 @@ export const en = {
         },
         {
           q: 'How many rounds can I play a day?',
-          a: 'Three on a full tank, and more as it fills. Every finished round spends one energy whether you win or lose, and energy comes back on its own — one every four hours, up to three. Nothing pays less for being repeated: the tenth round of the day is worth exactly what the first was.',
+          a: 'Four on a full tank, and more as it fills. Every finished round spends one energy whether you win or lose, and energy comes back on its own — one every four hours, up to four. Nothing pays less for being repeated: the tenth round of the day is worth exactly what the first was.',
         },
         {
           q: 'What is a voucher actually worth?',

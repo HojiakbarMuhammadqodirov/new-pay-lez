@@ -48,7 +48,7 @@ Run the backend locally:
 ```bash
 npm install
 npm run server        # http://127.0.0.1:8787 — migrates, seeds and imports on first run
-npm run verify:api    # 521 checks, if you want to see what it guarantees
+npm run verify:api    # 537 checks, if you want to see what it guarantees
 ```
 
 > **A large economy change has landed since the last copy of this brief.** Points
@@ -183,12 +183,12 @@ Notes that decide whether these feel right:
   connection mid-round takes nothing with it.
 - **Energy does not reset at midnight.** It is shared across all seven games and
   refills one every `energy_regen_minutes` — 240 free, 180 Pro, 120 Premium — up
-  to `daily_energy` (3 / 5 / 7). `GET /v1/games/state` returns
+  to `daily_energy` (4 / 6 / 10). `GET /v1/games/state` returns
   `energy: { energy, max, nextAt }`, and `nextAt` is what an empty tank should
   draw. A countdown to midnight is wrong.
 - **That pair is the whole limiter on a day**, now that there is no points cap
   and no decay curve. Read together they give its size — 6 rounds a day sustained
-  on free and 9 from a full tank, 8/13 on Pro, 12/19 on Premium. It is worth
+  on free and 10 from a full tank, 8/14 on Pro, 12/22 on Premium. It is worth
   drawing honestly: it is the number a player plans an evening around, and it is
   what a paid plan is actually sold on.
 - Word Builder hints are capped per day by `word_hints_per_day` (3 / 6 / 10).
@@ -429,8 +429,8 @@ matches.
 
 ```diff
   {
--   "lives": { "lives": 2, "max": 3, "nextAt": "2026-08-29T18:12:44.000Z" },
-+   "energy": { "energy": 2, "max": 3, "nextAt": "2026-08-29T18:12:44.000Z" },
+-   "lives": { "lives": 2, "max": 4, "nextAt": "2026-08-29T18:12:44.000Z" },
++   "energy": { "energy": 2, "max": 4, "nextAt": "2026-08-29T18:12:44.000Z" },
     "streak": 6,
     "longestStreak": 11,
     "freezes": 2,
@@ -474,10 +474,10 @@ costs nothing (see §2), so it is not yet decremented.
 ```diff
 - { "error": { "code": "no_lives",
 -              "message": "no hearts left",
--              "nextAt": "2026-08-29T18:12:44.000Z", "max": 3 } }
+-              "nextAt": "2026-08-29T18:12:44.000Z", "max": 4 } }
 + { "error": { "code": "no_energy",
 +              "message": "no energy left",
-+              "nextAt": "2026-08-29T18:12:44.000Z", "max": 3 } }
++              "nextAt": "2026-08-29T18:12:44.000Z", "max": 4 } }
 ```
 
 **This is the dangerous one**, because nothing about it fails loudly: the status
@@ -494,8 +494,8 @@ timestamp minutes-to-hours away rather than the end of the day.
 **1e. The `entitlements` map — the pair renamed, and a third key gone.**
 
 ```diff
-- "daily_lives": "3", "life_regen_minutes": "240",
-+ "daily_energy": "3", "energy_regen_minutes": "240",
+- "daily_lives": "4", "life_regen_minutes": "240",
++ "daily_energy": "4", "energy_regen_minutes": "240",
 - "round_decay": "free",
 ```
 
@@ -523,9 +523,9 @@ What a day is, so the screens can say it honestly:
 
 | Plan | Sustained, per day | From a full tank |
 | --- | --- | --- |
-| Free | 6 | 9 |
-| Pro | 8 | 13 |
-| Premium | 12 | 19 |
+| Free | 6 | 10 |
+| Pro | 8 | 14 |
+| Premium | 12 | 22 |
 
 Three rules travel with the charge, and each of them is a screen:
 
@@ -558,7 +558,7 @@ Three rules travel with the charge, and each of them is a screen:
 
 The per-game decay curve is **deleted**, not disabled: `score = floor(raw ×
 points_multiplier)` and nothing else. A round pays the same whether it is the
-first of the day or the ninth. **A model with a required `decay` throws on
+first of the day or the tenth. **A model with a required `decay` throws on
 decode**, on the result screen of every round of every game — and any "worth less
 this time" copy, and the branch that showed it, should go with the field rather
 than sit behind a condition that can no longer be true.

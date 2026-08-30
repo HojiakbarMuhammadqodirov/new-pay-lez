@@ -471,23 +471,29 @@ export const pl: Dictionary = {
 
     pointsKicker: 'Twoje punkty',
     pointsUnit: '{points} pkt',
-    pointsGoal: 'jeszcze {points} do następnej zniżki',
+    pointsGoal: 'jeszcze {points} do {target}',
     pointsHave: 'masz już dość na zniżkę',
-    pointsTarget: '{points} odblokowuje kolejną',
 
     statsToggle: 'Twoje statystyki',
     accuracy: 'Skuteczność',
 
     featured: 'Dzisiejsza gra · podtrzymuje serię',
 
+    streakHint: 'Jedna runda dziennie ją podtrzymuje',
+    freezesHint: 'Każde pokrywa jeden opuszczony dzień',
+    streakKept: 'zaliczone',
+    streakMissed: 'opuszczone',
+    streakAhead: 'jeszcze przed nami',
+
     names: [
-      'Gry na rozum',
+      'Znajdź parę',
+      'Lot Squawka',
       'Zgadnij flagę',
       'Kraj i stolica',
+      'Gry na rozum',
       'Quiz o Polsce',
-      'Lot Squawka',
-      'Znajdź parę',
-      'Ułóż słowo',
+      'Ułóż słowo · Angielski',
+      'Ułóż słowo · {language}',
     ],
     rule: '{questions} pytań · po {seconds} sek.',
     reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
@@ -497,6 +503,22 @@ export const pl: Dictionary = {
     energyFull: 'Pełna — nie ma na co czekać',
     energyCost: '1 na rundę',
     loading: 'Rozdajemy…',
+
+    /* Fixed samples of the kind of question each bank asks — short enough to
+       read at preview size. `options[0]` is the right answer everywhere here,
+       so keep the order; `capital.country` is filled into `whichCapital`. */
+    preview: {
+      flag: ['Polska', 'Ukraina', 'Hiszpania'],
+      capital: { country: 'Polski', options: ['Warszawa', 'Kraków', 'Gdańsk'] },
+      brain: {
+        q: 'Którą planetę nazywamy Czerwoną Planetą?',
+        options: ['Mars', 'Wenus', 'Jowisz'],
+      },
+      poland: {
+        q: 'Jaka jest waluta Polski?',
+        options: ['Złoty', 'Euro', 'Korona'],
+      },
+    },
 
     question: 'Pytanie {n} z {total}',
     whichCountry: 'Jaki to kraj?',
@@ -555,7 +577,6 @@ export const pl: Dictionary = {
     wordGame: {
       rule: '{words} słów · od łatwych do trudnych',
       reward: 'Trudniejsze słowa dają więcej · podpowiedź kosztuje bonus',
-      list: 'Język do ćwiczenia',
       lists: { pl: 'Polski', en: 'Angielski' },
       tier: 'Poziom {n}',
       undo: 'Cofnij',
@@ -1839,7 +1860,7 @@ export const pl: Dictionary = {
       benefits: [
         {
           title: 'Każda runda warta tyle samo',
-          body: 'Żadna gra nie płaci mniej za drugie podejście i żadna dzisiejsza runda nie jest warta mniej niż wczorajsza. Dzień ogranicza energia: trzy w zapasie, po jednej na rundę, i jedna wraca co cztery godziny.',
+          body: 'Żadna gra nie płaci mniej za drugie podejście i żadna dzisiejsza runda nie jest warta mniej niż wczorajsza. Dzień ogranicza energia: cztery w zapasie, po jednej na rundę, i jedna wraca co cztery godziny.',
         },
         {
           title: 'Dzień siódmy: zamrożenie',
@@ -1870,7 +1891,7 @@ export const pl: Dictionary = {
         },
         {
           q: 'Ile rund mogę zagrać dziennie?',
-          a: 'Trzy przy pełnym zapasie, a potem tyle, ile zdąży wrócić. Każda skończona runda kosztuje jedną energię — wszystko jedno, wygrana czy przegrana — a energia wraca sama, po jednej co cztery godziny, maksymalnie do trzech. Nic nie płaci mniej za powtórzenie: dziesiąta runda dnia jest warta dokładnie tyle, co pierwsza.',
+          a: 'Cztery przy pełnym zapasie, a potem tyle, ile zdąży wrócić. Każda skończona runda kosztuje jedną energię — wszystko jedno, wygrana czy przegrana — a energia wraca sama, po jednej co cztery godziny, maksymalnie do czterech. Nic nie płaci mniej za powtórzenie: dziesiąta runda dnia jest warta dokładnie tyle, co pierwsza.',
         },
         {
           q: 'Ile naprawdę wart jest voucher?',

@@ -84,10 +84,10 @@ Win or lose — an abandoned round still costs nothing, because the charge is
 written in `games.finish` and nowhere else. It refills one per
 `energy_regen_minutes` up to `daily_energy`, so a day is
 `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank: free 6
-sustained and 9 in a burst, Pro 8/13, Premium 12/19. Three other brakes have
+sustained and 10 in a burst, Pro 8/14, Premium 12/22. Three other brakes have
 lived here and all three are gone — points expiry, a daily points cap, and a
 per-game decay curve that paid a repeat of the same game less. Charging only a
-*loss* was the version before this one and it bounded nobody: two of the seven
+*loss* was the version before this one and it bounded nobody: three of the eight
 games cannot be lost. **If a day needs to be smaller, move `CONFIG.points`** —
 two overlapping limiters where only one binds is one more than a player can be
 told about, and the pair a player can see on the screen is where the rule
@@ -154,7 +154,7 @@ Poland banks are the hand-delivered CSVs in `updates/`**, the same files
 `npm run banks` reads for the front end, and `db/import.ts` reads that directory
 as a second source. They were missing for a while and the symptom is worth
 recognising: `POST /v1/games/sessions {gameType:"brain"}` returns a 404 saying
-"no questions in the brain bank", and two of the seven games are unplayable
+"no questions in the brain bank", and two of the eight games are unplayable
 while every other endpoint looks fine. The import reports it in its notes when
 the files are not there rather than importing nothing quietly.
 
@@ -166,7 +166,7 @@ their own terms.
 
 **The Flutter app is the one client that does talk to it.** It lives in the
 `Pay-lez mobile` repo beside this one and is wired end to end — the four-step
-gate from both sides, all seven games on the server's move-by-move protocol, the
+gate from both sides, all eight games on the server's move-by-move protocol, the
 wallet, the guidebook, and the partner companion. Two things follow for anybody
 changing `server/`. Its `test/live_test.dart` runs the whole journey against
 `npm run server` and will catch a renamed field before a phone does, so **run it
@@ -234,20 +234,48 @@ design hands you a colour per item and you are *not* depicting an object, reach
 for texture instead — see the `[data-texture]` note below.
 
 **When a design hands you a hue per item, reach for texture — unless the item is
-an object.** The Play mock (`b2b/Paylez Play.dc.html`) gives each game its own
-colour, and that colour is doing real work: it is how six cards in a grid stop
-being the same card six times. The work is what had to be kept, not the
-mechanism. `[data-texture]` on `.play-card` paints a different repeating pattern
-per game in `--accent-rgb` at three to five percent, and the cards read as six
-objects with one accent on the page. `PLAY_TEXTURES` in `games.tsx` is
-index-aligned with `GAMES` like everything else there. The alphas are the whole
-difficulty and they are set by the worst case — a texture crisp enough to admire
-on an empty card is noise under the two rule lines every card carries.
+an object.** Two mocks do it. The wallet mock gives each band its own colour and
+`[data-texture]` on `.wal-band` answers it: a repeating pattern per band in
+`--accent-rgb` at three to five percent, so the bands read as different objects
+with one accent on the page. The alphas are the whole difficulty and they are
+set by the worst case — a texture crisp enough to admire on an empty card is
+noise under the body copy every card carries.
 
-That is the rule for *cards*, which are surfaces carrying their own labels. It
-is not the rule for the level behind them, where a brick and a lucky box are
-different things rather than differently-decorated ones and no label exists to
-tell them apart. Deciding which of the two you have is the whole judgement.
+The Play mock (`b2b/Paylez Play.dc.html`) does the same thing for the game cards
+and is **no longer answered this way**, which is worth knowing before reaching
+for the pattern a third time. The cards carried textures and it worked: eight
+tiles stopped looking like one tile eight times. It answered only half the
+question, though — a texture tells cards apart and says nothing about the games,
+which is a lot of a card's surface to spend on making the choices
+distinguishable rather than on the choice.
+
+**A hovered card plays a working miniature of its own round instead**
+(`games/preview.tsx` and `══ game previews ══` in `site.css`). Three rules keep
+it honest, and they are the whole reason it is worth more than the texture was:
+
+- **It is the game, not a picture of one.** Memory Match turns real cards off
+  the Kraków deck in `games/data/decks.json`; Word Builder builds a real word
+  out of its own shuffled letters; the flag is `flagOf('PL')`; Squawk is the
+  *actual* sprite, the same `PARROT_PARTS` table the flight canvas draws from,
+  read into SVG rects. The shapes it replaced — bars for answers, a striped
+  rectangle for a flag — were a second decoration wearing the game's clothes.
+- **It copies the game's own states.** The answer chips are `.round-option`'s
+  pair, right filled and wrong struck through; the memory cards are
+  `.mm-card`'s three faces and, like the real board, they **do not flip**.
+  Inventing motion the game does not have is the same mistake one step subtler.
+- **The content is real and it is fixed.** `PREVIEW` in `content.ts` and
+  `copy.games.preview` hold it, because a hover must not fetch a 220 kB question
+  bank and a preview that dealt a new question every time would be a slot
+  machine where an example is wanted. `npm run verify` reads the real data files
+  and checks the samples are still in them, so "real content" cannot quietly
+  stop being true.
+
+Where a decoration could be carrying information, prefer the information.
+
+Neither is the rule for the level behind those cards, where a brick and a lucky
+box are different things rather than differently-decorated ones and no label
+exists to tell them apart. Deciding which of the three you have is the whole
+judgement.
 
 **The brand is the word, and the word is `900 21px/1 Onest`.** That is the app's
 own declaration, carried over exactly: `--font-brand` / `--brand-size` in
@@ -490,14 +518,42 @@ experience, which an owner is reading about rather than living. The rules that
 decide points, streak, energy and the wallet are pure functions in
 `auth/player.ts`, so `npm run verify` owns them; the components only call them.
 
+**The order of `GAMES` is the layout of the Play screen.** `GAMES[0]` is the
+full-width poster L-Earn opens with and everything after it fills the grid two
+to a row, so moving a row moves a card and there is no second ordering to keep
+in step. Nothing sorts the list at render and nothing is per-player: a grid that
+reshuffled itself by what you had played would move the card you were reaching
+for. **Every card is a `<button>`**, which is what lets a hover take the
+description and the Play label away — there is nothing left to aim at, because
+the card is the target. That is also why **Word Builder is two rows rather than
+one row with a picker**: `word` always deals English and `wordLocal` deals the
+language of the city on the profile (`wordListFor` in `games/banks.ts`), and
+practising English and practising the language you have moved to are the two
+things this product is for rather than one game played two ways.
+
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that
-absorbs one missed day. Seven games score seven different ways — a quiz pays per
+absorbs one missed day. Eight games score seven different ways — a quiz pays per
 right answer, a flight pays per gap past an endless target, Word Builder totals
 five per-word scores plus a perfect-round bonus, Memory Match reads its elapsed
 seconds into one of four bands — and **none of them restates what a streak is.**
 They compute a number and hand it over. There were two copies of that rule once
 and it would be five by now.
+
+**The streak is drawn as seven days, and the week is derived rather than
+stored.** `streakWeek` in `auth/player.ts` reads the run back off
+`streak` + `lastPlayed` — a streak of five ending Thursday already *says*
+"Sunday through Thursday" — because a second history beside the number would
+disagree with it the first time either was written without the other, and the
+number is printed next to the circles. A live streak whose `lastPlayed` is
+`null` reads as ending **yesterday**, because that is the branch `awardPoints`
+already gives it — a state stored directories still carry and the app itself
+cannot produce. A day the streak counts shows the
+**currency mark of wherever the player lives** (`fxForCountry`, off the
+profile's country, not off the language switcher), because the argument a streak
+makes is that turning up is worth money and a row of ticks makes it to nobody. A
+country the rate sheet does not carry falls back to `$`. A day that has not
+happened yet is `ahead` and must not be drawn as missed.
 
 **A lapse takes the streak and nothing else.** It used to take the balance with
 it — the old app's own hot-deal terms say so — and the server does not do that
@@ -505,13 +561,23 @@ either: points never expire, and there is no ledger reason for a negative entry
 that looks like a wipe. Bringing one back is a product decision, not a tidy-up.
 
 **Energy is what bounds a day, and it is not called lives.** `MAX_ENERGY` and
-`ENERGY_REGEN_MINUTES` mirror the server's *free-plan* figures (`CONFIG.points`),
-and `energyOf` derives the tank from `energy` + `energyAt` on demand rather than
-storing a count that would be stale the moment the tab was left open — the same
-construction `games.energyFor` uses one repo over, for the same reason. Every
-finished round costs one, win or lose; `spendEnergy` is the only spend, so an
-abandoned round costs nothing. A state saved under the old `lives` / `livesAt`
-names still reads, and a missing anchor reads as a full tank.
+`ENERGY_REGEN_MINUTES` mirror the server's *free-plan* figures (`CONFIG.points`):
+four in the tank, one back every four hours — six rounds a day sustained and ten
+from a full start. The free plan is the only one this site can resolve, because
+it sells no subscription it could read a bigger tank off. `energyOf` derives the
+tank from `energy` + `energyAt` on demand rather than storing a count that would
+be stale the moment the tab was left open — the same construction
+`games.energyFor` uses one repo over, for the same reason. Every finished round
+costs one, win or lose; `spendEnergy` is the only spend, so an abandoned round
+costs nothing. A state saved under the old `lives` / `livesAt` names still reads,
+and a missing anchor reads as a full tank.
+
+The gauge that draws it is a **battery** — four blocks in a case with a terminal
+on the end, the block being earned filling live against the real clock in CSS,
+and a spark crossing it while it charges. A row of pips has to be counted; a
+battery is read, and the reading that matters is whether there is an evening's
+play left. The blocks are discrete because the quantity is: a round costs a whole
+one, and a bar three-quarters full would be promising a round that is not there.
 
 **Questions come from `games/data/`, through a bag.** The four quiz rounds no
 longer read a handful of items out of the dictionaries: `scripts/build-question-banks.mjs`

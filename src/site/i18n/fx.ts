@@ -99,6 +99,73 @@ export const FX_FOR_LANGUAGE: Record<LanguageCode, FxCode> = {
   uk: 'UAH',
 };
 
+
+/**
+ * What money is spent where.
+ *
+ * ISO-3166 alpha-2 to a row of the table above, and it exists for one screen:
+ * the streak row on L-Earn puts a **currency mark** in the circle of every day
+ * kept, so a week of showing up reads as a week of earning rather than as seven
+ * ticks. The mark has to be the one this player actually holds in their hand,
+ * and the only thing the account knows about that is the country their **city**
+ * is in (`UserProfile.countryCode`) — not the language they read the site in,
+ * which is a different question with a different answer for most of the people
+ * this product is for. A Ukrainian in Kraków spends złoty.
+ *
+ * Partial on purpose, and the gap is the design. It covers the nineteen
+ * currencies `FX` carries plus the euro area, which is every country this
+ * audience moves between; anywhere else resolves to `null` and the screen draws
+ * a dollar sign. That is the honest fallback — a `$` is read as "money" almost
+ * everywhere, where guessing at a currency we do not carry a rate for would be
+ * inventing a fact about somebody's wallet.
+ *
+ * The euro area is written out rather than folded into a default, because
+ * "unknown" and "euro" are the two answers that must not merge: a default of
+ * EUR would silently price a Brazilian's streak in euros and there would be
+ * nothing on the screen to notice it by.
+ */
+const EURO_AREA = [
+  'AT', 'BE', 'HR', 'CY', 'EE', 'FI', 'FR', 'DE', 'GR', 'IE', 'IT',
+  'LV', 'LT', 'LU', 'MT', 'NL', 'PT', 'SK', 'SI', 'ES',
+] as const;
+
+export const FX_FOR_COUNTRY: Record<string, FxCode> = {
+  PL: 'PLN',
+  GB: 'GBP',
+  UA: 'UAH',
+  RU: 'RUB',
+  UZ: 'UZS',
+  KZ: 'KZT',
+  TR: 'TRY',
+  CZ: 'CZK',
+  CH: 'CHF',
+  BY: 'BYN',
+  MD: 'MDL',
+  GE: 'GEL',
+  AM: 'AMD',
+  AZ: 'AZN',
+  TM: 'TMT',
+  KG: 'KGS',
+  TJ: 'TJS',
+  US: 'USD',
+  ...Object.fromEntries(EURO_AREA.map((code) => [code, 'EUR' as FxCode])),
+};
+
+/**
+ * The mark to draw for a country, or `null` when we do not know it.
+ *
+ * Case-folded and trimmed because `countryCode` is only *usually* a code: the
+ * profile accepts a typed country when the city was not on the served list (see
+ * `UserProfile.countryCode`), so what arrives here can be `'pl'`, `'PL '`, or
+ * the word "Poland". The first two are the same country and are folded; the
+ * third is not a code and correctly falls through to `null`.
+ */
+export function fxForCountry(countryCode: string | undefined): FxCurrency | null {
+  const code = (countryCode ?? '').trim().toUpperCase();
+  const key = FX_FOR_COUNTRY[code];
+  return key ? FX[key] : null;
+}
+
 /** Digit grouping, with the reader's separator and the currency's decimals. */
 export function formatFx(value: number, currency: FxCurrency, separator: string): string {
   return formatDigits(value, currency.decimals, separator);

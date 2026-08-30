@@ -6,14 +6,14 @@
  * needs a hook belongs in `AuthProvider`.
  *
  * The model is the one the old paylez app used (see
- * `landing/screenshots/learn1.png`): a score, a daily streak, three energy, and
- * running answered/correct counts.
+ * `landing/screenshots/learn1.png`): a score, a daily streak, a tank of energy,
+ * and running answered/correct counts.
  *
  * **What bounds a day is energy, and nothing else.** Every finished round
  * spends one, win or lose, and an empty tank is a shut door. What keeps it from
  * being a locked one is the clock — the tank gains one every
- * `ENERGY_REGEN_MINUTES` rather than all three at midnight — and what that
- * arithmetic comes to is nine finished rounds in a day from a full tank, six a
+ * `ENERGY_REGEN_MINUTES` rather than all of it at midnight — and what that
+ * arithmetic comes to is ten finished rounds in a day from a full tank, six a
  * day sustained.
  *
  * A second rule used to sit beside it: a `DAILY_DECAY` curve that paid a
@@ -48,8 +48,14 @@ import {
   type VenueFacts,
 } from '../content';
 
-/** How much energy a full tank holds, and what a round costs. */
-export const MAX_ENERGY = 3;
+/**
+ * How much energy a full tank holds, and what a round costs.
+ *
+ * Mirrors `CONFIG.points.dailyEnergy`, the server's **free** plan — the only
+ * plan this site can resolve, because there are no subscriptions here to read a
+ * bigger tank off. The server sells two: Pro holds six and Premium ten.
+ */
+export const MAX_ENERGY = 4;
 
 /**
  * How long one energy takes to come back.
@@ -58,15 +64,16 @@ export const MAX_ENERGY = 3;
  * sells a faster regen with a plan and this site has no plan to read.
  *
  * Four hours is what makes charging every round fair, and the two numbers have
- * to be read together: three at four hours is twelve hours from empty to full,
- * so somebody who spends the tank at nine in the morning is playing again by one
- * and whole again by nine — where a midnight refill would have shut the page for
- * the rest of the day. A cost that expires while you are still on the page is a
- * cost; one that expires when you are asleep is a lockout.
+ * to be read together: one comes back every four hours, so somebody who empties
+ * the tank at nine in the morning is playing again by one, has two by five, and
+ * never spends an evening looking at a shut door. That is the property that
+ * matters, and it is the *first* refill rather than the last that carries it —
+ * a full tank from empty is sixteen hours, which nobody waits for because
+ * nobody has to.
  *
  * The pair is also the size of a day, and it is worth writing down because
- * nothing else in the module states it: three in the tank plus one every four
- * hours is **nine finished rounds in twenty-four hours** from full, and six a
+ * nothing else in the module states it: four in the tank plus one every four
+ * hours is **ten finished rounds in twenty-four hours** from full, and six a
  * day at the steady rate.
  */
 export const ENERGY_REGEN_MINUTES = 240;
@@ -601,11 +608,18 @@ export function today(now: Date = new Date()): string {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
-/** Yesterday, same format — the only day that continues a streak. */
-function yesterday(now: Date = new Date()): string {
+/** Yesterday as a `Date`, which is what a caller that wants to keep walking
+ *  needs. `yesterday()` below is this plus `today()`, and is what almost every
+ *  caller actually wants. */
+function yesterdayOf(now: Date): Date {
   const back = new Date(now);
   back.setDate(back.getDate() - 1);
-  return today(back);
+  return back;
+}
+
+/** Yesterday, same format — the only day that continues a streak. */
+function yesterday(now: Date = new Date()): string {
+  return today(yesterdayOf(now));
 }
 
 /**
@@ -621,6 +635,109 @@ function twoDaysBack(now: Date = new Date()): string {
   const back = new Date(now);
   back.setDate(back.getDate() - 2);
   return today(back);
+}
+
+
+/* ──────────────────────────────────────────────────────────── the week ── */
+
+/** One of the seven circles on the streak row. */
+export interface StreakDay {
+  /** `YYYY-MM-DD`, in the reader's own timezone like everything else here. */
+  date: string;
+  /**
+   * 0 is Monday and 6 is Sunday — the index into the row *and* into the
+   * dictionary's seven initials, which is why it is not JavaScript's own
+   * `getDay()` numbering. `getDay()` puts Sunday first, and a week that starts
+   * on Sunday is wrong in all five of this site's languages.
+   */
+  weekday: number;
+  /** Whether the streak counts this day. */
+  kept: boolean;
+  /** Today. Exactly one of the seven, always. */
+  now: boolean;
+  /** A day this week that has not arrived yet — neither kept nor missed. */
+  ahead: boolean;
+}
+
+/**
+ * This week, Monday to Sunday, as the streak sees it.
+ *
+ * **Derived, not stored.** A `streak` of five and a `lastPlayed` of Thursday is
+ * already the statement "Sunday through Thursday", so the row reads it back out
+ * rather than keeping a second history beside it — which is the same choice
+ * `energyOf` makes about the tank, for the same reason. Two records of one fact
+ * disagree the first time either is written without the other, and the number
+ * printed next to these circles is the one they would disagree with.
+ *
+ * It also means a day a **freeze** absorbed shows as kept, and that is correct
+ * rather than a rounding: a freeze's whole job is that the day still counts.
+ * The row is drawing what the streak claims, and the streak claims it.
+ *
+ * Three states, not two. A day in the future is `ahead` — not missed — because
+ * a Monday morning with six empty circles after it is a week already lost, and
+ * it is a week that has not happened. `now` is the seventh circle's own state
+ * and rides alongside `kept`: today is a day you may still keep.
+ *
+ * Nothing here is memoised and nothing needs to be: seven `Date`s once per
+ * render is cheaper than the comparison that would decide whether to redo it.
+ */
+export function streakWeek(state: PlayerState, now: Date = new Date()): StreakDay[] {
+  /* Monday of the week `now` falls in. `getDay()` is 0..6 from Sunday, so
+     Sunday has to walk back six days rather than none. */
+  const offset = (now.getDay() + 6) % 7;
+  const monday = new Date(now);
+  monday.setDate(monday.getDate() - offset);
+
+  const at = today(now);
+  const run = Math.max(0, Math.floor(state.streak));
+
+  /*
+   * The last day the run covers.
+   *
+   * **A live streak with no `lastPlayed` ends yesterday**, and that is a reading
+   * of an existing rule rather than a guess. `awardPoints` treats
+   * `played === null` as `continued` — the same branch it gives an actual
+   * yesterday — so as far as every rule in this module is concerned, `null` on a
+   * streak that is still alive *is* yesterday. Drawing it as no days at all
+   * would have the row contradict the number printed beside it, and the number
+   * is the one the next round will act on.
+   *
+   * The state exists in the wild: it is what the seeded demo account looked like
+   * before `seededPlayer` started writing a date, and a directory saved by that
+   * build is still sitting in the `localStorage` of every device that has opened
+   * this site. It is also a state the app itself cannot produce, because a
+   * finished round always writes `lastPlayed` — so this is a reader of old data,
+   * not a rule.
+   *
+   * A streak of **zero** takes neither branch and keeps nothing, which is the
+   * genuinely new player and is right.
+   */
+  const last = state.lastPlayed ?? (run > 0 ? today(yesterdayOf(now)) : null);
+
+  /* The first day the streak covers: `run` days ending *on* `last`, so a streak
+     of one covers `last` alone. Held as a string so the comparison below is the
+     same lexicographic one `YYYY-MM-DD` supports everywhere else in this
+     module — and built by walking a `Date`, because subtracting from the string
+     would be wrong across a month end. */
+  let from: string | null = null;
+  if (last !== null && run > 0) {
+    const back = new Date(`${last}T12:00:00`);
+    back.setDate(back.getDate() - (run - 1));
+    from = today(back);
+  }
+
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday);
+    day.setDate(day.getDate() + i);
+    const date = today(day);
+    return {
+      date,
+      weekday: i,
+      kept: from !== null && last !== null && date >= from && date <= last,
+      now: date === at,
+      ahead: date > at,
+    };
+  });
 }
 
 /* ────────────────────────────────────────────────────────────── the tank ── */
@@ -801,11 +918,11 @@ export function awardPoints(
    * **Every finished round costs one energy, win or lose.**
    *
    * Charging only the loss was the version before this, and it was the same
-   * mistake as charging nothing, one step smaller: two of the seven games have
+   * mistake as charging nothing, one step smaller: three of the eight games have
    * no fail state and a player answering correctly never touched the tank, so
    * the pool was a tax on being bad at quizzes and a bound on nobody. Three
    * pips that only ever moved for the struggling player read as a punishment;
-   * three pips that mean "rounds left" read as a budget, and everybody has the
+   * cells that mean "rounds left" read as a budget, and everybody has the
    * same one.
    *
    * A round *abandoned* still costs nothing — this is the only spend in the

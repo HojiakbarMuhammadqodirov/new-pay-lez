@@ -90,6 +90,11 @@ const PATHS = {
      sun is already the light-theme toggle two controls away in the same bar,
      and two suns in one header is one too many. */
   spark: <><path d="M12 3.2 13.9 9 19.8 11l-5.9 2-1.9 5.8L10.1 13 4.2 11 10.1 9Z" /><path d="M18.5 3.6v3M17 5.1h3" /></>,
+  /* The charge mark on the L-Earn battery. A stroked outline rather than a
+     filled slab, because it sits at 13px inside the panel kicker next to a
+     word, and every other icon in that position is a 2px stroke — a solid
+     bolt there reads as a different weight of thing entirely. */
+  bolt: <><path d="M13.5 3 5.5 13.4h5.2L10.5 21l8-10.4h-5.2L13.5 3Z" /></>,
   /* Customers: a group, not the single figure `assistant` draws. The rail
      lists both screens, so they cannot share a glyph.
 

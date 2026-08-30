@@ -8,7 +8,7 @@ import {
   STREAK,
 } from './content';
 import { MAX_FREEZES } from './auth/player';
-import { rulesFor } from './games/rules';
+import { gameName, rulesFor } from './games/rules';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
@@ -180,7 +180,11 @@ function LearnGames() {
               <span className="game-ico">
                 <Icon name={entry.icon} size={24} />
               </span>
-              <h3>{games.names[i]}</h3>
+              {/* Polish, and hardcoded — this page is read by people who are not
+                  signed in, so there is no profile to take the local Word
+                  Builder's language off, and Polish is the market this site is a
+                  guide to. The signed-in grid reads the real one. */}
+              <h3>{gameName(i, games, 'pl')}</h3>
               {/* The same two sentences the signed-in Play grid prints, from the
                   same function. This section already maps `GAMES` so the pitch
                   cannot claim a game the product does not have; the rule lines

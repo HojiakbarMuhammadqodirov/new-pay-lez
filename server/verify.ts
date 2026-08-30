@@ -955,6 +955,16 @@ function energyRules(): void {
     full - 3,
   );
 
+  /* Whatever the ceiling leaves after those three, spent, so that the refusal
+     below is about an empty tank rather than about the number 3. `daily_energy`
+     is a plan figure and has already moved once; a fixed count of rounds here
+     turns that move into a failure in this file rather than a change in that
+     one. */
+  while (games.energyFor(w.db, w.customerId, at).energy > 0) {
+    const drain = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+    games.finish(w.db, { sessionId: drain.sessionId, userId: w.customerId, at });
+  }
+
   /* An empty tank refuses the *start*. Refusing the finish instead would mean
      telling somebody the round they just played does not count. */
   throws('an empty tank refuses the next round', 'no_energy', () =>
@@ -980,7 +990,7 @@ function energyRules(): void {
    *
    * One per interval and no more — a tank that kept counting would hand back a
    * week of rounds to somebody returning from holiday — and the whole tank back
-   * at `max × interval`, which on the free plan is twelve hours.
+   * at `max × interval`, which on the free plan is sixteen hours.
    */
   const regen = CONFIG.points.energyRegenMinutes;
   eq('nothing arrives early', games.energyFor(w.db, w.customerId, plusMinutes(at, regen - 1)).energy, 0);
@@ -1006,14 +1016,14 @@ function energyRules(): void {
    * **What a day is, now that every round costs.**
    *
    * `dailyEnergy + 1440 / energyRegenMinutes` — the tank once, plus what the
-   * clock returns over twenty-four hours. Nine on the free plan from a full
+   * clock returns over twenty-four hours. Ten on the free plan from a full
    * tank, six a day sustained. It is asserted rather than left as arithmetic in
    * a comment because **it is now the only bound on a day**: the per-game decay
    * curve that used to sit beside it is gone, so these two constants are the
    * whole rule and moving either one changes how much a player can earn. This
    * is what makes somebody notice.
    */
-  eq('a free day is nine finished rounds', full + Math.floor(1440 / regen), 9);
+  eq('a free day is ten finished rounds', full + Math.floor(1440 / regen), 10);
 
   w.db.close();
 }

@@ -95,10 +95,12 @@ import { PATHS } from './router';
  * carries the card's own subject at plate size instead, over a repeating pattern
  * drawn from `--accent-rgb`.
  *
- * That is the same substitution `PLAY_TEXTURES` makes for the Play mock's six
- * hues, and it is index-aligned the same way. Modulo rather than a fixed length,
- * because a player can hold any number of stamp cards and gift cards; the names
- * are the same seven as L-Earn's so the vocabulary is one.
+ * The Play screen made the same substitution for its own mock's six hues once,
+ * with the same seven pattern names — its cards carry a preview of the round
+ * instead now, which is the better answer where there is a round to preview and
+ * no answer at all here, because a gift card has no gameplay to show. The names
+ * stayed on this side. Modulo rather than a fixed length, because a player can
+ * hold any number of stamp cards and gift cards.
  */
 const WAL_TEXTURES = ['dots', 'stripe', 'orbit', 'weave', 'chevron', 'grid', 'hatch'] as const;
 

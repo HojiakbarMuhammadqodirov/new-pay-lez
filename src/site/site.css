@@ -11245,18 +11245,24 @@ button {
 /* ════════════════════════════════════════════════════════════════ games ══
    L-Earn, once you are signed in.
 
-   The layout is `b2b/Paylez Play.dc.html`, the Play mock: a points panel, a
-   stats strip that folds its detail away, one featured game at full width, and
-   the rest as a grid.
+   The layout is `b2b/Paylez Play.dc.html`, the Play mock: a points panel, one
+   featured game at full width, and the rest as a grid.
 
    What is not the mock is its palette. It gives each game a hue — amber, lime,
-   violet, coral, sky — and this site has one accent, so the cards are told
-   apart by a **texture** instead: `[data-texture]` on `.play-card` and
-   `.play-feature` paints a repeating pattern in `--accent-rgb` at three to five
-   percent, and six cards side by side read as six objects without a second
-   colour family arriving on the page. The alphas are the whole trick and they
-   are set by the worst case — a texture that looks crisp on an empty card is
-   noise under the two rule lines every card carries.
+   violet, coral, sky — and this site has one accent. That was answered for a
+   while by **texture**: a repeating pattern per card in `--accent-rgb` at three
+   to five percent, so six cards side by side read as six objects with no second
+   colour family arriving on the page. It worked, and it is gone, because it
+   answered only half the question. A texture tells cards apart; it says nothing
+   about the games. The cards carry a small **preview** of their own round now
+   (`══ game previews ══` further down) — one accent still, and the surface is
+   spent on the thing the player is choosing between rather than on making the
+   choices distinguishable.
+
+   Two other things on this screen are worth finding before changing anything:
+   the **battery**, which is the tank drawn as the object everybody already
+   reads, and the **week**, which is the streak as seven days with the money in
+   them and is deliberately inside no box at all.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .play,
@@ -11594,88 +11600,199 @@ button {
 }
 
 /*
- * Three cells, not a single bar, and they stand up.
+ * ── the battery ──
  *
- * A bar says "40% charged", which is not what a player needs off this panel:
- * the unit is a *round*, it is indivisible, and half of one buys nothing. Cells
- * say two rounds are ready and a third is on its way, which is the sentence the
- * screen is actually making.
+ * Four blocks in a case with a terminal on the end.
  *
- * Vertical, and filling from the floor, because that is what a tank does and
- * because it is what makes this panel the height of the one beside it. Laid
- * flat, the gauge was 10px of a panel stretched to match the points card and
- * the rest was a void with a footnote at the bottom of it. `flex: 1` hands the
- * slack to the one element that can spend it honestly — a taller cell is more
- * gauge, not more padding.
+ * A bar would say "40% charged", which is not what a player needs off this
+ * panel: the unit is a *round*, it is indivisible, and half of one buys
+ * nothing. Blocks say two rounds are ready and a third is on its way, which is
+ * the sentence the screen is actually making — and drawing the case around them
+ * is what turns a row of pips into something nobody has to be taught. Everyone
+ * in every market this ships to has spent twenty years reading exactly this
+ * shape in the corner of a screen.
+ *
+ * It lies flat and takes the slack (`flex: 1`), which is what keeps this panel
+ * the height of the points card beside it. `min-height` rather than a fixed one
+ * so a taller panel is more battery rather than more padding.
  */
-.play-energy-cells {
+.play-battery {
   position: relative;
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 0.45rem;
+  display: flex;
+  align-items: stretch;
   flex: 1;
-  min-height: 4rem;
+  min-height: 3.6rem;
+  max-height: 6rem;
   margin-bottom: 0.9rem;
 }
 
-/* The well is drawn, not implied. A 12% tint is a shadow on black and almost
-   nothing on paper, and a gauge whose empty cells are invisible is a gauge with
-   no cap on it — "one" and "one of three" are different readings. The hairline
-   is what makes the third cell exist while it is empty. */
-.play-energy-cells > span {
+/* The case is drawn, not implied. A gauge whose empty blocks are invisible is a
+   gauge with no cap on it — "one" and "one of four" are different readings, and
+   the outline is what makes the fourth block exist while it is empty. */
+.play-battery-case {
   position: relative;
   overflow: hidden;
+  flex: 1;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.3rem;
+  padding: 0.3rem;
   border-radius: 12px;
-  border: 1px solid var(--border);
-  background: rgba(var(--tint-rgb), 0.12);
+  border: 1.5px solid var(--border-2);
+  background: rgba(var(--tint-rgb), 0.07);
 }
 
-.play-energy-cells > span[data-state='full'] {
-  border-color: transparent;
-  background: var(--accent);
-  box-shadow: 0 0 14px rgba(var(--glow-rgb), calc(0.4 * var(--glow-k)));
+/* The terminal. Two thirds of the case's height and hard against its right
+   edge — the one detail that stops a rounded rectangle full of blocks reading
+   as a segmented progress bar. */
+.play-battery-tip {
+  align-self: center;
+  width: 0.32rem;
+  height: 38%;
+  min-height: 0.75rem;
+  margin-left: 0.16rem;
+  border-radius: 0 4px 4px 0;
+  background: var(--border-2);
+}
+
+.play-battery-cell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 6px;
+  background: rgba(var(--tint-rgb), 0.12);
+  transition: background 300ms var(--ease);
 }
 
 /*
- * The cell being earned, filling in real time and costing nothing to do it.
+ * A block that is charged. The entrance animation runs when the selector starts
+ * matching — which is exactly the moment energy lands — so a block arriving is
+ * a block that grows into place, and nothing had to tell it a round had come
+ * back. Re-renders do not restart it: the cells are keyed by index and never
+ * remount.
+ */
+.play-battery-cell[data-state='full'] {
+  background: var(--accent);
+  box-shadow: 0 0 14px rgba(var(--glow-rgb), calc(0.35 * var(--glow-k)));
+  animation: play-cell 460ms var(--ease) backwards;
+  animation-delay: calc(var(--p) * 55ms);
+}
+
+@keyframes play-cell {
+  from {
+    transform: scaleX(0.1);
+    opacity: 0.3;
+  }
+}
+
+/*
+ * The block being earned, filling in real time and costing nothing to do it.
  *
  * `--charge-span` is how long one takes and `--charge-delay` is how far in we
- * already are, negative — so the animation starts partway through and the bar
- * is at the right place on the first frame and keeps going without anything in
- * React watching it. `--charge` is the same fraction as a plain transform,
- * which is what the reduced-motion rule below falls back to and what shows if
- * the animation is ever dropped.
+ * already are, negative — so the animation starts partway through, is at the
+ * right place on the first frame, and keeps going without anything in React
+ * watching it. `--charge` is the same fraction as a plain transform, which is
+ * what the reduced-motion rule below falls back to and what shows if the
+ * animation is ever dropped.
+ *
+ * Left to right, because the case is horizontal and a block filling upward
+ * inside a row of blocks is two directions of travel in one gauge.
  *
  * Held at an alpha rather than the full accent: this one is *pending*, and a
- * cell that painted itself the same as the two beside it would be claiming a
- * round the player does not have.
+ * block painted the same as the ones beside it would be claiming a round the
+ * player does not have.
  */
-.play-energy-cells i {
+.play-battery-cell i {
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: var(--accent);
-  opacity: 0.5;
-  transform-origin: bottom center;
-  transform: scaleY(var(--charge, 0));
+  opacity: 0.45;
+  transform-origin: left center;
+  transform: scaleX(var(--charge, 0));
   animation: play-charge var(--charge-span, 0ms) linear var(--charge-delay, 0ms)
     1 forwards;
 }
 
 @keyframes play-charge {
   from {
-    transform: scaleY(0);
+    transform: scaleX(0);
   }
   to {
-    transform: scaleY(1);
+    transform: scaleX(1);
+  }
+}
+
+/*
+ * ── the spark ──
+ *
+ * Two small bolts crossing the case while it is charging. They are the whole
+ * difference between four blocks in a box and a *battery*: a static gauge and a
+ * charging one look identical otherwise, and the one thing a player wants off
+ * this panel when it is not full is that something is happening.
+ *
+ * **They are cut out of the page ground, not painted in the accent.** A bolt in
+ * `--accent` is invisible over a charged block, which is the only place it is
+ * worth seeing; `--bg` is the one colour guaranteed to contrast with the accent
+ * in both themes — dark on mint, near-white on teal. The drop shadow in
+ * `--glow-rgb` is what keeps it legible over the *empty* blocks it also passes,
+ * where a hole in nothing would be nothing.
+ *
+ * Only while `[data-charging]`: a full tank has no work being done on it, and a
+ * charge indicator that flickers on a full battery is telling you about
+ * something that is not happening.
+ */
+.play-battery-bolt {
+  position: absolute;
+  top: 50%;
+  width: 0.62rem;
+  height: 1.05rem;
+  margin-top: -0.52rem;
+  left: -8%;
+  opacity: 0;
+  background: var(--bg);
+  clip-path: polygon(58% 0%, 16% 56%, 44% 56%, 36% 100%, 84% 42%, 54% 42%);
+  filter: drop-shadow(0 0 5px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k))));
+  pointer-events: none;
+}
+
+.play-energy[data-charging='true'] .play-battery-bolt {
+  animation: play-spark 3.4s var(--ease) infinite;
+}
+
+/* The second one runs at half phase and a little smaller, so the pair reads as
+   current moving rather than as one thing blinking. */
+.play-energy[data-charging='true'] .play-battery-bolt:nth-of-type(2) {
+  animation-delay: 1.7s;
+  transform: scale(0.72);
+}
+
+@keyframes play-spark {
+  0% {
+    left: -8%;
+    opacity: 0;
+  }
+  16% {
+    opacity: 0.95;
+  }
+  72% {
+    opacity: 0.95;
+  }
+  100% {
+    left: 100%;
+    opacity: 0;
   }
 }
 
 /* Frozen at the fraction it is actually at, not hidden: the reading is the
-   point and only its motion is motion. */
+   point and only its motion is motion. The spark is pure motion, so it goes. */
 @media (prefers-reduced-motion: reduce) {
-  .play-energy-cells i {
+  .play-battery-cell i,
+  .play-battery-cell[data-state='full'] {
+    animation: none;
+  }
+
+  .play-energy[data-charging='true'] .play-battery-bolt {
     animation: none;
   }
 }
@@ -11709,11 +11826,250 @@ button {
   color: var(--text-fnt);
 }
 
+/* ── the week, and the slack ────────────────────────────────────────────────
+ *
+ * The streak and the freezes, side by side on one line, and **inside nothing**.
+ *
+ * No border, no sheet, no tint. Every other reading on this screen is in a
+ * panel because every other reading is a *figure* — a balance, a tank — and a
+ * panel is what says "this is one quantity". This is not a quantity, it is a
+ * record: seven days, and what you have left to cover the eighth. Boxing it put
+ * two more slabs on a page that already has two, and made a streak look like a
+ * statistic rather than like the thing the page is asking you to keep.
+ *
+ * They share a line because they are one reading between them. A freeze is only
+ * any use if you know you have one *before* the morning you sleep in, and it
+ * used to be a 15px pip in a strip of pills.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+.play-run {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: clamp(1.2rem, 5vw, 3.5rem);
+  flex-wrap: wrap;
+  padding: 0.4rem 0.2rem 0;
+  margin-bottom: 1.6rem;
+}
+
+.play-run-part {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.play-run-freeze {
+  align-items: flex-start;
+}
+
+.play-run-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.play-run-kicker svg {
+  color: var(--accent-lit);
+}
+
+/* The number, at the size of the thing it is counting. Baseline-aligned so the
+   freeze panel's "/2" sits on the same line as its figure without a second rule
+   to hold it there. */
+.play-run-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.25rem;
+  margin: 0;
+  line-height: 1;
+}
+
+.play-run-count b {
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 6vw, 2.9rem);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.play-run-count span {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+.play-run-week {
+  display: flex;
+  align-items: flex-start;
+  gap: clamp(0.3rem, 1.6vw, 0.65rem);
+  margin: 0.25rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.play-run-week li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/*
+ * One day.
+ *
+ * A ring at rest, a filled coin when it was kept. The centre of a kept day
+ * carries the **currency mark of wherever this player lives** — see `StreakRow`
+ * in `games.tsx` — because a streak's whole argument is that showing up is
+ * worth money, and a row of ticks makes that argument to nobody.
+ */
+.play-run-dot {
+  display: grid;
+  place-items: center;
+  width: clamp(2.05rem, 6.2vw, 2.75rem);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: rgba(var(--tint-rgb), 0.05);
+  color: var(--text-fnt);
+  transition:
+    background 260ms var(--ease),
+    border-color 260ms var(--ease),
+    color 260ms var(--ease);
+}
+
+.play-run-dot em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: clamp(0.82rem, 2.5vw, 1.02rem);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* A mark longer than two characters — `so'm`, `CHF`, `Kč` at a pinch — sized
+   to fit the circle it is inside rather than allowed to widen it. The circles
+   are a row of seven and they have to stay a row of seven identical circles;
+   a Uzbek player's week must not be a different shape from a Polish one's. */
+.play-run-week[data-mark='long'] .play-run-dot em {
+  font-size: clamp(0.56rem, 1.7vw, 0.7rem);
+  letter-spacing: -0.02em;
+}
+
+.play-run-week li[data-state='kept'] .play-run-dot {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  box-shadow: 0 0 16px rgba(var(--glow-rgb), calc(0.42 * var(--glow-k)));
+}
+
+/* A day that has not happened is neither kept nor missed, and it must not read
+   as missed: a Monday morning with six flat circles after it is a week already
+   lost, and it is a week that has not started. */
+.play-run-week li[data-state='ahead'] .play-run-dot {
+  border-style: dashed;
+  opacity: 0.45;
+}
+
+/* Today, marked whichever way it went — the ring is around the circle rather
+   than part of it, so it reads on a kept day and an unkept one alike. */
+.play-run-week li[data-now='true'] .play-run-dot {
+  outline: 2px solid var(--accent-soft);
+  outline-offset: 3px;
+}
+
+/*
+ * The effect, and it is on exactly one circle.
+ *
+ * Today, once it is kept: a ring that breathes outward and fades. Seven pulsing
+ * circles would be a slot machine; one is the day you just earned, still warm.
+ * `::after` rather than a `box-shadow` keyframe so the resting glow above stays
+ * put underneath it.
+ */
+.play-run-week li[data-state='kept'][data-now='true'] .play-run-dot {
+  position: relative;
+}
+
+.play-run-week li[data-state='kept'][data-now='true'] .play-run-dot::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  animation: play-kept 2.6s var(--ease) infinite;
+  pointer-events: none;
+}
+
+@keyframes play-kept {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70%,
+  100% {
+    transform: scale(1.55);
+    opacity: 0;
+  }
+}
+
+/* The letters. `Intl` writes them (see `StreakRow`), and Polish and Ukrainian
+   hand back lower case — the row wants them all one height. */
+.play-run-day {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+/* The freezes, at the size of the streak they protect. */
+.play-run-flakes {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: 0.25rem;
+  color: var(--accent-lit);
+}
+
+.play-run-flakes i {
+  display: flex;
+  font-style: normal;
+}
+
+/* A spent freeze stays where it was at low contrast rather than vanishing: two
+   flakes with one missing reads as damage, one flake reads as a design. */
+.play-run-flakes i[data-spent='true'] {
+  opacity: 0.2;
+}
+
+.play-run-note {
+  margin: 0.15rem 0 0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .play-run-week li[data-state='kept'][data-now='true'] .play-run-dot::after {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
 /* ── the stats strip ──────────────────────────────────────────────────────
  *
- * One line of readings with a disclosure on the end. Deliberately *not* the
- * filled panel the points card is: these are figures you glance at, and four
- * more slabs of tint under the one that matters would flatten the page.
+ * What is left after the streak and the freezes moved out: five figures behind
+ * one disclosure, and the disclosure is the whole of the closed state.
+ *
+ * It was a row of pills with the toggle pushed to the end of it. Once three of
+ * the five readings had a section or a panel of their own, the row was one pill
+ * and a button — so the row went, and the button became the strip.
  */
 
 .play-strip {
@@ -11723,84 +12079,34 @@ button {
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   margin-bottom: 1.5rem;
-}
-
-.play-strip-row {
-  display: flex;
-  align-items: center;
-  gap: clamp(1rem, 3vw, 2.1rem);
-  flex-wrap: wrap;
-  padding: 0.8rem 1.1rem;
-}
-
-.play-stat {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--accent-lit);
-}
-
-.play-stat em {
-  font-style: normal;
-  font-size: 0.82rem;
-  font-weight: 500;
-  color: var(--text-mut);
-}
-
-.play-stat > b {
-  font-family: var(--font-display);
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Pips — lives and freezes — share one geometry. `> b` above would otherwise
-   set them as a run of text, which is right for a number and not for a row. */
-.play-stat > b.play-pips {
-  display: flex;
-  align-items: center;
-  gap: 0.2rem;
-  font-size: 0.95rem;
-  line-height: 1;
-  color: var(--accent-lit);
-}
-
-.play-pips i {
-  display: flex;
-  font-style: normal;
-}
-
-/* Spent pips stay in place at low contrast rather than disappearing — three
-   hearts with one missing reads as damage, two hearts reads as a design. */
-.play-pips i[data-spent='true'] {
-  opacity: 0.22;
+  overflow: hidden;
 }
 
 .play-stats-toggle {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 0.45rem;
-  /* Pushed to the end of the row, and the only thing here that is a control. */
-  margin-left: auto;
-  padding: 0.45rem 0.75rem;
-  border-radius: 10px;
-  border: 1px solid var(--border);
+  width: 100%;
+  padding: 0.75rem 1.1rem;
+  border: 0;
   background: transparent;
   color: var(--text-mut);
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
+  text-align: left;
   cursor: pointer;
-  transition: color 200ms var(--ease), border-color 200ms var(--ease);
+  transition: color 200ms var(--ease), background 200ms var(--ease);
 }
 
 .play-stats-toggle:hover {
   color: var(--text);
-  border-color: var(--border-2);
+  background: var(--surface);
 }
 
 .play-stats-toggle svg {
+  color: var(--accent-lit);
   transition: transform 220ms var(--ease);
 }
 
@@ -11836,185 +12142,289 @@ button {
   color: var(--accent-ink);
 }
 
-/* ── the featured game ─────────────────────────────────────────────────────
+/* ── the catalogue ──────────────────────────────────────────────────────────
  *
- * One game at the width of the page. Every card below it is a choice between
- * peers; this one is the answer to "I have thirty seconds, what do I play",
- * which is the question a returning player actually arrives with.
- */
+ * Eight games: the poster, then the rest two to a row.
+ *
+ * One wrapper round all of them, and it is load-bearing rather than tidy:
+ * hovering any card blurs every *other* card, which is a `:has()` written
+ * against a common ancestor. Without one the rule would have had to hang off
+ * the page wrapper and would have blurred the balance panel and the board with
+ * them.
+ *
+ * The grid is two even columns and nothing else. It used to be six columns with
+ * three card weights spanning 2, 3 and 6 of them, which was an argument about
+ * which games deserved more room — and the argument was lost the moment the
+ * cards started carrying a picture of their own round, because a preview at a
+ * third of a row is a smear. Two columns is also what makes the odd card at the
+ * end sit at the width of every other card instead of stretching to fill the
+ * row: seven tiles in twos leaves one alone, and one alone at the same size as
+ * its siblings is a list that ran out, which is what it is. Stretched, it would
+ * read as a second poster.
+ * ══════════════════════════════════════════════════════════════════════════ */
 
-.play-feature {
-  position: relative;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  gap: clamp(1rem, 3vw, 2.2rem);
-  flex-wrap: wrap;
-  padding: clamp(1.4rem, 3vw, 2rem);
-  margin-bottom: 1rem;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border-2);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  transition: border-color 220ms var(--ease), transform 220ms var(--ease);
-}
-
-.play-feature:hover {
-  transform: translateY(-3px);
-}
-
-.play-feature-glow {
-  position: absolute;
-  top: -5.5rem;
-  right: -3.5rem;
-  width: 19rem;
-  height: 19rem;
-  border-radius: 50%;
-  pointer-events: none;
-  background: radial-gradient(
-    circle,
-    rgba(var(--glow-rgb), calc(0.16 * var(--glow-k))) 0%,
-    rgba(var(--glow-rgb), 0) 70%
-  );
-}
-
-.play-feature-main {
-  position: relative;
-  flex: 1 1 22rem;
-  min-width: min(100%, 15rem);
-}
-
-.play-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 1rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-2);
-  background: rgba(var(--tint-rgb), 0.1);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--accent-ink);
-}
-
-.play-feature h2 {
-  margin-bottom: 0.5rem;
-  font-size: clamp(1.5rem, 3.6vw, 2.1rem);
-  letter-spacing: -0.03em;
-  line-height: 1.05;
-}
-
-.play-feature-rules {
-  margin-bottom: 1.4rem;
-  max-width: 30rem;
-  font-size: 0.875rem;
-  line-height: 1.55;
-  color: var(--text-mut);
-  text-wrap: pretty;
-}
-
-.play-feature-cta {
-  gap: 0.6rem;
-}
-
-/* The icon, at the size that makes this a poster rather than a wide card. It
-   states its own box for the reason every chart here does: a percentage or an
-   `aspect-ratio` against an `auto` parent has nothing to resolve against. */
-.play-feature-ico {
-  position: relative;
-  flex: 0 0 auto;
+.play-catalogue {
   display: grid;
-  place-items: center;
-  width: clamp(6rem, 14vw, 9rem);
-  height: clamp(6rem, 14vw, 9rem);
-  border-radius: 2rem;
-  border: 1px solid var(--border);
-  background: rgba(var(--tint-rgb), 0.06);
-  color: var(--accent-lit);
-}
-
-/* ── the rest of the catalogue ─────────────────────────────────────────────
- *
- * Six cards at three weights on a six-column grid, and the weight is a fact
- * about the game rather than a ranking of it — `PLAY_SIZES` in `games.tsx`
- * carries the argument. `auto-fit` with one `minmax` was what made this a wall
- * of identical tiles: it can only produce cards that are all the same, so seven
- * different rounds arrived as seven of the same object and the only thing
- * telling them apart was a texture at four percent.
- *
- *   sm  span 2   the three sibling quizzes — same shape, same clock, same
- *                allowance; a set, read by scanning down them
- *   md  span 3   Squawk's Flight and Memory Match — each its own board and its
- *                own loop, so each gets a poster with the glyph at poster size
- *   lg  span 6   Word Builder, the only card carrying a control: the list it
- *                teaches is chosen here, before the round
- */
-
-.play-grid {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
 }
 
-.play-card[data-size='sm'] {
-  grid-column: span 2;
+/* The poster takes the row. It is `GAMES[0]` and it is the only card that is
+   ever wide — "today's game" is a position in the catalogue, not a size a card
+   can earn. */
+.play-card-lead {
+  grid-column: 1 / -1;
 }
 
-.play-card[data-size='md'] {
-  grid-column: span 3;
-  min-height: 15rem;
-  padding: 1.6rem 1.5rem;
-}
-
-.play-card[data-size='lg'] {
-  grid-column: span 6;
-  flex-direction: row;
-  align-items: center;
-  gap: clamp(1rem, 4vw, 2.4rem);
-  padding: 1.5rem;
-}
-
+/*
+ * ── one card ──
+ *
+ * A `<button>`, and every part of it is the press. That is what let the Play
+ * label leave on hover: there is nothing left to aim at, because the card is
+ * the target. All the resets a `<button>` needs are here rather than inherited,
+ * since nothing else in the sheet styles a bare button this size.
+ *
+ * `overflow: hidden` is not decoration — it is what clips the preview to the
+ * card's own corners and what the collapsing tail row is clipped by.
+ */
 .play-card {
   position: relative;
+  z-index: 0;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  gap: 0.9rem;
-  padding: 1.35rem 1.25rem;
+  display: block;
+  width: 100%;
+  min-height: 12.5rem;
+  padding: 1.1rem 1.15rem 1.2rem;
   border-radius: var(--r-lg);
   border: 1px solid var(--border);
   background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  transition: border-color 220ms var(--ease), transform 220ms var(--ease);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform 320ms var(--ease),
+    border-color 260ms var(--ease),
+    box-shadow 320ms var(--ease),
+    filter 260ms var(--ease),
+    opacity 260ms var(--ease);
 }
 
-.play-card:hover,
-.play-feature:hover {
-  border-color: var(--accent-soft);
-}
-
-.play-card:hover {
-  transform: translateY(-3px);
+.play-card-lead {
+  min-height: 15rem;
+  padding: clamp(1.3rem, 3vw, 1.9rem);
+  border-color: var(--border-2);
 }
 
 /*
- * The grid arrives as a cascade, not as one block.
+ * The body, and the whole hover in four grid rows.
  *
- * An `animation` rather than a `transition-delay`, and the difference matters:
- * `.play-card` transitions its own `transform` for the hover lift, so a delay
- * on the element would delay *that* too and the card would take a third of a
- * second to notice the cursor. The animation runs once, fills `backwards` so
- * the card stays down during its delay, and then gets out of the way entirely —
- * leaving hover to the transition it belongs to.
+ * `auto 0fr auto 1fr` at rest: the head, an empty row with no height, the name,
+ * and the tail with everything left over. On hover the middle two swap —
+ * `auto 1fr auto 0fr` — so the empty row takes exactly the space the tail gives
+ * up and the name is carried down to land where the Play label was.
  *
- * `--i` is the card's index in `GAMES`, set at the call site.
+ * **A `0fr` → `1fr` row rather than a `translateY`**, because the distance
+ * between the name's two positions depends on how many lines the name wraps to,
+ * which differs per card and per language. A hand-tuned offset is wrong
+ * somewhere by construction; a row that takes up whatever the other one drops
+ * is right everywhere and has nothing to keep in step.
  */
-.play-grid > [data-reveal][data-shown='true'] {
+.play-card-main {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-rows: auto 0fr auto 1fr;
+  gap: 0.55rem;
+  min-height: 10.2rem;
+  transition: grid-template-rows 380ms var(--ease);
+}
+
+.play-card-lead .play-card-main {
+  min-height: 12.4rem;
+}
+
+.play-card-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.play-ico {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  aspect-ratio: 1;
+  flex: 0 0 auto;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(var(--tint-rgb), 0.08);
+  color: var(--accent-lit);
+  transition: background 260ms var(--ease), border-color 260ms var(--ease);
+}
+
+.play-card-lead .play-ico {
+  width: 2.9rem;
+}
+
+/* "Today's game · keeps your streak". Only the poster has one, and it sits
+   beside the icon rather than above the name so that the name is free to travel
+   without dragging a pill down the card with it. */
+.play-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: rgba(var(--tint-rgb), 0.08);
+  color: var(--accent-ink);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+/* The row that grows. Empty on purpose — a `gap` cannot be animated into the
+   space a sibling gives back, and an element can. */
+.play-card-lift {
+  min-height: 0;
+}
+
+.play-card-name {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--text);
+  transition: color 260ms var(--ease);
+}
+
+.play-card-lead .play-card-name {
+  font-size: clamp(1.25rem, 3vw, 1.6rem);
+}
+
+/*
+ * The rules and the press, in the row that closes.
+ *
+ * `min-height: 0` and `overflow: hidden` are what let a grid row actually reach
+ * zero — a grid item's automatic minimum size is its content, so without them
+ * the row refuses to close and the name never moves.
+ */
+.play-card-tail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.play-card-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.play-rule {
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+/*
+ * The press. A `<span>` that looks like the button it is inside — the card is
+ * the control, so this is a label, and giving it `pointer-events` or a tab stop
+ * of its own would put a second target inside the first.
+ */
+.play-start {
+  display: block;
+  margin-top: auto;
+  padding: 0.62rem 1rem;
+  border-radius: 999px;
+  background: var(--solid);
+  color: var(--on-solid);
+  text-align: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+/* ── hover ──────────────────────────────────────────────────────────────────
+ *
+ * Guarded by `hover: hover` throughout. On a touch screen `:hover` sticks after
+ * a tap, so an unguarded rule would leave the card that was last pressed with
+ * its description permanently gone — and there is no pointer to take it back.
+ */
+@media (hover: hover) {
+  .play-card:hover:not(:disabled) {
+    z-index: 3;
+    transform: translateY(-4px) scale(1.035);
+    border-color: var(--border-2);
+    box-shadow: 0 18px 40px -18px var(--shadow);
+  }
+
+  .play-card:hover:not(:disabled) .play-card-main {
+    grid-template-rows: auto 1fr auto 0fr;
+  }
+
+  /* Down and out, not up and out. A row collapsing on its own pulls its
+     contents toward its own top edge, which reads as the card swallowing them;
+     the translate is what makes them leave the way the name arrives. */
+  .play-card:hover:not(:disabled) .play-card-tail {
+    opacity: 0;
+    transform: translateY(1.1rem);
+  }
+
+  .play-card:hover:not(:disabled) .play-ico {
+    background: var(--accent);
+    border-color: transparent;
+    color: var(--on-accent);
+  }
+
+  /*
+   * Everything else steps back.
+   *
+   * `:has()` on the wrapper rather than `:hover` on it, because the wrapper is
+   * hovered in the gaps between cards too — and a grid that blurs itself when
+   * the pointer crosses a gutter with nothing picked out is a page that
+   * flinches.
+   *
+   * **`backdrop-filter` is dropped for the duration, and that is a cost
+   * decision rather than a look.** Blurring an element that is itself blurring
+   * what is behind it makes the compositor rasterise the backdrop through two
+   * filters, on seven cards at once, over a canvas that is already painting
+   * every frame — the most expensive thing this screen could be asked to do,
+   * arriving at the exact moment the eighth card is also scaling. Nobody can
+   * tell which kind of blur they are looking at through a 3px one at half
+   * opacity, so it buys nothing to keep. The same argument the partner
+   * dashboard's `data-solid` tables make, at the moment it is worth the most.
+   */
+  .play-catalogue:has(.play-card:hover:not(:disabled)) .play-card:not(:hover) {
+    filter: blur(3px);
+    opacity: 0.5;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+.play-card:active:not(:disabled) {
+  transform: translateY(-1px) scale(1.01);
+}
+
+/* A card that cannot be played does not pretend it can: no hover, no preview,
+   no lift. The label already says why — "Out of energy" or "Dealing…". */
+.play-card:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+/*
+ * The cascade in. `animation` rather than `transition-delay`, because a delay
+ * would also apply to the hover lift — the card would sit still for a fifth of
+ * a second after the pointer arrived, which reads as a dropped frame.
+ */
+.play-catalogue > [data-reveal][data-shown='true'] {
   animation: play-in 520ms var(--ease) calc(var(--i, 0) * 55ms) backwards;
 }
 
@@ -12026,283 +12436,835 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .play-grid > [data-reveal][data-shown='true'] {
+  .play-catalogue > [data-reveal][data-shown='true'] {
     animation: none;
+  }
+
+  .play-card,
+  .play-card-main,
+  .play-card-tail {
+    transition: none;
+  }
+
+  /* The lift and the blur go; the card still tells you it is under the pointer,
+     because a grid of eight identical presses with no hover state at all is a
+     worse answer than a still one. */
+  .play-card:hover:not(:disabled) {
+    transform: none;
+  }
+
+  .play-catalogue:has(.play-card:hover:not(:disabled)) .play-card:not(:hover) {
+    filter: none;
+    opacity: 0.72;
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
   }
 }
 
-/* A press has to feel like one. The lift is hover's; this is the push back. */
-.play-card:active {
-  transform: translateY(-1px);
+/* ── game previews ──────────────────────────────────────────────────────────
+ *
+ * A working miniature of a round, revealed under the card's own name on hover.
+ *
+ * Eight games, seven miniatures — the two Word Builders share one, because they
+ * are one game dealing two lists. The markup is `games/preview.tsx`, which
+ * renders **real content**: cards off the Kraków deck, a real flag over real
+ * country names, a real word over its own shuffled letters, and Squawk himself
+ * out of the `PARROT_PARTS` table the game's canvas draws from.
+ *
+ * These replaced a set of abstract shapes — bars for answers, a striped
+ * rectangle for a flag — which replaced a set of repeating textures. Each did
+ * the same job of stopping eight tiles looking like one tile eight times; only
+ * this one also answers the question the player is actually asking, which is
+ * what a round is like before spending energy on it.
+ *
+ * Five rules hold across all of them.
+ *
+ *   - **Nothing animates until a card is hovered.** `animation-play-state` is
+ *     `paused` at rest, so eight mounted previews cost eight static layouts and
+ *     no frames. This is the CSS half of the root `CLAUDE.md` rule about
+ *     per-frame work — a decorative loop is the last thing that should be
+ *     driven from React.
+ *   - **A miniature copies the game's own states.** The answer chips are
+ *     `.round-option`'s pair — right is the accent fill, wrong is the accent
+ *     *removed* and struck through. The memory cards are `.mm-card`'s three
+ *     faces and, like the real board, they **do not flip**: a card changes its
+ *     border and its fill and that is the whole animation the game has.
+ *   - **They read at full strength, and that is new.** The abstract set was
+ *     capped at 30% accent because it sat under two lines of body copy. It does
+ *     not any more: the card's rules and its Play label leave on hover and the
+ *     name travels down below the preview, so nothing is on top of it and there
+ *     is no reason to whisper.
+ *   - **`pointer-events: none`**, because the card underneath is the button.
+ *   - **The band is fixed.** `.play-prev` is inset to sit clear of the icon tile
+ *     above and the name below, so no preview has to be laid out around them
+ *     and none can collide with them.
+ * ══════════════════════════════════════════════════════════════════════════ */
+
+.play-prev {
+  position: absolute;
+  /* Clear of the icon row at the top and the name at the bottom. */
+  top: 3.5rem;
+  right: 1.15rem;
+  bottom: 3.1rem;
+  left: 1.15rem;
+  z-index: 0;
+  display: grid;
+  place-items: stretch;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 300ms var(--ease);
 }
 
-.play-card-main {
+.play-card-lead .play-prev {
+  top: 4.2rem;
+  bottom: 4.4rem;
+}
+
+.play-prev * {
+  animation-play-state: paused;
+  animation-iteration-count: infinite;
+  animation-timing-function: var(--ease);
+}
+
+@media (hover: hover) {
+  .play-card:hover:not(:disabled) .play-prev {
+    opacity: 1;
+  }
+
+  .play-card:hover:not(:disabled) .play-prev * {
+    animation-play-state: running;
+  }
+}
+
+/* Shown, held on its first frame. The miniature is the information; only its
+   motion is motion, and a still first frame is still a real board. */
+@media (prefers-reduced-motion: reduce) {
+  .play-prev * {
+    animation-play-state: paused !important;
+  }
+}
+
+/* ── Memory Match ──
+ *
+ * Six cards, three pairs, in `.mm-card`'s own three faces. The pairs turn one
+ * after another and stay up, which is the real board's rule — a matched pair
+ * stays, because the game is remembering where things were and a board that
+ * empties removes the evidence.
+ *
+ * Three keyframe sets rather than one with a per-pair delay: every card has to
+ * restart on the same beat or the board would never be empty again, and a
+ * delay staggers the *reset* as well as the reveal. */
+
+.pv-board {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 0.3rem;
+  /* Capped, and centred in whatever it is given. Three cards across the whole
+     width of the poster made each one four times wider than it was tall, which
+     is the opposite of the 3:4 a playing card is. */
+  width: 100%;
+  max-width: 15rem;
+  margin-inline: auto;
+}
+
+/* The three faces occupy one cell and cross-fade in it. Stacked with an
+   explicit row and column rather than with `position: absolute`, because the
+   static position of an absolutely-positioned grid child is the corner of the
+   spec browsers agree on least. */
+.pv-card {
+  display: grid;
+  grid-template-columns: 1fr;
+  place-items: center;
+  border-radius: 7px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.pv-card > * {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+/* The face-down mark: `.mm-back`, at the size this board can carry. */
+.pv-card .pv-back {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 3px;
+  border: 1px solid var(--border-2);
+}
+
+.pv-card b,
+.pv-card em {
+  opacity: 0;
+}
+
+.pv-card b {
+  font-size: 1.05rem;
+  line-height: 1;
+  transform: translateY(-0.32rem);
+}
+
+.pv-card em {
+  font-style: normal;
+  font-size: 0.46rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent-ink);
+  transform: translateY(0.5rem);
+}
+
+.pv-card {
+  animation-name: pv-card-1;
+  animation-duration: 6s;
+}
+
+.pv-card .pv-back {
+  animation-name: pv-hide-1;
+  animation-duration: 6s;
+}
+
+.pv-card b {
+  animation-name: pv-show-1;
+  animation-duration: 6s;
+}
+
+.pv-card em {
+  animation-name: pv-label-1;
+  animation-duration: 6s;
+}
+
+.pv-card[data-pair='1'] {
+  animation-name: pv-card-2;
+}
+.pv-card[data-pair='1'] .pv-back {
+  animation-name: pv-hide-2;
+}
+.pv-card[data-pair='1'] b {
+  animation-name: pv-show-2;
+}
+.pv-card[data-pair='1'] em {
+  animation-name: pv-label-2;
+}
+
+.pv-card[data-pair='2'] {
+  animation-name: pv-card-3;
+}
+.pv-card[data-pair='2'] .pv-back {
+  animation-name: pv-hide-3;
+}
+.pv-card[data-pair='2'] b {
+  animation-name: pv-show-3;
+}
+.pv-card[data-pair='2'] em {
+  animation-name: pv-label-3;
+}
+
+/* `up` is the accent border and the lifted tint; `matched` is the accent's own
+   fill at 14%, which is `.mm-card[data-face='matched']` exactly. */
+@keyframes pv-card-1 {
+  0%,
+  8% {
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+  14%,
+  92% {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.14);
+  }
+  100% {
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+}
+@keyframes pv-card-2 {
+  0%,
+  33% {
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+  39%,
+  92% {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.14);
+  }
+  100% {
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+}
+@keyframes pv-card-3 {
+  0%,
+  58% {
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+  64%,
+  92% {
+    border-color: var(--accent);
+    background: rgba(var(--accent-rgb), 0.14);
+  }
+  100% {
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+}
+
+@keyframes pv-hide-1 {
+  0%,
+  8% {
+    opacity: 1;
+  }
+  12%,
+  92% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes pv-hide-2 {
+  0%,
+  33% {
+    opacity: 1;
+  }
+  37%,
+  92% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes pv-hide-3 {
+  0%,
+  58% {
+    opacity: 1;
+  }
+  62%,
+  92% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes pv-show-1 {
+  0%,
+  9% {
+    opacity: 0;
+  }
+  14%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes pv-show-2 {
+  0%,
+  34% {
+    opacity: 0;
+  }
+  39%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes pv-show-3 {
+  0%,
+  59% {
+    opacity: 0;
+  }
+  64%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* The Polish word arrives with the match, a beat after the emoji — which is
+   what the real board does, and the reason the game is on this page. */
+@keyframes pv-label-1 {
+  0%,
+  14% {
+    opacity: 0;
+  }
+  19%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes pv-label-2 {
+  0%,
+  39% {
+    opacity: 0;
+  }
+  44%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes pv-label-3 {
+  0%,
+  64% {
+    opacity: 0;
+  }
+  69%,
+  92% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+/* ── Squawk's Flight ──
+ *
+ * The stage's own geometry, as percentages of the box: a column is
+ * `FLIGHT.pipe.width / worldWidth` across (9 of 71), the gap is
+ * `FLIGHT.pipe.gap` of the world's height (24 of 100), and the cap band is
+ * `FLIGHT.pipe.cap` (2.4). Both pieces run past the frame so only the mouth
+ * shows a rounded end, exactly as the canvas draws them. */
+
+.pv-sky {
   position: relative;
+  overflow: hidden;
+  border-radius: 10px;
+  background: rgba(var(--accent-rgb), 0.05);
+}
+
+.pv-col {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 12.7%;
+  left: 108%;
+  animation-name: pv-fly;
+  animation-duration: 3.6s;
+  animation-timing-function: linear;
+  animation-delay: calc(var(--p) * -1.8s);
+}
+
+.pv-col i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.16);
+  border: 1px solid rgba(var(--accent-rgb), 0.4);
+}
+
+/* The solid band across each mouth — the one opaque mark on the stage, and
+   what makes the gap read as a gate rather than as absence. */
+.pv-col i::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* Both pieces run well past the frame so only the **mouth** shows a rounded
+   end. A column with four rounded corners floats, and these are meant to be cut
+   out of the stage — which is why the canvas starts them two radii above the
+   ceiling and ends them below the floor. */
+.pv-col-top {
+  top: -40%;
+  bottom: calc(100% - var(--gap) + 12%);
+}
+
+.pv-col-top::after {
+  bottom: 0;
+}
+
+.pv-col-low {
+  top: calc(var(--gap) + 12%);
+  bottom: -40%;
+}
+
+.pv-col-low::after {
+  top: 0;
+}
+
+@keyframes pv-fly {
+  from {
+    left: 108%;
+  }
+  to {
+    left: -14%;
+  }
+}
+
+.pv-bird {
+  position: absolute;
+  /* `FLIGHT.bird.x` is 16 of the world's 71 units across — the same place on
+     the stage the real one flies. */
+  left: 16%;
+  top: 50%;
+  width: 32%;
+  overflow: visible;
+  margin-top: -11%;
+  animation-name: pv-bob;
+  animation-duration: 1.8s;
+}
+
+/* The four sanctioned part styles, and the fifth the wing has to itself.
+   `soft` and `wing` are the accent mixed toward the page — `FLIGHT.shade` does
+   the same on the canvas — and the eye is the page's own ground, so it reads as
+   a hole rather than as a dot. */
+.pv-p-body {
+  fill: var(--accent);
+}
+
+.pv-p-soft {
+  fill: rgba(var(--accent-rgb), 0.62);
+}
+
+.pv-p-ink {
+  fill: var(--on-accent);
+}
+
+.pv-p-eye {
+  fill: var(--bg);
+}
+
+/*
+ * The wing: one rect swung about the shoulder, between `WING.frames`.
+ *
+ * `transform-box: fill-box` is what makes the pivot expressible at all — the
+ * origin then lives inside the wing's own box, and the shoulder happens to fall
+ * inside it. Both percentages and both angles are computed from `WING` in
+ * `preview.tsx`, so a tuning change to the sprite moves this with it.
+ */
+.pv-wing {
+  /* The wing has to separate from the body it lies on. In the game it is the
+     accent mixed toward the page (`FLIGHT.shade`), which lightens on paper and
+     darkens on black; an alpha does the same over a card, but 0.72 was close
+     enough to solid that the two merged into one blob. */
+  fill: rgba(var(--accent-rgb), 0.5);
+  transform-box: fill-box;
+  transform-origin: var(--wing-x) var(--wing-y);
+  animation-name: pv-flap;
+  animation-duration: 0.36s;
+  animation-timing-function: steps(1, end);
+}
+
+@keyframes pv-flap {
+  0%,
+  49% {
+    transform: rotate(var(--wing-up));
+  }
+  50%,
+  100% {
+    transform: rotate(var(--wing-down));
+  }
+}
+
+/* The tilt is `FLIGHT.bird.tilt` in spirit — nose up climbing, down falling —
+   at a fraction of its range. A sprite fifty pixels across cannot spare sixteen
+   degrees: at that size the rotation stops reading as motion and starts reading
+   as the shape. */
+@keyframes pv-bob {
+  0%,
+  100% {
+    transform: translateY(-26%) rotate(-7deg);
+  }
+  50% {
+    transform: translateY(24%) rotate(9deg);
+  }
+}
+
+/* ── the question rounds ──
+ *
+ * A prompt and three answers, in `.round-option`'s own two states. The sweep
+ * runs down the chips and then the right one fills, which is the shape of
+ * answering: you read them, you pick, the board tells you. */
+
+.pv-quiz {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
-  /* Takes the slack, which is what lines the buttons up along the bottom of a
-     row of cards whose names wrap to different heights. */
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.pv-quiz[data-flag='true'] {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.pv-ask {
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--text-mut);
+}
+
+/* The family has to be named, or Chromium on Windows draws the flag as the two
+   regional-indicator letters it is built from. Three rules in this sheet say
+   so; this is the fourth. */
+.pv-flag {
+  flex: 0 0 auto;
+  font-family: 'GH Country Flags', var(--font-body);
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.pv-opts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
   flex: 1;
   min-width: 0;
 }
 
-.play-card-side {
-  position: relative;
+.pv-opts i {
+  display: block;
+  padding: 0.22rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text-mut);
+  font-style: normal;
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Declared here and revealed by its colour: `text-decoration-line` does not
+     animate and `text-decoration-color` does, so the strike is always on the
+     element and only ever invisible. */
+  text-decoration: line-through;
+  text-decoration-color: transparent;
+  animation-name: pv-scan;
+  animation-duration: 4.2s;
+  animation-delay: calc(var(--p) * 0.26s);
+}
+
+/* Right is the accent fill. Wrong is the accent removed and struck through —
+   with one hue that is the only honest pair, and it reads correctly: the answer
+   lights up and the mistake goes quiet. */
+.pv-opts i[data-right='true'] {
+  animation-name: pv-right;
+}
+
+@keyframes pv-scan {
+  0%,
+  40% {
+    border-color: var(--border-2);
+    background: var(--surface);
+    color: var(--text-mut);
+    text-decoration-color: transparent;
+  }
+  46%,
+  50% {
+    border-color: var(--accent-ink);
+    background: var(--surface-2);
+    color: var(--text);
+    text-decoration-color: transparent;
+  }
+  62%,
+  94% {
+    border-color: var(--border);
+    background: transparent;
+    color: var(--text-fnt);
+    text-decoration-color: var(--text-fnt);
+  }
+  100% {
+    border-color: var(--border-2);
+    background: var(--surface);
+    color: var(--text-mut);
+    text-decoration-color: transparent;
+  }
+}
+
+@keyframes pv-right {
+  0%,
+  40% {
+    border-color: var(--border-2);
+    background: var(--surface);
+    color: var(--text-mut);
+  }
+  46%,
+  50% {
+    border-color: var(--accent-ink);
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  62%,
+  94% {
+    border-color: transparent;
+    background: var(--accent);
+    color: var(--on-accent);
+  }
+  100% {
+    border-color: var(--border-2);
+    background: var(--surface);
+    color: var(--text-mut);
+  }
+}
+
+/* ── Word Builder ──
+ *
+ * The hint, the slots, and the tray. A letter lands in its slot and its tile
+ * goes to 20% and holds its place — `.wb-key[data-used]` does the same, and for
+ * the reason its own note gives: the tray is a layout the player is reading,
+ * and reflowing it on every tap loses them. */
+
+.pv-word {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-}
-
-.play-card-head {
-  display: flex;
   align-items: center;
-  gap: 0.7rem;
-  margin-bottom: 0.35rem;
+  justify-content: center;
+  gap: 0.3rem;
 }
 
-.play-ico {
-  position: relative;
-  flex: 0 0 auto;
+.pv-hint {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: center;
+  color: var(--text-mut);
+}
+
+.pv-slots,
+.pv-keys {
+  display: flex;
+  gap: 0.22rem;
+}
+
+.pv-slots i,
+.pv-keys i {
   display: grid;
   place-items: center;
-  width: 2.8rem;
-  height: 2.8rem;
-  border-radius: 14px;
+  width: 1.15rem;
+  height: 1.35rem;
+  border-radius: 5px;
   border: 1px solid var(--border-2);
-  background: rgba(var(--tint-rgb), 0.08);
-  color: var(--accent-lit);
-}
-
-.play-card[data-size='sm'] .play-ico {
-  width: 2.3rem;
-  height: 2.3rem;
-  border-radius: 11px;
-}
-
-.play-card b {
-  position: relative;
+  background: var(--surface);
   font-family: var(--font-display);
-  font-size: 1.05rem;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
-  text-wrap: balance;
+  font-style: normal;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text);
 }
 
-.play-card[data-size='sm'] b {
-  font-size: 0.95rem;
+/* A slot is empty until its letter arrives; the box is drawn from the start,
+   because an empty slot is the whole shape of the puzzle. */
+.pv-slots i {
+  color: transparent;
+  animation-name: pv-fillslot;
+  animation-duration: 4.4s;
+  animation-delay: calc(var(--p) * 0.42s);
 }
 
-.play-card[data-size='md'] b,
-.play-card[data-size='lg'] b {
-  font-size: 1.25rem;
+.pv-keys i {
+  border-color: var(--accent-soft);
+  animation-name: pv-spend;
+  animation-duration: 4.4s;
+  animation-delay: calc(var(--of) * 0.42s);
 }
 
-.play-rule {
-  position: relative;
-  font-size: 0.78rem;
-  line-height: 1.5;
-  color: var(--text-mut);
-  text-wrap: pretty;
+@keyframes pv-fillslot {
+  0%,
+  6% {
+    color: transparent;
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
+  12%,
+  86% {
+    color: var(--on-accent);
+    border-color: transparent;
+    background: var(--accent);
+  }
+  100% {
+    color: transparent;
+    border-color: var(--border-2);
+    background: var(--surface);
+  }
 }
 
-/*
- * The glyph again, at poster size, on the two cards with room for it.
- *
- * It sits in the texture's register rather than the icon tile's — a mark on the
- * surface at low opacity, bled off two edges, with the content painted over it.
- * That is what stops a medium card reading as a small one that grew: it has a
- * subject, and the subject is the game. `opacity` and not a second colour: the
- * stroke is `--accent-lit` diluted, which is the same thing every wash on this
- * page is made of.
- */
-.play-mark {
-  position: absolute;
-  right: -1.2rem;
-  bottom: -1.4rem;
-  display: block;
-  pointer-events: none;
-  color: var(--accent-lit);
-  opacity: 0.13;
-}
-
-.play-start {
-  position: relative;
-  width: 100%;
-  justify-content: center;
-}
-
-.play-start:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  transform: none;
-}
-
-/* The wide card's controls take a column of their own, which is the whole
-   reason it is the wide one. */
-.play-card[data-size='lg'] .play-card-side {
-  flex: 0 0 auto;
-  min-width: 14rem;
+@keyframes pv-spend {
+  0%,
+  6% {
+    opacity: 1;
+  }
+  12%,
+  86% {
+    opacity: 0.2;
+  }
+  100% {
+    opacity: 1;
+  }
 }
 
 /*
- * ── the deck and the grid, narrow ──
+ * ── the catalogue, narrow ──
  *
- * Here rather than in the `══ responsive ══` block below, because these three
- * steps are not adjustments to a layout defined elsewhere — they *are* the
- * layout, and a span declared six hundred lines from the one that overrides it
- * is how a grid quietly stops adding up. The one narrow rule this screen keeps
+ * Here rather than in the `══ responsive ══` block below, because this is not
+ * an adjustment to a layout defined elsewhere — it *is* the layout, and a
+ * column count declared six hundred lines from the rule that overrides it is
+ * how a grid quietly stops adding up. The one narrow rule this screen keeps
  * down there is `.play-hero-cta`, which is a padding decision about a button.
  *
- * There is only one step, and that is deliberate. The column count is what the
- * spans are written against, so an intermediate tier that moved one weight and
- * not the others just makes a different grid to keep in your head — and the
- * three weights hold their proportions all the way down: at the narrowest the
- * wrap allows, a quiz tile is about 230px and a poster about 350px, which is
- * what they are at full width minus a little. Below that the whole thing is one
- * column, which is the only honest answer on a phone.
+ * Two steps, and both are about the same thing: two cards side by side stop
+ * being cards somewhere around a phone's width, and a preview drawn at 150px
+ * across is a smudge. So the grid goes to one column and the previews stop
+ * being drawn at all — a card on a phone is an icon, a name, two lines and a
+ * press, which is the whole of what it needs to be. Touch has no hover to
+ * reveal them with either.
  */
 
 @media (max-width: 760px) {
-  /* The deck stops being two panels and becomes two, stacked. Points first:
-     it is the one that says whether any of this is worth doing. */
   .play-deck {
     grid-template-columns: 1fr;
   }
 
-  /* The cells are as tall as they are to fill a panel matched to the one beside
-     it. Stacked there is nothing to match, and a 4rem gauge for a figure with
-     one digit in it is the games pushed another screenful down. */
-  .play-energy-cells {
-    min-height: 2.6rem;
+  .play-battery {
+    min-height: 3rem;
   }
 
-  /* Every card takes the row. Three quiz tiles at a third of a phone are a
-     column of icons with the words underneath them. */
-  .play-grid {
+  .play-catalogue {
     grid-template-columns: 1fr;
   }
 
-  .play-card[data-size='sm'],
-  .play-card[data-size='md'],
-  .play-card[data-size='lg'] {
-    grid-column: auto;
+  .play-card,
+  .play-card-lead {
+    min-height: 0;
+    padding: 1.15rem 1.1rem 1.2rem;
   }
 
-  /* The wide card gives up its second column with the width that justified it,
-     and its picker goes back above the button. */
-  .play-card[data-size='lg'] {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 1.35rem 1.25rem;
+  .play-card-main,
+  .play-card-lead .play-card-main {
+    min-height: 0;
   }
 
-  .play-card[data-size='lg'] .play-card-side {
-    min-width: 0;
-  }
-
-  /* A 112px glyph bled off two corners of a full-width card is wallpaper, not
-     a subject. */
-  .play-mark {
+  .play-prev {
     display: none;
   }
-
-  /* The poster's framed glyph goes with it. It is the right-hand column of a
-     wide card, and once the card has no columns it wraps to the bottom and
-     lands *under the CTA* as a 6rem box with nothing to do with anything —
-     which is worse than not drawing it. The badge, the name, the rules and the
-     press are the card. */
-  .play-feature-ico {
-    display: none;
-  }
-}
-
-/* ── card textures ─────────────────────────────────────────────────────────
- *
- * What stands in for the mock's six hues. Each is a repeating paint on a
- * pseudo-element behind the card's content — `pointer-events: none` because a
- * texture that swallowed the Play button would be a very silly bug, and every
- * child above it carries `position: relative` for the same reason.
- *
- * The alphas run 3–5%. That is lower than looks right on an isolated card and
- * it is meant to be: these sit over a backdrop that is itself moving, under two
- * lines of 0.78rem body copy, in both themes.
- */
-.play-card::before,
-.play-feature::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.play-card[data-texture='dots']::before,
-.play-feature[data-texture='dots']::before {
-  background-image: radial-gradient(
-    rgba(var(--accent-rgb), 0.16) 1.4px,
-    transparent 1.4px
-  );
-  background-size: 22px 22px;
-}
-
-.play-card[data-texture='hatch']::before {
-  background-image: repeating-linear-gradient(
-    58deg,
-    rgba(var(--accent-rgb), 0.055) 0 1.5px,
-    transparent 1.5px 15px
-  );
-}
-
-.play-card[data-texture='grid']::before {
-  background-image:
-    repeating-linear-gradient(
-      0deg,
-      rgba(var(--accent-rgb), 0.05) 0 1px,
-      transparent 1px 26px
-    ),
-    repeating-linear-gradient(
-      90deg,
-      rgba(var(--accent-rgb), 0.05) 0 1px,
-      transparent 1px 26px
-    );
-}
-
-.play-card[data-texture='stripe']::before {
-  background-image: repeating-linear-gradient(
-    180deg,
-    rgba(var(--accent-rgb), 0.04) 0 7px,
-    transparent 7px 21px
-  );
-}
-
-.play-card[data-texture='orbit']::before {
-  background-image: repeating-radial-gradient(
-    circle at 82% 14%,
-    rgba(var(--accent-rgb), 0.07) 0 1.2px,
-    transparent 1.2px 19px
-  );
-}
-
-.play-card[data-texture='weave']::before {
-  background-image:
-    repeating-linear-gradient(
-      45deg,
-      rgba(var(--accent-rgb), 0.045) 0 1.5px,
-      transparent 1.5px 18px
-    ),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(var(--accent-rgb), 0.045) 0 1.5px,
-      transparent 1.5px 18px
-    );
-}
-
-.play-card[data-texture='chevron']::before {
-  background-image: repeating-linear-gradient(
-    135deg,
-    rgba(var(--accent-rgb), 0.05) 0 1.5px,
-    transparent 1.5px 20px
-  );
 }
 
 /* ── a round in play ── */
@@ -12355,10 +13317,10 @@ button {
   transition: width 120ms linear;
 }
 
-/* The mistakes left in this round. Same geometry and same spent treatment as
-   the strip's `.play-pips`, but its own rule — the strip is a reading of the
-   account and this is a reading of the round, and they are not one component
-   that happens to be in two places. */
+/* The mistakes left in this round. Same spent treatment as the freezes on the
+   week row, but its own rule — that row is a reading of the account and this is
+   a reading of the round, and they are not one component that happens to be in
+   two places. The strip's pips they used to be paired with are gone. */
 .round-hearts {
   display: flex;
   gap: 0.2rem;
@@ -12767,33 +13729,6 @@ button {
   color: var(--accent-lit);
 }
 
-/* The word list Word Builder is practising, chosen on its card. */
-.play-pick {
-  display: flex;
-  gap: 0.3rem;
-  padding: 0.25rem;
-  border-radius: 999px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-}
-
-.play-pick button {
-  flex: 1;
-  padding: 0.35rem 0.6rem;
-  border-radius: 999px;
-  border: 0;
-  background: none;
-  font-family: inherit;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--text-mut);
-  cursor: pointer;
-}
-
-.play-pick button[data-on='true'] {
-  background: var(--accent);
-  color: var(--on-accent);
-}
 
 /* ── the board ── */
 

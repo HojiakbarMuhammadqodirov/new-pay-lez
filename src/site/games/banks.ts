@@ -146,6 +146,40 @@ export type WordRow = [word: string, hint: string, tier: number];
  */
 export type WordList = 'en' | 'pl';
 
+/**
+ * Which list the **local** Word Builder card practises.
+ *
+ * The catalogue carries two Word Builder rows (see `GAMES` in `content.ts`):
+ * one that is always English, and one that is the language of wherever this
+ * person has moved to. This table is the second one's answer, keyed by the
+ * country of the city on their profile — `UserProfile.countryCode` — because
+ * where you live is what decides which language the queue in front of you is
+ * speaking. It is deliberately *not* keyed by the site's own language switcher,
+ * which decides what you read and says nothing about where you are standing.
+ *
+ * `'pl'` is the fallback and it is a real answer rather than a shrug: this site
+ * is a guide to having moved to Poland, and Polish is the one local list it
+ * ships. An account with no city yet gets it, and so does a country we have no
+ * list for — because the alternative, resolving to `'en'`, would put the same
+ * game on two cards under two names, which is worse than offering the market's
+ * language to somebody who has not told us where they are.
+ *
+ * A country whose language *is* English is the same case and takes the same
+ * branch, for the same reason: English already has a card.
+ *
+ * **Adding a list is one file and one row.** Drop `data/words.<code>.json`
+ * beside the two that are there, widen `WordList`, and name the country here.
+ * The card renames itself — its label is `copy.games.wordGame.lists[list]`.
+ */
+export const WORD_LIST_FOR_COUNTRY: Record<string, WordList> = {
+  PL: 'pl',
+};
+
+/** The local list for a profile's country, folded the way `fxForCountry` folds. */
+export function wordListFor(countryCode: string | undefined): WordList {
+  return WORD_LIST_FOR_COUNTRY[(countryCode ?? '').trim().toUpperCase()] ?? 'pl';
+}
+
 export const loadWords = (list: WordList) =>
   load(`./data/words.${list}.json`) as Promise<WordRow[]>;
 

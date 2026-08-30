@@ -300,11 +300,11 @@ It is a shared pool across all seven games, and `GET /v1/games/state` returns it
 under `energy` as an **object**:
 
 ```json
-{ "energy": 2, "max": 3, "nextAt": "2026-08-29T18:12:44.000Z" }
+{ "energy": 2, "max": 4, "nextAt": "2026-08-29T18:12:44.000Z" }
 ```
 
 One comes back every `energy_regen_minutes` — 240 free, 180 on Pro, 120 on
-Premium — up to `daily_energy`, which is 3, 5 and 7. `nextAt` is `null` when the
+Premium — up to `daily_energy`, which is 4, 6 and 10. `nextAt` is `null` when the
 tank is full. Draw the wait from it; a countdown to midnight is simply wrong, and
 a pool with no visible end is what makes an energy system feel broken.
 
@@ -313,9 +313,9 @@ Read the two keys together and they give the size of a day —
 
 | Plan | Sustained, per day | From a full tank |
 | --- | --- | --- |
-| Free | 6 | 9 |
-| Pro | 8 | 13 |
-| Premium | 12 | 19 |
+| Free | 6 | 10 |
+| Pro | 8 | 14 |
+| Premium | 12 | 22 |
 
 `POST /v1/games/sessions` refuses with `no_energy` on an empty tank — enforced at
 the start, because finding out at the end means finding out after the round was
@@ -345,7 +345,7 @@ The raw round, before the one factor below:
 
 Then `score = floor(raw × points_multiplier)`, and that is the whole of it.
 
-**A round pays the same whether it is your first of the day or your ninth.**
+**A round pays the same whether it is your first of the day or your tenth.**
 There is no daily points cap and no per-game decay curve — a curve lived here
 that paid a repeat of the same game 100/60/40/20/0 percent on free, and it is
 gone along with the `decay` field on the finish response and the `round_decay`
@@ -414,7 +414,7 @@ Ask what the account is entitled to, never what it paid. `GET /v1/me` returns an
 `entitlements` map resolved from the active plan:
 
 ```json
-{ "daily_energy": "3", "energy_regen_minutes": "240", "scan_points": "20",
+{ "daily_energy": "4", "energy_regen_minutes": "240", "scan_points": "20",
   "points_multiplier": "1", "exclusive_deals": "false" }
 ```
 
@@ -427,7 +427,7 @@ is sold with a free trial** — `trial_days` is 0 on every one of them.
 
 | Key | Free | Pro | Premium |
 | --- | --- | --- | --- |
-| `daily_energy` | 3 | 5 | 7 |
+| `daily_energy` | 4 | 6 | 10 |
 | `energy_regen_minutes` | 240 | 180 | 120 |
 | `points_multiplier` *(game rounds only)* | 1 | 1.25 | 1.75 |
 | `scan_points` | 20 | 30 | 50 |

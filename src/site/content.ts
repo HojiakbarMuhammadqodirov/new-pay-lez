@@ -481,9 +481,9 @@ export const ASSISTANT_OPEN_EVENT = 'paylez:assistant-open';
  *
  * Written out here rather than derived from the table below, because the table
  * is now typed *by* it: a row with a misspelt id is a build error at the row
- * rather than a game nothing can ever find. `auth/player.ts` imports it to key
- * the day's per-game tally — the decay curve prices a repeat of *this* game, so
- * every award has to say which one it was.
+ * rather than a game nothing can ever find. Every award carries one, which is
+ * what lets the scoring in `auth/player.ts` say *which* round it is pricing
+ * without the table itself having to be reachable from there.
  */
 export type GameId =
   | 'brain'
@@ -498,7 +498,16 @@ export type GameId =
   | 'wordLocal';
 
 /**
- * The seven games, index-aligned with `copy.games.names`.
+ * The eight games, in the order the screen shows them and index-aligned with
+ * `copy.games.names`.
+ *
+ * **The order is the layout.** `GAMES[0]` is the featured card — the full-width
+ * poster L-Earn opens with — and everything after it fills the grid two to a
+ * row. So moving a row here moves a card there, and the two cannot be told
+ * apart: there is no second ordering to keep in step, and nothing sorts this
+ * list at render. It is also not per-player. A grid that reshuffled itself by
+ * what you had played would move the card you were reaching for, which is the
+ * one thing a grid of buttons must never do.
  *
  * Rules per game rather than one shared rule, because the old app varied them
  * and the variation is the point: the flag round gives you six seconds a
@@ -518,15 +527,16 @@ export type GameId =
  *
  * `allowedMistakes` is how many you may get wrong and still bank the round.
  *
- * Every figure here is what a round scores **before the day's curve**. A repeat
- * of the same game pays a fraction of it and the fifth pays nothing — see
- * `DAILY_DECAY` in `auth/player.ts`, which is the only brake on this screen now
- * that a loss costs no life.
+ * Every figure here is what a round scores, full stop. A day is bounded by
+ * energy and by nothing else (`MAX_ENERGY` in `auth/player.ts`), so the
+ * hundredth round of the day pays exactly what the first did — there is no
+ * curve here to read the figures through, and the note that used to say so
+ * described one that had already been removed.
  *
- * **The last three read those columns differently rather than making them
- * optional**, so this stays one homogeneous table instead of a union of five
- * object shapes that every consumer would have to narrow. What each column means
- * per kind is stated on the row.
+ * **The last four read those columns differently rather than making them
+ * optional**, so this stays one homogeneous table instead of a union of object
+ * shapes that every consumer would have to narrow. What each column means per
+ * kind is stated on the row.
  *
  * Where the questions come from changed with this table: the four quiz rounds no
  * longer read a handful of hardcoded items out of the dictionaries. They draw
@@ -627,6 +637,69 @@ export const GAMES: Array<{
   { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
   { id: 'wordLocal', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
 ];
+
+/**
+ * What the hover previews actually play.
+ *
+ * A card in the catalogue shows a **working miniature of its own round** when
+ * the pointer rests on it, and these are the pieces that are structure rather
+ * than copy: a flag's ISO code, three cards off a real deck, one row out of each
+ * word list. The words a reader reads live in `copy.games.preview`.
+ *
+ * **Everything here is real content the game itself uses**, and that is the
+ * whole point of the block. The previews were abstract shapes first — bars,
+ * dots, a rectangle standing in for a flag — and they told a player that six
+ * cards were six different cards without telling them what any of the six
+ * actually was. A card promising a quiz and drawing four grey bars is
+ * advertising the wrong product.
+ *
+ * They are **fixed samples, not draws from the banks.** The banks in
+ * `games/data/` are code-split on purpose and the general one is 220 kB; a
+ * pointer crossing a card must not fetch that, and a preview that dealt a new
+ * question on every hover would be a slot machine where an example is wanted.
+ * `npm run verify` checks the deck cards and the words below against the real
+ * files, so "real content" stays true rather than being true on the day it was
+ * typed.
+ */
+export const PREVIEW = {
+  /**
+   * The flag the Guess the Flag card shows, as the ISO code `flagOf` turns into
+   * an emoji. `copy.games.preview.flag[0]` is the country it names, and the two
+   * have to agree — a translator moving `Poland` to `Polska` keeps them
+   * agreeing, which is why the code is here and the name is not.
+   */
+  flagCode: 'PL',
+
+  /**
+   * Three pairs off the Kraków deck in `games/data/decks.json`, verbatim.
+   *
+   * Not translated, and that is not an omission: the label is the **Polish
+   * name**, which is the thing Memory Match is teaching, and it is the same
+   * string on the board whichever of the five languages the site is being read
+   * in. Copying three rows rather than importing the file keeps a 3.5 kB deck
+   * out of the main bundle for a decoration; `npm run verify` reads the real
+   * file and checks these three are still in it.
+   */
+  memory: [
+    { icon: '🏰', label: 'Wawel' },
+    { icon: '🐉', label: 'Smok' },
+    { icon: '⛲', label: 'Rynek' },
+  ],
+
+  /**
+   * One row from each word list, `[word, hint]` out of `words.<list>.json`.
+   *
+   * Two different words, because the catalogue now has two Word Builders and a
+   * card should preview the round it will actually deal — the English card
+   * builds an English word and the local card a Polish one. The hints are
+   * English in both files (see `WordList` in `games/banks.ts`), which is what
+   * the real game shows too.
+   */
+  word: {
+    en: { word: 'BREAD', hint: 'You buy this at a bakery' },
+    pl: { word: 'KAWA', hint: 'You order this in a café' },
+  },
+} as const;
 
 /** The board's two orderings, index-aligned with `copy.games.boardTabs`. */
 export const BOARD_TABS = ['correct', 'points'] as const;

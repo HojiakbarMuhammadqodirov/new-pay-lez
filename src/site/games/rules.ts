@@ -32,6 +32,7 @@
  */
 import { GAMES } from '../content';
 import { MAX_FLIGHT_POINTS, MEMORY_BANDS } from '../auth/player';
+import type { WordList } from './banks';
 import type { Dictionary } from '../i18n/en';
 import { fill } from '../i18n/currency';
 
@@ -74,4 +75,28 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
       points: String(entry.perCorrect),
     }),
   ];
+}
+
+/**
+ * A game's name, with the one hole any of them has filled in.
+ *
+ * Here rather than in `games.tsx` for the reason `rulesFor` above is: three
+ * screens name these games — the signed-in grid, its poster, and the marketing
+ * section a signed-out visitor reads — and the moment one of them formats a
+ * name itself, that one is free to drift.
+ *
+ * Seven of the eight names are plain strings. The eighth is the local Word
+ * Builder, named after the list it will actually deal
+ * (`'Word Builder · {language}'`), because that list is a fact about the
+ * player's city rather than about the catalogue. Running every name through
+ * `fill` rather than special-casing index seven keeps the call sites from
+ * having to know which one is special — `fill` leaves a string with no holes
+ * exactly as it found it.
+ */
+export function gameName(
+  index: number,
+  games: Dictionary['games'],
+  list: WordList,
+): string {
+  return fill(games.names[index], { language: games.wordGame.lists[list] });
 }

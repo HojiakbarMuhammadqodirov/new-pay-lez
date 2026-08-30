@@ -218,7 +218,7 @@ is worth having here, and it is one sentence:
 > **Every finished round costs one energy, win or lose, and nothing else bounds
 > a day.** Energy refills one per `energy_regen_minutes` up to `daily_energy`, so
 > a day is `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank:
-> **free 6 sustained and 9 in a burst, Pro 8/13, Premium 12/19.**
+> **free 6 sustained and 10 in a burst, Pro 8/14, Premium 12/22.**
 
 Both halves of that are recent and both replaced something. Charging a *win* is
 what makes the pool a limiter rather than a decoration — losses only was a tax on
@@ -257,7 +257,7 @@ listed rather than simply absent:
   break on a missing key, and is always 0.
 - **There is no per-game decay curve.** A round pays `floor(raw ×
   points_multiplier)` and nothing else, whether it is the first of the day or the
-  ninth. `CONFIG.games.decay`, `decayFor` and the `decay` field on the finish
+  tenth. `CONFIG.games.decay`, `decayFor` and the `decay` field on the finish
   response are gone, and `round_decay` is in `RETIRED_ENTITLEMENTS` so a row
   seeded by an older build is deleted on boot rather than left as a live tier
   figure no file mentions. It was written when play was unlimited and it was the
@@ -270,7 +270,7 @@ listed rather than simply absent:
   `gate.confirm`.
 - **Energy does not reset at midnight** — and it is not called hearts. The word
   changed with the rule: `CONFIG.points.dailyEnergy` / `energyRegenMinutes`, the
-  entitlements `daily_energy` (3/5/7) and `energy_regen_minutes` (240/180/120),
+  entitlements `daily_energy` (4/6/10) and `energy_regen_minutes` (240/180/120),
   `games.energyFor`, `energyLeft` on both game bodies, `energy` on
   `GET /v1/games/state`, and `no_energy`. `daily_lives` and `life_regen_minutes`
   are retired alongside `round_decay`.
