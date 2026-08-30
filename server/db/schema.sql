@@ -1461,3 +1461,35 @@ CREATE TABLE IF NOT EXISTS auth_attempts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_auth_attempts ON auth_attempts (subject, at);
+
+-- Messages sent from the website's Contact page. Not `feedback`, which is a
+-- signed-in customer rating something inside the product: this is anybody at
+-- all, including somebody who has never had an account, and it carries the
+-- reply-to address they typed rather than a foreign key to a user.
+--
+-- `email_norm` and `sender_day` exist to be counted, not to be read. The first
+-- bounds one address, the second bounds one connection for the day it was
+-- computed on — it is the same rotating HMAC the traffic beacon uses, so it
+-- cannot recognise anybody tomorrow. See `domain/contact.ts`.
+CREATE TABLE IF NOT EXISTS contact_messages (
+  id         TEXT PRIMARY KEY,
+  topic      TEXT NOT NULL CHECK (topic IN ('support', 'feedback', 'partnership', 'other')),
+  name       TEXT NOT NULL,
+  email      TEXT NOT NULL,
+  email_norm TEXT NOT NULL,
+  body       TEXT NOT NULL,
+  status     TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'read', 'done')),
+  -- Set when the sender happened to be signed in. `SET NULL` rather than
+  -- `CASCADE`: erasing an account must not erase a support conversation the
+  -- operator may still be in the middle of, and the message carries its own
+  -- reply-to address anyway.
+  user_id    TEXT REFERENCES users (id) ON DELETE SET NULL,
+  language   TEXT,
+  sender_day TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  handled_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_contact_status ON contact_messages (status, created_at);
+CREATE INDEX IF NOT EXISTS idx_contact_email ON contact_messages (email_norm, created_at);
+CREATE INDEX IF NOT EXISTS idx_contact_sender ON contact_messages (sender_day, created_at);

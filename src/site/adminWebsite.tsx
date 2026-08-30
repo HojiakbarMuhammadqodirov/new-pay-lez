@@ -160,7 +160,7 @@ function Trend({ rows, label }: { rows: TrafficReport['trend']; label: string })
  * could diagnose. When the site's own auth moves to the server this panel is
  * what disappears.
  */
-function Connect({ onDone, copy }: { onDone: () => void; copy: WebsiteCopy }) {
+export function Connect({ onDone, copy }: { onDone: () => void; copy: WebsiteCopy }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -233,7 +233,7 @@ function Connect({ onDone, copy }: { onDone: () => void; copy: WebsiteCopy }) {
 
 /* ──────────────────────────────────────────────────────────────── screen ── */
 
-type WebsiteCopy = ReturnType<typeof useCopy>['admin']['website'];
+export type WebsiteCopy = ReturnType<typeof useCopy>['admin']['website'];
 
 export function AdminWebsite() {
   const copy = useCopy().admin.website;

@@ -349,6 +349,24 @@ export const CONFIG = {
     maxPathLength: 120,
   },
 
+  /* ────────────────────────────────────────── messages from the site ── */
+  contact: {
+    /**
+     * How many messages one address, or one connection, may send in an hour.
+     *
+     * Five rather than one, because the realistic honest case is somebody who
+     * writes, presses send, thinks of the screenshot they meant to describe,
+     * and writes again — twice or three times over a few minutes. A limit that
+     * catches that person is a limit that loses the detail they came back to
+     * add. It is a bound against a script, and a script does not stop at five.
+     *
+     * Counted over both keys independently: the address bounds one person
+     * hammering the form, and the rotating connection hash bounds one script
+     * cycling addresses. Neither alone is enough — see `domain/contact.ts`.
+     */
+    perHour: 5,
+  },
+
   /* ─────────────────────────────────────────────────────── sessions ── */
   auth: {
     sessionDays: 30,

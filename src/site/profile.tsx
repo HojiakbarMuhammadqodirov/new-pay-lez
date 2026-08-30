@@ -19,6 +19,7 @@ import {
   type CityList,
 } from './api/profile';
 import { useAuth } from './auth/context';
+import { AVATAR_PX, toSquareDataUrl } from './imageFile';
 import { Face } from './auth/Avatar';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -79,20 +80,6 @@ import {
  * counted. Prose is decoration that costs a column.
  */
 
-/* ──────────────────────────────────────────────────────────────── photo ── */
-
-/**
- * How big a stored avatar is, per side.
- *
- * 192 rather than the 92 the form draws it at, because the same data URL is the
- * only copy — a retina screen reads this one at twice the CSS size — and 192²
- * of JPEG is a few kilobytes either way. What it is *not* is the file the
- * picker handed over: a phone photo is three or four megabytes of base64, and
- * an origin has about five megabytes of `localStorage` for everything on this
- * site put together.
- */
-const AVATAR_PX = 192;
-
 /*
  * The two bounds the form's sentences quote, as strings.
  *
@@ -106,54 +93,16 @@ const MAX = String(USERNAME_MAX);
 /** The page's own slice of the dictionary, for the helpers below it. */
 type ProfileCopy = ReturnType<typeof useCopy>['profile'];
 
+/* ──────────────────────────────────────────────────────────────── photo ── */
+
 /**
  * A picked file as a small square data URL.
  *
- * Cover-cropped rather than squashed: a portrait photo scaled to a square makes
- * a face narrow, and every use of this is a disc. JPEG rather than PNG because
- * the input is a photograph, and `0.82` is where the artefacts stop being
- * visible at this size.
- *
- * Rejects by resolving to `null` rather than throwing — the only realistic
- * failure is a file that is not an image, and the honest response to that is to
- * leave the photo alone.
+ * The work is in `imageFile.ts`, because the venue logo needs exactly the same
+ * thing and a second copy of a canvas crop is a second place for the quality
+ * and the size to drift apart.
  */
-async function toAvatar(file: File): Promise<string | null> {
-  const url = URL.createObjectURL(file);
-  try {
-    const image = new Image();
-    const loaded = new Promise<boolean>((resolve) => {
-      image.onload = () => resolve(true);
-      image.onerror = () => resolve(false);
-    });
-    image.src = url;
-    if (!(await loaded)) return null;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = AVATAR_PX;
-    canvas.height = AVATAR_PX;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    const side = Math.min(image.naturalWidth, image.naturalHeight);
-    ctx.drawImage(
-      image,
-      (image.naturalWidth - side) / 2,
-      (image.naturalHeight - side) / 2,
-      side,
-      side,
-      0,
-      0,
-      AVATAR_PX,
-      AVATAR_PX,
-    );
-    return canvas.toDataURL('image/jpeg', 0.82);
-  } finally {
-    /* Always, including on the failure paths above: an object URL is a live
-       reference to the file and is not collected while it exists. */
-    URL.revokeObjectURL(url);
-  }
-}
+const toAvatar = (file: File): Promise<string | null> => toSquareDataUrl(file, AVATAR_PX);
 
 /* ─────────────────────────────────────────────────────────────── the kit ── */
 

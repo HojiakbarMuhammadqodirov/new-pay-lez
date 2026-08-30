@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { CONTACT_EMAIL, SALES_EMAIL, SOCIALS } from './content';
+import { CONTACT_TOPICS as TOPICS, SOCIALS } from './content';
+import { ApiError, call } from './api/client';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -18,14 +19,20 @@ import { PATHS } from './router';
  * selling to. So: the form, what it does, when it will be answered, and where
  * else we are. Nothing above it.
  *
- * **The form does not post anywhere, and says so.** There is no network layer
- * under `src/` for it to post to — so a Send button would be a promise the page
- * cannot keep, and the usual way that gets built is a `setTimeout` and a green
- * tick over a message nobody received. Instead the button composes a `mailto:`
- * and hands it to the reader's own mail client: the subject, the address and
- * the body are all filled in, and the send button is theirs. That is a real
- * action with a real outcome, and `form.note` tells the reader exactly what is
- * about to happen before they press it.
+ * **The form posts to `POST /v1/contact`, and the message lands in the
+ * console.** It used to compose a `mailto:` and hand it to the reader's own
+ * mail client, which was the honest thing to do while there was nothing under
+ * `src/` to post to — a Send button with nothing behind it is a promise the
+ * page cannot keep. There is a server now, and a `mailto:` costs the sender a
+ * mail client that is configured, willing and not a webmail tab; every message
+ * it loses is lost *silently*, because the reader believes they sent it.
+ *
+ * Two things follow, and both are visible on the screen. The button says
+ * "Submit the message" rather than naming somebody else's app, because this
+ * page is what sends it now. And the three ways it can end are three different
+ * sentences — sent, refused, or *the server is not there* — because the last of
+ * those is the one a `setTimeout` and a green tick would hide, and it is the
+ * one where the reader still has something to do about it.
  *
  * **No backdrop, for the same reason the two legal pages have none.** Every
  * canvas on this site is a fixed layer behind a page long enough to scroll it
@@ -41,33 +48,56 @@ export function ContactPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
-  const [error, setError] = useState(false);
-
-  /*
-   * `mailto:` rather than a POST, for the reason in the file header. Two details
-   * matter: the body is assembled with real newlines and encoded once with
-   * `encodeURIComponent` (a raw `\n` in a `mailto:` is dropped by some clients),
-   * and the reply-to address the reader typed goes *into the body* rather than
-   * into a `?from=`, which no client honours and every spam filter dislikes.
+  /**
+   * What the form is doing, as one value rather than three booleans.
+   *
+   * `sending` has to lock the button — a form that can be pressed twice is a
+   * form that files the same message twice, and this one has a rate limit that
+   * would then refuse the second press and show a failure for a message that
+   * arrived. `problem` carries the *reason*, because "we could not reach the
+   * server" and "you left the message empty" are different problems with
+   * different next moves.
    */
-  const submit = (event: React.FormEvent) => {
+  const [status, setStatus] = useState<'idle' | 'sending' | 'sent'>('idle');
+  const [problem, setProblem] = useState<'fields' | 'refused' | 'offline' | null>(null);
+
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (status === 'sending') return;
 
     if (!name.trim() || !email.trim() || !message.trim()) {
-      setError(true);
+      setProblem('fields');
       return;
     }
-    setError(false);
 
-    /* A partnership goes to the other inbox — the split the two addresses make,
-       honoured by the topic the reader picked rather than ignored. */
-    const to = topic === 2 ? SALES_EMAIL : CONTACT_EMAIL;
-    const subject = `${copy.contact.form.topics[topic]} — ${name.trim()}`;
-    const body = `${message.trim()}\n\n—\n${name.trim()}\n${email.trim()}`;
+    setProblem(null);
+    setStatus('sending');
 
-    window.location.href = `mailto:${to}?subject=${encodeURIComponent(
-      subject,
-    )}&body=${encodeURIComponent(body)}`;
+    try {
+      await call('/v1/contact', {
+        method: 'POST',
+        body: {
+          /* The topic goes as the server's own word rather than as the index
+             this `<select>` holds or the label it shows: an index would mean
+             the API's meaning changed the day somebody reordered the list, and
+             the label is translated, so a Polish reader would file a topic the
+             table has no name for. `TOPICS` is index-aligned with
+             `copy.contact.form.topics`, which is the same arrangement every
+             other list on this site uses. */
+          topic: TOPICS[topic],
+          name: name.trim(),
+          email: email.trim(),
+          message: message.trim(),
+        },
+      });
+      setStatus('sent');
+    } catch (cause) {
+      setStatus('idle');
+      /* Status 0 is "we never reached it" — see `ApiError` in `api/client.ts`.
+         Anything else is a server that answered and said no, which for this
+         form is either a bad address or the hourly limit. */
+      setProblem(cause instanceof ApiError && cause.status === 0 ? 'offline' : 'refused');
+    }
   };
 
   return (
@@ -202,16 +232,35 @@ export function ContactPage() {
 
               {/* Weighted rather than red: the palette has one accent, so an
                   error is louder by contrast. See the field kit in site.css. */}
-              {error && (
+              {problem && (
                 <p className="field-error" role="alert">
-                  {copy.contact.form.error}
+                  {problem === 'fields'
+                    ? copy.contact.form.error
+                    : problem === 'offline'
+                      ? copy.contact.form.offline
+                      : copy.contact.form.refused}
                 </p>
               )}
 
-              <button type="submit" className="btn btn-solid btn-lg">
-                <Icon name="send" size={17} strokeWidth={2.2} />
-                {copy.contact.form.submit}
-              </button>
+              {/* The receipt replaces the button rather than sitting under it.
+                  A live Send under "we have it" invites a second press, which
+                  the rate limit would then refuse — a failure message for a
+                  message that arrived. */}
+              {status === 'sent' ? (
+                <p className="ct-sent" role="status">
+                  <Icon name="check" size={17} strokeWidth={2.6} />
+                  {copy.contact.form.sent}
+                </p>
+              ) : (
+                <button
+                  type="submit"
+                  className="btn btn-solid btn-lg"
+                  disabled={status === 'sending'}
+                >
+                  <Icon name="send" size={17} strokeWidth={2.2} />
+                  {status === 'sending' ? copy.contact.form.sending : copy.contact.form.submit}
+                </button>
+              )}
 
               <p className="field-help ct-note">{copy.contact.form.note}</p>
             </form>

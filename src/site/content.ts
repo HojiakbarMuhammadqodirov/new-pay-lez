@@ -479,6 +479,18 @@ export const FOOTER_LINKS: Array<Array<string | null>> = [
 export const CONTACT_EMAIL = 'usepaylez@gmail.com';
 
 /**
+ * What the Contact form files a message under, index-aligned with
+ * `copy.contact.form.topics`.
+ *
+ * These are the server's own words (`TOPICS` in `server/domain/contact.ts`) and
+ * they are what goes over the wire — not the index the `<select>` holds, which
+ * would change meaning the day somebody reorders the list, and not the label,
+ * which is translated and would file a Polish reader's message under a topic
+ * the table has no name for.
+ */
+export const CONTACT_TOPICS = ['support', 'feedback', 'partnership', 'other'] as const;
+
+/**
  * The channels the footer and the Contact page both link to.
  *
  * One table rather than two: the pair appears in the footer and again on
@@ -799,6 +811,17 @@ export interface AdminService {
   id: string;
   /** The letter on the tile. Venue names are brands and are never translated. */
   logo: string;
+  /**
+   * The venue's own mark, if its owner uploaded one — a data URL, and `''` for
+   * every seeded venue here.
+   *
+   * Optional rather than a letter-or-image union because that is what it
+   * actually is: a listing either has a picture or it does not, and the letter
+   * above is the fallback rather than the other half of a choice. The console
+   * is the one screen that shows seeded venues and real ones side by side, so
+   * it is also the one screen where both cases are on screen at once.
+   */
+  mark?: string;
   name: string;
   /** Index into `BUSINESS_CATEGORIES`, and so into `copy.listing.categories`. */
   category: number;
@@ -1008,7 +1031,7 @@ export const ADMIN_VOUCHER_ROWS: Array<{
 ];
 
 /** The console's own tabs, and the analytics view's. Icons are structure. */
-export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant', 'bars'];
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant', 'bars', 'send'];
 export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
 
 /** The nine Dashboard cards, in the original's order. */

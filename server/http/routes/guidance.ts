@@ -13,8 +13,9 @@
  * a language the reader did not ask for should be visibly that, not silently it.
  */
 import { CONFIG } from '../../config.ts';
+import * as contact from '../../domain/contact.ts';
 import * as traffic from '../../domain/traffic.ts';
-import { list, optStr, qInt, qStr } from '../input.ts';
+import { list, optStr, str, qInt, qStr } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
 /** `field → value` in the best available language, for one entity. */
@@ -325,6 +326,39 @@ export const guidanceRoutes: Route[] = [
       );
       return { ok: true, recorded: events.length };
     },
+  },
+  {
+    /**
+     * A message from the website's Contact page.
+     *
+     * `auth: 'none'`, because the point of a contact form is that somebody who
+     * cannot sign in can still reach us — a support form behind a session is a
+     * support form the people who most need it cannot use. When a token *was*
+     * sent it is attributed, exactly as the traffic beacon does it, so an
+     * operator reading the message knows which account it came from without the
+     * sender having to say.
+     *
+     * The connection is passed through for the rate limit and nothing else. It
+     * is hashed under the day's key inside the domain and never stored raw —
+     * see `domain/contact.ts`.
+     */
+    method: 'POST',
+    pattern: '/v1/contact',
+    auth: 'none',
+    name: 'contact.submit',
+    handler: (ctx) =>
+      contact.submit(ctx.db, {
+        topic: str(ctx.body, 'topic'),
+        name: str(ctx.body, 'name'),
+        email: str(ctx.body, 'email'),
+        body: str(ctx.body, 'message'),
+        userId: ctx.actor?.user.id ?? null,
+        language: ctx.language,
+        ip: ctx.ip,
+        agent: String(ctx.req.headers['user-agent'] ?? ''),
+        secret: ctx.secret,
+        at: ctx.at,
+      }),
   },
   {
     method: 'GET',

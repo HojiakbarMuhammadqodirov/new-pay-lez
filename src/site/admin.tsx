@@ -8,6 +8,7 @@ import {
   type AdminService,
 } from './content';
 import { ServiceAnalytics } from './adminAnalytics';
+import { AdminMessages } from './adminMessages';
 import { AdminWebsite } from './adminWebsite';
 import { ThemeToggle } from './Header';
 import { Icon } from './icons';
@@ -142,7 +143,7 @@ function ServiceCard({
   return (
     <li className="adm-service" data-reveal>
       <span className="adm-logo" aria-hidden>
-        {service.logo}
+        {service.mark ? <img src={service.mark} alt="" /> : service.logo}
       </span>
 
       <div className="adm-service-body">
@@ -224,6 +225,10 @@ export function AdminPage() {
         return {
           id: user.id,
           logo: listing.name.trim().charAt(0).toUpperCase() || '?',
+          /* The letter stays as the fallback for a listing whose owner has not
+             chosen a logo — which is every seeded venue, and every real one
+             until somebody does. */
+          mark: listing.logo,
           name: listing.name,
           category: Math.max(0, BUSINESS_CATEGORIES.findIndex((c) => c.id === listing.category)),
           city: listing.city,
@@ -403,9 +408,11 @@ export function AdminPage() {
                   )}
                 </section>
               ) : tab === 3 ? (
-                /* The one tab that is not derived on this device — it asks the
-                   backend, and says so when the backend is not there. */
+                /* The two tabs that are not derived on this device — they ask
+                   the backend, and say so when the backend is not there. */
                 <AdminWebsite />
+              ) : tab === 4 ? (
+                <AdminMessages />
               ) : (
                 <section className="adm-block" data-reveal>
                   <div className="adm-block-head">

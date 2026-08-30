@@ -6472,6 +6472,56 @@ button {
   font-size: 0.72rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  overflow: hidden;
+}
+
+/*
+ * The venue's own mark, once one has been chosen.
+ *
+ * `contain` rather than `cover`, which is the opposite of the rule everywhere
+ * else in this sheet and is the whole point: a logo is a *shape*, and cropping
+ * it to fill a band is how a wordmark loses its first and last letters. The
+ * band keeps its own ground behind it, so a mark with transparency or a square
+ * crop sits on the surface rather than on a hole.
+ */
+.phone-cover[data-has-logo] {
+  padding: 0.6rem;
+}
+
+.phone-cover img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+/* The chip beside the file button — small, because it is a receipt for the
+   press rather than the preview. The preview is the phone next to it. */
+.logo-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.logo-chip {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 2.4rem;
+  height: 2.4rem;
+  padding: 2px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.logo-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
 }
 
 .phone-body {
@@ -16352,12 +16402,23 @@ button {
   background: var(--surface);
 }
 
+/* A real logo is `contain`ed like the listing preview's — see `.phone-cover`.
+   Cropping a wordmark to fill a tile is how it loses its outer letters. */
+.adm-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
 .adm-logo {
   display: grid;
   place-items: center;
   width: 2.75rem;
   height: 2.75rem;
   flex: 0 0 auto;
+  padding: 2px;
+  overflow: hidden;
   border-radius: 14px;
   border: 1px solid var(--border);
   background: var(--surface-2);
@@ -19102,3 +19163,188 @@ button {
     transition: none;
   }
 }
+/* ── the console's inbox (`adminMessages.tsx`) ────────────────────────────
+   The fifth tab. `adm-` like the rest of the console; `.adm-msg*` was grepped
+   and was free.
+
+   The filter chips take their counts from the server rather than from the rows
+   on screen, which is why the number sits in its own `<b>`: it is a separate
+   fact from the label, and it is the one that changes. */
+
+.adm-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.adm-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-mut);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    color 200ms var(--ease),
+    background 200ms var(--ease);
+}
+
+.adm-chip b {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-fnt);
+}
+
+.adm-chip:hover {
+  border-color: var(--border-2);
+  color: var(--text);
+}
+
+.adm-chip[data-on='true'] {
+  border-color: var(--accent-ink);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.adm-chip[data-on='true'] b {
+  color: var(--accent-ink);
+}
+
+.adm-msgs {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * One message.
+ *
+ * `data-status` marks the row rather than colouring it: the palette has one
+ * accent, so "unread" is a bar down the leading edge and "done" is the row
+ * dropping back to the page's own weight. That is the same argument the field
+ * kit makes about errors — louder by contrast, not by hue.
+ */
+.adm-msg {
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid transparent;
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.adm-msg[data-status='new'] {
+  border-left-color: var(--accent-ink);
+  background: var(--surface-2);
+}
+
+.adm-msg[data-status='done'] {
+  opacity: 0.62;
+}
+
+.adm-msg-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.5rem;
+}
+
+.adm-msg-who {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.adm-msg-who b {
+  font-size: 0.9rem;
+}
+
+.adm-msg-who a {
+  font-size: 0.78rem;
+  color: var(--accent-ink);
+  word-break: break-all;
+}
+
+.adm-msg-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  flex: none;
+  font-size: 0.74rem;
+  color: var(--text-fnt);
+}
+
+.adm-msg-topic {
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-weight: 600;
+}
+
+/* The message itself, and the only place on the console where somebody else's
+   words are printed. `pre-wrap` because they typed the line breaks and a bug
+   report loses its shape without them; `break-word` because a pasted URL or a
+   stack trace is exactly what arrives here. */
+.adm-msg-body {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.adm-msg-foot {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.7rem;
+}
+
+.adm-msg-move {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.76rem;
+}
+
+.adm-msg-tag {
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  color: var(--text-fnt);
+}
+
+/* The Contact page's receipt, which replaces the button rather than joining it
+   — see the note at the press in `contact.tsx`. */
+.ct-sent {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border: 1px solid var(--accent-ink);
+  border-radius: var(--r);
+  background: var(--surface-2);
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ct-sent svg {
+  flex: none;
+  color: var(--accent-ink);
+}
+

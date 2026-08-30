@@ -39,7 +39,7 @@
  * that touches a rate, so a złoty figure round-trips to the same złoty figure.
  */
 import { useMemo } from 'react';
-import { ApiError, hasToken } from './client';
+import { ApiError, call, hasToken } from './client';
 import { useApi, type ApiResult, type ApiState } from './useApi';
 import { FX, type FxCode } from '../i18n/fx';
 
@@ -405,3 +405,62 @@ export function chain<T>(
   }
   return report.state;
 }
+
+/* ══════════════════════════════════════════════════════════ writing a deal ══ */
+
+/**
+ * What the create drawer sends, in the API's own words.
+ *
+ * The drawer's state is a form — a title, a badge, seven checkboxes, two clock
+ * faces — and none of those are what the endpoint takes. Translating between
+ * them belongs here rather than in the component for the reason every other
+ * mapping in this file lives here: the shape the server accepts is a fact about
+ * the API, and a component that knows it is a component that has to be edited
+ * when the API moves.
+ */
+export interface DealDraft {
+  /** Per language, keyed by the site's own two-letter codes. */
+  copy: Record<string, { title: string; description: string }>;
+  /** The badge — "20%", "2+1". Free text on the server, and rightly so. */
+  discountText: string;
+  category?: string;
+  /** `YYYY-MM-DD`, both inclusive. */
+  validFrom: string;
+  validTo: string;
+  /** 0 = Monday, matching `LocalTime.weekday`. An empty list means every day. */
+  targetWeekdays: number[];
+  /** Minutes past local midnight. */
+  targetFromMin: number;
+  targetToMin: number;
+  targetLanguages: string[];
+  targetAudience: string[];
+  capClaims?: number;
+  /** Minor units of the **venue's** currency, which is not the reader's. */
+  capSpendMinor?: number;
+}
+
+export interface CreatedDeal {
+  id: string;
+  status: string;
+}
+
+/**
+ * Create a deal. It arrives as a draft — publishing is a second call.
+ *
+ * Two calls and not one because they are two decisions on the server, and the
+ * drawer offers them as two buttons: "save for later" is a draft that exists,
+ * and "publish" is that draft going live. Collapsing them into a `published`
+ * flag would make the failure mode worse, not better — a deal that was created
+ * and then failed to publish is a real state, and the owner needs to be told
+ * which half happened.
+ */
+export const createDeal = (venueId: string, draft: DealDraft): Promise<CreatedDeal> =>
+  call<CreatedDeal>(`/v1/partner/venues/${encodeURIComponent(venueId)}/deals`, {
+    method: 'POST',
+    body: draft,
+  });
+
+export const publishDeal = (dealId: string): Promise<CreatedDeal> =>
+  call<CreatedDeal>(`/v1/partner/deals/${encodeURIComponent(dealId)}/publish`, {
+    method: 'POST',
+  });

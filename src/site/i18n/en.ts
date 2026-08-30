@@ -136,7 +136,7 @@ export const en = {
       'Players',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
-    tabs: ['Services', 'Offers', 'People', 'Website'],
+    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages'],
 
     services: {
       title: 'Business services',
@@ -177,6 +177,25 @@ export const en = {
     note: 'This directory lives in this browser. There is no server behind it yet, so the console reads rather than edits — see auth/users.ts.',
 
     /* ── the fourth tab: the site itself, and the only one that asks a server ── */
+    /**
+     * The fifth tab, and the second one that asks a server. See
+     * `adminMessages.tsx` — it shares the Website tab's `Connect` panel and
+     * its `down` sentences, so nothing about being disconnected is written
+     * twice.
+     */
+    messages: {
+      title: 'What people wrote',
+      lede: 'Messages from the Contact page. Replying is your own mail app — the address is a link.',
+      filter: 'Filter by status',
+      all: 'All',
+      /* Index-aligned with `STATUSES` in `adminMessages.tsx`. */
+      statuses: ['New', 'Read', 'Done'],
+      empty: 'Nothing here.',
+      markRead: 'Mark read',
+      markDone: 'Mark done',
+      signedIn: 'Has an account',
+      wroteIn: 'Wrote in {language}',
+    },
     website: {
       title: 'The website',
       lede: 'Visitors, pages and activity, {from} to {to}.',
@@ -850,6 +869,8 @@ export const en = {
       logo: 'Logo',
       logoHelp: 'Square, at least 512 px.',
       logoChoose: 'Choose a file',
+      logoReplace: 'Replace',
+      logoRemove: 'Remove',
 
       country: 'Country',
       city: 'City',
@@ -1695,6 +1716,16 @@ export const en = {
         previewLimitNone: 'No claim limit',
         previewLimitClaims: 'Stops after {n} claims',
         previewLimitMoney: 'Stops once it has cost {amount}',
+        /* The six endings a press can have, now that it reaches a server. */
+        filing: 'Filing…',
+        published: 'Published. It is live in the app.',
+        saved: 'Saved as a draft. Publish it whenever you like.',
+        needsSession: 'This browser is not connected to the Paylez API, so there is nowhere to file it. Connect from the admin console first.',
+        filingOffline: 'We could not reach the server. Nothing was filed — try again in a minute.',
+        filingRefused: 'The server would not take it: {why}',
+        savedUnverified: 'Saved as a draft. It goes live once your venue is verified — we are on it.',
+        savedNotLive: 'Saved as a draft, but we lost the server before it went live. Publish it from Hot deals.',
+        savedNotLiveWhy: 'Saved as a draft. It did not go live: {why}',
       },
       campaign: {
         kicker: 'New loyalty campaign',
@@ -2970,10 +3001,13 @@ export const en = {
       emailPlaceholder: 'you@email.com',
       message: 'Message',
       messagePlaceholder: 'What happened, and what you expected instead.',
-      submit: 'Open in your mail app',
-      /* The honest bit. Do not soften this — see the block comment above. */
-      note: 'Nothing is stored on this page. The button opens your own mail app with the message already written and addressed; you press send.',
+      submit: 'Submit the message',
+      note: 'It goes straight to the Paylez team — no mail app, and nothing to press twice. We answer to the address you gave.',
       error: 'Fill in your name, your email address and a message.',
+      sending: 'Sending…',
+      sent: 'We have it. We answer to the address you gave.',
+      offline: 'We could not reach the server just now. Try again in a minute — nothing you typed has been lost.',
+      refused: 'That did not go through. Check the email address, and if you have written several times in the last hour, give it a few minutes.',
     },
 
     hours: {

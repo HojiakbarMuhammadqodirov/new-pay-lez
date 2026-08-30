@@ -12,6 +12,7 @@
  */
 import * as analytics from '../../domain/analytics.ts';
 import * as audit from '../../domain/audit.ts';
+import * as contact from '../../domain/contact.ts';
 import * as fraud from '../../domain/fraud.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as partners from '../../domain/partners.ts';
@@ -366,6 +367,52 @@ export const adminRoutes: Route[] = [
     pattern: '/v1/admin/activity',
     auth: 'admin',
     handler: (ctx) => ({ events: traffic.activity(ctx.db, qInt(ctx, 'limit', 100)) }),
+  },
+  {
+    /**
+     * The inbox: what people wrote on the website's Contact page.
+     *
+     * `counts` is returned beside the page rather than derived from it, because
+     * the number on a filter chip is a fact about the table and not about this
+     * page of it — see `domain/contact.ts`.
+     */
+    method: 'GET',
+    pattern: '/v1/admin/messages',
+    auth: 'admin',
+    handler: (ctx) => {
+      const status = qStr(ctx, 'status');
+      if (status !== undefined && !contact.isStatus(status)) {
+        throw new DomainError('validation_failed', 'unknown status');
+      }
+      return contact.list(ctx.db, { status, limit: qInt(ctx, 'limit', 100) });
+    },
+  },
+  {
+    /**
+     * The one write: where the operator has got to with a message.
+     *
+     * It is not a reply — there is no mail sender here and adding one to make
+     * this endpoint feel complete would be the wrong order to build it in. It
+     * records that somebody has read or finished with the row, which is what
+     * stops two operators answering the same person.
+     */
+    method: 'PATCH',
+    pattern: '/v1/admin/messages/:id',
+    auth: 'admin',
+    handler: (ctx) => {
+      const status = oneOf(ctx.body, 'status', contact.STATUSES);
+      const message = contact.setStatus(ctx.db, ctx.params.id, status, ctx.at);
+      audit.record(ctx.db, {
+        actorId: actor(ctx).user.id,
+        actorRole: 'admin',
+        action: 'contact.status',
+        entity: 'contact_message',
+        entityId: message.id,
+        after: status,
+        at: ctx.at,
+      });
+      return message;
+    },
   },
   {
     /**

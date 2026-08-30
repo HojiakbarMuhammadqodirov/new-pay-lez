@@ -26,6 +26,7 @@ import {
   type SpokenLanguage,
 } from './auth/business';
 import { navigate } from './router';
+import { LOGO_PX, toSquareDataUrl } from './imageFile';
 
 /**
  * The business listing form, and the two things beside it that make filling one
@@ -167,7 +168,12 @@ function AppPreview({ profile }: { profile: BusinessProfile }) {
       <span className="console-label">{preview.title}</span>
 
       <div className="phone" data-ink="on">
-        <div className="phone-cover">{preview.cover}</div>
+        {/* The mark, if there is one. The placeholder stays for the listing
+            that has not chosen one yet — an empty band says less than a band
+            that names what belongs in it. */}
+        <div className="phone-cover" data-has-logo={profile.logo ? 'true' : undefined}>
+          {profile.logo ? <img src={profile.logo} alt="" /> : preview.cover}
+        </div>
         <div className="phone-body">
           <b>{profile.name || preview.name}</b>
           <span className="phone-kind">
@@ -221,6 +227,31 @@ export function BusinessForm({ mode }: { mode: 'setup' | 'profile' }) {
   const text =
     (key: keyof BusinessProfile) => (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       set(key, event.target.value as never);
+
+  /**
+   * The logo, as a picture rather than as a filename.
+   *
+   * It used to store `file.name`, on the argument that there was nowhere to
+   * upload to and a base64 image in `localStorage` would eat the origin's
+   * quota. The first half was true and the second was answered the wrong way:
+   * the preview beside this form is the whole point of the form, and it showed
+   * the words "Cover photo" no matter what anybody chose. A listing whose owner
+   * cannot see their own mark on it is not a preview of anything.
+   *
+   * `LOGO_PX` is what makes the quota argument go away — 256² of JPEG is a few
+   * kilobytes, which is the same trade the profile photo already makes.
+   *
+   * The input is cleared first so that choosing the *same* file again still
+   * fires a change, which is what makes "pick, look, pick the same one after
+   * cropping it" work.
+   */
+  const pickLogo = async (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file) return;
+    const logo = await toSquareDataUrl(file, LOGO_PX);
+    if (logo) set('logo', logo);
+  };
 
   const categoryIndex = useMemo(
     () => BUSINESS_CATEGORIES.findIndex((c) => c.id === draft.category),
@@ -384,21 +415,30 @@ export function BusinessForm({ mode }: { mode: 'setup' | 'profile' }) {
             {/* `wraps={false}`: the child is a `<label>` of its own, and one
                 label may not contain another. */}
             <Field label={fields.logo} required help={fields.logoHelp} wraps={false}>
-              {/*
-                The filename, not the file. There is nowhere to upload to — this
-                build has no server — and stashing a data URL in the session
-                would put a base64 image into localStorage, which has about 5 MB
-                for the whole origin. The name is enough to know one was chosen.
-              */}
-              <label className="file-pick">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(event) => set('logo', event.target.files?.[0]?.name ?? '')}
-                />
-                <Icon name="card" size={15} />
-                <span>{draft.logo || fields.logoChoose}</span>
-              </label>
+              <div className="logo-pick">
+                {draft.logo && (
+                  <span className="logo-chip" aria-hidden>
+                    <img src={draft.logo} alt="" />
+                  </span>
+                )}
+                <label className="file-pick">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => void pickLogo(event.target)}
+                  />
+                  <Icon name="card" size={15} />
+                  {/* The label says "choose" until there is one and "replace"
+                      after, because the chip beside it is already the answer to
+                      "did that work" and the button's job is the next move. */}
+                  <span>{draft.logo ? fields.logoReplace : fields.logoChoose}</span>
+                </label>
+                {draft.logo && (
+                  <button type="button" className="link-btn" onClick={() => set('logo', '')}>
+                    {fields.logoRemove}
+                  </button>
+                )}
+              </div>
             </Field>
           </div>
         </fieldset>

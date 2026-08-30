@@ -1,11 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { MutableRefObject, ReactNode } from 'react';
 import { Icon } from './icons';
 import { useAuth } from './auth/context';
-import { useCopy, useCurrency, useMoney } from './i18n/context';
+import { useCopy, useCurrency, useLanguage, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PD_AUDIENCES } from './partnerMetrics';
-import { usePartnerPushQuota, usePartnerVenueId } from './api/partner';
+import {
+  createDeal,
+  publishDeal,
+  usePartnerPushQuota,
+  usePartnerVenueId,
+  type DealDraft,
+} from './api/partner';
+import { ApiError } from './api/client';
 import { FX } from './i18n/fx';
 import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
@@ -20,13 +27,30 @@ import type { DrawerKind } from './dashboardShell';
  * the validation line, the escape key and the slide-in are the same for both;
  * only the middle changes.
  *
- * **It writes nothing.** There is no server behind the dashboard, so publishing
- * raises the confirmation strip and says what would have happened — the same
- * rule `copy.dashboard.notWired` states on every other control here. What the
- * drawer *is* for is the shape of the decision: the prototype's real value is
- * that it shows an owner the cost, the reach and the phone preview of the thing
- * they are about to publish, before they publish it, and all three of those move
- * as the form is filled in.
+ * **The deal body writes.** Both of its buttons reach the server —
+ * `POST /v1/partner/venues/:id/deals` for the draft, and the publish endpoint
+ * after it for the one that goes live — so a deal created here is in the
+ * database and comes back on the Hot deals screen, which has always read from
+ * the API. Before this the buttons raised `copy.dashboard.notWired`, which was
+ * true and was also the whole complaint: an owner filled the panel in, pressed
+ * publish, and nothing existed afterwards.
+ *
+ * Two things about that are load-bearing.
+ *
+ * **The two buttons are two calls because they are two decisions.** A deal is
+ * created as a draft and published by a second request; collapsing them into
+ * one flag would hide the state that actually goes wrong, which is a deal that
+ * was created and then failed to go live. The owner is told which half
+ * happened.
+ *
+ * **The rest of the drawer still writes nothing, and still says so.** The push
+ * notification this panel schedules has no endpoint behind it here, so it
+ * raises the strip exactly as before. A panel where three controls write and
+ * one does not is only honest if the one that does not keeps saying so.
+ *
+ * What the drawer is *also* for has not changed: it shows an owner the cost,
+ * the reach and the phone preview of the thing they are about to publish,
+ * before they publish it, and all three move as the form is filled in.
  *
  * Two things about it are easy to undo by accident:
  *
@@ -80,17 +104,56 @@ function Block({ title, children }: { title: string; children: ReactNode }) {
 /* ─────────────────────────────────────────────────────────────── the deal ── */
 
 /** The dates the drawer opens on: the month the whole dashboard reports. */
+/**
+ * The category a deal is filed under, index-aligned with `copy.deal.kinds`.
+ *
+ * The server takes `category` as free text, so these are the words it will be
+ * grouped by later; they are English identifiers rather than the reader's
+ * labels for the same reason `CONTACT_TOPICS` is — a Polish owner and an
+ * English one filing the same kind of offer have to file it under one name.
+ */
+const DEAL_KINDS = ['percentage', 'free_item', 'money_off', 'extra_stamp'] as const;
+
+/**
+ * The audience options as the server's segments, index-aligned with
+ * `copy.deals.audiences`.
+ *
+ * `null` twice, for two different reasons: "Everyone" is the absence of a
+ * segment, and "Russian speakers" is a *language*, which the draft sends in
+ * `targetLanguages` instead. A language filed as a segment would be a targeting
+ * rule the server has no name for and would silently match nobody.
+ */
+const AUDIENCE_SEGMENTS: (string | null)[] = ['', 'newcomer', 'lapsed', 'new', null].map(
+  (value) => value || null,
+);
+
+/** `HH:MM` as minutes past midnight, which is what a deal window compares. */
+const minutesOf = (clock: string): number => {
+  const [h, m] = clock.split(':').map(Number);
+  return (h || 0) * 60 + (m || 0);
+};
+
 const DEFAULT_FROM = '2026-08-04';
 const DEFAULT_TO = '2026-09-01';
 
-function DealBody({ onValid }: { onValid: (problems: number) => void }) {
+function DealBody({
+  onValid,
+  submit,
+}: {
+  onValid: (problems: number) => void;
+  /* How the footer reaches the form. The buttons live on the frame — six places
+     open this drawer and all of them get the same footer — so the body hands
+     its filing function up the same way it hands up its validation count. */
+  submit: MutableRefObject<((publish: boolean) => Promise<void>) | null>;
+}) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.drawer.deal;
   const dealCopy = dashboard.deals;
   const currency = useCurrency();
   const money = useMoney();
   const { account } = useAuth();
-  const { toast } = useDashboard();
+  const { toast, closeDrawer } = useDashboard();
+  const [language] = useLanguage();
 
   const [title, setTitle] = useState('');
   const [desc, setDesc] = useState('');
@@ -142,6 +205,115 @@ function DealBody({ onValid }: { onValid: (problems: number) => void }) {
   const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : null;
   const quotaOut = quota !== null && quota.remaining === 0;
   const quotaUnknown = quota === null;
+
+  /*
+   * Filing the deal.
+   *
+   * The form's state and the endpoint's body are two different shapes, and the
+   * translation is stated here rather than inlined at the press so the two
+   * buttons cannot drift:
+   *
+   * - **Weekdays.** The checkboxes are Monday-first and so is the server
+   *   (`LocalTime.weekday`, 0 = Monday), so the indices go straight across. All
+   *   seven ticked is sent as *nothing*, because "every day" is the absence of
+   *   a day filter and a list of all seven would be a filter that has to be
+   *   re-checked on every claim for no reason.
+   * - **Hours.** Two clock faces become minutes past local midnight, which is
+   *   what a deal window is compared against.
+   * - **The audience.** Four of the five options are segments the server knows;
+   *   the fifth, "Russian speakers", is a *language* and goes in the language
+   *   list instead. A language is not a segment, and sending it as one would
+   *   file a targeting rule the server has no name for.
+   * - **The spend cap.** The well holds the **reader's** currency — that is the
+   *   rule for a money field being typed rather than shown — and the server
+   *   wants the *venue's* minor units. It goes back through the euro the whole
+   *   site stores amounts in, then out to złoty, which is the currency the
+   *   venues on this dashboard actually charge in.
+   */
+  const asDraft = (): DealDraft => ({
+    /* One language, and the one being written in. The panel has a single title
+       field, so claiming a translation exists for the other four would be the
+       lie the assistant's language tabs exist to avoid. */
+    copy: { [language]: { title: title.trim(), description: desc.trim() } },
+    discountText: badge.trim(),
+    category: DEAL_KINDS[kind],
+    validFrom: from,
+    validTo: to,
+    targetWeekdays: days.every(Boolean)
+      ? []
+      : days.flatMap((on, index) => (on ? [index] : [])),
+    targetFromMin: minutesOf(hourFrom),
+    targetToMin: minutesOf(hourTo),
+    targetLanguages: audience === 4 ? ['ru'] : [],
+    targetAudience: AUDIENCE_SEGMENTS[audience] ? [AUDIENCE_SEGMENTS[audience]!] : [],
+    ...(stop === 1 ? { capClaims: stopClaims } : {}),
+    ...(stop === 2
+      ? { capSpendMinor: Math.round((stopMoney / currency.rate) * FX.PLN.rate * 100) }
+      : {}),
+  });
+
+  submit.current = async (andPublish: boolean) => {
+    const venueId = quotaVenue.state.status === 'ready' ? quotaVenue.state.data : null;
+    if (venueId === null) {
+      /* No partner session on this device, so there is nowhere to file it.
+         Saying that is the whole point — the alternative is a press that
+         appears to work and leaves nothing behind, which is exactly what this
+         change exists to stop. */
+      toast(copy.needsSession);
+      return;
+    }
+
+    let created;
+    try {
+      created = await createDeal(venueId, asDraft());
+    } catch (cause) {
+      /* Named separately, because the two have different fixes: one is "try
+         again in a minute", the other is "the server looked at this and said
+         no", and only the second is worth reading the reason for. */
+      toast(
+        cause instanceof ApiError && cause.status === 0
+          ? copy.filingOffline
+          : fill(copy.filingRefused, {
+              why: cause instanceof Error ? cause.message : String(cause),
+            }),
+      );
+      return;
+    }
+
+    if (!andPublish) {
+      toast(copy.saved);
+      closeDrawer();
+      return;
+    }
+
+    try {
+      await publishDeal(created.id);
+      toast(copy.published);
+    } catch (cause) {
+      /*
+       * **The deal exists either way**, and this is the whole reason the two
+       * calls are not collapsed into one.
+       *
+       * The common failure here is not an error at all: a venue is unverified
+       * until an operator verifies it, and an unverified venue may hold drafts
+       * but may not put an offer in front of customers. Reporting that as
+       * "filing failed" would send an owner back to retype a deal that is
+       * already saved — so every ending on this path says the draft is there,
+       * and only the *reason* it is not live changes.
+       */
+      const why = cause instanceof ApiError ? cause.code : '';
+      toast(
+        why === 'not_verified'
+          ? copy.savedUnverified
+          : cause instanceof ApiError && cause.status === 0
+            ? copy.savedNotLive
+            : fill(copy.savedNotLiveWhy, {
+                why: cause instanceof Error ? cause.message : String(cause),
+              }),
+      );
+    }
+    closeDrawer();
+  };
 
   const dayNames = useCopy().dashboard.customers.days;
   const whenDays =
@@ -666,7 +838,31 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
   const copy = dashboard.drawer;
   const { closeDrawer, toast } = useDashboard();
   const [problems, setProblems] = useState(0);
+  const [filing, setFiling] = useState(false);
   const panel = useRef<HTMLElement>(null);
+  /* Set by `DealBody` during its render — see the prop's note there. Null while
+     the campaign body is mounted, which is what the `kind` check below is
+     reading rather than a second flag. */
+  const submit = useRef<((publish: boolean) => Promise<void>) | null>(null);
+
+  /* One press, whichever button. Locked while it is in flight: a second press
+     files a second deal, and the panel closes on success anyway. */
+  const press = async (publish: boolean) => {
+    if (filing) return;
+    if (kind !== 'deal' || !submit.current) {
+      /* The campaign body has no endpoint behind it and still says so — see the
+         note in the file header. */
+      toast(dashboard.notWired);
+      closeDrawer();
+      return;
+    }
+    setFiling(true);
+    try {
+      await submit.current(publish);
+    } finally {
+      setFiling(false);
+    }
+  };
 
   const body = kind === 'deal' ? copy.deal : copy.campaign;
 
@@ -706,7 +902,7 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
 
         <div className="pd-drawer-body">
           {kind === 'deal' ? (
-            <DealBody onValid={setProblems} />
+            <DealBody onValid={setProblems} submit={submit} />
           ) : (
             <CampaignBody onValid={setProblems} />
           )}
@@ -721,23 +917,18 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
             <button
               type="button"
               className="btn btn-ghost"
-              onClick={() => {
-                toast(dashboard.notWired);
-                closeDrawer();
-              }}
+              disabled={filing}
+              onClick={() => void press(false)}
             >
               {copy.later}
             </button>
             <button
               type="button"
               className="btn btn-solid"
-              disabled={problems > 0}
-              onClick={() => {
-                toast(dashboard.notWired);
-                closeDrawer();
-              }}
+              disabled={problems > 0 || filing}
+              onClick={() => void press(true)}
             >
-              {body.publish}
+              {filing ? copy.deal.filing : body.publish}
             </button>
           </div>
         </footer>

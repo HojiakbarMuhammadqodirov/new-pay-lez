@@ -116,7 +116,7 @@ export const pl: Dictionary = {
       'Konta',
       'Gracze',
     ],
-    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna'],
+    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości'],
 
     services: {
       title: 'Usługi biznesowe',
@@ -156,6 +156,18 @@ export const pl: Dictionary = {
     note: 'Ta baza kont jest w tej przeglądarce. Nie ma jeszcze serwera, więc konsola czyta, a nie edytuje — zobacz auth/users.ts.',
 
     /* ── czwarta zakładka: sama witryna, jedyna pytająca serwer ── */
+    messages: {
+      title: 'Co napisali ludzie',
+      lede: 'Wiadomości ze strony Kontakt. Odpowiadasz z własnego programu pocztowego — adres jest linkiem.',
+      filter: 'Filtruj po statusie',
+      all: 'Wszystkie',
+      statuses: ['Nowe', 'Przeczytane', 'Załatwione'],
+      empty: 'Nic tu nie ma.',
+      markRead: 'Oznacz jako przeczytane',
+      markDone: 'Oznacz jako załatwione',
+      signedIn: 'Ma konto',
+      wroteIn: 'Napisał(a) po {language}',
+    },
     website: {
       title: 'Witryna',
       lede: 'Odwiedzający, strony i aktywność, {from} – {to}.',
@@ -620,6 +632,8 @@ export const pl: Dictionary = {
       logo: 'Logo',
       logoHelp: 'Kwadratowe, co najmniej 512 px.',
       logoChoose: 'Wybierz plik',
+      logoReplace: 'Zmień',
+      logoRemove: 'Usuń',
 
       country: 'Kraj',
       city: 'Miasto',
@@ -1355,6 +1369,15 @@ export const pl: Dictionary = {
         previewLimitNone: 'Bez limitu odebrań',
         previewLimitClaims: 'Zatrzymuje się po {n} odebraniach',
         previewLimitMoney: 'Zatrzymuje się, gdy kosztuje {amount}',
+        filing: 'Zapisywanie…',
+        published: 'Opublikowano. Jest już w aplikacji.',
+        saved: 'Zapisano jako wersję roboczą. Opublikujesz, kiedy zechcesz.',
+        needsSession: 'Ta przeglądarka nie jest połączona z API Paylez, więc nie ma gdzie tego zapisać. Połącz się najpierw z konsoli administratora.',
+        filingOffline: 'Nie udało się połączyć z serwerem. Nic nie zapisano — spróbuj za minutę.',
+        filingRefused: 'Serwer tego nie przyjął: {why}',
+        savedUnverified: 'Zapisano jako wersję roboczą. Trafi do aplikacji, gdy Twój lokal zostanie zweryfikowany — zajmujemy się tym.',
+        savedNotLive: 'Zapisano jako wersję roboczą, ale straciliśmy połączenie przed publikacją. Opublikuj z listy Hot deals.',
+        savedNotLiveWhy: 'Zapisano jako wersję roboczą. Nie trafiło do aplikacji: {why}',
       },
       campaign: {
         kicker: 'Nowa kampania lojalnościowa',
@@ -2580,9 +2603,13 @@ export const pl: Dictionary = {
       emailPlaceholder: 'ty@email.com',
       message: 'Wiadomość',
       messagePlaceholder: 'Co się stało i czego się spodziewałeś.',
-      submit: 'Otwórz w programie pocztowym',
-      note: 'Nic nie jest zapisywane na tej stronie. Przycisk otwiera Twój własny program pocztowy z gotową, zaadresowaną wiadomością — wysyłasz ją Ty.',
+      submit: 'Wyślij wiadomość',
+      note: 'Trafia prosto do zespołu Paylez — bez aplikacji pocztowej i bez drugiego kliknięcia. Odpowiadamy na podany adres.',
       error: 'Podaj imię, adres e-mail i treść wiadomości.',
+      sending: 'Wysyłanie…',
+      sent: 'Mamy ją. Odpowiemy na podany adres.',
+      offline: 'Nie udało się połączyć z serwerem. Spróbuj za minutę — nic z tego, co napisałeś, nie zginęło.',
+      refused: 'Nie udało się wysłać. Sprawdź adres e-mail, a jeśli pisałeś już kilka razy w ciągu godziny, odczekaj chwilę.',
     },
 
     hours: {

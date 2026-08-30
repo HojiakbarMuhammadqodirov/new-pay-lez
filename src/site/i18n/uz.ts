@@ -111,7 +111,7 @@ export const uz: Dictionary = {
       'Hisoblar',
       'O‘yinchilar',
     ],
-    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt'],
+    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar'],
 
     services: {
       title: 'Biznes xizmatlari',
@@ -151,6 +151,18 @@ export const uz: Dictionary = {
     note: 'Bu hisoblar ro‘yxati shu brauzerda saqlanadi. Hali server yo‘q, shuning uchun konsol tahrirlamaydi, faqat o‘qiydi — auth/users.ts’ga qarang.',
 
     /* ── to‘rtinchi bo‘lim: saytning o‘zi, serverdan so‘raydigan yagonasi ── */
+    messages: {
+      title: 'Odamlar nima yozgan',
+      lede: 'Kontakt sahifasidan kelgan xabarlar. Javobni o‘z pochta ilovangizdan yozasiz — manzil havola.',
+      filter: 'Holat bo‘yicha filtr',
+      all: 'Hammasi',
+      statuses: ['Yangi', 'O‘qilgan', 'Bajarilgan'],
+      empty: 'Bu yerda hech narsa yo‘q.',
+      markRead: 'O‘qilgan deb belgilash',
+      markDone: 'Bajarilgan deb belgilash',
+      signedIn: 'Hisobi bor',
+      wroteIn: '{language} tilida yozgan',
+    },
     website: {
       title: 'Sayt',
       lede: 'Tashrifchilar, sahifalar va faollik, {from} – {to}.',
@@ -615,6 +627,8 @@ export const uz: Dictionary = {
       logo: 'Logotip',
       logoHelp: 'Kvadrat, kamida 512 px.',
       logoChoose: 'Fayl tanlash',
+      logoReplace: 'Almashtirish',
+      logoRemove: 'O‘chirish',
 
       country: 'Davlat',
       city: 'Shahar',
@@ -1351,6 +1365,15 @@ export const uz: Dictionary = {
         previewLimitNone: 'Olish chegarasi yo‘q',
         previewLimitClaims: '{n} ta olishdan keyin to‘xtaydi',
         previewLimitMoney: '{amount} ga yetganda to‘xtaydi',
+        filing: 'Saqlanmoqda…',
+        published: 'Chop etildi. Ilovada ko‘rinadi.',
+        saved: 'Qoralama sifatida saqlandi. Xohlagan paytda chop etasiz.',
+        needsSession: 'Bu brauzer Paylez API’siga ulanmagan, shuning uchun saqlash joyi yo‘q. Avval admin konsolidan ulaning.',
+        filingOffline: 'Serverga ulanib bo‘lmadi. Hech narsa saqlanmadi — bir daqiqadan so‘ng urinib ko‘ring.',
+        filingRefused: 'Server qabul qilmadi: {why}',
+        savedUnverified: 'Qoralama sifatida saqlandi. Joyingiz tasdiqlangach chop etiladi — biz shug‘ullanyapmiz.',
+        savedNotLive: 'Qoralama saqlandi, ammo chop etishdan oldin server bilan aloqa uzildi. Hot deals ro‘yxatidan chop eting.',
+        savedNotLiveWhy: 'Qoralama sifatida saqlandi. Chop etilmadi: {why}',
       },
       campaign: {
         kicker: 'Yangi sodiqlik kampaniyasi',
@@ -2580,9 +2603,13 @@ export const uz: Dictionary = {
       emailPlaceholder: 'siz@email.com',
       message: 'Xabar',
       messagePlaceholder: 'Nima bo‘ldi va nimani kutgan edingiz.',
-      submit: 'Pochta ilovasida ochish',
-      note: 'Bu sahifada hech narsa saqlanmaydi. Tugma sizning o‘z pochta ilovangizni tayyor va manzillangan xabar bilan ochadi — yuborishni siz bosasiz.',
+      submit: 'Xabarni yuborish',
+      note: 'To‘g‘ridan-to‘g‘ri Paylez jamoasiga boradi — pochta ilovasisiz va ikkinchi bosishsiz. Siz ko‘rsatgan manzilga javob beramiz.',
       error: 'Ismingizni, e-pochta manzilingizni va xabarni to‘ldiring.',
+      sending: 'Yuborilmoqda…',
+      sent: 'Qabul qilindi. Siz ko‘rsatgan manzilga javob beramiz.',
+      offline: 'Hozir serverga ulanib bo‘lmadi. Bir daqiqadan so‘ng urinib ko‘ring — yozganlaringiz yo‘qolmadi.',
+      refused: 'Yuborilmadi. E-pochta manzilini tekshiring, agar bir soat ichida bir necha marta yozgan bo‘lsangiz, biroz kuting.',
     },
 
     hours: {
