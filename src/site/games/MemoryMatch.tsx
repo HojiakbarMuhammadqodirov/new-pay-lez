@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { memoryPoints } from '../auth/player';
@@ -10,12 +10,20 @@ import { buildMemoryBoard, type MemoryCard } from './rounds';
  *
  * Twelve cards, six pairs, and the only round on the page with no countdown and
  * no way to lose. It is **timed**, which is not the same thing: `memoryPoints`
- * in `auth/player.ts` reads the elapsed seconds into one of four bands, and
- * none of that is on screen — nothing ticks, nothing ends, and the slowest band
- * still pays. The accessibility decision survives the change intact, because it
- * was never about being untimed: this is still the game a non-native reader or
- * an older player wins by being careful, and being careful is what being quick
- * at it *is*.
+ * in `auth/player.ts` reads the elapsed seconds into one of four bands.
+ * Nothing ends and the slowest band still pays, so the accessibility decision
+ * survives intact — it was never about being untimed: this is still the game a
+ * non-native reader or an older player wins by being careful, and being careful
+ * is what being quick at it *is*.
+ *
+ * **The clock is on screen, and it counts up.** It was hidden on the argument
+ * that a reading nobody is shown should not cost a re-render, which answered the
+ * wrong question: the elapsed time is the only input to what this round pays,
+ * and a player who cannot see it is being scored on something the screen refuses
+ * to tell them. A countdown would be the other mistake — it would put a deadline
+ * on a board that has none. What is drawn is a stopwatch: it never runs out, it
+ * just costs. `Stopwatch` below owns its own tick so the twelve cards do not
+ * re-render with it.
  *
  * What changed is that the round stopped paying a guaranteed 36 for six pairs
  * that cannot be lost — the richest round on the page for the least asked of
@@ -105,10 +113,13 @@ export function MemoryMatch({
   /*
    * When the first card was turned over.
    *
-   * **A ref, not state.** Nothing on screen reads it — there is no countdown and
-   * no fail state — so a clock through `useState` would re-render twelve cards
-   * several times a second for a number nobody is being shown, which is the one
-   * pattern the root `CLAUDE.md` rules out outright.
+   * **Still a ref, now that the clock is drawn.** This is the reading that
+   * *scores* — it is what `memoryPoints` is handed when the board clears — and it
+   * has to be exact and must not cause a render. The visible stopwatch reads the
+   * same ref through `Stopwatch`, which keeps its own tick to itself: one small
+   * component re-renders four times a second, and the twelve cards do not. That
+   * is the whole of the arrangement the root `CLAUDE.md` asks for, rather than
+   * the "no clock at all" it was mistaken for.
    *
    * Started by the first flip rather than on mount, because opening the tab is
    * not playing: somebody who opens the page and goes to answer the door has not
@@ -205,10 +216,15 @@ export function MemoryMatch({
       <div className="round-top">
         <span className="round-count">
           {fill(copy.memory.pairs, { found: String(found), total: String(pairs) })}
-        </span>
-        <span className="round-clock">
+          <span aria-hidden> · </span>
           {fill(copy.memory.moves, { n: String(moves) })}
         </span>
+        {/* The stopwatch takes the clock slot, which is where a quiz puts its
+            countdown — the same corner of the same header, because it answers
+            the same question about the same thing. The moves moved in beside
+            the pairs: they are a tally of what has happened and this is the
+            figure the round is priced on. */}
+        <Stopwatch from={startedAt} stopped={found >= pairs} />
       </div>
 
       {/* Four columns and a 3:4 card, which is the shape a playing card is; a
@@ -262,5 +278,52 @@ export function MemoryMatch({
         {copy.quit}
       </button>
     </div>
+  );
+}
+
+/**
+ * The elapsed clock, counting up.
+ *
+ * **Its own component so its own tick stays its own.** The board is twelve cards
+ * and a live word panel; re-rendering all of it four times a second to move two
+ * digits is exactly the pattern the root `CLAUDE.md` rules out. One small
+ * component reading a ref is not — nothing above it re-renders, and the cards
+ * are untouched between flips.
+ *
+ * Four times a second rather than once, because a stopwatch that ticks on its
+ * own schedule is visibly late: at a one-second interval the displayed second
+ * lags the real one by up to a full second, and this is a number a player is
+ * about to be scored on. It costs a comparison and a text node.
+ *
+ * It **stops** when the board is cleared rather than being unmounted, so the
+ * time that was actually paid for stays on screen through the result beat.
+ *
+ * `m:ss`, floored, which is how a stopwatch reads and is also how
+ * `MEMORY_BANDS` reads it: the bands are ceilings, so a 39.9-second board is a
+ * 39-second board and must not be shown as 40.
+ */
+function Stopwatch({
+  from,
+  stopped,
+}: {
+  /** When the first card turned; `null` until one does. */
+  from: RefObject<number | null>;
+  stopped: boolean;
+}) {
+  const [, tick] = useState(0);
+
+  useEffect(() => {
+    if (stopped) return;
+    const id = window.setInterval(() => tick((n) => n + 1), 250);
+    return () => window.clearInterval(id);
+  }, [stopped]);
+
+  const seconds =
+    from.current === null ? 0 : Math.floor((Date.now() - from.current) / 1000);
+
+  return (
+    <span className="round-clock mm-watch" role="timer">
+      {Math.floor(seconds / 60)}:{String(seconds % 60).padStart(2, '0')}
+    </span>
   );
 }

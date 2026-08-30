@@ -185,13 +185,20 @@ function Squawk() {
  * `--gap` is where the hole is, and the two differ by less than
  * `FLIGHT.pipe.maxStep` allows, so the pair is a course the generator could
  * actually have dealt.
+ *
+ * **The two heights and the bird's bob are one arrangement, not two.** A column
+ * reaches him about three quarters of the way through its travel, and the second
+ * is half a cycle ahead of the first, so he meets one of them at each end of his
+ * bob — which is why the sheet times `pv-bob` to the *column* cycle rather than
+ * to a rhythm of its own. Get that wrong and the preview shows him flying
+ * through a wall, which is the one thing the real game will not let you do.
  */
 function FlightPreview() {
   return (
     <span className="pv-sky">
       {[
-        { p: 0, gap: 52 },
-        { p: 1, gap: 34 },
+        { p: 0, gap: 40 },
+        { p: 1, gap: 60 },
       ].map((column) => (
         <span
           className="pv-col"

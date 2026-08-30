@@ -158,35 +158,53 @@ function chargeOf(nextAt: number, now: number): { span: number; into: number; at
 }
 
 /**
- * "in 3 hours", in the reader's own language.
+ * "3h 12m", or "45m" under the hour, in the reader's own language.
  *
  * A tank that fills on a clock has to say when, or it is a wait with no end on
  * it — which is the one way an energy system reads as broken rather than as a
- * cost. The pips say how many; this says how long. It matters more now that
- * every round spends one: an empty tank is a state every player reaches, not
- * only the one losing.
+ * cost. The battery says how many; this says how long.
  *
- * The words come from `Intl` rather than from a dictionary key, and this is the
- * one place in the site where that is the *better* owner. A duration belongs to
- * the reader's language — five dictionaries would each have to carry a
- * singular, a plural and, in Russian and Ukrainian, the third form the numbers
- * ending 2, 3 and 4 take, and the platform already knows all of them. Compare
- * `fx.ts`, which refuses `Intl.NumberFormat` for money on the opposite ground:
- * a currency's symbol placement belongs to the *currency*, not to whoever is
- * reading it.
+ * The words come from `Intl` rather than from a dictionary key, and this is one
+ * of two places in the site where that is the *better* owner (the other is the
+ * weekday letters on the streak row). A duration belongs to the reader's
+ * language — five dictionaries would each have to carry a singular, a plural
+ * and, in Russian and Ukrainian, the third form the numbers ending 2, 3 and 4
+ * take, and the platform already knows all of them. Compare `fx.ts`, which
+ * refuses `Intl.NumberFormat` for money on the opposite ground: a currency's
+ * symbol placement belongs to the *currency*, not to whoever is reading it.
  *
- * One unit, never two. "in 3 hours 12 minutes" is a stopwatch; what a player
- * wants off this line is whether to wait or to go and do something else.
+ * **Two units now, not one.** The rule written here used to be the opposite —
+ * one unit, on the grounds that "in 3 hours 12 minutes" is a stopwatch and what
+ * a player wants is whether to wait or go and do something else. That was right
+ * about a sentence under the gauge and wrong about a figure beside the count,
+ * which is where this reads now: somebody looking at it has already decided to
+ * wait and is asking how long, and "in 3 hours" leaves them checking back at a
+ * quarter past. Under the hour there is only ever one unit anyway.
+ *
+ * `unitDisplay: 'narrow'` is what keeps it to a chip — "3h" in English, "3 ч"
+ * in Russian — rather than the "3 hours" `RelativeTimeFormat` was giving. The
+ * cost is that the platform no longer supplies the "in", so the frame around
+ * this is a dictionary string (`energyNext`) and only the frame.
  */
 function untilNextEnergy(at: number, now: number, language: LanguageCode): string {
-  const rtf = new Intl.RelativeTimeFormat(language, { numeric: 'always' });
-  /* Never "in 0 minutes": energy forty seconds away is still a minute away to a
-     line that counts in minutes, and rounding it to nothing would show the wait
-     as over while the button is still disabled. */
+  const unit = (value: number, which: 'hour' | 'minute') =>
+    new Intl.NumberFormat(language, {
+      style: 'unit',
+      unit: which,
+      unitDisplay: 'narrow',
+    }).format(value);
+
+  /* Never "0m": energy forty seconds away is still a minute away to a line that
+     counts in minutes, and rounding it to nothing would show the wait as over
+     while the button is still disabled. */
   const minutes = Math.max(1, Math.ceil((at - now) / 60_000));
-  return minutes >= 60
-    ? rtf.format(Math.round(minutes / 60), 'hour')
-    : rtf.format(minutes, 'minute');
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+
+  if (hours === 0) return unit(minutes, 'minute');
+  /* An exact hour drops the zero rather than printing "3h 0m", which is a
+     stopwatch reading a clock face. */
+  return rest === 0 ? unit(hours, 'hour') : `${unit(hours, 'hour')} ${unit(rest, 'minute')}`;
 }
 
 /*
@@ -289,6 +307,112 @@ function PlayCard({
         </span>
       </span>
     </button>
+  );
+}
+
+/* ────────────────────────────────────────────────────────── the lightning ── */
+
+/**
+ * The arcs a full battery throws off itself.
+ *
+ * **Drawn, not stamped.** These were a clip-path bolt glyph — one shape,
+ * repeated, popping in and out — which read as a row of little icons rather than
+ * as electricity. Lightning is a *line*: it is thin, it is kinked, it forks, and
+ * it arrives all at once rather than growing. So each of these is a real
+ * polyline stroked in the accent, and what animates is `stroke-dashoffset` — the
+ * bolt is *drawn* from its root to its tip in about a twentieth of a second,
+ * flickers, and is gone. That is the whole difference, and it is entirely in the
+ * fact that a stroke can be dashed and a filled shape cannot.
+ *
+ * Twelve of them, spread along both long edges and one at each end, each
+ * rotated to fire **outward** from
+ * the point it is attached to: `transform-origin: 50% 0` puts the pivot at the
+ * root, so a bolt authored pointing down swings to point up, left or right
+ * without moving its attachment. The small per-bolt `--tilt` on top of that is
+ * what keeps twelve of them from looking like twelve copies of one.
+ *
+ * **Spontaneity is co-prime durations, not randomness.** Every bolt has its own
+ * cycle length — 1.7s against 2.9s against 3.3s — so the set does not come back
+ * into phase for well over a minute, and no two ever strike on the same beat
+ * twice running. `Math.random` would do the same thing and would deal a new
+ * pattern on every render of a panel that re-renders once a minute; a table of
+ * awkward numbers does it once, at build time, for nothing.
+ *
+ * It runs only while the tank is **full** (`[data-full]` in the sheet), which is
+ * exactly when the spark that crosses the case is not: charge going in is a
+ * bolt travelling *through* the battery, and charge held is a battery shedding
+ * it. Nothing on this panel does both at once.
+ */
+
+/**
+ * Four bolts, in a 20 × 34 box, rooted at the top edge and striking downward.
+ *
+ * Two of them fork, because a bolt that never branches is a zigzag. The numbers
+ * are drawn by hand rather than generated: a generator with jitter produces
+ * shapes that are *different* rather than shapes that are *good*, and there are
+ * only four of them.
+ */
+const ZAPS = [
+  'M10 0 5 12 11 13 4 34M8 19 14 25',
+  'M10 0 15 11 9 14 13 34',
+  'M10 0 4 10 10 15 6 34M9 22 3 28',
+  'M10 0 14 13 8 16 12 33',
+] as const;
+
+/**
+ * Where each one is rooted and which way it fires.
+ *
+ * `turn` is the outward direction — 180° along the top edge, 0° along the
+ * bottom, ±90° at the ends — and `tilt` is the few degrees off it that stop the
+ * row looking stamped. `beat` is that bolt's own cycle in seconds and `in` is
+ * how far into it the panel starts.
+ */
+const ZAP_POINTS: ReadonlyArray<{
+  x: string;
+  y: string;
+  turn: number;
+  tilt: number;
+  beat: number;
+  in: number;
+}> = [
+  { x: '9%', y: '0%', turn: 180, tilt: -16, beat: 1.7, in: 0 },
+  { x: '28%', y: '0%', turn: 180, tilt: 7, beat: 2.9, in: 1.1 },
+  { x: '47%', y: '0%', turn: 180, tilt: -6, beat: 2.3, in: 1.9 },
+  { x: '66%', y: '0%', turn: 180, tilt: 15, beat: 3.1, in: 0.4 },
+  { x: '86%', y: '0%', turn: 180, tilt: -11, beat: 2.1, in: 1.5 },
+  { x: '100%', y: '50%', turn: -90, tilt: -13, beat: 2.6, in: 0.7 },
+  { x: '88%', y: '100%', turn: 0, tilt: 12, beat: 1.9, in: 1.3 },
+  { x: '69%', y: '100%', turn: 0, tilt: -8, beat: 3.3, in: 2.2 },
+  { x: '50%', y: '100%', turn: 0, tilt: 14, beat: 2.4, in: 0.2 },
+  { x: '31%', y: '100%', turn: 0, tilt: -15, beat: 2.8, in: 1.7 },
+  { x: '12%', y: '100%', turn: 0, tilt: 9, beat: 1.8, in: 0.9 },
+  { x: '0%', y: '50%', turn: 90, tilt: 11, beat: 3.0, in: 2.5 },
+];
+
+function BatteryLightning() {
+  return (
+    <>
+      {ZAP_POINTS.map((zap, i) => (
+        <svg
+          key={i}
+          className="play-zap"
+          viewBox="0 0 20 34"
+          aria-hidden
+          focusable="false"
+          style={
+            {
+              left: zap.x,
+              top: zap.y,
+              '--turn': `${zap.turn + zap.tilt}deg`,
+              '--beat': `${zap.beat}s`,
+              '--in': `-${zap.in}s`,
+            } as CSSProperties
+          }
+        >
+          <path d={ZAPS[i % ZAPS.length]} />
+        </svg>
+      ))}
+    </>
   );
 }
 
@@ -1086,6 +1210,7 @@ export function GamesApp() {
               className="play-energy"
               data-empty={energy === 0 ? 'true' : undefined}
               data-charging={nextEnergyAt === null ? undefined : 'true'}
+              data-full={nextEnergyAt === null ? 'true' : undefined}
               data-reveal
             >
               <span className="play-energy-glow" aria-hidden />
@@ -1096,9 +1221,21 @@ export function GamesApp() {
                 {games.energy}
               </span>
 
+              {/* The count, and beside it the wait. Beside rather than under,
+                  because "2 of 4" and "the third lands in 3h 12m" are one
+                  reading and a player takes them in one glance — the sentence
+                  that used to sit under the battery was the same fact a line
+                  away from the figure it belongs to. */}
               <p className="play-energy-count">
                 <b>{energy}</b>
                 <span aria-hidden>/{MAX_ENERGY}</span>
+                {nextEnergyAt !== null && (
+                  <em className="play-energy-next">
+                    {fill(games.energyNext, {
+                      time: untilNextEnergy(nextEnergyAt, Date.now(), language),
+                    })}
+                  </em>
+                )}
               </p>
 
               <div
@@ -1130,15 +1267,20 @@ export function GamesApp() {
                       </span>
                     );
                   })}
-                  {/* The spark over the case. Decorative, and the only thing on
-                      this panel that is: it is what makes four blocks in a box
-                      read as *charge* rather than as a progress bar lying on its
-                      side. Two of them, offset, so the loop does not read as one
-                      thing blinking. */}
+                  {/* The spark crossing the case while it charges. Decorative,
+                      and the only thing on this panel that is: it is what makes
+                      four blocks in a box read as *charge* rather than as a
+                      progress bar lying on its side. Two of them, offset, so the
+                      loop does not read as one thing blinking. */}
                   <i className="play-battery-bolt" aria-hidden />
                   <i className="play-battery-bolt" aria-hidden />
                 </span>
                 <span className="play-battery-tip" aria-hidden />
+
+                {/* And the other state — see `BatteryLightning` above. A full
+                    tank has nothing crossing it, so it sheds arcs off every edge
+                    instead. */}
+                <BatteryLightning />
               </div>
 
               {/* An empty tank says so in words before it says when. The
@@ -1146,11 +1288,12 @@ export function GamesApp() {
                   refused a round has not asked yet. */}
               {energy === 0 && <p className="play-energy-out">{games.noEnergy}</p>}
 
-              <p className="play-energy-line">
-                {nextEnergyAt === null
-                  ? games.energyFull
-                  : `+1 ${untilNextEnergy(nextEnergyAt, Date.now(), language)}`}
-              </p>
+              {/* Only the full state says anything here now. The countdown moved
+                  up beside the count, and printing it twice would be the same
+                  figure in two registers a centimetre apart. */}
+              {nextEnergyAt === null && (
+                <p className="play-energy-line">{games.energyFull}</p>
+              )}
               <p className="play-energy-cost">{games.energyCost}</p>
             </section>
           </div>

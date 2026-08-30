@@ -11616,6 +11616,40 @@ button {
   color: var(--text-fnt);
 }
 
+/*
+ * The wait, beside the count.
+ *
+ * `margin-left: auto` pushes it to the far end of the row, so the figure and the
+ * countdown sit at opposite edges and read as two things rather than as one long
+ * number. It shrinks rather than wraps — Uzbek's narrow units are `soat` and
+ * `daq.`, which makes the longest form here nearly twice the English — because a
+ * chip that wrapped would push the battery down and change the height of a panel
+ * matched to the one beside it.
+ *
+ * **No border and no sheet.** It was a pill, and a pill is what you draw round a
+ * thing that needs separating from what is beside it — this needs the opposite.
+ * It is the same reading as the figure it sits next to, one of two halves of
+ * "two rounds, and a third in three and a half hours", and boxing it made it
+ * look like a status tag pinned to the panel. The size does the separating
+ * instead: big enough to be read at a glance from the count's own line, and
+ * still visibly the smaller of the two.
+ */
+.play-energy-next {
+  margin-left: auto;
+  min-width: 0;
+  color: var(--accent-ink);
+  font-family: var(--font-display);
+  font-style: normal;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+
 /* An empty tank is not a celebration. Same figure, same place, no accent —
    the one honest way to say bad news in a palette with a single hue, and the
    rule `.result-gain[data-zero]` already follows two hundred lines down. */
@@ -11808,6 +11842,125 @@ button {
   }
 }
 
+/*
+ * ── a full tank ──
+ *
+ * Arcs thrown off every edge of the case, drawn as **strokes** rather than
+ * stamped as shapes. The markup is `BatteryLightning` in `games.tsx`, whose
+ * comment carries the reasoning; this is what makes each one strike.
+ *
+ * A bolt is a polyline with its whole length as one dash, offset out of sight.
+ * Pulling the offset to zero *draws* it, root to tip, and it is over in about a
+ * twentieth of a second — which is what lightning actually does and what the
+ * clip-path glyph this replaced could not do at all: a filled shape can only
+ * appear, and appearing is what an icon does.
+ *
+ * They hang off `.play-battery` rather than the case, because the case clips its
+ * contents so the charging bolt cannot escape it, and these are entirely outside
+ * it.
+ */
+.play-zap {
+  position: absolute;
+  width: 0.9rem;
+  height: 1.6rem;
+  /* Half the width, so the root sits *on* the edge point rather than beside it.
+     The pivot is the root too — see `transform-origin` — which is what lets one
+     shape fire up, down, left or right without being redrawn. */
+  margin-left: -0.45rem;
+  overflow: visible;
+  opacity: 0;
+  transform-origin: 50% 0;
+  transform: rotate(var(--turn));
+  pointer-events: none;
+}
+
+.play-zap path {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* One dash longer than any path in `ZAPS`, so the whole bolt is inside it and
+     the offset can hide all of it. */
+  stroke-dasharray: 64;
+  stroke-dashoffset: 64;
+}
+
+/*
+ * Only while it is full, and each on its own clock.
+ *
+ * `--beat` is that bolt's cycle and `--in` is a negative delay, so the panel does
+ * not open with eight bolts waiting to fire in unison — it opens partway through
+ * eight different cycles, which is the whole of what makes it look spontaneous.
+ */
+.play-energy[data-full='true'] .play-zap {
+  animation: play-arc var(--beat) linear var(--in) infinite;
+}
+
+.play-energy[data-full='true'] .play-zap path {
+  animation: play-draw var(--beat) linear var(--in) infinite;
+}
+
+/* The glow is on the group and the draw is on the path, because a filter on an
+   animating stroke re-rasterises it every frame. */
+/*
+ * The flicker, and how much of the cycle it fills.
+ *
+ * A third, which is what puts four or five of the twelve alight at any moment.
+ * It was a fifth, and eight bolts at a fifth is one and a half — technically a
+ * storm, visibly a blinking dot. The strike itself is still instant; what got
+ * longer is the guttering afterwards, which is the part that reads as
+ * electricity rather than as a light being switched.
+ */
+@keyframes play-arc {
+  0% {
+    opacity: 0;
+    filter: none;
+  }
+  1% {
+    opacity: 1;
+    filter: drop-shadow(0 0 6px rgba(var(--glow-rgb), calc(1.3 * var(--glow-k))));
+  }
+  6% {
+    opacity: 0.3;
+  }
+  9% {
+    opacity: 1;
+  }
+  15% {
+    opacity: 0.45;
+  }
+  18% {
+    opacity: 1;
+  }
+  24% {
+    opacity: 0.6;
+  }
+  27% {
+    opacity: 0.95;
+  }
+  34% {
+    opacity: 0;
+    filter: drop-shadow(0 0 6px rgba(var(--glow-rgb), calc(1.3 * var(--glow-k))));
+  }
+  100% {
+    opacity: 0;
+    filter: none;
+  }
+}
+
+/* Root to tip in the first two percent of the cycle. `steps` on the tail so the
+   bolt does not creep back out of sight while it is fading. */
+@keyframes play-draw {
+  0% {
+    stroke-dashoffset: 64;
+  }
+  2%,
+  100% {
+    stroke-dashoffset: 0;
+  }
+}
+
 /* Frozen at the fraction it is actually at, not hidden: the reading is the
    point and only its motion is motion. The spark is pure motion, so it goes. */
 @media (prefers-reduced-motion: reduce) {
@@ -11818,6 +11971,15 @@ button {
 
   .play-energy[data-charging='true'] .play-battery-bolt {
     animation: none;
+  }
+
+  /* The arcs are pure motion — there is no reading in them that the count and
+     the four filled blocks are not already giving — so they go entirely rather
+     than being held on a frame. A bolt frozen mid-strike is a scratch on the
+     panel. */
+  .play-zap {
+    animation: none;
+    display: none;
   }
 }
 
@@ -13339,6 +13501,24 @@ button {
   /* Linear, and matched to the tick: an eased countdown lies about how long is
      left. */
   transition: width 120ms linear;
+}
+
+/*
+ * The stopwatch on the memory board.
+ *
+ * It counts **up** and it never runs out, which is the whole difference between
+ * it and the quiz clock it shares a slot with: that one is a deadline, this one
+ * is a price. Tabular figures because it is a clock and the seconds column must
+ * not shuffle the minutes along every time it passes a 1.
+ *
+ * It is not tinted and it does not warn. `MEMORY_BANDS` steps down at 40, 70
+ * and 110 seconds, and marking those on the face would turn a board with no fail
+ * state into one with three — the game is still won by being careful, and being
+ * careful is what being quick at it is.
+ */
+.mm-watch {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
 }
 
 /* The mistakes left in this round. Same spent treatment as the freezes on the
