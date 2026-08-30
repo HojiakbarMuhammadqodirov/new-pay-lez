@@ -212,8 +212,10 @@ export const LEDGER_REASONS = [
  * 2 → 3 retired contact verification — a column drop — and backfilled the
  * birthday's edit counter, which is a rewrite of existing rows. Neither is
  * additive, so neither can be an `addColumn`.
+ * 3 → 4 retired the free-text `headline` in favour of the chosen `occupation`
+ * beside it. Another drop.
  */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 const schemaVersion = (db: Db): number => {
   const row = db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
@@ -400,6 +402,66 @@ function retireContactVerification(db: Db): void {
 }
 
 /**
+ * Version 4: the free-text line about yourself becomes a chosen status.
+ *
+ * `headline` held whatever somebody typed; `occupation` — added by the
+ * `addColumn` above — holds one of five values the picker offers. The product
+ * decided the second replaces the first, so the column goes rather than sitting
+ * there written by nothing: a column nobody writes and nobody reads is a column
+ * the next reader has to work out the status of, which is the same argument the
+ * version-3 migration makes for `phone_verified`.
+ *
+ * **A drop is data loss, so it is counted out loud rather than performed
+ * quietly.** Row counts are asserted identical the way both migrations above do
+ * theirs — that is the invariant that actually matters, and a rewrite that
+ * cannot show it kept every row is not one worth running against production.
+ * But rows are not the only thing a `DROP COLUMN` can lose, so the non-empty
+ * headlines are counted first and reported. It is a warning and not a refusal
+ * on purpose: a server that will not boot because one person wrote "hi about
+ * me" is a worse outcome than losing "hi about me", and there is nowhere honest
+ * to put a sentence in a five-value picker. What must not happen is losing them
+ * *silently*.
+ *
+ * Guarded the way the other two are — on the stored version *and* on what is
+ * actually in the file, so a database created fresh from `schema.sql` (which no
+ * longer declares the column) does nothing at all. `ALTER TABLE … DROP COLUMN`
+ * is available here for the same reason it was for `phone_verified`: the column
+ * is in no index, no CHECK, no view and no foreign key, which are the four
+ * things SQLite refuses a drop for.
+ */
+function retireTheHeadline(db: Db): void {
+  if (schemaVersion(db) >= 4) return;
+  if (!db.get(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`)) return;
+  const columns = db.all<{ name: string }>(`PRAGMA table_info(users)`).map((row) => row.name);
+  if (!columns.includes('headline')) return;
+
+  const written =
+    db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM users WHERE headline IS NOT NULL AND TRIM(headline) <> ''`,
+    )?.n ?? 0;
+  if (written > 0) {
+    console.warn(
+      `migration 4: dropping users.headline discards ${written} written line(s) — ` +
+        'the product replaced it with the chosen `occupation`, and a sentence has ' +
+        'nowhere to go in a five-value picker.',
+    );
+  }
+
+  db.tx(() => {
+    const before = userCount(db);
+    db.exec('ALTER TABLE users DROP COLUMN headline');
+    const after = userCount(db);
+    if (after !== before) {
+      throw new Error(`headline migration lost rows: users ${before} → ${after}`);
+    }
+    const orphans = db.all(`PRAGMA foreign_key_check`);
+    if (orphans.length > 0) {
+      throw new Error(`headline migration left ${orphans.length} broken references`);
+    }
+  });
+}
+
+/**
  * The SQL constraint and `LEDGER_REASONS` must be the same set, both ways.
  *
  * On every boot rather than in the test suite, because what it catches is a
@@ -439,7 +501,14 @@ export function migrate(db: Db): void {
   addColumn(db, 'users', 'birth_date', 'TEXT');
   addColumn(db, 'users', 'birth_date_set_at', 'TEXT');
   addColumn(db, 'users', 'birth_date_changes', 'INTEGER NOT NULL DEFAULT 0');
-  addColumn(db, 'users', 'headline', 'TEXT');
+  /* One of `OCCUPATIONS` in `domain/accounts.ts`, and nullable because "has not
+     said" is the state every account starts in. No CHECK: see the column's own
+     note in `schema.sql` for why a vocabulary that is a product decision does
+     not get one on the busiest table in the schema. The free-text `headline`
+     this replaced is dropped by the version-4 migration below — and the
+     `addColumn` for it had to go with it, or every boot would re-add the column
+     the migration had just removed. */
+  addColumn(db, 'users', 'occupation', 'TEXT');
   addColumn(db, 'users', 'onboarded_at', 'TEXT');
   /* The once-only guard on `CONFIG.earn.profileComplete`, claimed by an
      `UPDATE … WHERE profile_completed_at IS NULL` the way `onboarded_at` is. */
@@ -467,6 +536,7 @@ export function migrate(db: Db): void {
   widenLedgerReasons(db);
   assertLedgerReasons(db);
   retireContactVerification(db);
+  retireTheHeadline(db);
 
   db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)

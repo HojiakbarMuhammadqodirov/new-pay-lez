@@ -45,7 +45,8 @@ import {
   checkBirthDate,
   checkUsername,
   findUser,
-  HEADLINE_MAX,
+  OCCUPATIONS,
+  isOccupation,
   isPhone,
   MIN_PASSWORD,
   newUser,
@@ -951,7 +952,7 @@ console.log('\nthe profile');
   check('a blank profile with an address reads 14%', profilePercent(blank, 'a@b.c') === 14);
 
   const full = {
-    username: 'kasia', headline: 'hi', city: 'Krakow', countryCode: 'PL',
+    username: 'kasia', occupation: 'student' as const, city: 'Krakow', countryCode: 'PL',
     phone: '+48 600 000 000', birthDate: '1998-03-14', birthDateChangesLeft: 1,
     avatar: 'data:image/jpeg;base64,x',
   };
@@ -964,11 +965,25 @@ console.log('\nthe profile');
     profilePercent({ ...full, phone: '' }, 'a@b.c') === 85,
   );
 
+  /*
+   * Status is a closed set, and the set is the server's.
+   *
+   * There is no validator to test here — that is the point of the change. The
+   * free line this replaced needed a length rule and a refusal path; five
+   * literals need neither, because the only value that can arrive is one the
+   * type system already allows. What *can* still drift is the set itself, in
+   * either of two directions: a value renamed on the server and not here, or a
+   * sixth added to the menu that `PATCH /v1/me` will refuse. So the list is
+   * checked verbatim, in order, and `other` is checked to be last because that
+   * is where a catch-all belongs in the menu the array renders.
+   */
   check(
-    'a headline is a line, not a paragraph',
-    HEADLINE_MAX === 140,
-    `${HEADLINE_MAX} characters`,
+    'status is the five values the server stores',
+    OCCUPATIONS.join(',') === 'student,worker,business,freelancer,other',
+    OCCUPATIONS.join(', '),
   );
+  check('…and a stored value outside them is not one', !isOccupation('headline'));
+  check('…while each of the five is', OCCUPATIONS.every(isOccupation));
 
   /* The seeded player is furnished for the same reason her wallet is, and she
      is the account somebody signs in as to look at these screens. */

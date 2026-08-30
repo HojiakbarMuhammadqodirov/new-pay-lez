@@ -2566,21 +2566,41 @@ export const pl: Dictionary = {
       taken: 'Ta nazwa jest zajęta.',
     },
 
-    headline: 'Linijka o Tobie',
-    headlineHelp: 'Jedna linijka, nie akapit. Zostało {n} znaków.',
-    headlinePlaceholder: 'Kawa przelewowa, flagi i karta pieczątek, której nie zamierzam zgubić.',
-    headlineLong: 'Linijka o Tobie ma najwyżej {max} znaków.',
+    status: 'Status',
+    statusHelp: 'Mniej więcej to, czym się zajmujesz. Po tym lokal wie, kto u niego siedzi.',
+    statusChoose: 'Wybierz jedno',
+    statusMenu: 'Status',
+    occupations: {
+      student: 'Uczeń lub student',
+      worker: 'Pracownik',
+      business: 'Właściciel firmy',
+      freelancer: 'Freelancer',
+      other: 'Inne',
+    },
 
     city: 'Miasto',
-    cityChoose: 'Wybierz swoje miasto',
-    cityHelp: 'Paylez działa w Polsce, Niemczech i Uzbekistanie. Kraj wynika z miasta.',
+    cityPlaceholder: 'Zacznij pisać nazwę miasta',
+    cityHelp:
+      'Zacznij pisać i wybierz z listy — Paylez zna {n} miast w Polsce, Niemczech i Uzbekistanie. Jeśli Twojego nie ma, zaznacz to i wpisz je samodzielnie.',
+    cityMenu: 'Pasujące miasta',
+    cityOther: 'Mojego miasta nie ma na liście',
+    cityOtherHelp: 'Wpisz miasto tak, jak je nazywasz, i kraj razem z nim.',
+    cityNoMatch:
+      'Nic nie pasuje — zaznacz „Mojego miasta nie ma na liście” i wpisz je samodzielnie.',
+    cityNeeded:
+      'Wybierz miasto z listy albo zaznacz „Mojego miasta nie ma na liście” i dopisz kraj.',
     cityLoading: 'Wczytujemy listę miast…',
-    cityDown: 'Chwilowo niedostępne.',
+    cityDown: 'Podpowiedzi są niedostępne — wpisz miasto i jego kraj.',
     cityOffline:
-      'Lista miast pochodzi z backendu Paylez, a on nie odpowiada. Nic innego na tej stronie jej nie potrzebuje — zapisz resztę, a miasto wybierz, gdy wróci.',
+      'Lista miast pochodzi z backendu Paylez, a on nie odpowiada. Miasto i kraj możesz wpisać samodzielnie; podpowiedzi wrócą razem z nim.',
     cityRetry: 'Spróbuj ponownie',
-    cityKept: 'Zostaje bez zmian, dopóki nie wybierzesz z listy.',
     country: 'Kraj',
+    countryPlaceholder: 'Polska',
+    countryHelp:
+      'Pytamy tylko dlatego, że Twojego miasta nie ma na naszej liście. Nazwa albo dwuliterowy kod.',
+    countryUnchecked:
+      'Pytamy, bo nie możemy sięgnąć do listy miast, żeby sprawdzić Twoje. Nazwa albo dwuliterowy kod.',
+    countryNeeded: 'Miasto, którego nie znamy, potrzebuje kraju obok siebie.',
     countries: { PL: 'Polska', DE: 'Niemcy', UZ: 'Uzbekistan' },
 
     phone: 'Telefon',
@@ -2610,7 +2630,7 @@ export const pl: Dictionary = {
 
     cardTitle: 'Co widzą inni',
     cardNoName: 'Jeszcze bez nazwy',
-    cardNoLine: 'Jeszcze bez opisu.',
+    cardNoRole: 'Statusu jeszcze nie ma',
     cardNowhere: 'Jeszcze bez miasta',
 
     meterTitle: 'Profil',
@@ -2620,7 +2640,7 @@ export const pl: Dictionary = {
     fieldNames: {
       avatar: 'Zdjęcie',
       username: 'Nazwa użytkownika',
-      headline: 'Linijka o Tobie',
+      occupation: 'Status',
       city: 'Miasto',
       email: 'E-mail',
       phone: 'Telefon',

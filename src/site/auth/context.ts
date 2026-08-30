@@ -14,6 +14,7 @@ import type { BusinessProfile } from './business';
 import type { PlayerState } from './player';
 import type {
   BirthDateError,
+  Occupation,
   SignInError,
   SignUpDraft,
   SignUpError,
@@ -70,10 +71,36 @@ export interface Account {
 export interface UserProfile {
   /** Unique, chosen once and editable; the handle other players see. */
   username: string;
-  /** A short line the player writes about themselves. */
-  headline: string;
-  /** Chosen from the served list — Poland, Germany or Uzbekistan. */
+  /**
+   * What this person does — one of five, or `''` for not yet answered.
+   *
+   * The form labels it **Status**; the field is `occupation`, because `status`
+   * on an account already means whether the account is live. It replaced a free
+   * line of prose, and the reason is that a line about yourself is not a fact
+   * anything can act on: five values can be counted, compared between cities
+   * and targeted by a venue's offer, and a sentence cannot.
+   */
+  occupation: Occupation | '';
+  /**
+   * Where this person is.
+   *
+   * **Suggested, not dictated.** `GET /v1/cities` serves 114 canonical names and
+   * the field offers them as you type, because a leaderboard groups on this
+   * string with a literal `=` and four spellings of Kraków are four boards. But
+   * a list of 114 is a list somebody is not on, and refusing them outright makes
+   * the picker wrong rather than the list incomplete — so an unknown city is
+   * accepted *provided a country comes with it*, which is exactly the rule
+   * `PATCH /v1/me` enforces.
+   */
   city: string;
+  /**
+   * The country the city is in.
+   *
+   * An ISO-3166 alpha-2 code when the city came off the served list, where it is
+   * derived and never asked for. Whatever was typed when it did not — the write
+   * needs *a country*, not a code, and pretending otherwise would mean shipping
+   * a 200-entry country table to serve the one person the city list missed.
+   */
   countryCode: string;
   phone: string;
   /** ISO `YYYY-MM-DD`. Settable, then correctable once, then support. */
@@ -105,7 +132,7 @@ export interface UserProfile {
  */
 export const EMPTY_PROFILE: UserProfile = {
   username: '',
-  headline: '',
+  occupation: '',
   city: '',
   countryCode: '',
   phone: '',
@@ -209,7 +236,16 @@ export interface AuthValue {
  */
 export interface ProfilePatch
   extends Partial<Omit<UserProfile, 'city' | 'countryCode' | 'birthDateChangesLeft'>> {
-  /** A city from the served list, with the country it belongs to. */
+  /**
+   * A city and the country it is in — the pair, or neither.
+   *
+   * The pairing is the rule, and it survived the field becoming a suggestion
+   * box: a known city derives its country and an unknown one is only accepted
+   * *with* one, so in both cases the two travel together and there is no shape
+   * here that can send a city on its own. The page refuses to submit the third
+   * state — a city nobody can place — rather than sending half a place and
+   * letting the write decide.
+   */
   place?: { city: string; countryCode: string };
 }
 
@@ -218,7 +254,6 @@ export type ProfileResult =
   | { ok: true }
   | { ok: false; field: 'username'; error: UsernameError }
   | { ok: false; field: 'birthDate'; error: BirthDateError | 'spent' }
-  | { ok: false; field: 'headline'; error: 'long' }
   | { ok: false; field: 'phone'; error: 'shape' };
 
 export const AuthContext = createContext<AuthValue | null>(null);

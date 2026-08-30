@@ -141,7 +141,7 @@ function seededPlayer(): PlayerState {
  */
 const DILNOZA: UserProfile = {
   username: 'dilnoza',
-  headline: 'Filter coffee, flags, and a stamp card I refuse to lose.',
+  occupation: 'student',
   city: 'Krakow',
   countryCode: 'PL',
   phone: '+48 668 214 907',
@@ -324,8 +324,34 @@ export function newUser(
  * them rather than a browser.
  */
 
-/** A line, not a paragraph. `HEADLINE_MAX` on the server. */
-export const HEADLINE_MAX = 140;
+/**
+ * What somebody does, as a closed set — `occupation` on the server.
+ *
+ * A five-option list and not the free line that used to sit here. The line was
+ * a paragraph nobody read and nothing could group on; this is a fact about a
+ * person that a venue can actually target an offer at, and the same five values
+ * the server stores. Kept in *this* order because it is the order the menu
+ * offers them in, and `other` is last for the reason a catch-all always is.
+ *
+ * **The column is `occupation`; the label on the form is "Status".** `status`
+ * is already the account state, so the two names are deliberately different —
+ * a label is what a reader is asked, a column is what the row is called.
+ */
+export const OCCUPATIONS = ['student', 'worker', 'business', 'freelancer', 'other'] as const;
+
+export type Occupation = (typeof OCCUPATIONS)[number];
+
+/**
+ * Whether a stored string is still one of the five.
+ *
+ * Needed because a profile read back out of `localStorage` is whatever an older
+ * build wrote there — including the `headline` prose this field replaced. A row
+ * carrying one is read as unanswered rather than as a sixth option nothing has
+ * a label for.
+ */
+export function isOccupation(value: string): value is Occupation {
+  return (OCCUPATIONS as readonly string[]).includes(value);
+}
 
 /**
  * How many times a player may write their own birthday: once to set it, once to
@@ -470,7 +496,7 @@ export function isPhone(value: string): boolean {
 export type ProfileField =
   | 'avatar'
   | 'username'
-  | 'headline'
+  | 'occupation'
   | 'city'
   | 'email'
   | 'phone'
@@ -496,7 +522,7 @@ export function profileGaps(profile: UserProfile, email: string): ProfileField[]
   const answered: Record<ProfileField, string> = {
     avatar: profile.avatar,
     username: profile.username,
-    headline: profile.headline,
+    occupation: profile.occupation,
     city: profile.city,
     email,
     phone: profile.phone,

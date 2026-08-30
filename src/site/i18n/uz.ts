@@ -2566,21 +2566,41 @@ export const uz: Dictionary = {
       taken: 'Bu nom allaqachon olingan.',
     },
 
-    headline: 'O‘zingiz haqingizda bir qator',
-    headlineHelp: 'Bir qator, abzas emas. {n} belgi qoldi.',
-    headlinePlaceholder: 'Filtrli qahva, bayroqlar va yo‘qotgim kelmaydigan shtamp kartasi.',
-    headlineLong: 'O‘zingiz haqingizdagi qator ko‘pi bilan {max} belgi bo‘ladi.',
+    status: 'Maqom',
+    statusHelp: 'Taxminan nima bilan shug‘ullanasiz. Shu orqali joy kim kelganini biladi.',
+    statusChoose: 'Bittasini tanlang',
+    statusMenu: 'Maqom',
+    occupations: {
+      student: 'Talaba',
+      worker: 'Ishchi',
+      business: 'Biznes egasi',
+      freelancer: 'Frilanser',
+      other: 'Boshqa',
+    },
 
     city: 'Shahar',
-    cityChoose: 'Shahringizni tanlang',
-    cityHelp: 'Paylez Polsha, Germaniya va O‘zbekistonda ishlaydi. Mamlakat shahardan kelib chiqadi.',
+    cityPlaceholder: 'Shahringizni yoza boshlang',
+    cityHelp:
+      'Yoza boshlang va ro‘yxatdan tanlang — Paylez Polsha, Germaniya va O‘zbekistondagi {n} ta shaharni biladi. Sizniki ular orasida bo‘lmasa, shuni belgilang va o‘zingiz yozing.',
+    cityMenu: 'Mos keladigan shaharlar',
+    cityOther: 'Mening shahrim ro‘yxatda yo‘q',
+    cityOtherHelp: 'Shaharni o‘zingiz aytadigan tarzda yozing va yoniga mamlakatni qo‘shing.',
+    cityNoMatch:
+      'Hech narsa mos kelmadi — «Mening shahrim ro‘yxatda yo‘q»ni belgilang va o‘zingiz yozing.',
+    cityNeeded:
+      'Ro‘yxatdan shahar tanlang yoki «Mening shahrim ro‘yxatda yo‘q»ni belgilab, mamlakatni ham yozing.',
     cityLoading: 'Shaharlar ro‘yxati yuklanmoqda…',
-    cityDown: 'Hozircha mavjud emas.',
+    cityDown: 'Takliflar mavjud emas — shahar va uning mamlakatini o‘zingiz yozing.',
     cityOffline:
-      'Shaharlar ro‘yxati Paylez backendidan keladi, u esa javob bermayapti. Bu sahifada boshqa hech narsa unga muhtoj emas — qolganini saqlang, shaharni esa u qaytganda tanlaysiz.',
+      'Shaharlar ro‘yxati Paylez backendidan keladi, u esa javob bermayapti. Shahar va mamlakatni o‘zingiz yozishingiz mumkin; u qaytganda takliflar ham qaytadi.',
     cityRetry: 'Qayta urinib ko‘ring',
-    cityKept: 'Ro‘yxatdan tanlamaguningizcha shundayligicha qoladi.',
     country: 'Mamlakat',
+    countryPlaceholder: 'Polsha',
+    countryHelp:
+      'Faqat shahringiz ro‘yxatimizda bo‘lmagani uchun so‘raymiz. Nomi yoki ikki harfli kodi.',
+    countryUnchecked:
+      'So‘raymiz, chunki shahringizni tekshirish uchun shaharlar ro‘yxatiga ulana olmayapmiz. Nomi yoki ikki harfli kodi.',
+    countryNeeded: 'Biz bilmagan shaharga mamlakat ham kerak bo‘ladi.',
     countries: { PL: 'Polsha', DE: 'Germaniya', UZ: 'O‘zbekiston' },
 
     phone: 'Telefon',
@@ -2610,7 +2630,7 @@ export const uz: Dictionary = {
 
     cardTitle: 'Boshqalar nimani ko‘radi',
     cardNoName: 'Hali nom yo‘q',
-    cardNoLine: 'Hali qator yo‘q.',
+    cardNoRole: 'Hali maqom yo‘q',
     cardNowhere: 'Hali shahar yo‘q',
 
     meterTitle: 'Profil',
@@ -2620,7 +2640,7 @@ export const uz: Dictionary = {
     fieldNames: {
       avatar: 'Surat',
       username: 'Foydalanuvchi nomi',
-      headline: 'O‘zingiz haqingizda bir qator',
+      occupation: 'Maqom',
       city: 'Shahar',
       email: 'E-pochta',
       phone: 'Telefon',

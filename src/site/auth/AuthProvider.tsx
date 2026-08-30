@@ -15,7 +15,6 @@ import { addUser, listUsers, patchUser, toAccount } from './directory';
 import { exchangeGoogleCredential, forgetGoogle } from './google';
 import { signOut as apiSignOut } from '../api/client';
 import {
-  HEADLINE_MAX,
   WELCOME_POINTS,
   checkBirthDate,
   checkUsername,
@@ -358,10 +357,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         username = handle.username;
       }
 
-      const headline = patch.headline?.trim();
-      if (headline !== undefined && headline.length > HEADLINE_MAX) {
-        return { ok: false, field: 'headline', error: 'long' };
-      }
+      /* `occupation` gets no check of its own, and that is the closed set
+         paying for itself: it is a union of five literals plus `''`, so the
+         only value that could arrive wrong is one the type system already
+         refuses. The free line it replaced needed a length rule. */
 
       const phone = patch.phone?.trim();
       if (phone !== undefined && phone !== '' && !isPhone(phone)) {
@@ -393,7 +392,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const profile: UserProfile = {
           ...live.profile,
           ...(username === undefined ? {} : { username }),
-          ...(headline === undefined ? {} : { headline }),
+          ...(patch.occupation === undefined ? {} : { occupation: patch.occupation }),
           ...(phone === undefined ? {} : { phone }),
           ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }),
           ...(patch.place === undefined

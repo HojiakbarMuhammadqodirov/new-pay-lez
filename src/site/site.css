@@ -16318,12 +16318,14 @@ button {
    names were grepped: neither existed.
 
    Almost nothing below is a control. The profile form is the `══ forms ══`
-   field kit end to end — `.field`, `.field-row`, `.field-label`, `.field-help`,
-   `.field-error`, `.file-pick`, `.form-block`, `.form-actions` — and the rail's
-   two panels are `.console`, which is the same primitive the listing form's
-   rail uses. What is here is the layout around them, the avatar disc, and the
-   onboarding screen, which is a frame rather than a page and therefore owns its
-   own vertical rhythm.
+   field kit — `.field`, `.field-row`, `.field-label`, `.field-help`,
+   `.field-error`, `.file-pick`, `.form-block`, `.form-actions` — its two
+   dropdowns are the header's `.lang-menu` / `.lang-option` (see `Header.tsx`,
+   whose picker the dashboard's range menu already borrows), and the rail's two
+   panels are `.console`, the same primitive the listing form's rail uses. What
+   is here is the layout around them, the avatar disc, the one trigger the kit
+   has no shape for, and the onboarding screen, which is a frame rather than a
+   page and therefore owns its own vertical rhythm.
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ───────────────────────────────────────────────────────── #/profile ── */
@@ -16366,45 +16368,89 @@ button {
   }
 }
 
-/* The photo row: disc, picker, and the remove link once there is something to
-   remove. Wraps rather than shrinking — three items on a 320px screen is two
-   lines, not three squeezed ones. */
+/*
+ * Who you are: the photo, and the username *beside* it.
+ *
+ * A two-track grid rather than a stack, because the photo and the handle are
+ * one answer — this is the face and the name on a leaderboard row, and putting
+ * the name underneath a thumbnail made the top of the form read as two
+ * unrelated questions.
+ *
+ * The first track is a *number* and not `auto`, which is the one thing here
+ * that had to be found by looking. Every row of the field kit carries a
+ * `.field-help` line, and `auto` sizes to max-content — so the track was being
+ * set by the width of "Square works best. It is shrunk to a thumbnail and kept
+ * on this device.", one long line, and the photo ended up in a column three
+ * times wider than the disc in it. 11rem is the disc plus the picker beside it;
+ * the help wraps under both, which is what it should have been doing anyway.
+ */
+.prof-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 11rem) minmax(0, 1fr);
+  gap: 1.15rem;
+  align-items: start;
+}
+
+/* The photo column: disc, picker, and the remove link once there is something
+   to remove. Centred on the disc, which is the widest thing in the track. */
 .prof-photo {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 0.85rem;
-  flex-wrap: wrap;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.prof-photo .file-pick {
+  justify-content: center;
+  max-width: 100%;
 }
 
 /*
- * The avatar disc.
+ * The avatar disc, and the one colour decision on this page worth stating.
  *
- * A tinted disc carrying the initial when there is no photo, which is the same
- * fallback the header chip draws, and the same one the card in the rail draws —
- * so an account with no photo looks like an account with no photo everywhere
- * rather than like a broken image in one place.
+ * It was a `--border-2` hairline over `rgba(var(--accent-rgb), 0.14)` — a teal
+ * chip, at the size a chip works. At the size it is now it stopped being a tint
+ * and became a wash of accent under somebody's face, which is the same mistake
+ * `--tint-rgb` exists to document one screen over.
+ *
+ * So it is the **ink**: `--ink-rgb` and `--ink-on-rgb`, the near-black this
+ * brand's dark surfaces are made of and the mint that marks it, declared in
+ * `:root` and never redeclared because they belong to a surface rather than to
+ * a theme. That makes the disc one object in both themes rather than two
+ * near-misses, and it reads in both for different reasons: on paper it is a
+ * black disc on near-white and separates itself outright, and on black the
+ * ink's green cast (4,32,31 against the page's 13,13,14) is what draws the
+ * edge — which is the same 6% lift `--bg-2` uses inside `[data-ink]`. No
+ * border, because a disc that needs a hairline to be seen is one whose fill is
+ * wrong.
+ *
+ * `--disc` rather than a size per class: the initial has to scale with the
+ * circle, and two hand-set font sizes is two chances for the letter to sit off
+ * centre in one of them.
  */
 .prof-avatar {
+  --disc: 3.6rem;
   display: grid;
   place-items: center;
   flex: none;
-  width: 3rem;
-  height: 3rem;
+  width: var(--disc);
+  height: var(--disc);
   border-radius: 999px;
-  border: 1px solid var(--border-2);
-  background: rgba(var(--accent-rgb), 0.14);
-  color: var(--accent-ink);
+  background: rgb(var(--ink-rgb));
+  color: rgb(var(--ink-on-rgb));
   font-family: var(--font-display);
-  font-size: 1.1rem;
+  font-size: calc(var(--disc) * 0.38);
   font-weight: 600;
   line-height: 1;
   overflow: hidden;
 }
 
+/* The form's own. Big enough that a photograph is a photograph rather than a
+   favicon of one — this is the field being filled in, where the rail's disc is
+   a preview of it. */
 .prof-avatar-lg {
-  width: 3.6rem;
-  height: 3.6rem;
-  font-size: 1.35rem;
+  --disc: 5.75rem;
 }
 
 .prof-avatar img {
@@ -16431,6 +16477,156 @@ button {
   font-size: 0.9375rem;
   line-height: 1.45;
   color: var(--text);
+}
+
+/* ── the two menus ─────────────────────────────────────────────────────────
+ *
+ * Both are the header's language picker: `.lang-menu` for the sheet and
+ * `.lang-option` for the rows, `role="listbox"` owning `role="option"`
+ * directly with no `<li>` in between — see the note on `LanguageMenu` in
+ * `Header.tsx`, which the dashboard's range picker already borrows. This is the
+ * third and fourth caller, not a third design.
+ *
+ * What is local is the *trigger*, and only because the two triggers are
+ * different things. The status menu opens off a control that has to look like
+ * the field kit's `<select>` well, because it stands in a column with two real
+ * fields; the city menu opens off an actual `<input>`, which is already the
+ * kit's and needs nothing but somewhere to hang the sheet.
+ * ─────────────────────────────────────────────────────────────────────────── */
+
+/*
+ * The status trigger: the `══ forms ══` kit's select well, on a `<button>`.
+ *
+ * A native `<select>` would have been free, and is what stood here for the
+ * country. It cannot be this control: a native popup is drawn by the operating
+ * system, so it cannot be the menu the rest of the site uses, and on the one
+ * screen where two dropdowns sit a row apart they would have been two different
+ * pictures of the same thing. The declarations are the kit's, token for token,
+ * rather than an import — CSS has no way to say "this button is one of those" —
+ * and the caret is the shared `.lang-caret`, so it rotates on open like every
+ * other menu here.
+ */
+.prof-select {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease);
+}
+
+.prof-select:hover {
+  border-color: var(--accent-soft);
+}
+
+.prof-select:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 1px;
+  border-color: transparent;
+  background: var(--surface-2);
+}
+
+/* Unanswered reads as a prompt rather than as a value, which is the same thing
+   a placeholder does in the field beside it. */
+.prof-select[data-empty='true'] {
+  color: var(--text-fnt);
+}
+
+/* The caret is pushed to the far edge by the value, so the whole width is the
+   control rather than just the words. */
+.prof-select .lang-caret {
+  margin-left: auto;
+  flex: none;
+  color: var(--accent-ink);
+}
+
+.prof-select[aria-expanded='true'] .lang-caret {
+  transform: rotate(180deg);
+}
+
+/* Both menus hang off their own field rather than off the form. */
+.prof-menu-host {
+  position: relative;
+  min-width: 0;
+}
+
+/*
+ * The sheet, positioned for a field instead of for a header control.
+ *
+ * `.lang-menu` pins itself to the right edge at `min-width: 11rem`, which is
+ * right for a trigger in a nav bar and wrong for one that is a full row: the
+ * menu has to be as wide as the field it belongs to, or the suggestion and the
+ * text it is suggesting for do not line up.
+ */
+.prof-menu {
+  left: 0;
+  right: 0;
+  min-width: 0;
+  /* Eight rows fit; the cap only matters when a translation wraps one of them,
+     and a menu taller than this is one whose bottom is off a phone screen. */
+  max-height: 17rem;
+  overflow-y: auto;
+}
+
+/* The keyboard's position in the list. `aria-activedescendant` moves a virtual
+   focus that draws nothing, so the row has to say where it is — and it has to
+   read as *pointed at* rather than as chosen, which is what `[data-on]` means
+   two lines down. */
+.prof-menu .lang-option[data-active='true'] {
+  background: var(--surface-2);
+  color: var(--accent-ink);
+}
+
+/* A suggestion is a city and the country it is in — the country as the same
+   small key the language menu sets its codes in, because that is what it is. */
+.prof-opt-place {
+  margin-left: auto;
+  padding-left: 0.6rem;
+}
+
+/*
+ * "My city is not on the list", which is a different kind of row.
+ *
+ * Separated by a rule and set in the accent, because it is not a fifth
+ * suggestion — it is the way out of the list, and a reader who has scanned
+ * eight names and not found theirs has to be able to see that at a glance
+ * rather than read to the bottom of a ninth.
+ */
+.prof-opt-other {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 3px 3px;
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+.prof-opt-other svg {
+  flex: none;
+}
+
+/*
+ * A fieldset with a menu open has to sit above the one after it.
+ *
+ * `.form-block` carries a `backdrop-filter`, which makes every one of them a
+ * stacking context — so the status menu, opening downward out of the last row
+ * of "who you are", was painted *under* "where you are" no matter what
+ * `z-index` the sheet itself asked for. Raising the block only while something
+ * inside it is expanded keeps the stack flat the rest of the time.
+ */
+.prof-form .form-block:has([aria-expanded='true']) {
+  position: relative;
+  z-index: 2;
 }
 
 /* The "the backend is not answering" line under the city picker. Weighted
@@ -16479,11 +16675,22 @@ button {
   color: var(--accent-ink);
 }
 
-.prof-card-line {
+/* What used to be a line of prose is now one of five values, so it is set like
+   the place under it rather than like a paragraph: an icon and a fact, the two
+   of them a matched pair. */
+.prof-card-role {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   margin: 0.9rem 0 0;
-  font-size: 0.875rem;
-  line-height: 1.5;
+  font-size: 0.8125rem;
   color: var(--text-mut);
+}
+
+.prof-card-role svg,
+.prof-card-where svg {
+  flex: none;
+  color: var(--accent-ink);
 }
 
 .prof-card-where {
@@ -16550,6 +16757,34 @@ button {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--accent-ink);
+}
+
+/*
+ * A phone.
+ *
+ * The identity row stops being a row — 5.75rem of disc plus a field that has to
+ * hold twenty characters does not fit inside 390px, and squeezing it would make
+ * the username input narrower than the handle it takes. What survives the stack
+ * is the *photo block* going back to a line: disc on the left, picker and
+ * remove beside it, which is the arrangement the whole page had before the disc
+ * grew and is still the compact one.
+ *
+ * Status and birthday need nothing here: they are a `.field-row`, and the kit
+ * already stacks every one of those at 820px — well above this. Restating it
+ * would be a second breakpoint for the same behaviour, and the two would
+ * eventually disagree.
+ */
+@media (max-width: 34rem) {
+  .prof-identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .prof-photo {
+    flex-direction: row;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+  }
 }
 
 /* ───────────────────────────────────────────────────────── #/welcome ── */
@@ -16910,13 +17145,20 @@ button {
  * Reduced motion.
  *
  * Nothing here moves position, so there is nothing to freeze — what there is,
- * is three widths and an opacity that animate on their own. Under the
- * preference they arrive at their value instead of travelling to it, which is
- * the same treatment the site's reveals get: the state still changes, it simply
- * does not perform.
+ * is three widths, a rotation and an opacity that animate on their own. Under
+ * the preference they arrive at their value instead of travelling to it, which
+ * is the same treatment the site's reveals get: the state still changes, it
+ * simply does not perform.
+ *
+ * The caret is in the list rather than exempt from it. It is a 13px glyph and
+ * the rotation is 200ms, which is exactly the kind of thing that reads as
+ * incidental until it is the fourth one on a screen; the arrow still ends up
+ * pointing the other way, it just gets there at once.
  */
 @media (prefers-reduced-motion: reduce) {
   .prof-bar i,
+  .prof-select,
+  .prof-select .lang-caret,
   .onb-bar i,
   .onb-pips i,
   .onb-rounds i,

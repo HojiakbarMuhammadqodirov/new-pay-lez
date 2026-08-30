@@ -4,24 +4,37 @@
  * Everything else on `#/profile` is decided locally, because the site's own
  * accounts are still `localStorage` (`auth/users.ts` says so at the top). The
  * city is not, and the reason is a rule rather than a preference: the set is
- * closed, it is 114 entries across three countries, it folds accents and
- * resolves local spellings onto one canonical ASCII name, and the city
- * leaderboard groups on that name with a literal `=`. A second copy of it in
- * this bundle would be a list that changes on the server and does not change
- * here — the shape that ends with a picker offering a city the write refuses.
+ * 114 entries across three countries, it folds accents and resolves local
+ * spellings onto one canonical ASCII name, and the city leaderboard groups on
+ * that name with a literal `=`. A second copy of it in this bundle would be a
+ * list that changes on the server and does not change here.
  *
- * So the picker asks. `GET /v1/cities` is public — it has to be, because
- * sign-up takes a city and a form cannot be asked for a token to render its own
+ * So the field asks. `GET /v1/cities` is public — it has to be, because sign-up
+ * takes a city and a form cannot be asked for a token to render its own
  * options — and it serves the same constant `accounts.resolveCity` checks
- * against, which is what makes "chosen, not typed" true on both sides of the
- * wire at once.
+ * against.
+ *
+ * ── a suggestion source, not a whitelist ─────────────────────────────────
+ *
+ * This used to feed a `<select>`, on the argument that free text does not make
+ * a messy leaderboard but *several* boards, one per spelling. That argument is
+ * still true and is why the suggestions exist at all — but it was being used to
+ * justify something else, which is refusing a city the list has never heard of.
+ * 114 names is a good list and a short one; somebody lives in the 115th, and
+ * for them a closed picker is not a tidy board, it is a form that cannot be
+ * finished.
+ *
+ * So the field suggests as you type and takes what it is given. `PATCH /v1/me`
+ * draws the line in the one place it can be drawn honestly: an unknown city is
+ * accepted **provided a country comes with it**, because the pair is what makes
+ * a place, and a city nobody can place is the only genuinely useless answer.
  *
  * **A failed request is a state, not an empty list.** Same rule as the console's
  * fourth tab: `useApi` hands back `loading | ready | error` as a union so
  * "the backend is not answering" and "the answer is nothing" cannot be
- * confused, and the form disables the field and says which one it is rather
- * than showing an empty dropdown that looks like a product with no cities in
- * it.
+ * confused. What has changed is the cost of the failure — with a text field
+ * there is nothing to disable, so the form says the suggestions are down and
+ * lets the reader write the place themselves.
  */
 import { useApi, type ApiResult } from './useApi';
 
@@ -42,22 +55,74 @@ export interface CityList {
 export const useCities = (): ApiResult<CityList> => useApi<CityList>('/v1/cities');
 
 /**
- * The list as an options list: grouped by country, in the server's country
- * order, each group in the server's own order within it.
+ * How many suggestions the menu offers at once.
  *
- * Grouped rather than sorted alphabetically across the whole set, because a
- * flat list of 114 puts Andijan above Berlin and asks a reader in Kraków to
- * scan the other two countries to find their own. The server's order is kept
- * inside each group — it is the population order the table was written in, so
- * the city most people want is at the top rather than the one starting with A.
+ * Eight, because the list is scanned rather than read: a menu long enough to
+ * scroll is one where the answer can be *below* the fold, which is the failure
+ * a suggestion box exists to avoid. Two letters of a Polish city already cut
+ * 114 to single figures, and anything still ambiguous after that is answered by
+ * typing a third.
  */
-export function byCountry(list: CityList): Array<[CityCountry, City[]]> {
-  return list.countries
-    .map(
-      (country): [CityCountry, City[]] => [
-        country,
-        list.cities.filter((city) => city.country === country),
-      ],
-    )
-    .filter(([, cities]) => cities.length > 0);
+export const CITY_SUGGESTIONS = 8;
+
+/**
+ * The comparison key: lowercase, accents folded, punctuation and spacing gone.
+ *
+ * The served names are already canonical ASCII, so this is not really for them
+ * — it is for what gets *typed*. Somebody in Kraków types "Kraków", somebody in
+ * Gorzów types "Gorzow Wlkp." with a space they may or may not include, and a
+ * naive `includes` misses both. Folding both sides means the query is compared
+ * on the letters rather than on the keyboard that produced them.
+ */
+export const foldCity = (value: string): string =>
+  value
+    .normalize('NFD')
+    /* Every combining mark NFD just separated out, by Unicode category rather
+       than by a codepoint range: `\p{M}` is what "an accent, from any script"
+       is called, so this folds Polish, German and Uzbek Latin without three
+       tables — and without a literal combining character in the source, which
+       is invisible in every editor and therefore unreviewable. */
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+/**
+ * The city with this exact name, folded — or `undefined`.
+ *
+ * The distinction the whole form turns on. A city that resolves here has its
+ * country as a *fact* and no second question; one that does not is a place the
+ * reader has to describe, which is the "other city" branch.
+ */
+export const lookupCity = (list: CityList, name: string): City | undefined => {
+  const key = foldCity(name);
+  return key ? list.cities.find((city) => foldCity(city.name) === key) : undefined;
+};
+
+/**
+ * The cities a query suggests, best first, at most `CITY_SUGGESTIONS` of them.
+ *
+ * Ranked in two bands rather than sorted, and the bands are the point: a name
+ * that *starts* with what has been typed comes before one that merely contains
+ * it, so "war" offers Warsaw before Nowa Warszawa. Within each band the
+ * server's own order is kept — it is the population order the table was written
+ * in, so the city most people want is at the top rather than the one starting
+ * with A.
+ *
+ * An empty query is not an empty answer: it returns the head of the list, which
+ * under that ordering is the largest cities in the countries Paylez covers.
+ * A menu that opens blank until a key is pressed is a menu that looks broken.
+ */
+export function matchCities(list: CityList, query: string): City[] {
+  const key = foldCity(query);
+  if (!key) return list.cities.slice(0, CITY_SUGGESTIONS);
+
+  const starts: City[] = [];
+  const contains: City[] = [];
+  for (const city of list.cities) {
+    const name = foldCity(city.name);
+    if (name.startsWith(key)) starts.push(city);
+    else if (name.includes(key)) contains.push(city);
+    if (starts.length >= CITY_SUGGESTIONS) break;
+  }
+  return [...starts, ...contains].slice(0, CITY_SUGGESTIONS);
 }

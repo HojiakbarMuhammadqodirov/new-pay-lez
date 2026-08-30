@@ -70,18 +70,28 @@ CREATE TABLE IF NOT EXISTS users (
                 CHECK (auth_provider IN ('email', 'google', 'apple', 'provisional')),
   provider_ref  TEXT,
   language      TEXT NOT NULL DEFAULT 'en',
-  -- A **closed set**, not free text: `CITIES` in `domain/accounts.ts` lists the
-  -- cities of the three countries Paylez operates in, and `country_code` is
-  -- written from the chosen city rather than answered separately, so the two can
-  -- never disagree. The constraint is in the domain layer and deliberately not a
-  -- CHECK here — a CHECK would retroactively invalidate every city already
-  -- imported from the old database, and a row that cannot be updated because of
-  -- a value nobody can now change is worse than a spelling.
+  -- **A suggestion, not a whitelist.** `CITIES` in `domain/accounts.ts` is the
+  -- 114 places Paylez operates in and is what `GET /v1/cities` serves the
+  -- picker, but a write may name a city that is not on it — provided it names a
+  -- country with it, because a place nobody has heard of and no country to put
+  -- it in is not an answer. See `resolveCity`.
   --
-  -- The reason a set exists at all is one query: the city weekly board
-  -- (`domain/social.ts`) groups on `users.city` with a literal `=`, so free text
-  -- splits one city into a board per spelling and nobody is on the one they
-  -- expect.
+  -- **What is stored is canonical either way**, and that is the whole job of
+  -- this column. The city weekly board (`domain/social.ts`) groups on it with a
+  -- literal `=`, so free text does not make a messy board — it makes *several*
+  -- boards, one per spelling, with one player on each. A city that resolves onto
+  -- the table is stored exactly as the table spells it; one that does not is
+  -- stored as the single title-cased representative of its folded key, so
+  -- `Kryvyi Rih`, `kryvyi rih` and `Kryvyï  Rih` are one place and one board.
+  --
+  -- `country_code` is a fact about the city, not a second answer: it is written
+  -- from the table when the city is one of the 114 and from the request only
+  -- when it is not, so the two can never disagree about a place we cover.
+  --
+  -- Deliberately not a CHECK, for the reason it never was: a CHECK would
+  -- retroactively invalidate every city imported from the old database, and a
+  -- row that cannot be updated because of a value nobody can now change is worse
+  -- than a spelling.
   city          TEXT,
   country_code  TEXT,
   -- Contact and profile, all optional: none of them gates anything, and an
@@ -103,11 +113,24 @@ CREATE TABLE IF NOT EXISTS users (
   birth_date    TEXT,
   birth_date_set_at TEXT,
   birth_date_changes INTEGER NOT NULL DEFAULT 0,
-  -- The player's own line about themselves. Named `headline` because `status`
-  -- below is already taken by the account state, and two columns meaning
-  -- different things under one name is how a moderation query ends up reading a
-  -- sentence somebody wrote about their cat.
-  headline      TEXT,
+  -- What the person does: one of `student`, `worker`, `business`, `freelancer`,
+  -- `other`. **The UI calls this field "Status"; the column cannot**, because
+  -- `status` forty lines down is the account state
+  -- (`provisional` / `active` / `banned` / `erased`) and two columns meaning
+  -- different things under one name is how a moderation query ends up reading
+  -- somebody's job. It replaced a free-text `headline`, which the version-4
+  -- migration in `db.ts` drops.
+  --
+  -- **No CHECK, and the vocabulary lives in `OCCUPATIONS` in
+  -- `domain/accounts.ts`.** SQLite cannot alter a CHECK in place, so the day the
+  -- product adds "retired" to the picker it would cost a full rebuild of
+  -- `users` — the most-referenced table in this schema, with cascades hanging
+  -- off nearly every other one — to widen a dropdown. `points_ledger.reason`
+  -- pays that price because the ledger outlives every process that writes to it
+  -- and holds money; a self-reported status does not. One code path writes this
+  -- column (`updateProfile`) and it validates against the same exported tuple
+  -- the picker is rendered from, so there is one list rather than two.
+  occupation    TEXT,
   -- When onboarding was reported finished. The welcome gift
   -- (`CONFIG.earn.onboarding`) is paid here rather than at sign-up, and this
   -- column is what makes "exactly once" atomic: the grant is guarded by an

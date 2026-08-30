@@ -2848,9 +2848,17 @@ export const en = {
    *
    * Three of the seven carry a rule that is not "is it a string", and all three
    * state it before it is broken rather than on refusal. The figures in those
-   * sentences — the username's bounds, the headline's ceiling, what is left of
-   * it — arrive through `{min}` / `{max}` / `{n}` holes from `auth/users.ts`,
-   * so a constant that moves cannot leave five dictionaries quoting the old one.
+   * sentences — the username's bounds, how many cities the backend knows —
+   * arrive through `{min}` / `{max}` / `{n}` holes from `auth/users.ts` and from
+   * the served list itself, so a constant that moves cannot leave five
+   * dictionaries quoting the old one.
+   *
+   * Two of the labels deliberately do not match the field behind them. **Status**
+   * is the column `occupation`, because `status` on an account already means
+   * whether it is live; and **Country** under an unknown city asks for a country
+   * rather than for a code, because the write needs a place and not an entry in
+   * a table. A label is what a reader is asked; a column is what the row is
+   * called, and they are allowed to differ.
    */
   profile: {
     eyebrow: 'Your account',
@@ -2878,29 +2886,62 @@ export const en = {
       taken: 'That username is taken.',
     },
 
-    headline: 'A line about you',
-    /* One sentence with the remaining count inside it, not a sentence with a
-       figure glued to its end: "12 characters left" and "zostało 12 znaków" do
-       not put the number in the same place. */
-    headlineHelp: 'One line, not a paragraph. {n} characters left.',
-    headlinePlaceholder: 'Filter coffee, flags, and a stamp card I refuse to lose.',
-    headlineLong: 'A line about you is at most {max} characters.',
+    /* The label is "Status" and the column is `occupation`. See the note above
+       the block: the two are allowed to differ, and here they have to. */
+    status: 'Status',
+    statusHelp: 'Roughly what you do. It is what tells a venue who is in the room.',
+    statusChoose: 'Choose one',
+    /* The menu's accessible name. The trigger says the chosen value, so without
+       this the listbox that opens has no name of its own. */
+    statusMenu: 'Status',
+    /* Keyed by the five stored values rather than positional, because the menu
+       reads them by key and a reordered array would silently relabel everybody
+       who had already answered. */
+    occupations: {
+      student: 'Student',
+      worker: 'Worker',
+      business: 'Business owner',
+      freelancer: 'Freelancer',
+      other: 'Other',
+    },
 
     city: 'City',
-    cityChoose: 'Choose your city',
-    cityHelp: 'Paylez covers Poland, Germany and Uzbekistan. Your country follows from the city.',
+    cityPlaceholder: 'Start typing your city',
+    /* The count is a hole because the list is served, not shipped: a sentence
+       claiming 114 cities is a sentence that goes stale the day a 115th is
+       added on the other side of the wire. */
+    cityHelp:
+      'Type, then pick from the list — Paylez knows {n} cities across Poland, Germany and Uzbekistan. If yours is not one of them, say so and write it yourself.',
+    cityMenu: 'Matching cities',
+    cityOther: 'My city is not on the list',
+    cityOtherHelp: 'Write the city the way you would say it, and the country with it.',
+    cityNoMatch: 'Nothing matches that — choose “My city is not on the list” and write it yourself.',
+    cityNeeded:
+      'Pick a city from the list, or choose “My city is not on the list” and write the country too.',
     cityLoading: 'Loading the list of cities…',
     /* The short one goes under the field and the long one in the panel beside
        it. Both said the whole sentence at first, which is the same paragraph
-       twice on one row — the field only has to stop claiming the picker works. */
-    cityDown: 'Not available right now.',
+       twice on one row. */
+    cityDown: 'Suggestions are not available — write your city and its country.',
     cityOffline:
-      'The list of cities comes from the Paylez backend, and it is not answering. Nothing else on this page needs it — save the rest, and choose a city when it is back.',
+      'The list of cities comes from the Paylez backend, and it is not answering. You can still write your city and country yourself; the suggestions come back when it does.',
     cityRetry: 'Try again',
-    cityKept: 'Kept as it is until you choose from the list.',
     country: 'Country',
-    /* Keyed by ISO code rather than an array, because the picker groups its
-       options by country and reads them by code, not by position. */
+    countryPlaceholder: 'Poland',
+    /* Why it is being asked at all, because it is not asked of anybody else.
+       A country is a *fact* about a city we know, and a question only about one
+       we do not. */
+    countryHelp: 'Asked only because your city is not on our list. The name or the two-letter code.',
+    /* The same field, for the case where the list never arrived. The sentence
+       above would be a claim we cannot make — we have not checked the city
+       against anything, so "not on our list" is not what happened. */
+    countryUnchecked:
+      'Asked because we cannot reach the list of cities to look yours up. The name or the two-letter code.',
+    countryNeeded: 'A city we do not know needs the country with it.',
+    /* Keyed by ISO code rather than an array, because a suggestion carries its
+       country as a code and the card in the rail reads it back the same way. A
+       country typed by hand is printed as written — there is no table to look
+       it up in, and inventing one would be a second, worse city list. */
     countries: { PL: 'Poland', DE: 'Germany', UZ: 'Uzbekistan' },
 
     phone: 'Phone',
@@ -2931,7 +2972,7 @@ export const en = {
 
     cardTitle: 'What others see',
     cardNoName: 'No username yet',
-    cardNoLine: 'No line yet.',
+    cardNoRole: 'No status yet',
     cardNowhere: 'No city yet',
 
     meterTitle: 'Profile',
@@ -2945,7 +2986,7 @@ export const en = {
     fieldNames: {
       avatar: 'Photo',
       username: 'Username',
-      headline: 'A line about you',
+      occupation: 'Status',
       city: 'City',
       email: 'Email',
       phone: 'Phone',
