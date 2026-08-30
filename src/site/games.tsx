@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { BOARD_TABS, GAMES, VOUCHER_CARDS, type GameId } from './content';
 import { listUsers } from './auth/directory';
+import { SEED_USERS } from './auth/users';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -848,13 +849,24 @@ function Board({ player, meId }: { player: PlayerState; meId: string }) {
    * in state before it is committed.
    *
    * Accounts with nothing yet are kept rather than filtered: a board that hides
-   * everybody on zero is a board that tells a new player they are alone. What
-   * *is* filtered is business accounts, which have no player state at all.
+   * everybody on zero is a board that tells a new player they are alone.
+   *
+   * Two kinds *are* filtered. Business accounts, which have no player state at
+   * all. And **the seeded demo accounts**, which is the second half of the same
+   * complaint the invented codes were: Dilnoza ships with a seven-day streak and
+   * 108 correct answers so that somebody signing in with the credentials printed
+   * on the sign-in form can see a furnished account, and a new player has no way
+   * to tell that row apart from a stranger who is simply better than them. She
+   * is demo data sitting at the top of a real board.
+   *
+   * She still appears on the board she is signed into, as `You` — the filter is
+   * on other people's rows, not on the account itself.
    */
   const rows = useMemo(() => {
     const key = BOARD_TABS[tab];
+    const seeded = new Set(SEED_USERS.map((user) => user.id));
     const others = listUsers()
-      .filter((user) => user.type === 'individual' && user.id !== meId)
+      .filter((user) => user.type === 'individual' && user.id !== meId && !seeded.has(user.id))
       .flatMap((user) =>
         user.player
           ? [{
