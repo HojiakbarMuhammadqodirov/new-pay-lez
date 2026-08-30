@@ -496,6 +496,7 @@ export const ru: Dictionary = {
     play: 'Играть',
     noEnergy: 'Энергия закончилась',
     energyFull: 'Полная — ждать нечего',
+    energyNext: '+1 через {time}',
     energyCost: '1 за раунд',
     loading: 'Раздаём…',
 
@@ -2742,6 +2743,9 @@ export const ru: Dictionary = {
     included: 'Входит',
     notIncluded: 'Не входит',
     badges: ['Звезда', 'Корона'],
+    heroRows: ['Энергия в день', 'Восстановление, ч', 'Баллы за раунд'],
+    more: 'Всё остальное',
+    mark: 'Знак плана: {name}',
     plans: [
       { name: 'Free', note: 'Вся петля, без подпорок.' },
       { name: 'Pro', note: 'Для того, кто играет каждый день.' },

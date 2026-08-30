@@ -90,6 +90,12 @@ const PATHS = {
      sun is already the light-theme toggle two controls away in the same bar,
      and two suns in one header is one too many. */
   spark: <><path d="M12 3.2 13.9 9 19.8 11l-5.9 2-1.9 5.8L10.1 13 4.2 11 10.1 9Z" /><path d="M18.5 3.6v3M17 5.1h3" /></>,
+  /* The two subscription seals, and the only pair here drawn *filled*: they are
+     marks worn beside a name rather than glyphs labelling a control, so a
+     stroked outline read as one more icon in a row of icons. `vector-effect`
+     is not wanted on them for the same reason. */
+  star: <><path d="M12 3.6l2.47 5.28 5.53.77-4.03 4.05 1 5.7L12 16.7l-4.97 2.7 1-5.7L4 9.65l5.53-.77Z" fill="currentColor" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></>,
+  crown: <><path d="M4 17.5h16M4.4 7.2l3.3 3.1L12 4.6l4.3 5.7 3.3-3.1-1.3 8.2H5.7Z" fill="currentColor" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" /></>,
   /* The charge mark on the L-Earn battery. A stroked outline rather than a
      filled slab, because it sits at 13px inside the panel kicker next to a
      word, and every other icon in that position is a 2px stroke — a solid

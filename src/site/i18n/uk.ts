@@ -501,6 +501,7 @@ export const uk: Dictionary = {
     play: 'Грати',
     noEnergy: 'Енергія скінчилася',
     energyFull: 'Повна — нема чого чекати',
+    energyNext: '+1 через {time}',
     energyCost: '1 за раунд',
     loading: 'Роздаємо…',
 
@@ -2748,6 +2749,9 @@ export const uk: Dictionary = {
     included: 'Входить',
     notIncluded: 'Не входить',
     badges: ['Зірка', 'Корона'],
+    heroRows: ['Енергія на день', 'Відновлення, год', 'Бали за раунд'],
+    more: 'Усе інше',
+    mark: 'Знак плану: {name}',
     plans: [
       { name: 'Free', note: 'Уся петля, без підпорок.' },
       { name: 'Pro', note: 'Для того, хто грає щодня.' },

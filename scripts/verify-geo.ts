@@ -98,7 +98,17 @@ import { toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
-import { DEAL_CATEGORIES, GAMES, PREVIEW, WALLET_DEALS, type HotDeal } from '../src/site/content';
+import {
+  DEAL_CATEGORIES,
+  GAMES,
+  PREVIEW,
+  SUB_BADGE_ROW,
+  SUB_HERO,
+  SUB_PLANS,
+  SUB_ROWS,
+  WALLET_DEALS,
+  type HotDeal,
+} from '../src/site/content';
 /* The source dictionary, read for its *shapes* rather than its words: the
    dashboard's arrays are index-aligned with the seeds below, and a stale index
    renders `undefined` instead of throwing. */
@@ -1786,6 +1796,23 @@ console.log('\ncopy that quotes a constant');
   const faq = en.learn.faq.items.map((item) => item.a).join(' ');
   check('…and the English FAQ still quotes both figures',
     /four hours/.test(faq) && /up to four/.test(faq));
+
+  /*
+   * The countdown beside the energy count is a **frame around a hole**, and the
+   * hole is the only part of it that carries the number.
+   *
+   * `untilNextEnergy` writes the duration itself — "3h 12m", or "45m" under the
+   * hour — out of `Intl.NumberFormat`, because units and their plurals belong to
+   * the reader's language and the platform knows all five. What the dictionary
+   * owns is the sentence around it. A translation that dropped `{time}` would
+   * print "+1 in" beside a full battery and say nothing at all, which is the one
+   * failure here that looks deliberate.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    check(`${code}'s energy countdown keeps its hole`,
+      LANGUAGES[code].games.energyNext.includes('{time}'),
+      LANGUAGES[code].games.energyNext);
+  }
 }
 
 console.log('\nplaying — the two scored games');
@@ -3137,6 +3164,78 @@ console.log('\nthe partner dashboard');
   /* Zero keeps its decimals so a column of per-unit costs stays aligned —
      "£0" among "£0.67" is a ragged column, and these are tabular figures. */
   check('…and zero keeps the same shape', money(0, gbp, 'unit') === '£0.00', money(0, gbp, 'unit'));
+}
+
+/* ══════════════════════════════════════════════════ the plan table ══ */
+
+console.log('\nthe plan table says what the product does');
+
+{
+  /*
+   * The drift this exists to catch has already happened once.
+   *
+   * The free tank went from three to four when energy started being spent on
+   * every round, and this table kept advertising three for a day — the landing
+   * page offering a smaller free tier than the product was handing out. The
+   * front end cannot see the server's `CONFIG.points`, so the mirror is
+   * manual; what it *can* see is `player.ts`, which holds the same two free-plan
+   * figures for the same reason. Checking the free column against those is the
+   * one end of the mirror this side of the wire can hold.
+   */
+  const [energy, refill, multiplier] = SUB_ROWS;
+  check('the free tank on the plan table is the tank the site gives you',
+    energy.values[0] === MAX_ENERGY, `${energy.values[0]} vs ${MAX_ENERGY}`);
+  check('…and its refill is the site’s, in hours',
+    refill.values[0] === ENERGY_REGEN_MINUTES / 60,
+    `${refill.values[0]}h vs ${ENERGY_REGEN_MINUTES}min`);
+  check('…and the free plan pays a plain single rate', multiplier.values[0] === 1);
+
+  /* Every paid tier is an improvement on the one below it, on the three figures
+     the card leads with. A plan that charged more for less energy would be a
+     typo nobody would notice in a table this wide. */
+  check('energy climbs with the price', energy.values[1]! > energy.values[0]!
+    && energy.values[2]! > energy.values[1]!);
+  check('…and the wait comes down', refill.values[1]! < refill.values[0]!
+    && refill.values[2]! < refill.values[1]!);
+  check('…and a round pays more', multiplier.values[1]! > multiplier.values[0]!
+    && multiplier.values[2]! > multiplier.values[1]!);
+
+  /* The card splits the table by index, so the indices have to be inside it and
+     the three parts have to exhaust it — a row that fell in the gap between the
+     strip and the list would simply stop being shown, silently. */
+  check('the strip and the seal are inside the table',
+    SUB_HERO < SUB_BADGE_ROW && SUB_BADGE_ROW === SUB_ROWS.length - 1);
+  check('…and the three parts exhaust it',
+    SUB_HERO + (SUB_BADGE_ROW - SUB_HERO) + 1 === SUB_ROWS.length);
+  check('the seal row is the badge row', SUB_ROWS[SUB_BADGE_ROW].kind === 'badge');
+  check('…and it is the only one', SUB_ROWS.filter((r) => r.kind === 'badge').length === 1);
+
+  /* A seal is an index into `copy.badges`, so a third value would print
+     `undefined` on the card rather than fail anywhere. */
+  check('every seal names a badge the dictionaries carry',
+    SUB_ROWS[SUB_BADGE_ROW].values.every((v) => v === 0 || (v === 1 || v === 2)));
+
+  /* The three columns are the three plans, read straight across. */
+  check('every row has one value per plan',
+    SUB_ROWS.every((row) => row.values.length === SUB_PLANS.length));
+
+  for (const code of LANGUAGE_ORDER) {
+    const sub = LANGUAGES[code].subscription;
+    check(`${code} labels every row`, sub.rows.length === SUB_ROWS.length,
+      `${sub.rows.length} of ${SUB_ROWS.length}`);
+    check(`…and every figure in the strip`, sub.heroRows.length === SUB_HERO,
+      `${sub.heroRows.length} of ${SUB_HERO}`);
+    check(`…and names both seals`, sub.badges.length === 2);
+    check(`…and its seal label has a name to put in it`, sub.mark.includes('{name}'),
+      sub.mark);
+    check(`…and nothing in the strip is blank`,
+      sub.heroRows.every((label) => label.trim().length > 0));
+    /* The unit lives in the label, which is the rule that keeps "hours" and
+       "days" translatable. A stray unit welded to a figure would show up as a
+       Latin letter in the Cyrillic dictionaries, so this is checked where it
+       can actually be seen. */
+    check(`…and every plan is named`, sub.plans.length === SUB_PLANS.length);
+  }
 }
 
 console.log(

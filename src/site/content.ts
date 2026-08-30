@@ -380,8 +380,14 @@ export type SubRowKind = 'number' | 'multiplier' | 'flag' | 'badge';
  * month.
  */
 export const SUB_ROWS: Array<{ kind: SubRowKind; values: [SubValue, SubValue, SubValue] }> = [
-  /* `daily_energy` — finished rounds a day from a full tank. */
-  { kind: 'number', values: [3, 5, 7] },
+  /* `daily_energy` — the tank, which is also finished rounds a day from a full
+     one before the clock gives anything back. These three moved from 3/5/7 when
+     energy started being spent on every round rather than only on a lost one,
+     and this table was left behind for a day: the page advertised a smaller
+     free tier than the product was giving away. `npm run verify` now checks the
+     free column against `MAX_ENERGY`, which is the only one of the three the
+     front end can see. */
+  { kind: 'number', values: [4, 6, 10] },
   /* `energy_regen_minutes`, in hours: 240 / 180 / 120. A faster refill is worth
      more than a bigger pool to the player who empties it at nine in the
      morning, which is what the server's own note says it is for. */
@@ -415,9 +421,42 @@ export const SUB_ROWS: Array<{ kind: SubRowKind; values: [SubValue, SubValue, Su
   /* `priority_support`. */
   { kind: 'flag', values: [0, 0, 1] },
   /* `profile_badge` — '', 'star', 'crown'. The mark beside your name on the
-     board, and the only row here whose value is a word. */
+     board, and the only row here whose value is a word.
+
+     It stays **last** because it is read off the end rather than in sequence:
+     `SUB_BADGE_ROW` points at it and the card draws it as a seal in the header
+     rather than as a thirteenth line of small print. A perk you wear is the one
+     row on this table that is not a quantity, and printing "Crown" in the
+     right-hand column of a list was the flattest possible way to say so. */
   { kind: 'badge', values: [0, 1, 2] },
 ];
+
+/**
+ * How the card splits that table into three parts, by index.
+ *
+ * The order of `SUB_ROWS` was already an argument — the loop a player is in
+ * first, then what a plan adds around it — and these two constants are that
+ * argument made structural rather than left in a comment for a component to
+ * ignore.
+ *
+ * - The first `SUB_HERO` rows are the **strip**: three figures at display size,
+ *   because they are the difference somebody feels on their first evening and
+ *   the reason to pay at all. A plan whose whole case is "ten rounds instead of
+ *   four, refilled twice as fast, paying 1.75×" cannot make that case as rows
+ *   one to three of a thirteen-row list set in 0.8rem.
+ * - The last row is the **seal**, drawn in the card header.
+ * - Everything between is the list, which is what a list is good at: nine
+ *   like-for-like answers a reader scans down rather than reads.
+ *
+ * They are indices into one array rather than three arrays because the table
+ * still has to be readable straight across — the values are index-aligned with
+ * `SUB_PLANS` and the labels with `copy.subscription.rows`, and splitting the
+ * source would put that alignment in three places to keep instead of one.
+ */
+export const SUB_HERO = 3;
+
+/** The seal's row. Last, and the card reads it from the end for that reason. */
+export const SUB_BADGE_ROW = SUB_ROWS.length - 1;
 
 /**
  * Where the footer's two columns go, index-aligned with

@@ -496,6 +496,7 @@ export const uz: Dictionary = {
     play: 'O‘ynash',
     noEnergy: 'Energiya tugadi',
     energyFull: 'To‘la — kutadigan narsa yo‘q',
+    energyNext: '+1 yana {time}',
     energyCost: 'Har raundga 1 ta',
     loading: 'Tarqatilmoqda…',
 
@@ -2756,6 +2757,9 @@ export const uz: Dictionary = {
     included: 'Kiradi',
     notIncluded: 'Kirmaydi',
     badges: ['Yulduzcha', 'Toj'],
+    heroRows: ['Kuniga energiya', 'Tiklanish, soat', 'Raund balli'],
+    more: 'Qolgan hammasi',
+    mark: '{name} reja belgisi',
     plans: [
       { name: 'Free', note: 'Butun aylanma, yordamsiz.' },
       { name: 'Pro', note: 'Har kuni o‘ynaydigan uchun.' },

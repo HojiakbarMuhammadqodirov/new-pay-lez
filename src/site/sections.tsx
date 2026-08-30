@@ -8,7 +8,9 @@ import {
   PARTNERS,
   SERVICE_ICONS,
   SOCIALS,
+  SUB_BADGE_ROW,
   SUB_DEFAULT_TERM,
+  SUB_HERO,
   SUB_PLANS,
   SUB_ROWS,
   SUB_TERMS,
@@ -468,15 +470,39 @@ export function Subscription() {
             const priced = plan.terms
               ? subTermPrice(plan.eur, rung.months, rung.discountBp, currency)
               : null;
+            /* 0, 1 or 2 — none, star, crown. A `badge` row's value is an index
+               into `copy.badges` and not a count, which is why it is read here
+               rather than through `SubCell`. */
+            const seal = SUB_ROWS[SUB_BADGE_ROW].values[planIndex] ?? 0;
 
             return (
-              <article className="sub-card" key={plan.id} data-reveal>
+              <article
+                className="sub-card"
+                key={plan.id}
+                data-tier={plan.id}
+                data-reveal
+              >
                 <div className="sub-card-in">
-                  <span className="sub-ico">
-                    <Icon name={plan.icon} size={20} />
-                  </span>
-                  <h3>{named.name}</h3>
-                  <span className="sub-note">{named.note}</span>
+                  <header className="sub-head">
+                    <span className="sub-ico">
+                      <Icon name={plan.icon} size={20} />
+                    </span>
+                    <span className="sub-titles">
+                      <h3>{named.name}</h3>
+                      <span className="sub-note">{named.note}</span>
+                    </span>
+                    {/* The seal, read off the end of the table rather than
+                        printed as its last row — see `SUB_BADGE_ROW`. */}
+                    {seal !== 0 && (
+                      <span
+                        className="sub-seal"
+                        aria-label={fill(copy.mark, { name: copy.badges[seal - 1] })}
+                      >
+                        <Icon name={seal === 1 ? 'star' : 'crown'} size={13} />
+                        {copy.badges[seal - 1]}
+                      </span>
+                    )}
+                  </header>
 
                   {/* Keyed on the term so a new price animates in rather than
                       swapping under the eye. Remounting one `<p>` is the whole
@@ -488,6 +514,19 @@ export function Subscription() {
                       <>
                         <b>{money(priced.perMonth, 'unit')}</b>
                         <span>{copy.perMonth}</span>
+                        {/* The rung's own saving, on the card it is taken off.
+                            It is the ladder's figure rather than a second one:
+                            the chip above says which rung is selected and this
+                            says what that rung is doing to *this* price, which
+                            is the question a reader has while looking at the
+                            price rather than at the ladder. */}
+                        {rung.discountBp > 0 && (
+                          <span className="sub-save">
+                            {fill(copy.term.save, {
+                              pct: String(rung.discountBp / 100),
+                            })}
+                          </span>
+                        )}
                       </>
                     )}
                   </p>
@@ -505,13 +544,31 @@ export function Subscription() {
                           })}
                   </p>
 
-                  <ul className="sub-rows">
-                    {SUB_ROWS.map((row, rowIndex) => (
-                      <li className="sub-row" key={rowIndex}>
-                        <span className="sub-row-label">{copy.rows[rowIndex]}</span>
-                        <SubCell kind={row.kind} value={row.values[planIndex]} />
+                  {/* The three figures the plan is actually bought for, at a
+                      size that can make the case. */}
+                  <ul className="sub-hero">
+                    {SUB_ROWS.slice(0, SUB_HERO).map((row, rowIndex) => (
+                      <li key={rowIndex}>
+                        <b>
+                          <SubCell kind={row.kind} value={row.values[planIndex]} />
+                        </b>
+                        <span>{copy.heroRows[rowIndex]}</span>
                       </li>
                     ))}
+                  </ul>
+
+                  <span className="sub-more">{copy.more}</span>
+
+                  <ul className="sub-rows">
+                    {SUB_ROWS.slice(SUB_HERO, SUB_BADGE_ROW).map((row, offset) => {
+                      const rowIndex = offset + SUB_HERO;
+                      return (
+                        <li className="sub-row" key={rowIndex}>
+                          <span className="sub-row-label">{copy.rows[rowIndex]}</span>
+                          <SubCell kind={row.kind} value={row.values[planIndex]} />
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               </article>

@@ -11597,7 +11597,10 @@ button {
   display: flex;
   align-items: baseline;
   gap: 0.15rem;
-  margin-bottom: 0.85rem;
+  /* Room for the arcs. A full battery throws bolts a rem and a half off its top
+     edge, and without the clearance the leftmost one strikes through the figure
+     — which reads as a scratch on the panel rather than as electricity. */
+  margin-bottom: 1.2rem;
   font-family: var(--font-display);
   line-height: 1;
   letter-spacing: -0.04em;
@@ -11681,7 +11684,8 @@ button {
   flex: 1;
   min-height: 3.6rem;
   max-height: 6rem;
-  margin-bottom: 0.9rem;
+  /* Same clearance underneath, for the same reason. */
+  margin-bottom: 1.2rem;
 }
 
 /* The case is drawn, not implied. A gauge whose empty blocks are invisible is a
@@ -13074,7 +13078,7 @@ button {
    ceiling and ends them below the floor. */
 .pv-col-top {
   top: -40%;
-  bottom: calc(100% - var(--gap) + 12%);
+  bottom: calc(100% - var(--gap) + 23%);
 }
 
 .pv-col-top::after {
@@ -13082,7 +13086,7 @@ button {
 }
 
 .pv-col-low {
-  top: calc(var(--gap) + 12%);
+  top: calc(var(--gap) + 23%);
   bottom: -40%;
 }
 
@@ -13104,12 +13108,32 @@ button {
   /* `FLIGHT.bird.x` is 16 of the world's 71 units across — the same place on
      the stage the real one flies. */
   left: 16%;
-  top: 50%;
-  width: 32%;
+  /* Half his own height above the middle, which is `50% - 30%/2`. Written as a
+     `top` rather than a negative `margin-top`, because a percentage margin
+     resolves against the containing block's **width** — it put him at the top of
+     the stage on a box that is three times wider than it is tall, and he flew
+     straight through the first column. */
+  top: 35%;
+  /*
+   * **Sized against the stage's height, not its width**, which is the only one
+   * of the two that means anything here: what has to be true is that he fits
+   * through the gap, and the gap is vertical. A width in percent made him a
+   * different fraction of the opening on every card the grid can produce — fine
+   * at one breakpoint and clipping through a column at the next.
+   *
+   * 30% against a 46% opening leaves eight points of clearance at each end,
+   * which is what the bob then spends. He started at 32% *of the width*, which
+   * on a card was wider than the gate he was flying through — a course drawn as
+   * a portrait.
+   */
+  height: 30%;
+  width: auto;
+  aspect-ratio: 1.44 / 1.24;
   overflow: visible;
-  margin-top: -11%;
   animation-name: pv-bob;
-  animation-duration: 1.8s;
+  /* The column cycle, not a rhythm of its own — see `FlightPreview`. */
+  animation-duration: 3.6s;
+  animation-timing-function: ease-in-out;
 }
 
 /* The four sanctioned part styles, and the fifth the wing has to itself.
@@ -13164,17 +13188,30 @@ button {
   }
 }
 
-/* The tilt is `FLIGHT.bird.tilt` in spirit — nose up climbing, down falling —
-   at a fraction of its range. A sprite fifty pixels across cannot spare sixteen
-   degrees: at that size the rotation stops reading as motion and starts reading
-   as the shape. */
+/*
+ * Down to meet the second column, up to meet the first.
+ *
+ * A column crosses the bird about three quarters of the way through its own
+ * travel, and the two columns are half a cycle apart — so on this shared 3.6s
+ * clock he has to be **low at a quarter** and **high at three quarters**, which
+ * is where the two gaps are. The midpoints are level flight between gates.
+ *
+ * The tilt is `FLIGHT.bird.tilt` in spirit — nose up climbing, down falling — at
+ * a fraction of its range. A sprite forty pixels across cannot spare sixteen
+ * degrees: at that size the rotation stops reading as motion and starts reading
+ * as the shape.
+ */
 @keyframes pv-bob {
   0%,
+  50%,
   100% {
-    transform: translateY(-26%) rotate(-7deg);
+    transform: translateY(0) rotate(0deg);
   }
-  50% {
-    transform: translateY(24%) rotate(9deg);
+  25% {
+    transform: translateY(17%) rotate(9deg);
+  }
+  75% {
+    transform: translateY(-17%) rotate(-8deg);
   }
 }
 
@@ -17570,9 +17607,10 @@ button {
    - **The cards are a tray and a plate.** `.sub-card` is a translucent shell
      with 6px of padding and `.sub-card-in` is the glass panel sitting in it,
      with a radius 6px smaller so the two curves are concentric. A pricing card
-     is the densest thing on this page — a name, a price, a commitment and
-     thirteen rows — and the nested enclosure is what stops it reading as a
-     rectangle of text laid on the globe.
+     is the densest thing on this page — a name, a price, a commitment, three
+     figures and nine rows — and the nested enclosure is what stops it reading
+     as a rectangle of text laid on the globe. The tray is also where a tier
+     puts its colour: see the materials block below.
    - **Hover marks the card with a border, never with a lift.** That is
      `.tier`'s own rule from the Business page, and the argument is the same:
      raising one card out of a row of three costs the row its shared baseline,
@@ -17697,13 +17735,28 @@ button {
     0 26px 70px -50px rgba(var(--glow-rgb), calc(0.85 * var(--glow-k)));
 }
 
+/* The icon, the name and the seal on one line — the disc used to sit on a line
+   of its own above the name, which spent a whole row of a dense card on 34px of
+   circle and left the seal nowhere to go. */
+.sub-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.sub-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .sub-ico {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: none;
   width: 2.1rem;
   height: 2.1rem;
-  margin-bottom: 0.9rem;
   border: 1px solid var(--border);
   border-radius: 50%;
   background: var(--surface-2);
@@ -17719,6 +17772,33 @@ button {
   margin-top: 0.2rem;
   font-size: 0.78rem;
   color: var(--text-fnt);
+}
+
+/*
+ * The seal — the `profile_badge` row, worn rather than listed.
+ *
+ * It is the one perk on the table you carry around with you, so it is drawn
+ * where a mark belongs: at the top of the card, beside the name it would sit
+ * beside on the board. As the thirteenth row of a list it was the word "Crown"
+ * right-aligned in 0.8rem, which is the flattest possible way to describe a
+ * decoration.
+ */
+.sub-seal {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  gap: 0.3rem;
+  margin-top: 0.15rem;
+  padding: 0.24rem 0.55rem 0.24rem 0.45rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.1);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--accent-ink);
 }
 
 .sub-price {
@@ -17746,6 +17826,26 @@ button {
   color: var(--text-fnt);
 }
 
+/* The saving, sat on the price it comes off. Small, because the figure it
+   qualifies is 2rem of display type and a chip that competes with it turns two
+   pieces of information into two headlines. */
+.sub-save {
+  align-self: center;
+  margin-left: auto;
+  padding: 0.22rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--accent-ink);
+}
+
+.sub-card[data-tier='premium'] .sub-save {
+  background: rgba(var(--ink-on-rgb), 0.16);
+}
+
 @keyframes sub-price-in {
   from {
     opacity: 0;
@@ -17771,11 +17871,73 @@ button {
   color: var(--text-mut);
 }
 
+/*
+ * The strip — the three figures a plan is bought for, at a size that can argue.
+ *
+ * Three equal columns and `tabular-nums`, so 4 / 6 / 10 line up across the row
+ * of cards and the jump from one tier to the next is legible as a *shape*
+ * before any of it is read. That is the entire reason these three left the
+ * list: "10" beside "4" at display size is the offer, and the same pair set in
+ * 0.8rem at the right-hand edge of a thirteen-row table is a spreadsheet.
+ *
+ * The label sits under the figure rather than beside it because the three
+ * columns are narrow, and a label that wraps to two lines under a number is
+ * still legible where one that wraps beside it is a mess.
+ */
+.sub-hero {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.4rem;
+  margin: 1.15rem 0 0;
+  padding: 0.85rem 0.2rem;
+  border-block: 1px solid var(--border);
+}
+
+.sub-hero li {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  text-align: center;
+  min-width: 0;
+}
+
+/* The `<b>` is a wrapper around `SubCell`, which brings its own `.sub-val` —
+   hence the descendant selector rather than styling the `<b>` itself. */
+.sub-hero b .sub-val {
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2.1vw, 1.75rem);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  color: var(--accent-lit);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-hero span {
+  font-size: 0.68rem;
+  line-height: 1.25;
+  color: var(--text-fnt);
+  text-wrap: balance;
+}
+
+/* Heads the nine rows, so the strip above them reads as a summary rather than
+   as the first three of twelve. */
+.sub-more {
+  display: block;
+  margin-top: 1.1rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
 .sub-rows {
   list-style: none;
-  margin: 1.1rem 0 0;
-  padding: 0.45rem 0 0;
-  border-top: 1px solid var(--border);
+  margin: 0.5rem 0 0;
+  padding: 0;
 }
 
 /*
@@ -17835,6 +17997,179 @@ button {
 
 /* ── the one press ──────────────────────────────────────────────────────── */
 
+/* ── the three tiers are three materials ──────────────────────────────────
+   The section shipped as one card drawn three times: same glass, same border,
+   same thirteen rows, and the only difference between Free and Premium was
+   which numbers sat in the right-hand column. A price list whose most expensive
+   item looks exactly like its free one is not making the case.
+
+   So each tier gets its own **material**, and the three are surfaces this brand
+   already owns rather than three new colours:
+
+     Free      plain glass, unchanged — it is the quiet one on purpose
+     Pro       glass tinted with the accent, marked with a rail and a hatch
+     Premium   the ink plate: near-black carrying mint, in *both* themes
+
+   Premium is the interesting one. `--ink-rgb` / `--ink-on-rgb` are declared in
+   `:root` and never redeclared, because they belong to a surface rather than to
+   a theme — the same pair the profile's avatar disc is made of. A card built
+   from them is one object in both themes instead of two near-misses: on paper
+   it is a black slab among white ones and separates itself outright, and on
+   black the ink's green cast (4,32,31 against the page's 13,13,14) draws the
+   edge, which is the same 6% lift `--bg-2` uses.
+
+   That card **redefines the palette locally** rather than naming colours in its
+   own rules. Everything inside it already reads `--text`, `--border`,
+   `--surface-2` and the `--accent-*` family; re-pointing those at the ink pair
+   re-skins the whole card — the seal, the strip, the nine rows — without a
+   single new selector. It is the token system doing what the note at the top of
+   this file says it is for, and it is why this block is short.
+
+   The textures are the `[data-texture]` device from the game cards, here for
+   the same reason: when a design wants each item distinguishable and the items
+   are not objects, reach for texture rather than a second hue. The alphas are
+   set by the worst case — a hatch crisp enough to admire on an empty card is
+   noise under nine rows of small print. */
+
+.sub-card-in {
+  position: relative;
+  overflow: hidden;
+}
+
+/* The texture. Non-positioned children paint *under* a positioned
+   pseudo-element, so the content is lifted a layer rather than the wash being
+   pushed behind the plate, where its own background would hide it. */
+.sub-card-in::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: 0;
+}
+
+.sub-card-in > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* The rail: the lit top edge of a card catching the light. It stops short of
+   the corners, because a line running into a 26px radius reads as a border that
+   failed rather than as a highlight. */
+.sub-card[data-tier='pro'] .sub-card-in::after,
+.sub-card[data-tier='premium'] .sub-card-in::after {
+  content: '';
+  position: absolute;
+  inset: 0 12% auto;
+  height: 1.5px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--accent-rgb), 0.55),
+    transparent
+  );
+}
+
+/* ── Pro ── */
+
+.sub-card[data-tier='pro'] {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+/* The tray's tint is what separates Pro from Free at a glance, and on paper the
+   alpha that reads over black is very nearly nothing: light's --accent-rgb is a
+   dark teal, so the same 10% is a pale wash rather than a lit edge. Both go up
+   together — the tray and the plate's own border — which is the whole of Pro's
+   material. */
+:root[data-theme='light'] .sub-card[data-tier='pro'] {
+  background: rgba(var(--accent-rgb), 0.16);
+}
+
+.sub-card[data-tier='pro'] .sub-card-in {
+  border-color: rgba(var(--accent-rgb), 0.34);
+}
+
+.sub-card[data-tier='pro'] .sub-card-in::before {
+  opacity: 1;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.055) 0 1.5px,
+    transparent 1.5px 16px
+  );
+}
+
+/* ── Premium ── */
+
+.sub-card[data-tier='premium'] {
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+/*
+ * Ten tokens, and the card re-skins itself.
+ *
+ * These are dark's own values written against the ink pair rather than
+ * referenced out of the dark block: the card is a piece of dark UI whichever
+ * theme is reading, so it must not follow the page's palette when that palette
+ * turns to paper.
+ */
+.sub-card[data-tier='premium'] .sub-card-in {
+  --accent-rgb: var(--ink-on-rgb);
+  --accent: rgb(var(--ink-on-rgb));
+  --accent-ink: rgb(var(--ink-on-rgb));
+  --accent-lit: rgb(var(--ink-on-rgb));
+  --text: #e6f6f3;
+  --text-mut: rgba(230, 246, 243, 0.64);
+  --text-fnt: rgba(230, 246, 243, 0.42);
+  --border: rgba(var(--ink-on-rgb), 0.16);
+  --border-2: rgba(var(--ink-on-rgb), 0.32);
+  --surface-2: rgba(var(--ink-on-rgb), 0.09);
+
+  border-color: rgba(var(--ink-on-rgb), 0.22);
+  background: rgb(var(--ink-rgb));
+  /* No blur: there is nothing to see through an opaque plate, and a
+     backdrop-filter on a card this size is the most expensive thing here. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: inset 0 1px 0 rgba(var(--ink-on-rgb), 0.18);
+}
+
+.sub-card[data-tier='premium'] .sub-card-in::before {
+  opacity: 1;
+  background-image:
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--ink-on-rgb), 0.05) 0 1.5px,
+      transparent 1.5px 17px
+    ),
+    repeating-linear-gradient(
+      -45deg,
+      rgba(var(--ink-on-rgb), 0.05) 0 1.5px,
+      transparent 1.5px 17px
+    );
+}
+
+/* The seal on the ink plate is filled rather than tinted: at a tenth of an
+   alpha over near-black it disappeared, and the crown is the one thing on this
+   card that should not be subtle. */
+.sub-card[data-tier='premium'] .sub-seal {
+  border-color: transparent;
+  background: rgb(var(--ink-on-rgb));
+  color: rgb(var(--ink-rgb));
+}
+
+.sub-card[data-tier='premium'] .sub-ico {
+  border-color: rgba(var(--ink-on-rgb), 0.28);
+}
+
+/* Hover keeps the section's rule — mark the card, never lift it — but the two
+   paid tiers take the glow as well, since they have a rail for it to come off. */
+.sub-card[data-tier='pro']:hover .sub-card-in,
+.sub-card[data-tier='premium']:hover .sub-card-in {
+  box-shadow:
+    inset 0 1px 0 rgba(var(--accent-rgb), 0.18),
+    0 30px 80px -46px rgba(var(--glow-rgb), calc(1.1 * var(--glow-k)));
+}
+
 .sub-foot {
   display: grid;
   justify-items: center;
@@ -17853,8 +18188,8 @@ button {
 /* ── narrow ─────────────────────────────────────────────────────────────── */
 
 /*
- * Three columns of thirteen rows need roughly 290px each before the labels
- * start wrapping into the values. Below that the cards stack and take a
+ * Three columns of nine rows need roughly 290px each before the labels start
+ * wrapping into the values. Below that the cards stack and take a
  * readable measure rather than the full width of the wrap — a comparison row
  * whose label and value are 700px apart is not one.
  */
@@ -17885,6 +18220,23 @@ button {
 
   .sub-row {
     font-size: 0.8rem;
+  }
+
+  /* Three figures across a 350px card is 110px a column, and "Points a round"
+     under "1.25x" wraps to two lines at that width — which is fine, and is the
+     reason the label sits under the figure rather than beside it. The figure
+     comes down a step so the three do not crowd their own labels. */
+  .sub-hero b .sub-val {
+    font-size: 1.35rem;
+  }
+
+  /* The seal drops its word and keeps its mark: the name, the note and "Crown"
+     across 350px pushes that note onto three lines. The aria-label still says
+     which one it is, so nothing is lost to a reader who cannot see the shape. */
+  .sub-seal {
+    gap: 0;
+    padding: 0.3rem;
+    font-size: 0;
   }
 }
 

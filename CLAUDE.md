@@ -15,7 +15,7 @@ This file covers the repo as a whole.
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 582 checks: it
+There is no test runner. `npm run verify` is the test suite — 687 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of
@@ -574,7 +574,19 @@ and a missing anchor reads as a full tank.
 
 The gauge that draws it is a **battery** — four blocks in a case with a terminal
 on the end, the block being earned filling live against the real clock in CSS,
-and a spark crossing it while it charges. A row of pips has to be counted; a
+and the wait written beside the count as `+1 in 3h 12m` (`untilNextEnergy`,
+which takes its units from `Intl` and its frame from `copy.games.energyNext`).
+The two states have their own motion and it is the difference between them that
+matters: a spark **crosses** the case while charge is going in, and a full tank
+**arcs off every edge** instead — twelve bolts drawn as stroked polylines
+(`BatteryLightning` in `games.tsx`), each struck by pulling a `stroke-dashoffset`
+to zero in a fiftieth of a second. A filled shape can only *appear*, which is
+what an icon does; a stroke can be drawn, which is what lightning does. Their
+cycles are deliberately co-prime, so the set does not come back into phase and
+the striking reads as spontaneous without a single random number. A full battery was the one reading
+on that panel with no motion at all, which is backwards — it is the state a
+player most wants to recognise without reading, because it is the one where every
+button on the page works. A row of pips has to be counted; a
 battery is read, and the reading that matters is whether there is an evening's
 play left. The blocks are discrete because the quantity is: a round costs a whole
 one, and a bar three-quarters full would be promising a round that is not there.

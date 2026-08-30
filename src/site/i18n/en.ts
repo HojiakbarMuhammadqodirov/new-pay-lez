@@ -656,6 +656,24 @@ export const en = {
     noEnergy: 'Out of energy',
     /* The gauge's line when the tank is full and there is nothing to count to. */
     energyFull: 'Full — nothing to wait for',
+    /*
+     * The countdown, beside the count rather than under the gauge.
+     *
+     * `{time}` arrives already written — "3h 12m", or "45m" under the hour —
+     * from `untilNextEnergy` in `games.tsx`, which builds it out of `Intl` in
+     * the reader's own language. So this string is only the frame around it,
+     * and the frame is what has to translate: the "in" belongs to a sentence
+     * and the number does not.
+     *
+     * It says **hours and minutes**, which reverses a rule that used to be
+     * written here: one unit, never two, on the grounds that "in 3 hours 12
+     * minutes" is a stopwatch where a player only wants to know whether to wait.
+     * That was right about the sentence under the gauge and wrong beside the
+     * figure — this is the line somebody reads when they have decided to wait
+     * and want to know for how long, and "in 3 hours" leaves them checking back
+     * at a quarter past.
+     */
+    energyNext: '+1 in {time}',
     /* What a round costs, said once on the screen rather than on seven cards.
        It is the rule the whole page turns on and it was nowhere on it: a player
        met the cost by running out. Deliberately unitless — the noun is the
@@ -3230,6 +3248,20 @@ export const en = {
     notIncluded: 'Not included',
     /** Index-aligned with the `badge` row's values 1 and 2. */
     badges: ['Star', 'Crown'],
+    /**
+     * The strip's labels, index-aligned with the first `SUB_HERO` rows.
+     *
+     * Short on purpose, and short is why they are not `rows` reused: these sit
+     * under a figure at display size in a third of a card, where "Hours to
+     * refill one energy" wraps to three lines and stops being a label. The unit
+     * still lives in the label rather than welded to the number — that rule is
+     * about where a translator can reach it, not about how long the words are.
+     */
+    heroRows: ['Energy a day', 'Refill, hours', 'Points a round'],
+    /** Heads the nine rows under the strip. */
+    more: 'Everything else',
+    /** Names the seal for a screen reader: "Star plan mark". */
+    mark: '{name} plan mark',
     /** Index-aligned with `SUB_PLANS`. */
     plans: [
       { name: 'Free', note: 'The whole loop, unaided.' },

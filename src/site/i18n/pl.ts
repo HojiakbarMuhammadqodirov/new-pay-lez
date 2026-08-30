@@ -501,6 +501,7 @@ export const pl: Dictionary = {
     play: 'Zagraj',
     noEnergy: 'Koniec energii',
     energyFull: 'Pełna — nie ma na co czekać',
+    energyNext: '+1 za {time}',
     energyCost: '1 na rundę',
     loading: 'Rozdajemy…',
 
@@ -2756,6 +2757,9 @@ export const pl: Dictionary = {
     included: 'W pakiecie',
     notIncluded: 'Poza pakietem',
     badges: ['Gwiazdka', 'Korona'],
+    heroRows: ['Energia dziennie', 'Odnowa, godziny', 'Punkty za rundę'],
+    more: 'Wszystko inne',
+    mark: 'Oznaczenie planu: {name}',
     plans: [
       { name: 'Free', note: 'Cała pętla, bez wspomagania.' },
       { name: 'Pro', note: 'Dla grającego codziennie.' },
