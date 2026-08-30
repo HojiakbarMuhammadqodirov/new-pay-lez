@@ -19,7 +19,7 @@
  */
 import { EMPTY_PROFILE, type Account } from './context';
 import { SEED_USERS, type UserRecord } from './users';
-import { seedPlayer } from './player';
+import { newPlayer } from './player';
 
 const STORAGE_KEY = 'paylez-users';
 
@@ -122,7 +122,10 @@ export function toAccount(user: UserRecord): Account {
     email: user.email,
     type: user.type,
     business: user.business,
-    player: user.type === 'individual' ? (user.player ?? seedPlayer()) : user.player,
+    /* `newPlayer`, not the demo state: a stored row that predates `player`
+       belongs to somebody who has played nothing, and backfilling them a wallet
+       would be inventing a history for a real account. */
+    player: user.type === 'individual' ? (user.player ?? newPlayer()) : user.player,
     /* Same backfill, same reason: the profile postdates the stored shape and
        every field on it is a string the form is about to render. A missing one
        is an empty profile, not a page that throws reading `.username` of

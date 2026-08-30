@@ -56,6 +56,7 @@ import {
   SEED_USERS,
   USERNAME_MAX,
   USERNAME_MIN,
+  WELCOME_POINTS,
   validateSignUp,
   type UserRecord,
 } from '../src/site/auth/users';
@@ -83,6 +84,7 @@ import {
   redeem,
   ENERGY_REGEN_MINUTES,
   energyOf,
+  newPlayer as freshPlayer,
   seedPlayer,
   streakWeek,
   today,
@@ -3164,6 +3166,54 @@ console.log('\nthe partner dashboard');
   /* Zero keeps its decimals so a column of per-unit costs stays aligned —
      "£0" among "£0.67" is a ragged column, and these are tabular figures. */
   check('…and zero keeps the same shape', money(0, gbp, 'unit') === '£0.00', money(0, gbp, 'unit'));
+}
+
+/* ═══════════════════════════════════════════ what a new account holds ══ */
+
+console.log('\na new account has earned nothing');
+
+{
+  /*
+   * The bug this exists to stop shipped once and was visible on the first
+   * screen: every new sign-up was handed the *demo* player — 340 points, a
+   * three-day streak, 45 answered, four vouchers and three stamp cards — so
+   * somebody who had played nothing opened L-Earn on 340, took the 100-point
+   * welcome gift, and read 440 before their first round.
+   *
+   * The rule is one sentence: **the only points a new player has not earned are
+   * the welcome gift.** Everything below is that sentence, checked.
+   */
+  const fresh = freshPlayer();
+
+  check('a new player starts on zero points', fresh.points === 0, String(fresh.points));
+  check('…with no streak', fresh.streak === 0);
+  check('…having answered nothing', fresh.answered === 0 && fresh.correct === 0);
+  check('…and never having played', fresh.lastPlayed === null);
+  /* A freeze is earned at a streak milestone. Handing one over at sign-up is
+     the same category of gift as the points. */
+  check('…and no freeze in hand', fresh.freezes === 0);
+  check('…an empty wallet', fresh.vouchers.length === 0);
+  check('…no stamp cards', (fresh.stamps ?? []).length === 0);
+  check('…and nothing claimed', (fresh.deals ?? []).length === 0);
+  /* The tank is the one thing that *is* full, and it has to be: energy is not
+     earned, it is the limiter on a day, and a new player who cannot play is a
+     new player who leaves. */
+  check('…but a full tank', fresh.energy === MAX_ENERGY, String(fresh.energy));
+  check('…with no regen clock running', fresh.energyAt === null);
+
+  /* The first balance anybody can honestly see. */
+  check(
+    'the first balance a player can see is the welcome gift alone',
+    fresh.points + WELCOME_POINTS === WELCOME_POINTS,
+    String(fresh.points + WELCOME_POINTS),
+  );
+
+  /* And the demo account is still the demo account — the separation is the
+     fix, not deleting the seeded wallet, which is what makes the printed
+     credentials on the sign-in form worth signing in with. */
+  const demo = seedPlayer();
+  check('the demo player still has a wallet to look at', demo.vouchers.length > 0);
+  check('…and is not what a new account gets', demo.points !== fresh.points);
 }
 
 /* ══════════════════════════════════════════════════ the plan table ══ */

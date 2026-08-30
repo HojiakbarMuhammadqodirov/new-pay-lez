@@ -755,21 +755,6 @@ export const PREVIEW = {
 /** The board's two orderings, index-aligned with `copy.games.boardTabs`. */
 export const BOARD_TABS = ['correct', 'points'] as const;
 
-/**
- * The sample leaderboard.
- *
- * Player codes rather than names, exactly as the old app showed them — a public
- * board with real names on it is a different product with a different privacy
- * question, and the codes are what the screenshots have.
- */
-export const GAME_BOARD = [
-  { code: 'PY7178', correct: 21, points: 96, streak: 6 },
-  { code: 'PY6722', correct: 17, points: 74, streak: 4 },
-  { code: 'PY6307', correct: 10, points: 61, streak: 2 },
-  { code: 'PY5940', correct: 9, points: 48, streak: 5 },
-  { code: 'PY5511', correct: 7, points: 35, streak: 1 },
-];
-
 /* ─────────────────────────────────────────────────────────────── account ── */
 
 /**

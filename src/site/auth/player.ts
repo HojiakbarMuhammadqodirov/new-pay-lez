@@ -515,13 +515,55 @@ function bought(brand: string): Pick<OwnedVoucher, 'brand' | 'logo' | 'points' |
 }
 
 /**
- * A new player, with something already in the wallet.
+ * A player who has just opened an account: **nothing, and a full tank.**
  *
- * Not empty on purpose. A wallet with nothing in it cannot show what a used
- * voucher looks like, what an expiry looks like, or what the Used tab is for —
- * and those are most of what the page is trying to explain now that the
- * explaining paragraphs are gone. Two active and two spent is the smallest set
- * that shows all of it.
+ * Zero of everything, and that is the whole point. This used to return the
+ * demo state below — 340 points, a three-day streak, 45 questions answered and
+ * four vouchers — because a wallet with nothing in it cannot show what a used
+ * voucher looks like. That argument was about *the demo account*, and applying
+ * it to every new sign-up meant somebody who had played nothing opened L-Earn
+ * on 340 points, took the 100-point welcome gift, and was looking at 440 before
+ * their first round. It read as a bug because it was one: the number on the
+ * screen was not about them.
+ *
+ * So the two are separated. A new account gets this. The demo account keeps
+ * `seedPlayer` below, which is what a demo account is *for* — its credentials
+ * are printed on the sign-in form precisely so somebody can look at a full
+ * wallet without earning one.
+ *
+ * The welcome gift is then the only thing a new player has not earned, and it
+ * is paid by `finishOnboarding` for finishing the flow rather than for
+ * existing — so the first balance anybody sees is 100, and every point after it
+ * came from a round they played.
+ */
+export function newPlayer(): PlayerState {
+  return {
+    points: 0,
+    streak: 0,
+    energy: MAX_ENERGY,
+    answered: 0,
+    correct: 0,
+    lastPlayed: null,
+    /* No anchor: a full tank has no clock running. */
+    energyAt: null,
+    /* Zero, not one. A freeze is earned at the streak milestones in
+       `awardPoints`, and handing one over at sign-up is the same category of
+       gift as the 340 points this function exists to stop. */
+    freezes: 0,
+    vouchers: [],
+    stamps: [],
+    deals: [],
+  };
+}
+
+/**
+ * The demo account's player, with something already in the wallet.
+ *
+ * Not empty on purpose, and **not what a new account gets** — see `newPlayer`
+ * above. A wallet with nothing in it cannot show what a used voucher looks
+ * like, what an expiry looks like, or what the Used tab is for, and those are
+ * most of what the page is trying to explain. Two active and two spent is the
+ * smallest set that shows all of it.
  *
  * Every row is a real card off the catalogue rather than four hand-written
  * ones. They were hand-written, and two of the four had drifted: a Zalando card

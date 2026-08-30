@@ -6,7 +6,8 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { BOARD_TABS, GAME_BOARD, GAMES, VOUCHER_CARDS, type GameId } from './content';
+import { BOARD_TABS, GAMES, VOUCHER_CARDS, type GameId } from './content';
+import { listUsers } from './auth/directory';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -811,26 +812,72 @@ function Result({
 
 /* ───────────────────────────────────────────────────────────── leaderboard ── */
 
-function Board({ player }: { player: PlayerState }) {
+/**
+ * A player's code on the board — `PY` and four digits, derived from the id.
+ *
+ * Codes rather than names, exactly as the old app showed them: a public board
+ * with real names on it is a different product with a different privacy
+ * question. Derived rather than stored so it is stable for one account across
+ * reloads without a field anybody has to keep, and so two accounts cannot be
+ * handed the same code by an incrementing counter.
+ */
+function codeOf(id: string): string {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return `PY${String(hash % 10000).padStart(4, '0')}`;
+}
+
+function Board({ player, meId }: { player: PlayerState; meId: string }) {
   const copy = useCopy().games;
   const [tab, setTab] = useState(0);
   const [all, setAll] = useState(false);
 
-  /* The signed-in player is *in* the board, ranked with everyone else — a
-     leaderboard you are not on is a table of strangers. */
+  /*
+   * **Everybody on this board is a real account.**
+   *
+   * It used to be five invented codes in `content.ts` — PY7178 with 21 correct,
+   * and so on — which is why a brand-new player on a brand-new browser was
+   * ranked fourth behind four people who do not exist. The rows come off the
+   * directory now (`auth/directory.ts`, the same rows the console reads), so a
+   * board with one name on it is the honest answer to a product with one
+   * player, and it fills up as people sign up.
+   *
+   * The signed-in player is *in* it, ranked with everyone else — a leaderboard
+   * you are not on is a table of strangers — and is read from `player` rather
+   * than from their directory row, because the round they have just finished is
+   * in state before it is committed.
+   *
+   * Accounts with nothing yet are kept rather than filtered: a board that hides
+   * everybody on zero is a board that tells a new player they are alone. What
+   * *is* filtered is business accounts, which have no player state at all.
+   */
   const rows = useMemo(() => {
-    const me = {
-      code: 'You',
-      correct: player.correct,
-      points: player.points,
-      streak: player.streak,
-      me: true,
-    };
     const key = BOARD_TABS[tab];
-    return [...GAME_BOARD.map((r) => ({ ...r, me: false })), me].sort(
-      (a, b) => b[key] - a[key],
-    );
-  }, [tab, player.correct, player.points, player.streak]);
+    const others = listUsers()
+      .filter((user) => user.type === 'individual' && user.id !== meId)
+      .flatMap((user) =>
+        user.player
+          ? [{
+              code: codeOf(user.id),
+              correct: user.player.correct,
+              points: user.player.points,
+              streak: user.player.streak,
+              me: false,
+            }]
+          : [],
+      );
+
+    return [
+      ...others,
+      {
+        code: copy.boardYou,
+        correct: player.correct,
+        points: player.points,
+        streak: player.streak,
+        me: true,
+      },
+    ].sort((a, b) => b[key] - a[key]);
+  }, [tab, meId, copy.boardYou, player.correct, player.points, player.streak]);
 
   const shown = all ? rows : rows.slice(0, 3);
 
@@ -1464,7 +1511,7 @@ export function GamesApp() {
             </div>
           )}
 
-          <Board player={player} />
+          <Board player={player} meId={account.id} />
         </div>
       </section>
     </main>

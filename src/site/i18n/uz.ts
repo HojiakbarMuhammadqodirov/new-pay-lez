@@ -549,6 +549,10 @@ export const uz: Dictionary = {
     boardTitle: 'Reyting',
     boardTabs: ['To‘g‘ri javoblar', 'Yig‘ilgan ballar'],
     boardTop: 'Top 10',
+    /* The signed-in player's own row on the leaderboard. Everybody else is a
+       derived PY-code; this one is the second person, because a board you are
+       on should say so in words rather than in a code you have to recognise. */
+    boardYou: 'Siz',
     boardStreak: '{n} kunlik ketma-ketlik',
     boardCorrect: 'to‘g‘ri',
     boardPoints: 'ball',

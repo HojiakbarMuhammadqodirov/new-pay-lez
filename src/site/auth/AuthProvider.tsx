@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
 import { blankBusiness, type BusinessProfile } from './business';
-import { seedPlayer, today, type PlayerState } from './player';
+import { newPlayer, today, type PlayerState } from './player';
 import {
   AuthContext,
   EMPTY_PROFILE,
@@ -297,8 +297,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         business: type === 'business' ? current.business : null,
         /* The player state is the opposite case to the listing: it is created
            the moment someone says they are here to play, because an empty
-           wallet cannot show what a wallet is for. See `seedPlayer`. */
-        player: type === 'individual' ? (current.player ?? seedPlayer()) : null,
+           wallet is empty, and stays empty until they play. See `newPlayer`. */
+        player: type === 'individual' ? (current.player ?? newPlayer()) : null,
       };
       commit(next);
       return next;

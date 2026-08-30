@@ -549,6 +549,10 @@ export const ru: Dictionary = {
     boardTitle: 'Рейтинг',
     boardTabs: ['Верные ответы', 'Заработанные баллы'],
     boardTop: 'Топ-10',
+    /* The signed-in player's own row on the leaderboard. Everybody else is a
+       derived PY-code; this one is the second person, because a board you are
+       on should say so in words rather than in a code you have to recognise. */
+    boardYou: 'Вы',
     boardStreak: 'серия {n} дней',
     boardCorrect: 'верных',
     boardPoints: 'баллов',
