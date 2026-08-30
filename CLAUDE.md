@@ -15,7 +15,7 @@ This file covers the repo as a whole.
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 700 checks: it
+There is no test runner. `npm run verify` is the test suite — 705 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of

@@ -2537,8 +2537,22 @@ console.log('\nthe directory');
   check('…which the next round continues rather than resets',
     awardRound(player!.player!, { game: 'brain', correct: 5, total: 5, perCorrect: 1, won: true })
       .streak === 8);
+  /*
+   * Drawn from the last day played, **not from today**, and that is the fix for
+   * a check that failed every Monday.
+   *
+   * `streakWeek` shows the week that `now` falls in, Monday-first. The seed's
+   * `lastPlayed` is yesterday; on a Monday, yesterday is Sunday and belongs to
+   * the *previous* week, so a seven-day run ending then correctly draws an
+   * empty strip — the player has not played yet this week. Asserting against
+   * `new Date()` was therefore asserting something untrue one day in seven,
+   * which is the same shape as the month-end fixture in `server/verify.ts`.
+   *
+   * What is actually invariant is that the run is drawable in the week it
+   * happened in, and that is what this checks.
+   */
   check('…and a week the row can actually draw',
-    streakWeek(player!.player!, new Date()).some((day) => day.kept));
+    streakWeek(player!.player!, seedDay).some((day) => day.kept));
 
   const ids = new Set(SEED_USERS.map((u) => u.id));
   const emails = new Set(SEED_USERS.map((u) => u.email.toLowerCase()));
@@ -3214,6 +3228,40 @@ console.log('\na new account has earned nothing');
   const demo = seedPlayer();
   check('the demo player still has a wallet to look at', demo.vouchers.length > 0);
   check('…and is not what a new account gets', demo.points !== fresh.points);
+
+  /*
+   * **The path an actual sign-up takes**, which is the one that was still
+   * wrong after the first fix.
+   *
+   * `newPlayer` was pointed at from `AuthProvider.setType` and from the
+   * directory's backfill, and both of those are the *unusual* routes — a
+   * session that predates the field, or a visitor answering the account-type
+   * question late. The ordinary route is `newUser`, it had its own
+   * `seedPlayer()` call, and it kept handing out 340 points to every sign-up
+   * until a browser check caught it. So it is checked here rather than
+   * anywhere else: this is the function the form calls.
+   */
+  const signedUp = newUser({
+    name: 'Fresh Tester',
+    email: 'fresh@example.com',
+    password: 'testing-1234',
+    type: 'individual',
+  }, 'u_fresh', '2026-08-31');
+  check('a sign-up produces an empty player', signedUp.player?.points === 0,
+    String(signedUp.player?.points));
+  check('…with nothing in the wallet', (signedUp.player?.vouchers ?? []).length === 0);
+  check('…and no streak', signedUp.player?.streak === 0);
+  check('…and it is exactly `newPlayer`',
+    JSON.stringify(signedUp.player) === JSON.stringify(fresh));
+  /* A business sign-up has no player at all, which is a different answer from
+     an empty one and has to stay that way. */
+  const owner = newUser({
+    name: 'Venue Owner',
+    email: 'owner@example.com',
+    password: 'testing-1234',
+    type: 'business',
+  }, 'u_owner', '2026-08-31');
+  check('a business sign-up has no player state', owner.player === null);
 }
 
 /* ══════════════════════════════════════════════════ the plan table ══ */

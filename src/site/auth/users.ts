@@ -23,7 +23,7 @@
  * in `directory.ts`.
  */
 import { isEmail, type BusinessProfile } from './business';
-import { seedPlayer, today, type PlayerState } from './player';
+import { newPlayer, seedPlayer, today, type PlayerState } from './player';
 import { EMPTY_PROFILE } from './context';
 import type { AccountType, UserProfile } from './context';
 
@@ -113,7 +113,7 @@ const BRATYSLAWSKA: BusinessProfile = {
 /**
  * The player behind `user2`.
  *
- * Further along than `seedPlayer()`'s brand-new state — a week of streak, a
+ * Further along than `seedPlayer()`'s own state — a week of streak, a
  * balance that can afford the top of the catalogue, and a history that shows the
  * accuracy figure meaning something.
  *
@@ -308,7 +308,11 @@ export function newUser(
     created,
     type: draft.type,
     business: null,
-    player: draft.type === 'individual' ? seedPlayer() : null,
+    /* `newPlayer`, and this is the line the whole separation exists for: this
+       is what a sign-up produces. `seedPlayer` — the furnished demo wallet — is
+       reached from exactly one place now, `seededPlayer` above, which is the
+       demo account whose credentials the sign-in form prints. */
+    player: draft.type === 'individual' ? newPlayer() : null,
     profile: { ...EMPTY_PROFILE },
     /*
      * `null` and not absent, and the difference is the whole of the onboarding
