@@ -45,8 +45,8 @@ export const CONFIG = {
      *
      * What makes charging fair is that energy comes back on a clock rather than
      * at midnight: spend the tank at nine in the morning and the wait is hours,
-     * not the rest of the day. Read the two numbers below together — three at
-     * four hours is twelve hours from empty to full, and nine finished rounds
+     * not the rest of the day. Read the two numbers below together — four at
+     * four hours is sixteen hours from empty to full, and ten finished rounds
      * in a day from a full start; six a day at the steady rate. Pro is eight
      * sustained and Premium twelve.
      *
@@ -56,7 +56,7 @@ export const CONFIG = {
      * see on the screen, rather than in a second rule that shrinks the reward
      * for reasons nobody can count.
      */
-    dailyEnergy: 3,
+    dailyEnergy: 4,
     /** Minutes to regenerate one energy, on the free plan. Paid plans are
      *  faster (`energy_regen_minutes`). */
     energyRegenMinutes: 240,

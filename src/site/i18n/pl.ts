@@ -398,20 +398,55 @@ export const pl: Dictionary = {
       full: 'Komplet — {reward} czeka przy kasie',
       cycles: 'Wypełniona {n}× wcześniej',
       none: 'Nie masz jeszcze kart. Pierwsza zaczyna się przy pierwszej wizycie w lokalu z kartą.',
+      noneHere: 'Brak kart pieczątek w kategorii {category}.',
       visit: 'Dodaj wizytę',
     },
 
     deals: {
       title: 'Gorące oferty',
       lede: 'Oferty w pobliżu. Większość nie kosztuje nic — płaci za nie lokal.',
+
+      all: 'Wszystkie',
+      categories: ['Kawa', 'Jedzenie', 'Piekarnia', 'Usługi', 'Uroda'],
+      filter: 'Filtruj według kategorii',
+      noneHere: 'W kategorii {category} nie ma jeszcze nic w pobliżu.',
+      showAll: 'Pokaż wszystkie oferty',
+
+      openNow: 'Otwarte teraz',
+      closedNow: 'Zamknięte teraz',
       held: 'W Twoim portfelu',
-      board: 'Odbierz ofertę',
+
+      everyDay: 'Codziennie, {hours}',
+      until: 'Do {date}',
+      reviews: '{n} opinii',
+
       free: 'Za darmo',
       claim: 'Odbierz',
+      shortBy: 'Brakuje jeszcze {n} punktów',
       claimed: 'Odebrano {date}',
-      until: 'Do {date}',
-      short: 'Za mało punktów',
+      justClaimed: 'Odebrano — pokaż ten kod przy kasie',
+      code: 'Twój kod',
+
+      offers: [
+        'Dwie kawy, a trzecia na koszt lokalu.',
+        'Dziesięć procent zniżki na całe zamówienie, przez cały dzień.',
+        'Dwadzieścia procent zniżki na wszystko na ladzie.',
+        'Kup trzy bochenki, a czwarty dostaniesz za darmo.',
+        'Piętnaście procent zniżki na lunch w każdym stoisku w hali.',
+        'Dwa dania, a trzecie na koszt lokalu.',
+        'Darmowa kawa przelewowa do każdej kupionej książki.',
+        'Piętnaście procent zniżki na strzyżenie i podcięcie brody.',
+        'Dwadzieścia pięć procent zniżki na pierwszy zabieg.',
+      ],
+
       none: 'Nic jeszcze nie odebrano.',
+    },
+
+    redeemed: {
+      title: 'Odebrane',
+      lede: 'To, co już odebrałeś. Pokaż kod przy kasie — każdy działa tylko raz.',
+      dealsTitle: 'Odebrane gorące oferty',
+      dealsLede: 'Twoje aż do końca oferty. Lokal odczytuje kod przy kasie.',
     },
 
     giftsTitle: 'Karty podarunkowe',

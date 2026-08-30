@@ -136,8 +136,8 @@ const PLANS: PlanSeed[] = [
          morning, which is the player this key exists for — and now that every
          finished round costs one, that is every player, not just the one
          losing. The two keys together are what a day is: from a full tank,
-         `daily_energy + 1440 / energy_regen_minutes` rounds, so 9 here, 13 on
-         Pro, 19 on Premium. */
+         `daily_energy + 1440 / energy_regen_minutes` rounds, so 10 here, 14 on
+         Pro, 22 on Premium. */
       energy_regen_minutes: CONFIG.points.energyRegenMinutes,
       /* **Game rounds only** — see the note in `entitlements.ts`. The venue
          lines below have their own per-tier figures, and multiplying those as
@@ -188,7 +188,7 @@ const PLANS: PlanSeed[] = [
     rank: 1,
     terms: true,
     entitlements: {
-      daily_energy: 5,
+      daily_energy: 6,
       energy_regen_minutes: 180,
       points_multiplier: 1.25,
       scan_points: 30,
@@ -217,7 +217,7 @@ const PLANS: PlanSeed[] = [
     rank: 2,
     terms: true,
     entitlements: {
-      daily_energy: 7,
+      daily_energy: 10,
       energy_regen_minutes: 120,
       points_multiplier: 1.75,
       scan_points: 50,

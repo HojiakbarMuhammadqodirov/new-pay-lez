@@ -206,7 +206,7 @@ const SCHEMAS: Record<string, Schema> = {
         description:
           'Resolved server-side from the active plan. Ask what the account is entitled ' +
           'to, never what it paid. Values are strings; parse what you need.\n\n' +
-          'Consumer keys, free/pro/premium: `daily_energy` 3/5/7, `energy_regen_minutes` ' +
+          'Consumer keys, free/pro/premium: `daily_energy` 4/6/10, `energy_regen_minutes` ' +
           '240/180/120, `points_multiplier` 1/1.25/1.75 (**game rounds only**), `scan_points` ' +
           '20/30/50, `first_visit_points` 100/150/250, `stamp_points` 100/150/250, ' +
           '`new_category_points` 25/50/100, `voucher_validity_days` 14/30/60, ' +
@@ -223,7 +223,7 @@ const SCHEMAS: Record<string, Schema> = {
           'keys above. The server deletes retired rows on boot, so a client that still ' +
           'reads one gets a missing key rather than a stale number. **The energy pair is ' +
           'the only thing that bounds a day**: every finished round costs one, so a full ' +
-          'tank plus a day of refill is 9 rounds free, 13 on Pro, 19 on Premium.',
+          'tank plus a day of refill is 10 rounds free, 14 on Pro, 22 on Premium.',
       },
       venues: arrayOf({ type: 'object' }),
     },
@@ -505,8 +505,8 @@ const SCHEMAS: Record<string, Schema> = {
       'still costs nothing, and starting one costs nothing — the charge is written when ' +
       'the round is banked.\n\n' +
       'It **does not reset at midnight**: one refills every `energy_regen_minutes` (free ' +
-      '240, Pro 180, Premium 120) up to `daily_energy` (3/5/7). From a full tank that is ' +
-      '9 rounds in a day free, 13 on Pro, 19 on Premium; 6/8/12 at the sustained rate.',
+      '240, Pro 180, Premium 120) up to `daily_energy` (4/6/10). From a full tank that is ' +
+      '10 rounds in a day free, 14 on Pro, 22 on Premium; 6/8/12 at the sustained rate.',
     properties: {
       energy: int('Whole energy available right now. Was `lives`.'),
       max: int('The plan’s ceiling — `daily_energy`.'),

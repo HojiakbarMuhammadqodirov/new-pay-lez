@@ -38,7 +38,15 @@
  * below used to carry their own face values and two of them disagreed with the
  * shelf they were supposedly bought from.
  */
-import { CHEAPEST_VOUCHER_POINTS, voucherCard, type GameId } from '../content';
+import {
+  CHEAPEST_VOUCHER_POINTS,
+  voucherCard,
+  WALLET_DEALS,
+  type DealCategory,
+  type GameId,
+  type HotDeal,
+  type VenueFacts,
+} from '../content';
 
 /** How much energy a full tank holds, and what a round costs. */
 export const MAX_ENERGY = 3;
@@ -145,6 +153,15 @@ export interface StampCard {
   stamps: number;
   required: number;
   cycles: number;
+  /**
+   * What kind of place it is, for the category strip at the top of the wallet.
+   *
+   * Optional, and the optionality is load-bearing: this field arrived after
+   * people had stamp cards, and a state written before it has none. `inCategory`
+   * reads a missing one as *unfiled* rather than as any particular category, so
+   * an old card keeps showing under "All" and never claims to be a bakery.
+   */
+  category?: DealCategory;
 }
 
 /**
@@ -159,8 +176,15 @@ export interface StampCard {
  * `points` is what claiming cost, and it is **0 for most of them** — a hot deal
  * is an offer a venue is running, not something bought with a balance. The
  * handful that do cost points say so on the card.
+ *
+ * The venue's own facts are `Partial` for the same reason `StampCard.category`
+ * is optional: a deal claimed before the card carried an address was stored
+ * without one, and the card degrades to the parts that are actually known
+ * rather than printing an empty meta line — which is the rule the app's own
+ * `_metaLine` states ("degrades to the parts that are actually known rather
+ * than printing 'null away'").
  */
-export interface ClaimedDeal {
+export interface ClaimedDeal extends Partial<VenueFacts> {
   id: string;
   venue: string;
   logo: string;
@@ -263,6 +287,154 @@ export const stampsOf = (state: PlayerState): StampCard[] => state.stamps ?? [];
 /** Claimed deals held, same. */
 export const dealsOf = (state: PlayerState): ClaimedDeal[] => state.deals ?? [];
 
+/* ──────────────────────────────────────────────────── the category strip ── */
+
+/**
+ * Does this row belong under that chip?
+ *
+ * `null` is the "All" chip and is not a category — a venue cannot be filed in
+ * it, so it is the absence of a filter rather than a value to compare against.
+ *
+ * A row with **no** category matches only `null`. That is the honest reading of
+ * a missing field: "we have not filed this one" is not the same claim as "this
+ * one is a bakery", and a filter that let unfiled rows fall through would put
+ * somebody's barber under Coffee. The cost is that an old stamp card is only
+ * visible with no chip selected, which is why the strip's counts are computed
+ * from the same predicate — the number on the chip and the number in the list
+ * cannot disagree.
+ */
+export const inCategory = (
+  row: { category?: DealCategory },
+  category: DealCategory | null,
+): boolean => category === null || row.category === category;
+
+/** The rows under one chip. */
+export const filterByCategory = <T extends { category?: DealCategory }>(
+  rows: T[],
+  category: DealCategory | null,
+): T[] => rows.filter((row) => inCategory(row, category));
+
+/**
+ * The deals still on the board for this player — everything not already held.
+ *
+ * The wallet shows the board at the top and what came out of it below, and the
+ * rule the split rests on is that **a deal is in exactly one of the two**. It
+ * has to be derived rather than tracked: a claim writes to `state.deals` and
+ * nothing edits the board, so the only way the two lists can drift is if
+ * somebody computes one of them a second way.
+ */
+export const openDeals = (board: HotDeal[], state: PlayerState): HotDeal[] => {
+  const held = new Set(dealsOf(state).map((row) => row.id));
+  return board.filter((deal) => !held.has(deal.id));
+};
+
+/**
+ * A held deal, with the board's facts about the venue where the board has them.
+ *
+ * The app's rule, in the note on `_titleFor`: **the venue list is the record of
+ * what a place is called**, so where a claimed deal and the live board disagree
+ * about an address, the board wins. Two things follow, and they are why this is
+ * a merge rather than a lookup:
+ *
+ * - a deal claimed before the card carried an address at all — every one in
+ *   anybody's `localStorage` today — gets the venue back, instead of showing a
+ *   name and nothing else for as long as the offer runs;
+ * - a deal whose offer has since come off the board keeps what was stored with
+ *   it, because a holding does not stop being one when the offer ends. That is
+ *   the case a lookup would render as a blank card.
+ *
+ * Only the venue's facts are taken. `badge`, `points`, `expires`, `claimedOn`
+ * and `code` are what was *agreed* at the counter and are never re-read from a
+ * board that may have been edited since.
+ */
+export function heldWithVenue(deal: ClaimedDeal, board: HotDeal[]): ClaimedDeal {
+  const live = board.find((row) => row.id === deal.id);
+  if (!live) return deal;
+  const { category, city, address, rating, reviews, hours, zone } = live;
+  return { ...deal, category, city, address, rating, reviews, hours, zone };
+}
+
+/**
+ * A stamp card, filed under the category the board already has for its venue.
+ *
+ * Same rule as `heldWithVenue` and a weaker join: a stamp card has no deal id
+ * to match on — its `id` is the *card's* — so the only key available is the
+ * venue's name, matched exactly. That is enough for what this is for, which is
+ * the card written before the strip existed: a wallet holding three cards none
+ * of which appear under any chip reads as a broken filter rather than as an
+ * honest "unfiled".
+ *
+ * It only ever **fills a gap**. A card that already says what it is keeps
+ * saying it, and a venue the board has never heard of stays unfiled — which is
+ * the state `inCategory` is written for, and the reason this returns the card
+ * unchanged rather than guessing at one.
+ */
+export function stampWithVenue(card: StampCard, board: HotDeal[]): StampCard {
+  if (card.category) return card;
+  const live = board.find((row) => row.venue === card.venue);
+  return live ? { ...card, category: live.category } : card;
+}
+
+/* ─────────────────────────────────────────────────────────── the door ── */
+
+/** Minutes past midnight, or `null` if that is not an `HH:MM`. */
+function atMinute(clock: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(clock.trim());
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (hours > 24 || minutes > 59) return null;
+  return hours * 60 + minutes;
+}
+
+/**
+ * Is the venue open right now, on **its own** clock?
+ *
+ * `null` means the card knows nothing — an unparseable span, or none at all —
+ * and it is a third state rather than a `false` on purpose: "closed now" is a
+ * claim about the venue, and making it because a seed row was malformed is the
+ * class of bug this whole module writes its fallbacks around.
+ *
+ * `Intl.DateTimeFormat` with an explicit `en-GB` and the venue's zone is the
+ * only part of the site that reaches for `Intl`, and the note in `currency.ts`
+ * that says it is not used is about *numbers*: there, `Intl` would also impose
+ * the locale's own currency placement, which is a property of the pitch. Here
+ * the locale is pinned to one that writes `HH:MM` and the only thing being
+ * asked of it is what hour it is in Kraków, which nothing else can answer.
+ *
+ * A span that ends before it starts has crossed midnight (`22:00 – 02:00`), and
+ * the test flips from "between" to "outside" for it.
+ */
+export function openNow(
+  facts: { hours: string; zone: string },
+  now: Date = new Date(),
+): boolean | null {
+  const [from, to] = facts.hours.split(/\s*[–-]\s*/);
+  const opens = from === undefined ? null : atMinute(from);
+  const closes = to === undefined ? null : atMinute(to);
+  if (opens === null || closes === null) return null;
+
+  let local: string;
+  try {
+    local = new Intl.DateTimeFormat('en-GB', {
+      timeZone: facts.zone,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).format(now);
+  } catch {
+    /* An unknown zone is "nothing said", not "closed" — same rule as above. */
+    return null;
+  }
+
+  const minute = atMinute(local);
+  if (minute === null) return null;
+
+  return opens <= closes
+    ? minute >= opens && minute < closes
+    : minute >= opens || minute < closes;
+}
+
 /** A card with every slot filled. The reward is waiting at the counter. */
 export const isCardFull = (card: StampCard): boolean => card.stamps >= card.required;
 
@@ -306,7 +478,7 @@ export function stampVisit(state: PlayerState, cardId: string): PlayerState {
  */
 export function claimDeal(
   state: PlayerState,
-  deal: { id: string; venue: string; logo: string; badge: string; points: number; expires: string },
+  deal: HotDeal,
   code: string,
   on: string,
 ): PlayerState {
@@ -402,21 +574,20 @@ export function seedPlayer(): PlayerState {
      * 2 of 6 shows a progress bar; this one shows a rule.
      */
     stamps: [
-      { id: 's1', venue: 'Dubai Cafe', logo: 'D', reward: 'a free filter coffee', stamps: 5, required: 6, cycles: 1 },
-      { id: 's2', venue: 'Sablewski & Para', logo: 'S', reward: 'a free pastry', stamps: 1, required: 8, cycles: 0 },
-      { id: 's3', venue: 'Hala Forum', logo: 'H', reward: 'a free lunch set', stamps: 3, required: 10, cycles: 0 },
+      { id: 's1', venue: 'Dubai Cafe', logo: 'D', reward: 'a free filter coffee', stamps: 5, required: 6, cycles: 1, category: 'coffee' },
+      { id: 's2', venue: 'Sablewski & Para', logo: 'S', reward: 'a free pastry', stamps: 1, required: 8, cycles: 0, category: 'bakery' },
+      { id: 's3', venue: 'Hala Forum', logo: 'H', reward: 'a free lunch set', stamps: 3, required: 10, cycles: 0, category: 'food' },
     ],
     /* One claimed, so the section is not an empty state on a page whose whole
        job is to show what the wallet holds. The rest of the board is the
        catalogue below it. */
     deals: [
       {
-        id: 'd-dubai-2for1',
-        venue: 'Dubai Cafe',
-        logo: 'D',
-        badge: '2+1',
-        points: 0,
-        expires: '31.08',
+        /* Spread off the board rather than written out, for the reason the
+           vouchers above are: this is the same offer the top of the page is
+           showing, and two hand-written copies of one venue drift the first
+           time an address is corrected in only one of them. */
+        ...WALLET_DEALS[0],
         claimedOn: '19.07',
         code: 'PLZ-D2F1',
       },

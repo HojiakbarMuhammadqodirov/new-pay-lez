@@ -13307,6 +13307,103 @@ button {
   }
 }
 
+/* ══════════════════════════════════════════════════ the category strip ══
+ *
+ * The chips above the board — the app's `_CategoryStrip`
+ * (`Pay-lez mobile`, `lib/screens/deals_screen.dart`).
+ *
+ * Two things are ported exactly and one is not. The 44px height is: it is the
+ * app's, and it is the target a thumb needs on the phone this page also has to
+ * work on. The **fill** is not: the app paints the selected chip `ink` — a
+ * near-black pill with the page's ground for a label — and near-black is the
+ * one press on this site that belongs to `.pd-app` alone (see the note on
+ * `--solid`). A selected chip here is the accent, like every other selected
+ * thing on the site: `.wal-tabs`, the dashboard rail, the language menu.
+ *
+ * It wraps rather than scrolling. The app scrolls it because a phone has one
+ * row of 402px to spend and six chips do not fit; a page 1200px wide has room
+ * for all six twice over, and a horizontal scroller on a desktop is a row with
+ * things hidden in it for no reason. Below the fold of a phone it wraps to two
+ * lines, which hides nothing.
+ */
+.wal-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.wal-cats button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.75rem;
+  padding: 0.5rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 240ms var(--ease),
+    border-color 240ms var(--ease),
+    color 240ms var(--ease);
+}
+
+.wal-cats button:hover {
+  border-color: var(--accent-soft);
+  background: var(--surface);
+}
+
+.wal-cats button[data-on='true'] {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+/* The count, which is the whole reason the strip is worth pressing: a chip
+   that says 0 has already answered the question. `tabular-nums` so six chips
+   in a row do not step as the counts change. */
+.wal-cats button i {
+  font-style: normal;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wal-cats button {
+    transition: none;
+  }
+}
+
+/* A heading below a heading — the two blocks inside "Redeemed". Smaller than a
+   `.section-head` because it is subordinate to one and has to read that way;
+   the lede sits on the same line where there is room for it, because these two
+   are a list of what is in the section rather than two sections. */
+.wal-subhead {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  margin: 1.8rem 0 1rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.wal-subhead span {
+  font-family: var(--font-body);
+  font-size: 0.83rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text-mut);
+}
+
 /* ══════════════════════════════════════════════ a holding, in one card ══
    The shell the three holdings share. Prefixed `wal-` like everything else on
    this screen: `site.css` is one sheet with no scoping, and `.wallet-tabs` on
@@ -13590,11 +13687,96 @@ button {
   text-wrap: balance;
 }
 
+/* ── the venue, under its name ─────────────────────────────────────────────
+ *
+ * Three lines the app's list card does not carry, and the reason it does not is
+ * that on a phone it is one of a column you scroll past — it puts the venue's
+ * facts on the venue sheet a tap further in. There is no sheet here, and a
+ * desktop card has the room, so the meta line the app's *venue screen* writes
+ * (`_metaLine`: `category · address`) comes forward onto the card.
+ *
+ * All three degrade rather than render a hole: a deal claimed before these
+ * fields existed carries none of them and gets none of the lines.
+ */
+.wal-where {
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+/*
+ * The rating: a figure and the cohort behind it, never one without the other.
+ *
+ * The star is a glyph rather than an icon because it has to sit *inside* the
+ * figure's line box at the figure's own weight — an SVG beside it is a second
+ * baseline to align, and this is one word.
+ */
+.wal-rate {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  font-size: 0.76rem;
+  color: var(--text-fnt);
+}
+
+.wal-rate b {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.wal-rate i {
+  font-style: normal;
+  font-size: 0.8rem;
+  color: var(--accent-ink);
+}
+
+/* The window. Pushed off the bottom of the text block so the offer line above
+   it sits against the name rather than floating between the two. */
+.wal-when {
+  margin-top: 0.35rem;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
 /* The app's teal line — what the reader gets, said once. */
 .wal-offer {
+  margin-top: 0.35rem;
   font-size: 0.84rem;
   font-weight: 600;
   line-height: 1.4;
+  color: var(--accent-ink);
+  text-wrap: pretty;
+}
+
+/*
+ * "Free to claim" — the offer's most notable property, and the only thing on
+ * the card that is neither the venue's words nor the offer's.
+ *
+ * A tag rather than a line, and the difference is what stops the card having
+ * two accent sentences under one name: the offer above it is a sentence, this
+ * is a property of it, and set at the same weight in the same ink they read as
+ * a paragraph that has been broken in the wrong place.
+ *
+ * A priced deal gets nothing here. What it costs is on the button, and the
+ * absence of a price is what "free" means — saying it twice would push the
+ * venue's own facts off the card.
+ */
+.wal-free {
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  border: 1px solid var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+  font-size: 0.68rem;
+  font-weight: 700;
+  line-height: 1.3;
   color: var(--accent-ink);
 }
 
@@ -13636,53 +13818,244 @@ button {
   transform: none;
 }
 
-/* ══════════════════════════════════════════ the two columns of holdings ══
+/* ══════════════════════════════════════════════════════ claiming a deal ══
  *
- * Deals and stamp cards, side by side.
+ * What happens in the second between pressing "Claim this deal" and the card
+ * moving down to Redeemed.
  *
- * The one place this page departs from the app's single column, and the reason
- * is the pairing rather than the width: these two are what a player checks
- * *before going out* — what have I got, and where am I nearly there — and on a
- * wide screen that is one look instead of two scrolls. The gift cards below
- * stay full width because they are a shelf as well as a holding.
+ * The app does none of this, and the reason it does not is worth stating so
+ * that this is not read as a port: on the phone the button *navigates* — it
+ * arms the gate and drops you on the Scan tab, and a celebration on a screen
+ * you are leaving is a celebration nobody sees. Nothing navigates here. The
+ * card has to say by itself that the press worked, that the offer is now
+ * yours, and that it has moved — three things, and a card that simply vanished
+ * from the list would say none of them.
  *
- * `1fr 1fr` rather than `auto-fit`: the two columns are not interchangeable
- * cards, they are two named sections, and a track that collapses them into one
- * at an arbitrary width would reorder the page for no reason. One breakpoint,
- * chosen where the deal grid stops fitting two across.
+ * So the motion is doing work rather than decorating: **the ring** is the claim
+ * going out, **the sheen** is the card being marked, **the code** lands where
+ * the button was, and only then does the card leave. Every curve is the app's
+ * own kit (`lib/widgets/common.dart`) rather than invented here — `Pop` for the
+ * code, the stamp-landing ring for the burst, `Sheen` for the sweep — because
+ * this is the same product doing the same thing and it should move the same
+ * way.
+ *
+ * All of it is off under `prefers-reduced-motion`, and the *hold* goes with it:
+ * `CLAIM_HOLD_MS` in `wallet.tsx` is skipped entirely rather than left running
+ * over a still card, so a reader who has asked for less movement gets the deal
+ * in the Redeemed section immediately instead of a second of nothing.
  * ═══════════════════════════════════════════════════════════════════════ */
-.wal-split {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: clamp(1.6rem, 4vw, 3rem);
-  margin-top: 2.5rem;
+
+/* The card itself: one short lift, on the same curve everything else here
+   settles with. Not a scale — the card is in a grid whose other cards do not
+   move, and a card that grows pushes its own text off its neighbours' lines. */
+.wal-deal[data-claiming='true'] {
+  border-color: var(--accent-soft);
+  animation: wal-claim 620ms var(--ease) both;
 }
 
-.wal-col {
-  min-width: 0;
+@keyframes wal-claim {
+  0% {
+    transform: translateY(0);
+  }
+  35% {
+    transform: translateY(-6px);
+  }
+  100% {
+    transform: translateY(0);
+  }
 }
 
-.wal-col .section-head {
-  margin-bottom: 1.1rem;
+/*
+ * The burst — the app's `pl-stampring` at card size.
+ *
+ * A ring rather than a filled disc, and it goes *out*: the claim leaving the
+ * card is the thing being drawn. Centred on the band rather than on the plate
+ * because the band is what the eye is already on, and clipped by the card's own
+ * `overflow: hidden` so it reads as coming from under the card rather than
+ * floating over the page.
+ */
+.wal-burst {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 6rem;
+  height: 6rem;
+  margin: -3rem 0 0 -3rem;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  pointer-events: none;
+  animation: wal-burst 620ms ease-out both;
 }
+
+@keyframes wal-burst {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.35);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.6);
+  }
+}
+
+/*
+ * The sheen — the app's `Sheen`, a `-18deg` bar crossing the plate once.
+ *
+ * A gradient rather than a solid bar, because a hard edge over a textured band
+ * reads as a rendering fault. It runs the full height of the band and starts
+ * off the left edge, so the first frame is empty rather than a bar sitting in
+ * the middle of the card.
+ */
+.wal-sheen {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 34%;
+  pointer-events: none;
+  transform: skewX(-18deg);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--accent-rgb), 0.28),
+    transparent
+  );
+  animation: wal-sheen 620ms ease-out both;
+}
+
+@keyframes wal-sheen {
+  0% {
+    transform: translateX(-140%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(340%) skewX(-18deg);
+  }
+}
+
+/*
+ * What replaces the button: a tick, the sentence, and the code.
+ *
+ * The button is *gone* rather than disabled. A control that cannot do anything
+ * any more should not still look like one, and pressing this one twice is
+ * exactly what `claimDeal` guards against — a guard the screen should not be
+ * inviting anybody to test.
+ */
+.wal-won {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  min-height: 2.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--accent-ink);
+  animation: wal-rise 400ms var(--ease) both;
+}
+
+.wal-won svg {
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+
+/* The code lands on the app's `Pop` curve — .86 up through 1.04 and back —
+   which is the one motion in the kit that means "this is now yours". */
+.wal-won .wcard-code {
+  display: block;
+  margin-top: 0.2rem;
+  animation: wal-pop 400ms 160ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+@keyframes wal-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes wal-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.86);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/*
+ * The code on a deal already held, which is not an event and does not animate.
+ *
+ * Labelled, unlike the gift card's: a gift card's code sits under a face value
+ * and a brand and could not be anything else, and this one sits where a button
+ * was on a card that looks like the eight offers above it.
+ */
+.wal-code-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.wal-code-block i {
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wal-deal[data-claiming='true'],
+  .wal-burst,
+  .wal-sheen,
+  .wal-won,
+  .wal-won .wcard-code {
+    animation: none;
+  }
+}
+
+/* ══════════════════════════════════════════════════ the board, in a grid ══
+ *
+ * Deals and stamp cards, one full-width list each, one under the other.
+ *
+ * This was two columns side by side, on the argument that "what have I got, and
+ * where am I nearly there" is one question a wide screen can answer in one
+ * look. The argument was right about the pairing and wrong about the page: half
+ * a page is not enough width for the app's card once it carries the venue as
+ * well as the offer — an address, a rating and a 44px button in a 13.5rem track
+ * is three words per line — and the two lists are now filtered by one strip
+ * that sits above both, which a two-column layout would have to draw twice.
+ *
+ * So the pairing moved from *beside* to *under one filter*, which is the same
+ * glance for the same reason and leaves the card the width it needs.
+ * ═══════════════════════════════════════════════════════════════════════ */
 
 /* ── hot deals ─────────────────────────────────────────────────────────────
  *
- * `13.5rem` rather than the `11rem` this grid used to floor at. The band is the
- * card now and the app's is 150 of 360 — a proportion an 11rem track cannot
- * hold without the plate and the pill colliding — so the track was widened to
- * fit the object rather than the object squeezed to fit the track. Two across a
- * half-width column, three once the split has collapsed.
+ * `17.5rem` rather than the `13.5rem` a half-width column could hold. The card
+ * is the app's whole card now — band, venue, meta line, rating, offer, window,
+ * action — and the floor is set by the longest thing that must not wrap badly:
+ * a category and a street on one meta line. Four across the full width, three
+ * on a laptop, one on a phone.
  */
 .wal-deals {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
-  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
+  gap: 0.9rem;
 }
 
 /* A deal already in the wallet is not a thing you can take again, so it stops
-   looking like an offer and starts looking like a holding: the border firms up,
-   the band goes quiet, and the code takes the place the button had. */
+   looking like an offer and starts looking like a holding: the border firms up
+   and the band goes quiet. These live in their own section now rather than
+   among the offers, and the treatment is what makes the two sections read
+   differently when one is scrolled past the other. */
 .wal-deal[data-held='true'] {
   border-color: var(--border-2);
 }
@@ -13691,12 +14064,14 @@ button {
   background: var(--surface);
 }
 
-/* ── stamp cards ── */
-
+/* ── stamp cards ──
+   A grid rather than the column they were in, for the same reason the deals are
+   one: the section is full width now, and a stack of full-width rows would put
+   one card on a line that fits three. */
 .wal-stamps {
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 0.9rem;
 }
 
 /* A full card is the one state on this page that is an *event* rather than a
@@ -13736,6 +14111,95 @@ button {
   border-color: transparent;
   background: var(--accent);
   box-shadow: 0 0 12px -4px rgba(var(--glow-rgb), calc(0.8 * var(--glow-k)));
+}
+
+/*
+ * The brand's mark, in the top-left box of every band.
+ *
+ * `.pv-logo` is the tile itself — one letter on the accent — and this is the
+ * corner it sits in. It gets a ring in the panel colour because it is the one
+ * element on the card that sits directly on a texture: a mint tile on a mint
+ * pattern has no edge, and the letter reads as part of the band rather than as
+ * a mark on it. The same tile, unringed, is what the catalogue below uses,
+ * where there is no texture under it.
+ *
+ * A letter and not a picture, and that is not a placeholder: nothing in `src/`
+ * ships an image asset, and a brand's logo fetched from its own CDN is the
+ * third-party runtime request this front end is built to do without.
+ */
+.wal-mark {
+  position: relative;
+  box-shadow:
+    0 0 0 1px rgba(var(--panel-rgb), 0.5),
+    0 10px 22px -14px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
+}
+
+/*
+ * The stamp that just landed — the app's `pl-stamp` and `pl-stampring`
+ * (`lib/widgets/stamps.dart`).
+ *
+ * It drops in oversized and settles, with a ring going out behind it. Only one
+ * disc ever carries it, and only for as long as the visit is fresh: the row is
+ * a picture of a count, and a picture in which two of the discs are moving is a
+ * picture of nothing.
+ *
+ * The rotation is the app's, and it is what stops this reading as a scale
+ * transition: a stamp is a thing pressed onto paper by a hand, and a hand does
+ * not land square.
+ */
+.wal-slots span {
+  position: relative;
+}
+
+.wal-slots span[data-landed='true'] {
+  animation: wal-stamp 520ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
+}
+
+.wal-slots span[data-landed='true']::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 999px;
+  border: 2px solid var(--accent);
+  animation: wal-stamp-ring 900ms 60ms ease-out both;
+}
+
+@keyframes wal-stamp {
+  0% {
+    opacity: 0;
+    transform: scale(2.4) rotate(-14deg);
+  }
+  52% {
+    opacity: 1;
+    transform: scale(0.9) rotate(3deg);
+  }
+  74% {
+    transform: scale(1.07) rotate(-1deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes wal-stamp-ring {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.55);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(2.2);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wal-slots span[data-landed='true'] {
+    animation: none;
+  }
+
+  .wal-slots span[data-landed='true']::after {
+    display: none;
+  }
 }
 
 /* Filled `n×` before. Sits on the name row rather than the band, because it is
@@ -14077,20 +14541,6 @@ button {
 
   .split {
     grid-template-columns: 1fr;
-  }
-
-  /*
-   * The wallet's two holdings stop being side by side.
-   *
-   * They are paired on a wide screen because "what have I got, and where am I
-   * nearly there" is one question — see `.wal-split`. On a phone the pairing is
-   * unreachable anyway: the two columns are a screen apart vertically whether
-   * they are in one track or two, and half-width deal cards at this size are
-   * two words per line.
-   */
-  .wal-split {
-    grid-template-columns: minmax(0, 1fr);
-    margin-top: 2rem;
   }
 
   /*
@@ -15505,6 +15955,7 @@ button {
    * without the pill landing on the plate.
    */
   .wal-deals,
+  .wal-stamps,
   .wcards {
     grid-template-columns: minmax(0, 1fr);
   }

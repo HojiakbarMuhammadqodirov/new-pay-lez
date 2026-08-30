@@ -66,15 +66,19 @@ import {
   canAfford,
   claimDeal,
   dealsOf,
+  filterByCategory,
   flightAward,
   flightPoints,
   freezesOf,
+  inCategory,
   isCardFull,
   markUsed,
   MAX_FLIGHT_POINTS,
   MAX_FREEZES,
   MAX_ENERGY,
   memoryPoints,
+  openDeals,
+  openNow,
   redeem,
   ENERGY_REGEN_MINUTES,
   energyOf,
@@ -85,12 +89,13 @@ import {
   usedVouchers,
   wordPoints,
   type PlayerState,
+  type StampCard,
 } from '../src/site/auth/player';
 import { toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
-import { GAMES } from '../src/site/content';
+import { DEAL_CATEGORIES, GAMES, WALLET_DEALS, type HotDeal } from '../src/site/content';
 /* The source dictionary, read for its *shapes* rather than its words: the
    dashboard's arrays are index-aligned with the seeds below, and a stale index
    renders `undefined` instead of throwing. */
@@ -1189,8 +1194,28 @@ console.log('\nthe wallet');
    *
    * Two guards, and the second is the one worth having: a button pressed twice
    * would otherwise put two of the same offer in the wallet and charge for both.
+   *
+   * Annotated `HotDeal` rather than left to inference. The row now carries the
+   * venue's own facts — where it is, when its door is open, and in which zone
+   * — and an invented deal missing them is one the wallet would happily store
+   * and the card could not draw. The annotation is what puts the next field
+   * added to that type here rather than on a screen.
    */
-  const free = { id: 'd-test-free', venue: 'V', logo: 'V', badge: '2+1', points: 0, expires: '31.12' };
+  const free: HotDeal = {
+    id: 'd-test-free',
+    venue: 'V',
+    logo: 'V',
+    badge: '2+1',
+    points: 0,
+    expires: '31.12',
+    category: 'coffee',
+    city: 'Kraków',
+    address: 'ul. Testowa 1',
+    rating: 4.2,
+    reviews: 12,
+    hours: '09:00 – 17:00',
+    zone: 'Europe/Warsaw',
+  };
   const claimed = claimDeal(seeded, free, 'PLZ-TEST', '01.08');
   check('claiming a free deal costs nothing', claimed.points === seeded.points);
   check('…and puts it in the wallet', dealsOf(claimed).length === dealsOf(seeded).length + 1);
@@ -1217,6 +1242,182 @@ console.log('\nthe wallet');
   const old = { ...seeded, stamps: undefined, deals: undefined };
   check('a session that predates stamp cards reads as empty', stampsOf(old).length === 0);
   check('…and so does one that predates deals', dealsOf(old).length === 0);
+
+  /*
+   * ── the board and the wallet are two lists, and a deal is in exactly one ──
+   *
+   * The page puts what is on offer above what has already been taken, and the
+   * whole layout rests on nothing being in both: a row under "Hot deals" that
+   * is also under "Redeemed" offers a claim on something already held, and
+   * charges for it. Only one of the two lists is stored — `openDeals` derives
+   * the other — so the only way they can drift is if somebody computes the
+   * board a second way.
+   */
+  const board = openDeals(WALLET_DEALS, seeded);
+  const dubai = WALLET_DEALS[0];
+  const inWallet = dealsOf(seeded)[0];
+  check('the seeded claim is off the board', !board.some((deal) => deal.id === inWallet.id), inWallet.id);
+  check(
+    '…and the two lists exhaust the board',
+    board.length + dealsOf(seeded).length === WALLET_DEALS.length,
+    `${board.length} open + ${dealsOf(seeded).length} held of ${WALLET_DEALS.length}`,
+  );
+
+  /* Claiming moves a row across rather than copying it. */
+  const next = board.find((deal) => deal.points === 0)!;
+  const took = claimDeal(seeded, next, 'PLZ-BOARD', '02.08');
+  const shorter = openDeals(WALLET_DEALS, took);
+  check('claiming takes it off the board', !shorter.some((deal) => deal.id === next.id), next.id);
+  check('…and the board is one shorter', shorter.length === board.length - 1, `${shorter.length} open`);
+  check('…with every other row untouched', shorter.every((deal) => board.some((was) => was.id === deal.id)));
+
+  /*
+   * ── the category strip ──
+   *
+   * "All" is the absence of a filter rather than a sixth category: a venue
+   * cannot *be* in it, which is why it is drawn from `copy.wallet.deals.all`
+   * and why the predicate takes `null` instead of a string every row would
+   * have to be compared against. A chip called "all" in the list would be a
+   * category nothing could ever be filed under.
+   */
+  check(
+    'nothing on the strip is an "all" category',
+    !DEAL_CATEGORIES.some((category) => String(category).toLowerCase() === 'all'),
+    DEAL_CATEGORIES.join(' '),
+  );
+  check('the "All" chip matches every deal', WALLET_DEALS.every((deal) => inCategory(deal, null)));
+
+  /*
+   * A row with **no** category matches only "All". "We have not filed this one"
+   * is not the same claim as "this one is a bakery", and a filter that let
+   * unfiled rows fall through would put somebody's barber under Coffee. The
+   * field is optional because stamp cards existed before it did, not because a
+   * new one may skip it.
+   */
+  const unfiled: StampCard = {
+    id: 's0',
+    venue: 'Stary Kleparz',
+    logo: 'S',
+    reward: 'a free coffee',
+    stamps: 2,
+    required: 6,
+    cycles: 0,
+  };
+  check('an unfiled card shows under "All"', inCategory(unfiled, null));
+  check('…and under no chip at all', DEAL_CATEGORIES.every((category) => !inCategory(unfiled, category)));
+  check(
+    '…so filtering never invents a filing',
+    filterByCategory([...stampsOf(seeded), unfiled], 'coffee').every((card) => card.category === 'coffee'),
+  );
+  check(
+    'and no chip drops a filed row',
+    filterByCategory([...stampsOf(seeded), unfiled], null).length === stampsOf(seeded).length + 1,
+  );
+
+  /*
+   * The number on a chip and the number in the list under it are one predicate,
+   * which is the only arrangement in which they cannot disagree.
+   */
+  for (const category of DEAL_CATEGORIES) {
+    const under = filterByCategory(WALLET_DEALS, category);
+    const counted = WALLET_DEALS.filter((deal) => inCategory(deal, category)).length;
+    check(`the ${category} chip lists what it counts`, under.length === counted, `${under.length}`);
+    /* A chip that can only ever be empty is a chip that should not be on the
+       strip. Nine rows is the size that keeps all five of them honest. */
+    check(`…and has something behind it`, under.length > 0, `${under.length} deals`);
+  }
+
+  check(
+    'every deal is filed under a real chip',
+    WALLET_DEALS.every((deal) => DEAL_CATEGORIES.includes(deal.category)),
+  );
+  check(
+    'and so is every seeded stamp card',
+    stampsOf(seeded).every(
+      (card) => card.category !== undefined && DEAL_CATEGORIES.includes(card.category),
+    ),
+  );
+
+  /*
+   * ── the offers, in five languages ──
+   *
+   * `Dictionary` is `typeof en`, which makes a missing *key* a compile error
+   * and says nothing about a missing array *element*: a tenth deal with nine
+   * lines of copy renders `undefined` under a badge and typechecks perfectly.
+   * The badge itself is the venue's own words and is never translated; this
+   * half is the app saying what they mean, so it has to exist wherever the
+   * board does.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    const deals = LANGUAGES[code].wallet.deals;
+    check(`${code} explains every offer`, deals.offers.length === WALLET_DEALS.length,
+      `${deals.offers.length} of ${WALLET_DEALS.length}`);
+    check(`…and none of them is blank`, deals.offers.every((line) => line.trim().length > 0));
+    check(`…and names every chip`, deals.categories.length === DEAL_CATEGORIES.length,
+      `${deals.categories.length} of ${DEAL_CATEGORIES.length}`);
+  }
+
+  /*
+   * ── the door ──
+   *
+   * "Open now" is answered on the **venue's** clock. A Kraków café keeps Kraków
+   * hours to a reader standing in Tashkent, and the machine the page is
+   * rendered on is the one thing that cannot be asked — which is why every row
+   * carries a `zone`, and why this block pins an instant rather than letting
+   * `openNow` reach for `new Date()`.
+   */
+  const sevenInKrakow = new Date('2026-06-15T05:00:00Z'); /* 07:00 CEST */
+  check('a venue that opens at 07:30 is shut at 07:00', openNow(dubai, sevenInKrakow) === false, dubai.hours);
+  check('…and open an hour later', openNow(dubai, new Date('2026-06-15T06:00:00Z')) === true);
+  /* The proof that the zone is what decides: one instant, one span, two zones,
+     two answers — which no single clock can produce, whichever clock the
+     machine running this suite happens to be set to. */
+  check(
+    'the zone answers, not the reader',
+    openNow(dubai, sevenInKrakow) === false &&
+      openNow({ hours: dubai.hours, zone: 'Asia/Tashkent' }, sevenInKrakow) === true,
+  );
+
+  /* A span that ends before it starts has crossed midnight, and the test flips
+     from "between" to "outside" for it — otherwise every late venue on the
+     board reads as shut for exactly the evening it is open. */
+  const late = { hours: '22:00 – 02:00', zone: 'Europe/Warsaw' };
+  check('a late venue is open at 23:00', openNow(late, new Date('2026-06-15T21:00:00Z')) === true);
+  check('…and still open at 01:00', openNow(late, new Date('2026-06-15T23:00:00Z')) === true);
+  check('…and shut at midday', openNow(late, new Date('2026-06-15T10:00:00Z')) === false);
+
+  /*
+   * **Unreadable is `null`, never `false`.** "Closed now" is a claim about a
+   * venue and a malformed seed row must not make it: the third state is the
+   * only answer that says "nothing here to read" without saying something
+   * untrue about the place.
+   */
+  const warsaw = 'Europe/Warsaw';
+  check('no hours at all says nothing', openNow({ hours: '', zone: warsaw }, sevenInKrakow) === null);
+  check('…and neither does a span with no separator',
+    openNow({ hours: '07:30', zone: warsaw }, sevenInKrakow) === null);
+  check('…nor a span that is not a clock',
+    openNow({ hours: 'from dawn – till dusk', zone: warsaw }, sevenInKrakow) === null);
+  check('…nor an hour past 24:00',
+    openNow({ hours: '25:00 – 26:00', zone: warsaw }, sevenInKrakow) === null);
+  check('…nor a zone nobody has heard of',
+    openNow({ hours: dubai.hours, zone: 'Mars/Olympus' }, sevenInKrakow) === null);
+
+  /*
+   * A claimed deal carries the venue with it. The card in the wallet is spread
+   * off the board row rather than written out beside it, because two copies of
+   * one venue drift the first time an address is corrected in only one of them
+   * — the same argument the seeded vouchers make against hand-written face
+   * values.
+   */
+  check('the claimed deal is the board row', inWallet.id === dubai.id, inWallet.id);
+  check(
+    '…with the venue still on it',
+    inWallet.address === dubai.address &&
+      inWallet.rating === dubai.rating &&
+      inWallet.category === dubai.category,
+    `${inWallet.address} · ★${inWallet.rating} · ${inWallet.category}`,
+  );
 }
 
 console.log('\nplaying');

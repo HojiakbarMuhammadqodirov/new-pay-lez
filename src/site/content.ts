@@ -492,7 +492,10 @@ export type GameId =
   | 'poland'
   | 'flight'
   | 'memory'
-  | 'word';
+  /** English. */
+  | 'word'
+  /** The language of wherever the profile says this person lives. */
+  | 'wordLocal';
 
 /**
  * The seven games, index-aligned with `copy.games.names`.
@@ -540,10 +543,34 @@ export const GAMES: Array<{
   perCorrect: number;
   allowedMistakes: number;
 }> = [
-  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1, allowedMistakes: 1 },
-  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
-  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
-  { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
+  /*
+   * Memory Match, and it leads the table because it leads the screen — the
+   * first row is the featured card (`FEATURED` in `games.tsx`), and this is the
+   * one round on the page with no clock, no fail state and nothing to read
+   * before you start it. A catalogue's first card is the one somebody who has
+   * never played opens, and a quiz with a six-second timer is the wrong door.
+   *
+   * `questions` is pairs on the board, and both of the other two are zero and
+   * mean it: there is no countdown and there is no fail state.
+   *
+   * **`perCorrect` prices nothing on this row** and is the one dead number in
+   * the table. The board is scored by `MEMORY_BANDS` in `auth/player.ts` — 12,
+   * 8, 4 or 2 for the whole board on how long it took — so there is no
+   * per-pair figure to state, and the card reads the top band out of `player.ts`
+   * rather than this column (see `rulesFor`). It is left at 6 rather than
+   * dropped because the row is one shape with seven others and a nullable column
+   * would be a union of shapes for every consumer to narrow; a number nothing
+   * reads is the cheaper of the two.
+   *
+   * Being measured is not being raced, and the difference is the whole
+   * accessibility argument for this game: nothing ticks on screen, nothing ends
+   * the board, and the slowest band still pays. What time buys is the honest
+   * measure of the skill actually being tested — remembering where a card was is
+   * what makes you fast — where the move count it used to be scored on paid a
+   * guaranteed 36 for six pairs that cannot be lost, the richest round on the
+   * page for the least asked of anybody.
+   */
+  { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6, allowedMistakes: 0 },
   /*
    * The arcade round, and the only one that is played rather than answered.
    * `questions` is gaps to clear, `perCorrect` is points per gap,
@@ -561,38 +588,44 @@ export const GAMES: Array<{
    * twenty.
    */
   { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 1, allowedMistakes: 0 },
+  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
+  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
+  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1, allowedMistakes: 1 },
+  { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
   /*
-   * Memory Match. `questions` is pairs on the board, and both of the other two
-   * are zero and mean it: there is no countdown and there is no fail state.
+   * Word Builder, twice.
    *
-   * **`perCorrect` prices nothing on this row** and is the one dead number in
-   * the table. The board is scored by `MEMORY_BANDS` in `auth/player.ts` — 12,
-   * 8, 4 or 2 for the whole board on how long it took — so there is no
-   * per-pair figure to state, and the card reads the top band out of `player.ts`
-   * rather than this column (see `rulesFor`). It is left at 6 rather than
-   * dropped because the row is one shape with six others and a nullable column
-   * would be a union of shapes for every consumer to narrow; a number nothing
-   * reads is the cheaper of the two.
+   * It used to be one row with a **picker on its card**: a segmented control
+   * that chose between the English and the Polish list before the round. Two
+   * rows instead, and the difference is not cosmetic. A picker is a decision
+   * asked of somebody who has not opened the game yet, in a grid whose every
+   * other card is a single press — so the one card in the set that asked a
+   * question first was also the one card whose surface could not become the
+   * button. Splitting it lets **every** card be one press, which is what the
+   * hover on `.play-card` now depends on.
    *
-   * Being measured is not being raced, and the difference is the whole
-   * accessibility argument for this game: nothing ticks on screen, nothing ends
-   * the board, and the slowest band still pays. What time buys is the honest
-   * measure of the skill actually being tested — remembering where a card was is
-   * what makes you fast — where the move count it used to be scored on paid a
-   * guaranteed 36 for six pairs that cannot be lost, the richest round on the
-   * page for the least asked of anybody.
-   */
-  { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6, allowedMistakes: 0 },
-  /*
-   * Word Builder. `questions` is words in the round; `perCorrect` is dead here
-   * for the same reason it is on the memory row above, and `seconds` is 0
-   * because **there is no clock at all any more** — not a limit and not a
-   * score. A word is worth `WORD_BASE` plus its own tier (`wordPoints`), and a
-   * hint forfeits the tier and leaves the base. The speed term that used to sit
-   * in there made the thinking game of the set a race, which is what the other
-   * five already are.
+   * It also makes the catalogue tell the truth about itself. Practising English
+   * and practising the language of the city you have moved to are not one game
+   * played two ways; they are the two things this product is for, and a
+   * catalogue that lists seven rounds when there are eight to play is
+   * undercounting itself to save a row.
+   *
+   * The pair share `kind: 'word'` — one screen, one scorer — and differ only in
+   * which list `games.tsx` hands `WordBuilder`. `word` is always English;
+   * `wordLocal` reads the list off the **profile's country** (`wordListFor` in
+   * `games/banks.ts`), because the local language is a fact about where
+   * somebody lives rather than about which of five dictionaries they read the
+   * site in.
+   *
+   * `perCorrect` is dead on both rows for the same reason it is on the memory
+   * row above, and `seconds` is 0 because **there is no clock at all** — not a
+   * limit and not a score. A word is worth `WORD_BASE` plus its own tier
+   * (`wordPoints`), and a hint forfeits the tier and leaves the base. The speed
+   * term that used to sit in there made the thinking game of the set a race,
+   * which is what four of the others already are.
    */
   { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
+  { id: 'wordLocal', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
 ];
 
 /** The board's two orderings, index-aligned with `copy.games.boardTabs`. */
@@ -1291,13 +1324,77 @@ export const SALES_EMAIL = 'usepaylez@gmail.com';
  * Venue names are brand names and are never translated, which is why they are
  * structure. The offer itself (`badge`) is the venue's own words and is not
  * translated either — a deal written as "2+1" by a Kraków café is "2+1" to
- * everybody who walks past it.
+ * everybody who walks past it. `copy.wallet.deals.offers` is index-aligned with
+ * this array and *is* translated: that half is the app explaining the offer
+ * rather than the venue stating it.
  *
- * `copy.wallet.deals.terms` is index-aligned with this array: that half *is*
- * translated, because it is the app explaining the offer rather than the venue
- * stating it.
+ * ── the venue travels with the offer ─────────────────────────────────────
+ *
+ * The app's card (`Pay-lez mobile`, `lib/screens/deals_screen.dart`, `_DealCard`)
+ * is a **venue** card — the top line is the place, not the offer — and it reads
+ * that line off a `Venue` the deals list has already fetched. There is no venue
+ * list on this page and there is not going to be one for a seed of nine rows,
+ * so the facts the card needs ride on the deal: `category`, `address`, `hours`
+ * and the rating pair. Every one of them is a fact about the place rather than
+ * about the reader, which is the line this seed will not cross — see `zone`.
  */
-export const WALLET_DEALS: Array<{
+export type DealCategory = 'coffee' | 'food' | 'bakery' | 'services' | 'beauty';
+
+/**
+ * The chips on the deals strip, in the app's own order.
+ *
+ * The app's strip is `['All', 'Coffee', 'Food', 'Bakery', 'Services', 'Beauty']`
+ * (`deals_screen.dart`, `_cats`) and this is the five that are actually a
+ * category — "All" is the absence of a filter and is drawn from
+ * `copy.wallet.deals.all` rather than being an entry here, because a venue
+ * cannot *be* in it.
+ *
+ * Index-aligned with `copy.wallet.deals.categories`, like every other list here.
+ * These are **not** `BUSINESS_CATEGORIES`: that taxonomy is the one a venue
+ * owner files a listing under (café, restaurant, barbershop, beauty, dental,
+ * language school, fitness) and this is the one a customer browses offers with.
+ * Seven filing cabinets is the wrong strip to put in front of somebody deciding
+ * where to have lunch, and the app already chose the shorter one.
+ */
+export const DEAL_CATEGORIES: DealCategory[] = [
+  'coffee',
+  'food',
+  'bakery',
+  'services',
+  'beauty',
+];
+
+/** What the card says about the place, over and above the offer. */
+export interface VenueFacts {
+  category: DealCategory;
+  city: string;
+  /** Street and number. Joined with the category into the app's meta line. */
+  address: string;
+  /** One decimal, as the app's guide screen writes it: `★ 4.5`. */
+  rating: number;
+  reviews: number;
+  /**
+   * The door, as `HH:MM – HH:MM` in `zone`.
+   *
+   * One span for the whole week rather than seven, because that is what the
+   * card renders (`Every day, 07:30 – 19:00` — the app's `everyDaySpan` branch)
+   * and a seven-day editor is a listing form's problem, not a seed's.
+   */
+  hours: string;
+  /**
+   * The venue's own timezone, and the reason the pill may say "Open now".
+   *
+   * The pill used to say the window (`Until 15.09`) with a note admitting that
+   * the app's own dot means *open now* and that this page had no week to read
+   * one off. It has one now — and a week without a zone would be worse than no
+   * week at all, because it would answer "is it open?" against whichever clock
+   * the reader happens to be standing in. Kraków venues keep Kraków hours to a
+   * reader in Tashkent, and `openNow` in `auth/player.ts` evaluates them there.
+   */
+  zone: string;
+}
+
+export interface HotDeal extends VenueFacts {
   id: string;
   venue: string;
   logo: string;
@@ -1306,13 +1403,152 @@ export const WALLET_DEALS: Array<{
   points: number;
   /** `DD.MM`, the format every date in the wallet is written in. */
   expires: string;
-}> = [
-  { id: 'd-dubai-2for1', venue: 'Dubai Cafe', logo: 'D', badge: '2+1', points: 0, expires: '31.08' },
-  { id: 'd-sablewski-20', venue: 'Sablewski & Para', logo: 'S', badge: '20%', points: 0, expires: '15.09' },
-  { id: 'd-forum-lunch', venue: 'Hala Forum', logo: 'H', badge: '15%', points: 50, expires: '30.09' },
-  { id: 'd-massolit-free', venue: 'Massolit Books', logo: 'M', badge: 'FREE', points: 100, expires: '12.09' },
-  { id: 'd-karma-10', venue: 'Karma Coffee', logo: 'K', badge: '10%', points: 0, expires: '28.09' },
-  { id: 'd-hevre-2for1', venue: 'Hevre', logo: 'H', badge: '2+1', points: 0, expires: '05.10' },
+}
+
+/*
+ * Nine rows, and the shape of the set is deliberate: every chip on the strip
+ * has at least one deal behind it, two of the nine cost points (one of which
+ * the seeded balance cannot reach, so the "N more points" branch is on screen
+ * rather than only in the code), and one is already in the seeded wallet, so
+ * the claimed section is not an empty state on a page whose job is to show what
+ * the wallet holds.
+ */
+export const WALLET_DEALS: HotDeal[] = [
+  {
+    id: 'd-dubai-2for1',
+    venue: 'Dubai Cafe',
+    logo: 'D',
+    badge: '2+1',
+    points: 0,
+    expires: '31.08',
+    category: 'coffee',
+    city: 'Kraków',
+    address: 'ul. Karmelicka 12',
+    rating: 4.5,
+    reviews: 218,
+    hours: '07:30 – 19:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-karma-10',
+    venue: 'Karma Coffee',
+    logo: 'K',
+    badge: '10%',
+    points: 0,
+    expires: '28.09',
+    category: 'coffee',
+    city: 'Kraków',
+    address: 'ul. Krupnicza 12',
+    rating: 4.7,
+    reviews: 402,
+    hours: '08:00 – 18:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-sablewski-20',
+    venue: 'Sablewski & Para',
+    logo: 'S',
+    badge: '20%',
+    points: 0,
+    expires: '15.09',
+    category: 'bakery',
+    city: 'Kraków',
+    address: 'ul. Sławkowska 17',
+    rating: 4.6,
+    reviews: 1180,
+    hours: '06:30 – 20:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-buczek-3for2',
+    venue: 'Buczek Piekarnia',
+    logo: 'B',
+    badge: '3+1',
+    points: 0,
+    expires: '22.09',
+    category: 'bakery',
+    city: 'Kraków',
+    address: 'ul. Długa 43',
+    rating: 4.4,
+    reviews: 640,
+    hours: '06:00 – 19:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-forum-lunch',
+    venue: 'Hala Forum',
+    logo: 'H',
+    badge: '15%',
+    points: 50,
+    expires: '30.09',
+    category: 'food',
+    city: 'Kraków',
+    address: 'Marii Konopnickiej 28',
+    rating: 4.3,
+    reviews: 2960,
+    hours: '12:00 – 23:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-hevre-2for1',
+    venue: 'Hevre',
+    logo: 'H',
+    badge: '2+1',
+    points: 0,
+    expires: '05.10',
+    category: 'food',
+    city: 'Kraków',
+    address: 'ul. Meiselsa 18',
+    rating: 4.5,
+    reviews: 1740,
+    hours: '10:00 – 23:30',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-massolit-free',
+    venue: 'Massolit Books',
+    logo: 'M',
+    badge: 'FREE',
+    points: 100,
+    expires: '12.09',
+    category: 'services',
+    city: 'Kraków',
+    address: 'ul. Felicjanek 4',
+    rating: 4.8,
+    reviews: 1120,
+    hours: '10:00 – 20:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-sultan-15',
+    venue: 'Sultan Barbers',
+    logo: 'S',
+    badge: '15%',
+    points: 0,
+    expires: '18.09',
+    category: 'services',
+    city: 'Warszawa',
+    address: 'ul. Chmielna 21',
+    rating: 4.6,
+    reviews: 512,
+    hours: '10:00 – 20:00',
+    zone: 'Europe/Warsaw',
+  },
+  {
+    id: 'd-nova-beauty',
+    venue: 'Nova Beauty Bar',
+    logo: 'N',
+    badge: '25%',
+    points: 500,
+    expires: '08.10',
+    category: 'beauty',
+    city: 'Kraków',
+    address: 'ul. Dietla 60',
+    rating: 4.6,
+    reviews: 380,
+    hours: '09:00 – 20:00',
+    zone: 'Europe/Warsaw',
+  },
 ];
 
 /**

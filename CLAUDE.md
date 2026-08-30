@@ -15,7 +15,7 @@ This file covers the repo as a whole.
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 531 checks: it
+There is no test runner. `npm run verify` is the test suite — 582 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of
@@ -448,10 +448,39 @@ allocation. A *stamp card* counts **visits to one venue**, and a visit is not a
 point — it cannot be spent anywhere else, and a full card **rolls over into the
 next one** rather than overflowing, which is why `cycles` exists. The model is
 the Flutter app's (`lib/screens/wallet_screen.dart`) and the arithmetic is pure
-functions in `auth/player.ts`, so `npm run verify` owns it. The one thing that is
-*not* the app's is the layout: the phone stacks all of it and refuses a
-segmented control, and the desktop puts the deals and the stamp cards side by
-side — which is a change to what is on screen at once, not to what is hidden.
+functions in `auth/player.ts`, so `npm run verify` owns it.
+
+**The wallet page is a board and then a wallet, and a deal is in exactly one of
+them.** What is on offer is at the top — the hot deals and the stamp cards,
+under one strip of category chips (`DEAL_CATEGORIES`, the app's own six less the
+"All" that is the absence of a filter rather than something a venue can be) —
+because that is what somebody opens the page to decide from before going out.
+What has already been taken is below it: the claimed deals with their codes,
+then the gift cards. The split is **derived** (`openDeals`) rather than tracked,
+so the two lists cannot drift, and `npm run verify` checks that they exhaust the
+board between them. That replaced a two-column layout which put the deals and
+the stamp cards side by side and mixed claimed offers in among the unclaimed;
+the columns were a good answer to "what have I got, and where am I nearly
+there", and what they could not do is separate an offer from a holding.
+
+The card is the app's (`lib/screens/deals_screen.dart`, `_DealCard`) with the
+venue's own facts brought forward from the venue sheet the web has no room for —
+and the pill says **Open now** on the *venue's* clock, not the reader's, which is
+what `VenueFacts.zone` is for and the only place in the front end that reaches
+for `Intl`. The one slot the app has and this does not is the distance: nothing
+here has a position fix either, and a seeded "1.2 km away" would be the one
+thing on the card that is about the reader rather than about the venue.
+
+**Claiming is the one thing on that page that is animated, and the animation is
+load-bearing.** The phone's button *navigates* — it arms the gate and drops you
+on the Scan tab — so the app celebrates nothing. Nothing navigates here, and a
+card that simply vanished from the list would fail to say that the press worked,
+that the offer is now yours, and that it has moved. So the card is held on the
+board for `CLAIM_HOLD_MS` while a ring goes out, a sheen crosses the plate and
+the code lands where the button was, and only then does `openDeals` move it
+down. Every curve is the app's own kit rather than invented here. Under
+`prefers-reduced-motion` the **hold goes with the motion**: the deal appears
+below immediately rather than leaving a second of nothing on a still card.
 
 **A signed-in individual gets a different page, not a different section.**
 `useIsPlayer()` swaps L-Earn and Vouchers wholesale: `learn.tsx` → `games.tsx`,

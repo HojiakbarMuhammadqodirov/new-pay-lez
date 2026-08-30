@@ -449,21 +449,81 @@ export const en = {
       full: 'Complete — {reward} is waiting at the counter',
       cycles: 'Filled {n}× before',
       none: 'No stamp cards yet. One starts on your first visit to a venue running a card.',
+      /* The same list, emptied by the strip rather than by having nothing in
+         it. A card filed before the strip existed has no category and shows
+         only under "All" — see `inCategory` in `auth/player.ts`. */
+      noneHere: 'No stamp cards under {category}.',
       visit: 'Add a visit',
     },
 
-    /* ── hot deals ── */
+    /* ── hot deals ──
+       The board at the top of the page — what is on offer near you — and the
+       strip of chips that filters it. A claimed deal leaves this list for the
+       "Redeemed" section below; nothing is ever in both. */
     deals: {
       title: 'Hot deals',
       lede: 'Live offers near you. Most cost nothing to claim — the venue is paying for them.',
+
+      /* The category strip. `all` is deliberately not one of `categories`: it
+         is the absence of a filter rather than something a venue can be, and
+         `DEAL_CATEGORIES` in `content.ts` carries the reasoning. */
+      all: 'All',
+      categories: ['Coffee', 'Food', 'Bakery', 'Services', 'Beauty'],
+      filter: 'Filter by category',
+      /* `{category}` is whichever chip is selected, in the words above. */
+      noneHere: 'Nothing under {category} near you yet.',
+      showAll: 'Show every deal',
+
+      /* The pill on the band: what the venue is doing **right now**, on its own
+         clock. The dot pulses on the first of these three and on nothing else. */
+      openNow: 'Open now',
+      closedNow: 'Closed now',
       held: 'In your wallet',
-      board: 'Claim one',
-      free: 'Free to claim',
-      claim: 'Claim',
-      claimed: 'Claimed {date}',
+
+      /* The venue's lines. `{hours}` is its own published span, `{date}` the
+         last day of the offer, `{n}` how many people have rated it. */
+      everyDay: 'Every day, {hours}',
       until: 'Until {date}',
-      short: 'Not enough points',
-      none: 'Nothing claimed yet.',
+      reviews: '{n} reviews',
+
+      free: 'Free to claim',
+      claim: 'Claim this deal',
+      /* `{n}` is the shortfall, not the price — the app's own wording, because
+         "500 pts" on a button a balance cannot reach says the wrong half. */
+      shortBy: '{n} more points to go',
+      claimed: 'Claimed {date}',
+      /* What the card says for the second between the press and the move down
+         to the Redeemed section. */
+      justClaimed: 'Claimed — show this code at the counter',
+      code: 'Your code',
+
+      /* Index-aligned with `WALLET_DEALS`. The badge itself ("2+1", "20%") is
+         the venue's own words and is never translated; this is the app saying
+         what they mean, which is why this half is copy. */
+      offers: [
+        'Two coffees, and the third is on the house.',
+        'Ten percent off the whole order, all day.',
+        'Twenty percent off everything on the counter.',
+        'Buy three loaves and the fourth is free.',
+        'Fifteen percent off lunch at any stall in the hall.',
+        'Two plates, and the third is on the house.',
+        'A free filter coffee with any book you buy.',
+        'Fifteen percent off a cut and a beard trim.',
+        'Twenty-five percent off your first treatment.',
+      ],
+
+      none: 'Nothing claimed yet. Take one from the board above.',
+    },
+
+    /* ── what you have already taken ──
+       Everything below the board: the hot deals that have been claimed and the
+       gift cards bought with points. Both are things you hold rather than
+       things on offer, which is the whole reason they are down here. */
+    redeemed: {
+      title: 'Redeemed',
+      lede: 'What you have already taken. Show the code at the counter — each one is used once.',
+      dealsTitle: 'Hot deals you claimed',
+      dealsLede: 'Yours until the offer ends. The venue reads the code at the till.',
     },
 
     /* The gift-card section's own heading. The holdings below it were the whole

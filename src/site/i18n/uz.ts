@@ -393,20 +393,55 @@ export const uz: Dictionary = {
       full: 'To‘ldi — {reward} kassada kutmoqda',
       cycles: 'Avval {n}× to‘ldirilgan',
       none: 'Hali karta yo‘q. Birinchisi karta ishlatadigan joyga birinchi tashrifda boshlanadi.',
+      noneHere: '{category} bo‘limida shtamp kartalari yo‘q.',
       visit: 'Tashrif qo‘shish',
     },
 
     deals: {
       title: 'Qaynoq takliflar',
       lede: 'Yaqin atrofdagi takliflar. Ko‘pchiligi bepul — joyning o‘zi to‘laydi.',
+
+      all: 'Hammasi',
+      categories: ['Qahva', 'Taom', 'Nonvoyxona', 'Xizmatlar', 'Go‘zallik'],
+      filter: 'Toifa bo‘yicha filtr',
+      noneHere: 'Yaqin atrofda {category} bo‘yicha hozircha hech narsa yo‘q.',
+      showAll: 'Barcha takliflarni ko‘rsatish',
+
+      openNow: 'Hozir ochiq',
+      closedNow: 'Hozir yopiq',
       held: 'Hamyoningizda',
-      board: 'Bittasini oling',
+
+      everyDay: 'Har kuni, {hours}',
+      until: '{date} gacha',
+      reviews: '{n} ta sharh',
+
       free: 'Bepul',
       claim: 'Olish',
+      shortBy: 'Yana {n} ball kerak',
       claimed: '{date} olingan',
-      until: '{date} gacha',
-      short: 'Ball yetarli emas',
+      justClaimed: 'Olindi — bu kodni kassada ko‘rsating',
+      code: 'Sizning kodingiz',
+
+      offers: [
+        'Ikkita qahva, uchinchisi esa muassasa hisobidan.',
+        'Butun buyurtmaga kun bo‘yi o‘n foiz chegirma.',
+        'Peshtaxtadagi hamma narsaga yigirma foiz chegirma.',
+        'Uchta non oling, to‘rtinchisi bepul.',
+        'Zaldagi istalgan rastada tushlikka o‘n besh foiz chegirma.',
+        'Ikkita taom, uchinchisi esa muassasa hisobidan.',
+        'Har qanday kitob xaridiga bepul filtr qahva.',
+        'Soch olish va soqol tekislashga o‘n besh foiz chegirma.',
+        'Birinchi muolajangizga yigirma besh foiz chegirma.',
+      ],
+
       none: 'Hali hech narsa olinmagan.',
+    },
+
+    redeemed: {
+      title: 'Olinganlar',
+      lede: 'Siz allaqachon olganlaringiz. Kodni kassada ko‘rsating — har biri bir marta ishlaydi.',
+      dealsTitle: 'Siz olgan qaynoq takliflar',
+      dealsLede: 'Taklif tugaguncha sizniki. Muassasa kodni kassada o‘qiydi.',
     },
 
     giftsTitle: 'Sovg‘a kartalari',

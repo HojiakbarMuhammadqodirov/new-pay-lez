@@ -89,7 +89,7 @@ export function playerState(db: Db, userId: string, at: Iso = now()): PlayerStat
 export interface Energy {
   /** Whole energy available at the instant asked about. */
   energy: number;
-  /** The plan's ceiling — `daily_energy`, free 3. */
+  /** The plan's ceiling — `daily_energy`, free 4. */
   max: number;
   /**
    * When the next one lands, or `null` at the ceiling.
@@ -122,7 +122,7 @@ export interface Energy {
  * `energy_regen_minutes`** now — four hours on the free plan, faster on a paid
  * one — so an empty tank is a wait measured in hours. Read with the ceiling it
  * gives the size of a day: `daily_energy + 1440 / energy_regen_minutes` rounds
- * from full, 9 free, 13 on Pro, 19 on Premium.
+ * from full, 10 free, 14 on Pro, 22 on Premium.
  *
  * **Nothing runs on a clock; the count is read off the spends.** There is no
  * scheduler in this process and a refill job would be one, so the tank is a
@@ -156,7 +156,7 @@ export function energyFor(db: Db, userId: string, at: Iso = now()): Energy {
  * gap long enough to have refilled the tank.
  *
  * That gap is `max × interval` and it is usually one or two rows in: a player
- * who has not finished a round in twelve hours is full, and nothing older than
+ * who has not finished a round in sixteen hours is full, and nothing older than
  * the round that broke that run can affect the count. The limit bounds the
  * pathological case instead — somebody who has finished a round every three
  * hours for a fortnight, where no such gap exists — and there the fold starts
@@ -165,9 +165,10 @@ export function energyFor(db: Db, userId: string, at: Iso = now()): Energy {
  *
  * Every finished round is a spend now rather than every lost one, so this walk
  * reads several times as many rows per player as it did. Sixty-four is still
- * comfortably past the gap on every plan — Premium is 7 × 2h = 14 hours of play
- * without a break before the limit is even consulted — but it is the number to
- * revisit first if the ceiling or the interval ever move.
+ * past the gap on every plan — Premium is 10 × 2h = 20 hours of play without a
+ * break before the limit is even consulted — but it is the number to revisit
+ * first if the ceiling or the interval ever move, and the ceiling has now moved
+ * once.
  */
 const ENERGY_LOOKBACK = 64;
 
