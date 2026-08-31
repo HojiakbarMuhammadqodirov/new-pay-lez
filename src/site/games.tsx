@@ -1204,7 +1204,26 @@ export function GamesApp() {
     setResult(null);
     setSession(null);
 
-    /* The three that build their own round need nothing from here. */
+    /*
+     * The flight needs a session but no questions: the server scores it from a
+     * reported gap count at `finish`, because there is nothing to validate move
+     * by move in a side-scroller. What the server owns is the *rate* and the
+     * cap, which is the half a client should not be trusted with.
+     */
+    if (chosen.kind === 'flight' && hasToken()) {
+      setQuestions([]);
+      setLoading(true);
+      startRound('flight', language)
+        .then((round) => {
+          setSession(round.sessionId);
+          setPlaying(id);
+        })
+        .catch(() => setPlaying(null))
+        .finally(() => setLoading(false));
+      return;
+    }
+
+    /* The rest that build their own round need nothing from here. */
     if (chosen.kind !== 'text' && chosen.kind !== 'flag' && chosen.kind !== 'capital') {
       setQuestions([]);
       setPlaying(id);
@@ -1341,38 +1360,7 @@ export function GamesApp() {
      * answered.
      */
     if (session) {
-      const id = session;
-      setSession(null);
-      finishRound(id)
-        .then((done) => {
-          setPlayer({
-            ...player,
-            points: done.balance,
-            streak: done.streak,
-            freezes: done.freezes,
-            energy: done.energyLeft,
-            /* A full tank has no clock running; a spent one is anchored now,
-               which is when the server charged it. */
-            energyAt: done.energyLeft >= MAX_ENERGY ? null : Date.now(),
-            answered: player.answered + done.answered,
-            correct: player.correct + done.correct,
-            lastPlayed: todayLocal(),
-          });
-          setResult({
-            won: done.won,
-            correct: done.correct,
-            points: done.score,
-            balance: done.balance,
-          });
-        })
-        .catch(() => {
-          /* The round happened and we cannot say what it was worth. Showing a
-             locally computed number here would be inventing the one figure the
-             player came for, so the card says the round did not bank and the
-             next `/v1/games/state` reconciles whatever the server actually
-             recorded. */
-          setResult({ won: false, correct, points: 0, balance: player.points });
-        });
+      bankServer(session, undefined, correct);
       return;
     }
 
@@ -1389,8 +1377,57 @@ export function GamesApp() {
   };
 
   /** A finished flight: gaps flown, and whether it reached the bank line. */
+  /**
+   * Bank a server round from its reply, and show the card.
+   *
+   * Shared by every game that finishes on the server. The player is written
+   * *from* the response — balance, streak, freezes, energy — because those are
+   * the figures now in the database, and a locally recomputed one beside them
+   * is a second number on the screen that disagrees with the first.
+   */
+  const bankServer = (id: string, report?: Record<string, unknown>, fallbackCorrect = 0) => {
+    setSession(null);
+    finishRound(id, report)
+      .then((done) => {
+        setPlayer({
+          ...player,
+          points: done.balance,
+          streak: done.streak,
+          freezes: done.freezes,
+          energy: done.energyLeft,
+          energyAt: done.energyLeft >= MAX_ENERGY ? null : Date.now(),
+          answered: player.answered + done.answered,
+          correct: player.correct + done.correct,
+          lastPlayed: todayLocal(),
+        });
+        setResult({
+          won: done.won,
+          correct: done.correct,
+          points: done.score,
+          balance: done.balance,
+        });
+      })
+      .catch(() => {
+        /* The round happened and we cannot say what it was worth. A locally
+           computed figure here would invent the one number the player came
+           for. */
+        setResult({ won: false, correct: fallbackCorrect, points: 0, balance: player.points });
+      });
+  };
+
+  /** A finished flight: gaps flown, and whether it reached the bank line. */
   const finishFlight = (cleared: number, won: boolean) => {
     if (!game) return;
+
+    /* The one game the server scores from a **report** rather than from moves.
+       There is nothing to validate move by move in a side-scroller — the server
+       takes the gap count and applies its own per-gap rate and its own cap, so
+       what a client can influence is the input, not the arithmetic. */
+    if (session) {
+      bankServer(session, { cleared }, cleared);
+      return;
+    }
+
     bank(
       flightAward({
         game: game.id,
