@@ -19634,3 +19634,12 @@ button {
   }
 }
 
+
+/* The moment between pressing an option and the server saying whether it was
+   right. Marked as *chosen*, not as wrong: calling it wrong before the verdict
+   arrives would be a guess, and on a four-option question it would be wrong
+   about a quarter of the time. See `Round.resolve` in `games.tsx`. */
+.round-option[data-state='picked'] {
+  border-color: var(--border-2);
+  background: var(--surface-2);
+}

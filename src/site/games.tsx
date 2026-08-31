@@ -8,6 +8,8 @@ import {
 } from 'react';
 import { GAMES, VOUCHER_CARDS, type GameId } from './content';
 import { useApi } from './api/useApi';
+import { hasToken } from './api/client';
+import { finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
 import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
@@ -27,6 +29,7 @@ import {
   streakWeek,
   type Award,
   type PlayerState,
+  today as todayLocal,
 } from './auth/player';
 import { FlightGame } from './flight/FlightGame';
 import {
@@ -558,11 +561,27 @@ interface RoundState {
 function Round({
   game,
   questions,
+  resolve,
   onDone,
   onQuit,
 }: {
   game: Game;
   questions: Question[];
+  /**
+   * Ask the **server** whether a choice was right, when the round is a server
+   * round.
+   *
+   * Present for the four quizzes, absent for the rounds the client still builds
+   * itself. The difference it makes is a round trip per question — the server
+   * holds the answers (`game_sessions.secret`) and hands over only prompts and
+   * options, which is what makes a score it computes worth anything. A client
+   * that knew the answer could report any score it liked.
+   *
+   * `Question.answer` is `-1` on a server round for that reason: there is no
+   * answer here to compare against, and the resolver's reply is what fills the
+   * right-and-wrong marking in.
+   */
+  resolve?: (index: number, choice: number) => Promise<{ correct: boolean; answer: number }>;
   /** Right answers, and how long the whole round took in whole seconds. */
   onDone: (correct: number, seconds: number) => void;
   onQuit: () => void;
@@ -598,19 +617,55 @@ function Round({
    * time (`choice === -1`). Wrapped in a ref-stable callback because the timer
    * effect below depends on it and must not restart on every render.
    */
+  /*
+   * The right answer for the question on screen, once it is known.
+   *
+   * On a local round it is known up front and this is never written. On a
+   * server round the answer arrives with the verdict, and the buttons need it
+   * to mark which one *was* right — showing only "you were wrong" without
+   * showing what was right is the one thing a quiz must not do.
+   */
+  const [revealed, setRevealed] = useState<number | null>(null);
+
   const answer = useCallback(
     (choice: number) => {
+      /* The optimistic half: the press has to register now, whatever the
+         network is doing. Locking on `picked` is what stops a second press
+         landing while the first is in flight — and the timer's own `-1` cannot
+         race it either, for the same reason. */
+      let already = false;
       setState((current) => {
-        if (current.picked !== null) return current; // already answered
-        const right = choice === questions[current.index].answer;
-        return {
-          ...current,
-          picked: choice,
-          correct: current.correct + (right ? 1 : 0),
-        };
+        if (current.picked !== null) {
+          already = true;
+          return current;
+        }
+        return { ...current, picked: choice };
       });
+      if (already) return;
+
+      const index = state.index;
+
+      if (!resolve) {
+        const right = choice === questions[index].answer;
+        setRevealed(questions[index].answer);
+        if (right) setState((current) => ({ ...current, correct: current.correct + 1 }));
+        return;
+      }
+
+      void resolve(index, choice)
+        .then(({ correct, answer: right }) => {
+          setRevealed(right);
+          if (correct) setState((current) => ({ ...current, correct: current.correct + 1 }));
+        })
+        .catch(() => {
+          /* The move did not land. The question stays answered — un-answering it
+             under the player would be worse — and the server's own tally is the
+             one that pays, so a lost move is a question that scored nothing
+             rather than a round that broke. */
+          setRevealed(-1);
+        });
     },
-    [questions],
+    [questions, resolve, state.index],
   );
 
   // The clock. Restarts with each question; `answer` freezes it by setting `picked`.
@@ -666,6 +721,9 @@ function Round({
         }
         return { ...current, index: current.index + 1, picked: null };
       });
+      /* Cleared with the question it belonged to. Leaving it set would mark an
+         option on the *next* question before it had been answered. */
+      setRevealed(null);
     }, 900);
     return () => window.clearTimeout(next);
   }, [state.picked, state.index, questions.length, startedAt]);
@@ -702,14 +760,24 @@ function Round({
           /* After a pick the right answer is always marked, not just the one
              chosen — getting it wrong is the moment you most want to be told
              what it was. */
+          /* `revealed` is the answer once it is known — immediately on a local
+             round, and when the server replies on a server one. Until then only
+             the pressed button is marked, and it is marked as *chosen* rather
+             than as wrong: calling it wrong before the verdict arrives would be
+             a guess, and it would be wrong about a fifth of the time. */
+          const right = resolve ? revealed : question.answer;
           const state_ =
             state.picked === null
               ? undefined
-              : index === question.answer
-                ? 'right'
-                : index === state.picked
-                  ? 'wrong'
-                  : undefined;
+              : right === null
+                ? index === state.picked
+                  ? 'picked'
+                  : undefined
+                : index === right
+                  ? 'right'
+                  : index === state.picked
+                    ? 'wrong'
+                    : undefined;
           return (
             <button
               key={option}
@@ -835,6 +903,36 @@ function Result({
       </button>
     </div>
   );
+}
+
+/**
+ * The site's game ids against the server's.
+ *
+ * Two vocabularies for the same seven games, and neither is going to give way:
+ * the site's are the route and copy keys it has always used, the server's are a
+ * `CHECK` constraint on a table with rows in it. One table here beats a rename
+ * on either side.
+ *
+ * `poland` is the country quiz and the server has an `uzbekistan` twin for it;
+ * which one a player gets is the bank the site already picks from their country,
+ * so the mapping is the site's own `quizBankFor` decision expressed once more.
+ */
+const SERVER_GAME: Record<GameId, ServerGameType> = {
+  brain: 'brain',
+  flag: 'flags',
+  capital: 'capitals',
+  local: 'poland',
+  word: 'word_builder',
+  /* The local-language word game. The server has one Word Builder and the
+     language is a property of the session, not of the game. */
+  wordLocal: 'word_builder',
+  memory: 'memory_match',
+  flight: 'flight',
+};
+
+/** What `/v1/games/sessions` sends back for the four quizzes. */
+interface ServerQuiz {
+  questions: { index: number; prompt: string; options: string[] }[];
 }
 
 /* ───────────────────────────────────────────────────────────── leaderboard ── */
@@ -982,6 +1080,8 @@ export function GamesApp() {
   const [playing, setPlaying] = useState<GameId | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
+  /* The server round in flight, or null for a locally built one. */
+  const [session, setSession] = useState<string | null>(null);
   /* The detail behind the strip. Shut by default: four figures a player checks
      occasionally should not push the games below the fold every visit. */
   const [statsOpen, setStatsOpen] = useState(false);
@@ -1102,11 +1202,54 @@ export function GamesApp() {
     if (!chosen || energy <= 0 || loading) return;
 
     setResult(null);
+    setSession(null);
 
     /* The three that build their own round need nothing from here. */
     if (chosen.kind !== 'text' && chosen.kind !== 'flag' && chosen.kind !== 'capital') {
       setQuestions([]);
       setPlaying(id);
+      return;
+    }
+
+    /*
+     * **A quiz is played on the server when there is a session to play it on.**
+     *
+     * The server holds the answers and scores the round, which is the only
+     * arrangement in which a score means anything: a client that knows the
+     * answer can report whatever it likes, and a leaderboard built on that is
+     * a leaderboard of whoever opened devtools. It also means the points
+     * survive the browser — the whole reason for this.
+     *
+     * With no API session it falls through to the local bank exactly as before.
+     * That is the demo accounts, and anybody playing while the backend is down;
+     * those rounds pay into the local mirror and are not ranked, which is the
+     * honest treatment of a round nobody can verify.
+     */
+    if (hasToken()) {
+      setPlaying(null);
+      setLoading(true);
+      startRound(SERVER_GAME[id], language)
+        .then((round) => {
+          const content = round.content as ServerQuiz;
+          setSession(round.sessionId);
+          setQuestions(
+            content.questions.map((q) => ({
+              prompt: q.prompt,
+              /* A flag round's prompt *is* the flag. The server sends the emoji
+                 in the prompt for `flags`, so the site's glyph slot takes it and
+                 the text line goes to the question the site already owns. */
+              ...(chosen.kind === 'flag'
+                ? { glyph: q.prompt, prompt: games.whichCountry }
+                : {}),
+              options: q.options,
+              /* Unknown here, and that is the point — see `Round.resolve`. */
+              answer: -1,
+            })),
+          );
+          setPlaying(id);
+        })
+        .catch(() => setPlaying(null))
+        .finally(() => setLoading(false));
       return;
     }
 
@@ -1181,6 +1324,58 @@ export function GamesApp() {
    */
   const finishQuiz = (correct: number, seconds: number) => {
     if (!game) return;
+
+    /*
+     * **On a server round the server's arithmetic wins, and the client does not
+     * get a vote.**
+     *
+     * It scored the answers it validated, spent the energy, moved the streak
+     * and wrote the ledger entry the leaderboard ranks on. Recomputing any of
+     * that here and showing the local figure would put two numbers on one
+     * screen that disagree — and the one the player would see is the one that
+     * is not in the database.
+     *
+     * The local mirror is written *from* the server's reply so the cards, the
+     * energy meter and the wallet stay consistent until the next `/v1/games/state`
+     * — not as a second source of truth, but as a cache of the one that just
+     * answered.
+     */
+    if (session) {
+      const id = session;
+      setSession(null);
+      finishRound(id)
+        .then((done) => {
+          setPlayer({
+            ...player,
+            points: done.balance,
+            streak: done.streak,
+            freezes: done.freezes,
+            energy: done.energyLeft,
+            /* A full tank has no clock running; a spent one is anchored now,
+               which is when the server charged it. */
+            energyAt: done.energyLeft >= MAX_ENERGY ? null : Date.now(),
+            answered: player.answered + done.answered,
+            correct: player.correct + done.correct,
+            lastPlayed: todayLocal(),
+          });
+          setResult({
+            won: done.won,
+            correct: done.correct,
+            points: done.score,
+            balance: done.balance,
+          });
+        })
+        .catch(() => {
+          /* The round happened and we cannot say what it was worth. Showing a
+             locally computed number here would be inventing the one figure the
+             player came for, so the card says the round did not bank and the
+             next `/v1/games/state` reconciles whatever the server actually
+             recorded. */
+          setResult({ won: false, correct, points: 0, balance: player.points });
+        });
+      return;
+    }
+
     bank(
       quizAward({
         game: game.id,
@@ -1527,6 +1722,27 @@ export function GamesApp() {
             <Round
               game={game}
               questions={questions}
+              /*
+               * The verdict, from the server, one question at a time.
+               *
+               * `seq` is the question index: 0-based and increasing, which is
+               * exactly what the protocol wants, and it means a resent move is
+               * a duplicate the server recognises rather than a second answer.
+               *
+               * `answer` comes back as `number | string` because Word Builder's
+               * is a word; on a quiz it is always the option index.
+               */
+              resolve={
+                session
+                  ? async (index, choice) => {
+                      const move = await sendMove(session, index, { index, choice });
+                      return {
+                        correct: move.correct === true,
+                        answer: typeof move.answer === 'number' ? move.answer : -1,
+                      };
+                    }
+                  : undefined
+              }
               onDone={finishQuiz}
               onQuit={() => setPlaying(null)}
             />
