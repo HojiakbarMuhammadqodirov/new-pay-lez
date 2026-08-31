@@ -396,6 +396,9 @@ export function BusinessForm({ mode }: { mode: 'setup' | 'profile' }) {
         phone: listing.phone.trim() || undefined,
         email: listing.email.trim() || undefined,
         priceRange: listing.price.trim() || undefined,
+        /* The mark itself, not a note that one was chosen. Without this the
+           logo an owner picked existed only in the browser they picked it in. */
+        imageUrl: listing.logo || undefined,
       };
       if (mine[0]) {
         await updateVenue(mine[0].id, body);

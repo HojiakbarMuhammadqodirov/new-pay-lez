@@ -488,6 +488,19 @@ export interface VenueDraft {
   priceRange?: string;
   phone?: string;
   email?: string;
+  /**
+   * The venue's mark, as the small square data URL the listing form stores.
+   *
+   * A data URL and not a filename, for the reason `imageFile.ts` gives: there
+   * is nowhere to upload to, and the picture is downscaled to `LOGO_PX` before
+   * it is ever kept, which is a few kilobytes. Sending it matters because a
+   * logo that lives in one browser is a logo the app cannot draw — and the app
+   * is where a customer sees the venue.
+   *
+   * If a real object store ever appears, this becomes a URL and nothing else
+   * about the flow changes; the column is already `TEXT`.
+   */
+  imageUrl?: string;
 }
 
 export interface Venue {
