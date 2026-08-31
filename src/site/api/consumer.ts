@@ -294,3 +294,29 @@ export interface Board {
 
 export const cityBoard = (limit = 10) =>
   call<Board>(`/v1/leaderboard/city?limit=${limit}`);
+
+/* ═══════════════════════════════════════════════════════════ onboarding ══ */
+
+/**
+ * Claim the welcome bonus.
+ *
+ * **Idempotent on the server**, and that is what makes it safe to call from a
+ * flow somebody can refresh, come back to on a second device, or double-press:
+ * `accounts.completeOnboarding` claims the row with
+ * `UPDATE … WHERE onboarded_at IS NULL`, so two calls race for one row and
+ * exactly one pays. `granted` says which call this was — `false` is not a
+ * failure, it is "somebody already collected this", which is the honest answer
+ * to a second press.
+ */
+export interface Onboarded {
+  granted: boolean;
+  points: number;
+  balance: number;
+}
+
+export const completeOnboarding = () =>
+  call<Onboarded>('/v1/me/onboarded', {
+    method: 'POST',
+    /* The account is the key: a retry after a dropped response must pay once. */
+    idempotencyKey: 'onboarded',
+  });

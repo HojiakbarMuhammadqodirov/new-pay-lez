@@ -13,7 +13,7 @@ import {
 } from './context';
 import { addUser, listUsers, patchUser, toAccount } from './directory';
 import { exchangeGoogleCredential, forgetGoogle } from './google';
-import { ApiError, setToken, signOut as apiSignOut } from '../api/client';
+import { ApiError, hasToken, setToken, signOut as apiSignOut } from '../api/client';
 import * as api from '../api/consumer';
 import { useLanguage } from '../i18n/context';
 import {
@@ -556,27 +556,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * that has never played. Running it through the streak would start a streak
    * on a game that is not one of the seven.
    */
+  /**
+   * Finish onboarding, and take the welcome bonus **from the server**.
+   *
+   * The flow's own flag rounds are a server session like any other round now,
+   * so `earned` has already been banked by the time this runs — what is left is
+   * the welcome bonus, and it is the server's to grant. `POST /v1/me/onboarded`
+   * claims the row with `UPDATE … WHERE onboarded_at IS NULL`, so a refresh, a
+   * second device and a double-press all race for one row and exactly one pays.
+   * `granted: false` is not a failure; it is "somebody already collected this".
+   *
+   * The account is then written from the **balance the server reports**, not
+   * from local arithmetic. It used to add `earned + WELCOME_POINTS` to whatever
+   * this browser happened to hold, which is how a brand-new player ended the
+   * flow reading 130 while the database said 2.
+   *
+   * With no session it falls back to the old local sum. That is the demo
+   * accounts and a dead backend — the same fallback every other path here has,
+   * and for the same reason.
+   */
   const finishOnboarding = useCallback(
-    (earned: number) => {
-      setAccount((live) => {
-        if (!live) return live;
-        /* The guard, and the reason a second call is safe rather than an
-           error: the honest answer to "did I finish onboarding?" is yes, and
-           this call is simply not the one that paid for it. */
-        if (live.onboardedAt !== null) return live;
+    async (earned: number) => {
+      const stamp = (balance: number | null) =>
+        setAccount((live) => {
+          if (!live) return live;
+          if (live.onboardedAt !== null) return live;
 
-        const next: Account = {
-          ...live,
-          onboardedAt: new Date().toISOString(),
-          player: live.player
-            ? { ...live.player, points: live.player.points + earned + WELCOME_POINTS }
-            : live.player,
-        };
-        commit(next);
-        return next;
-      });
+          const next: Account = {
+            ...live,
+            onboardedAt: new Date().toISOString(),
+            player: live.player
+              ? {
+                  ...live.player,
+                  points:
+                    balance ?? live.player.points + earned + WELCOME_POINTS,
+                }
+              : live.player,
+          };
+          commit(next);
+          return next;
+        });
+
+      if (!hasToken()) {
+        stamp(null);
+        return;
+      }
+
+      try {
+        const done = await api.completeOnboarding();
+        stamp(done.balance);
+      } catch {
+        /* The bonus did not land, and inventing it here would put a number on
+           the screen that is not in the ledger. The stamp still goes on — the
+           flow *is* finished — and the balance stays whatever the server last
+           said, which the next `/v1/games/state` reconciles. */
+        stamp(account?.player?.points ?? null);
+      }
     },
-    [commit],
+    [commit, account],
   );
 
   const value = useMemo<AuthValue>(

@@ -228,7 +228,7 @@ export interface AuthValue {
    * `POST /v1/me/onboarded`, which answers `granted: false` on every call after
    * the first; see `AuthProvider` for which side of the wire this one is.
    */
-  finishOnboarding: (earned: number) => void;
+  finishOnboarding: (earned: number) => Promise<void>;
 }
 
 /**

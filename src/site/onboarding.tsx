@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './icons';
 import { useAuth } from './auth/context';
 import { matchCities, savePlace, useCities, type City } from './api/profile';
+import { hasToken } from './api/client';
+import { finishRound, sendMove, startRound } from './api/consumer';
 import { WELCOME_POINTS } from './auth/users';
 import { LANGUAGES, LANGUAGE_ORDER, useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -282,17 +284,66 @@ function FlagStep({
   const [picked, setPicked] = useState<number | null>(null);
   const [points, setPoints] = useState(0);
   const [attempt, setAttempt] = useState(0);
+  /* The server round, when there is a session to open one on. */
+  const [session, setSession] = useState<string | null>(null);
+  const [revealed, setRevealed] = useState<number | null>(null);
 
   /*
-   * Built once, when this step mounts, and rebuilt only on a retry. Not on
-   * every render and not per question: `buildFlagRound` draws from the bag, so
-   * calling it again would take three *more* rows out of the pool and the
-   * player would be asked six questions to answer three.
+   * **The first round is a real round.**
+   *
+   * It used to be three questions off the local bank, scored 30/30/40 by this
+   * file, and the total was deliberately 100 so the payoff screen could say
+   * "you earned as much as we gave you". That was a nice line about a number
+   * that existed nowhere: a new player finished onboarding reading 130 while
+   * the database held 100, and the difference was three questions this browser
+   * had scored for itself.
+   *
+   * So it opens a `flags` session like any other round now. The server sends
+   * the questions and keeps the answers, scores what was answered, and writes
+   * the ledger entry — which means the first thing a player does on this site
+   * is also the first thing that counts. It costs one energy out of four, and
+   * that is the mechanic being taught rather than a tax.
+   *
+   * The three-question shape is kept: the server sends five and this asks the
+   * first three, because `finish` scores what was answered rather than what was
+   * offered. A four-screen welcome is not the place to sit somebody down for a
+   * full round.
+   *
+   * Built once on mount, rebuilt only on a retry — `buildFlagRound` draws from
+   * the bag, so calling it again would take three *more* rows out of the pool.
    */
   useEffect(() => {
     let live = true;
     setRound(null);
     setFailed(false);
+    setSession(null);
+
+    if (hasToken()) {
+      startRound('flags', language)
+        .then((started) => {
+          if (!live) return;
+          const content = started.content as {
+            questions: { index: number; prompt: string; options: string[] }[];
+          };
+          setSession(started.sessionId);
+          setRound(
+            content.questions.slice(0, ROUND_POINTS.length).map((q) => ({
+              glyph: q.prompt,
+              prompt: copy.gameTitle,
+              options: q.options,
+              /* Unknown by design: the server holds it. */
+              answer: -1,
+            })),
+          );
+        })
+        .catch(() => {
+          if (live) setFailed(true);
+        });
+      return () => {
+        live = false;
+      };
+    }
+
     buildFlagRound(language, ROUND_POINTS.length, copy.gameTitle)
       .then((built) => {
         if (live) setRound(built);
@@ -341,7 +392,10 @@ function FlagStep({
 
   const question = round[at];
   const answered = picked !== null;
-  const right = answered && picked === question.answer;
+  /* On a server round the answer arrives with the verdict; until then there is
+     nothing honest to mark. See the same rule in `Round` in `games.tsx`. */
+  const rightIndex = session ? revealed : question.answer;
+  const right = answered && rightIndex !== null && picked === rightIndex;
   const last = at === round.length - 1;
 
   /* One-way per round: the buttons repaint to show which was right, so a second
@@ -349,16 +403,45 @@ function FlagStep({
   const answer = (index: number) => {
     if (answered) return;
     setPicked(index);
-    if (index === question.answer) setPoints((total) => total + ROUND_POINTS[at]);
+
+    if (!session) {
+      if (index === question.answer) setPoints((total) => total + ROUND_POINTS[at]);
+      setRevealed(question.answer);
+      return;
+    }
+
+    /* The server's verdict, and its answer to show. `seq` is the question's
+       index in the round the server sent, which is `at` because this asks its
+       questions in order from the first. */
+    void sendMove(session, at, { index: at, choice: index })
+      .then((move) => {
+        setRevealed(typeof move.answer === 'number' ? move.answer : -1);
+        /* The points shown are still the flow's own 30/30/40 — what the round
+           *pays* is the server's arithmetic, banked at `finish`, and the payoff
+           screen reads the real balance rather than this. See `PayoffStep`. */
+        if (move.correct) setPoints((total) => total + ROUND_POINTS[at]);
+      })
+      .catch(() => setRevealed(-1));
   };
 
   const next = () => {
     if (last) {
+      if (session) {
+        const id = session;
+        setSession(null);
+        /* Bank it, then move on regardless: a welcome flow that could strand
+           somebody on a network error is worse than one that loses a round. */
+        finishRound(id)
+          .then((done) => onDone(done.score))
+          .catch(() => onDone(0));
+        return;
+      }
       onDone(points);
       return;
     }
     setAt((n) => n + 1);
     setPicked(null);
+    setRevealed(null);
   };
 
   return (
@@ -400,11 +483,15 @@ function FlagStep({
             data-state={
               !answered
                 ? undefined
-                : index === question.answer
-                  ? 'right'
-                  : index === picked
-                    ? 'wrong'
+                : rightIndex === null
+                  ? index === picked
+                    ? 'picked'
                     : 'dim'
+                  : index === rightIndex
+                    ? 'right'
+                    : index === picked
+                      ? 'wrong'
+                      : 'dim'
             }
             onClick={() => answer(index)}
           >
@@ -508,7 +595,7 @@ export function OnboardingPage() {
   const [step, setStep] = useState<Step>('lang');
   const [earned, setEarned] = useState(0);
 
-  const finish = useCallback(() => finishOnboarding(earned), [finishOnboarding, earned]);
+  const finish = useCallback(() => void finishOnboarding(earned), [finishOnboarding, earned]);
 
   if (!account) return null;
 

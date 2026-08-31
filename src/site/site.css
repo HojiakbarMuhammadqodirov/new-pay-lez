@@ -19643,3 +19643,10 @@ button {
   border-color: var(--border-2);
   background: var(--surface-2);
 }
+
+/* Onboarding's own pending state, matching `.round-option[data-state='picked']`
+   on the play screen: pressed, verdict not back yet. */
+.onb-option[data-state='picked'] {
+  border-color: var(--border-2);
+  background: var(--surface-2);
+}
