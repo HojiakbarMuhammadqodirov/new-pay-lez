@@ -388,10 +388,13 @@ export const SUB_ROWS: Array<{ kind: SubRowKind; values: [SubValue, SubValue, Su
      free column against `MAX_ENERGY`, which is the only one of the three the
      front end can see. */
   { kind: 'number', values: [4, 6, 10] },
-  /* `energy_regen_minutes`, in hours: 240 / 180 / 120. A faster refill is worth
-     more than a bigger pool to the player who empties it at nine in the
-     morning, which is what the server's own note says it is for. */
-  { kind: 'number', values: [4, 3, 2] },
+  /* `energy_regen_minutes`, and **in minutes** rather than hours. A faster refill
+     is worth more than a bigger pool to the player who empties it at nine in the
+     morning, which is what the server's own note says it is for — and the clocks
+     got fast enough that hours stopped being the unit: half an hour on Premium
+     is "0.5" in a column of whole numbers, which reads as a rounding error
+     rather than as the best row on the table. */
+  { kind: 'number', values: [120, 60, 30] },
   /* `points_multiplier`. **Game rounds only** — the venue lines are their own
      per-tier figures on the server, and multiplying those as well would pay a
      paid plan twice for one visit. The row's label has to say so. */
@@ -576,7 +579,13 @@ export type GameId =
  * its shape is `QUIZ_PERFECT_BONUS`, which is worth as much as all five answers
  * put together and lands on the last question.
  *
- * `allowedMistakes` is how many you may get wrong and still bank the round.
+ * **There is no mistake allowance any more, and no column for one.** A quiz
+ * ran until the second wrong answer, which closed a round the player had paid
+ * energy for and left three questions they never saw — a fail state on a game
+ * whose whole promise is "answer five things". Every round now runs to the
+ * fifth question; a wrong answer is worth nothing and nothing worse than
+ * nothing. The one game that can still end early is the flight, and what ends
+ * it is a crash, not a tally.
  *
  * Every figure here is what a round scores, full stop. A day is bounded by
  * energy and by nothing else (`MAX_ENERGY` in `auth/player.ts`), so the
@@ -602,7 +611,6 @@ export const GAMES: Array<{
   questions: number;
   seconds: number;
   perCorrect: number;
-  allowedMistakes: number;
 }> = [
   /*
    * Memory Match, and it leads the table because it leads the screen — the
@@ -631,16 +639,17 @@ export const GAMES: Array<{
    * guaranteed 36 for six pairs that cannot be lost, the richest round on the
    * page for the least asked of anybody.
    */
-  { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6, allowedMistakes: 0 },
+  { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6 },
   /*
    * The arcade round, and the only one that is played rather than answered.
    * `questions` is gaps to clear, `perCorrect` is points per gap,
-   * `allowedMistakes` is 0 because one crash ends it, and `seconds` is unused —
+   * one crash ends it, and `seconds` is unused —
    * the round lasts as long as you do.
    *
-   * Five gaps to bank, matching the quizzes' five questions, so a round is worth
-   * the same wherever you spend it. Unlike a quiz the run does not stop there —
-   * every gap past five pays another point — but the *payout* does stop:
+   * Five gaps to bank, matching the quizzes' five questions. Unlike a quiz the
+   * run does not stop there — every gap past five pays another **half** point,
+   * which is what lets the scroll speed climb without the payout running away
+   * with it — but the payout does stop:
    * `MAX_FLIGHT_POINTS` in `auth/player.ts` caps a flight at 20, which is twice
    * a clean quiz and the same order as everything else in the set. At two a gap
    * with no ceiling at all, which is what this row said before, one lucky run
@@ -648,11 +657,11 @@ export const GAMES: Array<{
    * bound. Skill is still paid for past the bank line; it stops being paid at
    * twenty.
    */
-  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 1, allowedMistakes: 0 },
-  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
-  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1, allowedMistakes: 1 },
-  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1, allowedMistakes: 1 },
-  { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1, allowedMistakes: 1 },
+  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 0.5 },
+  { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1 },
+  { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1 },
+  { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1 },
+  { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1 },
   /*
    * Word Builder, twice.
    *
@@ -685,8 +694,8 @@ export const GAMES: Array<{
    * term that used to sit in there made the thinking game of the set a race,
    * which is what four of the others already are.
    */
-  { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
-  { id: 'wordLocal', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5, allowedMistakes: 0 },
+  { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5 },
+  { id: 'wordLocal', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5 },
 ];
 
 /**
@@ -1016,7 +1025,7 @@ export const ADMIN_VOUCHER_ROWS: Array<{
 ];
 
 /** The console's own tabs, and the analytics view's. Icons are structure. */
-export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant', 'bars', 'send'];
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant', 'bars', 'send', 'book'];
 export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
 
 /** The nine Dashboard cards, in the original's order. */

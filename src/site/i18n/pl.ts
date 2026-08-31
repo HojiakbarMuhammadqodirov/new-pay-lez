@@ -116,7 +116,7 @@ export const pl: Dictionary = {
       'Konta',
       'Gracze',
     ],
-    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości'],
+    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości', 'Baza'],
 
     services: {
       title: 'Usługi biznesowe',
@@ -156,6 +156,21 @@ export const pl: Dictionary = {
     note: 'Ta baza kont jest w tej przeglądarce. Nie ma jeszcze serwera, więc konsola czyta, a nie edytuje — zobacz auth/users.ts.',
 
     /* ── czwarta zakładka: sama witryna, jedyna pytająca serwer ── */
+    database: {
+      title: 'Na serwerze',
+      lede: 'Wszyscy zarejestrowani i wszystkie lokale na platformie. To żywa baza danych, nie ta przeglądarka.',
+      switch: 'Którą tabelę pokazać',
+      counts: { users: 'aktywne konta', venues: 'aktywne lokale', issued: 'przyznane punkty' },
+      tables: { users: 'Ludzie', venues: 'Lokale' },
+      userColumns: ['Imię i nazwisko', 'E-mail', 'Rejestracja przez', 'Miasto', 'Punkty', 'Status', 'Dołączył'],
+      venueColumns: ['Lokal', 'Miasto', 'Kategoria', 'Właściciel', 'Wizyty', 'Zweryfikowany'],
+      unnamed: 'Bez nazwy',
+      verified: 'Zweryfikowany',
+      unverified: 'Jeszcze nie',
+      noUsers: 'Nikt się jeszcze nie zarejestrował.',
+      noVenues: 'Brak lokali.',
+      note: 'Pokazano {n} kont. Ten ekran czyta; nigdy nie edytuje cudzego konta.',
+    },
     messages: {
       title: 'Co napisali ludzie',
       lede: 'Wiadomości ze strony Kontakt. Odpowiadasz z własnego programu pocztowego — adres jest linkiem.',
@@ -472,7 +487,6 @@ export const pl: Dictionary = {
     score: 'Wynik',
     streak: 'Seria',
     energy: 'Energia',
-    roundMistakes: 'Pozostałe błędy',
     freezes: 'Zamrożenia',
     answered: 'Odpowiedzi',
     correctLabel: 'Poprawnych',
@@ -508,7 +522,7 @@ export const pl: Dictionary = {
       'Ułóż słowo · {language}',
     ],
     rule: '{questions} pytań · po {seconds} sek.',
-    reward: '{mistakes} błąd dozwolony · +{points} za poprawną odpowiedź',
+    reward: '+{points} za poprawną odpowiedź · +{bonus} za szybki komplet',
     start: 'Zacznij grę',
     play: 'Zagraj',
     noEnergy: 'Koniec energii',
@@ -566,7 +580,7 @@ export const pl: Dictionary = {
     boardShowLess: 'Pokaż mniej',
 
     flight: {
-      rule: 'Leć tak daleko, jak zdoła Squawk · {gaps} bram zalicza rundę',
+      rule: 'Leć tak daleko, jak zdoła Squawk · z czasem przyspiesza',
       reward: 'Jedno zderzenie kończy grę · +{points} za bramę · do {max} za lot',
       goal: '{target} zalicza rundę',
       hint: 'Dotknij ekranu, aby zamachać skrzydłami',
@@ -582,8 +596,8 @@ export const pl: Dictionary = {
     },
 
     memory: {
-      rule: '{pairs} par · bez limitu czasu',
-      reward: 'Szybsze ułożenie to więcej punktów · do {points}',
+      rule: '{pairs} par · liczy się czas',
+      reward: 'Poniżej {seconds} sek. daje {points} · wolniej mniej punktów',
       pairs: 'Pary {found} / {total}',
       moves: 'Ruchy: {n}',
       facedown: 'Zakryta karta',
@@ -593,7 +607,7 @@ export const pl: Dictionary = {
 
     wordGame: {
       rule: '{words} słów · od łatwych do trudnych',
-      reward: 'Trudniejsze słowa dają więcej · podpowiedź kosztuje bonus',
+      reward: 'Słowo daje swój poziom · podpowiedź dzieli to na pół',
       lists: { pl: 'Polski', en: 'Angielski' },
       tier: 'Poziom {n}',
       undo: 'Cofnij',

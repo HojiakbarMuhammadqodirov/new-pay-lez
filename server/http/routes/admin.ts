@@ -427,7 +427,17 @@ export const adminRoutes: Route[] = [
     handler: (ctx) => {
       const search = qStr(ctx, 'q');
       return ctx.db.all(
-        `SELECT u.id, u.display_name, u.city, u.country_code, u.status, u.created_at,
+        /* `email` and `auth_provider` are here and the rest of the profile is
+           not, which is the line this endpoint's "deliberately shallow" note
+           draws. An operator has to be able to tell two accounts apart, and on
+           a real directory the display names collide — four variants of one
+           person's name, all real, was the state that made this necessary. The
+           provider is beside it because "signed in with Google" is the answer
+           to "why has this account no password", which is otherwise a support
+           ticket. Phone, birthday and occupation stay out: those are a profile
+           viewer, and this is a list somebody scans. */
+        `SELECT u.id, u.display_name, u.email, u.auth_provider, u.city, u.country_code,
+                u.status, u.created_at, u.language, u.onboarded_at,
                 u.points_cache AS points, u.referral_code,
                 (SELECT COUNT(*) FROM transactions t
                   WHERE t.user_id = u.id AND t.status = 'committed') AS scans,

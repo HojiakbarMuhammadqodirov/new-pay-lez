@@ -13128,7 +13128,7 @@ button {
    ceiling and ends them below the floor. */
 .pv-col-top {
   top: -40%;
-  bottom: calc(100% - var(--gap) + 23%);
+  bottom: calc(100% - var(--gap) + 26%);
 }
 
 .pv-col-top::after {
@@ -13136,7 +13136,7 @@ button {
 }
 
 .pv-col-low {
-  top: calc(var(--gap) + 23%);
+  top: calc(var(--gap) + 26%);
   bottom: -40%;
 }
 
@@ -13153,37 +13153,137 @@ button {
   }
 }
 
-.pv-bird {
+/*
+ * The course: the slow drift that threads one gap and then the next.
+ *
+ * A column reaches the bird about three quarters of the way through its own
+ * travel, and the two columns are half a cycle apart — so on this shared 3.6s
+ * clock he has to be **low at a quarter** and **high at three quarters**, which
+ * is where the two gaps are. This is the wrapper's whole job; the flapping
+ * happens inside it.
+ *
+ * **Sized against the stage's height, not its width**, which is the only one of
+ * the two that means anything here: what has to be true is that he fits through
+ * the gap, and the gap is vertical. A width in percent made him a different
+ * fraction of the opening on every card the grid can produce — fine at one
+ * breakpoint and clipping through a column at the next.
+ *
+ * `top: 35%` is half his own height above the middle, `50% - 30%/2`. Written as
+ * a `top` rather than a negative `margin-top`, because a percentage margin
+ * resolves against the containing block's **width** — it put him at the top of
+ * the stage on a box three times wider than it is tall, and he flew straight
+ * through the first column.
+ */
+.pv-bird-path {
   position: absolute;
-  /* `FLIGHT.bird.x` is 16 of the world's 71 units across — the same place on
-     the stage the real one flies. */
+  /* `FLIGHT.bird.x` is 16 of the world's 71 units across — the same place on the
+     stage the real one flies. */
   left: 16%;
-  /* Half his own height above the middle, which is `50% - 30%/2`. Written as a
-     `top` rather than a negative `margin-top`, because a percentage margin
-     resolves against the containing block's **width** — it put him at the top of
-     the stage on a box that is three times wider than it is tall, and he flew
-     straight through the first column. */
-  top: 35%;
-  /*
-   * **Sized against the stage's height, not its width**, which is the only one
-   * of the two that means anything here: what has to be true is that he fits
-   * through the gap, and the gap is vertical. A width in percent made him a
-   * different fraction of the opening on every card the grid can produce — fine
-   * at one breakpoint and clipping through a column at the next.
-   *
-   * 30% against a 46% opening leaves eight points of clearance at each end,
-   * which is what the bob then spends. He started at 32% *of the width*, which
-   * on a card was wider than the gate he was flying through — a course drawn as
-   * a portrait.
-   */
-  height: 30%;
-  width: auto;
+  top: 37%;
+  height: 26%;
   aspect-ratio: 1.44 / 1.24;
-  overflow: visible;
-  animation-name: pv-bob;
-  /* The column cycle, not a rhythm of its own — see `FlightPreview`. */
+  animation-name: pv-course;
   animation-duration: 3.6s;
   animation-timing-function: ease-in-out;
+}
+
+@keyframes pv-course {
+  0%,
+  50%,
+  100% {
+    transform: translateY(0);
+  }
+  /* Forty-five percent of his own height, which is about twelve of the stage —
+     enough to actually carry him from one gap to the other. It was eleven, and
+     eleven of a sprite a quarter of the stage tall is three percent of the
+     stage: he was not threading the gates, he was sitting between them and
+     they happened to be wide. */
+  25% {
+    transform: translateY(45%);
+  }
+  75% {
+    transform: translateY(-45%);
+  }
+}
+
+/*
+ * The flap, which is the game.
+ *
+ * Five of them per course cycle — 0.72s each, which divides 3.6 exactly so the
+ * two never drift out of phase — and each one is an **impulse and a fall**, not
+ * a wave. The rise takes a fifth of the beat and eases *out*; the fall takes the
+ * other four fifths and eases *in*, because that is what gravity does and it is
+ * the difference between a bird flying and a bird bobbing. The nose follows: up
+ * hard on the impulse, tipping further down the longer the fall goes on, which
+ * is `tiltFor` in the real engine drawn by hand.
+ *
+ * The amplitude is deliberately small — under a third of his own height, about
+ * nine percent of the stage. It has to be: the course drift already spends five
+ * percent of the opening at each end, and a flap large enough to look dramatic
+ * put the top of the arc through the roof of the gate. What sells it is the
+ * *shape* of the motion and the tilt, not the distance.
+ */
+.pv-bird {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  /* `pv-swoop`, not `pv-flap` — the wing already owns that name two hundred
+     lines down, and a duplicate @keyframes silently hands the later definition
+     to both. The bird would have flapped its whole body and held its wing. */
+  animation-name: pv-swoop;
+  animation-duration: 0.72s;
+  animation-timing-function: linear;
+}
+
+@keyframes pv-swoop {
+  0% {
+    transform: translateY(0) rotate(26deg);
+    animation-timing-function: cubic-bezier(0.15, 0.85, 0.35, 1);
+  }
+  18% {
+    transform: translateY(-22%) rotate(-20deg);
+    animation-timing-function: cubic-bezier(0.5, 0, 0.9, 0.5);
+  }
+  100% {
+    transform: translateY(0) rotate(26deg);
+  }
+}
+
+/*
+ * The tap ring.
+ *
+ * It fires on the impulse, not between them, which is the one thing that makes
+ * the card explain the control rather than just show the result: the press and
+ * the climb are the same beat. Drawn where a thumb would be rather than on the
+ * bird — you tap the *stage* in this game, anywhere.
+ */
+.pv-tap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1.6rem;
+  height: 1.6rem;
+  margin: -0.8rem 0 0 -0.8rem;
+  border-radius: 50%;
+  border: 1.5px solid rgba(var(--accent-rgb), 0.55);
+  opacity: 0;
+  pointer-events: none;
+  animation-name: pv-press;
+  animation-duration: 0.72s;
+  animation-timing-function: ease-out;
+}
+
+@keyframes pv-press {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.35);
+  }
+  55%,
+  100% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
 }
 
 /* The four sanctioned part styles, and the fifth the wing has to itself.
@@ -13235,33 +13335,6 @@ button {
   50%,
   100% {
     transform: rotate(var(--wing-down));
-  }
-}
-
-/*
- * Down to meet the second column, up to meet the first.
- *
- * A column crosses the bird about three quarters of the way through its own
- * travel, and the two columns are half a cycle apart — so on this shared 3.6s
- * clock he has to be **low at a quarter** and **high at three quarters**, which
- * is where the two gaps are. The midpoints are level flight between gates.
- *
- * The tilt is `FLIGHT.bird.tilt` in spirit — nose up climbing, down falling — at
- * a fraction of its range. A sprite forty pixels across cannot spare sixteen
- * degrees: at that size the rotation stops reading as motion and starts reading
- * as the shape.
- */
-@keyframes pv-bob {
-  0%,
-  50%,
-  100% {
-    transform: translateY(0) rotate(0deg);
-  }
-  25% {
-    transform: translateY(17%) rotate(9deg);
-  }
-  75% {
-    transform: translateY(-17%) rotate(-8deg);
   }
 }
 
@@ -13606,26 +13679,6 @@ button {
 .mm-watch {
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.01em;
-}
-
-/* The mistakes left in this round. Same spent treatment as the freezes on the
-   week row, but its own rule — that row is a reading of the account and this is
-   a reading of the round, and they are not one component that happens to be in
-   two places. The strip's pips they used to be paired with are gone. */
-.round-hearts {
-  display: flex;
-  gap: 0.2rem;
-  font-size: 1.15rem;
-  line-height: 1.35;
-  color: var(--accent-lit);
-}
-
-.round-hearts span {
-  font-style: normal;
-}
-
-.round-hearts span[data-spent='true'] {
-  opacity: 0.22;
 }
 
 .round-glyph {
@@ -19346,5 +19399,83 @@ button {
 .ct-sent svg {
   flex: none;
   color: var(--accent-ink);
+}
+
+/* ── the console's database tab (`adminDatabase.tsx`) ─────────────────────
+   Three counts and a table. `adm-db-` was grepped and was free.
+
+   The counts are a strip rather than the console's usual cards because they
+   are a caption on the tables under them, not the point of the screen — the
+   rows are. */
+
+.adm-db-counts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 1.1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface);
+}
+
+.adm-db-counts div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.adm-db-counts b {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-lit);
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-db-counts span {
+  font-size: 0.7rem;
+  line-height: 1.3;
+  color: var(--text-fnt);
+}
+
+/* Tabular, because a column of balances that does not line up is a column
+   somebody has to read twice. */
+.adm-db-num {
+  font-family: var(--font-mono, var(--font-display));
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* The role, when a row has one. Beside the name rather than in its own column:
+   almost nobody has a role, and an almost-empty column is a column of dashes. */
+.adm-db-role {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.1rem 0.38rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  vertical-align: middle;
+}
+
+.adm-db-note {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0.9rem 0 0;
+  font-size: 0.74rem;
+  color: var(--text-fnt);
+}
+
+.adm-db-note svg {
+  flex: none;
 }
 

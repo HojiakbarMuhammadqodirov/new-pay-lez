@@ -111,7 +111,7 @@ export const uz: Dictionary = {
       'Hisoblar',
       'O‘yinchilar',
     ],
-    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar'],
+    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar', 'Baza'],
 
     services: {
       title: 'Biznes xizmatlari',
@@ -151,6 +151,21 @@ export const uz: Dictionary = {
     note: 'Bu hisoblar ro‘yxati shu brauzerda saqlanadi. Hali server yo‘q, shuning uchun konsol tahrirlamaydi, faqat o‘qiydi — auth/users.ts’ga qarang.',
 
     /* ── to‘rtinchi bo‘lim: saytning o‘zi, serverdan so‘raydigan yagonasi ── */
+    database: {
+      title: 'Serverda',
+      lede: 'Ro‘yxatdan o‘tgan barcha odamlar va platformadagi barcha joylar. Bu jonli ma’lumotlar bazasi, bu brauzer emas.',
+      switch: 'Qaysi jadval ko‘rsatilsin',
+      counts: { users: 'faol hisoblar', venues: 'faol joylar', issued: 'berilgan ballar' },
+      tables: { users: 'Odamlar', venues: 'Joylar' },
+      userColumns: ['Ism', 'E-pochta', 'Ro‘yxatdan o‘tish', 'Shahar', 'Ballar', 'Holat', 'Qo‘shilgan'],
+      venueColumns: ['Joy', 'Shahar', 'Turkum', 'Egasi', 'Tashriflar', 'Tasdiqlangan'],
+      unnamed: 'Ism ko‘rsatilmagan',
+      verified: 'Tasdiqlangan',
+      unverified: 'Hali yo‘q',
+      noUsers: 'Hali hech kim ro‘yxatdan o‘tmagan.',
+      noVenues: 'Joylar yo‘q.',
+      note: '{n} ta hisob ko‘rsatilmoqda. Bu ekran o‘qiydi; birovning hisobini hech qachon tahrirlamaydi.',
+    },
     messages: {
       title: 'Odamlar nima yozgan',
       lede: 'Kontakt sahifasidan kelgan xabarlar. Javobni o‘z pochta ilovangizdan yozasiz — manzil havola.',
@@ -467,7 +482,6 @@ export const uz: Dictionary = {
     score: 'Hisob',
     streak: 'Ketma-ketlik',
     energy: 'Energiya',
-    roundMistakes: 'Qolgan xatolar',
     freezes: 'Muzlatishlar',
     answered: 'Javoblar',
     correctLabel: 'To‘g‘ri',
@@ -503,7 +517,7 @@ export const uz: Dictionary = {
       'So‘z yig‘ · {language}',
     ],
     rule: '{questions} savol · har biri {seconds} soniya',
-    reward: '{mistakes} xatoga ruxsat · har to‘g‘ri javob uchun +{points}',
+    reward: 'Har to‘g‘ri javob +{points} · tez va xatosiz raund +{bonus}',
     start: 'O‘yinni boshlash',
     play: 'O‘ynash',
     noEnergy: 'Energiya tugadi',
@@ -561,8 +575,8 @@ export const uz: Dictionary = {
     boardShowLess: 'Kamroq ko‘rsatish',
 
     flight: {
-      rule: 'Squawk qancha uchsa, shuncha · {gaps} ta darvoza raundni hisobga oladi',
-      reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza uchun +{points} · bir parvozda {max} gacha',
+      rule: 'Squawk qancha uchsa, shuncha · borgan sari tezlashadi',
+      reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza +{points} · parvozda {max} gacha',
       goal: '{target} ta raundni hisobga oladi',
       hint: 'Qanot qoqish uchun ekranga bosing',
       resume: 'Davom ettirish uchun bosing',
@@ -577,8 +591,8 @@ export const uz: Dictionary = {
     },
 
     memory: {
-      rule: '{pairs} juftlik · vaqt cheklovi yo‘q',
-      reward: 'Tezroq yig‘sangiz ko‘proq ball · {points} gacha',
+      rule: '{pairs} juftlik · vaqt hisoblanadi',
+      reward: '{seconds} soniyagacha {points} ball · sekinroq — kamroq',
       pairs: 'Juftliklar {found} / {total}',
       moves: '{n} harakat',
       facedown: 'Yopiq karta',
@@ -588,7 +602,7 @@ export const uz: Dictionary = {
 
     wordGame: {
       rule: '{words} so‘z · osondan qiyingacha',
-      reward: 'Qiyinroq so‘z ko‘proq ball beradi · maslahat bonusni oladi',
+      reward: 'So‘z darajasicha ball beradi · maslahat uni yarim qiladi',
       lists: { pl: 'Polyakcha', en: 'Inglizcha' },
       tier: '{n}-daraja',
       undo: 'Orqaga',

@@ -136,7 +136,7 @@ export const en = {
       'Players',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
-    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages'],
+    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages', 'Database'],
 
     services: {
       title: 'Business services',
@@ -183,6 +183,26 @@ export const en = {
      * its `down` sentences, so nothing about being disconnected is written
      * twice.
      */
+    /**
+     * The sixth tab, and the third that asks a server. It is the one screen
+     * that shows the rows in `users` and `venues` — see `adminDatabase.tsx`
+     * for why that is not the same question the People tab answers.
+     */
+    database: {
+      title: 'On the server',
+      lede: 'Everyone who has signed up, and every venue on the platform. This is the live database, not this browser.',
+      switch: 'Which table to show',
+      counts: { users: 'active accounts', venues: 'live venues', issued: 'points issued' },
+      tables: { users: 'People', venues: 'Venues' },
+      userColumns: ['Name', 'Email', 'Signed up with', 'City', 'Points', 'Status', 'Joined'],
+      venueColumns: ['Venue', 'City', 'Category', 'Owner', 'Visits', 'Verified'],
+      unnamed: 'No name given',
+      verified: 'Verified',
+      unverified: 'Not yet',
+      noUsers: 'Nobody has signed up yet.',
+      noVenues: 'No venues yet.',
+      note: 'Showing {n} accounts. This screen reads; it never edits somebody else’s account.',
+    },
     messages: {
       title: 'What people wrote',
       lede: 'Messages from the Contact page. Replying is your own mail app — the address is a link.',
@@ -564,10 +584,6 @@ export const en = {
        had to move with the mechanic, or the screen would explain itself with a
        noun nothing else on it uses. */
     energy: 'Energy',
-    /* The hearts above a quiz round, which are **not** the energy pool: they
-       count the mistakes this round still allows. The two wore one key once,
-       and separating them is what the rename was for. */
-    roundMistakes: 'Mistakes left',
     freezes: 'Freezes',
     answered: 'Answered',
     correctLabel: 'Correct',
@@ -662,7 +678,18 @@ export const en = {
     /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
        game's own row, so a rules line never disagrees with the game it labels. */
     rule: '{questions} questions · {seconds} sec each',
-    reward: '{mistakes} mistake allowed · +{points} per correct answer',
+    /*
+     * What a round pays, in the order it pays it.
+     *
+     * The old line led with the mistake allowance — "1 mistake allowed" — which
+     * was the first thing a player read about a quiz and is now not a rule at
+     * all: every round runs to the fifth question however many go wrong. What
+     * replaced it is the thing worth aiming at. `{bonus}` is the perfect bonus
+     * and the fastest speed band added together, because they are only ever
+     * earned together and two numbers here would be a sum a card asked the
+     * reader to do.
+     */
+    reward: '+{points} per correct answer · +{bonus} for a fast clean sweep',
     start: 'Start game',
     /* The short label, for the cards in the grid — six of them side by side,
        where "Start game" wraps and the surrounding card already says which. */
@@ -779,8 +806,8 @@ export const en = {
      * catches a missing key but would say nothing about a missing array entry.
      */
     flight: {
-      rule: 'Fly as far as Squawk can · {gaps} gaps banks the round',
-      reward: 'One crash ends it · +{points} per gap · up to {max} a flight',
+      rule: 'Fly as far as Squawk can · it speeds up as you go',
+      reward: 'One crash ends it · +{points} a gap · up to {max} a flight',
       goal: '{target} to bank the round',
       hint: 'Tap the screen to flap',
       resume: 'Tap to pick up where you left off',
@@ -805,8 +832,11 @@ export const en = {
      * 196 capitals, drawn through a bag that exhausts before it repeats.
      */
     memory: {
-      rule: '{pairs} pairs · no time limit',
-      reward: 'Faster clears score more · up to {points}',
+      rule: '{pairs} pairs · the clock counts up',
+      /* Both figures come from `MEMORY_BANDS` — the top band's ceiling and what
+         it pays. A card that stated the seconds itself would be the one place
+         the bands could move without the copy noticing. */
+      reward: 'Under {seconds} seconds pays {points} · slower pays less',
       pairs: 'Pairs {found} / {total}',
       moves: '{n} moves',
       facedown: 'Face-down card',
@@ -823,7 +853,7 @@ export const en = {
      */
     wordGame: {
       rule: '{words} words · easy to hard',
-      reward: 'Harder words score more · a hint costs the bonus',
+      reward: 'A word pays its difficulty · a hint halves it',
       /* Names the list being practised, which is what tells the catalogue's two
          Word Builder cards apart — one is always English, the other is the
          language of the city on the profile. It is *not* the language the site
@@ -3309,7 +3339,7 @@ export const en = {
     /** Index-aligned with `SUB_ROWS`. The unit lives here; see the note above. */
     rows: [
       'Energy a day',
-      'Hours to refill one energy',
+      'Minutes to refill one energy',
       'Points on a game round',
       'Days a voucher stays spendable',
       'Word Builder hints a day',

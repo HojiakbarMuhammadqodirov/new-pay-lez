@@ -8,6 +8,7 @@ import {
   type AdminService,
 } from './content';
 import { ServiceAnalytics } from './adminAnalytics';
+import { AdminDatabase } from './adminDatabase';
 import { AdminMessages } from './adminMessages';
 import { AdminWebsite } from './adminWebsite';
 import { ThemeToggle } from './Header';
@@ -413,6 +414,8 @@ export function AdminPage() {
                 <AdminWebsite />
               ) : tab === 4 ? (
                 <AdminMessages />
+              ) : tab === 5 ? (
+                <AdminDatabase />
               ) : (
                 <section className="adm-block" data-reveal>
                   <div className="adm-block-head">
