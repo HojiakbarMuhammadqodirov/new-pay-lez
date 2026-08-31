@@ -804,7 +804,89 @@ export const uz: Dictionary = {
         action: 'QR kodni olish',
       },
     ],
-    notWired: 'Bu versiyada ulanmagan.',
+    acts: {
+      column: 'Amallar',
+
+      publish: 'Chop etish',
+      pause: 'To‘xtatib turish',
+      resume: 'Davom ettirish',
+      extend: 'Uzaytirish',
+      end: 'Yakunlash',
+      endSure: 'Aniqmi?',
+      notify: 'Xabar berish',
+      send: 'Rejalashtirish',
+      save: 'Saqlash',
+      close: 'Yopish',
+      refresh: 'Yangilash',
+      until: 'Yangi tugash sanasi',
+      sendAt: 'Qachon yuborilsin',
+
+      published: 'Chop etildi. Ilovada ko‘rinmoqda.',
+      paused: 'To‘xtatildi. Mijozlar buni endi ko‘rmaydi.',
+      resumed: 'Yana ishlayapti.',
+      extended: 'Tugash sanasi surildi.',
+      ended: 'Yakunlandi. Buni endi qaytarib bo‘lmaydi.',
+      notified: 'Bildirishnoma rejalashtirildi.',
+
+      offline: 'Serverga ulanib bo‘lmadi. Hech narsa o‘zgarmadi — bir daqiqadan so‘ng urinib ko‘ring.',
+      refused: 'Server buni qabul qilmadi: {why}',
+
+      budgetTitle: 'Oylik byudjetni belgilang',
+      budgetLede:
+        'Oy uchun bitta summa, sodiqlik mukofotlari va vaucher chegirmalari orasida bo‘linadi. U allaqachon sarflangan va ajratib qo‘yilgandan kam bo‘la olmaydi.',
+      budgetTotal: 'Shu oyda jami',
+      budgetShare: 'Sodiqlikka ulush',
+      shareUnit: '% sodiqlikka',
+      budgetShareNote: '{loyalty} sodiqlik mukofotlariga, {voucher} vaucher chegirmalariga.',
+      budgetSaved: 'Byudjet saqlandi.',
+      moveTitle: 'Ikki jamg‘arma orasida pul ko‘chirish',
+      moveAmount: 'Qancha ko‘chirilsin',
+      moveDo: 'Ko‘chirish',
+      moveDir: '{from} → {to}',
+      moveNote:
+        'Faqat hali mavjud pul ko‘chadi. Ajratib qo‘yilgani buni allaqachon ishlab olgan mijozniki.',
+      moved: 'Ko‘chirildi.',
+      hint: '«{to}» jamg‘armasi deyarli tugadi, «{from}» da esa zaxira bor. Taxminan {amount} ko‘chirishga arziydi.',
+      pools: { loyalty: 'Sodiqlik', voucher: 'Vaucherlar' },
+
+      ladderEdit: 'Ballar nima berishini o‘zgartirish',
+      ladderDone: 'Tayyor',
+      tierPct: 'Chegirma',
+      tierPoints: 'Necha ball turadi',
+      tierCap: 'Bitta hisobdan ko‘pi bilan',
+      pctUnit: '% chegirma',
+      tierAdd: 'Daraja qo‘shish',
+      tierRetire: 'Olib qo‘yish',
+      tierRetired: 'Daraja olib qo‘yildi. U bo‘yicha berilgan vaucherlar ishlayveradi.',
+      tiersSaved: 'Ball darajalari saqlandi.',
+      tierDuplicate:
+        'Ikki daraja bir xil chegirma bera olmaydi — ikkinchisi birinchisini almashtiradi.',
+
+      queueTitle: 'Tasdiqlash kutilmoqda',
+      queueLede:
+        'Mijoz kodni skanerladi, lekin hali hech narsa berilmadi. Tasdiqlang — ballar, shtamplar va chegirmalar bir vaqtda amalga oshadi.',
+      queueEmpty:
+        'Hech narsa kutmayapti. Mijoz telefonini ko‘targanidan bir necha soniya keyin skaner shu yerda paydo bo‘ladi.',
+      confirm: 'Tasdiqlash',
+      turnAway: 'Rad etish',
+      confirmed: 'Tasdiqlandi. Mijoz ballarini oldi.',
+      turnedAway: 'Rad etildi. Hech narsa berilmadi.',
+      billLabel: 'Hisob summasi',
+      waitingCustomer: 'Mijoz summani kiritishini kutyapmiz',
+      openedAt: '{at} da skanerlandi',
+      intents: {
+        earn: 'Yig‘ish',
+        voucher_redeem: 'Vaucher',
+        reward_redeem: 'Mukofot',
+      },
+
+      exportLocked: 'CSV eksporti bu joyning tarifiga kirmaydi.',
+      previewTitle: 'Sizning e’loningiz mijoz ko‘zi bilan',
+      previewLede:
+        'Serverdan o‘qildi — bu shakldagi emas, saqlangan versiya.',
+      previewVouchers: 'Ballar qabul qilinadi',
+      previewNoVouchers: 'Ballar hozircha qabul qilinmaydi',
+    },
 
     unmeasured: {
       noSession:
@@ -909,7 +991,7 @@ export const uz: Dictionary = {
 
       proofTitle: 'Isbotlay oladigan yagona narsa',
       proof:
-        'Sodiqlik kampaniyalaringizdagi mijozlar oyiga {after} marta keladi — qo‘shilishdan oldingi {before} martaga qarshi.',
+        'Sodiqlik kampaniyalaringizdagi mijozlar qo‘shilishdan oldingiga qaraganda {n}× tez-tez keladi.',
       proofNote:
         'Sizning o‘z QR skanlaringizdan hisoblangan, taxmin emas. Kassa integratsiyasi kerak emas.',
       before: 'oldin',
@@ -1011,7 +1093,7 @@ export const uz: Dictionary = {
         scheduled: 'Rejalashtirilgan',
         paused: 'To‘xtatilgan',
         expired: 'Muddati tugagan',
-        ended: 'Yakunlangan',
+        archived: 'Yakunlangan',
       },
       search: 'Takliflaringiz orasidan qidirish',
       filters: ['Hammasi', 'Faol', 'Rejalashtirilgan', 'To‘xtatilgan', 'Muddati tugagan'],
@@ -1081,7 +1163,7 @@ export const uz: Dictionary = {
         paused: 'Davom ettirish',
         scheduled: 'Pauza',
         expired: 'Nusxalash',
-        ended: 'Nusxalash',
+        archived: 'Nusxalash',
       },
       pointsNote: 'Ball taklifi — kassada sizga hech narsaga tushmaydi',
       costEstimate: 'taxmin',
@@ -1426,6 +1508,10 @@ export const uz: Dictionary = {
         savedUnverified: 'Qoralama sifatida saqlandi. Joyingiz tasdiqlangach chop etiladi — biz shug‘ullanyapmiz.',
         savedNotLive: 'Qoralama saqlandi, ammo chop etishdan oldin server bilan aloqa uzildi. Hot deals ro‘yxatidan chop eting.',
         savedNotLiveWhy: 'Qoralama sifatida saqlandi. Chop etilmadi: {why}',
+        savedPlanFull: 'Qoralama sifatida saqlandi. Tarifingiz bir vaqtda bitta faol taklifga ruxsat beradi — ishlab turganini to‘xtatib, buni takliflar ro‘yxatidan chop eting.',
+        savedNoPush: 'Qoralama sifatida saqlandi. Bildirishnoma yuborilmaydi — qoralama lentada yo‘q.',
+        publishedNotified: 'Chop etildi, bildirishnoma {at} da yuboriladi.',
+        publishedNoPush: 'Chop etildi va ishlayapti. Bildirishnomani rejalashtirib bo‘lmadi: {why}',
       },
       campaign: {
         kicker: 'Yangi sodiqlik kampaniyasi',
@@ -1468,6 +1554,8 @@ export const uz: Dictionary = {
         summaryNote:
           'Pul mijoz shartni bajargan paytda sodiqlik byudjetidan ajratiladi, u mukofotdan foydalanganda emas. Mukofot muddati o‘tsa, pul qaytadi.',
         summaryReward: 'mukofot',
+        started: 'Ishlayapti. Keyingi tashrifdan sanaydi.',
+        costError: 'Bitta mukofot sizga qanchaga tushishini ko‘rsating — mijoz unga erishgan lahzada pul sodiqlik byudjetidan ajratiladi.',
       },
       valid: 'Nashrdan oldin yuqoridagi {n} ta narsani tuzating.',
       validPlural: 'Nashrdan oldin yuqoridagi {n} ta narsani tuzating.',

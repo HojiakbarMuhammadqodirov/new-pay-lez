@@ -9301,229 +9301,9 @@ button {
   background: var(--accent);
 }
 
-/*
- * ── who reaches each tier ─────────────────────────────────────────────────
- *
- * A ladder of three rows, and the shape of it is the answer: the bars fall away
- * to a stub because almost nobody gets to the deepest discount. That is the
- * thing a five-column table made the reader assemble for themselves.
- *
- * The colour question this had to solve is the one the palette does not allow
- * an easy answer to. Three tiers want to be three marks, and the site has one
- * accent — so they are three *alphas* of it, and the ramp runs the way it does
- * for a reason that is not decoration: the top tier's bar is a thirteenth of the
- * width of the bottom one, so the rarest tier gets the strongest fill because it
- * has the least room to register in. The reach bar is the accent held back; the
- * head inside it is the accent at full, and that is the share that came back
- * used. One hue, three weights, two states.
- *
- * The selected row is the exception and it is the ink — `--solid`, the material
- * a press is made of, which is near-black on paper and the mint on black. That
- * is what makes the pick read as a pick in both themes without a fourth alpha
- * that would collide with the three above it.
- */
-.pd-ladder-head,
-.pd-tier-row {
-  display: grid;
-  grid-template-columns:
-    minmax(4.5rem, auto) 7.5rem minmax(3rem, 1fr)
-    4.5rem 3.5rem minmax(5rem, auto);
-  align-items: center;
-  gap: 0.75rem;
-  text-align: left;
-}
 
-.pd-ladder-head {
-  padding: 0 0.6rem 0.5rem;
-  border-bottom: 1px solid var(--border);
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-fnt);
-}
 
-.pd-ladder-head > span:nth-child(n + 4) {
-  text-align: right;
-}
 
-.pd-ladder {
-  display: flex;
-  flex-direction: column;
-}
-
-.pd-tier-row {
-  width: 100%;
-  padding: 0.7rem 0.6rem;
-  border: none;
-  border-bottom: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  background: none;
-  font: inherit;
-  color: var(--text);
-  cursor: pointer;
-  transition: background 200ms var(--ease);
-}
-
-.pd-tier-row:last-child {
-  border-bottom: none;
-}
-
-.pd-tier-row:hover {
-  background: var(--surface);
-}
-
-/* A `<button>` brought this for free; a div with `role="button"` does not, and
-   a row you can tab to but cannot see is worse than one you cannot tab to. */
-.pd-tier-row:focus-visible {
-  outline: 2px solid var(--accent-lit);
-  outline-offset: -2px;
-}
-
-.pd-tier-row[data-on='true'] {
-  background: var(--surface-2);
-}
-
-/* The tier itself. On the selected row it takes the ink and its mint label —
-   the same pair every primary control on the site is made of. */
-.pd-tier {
-  justify-self: start;
-  padding: 0.25rem 0.6rem;
-  border-radius: 999px;
-  border: 1px solid var(--border-2);
-  font-size: 0.78rem;
-  font-weight: 700;
-  white-space: nowrap;
-  color: var(--text);
-  transition: background 200ms var(--ease), color 200ms var(--ease);
-}
-
-.pd-tier-row[data-on='true'] .pd-tier {
-  border-color: transparent;
-  background: var(--solid);
-  color: var(--on-solid);
-}
-
-/* The threshold is a field, and the field is the whole cell — same rule the
-   Relocate converter was fixed for: the well, its unit and the empty space
-   after the digits all have to put the caret in it. */
-.pd-tier-pts {
-  display: block;
-  min-width: 0;
-}
-
-.pd-tier-pts .pd-well {
-  padding: 0.35rem 0.55rem;
-}
-
-.pd-tier-pts .pd-well input {
-  font-size: 0.78rem;
-  font-weight: 600;
-}
-
-/* A chart states its own height, and a bar states its own too — a percentage
-   against an auto parent resolves to nothing. */
-.pd-tier-track {
-  display: block;
-  height: 0.65rem;
-  min-width: 0;
-  border-radius: 999px;
-  background: var(--surface-2);
-  overflow: hidden;
-}
-
-/* Reach: how many of this tier went out, against the widest tier. */
-.pd-tier-track i {
-  position: relative;
-  display: block;
-  height: 100%;
-  width: var(--reach);
-  border-radius: inherit;
-  background: rgba(var(--accent-rgb), var(--a));
-  transition: width 600ms var(--ease);
-}
-
-/* Used: the share of those that came back, drawn inside the reach rather than
-   beside it, because a redemption is a subset of an issue and two bars side by
-   side would say they were independent — the same argument the B2B mock's
-   columns make one screen over. */
-.pd-tier-track b {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--used);
-  border-radius: inherit;
-  background: var(--accent);
-}
-
-.pd-tier-row[data-step='0'] .pd-tier-track i {
-  --a: 0.26;
-}
-.pd-tier-row[data-step='1'] .pd-tier-track i {
-  --a: 0.4;
-}
-.pd-tier-row[data-step='2'] .pd-tier-track i {
-  --a: 0.58;
-}
-
-.pd-tier-row em {
-  font-size: 0.8rem;
-  font-style: normal;
-  font-variant-numeric: tabular-nums;
-  text-align: right;
-  white-space: nowrap;
-}
-
-/* The per-row label, shown only when the head above has been dropped. */
-.pd-tier-key {
-  display: none;
-  margin-right: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-fnt);
-}
-
-.pd-ladder-note {
-  margin-top: 0.9rem;
-}
-
-/*
- * Narrow: the head cannot label six columns that are no longer in a row, so it
- * goes and each figure carries its own key instead. The track spans the full
- * width underneath, which is the one element that reads *better* wide than
- * boxed into a sixth of the row.
- */
-@media (max-width: 52rem) {
-  .pd-ladder-head {
-    display: none;
-  }
-
-  .pd-tier-row {
-    grid-template-columns: auto auto;
-    justify-content: space-between;
-    gap: 0.4rem 0.75rem;
-  }
-
-  .pd-tier-track {
-    grid-column: 1 / -1;
-    order: 3;
-    margin-top: 0.2rem;
-  }
-
-  .pd-tier-row em {
-    order: 4;
-    text-align: left;
-  }
-
-  .pd-tier-key {
-    display: inline;
-  }
-
-  .pd-tier-pts {
-    order: 2;
-  }
-}
 
 /* Picking a tier above dims the rest of the mix, so the two panels are one
    subject rather than two lists of the same three numbers. */
@@ -9538,7 +9318,6 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pd-tier-track i,
   .pd-stacked i,
   .pd-mix-row {
     transition: none;
@@ -9757,6 +9536,94 @@ button {
   gap: 0.6rem;
   flex-wrap: wrap;
   justify-content: center;
+}
+
+/* ── the controls that write ───────────────────────────────────────────────
+ *
+ * A row of fields with the button that commits them on the end. Five places
+ * use it — the deal row's extend and notify forms, the budget's save, the pool
+ * transfer and the ladder's add/save pair — and it is one class rather than
+ * five because the alignment problem is identical every time: a `.field` grows
+ * a label above its control, so a bare `align-items: center` puts the button
+ * level with the label rather than with the well beside it.
+ *
+ * `flex-end` is what fixes that, and it is why the forms with no labels look
+ * right too: with nothing above them the two edges coincide.
+ */
+.pd-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.9rem 0 0.2rem;
+}
+
+.pd-inline-form .field {
+  gap: 0.3rem;
+  margin: 0;
+}
+
+.pd-inline-form > .pd-fine {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+/* The heading that separates moving money from setting it. A second head
+   inside one panel needs the rule above it that the first one gets from the
+   panel's own top edge. */
+.pd-move-head {
+  margin-top: 1.1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/*
+ * One rung of the voucher ladder, being edited.
+ *
+ * Deliberately *not* `.pd-tier-row`, which is a six-column grid with a pointer
+ * cursor further up this sheet, left behind by the seeded ladder this replaced.
+ * Three fields and a retire button: `auto-fit` rather than four fixed tracks so
+ * the row folds to two-up on a narrow window instead of scrolling a panel that
+ * is otherwise the width of the page.
+ */
+.pd-rung {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  align-items: flex-end;
+  gap: 0.6rem;
+  padding: 0.8rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-rung:last-of-type {
+  border-bottom: none;
+}
+
+.pd-rung .field {
+  gap: 0.3rem;
+  margin: 0;
+}
+
+/* The retire button sits on the baseline of the wells rather than filling the
+   track: at full height it reads as a fourth field. */
+.pd-rung > .btn {
+  align-self: end;
+  justify-self: start;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.75rem;
+}
+
+/* The expander lives in a `td` whose padding is zeroed so the panel can own it,
+   so the form inside has to put it back. */
+.pd-drawer-row .pd-inline-form {
+  padding: 0.9rem clamp(1rem, 2.2vw, 1.4rem);
+}
+
+/* In the counter queue the actions are the right-hand end of a flex row rather
+   than a table cell, so they take the space the name does not. Scoped, because
+   `margin-left: auto` is what the deals table's own cells must *not* do. */
+.pd-run-row .pd-row-acts {
+  margin-left: auto;
 }
 
 /* ── one deal, opened out ──────────────────────────────────────────────────

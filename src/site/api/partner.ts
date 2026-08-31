@@ -60,6 +60,24 @@ export function minorToEuro(minor: number, currency: string): number {
   return minor / 10 ** fx.decimals / fx.rate;
 }
 
+/**
+ * The same seam, in the direction a *write* crosses it.
+ *
+ * Every money control on this dashboard holds the **reader's** currency, and
+ * every money field the server takes is minor units of the **venue's** — two
+ * conversions, not one, and the euro in the middle is the site's own unit. A
+ * Polish owner reading in English types 400, `useMoney` said £, and what the
+ * budget endpoint has to receive is 187 000 grosz.
+ *
+ * Rounded rather than truncated, and rounded once: `int()` on the server refuses
+ * a fraction outright rather than silently flooring it, so a value that arrives
+ * as 39999.999999 is a 400 and not a penny lost.
+ */
+export function euroToMinor(euro: number, currency: string): number {
+  const fx = FX[currency as FxCode] ?? FX.EUR;
+  return Math.round(euro * fx.rate * 10 ** fx.decimals);
+}
+
 /* ═══════════════════════════════════════════════════ the server's shapes ══ */
 
 /**
@@ -121,7 +139,20 @@ export interface BudgetBody {
     available: boolean;
   }>;
   averageCheck: { minor: number; currency: string };
-  rebalanceHint: unknown;
+  /**
+   * `budget.rebalanceHint` — the server's own opinion on whether one pool is
+   * near empty while the other has room, or `null` for "do not ask".
+   *
+   * Typed rather than left `unknown` because the null is the whole value of it:
+   * the hint only appears when one side is genuinely running out *and* the
+   * other has three times the threshold spare, precisely so an owner does not
+   * learn to dismiss it and then miss it on the day it matters.
+   */
+  rebalanceHint: {
+    from: 'loyalty' | 'voucher';
+    to: 'loyalty' | 'voucher';
+    suggested: number;
+  } | null;
   tolerance: unknown;
 }
 
@@ -178,12 +209,39 @@ export interface AnalyticsResponse {
   benchmarks?: Array<{ metric: string; value: number; venue_count: number }>;
 }
 
+/**
+ * A deal's lifecycle, in the server's own words.
+ *
+ * The last member is `archived` and not `ended`, which is worth saying because
+ * this file claimed `ended` for a while and nothing caught it:
+ * `copy.deals.states` is keyed by this union, so an archived deal drew a blank
+ * where its state should have been — the one cell on that table whose missing
+ * word is the answer to "why is this offer not in the app any more".
+ */
+export type DealStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'live'
+  | 'paused'
+  | 'expired'
+  | 'archived';
+
+/**
+ * The three a partner may *set*, which is a smaller set than the six above.
+ *
+ * `draft` and `expired` are not on it because neither is a decision: a deal is
+ * born a draft and expires by its own end date. `scheduled` is not either — it
+ * is what publishing a deal whose window has not opened produces. What is left
+ * is resume, pause, and take it down for good.
+ */
+export type DealAction = 'live' | 'paused' | 'archived';
+
 /** A row of `partners.dealsFor` — the `hot_deals` row plus its funnel. */
 export interface DealResponse {
   id: string;
   venue_id: string | null;
   discount_text: string | null;
-  status: 'draft' | 'scheduled' | 'live' | 'paused' | 'expired' | 'ended';
+  status: DealStatus;
   valid_from: string | null;
   valid_to: string | null;
   target_audience: string | null;
@@ -274,9 +332,31 @@ export const noSession = (why: string): ApiError => new ApiError(0, NO_SESSION, 
 
 export const isNoSession = (error: ApiError): boolean => error.code === NO_SESSION;
 
-interface PartnerVenueRow {
+/**
+ * `GET /v1/partner/venues`, which is `SELECT *` on the venue row.
+ *
+ * Four columns beyond the name are load-bearing on this dashboard and none of
+ * them can be guessed from the site's own `BusinessProfile`:
+ *
+ * - **`currency`** is what every `…Minor` on every other response is counted in.
+ *   The screens used to read it off the budget, which meant a screen that could
+ *   not reach `/budget` silently priced a Kraków café in euros.
+ * - **`timezone`** is the clock a push is scheduled against. The server refuses
+ *   a send outside 07:00–21:00 *venue-local*, so an owner reading in London who
+ *   picks 07:30 for their Warsaw café is refused for a reason nothing on the
+ *   screen could explain without this.
+ * - **`status` / `verified_at`** are the gate between a draft and a live offer.
+ *   Publishing fails with `not_verified` until an operator has looked, and a
+ *   screen that knows this can say so *before* the press rather than after it.
+ */
+export interface PartnerVenue {
   id: string;
   name: string;
+  city: string | null;
+  currency: string;
+  timezone: string;
+  status: string;
+  verified_at: string | null;
 }
 
 /**
@@ -295,7 +375,7 @@ interface PartnerVenueRow {
  * to the session, and nothing else here changes.
  */
 export function usePartnerVenueId(): ApiResult<string | null> {
-  const result = useApi<PartnerVenueRow[]>(hasToken() ? '/v1/partner/venues' : null);
+  const result = useApi<PartnerVenue[]>(hasToken() ? '/v1/partner/venues' : null);
 
   const anonymous = useMemo<ApiResult<string | null>>(
     () => ({
@@ -314,6 +394,43 @@ export function usePartnerVenueId(): ApiResult<string | null> {
     }
     return {
       state: { status: 'ready', data: result.state.data[0]?.id ?? null },
+      reload: result.reload,
+    };
+  }, [result.state, result.reload]);
+
+  return hasToken() ? mapped : anonymous;
+}
+
+/**
+ * The same request, kept whole.
+ *
+ * A second hook rather than a second field on the first, because most callers
+ * genuinely only want the id and threading a row they ignore through six
+ * screens is how a shape ends up being read for something it does not carry.
+ * `useApi` holds no cache, so the two fire two requests — which is already true
+ * of `usePartnerVenueId` itself, called once by the rail, once by the screen and
+ * once by the drawer. One more GET of one row is the cheaper of the two costs.
+ */
+export function usePartnerVenue(): ApiResult<PartnerVenue | null> {
+  const result = useApi<PartnerVenue[]>(hasToken() ? '/v1/partner/venues' : null);
+
+  const anonymous = useMemo<ApiResult<PartnerVenue | null>>(
+    () => ({
+      state: {
+        status: 'error',
+        error: noSession('This device has no partner session on the API.'),
+      },
+      reload: () => undefined,
+    }),
+    [],
+  );
+
+  const mapped = useMemo<ApiResult<PartnerVenue | null>>(() => {
+    if (result.state.status !== 'ready') {
+      return { state: result.state as ApiState<PartnerVenue | null>, reload: result.reload };
+    }
+    return {
+      state: { status: 'ready', data: result.state.data[0] ?? null },
       reload: result.reload,
     };
   }, [result.state, result.reload]);
@@ -392,7 +509,10 @@ export const usePartnerPushQuota = (venueId: string | null) =>
  * is" as "this venue has no data".
  */
 export function chain<T>(
-  venue: ApiResult<string | null>,
+  /* `unknown` rather than `string | null`, so the venue half may be either
+     hook: some screens need the id and some need the whole row, and the only
+     thing this function reads out of it is whether it is `null`. */
+  venue: ApiResult<unknown>,
   report: ApiResult<T>,
 ): ApiState<T> {
   if (venue.state.status === 'loading') return { status: 'loading' };
@@ -541,4 +661,354 @@ export const submitVerification = (venueId: string) =>
   call<{ id: string }>(
     `/v1/partner/venues/${encodeURIComponent(venueId)}/verification`,
     { method: 'POST', body: { method: 'manual' } },
+  );
+
+/* ══════════════════════════════════════════════ a wall clock, as an instant ══ */
+
+/**
+ * How far ahead of UTC a zone is at a given instant, in milliseconds.
+ *
+ * Formatting the instant *in* the zone and reading the result back as though it
+ * were UTC is the standard way to get an offset out of `Intl` without a table
+ * of them — the difference between the two is the offset, DST included, because
+ * the formatter already applied it.
+ */
+function zoneOffsetMs(instant: Date, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    hourCycle: 'h23',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).formatToParts(instant);
+
+  const at: Record<string, number> = {};
+  for (const part of parts) if (part.type !== 'literal') at[part.type] = Number(part.value);
+
+  return (
+    Date.UTC(at.year, at.month - 1, at.day, at.hour, at.minute, at.second) - instant.getTime()
+  );
+}
+
+/**
+ * `2026-08-04` + `07:30` at a venue's own clock, as the instant the server wants.
+ *
+ * The owner types a wall clock — half past seven, at their café — and the API
+ * takes an ISO instant. Between the two sits the venue's zone, and it has to be
+ * the *venue's* rather than the device's: `deals.schedulePush` rejects anything
+ * outside 07:00–21:00 **venue-local**, so a Warsaw owner reading in London who
+ * asks for 07:30 is refused with `quiet_hours` for a reason nothing on the
+ * screen could otherwise explain.
+ *
+ * Two passes, because one is wrong twice a year. The first offset is read at
+ * the naive instant, which is up to an hour off across a DST boundary; the
+ * second is read at the corrected one, which is the instant that actually
+ * exists. An unknown zone falls back to the device's own clock rather than
+ * throwing — a slightly wrong hour is recoverable and a dead button is not.
+ */
+export function venueInstant(date: string, time: string, timezone: string): string {
+  const [y, m, d] = date.split('-').map(Number);
+  const [hh, mm] = time.split(':').map(Number);
+  const naive = Date.UTC(y, (m || 1) - 1, d || 1, hh || 0, mm || 0, 0);
+
+  try {
+    const once = naive - zoneOffsetMs(new Date(naive), timezone);
+    return new Date(naive - zoneOffsetMs(new Date(once), timezone)).toISOString();
+  } catch {
+    return new Date(y, (m || 1) - 1, d || 1, hh || 0, mm || 0).toISOString();
+  }
+}
+
+/* ═════════════════════════════════════════════ a deal after it is published ══ */
+
+/**
+ * Pause it, resume it, or take it down.
+ *
+ * §11.2's urgent levers, and the reason they are urgent is worth keeping in
+ * mind: an owner who has run out of the thing they are giving away needs the
+ * offer off the feed in seconds, not at the end of a support ticket. There is
+ * no confirmation step for that reason, and `paused` is reversible.
+ *
+ * `archived` is not reversible from this screen, which is why it is the only one
+ * of the three the UI asks twice about.
+ */
+export const setDealStatus = (dealId: string, status: DealAction) =>
+  call<DealResponse>(`/v1/partner/deals/${encodeURIComponent(dealId)}/status`, {
+    method: 'POST',
+    body: { status },
+  });
+
+/**
+ * Push the end date out.
+ *
+ * The server refuses a date that is not *later* than the one already stored —
+ * "extend" means extend — and it revives an `expired` deal in the same
+ * statement, which is what makes this the correct control on an offer that has
+ * already run out rather than a second "publish".
+ */
+export const extendDeal = (dealId: string, validTo: string) =>
+  call<DealResponse>(`/v1/partner/deals/${encodeURIComponent(dealId)}/extend`, {
+    method: 'POST',
+    body: { validTo },
+  });
+
+/**
+ * The one notification a deal may carry.
+ *
+ * One, not many: `deal_pushes` is unique on the deal, so a second attempt is a
+ * `conflict` rather than a second send. The quota is checked here too and the
+ * refusal is `quota_exceeded`, which is a different sentence from "you have
+ * none left" read off `push-quota` before the press — the first is what
+ * happened, the second is what the screen predicted.
+ */
+export const scheduleDealPush = (dealId: string, scheduledAt: string) =>
+  call<{ id: string; remaining: number }>(
+    `/v1/partner/deals/${encodeURIComponent(dealId)}/push`,
+    { method: 'POST', body: { scheduledAt } },
+  );
+
+/* ═══════════════════════════════════════════════════════════════ campaigns ══ */
+
+/**
+ * What the campaign drawer sends.
+ *
+ * `rewardCostMinor` is the field the whole of §5.1 turns on: a campaign pays a
+ * *fixed item at an exact cost*, and the exact cost is what lets the loyalty
+ * pool reserve the right amount the moment somebody qualifies. A percentage
+ * would make the reserve a guess, which is why the server has no field for one
+ * — see the note in `server/README.md` about the three imported campaigns that
+ * had to be converted.
+ */
+export interface CampaignDraft {
+  name: string;
+  visitsRequired: number;
+  rewardLabel: string;
+  /** Minor units of the **venue's** currency. */
+  rewardCostMinor: number;
+  priority?: number;
+  minSpendMinor?: number;
+  rewardValidDays?: number;
+}
+
+/**
+ * Create a campaign. Unlike a deal there is no second call.
+ *
+ * `partners.createCampaign` inserts it `active`, because a stamp card has no
+ * feed placement to review and nothing to schedule — it starts counting the
+ * next visit. The drawer's button says "Start the campaign" for that reason and
+ * has no "publish" twin.
+ */
+export const createCampaign = (venueId: string, draft: CampaignDraft) =>
+  call<CampaignResponse>(`/v1/partner/venues/${encodeURIComponent(venueId)}/campaigns`, {
+    method: 'POST',
+    body: draft,
+  });
+
+/**
+ * Pause or end a campaign.
+ *
+ * §5.3, and the half that is easy to get wrong: pausing stops new *earning* and
+ * touches nothing already earned. A reward somebody has qualified for stays
+ * valid and stays reserved out of the pool, which is why the Campaigns screen
+ * keeps showing an outstanding count for a paused row rather than zeroing it.
+ */
+export const setCampaignStatus = (
+  campaignId: string,
+  status: 'active' | 'paused' | 'ended',
+) =>
+  call<{ status: string }>(`/v1/partner/campaigns/${encodeURIComponent(campaignId)}/status`, {
+    method: 'POST',
+    body: { status },
+  });
+
+/* ════════════════════════════════════════════ what points buy, and the pool ══ */
+
+/** One rung of the ladder, as `PUT /v1/partner/venues/:id/tiers` takes it. */
+export interface TierDraft {
+  discountPct: number;
+  pointsCost: number;
+  /** Minor units of the venue's currency: the most one voucher may take off. */
+  maxDiscountMinor: number;
+  active?: boolean;
+}
+
+/**
+ * Set the ladder.
+ *
+ * An upsert on `(venue_id, discount_pct)`, so the percentage is the identity of
+ * a rung and sending a shorter list does **not** delete the rungs left out. A
+ * tier is retired by sending it with `active: false`, which is also the honest
+ * model: `issued_vouchers` already refers to it, and a row with history behind
+ * it is switched off rather than removed.
+ */
+export const setVoucherTiers = (venueId: string, tiers: TierDraft[]) =>
+  call<BudgetBody['tiers']>(`/v1/partner/venues/${encodeURIComponent(venueId)}/tiers`, {
+    method: 'PUT',
+    body: { tiers },
+  });
+
+/**
+ * Set the month's budget, and the split between the two pools.
+ *
+ * The split is basis points of one total rather than two amounts, and that is
+ * the whole design: two fields beside each other can be set to a pair that does
+ * not add up, and the first person to try it commits the same money twice. The
+ * server refuses a total below what is already spent or reserved — a pool that
+ * cannot honour the vouchers customers are holding is a promise already broken —
+ * and reports the committed figure with the refusal so the screen can say what
+ * the floor is.
+ */
+export const setBudget = (venueId: string, totalMinor: number, loyaltyBp?: number) =>
+  call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget`, {
+    method: 'PUT',
+    body: loyaltyBp === undefined ? { totalMinor } : { totalMinor, loyaltyBp },
+  });
+
+/**
+ * Move available money from one pool to the other.
+ *
+ * Two compensating movements inside one transaction, which is what keeps
+ * `base − spent − reserved` exhausting both sides afterwards. Only what is
+ * *available* moves: reserved money belongs to a customer who has already
+ * qualified, and the refusal names how much there was.
+ */
+export const rebalanceBudget = (
+  venueId: string,
+  from: 'loyalty' | 'voucher',
+  amountMinor: number,
+) =>
+  call<BudgetBody>(`/v1/partner/venues/${encodeURIComponent(venueId)}/budget/rebalance`, {
+    method: 'POST',
+    body: { from, amountMinor },
+  });
+
+/* ════════════════════════════════════════════════════════════════ the month ══ */
+
+/**
+ * The venue's own month as a CSV, from the server that counted it.
+ *
+ * B10, and gated behind the plan's `export_csv` entitlement — so a 403 here is
+ * "not on this plan" and not "something broke", which are different sentences.
+ * The body is the file rather than a download URL because there is no object
+ * store behind this and there does not need to be: it is a day-by-day roll-up
+ * with no user column in it, measured in kilobytes.
+ */
+export const exportCsv = (venueId: string) =>
+  call<{ filename: string; csv: string }>(
+    `/v1/partner/venues/${encodeURIComponent(venueId)}/export`,
+  );
+
+/* ═══════════════════════════════════════════════════════════════ the counter ══ */
+
+/**
+ * A transaction as the gate holds it — the row `GET /v1/venues/:id/pending`
+ * returns, narrowed to what the queue draws.
+ *
+ * `amount_minor` is **null until step three of the gate**, which is not a
+ * missing value: it is the state where a customer has scanned and nobody has
+ * entered the bill yet. Rendering it as 0 would tell an owner somebody bought
+ * nothing.
+ *
+ * `amount_entered_by` is what decides **who** may fill it in, and it is on this
+ * shape because the queue is unusable without it: at a venue set to `cashier`
+ * — which is the default — the *owner* types the bill, and a Confirm button
+ * with no field beside it fails with `invalid_state: no amount has been
+ * entered` every single time. At a venue set to `customer` the owner must not
+ * offer a field at all; they are waiting on a phone.
+ */
+export interface PendingScan {
+  id: string;
+  venue_id: string;
+  user_id: string;
+  trigger_type: 'qr' | 'nfc' | 'manual';
+  intent: 'earn' | 'voucher_redeem' | 'reward_redeem';
+  amount_minor: number | null;
+  amount_entered_by: 'cashier' | 'customer' | null;
+  currency: string;
+  opened_at: string;
+}
+
+/**
+ * The confirmation queue.
+ *
+ * Its own hook rather than `useVenueApi` because it is *not* under
+ * `/v1/partner/` — the gate owns it, and the partner companion app reads the
+ * same path (§11.1). Copying the "nobody to ask on behalf of" branch is the
+ * price of that, and it is copied rather than generalised because the two
+ * prefixes are two different route modules and folding them would hide which.
+ */
+export function usePartnerPending(venueId: string | null): ApiResult<PendingScan[]> {
+  const path = venueId === null ? null : `/v1/venues/${encodeURIComponent(venueId)}/pending`;
+  const result = useApi<PendingScan[]>(path);
+
+  const unavailable = useMemo<ApiResult<PendingScan[]>>(
+    () => ({
+      state: {
+        status: 'error',
+        error: noSession('This device has no partner session on the API.'),
+      },
+      reload: () => undefined,
+    }),
+    [],
+  );
+
+  return path === null ? unavailable : result;
+}
+
+/**
+ * A fresh counter QR, and the second it stops working.
+ *
+ * Short-lived and single-use by design (§3.2): the token carries its own expiry
+ * and burns on the first scan, so the screen showing it has to ask again on a
+ * timer rather than print one code and walk away. That is the whole reason a
+ * venue's QR is an endpoint and not a sticker.
+ */
+export const mintQr = (venueId: string) =>
+  call<{ token: string; expiresAt: string; ttlSeconds: number }>(
+    `/v1/venues/${encodeURIComponent(venueId)}/qr`,
+    { method: 'POST' },
+  );
+
+/**
+ * Step three: the bill.
+ *
+ * Minor units of the venue's currency, and an **integer** — the server's `int()`
+ * refuses a fraction outright rather than rounding one, on the principle that a
+ * client sending 42.50 has the wrong unit rather than a rounding problem.
+ *
+ * Who may call it is `venues.amount_entry`: at `cashier` (the default) only
+ * staff, at `customer` only the customer or staff. The queue reads that off the
+ * transaction rather than assuming, because assuming is how an owner ends up
+ * typing a bill into a field the server will not accept it from.
+ */
+export const enterScanAmount = (transactionId: string, amountMinor: number) =>
+  call<PendingScan>(`/v1/gate/transactions/${encodeURIComponent(transactionId)}/amount`, {
+    method: 'POST',
+    body: { amountMinor },
+  });
+
+/**
+ * Commit a pending scan. This is the one call on the dashboard that moves money.
+ *
+ * Step four of the gate, in one database transaction: the points are granted,
+ * the discount is taken, the stamp is added, the budget is debited. Nothing of
+ * value existed before it (§3.1) and everything does after, which is exactly why
+ * it carries an idempotency key — a double press on a slow connection must not
+ * pay a customer twice, and the server settles that by storing the first
+ * response against the key rather than by trusting the button to be disabled.
+ */
+export const confirmScan = (transactionId: string) =>
+  call<{ transaction: { id: string }; pointsGranted: number; discountMinor: number }>(
+    `/v1/gate/transactions/${encodeURIComponent(transactionId)}/confirm`,
+    { method: 'POST', idempotencyKey: crypto.randomUUID() },
+  );
+
+/** Turn one away — a mis-scan, a customer who changed their mind, a wrong bill. */
+export const cancelScan = (transactionId: string, reason: string) =>
+  call<{ id: string }>(
+    `/v1/gate/transactions/${encodeURIComponent(transactionId)}/cancel`,
+    { method: 'POST', body: { reason } },
   );

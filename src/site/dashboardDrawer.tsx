@@ -6,10 +6,15 @@ import { useCopy, useCurrency, useLanguage, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PD_AUDIENCES } from './partnerMetrics';
 import {
+  createCampaign,
   createDeal,
+  euroToMinor,
   publishDeal,
+  scheduleDealPush,
   usePartnerPushQuota,
-  usePartnerVenueId,
+  usePartnerVenue,
+  venueInstant,
+  type CampaignDraft,
   type DealDraft,
 } from './api/partner';
 import { ApiError } from './api/client';
@@ -27,26 +32,33 @@ import type { DrawerKind } from './dashboardShell';
  * the validation line, the escape key and the slide-in are the same for both;
  * only the middle changes.
  *
- * **The deal body writes.** Both of its buttons reach the server —
- * `POST /v1/partner/venues/:id/deals` for the draft, and the publish endpoint
- * after it for the one that goes live — so a deal created here is in the
- * database and comes back on the Hot deals screen, which has always read from
- * the API. Before this the buttons raised `copy.dashboard.notWired`, which was
- * true and was also the whole complaint: an owner filled the panel in, pressed
- * publish, and nothing existed afterwards.
+ * **Both bodies write, and so does the notification.** A deal goes to
+ * `POST /v1/partner/venues/:id/deals` and then the publish endpoint; its push
+ * to `POST /v1/partner/deals/:id/push`; a campaign to
+ * `POST /v1/partner/venues/:id/campaigns`. Nothing in this panel raises
+ * `copy.dashboard.notWired` any more, because there is nothing left in it that
+ * cannot happen — which is the only honest way to retire that string.
  *
- * Two things about that are load-bearing.
+ * Three things about that are load-bearing.
  *
- * **The two buttons are two calls because they are two decisions.** A deal is
- * created as a draft and published by a second request; collapsing them into
- * one flag would hide the state that actually goes wrong, which is a deal that
- * was created and then failed to go live. The owner is told which half
+ * **The deal's two buttons are two calls because they are two decisions.** A
+ * deal is created as a draft and published by a second request; collapsing them
+ * into one flag would hide the state that actually goes wrong, which is a deal
+ * that was created and then failed to go live. The owner is told which half
  * happened.
  *
- * **The rest of the drawer still writes nothing, and still says so.** The push
- * notification this panel schedules has no endpoint behind it here, so it
- * raises the strip exactly as before. A panel where three controls write and
- * one does not is only honest if the one that does not keeps saying so.
+ * **The campaign's one button is one call**, and that asymmetry is the server's
+ * rather than an omission: `partners.createCampaign` inserts it `active`,
+ * because a stamp card has no feed placement to review and nothing to schedule.
+ * It starts counting the next visit.
+ *
+ * **A push is scheduled only on publish, and against the venue's clock.** Not on
+ * "save for later", because a notification about an unpublished offer sends
+ * people to something that is not there; and not on the reader's clock, because
+ * the server refuses a send outside 07:00–21:00 *venue-local* and an owner
+ * reading in London would be refused for a reason nothing on the screen could
+ * explain. `venueInstant` is that conversion, and the venue's `timezone` is why
+ * this panel asks for the whole venue row rather than just its id.
  *
  * What the drawer is *also* for has not changed: it shows an owner the cost,
  * the reach and the phone preview of the thing they are about to publish,
@@ -136,6 +148,17 @@ const minutesOf = (clock: string): number => {
 const DEFAULT_FROM = '2026-08-04';
 const DEFAULT_TO = '2026-09-01';
 
+/**
+ * Where the plans are written down.
+ *
+ * The *anchor* form and not `#/business#business-pricing`: `routeOf` looks a
+ * hash starting with `#/` up in `ROUTES` verbatim, so the compound form misses
+ * the table and lands on the marketing front page — the exact bug
+ * `ANCHOR_ROUTES` exists to prevent. A bare section id is how every other
+ * cross-page link on this site is written.
+ */
+const PLANS_ANCHOR = '#business-pricing';
+
 function DealBody({
   onValid,
   submit,
@@ -198,10 +221,9 @@ function DealBody({
    * switch is disabled for that reason rather than for the "you have used them
    * all" reason, which is a different sentence and a different fix.
    */
-  const quotaVenue = usePartnerVenueId();
-  const quotaApi = usePartnerPushQuota(
-    quotaVenue.state.status === 'ready' ? quotaVenue.state.data : null,
-  );
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const quotaApi = usePartnerPushQuota(venue?.id ?? null);
   const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : null;
   const quotaOut = quota !== null && quota.remaining === 0;
   const quotaUnknown = quota === null;
@@ -227,8 +249,10 @@ function DealBody({
    * - **The spend cap.** The well holds the **reader's** currency — that is the
    *   rule for a money field being typed rather than shown — and the server
    *   wants the *venue's* minor units. It goes back through the euro the whole
-   *   site stores amounts in, then out to złoty, which is the currency the
-   *   venues on this dashboard actually charge in.
+   *   site stores amounts in, then out through `euroToMinor` at the venue's own
+   *   currency, which is a column on the venue rather than a constant: this
+   *   divided by `FX.PLN` once, which was right for a Kraków café and a hundred
+   *   times wrong for a Tashkent one.
    */
   const asDraft = (): DealDraft => ({
     /* One language, and the one being written in. The panel has a single title
@@ -248,12 +272,12 @@ function DealBody({
     targetAudience: AUDIENCE_SEGMENTS[audience] ? [AUDIENCE_SEGMENTS[audience]!] : [],
     ...(stop === 1 ? { capClaims: stopClaims } : {}),
     ...(stop === 2
-      ? { capSpendMinor: Math.round((stopMoney / currency.rate) * FX.PLN.rate * 100) }
+      ? { capSpendMinor: euroToMinor(stopMoney / currency.rate, venue?.currency ?? 'EUR') }
       : {}),
   });
 
   submit.current = async (andPublish: boolean) => {
-    const venueId = quotaVenue.state.status === 'ready' ? quotaVenue.state.data : null;
+    const venueId = venue?.id ?? null;
     if (venueId === null) {
       /* No partner session on this device, so there is nowhere to file it.
          Saying that is the whole point — the alternative is a press that
@@ -281,14 +305,43 @@ function DealBody({
     }
 
     if (!andPublish) {
-      toast(copy.saved);
+      /* A draft carries no push. `schedulePush` would happily take one — it
+         checks the quota and the quiet hours, not the deal's status — and the
+         result would be a notification sending people to an offer that is not
+         in the feed. The switch being on is why the second sentence exists. */
+      toast(notify ? copy.savedNoPush : copy.saved);
       closeDrawer();
       return;
     }
 
     try {
       await publishDeal(created.id);
-      toast(copy.published);
+      /*
+       * The push is a third call and its own ending.
+       *
+       * It comes after the publish because a notification about an offer that
+       * failed to go live is worse than no notification, and it is reported
+       * separately because "published, and nobody was told" is a state the
+       * owner can act on — the deal is live and they can try the send again
+       * from the Hot deals screen.
+       */
+      if (notify) {
+        try {
+          await scheduleDealPush(
+            created.id,
+            venueInstant(notifyDate, notifyTime, venue?.timezone ?? 'Europe/Warsaw'),
+          );
+          toast(fill(copy.publishedNotified, { at: notifyTime }));
+        } catch (cause) {
+          toast(
+            fill(copy.publishedNoPush, {
+              why: cause instanceof Error ? cause.message : String(cause),
+            }),
+          );
+        }
+      } else {
+        toast(copy.published);
+      }
     } catch (cause) {
       /*
        * **The deal exists either way**, and this is the whole reason the two
@@ -305,11 +358,17 @@ function DealBody({
       toast(
         why === 'not_verified'
           ? copy.savedUnverified
-          : cause instanceof ApiError && cause.status === 0
-            ? copy.savedNotLive
-            : fill(copy.savedNotLiveWhy, {
-                why: cause instanceof Error ? cause.message : String(cause),
-              }),
+          : /* The refusal a free-plan owner meets first: `live_deals` is a
+               capacity of one, so the second offer is refused *because the
+               first one is running*. That is a different sentence from "it
+               broke" and has a different fix, on a different screen. */
+            why === 'entitlement_required'
+            ? copy.savedPlanFull
+            : cause instanceof ApiError && cause.status === 0
+              ? copy.savedNotLive
+              : fill(copy.savedNotLiveWhy, {
+                  why: cause instanceof Error ? cause.message : String(cause),
+                }),
       );
     }
     closeDrawer();
@@ -483,9 +542,16 @@ function DealBody({
           <div className="pd-brief pd-brief-warn">
             <b>{fill(copy.notifyOutTitle, { total: String(quota?.quota ?? 0) })}</b>
             <p>{copy.notifyOutBody}</p>
-            <button type="button" className="btn btn-ghost" onClick={() => toast(dashboard.notWired)}>
+            {/* A link, because the thing it names is a page rather than an
+                action: the plans and what each one carries are the pricing
+                table on `#/business`, and `ANCHOR_ROUTES` resolves the
+                `business-` prefix to that route. It used to raise the strip
+                with `notWired`, which was the honest answer while nothing
+                existed to point at — and stopped being one the moment the
+                pitch page grew a pricing section. */}
+            <a className="btn btn-ghost" href={PLANS_ANCHOR}>
               {copy.notifyPlan}
-            </button>
+            </a>
           </div>
         )}
 
@@ -648,11 +714,24 @@ function DealBody({
 
 /* ─────────────────────────────────────────────────────────── the campaign ── */
 
-function CampaignBody({ onValid }: { onValid: (problems: number) => void }) {
+function CampaignBody({
+  onValid,
+  submit,
+}: {
+  onValid: (problems: number) => void;
+  /* The same hand-up the deal body uses, for the same reason: the buttons live
+     on the frame because six places open this drawer, so the body passes its
+     filing function outward rather than the frame reaching inward. */
+  submit: MutableRefObject<((publish: boolean) => Promise<void>) | null>;
+}) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.drawer.campaign;
+  const dealCopy = dashboard.drawer.deal;
   const currency = useCurrency();
   const money = useMoney();
+  const { toast, closeDrawer } = useDashboard();
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
 
   const [name, setName] = useState('');
   const [visits, setVisits] = useState(4);
@@ -671,14 +750,71 @@ function CampaignBody({ onValid }: { onValid: (problems: number) => void }) {
 
   const rewardMissing = rewardKind === 0 && !rewardItem.trim();
   const nameMissing = !name.trim();
+  /* A reward with no cost is the third problem, and it is the server's rule
+     rather than a nicety: §5.1 reserves the *exact* cost out of the loyalty
+     pool the moment somebody qualifies, so a campaign that costs nothing
+     reserves nothing and the pool stops meaning anything. `validateCampaign`
+     refuses it; saying so in the form is cheaper than a round trip. */
+  const costMissing = !(cost > 0);
   useEffect(() => {
-    onValid((nameMissing ? 1 : 0) + (rewardMissing ? 1 : 0));
-  }, [nameMissing, rewardMissing, onValid]);
+    onValid((nameMissing ? 1 : 0) + (rewardMissing ? 1 : 0) + (costMissing ? 1 : 0));
+  }, [nameMissing, rewardMissing, costMissing, onValid]);
 
   const reward =
     rewardKind === 0
       ? rewardItem.trim() || copy.summaryReward
       : `${money(rewardAmount / currency.rate, 'unit')} ${copy.rewardOff}`;
+
+  /*
+   * Filing the campaign.
+   *
+   * Three of the fields cross the money seam and all three cross it the same
+   * way — reader's currency, back through the euro the site stores in, out to
+   * the venue's minor units. The fourth number on the panel, `project`, is
+   * deliberately *not* sent: it is the owner asking "what if forty people
+   * finish this", which is arithmetic about a hypothetical and not a property
+   * of the campaign.
+   *
+   * `rewardLabel` is the sentence a customer reads, which is why the money-off
+   * variant sends the formatted amount rather than the raw one: the label is
+   * copy, and the cost beside it is the figure.
+   */
+  const asDraft = (): CampaignDraft => ({
+    name: name.trim(),
+    visitsRequired: visits,
+    rewardLabel: reward,
+    rewardCostMinor: euroToMinor(cost / currency.rate, venue?.currency ?? 'EUR'),
+    priority,
+    minSpendMinor: euroToMinor(minSpend / currency.rate, venue?.currency ?? 'EUR'),
+    rewardValidDays: expiry,
+  });
+
+  submit.current = async () => {
+    if (venue === null) {
+      /* Same ending as the deal body's, and the same reason: there is nowhere
+         to file it, and a press that appears to work and leaves nothing behind
+         is what this whole change exists to stop. */
+      toast(dealCopy.needsSession);
+      return;
+    }
+    try {
+      await createCampaign(venue.id, asDraft());
+      /* One call, one ending. A campaign is inserted `active` — there is no
+         draft state to fall back to and therefore no "saved but not live"
+         sentence to write. */
+      toast(copy.started);
+    } catch (cause) {
+      toast(
+        cause instanceof ApiError && cause.status === 0
+          ? dealCopy.filingOffline
+          : fill(dealCopy.filingRefused, {
+              why: cause instanceof Error ? cause.message : String(cause),
+            }),
+      );
+      return;
+    }
+    closeDrawer();
+  };
 
   return (
     <>
@@ -755,6 +891,11 @@ function CampaignBody({ onValid }: { onValid: (problems: number) => void }) {
           unit={`${currency.symbol} ${copy.costEach}`}
           label={copy.costTitle}
         />
+        {costMissing ? (
+          <span className="field-error" role="alert">
+            {copy.costError}
+          </span>
+        ) : null}
         <p className="pd-fine">{copy.costNote}</p>
         <div className="pd-projection">
           <NumberWell
@@ -834,28 +975,20 @@ function CampaignBody({ onValid }: { onValid: (problems: number) => void }) {
 /* ───────────────────────────────────────────────────────────────── frame ── */
 
 export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
-  const dashboard = useCopy().dashboard;
-  const copy = dashboard.drawer;
-  const { closeDrawer, toast } = useDashboard();
+  const copy = useCopy().dashboard.drawer;
+  const { closeDrawer } = useDashboard();
   const [problems, setProblems] = useState(0);
   const [filing, setFiling] = useState(false);
   const panel = useRef<HTMLElement>(null);
-  /* Set by `DealBody` during its render — see the prop's note there. Null while
-     the campaign body is mounted, which is what the `kind` check below is
-     reading rather than a second flag. */
+  /* Set by whichever body is mounted, during its render — see the prop's note
+     on `DealBody`. Both set it now, so the frame no longer has to know which
+     one it is showing in order to know whether the press does anything. */
   const submit = useRef<((publish: boolean) => Promise<void>) | null>(null);
 
   /* One press, whichever button. Locked while it is in flight: a second press
      files a second deal, and the panel closes on success anyway. */
   const press = async (publish: boolean) => {
-    if (filing) return;
-    if (kind !== 'deal' || !submit.current) {
-      /* The campaign body has no endpoint behind it and still says so — see the
-         note in the file header. */
-      toast(dashboard.notWired);
-      closeDrawer();
-      return;
-    }
+    if (filing || !submit.current) return;
     setFiling(true);
     try {
       await submit.current(publish);
@@ -904,7 +1037,7 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
           {kind === 'deal' ? (
             <DealBody onValid={setProblems} submit={submit} />
           ) : (
-            <CampaignBody onValid={setProblems} />
+            <CampaignBody onValid={setProblems} submit={submit} />
           )}
         </div>
 
@@ -914,14 +1047,20 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
             <button type="button" className="btn btn-ghost" onClick={closeDrawer}>
               {copy.cancel}
             </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              disabled={filing}
-              onClick={() => void press(false)}
-            >
-              {copy.later}
-            </button>
+            {/* Only a deal can be saved and finished later, because only a deal
+                has a draft state to be saved *into*. A campaign is inserted
+                active, so this button on that body would have started the
+                thing its own label promised not to. */}
+            {kind === 'deal' && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={filing}
+                onClick={() => void press(false)}
+              >
+                {copy.later}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn-solid"

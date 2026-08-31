@@ -40,10 +40,17 @@ import { useDashboard } from './dashboardShell';
  *   the tier that moved. That is exactly what the composer note promises the
  *   owner, and a number typed into a dictionary string would break the promise
  *   silently.
- * - **Nothing it drafts is live, and it says so twice.** The draft is stamped,
- *   and publishing raises the strip with `notWired` rather than pretending. The
- *   prototype's own line — *nothing goes live until you press the button* — is
- *   the one claim this build cannot honour, so it does not make it.
+ * - **Nothing it drafts is live, and the screen never opens.** `PD_ASSIST.measured`
+ *   is false until a venue's own context has been fetched, and nothing fetches
+ *   it — so the whole conversation below is unreachable and the panel says why.
+ *   That is deliberate rather than pending: the sentences here quote a quiet
+ *   window, a peer comparison, a free-item multiple and a Russian-speaking
+ *   share, and `GET /v1/partner/venues/:id/assistant/context` answers a
+ *   *different* set of facts. Wiring it is a rewrite of the conversation, not a
+ *   fetch, and drafting around the holes in the meantime is exactly the failure
+ *   the "it reads numbers, it does not invent them" rule above exists to stop.
+ *   Every other screen on this dashboard now writes to the server; this one is
+ *   the exception and is honest about being one.
  * - **The language tabs are the product's five, not the reader's one.** The
  *   whole point of that panel is that an owner reading in Polish sees what a
  *   Russian-speaking customer will read, so `PD_ASSIST_COPY` is a fixed table

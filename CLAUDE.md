@@ -70,7 +70,7 @@ before changing anything under it.
 Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 `node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
 it (migrating, seeding and importing the old database on an empty file);
-`npm run verify:api` is its test suite — 646 checks, the counterpart of
+`npm run verify:api` is its test suite — 650 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture
@@ -745,17 +745,26 @@ bundled, the flag font copied into `public/`), geometry comes from the
   any screen, because six places open the drawer and every one of them is the
   same panel; both are reached through `DashboardContext` (`dashboardShell.ts`)
   rather than threaded as props through eight screens.
-- **Nothing on this dashboard writes anything, and every control that looks like
-  it does says so.** There is no server behind `#/dashboard`, so publishing a
-  deal, cancelling a notification or exporting a CSV raises the strip with
-  `copy.dashboard.notWired` instead of pretending. Two corollaries. Money
-  *inputs* — the drawer's, the assistant's claim ceiling — hold the **reader's
-  currency**, not euros: the site stores euros and converts on the way out, which
-  is right for a figure being shown and wrong for one being typed, so they divide
-  by the rate once at the point a sentence needs euros back. And a figure the
-  screen cannot honestly make editable is shown as a **fact rather than a field**
-  — the voucher pool's three inputs are the note that states this, and the
-  Campaigns allocation follows it.
+- **This dashboard writes, and what it cannot do it removes rather than
+  refuses.** It used to write nothing at all — there was no server behind
+  `#/dashboard`, and every control that looked like it acted raised the strip
+  with `copy.dashboard.notWired`. That key is gone. Publishing, pausing,
+  extending and ending a deal, scheduling its push, creating and pausing a
+  campaign, moving money between the two budget pools, editing the voucher
+  ladder, confirming a scan and exporting the CSV all reach the partner API.
+  **The honesty rule survives the change and is what governs the leftovers**: a
+  control with no endpoint behind it is *deleted*, not left toasting an excuse —
+  which is why the empty-state buttons on Customers and Scans are gone (their
+  real next step is a QR code on a counter) and why the assistant screen stays
+  behind `PD_ASSIST.measured === false` rather than drafting around facts the
+  server answers differently.
+
+  Two corollaries stand unchanged. Money *inputs* — the drawer's, the budget
+  editor's — hold the **reader's currency**, not euros: the site stores euros and
+  converts on the way out, which is right for a figure being shown and wrong for
+  one being typed, so they go back through the rate at the point a sentence needs
+  euros. And a figure the screen cannot honestly make editable is shown as a
+  **fact rather than a field**.
 - **The assistant reads numbers; it does not invent them.** Every figure in every
   sentence it says arrives through a `fill()` hole from `partnerMetrics.ts` — the
   quiet hours, the peer comparison, the notification quota, both budget pools,

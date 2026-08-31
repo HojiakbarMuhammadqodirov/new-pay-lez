@@ -1127,8 +1127,113 @@ export const en = {
         action: 'Get your QR code',
       },
     ],
-    /* One honest line rather than a fake chart behind each button. */
-    notWired: 'Not wired up in this build.',
+    /*
+     * Every control that reaches the server, and every ending a press can have.
+     *
+     * This block replaced `notWired` — one honest line standing in for forty
+     * buttons that did nothing. It is not that sentence translated forty times;
+     * it is what is left once each of those buttons does the thing its own
+     * label says. Six verbs, six confirmations and two failures, shared by the
+     * deals table, the campaigns table, the voucher ladder, the budget and the
+     * queue at the counter, because the same act must not be called two things
+     * on two screens.
+     *
+     * The two failures are two because they have two different fixes: the
+     * server was not there, or it was there and refused. Only the second is
+     * worth reading a reason for, and `{why}` is the server’s own words.
+     */
+    acts: {
+      column: 'Actions',
+
+      publish: 'Publish',
+      pause: 'Pause',
+      resume: 'Resume',
+      extend: 'Extend',
+      end: 'End it',
+      /* One accent means a button cannot be red, so the one change that cannot
+         be undone asks its question in words instead. */
+      endSure: 'Sure?',
+      notify: 'Notify',
+      send: 'Schedule it',
+      save: 'Save',
+      close: 'Close',
+      refresh: 'Refresh',
+      until: 'New end date',
+      sendAt: 'When it goes out',
+
+      published: 'Published. It is live in the app.',
+      paused: 'Paused. Customers can no longer see it.',
+      resumed: 'Running again.',
+      extended: 'The end date moved.',
+      ended: 'Ended. That one is not coming back.',
+      notified: 'The notification is scheduled.',
+
+      offline: 'We could not reach the server. Nothing changed — try again in a minute.',
+      refused: 'The server would not do that: {why}',
+
+      /* ── the month’s money ── */
+      budgetTitle: 'Set your monthly budget',
+      budgetLede:
+        'One total for the month, split between loyalty rewards and voucher discounts. It cannot go below what you have already spent or set aside.',
+      budgetTotal: 'Total for this month',
+      budgetShare: 'Share for loyalty',
+      shareUnit: '% to loyalty',
+      budgetShareNote: '{loyalty} for loyalty rewards, {voucher} for voucher discounts.',
+      budgetSaved: 'Your budget is saved.',
+      moveTitle: 'Move money between the two pools',
+      moveAmount: 'How much to move',
+      moveDo: 'Move it',
+      moveDir: '{from} → {to}',
+      moveNote:
+        'Only money that is still available moves. Anything set aside belongs to a customer who has already earned it.',
+      moved: 'Moved.',
+      hint: 'Your {to} pool is nearly out and {from} has room. About {amount} is worth moving.',
+      pools: { loyalty: 'Loyalty', voucher: 'Vouchers' },
+
+      /* ── what points buy ── */
+      ladderEdit: 'Change what points buy',
+      ladderDone: 'Done',
+      tierPct: 'Discount',
+      tierPoints: 'Points it costs',
+      tierCap: 'Most off one bill',
+      pctUnit: '% off',
+      tierAdd: 'Add a tier',
+      tierRetire: 'Retire',
+      tierRetired: 'That tier is retired. Vouchers already given out at it still work.',
+      tiersSaved: 'Your point tiers are saved.',
+      tierDuplicate:
+        'Two tiers cannot offer the same discount — the second would replace the first.',
+
+      /* ── the counter ── */
+      queueTitle: 'Waiting to be confirmed',
+      queueLede:
+        'A customer has scanned and nothing has been given yet. Confirm it and the points, stamps and discounts all happen at once.',
+      queueEmpty:
+        'Nothing is waiting. A scan appears here within seconds of a customer holding up their phone.',
+      confirm: 'Confirm',
+      turnAway: 'Turn it away',
+      confirmed: 'Confirmed. The customer has their points.',
+      turnedAway: 'Turned away. Nothing was given.',
+      /* Not a figure and not a 0: at a venue where the cashier enters the
+         bill this is the field, and where the customer does it this is what
+         the row is waiting on. Neither is 'they bought nothing'. */
+      billLabel: 'Bill total',
+      waitingCustomer: 'Waiting for the customer to enter the bill',
+      openedAt: 'Scanned at {at}',
+      intents: {
+        earn: 'Earning',
+        voucher_redeem: 'Voucher',
+        reward_redeem: 'Reward',
+      },
+
+      /* ── the two buttons above every screen ── */
+      exportLocked: 'A CSV export is not included on this venue’s plan.',
+      previewTitle: 'Your listing, as customers see it',
+      previewLede:
+        'Read back from the server, so this is the version that was saved rather than the one in the form.',
+      previewVouchers: 'Points accepted here',
+      previewNoVouchers: 'Points not accepted here yet',
+    },
 
     /*
      * What a panel says when the figure behind it cannot be read.
@@ -1285,8 +1390,14 @@ export const en = {
       inMonth: 'in {month}',
 
       proofTitle: 'The one thing we can prove',
+      /* One hole, and it is a *multiple* rather than a rate.
+         `analytics.repeatMultiple` averages every campaign member's own visit
+         rate after joining over their rate before it, so the figure is a
+         ratio and its baseline is 1 by construction. The old sentence read it
+         as visits per month and quoted a literal '1.0' beside it, which was a
+         number nobody had measured standing next to one somebody had. */
       proof:
-        'Customers in your loyalty campaigns visit {after} times a month, up from {before} times before they joined.',
+        'Customers in your loyalty campaigns come in {n}× as often as they did before they joined.',
       proofNote: 'Counted from your own QR scans, not estimated. No till integration needed.',
       before: 'before',
       now: 'now',
@@ -1385,16 +1496,18 @@ export const en = {
         'New to your venue',
         'Russian speakers',
       ],
-      /* Keyed by `PartnerDeal['state']`, which is six wide. `draft` and
-         `ended` arrived with the API — a seeded deal was never either — and a
-         missing key here is a raw enum name printed at a venue owner. */
+      /* Keyed by `PartnerDeal['state']`, which is six wide, and keyed by the
+         *server's* words: `archived` and not `ended`. `draft` and `archived`
+         arrived with the API — a seeded deal was never either — and a missing
+         key here is a blank chip where a venue owner is looking for the reason
+         their offer is no longer in the app. */
       states: {
         draft: 'Draft',
         live: 'Live',
         scheduled: 'Scheduled',
         paused: 'Paused',
         expired: 'Expired',
-        ended: 'Ended',
+        archived: 'Ended',
       },
       search: 'Search your deals',
       filters: ['All', 'Live', 'Scheduled', 'Paused', 'Expired'],
@@ -1478,7 +1591,7 @@ export const en = {
         paused: 'Resume',
         scheduled: 'Pause',
         expired: 'Copy',
-        ended: 'Copy',
+        archived: 'Copy',
       },
       pointsNote: 'Points offer — costs you nothing at the till',
       costEstimate: 'estimate',
@@ -1851,6 +1964,16 @@ export const en = {
         savedUnverified: 'Saved as a draft. It goes live once your venue is verified — we are on it.',
         savedNotLive: 'Saved as a draft, but we lost the server before it went live. Publish it from Hot deals.',
         savedNotLiveWhy: 'Saved as a draft. It did not go live: {why}',
+        /* The refusal a free-plan owner meets first, and the only one worth
+           its own sentence: `live_deals` is a capacity rather than a fault,
+           and the fix is on the deals table — pause one — rather than here. */
+        savedPlanFull: 'Saved as a draft. Your plan allows one live deal at a time, so pause the one that is running and publish this from Hot deals.',
+        /* Three more endings, because the notification is a third call and
+           its own decision: published-and-sent, published-and-not-sent, and
+           a draft that deliberately carries no push. */
+        savedNoPush: 'Saved as a draft. No notification goes out — a draft is not in the feed to be notified about.',
+        publishedNotified: 'Published, and a notification goes out at {at}.',
+        publishedNoPush: 'Published and live. The notification did not schedule: {why}',
       },
       campaign: {
         kicker: 'New loyalty campaign',
@@ -1893,6 +2016,10 @@ export const en = {
         summaryNote:
           'The money is held from your loyalty budget when a customer qualifies, not when they use it. If the reward expires, it comes back.',
         summaryReward: 'a reward',
+        /* One ending, because a campaign has one button: the server inserts
+           it active, so there is no draft to fall back to. */
+        started: 'Running. It counts from the next visit.',
+        costError: 'Say what one reward costs you — the money is held from your loyalty budget the moment somebody qualifies.',
       },
       valid: 'Fix the {n} thing above before publishing.',
       validPlural: 'Fix the {n} things above before publishing.',

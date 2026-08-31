@@ -2794,6 +2794,40 @@ async function httpSurface(): Promise<void> {
   eq('but not publish before verification', publish.status, 403);
   eq('and it says why', publish.body.error.code, 'not_verified');
 
+  /*
+   * **And it cannot get there by the other door either.**
+   *
+   * `POST …/deals/:id/status {status:"live"}` used to write the column and
+   * nothing else, so the same deal that had just been refused publication went
+   * live on the next request and appeared in the public `GET /v1/deals`. A rule
+   * enforced at one of two doors is a rule with a door left open; both now run
+   * `assertPublishable`.
+   *
+   * The public catalogue is checked rather than the status field, because that
+   * is the thing that actually matters: what a customer can see.
+   */
+  const sneak = await call('POST', `/v1/partner/deals/${unverified.body.id}/status`, {
+    token: ownerToken,
+    body: { status: 'live' },
+  });
+  eq('nor by setting the status directly', sneak.status, 403);
+  eq('…for the same reason', sneak.body.error.code, 'not_verified');
+
+  const shopWindow = await call('GET', '/v1/deals?limit=50');
+  check(
+    'and an unverified venue’s deal is not in the public catalogue',
+    !(shopWindow.body as Array<{ id: string }>).some((d) => d.id === unverified.body.id),
+  );
+
+  /* Taking one *down* still needs no permission — an entitlement standing
+     between an owner and stopping their own offer is how a lapsed plan traps a
+     live deal on screen. */
+  const pauseIt = await call('POST', `/v1/partner/deals/${unverified.body.id}/status`, {
+    token: ownerToken,
+    body: { status: 'paused' },
+  });
+  eq('but pausing is never gated', pauseIt.status, 200);
+
   /* Idempotency: the same key returns the same response, a different body 409s. */
   const key = 'verify-key-1';
   const first = await call('POST', '/v1/games/sessions', {

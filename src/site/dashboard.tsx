@@ -3,12 +3,15 @@ import { DASH_SCREENS } from './content';
 import { PD_RANGES, RANGE_DAYS, dealFromApi } from './partnerMetrics';
 import type { RangeDays } from './partnerMetrics';
 import {
+  exportCsv,
   minorToEuro,
   usePartnerBudget,
   usePartnerCampaigns,
   usePartnerDeals,
+  usePartnerVenue,
   usePartnerVenueId,
 } from './api/partner';
+import { ApiError, call } from './api/client';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -49,9 +52,16 @@ import { useCountUp, useReveal } from './useReveal';
  * Two things belong to the frame rather than to any screen, and both are here
  * for the same reason the prototype puts them here: **the create drawer** —
  * reachable from six places and always the same panel — and **the confirmation
- * strip**, which is the one honest thing a button can do on a screen with no
- * server behind it. They are handed down through `DashboardContext` rather than
- * threaded as props through eight screens and forty buttons.
+ * strip**, which is now where every write on the dashboard reports its ending.
+ * They are handed down through `DashboardContext` rather than threaded as props
+ * through eight screens and forty buttons.
+ *
+ * **And the buttons write.** A deal is published, paused, extended, taken down
+ * or given its notification; a campaign is started, paused or ended; the
+ * voucher ladder and the month's budget are set; a scan waiting at the counter
+ * is confirmed. Six of the seven screens reach the server, and the strip's
+ * sentences are in the past tense because the thing has happened — which is the
+ * change that retired `copy.dashboard.notWired` rather than translating it.
  */
 
 /* ────────────────────────────────────────────────────────────────── rail ── */
@@ -194,10 +204,12 @@ function Rail({
  * that. What it does not share is the trigger: this one is chrome in the
  * dashboard bar rather than a header control, so it keeps `.pd-range-btn`.
  *
- * Unlike everything else on this frame it is *not* a control that has to
- * apologise for having no server: the numbers behind it are derived on this
- * device, so changing the window really does change every figure that depends
- * on it. That is why it is the one thing up here that is not `disabled`.
+ * It is the one control on this frame that still does not reach the server, and
+ * the reason is a mismatch rather than a missing endpoint: every report here is
+ * counted over a **calendar month**, and this picker offers a rolling day
+ * count. Sending 30 as a month would quote one window under the other's label,
+ * which is the exact confusion `dashboard.unmeasured.monthOnly` is written to
+ * name. It re-keys the reveal and the count-up, and says so in that sentence.
  */
 function RangeMenu() {
   const copy = useCopy();
@@ -327,6 +339,204 @@ function TopBar({ screen }: { screen: number }) {
   );
 }
 
+/* ──────────────────────────────────────────────── the two head buttons ── */
+
+/**
+ * The public listing, fetched from the server that serves it to the app.
+ *
+ * "Preview listing" raised the strip with "Opening your listing preview" and
+ * opened nothing, which is the shape of dishonesty this dashboard is least
+ * allowed: a control whose confirmation describes something that did not
+ * happen. `GET /v1/venues/:id` is the *customer's* view of a venue — the same
+ * body the phone reads — so previewing it is a real read of a real endpoint
+ * rather than a picture of the form the owner just filled in.
+ *
+ * Deliberately not built from `account.business`. A preview drawn from the
+ * browser's own copy of the listing shows what was typed; this shows what was
+ * *saved*, which is the only version a customer will ever see and the one worth
+ * checking before a deal goes out.
+ */
+interface PublicListing {
+  venue: {
+    name: string;
+    category: string | null;
+    subcategory: string | null;
+    city: string | null;
+    address: string | null;
+    priceRange: string | null;
+    imageUrl: string | null;
+    acceptsVouchers: boolean;
+  };
+}
+
+function ListingPreview({ venueId, onClose }: { venueId: string; onClose: () => void }) {
+  const copy = useCopy().dashboard;
+  const [listing, setListing] = useState<PublicListing | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let live = true;
+    call<PublicListing>(`/v1/venues/${encodeURIComponent(venueId)}`)
+      .then((body) => live && setListing(body))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [venueId]);
+
+  return (
+    <div className="pd-sheet" role="dialog" aria-modal="true" aria-label={copy.acts.previewTitle}>
+      <button
+        type="button"
+        className="pd-scrim"
+        aria-label={copy.drawer.close}
+        onClick={onClose}
+      />
+      <section className="pd-drawer-panel" tabIndex={-1}>
+        <header>
+          <div>
+            <span className="console-label">{copy.actions.preview}</span>
+            <h2>{copy.acts.previewTitle}</h2>
+            <p className="pd-fine">{copy.acts.previewLede}</p>
+          </div>
+          <button
+            type="button"
+            className="pd-icon"
+            aria-label={copy.drawer.close}
+            onClick={onClose}
+          >
+            <Icon name="close" size={15} strokeWidth={2} />
+          </button>
+        </header>
+
+        <div className="pd-drawer-body">
+          {failed ? (
+            <p className="pd-fine">{copy.unmeasured.serverSilent}</p>
+          ) : listing === null ? (
+            <p className="pd-fine">{copy.unmeasured.asking}</p>
+          ) : (
+            /* The same mock the deal drawer draws its offer in, and for the
+               same reason: the ground of the thing being previewed is black
+               whichever theme is reading, so `data-ink='on'` rather than the
+               page's own surface. */
+            <div className="pd-phone" data-ink="on">
+              <span className="pd-phone-notch" aria-hidden />
+              <div className="pd-phone-card">
+                <div className="pd-phone-art">
+                  <span>{listing.venue.priceRange ?? ''}</span>
+                </div>
+                <div className="pd-phone-body">
+                  <em>{[listing.venue.category, listing.venue.subcategory]
+                    .filter(Boolean)
+                    .join(' · ')}</em>
+                  <b>{listing.venue.name}</b>
+                  <p>{[listing.venue.address, listing.venue.city].filter(Boolean).join(', ')}</p>
+                  <div className="pd-phone-foot">
+                    <span>
+                      {listing.venue.acceptsVouchers
+                        ? copy.acts.previewVouchers
+                        : copy.acts.previewNoVouchers}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/**
+ * The secondary button above every screen: export the month, or preview the
+ * listing on the one screen that is the listing.
+ *
+ * Both used to raise the strip with a sentence in the past tense — "Your CSV is
+ * downloading", "Opening your listing preview" — and neither did anything. They
+ * are one component because they are one slot, and because both need the venue
+ * this API session owns.
+ */
+function HeadSecondary({
+  isProfile,
+  onPreview,
+}: {
+  isProfile: boolean;
+  /* The sheet itself is raised by the frame rather than rendered here, for the
+     reason the create drawer is: `.pd-head` is a `[data-reveal]` element, and a
+     `position: fixed` overlay inside one is contained by its transform until the
+     reveal lands — and invisible at `opacity: 0` before it does. */
+  onPreview: (venueId: string) => void;
+}) {
+  const copy = useCopy().dashboard;
+  const { toast } = useDashboard();
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const [busy, setBusy] = useState(false);
+
+  const download = async () => {
+    if (busy) return;
+    if (venue === null) {
+      toast(copy.drawer.deal.needsSession);
+      return;
+    }
+    setBusy(true);
+    try {
+      const file = await exportCsv(venue.id);
+      /*
+       * A blob and a synthetic click, because the CSV arrives in the response
+       * body rather than at a URL — there is no object store behind this and
+       * there does not need to be: it is a day-by-day roll-up with no user
+       * column, measured in kilobytes. The object URL is revoked immediately;
+       * the click has already read it.
+       */
+      const url = URL.createObjectURL(new Blob([file.csv], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = file.filename;
+      link.click();
+      URL.revokeObjectURL(url);
+      toast(copy.actions.exported);
+    } catch (cause) {
+      /* Three endings, because they have three different fixes: the plan does
+         not carry this, the server is not there, or it looked and refused. */
+      toast(
+        cause instanceof ApiError && cause.status === 403
+          ? copy.acts.exportLocked
+          : cause instanceof ApiError && cause.status === 0
+            ? copy.acts.offline
+            : fill(copy.acts.refused, {
+                why: cause instanceof Error ? cause.message : String(cause),
+              }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (isProfile) {
+    return (
+      <button
+        type="button"
+        className="btn btn-ghost"
+        onClick={() =>
+          venue === null ? toast(copy.drawer.deal.needsSession) : onPreview(venue.id)
+        }
+      >
+        <Icon name="eye" size={15} />
+        {copy.actions.preview}
+      </button>
+    );
+  }
+
+  return (
+    <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => void download()}>
+      <Icon name="download" size={15} />
+      {copy.actions.exportCsv}
+    </button>
+  );
+}
+
 /* ────────────────────────────────────────────────────────────────── page ── */
 
 /** The profile is the last screen and the only one with a form. */
@@ -359,6 +569,10 @@ export function DashboardPage() {
      the copy's own "August" crumb still says. */
   const [range, setRange] = useState<RangeDays>(RANGE_DAYS);
   const [toastText, setToastText] = useState<string | null>(null);
+  /* The venue whose public listing is being previewed, or null. On the frame
+     rather than on the head for the same reason the create drawer is: an
+     overlay inside a [data-reveal] element is contained by its transform. */
+  const [preview, setPreview] = useState<string | null>(null);
 
   /*
    * A second rescan, keyed on the screen. `Site` keys its own on the route, and
@@ -420,22 +634,7 @@ export function DashboardPage() {
                 <p>{copy.dashboard.screens[screen].lede}</p>
               </div>
               <div className="pd-head-acts">
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() =>
-                    setToastText(
-                      id === 'profile'
-                        ? copy.dashboard.actions.previewing
-                        : copy.dashboard.actions.exported,
-                    )
-                  }
-                >
-                  <Icon name={id === 'profile' ? 'eye' : 'download'} size={15} />
-                  {id === 'profile'
-                    ? copy.dashboard.actions.preview
-                    : copy.dashboard.actions.exportCsv}
-                </button>
+                <HeadSecondary isProfile={id === 'profile'} onPreview={setPreview} />
                 {primary && (
                   <button type="button" className="btn btn-solid" onClick={() => setDrawer(primary)}>
                     <Icon name="plus" size={15} strokeWidth={2} />
@@ -459,6 +658,7 @@ export function DashboardPage() {
         </div>
 
         {drawer && <DashboardDrawer kind={drawer} />}
+        {preview && <ListingPreview venueId={preview} onClose={() => setPreview(null)} />}
         {toastText && <DashboardToast message={toastText} onDone={dismiss} />}
       </main>
     </DashboardContext.Provider>

@@ -51,6 +51,7 @@ import type { ReachReport } from './api/reach';
 import type {
   CampaignResponse,
   DealResponse,
+  DealStatus,
   Metric,
   OverviewBody,
   Pool,
@@ -200,7 +201,10 @@ export interface PartnerDeal {
   id: string;
   /** What the deal gives away, in the venue's own words. */
   badge: string;
-  state: 'draft' | 'live' | 'scheduled' | 'paused' | 'expired' | 'ended';
+  /* The server's own union rather than a copy of it. It *was* a copy, and the
+     copy had `ended` where the server says `archived` — which nothing caught,
+     because a state nobody had reached is a key nobody looks up. */
+  state: DealStatus;
   seen: number;
   opened: number;
   claimed: number;

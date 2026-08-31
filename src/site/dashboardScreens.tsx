@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill, group as groupDigits } from './i18n/currency';
 import {
@@ -16,23 +16,43 @@ import {
   type TierRow,
 } from './partnerMetrics';
 import {
+  cancelScan,
   chain,
+  confirmScan,
+  enterScanAmount,
+  euroToMinor,
+  extendDeal,
   isNoSession,
   minorToEuro,
+  publishDeal,
+  rebalanceBudget,
+  scheduleDealPush,
+  setBudget,
+  setCampaignStatus,
+  setDealStatus,
+  setVoucherTiers,
   usePartnerAnalytics,
   usePartnerBudget,
   usePartnerCampaigns,
   usePartnerCustomers,
   usePartnerDeals,
   usePartnerOverview,
+  usePartnerPending,
   usePartnerToday,
+  usePartnerVenue,
   usePartnerVenueId,
+  venueInstant,
+  type BudgetBody,
   type Metric,
+  type PartnerVenue,
+  type PendingScan,
+  type TierDraft,
 } from './api/partner';
 import { useReach } from './api/reach';
-import type { ApiError } from './api/client';
+import { ApiError } from './api/client';
 import type { ApiState } from './api/useApi';
 import { Assistant } from './dashboardAssistant';
+import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
 
 /**
@@ -70,6 +90,22 @@ import { useDashboard } from './dashboardShell';
  * empty copy is `copy.dashboard.empty`, which already existed in all five
  * languages and had never been rendered — it is written for exactly this: what
  * this screen is for, and the one thing to do that would start filling it.
+ *
+ * ── and now they write, which changes what "honest" costs ────────────────
+ *
+ * Five of the seven carry controls that reach the server: a deal is published,
+ * paused, extended, taken down or given its one notification; a campaign is
+ * paused or ended; the voucher ladder and the month's budget are set; a pending
+ * scan at the counter is confirmed or turned away. `useAction` below is the one
+ * place a write, its two endings and the reload after it are written down —
+ * a screen that invented its own would eventually forget one of the three.
+ *
+ * The rule that governed the read side governs this one too, pointed the other
+ * way: **a press that could not reach the server must not look like a press
+ * that worked.** Every ending is a sentence, the failed one names why, and the
+ * list is re-read from the server afterwards rather than patched locally —
+ * because the server is what decides what a deal's status *became*, and a row
+ * this screen edited in place would be this screen's opinion of it.
  *
  * Charts are divs and inline SVG paths, as everywhere else on this site.
  */
@@ -122,6 +158,54 @@ function Bar({ label, value, of, note }: { label: string; value: number; of: num
   );
 }
 
+/**
+ * A write, its two endings, and the re-read after it.
+ *
+ * One hook rather than a `try/catch` at each of the fourteen call sites, and
+ * the three things it owns are the three that are easy to forget one of:
+ *
+ * - **A press is locked while it is in flight.** `busy` is the key of the
+ *   control that is working, not a boolean, so the row that was pressed is the
+ *   row that shows it — a table of six deals with every button greyed says the
+ *   wrong thing about which one is being paused.
+ * - **A failure is named, and named by kind.** "The server is not there" and
+ *   "the server looked at this and refused" have different fixes, and only the
+ *   second is worth reading a reason for. Same split the create drawer makes.
+ * - **Success re-reads rather than patches.** What a deal's status *became* is
+ *   the server's answer, not this screen's guess: extending an expired deal
+ *   also revives it, publishing may land on `scheduled` rather than `live`, and
+ *   a locally-patched row would show neither.
+ */
+function useAction(reload: () => void) {
+  const dashboard = useCopy().dashboard;
+  const { toast } = useDashboard();
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const run = useCallback(
+    async (key: string, done: string, work: () => Promise<unknown>) => {
+      setBusy((current) => current ?? key);
+      try {
+        await work();
+        toast(done);
+        reload();
+      } catch (cause) {
+        toast(
+          cause instanceof ApiError && cause.status === 0
+            ? dashboard.acts.offline
+            : fill(dashboard.acts.refused, {
+                why: cause instanceof Error ? cause.message : String(cause),
+              }),
+        );
+      } finally {
+        setBusy(null);
+      }
+    },
+    [dashboard.acts, reload, toast],
+  );
+
+  return { busy, run };
+}
+
 /** Live / paused, used / unused — the one chip the screens repeat. */
 function State({ on, children }: { on: boolean; children: string }) {
   return (
@@ -145,10 +229,29 @@ function State({ on, children }: { on: boolean; children: string }) {
  * not answer" is a fault. An owner about to conclude that nobody has visited
  * them needs to know it is neither.
  */
+/**
+ * The screens whose empty state has something to press, and what it opens.
+ *
+ * Three of the seven, and the button is **absent** on the other four rather
+ * than raising `copy.dashboard.notWired`. That string was the honest answer
+ * while nothing on this frame wrote anything; it stopped being one the moment
+ * the drawer started filing deals, because "not wired up" beside a button that
+ * could be wired is an excuse rather than a fact. Where the next step is not a
+ * press — the Customers and Scan screens fill in when a QR code goes on a
+ * counter, which is a thing that happens in a café — the panel says what to do
+ * and offers nothing to click, which is the true shape of it.
+ */
+const EMPTY_ACTION: Record<number, 'deal' | 'campaign'> = {
+  0: 'deal',
+  1: 'deal',
+  2: 'campaign',
+};
+
 function Unmeasured({ index, error }: { index: number; error?: ApiError }) {
   const dashboard = useCopy().dashboard;
-  const { openDrawer, toast } = useDashboard();
+  const { openDrawer } = useDashboard();
   const copy = dashboard.empty[index];
+  const opens = EMPTY_ACTION[index];
 
   const reason = error === undefined
     ? null
@@ -161,13 +264,11 @@ function Unmeasured({ index, error }: { index: number; error?: ApiError }) {
       <h3>{copy.title}</h3>
       <p className="pd-fine">{copy.body}</p>
       {reason && <p className="pd-fine">{reason}</p>}
-      <button
-        type="button"
-        className="btn btn-solid"
-        onClick={() => (index === 1 ? openDrawer('deal') : index === 2 ? openDrawer('campaign') : toast(dashboard.notWired))}
-      >
-        {copy.action}
-      </button>
+      {opens && (
+        <button type="button" className="btn btn-solid" onClick={() => openDrawer(opens)}>
+          {copy.action}
+        </button>
+      )}
     </div>
   );
 }
@@ -579,9 +680,14 @@ function Overview() {
                 <div>
                   <span className="console-label">{copy.proofTitle}</span>
                   <p className="pd-proof">
+                    {/* One hole, because the server answers with a *ratio* —
+                        each member's visit rate after joining over their rate
+                        before it, averaged. Its baseline is 1 by construction,
+                        which is what the column beside it draws; the sentence
+                        used to quote that 1 as though it were a measured
+                        visits-per-month figure. */}
                     {fill(copy.proof, {
-                      after: (analytics.repeatMultiple.value ?? 0).toFixed(1),
-                      before: '1.0',
+                      n: (analytics.repeatMultiple.value ?? 0).toFixed(1),
                     })}
                   </p>
                   <p className="pd-fine">{copy.proofNote}</p>
@@ -715,6 +821,231 @@ function Overview() {
 /* ──────────────────────────────────────────────────────────────── deals ── */
 
 /**
+ * Today, and a fortnight after it, as `YYYY-MM-DD`.
+ *
+ * `<input type="date">` speaks that and nothing else, and `toISOString` is the
+ * only formatter that produces it without an `Intl` round trip — it is UTC, so
+ * an owner east of the line late at night opens the picker on yesterday. That
+ * is a date field with a defaulted value in it, not a figure being reported,
+ * and the alternative is a second timezone conversion for a value the owner is
+ * about to overwrite.
+ */
+const isoDay = (offsetDays = 0): string =>
+  new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
+
+/**
+ * One deal, and everything an owner can do to it after it exists.
+ *
+ * The row was read-only until now, which meant the whole of §11.2 — the levers
+ * an owner reaches for when the thing they are giving away has run out — lived
+ * on the server with nothing calling them. Six controls, and which of them
+ * appear is decided by the state rather than by taste:
+ *
+ * - **Publish** only on a `draft`, because publishing is what a draft is for.
+ * - **Pause** on anything customers can currently reach, **Resume** on what was
+ *   paused. Reversible, no confirmation, deliberately: an offer that has to come
+ *   off the feed has to come off it now.
+ * - **Extend** wherever there is a window to push out. It is the correct control
+ *   on an *expired* deal and not a second publish, because the server revives an
+ *   expired deal in the same statement that moves its end date.
+ * - **End** everywhere except a draft, and it is the one that asks twice —
+ *   `archived` is the only one of the three status changes this screen cannot
+ *   undo.
+ * - **Notify** on a deal customers can reach. One per deal, ever; a second
+ *   attempt is a `conflict` the strip reports rather than a second send.
+ *
+ * The two that need a value open a second row underneath rather than a dialog:
+ * a date and a clock face are two fields, and a modal over a table the owner is
+ * comparing rows in hides the thing they were reading.
+ */
+function DealRow({
+  deal,
+  venue,
+  reload,
+  children,
+}: {
+  deal: PartnerDeal;
+  venue: PartnerVenue | null;
+  reload: () => void;
+  /** The read-only cells, which are the caller's business rather than this one's. */
+  children: React.ReactNode;
+}) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.acts;
+  const { busy, run } = useAction(reload);
+  const [open, setOpen] = useState<'extend' | 'notify' | null>(null);
+  const [sure, setSure] = useState(false);
+  const [until, setUntil] = useState(() => deal.to?.slice(0, 10) ?? isoDay(14));
+  const [pushDay, setPushDay] = useState(() => isoDay());
+  const [pushTime, setPushTime] = useState('09:00');
+
+  const reachable = deal.state === 'live' || deal.state === 'scheduled';
+  const working = busy !== null;
+
+  return (
+    <>
+      <tr data-dim={deal.state === 'expired' || deal.state === 'archived' ? 'true' : undefined}>
+        {children}
+        <td>
+          <span className="pd-row-acts">
+            {deal.state === 'draft' && (
+              <button
+                type="button"
+                className="btn btn-solid"
+                disabled={working}
+                onClick={() => void run('publish', copy.published, () => publishDeal(deal.id))}
+              >
+                {copy.publish}
+              </button>
+            )}
+            {reachable && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={working}
+                onClick={() =>
+                  void run('pause', copy.paused, () => setDealStatus(deal.id, 'paused'))
+                }
+              >
+                {copy.pause}
+              </button>
+            )}
+            {deal.state === 'paused' && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={working}
+                onClick={() =>
+                  void run('resume', copy.resumed, () => setDealStatus(deal.id, 'live'))
+                }
+              >
+                {copy.resume}
+              </button>
+            )}
+            {deal.state !== 'draft' && deal.state !== 'archived' && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={working}
+                onClick={() => setOpen((was) => (was === 'extend' ? null : 'extend'))}
+              >
+                {copy.extend}
+              </button>
+            )}
+            {reachable && (
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={working}
+                onClick={() => setOpen((was) => (was === 'notify' ? null : 'notify'))}
+              >
+                {copy.notify}
+              </button>
+            )}
+            {deal.state !== 'draft' && deal.state !== 'archived' && (
+              /* Two presses, because this is the one status change the screen
+                 cannot take back. The second label is a question rather than a
+                 warning: a palette with one accent cannot make a button red, so
+                 the confirmation is in the words. */
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={working}
+                onClick={() => {
+                  if (!sure) {
+                    setSure(true);
+                    return;
+                  }
+                  setSure(false);
+                  void run('end', copy.ended, () => setDealStatus(deal.id, 'archived'));
+                }}
+              >
+                {sure ? copy.endSure : copy.end}
+              </button>
+            )}
+          </span>
+        </td>
+      </tr>
+
+      {open !== null && (
+        <tr className="pd-drawer-row">
+          <td colSpan={6}>
+            <div className="pd-inline-form">
+              {open === 'extend' ? (
+                <>
+                  <label className="field">
+                    <span className="field-label">{copy.until}</span>
+                    <input
+                      type="date"
+                      value={until}
+                      onChange={(event) => setUntil(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-solid"
+                    disabled={working}
+                    onClick={() =>
+                      void run('extend', copy.extended, async () => {
+                        await extendDeal(deal.id, until);
+                        setOpen(null);
+                      })
+                    }
+                  >
+                    {copy.save}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <label className="field">
+                    <span className="field-label">{copy.sendAt}</span>
+                    <input
+                      type="date"
+                      value={pushDay}
+                      onChange={(event) => setPushDay(event.target.value)}
+                    />
+                  </label>
+                  <label className="field">
+                    <span className="visually-hidden">{copy.sendAt}</span>
+                    <input
+                      type="time"
+                      value={pushTime}
+                      onChange={(event) => setPushTime(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="btn btn-solid"
+                    disabled={working}
+                    onClick={() =>
+                      void run('notify', copy.notified, async () => {
+                        await scheduleDealPush(
+                          deal.id,
+                          /* The venue's clock, not the reader's — the server
+                             refuses a send outside 07:00–21:00 venue-local. */
+                          venueInstant(pushDay, pushTime, venue?.timezone ?? 'Europe/Warsaw'),
+                        );
+                        setOpen(null);
+                      })
+                    }
+                  >
+                    {copy.send}
+                  </button>
+                  <p className="pd-fine">{dashboard.drawer.deal.quietNote}</p>
+                </>
+              )}
+              <button type="button" className="btn btn-ghost" onClick={() => setOpen(null)}>
+                {copy.close}
+              </button>
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/**
  * The venue's hot deals, as the server has them.
  *
  * Six invented rows used to be here, with a claim sparkline, a "reach lost to
@@ -732,14 +1063,17 @@ function Deals() {
   const num = useNum();
   const [filter, setFilter] = useState(0);
 
-  const venue = usePartnerVenueId();
-  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
-  const dealsApi = usePartnerDeals(venueId);
-  const budgetApi = usePartnerBudget(venueId);
-  const state = chain(venue, dealsApi);
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const dealsApi = usePartnerDeals(venue?.id ?? null);
+  const state = chain(venueApi, dealsApi);
 
-  const currency =
-    budgetApi.state.status === 'ready' ? budgetApi.state.data.currency : 'EUR';
+  /* The venue's own currency, off the venue row rather than off the budget.
+     Reading it from `/budget` meant a screen that could reach `/deals` but not
+     `/budget` priced a Kraków café's discounts in euros — the same figure, at
+     four times the number. */
+  const currency = venue?.currency ?? 'EUR';
+  const reload = dealsApi.reload;
 
   return (
     <Screen state={state} index={1}>
@@ -802,11 +1136,12 @@ function Deals() {
                       <th>{copy.funnel[1]}</th>
                       <th>{copy.funnel[2]}</th>
                       <th>{dashboard.words.costSoFar}</th>
+                      <th>{dashboard.acts.column}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {shown.map((deal) => (
-                      <tr key={deal.id}>
+                      <DealRow key={deal.id} deal={deal} venue={venue} reload={reload}>
                         <td>
                           <b>{deal.badge}</b>
                           <span className="pd-fine">
@@ -839,7 +1174,7 @@ function Deals() {
                           )}
                         </td>
                         <td>{money(deal.cost, 'exact')}</td>
-                      </tr>
+                      </DealRow>
                     ))}
                   </tbody>
                 </table>
@@ -859,24 +1194,89 @@ function Deals() {
 
 /* ──────────────────────────────────────────────────────────── campaigns ── */
 
+/**
+ * Pause a campaign, restart it, or close it for good.
+ *
+ * §5.3's half that is easy to get backwards: pausing stops new *earning* and
+ * touches nothing already earned. A reward somebody has qualified for stays
+ * valid and stays reserved out of the loyalty pool, which is why the row keeps
+ * showing an outstanding count for a paused campaign rather than zeroing it —
+ * that money is still committed and the customer can still walk in for it.
+ *
+ * Ending asks twice for the same reason the deal's does: `ended` is where this
+ * screen stops being able to change its mind.
+ */
+function CampaignActions({
+  id,
+  live,
+  reload,
+}: {
+  id: string;
+  live: boolean;
+  reload: () => void;
+}) {
+  const copy = useCopy().dashboard.acts;
+  const { busy, run } = useAction(reload);
+  const [sure, setSure] = useState(false);
+  const working = busy !== null;
+
+  return (
+    <span className="pd-row-acts">
+      <button
+        type="button"
+        className="btn btn-ghost"
+        disabled={working}
+        onClick={() =>
+          void run(
+            'status',
+            live ? copy.paused : copy.resumed,
+            () => setCampaignStatus(id, live ? 'paused' : 'active'),
+          )
+        }
+      >
+        {live ? copy.pause : copy.resume}
+      </button>
+      <button
+        type="button"
+        className="btn btn-ghost"
+        disabled={working}
+        onClick={() => {
+          if (!sure) {
+            setSure(true);
+            return;
+          }
+          setSure(false);
+          void run('end', copy.ended, () => setCampaignStatus(id, 'ended'));
+        }}
+      >
+        {sure ? copy.endSure : copy.end}
+      </button>
+    </span>
+  );
+}
+
 function Campaigns() {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.campaigns;
   const money = useMoney();
   const num = useNum();
 
-  const venue = usePartnerVenueId();
-  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
-  const campaignsApi = usePartnerCampaigns(venueId);
-  const budgetApi = usePartnerBudget(venueId);
-  const state = chain(venue, campaignsApi);
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const campaignsApi = usePartnerCampaigns(venue?.id ?? null);
+  const budgetApi = usePartnerBudget(venue?.id ?? null);
+  const state = chain(venueApi, campaignsApi);
 
   const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : null;
+  /* The pool comes from `/budget`, but the *currency* comes from the venue: a
+     screen that can list campaigns and cannot read the budget still knows what
+     a reward costs, and must not quote it in the wrong money. */
+  const currency = venue?.currency ?? 'EUR';
 
   return (
     <Screen state={state} index={2}>
       {(rows) => {
-        const toEuro = (minor: number) => minorToEuro(minor, budget?.currency ?? 'EUR');
+        const toEuro = (minor: number) => minorToEuro(minor, currency);
         const list: CampaignRow[] = rows.map((row) => campaignFromApi(row, toEuro));
         const model = campaignModel(list, budget?.loyalty ?? null);
 
@@ -941,6 +1341,7 @@ function Campaigns() {
                     <th>{copy.earned}</th>
                     <th>{copy.used}</th>
                     <th>{copy.totals[2]}</th>
+                    <th>{dashboard.acts.column}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -964,6 +1365,13 @@ function Campaigns() {
                       <td>{num(campaign.earned)}</td>
                       <td>{num(campaign.used)}</td>
                       <td>{num(campaign.outstanding)}</td>
+                      <td>
+                        <CampaignActions
+                          id={campaign.id}
+                          live={campaign.live}
+                          reload={campaignsApi.reload}
+                        />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -997,32 +1405,441 @@ function Campaigns() {
 /* ───────────────────────────────────────────────────────────── vouchers ── */
 
 /**
+ * The month's money: how much of it there is, and how it is split.
+ *
+ * The prototype made the budget an editable field and recomputed the pool from
+ * it on this device, which was honest while there was no server — the whole
+ * pool was invented anyway. Then it became a *fact* rather than a field,
+ * because a screen that cannot save a number must not offer to take one. This
+ * is the third state and the right one: the field is back, and what it does is
+ * `PUT /v1/partner/venues/:id/budget`.
+ *
+ * Two things about it are the server's rules rather than this screen's:
+ *
+ * - **The split is one number, not two.** Basis points of one total, so the two
+ *   sides cannot be set to a pair that does not add up — which is the failure a
+ *   "loyalty budget" field beside a "voucher budget" field invites on the very
+ *   first edit, and it ends with the same money committed twice.
+ * - **A budget cannot shrink below what is already committed.** Spent money is
+ *   gone and reserved money belongs to a customer holding a voucher; a pool that
+ *   cannot honour them is a promise already broken. The refusal names the
+ *   figure and arrives through the strip like every other one.
+ *
+ * Both amounts are typed in the **reader's** currency and converted where the
+ * request needs the venue's, which is the rule for a money field being typed
+ * rather than shown (root `CLAUDE.md`).
+ */
+function BudgetEditor({
+  budget,
+  reload,
+}: {
+  budget: BudgetBody;
+  reload: () => void;
+}) {
+  const copy = useCopy().dashboard.acts;
+  const currency = useCurrency();
+  const money = useMoney();
+  const { busy, run } = useAction(reload);
+
+  const toReader = (minor: number) => minorToEuro(minor, budget.currency) * currency.rate;
+  const toMinor = (reader: number) => euroToMinor(reader / currency.rate, budget.currency);
+
+  const [total, setTotal] = useState(() => Math.round(toReader(budget.total)));
+  /* Percent rather than basis points, because a person setting a split thinks
+     in percent and the server's unit is an implementation detail of *storing*
+     it. One multiplication at the seam, in one place. */
+  const [share, setShare] = useState(() =>
+    budget.total > 0 ? Math.round((budget.loyalty.base / budget.total) * 100) : 50,
+  );
+  const [from, setFrom] = useState<'loyalty' | 'voucher'>('voucher');
+  const [amount, setAmount] = useState(0);
+
+  const working = busy !== null;
+  const hint = budget.rebalanceHint;
+  const poolName = (which: 'loyalty' | 'voucher') => copy.pools[which];
+
+  return (
+    <div className="pd-glass pd-panel" data-reveal>
+      <div className="pd-panel-head">
+        <span className="console-label">{copy.budgetTitle}</span>
+        <span className="pd-chip">{budget.period}</span>
+      </div>
+      <p className="pd-fine">{copy.budgetLede}</p>
+
+      <div className="pd-inputs">
+        <div>
+          <span className="field-label">{copy.budgetTotal}</span>
+          <NumberWell
+            value={total}
+            onChange={setTotal}
+            unit={currency.symbol}
+            label={copy.budgetTotal}
+            min={0}
+            wide
+          />
+        </div>
+        <div>
+          <span className="field-label">{copy.budgetShare}</span>
+          <NumberWell
+            value={share}
+            onChange={(next) => setShare(Math.max(0, Math.min(100, next)))}
+            unit={copy.shareUnit}
+            label={copy.budgetShare}
+            min={0}
+            wide
+          />
+          <span className="field-help">
+            {fill(copy.budgetShareNote, {
+              loyalty: money((total / currency.rate) * (share / 100), 'exact'),
+              voucher: money((total / currency.rate) * (1 - share / 100), 'exact'),
+            })}
+          </span>
+        </div>
+      </div>
+
+      <div className="pd-inline-form">
+        <button
+          type="button"
+          className="btn btn-solid"
+          disabled={working}
+          onClick={() =>
+            void run('budget', copy.budgetSaved, () =>
+              setBudget(budget.venueId, toMinor(total), Math.round(share * 100)),
+            )
+          }
+        >
+          {copy.save}
+        </button>
+      </div>
+
+      {/* Moving money between the two pools is a different act from resizing the
+          budget, and it is a different endpoint: two compensating movements in
+          one transaction, so `base − spent − reserved` still exhausts both sides
+          afterwards. Only what is *available* moves — reserved money belongs to
+          somebody who has already qualified for it. */}
+      <div className="pd-panel-head pd-move-head">
+        <span className="console-label">{copy.moveTitle}</span>
+      </div>
+      {hint && (
+        <p className="pd-fine">
+          {fill(copy.hint, {
+            from: poolName(hint.from),
+            to: poolName(hint.to),
+            amount: money(minorToEuro(hint.suggested, budget.currency), 'exact'),
+          })}
+        </p>
+      )}
+      <div className="pd-inline-form">
+        <div className="pd-seg">
+          {(['loyalty', 'voucher'] as const).map((which) => (
+            <button
+              key={which}
+              type="button"
+              data-on={from === which ? 'true' : undefined}
+              onClick={() => setFrom(which)}
+            >
+              {fill(copy.moveDir, {
+                from: poolName(which),
+                to: poolName(which === 'loyalty' ? 'voucher' : 'loyalty'),
+              })}
+            </button>
+          ))}
+        </div>
+        {/* No label element: `NumberWell` carries the `aria-label`, and a
+            `<label>` wrapping it would nest one inside the well’s own. */}
+        <div className="field">
+          <NumberWell
+            value={amount}
+            onChange={setAmount}
+            unit={currency.symbol}
+            label={copy.moveAmount}
+            min={0}
+          />
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={working || !(amount > 0)}
+          onClick={() =>
+            void run('move', copy.moved, () =>
+              rebalanceBudget(budget.venueId, from, toMinor(amount)),
+            )
+          }
+        >
+          {copy.moveDo}
+        </button>
+      </div>
+      <p className="pd-fine">{copy.moveNote}</p>
+    </div>
+  );
+}
+
+/**
+ * One rung being edited, in the units the owner is typing in.
+ *
+ * `cap` is the reader's currency, and `existing` says whether the server has
+ * seen this rung — a tier is keyed on `(venue_id, discount_pct)` rather than on
+ * an id, so a new rung is simply a percentage it has not met before. That is
+ * also why the duplicate check matters: two rows at 10% are not two tiers, they
+ * are one tier written twice, and the second silently wins.
+ */
+interface LadderRow {
+  existing: boolean;
+  pct: number;
+  points: number;
+  cap: number;
+}
+
+/**
+ * What points buy — and, now, what an owner can change about it.
+ *
+ * The ladder is the whole of the points economy from the venue's side: how deep
+ * a discount is, what it costs in points, and the most it may ever take off one
+ * bill. The third is what makes the second safe to be wrong — a median check
+ * that doubles overnight still cannot produce a voucher larger than the cap the
+ * owner set.
+ *
+ * Retiring rather than deleting, because `issued_vouchers` already points at
+ * the row: a tier with history behind it is switched off (`active: false`) and
+ * drops out of the ladder on the next read, since `vouchers.tiersFor` selects
+ * the active ones. `PUT …/tiers` is an upsert keyed on the percentage, so what
+ * is sent is what changes and a rung left out of the list is left alone.
+ *
+ * `units` is index-aligned with `budget.tiers` and comes from the caller
+ * because it is `voucherModelFor`'s arithmetic — what one voucher at this tier
+ * is expected to take off a bill, `min(check × pct, cap)`. Recomputing it here
+ * would be the same figure derived twice, which is the thing this dashboard's
+ * whole metrics module exists to prevent.
+ */
+function LadderEditor({
+  budget,
+  units,
+  reload,
+}: {
+  budget: BudgetBody;
+  units: number[];
+  reload: () => void;
+}) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.acts;
+  const vouchers = dashboard.vouchers;
+  const currency = useCurrency();
+  const money = useMoney();
+  const num = useNum();
+  const { busy, run } = useAction(reload);
+  const [editing, setEditing] = useState(false);
+
+  const asRows = useCallback(
+    (): LadderRow[] =>
+      budget.tiers.map((tier) => ({
+        existing: true,
+        pct: tier.discountPct,
+        points: tier.pointsCost,
+        cap: Math.round(minorToEuro(tier.maxDiscountMinor, budget.currency) * currency.rate),
+      })),
+    [budget.tiers, budget.currency, currency.rate],
+  );
+  const [rows, setRows] = useState<LadderRow[]>(asRows);
+
+  const patch = (index: number, next: Partial<LadderRow>) =>
+    setRows((current) => current.map((row, i) => (i === index ? { ...row, ...next } : row)));
+
+  const asDraft = (row: LadderRow, active: boolean): TierDraft => ({
+    discountPct: row.pct,
+    pointsCost: row.points,
+    maxDiscountMinor: euroToMinor(row.cap / currency.rate, budget.currency),
+    active,
+  });
+
+  /* Three things the server would refuse, and one it would silently accept. The
+     silent one is the duplicate: an upsert on the percentage means a second row
+     at 10% overwrites the first, and nothing in the response says so. */
+  const duplicate = new Set(rows.map((row) => row.pct)).size !== rows.length;
+  const incomplete = rows.some((row) => !(row.pct > 0) || !(row.points > 0) || !(row.cap > 0));
+  const working = busy !== null;
+
+  return (
+    <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+      <div className="pd-panel-head">
+        <div>
+          <span className="console-label">{vouchers.tiersTitle}</span>
+          <p className="pd-fine">{vouchers.tiersLede}</p>
+        </div>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => {
+            /* Re-read the server's answer every time the panel opens, so an
+               edit abandoned half-typed does not come back the next time. */
+            setRows(asRows());
+            setEditing((on) => !on);
+          }}
+        >
+          {editing ? copy.ladderDone : copy.ladderEdit}
+        </button>
+      </div>
+
+      {!editing ? (
+        budget.tiers.length === 0 ? (
+          <p className="pd-fine">{dashboard.empty[3].body}</p>
+        ) : (
+          <table className="pd-table">
+            <thead>
+              <tr>
+                <th>{vouchers.columns[0]}</th>
+                <th>{vouchers.columns[1]}</th>
+                <th>{vouchers.buysTitle}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {budget.tiers.map((tier, index) => (
+                <tr key={tier.discountPct}>
+                  <td>
+                    <b>{fill(vouchers.tier, { n: String(tier.discountPct) })}</b>
+                    {/* `copy.tierDetail` also states what share of the pool this
+                        tier has spent, and no endpoint groups spend by tier — so
+                        the sentence that needs both is replaced by the half that
+                        is true. */}
+                    <span className="pd-fine">
+                      {fill(dashboard.unmeasured.tierUnit, {
+                        unit: money(units[index] ?? 0, 'unit'),
+                      })}
+                    </span>
+                  </td>
+                  <td>{fill(vouchers.points, { n: num(tier.pointsCost) })}</td>
+                  <td>{num(tier.estimatedRemaining)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
+      ) : (
+        <>
+          {/* `pd-rung` and not `pd-tier-row`: that name is already a six-column
+              grid with a pointer cursor further down `site.css`, left behind by
+              the seeded ladder this replaced. Grep before naming a class — the
+              sheet has no scoping and three collisions have shipped bugs here
+              already (root `CLAUDE.md`). */}
+          {rows.map((row, index) => (
+            <div className="pd-rung" key={`${row.pct}-${index}`}>
+              <div className="field">
+                <span className="field-label">{copy.tierPct}</span>
+                <NumberWell
+                  value={row.pct}
+                  onChange={(next) => patch(index, { pct: Math.round(next) })}
+                  unit={copy.pctUnit}
+                  label={copy.tierPct}
+                  min={1}
+                />
+              </div>
+              <div className="field">
+                <span className="field-label">{copy.tierPoints}</span>
+                <NumberWell
+                  value={row.points}
+                  onChange={(next) => patch(index, { points: Math.round(next) })}
+                  unit={vouchers.pointsUnit}
+                  label={copy.tierPoints}
+                  min={1}
+                />
+              </div>
+              <div className="field">
+                <span className="field-label">{copy.tierCap}</span>
+                <NumberWell
+                  value={row.cap}
+                  onChange={(next) => patch(index, { cap: next })}
+                  unit={currency.symbol}
+                  label={copy.tierCap}
+                  min={1}
+                />
+              </div>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                disabled={working}
+                onClick={() => {
+                  /* A rung the server has never seen is simply dropped from the
+                     list. One it knows about is switched off, because a voucher
+                     somebody is holding still points at that row. */
+                  if (!row.existing) {
+                    setRows((current) => current.filter((_, i) => i !== index));
+                    return;
+                  }
+                  void run('retire', copy.tierRetired, () =>
+                    setVoucherTiers(budget.venueId, [asDraft(row, false)]),
+                  );
+                }}
+              >
+                {copy.tierRetire}
+              </button>
+            </div>
+          ))}
+
+          {duplicate && (
+            <p className="field-error" role="alert">
+              {copy.tierDuplicate}
+            </p>
+          )}
+          <p className="pd-fine">{vouchers.pointsOrder}</p>
+
+          <div className="pd-inline-form">
+            <button
+              type="button"
+              className="btn btn-ghost"
+              onClick={() =>
+                setRows((current) => [
+                  ...current,
+                  { existing: false, pct: 5, points: 100, cap: 10 },
+                ])
+              }
+            >
+              {copy.tierAdd}
+            </button>
+            <button
+              type="button"
+              className="btn btn-solid"
+              disabled={working || duplicate || incomplete || rows.length === 0}
+              onClick={() =>
+                void run('tiers', copy.tiersSaved, async () => {
+                  await setVoucherTiers(
+                    budget.venueId,
+                    rows.map((row) => asDraft(row, true)),
+                  );
+                  setEditing(false);
+                })
+              }
+            >
+              {copy.save}
+            </button>
+          </div>
+        </>
+      )}
+      <p className="pd-fine">{vouchers.buysNote}</p>
+    </div>
+  );
+}
+
+/**
  * The voucher ladder and the pool behind it.
  *
- * The prototype made the budget, the average transaction and the per-voucher
- * cap into three editable fields, and recomputed the pool from them on this
- * device — which was honest while there was no server, because the whole pool
- * was invented anyway. There is a server now, and nothing here writes to it, so
- * the rule in `CLAUDE.md` applies in the other direction: **a figure the screen
- * cannot honestly make editable is shown as a fact rather than a field.** All
- * three are read off `GET /v1/partner/venues/:id/budget`.
+ * The three figures at the top are still facts rather than fields — the average
+ * transaction is the median of the venue's own confirmed scans and the pool is
+ * `budget_movements` added up, and neither is a thing to type over. What *is*
+ * typeable now lives in its own two panels below, because the difference
+ * between "this is what your month looks like" and "this is what I am changing"
+ * is worth a panel border.
  *
- * Take-up per tier — how many were issued and how many used — is *not* on that
- * response, so the "given out" and "used" columns are gone rather than zeroed.
- * What the ladder does carry is the server's own `estimatedRemaining`: how many
- * more of this tier the remaining pool could fund, explicitly an estimate and
- * not a cap.
+ * Take-up per tier — how many were issued and how many used — is not on this
+ * response, so those columns are named as missing rather than zeroed.
  */
 function Vouchers() {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.vouchers;
   const money = useMoney();
-  const num = useNum();
 
-  const venue = usePartnerVenueId();
-  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
-  const budgetApi = usePartnerBudget(venueId);
-  const state = chain(venue, budgetApi);
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const budgetApi = usePartnerBudget(venue?.id ?? null);
+  const state = chain(venueApi, budgetApi);
 
   return (
     <Screen state={state} index={3}>
@@ -1043,17 +1860,16 @@ function Vouchers() {
           avgSpend,
           Math.max(0, ...tiers.map((t) => t.cap)),
         );
-
-        if (budget.voucher.base === 0 && tiers.length === 0) {
-          return (
-            <div className="pd-stack">
-              <Unmeasured index={3} />
-            </div>
-          );
-        }
+        const nothingYet = budget.voucher.base === 0 && tiers.length === 0;
 
         return (
           <div className="pd-stack">
+            {/* Nothing set up yet says so *and* leaves the controls that fix it
+                on the screen. The panel used to be the whole screen, with a
+                button under it that raised `notWired`; an explanation with the
+                remedy one panel below needs no button at all. */}
+            {nothingYet && <Unmeasured index={3} />}
+
             <div className="pd-glass pd-panel" data-reveal>
               <div className="pd-panel-head">
                 <span className="console-label">{copy.budgetTitle}</span>
@@ -1080,9 +1896,10 @@ function Vouchers() {
                 note={money(toEuro(budget.voucher.available), 'exact')}
               />
 
-              {/* Facts, not fields. Nothing on this screen writes, and the
-                  three inputs the prototype offered here are all things the
-                  server owns. */}
+              {/* Facts, not fields. The median check is the venue's own trading
+                  and the cap belongs to the ladder below, which is where it is
+                  edited; only the total is typeable, and it is typeable in the
+                  panel whose whole subject is changing it. */}
               <div className="pd-rows">
                 <div>
                   <span>{copy.budgetLabel}</span>
@@ -1104,44 +1921,13 @@ function Vouchers() {
               <p className="pd-fine">{copy.avgNote}</p>
             </div>
 
-            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
-              <div className="pd-panel-head">
-                <span className="console-label">{copy.tiersTitle}</span>
-                <p className="pd-fine">{copy.tiersLede}</p>
-              </div>
-              {tiers.length === 0 ? (
-                <p className="pd-fine">{dashboard.empty[3].body}</p>
-              ) : (
-                <table className="pd-table">
-                  <thead>
-                    <tr>
-                      <th>{copy.columns[0]}</th>
-                      <th>{copy.columns[1]}</th>
-                      <th>{copy.buysTitle}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {model.tiers.map((tier) => (
-                      <tr key={tier.pct}>
-                        <td>
-                          <b>{fill(copy.tier, { n: String(tier.pct) })}</b>
-                          {/* `copy.tierDetail` also states what share of the
-                              pool this tier has spent, and no endpoint groups
-                              spend by tier — so the sentence that needs both is
-                              replaced by the half that is true. */}
-                          <span className="pd-fine">
-                            {fill(dashboard.unmeasured.tierUnit, { unit: money(tier.unit, 'unit') })}
-                          </span>
-                        </td>
-                        <td>{fill(copy.points, { n: num(tier.points) })}</td>
-                        <td>{num(tier.remaining)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )}
-              <p className="pd-fine">{copy.buysNote}</p>
-            </div>
+            <BudgetEditor budget={budget} reload={budgetApi.reload} />
+
+            <LadderEditor
+              budget={budget}
+              units={model.tiers.map((tier) => tier.unit)}
+              reload={budgetApi.reload}
+            />
 
             {/* Per-tier take-up: `issued_vouchers` has it, no partner endpoint
                 returns it grouped by tier. Named rather than zeroed. */}
@@ -1161,15 +1947,17 @@ function Customers() {
   const money = useMoney();
   const num = useNum();
 
-  const venue = usePartnerVenueId();
-  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
-  const analyticsApi = usePartnerAnalytics(venueId);
-  const customersApi = usePartnerCustomers(venueId);
-  const budgetApi = usePartnerBudget(venueId);
-  const state = chain(venue, analyticsApi);
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const analyticsApi = usePartnerAnalytics(venue?.id ?? null);
+  const customersApi = usePartnerCustomers(venue?.id ?? null);
+  const state = chain(venueApi, analyticsApi);
 
   const roster = customersApi.state.status === 'ready' ? customersApi.state.data : null;
-  const currency = budgetApi.state.status === 'ready' ? budgetApi.state.data.currency : 'EUR';
+  /* Off the venue row rather than off the budget. Reading it from `/budget`
+     meant a screen that could reach `/analytics` and not `/budget` priced a
+     Kraków café's spend in euros — the same number, at four times the value. */
+  const currency = venue?.currency ?? 'EUR';
 
   return (
     <Screen state={state} index={4}>
@@ -1437,42 +2225,216 @@ function Customers() {
 /* ──────────────────────────────────────────────────────────────── scans ── */
 
 /**
+ * The queue at the counter.
+ *
+ * §11.1, and the one screen on this dashboard where the owner is standing at a
+ * till rather than reading a report: a customer has scanned, the gate has opened
+ * a transaction, and nothing of value exists until somebody presses confirm
+ * (§3.1). This is that press, and `POST /v1/gate/transactions/:id/confirm` is
+ * where every point, stamp and discount in the whole product is actually
+ * granted.
+ *
+ * Three things it has to get right:
+ *
+ * - **`amount_minor` is null until step three, and that is not a missing
+ *   figure.** It is the state where a customer has scanned and nobody has
+ *   entered the bill. Drawing it as 0 would say they bought nothing, and
+ *   confirming at that point is a real thing to do — an earn with no amount is
+ *   how a venue with no minimum spend works.
+ * - **The press carries an idempotency key**, because a double press on a slow
+ *   connection must not pay twice. The server settles that by storing the first
+ *   response against the key; the disabled button is a courtesy, not the rule.
+ * - **The queue is re-read, not patched.** What the confirm *granted* is the
+ *   receipt's business, and a row struck off locally would leave the counts in
+ *   the tiles above disagreeing with the list below them.
+ */
+function Queue({ venueId, currency }: { venueId: string | null; currency: string }) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.acts;
+  const pendingApi = usePartnerPending(venueId);
+  const { busy, run } = useAction(pendingApi.reload);
+
+  const rows = pendingApi.state.status === 'ready' ? pendingApi.state.data : null;
+
+  return (
+    <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+      <div className="pd-panel-head">
+        <div>
+          <span className="console-label">{copy.queueTitle}</span>
+          <p className="pd-fine">{copy.queueLede}</p>
+        </div>
+        <button type="button" className="btn btn-ghost" onClick={pendingApi.reload}>
+          {copy.refresh}
+        </button>
+      </div>
+
+      {rows === null ? (
+        <p className="pd-fine">
+          {pendingApi.state.status === 'loading'
+            ? dashboard.unmeasured.asking
+            : dashboard.unmeasured.serverSilent}
+        </p>
+      ) : rows.length === 0 ? (
+        <p className="pd-fine">{copy.queueEmpty}</p>
+      ) : (
+        rows.map((row) => (
+          <ScanRow
+            key={row.id}
+            row={row}
+            currency={currency}
+            busy={busy !== null}
+            run={run}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
+/**
+ * One scan waiting at the till, and the bill that has to be on it first.
+ *
+ * The gate has four steps and this row is three of them. `confirm` refuses with
+ * `invalid_state: no amount has been entered` until step three has happened, so
+ * a Confirm button on its own is a button that fails every time — which is what
+ * the first version of this panel was, and the server said so.
+ *
+ * Who fills the bill in is `venues.amount_entry`, carried on the transaction:
+ *
+ * - **`cashier`**, the default — the owner types it here, and Confirm sends the
+ *   amount and then commits. Two calls, one press, because they are one act at
+ *   a counter: the till says 24 złoty and the phone is being handed back.
+ * - **`customer`** — the field is not offered at all, and the row says what it
+ *   is waiting for. Drawing a field the server would refuse the owner's input
+ *   from is worse than drawing nothing.
+ *
+ * The well holds the **reader's** currency like every other typed amount on this
+ * dashboard, and crosses to the venue's minor units at the request.
+ */
+function ScanRow({
+  row,
+  currency,
+  busy,
+  run,
+}: {
+  row: PendingScan;
+  /** The venue's currency code — what `amount_minor` is counted in. */
+  currency: string;
+  busy: boolean;
+  run: (key: string, done: string, work: () => Promise<unknown>) => Promise<void>;
+}) {
+  const copy = useCopy().dashboard.acts;
+  const money = useMoney();
+  const reader = useCurrency();
+  const [bill, setBill] = useState(0);
+
+  const known = row.amount_minor !== null;
+  const mine = row.amount_entered_by !== 'customer';
+  /* Nothing to confirm until there is a bill — unless the venue is waiting on
+     the customer, in which case there is nothing this screen can do either. */
+  const ready = known || (mine && bill > 0);
+
+  return (
+    <div className="pd-run-row">
+      <span className="pd-kind" data-kind="deal">
+        {copy.intents[row.intent]}
+      </span>
+      <div className="pd-run-name">
+        {known ? (
+          <b>{money(minorToEuro(row.amount_minor ?? 0, currency), 'exact')}</b>
+        ) : mine ? (
+          <div className="field">
+            <NumberWell
+              value={bill}
+              onChange={setBill}
+              unit={reader.symbol}
+              label={copy.billLabel}
+              min={0}
+            />
+          </div>
+        ) : (
+          <b>{copy.waitingCustomer}</b>
+        )}
+        <span className="pd-fine">
+          {fill(copy.openedAt, { at: row.opened_at.slice(11, 16) })}
+        </span>
+      </div>
+      <span className="pd-row-acts">
+        <button
+          type="button"
+          className="btn btn-solid"
+          disabled={busy || !ready}
+          onClick={() =>
+            void run(row.id, copy.confirmed, async () => {
+              if (!known) {
+                await enterScanAmount(
+                  row.id,
+                  euroToMinor(bill / reader.rate, currency),
+                );
+              }
+              await confirmScan(row.id);
+            })
+          }
+        >
+          {copy.confirm}
+        </button>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          disabled={busy}
+          onClick={() =>
+            void run(row.id, copy.turnedAway, () => cancelScan(row.id, 'partner_declined'))
+          }
+        >
+          {copy.turnAway}
+        </button>
+      </span>
+    </div>
+  );
+}
+
+/**
  * Today at the counter.
  *
  * Forty-eight receipts used to be generated here from the row index — names
- * from a list of sixteen, a spend, a campaign, a receipt code — and paged
- * twelve at a time. `analytics.today` counts the real thing: visits, distinct
- * customers, sales and the transactions still waiting to be confirmed. There is
- * no endpoint that *lists* a venue's scans, so the counts are shown and the log
- * is named as missing rather than manufactured.
+ * from a list of sixteen, a spend, a campaign, a receipt code — and paged twelve
+ * at a time. `analytics.today` counts the real thing: visits, distinct
+ * customers, sales and the transactions still waiting to be confirmed.
+ *
+ * There is still no endpoint that lists a venue's *completed* scans, so the
+ * receipt log stays absent rather than manufactured. What was wrong about the
+ * old note is that it said so about the whole screen: `GET /v1/venues/:id/pending`
+ * has the transactions that have not been confirmed yet, which is the half a
+ * person standing at the till actually needs — and the count in `today` was
+ * being shown with no way to act on any of it.
  */
 function Scans() {
   const dashboard = useCopy().dashboard;
   const money = useMoney();
   const num = useNum();
 
-  const venue = usePartnerVenueId();
-  const venueId = venue.state.status === 'ready' ? venue.state.data : null;
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venueId = venue?.id ?? null;
   const todayApi = usePartnerToday(venueId);
-  const budgetApi = usePartnerBudget(venueId);
-  const state = chain(venue, todayApi);
+  const state = chain(venueApi, todayApi);
 
-  const currency = budgetApi.state.status === 'ready' ? budgetApi.state.data.currency : 'EUR';
+  const currency = venue?.currency ?? 'EUR';
 
   return (
     <Screen state={state} index={6}>
       {(today) => {
         const visits = metricValue(today.visits) ?? 0;
-        if (visits === 0 && today.pendingConfirmations === 0) {
-          return (
-            <div className="pd-stack">
-              <Unmeasured index={6} />
-            </div>
-          );
-        }
+        const quiet = visits === 0 && today.pendingConfirmations === 0;
 
         return (
           <div className="pd-stack">
+            {/* Nothing today is a fact rather than a failure, and the queue
+                stays underneath it: a scan can arrive while the screen is open,
+                and the panel that would show it must not be the panel that
+                disappears when there is nothing in it yet. */}
+            {quiet && <Unmeasured index={6} />}
+
             <div className="pd-tiles">
               <div className="pd-glass pd-tile" data-reveal>
                 <span>{dashboard.overview.tiles[0]}</span>
@@ -1503,6 +2465,10 @@ function Scans() {
               </div>
             </div>
 
+            <Queue venueId={venueId} currency={currency} />
+
+            {/* The receipt log: `transactions` holds every confirmed scan, and
+                no partner endpoint lists them. Named rather than invented. */}
             <NoSource title={dashboard.screens[6].name} />
           </div>
         );

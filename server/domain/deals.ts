@@ -365,7 +365,53 @@ export function runLifecycle(db: Db, at: Iso = now()): { started: number; ended:
 }
 
 /** §11.2. The partner's urgent levers, each one a single guarded action. */
-export function setStatus(db: Db, dealId: string, status: DealStatus, at: Iso = now()): Deal {
+/**
+ * The statuses a deal is *visible to customers* in.
+ *
+ * `browse` and the app read these, which is what makes moving into one a
+ * publication rather than a bookkeeping change — see `setStatus`.
+ */
+const PUBLIC_STATUSES: DealStatus[] = ['live', 'scheduled'];
+
+/**
+ * Move a deal between states.
+ *
+ * **Moving *into* a public state is publishing, and is gated like publishing.**
+ * This function used to write the column and nothing else, which meant
+ * `POST /v1/partner/deals/:id/status {status:"live"}` reached the public
+ * catalogue without any of the three checks `partners.publishDeal` makes:
+ * the venue did not have to be verified, the plan's `live_deals` cap did not
+ * apply, and a deal with no title in any language could go out blank. An
+ * unverified venue could put an offer in front of customers by asking for the
+ * state directly instead of asking to publish — proven against a running
+ * server, where `publish` refused with `not_verified` and `status: 'live'`
+ * succeeded on the same deal a second later.
+ *
+ * The guard lives here rather than on the route because the route was never the
+ * problem: any caller of this function was one, and a rule enforced at one of
+ * two doors is a rule with a door left open. `publishDeal` writes the column
+ * itself after running the same checks, so it does not pay for them twice.
+ *
+ * Everything else — pausing, archiving, expiring — is unguarded on purpose:
+ * taking an offer *down* is never the dangerous direction, and needing an
+ * entitlement to stop something is how a lapsed plan traps a live deal on
+ * screen.
+ */
+export function setStatus(
+  db: Db,
+  dealId: string,
+  status: DealStatus,
+  at: Iso = now(),
+  /**
+   * Who is asking, when the answer might be "you may not".
+   *
+   * Optional so the internal callers that have already earned the transition
+   * are unchanged; a route handler passes it and gets the gates.
+   */
+  guard?: { check: (deal: Deal) => void },
+): Deal {
+  if (PUBLIC_STATUSES.includes(status) && guard) guard.check(getDeal(db, dealId));
+
   db.run(`UPDATE hot_deals SET status = $s, updated_at = $t WHERE id = $i`, {
     s: status,
     t: at,

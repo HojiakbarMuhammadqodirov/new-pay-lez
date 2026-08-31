@@ -29,9 +29,13 @@ export interface DashboardShell {
   /**
    * Raise the confirmation strip.
    *
-   * Every one of these says what *would* have happened, because nothing behind
-   * this screen writes anything — same rule as `copy.dashboard.notWired`, in the
-   * one place where a button has to acknowledge the press.
+   * It used to say what *would* have happened, because nothing behind this
+   * screen wrote anything. Now it says what did: every press that reaches the
+   * server ends here, in one of three sentences — it worked, the server was not
+   * there, or the server refused and here is why. That is the whole reason it
+   * lives on the frame rather than on a screen: fourteen controls across five
+   * screens report into one strip, and a second strip somewhere else would be a
+   * second opinion about whether the press landed.
    */
   toast: (message: string) => void;
   /**

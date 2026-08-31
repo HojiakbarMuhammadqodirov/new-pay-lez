@@ -422,7 +422,16 @@ export const partnerRoutes: Route[] = [
       const deal = deals.getDeal(ctx.db, ctx.params.id);
       if (deal.venue_id) gate.requireStaff(ctx.db, deal.venue_id, actor(ctx).user.id);
       const status = oneOf(ctx.body, 'status', ['live', 'paused', 'archived'] as const);
-      const updated = deals.setStatus(ctx.db, deal.id, status, ctx.at);
+      /*
+       * Resuming a paused deal puts it back in front of customers, so it is
+       * publishing and is checked like publishing — the venue still has to be
+       * verified and the plan's live-deal cap still has to have room. Taking one
+       * down needs no permission, which is why the guard only runs on the way
+       * up. See `deals.setStatus`.
+       */
+      const updated = deals.setStatus(ctx.db, deal.id, status, ctx.at, {
+        check: () => partners.assertPublishable(ctx.db, deal.id),
+      });
       audit.record(ctx.db, {
         actorId: actor(ctx).user.id,
         action: `deal.${status}`,

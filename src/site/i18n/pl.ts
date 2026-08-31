@@ -809,7 +809,89 @@ export const pl: Dictionary = {
         action: 'Pobierz swój kod QR',
       },
     ],
-    notWired: 'Niepodłączone w tej wersji.',
+    acts: {
+      column: 'Działania',
+
+      publish: 'Opublikuj',
+      pause: 'Wstrzymaj',
+      resume: 'Wznów',
+      extend: 'Przedłuż',
+      end: 'Zakończ',
+      endSure: 'Na pewno?',
+      notify: 'Powiadom',
+      send: 'Zaplanuj',
+      save: 'Zapisz',
+      close: 'Zamknij',
+      refresh: 'Odśwież',
+      until: 'Nowa data końca',
+      sendAt: 'Kiedy wyjdzie',
+
+      published: 'Opublikowane. Jest już w aplikacji.',
+      paused: 'Wstrzymane. Klienci już tego nie widzą.',
+      resumed: 'Znowu działa.',
+      extended: 'Data końca przesunięta.',
+      ended: 'Zakończone. Tego już nie cofniesz.',
+      notified: 'Powiadomienie zaplanowane.',
+
+      offline: 'Nie udało się połączyć z serwerem. Nic się nie zmieniło — spróbuj za minutę.',
+      refused: 'Serwer tego nie przyjął: {why}',
+
+      budgetTitle: 'Ustaw budżet na miesiąc',
+      budgetLede:
+        'Jedna kwota na miesiąc, podzielona między nagrody lojalnościowe i zniżki na bony. Nie może spaść poniżej tego, co już wydane lub odłożone.',
+      budgetTotal: 'Łącznie w tym miesiącu',
+      budgetShare: 'Część na lojalność',
+      shareUnit: '% na lojalność',
+      budgetShareNote: '{loyalty} na nagrody lojalnościowe, {voucher} na zniżki z bonów.',
+      budgetSaved: 'Budżet zapisany.',
+      moveTitle: 'Przenieś pieniądze między pulami',
+      moveAmount: 'Ile przenieść',
+      moveDo: 'Przenieś',
+      moveDir: '{from} → {to}',
+      moveNote:
+        'Przenosi się tylko to, co wciąż dostępne. To, co odłożone, należy do klienta, który już na to zapracował.',
+      moved: 'Przeniesione.',
+      hint: 'Pula „{to}” jest prawie pusta, a „{from}” ma zapas. Warto przenieść około {amount}.',
+      pools: { loyalty: 'Lojalność', voucher: 'Bony' },
+
+      ladderEdit: 'Zmień, co dają punkty',
+      ladderDone: 'Gotowe',
+      tierPct: 'Zniżka',
+      tierPoints: 'Ile kosztuje punktów',
+      tierCap: 'Najwięcej z jednego rachunku',
+      pctUnit: '% zniżki',
+      tierAdd: 'Dodaj próg',
+      tierRetire: 'Wycofaj',
+      tierRetired: 'Próg wycofany. Bony już wydane w tym progu nadal działają.',
+      tiersSaved: 'Progi punktowe zapisane.',
+      tierDuplicate:
+        'Dwa progi nie mogą mieć tej samej zniżki — drugi zastąpiłby pierwszy.',
+
+      queueTitle: 'Czeka na potwierdzenie',
+      queueLede:
+        'Klient zeskanował kod i nic jeszcze nie zostało przyznane. Potwierdź, a punkty, pieczątki i zniżki wykonają się naraz.',
+      queueEmpty:
+        'Nic nie czeka. Skan pojawia się tutaj w kilka sekund po tym, jak klient podniesie telefon.',
+      confirm: 'Potwierdź',
+      turnAway: 'Odmów',
+      confirmed: 'Potwierdzone. Klient ma swoje punkty.',
+      turnedAway: 'Odmówione. Nic nie zostało przyznane.',
+      billLabel: 'Kwota rachunku',
+      waitingCustomer: 'Czekamy, aż klient wpisze kwotę',
+      openedAt: 'Zeskanowano o {at}',
+      intents: {
+        earn: 'Zbieranie',
+        voucher_redeem: 'Bon',
+        reward_redeem: 'Nagroda',
+      },
+
+      exportLocked: 'Eksport CSV nie jest częścią planu tego lokalu.',
+      previewTitle: 'Twoja wizytówka oczami klienta',
+      previewLede:
+        'Odczytane z serwera, więc to wersja zapisana, a nie ta wpisana w formularzu.',
+      previewVouchers: 'Punkty akceptowane',
+      previewNoVouchers: 'Punkty jeszcze nieakceptowane',
+    },
 
     unmeasured: {
       noSession:
@@ -914,7 +996,7 @@ export const pl: Dictionary = {
 
       proofTitle: 'Jedyna rzecz, którą możemy udowodnić',
       proof:
-        'Klienci w Twoich kampaniach lojalnościowych przychodzą {after} razy w miesiącu, wobec {before} razy przed dołączeniem.',
+        'Klienci w Twoich kampaniach lojalnościowych przychodzą {n}× częściej niż przed dołączeniem.',
       proofNote: 'Policzone z Twoich własnych skanów QR, nie oszacowane. Bez integracji z kasą.',
       before: 'przedtem',
       now: 'teraz',
@@ -1015,7 +1097,7 @@ export const pl: Dictionary = {
         scheduled: 'Zaplanowana',
         paused: 'Wstrzymana',
         expired: 'Wygasła',
-        ended: 'Zakończona',
+        archived: 'Zakończona',
       },
       search: 'Szukaj wśród swoich okazji',
       filters: ['Wszystkie', 'Aktywne', 'Zaplanowane', 'Wstrzymane', 'Wygasłe'],
@@ -1085,7 +1167,7 @@ export const pl: Dictionary = {
         paused: 'Wznów',
         scheduled: 'Wstrzymaj',
         expired: 'Skopiuj',
-        ended: 'Skopiuj',
+        archived: 'Skopiuj',
       },
       pointsNote: 'Oferta punktowa — nic Cię nie kosztuje przy kasie',
       costEstimate: 'szacunek',
@@ -1430,6 +1512,10 @@ export const pl: Dictionary = {
         savedUnverified: 'Zapisano jako wersję roboczą. Trafi do aplikacji, gdy Twój lokal zostanie zweryfikowany — zajmujemy się tym.',
         savedNotLive: 'Zapisano jako wersję roboczą, ale straciliśmy połączenie przed publikacją. Opublikuj z listy Hot deals.',
         savedNotLiveWhy: 'Zapisano jako wersję roboczą. Nie trafiło do aplikacji: {why}',
+        savedPlanFull: 'Zapisano jako wersję roboczą. Twój plan pozwala na jedną aktywną ofertę naraz — wstrzymaj tę, która działa, i opublikuj tę z listy ofert.',
+        savedNoPush: 'Zapisano jako wersję roboczą. Powiadomienie nie wyjdzie — wersji roboczej nie ma w aplikacji.',
+        publishedNotified: 'Opublikowane, a powiadomienie wyjdzie o {at}.',
+        publishedNoPush: 'Opublikowane i działa. Powiadomienia nie udało się zaplanować: {why}',
       },
       campaign: {
         kicker: 'Nowa kampania lojalnościowa',
@@ -1472,6 +1558,8 @@ export const pl: Dictionary = {
         summaryNote:
           'Pieniądze są rezerwowane z budżetu lojalnościowego, gdy klient się kwalifikuje, a nie gdy odbiera nagrodę. Jeśli nagroda wygaśnie, wracają.',
         summaryReward: 'nagroda',
+        started: 'Działa. Liczy od następnej wizyty.',
+        costError: 'Podaj, ile kosztuje Cię jedna nagroda — pieniądze są rezerwowane z budżetu lojalnościowego w chwili, gdy ktoś ją zdobędzie.',
       },
       valid: 'Popraw {n} rzecz powyżej przed publikacją.',
       validPlural: 'Popraw {n} rzeczy powyżej przed publikacją.',

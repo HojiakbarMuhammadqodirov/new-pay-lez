@@ -676,25 +676,12 @@ export function publishDeal(
   input: { dealId: string; actorId: string; at?: Iso },
 ): deals.Deal {
   const at = input.at ?? now();
-  const deal = deals.getDeal(db, input.dealId);
-  if (!deal.venue_id) throw new DomainError('invalid_state', 'deal has no venue');
-  const venue = getVenue(db, deal.venue_id);
-  requireVerified(venue);
-
-  const ent = entitlements.entitlementsFor(db, { venueId: venue.id });
-  const live =
-    db.get<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM hot_deals WHERE venue_id = $v AND status IN ('live', 'scheduled')`,
-      { v: venue.id },
-    )?.n ?? 0;
-  entitlements.requireCapacity(ent, 'live_deals', live, 1);
-
+  const deal = assertPublishable(db, input.dealId);
+  /* Re-read for the two things the audit entry and the moderation row need.
+     `assertPublishable` proved them; it does not carry them back, because its
+     job is the verdict rather than the payload. */
+  const venue = getVenue(db, deal.venue_id!);
   const filled = deals.completeness(db, input.dealId);
-  if (filled.filled.length === 0) {
-    throw new DomainError('validation_failed', 'a deal needs a title and description in at least one language', {
-      missing: filled.missing,
-    });
-  }
 
   const scheduled = deal.valid_from && deal.valid_from > at;
   db.run(
@@ -731,4 +718,45 @@ export function dealsFor(db: Db, venueId: string) {
       funnel: deals.funnel(db, deal.id),
       translations: deals.completeness(db, deal.id),
     }));
+}
+
+/**
+ * The three gates a deal has to clear before customers can see it.
+ *
+ * Extracted so the *two* doors into a public state enforce the same rule.
+ * `publishDeal` was one of them; `deals.setStatus` was the other, and it had no
+ * gates at all — an unverified venue could reach the public catalogue by asking
+ * for the state instead of asking to publish. A rule enforced at one of two
+ * doors is a rule with a door left open, so there is now one function and both
+ * call it.
+ *
+ * The order is the order that gives the most useful error first: unverified is
+ * a thing an operator fixes, a full plan is a thing the owner fixes, and an
+ * empty deal is a thing they fix in the drawer they just left.
+ */
+export function assertPublishable(db: Db, dealId: string): deals.Deal {
+  const deal = deals.getDeal(db, dealId);
+  if (!deal.venue_id) throw new DomainError('invalid_state', 'deal has no venue');
+  const venue = getVenue(db, deal.venue_id);
+  requireVerified(venue);
+
+  const ent = entitlements.entitlementsFor(db, { venueId: venue.id });
+  /* The deal being resumed is not counted, because it is not live yet — so the
+     comparison is "is there room for one more", which is the same question
+     publishing asks. */
+  const live =
+    db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM hot_deals
+        WHERE venue_id = $v AND status IN ('live', 'scheduled') AND id <> $d`,
+      { v: venue.id, d: dealId },
+    )?.n ?? 0;
+  entitlements.requireCapacity(ent, 'live_deals', live, 1);
+
+  const filled = deals.completeness(db, dealId);
+  if (filled.filled.length === 0) {
+    throw new DomainError('validation_failed', 'a deal needs a title and description in at least one language', {
+      missing: filled.missing,
+    });
+  }
+  return deal;
 }
