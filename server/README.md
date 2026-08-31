@@ -27,7 +27,7 @@ files are not found.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 537 checks, no browser, no network
+npm run verify:api     # the test suite — 579 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -218,15 +218,26 @@ is worth having here, and it is one sentence:
 > **Every finished round costs one energy, win or lose, and nothing else bounds
 > a day.** Energy refills one per `energy_regen_minutes` up to `daily_energy`, so
 > a day is `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank:
-> **free 6 sustained and 10 in a burst, Pro 8/14, Premium 12/22.**
+> **free 12 sustained and 16 in a burst, Pro 24/30, Premium 48/58.**
 
 Both halves of that are recent and both replaced something. Charging a *win* is
 what makes the pool a limiter rather than a decoration — losses only was a tax on
 being bad at quizzes, and two of the seven games cannot be lost at all, so it
 bounded the struggling player and nobody else. Refilling on a clock is what makes
-charging fair: spend the tank at nine in the morning and the wait is hours, not
-the rest of the day. A round that is *abandoned* still costs nothing, because the
-charge is written in `games.finish` and nowhere else.
+charging fair: spend the tank at nine in the morning and the wait is an hour or
+two, not the rest of the day. A round that is *abandoned* still costs nothing,
+because the charge is written in `games.finish` and nowhere else.
+
+**The clocks have just been cut hard and the ceilings have not moved**:
+`energy_regen_minutes` went 240/180/120 → **120/60/30** while `daily_energy`
+stayed at 4/6/10, which took a day from 10/14/22 rounds to 16/30/58. What a plan
+buys is now almost entirely the refill: the tank is a burst allowance somebody
+spends in the first ten minutes, and the clock is the evening. Six figures moved
+with that pair — the sustained and burst rates on all three tiers — and every one
+of them is written down in `API.md`, `FLUTTER-BRIEF.md` and `openapi.ts` as well
+as here, which is why `verify.ts` asserts all three day sizes off
+`plan_entitlements` rather than off `CONFIG` (only the free row is a copy of the
+config; Pro and Premium live nowhere else).
 
 `games.energyFor` reconstructs the tank from `game_sessions.life_spent` and
 `finished_at` at the instant somebody asks — no scheduler, no refill job, the
@@ -243,7 +254,42 @@ key or entitlement is named after either of them — `daily_counters.lives_used`
 also cannot stand in for the tank for a reason that is not about its name: it is
 bucketed by day, and a regen clock needs an instant.
 
-### The five rules this economy used to have and does not
+### What a round pays
+
+Seven games, four scorers, and one rounding step. The tables are in
+`CONFIG.games`; the shape is:
+
+| Game | Raw |
+| --- | --- |
+| `brain`, `flags`, `capitals`, `poland` | 1 per correct answer, **+1** for all five, **+2/+1/0** for a clean sweep in ≤10s / ≤15s / slower. Ceiling 8 |
+| `word_builder` | **the word's own tier** (1/2/3), **halved** if it was hinted, **+1** for solving all five first-try and hint-free |
+| `memory_match` | elapsed time alone: ≤18s → 8, ≤23s → 6, slower → 3 |
+| `flight` | **half a point** per gap cleared, capped at 20. Five gaps decide `won`, not what it pays |
+
+Then `score = floor(raw × points_multiplier)` and that is the whole of it.
+
+Three things about that are load-bearing:
+
+- **The clock is the server's**, for both the quizzes' speed bonus and Memory
+  Match, read as the span from the first `game_events` row to the last. A client
+  has no clock this server is willing to read, and a reported duration is one a
+  modified client invents.
+- **A band boundary is inclusive, and the field is named for the comparison.**
+  `throughSeconds` is compared with `<=`, so a round finishing on the stroke of
+  ten seconds gets the ten-second band. "Under 10" and "up to 10" are different
+  rules and a field called `under` compared with `<=` is a lie about one of them.
+- **The round is floored once, at the end, after the multiplier.** Two scorers
+  return halves — a hinted word and a flight gap — and `domain/games.ts` carries
+  the exact sum through to `ledger.earn`, which is where it becomes points.
+  Flooring per item throws those halves away one at a time, and the loss only
+  becomes visible on a paid tier: seven gaps is 3.5, which banks 4 on Pro and
+  would bank 3 if the scorer had rounded first. `verify.ts` checks exactly that.
+
+The quiz speed bonus is paid **only on a clean sweep**, which is what stops the
+fastest way through a quiz being to answer five questions wrong without reading
+them.
+
+### The six rules this economy used to have and does not
 
 Each of them left prose behind in more than one file, which is why they are
 listed rather than simply absent:
@@ -270,10 +316,16 @@ listed rather than simply absent:
   `gate.confirm`.
 - **Energy does not reset at midnight** — and it is not called hearts. The word
   changed with the rule: `CONFIG.points.dailyEnergy` / `energyRegenMinutes`, the
-  entitlements `daily_energy` (4/6/10) and `energy_regen_minutes` (240/180/120),
+  entitlements `daily_energy` (4/6/10) and `energy_regen_minutes` (120/60/30),
   `games.energyFor`, `energyLeft` on both game bodies, `energy` on
   `GET /v1/games/state`, and `no_energy`. `daily_lives` and `life_regen_minutes`
   are retired alongside `round_decay`.
+- **A quiz has no mistake limit and cannot be lost.** All five questions are
+  asked however the first four went; `quizMistakes` and the `mistakesAllowed` key
+  on the round's `content` are both gone. `won` on a quiz means **all five
+  correct** — the only distinction left worth drawing, and the one both quiz
+  bonuses are paid on. A round that ended after two wrong answers took the last
+  question away from exactly the player who needed the practice.
 
 Two rules about what a paid plan buys, and they are easy to break in opposite
 directions:

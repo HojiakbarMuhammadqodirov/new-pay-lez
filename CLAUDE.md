@@ -15,7 +15,7 @@ This file covers the repo as a whole.
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 705 checks: it
+There is no test runner. `npm run verify` is the test suite — 735 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of
@@ -70,7 +70,7 @@ before changing anything under it.
 Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 `node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
 it (migrating, seeding and importing the old database on an empty file);
-`npm run verify:api` is its test suite — 537 checks, the counterpart of
+`npm run verify:api` is its test suite — 579 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture
@@ -83,8 +83,8 @@ still has to come out of something.)
 Win or lose — an abandoned round still costs nothing, because the charge is
 written in `games.finish` and nowhere else. It refills one per
 `energy_regen_minutes` up to `daily_energy`, so a day is
-`daily_energy + 1440 / energy_regen_minutes` rounds from a full tank: free 6
-sustained and 10 in a burst, Pro 8/14, Premium 12/22. Three other brakes have
+`daily_energy + 1440 / energy_regen_minutes` rounds from a full tank: free 12
+sustained and 16 in a burst, Pro 24/30, Premium 48/58. Three other brakes have
 lived here and all three are gone — points expiry, a daily points cap, and a
 per-game decay curve that paid a repeat of the same game less. Charging only a
 *loss* was the version before this one and it bounded nobody: three of the eight
@@ -534,11 +534,26 @@ things this product is for rather than one game played two ways.
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that
 absorbs one missed day. Eight games score seven different ways — a quiz pays per
-right answer, a flight pays per gap past an endless target, Word Builder totals
-five per-word scores plus a perfect-round bonus, Memory Match reads its elapsed
-seconds into one of four bands — and **none of them restates what a streak is.**
+right answer plus a sweep bonus and a band off the round's own clock, a flight
+pays half a point per gap past an endless target, Word Builder pays each word its
+tier and halves any word a hint was spent on, Memory Match reads its elapsed
+seconds into one of three bands — and **none of them restates what a streak is.**
 They compute a number and hand it over. There were two copies of that rule once
 and it would be five by now.
+
+**Nothing that can be lost, is.** Only the flight has a fail state, and what ends
+it is a crash rather than a tally. The quizzes' mistake allowance is gone — a
+round runs to the fifth question however many go wrong — so `won` on a quiz means
+the **clean sweep** and nothing else, which is the only distinction left worth
+drawing and the one the bonuses are paid on. Do not reintroduce a mistake limit
+to make a game harder: it does not make it harder, it makes it shorter, and what
+it takes away is the questions the player paid energy to see.
+
+**Halves exist now, and they are floored once.** A gap is worth 0.5 and a hinted
+word is worth half its tier, so a round can hold an odd number of halves. Every
+such round floors at the end and only at the end (`flightPoints`,
+`wordRoundPoints`) — flooring per item charges the same hint twice, and rounding
+up pays for a gap that was not flown.
 
 **The streak is drawn as seven days, and the week is derived rather than
 stored.** `streakWeek` in `auth/player.ts` reads the run back off
@@ -562,8 +577,8 @@ that looks like a wipe. Bringing one back is a product decision, not a tidy-up.
 
 **Energy is what bounds a day, and it is not called lives.** `MAX_ENERGY` and
 `ENERGY_REGEN_MINUTES` mirror the server's *free-plan* figures (`CONFIG.points`):
-four in the tank, one back every four hours — six rounds a day sustained and ten
-from a full start. The free plan is the only one this site can resolve, because
+four in the tank, one back every two hours — twelve rounds a day sustained and
+sixteen from a full start. The free plan is the only one this site can resolve, because
 it sells no subscription it could read a bigger tank off. `energyOf` derives the
 tank from `energy` + `energyAt` on demand rather than storing a count that would
 be stale the moment the tab was left open — the same construction
@@ -574,7 +589,7 @@ and a missing anchor reads as a full tank.
 
 The gauge that draws it is a **battery** — four blocks in a case with a terminal
 on the end, the block being earned filling live against the real clock in CSS,
-and the wait written beside the count as `+1 in 3h 12m` (`untilNextEnergy`,
+and the wait written beside the count as `+1 in 1h 12m` (`untilNextEnergy`,
 which takes its units from `Intl` and its frame from `copy.games.energyNext`).
 The two states have their own motion and it is the difference between them that
 matters: a spark **crosses** the case while charge is going in, and a full tank
