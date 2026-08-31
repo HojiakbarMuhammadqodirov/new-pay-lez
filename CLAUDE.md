@@ -70,7 +70,7 @@ before changing anything under it.
 Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 `node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
 it (migrating, seeding and importing the old database on an empty file);
-`npm run verify:api` is its test suite — 610 checks, the counterpart of
+`npm run verify:api` is its test suite — 616 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture

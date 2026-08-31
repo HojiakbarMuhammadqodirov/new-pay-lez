@@ -375,6 +375,20 @@ export const authRoutes: Route[] = [
     },
   },
   {
+    /**
+     * Register the signed-in account as a venue owner.
+     *
+     * The site calls this the moment somebody chooses “Business owner”, which
+     * with Google is *after* the session already exists — see `becomePartner`.
+     * Granting a role a person selects is only alarming when the role is
+     * `admin`, and that one is grantable nowhere.
+     */
+    method: 'POST',
+    pattern: '/v1/me/partner',
+    auth: 'user',
+    handler: (ctx) => accounts.becomePartner(ctx.db, actor(ctx).user.id, ctx.at),
+  },
+  {
     /* §1.2: one identity, two experiences, the active one held in the session. */
     method: 'POST',
     pattern: '/v1/me/mode',

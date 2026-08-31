@@ -116,6 +116,34 @@ function grantRole(db: Db, userId: string, role: Role, at: Iso): void {
   });
 }
 
+/**
+ * Become a venue owner, after the fact.
+ *
+ * `partner_owner` was grantable at sign-up and nowhere else, which held for
+ * exactly as long as every account arrived through the password form. Google
+ * broke it: that flow issues a session *before* anybody has been asked what
+ * kind of account this is, so a venue owner signing in with Google was filed as
+ * a consumer and could never own a venue — and had no way back, because the one
+ * moment the role could be granted had already passed.
+ *
+ * **Self-service, and that is not the same concession `admin` refuses.** Anyone
+ * may list a business; that is the product. `admin` is not choosable at any
+ * moment, by anybody, which is why it has no endpoint at all and why this one
+ * grants a single named role rather than taking one as an argument.
+ *
+ * Idempotent — `INSERT OR IGNORE` — so a second call from a retried request or
+ * a second device is a no-op rather than an error.
+ */
+export function becomePartner(db: Db, userId: string, at: Iso = now()): { roles: Role[] } {
+  getUser(db, userId);
+  grantRole(db, userId, 'partner_owner', at);
+  return {
+    roles: db
+      .all<{ role: Role }>(`SELECT role FROM user_roles WHERE user_id = $u`, { u: userId })
+      .map((row) => row.role),
+  };
+}
+
 /* ═══════════════════════════════════════════════ provisional identities ══ */
 
 /**

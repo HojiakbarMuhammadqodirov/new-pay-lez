@@ -28,6 +28,7 @@ import {
 import { navigate } from './router';
 import { LOGO_PX, toSquareDataUrl } from './imageFile';
 import { hasToken } from './api/client';
+import { becomePartner } from './api/consumer';
 import { createVenue, myVenues, submitVerification, updateVenue } from './api/partner';
 
 /**
@@ -385,6 +386,20 @@ export function BusinessForm({ mode }: { mode: 'setup' | 'profile' }) {
   const syncVenue = async (listing: BusinessProfile) => {
     if (!hasToken()) return;
     try {
+      /*
+       * Claim the role first, every time.
+       *
+       * It is idempotent, and asking costs one request against a listing save
+       * that is already several. What it buys is that this works whichever door
+       * the owner came through: the sign-up form grants `partner_owner` from
+       * its own flag, `setType` grants it when a Google visitor answers the
+       * question — and if either was missed, or the account predates both, this
+       * is the moment that cannot be skipped, because the very next call needs
+       * the role. Relying on an earlier grant having happened is how an owner
+       * ends up staring at a listing that saved locally and nowhere else.
+       */
+      await becomePartner();
+
       const mine = await myVenues();
       const body = {
         name: listing.name.trim(),

@@ -339,3 +339,20 @@ export const completeOnboarding = () =>
     /* The account is the key: a retry after a dropped response must pay once. */
     idempotencyKey: 'onboarded',
   });
+
+/**
+ * Register the signed-in account as a venue owner.
+ *
+ * Needed because Google issues a session *before* anybody has been asked what
+ * kind of account this is: the sign-up form knows, and hands `partner: true` to
+ * `/v1/auth/signup`, but a Google visitor picks after they are already signed
+ * in. Without this they were filed as a consumer with no way back, and every
+ * control on the partner dashboard told them there was nowhere to file
+ * anything.
+ *
+ * Idempotent on the server, so calling it for somebody who is already a partner
+ * is a no-op rather than an error — which is what lets the site call it on every
+ * "I am a business" without checking first.
+ */
+export const becomePartner = () =>
+  call<{ roles: string[] }>('/v1/me/partner', { method: 'POST' });

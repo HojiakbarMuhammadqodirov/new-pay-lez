@@ -2057,6 +2057,46 @@
         }
       }
     },
+    "/v1/me/partner": {
+      "post": {
+        "summary": "POST /v1/me/partner",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postMePartner",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/me/mode": {
       "post": {
         "summary": "Switch between personal and business mode",

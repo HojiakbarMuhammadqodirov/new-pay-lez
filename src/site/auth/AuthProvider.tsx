@@ -424,6 +424,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const setType = useCallback((type: AccountType) => {
+    /*
+     * **Tell the server, too, when the answer is "business".**
+     *
+     * `partner_owner` is granted at sign-up from the form's own flag — but a
+     * Google visitor is signed in *before* this question is asked, so for them
+     * this is the only moment it can be granted. Without it they were a
+     * consumer on the server holding a business account in the browser, and
+     * every control on the dashboard reported there was nowhere to file
+     * anything. Which was true, and named none of the reasons.
+     *
+     * Fire-and-forget: it is idempotent, and a failure here is recoverable the
+     * next time they save a listing. What must not happen is this blocking the
+     * choice — the local account type is what the router reads, and holding the
+     * screen on a network call to set a role would be trading the whole flow
+     * for a permission the next screen re-establishes anyway.
+     */
+    if (type === 'business' && hasToken()) void api.becomePartner().catch(() => undefined);
+
     setAccount((current) => {
       if (!current) return current;
       /*

@@ -2689,6 +2689,50 @@ async function httpSurface(): Promise<void> {
 }
 
 async function accountRules(): Promise<void> {
+  describe('§1.2 becoming a venue owner after the fact');
+  {
+    const w = world();
+    const at = now();
+
+    /*
+     * The gap Google opened. `partner_owner` was grantable at sign-up and
+     * nowhere else, which held while every account came through the password
+     * form — that flow knows what kind of account it is making. Google issues a
+     * session *before* anybody has been asked, so an owner who signed in that
+     * way was a consumer with no way back, and every control on the partner
+     * dashboard reported there was nowhere to file anything.
+     */
+    const person = await accounts.signUp(w.db, {
+      email: 'later-owner@example.com',
+      password: 'testing-1234',
+      name: 'Later Owner',
+      at,
+    });
+
+    check('a plain sign-up is not a partner',
+      !accounts.rolesOf(w.db, person.id).includes('partner_owner'));
+
+    const promoted = accounts.becomePartner(w.db, person.id, at);
+    check('…and can become one', promoted.roles.includes('partner_owner'));
+    check('…keeping what it already had', promoted.roles.includes('consumer'));
+
+    /* Idempotent, which is what lets the site call it on every "I am a
+       business" without checking first — and on every listing save. */
+    const again = accounts.becomePartner(w.db, person.id, at);
+    eq('…twice grants it once', again.roles.filter((r) => r === 'partner_owner').length, 1);
+
+    /* The line this endpoint must not cross. `admin` is choosable at no moment,
+       by anybody, which is why `becomePartner` names one role rather than
+       taking one. */
+    check('…and never grants the console', !again.roles.includes('admin'));
+
+    throws('an unknown account cannot be promoted', 'not_found', () =>
+      accounts.becomePartner(w.db, 'usr_nobody', at),
+    );
+
+    w.db.close();
+  }
+
   describe('§1.1 provisional accounts and the merge');
   const w = world();
   const at = now();
