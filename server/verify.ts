@@ -2802,16 +2802,33 @@ async function httpSurface(): Promise<void> {
   });
   eq('a game session starts', first.status, 200);
 
+  /*
+   * **The shelf is a fixture now, not a fact about the deployment.**
+   *
+   * These three checks used to redeem `gcs_media_expert`, which existed because
+   * `seedPlatform` wrote five real retailer names on every boot. That seeding
+   * is opt-in now — there is no agreement behind those brands, and a catalogue
+   * promising a Zalando card is worse than an empty one — so a test that needs
+   * something on the shelf has to put it there. Which is the right shape
+   * regardless: a test that depends on production seeding is a test that breaks
+   * when production stops seeding, and it broke exactly then.
+   */
+  w.db.run(
+    `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
+     VALUES ('gcs_test', 'Test Brand', 'T', 465, 'EUR', 100, 250, 0, 1)
+     ON CONFLICT (id) DO NOTHING`,
+  );
+
   const gift = await call('POST', '/v1/gift-cards', {
     token,
     key,
-    body: { stockId: 'gcs_media_expert' },
+    body: { stockId: 'gcs_test' },
   });
   eq('a gift card is redeemable', gift.status, 200);
   const again = await call('POST', '/v1/gift-cards', {
     token,
     key,
-    body: { stockId: 'gcs_media_expert' },
+    body: { stockId: 'gcs_test' },
   });
   eq('a retry returns the same result', again.body.code, gift.body.code);
   eq(

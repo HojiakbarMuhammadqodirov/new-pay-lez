@@ -69,8 +69,24 @@ export function boot(options: BootOptions = {}): { db: Db; routes: Route[] } {
    * doing. The count is re-read rather than reused, because the import between
    * the two is exactly the thing that may have changed it.
    */
+  /*
+   * **And it is off unless somebody asks for it.**
+   *
+   * The rule above — seed when the catalogue is empty — was written for a box
+   * that had just been stood up and had nothing to show. It is the wrong rule
+   * once a product is live with real people on it: an empty catalogue then
+   * means "no venue has signed up yet", which is a true and useful thing for a
+   * screen to say, and quietly filling it with seven invented cafés replaces a
+   * fact with a decoration. It also makes the demo rows immortal — delete them
+   * and the next restart writes them back.
+   *
+   * So `PAYLEZ_DEMO_SEED=1` and nothing else. A fresh clone that wants
+   * something to look at sets it; production does not, and an operator who
+   * deletes the demo set gets to keep it deleted.
+   */
+  const wanted = process.env.PAYLEZ_DEMO_SEED === '1';
   const stillEmpty = (db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`)?.n ?? 0) === 0;
-  if (stillEmpty) {
+  if (wanted && stillEmpty) {
     const demo = seedDemo(db);
     if (!options.quiet) {
       const total = Object.entries(demo)

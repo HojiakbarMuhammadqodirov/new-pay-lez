@@ -46,7 +46,22 @@ export function seedPlatform(db: Db, at: Iso = now()): void {
   db.tx(() => {
     seedPlans(db, at);
     seedCategoryDefaults(db);
-    seedGiftCards(db);
+    /*
+     * **The gift-card catalogue is opt-in, and that is a correction rather than
+     * a preference.**
+     *
+     * Five real brand names — Zalando, Empik, Douglas — were written on every
+     * boot with 250 in stock each, carried over from the prototype's own wallet
+     * so the two would agree. Nothing behind them is real: there is no
+     * agreement with any of those retailers, and a catalogue offering a 50 zł
+     * Zalando card for 500 points is a promise the product cannot keep to the
+     * first person who saves up for one. That is worse than an empty shelf,
+     * which at least says something true.
+     *
+     * The seeding stays, because an operator setting up a demonstration wants
+     * it and it is the only worked example of the shape. It runs when asked.
+     */
+    if (process.env.PAYLEZ_DEMO_SEED === '1') seedGiftCards(db);
     seedWords(db);
   });
 }
