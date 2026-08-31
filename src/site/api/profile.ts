@@ -36,6 +36,7 @@
  * there is nothing to disable, so the form says the suggestions are down and
  * lets the reader write the place themselves.
  */
+import { call } from './client';
 import { useApi, type ApiResult } from './useApi';
 
 /** The three countries Paylez covers, in the order the server lists them. */
@@ -126,3 +127,27 @@ export function matchCities(list: CityList, query: string): City[] {
   }
   return [...starts, ...contains].slice(0, CITY_SUGGESTIONS);
 }
+
+/* ══════════════════════════════════════════════════ where somebody plays ══ */
+
+/**
+ * The two answers the leaderboard needs, and the consent to appear on it.
+ *
+ * One call because they are one decision on one screen: onboarding asks where
+ * you are and whether you want to be seen, and a half-applied answer — a city
+ * saved with the consent lost, or the reverse — is a state nobody chose. The
+ * server takes all three on `PATCH /v1/me`, so they go together or not at all.
+ *
+ * `city` is *canonicalised on the server*, not stored as typed, which is why
+ * the caller has to render the city back from the response rather than from
+ * its own field: "kraków" typed here comes back as `Krakow`, and a client that
+ * kept the typed form would show a different city from the one it just saved.
+ */
+export const savePlace = (place: {
+  city: string;
+  countryCode: string;
+  leaderboardOptIn: boolean;
+}) => call<{ city: string | null; countryCode: string | null }>('/v1/me', {
+  method: 'PATCH',
+  body: place,
+});

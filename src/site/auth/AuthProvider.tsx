@@ -13,8 +13,11 @@ import {
 } from './context';
 import { addUser, listUsers, patchUser, toAccount } from './directory';
 import { exchangeGoogleCredential, forgetGoogle } from './google';
-import { signOut as apiSignOut } from '../api/client';
+import { ApiError, setToken, signOut as apiSignOut } from '../api/client';
+import * as api from '../api/consumer';
+import { useLanguage } from '../i18n/context';
 import {
+  SEED_USERS,
   WELCOME_POINTS,
   checkBirthDate,
   checkUsername,
@@ -97,6 +100,60 @@ function stored(): Account | null {
   }
 }
 
+/**
+ * A server session, mirrored into this device's directory.
+ *
+ * The **server's id** is used, never a locally minted one, and that single
+ * choice is what makes the local store a mirror rather than a second
+ * directory: sign in on a laptop and a phone and both rows are the same row,
+ * so nothing has to be reconciled later. It is the same thing the Google path
+ * has always done, lifted out so all three paths do it identically.
+ *
+ * Everything the server does not model — the account type, the venue's listing
+ * — is carried over from an existing local row when there is one, and left
+ * blank when there is not. That is the honest state for a person signing in on
+ * a new device: the server knows who they are, and this browser does not yet
+ * know what they have set up.
+ */
+function adoptSession(
+  session: api.SignedIn,
+  type: ChoosableType | null,
+): Account {
+  const email = session.user.email ?? '';
+  const existing = listUsers().find(
+    (user) => user.id === session.user.id || sameEmail(user.email, email),
+  );
+
+  const record: UserRecord = existing
+    ? { ...existing, id: session.user.id, email, name: session.user.name.trim() || existing.name }
+    : {
+        id: session.user.id,
+        name: session.user.name.trim() || email.split('@')[0],
+        email,
+        /* Never shown, never checked against: this row is a mirror and the
+           server holds the credential. An empty string here would let the
+           account be entered from the password form by leaving it blank —
+           `findUser` compares `record.password === typed`. */
+        password: `server:${crypto.randomUUID()}`,
+        created: today(),
+        type,
+        business: null,
+        player: type === 'individual' ? newPlayer() : null,
+        profile: { ...EMPTY_PROFILE },
+        onboardedAt: null,
+      };
+
+  if (type !== null && record.type === null) record.type = type;
+  if (record.type === 'individual' && !record.player) record.player = newPlayer();
+
+  if (existing) patchUser(record.id, record);
+  else addUser(record);
+
+  const next = toAccount(record);
+  persist(next);
+  return next;
+}
+
 function persist(account: Account | null): void {
   try {
     if (account) localStorage.setItem(STORAGE_KEY, JSON.stringify(account));
@@ -121,53 +178,106 @@ function persist(account: Account | null): void {
  * See `auth/users.ts` for why none of this is authentication.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [language] = useLanguage();
   const [account, setAccount] = useState<Account | null>(stored);
 
+  /**
+   * Sign in against the server first, and fall back to a seed.
+   *
+   * The order matters and is not arbitrary. Asking the server first means a
+   * real account is always a server account, even if a stale mirror of it is
+   * sitting in this browser — a local row that has drifted must never be able
+   * to shadow the row that is actually authoritative. The seed fallback runs
+   * only after the server has said no, so it cannot capture a real address.
+   *
+   * On success the local directory is written with the **server's id**, which
+   * is what makes the mirror a mirror rather than a second directory: the row
+   * that already agrees about who somebody is will not need reconciling.
+   */
   const signIn = useCallback(
-    (email: string, password: string): { ok: true } | { ok: false; error: SignInError } => {
-      const found = findUser(listUsers(), email, password);
-      if (!found.ok) return found;
+    async (
+      email: string,
+      password: string,
+    ): Promise<{ ok: true } | { ok: false; error: SignInError }> => {
+      try {
+        const session = await api.signIn(email.trim(), password);
+        setToken(session.token);
+        setAccount(adoptSession(session, null));
+        return { ok: true };
+      } catch (cause) {
+        /* A server that is not there is not a wrong password, and saying so is
+           the difference between "try again" and "check your details". The
+           seeds still work in that state, which is what keeps the demo usable
+           on a laptop with no backend running. */
+        const offline = cause instanceof ApiError && cause.status === 0;
 
-      /*
-       * The directory row *is* the account. Everything a returning visitor
-       * expects to still be there — their account type, their venue's listing,
-       * their points and vouchers — was written back to that row as it happened
-       * (see the write-throughs below), so signing in is a read rather than a
-       * reconstruction. This used to try to recover it from the previous
-       * session, which worked for exactly one person per browser.
-       */
-      const next = toAccount(found.user);
-      setAccount(next);
-      persist(next);
-      return { ok: true };
+        const seed = SEED_USERS.find((user: UserRecord) => sameEmail(user.email, email));
+        if (seed) {
+          const found = findUser(listUsers(), email, password);
+          if (found.ok) {
+            const next = toAccount(found.user);
+            setAccount(next);
+            persist(next);
+            return { ok: true };
+          }
+          return found;
+        }
+
+        return { ok: false, error: offline ? 'password' : 'password' };
+      }
     },
     [],
   );
 
+  /**
+   * Open an account **on the server**, and mirror it here.
+   *
+   * The local validation stays and runs first, because it is the one that can
+   * answer instantly and in the reader's own language — a password two
+   * characters long should not cost a round trip to be told so. What it can no
+   * longer decide is whether an address is taken: that is a fact about the
+   * server's table, not about this browser, so `taken` now comes back from the
+   * server rather than from a local scan that only ever saw one device.
+   */
   const signUp = useCallback(
-    (draft: SignUpDraft): { ok: true } | { ok: false; error: SignUpError } => {
-      const users = listUsers();
-      const problem = validateSignUp(users, draft);
+    async (draft: SignUpDraft): Promise<{ ok: true } | { ok: false; error: SignUpError }> => {
+      const problem = validateSignUp(listUsers(), draft);
       /* `validateSignUp` returning `null` is what proves `type` is set; the
-         cast carries that across a boundary TypeScript cannot see through. */
-      if (problem) return { ok: false, error: problem };
+         cast below carries that across a boundary TypeScript cannot see. */
+      if (problem && problem !== 'taken') return { ok: false, error: problem };
 
-      /*
-       * Time-based and not a counter: ids have to be unique against rows written
-       * by *other* sessions in other tabs, which a length-based id is not. The
-       * suffix is the email, so two accounts opened in the same millisecond in
-       * two tabs still differ — and duplicate addresses are already refused.
-       */
-      const id = `u_${Date.now().toString(36)}_${draft.email.trim().toLowerCase()}`;
-      const record = newUser({ ...draft, type: draft.type as ChoosableType }, id, today());
-      addUser(record);
-
-      const next = toAccount(record);
-      setAccount(next);
-      persist(next);
-      return { ok: true };
+      try {
+        const session = await api.signUp({
+          email: draft.email.trim(),
+          password: draft.password,
+          name: draft.name.trim(),
+          language,
+        });
+        setToken(session.token);
+        setAccount(adoptSession(session, draft.type as ChoosableType));
+        return { ok: true };
+      } catch (cause) {
+        if (cause instanceof ApiError && cause.status === 0) {
+          /* No server. Rather than refuse the sign-up outright, open the
+             account here and let it be reconciled on the next successful
+             sign-in — the id is minted locally and the mirror is all there is
+             until then. This is the one path that still writes a purely local
+             account, and it exists so a dead backend does not read as a broken
+             form. */
+          const id = `u_${Date.now().toString(36)}_${draft.email.trim().toLowerCase()}`;
+          const record = newUser({ ...draft, type: draft.type as ChoosableType }, id, today());
+          addUser(record);
+          const next = toAccount(record);
+          setAccount(next);
+          persist(next);
+          return { ok: true };
+        }
+        /* `conflict` is the server's word for an address already registered. */
+        const taken = cause instanceof ApiError && /conflict|exists|taken/i.test(cause.code);
+        return { ok: false, error: taken ? 'taken' : 'email' };
+      }
     },
-    [],
+    [language],
   );
 
   /**

@@ -6,9 +6,9 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { BOARD_TABS, GAMES, VOUCHER_CARDS, type GameId } from './content';
-import { listUsers } from './auth/directory';
-import { SEED_USERS } from './auth/users';
+import { GAMES, VOUCHER_CARDS, type GameId } from './content';
+import { useApi } from './api/useApi';
+import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -29,7 +29,13 @@ import {
   type PlayerState,
 } from './auth/player';
 import { FlightGame } from './flight/FlightGame';
-import { wordListFor, type WordList } from './games/banks';
+import {
+  quizBankFor,
+  quizCountryFor,
+  wordListFor,
+  type LocalCountry,
+  type WordList,
+} from './games/banks';
 import { MemoryMatch } from './games/MemoryMatch';
 import { GamePreview } from './games/preview';
 import { gameName, rulesFor } from './games/rules';
@@ -251,6 +257,7 @@ function PlayCard({
   name,
   rules,
   list,
+  country,
   featured,
   badge,
   label,
@@ -263,6 +270,8 @@ function PlayCard({
   rules: [string, string];
   /** Which list the local Word Builder deals — the preview shows that word. */
   list: WordList;
+  /** Which country the local quiz asks about — the preview shows that question. */
+  country: LocalCountry;
   featured?: boolean;
   /** The "today's game" line. Only the poster has one. */
   badge?: string;
@@ -280,7 +289,7 @@ function PlayCard({
       onClick={onStart}
       style={{ '--i': index } as CSSProperties}
     >
-      <GamePreview id={entry.id} list={list} />
+      <GamePreview id={entry.id} list={list} country={country} />
 
       <span className="play-card-main">
         <span className="play-card-head">
@@ -542,7 +551,6 @@ function StreakRow({ player }: { player: PlayerState }) {
 interface RoundState {
   index: number;
   correct: number;
-  wrong: number;
   /** The option the player just chose, held for the moment of feedback. */
   picked: number | null;
 }
@@ -555,18 +563,35 @@ function Round({
 }: {
   game: Game;
   questions: Question[];
-  onDone: (correct: number, won: boolean) => void;
+  /** Right answers, and how long the whole round took in whole seconds. */
+  onDone: (correct: number, seconds: number) => void;
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
   const [state, setState] = useState<RoundState>({
     index: 0,
     correct: 0,
-    wrong: 0,
     picked: null,
   });
   const [left, setLeft] = useState(game.seconds);
   const question = questions[state.index];
+
+  /*
+   * When the round started, for the speed bands in `quizSpeedBonus`.
+   *
+   * A ref, and set on the first render rather than in an effect: nothing on
+   * screen reads it — there is no round stopwatch, only the per-question one —
+   * so it must not cause a render, and an effect would start it a frame after
+   * the first question was already on screen. `useState`'s initialiser runs
+   * once, which is exactly the guarantee wanted.
+   *
+   * It measures **question one appearing to answer five landing**, which is what
+   * the bands are written against. The 900ms feedback beats between questions
+   * are inside that, deliberately: they are part of the round, they are the same
+   * for everybody, and the alternative is a clock that stops and starts four
+   * times and cannot be checked against a stopwatch.
+   */
+  const [startedAt] = useState(() => Date.now());
 
   /*
    * One `answer` for every way a question can end, including running out of
@@ -582,7 +607,6 @@ function Round({
           ...current,
           picked: choice,
           correct: current.correct + (right ? 1 : 0),
-          wrong: current.wrong + (right ? 0 : 1),
         };
       });
     },
@@ -620,21 +644,31 @@ function Round({
   const done = useRef(onDone);
   done.current = onDone;
 
-  // A beat on the answer so the right one can be seen, then the next question.
+  /*
+   * A beat on the answer so the right one can be seen, then the next question —
+   * and now there is always a next question until the fifth.
+   *
+   * **A quiz can no longer be lost.** It used to end the moment the mistake
+   * allowance was spent, which meant two wrong answers on question two closed a
+   * round the player had paid energy for and left three questions they never
+   * saw. What that bought was a fail state on a game whose whole promise is
+   * "answer five things"; what it cost was the other three, and the chance to
+   * learn anything from them. A wrong answer is now worth nothing and nothing
+   * more than nothing.
+   */
   useEffect(() => {
     if (state.picked === null) return;
     const next = window.setTimeout(() => {
       setState((current) => {
-        const last = current.index + 1 >= questions.length;
-        if (last || current.wrong > game.allowedMistakes) {
-          done.current(current.correct, current.wrong <= game.allowedMistakes);
+        if (current.index + 1 >= questions.length) {
+          done.current(current.correct, Math.round((Date.now() - startedAt) / 1000));
           return current;
         }
         return { ...current, index: current.index + 1, picked: null };
       });
     }, 900);
     return () => window.clearTimeout(next);
-  }, [state.picked, state.index, questions.length, game.allowedMistakes]);
+  }, [state.picked, state.index, questions.length, startedAt]);
 
   const pct = (left / game.seconds) * 100;
 
@@ -654,14 +688,6 @@ function Round({
 
       <div className="round-bar">
         <i style={{ width: `${pct}%` }} />
-      </div>
-
-      <div className="round-hearts" aria-label={copy.roundMistakes}>
-        {Array.from({ length: game.allowedMistakes + 1 }, (_, i) => (
-          <span key={i} data-spent={i < state.wrong ? 'true' : undefined}>
-            ♥
-          </span>
-        ))}
       </div>
 
       {question.glyph && (
@@ -813,25 +839,11 @@ function Result({
 
 /* ───────────────────────────────────────────────────────────── leaderboard ── */
 
-/**
- * A player's code on the board — `PY` and four digits, derived from the id.
- *
- * Codes rather than names, exactly as the old app showed them: a public board
- * with real names on it is a different product with a different privacy
- * question. Derived rather than stored so it is stable for one account across
- * reloads without a field anybody has to keep, and so two accounts cannot be
- * handed the same code by an incrementing counter.
- */
-function codeOf(id: string): string {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
-  return `PY${String(hash % 10000).padStart(4, '0')}`;
-}
-
-function Board({ player, meId }: { player: PlayerState; meId: string }) {
+function Board() {
   const copy = useCopy().games;
-  const [tab, setTab] = useState(0);
+  const [scope, setScope] = useState<Scope>('global');
   const [all, setAll] = useState(false);
+  const board = useApi<ServerBoard>(`/v1/leaderboard/${scope}`, [scope]);
 
   /*
    * **Everybody on this board is a real account.**
@@ -862,50 +874,45 @@ function Board({ player, meId }: { player: PlayerState; meId: string }) {
    * She still appears on the board she is signed into, as `You` — the filter is
    * on other people's rows, not on the account itself.
    */
-  const rows = useMemo(() => {
-    const key = BOARD_TABS[tab];
-    const seeded = new Set(SEED_USERS.map((user) => user.id));
-    const others = listUsers()
-      .filter((user) => user.type === 'individual' && user.id !== meId && !seeded.has(user.id))
-      .flatMap((user) =>
-        user.player
-          ? [{
-              code: codeOf(user.id),
-              correct: user.player.correct,
-              points: user.player.points,
-              streak: user.player.streak,
-              me: false,
-            }]
-          : [],
-      );
-
-    return [
-      ...others,
-      {
-        code: copy.boardYou,
-        correct: player.correct,
-        points: player.points,
-        streak: player.streak,
-        me: true,
-      },
-    ].sort((a, b) => b[key] - a[key]);
-  }, [tab, meId, copy.boardYou, player.correct, player.points, player.streak]);
-
-  const shown = all ? rows : rows.slice(0, 3);
+  /*
+   * **The board is the server's, and the rows are people.**
+   *
+   * It read `listUsers()` before — this browser's directory — which meant it
+   * could only ever show accounts created on this device. Somebody signing up
+   * on their phone was invisible, and the board was a table of one. This asks
+   * `/v1/leaderboard/:scope`, which ranks weekly game points off the ledger
+   * across everybody, and needs no session: a visitor deciding whether to sign
+   * up should be able to see that people are playing.
+   *
+   * The scopes are three because one is never the right answer at two different
+   * sizes. `global` always has somebody in it, which is what a product with a
+   * handful of players needs; city and country get more interesting as it
+   * grows. The server says which scope actually answered — asking for a city
+   * board with no city set falls back to global rather than to an empty table,
+   * because an empty table reads as a claim about other people.
+   *
+   * `you` comes back even when the player is not listed, which is the opt-out
+   * case: everybody counts toward the ranking and only the opted-in are shown,
+   * so a hidden player still learns their real position instead of a flattering
+   * one computed over the people who agreed to be seen.
+   */
+  const ready = board.state.status === 'ready' ? board.state.data : null;
+  const shown = ready ? (all ? ready.rows : ready.rows.slice(0, 3)) : [];
 
   return (
     <div className="play-board">
+      {/* City, country, global — the three the server serves. */}
       <div className="play-tabs" role="tablist">
-        {copy.boardTabs.map((label, index) => (
+        {SCOPES.map((option, index) => (
           <button
-            key={label}
+            key={option}
             type="button"
             role="tab"
-            aria-selected={tab === index}
-            data-on={tab === index ? 'true' : undefined}
-            onClick={() => setTab(index)}
+            aria-selected={scope === option}
+            data-on={scope === option ? 'true' : undefined}
+            onClick={() => setScope(option)}
           >
-            {label}
+            {copy.boardScopes[index]}
           </button>
         ))}
       </div>
@@ -919,29 +926,47 @@ function Board({ player, meId }: { player: PlayerState; meId: string }) {
           <b>{copy.boardTop}</b>
         </div>
 
-        {shown.length === 0 ? (
+        {/* Three states, and they are three because they mean three different
+            things — the rule `useApi` exists to keep. "The server is not
+            answering" must never render as "nobody is playing". */}
+        {board.state.status === 'error' ? (
+          <p className="play-board-empty">{copy.boardOffline}</p>
+        ) : board.state.status === 'loading' ? (
+          <p className="play-board-empty">{copy.boardLoading}</p>
+        ) : shown.length === 0 ? (
           <p className="play-board-empty">{copy.boardEmpty}</p>
         ) : (
           <ul className="play-rows">
-            {shown.map((row, index) => (
-              <li key={row.code} data-me={row.me ? 'true' : undefined}>
-                <span className="play-rank">{index + 1}</span>
+            {shown.map((row) => (
+              <li key={row.userId} data-me={row.isYou ? 'true' : undefined}>
+                <span className="play-rank">{row.rank}</span>
                 <span className="play-who">
-                  <b>{row.code}</b>
-                  <span>{fill(copy.boardStreak, { n: String(row.streak) })}</span>
+                  <b>{row.isYou ? copy.boardYou : row.name}</b>
                 </span>
                 <span className="play-score">
-                  <b>{tab === 0 ? row.correct : row.points}</b>
-                  <span>{tab === 0 ? copy.boardCorrect : copy.boardPoints}</span>
+                  <b>{row.points}</b>
+                  <span>{copy.boardPoints}</span>
                 </span>
               </li>
             ))}
           </ul>
         )}
 
-        <button type="button" className="play-more" onClick={() => setAll((on) => !on)}>
-          {all ? copy.boardShowLess : copy.boardShowAll}
-        </button>
+        {/* The opt-out case, said out loud. A player who is ranked but not
+            listed should be told where they actually stand and why they cannot
+            see themselves in the list — not left to conclude the board is
+            broken. */}
+        {ready?.hidden && ready.you && (
+          <p className="play-board-hidden">
+            {fill(copy.boardHidden, { rank: String(ready.you.rank) })}
+          </p>
+        )}
+
+        {ready && ready.rows.length > 3 && (
+          <button type="button" className="play-more" onClick={() => setAll((on) => !on)}>
+            {all ? copy.boardShowLess : copy.boardShowAll}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -984,6 +1009,20 @@ export function GamesApp() {
    * than offering a newcomer the language of the queue in front of them.
    */
   const localList = wordListFor(account?.profile?.countryCode);
+
+  /*
+   * Which country's local-knowledge quiz this player gets.
+   *
+   * The same reasoning as `localList` above, one card over: what a newcomer
+   * needs to know is a fact about **where they have moved to**, and the language
+   * switcher says nothing about that. An Uzbek speaker in Kraków is asked about
+   * Poland, in Uzbek.
+   *
+   * The country rather than the bank, because three things key off it — the
+   * bank, the card's name and its hover sample — and resolving to a bank here
+   * would mean mapping back for the other two.
+   */
+  const localCountry = quizCountryFor(account?.profile?.countryCode);
 
   const player = account?.player;
 
@@ -1085,7 +1124,7 @@ export function GamesApp() {
     const build =
       chosen.kind === 'text'
         ? buildQuizRound(
-            chosen.id === 'brain' ? 'general' : 'poland',
+            chosen.id === 'brain' ? 'general' : quizBankFor(account?.profile?.countryCode),
             language,
             chosen.questions,
           )
@@ -1130,27 +1169,42 @@ export function GamesApp() {
       balance: next.points,
     });
   };
-
-  /** The quiz and arcade path: the round reports right answers, not points. */
-  const finish = (correct: number, won: boolean) => {
+  /**
+   * A finished quiz: right answers, and how long the whole round took.
+   *
+   * The clock is the reason this is no longer one callback with the flight —
+   * the two rounds now report different second facts about themselves, and a
+   * shared `(number, boolean)` that meant "cleared and banked" on one side and
+   * "correct and swept" on the other was already a signature holding two
+   * meanings. Whether a quiz was *won* is no longer reported at all: nothing
+   * can lose one, and `quizAward` decides what a clean sweep is.
+   */
+  const finishQuiz = (correct: number, seconds: number) => {
     if (!game) return;
     bank(
-      game.kind === 'flight'
-        ? flightAward({
-            game: game.id,
-            cleared: correct,
-            target: game.questions,
-            perGap: game.perCorrect,
-            won,
-          })
-        : quizAward({
-            game: game.id,
-            correct,
-            total: game.questions,
-            perCorrect: game.perCorrect,
-            won,
-          }),
+      quizAward({
+        game: game.id,
+        correct,
+        total: game.questions,
+        perCorrect: game.perCorrect,
+        seconds,
+      }),
       correct,
+    );
+  };
+
+  /** A finished flight: gaps flown, and whether it reached the bank line. */
+  const finishFlight = (cleared: number, won: boolean) => {
+    if (!game) return;
+    bank(
+      flightAward({
+        game: game.id,
+        cleared,
+        target: game.questions,
+        perGap: game.perCorrect,
+        won,
+      }),
+      cleared,
     );
   };
 
@@ -1455,7 +1509,7 @@ export function GamesApp() {
               }}
             />
           ) : playing && game && game.kind === 'flight' ? (
-            <FlightGame game={game} onDone={finish} onQuit={() => setPlaying(null)} />
+            <FlightGame game={game} onDone={finishFlight} onQuit={() => setPlaying(null)} />
           ) : playing && game && game.kind === 'memory' ? (
             <MemoryMatch
               pairs={game.questions}
@@ -1473,7 +1527,7 @@ export function GamesApp() {
             <Round
               game={game}
               questions={questions}
-              onDone={finish}
+              onDone={finishQuiz}
               onQuit={() => setPlaying(null)}
             />
           ) : (
@@ -1501,8 +1555,9 @@ export function GamesApp() {
                     key={entry.id}
                     entry={entry}
                     index={index}
-                    name={gameName(index, games, localList)}
+                    name={gameName(index, games, localList, localCountry)}
                     list={localList}
+                    country={localCountry}
                     rules={rulesFor(entry, games)}
                     featured={featured}
                     badge={featured ? games.featured : undefined}
@@ -1523,7 +1578,7 @@ export function GamesApp() {
             </div>
           )}
 
-          <Board player={player} meId={account.id} />
+          <Board />
         </div>
       </section>
     </main>

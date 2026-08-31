@@ -11,7 +11,8 @@
  * It reads a whole file into memory. The largest export is 3.2 MB; streaming
  * would be the right call at a thousand times that and pointless here.
  */
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 export type CsvRow = Record<string, string>;
 
@@ -100,6 +101,49 @@ export function readCsv(path: string): CsvRow[] {
     });
     return out;
   });
+}
+
+/**
+ * The names in `names` that belong to one export, in the order they are read.
+ *
+ * An export can arrive in parts — the Uzbekistan quiz landed as
+ * `Uzbekistan_Quiz_Questions_data_part2.csv`, a name that says there is a part
+ * one somewhere and implies a part three later — so what identifies a bank is a
+ * pattern rather than a literal filename, and the next part is a file drop
+ * rather than a code change.
+ *
+ * It is split out from `readCsvParts` so the *selection* can be checked without
+ * a filesystem. `verify.ts` runs entirely in memory and has no scratch directory
+ * to plant a second part in, and a rule about which files make up a bank is
+ * worth checking even on a box where only one of them exists.
+ *
+ * Sorted by name, so two runs read the same rows in the same order. Plain
+ * lexicographic, which files `part10` ahead of `part2` — harmless for these
+ * exports, because every row carries its own `id` and the import keys on that
+ * rather than on position, and it is what the front end's own reader
+ * (`scripts/build-question-banks.mjs`) does with the same directory. A format
+ * whose row *order* was its identity would need a numeric collation here and a
+ * note saying why.
+ */
+export const csvParts = (names: string[], pattern: RegExp): string[] =>
+  names.filter((name) => pattern.test(name)).sort();
+
+/**
+ * Every file in `dir` matching `pattern`, read and concatenated.
+ *
+ * A directory that is not there reads as no rows, exactly as a missing file does
+ * in `readCsv` above: `new-data/` and `updates/` are both absent on a deployed
+ * box, and the caller reports the gap in its notes rather than the reader
+ * throwing halfway through an import that has already written a thousand rows.
+ */
+export function readCsvParts(dir: string, pattern: RegExp): CsvRow[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  return csvParts(names, pattern).flatMap((name) => readCsv(join(dir, name)));
 }
 
 /* ─────────────────────────────────────────────── reading a cell as a value ── */

@@ -118,7 +118,7 @@ export interface Board {
  * that counted scan earnings would rank whoever spends the most money, which is
  * a different competition and not one to advertise.
  */
-function weeklyPoints(db: Db, since: Iso, city?: string) {
+function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?: string } = {}) {
   return db.all<{ user_id: string; points: number; name: string; avatar: string | null; opted: number }>(
     `SELECT l.user_id, SUM(l.delta) AS points, u.display_name AS name,
             u.display_avatar AS avatar, u.leaderboard_opt_in AS opted
@@ -126,28 +126,71 @@ function weeklyPoints(db: Db, since: Iso, city?: string) {
       WHERE l.reason = 'game_win' AND l.status = 'committed' AND l.created_at >= $s
         AND u.status = 'active' AND u.deleted_at IS NULL
         AND ($city IS NULL OR u.city = $city)
+        AND ($country IS NULL OR u.country_code = $country)
       GROUP BY l.user_id
       ORDER BY points DESC`,
-    { s: since, city: city ?? null },
+    { s: since, city: where.city ?? null, country: where.country ?? null },
   );
 }
 
 /**
- * The city weekly board.
+ * The three scopes a weekly board can have.
+ *
+ * `global` is not a degenerate city — it is the one that always has an answer.
+ * A player who skipped the city question, or who lives somewhere with four
+ * other players, is on a board of one either way; ranking everybody together
+ * is the scope that is honest at the size this product actually is. The other
+ * two get more interesting as it grows, which is the opposite trajectory, and
+ * that is why all three exist rather than whichever one currently looks best.
+ */
+export const SCOPES = ['city', 'country', 'global'] as const;
+export type Scope = (typeof SCOPES)[number];
+
+export const isScope = (value: string): value is Scope =>
+  (SCOPES as readonly string[]).includes(value);
+
+/**
+ * A weekly board, in one of the three scopes.
  *
  * Two populations, one query: everybody counts toward the ranking, only the
  * opted-in are listed. That is why the rank is computed over the full result and
  * *then* the rows are filtered — ranking only the opted-in would tell a hidden
  * player they were third when they were eleventh, which is worse than not
  * showing them at all.
+ *
+ * **A scope with nothing to filter on falls back to global rather than to
+ * empty.** A player who never answered the city question asking for their city
+ * board is asking a question with no answer; returning an empty table would
+ * read as "nobody in your city is playing", which is a claim about other people
+ * rather than about a blank field. The scope in the response says which board
+ * actually came back, so a client can label it honestly instead of guessing.
  */
-export function cityBoard(
+export function board(
   db: Db,
-  input: { userId?: string; city: string; at?: Iso; limit?: number },
+  input: {
+    userId?: string;
+    scope: Scope;
+    city?: string | null;
+    country?: string | null;
+    at?: Iso;
+    limit?: number;
+  },
 ): Board {
   const at = input.at ?? now();
   const week = isoWeek(at);
-  const rows = weeklyPoints(db, weekStart(at), input.city);
+
+  const city = input.scope === 'city' ? (input.city ?? null) : null;
+  const country = input.scope === 'country' ? (input.country ?? null) : null;
+  /* What was asked for, versus what could be answered. */
+  const effective: Scope =
+    input.scope === 'city' && !city ? 'global'
+      : input.scope === 'country' && !country ? 'global'
+        : input.scope;
+
+  const rows = weeklyPoints(db, weekStart(at), {
+    city: city ?? undefined,
+    country: country ?? undefined,
+  });
 
   const ranked = rows.map((row, index) => ({
     rank: index + 1,
@@ -161,7 +204,10 @@ export function cityBoard(
 
   const you = ranked.find((row) => row.isYou) ?? null;
   return {
-    scope: `city:${input.city}`,
+    scope:
+      effective === 'city' ? `city:${city}`
+        : effective === 'country' ? `country:${country}`
+          : 'global',
     week,
     rows: ranked
       .filter((row) => row.opted || row.isYou)
@@ -228,7 +274,7 @@ export function snapshotWeek(db: Db, at: Iso = now()): number {
   let written = 0;
   db.tx(() => {
     for (const { city } of cities) {
-      const rows = weeklyPoints(db, weekStart(plusDays(at, -1)), city);
+      const rows = weeklyPoints(db, weekStart(plusDays(at, -1)), { city });
       rows.forEach((row, index) => {
         db.run(
           `INSERT INTO leaderboard_entries (week, scope, user_id, points, rank)

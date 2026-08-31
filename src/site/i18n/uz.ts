@@ -500,6 +500,10 @@ export const uz: Dictionary = {
 
     featured: 'Bugungi o‘yin · ketma-ketlikni saqlaydi',
 
+    /* Keyed by country code, not a template: the country's case changes with
+       the sentence around it, so each name is written whole. */
+    localQuiz: { PL: 'Polsha viktorinasi', UZ: 'O‘zbekiston viktorinasi' },
+
     streakHint: 'Kuniga bitta raund uni saqlaydi',
     freezesHint: 'Har biri o‘tkazib yuborilgan bir kunni qoplaydi',
     streakKept: 'saqlandi',
@@ -512,7 +516,7 @@ export const uz: Dictionary = {
       'Bayroqni top',
       'Davlat va poytaxt',
       'Aql o‘yinlari',
-      'Polsha viktorinasi',
+      'Mahalliy viktorina',
       'So‘z yig‘ · Inglizcha',
       'So‘z yig‘ · {language}',
     ],
@@ -536,9 +540,18 @@ export const uz: Dictionary = {
         q: 'Qaysi sayyora Qizil sayyora deyiladi?',
         options: ['Mars', 'Venera', 'Yupiter'],
       },
-      poland: {
-        q: 'Polsha valyutasi qaysi?',
-        options: ['Zlotiy', 'Yevro', 'Krona'],
+      /* One sample per local bank — the card is a different quiz per country.
+         The Uzbekistan row is the export's own, already written in every
+         language, so it is transcribed rather than translated. */
+      local: {
+        PL: {
+          q: 'Polsha valyutasi qaysi?',
+          options: ['Zlotiy', 'Yevro', 'Krona'],
+        },
+        UZ: {
+          q: 'O‘zbekiston nechta davlat bilan quruqlik chegarasiga ega?',
+          options: ['Beshta', 'Uchta', 'Yettita'],
+        },
       },
     },
 
@@ -563,6 +576,10 @@ export const uz: Dictionary = {
     boardTitle: 'Reyting',
     boardTabs: ['To‘g‘ri javoblar', 'Yig‘ilgan ballar'],
     boardTop: 'Top 10',
+      boardScopes: ['Mening shahrim', 'Mening davlatim', 'Hamma'],
+      boardLoading: 'Reyting yuklanmoqda…',
+      boardOffline: 'Hozir reytingni ololmayapmiz. Hech kim o‘ynamayapti degani emas — shunchaki so‘rab bo‘lmayapti.',
+      boardHidden: 'Bu hafta {rank}-o‘rindasiz. Ro‘yxatda yo‘qsiz, chunki buni yoqmagansiz — profilda yoqishingiz mumkin.',
     /* The signed-in player's own row on the leaderboard. Everybody else is a
        derived PY-code; this one is the second person, because a board you are
        on should say so in words rather than in a code you have to recognise. */
@@ -2756,6 +2773,14 @@ export const uz: Dictionary = {
     langTitle: 'Til tanlang',
     langLede: 'Keyinroq o‘zgartirsangiz bo‘ladi — u sarlavhadagi almashtirgich.',
     langNext: 'Davom etish',
+      placeTitle: 'Qayerda o‘ynaysiz?',
+      placeLede: 'Reyting shahar va davlat bo‘yicha tuziladi. Buni o‘tkazib yuborsangiz ham bo‘ladi — baribir o‘ynaysiz, ball yig‘asiz va jahon reytingida bo‘lasiz.',
+      placeCity: 'Shahringiz',
+      placeCityPlaceholder: 'Yozishni boshlang…',
+      placeListed: 'Meni reytingda ko‘rsating',
+      placeListedNote: 'Ismingiz va haftalik ballaringiz boshqa o‘yinchilarga ko‘rinadi. Yoqmaguningizcha o‘chiq — profilda istalgan vaqtda o‘zgartirasiz.',
+      placeSaving: 'Saqlanmoqda…',
+      back: 'Orqaga',
 
     gameTitle: 'Bu qaysi mamlakat?',
     gameRound: '{total} raunddan {n}-si',

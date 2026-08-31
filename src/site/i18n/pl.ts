@@ -505,6 +505,10 @@ export const pl: Dictionary = {
 
     featured: 'Dzisiejsza gra · podtrzymuje serię',
 
+    /* Keyed by country code, not a template: the country's case changes with
+       the sentence around it, so each name is written whole. */
+    localQuiz: { PL: 'Quiz o Polsce', UZ: 'Quiz o Uzbekistanie' },
+
     streakHint: 'Jedna runda dziennie ją podtrzymuje',
     freezesHint: 'Każde pokrywa jeden opuszczony dzień',
     streakKept: 'zaliczone',
@@ -517,7 +521,7 @@ export const pl: Dictionary = {
       'Zgadnij flagę',
       'Kraj i stolica',
       'Gry na rozum',
-      'Quiz o Polsce',
+      'Quiz lokalny',
       'Ułóż słowo · Angielski',
       'Ułóż słowo · {language}',
     ],
@@ -541,9 +545,18 @@ export const pl: Dictionary = {
         q: 'Którą planetę nazywamy Czerwoną Planetą?',
         options: ['Mars', 'Wenus', 'Jowisz'],
       },
-      poland: {
-        q: 'Jaka jest waluta Polski?',
-        options: ['Złoty', 'Euro', 'Korona'],
+      /* One sample per local bank — the card is a different quiz per country.
+         The Uzbekistan row is the export's own, already written in every
+         language, so it is transcribed rather than translated. */
+      local: {
+        PL: {
+          q: 'Jaka jest waluta Polski?',
+          options: ['Złoty', 'Euro', 'Korona'],
+        },
+        UZ: {
+          q: 'Z iloma krajami Uzbekistan graniczy lądowo?',
+          options: ['Pięcioma', 'Trzema', 'Siedmioma'],
+        },
       },
     },
 
@@ -568,6 +581,10 @@ export const pl: Dictionary = {
     boardTitle: 'Ranking',
     boardTabs: ['Poprawne odpowiedzi', 'Zdobyte punkty'],
     boardTop: 'Top 10',
+      boardScopes: ['Moje miasto', 'Mój kraj', 'Wszyscy'],
+      boardLoading: 'Wczytujemy ranking…',
+      boardOffline: 'Nie możemy teraz pobrać rankingu. To nie znaczy, że nikt nie gra — po prostu nie możemy zapytać.',
+      boardHidden: 'Jesteś na {rank} miejscu w tym tygodniu. Nie jesteś na liście, bo tego nie włączyłeś — możesz to zrobić w profilu.',
     /* The signed-in player's own row on the leaderboard. Everybody else is a
        derived PY-code; this one is the second person, because a board you are
        on should say so in words rather than in a code you have to recognise. */
@@ -2756,6 +2773,14 @@ export const pl: Dictionary = {
     langTitle: 'Wybierz język',
     langLede: 'Możesz go później zmienić — to przełącznik w nagłówku.',
     langNext: 'Dalej',
+      placeTitle: 'Gdzie grasz?',
+      placeLede: 'Ranking jest według miasta i kraju. Możesz to pominąć — nadal będziesz grać, zbierać punkty i pojawiać się w rankingu światowym.',
+      placeCity: 'Twoje miasto',
+      placeCityPlaceholder: 'Zacznij pisać…',
+      placeListed: 'Pokaż mnie w rankingu',
+      placeListedNote: 'Twoje imię i tygodniowe punkty, widoczne dla innych graczy. Wyłączone, dopóki nie włączysz — możesz to zmienić w profilu.',
+      placeSaving: 'Zapisywanie…',
+      back: 'Wstecz',
 
     gameTitle: 'Jaki to kraj?',
     gameRound: 'Runda {n} z {total}',

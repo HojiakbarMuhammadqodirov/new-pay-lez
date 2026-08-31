@@ -44,11 +44,18 @@ export const CONFIG = {
      * this the limiter rather than a decoration.
      *
      * What makes charging fair is that energy comes back on a clock rather than
-     * at midnight: spend the tank at nine in the morning and the wait is hours,
-     * not the rest of the day. Read the two numbers below together — four at
-     * four hours is sixteen hours from empty to full, and ten finished rounds
-     * in a day from a full start; six a day at the steady rate. Pro is eight
-     * sustained and Premium twelve.
+     * at midnight: spend the tank at nine in the morning and the wait is an
+     * hour or two, not the rest of the day. Read the two numbers below together
+     * — four at two hours is eight hours from empty to full, and sixteen
+     * finished rounds in a day from a full start; twelve a day at the steady
+     * rate. Pro is twenty-four sustained and Premium forty-eight.
+     *
+     * The intervals have all been cut hard — 240 → 120 here, and the paid tiers
+     * further still (180 → 60, 120 → 30). The ceiling did not move, so what a
+     * plan buys is almost entirely the clock now: the tank is a burst allowance
+     * and the refill is the day. That is the honest shape of it, because the
+     * tank is what somebody spends in the first ten minutes and the refill is
+     * what they plan an evening around.
      *
      * **This pair is the whole of what bounds a day.** There is no daily points
      * cap and no per-game taper: both existed once and both are gone. Anything
@@ -58,8 +65,8 @@ export const CONFIG = {
      */
     dailyEnergy: 4,
     /** Minutes to regenerate one energy, on the free plan. Paid plans are
-     *  faster (`energy_regen_minutes`). */
-    energyRegenMinutes: 240,
+     *  faster (`energy_regen_minutes`): 60 on Pro, 30 on Premium. */
+    energyRegenMinutes: 120,
   },
 
   /* ─────────────────────────────────────────────── §2b what pays, and how much ──
@@ -233,26 +240,97 @@ export const CONFIG = {
      * board that cannot be lost.
      */
 
-    /** Questions in a quiz round, and the mistakes a round survives. */
+    /*
+     * Questions in a quiz round. **There is no mistake cap and a quiz cannot be
+     * lost.** All five are asked however the first four went.
+     *
+     * A round used to end after two wrong answers, which made the fifth
+     * question unreachable for exactly the player who most needed the practice,
+     * and it made "won" a statement about how many mistakes somebody had left
+     * rather than about how they did. The only distinction left worth drawing
+     * is a clean sweep, and it is the one the two bonuses below are paid on.
+     */
     quizQuestions: 5,
-    quizMistakes: 2,
     quizPerCorrect: 1,
-    /** All five right. The last question is worth having, which is the whole
-     *  job of this bonus. */
-    quizPerfectBonus: 5,
+    /**
+     * All five right.
+     *
+     * It was 5, back when four right paid four and five paid ten and the last
+     * question *was* the round. That is too much weight on one answer now that
+     * a mistake costs nothing but the point it was worth: a quiz is a point a
+     * question, and one more for taking all five.
+     */
+    quizPerfectBonus: 1,
+    /**
+     * And how fast — on the **whole round**, not on a question.
+     *
+     * Paid only on a clean sweep, which is what stops it rewarding five wrong
+     * answers hammered out in two seconds: the fastest way through a quiz has
+     * always been to not read it. Read with the bonus above, a perfect fast
+     * round is 5 + 1 + 2 = 8, and that is the ceiling for a quiz.
+     *
+     * Timed from the first recorded event to the last, off the server's own
+     * stamps, exactly as Memory Match is — the client has no clock this module
+     * is willing to read, and a reported duration is one a modified client
+     * invents.
+     *
+     * `throughSeconds` is **inclusive**, and the field is named for the
+     * comparison it gets. "Under 10 seconds" and "up to 10 seconds" are
+     * different rules, only one of them can be written with a `<`, and a round
+     * that lands exactly on a boundary and drops to the slower band is the kind
+     * of off-by-one nobody reports — they just feel robbed.
+     */
+    quizSpeedBands: [
+      { throughSeconds: 10, points: 2 },
+      { throughSeconds: 15, points: 1 },
+      { throughSeconds: null, points: 0 },
+    ] as ReadonlyArray<{ throughSeconds: number | null; points: number }>,
 
     /*
-     * Word Builder. The tier is the word's own difficulty, read from
-     * `word_bank.tier` — this is the only bank in the product that carries one,
-     * and the server used to recompute it from the word's length instead.
+     * Word Builder. **A word is worth its tier** — 1, 2 or 3 — read from
+     * `word_bank.tier`, the only difficulty rating in the product a human set,
+     * and one the server used to recompute from the word's length instead.
      *
-     * There is deliberately no speed bonus any more. Three constants existed
-     * for one and none of them was ever read: every answer scored the same
-     * flat point whatever the clock said.
+     * One table rather than two that add up to it. A flat base of 1 plus a tier
+     * *bonus* of 0/1/2 was the rule before and it names the same three numbers
+     * by a longer road, but it also made a hint's penalty a subtraction of the
+     * bonus, which is what `wordHintFactor` below replaces.
+     *
+     * The site draws its five words on a `[1, 1, 2, 2, 3]` ramp, so a clean
+     * sweep there is nine, plus the bonus below: ten. **This server does not
+     * impose that ramp** — `buildWords` takes five at random from whatever the
+     * bank holds for the language — so its own rounds land near ten rather than
+     * on it. Imposing it here would need every language's bank to carry two
+     * words at each of tiers 1 and 2 and one at tier 3, and the seeded English
+     * list has exactly one three-or-four-letter word in it; a ramp it cannot
+     * fill returns a four-word round, which is worse than a round worth eight.
+     *
+     * There is deliberately no speed bonus here. Word Builder is the one game
+     * in the set where thinking is the activity, and a clock on it turns a
+     * puzzle into a typing test. The quizzes carry one because a question you
+     * know is answered instantly and a question you are guessing at is not.
      */
-    wordBase: 1,
-    wordTierBonus: [0, 1, 2],
-    wordPerfectBonus: 3,
+    wordTierPoints: [1, 2, 3],
+    /**
+     * What a hint costs: **half that word's points.**
+     *
+     * Forfeiting the tier bonus and keeping a flat base was the rule before,
+     * and it priced the reveal backwards — a tier-3 word fell from 3 to 1 while
+     * a tier-1 word fell from 1 to 1, so the hint was free on the easy word and
+     * brutal on the hard one, which is the opposite of where somebody reaches
+     * for it. A half costs the same *share* whatever the word is worth, which
+     * is what makes taking one a decision rather than a trap.
+     *
+     * It is one of the two fractional terms in the whole scoring — the other is
+     * `flightPerGap` — and the round is floored **once**, at the end, in
+     * `domain/games.ts`. Halving here and rounding here would lose the halves
+     * a player earned on two different words.
+     */
+    wordHintFactor: 0.5,
+    /** Every word solved, first try, no hint. One, matching the quizzes': a
+     *  clean-round bonus is worth having and is not worth a third of the round,
+     *  which is what 3 was against a nine-point ramp. */
+    wordPerfectBonus: 1,
     wordsPerRound: 5,
 
     /*
@@ -263,24 +341,43 @@ export const CONFIG = {
      * and still pays: finishing is always worth something, which is what keeps
      * the board approachable now that it is timed.
      *
+     * Three bands rather than four, and much tighter: 18/23/over paying 8/6/3,
+     * where it was 40/70/110/over paying 12/8/4/2. A six-pair board is not a
+     * forty-second game for anybody paying attention, so the old top band was
+     * where nearly every finished round landed and the clock was decorative.
+     *
+     * `throughSeconds` is **inclusive** — see the note on `quizSpeedBands`
+     * above, which is the same rule and the same reason.
+     *
      * Timed from the first move to the last, from the timestamps the server
      * already writes on every event — the client has no clock to borrow, and a
      * client-reported duration is one a modified client can invent.
      */
     memoryPairs: 6,
     memoryBands: [
-      { underSeconds: 40, points: 12 },
-      { underSeconds: 70, points: 8 },
-      { underSeconds: 110, points: 4 },
-      { underSeconds: null, points: 2 },
-    ] as ReadonlyArray<{ underSeconds: number | null; points: number }>,
+      { throughSeconds: 18, points: 8 },
+      { throughSeconds: 23, points: 6 },
+      { throughSeconds: null, points: 3 },
+    ] as ReadonlyArray<{ throughSeconds: number | null; points: number }>,
 
     /*
      * The endless flight. `flightTarget` gaps banks the round; every gap past it
      * still pays, up to a hard ceiling — one lucky run used to be worth four
      * days of everything else.
+     *
+     * **Half a point a gap**, not one. It was one, which put the 20-point
+     * ceiling twenty gaps out and made the arcade round the cheapest 20 points
+     * in the product; it is forty gaps now, and the client ramps the scroll
+     * speed as the run goes on, so the far half of that is earned rather than
+     * waited out. The server does not simulate the flight — it is handed
+     * `{cleared}` and clamps it — so the ramp is the client's business and this
+     * number is the only thing here that prices a gap.
+     *
+     * An odd gap count therefore ends on a half point. The round is floored
+     * **once, at the end**, so seven gaps is 3.5 and banks 3 — not two floors
+     * taking the same half off twice.
      */
-    flightPerGap: 1,
+    flightPerGap: 0.5,
     flightTarget: 5,
     flightMaxPoints: 20,
 
@@ -296,8 +393,9 @@ export const CONFIG = {
      * A curve lived here that paid a repeat of the *same* game 100/60/40/20/0%
      * on free. It was written when play was unlimited and it was the only brake
      * there was. Energy is that now — every finished round costs one, which is
-     * six rounds a day sustained on free (nine in a burst), eight on Pro,
-     * twelve on Premium — and the curve stopped reaching: per *game*, its free
+     * twelve rounds a day sustained on free (sixteen from a full tank),
+     * 24/30 on Pro, 48/58 on Premium — and the curve stopped reaching: per
+     * *game*, its free
      * zero rung was the fifth round of one game, so a player rotating the seven
      * never got near it, and on Pro and Premium it never bit under any pattern
      * of play at all. Two overlapping limiters where only one binds is one more

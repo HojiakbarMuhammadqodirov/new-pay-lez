@@ -48,7 +48,7 @@ Run the backend locally:
 ```bash
 npm install
 npm run server        # http://127.0.0.1:8787 — migrates, seeds and imports on first run
-npm run verify:api    # 537 checks, if you want to see what it guarantees
+npm run verify:api    # 579 checks, if you want to see what it guarantees
 ```
 
 > **A large economy change has landed since the last copy of this brief.** Points
@@ -64,10 +64,26 @@ npm run verify:api    # 537 checks, if you want to see what it guarantees
 > `test/live_test.dart` and `test/protocol_test.dart` will fail on first. Read
 > that before you read anything else here.
 >
+> **The games have moved again since that was written, and mostly in numbers
+> rather than in shapes.** The energy clock was cut hard (240/180/120 → 120/60/30
+> minutes a refill, ceilings unchanged), so a day went from 10/14/22 rounds to
+> **16/30/58**; the four quizzes lost their mistake limit and **cannot be lost**;
+> and all four scoring tables were rewritten, with the quizzes gaining a
+> round-speed bonus and two of the games now paying in halves. §2 and §3 of that
+> same list carry it. One key left a body (`mistakesAllowed`) and two arrived
+> (`perfectBonus`, `speedBands`); everything else is a figure, which means the
+> app will decode perfectly and be wrong.
+>
 > **The profile has moved since then too.** `headline` is gone — the column was
 > dropped, not emptied — and `occupation`, which the UI labels "Status", took its
 > place; the city field stopped being a closed list; and the GDPR export got much
 > bigger. Those are §5, §6 and §9 of the same list.
+>
+> **And `gameType` has gained a value: `uzbekistan`.** It is still seven games —
+> the Poland quiz became a *local* quiz with a bank per country, and the client
+> picks between `poland` and `uzbekistan` by `countryCode` on `GET /v1/me` rather
+> than showing both. A sealed Dart enum over the seven old values will throw on
+> decode the first time one is echoed back, which is §3e of that same list.
 
 ---
 
@@ -143,13 +159,23 @@ table; do not print any of them as the reward.
 
 | # | Game | `gameType` | What it is | Raw score |
 | --- | --- | --- | --- | --- |
-| 1 | Brain Games | `brain` | 5 questions, 12 s each, 2 mistakes survivable | 1 per correct, **+5** for all five |
-| 2 | Guess the Flag | `flags` | 5 questions, 6 s each. `prompt` is an **ISO country code** — build the flag emoji from it (snippet in `API.md` §5) | 1 per correct, **+5** for all five |
-| 3 | Country & Capital | `capitals` | 5 questions, 6 s each | 1 per correct, **+5** for all five |
-| 4 | Poland Quiz | `poland` | 5 questions, 8 s each | 1 per correct, **+5** for all five |
-| 5 | Squawk's Flight | `flight` | The arcade round. Endless side-scroller, fly through gaps, one crash ends it. 5 gaps decides whether the round was *won* | 1 per gap, **capped at 20 points** |
-| 6 | Memory Match | `memory_match` | 6 pairs. **No fail state** — deliberately the accessible one — but it is now **timed** | Elapsed time alone: <40 s → 12, <70 s → 8, <110 s → 4, otherwise 2 |
-| 7 | Word Builder | `word_builder` | 5 words from scrambled letters | 1 per word, **+** the word's own tier bonus (0/1/2), **+3** for all five first-try and hint-free |
+| 1 | Brain Games | `brain` | 5 questions, 12 s each. **No mistake limit — a quiz cannot be lost** | 1 per correct, **+1** for all five, **+2/+1/0** if the whole round took ≤10 s / ≤15 s / longer |
+| 2 | Guess the Flag | `flags` | 5 questions, 6 s each. `prompt` is an **ISO country code** — build the flag emoji from it (snippet in `API.md` §5) | as above; ceiling 8 |
+| 3 | Country & Capital | `capitals` | 5 questions, 6 s each | as above; ceiling 8 |
+| 4 | Local Quiz | `poland` **or** `uzbekistan` | 5 questions, 8 s each. **One card, two banks** — send the type that matches the country on the player's profile; see below | as above; ceiling 8 |
+| 5 | Squawk's Flight | `flight` | The arcade round. Endless side-scroller, fly through gaps, one crash ends it. 5 gaps decides whether the round was *won* | **half a point** per gap, **capped at 20 points** |
+| 6 | Memory Match | `memory_match` | 6 pairs. **No fail state** — deliberately the accessible one — but it is now **timed** | Elapsed time alone: ≤18 s → 8, ≤23 s → 6, slower → 3 |
+| 7 | Word Builder | `word_builder` | 5 words from scrambled letters | **the word's own tier** (1/2/3), **halved** if that word was hinted, **+1** for all five first-try and hint-free |
+
+**Seven cards, eight `gameType` values.** Row 4 is one game with two question
+banks: `poland` and `uzbekistan` run the identical protocol, score by the
+identical rules and differ only in which country they ask about. **Pick between
+them by `countryCode` on `GET /v1/me` and render a single card** — do not put both
+in the grid. A player in Kraków has no use for a quiz about Samarkand, and a menu
+that grows by one card every time the product reaches another country is a grid
+that stops fitting on a phone. `countryCode` is nullable, so decide what an
+account with no country sees rather than sending `null` into a switch and
+rendering nothing; the site's own answer is the market it is in.
 
 Then the server applies one factor and nothing else:
 
@@ -171,29 +197,53 @@ Notes that decide whether these feel right:
 
 - The banks are on the server: 196 flag questions and 196 capitals, in English,
   Polish, Russian and Uzbek. You do not ship question data.
+- **A quiz cannot be lost.** All five questions are asked however the first four
+  went; there is no mistake limit and `mistakesAllowed` is gone from the round's
+  `content`. Any hearts-remaining row on a quiz screen is dead — delete it, do
+  not draw it full. `won` on a quiz now means **all five correct**, and
+  `won: false` means "not a clean sweep" rather than "forfeited".
+- **The quiz speed bonus is on the whole round and only on a clean sweep**, timed
+  from the first event the server recorded to the last. There is no duration to
+  report — the same as Memory Match. Draw the timer against
+  `content.speedBands`, which the server sends with `perCorrect` and
+  `perfectBonus` so the numbers on the screen are the ones that will be paid.
+- **A band boundary is inclusive**: the wire field is `throughSeconds` and it is
+  compared with `<=`. Ten seconds exactly is the ten-second band.
 - Memory Match never sends the layout — you get `{cards, pairs}` and report pairs
   of positions. Do not hold the deck. It is scored from the server's own event
   stamps, so there is no duration to report: just play the moves.
 - The flight is the one game with no answer key. Report `{cleared}` to `/finish`;
-  the server caps the **points**, not the gaps.
+  the server caps the **points**, not the gaps. It pays **half a point a gap**
+  now, so the 20-point ceiling is forty gaps rather than twenty — which is what
+  the client-side speed ramp is there to make earned rather than waited out. The
+  ramp is yours; the price of a gap is the server's.
+- **Halves are real, and the round is floored once at the end.** A hinted word is
+  worth half its tier and a gap half a point. The server carries the exact sum
+  through the plan multiplier and floors the result, so seven gaps is 3.5 and
+  banks 3 on free and **4** on Pro. Do not floor per item locally and then show
+  the total; you will be a point low, and only on paid tiers, which is the
+  hardest kind of mismatch to notice.
 - **Hearts became energy, and every finished round costs one — win or lose.**
   Losses only was the rule before, and it bounded nobody: two of the seven games
   cannot be lost. An **abandoned** round still costs nothing, and *starting* one
   costs nothing — the charge is written when the round is banked, so a dropped
   connection mid-round takes nothing with it.
 - **Energy does not reset at midnight.** It is shared across all seven games and
-  refills one every `energy_regen_minutes` — 240 free, 180 Pro, 120 Premium — up
+  refills one every `energy_regen_minutes` — 120 free, 60 Pro, 30 Premium — up
   to `daily_energy` (4 / 6 / 10). `GET /v1/games/state` returns
   `energy: { energy, max, nextAt }`, and `nextAt` is what an empty tank should
   draw. A countdown to midnight is wrong.
 - **That pair is the whole limiter on a day**, now that there is no points cap
-  and no decay curve. Read together they give its size — 6 rounds a day sustained
-  on free and 10 from a full tank, 8/14 on Pro, 12/22 on Premium. It is worth
-  drawing honestly: it is the number a player plans an evening around, and it is
-  what a paid plan is actually sold on.
+  and no decay curve. Read together they give its size — 12 rounds a day
+  sustained on free and 16 from a full tank, 24/30 on Pro, 48/58 on Premium. It
+  is worth drawing honestly: it is the number a player plans an evening around,
+  and it is what a paid plan is actually sold on. **All six of those figures have
+  just moved** (from 6/10, 8/14, 12/22), because the intervals were cut hard
+  while the ceilings stayed put.
 - Word Builder hints are capped per day by `word_hints_per_day` (3 / 6 / 10).
   Past it the hint event is refused with `entitlement_required`, carrying `limit`
-  and `used`. A hint keeps the word's base point and forfeits its tier bonus.
+  and `used`. A hint **halves that word's points** — it used to forfeit a tier
+  bonus and keep a flat base, which charged nothing on the easiest word.
 - A round's result comes back with `streak`, `freezes`, `energyLeft` and
   `balance` — show those from the response, do not recompute them.
 
@@ -386,8 +436,9 @@ Two rendering rules that matter (`API.md` §9):
 - Every error code in `API.md` §2 has a message someone at a till can act on.
 - Amounts are integers in minor units, everywhere, with no exceptions.
 - Nothing on screen says points expire, that there is a daily points cap, that a
-  repeat round pays less, that energy comes back at midnight, or that a number
-  has been verified. Nothing says "heart" at all.
+  repeat round pays less, that energy comes back at midnight, that a quiz round
+  can be lost or that mistakes are limited, or that a number has been verified.
+  Nothing says "heart" at all.
 - No screen offers a free-text `headline`, and no screen refuses a city because
   it is not on `GET /v1/cities`. The profile's "Status" is a five-value picker
   reading `occupation`, and every city and country shown is the one the server
@@ -495,7 +546,7 @@ timestamp minutes-to-hours away rather than the end of the day.
 
 ```diff
 - "daily_lives": "4", "life_regen_minutes": "240",
-+ "daily_energy": "4", "energy_regen_minutes": "240",
++ "daily_energy": "4", "energy_regen_minutes": "120",
 - "round_decay": "free",
 ```
 
@@ -519,13 +570,20 @@ rule expects**. Anything the app paces off the pool — a "play again" affordanc
 a nudge, a paywall prompt, an onboarding tutorial that assumes the first few
 rounds are free — is now mistimed.
 
+**And the refill has just been cut hard, which moves it back the other way.**
+`energy_regen_minutes` went 240/180/120 → **120/60/30** while `daily_energy`
+stayed at 4/6/10. Nothing about the shape of the response changed, so this is the
+second thing in this section that reaches you as a support ticket rather than as
+a decode failure — but a day is now much larger, and the whole of a paid plan's
+argument moved into the clock.
+
 What a day is, so the screens can say it honestly:
 
-| Plan | Sustained, per day | From a full tank |
-| --- | --- | --- |
-| Free | 6 | 10 |
-| Pro | 8 | 14 |
-| Premium | 12 | 22 |
+| Plan | Sustained, per day | From a full tank | Was |
+| --- | --- | --- | --- |
+| Free | 12 | 16 | 6 / 10 |
+| Pro | 24 | 30 | 8 / 14 |
+| Premium | 48 | 58 | 12 / 22 |
 
 Three rules travel with the charge, and each of them is a screen:
 
@@ -538,7 +596,7 @@ Three rules travel with the charge, and each of them is a screen:
 - **The refusal is enforced at the start** (§1d), because finding out at the end
   means finding out after the round was played.
 
-### 3. `POST /v1/games/sessions/{id}/finish` — `decay` is **gone**, and `capped` always was 0
+### 3. The games — `decay` is **gone**, `capped` always was 0, **every scoring table moved**, and `gameType` gained a value
 
 ```diff
   {
@@ -567,9 +625,77 @@ than sit behind a condition that can no longer be true.
 break on a missing key. There is nothing to read instead of it: nothing trims a
 round. Delete any "you have hit today's limit" copy driven off it.
 
-The raw scores themselves moved a while back too — see the table in §2 of the
-brief. A fixture asserting 25 points for a clean Brain round, or 36 for a Memory
-Match board, is wrong by a lot.
+**The raw scores themselves have all just moved again**, and none of them has a
+shape to catch it. The table is in §2 of the brief; what changed, per game:
+
+| Game | Was | Is |
+| --- | --- | --- |
+| the four quizzes | 1 per correct, **+5** for all five; 2 mistakes survivable | 1 per correct, **+1** for all five, **+2/+1/0** for a clean sweep in ≤10 s / ≤15 s / slower. **No mistake limit.** Ceiling 8 |
+| `word_builder` | 1 per word + tier bonus 0/1/2 (a hint forfeited the bonus), **+3** for a clean sweep | **the word's tier** 1/2/3, **halved** by a hint, **+1** for a clean sweep |
+| `memory_match` | <40 s → 12, <70 s → 8, <110 s → 4, else 2 | **≤18 s → 8, ≤23 s → 6, slower → 3** |
+| `flight` | 1 per gap, capped at 20 | **0.5 per gap**, capped at 20 |
+
+Four consequences for the app, in the order they will bite:
+
+**3a. `content` on `POST /v1/games/sessions` — a quiz key left and two arrived.**
+
+```diff
+  "content": {
+    "questions": [ … ],
+-   "mistakesAllowed": 2,
+    "perCorrect": 1,
++   "perfectBonus": 1,
++   "speedBands": [ { "throughSeconds": 10, "points": 2 },
++                   { "throughSeconds": 15, "points": 1 },
++                   { "throughSeconds": null, "points": 0 } ]
+  }
+```
+
+A required `mistakesAllowed` **throws on decode** at the top of every quiz. Any
+hearts-remaining row on a quiz screen is dead: **a quiz cannot be lost**, all five
+questions are asked however the first four went, and the round banks what it
+earned. Draw the round timer against `speedBands` rather than hardcoding 10 and
+15 — the point of sending them is that the number on the screen is the number
+that will be paid.
+
+**3b. `won` on a quiz now means all five correct.** Not "fewer than three
+mistakes". `won: false` is "not a clean sweep", not "forfeited" — the round still
+scored, still banked, and still cost its one energy. A "you lost" screen on a
+quiz is now wrong on both counts.
+
+**3c. The quiz speed bonus is timed by the server, on the whole round, and is
+paid only on a clean sweep.** It is the span from the first event the server
+recorded to the last, exactly as Memory Match is timed. There is no duration to
+report and no per-question clock behind it. Paying it on any round would make
+answering five questions wrong without reading them the fastest way to a bonus.
+A boundary is **inclusive**: `throughSeconds` is compared with `<=`, so ten
+seconds exactly is the ten-second band.
+
+**3d. Scores can be halves before they are banked, and the round is floored
+once, at the end.** A hinted word is worth half its tier; a gap is worth half a
+point. The server carries the exact sum through `points_multiplier` and floors
+the result — seven gaps is 3.5, which banks **3** on free and **4** on Pro. If
+the app floors per item and shows its own total, it will disagree with `score`
+by a point, only on paid tiers, only on odd counts. That is the hardest kind of
+mismatch to notice and the easiest to avoid: show `score` off the response.
+
+A fixture asserting 25 points for a clean Brain round, 36 for a Memory Match
+board, or 10 for a clean quiz sweep is wrong by a lot.
+
+**3e. `gameType` has an eighth value, `uzbekistan`, and it is still seven
+games.** The Poland quiz became a *local* quiz with one bank per country:
+`poland` and `uzbekistan` run the same protocol, take the same event payloads,
+score by the same table and differ only in what they ask about. This is the one
+item in §3 that is a **decode** break rather than a figure — a sealed enum over
+the seven old strings throws the first time the server echoes the new one back
+on `POST /v1/games/sessions`.
+
+Two things to build against it. **Choose by `countryCode` on `GET /v1/me` and
+render one card**, not two: a grid that gains a card every time the product
+reaches another country stops fitting on a phone, and the quiz a player wants is
+the one about where they live. And **decide what an unknown country sees** —
+`countryCode` is nullable on accounts that predate the field, so a `switch` with
+no default renders no local quiz at all rather than an obvious fallback.
 
 ### 4. `GET /v1/wallet` — a field was **removed**
 
@@ -847,8 +973,17 @@ after either of them.
       `/v1/me` and `/v1/gate/…/confirm` from a freshly booted server. Those six
       are the ones whose keys moved.
 - [ ] Any model with a required `expiringSoon`, `pointsCapped`, `phoneVerified`,
-      `decay` or `headline` field: make it gone, not optional. A field that is
-      never sent is not a nullable field, it is a field that does not exist.
+      `decay`, `mistakesAllowed` or `headline` field: make it gone, not optional.
+      A field that is never sent is not a nullable field, it is a field that does
+      not exist.
+- [ ] Every hardcoded scoring figure in the app or its fixtures: all four tables
+      moved (§3). The ones most likely to be sitting in a test are `+5` for a
+      clean quiz sweep, the 40/70/110-second memory bands, and 1 point a gap.
+- [ ] Any assertion that a quiz round ends, or is `won: false`, after two wrong
+      answers. There is no mistake limit; `won` means all five correct.
+- [ ] Any comparison of a locally-totalled score against `score`. Halves are real
+      now, and the server floors once at the end — an app that floors per item is
+      a point low on Pro and Premium and exactly right on free.
 - [ ] Grep the app for `no_lives`, `livesLeft`, `daily_lives`,
       `life_regen_minutes`, `round_decay` and `resetsAt`. Every hit is a bug, and
       the first of them is the one that fails silently.
@@ -863,9 +998,9 @@ after either of them.
       it can assert a non-zero starting balance, and its game assertions need the
       new raw scores with no decay factor applied to them.
 - [ ] Any assertion that energy is unchanged after a **won** round: it is one
-      lower. A journey that finishes three rounds on a fresh free account now
-      ends on an empty tank — inside one test run nothing regenerates, four
-      hours being what it costs — so a fourth `POST /v1/games/sessions` is a
+      lower. A journey that finishes four rounds on a fresh free account now
+      ends on an empty tank — inside one test run nothing regenerates, two
+      hours being what a refill costs — so a fifth `POST /v1/games/sessions` is a
       `409 no_energy`.
 - [ ] Any assertion that a fourth Word Builder hint or a sixth assistant ask
       succeeds. Both are 403s now.

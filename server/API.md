@@ -279,11 +279,22 @@ connection never costs the player a question.
 
 | `gameType` | `content` | Event `payload` |
 | --- | --- | --- |
-| `flags` | `questions[{index, prompt, options}]` — `prompt` is an **ISO country code**; build the flag emoji from it | `{index, choice}` |
-| `capitals`, `brain`, `poland` | `questions[{index, prompt, options}]` | `{index, choice}` |
+| `flags` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` — `prompt` is an **ISO country code**; build the flag emoji from it | `{index, choice}` |
+| `capitals`, `brain`, `poland`, `uzbekistan` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` | `{index, choice}` |
 | `word_builder` | `words[{index, length, tier, letters, hint}]` | `{index, guess}`, or `kind:"hint"` with `{index, position}` |
 | `memory_match` | `{cards, pairs}` — the layout stays on the server | `{a, b}` — two card positions |
 | `flight` | `{target}` | none; send `{report:{cleared}}` to `/finish` |
+
+**Eight `gameType` values, seven cards.** `poland` and `uzbekistan` are one
+local-knowledge quiz asked about two different countries: same protocol, same
+scoring, same speed bands, different question bank. **Pick between them by the
+country on the player's profile** and show a single card — offering both is a
+menu that grows by one every time the product reaches another country, and a
+player in Kraków has no use for a quiz about Samarkand. There is no endpoint that
+picks for you: `GET /v1/me` carries `countryCode`, and that is the whole rule.
+It is **nullable** — an account that predates the country field has none — so
+decide what an unknown country sees rather than sending `null` into a switch and
+rendering no card at all.
 
 ### Energy is the whole of what bounds a day
 
@@ -303,7 +314,7 @@ under `energy` as an **object**:
 { "energy": 2, "max": 4, "nextAt": "2026-08-29T18:12:44.000Z" }
 ```
 
-One comes back every `energy_regen_minutes` — 240 free, 180 on Pro, 120 on
+One comes back every `energy_regen_minutes` — 120 free, 60 on Pro, 30 on
 Premium — up to `daily_energy`, which is 4, 6 and 10. `nextAt` is `null` when the
 tank is full. Draw the wait from it; a countdown to midnight is simply wrong, and
 a pool with no visible end is what makes an energy system feel broken.
@@ -313,9 +324,14 @@ Read the two keys together and they give the size of a day —
 
 | Plan | Sustained, per day | From a full tank |
 | --- | --- | --- |
-| Free | 6 | 10 |
-| Pro | 8 | 14 |
-| Premium | 12 | 22 |
+| Free | 12 | 16 |
+| Pro | 24 | 30 |
+| Premium | 48 | 58 |
+
+**Those six figures have just moved.** The intervals were cut hard —
+240/180/120 → 120/60/30 — while the ceilings stayed at 4/6/10, so a day went
+from 10/14/22 rounds to 16/30/58 and the sustained rate from 6/8/12 to 12/24/48.
+Anything the app paces off the pool was tuned against the old pair.
 
 `POST /v1/games/sessions` refuses with `no_energy` on an empty tank — enforced at
 the start, because finding out at the end means finding out after the round was
@@ -325,8 +341,10 @@ played. `energyLeft` on that response is therefore what the player holds
 **A hint is metered.** Word Builder hints are capped per day by
 `word_hints_per_day` — 3 free, 6 on Pro, 10 on Premium — and past it the event is
 refused with `entitlement_required` rather than quietly answered with something
-that is not a hint. A hint keeps the word's base point and forfeits its tier
-bonus, which is what makes taking one a decision.
+that is not a hint. A hint **halves that word's points**, which is what makes
+taking one a decision. (It used to forfeit a tier bonus and keep a flat base,
+which charged nothing on an easy word and two thirds on a hard one — the opposite
+of where anybody reaches for it.)
 
 **The score is not sent by the client.** `/finish` computes it from the events
 the server recorded. The only exception is the flight, which has no answer key —
@@ -338,12 +356,33 @@ The raw round, before the one factor below:
 
 | Game | Raw score |
 | --- | --- |
-| `brain`, `flags`, `capitals`, `poland` | 1 per correct answer, **+5** for all five. 5 questions, 2 mistakes survivable |
-| `word_builder` | 1 per word solved, **+** the word's own tier bonus (0/1/2, forfeited by a hint), **+3** for solving all five first-try and hint-free |
-| `memory_match` | **Elapsed time alone**: under 40 s → 12, under 70 s → 8, under 110 s → 4, otherwise → 2. Timed from the server's own event stamps. No fail state; a finished deck always pays |
-| `flight` | 1 per gap cleared, **capped at 20 points**. 5 gaps decides `won`, not what it pays |
+| `brain`, `flags`, `capitals`, `poland`, `uzbekistan` | 1 per correct answer, **+1** for all five, and a **round speed bonus** on top of that — ≤10 s → +2, ≤15 s → +1, slower → 0. Ceiling 8. 5 questions, **no mistake limit** |
+| `word_builder` | **the word's own tier** (1 / 2 / 3), **halved** if that word was hinted, **+1** for solving all five first-try and hint-free |
+| `memory_match` | **Elapsed time alone**: ≤18 s → 8, ≤23 s → 6, slower → 3. Timed from the server's own event stamps. No fail state; a finished deck always pays |
+| `flight` | **half a point** per gap cleared, **capped at 20 points**. 5 gaps decides `won`, not what it pays |
 
 Then `score = floor(raw × points_multiplier)`, and that is the whole of it.
+
+Four things about that table decide whether a client agrees with the server:
+
+- **A quiz cannot be lost, and `won` means all five correct.** The mistake limit
+  is gone and so is `mistakesAllowed` on the round's `content`: all five
+  questions are asked however the first four went, and the round banks what it
+  earned. `won: false` on a quiz means "not a clean sweep", not "forfeited".
+- **The quiz speed bonus is paid only on a clean sweep**, and it is timed on the
+  **whole round** — the span from the first recorded event to the last, off the
+  server's own stamps. Do not send a duration; there is nothing to send. Paying
+  it on any round would make the fastest strategy answering five questions wrong
+  without reading them. The bands travel on `content.speedBands` so a timer can
+  draw against the server's own numbers rather than a hardcoded copy.
+- **A band boundary is inclusive.** The wire field is `throughSeconds` and it is
+  compared with `<=`: a round finishing on the stroke of 10 seconds gets the
+  10-second band, and a board finished on the stroke of 18 gets 8 points.
+- **Raw scores can hold halves, and the round is floored once, at the end.** A
+  hinted word is worth half its tier and a gap is worth half a point. The server
+  carries the exact sum through the multiplier and floors the result — seven gaps
+  is 3.5, which banks 3 on free and 4 on Pro. Do not round per item on the client
+  and then compare; you will be a point low, and only on paid tiers.
 
 **A round pays the same whether it is your first of the day or your tenth.**
 There is no daily points cap and no per-game decay curve — a curve lived here
@@ -414,7 +453,7 @@ Ask what the account is entitled to, never what it paid. `GET /v1/me` returns an
 `entitlements` map resolved from the active plan:
 
 ```json
-{ "daily_energy": "4", "energy_regen_minutes": "240", "scan_points": "20",
+{ "daily_energy": "4", "energy_regen_minutes": "120", "scan_points": "20",
   "points_multiplier": "1", "exclusive_deals": "false" }
 ```
 
@@ -428,7 +467,7 @@ is sold with a free trial** — `trial_days` is 0 on every one of them.
 | Key | Free | Pro | Premium |
 | --- | --- | --- | --- |
 | `daily_energy` | 4 | 6 | 10 |
-| `energy_regen_minutes` | 240 | 180 | 120 |
+| `energy_regen_minutes` | 120 | 60 | 30 |
 | `points_multiplier` *(game rounds only)* | 1 | 1.25 | 1.75 |
 | `scan_points` | 20 | 30 | 50 |
 | `first_visit_points` | 100 | 150 | 250 |

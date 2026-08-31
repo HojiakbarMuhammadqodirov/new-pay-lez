@@ -500,6 +500,10 @@ export const ru: Dictionary = {
 
     featured: 'Игра дня · сохраняет серию',
 
+    /* Keyed by country code, not a template: the country's case changes with
+       the sentence around it, so each name is written whole. */
+    localQuiz: { PL: 'Викторина о Польше', UZ: 'Викторина об Узбекистане' },
+
     streakHint: 'Один раунд в день сохраняет её',
     freezesHint: 'Каждая покрывает один пропущенный день',
     streakKept: 'засчитано',
@@ -512,7 +516,7 @@ export const ru: Dictionary = {
       'Угадай флаг',
       'Страна и столица',
       'Игры для ума',
-      'Викторина о Польше',
+      'Местная викторина',
       'Собери слово · Английский',
       'Собери слово · {language}',
     ],
@@ -536,9 +540,18 @@ export const ru: Dictionary = {
         q: 'Какую планету называют Красной планетой?',
         options: ['Марс', 'Венера', 'Юпитер'],
       },
-      poland: {
-        q: 'Какая валюта в Польше?',
-        options: ['Злотый', 'Евро', 'Крона'],
+      /* One sample per local bank — the card is a different quiz per country.
+         The Uzbekistan row is the export's own, already written in every
+         language, so it is transcribed rather than translated. */
+      local: {
+        PL: {
+          q: 'Какая валюта в Польше?',
+          options: ['Злотый', 'Евро', 'Крона'],
+        },
+        UZ: {
+          q: 'С каким количеством стран граничит Узбекистан по суше?',
+          options: ['Пятью', 'Тремя', 'Семью'],
+        },
       },
     },
 
@@ -563,6 +576,10 @@ export const ru: Dictionary = {
     boardTitle: 'Рейтинг',
     boardTabs: ['Верные ответы', 'Заработанные баллы'],
     boardTop: 'Топ-10',
+      boardScopes: ['Мой город', 'Моя страна', 'Все'],
+      boardLoading: 'Загружаем таблицу…',
+      boardOffline: 'Сейчас не получается получить таблицу. Это не значит, что никто не играет — просто не можем спросить.',
+      boardHidden: 'Вы на {rank} месте на этой неделе. Вас нет в списке, потому что вы это не включили — можно включить в профиле.',
     /* The signed-in player's own row on the leaderboard. Everybody else is a
        derived PY-code; this one is the second person, because a board you are
        on should say so in words rather than in a code you have to recognise. */
@@ -2742,6 +2759,14 @@ export const ru: Dictionary = {
     langTitle: 'Выберите язык',
     langLede: 'Его можно поменять позже — это переключатель в шапке.',
     langNext: 'Продолжить',
+      placeTitle: 'Где вы играете?',
+      placeLede: 'Таблица строится по городу и стране. Это можно пропустить — вы всё равно будете играть, копить баллы и попадать в мировую таблицу.',
+      placeCity: 'Ваш город',
+      placeCityPlaceholder: 'Начните печатать…',
+      placeListed: 'Показывать меня в таблице',
+      placeListedNote: 'Ваше имя и баллы за неделю будут видны другим игрокам. Выключено, пока вы не включите — поменять можно в профиле.',
+      placeSaving: 'Сохраняем…',
+      back: 'Назад',
 
     gameTitle: 'Что это за страна?',
     gameRound: 'Раунд {n} из {total}',

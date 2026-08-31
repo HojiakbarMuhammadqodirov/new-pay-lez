@@ -25,7 +25,7 @@ import type { Route } from './http/router.ts';
 export interface BootOptions {
   file?: string;
   legacyDir?: string;
-  /** Where the two hand-delivered question banks live. See `db/import.ts` §8. */
+  /** Where the three hand-delivered question banks live. See `db/import.ts` §8. */
   gamesDir?: string;
   /** Import even when the database already has venues. */
   reimport?: boolean;

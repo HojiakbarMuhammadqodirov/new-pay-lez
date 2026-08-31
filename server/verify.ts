@@ -21,7 +21,7 @@ import { openDb } from './db/db.ts';
 import { seedDemo } from './db/demo.ts';
 import { importLegacy } from './db/import.ts';
 import { boot } from './main.ts';
-import { parseCsv } from './db/csv.ts';
+import { csvParts, parseCsv } from './db/csv.ts';
 import { CONFIG } from './config.ts';
 import { allRoutes } from './http/routes/index.ts';
 import { createApi } from './http/server.ts';
@@ -819,10 +819,13 @@ function gameRules(): void {
   check('a repeated event is not counted twice', !replay.accepted);
 
   const finished = games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
-  /* Five right at one apiece, plus the clean-sweep bonus that makes the last
-     question worth answering. */
+  /* Five right at one apiece, the clean-sweep bonus, and the speed band on top
+     of it — every event above was submitted at the same instant, so the round
+     took nought seconds and takes the fastest band. That is the quiz ceiling,
+     5 + 1 + 2, and `scoringRules` below walks the bands one at a time. */
   eq('the score is computed server-side', finished.score,
-    5 * CONFIG.games.quizPerCorrect + CONFIG.games.quizPerfectBonus);
+    5 * CONFIG.games.quizPerCorrect + CONFIG.games.quizPerfectBonus +
+      CONFIG.games.quizSpeedBands[0].points);
   eq('a clean round is a win', finished.won, true);
   eq('the streak starts at one', finished.streak, 1);
   /* **A win costs energy too, now.** The pool used to be charged by a loss
@@ -1013,17 +1016,389 @@ function energyRules(): void {
   );
 
   /*
-   * **What a day is, now that every round costs.**
+   * **What a day is, now that every round costs — on all three plans.**
    *
-   * `dailyEnergy + 1440 / energyRegenMinutes` — the tank once, plus what the
-   * clock returns over twenty-four hours. Ten on the free plan from a full
-   * tank, six a day sustained. It is asserted rather than left as arithmetic in
-   * a comment because **it is now the only bound on a day**: the per-game decay
-   * curve that used to sit beside it is gone, so these two constants are the
-   * whole rule and moving either one changes how much a player can earn. This
-   * is what makes somebody notice.
+   * `daily_energy + 1440 / energy_regen_minutes` — the tank once, plus what the
+   * clock returns over twenty-four hours. Sixteen on the free plan from a full
+   * tank, twelve a day sustained; thirty on Pro and fifty-eight on Premium. It
+   * is asserted rather than left as arithmetic in a comment because **it is now
+   * the only bound on a day**: the per-game decay curve that used to sit beside
+   * it is gone, so these two keys are the whole rule and moving either one
+   * changes how much a player can earn. This is what makes somebody notice.
+   *
+   * All three tiers are read from `plan_entitlements` rather than from
+   * `CONFIG`, because only the free row is a copy of the config — the Pro and
+   * Premium figures live nowhere else, and a day that quietly halved on a paid
+   * tier is exactly the change nothing else in this file would see. The three
+   * intervals were cut hard together (240/180/120 → 120/60/30) while the
+   * ceilings stayed at 4/6/10, which is why the gap between the tiers widened.
    */
-  eq('a free day is ten finished rounds', full + Math.floor(1440 / regen), 10);
+  eq('a free day is sixteen finished rounds', full + Math.floor(1440 / regen), 16);
+
+  const daySizeOf = (code: string): number => {
+    const ent = (key: string) =>
+      Number(
+        w.db.get<{ value: string }>(
+          `SELECT value FROM plan_entitlements WHERE plan_id = $p AND key = $k`,
+          { p: `pln_consumer_${code}`, k: key },
+        )?.value,
+      );
+    return ent('daily_energy') + Math.floor(1440 / ent('energy_regen_minutes'));
+  };
+  eq('…and the free plan row agrees with the config', daySizeOf('free'), 16);
+  eq('a Pro day is thirty', daySizeOf('pro'), 30);
+  eq('a Premium day is fifty-eight', daySizeOf('premium'), 58);
+
+  w.db.close();
+}
+
+/**
+ * §7.4 — what each of the four scorers pays, band by band and boundary by
+ * boundary.
+ *
+ * `gameRules` above proves the *protocol*: that the answers stay on the server,
+ * that a replay is idempotent, that somebody else's session is refused. This
+ * proves the **arithmetic**, which is a different thing and the thing that moves
+ * — every figure below was a different number one release ago, and none of them
+ * fails loudly when it is wrong. A quiz that quietly pays five for a clean sweep
+ * instead of one still returns a well-formed body.
+ *
+ * Three properties are worth naming because each of them has an obvious wrong
+ * implementation that passes a looser test:
+ *
+ * - **The band boundaries are inclusive.** `throughSeconds` is compared with
+ *   `<=`, so a round finishing on the stroke of ten seconds takes the ten-second
+ *   band. The `<` version of this is a rule nobody reports and everybody feels,
+ *   which is why both boundaries of every band are asserted rather than a value
+ *   safely inside it.
+ * - **A quiz cannot be lost, and `won` means a clean sweep.** Those are two
+ *   statements, not one: the round is played to the end however it is going, and
+ *   `won` names the only distinction still worth drawing.
+ * - **The round is floored once, at the end, after the plan multiplier.** Two of
+ *   the scorers deal in halves. The Pro round at the bottom is the check that
+ *   separates "floor once" from "floor twice" — they agree on the free plan and
+ *   differ by a point on a paid one, which is the shape this bug always takes.
+ */
+function scoringRules(): void {
+  describe('§7.4 scoring — the four games, band by band');
+  const w = world();
+  const base = now();
+
+  /** Seconds, which is the unit two of these scorers band on. `plusMinutes` is
+   *  the module's own shift and carries a fraction of one exactly. */
+  const plusSeconds = (at: Iso, seconds: number): Iso => plusMinutes(at, seconds / 60);
+
+  /*
+   * Every round below is three hours after the one before it.
+   *
+   * Each finished round costs one energy and the free tank is four, so a suite
+   * that plays two dozen of them at one instant runs dry in the fifth and every
+   * assertion after that is a `no_energy` throw rather than a score. Three hours
+   * is more than the two the free plan takes to refill one, so the tank is at
+   * its ceiling when each round opens and nothing here is secretly a test about
+   * energy — `energyRules` above owns that. It is also short enough never to
+   * lapse a streak, so no comeback bonus lands in the middle of a score.
+   */
+  let played = 0;
+  const nextAt = (): Iso => plusMinutes(base, (played += 1) * 180);
+
+  const secretOf = <T>(sessionId: string): T =>
+    JSON.parse(
+      w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+        i: sessionId,
+      })!.secret,
+    ) as T;
+
+  /* ── the quizzes ── */
+
+  /**
+   * Play a quiz. `rights` says which of the five to answer correctly, and the
+   * round is stretched so its first and last recorded events are `seconds`
+   * apart — which is the span the speed band reads, off the server's own stamps.
+   */
+  let accepted: boolean[] = [];
+  const quiz = (rights: boolean[], seconds: number, gameType: games.GameType = 'capitals') => {
+    const at = nextAt();
+    const done = plusSeconds(at, seconds);
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType,
+      language: 'en',
+      at,
+    });
+    const secret = secretOf<{ answers: number[] }>(opened.sessionId);
+    accepted = secret.answers.map((answer, index) =>
+      games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq: index,
+        kind: 'answer',
+        /* Four options, so any index that is not the answer is a wrong answer
+           and one of 0/1 always is. */
+        payload: { index, choice: rights[index] ? answer : answer === 0 ? 1 : 0 },
+        /* Only the last event moves: the band is max minus min over the round,
+           so the questions in between decide nothing and pinning them to the
+           start keeps the fixture readable. */
+        at: index === secret.answers.length - 1 ? done : at,
+      }).accepted,
+    );
+    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
+  };
+
+  const allFive = [true, true, true, true, true];
+  const perCorrect = CONFIG.games.quizPerCorrect;
+  const sweep = CONFIG.games.quizPerfectBonus;
+
+  const fast = quiz(allFive, 4);
+  eq('five right in four seconds is the quiz ceiling', fast.score, 8);
+  eq('…which is 5 + 1 + 2 and nothing else', fast.score, 5 * perCorrect + sweep + 2);
+  eq('and a clean sweep is what `won` now names', fast.won, true);
+
+  eq('exactly ten seconds is still the fast band', quiz(allFive, 10).score, 8);
+  eq('a half-second past it drops to the middle one', quiz(allFive, 10.5).score, 7);
+  eq('exactly fifteen seconds is still the middle band', quiz(allFive, 15).score, 7);
+  eq('past fifteen the clock pays nothing at all', quiz(allFive, 16).score, 6);
+
+  /*
+   * **The speed bonus is a clean-sweep bonus.** Five wrong answers hammered out
+   * in a second is the fastest possible round, and paying it would make not
+   * reading the question the winning strategy in a quiz.
+   */
+  const rushed = quiz([false, false, false, false, false], 1);
+  eq('five wrong answers in one second pay nothing', rushed.score, 0);
+  eq('…and the fastest possible round is not a win', rushed.won, false);
+
+  const four = quiz([true, true, true, true, false], 4);
+  eq('four right pays four, with no sweep bonus', four.score, 4 * perCorrect);
+  eq('…and no speed bonus either, however fast it was', four.score, 4);
+  eq('four out of five is not a clean sweep', four.won, false);
+
+  /*
+   * **A quiz cannot be lost.** It ended after two wrong answers once, which took
+   * the last question away from exactly the player who needed the practice. All
+   * five are asked, the round banks what it earned, and `won: false` here means
+   * "not a clean sweep" rather than "forfeited".
+   */
+  const wobbly = quiz([false, false, false, false, true], 4);
+  check('the fifth question is still asked after four mistakes', accepted[4]);
+  eq('…all five were recorded', accepted.filter(Boolean).length, 5);
+  eq('…the one right answer still banks', wobbly.score, 1 * perCorrect);
+  eq('…the round is complete, not truncated', wobbly.answered, CONFIG.games.quizQuestions);
+  eq('…and nothing was forfeited for the four mistakes', wobbly.correct, 1);
+
+  /*
+   * **Two banks, one game.** `poland` and `uzbekistan` are the same
+   * local-knowledge quiz asked about two different countries — the client shows
+   * one card and picks between them by the country on the player's profile — so
+   * a scoring rule that reached either of them and not the other would be a
+   * player in Tashkent being paid differently for the same minute. Nothing in
+   * `domain/games.ts` distinguishes them and these three checks are what says
+   * so: the same round pays the same, and each one draws from its own bank.
+   */
+  const drawnFrom = (gameType: string) =>
+    w.db.get<{ own: number; total: number }>(
+      `SELECT SUM(q.bank = $b) AS own, COUNT(*) AS total
+         FROM game_recent_items r JOIN quiz_items q ON q.id = r.item_key
+        WHERE r.user_id = $u AND r.game_type = $b`,
+      { u: w.customerId, b: gameType },
+    );
+  const uzbekistan = quiz(allFive, 4, 'uzbekistan');
+  const poland = quiz(allFive, 4, 'poland');
+  eq('the Uzbekistan quiz pays exactly what the Poland one does', uzbekistan.score, poland.score);
+  eq('…and both are the quiz ceiling, on the same rules as the other two', uzbekistan.score, 8);
+  eq(
+    'the Uzbekistan round is served out of the Uzbekistan bank',
+    drawnFrom('uzbekistan'),
+    { own: CONFIG.games.quizQuestions, total: CONFIG.games.quizQuestions },
+  );
+  eq(
+    '…and the Poland one out of Poland’s, rather than the two sharing a pool',
+    drawnFrom('poland'),
+    { own: CONFIG.games.quizQuestions, total: CONFIG.games.quizQuestions },
+  );
+
+  /* ── memory match ── */
+
+  /** Play a whole board perfectly, finishing `seconds` after the first move. */
+  const board = (seconds: number) => {
+    const at = nextAt();
+    const done = plusSeconds(at, seconds);
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    /* Every symbol is in the deck twice, so pairing each one's first position
+       with its second is the whole board played without a miss. */
+    const first = new Map<string, number>();
+    let seq = 0;
+    deck.forEach((symbol, index) => {
+      const opener = first.get(symbol);
+      if (opener === undefined) {
+        first.set(symbol, index);
+        return;
+      }
+      seq += 1;
+      games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq,
+        kind: 'pair',
+        payload: { a: opener, b: index },
+        at: seq === 1 ? at : done,
+      });
+    });
+    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
+  };
+
+  eq('a board in ten seconds takes the top band', board(10).score, 8);
+  eq('exactly eighteen seconds still does', board(18).score, 8);
+  eq('a half-second past it is the middle band', board(18.5).score, 6);
+  eq('exactly twenty-three seconds is still the middle band', board(23).score, 6);
+  eq('past it the floor band still pays', board(24).score, 3);
+  const slow = board(300);
+  eq('…and five minutes pays the same floor', slow.score, 3);
+  eq('a finished deck is a win however slow it was', slow.won, true);
+
+  /* ── word builder ── */
+
+  /*
+   * A five-word bank on a language code nothing else uses.
+   *
+   * Word Builder is scored per word and `buildWords` draws five at random, so a
+   * round out of the seeded bank is worth whatever tiers it happened to pull —
+   * a fine game and a useless assertion. Five planted words on the site's own
+   * `[1, 1, 2, 2, 3]` ramp make a clean sweep exactly nine, which is the figure
+   * the economy is written down as. (This server does not *impose* that ramp on
+   * a real round; `config.ts` says why, and says it at the point of use.)
+   */
+  const RAMP = [1, 1, 2, 2, 3];
+  RAMP.forEach((tier, index) => {
+    w.db.run(
+      `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, 'zz', $w, $t, 'planted')
+         ON CONFLICT (language, word) DO UPDATE SET tier = excluded.tier`,
+      { i: `wrd_zz_${index}`, w: `PLANTED${index}`, t: tier },
+    );
+  });
+
+  /**
+   * Play the planted round. `plan` is handed the tiers in the order they were
+   * drawn and says which words to reveal a letter on, which to get wrong once
+   * before solving, and which to leave unsolved.
+   */
+  const wordRound = (
+    plan: (tiers: number[]) => { hint?: number[]; fumble?: number[]; skip?: number[] },
+  ) => {
+    const at = nextAt();
+    /* Five words in the bank against a no-repeat window of forty: the second
+       round would find nothing left to ask. Clearing the window is what lets
+       four rounds run against one known ramp — the no-repeat rule itself is
+       `buildQuiz`'s and is not what this block is about. */
+    w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u AND game_type = 'word_builder'`, {
+      u: w.customerId,
+    });
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'word_builder',
+      language: 'zz',
+      at,
+    });
+    const secret = secretOf<{ words: string[]; tiers: number[] }>(opened.sessionId);
+    const wanted = plan(secret.tiers);
+    let seq = 0;
+    const send = (kind: string, payload: Record<string, unknown>) => {
+      seq += 1;
+      games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq,
+        kind,
+        payload,
+        at,
+      });
+    };
+    secret.words.forEach((word, index) => {
+      if (wanted.hint?.includes(index)) send('hint', { index, position: 0 });
+      if (wanted.fumble?.includes(index)) send('guess', { index, guess: 'NOTTHEWORD' });
+      if (wanted.skip?.includes(index)) return;
+      send('guess', { index, guess: word });
+    });
+    return {
+      result: games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at }),
+      tiers: secret.tiers,
+    };
+  };
+
+  const swept = wordRound(() => ({}));
+  eq('the planted round is the ramp', [...swept.tiers].sort().join(''), '11223');
+  eq('a word is worth its tier: 1+1+2+2+3, plus one for the sweep', swept.result.score, 10);
+
+  /*
+   * **A hint halves that word.** Forfeiting a tier *bonus* and keeping a flat
+   * base was the rule before, and it charged nothing on the easy word and two
+   * thirds on the hard one — the opposite of where somebody reaches for it. The
+   * easy word is where the two rules disagree in a way a floor cannot hide: the
+   * ramp pays 9 clean, 8.5 with the easiest word halved, and 9 under the old
+   * rule, which never charged for a hint on a tier-1 word at all.
+   */
+  const easyHint = wordRound((tiers) => ({ hint: [tiers.indexOf(1)] }));
+  eq('a hint on the easiest word costs half of it', easyHint.result.score, 8);
+  const hardHint = wordRound((tiers) => ({ hint: [tiers.indexOf(3)] }));
+  eq('a hint on the hardest word costs half of that', hardHint.result.score, 7);
+  check(
+    'either way the sweep bonus is refused, because a hint is not a clean round',
+    easyHint.result.score < 9 && hardHint.result.score < 8,
+  );
+
+  /*
+   * A wrong attempt is the other half of "clean". It costs the *word* nothing —
+   * the per-word rate is what somebody plays for — and costs the sweep
+   * everything, which is what the bonus is for.
+   */
+  const fumbled = wordRound((tiers) => ({ fumble: [tiers.indexOf(2)] }));
+  eq('a wrong attempt still pays the word its tier', fumbled.result.score, 9);
+  eq('…and still takes the sweep bonus away', fumbled.result.score, swept.result.score - 1);
+
+  /* ── the flight ── */
+
+  const flight = (cleared: number) => {
+    const at = nextAt();
+    const opened = games.startSession(w.db, { userId: w.customerId, gameType: 'flight', at });
+    return games.finish(w.db, {
+      sessionId: opened.sessionId,
+      userId: w.customerId,
+      clientReport: { cleared },
+      at,
+    });
+  };
+
+  eq('four gaps is two points at half a point each', flight(4).score, 2);
+  eq('…and short of the five-gap target, so not a win', flight(4).won, false);
+  const banked = flight(5);
+  eq('five gaps banks the round', banked.won, true);
+  eq('…and pays two and a half, which floors to two', banked.score, 2);
+  eq('seven gaps is three and a half, which floors to three rather than four', flight(7).score, 3);
+  eq('forty gaps reach the ceiling', flight(40).score, CONFIG.games.flightMaxPoints);
+  eq('and a thousand bank the same twenty', flight(1000).score, CONFIG.games.flightMaxPoints);
+
+  /*
+   * **The floor is at the end of the round, after the plan multiplier — and it
+   * is the only one.**
+   *
+   * Seven gaps is 3.5 exactly. Floored once at the end, Pro banks
+   * `floor(3.5 × 1.25)` = 4; floored in the scorer first, it banks
+   * `floor(3 × 1.25)` = 3. Both are 3 on the free plan, which is why the check
+   * above cannot tell them apart and this one can — a half thrown away per item
+   * is invisible until something multiplies what is left.
+   */
+  entitlements.startSubscription(w.db, {
+    subject: { userId: w.customerId },
+    planCode: 'pro',
+    source: 'stripe',
+    at: plusMinutes(base, (played + 1) * 180),
+  });
+  eq('half points survive to the multiplier: 3.5 × 1.25 banks 4, not 3', flight(7).score, 4);
 
   w.db.close();
 }
@@ -1536,14 +1911,46 @@ function socialRules(): void {
 
   /* §8.2: not opted in means not listed, but still ranked and still shown. */
   ledger.earn(w.db, { userId: w.customerId, points: 40, reason: 'game_win', at });
-  const board = social.cityBoard(w.db, { userId: w.customerId, city: 'Krakow', at });
+  const board = social.board(w.db, { userId: w.customerId, scope: 'city', city: 'Krakow', at });
   check('you see yourself', board.you !== null);
   check('…and know you are hidden', board.hidden);
   eq('nobody else sees you', board.rows.filter((row) => !row.isYou).length, 0);
 
   social.setLeaderboardOptIn(w.db, w.customerId, true);
-  const listed = social.cityBoard(w.db, { city: 'Krakow', at });
+  const listed = social.board(w.db, { scope: 'city', city: 'Krakow', at });
   check('opting in lists you', listed.rows.some((row) => row.userId === w.customerId));
+
+  /*
+   * The three scopes, and the fallback between them.
+   *
+   * The customer is in Krakow, PL. A country board finds them, a global board
+   * finds them, and a *different* city does not — which is the check that the
+   * filter is actually applied rather than ignored, because a board that
+   * silently ranks everybody would pass all three of the positive cases.
+   */
+  w.db.run(`UPDATE users SET country_code = 'PL' WHERE id = $u`, { u: w.customerId });
+  const byCountry = social.board(w.db, { scope: 'country', country: 'PL', at });
+  check('a country board finds them', byCountry.rows.some((r) => r.userId === w.customerId));
+  eq('…and says which scope answered', byCountry.scope, 'country:PL');
+
+  const global = social.board(w.db, { scope: 'global', at });
+  check('a global board finds them', global.rows.some((r) => r.userId === w.customerId));
+  eq('…and names itself', global.scope, 'global');
+
+  const elsewhere = social.board(w.db, { scope: 'city', city: 'Warsaw', at });
+  check('another city does not', !elsewhere.rows.some((r) => r.userId === w.customerId));
+
+  /*
+   * **A scope with nothing to filter on falls back to global rather than to
+   * empty**, and says so in `scope`. Asking for "my city" with no city set is a
+   * question with no answer; an empty table would read as a claim about other
+   * people rather than about a blank field.
+   */
+  const noCity = social.board(w.db, { userId: w.customerId, scope: 'city', city: null, at });
+  eq('a city board with no city falls back', noCity.scope, 'global');
+  check('…and still ranks you', noCity.rows.some((r) => r.userId === w.customerId));
+  const noCountry = social.board(w.db, { scope: 'country', country: null, at });
+  eq('…and so does a country board', noCountry.scope, 'global');
 
   w.db.close();
 }
@@ -2642,6 +3049,52 @@ function importRules(): void {
   const bad = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM campaigns WHERE reward_cost_minor <= 0`);
   eq('every campaign has a cost to the partner', bad?.n, 0);
 
+  /*
+   * **Which files make up a bank**, checked as a rule rather than against the
+   * directory as it currently stands.
+   *
+   * The Uzbekistan quiz arrived as `…_part2.csv`, so the next part is a file
+   * drop and not an edit — and a reader that took the first match, or one that
+   * read them in whatever order the filesystem offered, would silently import
+   * half a bank or a different half on each machine. Asserted against a list of
+   * names rather than by planting files, because this suite runs in memory and
+   * the point is the selection, not the reading.
+   */
+  const dropped = [
+    'General Quiz - data.csv',
+    'Poland Quiz Question - data.csv',
+    'Uzbekistan_Quiz_Questions_data_part2.csv',
+    'Uzbekistan_Quiz_Questions_data_part1.csv',
+    'Uzbekistan_Quiz_Questions_notes.txt',
+  ];
+  eq('every part of a bank is read, in name order', csvParts(dropped, /^Uzbekistan_Quiz_Questions_data_.*\.csv$/i), [
+    'Uzbekistan_Quiz_Questions_data_part1.csv',
+    'Uzbekistan_Quiz_Questions_data_part2.csv',
+  ]);
+  eq('a file that is not a part of it is left alone', csvParts(dropped, /^Poland Quiz Question - data\.csv$/i), [
+    'Poland Quiz Question - data.csv',
+  ]);
+  eq('and a bank nobody has delivered is no rows, not a throw', csvParts(dropped, /^Kazakhstan_/i), []);
+
+  /*
+   * **The two local-knowledge banks, complete in five languages.**
+   *
+   * A row is skipped for the language it is missing rather than for the bank, so
+   * a partial translation shows up here as a short language and nowhere else —
+   * the game still starts, and the player who reads Ukrainian gets a smaller
+   * pool than the player who reads English with nothing saying so. Pinning the
+   * counts is what turns that into a failure.
+   */
+  const local = (bank: string) =>
+    db.all<{ language: string; n: number }>(
+      `SELECT language, COUNT(*) AS n FROM quiz_items WHERE bank = $b GROUP BY language ORDER BY language`,
+      { b: bank },
+    );
+  const five = (n: number) =>
+    ['en', 'pl', 'ru', 'uk', 'uz'].map((language) => ({ language, n }));
+  eq('the Uzbekistan bank is 100 questions in each of the five', local('uzbekistan'), five(100));
+  eq('…and the Poland bank beside it is still 98', local('poland'), five(98));
+
   db.close();
 }
 
@@ -2837,6 +3290,7 @@ async function run(): Promise<void> {
   voucherRules();
   campaignRules();
   gameRules();
+  scoringRules();
   dealRules();
   consentRules();
   analyticsRules();

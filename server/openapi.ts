@@ -23,6 +23,7 @@
  */
 import { writeFileSync } from 'node:fs';
 import { CONFIG } from './config.ts';
+import { GAME_TYPES } from './domain/games.ts';
 import { allRoutes } from './http/routes/index.ts';
 import type { Auth, Route } from './http/router.ts';
 
@@ -42,6 +43,20 @@ const str = (description?: string): Schema => ({ type: 'string', ...(description
 const int = (description?: string): Schema => ({ type: 'integer', ...(description ? { description } : {}) });
 const bool = (description?: string): Schema => ({ type: 'boolean', ...(description ? { description } : {}) });
 const iso = (description: string): Schema => ({ type: 'string', format: 'date-time', description });
+
+/**
+ * The game enum, read from the same tuple the route validates against and the
+ * database's CHECK is built from.
+ *
+ * Spelt out here once, it would be a fourth copy of a list that already exists in
+ * three places — and the one a client generator reads, so the copy that goes
+ * stale is the one that produces a Dart enum missing a game.
+ */
+const gameTypeSchema = (description: string): Schema => ({
+  type: 'string',
+  enum: [...GAME_TYPES],
+  description,
+});
 
 interface Doc {
   summary: string;
@@ -207,7 +222,7 @@ const SCHEMAS: Record<string, Schema> = {
           'Resolved server-side from the active plan. Ask what the account is entitled ' +
           'to, never what it paid. Values are strings; parse what you need.\n\n' +
           'Consumer keys, free/pro/premium: `daily_energy` 4/6/10, `energy_regen_minutes` ' +
-          '240/180/120, `points_multiplier` 1/1.25/1.75 (**game rounds only**), `scan_points` ' +
+          '120/60/30, `points_multiplier` 1/1.25/1.75 (**game rounds only**), `scan_points` ' +
           '20/30/50, `first_visit_points` 100/150/250, `stamp_points` 100/150/250, ' +
           '`new_category_points` 25/50/100, `voucher_validity_days` 14/30/60, ' +
           '`word_hints_per_day` 3/6/10, `assistant_uses_per_day` 5/20/unlimited, ' +
@@ -223,7 +238,10 @@ const SCHEMAS: Record<string, Schema> = {
           'keys above. The server deletes retired rows on boot, so a client that still ' +
           'reads one gets a missing key rather than a stale number. **The energy pair is ' +
           'the only thing that bounds a day**: every finished round costs one, so a full ' +
-          'tank plus a day of refill is 10 rounds free, 14 on Pro, 22 on Premium.',
+          'tank plus a day of refill is 16 rounds free, 30 on Pro, 58 on Premium. Those ' +
+          'three figures have just moved — the intervals were cut from 240/180/120 while ' +
+          'the ceilings stayed at 4/6/10, so what a plan buys is now almost entirely the ' +
+          'clock.',
       },
       venues: arrayOf({ type: 'object' }),
     },
@@ -467,18 +485,26 @@ const SCHEMAS: Record<string, Schema> = {
       'and judges each event as it arrives.',
     properties: {
       sessionId: str(),
-      gameType: {
-        type: 'string',
-        enum: ['flags', 'capitals', 'brain', 'poland', 'word_builder', 'memory_match', 'flight'],
-      },
+      gameType: gameTypeSchema(
+        'Echoed back. `poland` and `uzbekistan` are the same quiz asked about two ' +
+          'different countries and score identically — a client shows **one** ' +
+          'local-knowledge card and picks between them by the country on the ' +
+          'player’s profile, rather than offering both.',
+      ),
       content: {
         type: 'object',
         description:
           'Shape depends on the game. Quizzes: `{questions:[{index,prompt,options}], ' +
-          'mistakesAllowed, perCorrect}` — for `flags`, `prompt` is an ISO country code ' +
-          'and the flag emoji is built from it. Word Builder: `{words:[{index,length,' +
-          'tier,letters,hint}]}`. Memory Match: `{cards,pairs}` — the layout stays on ' +
-          'the server. Flight: `{target}`.',
+          'perCorrect, perfectBonus, speedBands}` — for `flags`, `prompt` is an ISO ' +
+          'country code and the flag emoji is built from it. Word Builder: ' +
+          '`{words:[{index,length,tier,letters,hint}]}`. Memory Match: `{cards,pairs}` — ' +
+          'the layout stays on the server. Flight: `{target}`.\n\n' +
+          '`mistakesAllowed` is **gone** from the quiz shape: there is no mistake limit ' +
+          'and a quiz cannot be lost, so all five questions are asked however the first ' +
+          'four went. `speedBands` is `[{throughSeconds, points}]` — inclusive ' +
+          'boundaries, compared with `<=`, and paid only on a clean sweep. It is on the ' +
+          'wire so a round timer draws against the server’s own numbers rather than a ' +
+          'hardcoded copy of them.',
       },
       energyLeft: int(
         'Energy in the tank *before* this round is paid for — starting costs nothing, ' +
@@ -505,8 +531,10 @@ const SCHEMAS: Record<string, Schema> = {
       'still costs nothing, and starting one costs nothing — the charge is written when ' +
       'the round is banked.\n\n' +
       'It **does not reset at midnight**: one refills every `energy_regen_minutes` (free ' +
-      '240, Pro 180, Premium 120) up to `daily_energy` (4/6/10). From a full tank that is ' +
-      '10 rounds in a day free, 14 on Pro, 22 on Premium; 6/8/12 at the sustained rate.',
+      '120, Pro 60, Premium 30) up to `daily_energy` (4/6/10). From a full tank that is ' +
+      '16 rounds in a day free, 30 on Pro, 58 on Premium; 12/24/48 at the sustained rate. ' +
+      'All six figures moved when the intervals were cut from 240/180/120; the ceilings ' +
+      'did not, so the refill is where a paid plan now argues for itself.',
     properties: {
       energy: int('Whole energy available right now. Was `lives`.'),
       max: int('The plan’s ceiling — `daily_energy`.'),
@@ -555,7 +583,10 @@ const SCHEMAS: Record<string, Schema> = {
       answered: int(),
       won: bool(
         'Whether the round was won. It **does not decide what the round cost** — every ' +
-          'finished round spends one energy either way.',
+          'finished round spends one energy either way.\n\n' +
+          'On a **quiz** this means *all five correct*, and nothing else: there is no ' +
+          'mistake limit and a quiz cannot be lost, so `false` here is “not a clean ' +
+          'sweep” rather than “forfeited”. The round still scored and still banked.',
       ),
       streak: int(),
       freezes: int(
@@ -1123,10 +1154,12 @@ const DOCS: Record<string, Doc> = {
       'per-game decay curve. Energy is the whole limiter.',
     tags: ['games'],
     body: {
-      gameType: {
-        type: 'string',
-        enum: ['flags', 'capitals', 'brain', 'poland', 'word_builder', 'memory_match', 'flight'],
-      },
+      gameType: gameTypeSchema(
+        'Eight values, seven cards. `poland` and `uzbekistan` are one ' +
+          'local-knowledge quiz asked about two different countries — same ' +
+          'protocol, same scoring, different bank — so send the one that matches ' +
+          'the country on the player’s profile rather than showing both.',
+      ),
     },
     required: ['gameType'],
     response: ref('Round'),
@@ -1148,8 +1181,10 @@ const DOCS: Record<string, Doc> = {
       '`{a, b}` — two card positions. `seq` must increase; a repeat is accepted as a ' +
       'retry and does not count twice.\n\n' +
       'Word Builder hints are metered per day by `word_hints_per_day` (3 free, 6 Pro, 10 ' +
-      'Premium) and are refused rather than quietly stopped revealing. A hint keeps the ' +
-      'word’s base point and forfeits its tier bonus.',
+      'Premium) and are refused rather than quietly stopped revealing. A hint **halves ' +
+      'that word’s points** — it used to forfeit a tier bonus and keep a flat base, which ' +
+      'charged nothing on an easy word and two thirds on a hard one — and it also costs ' +
+      'the round’s clean-sweep bonus.',
     tags: ['games'],
     body: {
       seq: int('0-based, monotonic within the session.'),
@@ -1168,13 +1203,21 @@ const DOCS: Record<string, Doc> = {
       'The score is computed from the events the server recorded — nothing the client ' +
       'totals is trusted. `report` carries `{cleared}` for the flight, which is the one ' +
       'game with no answer key and is clamped instead.\n\n' +
-      'The raw round, before the plan multiplier: a **quiz** pays 1 ' +
-      'per correct answer and +5 for all five; **Word Builder** 1 per word solved, plus ' +
-      'the word’s own tier bonus (0/1/2, forfeited by a hint), plus 3 for solving all five ' +
-      'first-try and hint-free; **Memory Match** is scored on *elapsed time alone* — under ' +
-      '40 s 12, under 70 s 8, under 110 s 4, otherwise 2, timed from the server’s own event ' +
-      'stamps; the **flight** pays 1 per gap and is capped at 20 points, with 5 gaps ' +
-      'deciding whether the round was won.\n\n' +
+      'The raw round, before the plan multiplier: a **quiz** pays 1 per correct answer, ' +
+      '+1 for all five, and a round speed bonus of +2/+1/0 for a clean sweep in ≤10 s / ' +
+      '≤15 s / longer — ceiling 8, and no mistake limit, so all five are always asked; ' +
+      '**Word Builder** pays each solved word its own tier (1/2/3), **halved** if that ' +
+      'word was hinted, plus 1 for solving all five first-try and hint-free; **Memory ' +
+      'Match** is scored on *elapsed time alone* — ≤18 s 8, ≤23 s 6, slower 3, timed from ' +
+      'the server’s own event stamps; the **flight** pays half a point per gap and is ' +
+      'capped at 20 points, with 5 gaps deciding whether the round was won.\n\n' +
+      'Two of those tables deal in **halves**, and the round is floored **once**, at the ' +
+      'end, after the multiplier: seven gaps is 3.5, which banks 3 on the free plan and 4 ' +
+      'on Pro. A client that rounds per item and compares totals will be a point low, and ' +
+      'only on a paid tier.\n\n' +
+      'The two timed bands are read as the span from the first recorded event to the ' +
+      'last, and their boundaries are **inclusive** — the wire field is `throughSeconds` ' +
+      'and it is compared with `<=`. There is no duration for a client to report.\n\n' +
       'Then `score = floor(raw × points_multiplier)`, and that is all — no decay factor, ' +
       'no daily ceiling, and `capped` is always 0. A round pays the same whether it is ' +
       'the first of the day or the ninth.\n\n' +

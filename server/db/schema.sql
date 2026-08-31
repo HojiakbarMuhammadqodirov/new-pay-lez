@@ -780,8 +780,14 @@ CREATE TABLE IF NOT EXISTS push_quotas (
 CREATE TABLE IF NOT EXISTS game_sessions (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  -- Eight types, seven cards: `poland` and `uzbekistan` are one local-knowledge
+  -- quiz to the player, chosen by the country on their profile, and two banks
+  -- here. `GAME_TYPES` in `db.ts` is the same list in TypeScript and is
+  -- reconciled against this constraint on every boot; widening it costs a table
+  -- rebuild, because SQLite cannot alter a CHECK in place.
   game_type   TEXT NOT NULL CHECK (game_type IN (
-                'flags', 'capitals', 'brain', 'poland', 'word_builder', 'memory_match', 'flight')),
+                'flags', 'capitals', 'brain', 'poland', 'uzbekistan',
+                'word_builder', 'memory_match', 'flight')),
   language    TEXT NOT NULL DEFAULT 'en',
   seed        TEXT NOT NULL,
   secret      TEXT NOT NULL,        -- JSON: answers / target word / deck layout
@@ -845,7 +851,7 @@ CREATE TABLE IF NOT EXISTS daily_words (
 -- whatever else the export carries.
 CREATE TABLE IF NOT EXISTS quiz_items (
   id          TEXT PRIMARY KEY,
-  bank        TEXT NOT NULL,         -- 'flags' | 'capitals' | 'brain' | 'poland'
+  bank        TEXT NOT NULL,         -- 'flags' | 'capitals' | 'brain' | 'poland' | 'uzbekistan'
   language    TEXT NOT NULL,
   prompt      TEXT NOT NULL,
   answer      TEXT NOT NULL,

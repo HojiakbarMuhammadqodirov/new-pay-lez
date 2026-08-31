@@ -352,15 +352,9 @@ export const consumerRoutes: Route[] = [
     handler: (ctx) =>
       games.startSession(ctx.db, {
         userId: actor(ctx).user.id,
-        gameType: oneOf(ctx.body, 'gameType', [
-          'flags',
-          'capitals',
-          'brain',
-          'poland',
-          'word_builder',
-          'memory_match',
-          'flight',
-        ] as const),
+        /* The same tuple the database's CHECK is built from, so a type this
+           route accepts is a type the insert cannot reject. */
+        gameType: oneOf(ctx.body, 'gameType', games.GAME_TYPES),
         language: ctx.language,
         at: ctx.at,
       }),
@@ -401,16 +395,35 @@ export const consumerRoutes: Route[] = [
     handler: (ctx) => social.referralProgress(ctx.db, actor(ctx).user.id),
   },
   {
+    /**
+     * The weekly board, in one of three scopes.
+     *
+     * `auth: 'none'` because the board is public — a visitor deciding whether
+     * to sign up should be able to see that people are playing. A signed-in
+     * caller gets their own row marked and their own city and country used as
+     * the default filter, which is why the scope parameters are optional.
+     *
+     * `/v1/leaderboard/city` stays as an alias rather than being renamed: the
+     * Flutter app calls it, and breaking a client to tidy a path is not a
+     * trade worth making. Both routes reach the same function.
+     */
     method: 'GET',
-    pattern: '/v1/leaderboard/city',
+    pattern: '/v1/leaderboard/:scope',
     auth: 'none',
-    handler: (ctx) =>
-      social.cityBoard(ctx.db, {
+    handler: (ctx) => {
+      const scope = ctx.params.scope;
+      if (!social.isScope(scope)) {
+        throw new DomainError('not_found', 'no such leaderboard');
+      }
+      return social.board(ctx.db, {
         userId: ctx.actor?.user.id,
-        city: qStr(ctx, 'city') ?? ctx.actor?.user.city ?? 'Krakow',
+        scope,
+        city: qStr(ctx, 'city') ?? ctx.actor?.user.city ?? null,
+        country: qStr(ctx, 'country') ?? ctx.actor?.user.country_code ?? null,
         at: ctx.at,
         limit: qInt(ctx, 'limit', 20),
-      }),
+      });
+    },
   },
   {
     method: 'GET',

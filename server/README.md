@@ -13,21 +13,26 @@ It is seeded from the old database: the Base44 export in `new-data/`, thirty-one
 CSVs covering the guidebook, the venues, the deals, the people and the rate
 sheet. `db/import.ts` is the only file that knows those shapes.
 
-Two of the four question banks come from somewhere else, and it is worth knowing
-where. The capitals and flags banks are derived from `CountryCapital` in the
-export; the **general and Poland banks are hand-delivered exports** and live in
-`updates/` beside the front end's own copy of them, so the import reads that
-directory too. Without them `POST /v1/games/sessions {gameType:"brain"}` is a
-404 and two of the seven games cannot be played at all — which is a data gap
-rather than a missing feature, and the import reports it in its notes when the
-files are not found.
+Three of the five question banks come from somewhere else, and it is worth
+knowing where. The capitals and flags banks are derived from `CountryCapital` in
+the export; the **general, Poland and Uzbekistan banks are hand-delivered
+exports** and live in `updates/` beside the front end's own copy of them, so the
+import reads that directory too. Without one of them
+`POST /v1/games/sessions {gameType:"brain"}` is a 404 and the game that draws on
+it cannot be played at all — which is a data gap rather than a missing feature,
+and the import reports it in its notes when the files are not found.
+
+Five banks and seven games, because **Poland and Uzbekistan are one game.** A
+player sees a single local-knowledge quiz and the client picks the bank behind it
+from the country on their profile; the server sees two `gameType` values that
+score by identical rules and differ only in which questions they draw.
 
 ## Running it
 
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 579 checks, no browser, no network
+npm run verify:api     # the test suite — 588 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -36,7 +41,7 @@ npm run openapi        # regenerate openapi.json from the route table
 - **`API.md`** — the flows a spec file cannot express: the gate's four steps,
   idempotency, offline queueing, the games protocol, what counts as a claim, and
   the money/time/language conventions. Read this first.
-- **`openapi.json`** — 120 paths, 130 operations, generated from `allRoutes` so
+- **`openapi.json`** — 123 paths, 133 operations, generated from `allRoutes` so
   it cannot drift. Point a generator at it rather than hand-writing a client.
 - **`FLUTTER-BRIEF.md`** — the standing instruction for the mobile app, written
   to be handed over whole.
@@ -112,7 +117,7 @@ verify.ts            the test suite
 db/    schema.sql    every entity in §14 and Part E
        db.ts         open, migrate, nested transactions
        csv.ts        an RFC 4180 reader, for the export
-       import.ts     the old database → this schema, plus the two game banks
+       import.ts     the old database → this schema, plus the three game banks
                      that arrive as hand-delivered CSVs in `updates/`
        demo.ts       seven demonstration venues, written only when the
                      catalogue is *still* empty after the import — see below
@@ -254,14 +259,24 @@ key or entitlement is named after either of them — `daily_counters.lives_used`
 also cannot stand in for the tank for a reason that is not about its name: it is
 bucketed by day, and a regen clock needs an instant.
 
+**Adding a game costs a table rebuild**, which is the other thing worth knowing
+about that schema. `game_sessions.game_type` carries a CHECK; SQLite cannot alter
+one in place, so `GAME_TYPES` in `db/db.ts` is the list in TypeScript — the route
+validates against it and `openapi.ts` publishes it — and `widenGameTypes` is the
+version-5 migration that writes it into SQL on a database that already exists.
+Without that half, a new type passes every test and fails on every deployed box,
+which is the worst shape a schema change can take. `assertGameTypes` reconciles
+the tuple against the live constraint on every boot for the same reason
+`assertLedgerReasons` does it for the ledger's vocabulary.
+
 ### What a round pays
 
-Seven games, four scorers, and one rounding step. The tables are in
-`CONFIG.games`; the shape is:
+Seven games, eight `gameType` values, four scorers, and one rounding step. The
+tables are in `CONFIG.games`; the shape is:
 
 | Game | Raw |
 | --- | --- |
-| `brain`, `flags`, `capitals`, `poland` | 1 per correct answer, **+1** for all five, **+2/+1/0** for a clean sweep in ≤10s / ≤15s / slower. Ceiling 8 |
+| `brain`, `flags`, `capitals`, `poland`, `uzbekistan` | 1 per correct answer, **+1** for all five, **+2/+1/0** for a clean sweep in ≤10s / ≤15s / slower. Ceiling 8 |
 | `word_builder` | **the word's own tier** (1/2/3), **halved** if it was hinted, **+1** for solving all five first-try and hint-free |
 | `memory_match` | elapsed time alone: ≤18s → 8, ≤23s → 6, slower → 3 |
 | `flight` | **half a point** per gap cleared, capped at 20. Five gaps decide `won`, not what it pays |
@@ -485,6 +500,27 @@ passes. The second guard earned itself immediately. Stripping "Rep." and "Dem."
 as noise words collapsed `Congo, Dem. Rep.` and `Congo, Rep.` into one key, and
 every Kinshasa question got Brazzaville's flag.
 
+The other three banks are hand-delivered CSVs in `updates/`, and the two
+local-knowledge ones — **Poland, 98 questions, and Uzbekistan, 100** — are read
+by one function because they differ only in which country they ask about: four
+lettered options per language and a letter for the answer, where the general
+export gives an index. Both are complete in all five languages, which the suite
+pins rather than hopes for; a row missing a translation is skipped for *that
+language only*, so a partial bank shows up as a shorter pool for whoever reads
+Ukrainian and as nothing at all anywhere else.
+
+**Uzbekistan is matched by pattern, Poland by name**, and the asymmetry is
+deliberate. The Uzbekistan export arrived as
+`Uzbekistan_Quiz_Questions_data_part2.csv` — a name that promises more parts — so
+`readCsvParts` reads every file matching the prefix, sorted, and part three is a
+file drop rather than a code change. Poland arrived once, as one file, with no
+part in its name and therefore no convention to match; a prefix invented for it
+here would be a guess. The stronger reason is that `updates/` has two readers:
+the front end's `scripts/build-question-banks.mjs` builds its own copy of these
+banks out of the same files and pins Poland the same way, and two halves of one
+repository disagreeing about which files *are* the Poland bank is a difference
+nothing would report.
+
 ### Re-running the import
 
 `npm run server:import` is safe on a database that already has data: every row
@@ -529,7 +565,7 @@ The React site in `src/` still runs on `localStorage` (`src/site/auth/`), which
 its own `users.ts` says must be replaced by a server. The API shapes were chosen
 to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
 fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
-module, not a redesign. `GET /v1` lists all 130 endpoints.
+module, not a redesign. `GET /v1` lists all 133 endpoints.
 
 ### The admin account
 

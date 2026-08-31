@@ -505,6 +505,10 @@ export const uk: Dictionary = {
 
     featured: 'Гра дня · зберігає серію',
 
+    /* Keyed by country code, not a template: the country's case changes with
+       the sentence around it, so each name is written whole. */
+    localQuiz: { PL: 'Вікторина про Польщу', UZ: 'Вікторина про Узбекистан' },
+
     streakHint: 'Один раунд на день зберігає її',
     freezesHint: 'Кожна покриває один пропущений день',
     streakKept: 'зараховано',
@@ -517,7 +521,7 @@ export const uk: Dictionary = {
       'Вгадай прапор',
       'Країна і столиця',
       'Ігри для розуму',
-      'Вікторина про Польщу',
+      'Місцева вікторина',
       'Склади слово · Англійська',
       'Склади слово · {language}',
     ],
@@ -541,9 +545,18 @@ export const uk: Dictionary = {
         q: 'Яку планету називають Червоною планетою?',
         options: ['Марс', 'Венера', 'Юпітер'],
       },
-      poland: {
-        q: 'Яка валюта в Польщі?',
-        options: ['Злотий', 'Євро', 'Крона'],
+      /* One sample per local bank — the card is a different quiz per country.
+         The Uzbekistan row is the export's own, already written in every
+         language, so it is transcribed rather than translated. */
+      local: {
+        PL: {
+          q: 'Яка валюта в Польщі?',
+          options: ['Злотий', 'Євро', 'Крона'],
+        },
+        UZ: {
+          q: 'З якою кількістю країн межує Узбекистан по суходолу?',
+          options: ['П’ятьма', 'Трьома', 'Сімома'],
+        },
       },
     },
 
@@ -568,6 +581,10 @@ export const uk: Dictionary = {
     boardTitle: 'Рейтинг',
     boardTabs: ['Правильні відповіді', 'Зароблені бали'],
     boardTop: 'Топ-10',
+      boardScopes: ['Моє місто', 'Моя країна', 'Усі'],
+      boardLoading: 'Завантажуємо таблицю…',
+      boardOffline: 'Зараз не вдається отримати таблицю. Це не означає, що ніхто не грає — просто не можемо запитати.',
+      boardHidden: 'Ви на {rank} місці цього тижня. Вас немає у списку, бо ви це не увімкнули — можна увімкнути в профілі.',
     /* The signed-in player's own row on the leaderboard. Everybody else is a
        derived PY-code; this one is the second person, because a board you are
        on should say so in words rather than in a code you have to recognise. */
@@ -2748,6 +2765,14 @@ export const uk: Dictionary = {
     langTitle: 'Оберіть мову',
     langLede: 'Її можна змінити пізніше — це перемикач у шапці.',
     langNext: 'Далі',
+      placeTitle: 'Де ви граєте?',
+      placeLede: 'Таблиця будується за містом і країною. Це можна пропустити — ви все одно гратимете, накопичуватимете бали й потраплятимете у світову таблицю.',
+      placeCity: 'Ваше місто',
+      placeCityPlaceholder: 'Почніть друкувати…',
+      placeListed: 'Показувати мене в таблиці',
+      placeListedNote: 'Ваше ім’я та бали за тиждень будуть видимі іншим гравцям. Вимкнено, доки ви не увімкнете — змінити можна в профілі.',
+      placeSaving: 'Зберігаємо…',
+      back: 'Назад',
 
     gameTitle: 'Що це за країна?',
     gameRound: 'Раунд {n} з {total}',

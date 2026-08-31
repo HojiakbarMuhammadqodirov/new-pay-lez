@@ -32,7 +32,7 @@
  */
 import { join } from 'node:path';
 import type { Db } from './db.ts';
-import { bool, json, num, opt, readCsv, str, ts, type CsvRow } from './csv.ts';
+import { bool, json, num, opt, readCsv, readCsvParts, str, ts, type CsvRow } from './csv.ts';
 import { CONFIG } from '../config.ts';
 import { assertComplete, codeFor, flagOf } from './countries.ts';
 import { newId, referralCode } from '../domain/ids.ts';
@@ -852,23 +852,25 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   importCapitals(db, countries, bump);
   importFlags(db, countries, bump);
 
-  /* The other two banks are hand-delivered exports rather than Base44 tables, so
-     they sit in `updates/` beside the front end's own copy of them and are read
-     from there. Without them `POST /v1/games/sessions {gameType:"brain"}` is a
-     404 and two of the seven games cannot be played at all — which is a data
-     gap, not a missing feature, and it is fixed here rather than by teaching the
-     client to hide the cards. */
+  /* The other three banks are hand-delivered exports rather than Base44 tables,
+     so they sit in `updates/` beside the front end's own copy of them and are
+     read from there. Without one of them `POST /v1/games/sessions` is a 404 on
+     the game that draws from it — which is a data gap, not a missing feature,
+     and it is fixed here rather than by teaching the client to hide the card. */
   const banksDir = gamesDir ?? 'updates';
   const general = readCsv(join(banksDir, 'General Quiz - data.csv'));
-  const poland = readCsv(join(banksDir, 'Poland Quiz Question - data.csv'));
-  if (general.length === 0 || poland.length === 0) {
+  const poland = readCsvParts(banksDir, POLAND_BANK);
+  const uzbekistan = readCsvParts(banksDir, UZBEKISTAN_BANK);
+  if (general.length === 0 || poland.length === 0 || uzbekistan.length === 0) {
     notes.push(
-      `game banks: ${general.length} general and ${poland.length} Poland questions found in ${banksDir}/ — ` +
-        'the brain and poland games need both',
+      `game banks: ${general.length} general, ${poland.length} Poland and ` +
+        `${uzbekistan.length} Uzbekistan questions found in ${banksDir}/ — ` +
+        'a bank sitting at zero is a 404 on the game that draws from it',
     );
   }
   importGeneralQuiz(db, general, bump);
-  importPolandQuiz(db, poland, bump);
+  importLetterQuiz(db, poland, 'poland', bump);
+  importLetterQuiz(db, uzbekistan, 'uzbekistan', bump);
 
   /* ────────────────────────────── 9. the remittance tables, archived as-is ── */
 
@@ -1194,7 +1196,7 @@ function importFlags(
 }
 
 /**
- * The five languages the two hand-delivered banks are written in.
+ * The five languages the three hand-delivered banks are written in.
  *
  * The general export also carries Turkish and Azerbaijani columns. They are
  * skipped rather than imported: the account's `language` can only ever be one of
@@ -1256,14 +1258,51 @@ function importGeneralQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: numb
 }
 
 /**
- * The Poland quiz, from `Poland Quiz Question - data.csv`.
+ * Which files in `updates/` are the Poland bank, and which are the Uzbekistan
+ * one.
  *
- * Same bank, a different export shape: four lettered columns per language and a
- * letter rather than an index. `A`–`D` is mapped to 0–3 once, here, so nothing
- * downstream has to know that two of the four banks were exported by different
- * tools.
+ * **Uzbekistan is a pattern and Poland is a name, and that asymmetry is
+ * deliberate.** The Uzbekistan export arrived as
+ * `Uzbekistan_Quiz_Questions_data_part2.csv`, which names a part and so promises
+ * more of them; matching the prefix means part three is a file drop rather than
+ * an edit to this line. Poland arrived once, as one file, with no part in its
+ * name and therefore no convention to match — a prefix invented for it here
+ * would be a guess at how a second Poland file might one day be called, and a
+ * loose one would sweep up anything else beginning with those words.
+ *
+ * The stronger reason is that this directory has two readers. The front end's
+ * `scripts/build-question-banks.mjs` builds its own copy of these banks out of
+ * the same files and pins Poland to the same literal name, so widening it on one
+ * side only would leave the two halves of the repo disagreeing about which files
+ * *are* the Poland bank — which is a difference nothing would report and one
+ * player's question list would quietly stop matching another's.
  */
-function importPolandQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: number) => void): void {
+const POLAND_BANK = /^Poland Quiz Question - data\.csv$/i;
+const UZBEKISTAN_BANK = /^Uzbekistan_Quiz_Questions_data_.*\.csv$/i;
+
+/**
+ * A local-knowledge quiz — Poland's or Uzbekistan's — from a hand-delivered CSV.
+ *
+ * Same bank table, a different export shape from the general quiz: four lettered
+ * columns per language and a letter rather than an index. `A`–`D` is mapped to
+ * 0–3 once, here, so nothing downstream has to know that some of the banks were
+ * exported by different tools.
+ *
+ * **One reader for both, because the two files differ only in which country they
+ * are about.** They are not two cards on the screen: the client shows a single
+ * local-knowledge quiz and picks the bank behind it from the country on the
+ * player's profile, so a second copy of this function would be a second place
+ * for two halves of one game to drift apart. The Uzbekistan export happens to
+ * answer `A` on every row, which costs nothing because `domain/games.ts`
+ * shuffles the options per round and remembers where the answer went — and it is
+ * the reason it must keep doing so.
+ */
+function importLetterQuiz(
+  db: Db,
+  rows: CsvRow[],
+  bank: 'poland' | 'uzbekistan',
+  bump: (key: string, by?: number) => void,
+): void {
   const letters = ['a', 'b', 'c', 'd'] as const;
 
   for (const row of rows) {
@@ -1281,14 +1320,15 @@ function importPolandQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: numbe
 
       db.run(
         `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
-         VALUES ($i, 'poland', $l, $p, $a, $d, $m)`,
+         VALUES ($i, $b, $l, $p, $a, $d, $m)`,
         {
-          i: `poland_${id}_${lang}`,
+          i: `${bank}_${id}_${lang}`,
+          b: bank,
           l: lang,
           p: prompt,
           a: options[correct],
           d: JSON.stringify(options.filter((_, index) => index !== correct)),
-          m: JSON.stringify({ source: 'poland_quiz' }),
+          m: JSON.stringify({ source: `${bank}_quiz` }),
         },
       );
       bump('quiz_items');

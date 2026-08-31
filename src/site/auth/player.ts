@@ -13,8 +13,8 @@
  * spends one, win or lose, and an empty tank is a shut door. What keeps it from
  * being a locked one is the clock — the tank gains one every
  * `ENERGY_REGEN_MINUTES` rather than all of it at midnight — and what that
- * arithmetic comes to is ten finished rounds in a day from a full tank, six a
- * day sustained.
+ * arithmetic comes to is sixteen finished rounds in a day from a full tank,
+ * twelve a day sustained.
  *
  * A second rule used to sit beside it: a `DAILY_DECAY` curve that paid a
  * *repeat* of the same game 100/60/40/20/0%. It was written when play was
@@ -61,22 +61,22 @@ export const MAX_ENERGY = 4;
  * How long one energy takes to come back.
  *
  * Mirrors `CONFIG.points.energyRegenMinutes`, the free-plan figure — the server
- * sells a faster regen with a plan and this site has no plan to read.
+ * sells a faster regen with a plan and this site has no plan to read. It is two
+ * hours here, one on Pro, half an hour on Premium.
  *
- * Four hours is what makes charging every round fair, and the two numbers have
- * to be read together: one comes back every four hours, so somebody who empties
- * the tank at nine in the morning is playing again by one, has two by five, and
- * never spends an evening looking at a shut door. That is the property that
- * matters, and it is the *first* refill rather than the last that carries it —
- * a full tank from empty is sixteen hours, which nobody waits for because
- * nobody has to.
+ * **Two hours, halved from four.** The property that matters is the *first*
+ * refill rather than the last: somebody who empties the tank over lunch is
+ * playing again by two and whole again by evening, where four hours meant the
+ * afternoon was simply over. A cost that expires while you are still on the page
+ * is a cost; one that expires when you are asleep is a lockout, and four hours
+ * was drifting toward the second.
  *
  * The pair is also the size of a day, and it is worth writing down because
- * nothing else in the module states it: four in the tank plus one every four
- * hours is **ten finished rounds in twenty-four hours** from full, and six a
- * day at the steady rate.
+ * nothing else in the module states it: four in the tank plus one every two
+ * hours is **sixteen finished rounds in twenty-four hours** from full, and
+ * twelve a day at the steady rate.
  */
-export const ENERGY_REGEN_MINUTES = 240;
+export const ENERGY_REGEN_MINUTES = 120;
 
 /** The same interval in milliseconds, which is what every clock here is in. */
 const ENERGY_REGEN_MS = ENERGY_REGEN_MINUTES * 60_000;
@@ -995,13 +995,59 @@ export function awardPoints(
  *
  * The whole job of this bonus is to make the last question worth answering. One
  * point an answer is otherwise a flat line — the fifth question pays exactly
- * what the first did, whatever has happened in between — and five on the end is
- * what turns a round into something with a shape. It is also most of what a quiz
- * round is worth: 5 for the answers, 5 for having got them all.
+ * what the first did, whatever has happened in between — and something on the
+ * end is what turns a round into something with a shape.
+ *
+ * **One, down from five.** It used to be most of what a quiz was worth, which
+ * made the difference between four right and five right larger than the
+ * difference between one right and four. The shape it exists to give is now
+ * split between this and the speed bands below, and the two together are worth
+ * three — which is what a clean, fast round is: five for the answers, one for
+ * the sweep, two for the clock.
  *
  * Mirrors `CONFIG.games.quizPerfectBonus`.
  */
-export const QUIZ_PERFECT_BONUS = 5;
+export const QUIZ_PERFECT_BONUS = 1;
+
+/**
+ * What a *fast* clean sweep is worth, on top of the bonus above.
+ *
+ * Measured across the **whole round** — first question on screen to last answer
+ * — rather than per question, and that is the choice that gives the bands their
+ * meaning. Every quiz has its own per-question clock (six seconds on the flags,
+ * twelve on Brain Games), so a per-question threshold would be free on the games
+ * whose clock is already tighter than it and would bite only on the slowest one.
+ * A whole-round budget of ten seconds is about two a question: reachable on
+ * recognition, genuinely hard on a question you have to read. The bonus is a
+ * different size of ask per game, and that is correct — they are different
+ * games.
+ *
+ * **It is paid only on a clean sweep**, and that is not what the brief literally
+ * said. Read strictly, "all questions answered under ten seconds" pays two
+ * points for five deliberate wrong answers hammered out in two — a round worth
+ * more for being wrong quickly than right slowly. It also reconciles the two
+ * halves of what was asked: the same brief says a round with all five right is
+ * worth three more, and one for the sweep plus two for the clock is exactly
+ * three.
+ *
+ * `throughSeconds` and not `under`: "up to ten seconds" includes ten, and the
+ * comparison below is `<=`. A field named for one comparison and used with the
+ * other is the sort of thing that survives a rewrite and quietly moves a band.
+ */
+export const QUIZ_SPEED_BONUS = [
+  { throughSeconds: 10, points: 2 },
+  { throughSeconds: 15, points: 1 },
+  { throughSeconds: null, points: 0 },
+] as const;
+
+/** The band a round's elapsed seconds land in. */
+export function quizSpeedBonus(seconds: number): number {
+  const taken = Math.max(0, seconds);
+  for (const band of QUIZ_SPEED_BONUS) {
+    if (band.throughSeconds === null || taken <= band.throughSeconds) return band.points;
+  }
+  return 0;
+}
 
 export interface RoundResult {
   /** Which of the four quizzes. */
@@ -1010,8 +1056,11 @@ export interface RoundResult {
   total: number;
   /** Points the round is worth per correct answer, from the game's own table. */
   perCorrect: number;
-  /** True when the player stayed inside the game's mistake allowance. */
-  won: boolean;
+  /**
+   * How long the whole round took, in whole seconds — first question on screen
+   * to last answer. Only the speed bands read it, and only on a clean sweep.
+   */
+  seconds: number;
 }
 
 /**
@@ -1019,16 +1068,26 @@ export interface RoundResult {
  *
  * Split out from `awardRound` because the result card needs the same number the
  * balance gets, and the two must not be two sums. Every right answer is worth
- * the same and the game says how much; a clean sweep adds the bonus above.
+ * the same and the game says how much; a clean sweep adds the perfect bonus, and
+ * a *fast* clean sweep adds the speed band on top.
+ *
+ * **A quiz can no longer be lost, so nothing here decides whether it was.** The
+ * mistake allowance is gone — a player answers all five however many they get
+ * wrong — and `won` is now simply the clean sweep, which is the only
+ * distinction left that means anything and is the one the bonuses are paid on.
+ * It used to be handed in by the caller, which was the caller reporting a rule
+ * this module owns.
  */
 export function quizAward(result: RoundResult): Award {
-  const perfect = result.correct >= result.total ? QUIZ_PERFECT_BONUS : 0;
+  const swept = result.correct >= result.total;
   return {
     game: result.game,
-    points: result.correct * result.perCorrect + perfect,
+    points:
+      result.correct * result.perCorrect +
+      (swept ? QUIZ_PERFECT_BONUS + quizSpeedBonus(result.seconds) : 0),
     answered: result.total,
     correct: result.correct,
-    won: result.won,
+    won: swept,
   };
 }
 
@@ -1048,7 +1107,7 @@ export interface FlightResult {
   cleared: number;
   /** Gaps that bank the round, from the game's own row in `GAMES`. */
   target: number;
-  /** Points one gap pays. */
+  /** Points one gap pays. **Half a point**, since the rework — see `flightPoints`. */
   perGap: number;
   won: boolean;
 }
@@ -1077,9 +1136,18 @@ export function bankableGaps(cleared: number): number {
   return Math.max(0, Math.floor(cleared));
 }
 
-/** What a flight pays, wherever it is asked. */
+/**
+ * What a flight pays, wherever it is asked.
+ *
+ * **Half a point a gap, floored once at the end.** The half is what lets the
+ * scroll speed climb without the payout running away with it — a run that lasts
+ * twice as long is worth twice as much, and twice as much of a half is still
+ * modest against the ceiling. Flooring is deliberate and it is deliberate that
+ * it happens *here*, once: an odd gap count leaves a half point on the table,
+ * and rounding it up instead would pay for a gap that was not flown.
+ */
 export function flightPoints(cleared: number, perGap: number): number {
-  return Math.min(bankableGaps(cleared) * perGap, MAX_FLIGHT_POINTS);
+  return Math.floor(Math.min(bankableGaps(cleared) * perGap, MAX_FLIGHT_POINTS));
 }
 
 /**
@@ -1151,23 +1219,62 @@ export interface WordScore {
   hinted: boolean;
 }
 
-export const WORD_BASE = 1;
-/** +0 / +1 / +2 for tiers 1 / 2 / 3. */
-export const WORD_TIER_BONUS = [0, 1, 2];
+/**
+ * What each tier is worth: **the tier itself**, 1 / 2 / 3.
+ *
+ * A round is the ramp `[1, 1, 2, 2, 3]`, so a clean five is nine points and the
+ * last word is worth three times the first — which is the whole reason the ramp
+ * exists. This replaced a base of one plus a bonus of 0/1/2, which came to the
+ * same three numbers by a longer route and made a hinted word's value a
+ * subtraction rather than a fraction.
+ */
+export const WORD_TIER_POINTS = [1, 2, 3];
 
+/**
+ * A word, scored.
+ *
+ * **A hint halves it**, where it used to forfeit the tier bonus and leave the
+ * base — which paid the same one point for a hinted three-letter word and a
+ * hinted nine-letter one, and so made the hint free on exactly the words it
+ * should cost most on. Half of three is more than half of one, which is the
+ * shape a hint should have: it costs in proportion to what it gave away.
+ *
+ * Returns a **half point** where one was used. Nothing rounds here — the round's
+ * total is floored once, in `wordRoundPoints`, because flooring each word would
+ * charge the same hint twice.
+ */
 export function wordPoints(word: WordScore): number {
-  const tier = WORD_TIER_BONUS[Math.min(Math.max(word.tier, 1), 3) - 1];
-  return WORD_BASE + (word.hinted ? 0 : tier);
+  const full = WORD_TIER_POINTS[Math.min(Math.max(word.tier, 1), 3) - 1];
+  return word.hinted ? full / 2 : full;
 }
 
 /**
  * The whole round solved with no wrong guess and no hint.
  *
- * Worth three, which is between a quarter and a third of the round — the same
- * proportion the quizzes' perfect bonus is, for the same reason: it is what the
- * fifth word is for. Mirrors `CONFIG.games.wordPerfectBonus`.
+ * Worth one, down from three. The round's own ramp does the work now that a word
+ * pays its tier — nine points across five words, with the last worth three of
+ * them — so the bonus is the nod at the end rather than a third of the total.
+ * Mirrors `CONFIG.games.wordPerfectBonus`.
  */
-export const WORD_PERFECT_BONUS = 3;
+export const WORD_PERFECT_BONUS = 1;
+
+/**
+ * A finished Word Builder round, in whole points.
+ *
+ * **The one place the halves are resolved.** Hinted words come back as halves,
+ * and a round with three of them is worth an odd number of halves; flooring once
+ * here is the difference between losing a point and losing three. The bonus is
+ * added before the floor for the same reason — it is part of the round, not a
+ * separate payment.
+ *
+ * `clean` is every word solved with no wrong attempt and no hint. Both halves
+ * are load-bearing: a bonus paid on "no hints" alone would go to somebody who
+ * guessed at every word until it went in.
+ */
+export function wordRoundPoints(words: WordScore[], clean: boolean): number {
+  const earned = words.reduce((sum, word) => sum + wordPoints(word), 0);
+  return Math.floor(earned + (clean ? WORD_PERFECT_BONUS : 0));
+}
 
 /**
  * What a finished Memory Match round is worth — **time, and nothing else.**
@@ -1180,24 +1287,34 @@ export const WORD_PERFECT_BONUS = 3;
  *
  * Bands rather than a curve, so a result screen can say which one you landed in
  * and what the next one was worth — a continuous score off a hidden stopwatch is
- * a number nobody can aim at. The last band has no ceiling and still pays two:
+ * a number nobody can aim at. The last band has no ceiling and still pays three:
  * finishing is always worth something, which is what keeps the board the
  * approachable one of the set now that it is measured. It is still not *raced* —
- * there is no countdown, no fail state, and nothing on screen ticking.
+ * there is no countdown and no fail state, and the clock on screen counts up.
+ *
+ * **Three bands, and they are tight.** Forty seconds for the top band was most
+ * of a leisurely round; eighteen is a board somebody has actually learned. The
+ * spread narrowed with it — 8 / 6 / 3 rather than 12 / 8 / 4 / 2 — so the
+ * difference between a good clear and a slow one is a point or two rather than a
+ * multiple, which is the right weight for the one game in the set that cannot be
+ * lost.
+ *
+ * `throughSeconds` and not `under`: "up to eighteen seconds" includes eighteen.
+ * The clock is floored to whole seconds before it gets here, so this is the same
+ * band a player reads off the stopwatch when it stops.
  *
  * Mirrors `CONFIG.games.memoryBands`.
  */
 export const MEMORY_BANDS = [
-  { underSeconds: 40, points: 12 },
-  { underSeconds: 70, points: 8 },
-  { underSeconds: 110, points: 4 },
-  { underSeconds: null, points: 2 },
+  { throughSeconds: 18, points: 8 },
+  { throughSeconds: 23, points: 6 },
+  { throughSeconds: null, points: 3 },
 ] as const;
 
 export function memoryPoints(seconds: number): number {
   const taken = Math.max(0, seconds);
   for (const band of MEMORY_BANDS) {
-    if (band.underSeconds === null || taken < band.underSeconds) return band.points;
+    if (band.throughSeconds === null || taken <= band.throughSeconds) return band.points;
   }
   /* Unreachable — the last band's `null` catches everything — but the list is
      data and a list edited down to bands that all have a ceiling should still

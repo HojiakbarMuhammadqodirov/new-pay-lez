@@ -205,6 +205,33 @@ export const LEDGER_REASONS = [
 ] as const;
 
 /**
+ * Every game a session may be started for, in the order `schema.sql` lists them.
+ *
+ * Here for the same reason `LEDGER_REASONS` is: `game_sessions.game_type` carries
+ * a CHECK, a CHECK has to live in SQL, and the migration that widens one has to
+ * *write* the list from TypeScript. `domain/games.ts` derives `GameType` from
+ * this tuple, the route's `oneOf` validates against it and `openapi.ts` publishes
+ * it, so there is one list and a SQL copy that `assertGameTypes` reconciles on
+ * every boot rather than trusts.
+ *
+ * **Eight entries, seven cards.** `poland` and `uzbekistan` are one game to a
+ * player — a local-knowledge quiz whose bank is chosen by the country on their
+ * profile — and two entries here, because a question about the Sejm and a
+ * question about Samarkand are not interchangeable. They score identically and
+ * share every code path; only `quiz_items.bank` tells them apart.
+ */
+export const GAME_TYPES = [
+  'flags',
+  'capitals',
+  'brain',
+  'poland',
+  'uzbekistan',
+  'word_builder',
+  'memory_match',
+  'flight',
+] as const;
+
+/**
  * What `schema_meta.version` reads once every migration below has run.
  *
  * 1 → 2 widened the ledger's reason vocabulary, which a CHECK constraint cannot
@@ -214,8 +241,10 @@ export const LEDGER_REASONS = [
  * additive, so neither can be an `addColumn`.
  * 3 → 4 retired the free-text `headline` in favour of the chosen `occupation`
  * beside it. Another drop.
+ * 4 → 5 admitted the Uzbekistan quiz to `game_sessions.game_type`. A CHECK
+ * again, and so a rebuild again.
  */
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 const schemaVersion = (db: Db): number => {
   const row = db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
@@ -223,12 +252,25 @@ const schemaVersion = (db: Db): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
-/** The quoted values inside a table's `CHECK (reason IN (…))`, in file order. */
-function reasonsInTable(sql: string): string[] {
-  const clause = /CHECK \(reason IN \(([\s\S]*?)\)\)/.exec(sql);
+/**
+ * The quoted values inside one column's `CHECK (<column> IN (…))`, in file
+ * order.
+ *
+ * Read from `sqlite_master.sql`, which is the statement as it was typed — so the
+ * newline `schema.sql` wraps a long list on is inside the match, and the lazy
+ * `[\s\S]*?` is what stops it running on into the next column's own CHECK.
+ */
+function checkedValues(sql: string, column: string): string[] {
+  const clause = new RegExp(`CHECK \\(${column} IN \\(([\\s\\S]*?)\\)\\)`).exec(sql);
   if (!clause) return [];
   return [...clause[1].matchAll(/'([^']+)'/g)].map((match) => match[1]);
 }
+
+/** The `CREATE TABLE` statement a table was made with, or null if it is absent. */
+const tableSql = (db: Db, name: string): string | null =>
+  db.get<{ sql: string }>(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $n`, {
+    n: name,
+  })?.sql ?? null;
 
 const ledgerCounts = (db: Db): { entries: number; lots: number } => ({
   entries: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_ledger`)?.n ?? 0,
@@ -265,11 +307,9 @@ const ledgerCounts = (db: Db): { entries: number; lots: number } => ({
 function widenLedgerReasons(db: Db): void {
   if (schemaVersion(db) >= 2) return;
 
-  const table = db.get<{ sql: string }>(
-    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'points_ledger'`,
-  );
+  const table = tableSql(db, 'points_ledger');
   if (!table) return;
-  const present = new Set(reasonsInTable(table.sql));
+  const present = new Set(checkedValues(table, 'reason'));
   if (LEDGER_REASONS.every((reason) => present.has(reason))) return;
 
   const list = LEDGER_REASONS.map((reason) => `'${reason}'`).join(', ');
@@ -461,6 +501,105 @@ function retireTheHeadline(db: Db): void {
   });
 }
 
+const gameCounts = (db: Db): { sessions: number; events: number } => ({
+  sessions: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_sessions`)?.n ?? 0,
+  events: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events`)?.n ?? 0,
+});
+
+/**
+ * Version 5: the local-knowledge quiz gained a second country.
+ *
+ * `game_sessions.game_type` carries a CHECK, and a CHECK cannot be altered in
+ * place, so admitting `uzbekistan` to it is the documented table rebuild — new
+ * table, copy, drop, rename — for the same reason version 2 was. Without it a
+ * fresh database plays the game and every database that already exists refuses
+ * the insert, which is the worst shape a schema change can take: it passes every
+ * test and fails only where there is data.
+ *
+ * **`game_events.session_id` is `REFERENCES game_sessions (id) ON DELETE
+ * CASCADE`**, so this has version 2's trap exactly: with foreign keys on,
+ * `DROP TABLE` runs an implicit `DELETE FROM` first and takes every move a
+ * player ever reported with it — and the sessions would survive, scored, with
+ * nothing left to show how they were scored. `PRAGMA foreign_keys = OFF` around
+ * the rebuild is what prevents that, and it sits outside the transaction because
+ * the pragma is a no-op inside one.
+ *
+ * Proved rather than assumed, again: both tables are counted inside the
+ * transaction, before and after, and `foreign_key_check` runs before the commit.
+ * A difference throws, which rolls the rebuild back and leaves the original
+ * table as it was.
+ *
+ * Guarded twice so it runs once and never again — on the stored version, and on
+ * the constraint already in the file, because a database created fresh from
+ * `schema.sql` has the new vocabulary and nothing to rebuild.
+ */
+function widenGameTypes(db: Db): void {
+  if (schemaVersion(db) >= 5) return;
+
+  const table = tableSql(db, 'game_sessions');
+  if (!table) return;
+  const present = new Set(checkedValues(table, 'game_type'));
+  if (GAME_TYPES.every((type) => present.has(type))) return;
+
+  const list = GAME_TYPES.map((type) => `'${type}'`).join(', ');
+
+  db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    db.tx(() => {
+      const before = gameCounts(db);
+
+      db.exec(`
+        CREATE TABLE game_sessions_v5 (
+          id          TEXT PRIMARY KEY,
+          user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          game_type   TEXT NOT NULL CHECK (game_type IN (${list})),
+          language    TEXT NOT NULL DEFAULT 'en',
+          seed        TEXT NOT NULL,
+          secret      TEXT NOT NULL,
+          state       TEXT NOT NULL DEFAULT 'active'
+                      CHECK (state IN ('active', 'finished', 'abandoned', 'invalidated')),
+          score       INTEGER NOT NULL DEFAULT 0,
+          answered    INTEGER NOT NULL DEFAULT 0,
+          correct     INTEGER NOT NULL DEFAULT 0,
+          life_spent  INTEGER NOT NULL DEFAULT 0,
+          started_at  TEXT NOT NULL,
+          finished_at TEXT,
+          ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL
+        )`);
+      db.exec(`
+        INSERT INTO game_sessions_v5
+          (id, user_id, game_type, language, seed, secret, state, score, answered,
+           correct, life_spent, started_at, finished_at, ledger_id)
+        SELECT id, user_id, game_type, language, seed, secret, state, score, answered,
+               correct, life_spent, started_at, finished_at, ledger_id
+          FROM game_sessions`);
+      db.exec('DROP TABLE game_sessions');
+      db.exec('ALTER TABLE game_sessions_v5 RENAME TO game_sessions');
+      /* The old table's index went down with it. */
+      db.exec(
+        'CREATE INDEX IF NOT EXISTS idx_sessions_game ON game_sessions (user_id, started_at)',
+      );
+
+      const after = gameCounts(db);
+      if (after.sessions !== before.sessions || after.events !== before.events) {
+        throw new Error(
+          `game type migration lost rows: sessions ${before.sessions} → ${after.sessions}, ` +
+            `events ${before.events} → ${after.events}`,
+        );
+      }
+      const orphans = db.all(`PRAGMA foreign_key_check`);
+      if (orphans.length > 0) {
+        throw new Error(`game type migration left ${orphans.length} broken references`);
+      }
+    });
+  } finally {
+    /* Restored whether the rebuild committed or threw, exactly as version 2
+       restores it: the constructor turned them on and every other statement in
+       the process assumes they are. */
+    db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
 /**
  * The SQL constraint and `LEDGER_REASONS` must be the same set, both ways.
  *
@@ -469,16 +608,39 @@ function retireTheHeadline(db: Db): void {
  * worse, one the database accepts and no report knows how to name.
  */
 function assertLedgerReasons(db: Db): void {
-  const table = db.get<{ sql: string }>(
-    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'points_ledger'`,
-  );
+  const table = tableSql(db, 'points_ledger');
   if (!table) return;
-  const inTable = reasonsInTable(table.sql);
+  const inTable = checkedValues(table, 'reason');
   const missing = LEDGER_REASONS.filter((reason) => !inTable.includes(reason));
   const extra = inTable.filter((reason) => !(LEDGER_REASONS as readonly string[]).includes(reason));
   if (missing.length > 0 || extra.length > 0) {
     throw new Error(
       'points_ledger.reason disagrees with LEDGER_REASONS ' +
+        `(missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
+    );
+  }
+}
+
+/**
+ * The same reconciliation for `game_sessions.game_type` and `GAME_TYPES`.
+ *
+ * A game the enum offers and the CHECK refuses is a card the client renders, the
+ * player taps, and the server rejects with a constraint error rather than a
+ * refusal anyone designed — and it happens only on databases that predate the
+ * change, which is every deployed one. A game the CHECK allows and the enum has
+ * forgotten is the quieter half: rows accumulate under a type nothing can name.
+ * Checked on every boot for the same reason the ledger's vocabulary is, and
+ * against the live constraint rather than a copy of it.
+ */
+function assertGameTypes(db: Db): void {
+  const table = tableSql(db, 'game_sessions');
+  if (!table) return;
+  const inTable = checkedValues(table, 'game_type');
+  const missing = GAME_TYPES.filter((type) => !inTable.includes(type));
+  const extra = inTable.filter((type) => !(GAME_TYPES as readonly string[]).includes(type));
+  if (missing.length > 0 || extra.length > 0) {
+    throw new Error(
+      'game_sessions.game_type disagrees with GAME_TYPES ' +
         `(missing: ${missing.join(', ') || 'none'}; extra: ${extra.join(', ') || 'none'})`,
     );
   }
@@ -537,6 +699,8 @@ export function migrate(db: Db): void {
   assertLedgerReasons(db);
   retireContactVerification(db);
   retireTheHeadline(db);
+  widenGameTypes(db);
+  assertGameTypes(db);
 
   db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)

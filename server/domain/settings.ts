@@ -130,14 +130,20 @@ const PLANS: PlanSeed[] = [
        * cannot see it.
        */
       daily_energy: CONFIG.points.dailyEnergy,
-      /* Energy comes back on a clock, and the clock is what a plan buys: four
-         hours free, three on Pro, two on Premium. A faster refill is worth
-         more than a bigger pool to the player who runs out at nine in the
+      /* Energy comes back on a clock, and the clock is what a plan buys: two
+         hours free, one on Pro, half an hour on Premium. A faster refill is
+         worth more than a bigger pool to the player who runs out at nine in the
          morning, which is the player this key exists for — and now that every
          finished round costs one, that is every player, not just the one
          losing. The two keys together are what a day is: from a full tank,
-         `daily_energy + 1440 / energy_regen_minutes` rounds, so 10 here, 14 on
-         Pro, 22 on Premium. */
+         `daily_energy + 1440 / energy_regen_minutes` rounds, so 16 here, 30 on
+         Pro, 58 on Premium.
+
+         All three intervals were cut hard together (240/180/120 → 120/60/30)
+         while the ceilings stayed where they were, which is what
+         turns the tank into a burst allowance and the refill into the day. The
+         diff between the tiers widened with it: Pro used to buy a quarter more
+         rounds than free and now buys nearly twice as many. */
       energy_regen_minutes: CONFIG.points.energyRegenMinutes,
       /* **Game rounds only** — see the note in `entitlements.ts`. The venue
          lines below have their own per-tier figures, and multiplying those as
@@ -189,7 +195,7 @@ const PLANS: PlanSeed[] = [
     terms: true,
     entitlements: {
       daily_energy: 6,
-      energy_regen_minutes: 180,
+      energy_regen_minutes: 60,
       points_multiplier: 1.25,
       scan_points: 30,
       first_visit_points: 150,
@@ -218,7 +224,7 @@ const PLANS: PlanSeed[] = [
     terms: true,
     entitlements: {
       daily_energy: 10,
-      energy_regen_minutes: 120,
+      energy_regen_minutes: 30,
       points_multiplier: 1.75,
       scan_points: 50,
       first_visit_points: 250,
@@ -561,8 +567,10 @@ function seedGiftCards(db: Db): void {
  * Polish first, because the product's reason for existing is somebody who has
  * just moved to Kraków — the words are the ones a newcomer meets in a week of
  * ordinary errands, not a dictionary sample. The tier is the spec's own: 1 for
- * three or four letters, 2 for five or six, 3 for seven and up, which is what
- * `wordTierBonus` in `config.ts` pays against.
+ * three or four letters, 2 for five or six, 3 for seven and up, and it is now
+ * what the word is *worth* rather than a bonus on top of a base —
+ * `wordTierPoints` in `config.ts` is the table, and a hint halves whatever it
+ * says.
  *
  * The bank exists here rather than in the CSV import because the old database
  * has no word list — the games it shipped were the four quizzes.

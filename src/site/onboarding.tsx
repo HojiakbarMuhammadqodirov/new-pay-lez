@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './icons';
 import { useAuth } from './auth/context';
+import { matchCities, savePlace, useCities, type City } from './api/profile';
 import { WELCOME_POINTS } from './auth/users';
 import { LANGUAGES, LANGUAGE_ORDER, useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -71,7 +72,7 @@ const ROUND_POINTS = [30, 30, 40];
  */
 const FIRST_TIER = 250;
 
-type Step = 'lang' | 'game' | 'payoff';
+type Step = 'lang' | 'place' | 'game' | 'payoff';
 
 /* ────────────────────────────────────────────────────────────── the shell ── */
 
@@ -81,12 +82,12 @@ function Steps({ at }: { at: number }) {
   return (
     <div className="onb-head">
       <div className="onb-pips" aria-hidden>
-        {[0, 1, 2].map((index) => (
+        {[0, 1, 2, 3].map((index) => (
           <i key={index} data-on={index <= at ? 'true' : undefined} />
         ))}
       </div>
       <span className="onb-count">
-        {fill(copy.step, { n: String(at + 1), total: '3' })}
+        {fill(copy.step, { n: String(at + 1), total: '4' })}
       </span>
     </div>
   );
@@ -126,6 +127,137 @@ function LanguageStep({ onNext }: { onNext: () => void }) {
       <div className="onb-actions">
         <button type="button" className="btn btn-solid btn-lg" onClick={onNext}>
           {copy.langNext}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── step one and a half ── */
+
+/**
+ * Where you are, and whether you want to be seen.
+ *
+ * Two questions on one screen because they are one decision: the leaderboard is
+ * ranked by city and by country, so "where" is what makes the board mean
+ * anything, and "may we list you" is the consent that has to be asked before a
+ * name goes on a public table. Splitting them across two steps would ask for a
+ * city and then, a screen later, reveal what it was for.
+ *
+ * **It is skippable, and skipping it costs nothing that matters.** A player
+ * with no city still plays, still earns, and still appears on the global board
+ * — the server falls back rather than dropping them. A step that blocked the
+ * flow on a question about *where somebody lives* would be trading sign-ups for
+ * a nicer table.
+ *
+ * The consent defaults to **off**. Being listed to a whole country is not a
+ * setting to flip on somebody's behalf, and a board that fills up because
+ * nobody noticed the default is not consent.
+ *
+ * The city is written back **from the response**, not from what was typed: the
+ * server canonicalises it (`resolveCity`), so "kraków" is stored as `Krakow`,
+ * and a screen that kept the typed form would show a different city from the
+ * one it just saved.
+ */
+function PlaceStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
+  const copy = useCopy().onboarding;
+  const cities = useCities();
+  const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState<City | null>(null);
+  const [listed, setListed] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const list = cities.state.status === 'ready' ? cities.state.data : null;
+  const matches = list && query.trim() && !picked ? matchCities(list, query) : [];
+
+  const save = async () => {
+    if (busy) return;
+    if (!picked) {
+      /* Nothing chosen is a valid answer — see the note above. */
+      onNext();
+      return;
+    }
+    setBusy(true);
+    try {
+      await savePlace({
+        city: picked.name,
+        countryCode: picked.country,
+        leaderboardOptIn: listed,
+      });
+    } catch {
+      /* A place that did not save is not a reason to trap somebody in
+         onboarding. The profile page asks the same two questions and the
+         board falls back to global until then. */
+    } finally {
+      setBusy(false);
+      onNext();
+    }
+  };
+
+  return (
+    <>
+      <Steps at={1} />
+      <h1 className="onb-title">{copy.placeTitle}</h1>
+      <p className="onb-lede">{copy.placeLede}</p>
+
+      <div className="onb-place">
+        <label className="field">
+          <span className="field-label">{copy.placeCity}</span>
+          <input
+            type="text"
+            autoComplete="address-level2"
+            placeholder={copy.placeCityPlaceholder}
+            value={picked ? `${picked.name}, ${picked.country}` : query}
+            onChange={(event) => {
+              setPicked(null);
+              setQuery(event.target.value);
+            }}
+          />
+        </label>
+
+        {matches.length > 0 && (
+          <ul className="onb-cities">
+            {matches.map((city) => (
+              <li key={`${city.name}-${city.country}`}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPicked(city);
+                    setQuery('');
+                  }}
+                >
+                  <b>{city.name}</b>
+                  <span>{city.country}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {/* The consent, and it says what it does rather than naming a setting.
+            "Show me on the leaderboard" is a thing somebody can decide; a
+            checkbox labelled `leaderboardOptIn` is not. */}
+        <button
+          type="button"
+          className="onb-consent"
+          role="switch"
+          aria-checked={listed}
+          onClick={() => setListed((on) => !on)}
+        >
+          <span className="onb-switch" data-on={listed ? 'true' : undefined} aria-hidden />
+          <span>
+            <b>{copy.placeListed}</b>
+            <span>{copy.placeListedNote}</span>
+          </span>
+        </button>
+      </div>
+
+      <div className="onb-actions">
+        <button type="button" className="btn btn-solid btn-lg" disabled={busy} onClick={() => void save()}>
+          {busy ? copy.placeSaving : copy.langNext}
+        </button>
+        <button type="button" className="link-btn" onClick={onBack}>
+          {copy.back}
         </button>
       </div>
     </>
@@ -178,7 +310,7 @@ function FlagStep({
   if (failed) {
     return (
       <>
-        <Steps at={1} />
+        <Steps at={2} />
         <h1 className="onb-title">{copy.gameFailed}</h1>
         <div className="onb-actions">
           <button
@@ -199,7 +331,7 @@ function FlagStep({
   if (!round) {
     return (
       <>
-        <Steps at={1} />
+        <Steps at={2} />
         <p className="onb-lede" role="status">
           {copy.gameLoading}
         </p>
@@ -231,7 +363,7 @@ function FlagStep({
 
   return (
     <>
-      <Steps at={1} />
+      <Steps at={2} />
 
       <div className="onb-scoreline">
         <div className="onb-rounds" aria-hidden>
@@ -316,7 +448,7 @@ function PayoffStep({ earned, onFinish }: { earned: number; onFinish: () => void
 
   return (
     <>
-      <Steps at={2} />
+      <Steps at={3} />
 
       <span className="onb-total" aria-hidden>
         {total}
@@ -386,7 +518,9 @@ export function OnboardingPage() {
         <span className="brand">Paylez</span>
 
         {step === 'lang' ? (
-          <LanguageStep onNext={() => setStep('game')} />
+          <LanguageStep onNext={() => setStep('place')} />
+        ) : step === 'place' ? (
+          <PlaceStep onNext={() => setStep('game')} onBack={() => setStep('lang')} />
         ) : step === 'game' ? (
           <FlagStep
             /* Keyed on the language so changing it and coming back builds the

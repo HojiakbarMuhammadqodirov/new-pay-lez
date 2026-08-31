@@ -39,6 +39,7 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<SignInError | 'empty' | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -46,13 +47,21 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
       setError('empty');
       return;
     }
-    const result = signIn(email, password);
-    /*
-     * No navigation on success. Signing in changes the session, which changes
-     * what `resolveRoute` returns for this very route — the console, the setup
-     * form, or the landing page. Pushing a hash here as well would race that.
-     */
-    setError(result.ok ? null : result.error);
+    /* Locked while it is in flight. Signing in is a round trip now, and a form
+       that can be submitted twice opens two sessions. */
+    if (busy) return;
+    setBusy(true);
+    void signIn(email, password)
+      .then((result) => {
+        /*
+         * No navigation on success. Signing in changes the session, which
+         * changes what `resolveRoute` returns for this very route — the
+         * console, the setup form, or the landing page. Pushing a hash here as
+         * well would race that.
+         */
+        setError(result.ok ? null : result.error);
+      })
+      .finally(() => setBusy(false));
   };
 
   return (
@@ -180,13 +189,20 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
   const [password, setPassword] = useState('');
   const [type, setType] = useState<ChoosableType | null>(null);
   const [error, setError] = useState<SignUpError | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    const result = signUp({ name, email, password, type });
-    /* Nothing to navigate to here either: an owner resolves to setup and an
-       individual to the landing page, both from the account this just made. */
-    setError(result.ok ? null : result.error);
+    if (busy) return;
+    setBusy(true);
+    void signUp({ name, email, password, type })
+      .then((result) => {
+        /* Nothing to navigate to here either: an owner resolves to setup and an
+           individual to the landing page, both from the account this just
+           made. */
+        setError(result.ok ? null : result.error);
+      })
+      .finally(() => setBusy(false));
   };
 
   /* One `<p>` under the form rather than a message per field: the validation

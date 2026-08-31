@@ -645,6 +645,21 @@ export const en = {
      * side for the same reason — and `fx.ts`, which refuses `Intl` for money on
      * the opposite ground.
      */
+    /*
+     * The local quiz, named per country rather than per language.
+     *
+     * A **map, not a template**. "{country} Quiz" would need the country in
+     * whatever case the sentence governs, and Russian wants "Викторина о
+     * Польше" against "Викторина об Узбекистане" — a preposition that changes
+     * with the word after it. Each entry is a whole, grammatical name instead,
+     * which is the same call `wordGame.lists` makes for the same reason.
+     *
+     * Keyed by ISO country code, and the keys are `QUIZ_BANK_FOR_COUNTRY`'s in
+     * `games/banks.ts`. A country in that table with no name here falls back to
+     * `names`' own slot rather than rendering nothing.
+     */
+    localQuiz: { PL: 'Poland Quiz', UZ: 'Uzbekistan Quiz' },
+
     streakHint: 'One round a day keeps it',
     freezesHint: 'Each one covers a day you miss',
     /* The three states a circle can be in, for the label a screen reader gets.
@@ -671,7 +686,11 @@ export const en = {
       'Guess the Flag',
       'Country & Capital',
       'Brain Games',
-      'Poland Quiz',
+      /* The local quiz's name is not here — it depends on the country on the
+         profile, so it comes from `localQuiz` below. The slot is kept so the
+         array stays index-aligned with `GAMES`, and it is what a reader sees if
+         a country somehow resolves to no name at all. */
+      'Local Quiz',
       'Word Builder · English',
       'Word Builder · {language}',
     ],
@@ -758,9 +777,27 @@ export const en = {
         q: 'Which planet is called the Red Planet?',
         options: ['Mars', 'Venus', 'Jupiter'],
       },
-      poland: {
-        q: 'What is the currency of Poland?',
-        options: ['Złoty', 'Euro', 'Koruna'],
+      /*
+       * One sample per local bank, because the card is a different quiz per
+       * country and a preview asking about Poland on an Uzbek player's card
+       * would be advertising the wrong game — which is the exact failure the
+       * previews were built to stop.
+       *
+       * The Uzbekistan sample is **a real row from the export**, questions 88 of
+       * `updates/Uzbekistan_Quiz_Questions_data_part2.csv`, already written in
+       * all five languages by whoever wrote the bank. Nothing here was invented
+       * for the preview, which is the whole rule `PREVIEW` states in
+       * `content.ts` — and it is also why this one needed no translator.
+       */
+      local: {
+        PL: {
+          q: 'What is the currency of Poland?',
+          options: ['Złoty', 'Euro', 'Koruna'],
+        },
+        UZ: {
+          q: 'How many countries does Uzbekistan share a land border with?',
+          options: ['Five', 'Three', 'Seven'],
+        },
       },
     },
 
@@ -789,6 +826,11 @@ export const en = {
     boardTitle: 'Leaderboard',
     boardTabs: ['Correct answers', 'Points earned'],
     boardTop: 'Top 10',
+      /* The three scopes, index-aligned with `SCOPES` in `api/board.ts`. */
+      boardScopes: ['My city', 'My country', 'Everyone'],
+      boardLoading: 'Reading the board…',
+      boardOffline: 'We cannot reach the board right now. It is not that nobody is playing — we just cannot ask.',
+      boardHidden: 'You are {rank} this week. You are not listed because you have not turned that on — you can, in your profile.',
     /* The signed-in player's own row on the leaderboard. Everybody else is a
        derived PY-code; this one is the second person, because a board you are
        on should say so in words rather than in a code you have to recognise. */
@@ -3246,6 +3288,15 @@ export const en = {
     langTitle: 'Pick a language',
     langLede: 'You can change it later — it is the switcher in the header.',
     langNext: 'Continue',
+      /* Step one and a half: where you play, and whether to be listed. */
+      placeTitle: 'Where do you play?',
+      placeLede: 'The leaderboard is ranked by city and by country. You can skip this — you will still play, still earn, and still appear on the worldwide board.',
+      placeCity: 'Your city',
+      placeCityPlaceholder: 'Start typing…',
+      placeListed: 'Show me on the leaderboard',
+      placeListedNote: 'Your name and your weekly points, visible to other players. Off unless you turn it on, and you can change it any time in your profile.',
+      placeSaving: 'Saving…',
+      back: 'Back',
 
     gameTitle: 'Which country is this?',
     gameRound: 'Round {n} of {total}',

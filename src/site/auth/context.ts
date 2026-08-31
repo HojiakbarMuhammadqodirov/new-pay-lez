@@ -158,10 +158,23 @@ export function initial(who: { name: string }): string {
 export interface AuthValue {
   /** `null` when signed out. */
   account: Account | null;
+  /**
+   * Sign in against the **server**, falling back to the seeded demo accounts.
+   *
+   * Async now, where it used to read a row out of this device's directory
+   * synchronously, and that change is the whole migration in one signature: an
+   * account is a row on the server, and this browser holds a mirror of it.
+   *
+   * The fallback is narrow and deliberate. The three seeded accounts printed on
+   * this form exist only in `localStorage` — they are demo data, and putting
+   * them on the server would be putting fake people in the same table as real
+   * ones, which is the thing being cleaned up. So a seed signs in locally with
+   * no server session, and everybody else signs in properly or not at all.
+   */
   signIn: (
     email: string,
     password: string,
-  ) => { ok: true } | { ok: false; error: SignInError };
+  ) => Promise<{ ok: true } | { ok: false; error: SignInError }>;
   /**
    * Open an account and sign into it in one move.
    *
@@ -170,7 +183,7 @@ export interface AuthValue {
    * front door by the router until it does, and there is no reason to create
    * that state when the form can simply ask first.
    */
-  signUp: (draft: SignUpDraft) => { ok: true } | { ok: false; error: SignUpError };
+  signUp: (draft: SignUpDraft) => Promise<{ ok: true } | { ok: false; error: SignUpError }>;
   /**
    * Sign in with a Google credential.
    *
