@@ -48,6 +48,7 @@ export const pl: Dictionary = {
       email: 'Nie mamy konta z tym adresem e-mail.',
       password: 'To hasło się nie zgadza.',
       empty: 'Podaj adres e-mail i hasło.',
+      offline: 'Nie udało się połączyć z serwerem. To nie jest błąd w tym, co wpisałeś — spróbuj za minutę.',
     },
 
     signUpEyebrow: 'Pierwszy raz?',

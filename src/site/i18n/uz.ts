@@ -43,6 +43,7 @@ export const uz: Dictionary = {
       email: 'Bu manzil bilan hisobimiz yo‘q.',
       password: 'Bu parol to‘g‘ri kelmadi.',
       empty: 'Manzil va parolni kiriting.',
+      offline: 'Serverga ulanib bo‘lmadi. Kiritganingizda xato yo‘q — bir daqiqadan so‘ng urinib ko‘ring.',
     },
 
     signUpEyebrow: 'Bu yerda yangimisiz?',

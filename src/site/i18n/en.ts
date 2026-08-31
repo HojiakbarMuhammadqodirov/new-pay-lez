@@ -62,6 +62,10 @@ export const en = {
       email: 'We do not have an account with that email address.',
       password: 'That password does not match.',
       empty: 'Enter your email and password.',
+      /* Nobody looked at what was typed — the server could not be reached.
+         Saying "wrong password" here sends somebody to check a credential
+         that was correct, which is the worse of the two failures. */
+      offline: 'We could not reach the server. Nothing is wrong with what you typed — try again in a minute.',
     },
 
     /* Sign-up, which is also where the individual-or-business question is

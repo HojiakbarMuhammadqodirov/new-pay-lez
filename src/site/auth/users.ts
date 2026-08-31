@@ -227,7 +227,17 @@ export const SEED_USERS: UserRecord[] = [
  * at — but nothing advertises them.
  */
 
-export type SignInError = 'email' | 'password';
+/**
+ * Why a sign-in did not happen.
+ *
+ * `offline` is the third because the first two are both claims about what
+ * somebody *typed*, and there is a case where nothing they typed was the
+ * problem: the server could not be reached, so nobody has looked at it.
+ * Reporting that as a wrong password sends a person to check a credential that
+ * was correct — which is a worse failure than saying nothing, and it is the one
+ * this union existed without for exactly as long as it took to hit it.
+ */
+export type SignInError = 'email' | 'password' | 'offline';
 export type SignUpError = 'name' | 'email' | 'taken' | 'password' | 'type';
 
 /** Short enough to type, long enough not to be a typo. */

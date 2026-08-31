@@ -242,7 +242,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return found;
         }
 
-        return { ok: false, error: offline ? 'password' : 'password' };
+        return { ok: false, error: offline ? 'offline' : 'password' };
       }
     },
     [],
