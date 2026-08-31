@@ -32,7 +32,7 @@ score by identical rules and differ only in which questions they draw.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 588 checks, no browser, no network
+npm run verify:api     # the test suite — 610 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 

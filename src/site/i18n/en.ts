@@ -882,7 +882,15 @@ export const en = {
       pairs: 'Pairs {found} / {total}',
       moves: '{n} moves',
       facedown: 'Face-down card',
+      /* A card that has been turned and whose face has not arrived. Only a
+         server board has one: it holds the layout, so a face is something this
+         screen is told rather than something it knows. */
+      turning: 'Turning over…',
       hint: 'Turn two cards over. Match them and you keep the word.',
+      /* The same line for a board dealt by the server, which has no word to
+         keep — its faces are symbols. Promising one and paying out nothing is
+         the version of this that reads as a bug. */
+      serverHint: 'Turn two cards over. Both faces show — remember where they were.',
       resultScore: '{pairs} pairs found',
     },
 
@@ -910,6 +918,28 @@ export const en = {
       finish: 'See the result',
       correct: 'Correct · +{points} points',
       resultScore: '{solved} of {total} words built',
+
+      /*
+       * ── the three the server round needs ──
+       *
+       * A round played on the server does not know whether the word is right
+       * until it asks, and these are the three answers a local round never has
+       * to give.
+       */
+      /* The beat between the last letter landing and the verdict. It exists
+         because the board goes still while the request is in the air, and a
+         board that goes still on its own reads as a press that missed. */
+      checking: 'Checking…',
+      /* The day's hints are a plan entitlement (`word_hints_per_day`) and the
+         server refuses past it. It says the allowance rather than the failure:
+         the rule is working, and "something went wrong" would be a lie about it.
+         No letter is revealed and the word is not charged for one. */
+      hintsSpent: 'No hints left today',
+      /* A move that never reached the server — a guess or a hint. The server's
+         own tally is what pays, so the honest thing to say is that this one is
+         not in it. Deliberately says nothing about the *word*: it covers a
+         refused hint too, where nothing was submitted at all. */
+      unsent: 'That did not reach us',
     },
   },
 

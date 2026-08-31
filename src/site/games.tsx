@@ -48,7 +48,7 @@ import {
   buildQuizRound,
   type Question,
 } from './games/rounds';
-import { WordBuilder } from './games/WordBuilder';
+import { WordBuilder, type ServerWord } from './games/WordBuilder';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
 import '../components/GlobeHero/ui/flagFont.css';
@@ -1082,6 +1082,11 @@ export function GamesApp() {
   const [loading, setLoading] = useState(false);
   /* The server round in flight, or null for a locally built one. */
   const [session, setSession] = useState<string | null>(null);
+  /* What the server sent with that session — the words, the board size, the
+     flight target. Typed at each call site rather than here, because the three
+     games send three different things and a union of all of them would be a
+     shape no single game has. */
+  const [content, setContent] = useState<unknown>(null);
   /* The detail behind the strip. Shut by default: four figures a player checks
      occasionally should not push the games below the fold every visit. */
   const [statsOpen, setStatsOpen] = useState(false);
@@ -1203,19 +1208,27 @@ export function GamesApp() {
 
     setResult(null);
     setSession(null);
+    setContent(null);
 
     /*
-     * The flight needs a session but no questions: the server scores it from a
-     * reported gap count at `finish`, because there is nothing to validate move
-     * by move in a side-scroller. What the server owns is the *rate* and the
-     * cap, which is the half a client should not be trusted with.
+     * The three that are not quizzes each open a session and then play it their
+     * own way, so they take no `questions` from here — what they need is the
+     * session id and whatever the server sent with it, and both go to the
+     * component as props.
+     *
+     * The flight is the odd one of the three: it posts no moves at all, because
+     * there is nothing to validate move by move in a side-scroller. The server
+     * scores it from a reported gap count at `finish`, which leaves it owning
+     * the *rate* and the cap — the half a client should not be trusted with —
+     * while the client supplies the half it cannot help but supply.
      */
-    if (chosen.kind === 'flight' && hasToken()) {
+    if ((chosen.kind === 'flight' || chosen.kind === 'memory' || chosen.kind === 'word') && hasToken()) {
       setQuestions([]);
       setLoading(true);
-      startRound('flight', language)
+      startRound(SERVER_GAME[id], language)
         .then((round) => {
           setSession(round.sessionId);
+          setContent(round.content);
           setPlaying(id);
         })
         .catch(() => setPlaying(null))
@@ -1452,6 +1465,15 @@ export function GamesApp() {
    */
   const finishScored = (points: number, correct: number, won: boolean) => {
     if (!game) return;
+
+    /* Word Builder and Memory Match, when they were played on the server. The
+       `points` they report are their own local reckoning and are dropped: the
+       round was scored where the answers live. */
+    if (session) {
+      bankServer(session, undefined, correct);
+      return;
+    }
+
     bank({ game: game.id, points, answered: game.questions, correct, won }, correct);
   };
 
@@ -1745,6 +1767,11 @@ export function GamesApp() {
           ) : playing && game && game.kind === 'memory' ? (
             <MemoryMatch
               pairs={game.questions}
+              /* Both optional and both absent without an API session, which is
+                 the path the demo accounts and a dead backend take — the
+                 component then builds its own board exactly as it always has. */
+              session={session ?? undefined}
+              serverBoard={(content as { cards: number; pairs: number } | null) ?? undefined}
               onDone={finishScored}
               onQuit={() => setPlaying(null)}
             />
@@ -1752,6 +1779,8 @@ export function GamesApp() {
             <WordBuilder
               words={game.questions}
               list={game.id === 'wordLocal' ? localList : 'en'}
+              session={session ?? undefined}
+              serverWords={(content as { words?: ServerWord[] } | null)?.words}
               onDone={finishScored}
               onQuit={() => setPlaying(null)}
             />

@@ -282,7 +282,7 @@ connection never costs the player a question.
 | `flags` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` — `prompt` is an **ISO country code**; build the flag emoji from it | `{index, choice}` |
 | `capitals`, `brain`, `poland`, `uzbekistan` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` | `{index, choice}` |
 | `word_builder` | `words[{index, length, tier, letters, hint}]` | `{index, guess}`, or `kind:"hint"` with `{index, position}` |
-| `memory_match` | `{cards, pairs}` — the layout stays on the server | `{a, b}` — two card positions |
+| `memory_match` | `{cards, pairs}` — the layout stays on the server | `{a, b}` — two card positions; the reply carries `revealed[{index, face}]` for both |
 | `flight` | `{target}` | none; send `{report:{cleared}}` to `/finish` |
 
 **Eight `gameType` values, seven cards.** `poland` and `uzbekistan` are one

@@ -613,7 +613,9 @@ export const ru: Dictionary = {
       pairs: 'Пары {found} / {total}',
       moves: 'Ходов: {n}',
       facedown: 'Закрытая карта',
+      turning: 'Переворачиваем…',
       hint: 'Переверните две карты. Совпали — слово остаётся с вами.',
+      serverHint: 'Переверните две карты. Обе стороны видны — запомните, где они были.',
       resultScore: 'Найдено пар: {pairs}',
     },
 
@@ -629,6 +631,9 @@ export const ru: Dictionary = {
       finish: 'Посмотреть результат',
       correct: 'Верно · +{points} баллов',
       resultScore: 'Собрано слов: {solved} из {total}',
+      checking: 'Проверяем…',
+      hintsSpent: 'На сегодня подсказки закончились',
+      unsent: 'Это до нас не дошло',
     },
   },
 

@@ -613,7 +613,9 @@ export const uz: Dictionary = {
       pairs: 'Juftliklar {found} / {total}',
       moves: '{n} harakat',
       facedown: 'Yopiq karta',
+      turning: 'Ochilmoqda…',
       hint: 'Ikkita kartani ochib ko‘ring. Juftini topsangiz, so‘z sizniki.',
+      serverHint: 'Ikkita kartani ochib ko‘ring. Ikkalasi ham ko‘rinadi — qayerda ekanini eslab qoling.',
       resultScore: '{pairs} juftlik topildi',
     },
 
@@ -629,6 +631,9 @@ export const uz: Dictionary = {
       finish: 'Natijani ko‘rish',
       correct: 'To‘g‘ri · +{points} ball',
       resultScore: '{total} dan {solved} ta so‘z yig‘ildi',
+      checking: 'Tekshirilmoqda…',
+      hintsSpent: 'Bugunga maslahat qolmadi',
+      unsent: 'Bu bizga yetib kelmadi',
     },
   },
 

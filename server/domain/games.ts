@@ -501,6 +501,36 @@ export interface EventResult {
   correct?: boolean;
   /** Only ever the answer to a question already answered. */
   answer?: number | string;
+  /**
+   * The faces of the cards this move turned over. Memory Match only.
+   *
+   * **A flipped pair reveals both cards, and this is what says so.** The reply
+   * used to be `answer: deck[a]` and nothing else, which taught the client the
+   * face of the *first* card and left the second one blank — on a mismatch, half
+   * of what the player had just looked at. Memory Match is entirely about
+   * remembering what you saw, so a client that cannot draw both faces is not
+   * running the game; it is running a coin toss with a delay on it.
+   *
+   * Nothing is given away by it. What `game_sessions.secret` protects is the ten
+   * cards still face down, and these two are the ones the player is looking at —
+   * they named the positions in the payload. Every other position stays
+   * unreadable, which is the invariant `verify.ts` pins.
+   *
+   * **Positions rather than an ordered pair**, for two reasons. A client applies
+   * `{index, face}` straight onto its board without re-deriving which of `a` and
+   * `b` it sent first — a `[faceA, faceB]` tuple is correct only as long as both
+   * halves agree about the order, which is exactly the kind of agreement that
+   * rots. And it does not write "exactly two" into the shape: this is the one
+   * game whose moves *learn the board*, and a move that turned over a different
+   * number of cards would still fit.
+   *
+   * It is **additive**. `answer` still carries `deck[a]` exactly as it did, so
+   * the Flutter app's `protocol_test.dart` fixtures — response bodies copied
+   * verbatim off a running server — keep every field they were written against.
+   * A field added is a client that ignores it; a field changed is a client that
+   * breaks in a shop.
+   */
+  revealed?: Array<{ index: number; face: string }>;
   accepted: boolean;
 }
 
@@ -570,6 +600,7 @@ export function submitEvent(
     const secret = JSON.parse(session.secret) as Record<string, unknown>;
     let correct: boolean | undefined;
     let answer: number | string | undefined;
+    let revealed: EventResult['revealed'];
 
     if (secret.kind === 'quiz') {
       const answers = secret.answers as number[];
@@ -593,8 +624,30 @@ export function submitEvent(
          rather than before the insert, so a hint that is refused is a hint that
          never happened: nothing is written and nothing is revealed. */
       if (input.kind === 'hint') {
+        /*
+         * Validated, not clamped — and the order matters as much as the check.
+         *
+         * It used to be `Math.min(Math.max(0, position), length - 1)`, which
+         * meant a hint for a slot that does not exist still passed the
+         * allowance below, spent one of the day's three, and answered the
+         * *last* letter of the word. A client asking out of range was charged
+         * for a letter it had nowhere to put and could not tell that anything
+         * had gone wrong. Clamping is the right instinct for a value that is
+         * merely imprecise and the wrong one for a value that is a mistake:
+         * this is a mistake, and the other out-of-range value in this same
+         * branch — `index` — has always been treated as one.
+         *
+         * Refused *before* `requireHint`, so a rejected hint is a hint that
+         * never happened: nothing is written, nothing is spent, nothing is
+         * revealed. That is the same guarantee the allowance check itself makes
+         * one line down, and it would be worth nothing if a bad request could
+         * step past it.
+         */
+        const position = Number(input.payload.position ?? 0);
+        if (!Number.isInteger(position) || position < 0 || position >= words[index].length) {
+          throw new DomainError('bad_request', 'no such letter');
+        }
         requireHint(db, input.userId, input.sessionId, input.seq, at);
-        const position = Math.min(Math.max(0, Number(input.payload.position ?? 0)), words[index].length - 1);
         answer = words[index][position];
         correct = undefined;
       }
@@ -604,7 +657,17 @@ export function submitEvent(
       const b = Number(input.payload.b);
       if (!deck[a] || !deck[b] || a === b) throw new DomainError('bad_request', 'no such cards');
       correct = deck[a] === deck[b];
+      /* Kept, and now redundant beside `revealed`. It is the first card's face
+         and it is what every client written against the old reply reads; a key
+         that costs one string is not worth a protocol change to remove. */
       answer = deck[a];
+      /* Both of them, because both of them are face up on the player's screen.
+         Only these two — the loop that would build this from `deck` itself is
+         the whole answer key, and there is no move that needs it. */
+      revealed = [
+        { index: a, face: deck[a] },
+        { index: b, face: deck[b] },
+      ];
     }
 
     try {
@@ -625,11 +688,17 @@ export function submitEvent(
       /* The unique `(session, seq)` fired: this event has already been recorded.
          A replayed event is idempotent rather than an error — a retry after a
          dropped response is the common case and must not cost the player an
-         answer. */
-      return { correct, answer, accepted: false };
+         answer.
+
+         `revealed` travels on this reply too, and that is the point of retrying
+         one: the response that went missing is the only thing that was ever
+         going to tell this client what those two cards were. A duplicate that
+         answered `accepted: false` and nothing else would leave a Memory Match
+         board with two permanent blanks on it. */
+      return { correct, answer, revealed, accepted: false };
     }
 
-    return { correct, answer, accepted: true };
+    return { correct, answer, revealed, accepted: true };
   });
 }
 
@@ -992,10 +1061,30 @@ function scoreWords(
  * named so the comparison and the copy cannot drift apart.
  */
 function scoreDeck(
-  events: Array<{ correct: number | null; created_at: string }>,
+  events: Array<{ payload: string; correct: number | null; created_at: string }>,
   pairs: number,
 ): Scored {
-  const matched = events.filter((e) => e.correct === 1).length;
+  /* **Distinct pairs, not matching events.** The two are the same number for a
+     client that plays each pair once, and they come apart the moment one does
+     not: a move whose *response* was lost has been recorded here, and a client
+     that puts those two cards back down and turns them again submits the same
+     match a second time under a fresh `seq`. Counting rows would then report
+     seven pairs found on a six-pair board — which pays the same, because this
+     game is scored on the clock alone, and reads as a bug in the one figure the
+     result card shows beside the time. Normalised because `{a:3,b:7}` and
+     `{a:7,b:3}` are one pair of cards. */
+  const seen = new Set<string>();
+  for (const event of events) {
+    if (event.correct !== 1) continue;
+    try {
+      const { a, b } = JSON.parse(event.payload) as { a?: unknown; b?: unknown };
+      seen.add([Number(a), Number(b)].sort((x, y) => x - y).join(':'));
+    } catch {
+      /* A payload this module cannot read is not a pair it can name; it stays
+         out of the tally rather than taking the round's score down with it. */
+    }
+  }
+  const matched = seen.size;
   /* A round with fewer than two events has no elapsed time to read, not a fast
      one — `elapsedSeconds` returns `Infinity` and `bandFor` lands it on the
      slowest band, which still pays. A scoring function is the wrong place to

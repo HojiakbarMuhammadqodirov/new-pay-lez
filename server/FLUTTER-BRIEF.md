@@ -209,9 +209,17 @@ Notes that decide whether these feel right:
   `perfectBonus` so the numbers on the screen are the ones that will be paid.
 - **A band boundary is inclusive**: the wire field is `throughSeconds` and it is
   compared with `<=`. Ten seconds exactly is the ten-second band.
-- Memory Match never sends the layout — you get `{cards, pairs}` and report pairs
-  of positions. Do not hold the deck. It is scored from the server's own event
-  stamps, so there is no duration to report: just play the moves.
+- **Memory Match: the layout is still secret, but a turned pair comes back.**
+  You get `{cards, pairs}` and report pairs of positions, and the reply now
+  carries `revealed: [{index, face}, {index, face}]` for the two you just
+  turned. **Render your board from that** — it is the only way a client ever
+  learns a face, and without it a mismatch teaches nothing and the game is not a
+  memory game. It arrives on a mismatch as well as a match, and on the duplicate
+  path (`accepted: false`) too, because a retry after a dropped response is the
+  only thing that will ever tell you what those cards were. `face` is a symbol
+  string, not a label. Still do not hold a deck of your own. It is scored from
+  the server's own event stamps, so there is no duration to report: just play
+  the moves.
 - The flight is the one game with no answer key. Report `{cleared}` to `/finish`;
   the server caps the **points**, not the gaps. It pays **half a point a gap**
   now, so the 20-point ceiling is forty gaps rather than twenty — which is what

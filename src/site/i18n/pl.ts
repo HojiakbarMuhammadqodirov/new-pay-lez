@@ -618,7 +618,9 @@ export const pl: Dictionary = {
       pairs: 'Pary {found} / {total}',
       moves: 'Ruchy: {n}',
       facedown: 'Zakryta karta',
+      turning: 'Odkrywanie…',
       hint: 'Odkryj dwie karty. Dopasuj je, a słowo zostaje z Tobą.',
+      serverHint: 'Odkryj dwie karty. Obie strony są widoczne — zapamiętaj, gdzie były.',
       resultScore: 'Znalezione pary: {pairs}',
     },
 
@@ -634,6 +636,9 @@ export const pl: Dictionary = {
       finish: 'Zobacz wynik',
       correct: 'Dobrze · +{points} punktów',
       resultScore: 'Ułożone słowa: {solved} z {total}',
+      checking: 'Sprawdzamy…',
+      hintsSpent: 'Na dziś nie ma już podpowiedzi',
+      unsent: 'To do nas nie dotarło',
     },
   },
 

@@ -917,6 +917,22 @@
           "accepted": {
             "type": "boolean",
             "description": "False when this `seq` was already recorded — a retry, not a second answer."
+          },
+          "revealed": {
+            "type": "array",
+            "nullable": true,
+            "description": "Memory Match only. The two cards this move turned over, as `{index, face}` — positions rather than an ordered pair, so a client can apply them to its board without re-deriving which of `a`/`b` it sent first. It is the only way a client ever learns the layout, and it arrives on a mismatch as well as a match: a memory game in which a mismatch taught you nothing would not be one. Sent on the duplicate path too, because a retry after a dropped response is the only thing that will ever tell that client what those cards were.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "index": {
+                  "type": "integer"
+                },
+                "face": {
+                  "type": "string"
+                }
+              }
+            }
           }
         }
       },
@@ -3373,35 +3389,27 @@
         }
       }
     },
-    "/v1/leaderboard/city": {
+    "/v1/leaderboard/{scope}": {
       "get": {
-        "summary": "The city weekly board",
-        "description": "Everyone is ranked; only opted-in players are listed. If you have not opted in you still see your own rank, with `hidden: true`.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
-        "operationId": "getLeaderboardCity",
+        "summary": "GET /v1/leaderboard/:scope",
+        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "getLeaderboardByScope",
         "tags": [
-          "social"
+          "other"
         ],
         "parameters": [
           {
-            "name": "city",
-            "in": "query",
-            "required": false,
-            "description": "Defaults to the account’s city.",
+            "name": "scope",
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string"
             }
           }
         ],
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Board"
-                }
-              }
-            }
+          "204": {
+            "description": "Success"
           },
           "default": {
             "description": "Error",

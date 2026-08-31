@@ -817,6 +817,11 @@ function gameRules(): void {
     at,
   });
   check('a repeated event is not counted twice', !replay.accepted);
+  /* `revealed` belongs to Memory Match, which is the one game whose moves teach
+     the client what the board is. A quiz has an answer key and no board, and a
+     client narrowing on the field must not find one on a game that never turns a
+     card over. */
+  check('a quiz reply names no cards, because a quiz has no board', replay.revealed === undefined);
 
   const finished = games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
   /* Five right at one apiece, the clean-sweep bonus, and the speed band on top
@@ -1261,6 +1266,127 @@ function scoringRules(): void {
   eq('…and five minutes pays the same floor', slow.score, 3);
   eq('a finished deck is a win however slow it was', slow.won, true);
 
+  /*
+   * **A flipped pair reveals both cards.**
+   *
+   * The reply used to be `answer: deck[a]` alone, which told a client the face
+   * of the first card and nothing about the second — so a mismatch taught half
+   * of what the player had just looked at, and Memory Match is the one game in
+   * the set that is *entirely* about remembering what you saw. These checks are
+   * what stops that regressing, and the last of them is the one with teeth: what
+   * the secret protects is the cards still face down, and a reply that named a
+   * third position would be handing the board over one move at a time.
+   */
+  const revealRound = () => {
+    const at = nextAt();
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    /* A guaranteed **mismatch**: the first position, and the first position
+       after it holding a different symbol. That is the case the old reply was
+       wrong about, so it is the case worth pinning. */
+    const b = deck.findIndex((symbol, index) => index > 0 && symbol !== deck[0]);
+    const move = games.submitEvent(w.db, {
+      sessionId: opened.sessionId,
+      userId: w.customerId,
+      seq: 0,
+      kind: 'pair',
+      payload: { a: 0, b },
+      at,
+    });
+    return { at, opened, deck, b, move };
+  };
+
+  const reveal = revealRound();
+  eq('a mismatched pair is judged a mismatch', reveal.move.correct, false);
+  eq('…and it reveals both cards, not one', reveal.move.revealed, [
+    { index: 0, face: reveal.deck[0] },
+    { index: reveal.b, face: reveal.deck[reveal.b] },
+  ]);
+  eq(
+    '…while `answer` still carries the first card, so nothing reading it breaks',
+    reveal.move.answer,
+    reveal.deck[0],
+  );
+  check(
+    '…and nothing else on the board leaks with it',
+    reveal.move.revealed!.every((card) => card.index === 0 || card.index === reveal.b),
+  );
+  eq(
+    '…so a twelve-card deck gives up exactly two faces a move',
+    reveal.move.revealed!.length,
+    2,
+  );
+
+  /* A retry after a dropped response is the *only* thing that can still tell
+     this client what those two cards were, so the duplicate carries them. A
+     reply of `accepted: false` and nothing else leaves two permanent blanks on
+     the board. */
+  const replayed = games.submitEvent(w.db, {
+    sessionId: reveal.opened.sessionId,
+    userId: w.customerId,
+    seq: 0,
+    kind: 'pair',
+    payload: { a: 0, b: reveal.b },
+    at: reveal.at,
+  });
+  check('a replayed pair is a duplicate rather than a second move', !replayed.accepted);
+  eq('…and it still reveals the same two faces', replayed.revealed, reveal.move.revealed);
+
+  /*
+   * **The pairs found are distinct pairs, not matching events.**
+   *
+   * The two agree for a client that plays each pair once and come apart the
+   * moment one does not: a move whose response was lost is recorded here, and a
+   * client that puts those cards back down and turns them again submits the same
+   * match under a fresh `seq`. The score is the clock alone so it pays the same
+   * either way — what would be wrong is the count printed beside the time,
+   * seven pairs found on a six-pair board.
+   */
+  const doubled = (() => {
+    const at = nextAt();
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    const first = new Map<string, number>();
+    let seq = 0;
+    const send = (a: number, b: number) => {
+      games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq: (seq += 1),
+        kind: 'pair',
+        payload: { a, b },
+        at,
+      });
+    };
+    deck.forEach((symbol, index) => {
+      const opener = first.get(symbol);
+      if (opener === undefined) {
+        first.set(symbol, index);
+        return;
+      }
+      send(opener, index);
+      /* The same two cards again, the other way round — which is what a client
+         re-turning them looks like, and is one pair of cards however it is
+         written. */
+      send(index, opener);
+    });
+    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at });
+  })();
+  eq(
+    'a pair submitted twice counts once',
+    doubled.correct,
+    CONFIG.games.memoryPairs,
+  );
+  eq('…out of the board it was actually dealt', doubled.answered, CONFIG.games.memoryPairs);
+
   /* ── word builder ── */
 
   /*
@@ -1359,6 +1485,69 @@ function scoringRules(): void {
   const fumbled = wordRound((tiers) => ({ fumble: [tiers.indexOf(2)] }));
   eq('a wrong attempt still pays the word its tier', fumbled.result.score, 9);
   eq('…and still takes the sweep bonus away', fumbled.result.score, swept.result.score - 1);
+
+  /*
+   * **A hint for a letter that does not exist is refused, and costs nothing.**
+   *
+   * The position used to be clamped — a request for slot 40 of a four-letter
+   * word passed the allowance check, spent one of the day's three, and answered
+   * the last letter. The client had nowhere to put it and no way to tell that
+   * anything had gone wrong, and the allowance was gone.
+   *
+   * Both halves are checked, and the second is the one that matters: refusing
+   * the request is worth little if the refusal happens *after* the hint has
+   * been spent, so the allowance is read before and after and must not move.
+   */
+  {
+    const w2 = world();
+    const at2 = now();
+    const opened = games.startSession(w2.db, {
+      userId: w2.customerId,
+      gameType: 'word_builder',
+      language: 'en',
+      at: at2,
+    });
+    const spent = () =>
+      w2.db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM game_events WHERE kind = 'hint' AND session_id = $s`,
+        { s: opened.sessionId },
+      )?.n ?? 0;
+
+    const before = spent();
+    throws('a hint past the end of the word is refused', 'bad_request', () =>
+      games.submitEvent(w2.db, {
+        sessionId: opened.sessionId,
+        userId: w2.customerId,
+        seq: 900,
+        kind: 'hint',
+        payload: { index: 0, position: 40 },
+        at: at2,
+      }),
+    );
+    throws('…as is a negative one', 'bad_request', () =>
+      games.submitEvent(w2.db, {
+        sessionId: opened.sessionId,
+        userId: w2.customerId,
+        seq: 901,
+        kind: 'hint',
+        payload: { index: 0, position: -1 },
+        at: at2,
+      }),
+    );
+    eq('…and neither spent one of the day’s hints', spent(), before);
+
+    /* And the legitimate case still works, so the guard is not simply off. */
+    const ok = games.submitEvent(w2.db, {
+      sessionId: opened.sessionId,
+      userId: w2.customerId,
+      seq: 902,
+      kind: 'hint',
+      payload: { index: 0, position: 0 },
+      at: at2,
+    });
+    eq('a hint inside the word still answers one letter', String(ok.answer).length, 1);
+    w2.db.close();
+  }
 
   /* ── the flight ── */
 

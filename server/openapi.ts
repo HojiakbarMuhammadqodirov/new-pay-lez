@@ -519,6 +519,25 @@ const SCHEMAS: Record<string, Schema> = {
       correct: { type: 'boolean', nullable: true },
       answer: { nullable: true, description: 'Only ever the answer to the question just asked.' },
       accepted: bool('False when this `seq` was already recorded — a retry, not a second answer.'),
+      revealed: {
+        type: 'array',
+        nullable: true,
+        description:
+          'Memory Match only. The two cards this move turned over, as `{index, face}` — ' +
+          'positions rather than an ordered pair, so a client can apply them to its board ' +
+          'without re-deriving which of `a`/`b` it sent first. It is the only way a client ' +
+          'ever learns the layout, and it arrives on a mismatch as well as a match: a ' +
+          'memory game in which a mismatch taught you nothing would not be one. Sent on the ' +
+          'duplicate path too, because a retry after a dropped response is the only thing ' +
+          'that will ever tell that client what those cards were.',
+        items: {
+          type: 'object',
+          properties: {
+            index: { type: 'integer' },
+            face: { type: 'string' },
+          },
+        },
+      },
     },
   },
 

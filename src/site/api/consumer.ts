@@ -204,15 +204,32 @@ export const startRound = (gameType: ServerGameType, language?: string) =>
  * move as a duplicate, not a fault, which is the right answer for a flaky
  * connection and means a client may retry without checking first.
  *
- * `pair` arrives on a Memory Match match and nowhere else: it is what the two
- * cards were, so the board can show the word it just taught. The layout itself
- * stays secret, so this is the only way the client learns any of it.
+ * `answer` is whatever the question's answer was: an option index on a quiz,
+ * the correct spelling on a Word Builder guess, one letter on a hint. It is
+ * only ever sent for a question already answered — the server does not hand out
+ * answers to questions still open, which is the property that makes a
+ * client-side score worthless and a server-side one worth having.
+ *
+ * There was a `pair` field documented here, said to arrive on a Memory Match
+ * match. **It never existed on the server.** Something had to be believed about
+ * a protocol nobody had run, and this is what was believed; it is recorded
+ * rather than quietly deleted because the same mistake is cheap to make twice.
+ * What Memory Match actually returns is decided in `domain/games.ts` and is
+ * typed below by the screen that reads it.
  */
 export interface MoveResult {
   accepted: boolean;
   correct?: boolean;
   answer?: number | string;
-  pair?: { icon: string; label: string; en: string };
+  /**
+   * Anything a particular game's move sends back beyond the two fields above.
+   *
+   * Deliberately open: the deck games learn about the board as they play and
+   * the quiz games do not, and pinning one shape here would either constrain a
+   * protocol this file does not own or invent fields it cannot see. The screen
+   * that reads a move narrows this to what its own game sends.
+   */
+  [extra: string]: unknown;
 }
 
 export const sendMove = (

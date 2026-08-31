@@ -14012,6 +14012,21 @@ button {
   background: transparent;
 }
 
+/*
+ * Sent, and the server has not answered yet.
+ *
+ * The third state the other two screens already have — `.round-option` and
+ * `.onb-option` both carry a `picked` look for exactly this moment. It is
+ * deliberately *not* either of the two above: the row must read as committed
+ * without reading as judged, because on a four-letter word a guess that has
+ * been sent is right about as often as it is wrong and marking it either way
+ * before the reply lands is a coin toss the screen has no business making.
+ */
+.wb-slots[data-state='picked'] .wb-slot {
+  border-color: var(--border-2);
+  background: var(--surface-2);
+}
+
 .wb-slots[data-shake='true'] {
   animation: wb-shake 450ms var(--ease);
 }

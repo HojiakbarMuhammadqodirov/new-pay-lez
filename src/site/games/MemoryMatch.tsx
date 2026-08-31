@@ -3,6 +3,7 @@ import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { memoryPoints } from '../auth/player';
 import { today } from '../auth/player';
+import { sendMove, type MoveResult } from '../api/consumer';
 import { buildMemoryBoard, type MemoryCard } from './rounds';
 
 /**
@@ -31,10 +32,28 @@ import { buildMemoryBoard, type MemoryCard } from './rounds';
  * random spends just as freely; time is the measure of the thing actually being
  * tested, because remembering where a card was is what makes you fast.
  *
- * The L-Earn payload is the label revealed on a match: the deck is a themed set
- * of Kraków landmarks, Polish food, transport or everyday words, so matching two
- * cards teaches the word for what is on them. The deck rotates with the day (see
+ * ## Two boards, and only one of them is this file's
+ *
+ * With a `session` the board belongs to the **server**: `game_sessions.secret`
+ * holds the layout, this screen is told `{cards, pairs}` and nothing else, and
+ * it learns a card's face by turning it over. That is what makes the points
+ * real — a client that dealt its own deck could report any time it liked, and a
+ * leaderboard ranked on that ranks whoever opened devtools.
+ *
+ * Without one it deals its own deck exactly as it always has, which is the demo
+ * accounts and anybody playing while the backend is down. Those rounds pay into
+ * the local mirror and are not ranked. **Nothing on that path changed**, down to
+ * the beats: it is the fallback, and a fallback that drifts is one nobody can
+ * check the real thing against.
+ *
+ * The L-Earn payload is the local board's: the deck is a themed set of Kraków
+ * landmarks, Polish food, transport or everyday words, so matching two cards
+ * teaches the word for what is on them. The deck rotates with the day (see
  * `buildMemoryBoard`), which is what makes five decks into a week of themes.
+ * **A server board has no words** — `buildDeck` deals eight geometric symbols,
+ * which is the whole of what a face is over there — so the panel under it says
+ * what that board is instead of promising a word it cannot pay out. Teaching a
+ * word and scoring a round are two jobs, and the server took the second one.
  *
  * The icons are emoji, and the supplied spec is explicit that they are a
  * placeholder for commissioned illustrations. They are also the reason this
@@ -49,19 +68,95 @@ const MATCH_MS = 420;
 
 type Face = 'down' | 'up' | 'matched';
 
+/** Whether the reader has asked for less movement. Read at the moment of use —
+ *  the setting can change while the tab is open. */
+const reducedMotion = (): boolean =>
+  typeof window !== 'undefined' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/**
+ * The two faces a `pair` move turned over, out of the server's reply.
+ *
+ * `MoveResult` is deliberately open — `api/consumer.ts` says why: the deck games
+ * learn about the board as they play and the quiz games do not, so the shape of
+ * the extra is the reading screen's business rather than the client module's.
+ * This is that narrowing, and it is defensive on purpose: a reply missing the
+ * field is an older server, and the honest answer to one is a board that plays
+ * on with two blanks rather than a round that throws.
+ */
+function facesIn(move: MoveResult): Array<{ index: number; face: string }> {
+  if (!Array.isArray(move.revealed)) return [];
+  return move.revealed.filter(
+    (card): card is { index: number; face: string } =>
+      typeof card === 'object' &&
+      card !== null &&
+      typeof (card as { index?: unknown }).index === 'number' &&
+      typeof (card as { face?: unknown }).face === 'string',
+  );
+}
+
 export function MemoryMatch({
   pairs,
+  session,
+  serverBoard,
   onDone,
   onQuit,
 }: {
   pairs: number;
+  /** The server round in flight. Absent for a board this file dealt itself. */
+  session?: string;
+  /** What `/v1/games/sessions` said the board is. Arrives with `session`. */
+  serverBoard?: { cards: number; pairs: number };
   /** Points earned, pairs found, and whether the board was cleared. */
   onDone: (points: number, found: number, won: boolean) => void;
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
+
+  /*
+   * The server round, or `null` for a board this file deals itself.
+   *
+   * The two props are one fact and are read as one: a session with no board
+   * shape has nothing to draw, and a board shape with no session has nowhere to
+   * send a move. `games.tsx` sets them in a single batch, and taking them
+   * together here is what makes that a promise rather than a coincidence — a
+   * screen that believed either half on its own would render a grid it could
+   * not play.
+   */
+  const remote = session && serverBoard ? { session, ...serverBoard } : null;
+
+  /* The server's figures win where it has any: it dealt the board, and a client
+     that drew its grid from the game table would render eleven cards the day
+     `CONFIG.games.memoryPairs` moves. `pairs` stays the fallback, because
+     without a session there is nobody else to ask. */
+  const size = remote ? remote.cards : pairs * 2;
+  const total = remote ? remote.pairs : pairs;
+
   const [cards, setCards] = useState<MemoryCard[] | null>(null);
-  const [faces, setFaces] = useState<Face[]>([]);
+  /*
+   * The faces this client has been told about, by position.
+   *
+   * Only a server board uses it, and it is the whole of what that board knows:
+   * `null` is a card nobody has turned over yet. Written once per pair, from the
+   * reply — never guessed, and never derived from a match, because a match tells
+   * you two cards were equal and not what they were.
+   *
+   * A face **stays** here after the pair flips back down, which is not a leak:
+   * the render only draws a face for a card that is up or matched. What it buys
+   * is the flip a player expects — turning a card they have already seen shows
+   * it at once instead of waiting on a round trip for a fact this tab already
+   * holds. The server is still the one that says whether the pair matched.
+   */
+  const [known, setKnown] = useState<Array<string | null>>(() =>
+    remote ? Array.from({ length: remote.cards }, () => null) : [],
+  );
+  const [faces, setFaces] = useState<Face[]>(() =>
+    /* A server board is ready on the first render — there is nothing to fetch,
+       only blanks to draw — so the twelve cards are laid out in the state
+       initialiser rather than a frame later in an effect. A local board is
+       waiting on `decks.json` and stays empty until it lands. */
+    remote ? Array.from({ length: remote.cards }, () => 'down' as Face) : [],
+  );
   const [flipped, setFlipped] = useState<number[]>([]);
   const [found, setFound] = useState(0);
   const [moves, setMoves] = useState(0);
@@ -73,12 +168,38 @@ export function MemoryMatch({
      unmounted board. One ref rather than one timer id: two can be in flight when
      a match and a mismatch overlap. */
   const timers = useRef<number[]>([]);
-  useEffect(
-    () => () => {
-      for (const id of timers.current) window.clearTimeout(id);
-    },
-    [],
-  );
+  /* Whether this board is still the one on screen. A `pair` move is a round trip
+     and the player can quit inside it — `timers` catches the beats, this catches
+     the reply that was already in the air when they did. */
+  const live = useRef(true);
+  useEffect(() => {
+    /* Both flags are set on the way *in* as well as read on the way out, because
+       `StrictMode` mounts this component, tears it down and mounts it again in
+       development: a `live` that was only ever cleared would come back false on
+       the second mount and every reply would be dropped by a board that is on
+       screen. `pending` is the same array `after` pushes into — copied to a
+       local so the cleanup closes over the list rather than reaching through the
+       ref for it, which is a ref that could have been replaced by then. */
+    live.current = true;
+    const pending = timers.current;
+    return () => {
+      live.current = false;
+      for (const id of pending) window.clearTimeout(id);
+    };
+  }, []);
+
+  /*
+   * The next `seq`, which is 0-based and increases across the whole session.
+   *
+   * `game_events` has a unique `(session_id, seq)`, and the number is taken when
+   * a move is **sent** rather than when one succeeds: a request whose response
+   * was lost may well have been recorded, and re-using its number would spend
+   * the next pair's move on a duplicate — the server would answer
+   * `accepted: false` about two cards nobody is looking at, and the pair
+   * actually on screen would never be judged. A burnt number costs nothing; a
+   * reused one costs a move.
+   */
+  const nextSeq = useRef(0);
 
   /* `onQuit` is an inline arrow at the call site, so putting it in the dep array
      below would rebuild the board on every render of the page — a new shuffle
@@ -88,10 +209,18 @@ export function MemoryMatch({
   quit.current = onQuit;
 
   useEffect(() => {
-    let live = true;
+    /* A server board was dealt before this component mounted and there is
+       nothing here to build. Returning early rather than branching inside the
+       fetch keeps `decks.json` — a code-split chunk — off a path that would
+       never read it. The two props are tested rather than `remote`, which is a
+       fresh object every render and would restart this effect on each one; the
+       condition is the same one, written in the two stable halves. */
+    if (session && serverBoard) return;
+
+    let building = true;
     buildMemoryBoard(pairs, today())
       .then((board) => {
-        if (!live) return;
+        if (!building) return;
         setCards(board.cards);
         setFaces(board.cards.map(() => 'down'));
       })
@@ -103,28 +232,38 @@ export function MemoryMatch({
            one in the console. Hand the player back to the cards instead — the
            same answer `games.tsx` gives the quiz path for the same failure, and
            the screen the button that retries it is on. */
-        if (live) quit.current();
+        if (building) quit.current();
       });
     return () => {
-      live = false;
+      building = false;
     };
-  }, [pairs]);
+  }, [pairs, session, serverBoard]);
 
   /*
    * When the first card was turned over.
    *
    * **Still a ref, now that the clock is drawn.** This is the reading that
-   * *scores* — it is what `memoryPoints` is handed when the board clears — and it
-   * has to be exact and must not cause a render. The visible stopwatch reads the
-   * same ref through `Stopwatch`, which keeps its own tick to itself: one small
-   * component re-renders four times a second, and the twelve cards do not. That
-   * is the whole of the arrangement the root `CLAUDE.md` asks for, rather than
-   * the "no clock at all" it was mistaken for.
+   * *scores* a local round — it is what `memoryPoints` is handed when the board
+   * clears — and it has to be exact and must not cause a render. The visible
+   * stopwatch reads the same ref through `Stopwatch`, which keeps its own tick
+   * to itself: one small component re-renders four times a second, and the
+   * twelve cards do not. That is the whole of the arrangement the root
+   * `CLAUDE.md` asks for, rather than the "no clock at all" it was mistaken for.
    *
    * Started by the first flip rather than on mount, because opening the tab is
    * not playing: somebody who opens the page and goes to answer the door has not
    * had a slow round, and a clock started at mount would charge them for the
    * door. `null` until a card turns.
+   *
+   * **On a server round it scores nothing and is still drawn**, and the two
+   * clocks are worth being precise about. The server times a deck from the first
+   * `game_events` row to the last — so it starts when the *first pair* is
+   * submitted, which is after these two cards have been turned, and it stops
+   * when the last pair is judged, which is before the match beat below has
+   * finished playing. Its span is therefore strictly inside this one, and the
+   * band it lands in is the same or a faster one. A player is never paid less
+   * than the clock they were watching says; the direction it can be wrong in is
+   * the safe one.
    */
   const startedAt = useRef<number | null>(null);
 
@@ -133,8 +272,99 @@ export function MemoryMatch({
     timers.current.push(id);
   }, []);
 
+  /**
+   * Lock a matched pair, or turn a mismatched one back down.
+   *
+   * One function for both endings because they differ in three things — the
+   * face, the beat, and whether a pair was found — and everything else about
+   * them, including the two cards being released for the next move, is the same
+   * two lines written twice in the version this replaced.
+   */
+  const settle = useCallback(
+    (a: number, b: number, matched: boolean, hold: number) => {
+      after(hold, () => {
+        setFaces((current) =>
+          current.map((face, i) => (i === a || i === b ? (matched ? 'matched' : 'down') : face)),
+        );
+        setFlipped([]);
+        setBusy(false);
+        if (matched) setFound((n) => n + 1);
+      });
+    },
+    [after],
+  );
+
+  /**
+   * Submit a turned pair and wait to be told what it was.
+   *
+   * The optimistic half already happened — both cards are drawn face up before
+   * this is called — and what arrives is the half a client is not allowed to
+   * decide: the two faces, and whether they matched.
+   */
+  const submit = useCallback(
+    (id: string, a: number, b: number) => {
+      const seq = nextSeq.current;
+      nextSeq.current += 1;
+
+      void sendMove(id, seq, { a, b }, 'pair')
+        .then((move) => {
+          if (!live.current) return;
+
+          /* Both faces, whichever way the pair went. A mismatch is the move that
+             *teaches* — it is two cards the player now has to remember — and it
+             is exactly what the old reply could not say, because it named the
+             first card and left the second blank. */
+          const faces = facesIn(move);
+          if (faces.length > 0) {
+            setKnown((current) => {
+              const next = [...current];
+              for (const card of faces) {
+                if (card.index >= 0 && card.index < next.length) next[card.index] = card.face;
+              }
+              return next;
+            });
+          }
+
+          /* `accepted: false` is a duplicate `seq`, not a failure: the server had
+             this move already and has answered about it anyway. The verdict is
+             the same verdict, so it is read the same way — the flag is about
+             bookkeeping, and treating it as an error would put a played pair
+             back face down under the player. */
+          settle(
+            a,
+            b,
+            move.correct === true,
+            /* The match beat exists so the second card reads as *turning* before
+               the plate changes colour under it. On a server round that turn has
+               already been on screen for a round trip, and a reader who has asked
+               for less movement has no animation left for the beat to be waiting
+               on — so it is nothing. The mismatch beat is not motion and is not
+               touched: it is the time the two faces are readable, which is the
+               whole of what the player is here to do. */
+            move.correct === true ? (reducedMotion() ? 0 : MATCH_MS) : FLIP_BACK_MS,
+          );
+        })
+        .catch(() => {
+          if (!live.current) return;
+          /* The move did not land, so this client knows nothing about those two
+             cards and must not pretend otherwise: they go back down, unlearned,
+             and the round carries on. The server may have recorded it anyway —
+             a response can be lost after the row is written — and if it did, its
+             tally already counts the pair and this board will simply be turned
+             again. **What the round pays is the server's**, and it is scored on
+             the clock rather than on the count, so a move this client lost costs
+             the player nothing at all. */
+          settle(a, b, false, 0);
+        });
+    },
+    [settle],
+  );
+
   const flip = (index: number) => {
-    if (!cards || busy || faces[index] !== 'down') return;
+    if (busy || faces[index] !== 'down') return;
+    /* A local board has nothing to turn until `decks.json` lands; a server one
+       is dealt on the first render and has no such window. */
+    if (!remote && !cards) return;
 
     /* The clock starts on the first card that actually turns, which is why it is
        here and not above the guard: a tap on a matched card, or during a
@@ -152,12 +382,22 @@ export function MemoryMatch({
     setMoves((m) => m + 1);
     setBusy(true);
 
-    if (cards[a].pair === cards[b].pair) {
+    if (remote) {
+      submit(remote.session, a, b);
+      return;
+    }
+
+    /* Both halves of the local ending read the deck, and the guard at the top of
+       this function is what makes it non-null. Restated because the `remote`
+       branch above sits between the two and a narrowing does not cross it. */
+    const deck = cards ?? [];
+
+    if (deck[a].pair === deck[b].pair) {
       after(MATCH_MS, () => {
         setFaces((current) =>
           current.map((face, i) => (i === a || i === b ? 'matched' : face)),
         );
-        setLearned(cards[a]);
+        setLearned(deck[a]);
         setFlipped([]);
         setBusy(false);
         setFound((n) => n + 1);
@@ -184,10 +424,16 @@ export function MemoryMatch({
    * the last pair finishing its animation, and charging it to the player would
    * put every round most of a second closer to the next band down for watching
    * something they cannot skip.
+   *
+   * **The points reported are this file's own reckoning**, and on a server round
+   * they are dropped: `finishScored` in `games.tsx` calls `/finish` and takes
+   * the score from the reply, because the round was scored where the deck lives.
+   * They are still computed and still passed, because the same three arguments
+   * are the whole of what a local round pays and that path must not fork.
    */
   const reported = useRef(false);
   useEffect(() => {
-    if (found < pairs || reported.current) return;
+    if (found < total || reported.current) return;
     reported.current = true;
     /* Whole seconds, floored, the way a stopwatch reads: `MEMORY_BANDS` is a
        list of ceilings and a 39.9-second board is a 39-second board.
@@ -200,10 +446,10 @@ export function MemoryMatch({
       startedAt.current === null
         ? Number.POSITIVE_INFINITY
         : Math.floor((Date.now() - startedAt.current) / 1000);
-    after(700, () => onDone(memoryPoints(seconds), pairs, true));
-  }, [found, pairs, onDone, after]);
+    after(700, () => onDone(memoryPoints(seconds), total, true));
+  }, [found, total, onDone, after]);
 
-  if (!cards) {
+  if (!remote && !cards) {
     return (
       <div className="round round-loading" role="status">
         {copy.loading}
@@ -215,7 +461,7 @@ export function MemoryMatch({
     <div className="round mm-round">
       <div className="round-top">
         <span className="round-count">
-          {fill(copy.memory.pairs, { found: String(found), total: String(pairs) })}
+          {fill(copy.memory.pairs, { found: String(found), total: String(total) })}
           <span aria-hidden> · </span>
           {fill(copy.memory.moves, { n: String(moves) })}
         </span>
@@ -224,33 +470,53 @@ export function MemoryMatch({
             the same question about the same thing. The moves moved in beside
             the pairs: they are a tally of what has happened and this is the
             figure the round is priced on. */}
-        <Stopwatch from={startedAt} stopped={found >= pairs} />
+        <Stopwatch from={startedAt} stopped={found >= total} />
       </div>
 
       {/* Four columns and a 3:4 card, which is the shape a playing card is; a
           square grid reads as a keypad. */}
       <div className="mm-grid">
-        {cards.map((card, index) => {
-          const face = faces[index];
+        {Array.from({ length: size }, (_, index) => {
+          const face = faces[index] ?? 'down';
           const up = face !== 'down';
+          /* What is drawn on the front of this card. A local board knows every
+             face from the moment it is dealt; a server board knows the ones it
+             has been told, and `null` is the state this whole screen is built
+             around — turned over, and the reply not back yet. */
+          const card = cards ? cards[index] : null;
+          const icon = card ? card.icon : known[index] ?? null;
           return (
             <button
-              key={card.key}
+              /* A server board has no keys of its own — its cards are positions
+                 and nothing else — so the index is the identity there. It is
+                 stable: the grid is dealt once and never reordered. */
+              key={card ? card.key : index}
               type="button"
               className="mm-card"
               data-face={face}
               disabled={up || busy}
-              aria-label={up ? card.label : copy.memory.facedown}
+              aria-label={
+                !up
+                  ? copy.memory.facedown
+                  : icon === null
+                    ? copy.memory.turning
+                    : (card?.label ?? icon)
+              }
               onClick={() => flip(index)}
             >
-              {up ? (
+              {up && icon !== null ? (
                 <>
                   <span className="mm-icon" aria-hidden>
-                    {card.icon}
+                    {icon}
                   </span>
-                  {face === 'matched' && <span className="mm-label">{card.label}</span>}
+                  {face === 'matched' && card && <span className="mm-label">{card.label}</span>}
                 </>
               ) : (
+                /* The same mark a face-down card carries, because the card is
+                   the honest thing to change and it already has: `.mm-card` is
+                   lit and lifted at `data-face='up'` while this is still the
+                   back. Drawing a placeholder glyph in the icon slot would be
+                   inventing a face to say there is no face yet. */
                 <span className="mm-back" aria-hidden />
               )}
             </button>
@@ -262,6 +528,12 @@ export function MemoryMatch({
         What was just learned, and the whole reason the game is on this site.
         `aria-live` because the label appears without anything being focused, and
         a matched pair with a word on it is the one thing here worth announcing.
+
+        A server board has no word to teach — its faces are symbols — so it keeps
+        its own line here for the whole round rather than swapping to a label
+        that does not exist. The slot is kept either way: it is the live region,
+        and it holds the board's height steady between the first match and the
+        last.
       */}
       <p className="mm-learned" aria-live="polite">
         {learned ? (
@@ -269,6 +541,8 @@ export function MemoryMatch({
             <b>{learned.label}</b>
             {learned.en !== learned.label && <span>{learned.en}</span>}
           </>
+        ) : remote ? (
+          copy.memory.serverHint
         ) : (
           copy.memory.hint
         )}

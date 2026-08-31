@@ -618,7 +618,9 @@ export const uk: Dictionary = {
       pairs: 'Пари {found} / {total}',
       moves: 'Ходів: {n}',
       facedown: 'Закрита картка',
+      turning: 'Перевертаємо…',
       hint: 'Переверніть дві картки. Збіглися — слово залишається з вами.',
+      serverHint: 'Переверніть дві картки. Обидві сторони видно — запам’ятайте, де вони були.',
       resultScore: 'Знайдено пар: {pairs}',
     },
 
@@ -634,6 +636,9 @@ export const uk: Dictionary = {
       finish: 'Переглянути результат',
       correct: 'Правильно · +{points} балів',
       resultScore: 'Складено слів: {solved} з {total}',
+      checking: 'Перевіряємо…',
+      hintsSpent: 'На сьогодні підказок більше немає',
+      unsent: 'Це до нас не дійшло',
     },
   },
 
