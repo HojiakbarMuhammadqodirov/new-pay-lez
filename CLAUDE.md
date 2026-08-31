@@ -148,9 +148,9 @@ with a literal `=`, so free text does not make a messy board, it makes one board
 per spelling with one player on each. `server/README.md` carries both costs — a
 mis-filed `Halle`, and `Saint-Étienne` stored as `Saint Etienne`.
 
-Two of the four question banks do not come from `new-data/`. The capitals and
-flags banks are derived from the `CountryCapital` export; **the general and
-Poland banks are the hand-delivered CSVs in `updates/`**, the same files
+Two of the five question banks do not come from `new-data/`. The capitals and
+flags banks are derived from the `CountryCapital` export; **the general, Poland
+and Uzbekistan banks are the hand-delivered CSVs in `updates/`**, the same files
 `npm run banks` reads for the front end, and `db/import.ts` reads that directory
 as a second source. They were missing for a while and the symptom is worth
 recognising: `POST /v1/games/sessions {gameType:"brain"}` returns a 404 saying
@@ -609,10 +609,36 @@ one, and a bar three-quarters full would be promising a round that is not there.
 **Questions come from `games/data/`, through a bag.** The four quiz rounds no
 longer read a handful of items out of the dictionaries: `scripts/build-question-banks.mjs`
 turns the CSV exports in `updates/` into one file per bank per language (2102
-general questions, 98 on Poland, 196 flags, 196 capitals), which are code-split
+general questions, 98 on Poland, 100 on Uzbekistan, 196 flags, 196 capitals),
+which are code-split
 and fetched on first play — so a visitor who never opens L-Earn pays nothing for
 them, and building a round is asynchronous. Run `npm run banks` when a new export
 arrives and commit what it writes; it is deliberately *not* part of `build`.
+
+**The local-knowledge quiz is chosen by the profile's country, not by the
+language.** There are two of those banks now — Poland and Uzbekistan — and
+`QUIZ_BANK_FOR_COUNTRY` in `games/banks.ts` is the whole switch, alongside
+`WORD_LIST_FOR_COUNTRY` which does the same job for the local Word Builder. The
+distinction it protects is the one this product turns on: an Uzbek speaker in
+Kraków is asked **about Poland, in Uzbek**. Language says what you read; country
+says what you need to know.
+
+Three things key off that country and they must not be resolved separately — the
+bank, the card's name (`copy.games.localQuiz`) and the hover sample
+(`copy.games.preview.local`). `quizCountryFor` folds the profile's country once
+and everything else indexes on the result; `npm run verify` checks all five
+dictionaries cover every country in the table, because `Dictionary` catches a
+missing *key* and says nothing about a missing entry in a map keyed by country.
+
+The row in `GAMES` is called `local` and **not** `poland`. It was `poland` while
+Poland was the only bank there was; a second one made the id a lie, which is the
+same trap `occupation` was renamed to avoid one screen over.
+
+**Adding a country is one export and one row.** Drop
+`updates/<Country>_Quiz_Questions_data_*.csv` in — the generator globs, so a bank
+may arrive in parts — add a branch to `scripts/build-question-banks.mjs`, widen
+`LocalBank`, and name the country in `QUIZ_BANK_FOR_COUNTRY`. The five
+dictionaries then fail to compile until they name it, which is the point.
 
 `games/bag.ts` is the no-repeat rule: **every question in a bank is asked once
 before any of them is asked twice.** Shuffling the pool per round and taking the

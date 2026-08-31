@@ -2,7 +2,7 @@ import type { CSSProperties } from 'react';
 import { PREVIEW, type GameId } from '../content';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
-import { flagOf, type WordList } from './banks';
+import { flagOf, type LocalCountry, type WordList } from './banks';
 import { PARROT_PARTS, WING, type ParrotPart } from '../flight/parrot';
 
 /**
@@ -47,7 +47,16 @@ import { PARROT_PARTS, WING, type ParrotPart } from '../flight/parrot';
  *     readable in here is a string the game itself would show, so there is
  *     nothing extra to translate and nothing for a screen reader to read twice.
  */
-export function GamePreview({ id, list }: { id: GameId; list: WordList }) {
+export function GamePreview({
+  id,
+  list,
+  country,
+}: {
+  id: GameId;
+  list: WordList;
+  /** Which local bank this player's profile selects — see `quizBankFor`. */
+  country: LocalCountry;
+}) {
   return (
     <span className="play-prev" data-prev={id} aria-hidden>
       {id === 'memory' ? (
@@ -59,7 +68,7 @@ export function GamePreview({ id, list }: { id: GameId; list: WordList }) {
       ) : id === 'word' || id === 'wordLocal' ? (
         <WordPreview list={id === 'wordLocal' ? list : 'en'} />
       ) : (
-        <QuizPreview id={id} />
+        <QuizPreview id={id} country={country} />
       )}
     </span>
   );
@@ -182,6 +191,11 @@ function Squawk() {
  * and for the same reason: a column with four rounded corners floats where
  * these are meant to be cut out of the frame.
  *
+ * **He is flying it, not being carried through it.** The bird holds no altitude
+ * of his own: every rise is an impulse and everything between impulses is a
+ * fall, which is what the game is and what the smooth sine wave here before was
+ * not. See `pv-flap` in the sheet.
+ *
  * `--gap` is where the hole is, and the two differ by less than
  * `FLIGHT.pipe.maxStep` allows, so the pair is a course the generator could
  * actually have dealt.
@@ -209,7 +223,22 @@ function FlightPreview() {
           <i className="pv-col-low" />
         </span>
       ))}
-      <Squawk />
+
+      {/* The tap that does it. Squawk does not drift — somebody is flapping him,
+          and a preview that leaves that out is showing a bird on a conveyor
+          belt. The ring pulses on the same clock as the impulse, so what the
+          card teaches is the control: press, and he climbs. */}
+      <i className="pv-tap" aria-hidden />
+
+      {/* Two elements and two motions, composed. The wrapper flies the
+          **course** — the slow drift that puts him in one gap and then the next
+          — and the sprite inside does the **flap**, the fast rise and the
+          accelerating fall that is the actual game. One transform cannot do
+          both: they have different periods, and the whole point is that the
+          fast one rides on the slow one. */}
+      <span className="pv-bird-path">
+        <Squawk />
+      </span>
     </span>
   );
 }
@@ -243,22 +272,28 @@ function FlagPreview() {
  * what a real round puts at the top of the screen, so the preview asks the same
  * sentence and cannot drift into asking something the game does not.
  */
-function QuizPreview({ id }: { id: GameId }) {
+function QuizPreview({ id, country }: { id: GameId; country: LocalCountry }) {
   const games = useCopy().games;
   const preview = games.preview;
+
+  /* The local card previews **the bank it will actually deal**, which is the
+     same rule the local Word Builder follows: a card that offered a question
+     about Poland and then dealt one about Uzbekistan would be the abstract
+     shapes all over again, one step subtler. */
+  const local = preview.local[country];
 
   const ask =
     id === 'capital'
       ? fill(games.whichCapital, { country: preview.capital.country })
-      : id === 'poland'
-        ? preview.poland.q
+      : id === 'local'
+        ? local.q
         : preview.brain.q;
 
   const options =
     id === 'capital'
       ? preview.capital.options
-      : id === 'poland'
-        ? preview.poland.options
+      : id === 'local'
+        ? local.options
         : preview.brain.options;
 
   return (

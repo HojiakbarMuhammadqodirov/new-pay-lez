@@ -31,8 +31,13 @@
  * it is pure arithmetic with one import of its own.
  */
 import { GAMES } from '../content';
-import { MAX_FLIGHT_POINTS, MEMORY_BANDS } from '../auth/player';
-import type { WordList } from './banks';
+import {
+  MAX_FLIGHT_POINTS,
+  MEMORY_BANDS,
+  QUIZ_PERFECT_BONUS,
+  QUIZ_SPEED_BONUS,
+} from '../auth/player';
+import type { LocalCountry, WordList } from './banks';
 import type { Dictionary } from '../i18n/en';
 import { fill } from '../i18n/currency';
 
@@ -44,7 +49,10 @@ export type Game = (typeof GAMES)[number];
 export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string, reward: string] {
   if (entry.kind === 'flight') {
     return [
-      fill(games.flight.rule, { gaps: String(entry.questions) }),
+      /* No hole left in this one: the line stopped quoting the bank line when
+         it started saying the run accelerates, which is the fact a player needs
+         before they start rather than after. */
+      games.flight.rule,
       fill(games.flight.reward, {
         points: String(entry.perCorrect),
         max: String(MAX_FLIGHT_POINTS),
@@ -56,7 +64,10 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
        figure to state any more. See the note above the function. */
     return [
       fill(games.memory.rule, { pairs: String(entry.questions) }),
-      fill(games.memory.reward, { points: String(MEMORY_BANDS[0].points) }),
+      fill(games.memory.reward, {
+        seconds: String(MEMORY_BANDS[0].throughSeconds),
+        points: String(MEMORY_BANDS[0].points),
+      }),
     ];
   }
   if (entry.kind === 'word') {
@@ -70,9 +81,12 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
       questions: String(entry.questions),
       seconds: String(entry.seconds),
     }),
+    /* No mistake figure any more — there is no allowance to quote. What the
+       line says instead is what a clean round is worth, which is the thing the
+       new scoring made worth aiming at. */
     fill(games.reward, {
-      mistakes: String(entry.allowedMistakes),
       points: String(entry.perCorrect),
+      bonus: String(QUIZ_PERFECT_BONUS + QUIZ_SPEED_BONUS[0].points),
     }),
   ];
 }
@@ -97,6 +111,14 @@ export function gameName(
   index: number,
   games: Dictionary['games'],
   list: WordList,
+  country: LocalCountry,
 ): string {
+  /* The local-knowledge quiz is named per country rather than per language, and
+     it is a whole name rather than a template — see `localQuiz` in `en.ts` for
+     why a "{country} Quiz" hole cannot work across five grammars. The `names`
+     slot is the fallback and stays index-aligned with `GAMES` either way. */
+  if (GAMES[index]?.id === 'local') {
+    return games.localQuiz[country] ?? games.names[index];
+  }
   return fill(games.names[index], { language: games.wordGame.lists[list] });
 }

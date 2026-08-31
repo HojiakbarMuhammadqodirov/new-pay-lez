@@ -33,7 +33,13 @@ import {
   type Route,
 } from '../src/site/router';
 import { draw, shuffledRange } from '../src/site/games/bag';
-import { flagOf } from '../src/site/games/banks';
+import {
+  LOCAL_COUNTRIES,
+  QUIZ_BANK_FOR_COUNTRY,
+  flagOf,
+  quizBankFor,
+  quizCountryFor,
+} from '../src/site/games/banks';
 import { EMPTY_PROFILE, type Account } from '../src/site/auth/context';
 import {
   blankBusiness,
@@ -80,6 +86,8 @@ import {
   MAX_FREEZES,
   MAX_ENERGY,
   memoryPoints,
+  quizAward,
+  quizSpeedBonus,
   openDeals,
   openNow,
   redeem,
@@ -94,12 +102,13 @@ import {
   stampVisit,
   usedVouchers,
   wordPoints,
+  wordRoundPoints,
   type PlayerState,
   type StampCard,
 } from '../src/site/auth/player';
 import { toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
-import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, stepBird } from '../src/site/flight/engine';
+import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, speedAt, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
 import {
   DEAL_CATEGORIES,
@@ -1450,14 +1459,16 @@ console.log('\nplaying');
        every lapse below — which is the freeze block's business, not this one's. */
     freezes: 0,
   };
-  /* One point an answer and five for a clean sweep, so a perfect round is ten.
-     `perCorrect` comes from the game's own row and is now 1 for all four
-     quizzes — the 5/2/2/1 spread is what made Poland the worst-paying game on
-     the page for exactly the same five questions. */
-  const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, won: true };
+  /* One point an answer, one for a clean sweep and two for doing it inside ten
+     seconds, so a perfect fast round is eight. `perCorrect` comes from the game's
+     own row and is 1 for all four quizzes — the 5/2/2/1 spread is what made
+     Poland the worst-paying game on the page for exactly the same five
+     questions. `seconds` is the whole round, first question to last answer. */
+  const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, seconds: 8 };
 
   const first = awardRound(base, win, day('2026-08-03'));
-  check('a round scores per correct answer', first.points === 10, `${first.points} pts`);
+  check('a round scores per correct answer, the sweep and the clock',
+    first.points === 8, `${first.points} pts`);
   check('a first round starts the streak', first.streak === 1);
   check('answered and correct both move', first.answered === 5 && first.correct === 5);
   /* **A win costs energy too.** It costs exactly what a loss costs, which is
@@ -1469,7 +1480,7 @@ console.log('\nplaying');
 
   const nextDay = awardRound(first, win, day('2026-08-04'));
   check('the next day continues the streak', nextDay.streak === 2);
-  check('…and the balance carries', nextDay.points === 20, `${nextDay.points} pts`);
+  check('…and the balance carries', nextDay.points === 16, `${nextDay.points} pts`);
 
   const twice = awardRound(first, win, day('2026-08-03'));
   check('a second round the same day does not advance the streak', twice.streak === 1);
@@ -1490,13 +1501,13 @@ console.log('\nplaying');
      still resets; that is the whole punishment. */
   const lapsed = awardRound(first, win, day('2026-08-06'));
   check('missing the window resets the streak', lapsed.streak === 1);
-  check('…and the balance survives it', lapsed.points === 20, `${lapsed.points} pts`);
+  check('…and the balance survives it', lapsed.points === 16, `${lapsed.points} pts`);
 
   /* And a loss costs the same one, which is what makes the pips mean "rounds
      left" rather than "mistakes you are allowed". What makes charging fair at
      all is that energy comes back on a clock rather than at midnight, so an
      empty tank is a wait of hours and not a day. */
-  const lost = awardRound(base, { ...win, correct: 2, won: false }, day('2026-08-03'));
+  const lost = awardRound(base, { ...win, correct: 2 }, day('2026-08-03'));
   check('a lost round spends the same one', lost.energy === MAX_ENERGY - 1, `${lost.energy} left`);
   check('…and still banks what was right', lost.points === 2, `${lost.points} pts`);
   check('a win and a loss cost exactly the same', first.energy === lost.energy);
@@ -1520,11 +1531,11 @@ console.log('\nplaying');
 
   check('an empty tank is empty', at(0).count === 0, `${at(0).count}`);
   check('…and says when the next one lands', at(0).nextAt === t0 + ENERGY_REGEN_MINUTES * 60_000);
-  check('nothing arrives before the interval is up', at(hour * 3).count === 0);
-  check('one at four hours', at(hour * 4).count === 1, `${at(hour * 4).count}`);
-  check('two at eight', at(hour * 8).count === 2, `${at(hour * 8).count}`);
-  check('three at twelve', at(hour * 12).count === 3, `${at(hour * 12).count}`);
-  check('full at sixteen', at(hour * 16).count === MAX_ENERGY, `${at(hour * 16).count}`);
+  check('nothing arrives before the interval is up', at(hour * 1.5).count === 0);
+  check('one at two hours', at(hour * 2).count === 1, `${at(hour * 2).count}`);
+  check('two at four', at(hour * 4).count === 2, `${at(hour * 4).count}`);
+  check('three at six', at(hour * 6).count === 3, `${at(hour * 6).count}`);
+  check('full at eight', at(hour * 8).count === MAX_ENERGY, `${at(hour * 8).count}`);
   /* And it stops there — a tank that kept counting would hand back a week of
      rounds to somebody returning from holiday. */
   check('and never overfills', at(hour * 200).count === MAX_ENERGY, `${at(hour * 200).count}`);
@@ -1570,7 +1581,7 @@ console.log('\nplaying');
    * so if this number moves nothing else is left to notice.
    */
   const perDay = MAX_ENERGY + Math.floor(1440 / ENERGY_REGEN_MINUTES);
-  check('a day is ten finished rounds from a full tank', perDay === 10, `${perDay}`);
+  check('a day is sixteen finished rounds from a full tank', perDay === 16, `${perDay}`);
   /* And the payout does not know how many of them have been played. That is the
      other half of "energy is the only limiter", and the half a reintroduced
      curve would break first — a whole day of one game pays a flat rate. */
@@ -1583,7 +1594,11 @@ console.log('\nplaying');
 console.log('\nplaying — streak freezes');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
-  const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, won: true };
+  /* Twenty seconds, so the speed band pays nothing and the six points here are
+     five answers plus the sweep. This block is about the streak; a fixture whose
+     score moved with the clock would make every balance below a second thing to
+     keep in step. */
+  const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, seconds: 20 };
   const held = (n: number) => ({
     ...seedPlayer(),
     points: 100,
@@ -1605,12 +1620,12 @@ console.log('\nplaying — streak freezes');
      in `awardPoints` closed — see the absence below. */
   const saved = awardRound(held(1), win, day('2026-08-05'));
   check('a freeze absorbs a missed window', saved.streak === 5, `streak ${saved.streak}`);
-  check('…and the balance survives with it', saved.points === 110, `${saved.points} pts`);
+  check('…and the balance survives with it', saved.points === 106, `${saved.points} pts`);
   check('…and the freeze is spent', freezesOf(saved) === 0, `${freezesOf(saved)} held`);
 
   const unsaved = awardRound(held(0), win, day('2026-08-05'));
   check('without one, the streak still resets', unsaved.streak === 1);
-  check('…and the balance survives anyway', unsaved.points === 110, `${unsaved.points} pts`);
+  check('…and the balance survives anyway', unsaved.points === 106, `${unsaved.points} pts`);
 
   /* One day, and only one. "Lapsed" means no more than "not today and not
      yesterday", which a two-year absence satisfies exactly as a missed Tuesday
@@ -1620,7 +1635,7 @@ console.log('\nplaying — streak freezes');
   const away = awardRound(held(1), win, day('2026-08-09'));
   check('a longer absence is not what a freeze covers', away.streak === 1,
     `streak ${away.streak}`);
-  check('…and the balance survives even that', away.points === 110, `${away.points} pts`);
+  check('…and the balance survives even that', away.points === 106, `${away.points} pts`);
   check('…and the freeze is not spent on it', freezesOf(away) === 1,
     `${freezesOf(away)} held`);
 
@@ -1787,9 +1802,9 @@ console.log('\ncopy that quotes a constant');
    * This catches the first. If either constant moves, five strings move with
    * it, and this is the thing that says so.
    */
-  check(`the FAQ line "every four hours" still matches the code`,
-    ENERGY_REGEN_MINUTES === 240,
-    `${ENERGY_REGEN_MINUTES} min · the copy says four hours`);
+  check(`the FAQ line "every two hours" still matches the code`,
+    ENERGY_REGEN_MINUTES === 120,
+    `${ENERGY_REGEN_MINUTES} min · the copy says two hours`);
   check('…and its "up to four" still matches MAX_ENERGY',
     MAX_ENERGY === 4,
     `${MAX_ENERGY} · the copy says four`);
@@ -1821,42 +1836,74 @@ console.log('\ncopy that quotes a constant');
 console.log('\nplaying — the two scored games');
 {
   /*
-   * Word Builder pays a base and the word's own difficulty, and nothing else.
-   * The speed and first-try terms are gone: between them they were worth twice
-   * the word, which made the game a reflex test — which is what the other five
-   * already are.
+   * Word Builder pays **the word's own tier**, and nothing else. The speed and
+   * first-try terms are gone: between them they were worth twice the word, which
+   * made the game a reflex test — which is what the other five already are.
    */
-  check('an easy word is worth its base', wordPoints({ tier: 1, hinted: false }) === 1,
+  check('a word is worth its tier', wordPoints({ tier: 1, hinted: false }) === 1,
     `${wordPoints({ tier: 1, hinted: false })} pts`);
-  check('a medium word adds one', wordPoints({ tier: 2, hinted: false }) === 2);
-  check('a hard word adds two', wordPoints({ tier: 3, hinted: false }) === 3);
-  /* A hint forfeits the difficulty and leaves the base: somebody who needed it
-     still earns for finishing the word, just not for it having been hard. */
-  check('a hint costs the difficulty, not the word',
-    wordPoints({ tier: 3, hinted: true }) === 1, `${wordPoints({ tier: 3, hinted: true })} pts`);
-  check('no solved word is ever worth nothing', wordPoints({ tier: 1, hinted: true }) === 1);
+  check('a medium word is worth two', wordPoints({ tier: 2, hinted: false }) === 2);
+  check('a hard word is worth three', wordPoints({ tier: 3, hinted: false }) === 3);
+
+  /*
+   * **A hint halves the word**, where it used to forfeit the tier and leave a
+   * base of one. That paid the same single point for a hinted three-letter word
+   * and a hinted nine-letter one, which made the hint free on exactly the words
+   * it should cost most on. Half of three is more than half of one, which is the
+   * shape a hint should have.
+   */
+  check('a hint halves a hard word',
+    wordPoints({ tier: 3, hinted: true }) === 1.5,
+    `${wordPoints({ tier: 3, hinted: true })} pts`);
+  check('…and halves an easy one too', wordPoints({ tier: 1, hinted: true }) === 0.5);
+  check('no solved word is ever worth nothing', wordPoints({ tier: 1, hinted: true }) > 0);
   check('an out-of-range tier clamps', wordPoints({ tier: 9, hinted: false }) === 3);
+
+  /*
+   * The halves are resolved **once, over the round**, and that is the rule worth
+   * a test of its own: flooring each word instead would charge the same hint
+   * twice, and a round with three hinted words would lose a point and a half
+   * rather than a half.
+   */
+  const ramp = [1, 1, 2, 2, 3].map((tier) => ({ tier, hinted: false }));
+  check('a clean round pays the ramp plus the bonus',
+    wordRoundPoints(ramp, true) === 10, `${wordRoundPoints(ramp, true)} pts`);
+  check('…and without the sweep, just the ramp', wordRoundPoints(ramp, false) === 9);
+
+  const hintedOnce = ramp.map((word, i) => (i === 4 ? { ...word, hinted: true } : word));
+  check('one hint on the hardest word costs half of three',
+    wordRoundPoints(hintedOnce, false) === 7,
+    `${wordRoundPoints(hintedOnce, false)} pts`);
+
+  /* Three halves in one round is 1.5 points of fraction; floored once that is a
+     single point lost, not three. */
+  const hintedThrice = ramp.map((word, i) => (i < 3 ? { ...word, hinted: true } : word));
+  check('three halves floor once, not three times',
+    wordRoundPoints(hintedThrice, false) === 7,
+    `${wordRoundPoints(hintedThrice, false)} pts`);
 
   /*
    * Memory Match is scored on elapsed seconds and nothing else. It used to pay a
    * guaranteed 36 for six pairs that cannot be lost, which made it the richest
    * round on the page for the least asked of anybody.
    *
-   * Both sides of a boundary are checked because a band is a `<`, and an
-   * off-by-one there is the difference between a player's best board paying 12
-   * and paying 8.
+   * Both sides of a boundary are checked because the bands are **inclusive**
+   * now — `throughSeconds` with a `<=` — and an off-by-one there is the
+   * difference between a player's best board paying 8 and paying 6. The rename
+   * was the fix: a field called `underSeconds` compared with `<=` is a trap
+   * that survives every rewrite.
    */
-  check('a fast board takes the top band', memoryPoints(10) === 12, `${memoryPoints(10)} pts`);
-  check('…up to the boundary', memoryPoints(39) === 12);
-  check('…and the boundary itself drops a band', memoryPoints(40) === 8);
-  check('the middle band pays eight', memoryPoints(55) === 8);
-  check('the slow band pays four', memoryPoints(90) === 4);
-  check('past the last boundary pays the floor', memoryPoints(300) === 2);
+  check('a fast board takes the top band', memoryPoints(10) === 8, `${memoryPoints(10)} pts`);
+  check('…up to and including the boundary', memoryPoints(18) === 8);
+  check('…and one second past it drops a band', memoryPoints(19) === 6);
+  check('the middle band pays six', memoryPoints(22) === 6);
+  check('…up to and including its own boundary', memoryPoints(23) === 6);
+  check('past the last boundary pays the floor', memoryPoints(24) === 3);
   /* Finishing always pays something — that is what keeps the board the
      approachable one of the set now that it is measured rather than counted. */
-  check('the floor is never nothing', memoryPoints(99_999) === 2);
-  check('an instant board still scores', memoryPoints(0) === 12);
-  check('a negative clock cannot pay more than the top band', memoryPoints(-5) === 12);
+  check('the floor is never nothing', memoryPoints(99_999) === 3);
+  check('an instant board still scores', memoryPoints(0) === 8);
+  check('a negative clock cannot pay more than the top band', memoryPoints(-5) === 8);
 }
 
 console.log('\nflying — scoring');
@@ -1874,10 +1921,14 @@ console.log('\nflying — scoring');
   /* Five gaps banks the round and each pays one, so the bank line is worth 5
      and the ceiling is reached at twenty. The site and the server agree on
      both numbers now; they used to bank at 5 and 12 respectively. */
-  const full = { game: 'flight' as const, cleared: 5, target: 5, perGap: 1, won: true };
+  /* Half a point a gap, which is what the row and `FLIGHT.perGap` both say. The
+     halves are the reason every expectation below is a floor rather than a
+     multiplication: five gaps earn two and a half and bank two. */
+  const full = { game: 'flight' as const, cleared: 5, target: 5, perGap: 0.5, won: true };
 
   const cleared = awardFlight(base, full, day('2026-08-03'));
-  check('a cleared flight pays per gap', cleared.points === 5, `${cleared.points} pts`);
+  check('a cleared flight pays half a point a gap', cleared.points === 2,
+    `${cleared.points} pts`);
   check('a cleared flight spends one energy', cleared.energy === MAX_ENERGY - 1,
     `${cleared.energy} left`);
 
@@ -1885,11 +1936,14 @@ console.log('\nflying — scoring');
   /* And a crash spends the same one. Squawk is the game where crashing *is* the
      mechanic, so it used to be the one that emptied the tank while the other six
      left it alone — which is exactly the asymmetry that went when every finished
-     round started costing. Four hours a unit is what keeps three bad flights a
+     round started costing. Two hours a unit is what keeps three bad flights a
      wait you can sit out rather than the rest of the day. */
   check('a crashed flight spends the same one', crash.energy === MAX_ENERGY - 1,
     `${crash.energy} left`);
-  check('…and still banks the gaps flown', crash.points === 3, `${crash.points} pts`);
+  /* Three gaps is a point and a half, and a point and a half banks one. The
+     half is dropped, never rounded up — a gap that was not flown must not pay. */
+  check('…and still banks the gaps flown, floored', crash.points === 1,
+    `${crash.points} pts`);
   check('the whole round is charged to answered', crash.answered === 5, `${crash.answered}`);
   check('…and only the gaps flown count as correct', crash.correct === 3, `${crash.correct}`);
 
@@ -1899,11 +1953,13 @@ console.log('\nflying — scoring');
    * stated in the FAQ and on the vouchers page, and a second implementation of
    * them is how one of the three quietly becomes a lie.
    */
-  /* Ten points each way: a clean five-question quiz is 5 + 5, and ten gaps at
-     one apiece is ten. The two have to arrive at the same balance for the
-     comparison below to be about the streak rather than about the scoring. */
-  const quizArgs = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, won: true };
-  const tenGaps = { ...full, cleared: 10 };
+  /* Six points each way: a clean five-question quiz answered in no hurry is
+     5 + 1, and twelve gaps at half a point apiece is six. The two have to arrive
+     at the same balance for the comparison below to be about the streak rather
+     than about the scoring — which is the whole reason the numbers are chosen
+     rather than convenient. */
+  const quizArgs = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, seconds: 20 };
+  const tenGaps = { ...full, cleared: 12 };
   for (const [label, on] of [
     ['a fresh account', '2026-08-03'],
     ['the next day', '2026-08-04'],
@@ -1924,18 +1980,21 @@ console.log('\nflying — scoring');
    * — 20/12 is not a sensible accuracy — while the balance keeps counting.
    */
   const long = awardFlight(base, { ...full, cleared: 15 }, day('2026-08-03'));
-  check('gaps past the target still pay', long.points === 15, `${long.points} pts`);
+  check('gaps past the target still pay', long.points === 7, `${long.points} pts`);
   check('…while correct saturates at the target', long.correct === 5, `${long.correct}`);
   check('…and answered still counts one round', long.answered === 5, `${long.answered}`);
   check('…and it costs the one energy every finished round costs',
     long.energy === MAX_ENERGY - 1);
 
   check('the payout helper and the balance agree',
-    flightPoints(15, 1) === 15 && bankableGaps(15) === 15);
+    flightPoints(15, 0.5) === 7 && bankableGaps(15) === 15);
+  /* An even gap count has no half to lose, which is the other side of the same
+     rule and the one a reader checks the first against. */
+  check('…and an even count loses nothing', flightPoints(16, 0.5) === 8);
   /* The ceiling, which is the whole reason the old 99-gap clamp is gone: one
      lucky run used to be worth four days of every other game on the page. */
-  check('a long flight stops at the ceiling', flightPoints(40, 1) === MAX_FLIGHT_POINTS,
-    `${flightPoints(40, 1)} pts`);
+  check('a long flight stops at the ceiling', flightPoints(80, 0.5) === MAX_FLIGHT_POINTS,
+    `${flightPoints(80, 0.5)} pts`);
 
   /* What `awardFlight` owns on top: a score that arrived from a rAF loop. */
   const absurd = awardFlight(base, { ...full, cleared: 10_000 }, day('2026-08-03'));
@@ -1955,7 +2014,12 @@ console.log('\nflying — scoring');
     `${fake.energy} left`);
 
   const fractional = awardFlight(base, { ...full, cleared: 3.9, won: false }, day('2026-08-03'));
-  check('a fractional score floors', fractional.points === 3, `${fractional.points} pts`);
+  /* 3.9 gaps is three whole ones, and three halves is one and a half, which
+     banks one. Two floors on one round, and they are both right: the gap count
+     floors because half a gap was not crossed, and the payout floors because
+     half a point cannot be paid. */
+  check('a fractional score floors twice, correctly', fractional.points === 1,
+    `${fractional.points} pts`);
 
   const negative = awardFlight(base, { ...full, cleared: -2, won: false }, day('2026-08-03'));
   check('a negative score clamps to nothing', negative.points === 0 && negative.correct === 0);
@@ -1968,8 +2032,112 @@ console.log('\nflying — scoring');
     day('2026-08-03'),
   );
   check('a lapsed flight still reports what it earned',
-    lapsedFlight.points === 905 && flightPoints(5, 1) === 5,
-    `balance ${lapsedFlight.points}, earned ${flightPoints(5, 1)}`);
+    lapsedFlight.points === 902 && flightPoints(5, 0.5) === 2,
+    `balance ${lapsedFlight.points}, earned ${flightPoints(5, 0.5)}`);
+}
+
+console.log('\nplaying — a quiz cannot be lost, and a fast one pays more');
+{
+  const day = () => new Date('2026-08-03T12:00:00');
+  const base = {
+    ...seedPlayer(),
+    points: 0,
+    streak: 0,
+    answered: 0,
+    correct: 0,
+    lastPlayed: null,
+    freezes: 0,
+  };
+  const round = (correct: number, seconds: number) =>
+    quizAward({ game: 'brain' as const, correct, total: 5, perCorrect: 1, seconds });
+
+  /*
+   * **The mistake allowance is gone**, and this is the block that says so.
+   *
+   * A quiz used to end at the second wrong answer, which closed a round the
+   * player had paid energy for and left three questions they never saw — a fail
+   * state on a game whose whole promise is "answer five things". Four wrong
+   * answers now bank the fifth right one, and nothing about the round is
+   * "lost": `won` means the clean sweep, because that is the only distinction
+   * left that means anything and it is the one the bonuses are paid on.
+   */
+  check('a round with four mistakes still banks what it earned',
+    round(1, 30).points === 1, `${round(1, 30).points} pts`);
+  check('…and answers all five either way', round(1, 30).answered === 5);
+  check('…and is not a win', round(1, 30).won === false);
+  check('a round with none right pays nothing and still costs the round',
+    round(0, 30).points === 0 && round(0, 30).answered === 5);
+
+  /*
+   * The sweep and the clock, which are only ever earned together.
+   *
+   * Five answers, one for the sweep, two for doing it inside ten seconds: eight
+   * is the most a quiz can pay and it takes both. The bands are checked on both
+   * sides of each boundary because they are inclusive — `throughSeconds` with a
+   * `<=` — and an off-by-one there is a player's best round quietly paying one
+   * less than the card promised.
+   */
+  check('a clean sweep adds the perfect bonus', round(5, 30).points === 6,
+    `${round(5, 30).points} pts`);
+  check('…and the fastest band takes it to eight', round(5, 4).points === 8,
+    `${round(5, 4).points} pts`);
+  check('…up to and including ten seconds', round(5, 10).points === 8);
+  check('…eleven seconds drops to the middle band', round(5, 11).points === 7);
+  check('…up to and including fifteen', round(5, 15).points === 7);
+  check('…and sixteen earns the sweep alone', round(5, 16).points === 6);
+
+  /* Speed alone is worth nothing, which is the rule that stops the fastest way
+     to earn from being five deliberate wrong answers hammered out in two
+     seconds. */
+  check('four right in two seconds beats nobody', round(4, 2).points === 4,
+    `${round(4, 2).points} pts`);
+  check('…and a clean sweep at any speed still beats it', round(5, 99).points === 6);
+
+  /* The bands read directly, so a table edited without the function moving is a
+     failure here rather than a surprise on a result card. */
+  check('the speed bands are what the table says',
+    quizSpeedBonus(0) === 2 && quizSpeedBonus(12) === 1 && quizSpeedBonus(600) === 0);
+  check('a negative clock cannot pay more than the top band', quizSpeedBonus(-5) === 2);
+
+  const banked = awardRound(base, { game: 'brain', correct: 5, total: 5, perCorrect: 1, seconds: 4 }, day());
+  check('and the balance carries the whole eight', banked.points === 8,
+    `${banked.points} pts`);
+}
+
+console.log('\nflying — the difficulty ramp');
+{
+  /*
+   * The scroll accelerates as a run goes on, and then stops accelerating.
+   *
+   * The ceiling matters more than the rate: an unbounded ramp turns every long
+   * run into the same run, ending the instant the scroll passes what a hand can
+   * answer, and the skill it measures stops being flying and becomes reaction
+   * time. Doubling and holding leaves a good run genuinely open-ended.
+   *
+   * Linear on the **base**, not compounding — four steps of a quarter is exactly
+   * double, and a reader can check that against the config without a calculator.
+   */
+  const base = FLIGHT.pipe.speed;
+  check('a run starts at the base speed', speedAt(0) === base, `${speedAt(0)}`);
+  check('…and holds it until the first step', speedAt(9.9) === base);
+  check('the first step is a quarter more', speedAt(10) === base * 1.25, `${speedAt(10)}`);
+  check('…and they keep coming', speedAt(20) === base * 1.5 && speedAt(30) === base * 1.75);
+  check('four steps is exactly double', speedAt(40) === base * 2, `${speedAt(40)}`);
+
+  /* The freeze. Fifty seconds in and beyond, the world stops getting faster —
+     this is the check that keeps a long flight from becoming unplayable rather
+     than merely hard. */
+  check('it stops climbing at fifty seconds', speedAt(50) === base * 2, `${speedAt(50)}`);
+  check('…and stays there for as long as the run lasts',
+    speedAt(300) === base * 2 && speedAt(86_400) === base * 2);
+  check('a negative clock is still the base speed', speedAt(-10) === base);
+
+  /* The columns keep arriving on the same beat however fast the world moves —
+     `interval` is a time, not a distance — which is what keeps the altitude
+     available between two gates the same at the end of a run as at the start,
+     and that is the assumption `maxStep` is written against. */
+  check('the gate cadence is a time, not a distance',
+    FLIGHT.pipe.interval === 1.75 && FLIGHT.pipe.ramp.steps * FLIGHT.pipe.ramp.step === 1);
 }
 
 console.log('\nflying — physics');
@@ -2308,6 +2476,92 @@ console.log('\nflying — the sprite');
   check('every part has a positive size', PARROT_PARTS.every((p) => p.w > 0 && p.h > 0));
 }
 
+console.log('\nthe local quiz follows the profile, not the language');
+{
+  /*
+   * The local-knowledge card is the one game whose **content** depends on where
+   * the player says they live rather than on which of five languages they read.
+   * An Uzbek speaker in Kraków is asked about Poland, in Uzbek; a Pole in
+   * Tashkent is asked about Uzbekistan, in Polish. Those are two different axes
+   * and this block is what keeps them from being collapsed into one.
+   */
+  check('a Polish profile gets the Poland bank', quizBankFor('PL') === 'poland');
+  check('an Uzbek profile gets the Uzbekistan bank', quizBankFor('UZ') === 'uzbekistan');
+  /* Folded the way every other country lookup on the site folds: the profile
+     accepts a *typed* country when the city was not on the served list, so what
+     arrives here is only usually a code. */
+  check('…however the code was typed', quizBankFor('uz') === 'uzbekistan'
+    && quizBankFor(' Uz ') === 'uzbekistan');
+  /* Poland is the fallback and it is a real answer, not a shrug: this site is a
+     guide to having moved to Poland. */
+  check('a country with no bank falls back to the market', quizBankFor('DE') === 'poland');
+  check('…and so does an empty profile',
+    quizBankFor('') === 'poland' && quizBankFor(undefined) === 'poland');
+  check('a country name rather than a code is not a code',
+    quizBankFor('Uzbekistan') === 'poland');
+
+  /* The country and the bank are one fold, not two — three things key off the
+     country (the bank, the card's name, the hover sample) and a second
+     resolution is a second place for them to disagree. */
+  check('the country and the bank resolve together',
+    LOCAL_COUNTRIES.every((code) => quizBankFor(code) === QUIZ_BANK_FOR_COUNTRY[quizCountryFor(code)]));
+
+  /*
+   * Every language has to name every country's quiz and preview one of its
+   * questions. `Dictionary` catches a missing *key* but says nothing about a
+   * missing entry in a map keyed by country — a fourth country would render a
+   * blank card in four languages and typecheck perfectly.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    const games = LANGUAGES[code].games;
+    check(`${code} names every local quiz`,
+      LOCAL_COUNTRIES.every((country) => (games.localQuiz[country] ?? '').trim().length > 0),
+      LOCAL_COUNTRIES.map((c) => games.localQuiz[c]).join(' · '));
+    check(`${code} previews every local quiz`,
+      LOCAL_COUNTRIES.every((country) => {
+        const sample = games.preview.local[country];
+        return sample && sample.q.trim().length > 0
+          && sample.options.length === 3
+          && sample.options.every((option) => option.trim().length > 0);
+      }));
+  }
+
+  /*
+   * The bank itself. Built by `npm run banks` from the export in `updates/`, and
+   * read here off disk rather than imported, because what the check is about is
+   * the file the game will actually fetch.
+   */
+  const bank = (name: string): unknown =>
+    JSON.parse(readFileSync(new URL(`../src/site/games/data/${name}`, import.meta.url), 'utf8'));
+
+  const meta = bank('uzbekistan.meta.json') as { a: number[] };
+  check('the Uzbekistan bank was built', meta.a.length > 0, `${meta.a.length} questions`);
+
+  for (const code of LANGUAGE_ORDER) {
+    const rows = bank(`uzbekistan.${code}.json`) as string[][];
+    check(`…and carries all of it in ${code}`, rows.length === meta.a.length,
+      `${rows.length} of ${meta.a.length}`);
+    check(`…as a prompt and four options`, rows.every((row) => row.length === 5));
+    check(`…with nothing blank`,
+      rows.every((row) => row.every((cell) => cell.trim().length > 0)));
+  }
+
+  /*
+   * The stored answer is index 0 on every row of this export, which is only
+   * harmless because `buildQuizRound` shuffles the options at play time. If that
+   * shuffle ever goes, this bank becomes "always press the first button" — so
+   * the shuffle is the thing under test, not the export.
+   */
+  check('the export answers in one position…', meta.a.every((a) => a === 0));
+  const shuffled = new Set<number>();
+  for (let seed = 0; seed < 40; seed += 1) {
+    const order = shuffledRange(4);
+    shuffled.add(order.indexOf(0));
+  }
+  check('…which is why the round shuffles them', shuffled.size > 1,
+    `answer landed in ${shuffled.size} of 4 positions`);
+}
+
 console.log('\nthe card previews show real game content');
 {
   /*
@@ -2390,7 +2644,8 @@ console.log('\nthe card previews show real game content');
     check(`${code} previews three countries`, preview.flag.length === 3);
     check(`${code} previews three capitals`, preview.capital.options.length === 3);
     check(`${code} previews three answers on both quizzes`,
-      preview.brain.options.length === 3 && preview.poland.options.length === 3);
+      preview.brain.options.length === 3
+        && LOCAL_COUNTRIES.every((country) => preview.local[country].options.length === 3));
 
     /* The capital preview asks with the round's own prompt, so the country has
        to be a hole that prompt actually has — otherwise the card asks a
@@ -2407,9 +2662,9 @@ console.log('\nthe card previews show real game content');
         ...preview.flag,
         ...preview.capital.options,
         ...preview.brain.options,
-        ...preview.poland.options,
+        ...LOCAL_COUNTRIES.flatMap((country) => preview.local[country].options),
         preview.brain.q,
-        preview.poland.q,
+        ...LOCAL_COUNTRIES.map((country) => preview.local[country].q),
         preview.capital.country,
       ].every((text) => text.trim().length > 0));
   }
@@ -2552,7 +2807,7 @@ console.log('\nthe directory');
     player?.player?.lastPlayed === today(seedDay),
     `${player?.player?.lastPlayed}`);
   check('…which the next round continues rather than resets',
-    awardRound(player!.player!, { game: 'brain', correct: 5, total: 5, perCorrect: 1, won: true })
+    awardRound(player!.player!, { game: 'brain', correct: 5, total: 5, perCorrect: 1, seconds: 20 })
       .streak === 8);
   /*
    * Drawn from the last day played, **not from today**, and that is the fix for
@@ -3301,9 +3556,9 @@ console.log('\nthe plan table says what the product does');
   const [energy, refill, multiplier] = SUB_ROWS;
   check('the free tank on the plan table is the tank the site gives you',
     energy.values[0] === MAX_ENERGY, `${energy.values[0]} vs ${MAX_ENERGY}`);
-  check('…and its refill is the site’s, in hours',
-    refill.values[0] === ENERGY_REGEN_MINUTES / 60,
-    `${refill.values[0]}h vs ${ENERGY_REGEN_MINUTES}min`);
+  check('…and its refill is the site’s, in minutes',
+    refill.values[0] === ENERGY_REGEN_MINUTES,
+    `${refill.values[0]} vs ${ENERGY_REGEN_MINUTES}min`);
   check('…and the free plan pays a plain single rate', multiplier.values[0] === 1);
 
   /* Every paid tier is an improvement on the one below it, on the three figures

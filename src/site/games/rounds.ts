@@ -2,6 +2,7 @@ import type { LanguageCode } from '../i18n/context';
 import { drawFrom, shuffledRange } from './bag';
 import {
   flagOf,
+  type LocalBank,
   loadCapitals,
   loadDecks,
   loadFlags,
@@ -51,7 +52,7 @@ function scramble(options: string[], answer: number): Pick<Question, 'options' |
 /* ─────────────────────────────────────────────────────────────── the quizzes ── */
 
 export async function buildQuizRound(
-  bank: 'general' | 'poland',
+  bank: 'general' | LocalBank,
   language: LanguageCode,
   count: number,
 ): Promise<Question[]> {

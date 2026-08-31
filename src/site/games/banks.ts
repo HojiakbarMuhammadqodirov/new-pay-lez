@@ -20,7 +20,18 @@ import type { LanguageCode } from '../i18n/context';
  * import failure inside a game.
  */
 
-export type BankId = 'general' | 'poland' | 'flags' | 'capitals';
+export type BankId = 'general' | 'poland' | 'uzbekistan' | 'flags' | 'capitals';
+
+/**
+ * The two local-knowledge banks, and nothing else in this union.
+ *
+ * A separate type from `BankId` because these are the only two a *country* can
+ * select — the general quiz is asked of everybody and the flags and capitals are
+ * about everywhere. Typing the switch below against `BankId` would let a
+ * profile country resolve to `flags`, which is not a thing that should be
+ * expressible.
+ */
+export type LocalBank = 'poland' | 'uzbekistan';
 
 const TEXT = import.meta.glob('./data/*.json', { import: 'default' }) as Record<
   string,
@@ -104,7 +115,7 @@ const text = (id: BankId, language: LanguageCode) =>
 const meta = <T>(id: BankId) => load(`./data/${id}.meta.json`) as Promise<T>;
 
 export async function loadQuiz(
-  id: 'general' | 'poland',
+  id: 'general' | LocalBank,
   language: LanguageCode,
 ): Promise<QuizBank> {
   const [rows, { a }] = await Promise.all([
@@ -174,6 +185,69 @@ export type WordList = 'en' | 'pl';
 export const WORD_LIST_FOR_COUNTRY: Record<string, WordList> = {
   PL: 'pl',
 };
+
+/**
+ * Which local-knowledge quiz a country gets.
+ *
+ * The same idea as `WORD_LIST_FOR_COUNTRY` above and for the same reason: what a
+ * newcomer needs to know is a fact about **where they have moved to**, not about
+ * which of five languages they read the site in. An Uzbek speaker in Kraków is
+ * being asked about Poland, in Uzbek — those are two different axes and this is
+ * the one the card turns on.
+ *
+ * Poland is the fallback, and it is a real answer rather than a shrug: this site
+ * is a guide to having moved to Poland and that bank is the one it was built
+ * around. An account that has not filled in a city yet gets it, and so does a
+ * country no bank has been written for.
+ *
+ * **Adding a country is one export and one row.** Drop
+ * `updates/<Country>_Quiz_Questions_data_*.csv` in, add a branch to
+ * `scripts/build-question-banks.mjs`, widen `LocalBank`, and name the country
+ * here. The card renames itself — its label is `copy.games.localQuiz[code]`.
+ */
+export const QUIZ_BANK_FOR_COUNTRY = {
+  PL: 'poland',
+  UZ: 'uzbekistan',
+} as const satisfies Record<string, LocalBank>;
+
+/**
+ * The countries that have a quiz, as a type.
+ *
+ * Three things key off one of these — the bank, the card's name
+ * (`copy.games.localQuiz`) and the hover sample (`copy.games.preview.local`) —
+ * and they have to agree or a player gets an Uzbek bank under a Polish name.
+ * Deriving the type from the table rather than writing it out three times is
+ * what makes a fourth country a compile error in the two dictionaries rather
+ * than a blank card; `npm run verify` checks all five languages cover it.
+ */
+export type LocalCountry = keyof typeof QUIZ_BANK_FOR_COUNTRY;
+
+/** The same set at runtime, for the checks that walk it. Derived from the table
+ *  rather than written beside it, so a country cannot be added to one and not
+ *  the other. */
+export const LOCAL_COUNTRIES = Object.keys(QUIZ_BANK_FOR_COUNTRY) as LocalCountry[];
+
+/**
+ * Which country's quiz this profile gets.
+ *
+ * The **country**, not the bank, because the country is what the name and the
+ * preview are keyed by as well — resolving to a bank here and then mapping back
+ * for the label would be the same fold done twice, in two places, out of step
+ * the first time a country is added.
+ *
+ * Folded the way `fxForCountry` folds: `countryCode` is only *usually* a code,
+ * since the profile accepts a typed country when the city was not on the served
+ * list. `pl` and `PL ` are the same place; the word "Poland" is not a code and
+ * correctly falls through to the default.
+ */
+export function quizCountryFor(countryCode: string | undefined): LocalCountry {
+  const code = (countryCode ?? '').trim().toUpperCase();
+  return code in QUIZ_BANK_FOR_COUNTRY ? (code as LocalCountry) : 'PL';
+}
+
+/** The bank behind that country. */
+export const quizBankFor = (countryCode: string | undefined): LocalBank =>
+  QUIZ_BANK_FOR_COUNTRY[quizCountryFor(countryCode)];
 
 /** The local list for a profile's country, folded the way `fxForCountry` folds. */
 export function wordListFor(countryCode: string | undefined): WordList {

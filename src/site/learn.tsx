@@ -184,7 +184,7 @@ function LearnGames() {
                   signed in, so there is no profile to take the local Word
                   Builder's language off, and Polish is the market this site is a
                   guide to. The signed-in grid reads the real one. */}
-              <h3>{gameName(i, games, 'pl')}</h3>
+              <h3>{gameName(i, games, 'pl', 'PL')}</h3>
               {/* The same two sentences the signed-in Play grid prints, from the
                   same function. This section already maps `GAMES` so the pitch
                   cannot claim a game the product does not have; the rule lines

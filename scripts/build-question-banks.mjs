@@ -1,6 +1,6 @@
 /**
- * Turns the four question exports in `updates/` into the bundled banks the
- * games read.
+ * Turns the question exports in `updates/` into the bundled banks the games
+ * read.
  *
  * Run with `npm run banks`. It is **not** part of `dev` or `build`: the CSVs are
  * a hand-delivered export rather than a dependency, the output is committed, and
@@ -23,7 +23,7 @@
  * missing key is honest — a machine-translated one would not be.
  */
 
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -163,11 +163,47 @@ function buildGeneral() {
     .filter(usable);
 }
 
-/** The Poland round. `correct_answer` is a letter, A–D. */
-function buildPoland() {
-  const rows = parseCsv(
-    readFileSync(join(SRC, 'Poland Quiz Question - data.csv'), 'utf8'),
-  );
+/**
+ * Every export in `updates/` whose name matches, read and concatenated.
+ *
+ * A bank arrives in parts — the Uzbekistan export landed as
+ * `Uzbekistan_Quiz_Questions_data_part2.csv` — and a hardcoded filename means the
+ * next part is a code change rather than a file drop. Sorted by name so the row
+ * order is stable between runs: the no-repeat bag in `games/bag.ts` stores
+ * *indices*, so a bank that renumbered itself would hand a player questions they
+ * had already seen and skip ones they had not.
+ *
+ * Returns an empty list rather than throwing when nothing matches. A missing
+ * bank is a real state — the symptom is a 404 saying the bank is empty, which
+ * the root `CLAUDE.md` describes — and it must not stop the other three banks
+ * from building.
+ */
+function readParts(pattern) {
+  const files = readdirSync(SRC)
+    .filter((name) => pattern.test(name))
+    .sort();
+  if (files.length === 0) {
+    console.warn(`  ! no files matching ${pattern} in updates/ — bank skipped`);
+    return [];
+  }
+  return files.flatMap((name) => parseCsv(readFileSync(join(SRC, name), 'utf8')));
+}
+
+/**
+ * A local-knowledge quiz, of which there are now two.
+ *
+ * Poland and Uzbekistan ship the same columns and differ only in which country
+ * they are about, so they are one reader rather than two — the site picks
+ * between them by the country on the player's profile, and a second copy of this
+ * function is a second place for the two to drift apart.
+ *
+ * `correct_answer` is a **letter**, A–D, which is the one way this export
+ * differs from the general quiz's numeric index. The Uzbekistan file happens to
+ * answer `A` on every row; that is harmless because `buildQuizRound` shuffles
+ * the options at play time, and it is the reason it must keep doing so.
+ */
+function buildLetterQuiz(pattern) {
+  const rows = readParts(pattern);
 
   const letters = ['a', 'b', 'c', 'd'];
 
@@ -314,6 +350,31 @@ function buildCapitals() {
 mkdirSync(OUT, { recursive: true });
 
 /** Every language gets a row; a missing translation takes the English one. */
+/**
+ * Apostrophes, folded to each language's own character.
+ *
+ * The exports type the ASCII `'` (U+0027) and the site does not use it in prose
+ * at all: `uz.ts` writes o‘ and g‘ with U+2018 and every other apostrophe — the
+ * tutuq belgisi in `ma’lumot`, `e’lon`, `qat’iy` — with U+2019, which is the
+ * orthographic distinction Uzbek actually makes; `uk.ts` uses U+2019 throughout
+ * and U+2018 nowhere. Left alone, a question renders with a thin straight tick
+ * inside a card whose own label two lines up is curly, on every row of the bank.
+ *
+ * So it is folded here rather than in the CSV: the export stays exactly as it
+ * was handed over, and re-running `npm run banks` cannot lose the fold. The
+ * rule is the one those files already follow, which is why it is safe to apply
+ * mechanically — after o or g it is the letter o‘/g‘, and anywhere else it is
+ * the glottal stop.
+ *
+ * Only these two languages have a rule. English, Polish and Russian either do
+ * not use the character in this copy or use the typewriter form, and guessing
+ * at a curly quote in an English string would turn `'80s` into an opening one.
+ */
+const APOSTROPHE = {
+  uz: (text) => text.replace(/([oOgG])'|'/gu, (m, letter) => (letter ? `${letter}\u2018` : '\u2019')),
+  uk: (text) => text.replace(/'/gu, '\u2019'),
+};
+
 function perLanguage(entries, width) {
   const out = {};
   for (const lang of LANGS) {
@@ -333,7 +394,13 @@ function emit(name, meta, text) {
 
   for (const [lang, rows] of Object.entries(text)) {
     const file = join(OUT, `${name}.${lang}.json`);
-    const json = JSON.stringify(rows);
+    /* Folded here rather than in each builder because `capitals` assembles its
+       own per-language object inline, and was the one bank that missed it when
+       this lived in `perLanguage`. */
+    const fold = APOSTROPHE[lang];
+    const json = JSON.stringify(
+      fold ? rows.map((row) => row.map(fold)) : rows,
+    );
     writeFileSync(file, json);
     written.push([`${name}.${lang}`, Buffer.byteLength(json)]);
   }
@@ -342,8 +409,11 @@ function emit(name, meta, text) {
 const general = buildGeneral();
 emit('general', { a: general.map((e) => e.a) }, perLanguage(general, 5));
 
-const poland = buildPoland();
+const poland = buildLetterQuiz(/^Poland Quiz Question - data\.csv$/i);
 emit('poland', { a: poland.map((e) => e.a) }, perLanguage(poland, 5));
+
+const uzbekistan = buildLetterQuiz(/^Uzbekistan_Quiz_Questions_data_.*\.csv$/i);
+emit('uzbekistan', { a: uzbekistan.map((e) => e.a) }, perLanguage(uzbekistan, 5));
 
 const flags = buildFlags();
 emit(
@@ -415,6 +485,7 @@ for (const lang of ['en', 'pl']) {
 
 console.log(
   `general ${general.length} · poland ${poland.length} · ` +
+    `uzbekistan ${uzbekistan.length} · ` +
     `flags ${flags.length} · capitals ${capitals.length} · ` +
     `decks ${decks.length}`,
 );
