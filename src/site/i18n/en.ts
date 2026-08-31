@@ -136,7 +136,7 @@ export const en = {
       'Players',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
-    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages', 'Database'],
+    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages'],
 
     services: {
       title: 'Business services',
@@ -269,6 +269,13 @@ export const en = {
         unreachable: 'No answer. Is the backend running (npm run server)?',
       },
 
+        /* The session went stale. Not a password prompt — the console has no
+           login of its own any more; this is the front door. */
+        expired: {
+          title: 'Your session has expired',
+          body: 'Sign in again and the console picks up where it was.',
+          again: 'Sign in',
+        },
       down: {
         title: 'The backend is not answering',
         unreachable:

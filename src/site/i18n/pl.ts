@@ -116,7 +116,7 @@ export const pl: Dictionary = {
       'Konta',
       'Gracze',
     ],
-    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości', 'Baza'],
+    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości'],
 
     services: {
       title: 'Usługi biznesowe',
@@ -235,6 +235,11 @@ export const pl: Dictionary = {
         unreachable: 'Brak odpowiedzi. Czy backend działa (npm run server)?',
       },
 
+        expired: {
+          title: 'Sesja wygasła',
+          body: 'Zaloguj się ponownie, a konsola wróci tam, gdzie była.',
+          again: 'Zaloguj się',
+        },
       down: {
         title: 'Backend nie odpowiada',
         unreachable:

@@ -172,17 +172,21 @@ const DILNOZA: UserProfile = {
 };
 
 export const SEED_USERS: UserRecord[] = [
-  {
-    id: 'u_admin',
-    name: 'Sardor Rasulov',
-    email: 'admin@pay-lez.com',
-    password: 'pay-lez26',
-    created: '2026-01-05',
-    type: 'admin',
-    /* An admin has no venue and no wallet — they read everyone else's. */
-    business: null,
-    player: null,
-  },
+  /*
+   * **There is no seeded operator, and there must not be one.**
+   *
+   * There was: `admin@pay-lez.com`, with its password in this file and
+   * therefore in the shipped bundle, where anybody could read it. That was
+   * defensible while the console only read this device’s own `localStorage`
+   * — it unlocked a view of data the reader already had — and it stopped
+   * being defensible when two of its tabs started reading the live database.
+   *
+   * An operator is now whoever the *server* has given the `admin` role, learned
+   * from `roles` on the session in `AuthProvider.adoptSession`. That is a row
+   * in `user_roles` on a machine this browser cannot write to, which is the
+   * only place a permission of that kind can honestly live. It also ends the
+   * thing that made it confusing to use: one sign-in, one account, one console.
+   */
   {
     id: 'u_marta',
     name: 'Marta Wiśniewska',

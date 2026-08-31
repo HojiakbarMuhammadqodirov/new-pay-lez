@@ -119,6 +119,21 @@ function adoptSession(
   session: api.SignedIn,
   type: ChoosableType | null,
 ): Account {
+  /*
+   * **An operator is an operator because the server says so.**
+   *
+   * `admin` is not a `ChoosableType` — the sign-up form cannot offer it, which
+   * is the type system enforcing that nobody grants themselves the console. It
+   * arrives here instead, off `roles` on the session, which is `user_roles` on
+   * the server and nothing this browser can write.
+   *
+   * That replaces a seeded row in `auth/users.ts` whose password was in the
+   * shipped bundle. It was safe while the console only read this device's own
+   * `localStorage`; it stopped being safe the moment two of its tabs started
+   * reading the live database, and it was always confusing — an operator had to
+   * sign in twice, with two different accounts, to see one screen.
+   */
+  const isAdmin = session.roles?.includes('admin') === true;
   const email = session.user.email ?? '';
   const existing = listUsers().find(
     (user) => user.id === session.user.id || sameEmail(user.email, email),
@@ -143,7 +158,11 @@ function adoptSession(
         onboardedAt: null,
       };
 
-  if (type !== null && record.type === null) record.type = type;
+  /* The server's word wins over anything this browser remembered: an account
+     that has been made an operator becomes one on its next sign-in, and one
+     that has had it taken away loses the console the same way. */
+  if (isAdmin) record.type = 'admin';
+  else if (type !== null && record.type === null) record.type = type;
   if (record.type === 'individual' && !record.player) record.player = newPlayer();
 
   if (existing) patchUser(record.id, record);

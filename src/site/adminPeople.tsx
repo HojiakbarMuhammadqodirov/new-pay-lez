@@ -45,8 +45,8 @@
 import { useState } from 'react';
 import { hasToken } from './api/client';
 import { useApi } from './api/useApi';
-import { Connect } from './adminWebsite';
 import { Icon } from './icons';
+import { PATHS } from './router';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 
@@ -93,25 +93,43 @@ const day = (iso: string | null, locale: string) =>
       )
     : '—';
 
-export function AdminDatabase() {
+export function AdminPeople() {
   const dictionary = useCopy();
   const [language] = useLanguage();
   const copy = dictionary.admin.database;
-  const [connected, setConnected] = useState(hasToken);
   const [view, setView] = useState<'users' | 'venues'>('users');
 
-  const overview = useApi<Overview>(connected ? '/v1/admin/overview' : null);
-  const users = useApi<ServerUser[]>(connected ? '/v1/admin/users?limit=200' : null);
-  const venues = useApi<ServerVenue[]>(connected ? '/v1/admin/venues?limit=200' : null);
+  const overview = useApi<Overview>('/v1/admin/overview');
+  const users = useApi<ServerUser[]>('/v1/admin/users?limit=200');
+  const venues = useApi<ServerVenue[]>('/v1/admin/venues?limit=200');
 
-  if (!connected) {
+  /*
+   * **No second sign-in.**
+   *
+   * Reaching this screen at all means `resolveRoute` saw an account whose type
+   * is `admin`, and that type comes from `roles` on the *server's* session —
+   * so a token is already in hand. The panel that used to ask for the
+   * operations address and password here was a second login for the same
+   * person, with a different account, on one screen; it is gone, and the seeded
+   * browser admin it existed beside is gone with it.
+   *
+   * What can still happen is the token expiring under a session this browser
+   * still remembers. That is not a password prompt, it is a stale sign-in, and
+   * the honest thing is to say so and send them to the front door.
+   */
+  if (!hasToken()) {
     return (
-      <Connect
-        copy={dictionary.admin.website}
-        onDone={() => {
-          setConnected(true);
-        }}
-      />
+      <section className="adm-block" data-reveal>
+        <div className="adm-block-head">
+          <h2>{dictionary.admin.website.expired.title}</h2>
+          <p>{dictionary.admin.website.expired.body}</p>
+        </div>
+        <div className="adm-actions">
+          <a className="btn" href={PATHS.signin}>
+            {dictionary.admin.website.expired.again}
+          </a>
+        </div>
+      </section>
     );
   }
 

@@ -8,7 +8,7 @@ import {
   type AdminService,
 } from './content';
 import { ServiceAnalytics } from './adminAnalytics';
-import { AdminDatabase } from './adminDatabase';
+import { AdminPeople } from './adminPeople';
 import { AdminMessages } from './adminMessages';
 import { AdminWebsite } from './adminWebsite';
 import { ThemeToggle } from './Header';
@@ -19,7 +19,6 @@ import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
 import { profileCompleteness } from './auth/business';
 import { listUsers } from './auth/directory';
-import type { UserRecord } from './auth/users';
 import { PATHS } from './router';
 import { useCountUp, useReveal } from './useReveal';
 
@@ -64,36 +63,6 @@ function Kpi({ label, value }: { label: string; value: number }) {
   );
 }
 
-/** What a row's owner has to show for themselves, in one cell. */
-function State({ user }: { user: UserRecord }) {
-  const copy = useCopy();
-
-  if (user.player) {
-    return (
-      <span>
-        {fill(copy.admin.state.player, {
-          points: String(user.player.points),
-          streak: String(user.player.streak),
-        })}
-      </span>
-    );
-  }
-
-  if (user.type === 'business') {
-    if (!user.business) return <span className="adm-dim">{copy.admin.state.noListing}</span>;
-    const { percent } = profileCompleteness(user.business);
-    return percent === 100 ? (
-      <span className="adm-live">
-        <Icon name="check" size={13} strokeWidth={3} />
-        {copy.admin.state.live}
-      </span>
-    ) : (
-      <span>{fill(copy.admin.state.listing, { percent: String(percent) })}</span>
-    );
-  }
-
-  return <span className="adm-dim">{copy.admin.state.none}</span>;
-}
 
 /* ────────────────────────────────────────────────────────────── services ── */
 
@@ -256,7 +225,6 @@ export function AdminPage() {
     match(service.name, service.city, service.id),
   );
   const shownDeals = ADMIN_DEALS.filter((deal) => match(deal.name, deal.country));
-  const shownUsers = users.filter((user) => match(user.name, user.email));
 
   const players = users.filter((user) => user.type === 'individual').length;
   const kpis = [
@@ -414,64 +382,16 @@ export function AdminPage() {
                 <AdminWebsite />
               ) : tab === 4 ? (
                 <AdminMessages />
-              ) : tab === 5 ? (
-                <AdminDatabase />
               ) : (
-                <section className="adm-block" data-reveal>
-                  <div className="adm-block-head">
-                    <h2>{copy.people.title}</h2>
-                    <p>{copy.people.lede}</p>
-                  </div>
-
-                  {shownUsers.length === 0 ? (
-                    <p className="adm-empty">{copy.noMatch}</p>
-                  ) : (
-                    /* The table scrolls inside its own box rather than widening
-                       the page — five columns of addresses do not fit a phone. */
-                    <div className="adm-scroll">
-                      <table className="adm-table">
-                        <thead>
-                          <tr>
-                            {copy.people.columns.map((column) => (
-                              <th key={column}>{column}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {shownUsers.map((user) => (
-                            <tr key={user.id}>
-                              <td>
-                                <span className="adm-who">
-                                  <i aria-hidden>
-                                    {/* `?? ''` because `UserRecord.profile` is optional  a row
-                                        written before the profile existed has none,
-                                        which is a letter, not a crash. */}
-                                    <Face name={user.name} photo={user.profile?.avatar ?? ''} />
-                                  </i>
-                                  <b>{user.name}</b>
-                                </span>
-                              </td>
-                              <td className="adm-mono">{user.email}</td>
-                              <td>
-                                {user.type ? (
-                                  <span className="adm-role" data-role={user.type}>
-                                    {dictionary.auth.roles[user.type]}
-                                  </span>
-                                ) : (
-                                  <span className="adm-dim">{copy.state.undecided}</span>
-                                )}
-                              </td>
-                              <td className="adm-mono">{user.created}</td>
-                              <td>
-                                <State user={user} />
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </section>
+                /* **People is the server’s.** It read `auth/directory.ts`
+                   before — the accounts in *this browser* — which for an
+                   operator meant a list of seeds. The real people are rows in
+                   `users` on the server, and this is the tab whose whole
+                   purpose is to show them. It carries the venues beside them
+                   for the same reason: they are the other half of one
+                   database, and a second tab to reach them was one sign-in and
+                   one tab too many. */
+                <AdminPeople />
               )}
             </div>
 

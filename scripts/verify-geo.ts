@@ -54,6 +54,7 @@ import {
   profileGaps,
   profilePercent,
   SEED_USERS,
+  sameEmail,
   USERNAME_MAX,
   USERNAME_MIN,
   WELCOME_POINTS,
@@ -2497,10 +2498,26 @@ console.log('\nthe directory');
   const owner = byEmail('user1@pay-lez.com');
   const player = byEmail('user2@pay-lez.com');
 
-  check('all three seeds exist', Boolean(admin && owner && player), `${SEED_USERS.length} accounts`);
-  check('the admin is an admin', admin?.type === 'admin');
-  check('…and owns nothing on the platform', admin?.business === null && admin?.player === null);
-  check('the admin credential works', findUser(SEED_USERS, 'admin@pay-lez.com', 'pay-lez26').ok);
+  /*
+   * **Two seeds, and neither is an operator.**
+   *
+   * There were three, and the third was an admin whose password sat in this
+   * file and therefore in the shipped bundle. It was defensible while the
+   * console only read this device's own `localStorage`; it stopped being so
+   * when two of its tabs started reading the live database, and it was always
+   * confusing to use — an operator signed in twice, with two different
+   * accounts, to see one screen.
+   *
+   * An operator is now whoever the *server* has given the `admin` role, learned
+   * off `roles` on the session. The checks below are the property that
+   * guarantees it stays that way: nothing in the bundle can grant the console.
+   */
+  check('two seeds exist', Boolean(owner && player), `${SEED_USERS.length} accounts`);
+  check('no operator is seeded', admin === undefined);
+  check('…and no seed can reach the console',
+    SEED_USERS.every((u) => u.type !== 'admin'));
+  check('…and the address that used to is gone',
+    !SEED_USERS.some((u) => sameEmail(u.email, 'admin@pay-lez.com')));
 
   check('the owner is a business', owner?.type === 'business');
   check(
@@ -2561,10 +2578,11 @@ console.log('\nthe directory');
 
   /* Nothing prints these on the sign-in form any more — see the note where
      `DEMO_USERS` used to be exported. What is checked instead is the property
-     that made the admin unprintable in the first place: sign-up cannot produce
-     one, at the type level, so the seeds are the only three that exist. */
-  check('exactly one admin is seeded', SEED_USERS.filter((u) => u.type === 'admin').length === 1);
-  check('and the other two are ordinary accounts', SEED_USERS.filter((u) => u.type !== 'admin').length === 2);
+     that made the admin unprintable in the first place, now taken to its
+     conclusion: sign-up cannot produce one at the type level, and no seed is
+     one either, so nothing shipped to a browser can open the console. */
+  check('no seed is an operator', SEED_USERS.filter((u) => u.type === 'admin').length === 0);
+  check('and both seeds are ordinary accounts', SEED_USERS.filter((u) => u.type !== 'admin').length === 2);
 }
 
 console.log('\nsigning up');

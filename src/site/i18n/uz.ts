@@ -111,7 +111,7 @@ export const uz: Dictionary = {
       'Hisoblar',
       'O‘yinchilar',
     ],
-    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar', 'Baza'],
+    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar'],
 
     services: {
       title: 'Biznes xizmatlari',
@@ -230,6 +230,11 @@ export const uz: Dictionary = {
         unreachable: 'Javob yo‘q. Backend ishlayaptimi (npm run server)?',
       },
 
+        expired: {
+          title: 'Sessiya muddati tugadi',
+          body: 'Qaytadan kiring — konsol qolgan joyidan davom etadi.',
+          again: 'Kirish',
+        },
       down: {
         title: 'Backend javob bermayapti',
         unreachable:

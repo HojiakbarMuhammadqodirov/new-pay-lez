@@ -543,7 +543,9 @@ export type GameId =
   | 'brain'
   | 'flag'
   | 'capital'
-  | 'poland'
+  /** The local-knowledge quiz. **Which** country it asks about is the profile's,
+   *  not this id's — see `quizBankFor`. */
+  | 'local'
   | 'flight'
   | 'memory'
   /** English. */
@@ -661,7 +663,16 @@ export const GAMES: Array<{
   { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1 },
   { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1 },
   { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1 },
-  { id: 'poland', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1 },
+  /*
+   * The local-knowledge quiz, and the row that is **not named after a country**.
+   *
+   * It used to be `poland`, which was true while Poland was the only bank there
+   * was. A second one arrived and the id became a lie: the card asks about
+   * wherever the profile says this person lives, and an id that says otherwise
+   * is exactly the trap `occupation` was renamed to avoid one screen over. The
+   * bank comes from `quizBankFor`, the name from `copy.games.localQuiz`.
+   */
+  { id: 'local', kind: 'text', icon: 'housing', questions: 5, seconds: 8, perCorrect: 1 },
   /*
    * Word Builder, twice.
    *
@@ -1025,7 +1036,7 @@ export const ADMIN_VOUCHER_ROWS: Array<{
 ];
 
 /** The console's own tabs, and the analytics view's. Icons are structure. */
-export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'assistant', 'bars', 'send', 'book'];
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'people', 'bars', 'send'];
 export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
 
 /** The nine Dashboard cards, in the original's order. */
