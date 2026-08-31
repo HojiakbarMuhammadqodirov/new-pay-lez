@@ -209,17 +209,39 @@ Notes that decide whether these feel right:
   `perfectBonus` so the numbers on the screen are the ones that will be paid.
 - **A band boundary is inclusive**: the wire field is `throughSeconds` and it is
   compared with `<=`. Ten seconds exactly is the ten-second band.
-- **Memory Match: the layout is still secret, but a turned pair comes back.**
-  You get `{cards, pairs}` and report pairs of positions, and the reply now
-  carries `revealed: [{index, face}, {index, face}]` for the two you just
-  turned. **Render your board from that** — it is the only way a client ever
-  learns a face, and without it a mismatch teaches nothing and the game is not a
-  memory game. It arrives on a mismatch as well as a match, and on the duplicate
-  path (`accepted: false`) too, because a retry after a dropped response is the
-  only thing that will ever tell you what those cards were. `face` is a symbol
+- **Memory Match: the layout is still secret, but a turned card comes back.**
+  You get `{cards, pairs}` and report positions, and the reply carries
+  `revealed: [{index, face}, …]` for whatever you just turned. **Render your
+  board from that** — it is the only way a client ever learns a face, and
+  without it a mismatch teaches nothing and the game is not a memory game. It
+  arrives on a mismatch as well as a match, and on the duplicate path
+  (`accepted: false`) too, because a retry after a dropped response is the only
+  thing that will ever tell you what those cards were. `face` is a symbol
   string, not a label. Still do not hold a deck of your own. It is scored from
   the server's own event stamps, so there is no duration to report: just play
   the moves.
+- **Turn the first card of a move with `kind:"peek"`, `payload:{index}`.** This
+  is new, it is additive, and it is the difference between this game and a coin
+  toss: the protocol had only the pair, so the first card a player tapped stayed
+  blank until they had already committed to a second. Peek → that card's face
+  comes back as a **one-entry** `revealed`. Then send `{a, b}` for the second
+  card → **two** entries and the verdict. So read the array; never index a fixed
+  length. Five rules come with it, and four of them are things not to build:
+  - A peek carries **no `correct` and no `answer`** — it is not an answer to
+    anything. It is not counted as a pair and does not enlarge the board, so
+    `/finish` returns exactly what it did.
+  - **One `seq` for both kinds.** Number the moves of a round, not the kinds. A
+    peek counter and a pair counter collide on the second move of every board.
+  - A peek naming a card **off the board, or one already matched**, is a
+    `bad_request` and writes nothing — the number is not spent. Your UI should
+    never send one: a matched card is not tappable.
+  - The **pair** move still accepts two already-matched positions, on purpose,
+    so retrying a move whose response was lost is safe.
+  - **No peek allowance, no peek penalty, no local meter.** The round is priced
+    on elapsed time alone and a peek is an event inside that span, so peeking
+    can only ever cost. It also means the clock now starts on the first card
+    turned rather than on the first pair, which is the reading the player's own
+    stopwatch has been showing all along.
 - The flight is the one game with no answer key. Report `{cleared}` to `/finish`;
   the server caps the **points**, not the gaps. It pays **half a point a gap**
   now, so the 20-point ceiling is forty gaps rather than twenty — which is what
@@ -705,6 +727,41 @@ the one about where they live. And **decide what an unknown country sees** —
 `countryCode` is nullable on accounts that predate the field, so a `switch` with
 no default renders no local quiz at all rather than an obvious fallback.
 
+**3f. Memory Match gained a move: `kind:"peek"`, `payload:{index}`.** Purely
+additive — nothing that exists changed shape — and it is the difference between
+the game and a coin toss with a delay on it. The protocol had only the pair, so
+the first card a player tapped could not be drawn until they had already
+committed to a second, and a game about remembering what you saw showed them
+nothing to remember.
+
+```
+POST /v1/games/sessions/{id}/events
+     { seq: 0, kind: "peek", payload: { index: 3 } }
+  → { revealed: [ { index: 3, face: "▲" } ], accepted: true }
+
+     { seq: 1, kind: "pair", payload: { a: 3, b: 7 } }
+  → { correct: false, answer: "▲",
+      revealed: [ { index: 3, face: "▲" }, { index: 7, face: "●" } ],
+      accepted: true }
+```
+
+So `revealed` is **one** entry for a peek and **two** for a pair: read the
+array, do not index a fixed length, and note that a peek carries neither
+`correct` nor `answer` because it is not an answer to anything. It shares the
+one `seq` sequence with the pairs — number the *moves* of a round, not the
+kinds, or a peek counter and a pair counter collide on the second move of every
+board. A peek naming a card off the board or one already matched is a `400`
+`bad_request` and writes nothing, so a refused move costs neither a number nor a
+row; the `pair` move still accepts two matched positions, on purpose, so a retry
+after a lost response is safe.
+
+There is **no peek allowance and no peek penalty** — do not build a meter. The
+round is priced on elapsed time alone and a peek is an event inside that span,
+so it can only ever cost. The one consequence worth knowing is that the clock
+now starts on the first card *turned* rather than on the first pair submitted,
+which is a second or two earlier and is the reading a player's own stopwatch has
+been showing all along.
+
 ### 4. `GET /v1/wallet` — a field was **removed**
 
 ```diff
@@ -947,6 +1004,7 @@ will hide the next column silently. Render the JSON, or hand over the file.
 | --- | --- |
 | `POST /v1/assistant/ask` | `403 entitlement_required`, `entitlement: "assistant_uses_per_day"`, with `limit` and `used`, past 5 asks a day on free |
 | `POST /v1/games/sessions/{id}/events` with `kind: "hint"` | `403 entitlement_required`, `entitlement: "word_hints_per_day"`, past 3 a day on free |
+| `POST /v1/games/sessions/{id}/events` with `kind: "peek"` | `400 bad_request` on a card off the board, or one already matched. Nothing is written, so the `seq` is still free (§3f) |
 | `POST /v1/assistant/ask` with someone else's `sessionId` | `404 not_found` |
 | `PATCH /v1/me` | `409 conflict` on a taken `username`, or on a third different `birthDate`; `400 validation_failed` naming `countryCode`, `city` or `occupation` — the three in §6 |
 

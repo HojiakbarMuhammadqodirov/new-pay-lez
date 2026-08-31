@@ -523,13 +523,17 @@ const SCHEMAS: Record<string, Schema> = {
         type: 'array',
         nullable: true,
         description:
-          'Memory Match only. The two cards this move turned over, as `{index, face}` — ' +
+          'Memory Match only. The cards this move turned over, as `{index, face}` — ' +
           'positions rather than an ordered pair, so a client can apply them to its board ' +
           'without re-deriving which of `a`/`b` it sent first. It is the only way a client ' +
           'ever learns the layout, and it arrives on a mismatch as well as a match: a ' +
           'memory game in which a mismatch taught you nothing would not be one. Sent on the ' +
           'duplicate path too, because a retry after a dropped response is the only thing ' +
-          'that will ever tell that client what those cards were.',
+          'that will ever tell that client what those cards were.\n\n' +
+          '**Two entries for a `pair`, one for a `peek`** — read the array, never a fixed ' +
+          'length. A peek turns the opening card of a move on its own and answers here and ' +
+          'nowhere else: it sets no `correct` (it is not an answer to anything) and no ' +
+          '`answer` (which is the pair move’s legacy key, not a second channel).',
         items: {
           type: 'object',
           properties: {
@@ -1197,8 +1201,19 @@ const DOCS: Record<string, Doc> = {
     description:
       'Quizzes send `{index, choice}`. Word Builder sends `{index, guess}`, or ' +
       '`kind:"hint"` with `{index, position}` to reveal one letter. Memory Match sends ' +
-      '`{a, b}` — two card positions. `seq` must increase; a repeat is accepted as a ' +
+      '`kind:"peek"` with `{index}` to turn one card, and `{a, b}` — two card positions — ' +
+      'to close the move and be judged. `seq` must increase; a repeat is accepted as a ' +
       'retry and does not count twice.\n\n' +
+      '**The peek is what makes Memory Match a memory game**, and it is additive: the ' +
+      'protocol had only the pair, so the first card a player tapped could not be drawn ' +
+      'until they had committed to a second. Peek one card, get its face back in ' +
+      '`revealed`; pair the two, get both faces and the verdict. A peek is **not an ' +
+      'answer** — no `correct`, no `answer`, and it is neither counted as a pair nor able ' +
+      'to enlarge the board at `/finish`. It shares the one `seq` sequence with the pairs, ' +
+      'so number the moves of a round, not the kinds. There is no peek allowance and no ' +
+      'peek penalty: the round is priced on elapsed time alone and a peek is an event ' +
+      'inside that span, so peeking can only ever cost. A peek naming a position off the ' +
+      'board — or one already matched — is a `bad_request` and writes nothing.\n\n' +
       'Word Builder hints are metered per day by `word_hints_per_day` (3 free, 6 Pro, 10 ' +
       'Premium) and are refused rather than quietly stopped revealing. A hint **halves ' +
       'that word’s points** — it used to forfeit a tier bonus and keep a flat base, which ' +
@@ -1207,13 +1222,22 @@ const DOCS: Record<string, Doc> = {
     tags: ['games'],
     body: {
       seq: int('0-based, monotonic within the session.'),
-      kind: str('`answer` by default; `hint` for Word Builder.'),
+      kind: str(
+        '`answer` by default; `hint` for Word Builder; `peek` and `pair` for Memory Match.',
+      ),
       payload: { type: 'object' },
     },
     required: ['seq', 'payload'],
     response: ref('EventResult'),
     errors: [
       [403, '`entitlement_required` on a hint past `word_hints_per_day`. Carries `limit` and `used`.'],
+      [
+        400,
+        '`bad_request` on a position that is not a move: a hint past the end of the word, ' +
+          'or a `peek` naming a card off the board or one already matched. Refused rather ' +
+          'than clamped, and nothing is written — a refused move spends neither a `seq` ' +
+          'nor a hint.',
+      ],
     ],
   },
   'POST /v1/games/sessions/{id}/finish': {

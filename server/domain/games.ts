@@ -524,6 +524,13 @@ export interface EventResult {
    * game whose moves *learn the board*, and a move that turned over a different
    * number of cards would still fit.
    *
+   * That last sentence has since been cashed in: **`kind:'peek'` turns one card
+   * and this array comes back with one entry in it.** A client reads the array
+   * rather than the count, which is why the count was never written into the
+   * shape. A peek carries no `correct` and no `answer` — it is not an answer to
+   * anything, and the pair move's `answer` is a legacy key rather than a second
+   * channel to be consistent with.
+   *
    * It is **additive**. `answer` still carries `deck[a]` exactly as it did, so
    * the Flutter app's `protocol_test.dart` fixtures — response bodies copied
    * verbatim off a running server — keep every field they were written against.
@@ -574,6 +581,45 @@ function requireHint(db: Db, userId: string, sessionId: string, seq: number, at:
     used,
     3,
   );
+}
+
+/**
+ * The Memory Match positions this session has already matched.
+ *
+ * Read off `game_events` rather than kept as a column, for the reason the tank
+ * and the balance are: the rows that say it are already written, and a second
+ * record of one fact is a second thing to be wrong. It is `correct = 1` and the
+ * pair of positions in the payload — the same two facts `scoreDeck` reads at the
+ * end of the round, normalised the same way, because "which cards are matched"
+ * and "how many pairs were found" are one question asked twice.
+ *
+ * Only `peek` asks. A **pair** naming two matched cards is still accepted, and
+ * must be: a client whose response was lost puts those cards back down and turns
+ * them again, which is the case `scoreDeck`'s distinct-pair counting exists for.
+ * Refusing it would turn a dropped packet into a stuck board.
+ *
+ * A payload this module cannot parse names no card, which is the same answer
+ * `scoreDeck` gives it — a card left out of this set is a card a peek is allowed
+ * to turn, and the honest direction for an unreadable row is to permit rather
+ * than to block a move the player can see is legal.
+ */
+function matchedCards(db: Db, sessionId: string): Set<number> {
+  const out = new Set<number>();
+  const rows = db.all<{ payload: string }>(
+    `SELECT payload FROM game_events WHERE session_id = $s AND correct = 1`,
+    { s: sessionId },
+  );
+  for (const row of rows) {
+    try {
+      const { a, b } = JSON.parse(row.payload) as { a?: unknown; b?: unknown };
+      for (const position of [Number(a), Number(b)]) {
+        if (Number.isInteger(position)) out.add(position);
+      }
+    } catch {
+      /* Not a pair this module can name. */
+    }
+  }
+  return out;
 }
 
 /**
@@ -653,21 +699,95 @@ export function submitEvent(
       }
     } else if (secret.kind === 'deck') {
       const deck = secret.deck as string[];
-      const a = Number(input.payload.a);
-      const b = Number(input.payload.b);
-      if (!deck[a] || !deck[b] || a === b) throw new DomainError('bad_request', 'no such cards');
-      correct = deck[a] === deck[b];
-      /* Kept, and now redundant beside `revealed`. It is the first card's face
-         and it is what every client written against the old reply reads; a key
-         that costs one string is not worth a protocol change to remove. */
-      answer = deck[a];
-      /* Both of them, because both of them are face up on the player's screen.
-         Only these two — the loop that would build this from `deck` itself is
-         the whole answer key, and there is no move that needs it. */
-      revealed = [
-        { index: a, face: deck[a] },
-        { index: b, face: deck[b] },
-      ];
+      if (input.kind === 'peek') {
+        /*
+         * **One card, turned face up on its own.** This is the move the protocol
+         * did not have, and without it Memory Match was not the game: the only
+         * way to learn a face was to name two positions, so the first card a
+         * player tapped stayed blank until they had already committed to a
+         * second. That is not a memory game with a delay on it — it is a
+         * different game, in which every move is made blind.
+         *
+         * The shipped client peeks the **first** card of a move and sends the
+         * `pair` for the second, so the reply that turns card B is also the
+         * reply that judges the pair: tap, it turns; tap, it turns and then they
+         * stay or go back down. One extra round trip a move, not two.
+         *
+         * **A peek cannot make the game cheaper, and the reason is the clock
+         * rather than a counter.** `scoreDeck` prices this round on the span
+         * from the first recorded event to the last and on nothing else — not
+         * moves, not pairs found — and a peek *is* a recorded event inside that
+         * span. So peeking widens the span or leaves it alone, and `bandFor`
+         * pays less or the same for a wider one: **no sequence of peeks added to
+         * a round can pay more than that round without them.**
+         *
+         * The version of that worth being careful about is the client that does
+         * not merely *add* peeks but plays differently because of them — reads
+         * the whole board first, then clears it in a second, and takes the top
+         * band a flailing player would have missed. **That client did not need
+         * this move.** `revealed` already names both cards of a *mismatched*
+         * pair, on purpose and for the whole reason this game exists, so twelve
+         * cards were learnable in six pair moves before a peek existed; and
+         * `scoreDeck` pays the band whether or not the board was cleared, so the
+         * cheapest 8 points on offer here is two `pair` events a millisecond
+         * apart and always has been. A peek is a slower route to information
+         * that was already free, and it opens nothing.
+         *
+         * What a meter *would* do is tax the honest client, which sends exactly
+         * one peek per move because that is what turning a card looks like; the
+         * dishonest one pipelines twelve and pays whatever the meter says. So
+         * the limiter stays where it already is, and stays the one a result card
+         * can explain: the clock.
+         *
+         * **It is not an answer**, which is the other half of keeping the
+         * scoring honest: `correct` stays `undefined` and is written NULL, so
+         * `scoreDeck`'s `correct !== 1` filter steps over it, and it is neither
+         * counted as a pair nor able to disturb the distinct-pair set. The same
+         * is true of `answered`, which is the board's size. Nothing about
+         * `finish` changed.
+         */
+        const index = Number(input.payload.index);
+        /*
+         * Refused, not clamped, and refused for both reasons a position can be
+         * wrong — off the board, or already matched. That is the precedent the
+         * `hint` branch above set when it stopped clamping: a position outside
+         * the round is a client mistake rather than an imprecise value, and
+         * answering it with the nearest legal card hands back a face the client
+         * has nowhere to put and no way to know is wrong. A matched card is not
+         * face down, so turning it is not a move that exists.
+         *
+         * Re-peeking a card that is merely face *up* is deliberately allowed:
+         * the server holds no board state between events, and the one client
+         * behaviour that looks exactly like it is a retry under a fresh `seq`
+         * after a lost response — which is the case `revealed` travels on the
+         * duplicate path for.
+         */
+        if (!Number.isInteger(index) || index < 0 || index >= deck.length) {
+          throw new DomainError('bad_request', 'no such card');
+        }
+        if (matchedCards(db, session.id).has(index)) {
+          throw new DomainError('bad_request', 'card already matched');
+        }
+        /* The one position asked for. Everything else in `deck` stays where it
+           is — a peek is a card turning over, not a window onto the layout. */
+        revealed = [{ index, face: deck[index] }];
+      } else {
+        const a = Number(input.payload.a);
+        const b = Number(input.payload.b);
+        if (!deck[a] || !deck[b] || a === b) throw new DomainError('bad_request', 'no such cards');
+        correct = deck[a] === deck[b];
+        /* Kept, and now redundant beside `revealed`. It is the first card's face
+           and it is what every client written against the old reply reads; a key
+           that costs one string is not worth a protocol change to remove. */
+        answer = deck[a];
+        /* Both of them, because both of them are face up on the player's screen.
+           Only these two — the loop that would build this from `deck` itself is
+           the whole answer key, and there is no move that needs it. */
+        revealed = [
+          { index: a, face: deck[a] },
+          { index: b, face: deck[b] },
+        ];
+      }
     }
 
     try {
@@ -1059,6 +1179,15 @@ function scoreWords(
  * The boundaries are **inclusive** — a board finished on the stroke of 18
  * seconds takes the 18-second band. `bandFor` is why, and `throughSeconds` is
  * named so the comparison and the copy cannot drift apart.
+ *
+ * **Peeks are in the clock and out of the tally, and that pairing is the whole
+ * of what keeps single-card turns from being free.** A `peek` carries no verdict
+ * — `submitEvent` leaves `correct` NULL, because it is not an answer — so the
+ * `correct !== 1` line below steps over it and it can neither be counted as a
+ * pair nor land in the distinct-pair set. It is still an event, so it is inside
+ * the span `elapsedSeconds` measures, and a wider span never pays more. That is
+ * why there is no peek counter and no peek penalty: the only input to this score
+ * is a duration a peek can lengthen and cannot shorten.
  */
 function scoreDeck(
   events: Array<{ payload: string; correct: number | null; created_at: string }>,
@@ -1091,8 +1220,34 @@ function scoreDeck(
      reject a session the player has already played. */
   const band = bandFor(CONFIG.games.memoryBands, elapsedSeconds(events));
 
+  /*
+   * **The band is the rate; the pairs found are what it is paid on.**
+   *
+   * It used to be `band.points` flat, and that priced a round on the clock and
+   * on nothing else — so two `pair` events a millisecond apart, matching
+   * nothing, finished in the top band and banked the full eight. `correct: 0`
+   * on the body was the only tell, and nothing read it. A round that found
+   * nothing paid the same as a cleared board, which is not a scoring rule
+   * anybody chose; it is the shape the function happened to have.
+   *
+   * Proportional rather than a threshold, for the same reason the quiz pays per
+   * answer instead of demanding a sweep: a player who finds four pairs of six
+   * has played four pairs' worth of the game, and a cliff at "cleared" would
+   * pay them nothing for it. A cleared board still pays the whole band, which
+   * is the case that has to stay exactly as it was.
+   *
+   * Rounded rather than floored so a nearly-finished board does not lose its
+   * last point to arithmetic — five of six at the top band is 6.67, and 7 is
+   * the honest reading of that.
+   *
+   * The accessibility of this game is untouched: there is still no fail state,
+   * no clock on screen, and the slowest band still pays. What changed is that
+   * it pays for pairs.
+   */
+  const score = pairs > 0 ? Math.round((band.points * matched) / pairs) : 0;
+
   return {
-    score: band.points,
+    score,
     correct: matched,
     answered: pairs,
     /* There is no fail state in Memory Match — it is the deliberately accessible

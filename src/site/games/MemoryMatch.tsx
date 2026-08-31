@@ -40,6 +40,14 @@ import { buildMemoryBoard, type MemoryCard } from './rounds';
  * real — a client that dealt its own deck could report any time it liked, and a
  * leaderboard ranked on that ranks whoever opened devtools.
  *
+ * **Turning one over is a move, and that is recent.** The protocol had only a
+ * pair, so a server board could not show you the first card until you had named
+ * the second: you committed to a match blind, and a game entirely about
+ * remembering what you saw showed you nothing to remember. `kind:'peek'` turns
+ * the opening card of each move and `kind:'pair'` turns the closing one and
+ * judges them, so the sequence a player sees is the classic one — it turns, it
+ * turns, they stay or they go back down.
+ *
  * Without one it deals its own deck exactly as it always has, which is the demo
  * accounts and anybody playing while the backend is down. Those rounds pay into
  * the local mirror and are not ranked. **Nothing on that path changed**, down to
@@ -137,9 +145,10 @@ export function MemoryMatch({
    * The faces this client has been told about, by position.
    *
    * Only a server board uses it, and it is the whole of what that board knows:
-   * `null` is a card nobody has turned over yet. Written once per pair, from the
-   * reply — never guessed, and never derived from a match, because a match tells
-   * you two cards were equal and not what they were.
+   * `null` is a card nobody has turned over yet. Written once per *turn*, from
+   * the reply — a peek names one card and a pair names two — never guessed, and
+   * never derived from a match, because a match tells you two cards were equal
+   * and not what they were.
    *
    * A face **stays** here after the pair flips back down, which is not a leak:
    * the render only draws a face for a card that is up or matched. What it buys
@@ -257,13 +266,18 @@ export function MemoryMatch({
    *
    * **On a server round it scores nothing and is still drawn**, and the two
    * clocks are worth being precise about. The server times a deck from the first
-   * `game_events` row to the last — so it starts when the *first pair* is
-   * submitted, which is after these two cards have been turned, and it stops
-   * when the last pair is judged, which is before the match beat below has
-   * finished playing. Its span is therefore strictly inside this one, and the
-   * band it lands in is the same or a faster one. A player is never paid less
-   * than the clock they were watching says; the direction it can be wrong in is
-   * the safe one.
+   * `game_events` row to the last — so it starts when the opening card's *peek*
+   * arrives, which is the same tap that starts this one, and it stops when the
+   * last pair is judged, which is before the match beat below has finished
+   * playing. Its span is therefore still inside this one, and the band it lands
+   * in is the same or a faster one. A player is never paid less than the clock
+   * they were watching says; the direction it can be wrong in is the safe one.
+   *
+   * The peek is what made those two nearly the same reading. Before it the
+   * server's clock did not start until the *first pair* was submitted — two taps
+   * in — so it undercharged every round by however long the opening move took.
+   * Closing that gap is a round scored on what the player actually spent, which
+   * is the honest direction even though it is the stricter one.
    */
   const startedAt = useRef<number | null>(null);
 
@@ -295,10 +309,73 @@ export function MemoryMatch({
   );
 
   /**
+   * Write the faces a reply named onto the board.
+   *
+   * One function because both moves answer in the same shape and the merge is
+   * the same merge — a peek names one card, a pair names two — and two copies of
+   * an index bound is one of them eventually being wrong. It **merges** rather
+   * than replaces: `known` is everything this tab has ever been told, not what
+   * is face up, which is what lets a card the player has already seen turn back
+   * over instantly the next time they reach for it.
+   */
+  const learn = useCallback((move: MoveResult) => {
+    const faces = facesIn(move);
+    if (faces.length === 0) return;
+    setKnown((current) => {
+      const next = [...current];
+      for (const card of faces) {
+        if (card.index >= 0 && card.index < next.length) next[card.index] = card.face;
+      }
+      return next;
+    });
+  }, []);
+
+  /**
+   * Turn one card over on its own, and ask what it is.
+   *
+   * **This is the move that makes it a memory game.** The protocol had only a
+   * pair, so the first card a player tapped stayed blank until they had already
+   * tapped a second — every move made blind, which is not this game with a delay
+   * on it but a different one. `kind:'peek'` asks about a single position and
+   * the reply carries that card's face in the same `revealed` array a pair uses.
+   *
+   * It is fired and not waited on. Nothing is blocked — `busy` stays false, so
+   * the second card can be tapped while this is in the air — because the card is
+   * already drawn lifted and the only thing missing is the symbol on it. A
+   * player who is quick simply gets both faces at once, out of the pair's reply.
+   *
+   * Sent even when `known` already holds the face, which looks redundant and is
+   * not: the render draws that face immediately from what the tab knows, and
+   * this is what puts the *turn* in the round the server is timing. A move the
+   * server never saw is a second of the player's round that its clock does not
+   * charge for, and this game is scored on that clock alone.
+   *
+   * A failure is nothing at all. The card stays lifted and blank, the round
+   * carries on, and the pair move that follows names both faces anyway — so
+   * there is no state to unwind and nothing the player has to be told.
+   */
+  const peek = useCallback(
+    (id: string, index: number) => {
+      const seq = nextSeq.current;
+      nextSeq.current += 1;
+
+      void sendMove(id, seq, { index }, 'peek')
+        .then((move) => {
+          if (live.current) learn(move);
+        })
+        .catch(() => {
+          /* Deliberately empty; the comment above says why. */
+        });
+    },
+    [learn],
+  );
+
+  /**
    * Submit a turned pair and wait to be told what it was.
    *
    * The optimistic half already happened — both cards are drawn face up before
-   * this is called — and what arrives is the half a client is not allowed to
+   * this is called, and the first of them usually has its symbol on it already
+   * from the peek — and what arrives is the half a client is not allowed to
    * decide: the two faces, and whether they matched.
    */
   const submit = useCallback(
@@ -313,17 +390,10 @@ export function MemoryMatch({
           /* Both faces, whichever way the pair went. A mismatch is the move that
              *teaches* — it is two cards the player now has to remember — and it
              is exactly what the old reply could not say, because it named the
-             first card and left the second blank. */
-          const faces = facesIn(move);
-          if (faces.length > 0) {
-            setKnown((current) => {
-              const next = [...current];
-              for (const card of faces) {
-                if (card.index >= 0 && card.index < next.length) next[card.index] = card.face;
-              }
-              return next;
-            });
-          }
+             first card and left the second blank. It is still read here rather
+             than left to the peek: the peek covers the *first* card of a move
+             and this is the only thing that ever names the second. */
+          learn(move);
 
           /* `accepted: false` is a duplicate `seq`, not a failure: the server had
              this move already and has answered about it anyway. The verdict is
@@ -357,7 +427,7 @@ export function MemoryMatch({
           settle(a, b, false, 0);
         });
     },
-    [settle],
+    [settle, learn],
   );
 
   const flip = (index: number) => {
@@ -376,7 +446,14 @@ export function MemoryMatch({
     setFaces(nextFaces);
     setFlipped(nextFlipped);
 
-    if (nextFlipped.length < 2) return;
+    if (nextFlipped.length < 2) {
+      /* **The first card of a move is turned on its own**, because the player is
+         looking at it now and a card that shows nothing until they have
+         committed to a second one is the whole of what was wrong here. A local
+         board has the face in hand and needs nobody's permission. */
+      if (remote) peek(remote.session, index);
+      return;
+    }
 
     const [a, b] = nextFlipped;
     setMoves((m) => m + 1);

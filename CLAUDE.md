@@ -15,7 +15,7 @@ This file covers the repo as a whole.
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 735 checks: it
+There is no test runner. `npm run verify` is the test suite — 770 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of
@@ -70,7 +70,7 @@ before changing anything under it.
 Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 `node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
 it (migrating, seeding and importing the old database on an empty file);
-`npm run verify:api` is its test suite — 616 checks, the counterpart of
+`npm run verify:api` is its test suite — 646 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture

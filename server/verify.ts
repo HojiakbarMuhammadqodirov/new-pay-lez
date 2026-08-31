@@ -1257,6 +1257,62 @@ function scoringRules(): void {
     return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
   };
 
+  /*
+   * **The band is the rate; the pairs found are what it pays on.**
+   *
+   * `partialBoard` plays only some of them, so the two rules can be told apart:
+   * a flat band pays a round that found nothing exactly what it pays a cleared
+   * one, which is what this did before. `correct: 0` on the body was the only
+   * tell and nothing read it — so a client could bank the top band from two
+   * events a millisecond apart, forever, bounded by energy alone.
+   */
+  const partialBoard = (seconds: number, howMany: number) => {
+    const at = nextAt();
+    const done = plusSeconds(at, seconds);
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    const first = new Map<string, number>();
+    let seq = 0;
+    let played = 0;
+    deck.forEach((symbol, index) => {
+      const opener = first.get(symbol);
+      if (opener === undefined) {
+        first.set(symbol, index);
+        return;
+      }
+      if (played >= howMany) return;
+      played += 1;
+      seq += 1;
+      games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq,
+        kind: 'pair',
+        payload: { a: opener, b: index },
+        at: seq === 1 ? at : done,
+      });
+    });
+    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
+  };
+
+  /* The hole this closed: fast and empty used to pay what fast and finished
+     does. It is the check that fails without the change. */
+  const empty = partialBoard(1, 0);
+  eq('a round that found nothing pays nothing', empty.score, 0);
+  eq('…however fast it was', empty.correct, 0);
+
+  const half = partialBoard(10, 3);
+  eq('half a board at the top band pays half of it', half.score, 4);
+  eq('…and says how many it found', half.correct, 3);
+
+  /* Rounded rather than floored, so a nearly-finished board does not lose its
+     last point to arithmetic: five of six at eight is 6.67. */
+  eq('five of six at the top band rounds up', partialBoard(10, 5).score, 7);
+
   eq('a board in ten seconds takes the top band', board(10).score, 8);
   eq('exactly eighteen seconds still does', board(18).score, 8);
   eq('a half-second past it is the middle band', board(18.5).score, 6);
@@ -1386,6 +1442,143 @@ function scoringRules(): void {
     CONFIG.games.memoryPairs,
   );
   eq('…out of the board it was actually dealt', doubled.answered, CONFIG.games.memoryPairs);
+
+  /*
+   * **One card, turned on its own — `kind:'peek'`.**
+   *
+   * Without it there is no way to learn a face except by naming two positions,
+   * so the first card a player tapped stayed blank until they had committed to a
+   * second: every move made blind, which is a different game rather than this
+   * one with a delay on it. The checks below are the four promises that come
+   * with the move — it turns exactly the card asked for and nothing else, it is
+   * not an answer, it shares one sequence with the pairs, and it refuses a
+   * position that is off the board or already claimed.
+   */
+  const openDeck = () => {
+    const at = nextAt();
+    const opened = games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    return { at, id: opened.sessionId, deck: secretOf<{ deck: string[] }>(opened.sessionId).deck };
+  };
+  const move = (id: string, seq: number, kind: string, payload: Record<string, unknown>, at: Iso) =>
+    games.submitEvent(w.db, { sessionId: id, userId: w.customerId, seq, kind, payload, at });
+  const eventsIn = (id: string) =>
+    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events WHERE session_id = $s`, {
+      s: id,
+    })?.n ?? 0;
+
+  const single = openDeck();
+  const turned = move(single.id, 0, 'peek', { index: 3 }, single.at);
+  eq('a peek turns exactly the card it named', turned.revealed, [
+    { index: 3, face: single.deck[3] },
+  ]);
+  eq('…one card, not a window onto the layout', turned.revealed!.length, 1);
+  eq('a peek is not an answer, so it carries no verdict', turned.correct, undefined);
+  eq('…and none of the pair move’s legacy `answer` either', turned.answer, undefined);
+  check('…and it is recorded, so its number is spent', turned.accepted);
+
+  /* The same argument the pair path makes: a retry after a dropped response is
+     the only thing that will ever tell this client what that card was. */
+  const replayedPeek = move(single.id, 0, 'peek', { index: 3 }, single.at);
+  check('a replayed peek is a duplicate rather than a second turn', !replayedPeek.accepted);
+  eq('…and it still names the face', replayedPeek.revealed, turned.revealed);
+
+  /* One sequence for both kinds, which is what makes `seq` a position in the
+     round rather than a per-kind counter — a client that numbered its peeks and
+     its pairs separately would collide on the second move of every board. */
+  const collided = move(single.id, 0, 'pair', { a: 0, b: 1 }, single.at);
+  check('a pair cannot reuse a peek’s number: the two share one sequence', !collided.accepted);
+  check('…while the next number along is free', move(single.id, 1, 'pair', { a: 0, b: 1 }, single.at).accepted);
+
+  /*
+   * **Refused, not clamped — and a refused peek is one that never happened.**
+   *
+   * This is the precedent the Word Builder hint set when it stopped clamping a
+   * position into range, and the second half is the half with teeth: nothing is
+   * written, so a client asking for a card that is not there has not spent a
+   * number and has not put a row in the round's own clock.
+   */
+  const stray = openDeck();
+  throws('a peek past the end of the deck is refused', 'bad_request', () =>
+    move(stray.id, 0, 'peek', { index: stray.deck.length }, stray.at),
+  );
+  throws('…as is a negative position', 'bad_request', () =>
+    move(stray.id, 1, 'peek', { index: -1 }, stray.at),
+  );
+  throws('…and a fractional one, rather than being rounded into range', 'bad_request', () =>
+    move(stray.id, 2, 'peek', { index: 1.5 }, stray.at),
+  );
+  throws('…and a peek naming no card at all', 'bad_request', () =>
+    move(stray.id, 3, 'peek', {}, stray.at),
+  );
+  eq('…and none of the four left a row behind', eventsIn(stray.id), 0);
+
+  /*
+   * A matched card is not face down, so turning it is not a move that exists.
+   * The **pair** move still accepts those same two positions, and has to: a
+   * client whose response was lost puts the cards back down and turns them
+   * again, which is the case the distinct-pair counting above exists for.
+   */
+  const locked = openDeck();
+  const twin = locked.deck.findIndex((face, index) => index > 0 && face === locked.deck[0]);
+  check('a matched pair is judged a match', move(locked.id, 0, 'pair', { a: 0, b: twin }, locked.at).correct === true);
+  throws('a peek at a card already matched is refused', 'bad_request', () =>
+    move(locked.id, 1, 'peek', { index: 0 }, locked.at),
+  );
+  throws('…from either side of the pair', 'bad_request', () =>
+    move(locked.id, 2, 'peek', { index: twin }, locked.at),
+  );
+  const free = locked.deck.findIndex((_, index) => index !== 0 && index !== twin);
+  check(
+    '…while a card still face down turns as it should',
+    move(locked.id, 3, 'peek', { index: free }, locked.at).accepted,
+  );
+  check(
+    '…and the pair move still takes them, so a lost response is still retryable',
+    move(locked.id, 4, 'pair', { a: 0, b: twin }, locked.at).accepted,
+  );
+
+  /*
+   * **A peek is in the clock and out of the tally, and that pairing is the whole
+   * of why there is no peek counter and no peek penalty.**
+   *
+   * `scoreDeck` prices this game on the span from the first recorded event to
+   * the last and on nothing else. A peek carries no verdict, so it cannot be
+   * counted as a pair or enlarge the board; it is still an event, so it is
+   * inside that span. The three rounds below differ in the peeks alone — same
+   * six pairs, all submitted at one instant — and they are what says a peek can
+   * only ever cost: 8 with none, 8 with twelve that took no time, 6 with twelve
+   * that took nineteen seconds. There is no arrangement of them that pays more.
+   */
+  const clearedBoard = (gap: number, peeking: boolean) => {
+    const round = openDeck();
+    const paired = plusSeconds(round.at, gap);
+    let seq = 0;
+    if (peeking) round.deck.forEach((_, index) => move(round.id, seq++, 'peek', { index }, round.at));
+    const first = new Map<string, number>();
+    round.deck.forEach((symbol, index) => {
+      const opener = first.get(symbol);
+      if (opener === undefined) {
+        first.set(symbol, index);
+        return;
+      }
+      move(round.id, seq++, 'pair', { a: opener, b: index }, paired);
+    });
+    return games.finish(w.db, { sessionId: round.id, userId: w.customerId, at: paired });
+  };
+
+  const bare = clearedBoard(19, false);
+  eq('six pairs at one instant are a top-band board', bare.score, 8);
+  const quick = clearedBoard(0, true);
+  eq('…and peeking all twelve cards first does not change that, if it took no time', quick.score, 8);
+  eq('a peek is not a pair', quick.correct, CONFIG.games.memoryPairs);
+  eq('…and twelve of them do not enlarge a six-pair board', quick.answered, CONFIG.games.memoryPairs);
+  const dawdled = clearedBoard(19, true);
+  eq('…while nineteen seconds spent peeking costs the round a band', dawdled.score, 6);
+  check('so a peek can only ever cost, which is what a counter would be for', dawdled.score < bare.score);
 
   /* ── word builder ── */
 

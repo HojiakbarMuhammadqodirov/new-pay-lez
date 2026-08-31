@@ -282,7 +282,7 @@ connection never costs the player a question.
 | `flags` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` — `prompt` is an **ISO country code**; build the flag emoji from it | `{index, choice}` |
 | `capitals`, `brain`, `poland`, `uzbekistan` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` | `{index, choice}` |
 | `word_builder` | `words[{index, length, tier, letters, hint}]` | `{index, guess}`, or `kind:"hint"` with `{index, position}` |
-| `memory_match` | `{cards, pairs}` — the layout stays on the server | `{a, b}` — two card positions; the reply carries `revealed[{index, face}]` for both |
+| `memory_match` | `{cards, pairs}` — the layout stays on the server | `kind:"peek"` with `{index}` to turn one card, then `{a, b}` to close the move; the reply carries `revealed[{index, face}]` — one entry for a peek, two for a pair |
 | `flight` | `{target}` | none; send `{report:{cleared}}` to `/finish` |
 
 **Eight `gameType` values, seven cards.** `poland` and `uzbekistan` are one
@@ -295,6 +295,34 @@ picks for you: `GET /v1/me` carries `countryCode`, and that is the whole rule.
 It is **nullable** — an account that predates the country field has none — so
 decide what an unknown country sees rather than sending `null` into a switch and
 rendering no card at all.
+
+#### Memory Match turns cards one at a time
+
+`kind:"peek"` with `{index}` is what makes it a memory game, and it is additive
+— the protocol had only the pair, so the first card a player tapped could not be
+drawn until they had already committed to a second, and a game entirely about
+remembering what you saw showed them nothing to remember. Peek the opening card
+of a move and its face comes back in `revealed`; send `{a, b}` for the closing
+one and you get both faces and the verdict together, which is exactly the beat a
+player expects: it turns, it turns, they stay up or they go back down.
+
+Five things travel with it:
+
+- **A peek is not an answer.** No `correct`, no `answer`. It is not counted as a
+  pair, cannot enlarge the board, and `finish` scores exactly as it did.
+- **`revealed` has one entry for a peek and two for a pair.** Read the array;
+  never assume a length.
+- **One `seq` for both kinds.** Number the moves of a round, not the kinds — a
+  client with a peek counter and a pair counter collides on the second move of
+  every board.
+- **A position off the board, or one already matched, is a `bad_request`** and
+  writes nothing: no row, and the number is not spent. The `pair` move still
+  accepts two matched positions, because a client whose response was lost turns
+  those same cards again.
+- **There is no peek allowance and no peek penalty.** The round is priced on
+  elapsed time alone and a peek is an event inside that span, so peeking widens
+  the span or leaves it be — it can only ever cost. Do not build a local meter
+  for a rule that does not exist.
 
 ### Energy is the whole of what bounds a day
 
