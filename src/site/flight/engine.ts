@@ -154,6 +154,26 @@ export function crossed(pipe: Pipe, birdX: number): boolean {
 }
 
 /**
+ * How fast the world is scrolling, `seconds` into a run.
+ *
+ * Stepped rather than continuous, and that is the point: a smooth acceleration
+ * is one a player never notices and therefore never adapts to, where a step
+ * every ten seconds is a thing you feel arrive and can brace for. Each step adds
+ * `FLIGHT.pipe.ramp.step` of the **base** speed — linear, not compounding — and
+ * they stop after `steps` of them, which is what keeps a long run playable
+ * rather than turning it into a reaction-time test with a fixed answer.
+ *
+ * Pure and exported so `npm run verify` owns the curve: it is the one part of
+ * the difficulty that is arithmetic rather than animation, and it is read on
+ * every frame.
+ */
+export function speedAt(seconds: number): number {
+  const { speed, ramp } = FLIGHT.pipe;
+  const steps = Math.min(ramp.steps, Math.max(0, Math.floor(seconds / ramp.every)));
+  return speed * (1 + ramp.step * steps);
+}
+
+/**
  * Body angle for a given vertical speed, radians. Cosmetic only — nothing in
  * the collision test reads it, which is why the sprite may lean past its hitbox.
  */

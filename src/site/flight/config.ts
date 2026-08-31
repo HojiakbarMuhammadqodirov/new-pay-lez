@@ -100,12 +100,37 @@ export const FLIGHT = {
     /** The hole. Five and a half birds wide, against three and a half before —
      *  9.8 units of clearance either side of the hitbox rather than 7.3. */
     gap: 24,
-    /** Seconds between spawns — at `speed` that is 38.5 units apart. */
+    /**
+     * Seconds between spawns — at the base `speed` that is 38.5 units apart.
+     *
+     * A *time*, not a distance, which is what makes the ramp below safe: as the
+     * scroll accelerates the columns spread further apart in world units and go
+     * on arriving every 1.75 seconds. The altitude a bird can gain between two
+     * gates is therefore the same at the end of a run as at the start, which is
+     * exactly the assumption `maxStep` is written against.
+     */
     interval: 1.75,
-    /** World units per second. Slower than the original's 180px/708, which is
-     *  most of what "make it easier" actually means: it buys thinking time on
-     *  every gate rather than making any single one wider. */
+    /** World units per second, at the start. Slower than the original's
+     *  180px/708, which is most of what "make it easier" actually means: it buys
+     *  thinking time on every gate rather than making any single one wider. */
     speed: 22,
+    /**
+     * The difficulty ramp: the scroll speeds up as a run goes on.
+     *
+     * Without it an endless runner is a plateau — a player who can hold the
+     * line for twenty seconds can hold it for twenty minutes, and the only thing
+     * bounding the round is boredom. `step` is a fraction of the **base** speed
+     * added every `every` seconds, so the growth is linear rather than
+     * compounding: 22 → 27.5 → 33 → 38.5 → 44, which is exactly double by the
+     * time it stops.
+     *
+     * And it does stop. `steps` is the ceiling, and a ceiling matters more here
+     * than the rate does: an unbounded ramp turns every long run into the same
+     * run, ending the instant the scroll passes what a hand can answer, and the
+     * skill it measures stops being flying and starts being reaction time.
+     * Doubling and then holding leaves a fast run genuinely open-ended.
+     */
+    ramp: { every: 10, step: 0.25, steps: 4 },
     /**
      * How close a gap edge may come to the ceiling or the floor.
      *
@@ -158,15 +183,18 @@ export const FLIGHT = {
    */
   target: 5,
   /*
-   * One point a gap, matching the row in `content.ts` and `CONFIG.games`.
+   * **Half** a point a gap, matching the row in `content.ts` and `CONFIG.games`.
    *
-   * It was two, which made a long run the richest thing on the page by a wide
-   * margin — twenty gaps paid more than four days of every other game put
-   * together. Skill still sets the ceiling here, which is what makes this the
-   * one round worth chasing; the ceiling is now somewhere a good player can
-   * actually reach rather than an accident of how long they survived.
+   * It was two, then one. Halving it again is what pays for the ramp: the scroll
+   * now doubles in speed over the first fifty seconds, so a long run is a
+   * genuinely harder run and lasts proportionally less time than the old flat
+   * scroll allowed — but a gap crossed at 44 units a second is not worth twice
+   * one crossed at 22, it is worth the same, and there are simply more of them.
+   * Skill still sets the ceiling, which is what makes this the one round worth
+   * chasing; the ceiling is somewhere a good player can reach rather than an
+   * accident of how long they survived.
    */
-  perGap: 1,
+  perGap: 0.5,
   /*
    * Ceiling on a single flight's payout, against a score that cannot be
    * trusted: this game reports one integer and posts no per-move events, so it

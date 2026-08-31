@@ -10,6 +10,7 @@ import {
   hits,
   hitsBounds,
   spawnPipe,
+  speedAt,
   stepBird,
   tiltFor,
   type Bird,
@@ -263,7 +264,12 @@ export const FlightGame = memo(function FlightGame({ game, onDone, onQuit }: Fli
         pipes.push(pipe);
       }
 
-      for (const pipe of pipes) pipe.x -= FLIGHT.pipe.speed * dt;
+      /* The scroll speed is a function of how long this run has lasted, not a
+         constant — see `speedAt`. Read fresh every frame rather than latched at
+         a step boundary, so a long frame after a tab switch moves the columns by
+         what they were owed rather than by the old rate. */
+      const scroll = speedAt(elapsed);
+      for (const pipe of pipes) pipe.x -= scroll * dt;
 
       for (const pipe of pipes) {
         if (pipe.scored || !crossed(pipe, FLIGHT.bird.x)) continue;
