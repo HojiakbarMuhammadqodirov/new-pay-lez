@@ -200,6 +200,14 @@ export const en = {
       tables: { users: 'People', venues: 'Venues' },
       userColumns: ['Name', 'Email', 'Signed up with', 'City', 'Points', 'Status', 'Joined'],
       venueColumns: ['Venue', 'City', 'Category', 'Owner', 'Visits', 'Verified'],
+      /* The one thing on this screen somebody has to *do*. A venue waits here
+         until a person looks; until then its owner's offers cannot go live. */
+      review: {
+        title: 'Waiting for you',
+        lede: 'These venues have finished their listing and cannot publish an offer until somebody checks them.',
+        approve: 'Verify',
+        reject: 'Reject',
+      },
       unnamed: 'No name given',
       verified: 'Verified',
       unverified: 'Not yet',
@@ -1837,7 +1845,7 @@ export const en = {
         filing: 'Filing…',
         published: 'Published. It is live in the app.',
         saved: 'Saved as a draft. Publish it whenever you like.',
-        needsSession: 'This browser is not connected to the Paylez API, so there is nowhere to file it. Connect from the admin console first.',
+        needsSession: 'This deal has nowhere to go yet — your venue is not on the server. Open Business setup and save your listing; that registers it, and this panel starts working.',
         filingOffline: 'We could not reach the server. Nothing was filed — try again in a minute.',
         filingRefused: 'The server would not take it: {why}',
         savedUnverified: 'Saved as a draft. It goes live once your venue is verified — we are on it.',

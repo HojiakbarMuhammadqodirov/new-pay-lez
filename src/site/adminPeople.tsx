@@ -43,7 +43,7 @@
  * in the query rather than here, so it holds for every client.
  */
 import { useState } from 'react';
-import { hasToken } from './api/client';
+import { call, hasToken } from './api/client';
 import { useApi } from './api/useApi';
 import { Icon } from './icons';
 import { PATHS } from './router';
@@ -85,6 +85,22 @@ interface Overview {
   points: { issued: number; redeemed: number; ratio: number };
 }
 
+/**
+ * A venue waiting for somebody to look at it.
+ *
+ * The queue exists on the server and had nothing in it until the listing form
+ * started submitting — see `submitVerification` in `api/partner.ts`. This is
+ * the other half: the screen where a person actually looks.
+ */
+interface Pending {
+  id: string;
+  venue_id: string;
+  venue_name: string;
+  city: string | null;
+  method: string;
+  submitted_at: string;
+}
+
 /** A date, short, in the reader's own locale. The operator's day, not the row's. */
 const day = (iso: string | null, locale: string) =>
   iso
@@ -100,6 +116,10 @@ export function AdminPeople() {
   const [view, setView] = useState<'users' | 'venues'>('users');
 
   const overview = useApi<Overview>('/v1/admin/overview');
+  const pending = useApi<Pending[]>('/v1/admin/verifications');
+  /* Decided here and now, so the row answers the press rather than waiting on a
+     round trip. `reload` reconciles; a failure puts the row back. */
+  const [decided, setDecided] = useState<Record<string, boolean>>({});
   const users = useApi<ServerUser[]>('/v1/admin/users?limit=200');
   const venues = useApi<ServerVenue[]>('/v1/admin/venues?limit=200');
 
@@ -161,6 +181,33 @@ export function AdminPeople() {
   }
 
   const rows = users.state.data;
+
+  /* Rows this operator has already decided are dropped immediately — the
+     server is still the record, and `reload` reconciles. */
+  const queue = (pending.state.status === 'ready' ? pending.state.data : []).filter(
+    (row) => decided[row.id] === undefined,
+  );
+
+  const decide = async (id: string, approve: boolean) => {
+    setDecided((current) => ({ ...current, [id]: approve }));
+    try {
+      await call(`/v1/admin/verifications/${encodeURIComponent(id)}`, {
+        method: 'POST',
+        body: { approve },
+      });
+      /* The venues table carries the verified flag, so it has to be re-read
+         or the row it just approved goes on saying “not yet”. */
+      venues.reload();
+    } catch {
+      /* Put it back rather than let the console claim a decision the server
+         never took. */
+      setDecided((current) => {
+        const next = { ...current };
+        delete next[id];
+        return next;
+      });
+    }
+  };
   const venueRows = venues.state.status === 'ready' ? venues.state.data : [];
   const counts = overview.state.status === 'ready' ? overview.state.data : null;
 
@@ -170,6 +217,51 @@ export function AdminPeople() {
         <h2>{copy.title}</h2>
         <p>{copy.lede}</p>
       </div>
+
+      {/*
+        The review queue, and it sits above everything because it is the only
+        thing on this screen somebody has to *do*.
+
+        A venue is unverified until an operator looks at it, and an unverified
+        venue can hold draft offers but cannot put one in front of a customer.
+        So an owner who has finished their listing is waiting on this list, and
+        every day it goes unread is a day their deals sit in a drawer. It is
+        hidden entirely when empty rather than showing a cheerful zero: a queue
+        that is always on screen is a queue that stops being read.
+      */}
+      {queue.length > 0 && (
+        <div className="adm-queue">
+          <span className="console-label">{copy.review.title}</span>
+          <p>{copy.review.lede}</p>
+          <ul>
+            {queue.map((row) => (
+              <li key={row.id}>
+                <span>
+                  <b>{row.venue_name}</b>
+                  <span>{row.city ?? '—'}</span>
+                </span>
+                <span className="adm-queue-acts">
+                  <button
+                    type="button"
+                    className="btn btn-solid adm-msg-move"
+                    onClick={() => void decide(row.id, true)}
+                  >
+                    <Icon name="check" size={14} strokeWidth={2.4} />
+                    {copy.review.approve}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost adm-msg-move"
+                    onClick={() => void decide(row.id, false)}
+                  >
+                    {copy.review.reject}
+                  </button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {/* The three figures that say how big the thing is. `counts` may still be
           resolving while the tables are up — an em dash rather than a 0, for the

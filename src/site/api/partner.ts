@@ -464,3 +464,68 @@ export const publishDeal = (dealId: string): Promise<CreatedDeal> =>
   call<CreatedDeal>(`/v1/partner/deals/${encodeURIComponent(dealId)}/publish`, {
     method: 'POST',
   });
+
+/* ═════════════════════════════════════════════════════ the venue itself ══ */
+
+/**
+ * The listing, as the server models a venue.
+ *
+ * A subset of `BusinessProfile` and deliberately not a mapping of all of it:
+ * the site's form collects things the venue table has no column for — the app
+ * store links, the Instagram handle, the spoken-language chips — and inventing
+ * columns to hold them here would be designing the server from the form. What
+ * goes over is what both halves already agree exists.
+ */
+export interface VenueDraft {
+  name: string;
+  category: string;
+  subcategory?: string;
+  city: string;
+  countryCode?: string;
+  address?: string;
+  timezone?: string;
+  currency?: string;
+  priceRange?: string;
+  phone?: string;
+  email?: string;
+}
+
+export interface Venue {
+  id: string;
+  name: string;
+  city: string | null;
+  verified_at: string | null;
+}
+
+export const createVenue = (draft: VenueDraft) =>
+  call<Venue>('/v1/partner/venues', { method: 'POST', body: draft });
+
+export const updateVenue = (venueId: string, draft: VenueDraft) =>
+  call<Venue>(`/v1/partner/venues/${encodeURIComponent(venueId)}`, {
+    method: 'PATCH',
+    body: draft,
+  });
+
+/** The venues this token owns. Empty for an account that has not listed one. */
+export const myVenues = () => call<Venue[]>('/v1/partner/venues');
+
+/**
+ * Put a newly listed venue in the operator's review queue.
+ *
+ * **Verification is the gate between a draft and a live offer**, and until this
+ * was called nothing ever entered the queue: a venue was created unverified,
+ * its deals could be saved but never published, and no screen anywhere could
+ * approve it because there was nothing pending to approve. An owner filled in
+ * their listing and hit a wall with no visible cause.
+ *
+ * `manual` is the honest method of the three the server offers. `email_domain`
+ * proves a venue by the address that registered it and `business_details` by a
+ * tax id; the listing form asks for neither, so claiming either would be
+ * naming evidence that was never collected. What actually happens is that a
+ * person looks — which is what `manual` means.
+ */
+export const submitVerification = (venueId: string) =>
+  call<{ id: string }>(
+    `/v1/partner/venues/${encodeURIComponent(venueId)}/verification`,
+    { method: 'POST', body: { method: 'manual' } },
+  );

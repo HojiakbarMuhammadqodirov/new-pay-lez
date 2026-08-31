@@ -53,6 +53,8 @@ export const signIn = (email: string, password: string) =>
   });
 
 export interface SignUpDraft {
+  /** Grants `partner_owner`, which is the only moment it can be granted. */
+  partner?: boolean;
   email: string;
   password: string;
   name: string;

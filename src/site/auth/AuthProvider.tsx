@@ -271,6 +271,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           password: draft.password,
           name: draft.name.trim(),
           language,
+          /*
+           * **The one field that decides whether this account can ever own a
+           * venue**, and the site did not send it.
+           *
+           * `partner_owner` is granted at sign-up and nowhere else — there is no
+           * endpoint that promotes an account afterwards, deliberately, because
+           * a role that can be self-assigned is not a role. So a venue owner who
+           * signed up without this flag was filed as a consumer, could not
+           * create a venue, and every control on their dashboard that needed one
+           * told them the browser was not connected. It was; the account simply
+           * was not a partner.
+           */
+          partner: draft.type === 'business',
         });
         setToken(session.token);
         setAccount(adoptSession(session, draft.type as ChoosableType));

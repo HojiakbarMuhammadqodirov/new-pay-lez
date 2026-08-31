@@ -27,6 +27,30 @@ import {
 } from './auth/business';
 import { navigate } from './router';
 import { LOGO_PX, toSquareDataUrl } from './imageFile';
+import { hasToken } from './api/client';
+import { createVenue, myVenues, submitVerification, updateVenue } from './api/partner';
+
+/**
+ * Where a venue keeps its clock, per country the listing form offers.
+ *
+ * The **venue’s** zone, never the reader’s, and it is not decoration: the
+ * server compares a deal’s window and a venue’s quiet hours against it, so a
+ * Kraków café is shut at 23:00 Kraków time whoever is looking. It is the same
+ * rule the wallet’s “Open now” pill follows one screen over.
+ *
+ * One zone per country, which is true for all six the form offers — none of
+ * them spans two. A country that did would need the city to decide, and that
+ * is the point at which this table stops being enough rather than a place to
+ * guess.
+ */
+const VENUE_ZONES: Record<BusinessCountry, string> = {
+  pl: 'Europe/Warsaw',
+  ua: 'Europe/Kyiv',
+  ge: 'Asia/Tbilisi',
+  tr: 'Europe/Istanbul',
+  uz: 'Asia/Tashkent',
+  az: 'Asia/Baku',
+};
 
 /**
  * The business listing form, and the two things beside it that make filling one
@@ -317,11 +341,84 @@ export function BusinessForm({ mode }: { mode: 'setup' | 'profile' }) {
       return;
     }
 
+    /* Locally first and unconditionally: the listing is this owner's own record
+       and must survive a server that is not answering. */
     saveBusiness(draft);
     setSaved(true);
+
+    /*
+     * **And then on the server, because a listing nobody else can see is not a
+     * listing.**
+     *
+     * This is what the dashboard's every control was missing. A venue is what a
+     * hot deal attaches to, what a voucher is spent at and what the analytics
+     * are about; without a row in `venues` the drawer had nowhere to file
+     * anything and said so. The form wrote to `localStorage` and stopped.
+     *
+     * Created once and patched thereafter — `myVenues()` decides which, rather
+     * than a flag kept here, because the honest answer to "does this account
+     * have a venue" is on the server and a local flag is a guess that goes
+     * stale the first time somebody signs in on a second device.
+     *
+     * Failure is deliberately quiet on this path. The owner's listing is saved,
+     * they are being moved to their dashboard, and a red line about an API they
+     * have not heard of is not something they can act on. What they *will* see,
+     * the moment it matters, is the drawer saying the deal could not be filed —
+     * which is the screen where that sentence is worth reading.
+     */
+    void syncVenue(draft);
+
     /* Setup has somewhere to go; the profile screen is already where you want
        to be, so it just confirms. */
     if (mode === 'setup') navigate('dashboard');
+  };
+
+  /**
+   * Mirror the listing into `venues` on the server.
+   *
+   * The mapping is a subset on purpose — see `VenueDraft` in `api/partner.ts`.
+   * The timezone is the venue's, not the reader's, and it is what decides
+   * whether a deal is inside its own hours: `Europe/Warsaw` for a Polish venue
+   * and `Asia/Tashkent` for an Uzbek one, which is the whole of what this
+   * product's two markets need today.
+   */
+  const syncVenue = async (listing: BusinessProfile) => {
+    if (!hasToken()) return;
+    try {
+      const mine = await myVenues();
+      const body = {
+        name: listing.name.trim(),
+        category: listing.category,
+        city: listing.city.trim(),
+        countryCode: listing.country.toUpperCase(),
+        address: listing.street.trim() || undefined,
+        timezone: VENUE_ZONES[listing.country],
+        phone: listing.phone.trim() || undefined,
+        email: listing.email.trim() || undefined,
+        priceRange: listing.price.trim() || undefined,
+      };
+      if (mine[0]) {
+        await updateVenue(mine[0].id, body);
+        return;
+      }
+
+      const made = await createVenue(body);
+      /*
+       * A brand-new venue is unverified, and an unverified venue may hold
+       * drafts but may not put an offer in front of customers. Submitting it
+       * here is what puts it in the operator's queue — without this it was
+       * created unverified and *stayed* unverified for ever, because nothing
+       * else in the product ever queued one and the review screen had nothing
+       * to review. An owner met a wall with no visible cause.
+       *
+       * Only on creation. Editing an address is not a reason to re-review a
+       * venue somebody has already looked at.
+       */
+      await submitVerification(made.id);
+    } catch {
+      /* See the note at the call site: the listing is saved either way, and the
+         screen that needs to talk about the server is the one that needs it. */
+    }
   };
 
   const toggleSpoken = (code: SpokenLanguage) =>

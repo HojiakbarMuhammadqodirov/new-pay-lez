@@ -19665,3 +19665,67 @@ button {
   border-color: var(--border-2);
   background: var(--surface-2);
 }
+
+/* The console's review queue. It sits above the tables because it is the only
+   thing on that screen somebody has to *act* on — see the note at its markup.
+   Marked with the accent's own edge rather than a second hue, the same way an
+   unread message is. */
+.adm-queue {
+  margin-bottom: 1.1rem;
+  padding: 1rem 1.15rem;
+  border: 1px solid var(--border-2);
+  border-left: 3px solid var(--accent-ink);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+
+.adm-queue > p {
+  margin: 0.35rem 0 0.9rem;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+  max-width: 60ch;
+}
+
+.adm-queue ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+}
+
+.adm-queue li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--r) - 4px);
+  background: var(--panel, var(--surface));
+}
+
+.adm-queue li > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.adm-queue li b {
+  font-size: 0.9rem;
+}
+
+.adm-queue li span span {
+  font-size: 0.74rem;
+  color: var(--text-fnt);
+}
+
+.adm-queue-acts {
+  display: inline-flex;
+  gap: 0.4rem;
+  flex: none;
+}
