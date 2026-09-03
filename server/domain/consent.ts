@@ -25,12 +25,12 @@ import { now, type Iso } from './time.ts';
 
 export type ConsentKind = 'terms' | 'privacy' | 'marketing' | 'analytics';
 
-export function record(
+export async function record(
   db: Db,
   input: { userId: string; kind: ConsentKind; granted: boolean; source?: string; at?: Iso },
-): void {
+): Promise<void> {
   const at = input.at ?? now();
-  db.run(
+  await db.run(
     `INSERT INTO consent_records (id, user_id, kind, policy_version, granted, recorded_at, source)
      VALUES ($i, $u, $k, $p, $g, $t, $s)`,
     {
@@ -46,8 +46,8 @@ export function record(
 }
 
 /** The current answer for one kind: the latest record wins. */
-export function has(db: Db, userId: string, kind: ConsentKind): boolean {
-  const row = db.get<{ granted: number }>(
+export async function has(db: Db, userId: string, kind: ConsentKind): Promise<boolean> {
+  const row = await db.get<{ granted: number }>(
     `SELECT granted FROM consent_records WHERE user_id = $u AND kind = $k
       ORDER BY recorded_at DESC LIMIT 1`,
     { u: userId, k: kind },
@@ -57,12 +57,12 @@ export function has(db: Db, userId: string, kind: ConsentKind): boolean {
 
 /* ═════════════════════════════════════════ §1.4 the per-venue data sharing ══ */
 
-export function grantSharing(
+export async function grantSharing(
   db: Db,
   input: { userId: string; venueId: string; scope?: string; at?: Iso },
-): string {
+): Promise<string> {
   const at = input.at ?? now();
-  const existing = db.get<{ id: string }>(
+  const existing = await db.get<{ id: string }>(
     `SELECT id FROM data_sharing_consents
       WHERE user_id = $u AND venue_id = $v AND revoked_at IS NULL`,
     { u: input.userId, v: input.venueId },
@@ -70,7 +70,7 @@ export function grantSharing(
   if (existing) return existing.id;
 
   const id = newId('dsc');
-  db.run(
+  await db.run(
     `INSERT INTO data_sharing_consents
        (id, user_id, venue_id, scope, granted_at, policy_version)
      VALUES ($i, $u, $v, $s, $t, $p)`,
@@ -94,18 +94,18 @@ export function grantSharing(
  * the design working: a revocation that had to go and delete rows from a dozen
  * tables would be a revocation with a dozen places to be incomplete.
  */
-export function revokeSharing(db: Db, userId: string, venueId: string, at: Iso = now()): boolean {
+export async function revokeSharing(db: Db, userId: string, venueId: string, at: Iso = now()): Promise<boolean> {
   return (
-    db.run(
+    (await db.run(
       `UPDATE data_sharing_consents SET revoked_at = $t
         WHERE user_id = $u AND venue_id = $v AND revoked_at IS NULL`,
       { t: at, u: userId, v: venueId },
-    ).changes > 0
+    )).changes > 0
   );
 }
 
-export const sharingWith = (db: Db, userId: string) =>
-  db.all<{ venue_id: string; name: string; granted_at: string }>(
+export const sharingWith = async (db: Db, userId: string) =>
+  await db.all<{ venue_id: string; name: string; granted_at: string }>(
     `SELECT d.venue_id, v.name, d.granted_at FROM data_sharing_consents d
        JOIN venues v ON v.id = d.venue_id
       WHERE d.user_id = $u AND d.revoked_at IS NULL ORDER BY d.granted_at DESC`,
@@ -119,9 +119,9 @@ export const sharingWith = (db: Db, userId: string) =>
  * "a hard query-layer rule, not a UI toggle", and the way to keep it that way is
  * for there to be exactly one function that answers it.
  */
-export const hasSharingGrant = (db: Db, userId: string, venueId: string): boolean =>
+export const hasSharingGrant = async (db: Db, userId: string, venueId: string): Promise<boolean> =>
   Boolean(
-    db.get<{ id: string }>(
+    await db.get<{ id: string }>(
       `SELECT id FROM data_sharing_consents
         WHERE user_id = $u AND venue_id = $v AND revoked_at IS NULL`,
       { u: userId, v: venueId },
@@ -313,40 +313,40 @@ const ERASURE = ((): { set: string; params: Record<string, string | number> } =>
  * columns the erasure knew were personal were simply absent from it, and an
  * export that under-reports is the one failure its reader cannot detect.
  */
-export function exportUser(db: Db, userId: string): Record<string, unknown> {
-  const one = (sql: string) => db.get(sql, { u: userId });
-  const many = (sql: string) => db.all(sql, { u: userId });
+export async function exportUser(db: Db, userId: string): Promise<Record<string, unknown>> {
+  const one = async (sql: string) => await db.get(sql, { u: userId });
+  const many = async (sql: string) => await db.all(sql, { u: userId });
 
   return {
     exportedAt: now(),
     policyVersion: CONFIG.privacy.policyVersion,
-    account: one(`SELECT ${DISCLOSED} FROM users WHERE id = $u`),
-    roles: many(`SELECT role, granted_at FROM user_roles WHERE user_id = $u`),
-    consents: many(`SELECT kind, policy_version, granted, recorded_at, source
+    account: await one(`SELECT ${DISCLOSED} FROM users WHERE id = $u`),
+    roles: await many(`SELECT role, granted_at FROM user_roles WHERE user_id = $u`),
+    consents: await many(`SELECT kind, policy_version, granted, recorded_at, source
                       FROM consent_records WHERE user_id = $u ORDER BY recorded_at`),
-    dataSharing: many(`SELECT venue_id, scope, granted_at, revoked_at, policy_version
+    dataSharing: await many(`SELECT venue_id, scope, granted_at, revoked_at, policy_version
                          FROM data_sharing_consents WHERE user_id = $u`),
-    points: many(`SELECT id, delta, reason, source_kind, source_ref, venue_id, multiplier,
+    points: await many(`SELECT id, delta, reason, source_kind, source_ref, venue_id, multiplier,
                          status, created_at, expires_at
                     FROM points_ledger WHERE user_id = $u ORDER BY created_at`),
-    transactions: many(`SELECT id, venue_id, intent, status, amount_minor, currency,
+    transactions: await many(`SELECT id, venue_id, intent, status, amount_minor, currency,
                                points_granted, discount_minor, opened_at, confirmed_at
                           FROM transactions WHERE user_id = $u ORDER BY opened_at`),
-    visits: many(`SELECT venue_id, local_day, amount_minor, created_at FROM venue_visits WHERE user_id = $u`),
-    vouchers: many(`SELECT id, venue_id, discount_pct, points_spent, code, status, issued_at,
+    visits: await many(`SELECT venue_id, local_day, amount_minor, created_at FROM venue_visits WHERE user_id = $u`),
+    vouchers: await many(`SELECT id, venue_id, discount_pct, points_spent, code, status, issued_at,
                            expires_at, redeemed_at FROM issued_vouchers WHERE user_id = $u`),
-    rewards: many(`SELECT id, venue_id, label, status, earned_at, expires_at, redeemed_at
+    rewards: await many(`SELECT id, venue_id, label, status, earned_at, expires_at, redeemed_at
                      FROM earned_rewards WHERE user_id = $u`),
-    stampCards: many(`SELECT campaign_id, venue_id, stamps, cycles, joined_at FROM stamp_cards WHERE user_id = $u`),
-    games: many(`SELECT id, game_type, score, answered, correct, started_at, finished_at
+    stampCards: await many(`SELECT campaign_id, venue_id, stamps, cycles, joined_at FROM stamp_cards WHERE user_id = $u`),
+    games: await many(`SELECT id, game_type, score, answered, correct, started_at, finished_at
                    FROM game_sessions WHERE user_id = $u ORDER BY started_at`),
-    player: one(`SELECT streak, longest_streak, freezes, answered, correct, last_played
+    player: await one(`SELECT streak, longest_streak, freezes, answered, correct, last_played
                    FROM player_states WHERE user_id = $u`),
-    referrals: many(`SELECT id, referred_email, status, points_awarded, created_at
+    referrals: await many(`SELECT id, referred_email, status, points_awarded, created_at
                        FROM referrals WHERE referrer_id = $u`),
-    notifications: many(`SELECT kind, title, body, delivery, created_at, read_at
+    notifications: await many(`SELECT kind, title, body, delivery, created_at, read_at
                            FROM notifications WHERE user_id = $u ORDER BY created_at`),
-    community: one(`SELECT * FROM community_profiles WHERE user_id = $u`),
+    community: await one(`SELECT * FROM community_profiles WHERE user_id = $u`),
   };
 }
 
@@ -364,36 +364,36 @@ export function exportUser(db: Db, userId: string): Record<string, unknown> {
  * The things that genuinely are personal and serve no accounting purpose *are*
  * deleted: profiles, notifications, device links, push tokens.
  */
-export function eraseUser(db: Db, userId: string, at: Iso = now()): { erased: true } {
-  const user = db.get<{ id: string }>(`SELECT id FROM users WHERE id = $u`, { u: userId });
+export async function eraseUser(db: Db, userId: string, at: Iso = now()): Promise<{ erased: true }> {
+  const user = await db.get<{ id: string }>(`SELECT id FROM users WHERE id = $u`, { u: userId });
   if (!user) throw new DomainError('not_found', 'user not found');
 
-  db.tx(() => {
+  await db.tx(async () => {
     /* The `SET` clause is `USER_COLUMNS` above rather than a list written out
        here, and that is a fix for the class of bug rather than for one instance
        of it: a column personal enough to clear is by that fact personal enough
        to disclose, and two hand-written statements cannot stay agreed about
        which columns those are. Every column that used to be named on this line
        still is — read the table. */
-    db.run(`UPDATE users SET ${ERASURE.set} WHERE id = $u`, {
+    await db.run(`UPDATE users SET ${ERASURE.set} WHERE id = $u`, {
       ...ERASURE.params,
       t: at,
       u: userId,
     });
-    db.run(`DELETE FROM community_profiles WHERE user_id = $u`, { u: userId });
-    db.run(`DELETE FROM notifications WHERE user_id = $u`, { u: userId });
-    db.run(`DELETE FROM push_tokens WHERE user_id = $u`, { u: userId });
-    db.run(`DELETE FROM device_users WHERE user_id = $u`, { u: userId });
-    db.run(`DELETE FROM sessions WHERE user_id = $u`, { u: userId });
-    db.run(`DELETE FROM friendships WHERE user_id = $u OR friend_id = $u`, { u: userId });
+    await db.run(`DELETE FROM community_profiles WHERE user_id = $u`, { u: userId });
+    await db.run(`DELETE FROM notifications WHERE user_id = $u`, { u: userId });
+    await db.run(`DELETE FROM push_tokens WHERE user_id = $u`, { u: userId });
+    await db.run(`DELETE FROM device_users WHERE user_id = $u`, { u: userId });
+    await db.run(`DELETE FROM sessions WHERE user_id = $u`, { u: userId });
+    await db.run(`DELETE FROM friendships WHERE user_id = $u OR friend_id = $u`, { u: userId });
     /* Every active sharing grant ends with the account: a venue must not keep
        receiving identified data about somebody who no longer exists. */
-    db.run(
+    await db.run(
       `UPDATE data_sharing_consents SET revoked_at = COALESCE(revoked_at, $t) WHERE user_id = $u`,
       { t: at, u: userId },
     );
     /* The erasure itself is a consent-relevant event and is recorded as one. */
-    db.run(
+    await db.run(
       `INSERT INTO consent_records (id, user_id, kind, policy_version, granted, recorded_at, source)
        VALUES ($i, $u, 'privacy', $p, 0, $t, 'erasure')`,
       { i: newId('con'), u: userId, p: CONFIG.privacy.policyVersion, t: at },

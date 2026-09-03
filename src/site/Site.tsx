@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { GlobeHero } from '../components/GlobeHero';
 import { PaylezIntro } from '../components/PaylezIntro';
 import { AdminPage } from './admin';
+import { ErrorBoundary } from './ErrorBoundary';
 import { AnalyticsPage } from './analytics';
 import { AssistantDock } from './AssistantDock';
 import { AuthProvider } from './auth/AuthProvider';
@@ -426,14 +427,20 @@ function SiteContent() {
 
 export function Site() {
   return (
-    <ThemeProvider>
-      <LanguageProvider>
-        {/* Innermost of the three: the session decides what renders, and both
-            the theme and the language have to be readable while it does. */}
-        <AuthProvider>
-          <SiteContent />
-        </AuthProvider>
-      </LanguageProvider>
-    </ThemeProvider>
+    /* Outermost of the four, and it has to be: a boundary catches only what is
+       below it, and the three providers are as capable of throwing as the
+       screens are. It is also why its panel is not translated — see
+       `ErrorBoundary`, and the black dashboard that is the reason it exists. */
+    <ErrorBoundary>
+      <ThemeProvider>
+        <LanguageProvider>
+          {/* Innermost of the three: the session decides what renders, and both
+              the theme and the language have to be readable while it does. */}
+          <AuthProvider>
+            <SiteContent />
+          </AuthProvider>
+        </LanguageProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

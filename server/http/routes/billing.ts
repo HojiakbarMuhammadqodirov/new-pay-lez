@@ -32,26 +32,26 @@ export const billingRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/plans',
     auth: 'none',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const audience = (ctx.query.get('audience') ?? 'consumer') as 'consumer' | 'partner';
-      return entitlements.plansFor(ctx.db, audience).map((plan) => ({
+      return await Promise.all((await entitlements.plansFor(ctx.db, audience)).map(async (plan) => ({
         ...plan,
-        entitlements: ctx.db.all(`SELECT key, value FROM plan_entitlements WHERE plan_id = $p`, {
+        entitlements: await ctx.db.all(`SELECT key, value FROM plan_entitlements WHERE plan_id = $p`, {
           p: plan.id,
         }),
-      }));
+      })));
     },
   },
   {
     method: 'GET',
     pattern: '/v1/me/subscription',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
       return {
-        subscription: entitlements.activeSubscription(ctx.db, { userId: user.id }) ?? null,
-        plan: entitlements.planFor(ctx.db, { userId: user.id }),
-        entitlements: entitlements.entitlementsFor(ctx.db, { userId: user.id }),
+        subscription: (await entitlements.activeSubscription(ctx.db, { userId: user.id })) ?? null,
+        plan: await entitlements.planFor(ctx.db, { userId: user.id }),
+        entitlements: await entitlements.entitlementsFor(ctx.db, { userId: user.id }),
       };
     },
   },
@@ -73,14 +73,14 @@ export const billingRoutes: Route[] = [
       const source = oneOf(ctx.body, 'source', ['stripe', 'apple', 'google'] as const, 'stripe');
 
       if (venueId) {
-        const owns = ctx.db.get(`SELECT 1 FROM venues WHERE id = $v AND owner_user_id = $u`, {
+        const owns = await ctx.db.get(`SELECT 1 FROM venues WHERE id = $v AND owner_user_id = $u`, {
           v: venueId,
           u: user.id,
         });
         if (!owns) throw new DomainError('forbidden', 'not your venue');
       }
 
-      return billingPort.startCheckout({
+      return await billingPort.startCheckout({
         db: ctx.db,
         subject,
         planCode: str(ctx.body, 'planCode'),
@@ -112,7 +112,7 @@ export const billingRoutes: Route[] = [
       if (!result.ok) throw new DomainError('bad_request', result.reason);
       return {
         subscription: result.subscription,
-        entitlements: entitlements.entitlementsFor(ctx.db, { userId: user.id }),
+        entitlements: await entitlements.entitlementsFor(ctx.db, { userId: user.id }),
       };
     },
   },
@@ -120,18 +120,18 @@ export const billingRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/billing/cancel',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
       const venueId = optStr(ctx.body, 'venueId');
       const subject = venueId ? { venueId } : { userId: user.id };
-      const subscription = entitlements.activeSubscription(ctx.db, subject);
+      const subscription = await entitlements.activeSubscription(ctx.db, subject);
       if (!subscription) throw new DomainError('not_found', 'no active subscription');
 
       /* Cancelled at the end of the period, not immediately: they paid for the
          month. D3's "lapses restrict capability but never delete data" starts
          with not cutting somebody off the day they cancel. */
-      entitlements.setStatus(ctx.db, subscription.id, 'cancelled', ctx.at);
-      audit.record(ctx.db, {
+      await entitlements.setStatus(ctx.db, subscription.id, 'cancelled', ctx.at);
+      await audit.record(ctx.db, {
         actorId: user.id,
         action: 'subscription.cancel',
         entity: 'subscription',
@@ -155,11 +155,12 @@ export const billingRoutes: Route[] = [
     pattern: '/v1/billing/webhook/:source',
     auth: 'none',
     handler: async (ctx) =>
-      billingPort.handleWebhook({
+      await billingPort.handleWebhook({
         db: ctx.db,
         source: ctx.params.source,
         signature: String(ctx.req.headers['stripe-signature'] ?? ctx.req.headers['x-signature'] ?? ''),
         payload: ctx.body,
+        rawPayload: ctx.rawBody,
         at: ctx.at,
       }),
   },
@@ -167,9 +168,9 @@ export const billingRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/partner/venues/:id/subscription',
     auth: 'partner',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const venueId = ctx.params.id;
-      const owns = ctx.db.get(`SELECT 1 FROM venues WHERE id = $v AND owner_user_id = $u`, {
+      const owns = await ctx.db.get(`SELECT 1 FROM venues WHERE id = $v AND owner_user_id = $u`, {
         v: venueId,
         u: actor(ctx).user.id,
       });
@@ -177,10 +178,10 @@ export const billingRoutes: Route[] = [
         throw new DomainError('forbidden', 'not your venue');
       }
       return {
-        subscription: entitlements.activeSubscription(ctx.db, { venueId }) ?? null,
-        plan: entitlements.planFor(ctx.db, { venueId }),
-        entitlements: entitlements.entitlementsFor(ctx.db, { venueId }),
-        invoices: ctx.db.all(
+        subscription: (await entitlements.activeSubscription(ctx.db, { venueId })) ?? null,
+        plan: await entitlements.planFor(ctx.db, { venueId }),
+        entitlements: await entitlements.entitlementsFor(ctx.db, { venueId }),
+        invoices: await ctx.db.all(
           `SELECT i.* FROM invoices i JOIN subscriptions s ON s.id = i.subscription_id
             WHERE s.venue_id = $v ORDER BY i.issued_at DESC LIMIT 24`,
           { v: venueId },

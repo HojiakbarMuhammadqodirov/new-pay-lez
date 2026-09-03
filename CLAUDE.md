@@ -4,18 +4,35 @@ Guidance for Claude Code working in this repository.
 
 ## What this is
 
-The **Paylez** landing page: a single-page React site rendered on top of
-`GlobeHero`, a procedural two-colour globe (no textures, no models, no image
-assets) built with Three.js / React Three Fiber.
+**Paylez**, in two programs that share a repository and no code.
 
-`README.md` documents the globe component in depth — props, the maths behind
-the scroll transition, the responsive framing formulas, and the performance
-budget. **Read it before changing anything in `src/components/GlobeHero/`.**
-This file covers the repo as a whole.
+`src/` is the web front end: a hash-routed single-page React site with fifteen
+routes (`PATHS` in `router.ts`) covering the marketing pages, the signed-in
+player screens, the partner dashboard and the operator's console. It began as a
+landing page for `GlobeHero` — a procedural two-colour globe with no textures,
+models or image assets, built on Three.js / React Three Fiber — and that globe
+is still the landing route's backdrop and still the largest single component
+here, but it is now one route's backdrop out of several rather than the thing
+the site is built on.
+
+`server/` is the backend the front end and the Flutter app both talk to: zero
+runtime dependencies, `node:sqlite` and `node:http`, run straight from
+TypeScript by Node 22.
+
+Three files document their own halves in depth and this one covers the repo as
+a whole:
+
+- **`README.md`** — the globe: props, the maths behind the scroll transition,
+  the responsive framing formulas, the performance budget. **Read it before
+  changing anything in `src/components/GlobeHero/`.**
+- **`server/README.md`** — the backend's rules, which are arithmetic rather
+  than rendering. **Read it before changing anything under `server/`.**
+- **`src/site/CLAUDE.md`** — the palette at token level. **Read it before
+  touching a colour.**
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 770 checks: it
+There is no test runner. `npm run verify` is the test suite — 789 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of
@@ -36,9 +53,13 @@ lands, and commit what it writes.
 
 `npm run server` starts the backend, and `npm run verify:api` is *its* test
 suite — a second one, because it checks a different kind of thing (see
-`server/README.md`). `tsc -b` type-checks both projects: `tsconfig.app.json`
-covers `src/`, `tsconfig.server.json` covers `server/`, and they are separate
-because one targets a browser and the other Node. `npm run server:import`
+`server/README.md`). `tsc -b` type-checks four projects, split by what they
+target rather than by taste: `tsconfig.app.json` covers `src/` (a browser),
+`tsconfig.server.json` covers `server/` (Node 22 running TypeScript directly),
+and `tsconfig.node.json` and `tsconfig.scripts.json` cover the build config and
+the generators in `scripts/`. `npm run openapi` regenerates
+`server/openapi.json` from the live route table — run it after adding or
+changing an endpoint and commit what it writes. `npm run server:import`
 re-reads the old database in `new-data/` and exits.
 
 ## Layout
@@ -69,8 +90,13 @@ before changing anything under it.
 
 Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
 `node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
-it (migrating, seeding and importing the old database on an empty file);
-`npm run verify:api` is its test suite — 650 checks, the counterpart of
+it (migrating, seeding and importing the old database on an empty file — and
+**"seeding" is product configuration only**: `seedPlatform` writes the plans,
+the category defaults and the word bank, and nothing else. There is no venue
+catalogue, no offer and no gift-card shelf on any boot; see "nothing is seeded"
+under Conventions for why, and `bootOrdering` in `server/verify.ts` for the
+guard that keeps it true);
+`npm run verify:api` is its test suite — 684 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture
@@ -93,6 +119,20 @@ two overlapping limiters where only one binds is one more than a player can be
 told about, and the pair a player can see on the screen is where the rule
 belongs. `server/README.md` carries the arithmetic and the two column names
 (`life_spent`, `lives_used`) that are historical and stay that way.
+
+**And it bounds what a day is *worth*, not whether somebody may play.** An empty
+tank used to be a locked door — the Play buttons switched off, the server
+refusing with `no_energy` — which made it the one screen in this product with
+nothing on it to do. It opens a **practice** round now: the same round, banking
+nothing at all. No points, no streak, no freeze, no day counted, no energy taken,
+no ledger entry. `POST /v1/games/sessions {practice: true}` asks for one and both
+game bodies carry `paid`; the front end's whole rule is the first line of
+`awardPoints`, which returns the state untouched when `energyOf` reads empty. Two
+details are load-bearing and both are checked. The server decides paid-or-practice
+from the tank **as it was at `started_at`**, so the answer cannot change under a
+round that is being played and contradict what the screen said. And the flag is
+**opt-in**, so the phone keeps the refusal it shipped with until it chooses
+otherwise — see `server/FLUTTER-BRIEF.md`.
 
 Two things a venue owner can now see that they could not: **impressions and
 clicks**. `analytics.reach` sums the venue's *listing* events
@@ -158,13 +198,32 @@ recognising: `POST /v1/games/sessions {gameType:"brain"}` returns a 404 saying
 while every other endpoint looks fine. The import reports it in its notes when
 the files are not there rather than importing nothing quietly.
 
-The React site still runs on `localStorage` (`src/site/auth/`, which says so at
-the top of `users.ts`). Wiring it to this backend is a client module, not a
-redesign: the API returns the fields `PlayerState` and `BusinessProfile` already
-use. Until somebody does, the two halves are independent and both are correct on
-their own terms.
+**The React site talks to it now, and `localStorage` is a mirror rather than a
+directory.** Signing in, signing up and the Google exchange all go through
+`api/consumer.ts`; `adoptSession` in `auth/AuthProvider.tsx` writes the row back
+under **the server's own id**, never a locally minted one, which is what makes
+the local store a copy of one directory rather than a second directory to
+reconcile. The credential is the server's — a mirrored row carries
+`password: 'server:<uuid>'`, a value nothing compares against, precisely so the
+account cannot be entered from the password form by leaving the field blank.
+Two things follow and both are load-bearing:
 
-**The Flutter app is the one client that does talk to it.** It lives in the
+- **An operator is an operator because the server says so.** `admin` is not a
+  `ChoosableType`, so the sign-up form cannot offer it; it arrives on `roles` in
+  the session, which is `user_roles` on the server and nothing this browser can
+  write. That is why the console no longer has a sign-in panel of its own — see
+  the note under `#/admin` below.
+- **What the server does not model is still local**, and honestly so: the
+  account type and the venue's listing are carried over from an existing local
+  row and left blank when there is none. Somebody signing in on a new device is
+  known to the server and unknown to that browser, which is the true state.
+
+Nothing here is authentication *by itself* — a password typed into the sign-up
+form is still written to `localStorage` in plain text on the way past, and
+`auth/users.ts` says so at the top. What has changed is that the server is now
+the thing being asked.
+
+**The Flutter app is the other client.** It lives in the
 `Pay-lez mobile` repo beside this one and is wired end to end — the four-step
 gate from both sides, all eight games on the server's move-by-move protocol, the
 wallet, the guidebook, and the partner companion. Two things follow for anybody
@@ -400,16 +459,62 @@ build error.
 `admin` sits beside `individual` and `business` in `AccountType` rather than
 being a flag on one of them: it has no venue, no wallet and no marketing funnel,
 it has `#/admin`. Sign-up cannot produce one — `ChoosableType` excludes it at the
-type level, so the form that offers the choice *cannot* offer that one. Seeded
-credentials live in `auth/users.ts`; the two demo accounts are printed on the
-sign-in form and the admin deliberately is not.
+type level, so the form that offers the choice *cannot* offer that one.
+
+**And nothing is seeded.** `SEED_USERS` in `auth/users.ts` is an empty array.
+There were two accounts in it — a Kraków café owner with a finished listing,
+and a player with 1,240 points and a seven-day streak — and both are gone: a
+password in that file is a password in the shipped bundle, and since `server/`
+arrived it is a *working* one against a system that hashes them. The venue was
+a real business’s name on a listing nobody at that business had written, and
+the balance was one the ledger had no entry for. `RETIRED_IDS` in
+`directory.ts` sweeps both off any device that still stores them, because
+deleting a seed stops it being written and does nothing about the copy already
+in `localStorage` — where, by design, a stored row wins over a seed.
+
+**The same rule holds on the server, and it is the stronger half.** `db/demo.ts`
+(seven Kraków and Warsaw venues) is deleted, and so are `GIFT_CARDS` /
+`seedGiftCards` in `domain/settings.ts` — five real retailer names written on
+every boot with 250 in stock each. Nothing behind them was real, and a gift-card
+shelf is a promise made in **points**, which people spend a month earning.
+Gating it behind `PAYLEZ_DEMO_SEED=1` was tried and was not enough: a flag is
+set once on a box and forgotten, and the rows it wrote are indistinguishable
+from stock an operator entered. `bootOrdering` in `server/verify.ts` is the
+guard — after a boot, no `ven_demo_` row, no `del_demo_` row, no
+`gift_card_stock`, no `platform_config.demo_seed` — and it checks the plans and
+the word bank *survive*, because those are product configuration rather than
+anybody's data.
+
+**A seeded row is immortal**: delete it and the next restart writes it back.
+That is the whole argument, and it is why an empty catalogue is a *feature* —
+"no venue has signed up" is a true and useful thing for a screen to say, and
+every screen that used to demonstrate the seeds now has an empty state that says
+it. Do not helpfully seed any of it back.
 
 **Who is signed in decides what exists, and the rule is one pure function.**
 `resolveRoute(route, account)` in `router.ts` is the whole access policy: an
 individual has no Business, Analytics, dashboard or setup; an owner with no listing
 goes to setup; an admin's console *replaces* both partner routes and sign-in;
 an account that has not answered the individual-or-business question is held at
-sign-in. `Site` resolves the route *during render*, so a page this account may
+sign-in. **Analytics is not a public page** — a signed-out visitor asking for it
+goes to `landing`, not to `signin`, because the screen is a month of somebody's
+takings and signing in does not get a *player* there either: it is not locked, it
+is not theirs.
+
+Two routes are easy to miss because nothing in the marketing nav links to them.
+**`#/profile`** (`profile.tsx`) is the seven things a person tells us about
+themselves — photo, username, status, city, email, phone, birthday — and it is
+the same set the server's `updateProfile` writes, deliberately, because a form
+that accepted what the server refuses works until the day the two halves are
+wired together. It is the one private route an operator keeps: the console
+replaces the partner screens because an admin has no venue, and it does not
+replace their own name and city. **`#/welcome`** (`onboarding.tsx`) is the third
+frame — language, three rounds of flags, the payoff — and `resolveRoute` holds a
+new player *there from every route*, which is why it has no header: a nav above
+a gate is a bar whose every link bounces straight back. Its questions come
+through `games/bag.ts` out of the real 196-row flag bank, so they are translated
+and they are three the player will not be asked again; the welcome gift is paid
+for **finishing it**, not for opening an account. `Site` resolves the route *during render*, so a page this account may
 not see never mounts for a frame, and corrects the address bar in an effect
 afterwards.
 
@@ -447,19 +552,25 @@ Several of these pointed at a section on the page they were already on, which is
 what a page does when nobody has anywhere to send you yet.
 
 **Two storage keys, and they are different things.** `paylez-session` is who is
-signed in *on this device*; `paylez-users` (`auth/directory.ts`) is everyone who
-exists — the three seeds plus everyone who has signed up. The session is a
-pointer into that directory, which is what makes the rest work: every change an
-account makes to itself is written back to its row (`commit` in `AuthProvider`),
-so signing out and back in restores a venue's listing and a player's balance, and
-the admin console is reading the same rows the app is writing. A stored session
-whose id is no longer in the directory is dropped rather than honoured — that is
-what a session pointing at a deleted account *is*. Both follow the `theme/` split
-(context in one file, provider in another) and the same lazy-initialiser,
-wrapped-storage construction. **None of it is authentication** — the credentials
-are in the bundle and every sign-up password is written to `localStorage` in
-plain text beside them; `auth/users.ts` says so, and it must be replaced by a
-server before this points at real data.
+signed in *on this device*; `paylez-users` (`auth/directory.ts`) is every
+account this browser has seen. The session is a pointer into that directory,
+which is what makes the rest work: every change an account makes to itself is
+written back to its row (`commit` in `AuthProvider`), so signing out and back in
+restores a venue's listing. A stored session whose id is no longer in the
+directory is dropped rather than honoured — that is what a session pointing at a
+deleted account *is*. Both follow the `theme/` split (context in one file,
+provider in another) and the same lazy-initialiser, wrapped-storage construction.
+
+**The directory is a cache of the server's answer, not the record.** It stopped
+being the record when auth moved to the API — see the section above — and the
+practical consequence is which of the two you reach for: *who exists* is a
+question for the server (`GET /v1/admin/users`, which the console's People tab
+reads), and this store answers only *what this browser knows about them*. The
+API token is a **third** key, `paylez-api-token` (`api/client.ts`) — a pointer
+rather than a credential store, dropped the moment the server says it is no
+longer valid. All three reads are wrapped in `try`, because storage throws in a
+private window with cookies blocked and a console that cannot open is worse than
+one that cannot remember.
 
 **Sign-up asks which kind of account it is; sign-in does not.** The question is
 answered *before* the account exists, so nothing new is ever created in the
@@ -468,55 +579,66 @@ that predate that — `resolveRoute` sends `type === null` back there from every
 route — and deleting it would sign those visitors out of a tab they never asked
 to be signed out of.
 
+**Everything on the wallet page is the server's.** It was not: the board was
+nine hot deals in `content.ts`, the catalogue eight gift cards in the same file,
+and the three holdings were arrays inside a `localStorage` record — claiming a
+deal minted a code in this browser, buying a voucher subtracted from a number in
+this browser, and "Add a visit" stamped a card nobody had visited. It is four
+calls now, and every row is real: `GET /v1/deals` (the board), `GET /v1/wallet`
+(the holdings), `GET /v1/gift-cards` (the shelf) and `POST /v1/gift-cards`, the
+one press that moves value.
+
 **The wallet holds three things, and they are three because their rules
-differ.** A *hot deal* is one venue running one offer for a window, and claiming
-it is usually free — the venue is paying. A *gift card* is stock: a fixed face
-value at a named brand, bought with points off a catalogue with a monthly
-allocation. A *stamp card* counts **visits to one venue**, and a visit is not a
-point — it cannot be spent anywhere else, and a full card **rolls over into the
-next one** rather than overflowing, which is why `cycles` exists. The model is
-the Flutter app's (`lib/screens/wallet_screen.dart`) and the arithmetic is pure
-functions in `auth/player.ts`, so `npm run verify` owns it.
+differ.** A *discount voucher* is points already spent at one venue — a code and
+a percentage, honoured at that venue's till. A *gift card* is stock: a fixed face
+value at a named brand, bought with points off the shelf. A *stamp card* counts
+**visits to one venue**, and a visit is not a point — it cannot be spent anywhere
+else, and a full card **rolls over into the next one** rather than overflowing,
+which is what `cycles` counts. Collapsing any two of them loses the rule that
+tells them apart, and each of those rules is one a player would otherwise learn
+by being wrong at a counter.
 
-**The wallet page is a board and then a wallet, and a deal is in exactly one of
-them.** What is on offer is at the top — the hot deals and the stamp cards,
-under one strip of category chips (`DEAL_CATEGORIES`, the app's own six less the
-"All" that is the absence of a filter rather than something a venue can be) —
-because that is what somebody opens the page to decide from before going out.
-What has already been taken is below it: the claimed deals with their codes,
-then the gift cards. The split is **derived** (`openDeals`) rather than tracked,
-so the two lists cannot drift, and `npm run verify` checks that they exhaust the
-board between them. That replaced a two-column layout which put the deals and
-the stamp cards side by side and mixed claimed offers in among the unclaimed;
-the columns were a good answer to "what have I got, and where am I nearly
-there", and what they could not do is separate an offer from a holding.
+**The claim button is a disclosure, not a claim, and that is the load-bearing
+change.** `POST /v1/deals/:id/events` accepts `impression` and `open` and nothing
+else: a **claim is written by the gate**, from a confirmed scan at the venue,
+deliberately — a claim a phone could mint is worth nothing to the venue paying
+for it and is a figure the partner dashboard could not argue from. So there is
+nothing for a claim button to post. Pressing it opens the offer's **terms**
+(which the server sends with every deal and nothing was showing) and says where
+the claim actually happens — at the counter, on the venue's scan — and posts
+`open`, a real funnel step. Deleting the button instead was the other honest
+option and it takes the card's only affordance with it; a board of offers where
+nothing is pressable reads as broken rather than as read-only.
 
-The card is the app's (`lib/screens/deals_screen.dart`, `_DealCard`) with the
-venue's own facts brought forward from the venue sheet the web has no room for —
-and the pill says **Open now** on the *venue's* clock, not the reader's, which is
-what `VenueFacts.zone` is for and the only place in the front end that reaches
-for `Intl`. The one slot the app has and this does not is the distance: nothing
-here has a position fix either, and a seeded "1.2 km away" would be the one
-thing on the card that is about the reader rather than about the venue.
+The claim *animation* went with the claim. A ring, a sheen and a code landing
+where the button was were celebrating an event that no longer happens — as did
+`CLAIM_HOLD_MS`, `openDeals`, `DEAL_CATEGORIES` and the "Open now" pill computed
+on the venue's own clock. **Do not reintroduce any of them without an endpoint
+underneath**; that is the same honesty rule the partner dashboard states.
 
-**Claiming is the one thing on that page that is animated, and the animation is
-load-bearing.** The phone's button *navigates* — it arms the gate and drops you
-on the Scan tab — so the app celebrates nothing. Nothing navigates here, and a
-card that simply vanished from the list would fail to say that the press worked,
-that the offer is now yours, and that it has moved. So the card is held on the
-board for `CLAIM_HOLD_MS` while a ring goes out, a sheen crosses the plate and
-the code lands where the button was, and only then does `openDeals` move it
-down. Every curve is the app's own kit rather than invented here. Under
-`prefers-reduced-motion` the **hold goes with the motion**: the deal appears
-below immediately rather than leaving a second of nothing on a still card.
+**An empty catalogue is a state, and a dead server is a different one.** After
+the purge there are genuinely no deals and no gift cards until a business signs
+up, is verified and publishes, so "nothing here yet" is the *ordinary* reading
+and says so in its own words, while "we could not ask" says that instead. That is
+what `useApi`'s `loading | ready | error` union is for, and it is the rule the
+console states at length one file over.
+
+The card carries no photograph, because nothing in `src/` ships an image asset
+and a CDN placeholder would be the third-party runtime request the whole front
+end is built to avoid. `WAL_TEXTURES` cycles a pattern per band instead — see
+the `[data-texture]` rule above — and a brand's mark is its initial on the
+accent.
 
 **A signed-in individual gets a different page, not a different section.**
 `useIsPlayer()` swaps L-Earn and Vouchers wholesale: `learn.tsx` → `games.tsx`,
 `vouchers.tsx` → `wallet.tsx`. The marketing pages are untouched and still serve
 everyone else, including business owners — those pages describe the *customer's*
 experience, which an owner is reading about rather than living. The rules that
-decide points, streak, energy and the wallet are pure functions in
-`auth/player.ts`, so `npm run verify` owns them; the components only call them.
+decide points, the streak and energy are pure functions in `auth/player.ts`, so
+`npm run verify` owns them and the components only call them. **The wallet is no
+longer among them** — `redeem`, `markUsed`, `stampVisit`, `claimDeal` and
+`openDeals` all left that file when the holdings became the server's, and what
+they used to write to `localStorage` was fiction.
 
 **The order of `GAMES` is the layout of the Play screen.** `GAMES[0]` is the
 full-width poster L-Earn opens with and everything after it fills the grid two
@@ -586,6 +708,16 @@ be stale the moment the tab was left open — the same construction
 costs one, win or lose; `spendEnergy` is the only spend, so an abandoned round
 costs nothing. A state saved under the old `lives` / `livesAt` names still reads,
 and a missing anchor reads as a full tank.
+
+**An empty tank plays; it just does not pay.** `awardPoints` returns the state
+untouched when `energyOf` reads empty, and that one line is the whole of what a
+practice round is on this side — the scorers know nothing about energy and must
+not learn. Nothing on the Play screen refuses any more: the card label becomes
+`copy.games.practice`, the round wears a banner, and the result card explains its
+own zero with `practiceResult` rather than `resultNone`. The test is the tank
+*now* and that is exact rather than approximate — energy only ever refills, and
+`spendEnergy` is the only thing that takes it, so a tank reading empty at the end
+of a round was empty at the start of it.
 
 The gauge that draws it is a **battery** — four blocks in a case with a terminal
 on the end, the block being earned filling live against the real clock in CSS,
@@ -786,24 +918,119 @@ bundled, the flag font copied into `public/`), geometry comes from the
   the reading the rule exists to protect, and `backdrop-filter` on a dozen
   stacked panels is the most expensive thing on the page. Reduced-transparency
   and reduced-motion both turn it off.
-- **The console reports; it does not edit.** Every number on `#/admin` is
-  derived by the same pure functions the app uses — `profileCompleteness`
-  decides "live" there exactly as it does on the owner's own dashboard. Adding a
-  control that writes to somebody else's account means deciding what happens when
-  two tabs disagree, which is a server's job.
-- **The console's fourth tab is the one screen that asks a server, and it says
-  so when there is none.** Three tabs are derived on this device; "who visited
-  the site" is a question about people who never signed in and never touched this
-  browser, so `adminWebsite.tsx` reads `/v1/admin/*` through `api/`. It is the
-  first thing in `src/` that talks to `server/` — the session, wallet and games
-  are still `localStorage`. Two rules come with it. **A failed request is a
-  state, not a zero**: `useApi` returns `loading | ready | error` as a union
-  precisely so "not connected" and "connected, and the answer is 0" cannot be
-  confused, and the tab renders a "backend is not answering" panel rather than an
-  empty chart. And **the console signs in to the API separately from the site**,
-  because the site's admin is a seed in `auth/users.ts` and the server's is
-  whoever `PAYLEZ_ADMIN_EMAIL` provisioned; that panel disappears when the site's
-  own auth moves to the server.
+- **The console edits now, and the rule it replaced is the one to keep in
+  mind.** What stood here was "the console reports; it does not edit", with the
+  argument that a control writing to somebody else's account has to answer what
+  happens when two tabs disagree. That was right while the answer was
+  `localStorage`. It is a server's question and the server answers it, so
+  `#/admin` can now suspend and remove a venue, pause and remove an offer, take a
+  gift card off the shelf, suspend an account, set somebody's password and close
+  an account, and **correct what any of them says** — under `C7` in
+  `server/http/routes/admin.ts`.
+
+  **The line that survives is the one that mattered: an operator may describe
+  things, remove them and restore access to them, and may not edit a number
+  anybody reports from.** Nothing reachable from this screen touches a balance, a
+  visit count or a funnel figure — the three `PATCH`es take a name, a city, a
+  category, an offer's words and closing date, and nothing that was counted.
+  A removal is visible by its absence and every write here puts an audit row with
+  an actor on it; an edited figure is neither. Two tabs pressing "suspend" agree.
+
+  The three edits call the domain function the **owner's own form** calls
+  (`partners.updateVenue`, `partners.updateDeal`, `accounts.updateProfile`), so
+  an operator gets the owner's validation and the same city canonicaliser rather
+  than a second implementation that drifts.
+
+  **And removal means the row is gone.** A venue and an offer were archived and
+  stamped; they are `DELETE`d now, which the schema makes safe rather than
+  hopeful — everything that *belongs* to one cascades, and the four tables that
+  merely *mention* one (`points_ledger`, `transactions`, `audit_log`,
+  `guidance_services`) are `ON DELETE SET NULL`, so the accounting still adds up.
+  `translations` is swept by hand, because it is keyed by `(entity, entity_id)`
+  and no cascade reaches it. **A person is the exception and the exception is the
+  database's**: `points_ledger.user_id` and `transactions.user_id` cascade, so
+  dropping a customer who spent would delete a *venue's* record of what they
+  spent. Closing an account erases it (Article 17, the same routine
+  `DELETE /v1/me` runs) and drops the row only when nothing is owed to it — the
+  answer says which, like the gift-card route.
+
+  Three rules travel with it, all in `adminControls.tsx`:
+
+  - **Destroying something is behind a switch, and then behind a dialogue.**
+    `EditToggle` sits between the search field and the tabs — search narrows what
+    is listed, the tabs choose what kind of thing is listed, and it decides
+    whether the list can be changed — and it puts a pencil and a bin at the head
+    of every row. It is off on every load and not remembered: a console that
+    opened with the bins armed makes the first press of the afternoon a
+    destructive control nobody reached for. The bin then opens `ConfirmDialog`,
+    which **names the thing** and takes one deliberate press. That replaced a
+    gradient of two presses for an offer and the venue's name typed back for a
+    venue: a panel inside a list can be scrolled off-screen, and a confirmation
+    somebody types twenty times an afternoon is one they type without reading.
+    The server still requires the name in the body and `foldConfirm` still folds
+    it — that is the client proving it knows which row it is about to destroy.
+  - **A refusal is printed in the server's own words.** The strip says the
+    dictionary's lead and then the API's message verbatim, which is the one
+    place on this site that renders untranslated server text. These refusals
+    name *which gate closed* — an unverified venue, a plan with no room for
+    another live deal, a deal with no copy — and a dictionary sentence general
+    enough to cover them all would name none.
+  - **A control with nothing honest behind it is not drawn.** An operator's own
+    row gets a word instead of three buttons, because the server refuses every
+    one of them; a venue that has never been live gets no "restore", because the
+    press that puts one in front of customers is the verification decision on
+    the People tab; a gift card gets the bin without the pencil, because its face
+    value and points cost are what somebody bought against and no endpoint edits
+    one. That is the partner dashboard's honesty rule, one screen over.
+
+- **Two endpoints that return "the same thing" must return the same shape.**
+  `GET /v1/partner/venues/:id/budget` decorated the pools with `tiers`,
+  `averageCheck`, `rebalanceHint` and `tolerance`; `GET .../overview` returned
+  the bare pools **under the same field name**. That is a different type wearing
+  one name, TypeScript believed the front end's declaration of it, and it cost
+  the entire partner dashboard: the overview screen reads
+  `budget.averageCheck.minor`, got `undefined`, and the `TypeError` unmounted
+  React's whole tree. Both routes go through `budgetBody` in
+  `server/http/routes/partner.ts` now, and `verify:api` compares their key-sets
+  so a fifth decoration added to one and not the other fails there rather than
+  on a phone. The lesson generalises: when two routes answer the same question,
+  compose the body once.
+- **A render error used to be a black page, and now it is a panel.** A
+  `TypeError` thrown during render unmounts React's *entire* tree, leaving the
+  document body — which on this site is `--bg`. That is exactly what one missing
+  field on one response did to `#/dashboard`: no header, no message, nothing to
+  press. `ErrorBoundary` wraps the three providers in `Site.tsx` (outermost, so
+  it catches them too), prints the error text verbatim and offers a reload and a
+  way home, and clears itself on `hashchange` so navigating away recovers without
+  a reload. It is **not translated** on purpose — `LanguageProvider` is inside
+  it, and a boundary that reaches for `useCopy()` to describe a broken render can
+  throw while reporting a throw. Fixing the field is still the fix; this is what
+  makes the next one legible instead of invisible.
+
+  The console's write half is `api/admin.ts` (the calls), `adminWrite.ts` (the
+  hook) and `adminControls.tsx` (the kit). Nothing in the kit carries
+  `data-reveal`: a panel that opens on a press arrives after the reveal scan.
+
+- **All five console tabs ask the server, and there is no second sign-in.**
+  Services, Offers, People, Website and Messages (`ADMIN_TABS` in `content.ts`)
+  are five reads of `/v1/admin/*` through `api/`. This bullet used to say the
+  *fourth* was the only one — three were derived from `auth/directory.ts`, the
+  accounts in this browser, which for an operator meant a list of seeds — and
+  every one of them has moved. The panel that used to ask for an operations
+  address and password here is gone with them: reaching `#/admin` at all means
+  `resolveRoute` saw `roles` containing `admin` on the *server's* session, so a
+  token is already in hand, and asking again was one person signing in twice
+  with two accounts on one screen. What can still happen is that token expiring
+  under a session this browser remembers, which is a stale sign-in rather than a
+  password prompt, and the screen says so and points at the front door.
+
+  **A failed request is a state, not a zero.** `useApi` returns
+  `loading | ready | error` as a union precisely so "not connected" and
+  "connected, and the answer is none" cannot render the same way — and after the
+  purge the second is the *ordinary* state, because there genuinely are no
+  venues and no offers until a business signs up and somebody verifies it. Every
+  list has both panels and every count that has not arrived is an em dash rather
+  than a 0.
 - **The traffic beacon must not acquire a memory.** `api/traffic.ts` sends page
   views and named actions to `POST /v1/traffic` and holds *nothing* — no cookie,
   no `localStorage` key, no visitor id. The server identifies a visitor by a hash
@@ -814,19 +1041,30 @@ bundled, the flag font copied into `public/`), geometry comes from the
   `anonymousReturningVisitors: null` and the console prints a sentence. **Never
   render that as 0**; it is the same lie `suppressed` exists to prevent one screen
   over.
-- **A venue's analytics come out of one number.** `ADMIN_SERVICES` gives each
-  seeded venue a `scale`, and `adminMetrics.ts` derives the whole month from it —
-  cards, trends, tables, insights and the country comparison. That is what keeps
-  a quiet venue quiet *everywhere*; five separately invented data sets would
-  eventually contradict each other, and the original admin panel's screens agreed
-  with each other. `engagement` is a sum rather than a seeded figure for the same
-  reason — it is shown twice on the screen.
-- **`scale: 0` is not a special case, it is the same arithmetic.** Every count
-  lands on zero, every table empties, and the view falls back to its "nothing
-  yet" states — which is the state every reference screenshot in
-  `landing/screenshots/admin-*` was taken in, and the state a real signed-up
-  owner's listing is genuinely in. That listing is carried into the same service
-  list from the directory, so both are visible side by side.
+- **The console's analytics view says "not measured", and that is the honest
+  answer rather than a stub.** `adminMetrics.ts` used to derive a venue's whole
+  month from one seed: `ADMIN_SERVICES` gave each listing a `scale` and
+  `serviceMetrics(scale)` multiplied a table of invented base figures by it —
+  map opens, website clicks, calls, Instagram taps, scans, vouchers, a
+  thirty-day trend, a sales curve, a city and language split, a country
+  comparison. It was internally consistent, which was the whole argument for
+  deriving rather than transcribing, and none of it had been measured.
+
+  One endpoint answers anything venue-specific to an *operator*:
+  `GET /v1/admin/venues` returns a visit count and a customer count, two `COUNT`s
+  and nothing more. Everything else that screen showed is either partner-scoped
+  (`/v1/partner/venues/:id/analytics`, which an admin token cannot call —
+  `requireStaff` gates it on ownership) or is not collected at all. So
+  `serviceMetrics()` returns the **unmeasured month** and `serviceMetricsFrom()`
+  fills in the two figures that exist. `measured` is the field every panel
+  branches on and it is `false` **by construction rather than by a value
+  happening to be zero**, because "nobody has counted this" and "the count is
+  zero" are different findings and this console exists to tell an operator
+  things they cannot see anywhere else.
+
+  The pull to fix this by inventing a plausible number is the thing to resist.
+  If the figure is wanted, the work is a collection path on the server, not a
+  multiplier here.
 - **A chart states its own height.** The columns inside it are percentages, and a
   percentage height against an `auto` parent resolves to nothing — which is
   exactly what the country comparison did before `.adm-compare-cols` was given a
@@ -843,10 +1081,14 @@ bundled, the flag font copied into `public/`), geometry comes from the
   context is spent on at most one route at a time.
 - **The backdrop is per route, and one route per backdrop.** Landing gets the
   globe (the only WebGL one); L-Earn gets the platformer (`level/`), Analytics
-  the node web (`network/`), Business the candle tape (`market/`) and Vouchers
-  the drifting stubs (`stubs/`) — all four canvas-2D, all on `.site__web`;
-  Relocate keeps CSS rings (`.site__rings`), and Contact, Privacy and Terms have
-  none at all. `Site.tsx` renders exactly one, and that is what makes five
+  the node web (`network/`), Business **and Business setup** the candle tape
+  (`market/`) and Vouchers the drifting stubs (`stubs/`) — all four canvas-2D,
+  all on `.site__web`; Relocate keeps CSS rings (`.site__rings`), and Contact,
+  Privacy, Terms and **Profile** have none at all. Business setup shares the
+  tape because describing your venue is the first move in the thing the tape
+  already means; the profile has none because its subject is somebody's own
+  name, city and photograph, which no backdrop here is a picture of.
+  `Site.tsx` renders exactly one, and that is what makes five
   components affordable: the document holds at most one backdrop context at a
   time, plus the controller's on L-Earn. Rendering two at once costs a second
   context on that page; browsers cap how many a document may hold and start

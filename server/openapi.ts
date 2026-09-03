@@ -510,6 +510,15 @@ const SCHEMAS: Record<string, Schema> = {
         'Energy in the tank *before* this round is paid for — starting costs nothing, ' +
           'finishing costs one. Was `livesLeft`.',
       ),
+      paid: {
+        type: 'boolean',
+        description:
+          'Whether this round will bank anything. `false` is a **practice** round — one ' +
+          'opened on an empty tank by a client that sent `practice: true`. It plays ' +
+          'identically and banks nothing at all: no points, no streak, no energy, no ' +
+          'ledger entry. Without `practice` an empty tank is still the `no_energy` ' +
+          'refusal, so an existing client keeps the behaviour it shipped with.',
+      },
     },
   },
 
@@ -617,10 +626,19 @@ const SCHEMAS: Record<string, Schema> = {
           '5 on Pro, effectively unlimited on Premium.',
       ),
       energyLeft: int(
-        'Energy left after this round, which is one lower than the round started with. ' +
-          'Was `livesLeft`. See `Energy`.',
+        'Energy left after this round, which is one lower than the round started with — ' +
+          'or unchanged at 0 when `paid` is false. Was `livesLeft`. See `Energy`.',
       ),
       balance: int(),
+      paid: {
+        type: 'boolean',
+        description:
+          'Whether this round banked anything — the same fact `Round.paid` promised when ' +
+          'it was opened. `false` is a practice round: `score` is 0, `streak` and ' +
+          '`freezes` are unchanged, `balance` is unmoved and `energyLeft` is still 0. ' +
+          'A client needs it to tell a practice round from a round that simply scored ' +
+          'nothing — the two bodies are otherwise identical.',
+      },
       nearest: {
         nullable: true,
         type: 'object',
@@ -1173,6 +1191,12 @@ const DOCS: Record<string, Doc> = {
       'player has *before* paying for the round they are about to play, and the refusal ' +
       'is enforced here because finding out at the end means finding out after the round ' +
       'was played. An abandoned round costs nothing.\n\n' +
+      'Send `practice: true` to turn that refusal into an **unpaid round** instead: it ' +
+      'plays identically and banks nothing — no points, no streak, no energy, no ledger ' +
+      'entry — and both this response and the finish carry `paid: false`. Energy still ' +
+      'buys everything it bought; what it no longer buys is playing at all. Without the ' +
+      'flag an empty tank is still the refusal, so a client that has an out-of-energy ' +
+      'screen keeps it until it decides to offer practice.\n\n' +
       'Nothing else refuses or shrinks a round: there is no daily points cap and no ' +
       'per-game decay curve. Energy is the whole limiter.',
     tags: ['games'],
@@ -1183,6 +1207,12 @@ const DOCS: Record<string, Doc> = {
           'protocol, same scoring, different bank — so send the one that matches ' +
           'the country on the player’s profile rather than showing both.',
       ),
+      practice: {
+        type: 'boolean',
+        description:
+          'Play on an empty tank for nothing rather than be refused. Ignored when there ' +
+          'is energy — a round that can pay, pays. Optional; absent means false.',
+      },
     },
     required: ['gameType'],
     response: ref('Round'),

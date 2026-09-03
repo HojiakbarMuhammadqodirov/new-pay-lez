@@ -119,8 +119,7 @@ db/    schema.sql    every entity in §14 and Part E
        csv.ts        an RFC 4180 reader, for the export
        import.ts     the old database → this schema, plus the three game banks
                      that arrive as hand-delivered CSVs in `updates/`
-       demo.ts       seven demonstration venues, written only when the
-                     catalogue is *still* empty after the import — see below
+
 
 domain/              the rules. React-free, HTTP-free, testable on their own
        ledger.ts     §2   append-only points, FIFO lots. Nothing expires
@@ -248,6 +247,27 @@ config; Pro and Premium live nowhere else).
 `finished_at` at the instant somebody asks — no scheduler, no refill job, the
 same house rule as the balance one table over: derived, never stored.
 `no_energy` carries `nextAt` and `max`, and never `resetsAt`.
+
+**An empty tank is no longer a locked door: it is an unpaid one.**
+`POST /v1/games/sessions {practice: true}` opens a round on a tank with nothing
+in it, and that round banks nothing at all — no points, no ledger entry, no
+streak movement, no freeze earned or spent, no comeback payment, no day counted,
+no energy taken. Both bodies carry `paid`, because a practice round and a round
+that simply scored zero are otherwise the same response. Energy still buys
+everything it bought — points, the streak, a place on the board — and the one
+thing it no longer buys is *playing*, which was the only state of this product
+where a player who wanted to be here had nothing to do.
+
+Three details hold it together. The flag is **opt-in**: without it an empty tank
+is still the `no_energy` refusal, so a client that shipped an out-of-energy
+screen keeps it until it decides otherwise. `finish` decides paid-or-practice
+from the tank **as it was at `started_at`**, not as it is now — energy only
+refills, so a long round begun on empty would otherwise finish paid, contradicting
+what the screen told the player, and asking `energyFor` about the session's own
+start reconstructs exactly the number `startSession` saw without a column to
+remember it in. And a practice round writes `life_spent = 0`, which is the column
+`energyFor` already filters on, so it is invisible to the tank rather than being
+a spend the tank has to be taught to ignore.
 
 **Two column names are historical and stay that way**, which is the thing most
 likely to confuse the next reader of `db/schema.sql`:
@@ -531,29 +551,42 @@ import and asserts nothing moved.
 
 ### When there is nothing to import
 
-`new-data/` is gitignored — it is the old app's *live* data and must never reach
-a remote — so on every deployed box the import correctly reports "nothing
-(new-data/ not found)" and the catalogue stays empty. That is what production was
-actually serving: `GET /v1/venues` and `GET /v1/deals` both `[]`, for ever.
+`new-data/` is gitignored — it is the old app’s *live* data and must never
+reach a remote — so on a deployed box the import reports "nothing (new-data/
+not found)" and the catalogue stays empty.
 
-So `boot()` checks the venue count a **second** time, *after* the import has had
-its chance, and only if it is still zero calls `seedDemo` (`db/demo.ts`): seven
-Polish venues across Kraków and Warsaw, seven categories, two live deals each,
-with hours, a voucher ladder, a budget and a stamp campaign. The ordering is the
-whole of it — a box that *has* `new-data/` takes the real import and must never
-see these rows, because a demonstration café standing beside migrated partners is
-a row nobody can tell from a real one.
+**And it stays empty.** There was a `db/demo.ts` here: seven Polish venues
+across Kraków and Warsaw, two live deals each, with hours, a voucher ladder, a
+budget and a stamp campaign, written whenever the count was still zero after
+the import. Beside it `seedPlatform` wrote a gift-card shelf — Zalando, Media
+Expert, Douglas, Hebe, Empik, 250 in stock each. Both were carefully marked,
+both were arithmetically sound, and both are deleted.
 
-They are marked rather than disguised. Every id is prefixed `*_demo_*`, every
-name carries `(demo)`, the description says so in both languages it is written
-in, and `platform_config.demo_seed` — which the console lists — records when they
-arrived. Nobody owns them: `owner_user_id` is NULL, because the alternative is a
-partner credential in this repository, and `provisionAdmin` above states exactly
-why that is not on offer. Nothing is invented that would be a lie if believed —
-no ratings, no funnel events, no visits, and districts rather than street
-numbers. **Delete them the day the first real venue is onboarded**;
-`DELETE FROM venues WHERE id LIKE 'ven\_demo\_%' ESCAPE '\'` takes the rest with
-it.
+Three things were wrong with them and only the first was obvious:
+
+- **A shelf is a promise.** A card offered at 500 points is a month of somebody
+  earning, and there is no agreement with any of those retailers behind it. An
+  empty shelf says something true; that one said something we could not keep.
+- **An empty catalogue is a finding, not a fault.** It means no venue has
+  signed up, which is a fact worth putting on a screen — and it is the exact
+  distinction `analytics.reach` exists to draw one level down. A catalogue that
+  fills itself in cannot tell an operator which of the two they have.
+- **A seeded row is immortal.** Delete it and the next restart writes it back.
+  Gating it behind `PAYLEZ_DEMO_SEED=1` was the intermediate answer and it was
+  not enough: a flag is set once on a box and then forgotten, and the rows it
+  wrote are indistinguishable from stock an operator entered by hand.
+
+So a fresh box comes up with no venues, no deals and no vouchers, and the
+first of each arrives the way a real one does — through the partner API, with
+an audit trail behind it. `bootOrdering` in `verify.ts` is the check: after a
+boot, no `ven_demo_` row, no `del_demo_` row, no gift-card stock, no
+`platform_config.demo_seed`, and no venue reachable at `demo@pay-lez.com` —
+the address the seven shared, which is the tell that survives a rename.
+
+What boot *does* still write is product configuration rather than anybody’s
+data: the plan ladder, the category check defaults, and the Word Builder bank.
+The same suite checks those are still there, so the cut cannot go further than
+it was meant to.
 
 The remittance tables (`Wallet`, `Recipient`, `Transaction`, `PaymentMethod`) are
 imported into `legacy_*` and served read-only: both specs put real money movement
@@ -565,14 +598,16 @@ The React site in `src/` still runs on `localStorage` (`src/site/auth/`), which
 its own `users.ts` says must be replaced by a server. The API shapes were chosen
 to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
 fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
-module, not a redesign. `GET /v1` lists all 133 endpoints.
+module, not a redesign. `GET /v1` lists all 142 endpoints.
+
 
 ### The admin account
 
-Part C's console is twenty-four endpoints behind `auth: 'admin'`, and **nothing
-else in this server grants that role** — sign-up cannot produce one (§1.2), the
-import does not carry one, and no endpoint promotes anybody. `provisionAdmin`
-runs at boot and is the only way in:
+Part C's console is behind `auth: 'admin'`, and **nothing else in this server
+grants that role** — sign-up cannot produce one (§1.2), the import does not
+carry one, and no endpoint promotes anybody. `provisionAdmin` runs at boot and
+is the only way in:
+
 
 ```bash
 PAYLEZ_ADMIN_EMAIL=ops@pay-lez.com PAYLEZ_ADMIN_PASSWORD='…' npm run server
@@ -583,3 +618,91 @@ repository is a back door into every venue's money, and it would be found by
 whoever reads the file next. With the variables unset the server says so at boot
 and serves everything else; the console is simply unreachable, which is true and
 recoverable. It is idempotent, so rotating the key is a new value and a restart.
+
+### What an operator may change (C7)
+
+This file used to say the console reported and did not edit. It does both now,
+and the sentence that replaced it is the one to hold on to: **an operator may
+remove a thing, or restore access to it, and may not edit a figure anybody
+reports from.** Nothing in `routes/admin.ts` touches a balance, a visit count or
+a funnel number — the rule was never that an operator should be powerless, it
+was that a figure a partner argues from, changed by a third party with no trace,
+is a figure nobody can defend.
+
+They come in threes — describe it, take it down reversibly, or end it — because
+an operator given only the final version of an action will use it for the
+reversible case, and one given no way to fix a misspelt name will reach for the
+final version to fix one:
+
+| | describe | reversible | final |
+|---|---|---|---|
+| venue | `PATCH …/venues/:id` name, city, category, address, phone, email | `PATCH …/venues/:id` suspend / restore | `DELETE …/venues/:id` |
+| offer | `PATCH …/deals/:id` title, description, terms, `validTo` | `PATCH …/deals/:id` pause / resume | `DELETE …/deals/:id` |
+| gift card | — | — | `DELETE …/gift-cards/:id` |
+| account | `PATCH …/users/:id` name, city, phone, occupation | `POST …/users/:id/ban` | `DELETE …/users/:id` |
+
+plus `POST …/users/:id/password`, which gives a person their account back, and
+`GET …/deals`, which lists every offer whatever its state — the public
+`GET /v1/deals` is live rows only, so without it a paused offer could not be
+listed and therefore could not be resumed.
+
+The describe column and the reversible column share a route and are told apart
+by **which keys arrive**: a body carrying `status` is the suspend press, anything
+else is the edit form saving, and a body carrying both does both. Every one of
+them calls the domain function the *owner's own form* calls
+(`partners.updateVenue`, `partners.updateDeal`, `accounts.updateProfile`), so an
+operator gets the owner's validation, the same city canonicaliser and the same
+audit entry rather than a parallel writer that drifts. **Not one of them takes a
+count.** There is no route on this file that edits a balance, a visit, a claim or
+a funnel figure.
+
+Six things they get right that are easy to get wrong, and `verify.ts` checks
+every one:
+
+- **Removing means the row is gone, and the schema is what makes that safe.**
+  It used to be a `deleted_at` stamp, which left an operator told "removed"
+  looking at a database that still held the venue. Every foreign key into
+  `venues` and `hot_deals` is `ON DELETE CASCADE` for what *belongs* to them and
+  `ON DELETE SET NULL` for what merely *mentions* them — `points_ledger`,
+  `transactions`, `audit_log`, `guidance_services` — so the thing goes, what it
+  owned goes with it, and a platform report still adds up with the reference
+  detached. The audit entry is written **before** the delete, because
+  `audit_log.venue_id` is one of those SET NULLs and a record of a removal that
+  cannot say what was removed is not a record.
+- **`translations` is swept by hand.** It is keyed by `(entity, entity_id)` with
+  no foreign key to anything — that is what lets one table hold copy for deals,
+  venues, campaigns and guidance articles — so no cascade reaches it, and a deal
+  deleted without the sweep leaves its title under an id nothing points at.
+  Removing a venue sweeps its own copy *and* that of every deal and campaign
+  about to cascade off it, before the delete, while there is still something to
+  ask which those were.
+- **A person is the exception, and the exception is the database's.**
+  `points_ledger.user_id` and `transactions.user_id` are `ON DELETE CASCADE`, so
+  dropping a customer who spent would take every venue's record of what they
+  spent with them — a third party's revenue history, deleted from a screen about
+  somebody else. So closing an account runs `consent.eraseUser` and then drops
+  the row **only when nothing is owed to it**; the response's `outcome` is
+  `deleted` or `anonymised`, because they are different facts.
+- **A venue takes its offers with it.** `deals.browse` selects on
+  `hot_deals.status` and never joins `venues`, so a venue that is gone whose
+  deals are still `live` would leave a claimable card on the board for a business
+  that no longer exists. Its offers, pushes, campaigns and tags cascade in the
+  same transaction, and the count of offers comes back in the answer.
+- **Resuming an offer clears `assertPublishable`** — the owner's own three gates,
+  passed to `deals.setStatus` as its guard. Being an operator is not an
+  exemption from the rule that decides what a customer may be shown. Pausing is
+  ungated, because taking something *down* never is.
+- **A gift card is deleted or delisted and the database decides which.**
+  `gift_cards.stock_id` is `ON DELETE RESTRICT`, so a brand somebody holds a
+  card from goes `active = 0` instead; the response says which happened.
+- **An operator cannot be acted on, including by themselves.** Banning or
+  erasing your own row revokes your own session inside the request that did it,
+  and there is no screen anywhere that undoes that.
+
+Erasure is `consent.eraseUser` rather than an operator's own copy of it, and
+that reuse is the whole decision: erasure is a long list of columns and a longer
+list of tables, and the version exercised twice a year is the one that quietly
+stops clearing a column somebody added. The password reset drops every session
+the account has open and the new password is **not** written to the audit entry
+— `audit_log` is a table an operator exports.
+

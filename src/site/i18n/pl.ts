@@ -110,36 +110,121 @@ export const pl: Dictionary = {
     search: 'Szukaj lokalu, ID usługi, oferty lub osoby…',
     noMatch: 'Nic nie pasuje do tego wyszukiwania.',
     kpis: [
-      'Wszystkie usługi',
-      'Aktywne usługi',
-      'Wszystkie oferty',
+      'Lokale',
+      'Aktywne lokale',
       'Aktywne oferty',
+      'Karty w magazynie',
       'Konta',
-      'Gracze',
     ],
     tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości'],
 
     services: {
       title: 'Usługi biznesowe',
-      lede: 'Każdy lokal na paylez. Otwórz jeden, aby zobaczyć jego analitykę.',
+      lede: 'Każdy lokal na serwerze. Otwórz jeden, aby zobaczyć, co jest o nim mierzone.',
       serviceId: 'ID usługi',
       copy: 'Kopiuj',
       copied: 'Skopiowano',
       analytics: 'Analityka',
       active: 'Aktywna',
       paused: 'Wstrzymana',
-      vouchers: 'Vouchery',
       live: 'Prawdziwa wizytówka',
+      none: {
+        title: 'Nie ma jeszcze lokali',
+        body: 'Lokal pojawia się tutaj, gdy właściciel wypełni wizytówkę. Zweryfikuj go w zakładce „Ludzie”, a jego oferty będą mogły wejść na antenę.',
+      },
     },
 
     deals: {
       title: 'Oferty i karty podarunkowe',
-      lede: 'Co aplikacja pokazuje w całym kraju w tym miesiącu.',
+      lede: 'Wszystkie oferty platformy i cała półka z kartami podarunkowymi — łącznie ze wstrzymanymi ofertami i szkicami, których katalog klienta pokazać nie może.',
       kinds: { gift: 'Karta podarunkowa', deal: 'Gorąca oferta' },
       until: 'Do {date}',
+      cost: '{n} pkt',
+      stock: '{n} w magazynie',
+      states: {
+        draft: 'Szkic',
+        scheduled: 'Zaplanowana',
+        live: 'Aktywna',
+        paused: 'Wstrzymana',
+        expired: 'Wygasła',
+      } as Record<string, string>,
+      untitled: 'Bez tytułu',
+      none: {
+        title: 'Nie ma jeszcze ofert',
+        body: 'Gorące oferty przychodzą od zweryfikowanych lokali; karty podarunkowe wystawia platforma.',
+      },
+    },
+
+    manage: {
+      working: 'Chwileczkę…',
+      cancel: 'Anuluj',
+      dismiss: 'Zamknij',
+      failed: 'To się nie udało.',
+
+
+      suspend: 'Zawieś',
+      restore: 'Przywróć',
+
+      pause: 'Wstrzymaj',
+      resume: 'Wznów',
+      cardRemoved: 'Zdjęte z półki.',
+      cardDelisted:
+        'Zdjęte z półki, ale wiersz zostaje: {n} takich kart już kupiono, a kody w tych portfelach muszą dalej wskazywać markę.',
+
+      ban: 'Zawieś',
+      letBackIn: 'Przywróć dostęp',
+      password: 'Hasło',
+      passwordFor: 'Ustaw hasło dla: {who}',
+      passwordBody:
+        'Może się nim zalogować od razu, a wszystkie urządzenia, na których jest zalogowany, zostaną wylogowane. Sposób pierwotnej rejestracji się nie zmienia.',
+      newPassword: 'Nowe hasło',
+      passwordHelp: 'Co najmniej {n} znaków. Przekaż je osobiście — nic tutaj nigdzie go nie wysyła.',
+      setPassword: 'Ustaw',
+      passwordSet: 'Hasło ustawione. Wszystkie sesje tego konta zostały wylogowane.',
+      operatorRow: 'Operator',
+      closedRow: 'Zamknięte',
+
+      edit: 'Edytuj',
+      editOn: 'Zakończ edycję',
+      editHint: 'Każdy wiersz można poprawić lub usunąć.',
+      editRow: 'Edytuj',
+      deleteRow: 'Usuń',
+      save: 'Zapisz',
+      saved: 'Zapisano.',
+
+      deleteTitle: 'Usunąć {what}?',
+      deleteVenue:
+        'Lokal i wszystko, co do niego należy — oferty, kampanie, budżety, tagi i wizyty — zostaną usunięte z bazy danych. Zawieszenie to wersja odwracalna.',
+      deleteDeal:
+        'Oferta oraz zebrane przez nią wyświetlenia i odbiory zostaną usunięte z bazy danych. Wstrzymanie to wersja odwracalna.',
+      deleteUser:
+        'Imię, adres i profil zostaną wymazane. Jeśli konto nigdy nic nie zarobiło ani nie wydało, zniknie też jego wiersz; jeśli zarobiło, zostanie jako anonimowe wiersze, bo rachunki lokalu muszą się dalej zgadzać.',
+      deleteCard: 'Marka znika z półki.',
+      deleteYes: 'Tak, usuń',
+      deleted: 'Usunięto: {what}.',
+      venueDeleted: 'Lokal usunięty. Zniknęło z nim {n} ofert.',
+      userDeleted: 'Konto zamknięte — nie został po nim żaden wiersz.',
+      userAnonymised:
+        'Konto zamknięte. Jego wiersze zostają, anonimowe, bo rachunki lokalu są z nich wyliczane.',
+
+      fields: {
+        name: 'Nazwa',
+        city: 'Miasto',
+        country: 'Kraj',
+        category: 'Kategoria',
+        address: 'Adres',
+        phone: 'Telefon',
+        email: 'E-mail',
+        title: 'Tytuł',
+        description: 'Opis',
+        terms: 'Warunki',
+        until: 'Trwa do',
+        occupation: 'Status',
+      },
     },
 
     people: {
+
       title: 'Ludzie',
       lede: 'Trzy konta wbudowane i wszyscy, którzy zarejestrowali się później.',
       columns: ['Imię i nazwisko', 'E-mail', 'Rola', 'Dołączenie', 'Stan'],
@@ -154,7 +239,7 @@ export const pl: Dictionary = {
       none: '—',
     },
 
-    note: 'Ta baza kont jest w tej przeglądarce. Nie ma jeszcze serwera, więc konsola czyta, a nie edytuje — zobacz auth/users.ts.',
+    note: 'Każda liczba w tej konsoli jest odczytana z serwera i nic tutaj nie jest wpisane z góry. To, co ten ekran może zmienić, może tylko zabrać albo oddać: lokal, ofertę, konto, hasło. Żadnej liczby, na którą ktoś się powołuje, nie da się stąd edytować, a każde naciśnięcie trafia do dziennika audytu z Twoim nazwiskiem.',
 
     /* ── czwarta zakładka: sama witryna, jedyna pytająca serwer ── */
     database: {
@@ -163,7 +248,7 @@ export const pl: Dictionary = {
       switch: 'Którą tabelę pokazać',
       counts: { users: 'aktywne konta', venues: 'aktywne lokale', issued: 'przyznane punkty' },
       tables: { users: 'Ludzie', venues: 'Lokale' },
-      userColumns: ['Imię i nazwisko', 'E-mail', 'Rejestracja przez', 'Miasto', 'Punkty', 'Status', 'Dołączył'],
+      userColumns: ['Imię i nazwisko', 'E-mail', 'Rejestracja przez', 'Miasto', 'Punkty', 'Status', 'Dołączył', 'Działania'],
       venueColumns: ['Lokal', 'Miasto', 'Kategoria', 'Właściciel', 'Wizyty', 'Zweryfikowany'],
       review: {
         title: 'Czeka na Ciebie',
@@ -176,7 +261,7 @@ export const pl: Dictionary = {
       unverified: 'Jeszcze nie',
       noUsers: 'Nikt się jeszcze nie zarejestrował.',
       noVenues: 'Brak lokali.',
-      note: 'Pokazano {n} kont. Ten ekran czyta; nigdy nie edytuje cudzego konta.',
+      note: 'Pokazano {n} kont. Zawieszenie konta, jego zamknięcie i ustawienie hasła trafiają do dziennika audytu z Twoim nazwiskiem — a własnego wiersza operatora nie da się stąd zmienić w ogóle.',
     },
     messages: {
       title: 'Co napisali ludzie',
@@ -273,8 +358,6 @@ export const pl: Dictionary = {
         noSource: 'Nie mierzone — nic, co operator mógłby odczytać, jeszcze tego nie raportuje.',
         measured:
           'Wizyty i klienci są liczone, z GET /v1/admin/venues. Wszystko inne na tym ekranie należy do partnera albo nie jest zbierane i pokazujemy to jako „nie mierzone”, a nie jako zero.',
-        notConnected:
-          'Backend nie odpowiada, więc nawet liczby wizyt i klientów nie da się odczytać. To nie jest zero — nie udało się zapytać.',
       },
 
       states: { live: 'Aktywna', paused: 'Wstrzymana' },
@@ -404,28 +487,42 @@ export const pl: Dictionary = {
     lede: 'Wszystko, co zdobyłeś, i wszystko, co wydałeś.',
     balance: 'Saldo',
     points: 'pkt',
-    shortBy: 'Do kolejnego vouchera brakuje {n} punktów',
-    canRedeem: 'Wystarczy na voucher',
+    shortBy: 'Do kolejnej karty podarunkowej brakuje {n} punktów',
+    canRedeem: 'Wystarczy na kartę podarunkową',
+    noShelf: 'Na półce nie ma jeszcze nic — punkty nigdzie nie znikną.',
+
+    loading: 'Pytamy serwer…',
+
+    down: {
+      unreachable: 'Nie udało się połączyć z serwerem, więc to nie jest „nic” — to „nie udało się zapytać”. Spróbuj za chwilę.',
+      refused: 'Serwer odpowiedział, ale odrzucił żądanie. Zwykle pomaga ponowne zalogowanie.',
+      retry: 'Spróbuj ponownie',
+    },
 
     tabs: ['Aktywne', 'Wykorzystane'],
-    counts: '{active} aktywnych · {used} wykorzystanych',
 
     valid: 'Ważny do {date}',
-    usedOn: 'Wykorzystany {date}',
     cost: '{n} pkt',
-    show: 'Pokaż kod QR',
-    shown: 'Voucher przechodzi do „Wykorzystanych” w chwili wygenerowania kodu — zrób to przy kasie.',
 
     emptyActive: 'Nic tu jeszcze nie ma. Zagraj rundę i wydaj punkty tutaj.',
     emptyUsed: 'Nic jeszcze nie wykorzystano.',
     play: 'Zagraj rundę',
 
+    voucherTitle: 'Voucher rabatowy',
+    noVouchers: 'Nie masz jeszcze voucherów. Wydaje je lokal, gdy wydasz tam punkty.',
+
     catalogue: 'Co możesz dostać',
-    catalogueLede: 'Odświeżane co miesiąc. Każda karta ma ograniczoną pulę.',
+    catalogueLede: 'Karty podarunkowe za punkty. Tutaj jest to, co platforma faktycznie ma w magazynie.',
     redeem: 'Odbierz',
     short: 'Za mało punktów',
-    soldOut: 'Wraca 1. dnia miesiąca',
-    left: 'zostało {left} z {of}',
+    soldOut: 'Brak w magazynie',
+    left: 'zostało {n}',
+    buying: 'Kupujemy…',
+    buyFailed: 'Nie udało się i nic nie zostało pobrane. Spróbuj ponownie.',
+    priorityOnly: 'Tylko w planie płatnym',
+    noShelfYet: 'Nie ma jeszcze kart podarunkowych. Punkty zostają — lista wypełni się, gdy dołączą marki.',
+
+    atCounter: 'Kod odczytuje się przy kasie. Nic tutaj nie jest wydane, dopóki ktoś go nie zeskanuje.',
 
     stamps: {
       title: 'Karty pieczątek',
@@ -436,56 +533,34 @@ export const pl: Dictionary = {
       goingOne: 'Jeszcze jedna wizyta do {reward}',
       full: 'Komplet — {reward} czeka przy kasie',
       cycles: 'Wypełniona {n}× wcześniej',
-      none: 'Nie masz jeszcze kart. Pierwsza zaczyna się przy pierwszej wizycie w lokalu z kartą.',
-      noneHere: 'Brak kart pieczątek w kategorii {category}.',
-      visit: 'Dodaj wizytę',
+      none: 'Nie masz jeszcze kart pieczątek. Pierwsza zaczyna się przy pierwszej zeskanowanej wizycie w lokalu z kartą.',
     },
 
     deals: {
       title: 'Gorące oferty',
-      lede: 'Oferty w pobliżu. Większość nie kosztuje nic — płaci za nie lokal.',
+      lede: 'Oferty lokali w pobliżu. Większość nie kosztuje nic — płaci za nie lokal.',
 
       all: 'Wszystkie',
-      categories: ['Kawa', 'Jedzenie', 'Piekarnia', 'Usługi', 'Uroda'],
       filter: 'Filtruj według kategorii',
-      noneHere: 'W kategorii {category} nie ma jeszcze nic w pobliżu.',
+      noneHere: 'W kategorii {category} nie ma teraz nic.',
       showAll: 'Pokaż wszystkie oferty',
+      noneAtAll: 'Nie ma jeszcze aktywnych ofert. Pojawią się, gdy lokale dołączą i je opublikują.',
 
-      openNow: 'Otwarte teraz',
-      closedNow: 'Zamknięte teraz',
-      held: 'W Twoim portfelu',
-
-      everyDay: 'Codziennie, {hours}',
       until: 'Do {date}',
-      reviews: '{n} opinii',
-
       free: 'Za darmo',
-      claim: 'Odbierz',
       shortBy: 'Brakuje jeszcze {n} punktów',
-      claimed: 'Odebrano {date}',
-      justClaimed: 'Odebrano — pokaż ten kod przy kasie',
       code: 'Twój kod',
 
-      offers: [
-        'Dwie kawy, a trzecia na koszt lokalu.',
-        'Dziesięć procent zniżki na całe zamówienie, przez cały dzień.',
-        'Dwadzieścia procent zniżki na wszystko na ladzie.',
-        'Kup trzy bochenki, a czwarty dostaniesz za darmo.',
-        'Piętnaście procent zniżki na lunch w każdym stoisku w hali.',
-        'Dwa dania, a trzecie na koszt lokalu.',
-        'Darmowa kawa przelewowa do każdej kupionej książki.',
-        'Piętnaście procent zniżki na strzyżenie i podcięcie brody.',
-        'Dwadzieścia pięć procent zniżki na pierwszy zabieg.',
-      ],
-
-      none: 'Nic jeszcze nie odebrano.',
+      howToClaim: 'Jak odebrać',
+      hideTerms: 'Zamknij',
+      claimAtCounter: 'Pokaż ofertę przy kasie, a lokal ją zeskanuje. To właśnie ten skan jest odebraniem — żadna strona internetowa go nie zastąpi.',
     },
 
     redeemed: {
       title: 'Odebrane',
-      lede: 'To, co już odebrałeś. Pokaż kod przy kasie — każdy działa tylko raz.',
-      dealsTitle: 'Odebrane gorące oferty',
-      dealsLede: 'Twoje aż do końca oferty. Lokal odczytuje kod przy kasie.',
+      lede: 'To, co już wziąłeś. Pokaż kod przy kasie — każdy działa tylko raz.',
+      vouchersTitle: 'Vouchery rabatowe',
+      vouchersLede: 'Punkty wydane w jednym lokalu. Lokal odczytuje kod przy kasie.',
     },
 
     giftsTitle: 'Karty podarunkowe',
@@ -542,6 +617,10 @@ export const pl: Dictionary = {
     start: 'Zacznij grę',
     play: 'Zagraj',
     noEnergy: 'Koniec energii',
+    practice: 'Trening',
+    practiceFree: 'Dopóki energia się odnawia, rundy są za darmo — po prostu nie dają punktów.',
+    practiceRound: 'Runda treningowa — bez punktów',
+    practiceResult: 'Runda treningowa — nic nie zapisano. Kolejna energia znów płaci.',
     energyFull: 'Pełna — nie ma na co czekać',
     energyNext: '+1 za {time}',
     energyCost: '1 na rundę',
@@ -1414,7 +1493,6 @@ export const pl: Dictionary = {
       first: 'Pierwsza wizyta',
       again: 'Wrócił',
       today: 'Dziś',
-      places: ['Bratysławska 6', 'Bratysławska 6', 'Kiosk Kleparz'],
       noCampaign: 'Żadna kampania nie działa',
       progress: '{done}/{need} skanowań',
       toGo: 'jeszcze {n}',
@@ -1910,12 +1988,12 @@ export const pl: Dictionary = {
     title: 'Twoje punkty to prawdziwe pieniądze.',
     lede: 'Żadnych sztuczek. Graj, zbieraj punkty i wymieniaj je na karty podarunkowe oraz rabaty, z których naprawdę skorzystasz.',
     card: {
-      merchant: 'Karta podarunkowa Zalando',
-      meta: 'Sklep partnerski · wartość {amount}',
+      merchant: 'Partnerska karta podarunkowa',
+      meta: 'Wydawana jak pieniądze w sklepie',
       title: 'Wymień punkty na prawdziwy voucher.',
-      price: '500 pkt',
-      revealed: 'Voucher gotowy · PLZ-9F3K',
-      action: 'Wymień 100 punktów',
+      price: 'Punkty',
+      revealed: 'Voucher gotowy',
+      action: 'Wymień punkty',
     },
     benefits: [
       {
@@ -1978,7 +2056,7 @@ export const pl: Dictionary = {
       lede: 'Kilka szybkich pytań dziennie. Punkty, które zamieniają się w vouchery w sklepach, z których i tak korzystasz.',
       primary: 'Zacznij grać',
       secondary: 'Zobacz gry',
-      stats: ['Najlepsza runda', 'Daje zamrożenie', 'Wystarczy na voucher'],
+      stats: ['Najlepsza runda', 'Daje zamrożenie'],
     },
 
     steps: {
@@ -2059,7 +2137,7 @@ export const pl: Dictionary = {
         },
         {
           q: 'Ile naprawdę wart jest voucher?',
-          a: 'To zależy od rodzaju vouchera i od tego, co zdecyduje partner. Karta podarunkowa od samego paylez — na przykład do Zalando czy Zary — kosztuje 100 punktów z gry i jest warta {amount}.',
+          a: 'To zależy od vouchera i od tego, co zdecyduje partner. Karty podarunkowe wyceniane są w punktach i każda na półce pokazuje, ile kosztuje i ile jest warta — strona „Vouchery” wypisuje to, co jest w magazynie teraz.',
         },
         {
           q: 'W jakich językach są pytania?',
@@ -2506,15 +2584,16 @@ export const pl: Dictionary = {
 
     wallet: {
       title: 'Twoje vouchery',
-      counts: '{active} aktywne · {used} wykorzystane',
+      example: 'Przykład',
       tabs: { active: 'Aktywne', used: 'Wykorzystane' },
       note: 'Voucher liczy się jako wykorzystany w chwili wygenerowania kodu QR — generuj go przy kasie, a nie w tramwaju.',
       card: {
-        meta: 'Sklep partnerski · wartość {amount}',
+        brand: 'Sklep partnerski',
+        meta: 'Karta podarunkowa, wydawana jak pieniądze',
         cost: '500 pkt',
         action: 'Pokaż kod QR',
         code: 'PLZ-9F3K',
-        expires: 'Ważny do 31.08',
+        expires: 'Ważny do daty na karcie',
       },
     },
 
@@ -2545,12 +2624,16 @@ export const pl: Dictionary = {
     catalogue: {
       eyebrow: 'Co jest w portfelu',
       title: 'Karty podarunkowe do sklepów, do których i tak się wybierałeś.',
-      lede: 'Lista odświeża się co miesiąc, a każda karta ma ograniczoną pulę — kiedy miesięczna pula się skończy, wraca pierwszego.',
+      lede: 'Czytane z platformy na żywo. Tutaj jest to, co naprawdę jest w magazynie, w cenie, za jaką kupują to punkty.',
       cost: 'pkt',
-      left: 'zostało {left} z {of}',
+      left: 'zostało {n}',
       everywhere: 'Każdy sklep · także online',
-      soldOut: 'Wraca pierwszego',
+      soldOut: 'Brak w magazynie',
       action: 'Zobacz pełną listę',
+      loading: 'Pytamy serwer…',
+      none: 'Nie ma jeszcze kart podarunkowych. Punkty zostają — lista wypełni się, gdy dołączą marki.',
+      down: 'Nie udało się połączyć z serwerem, więc to nie jest pusty katalog, tylko katalog, którego nie udało się odczytać.',
+      retry: 'Spróbuj ponownie',
     },
 
     rules: {
@@ -2931,6 +3014,10 @@ export const pl: Dictionary = {
     unlimited: 'Bez limitu',
     included: 'W pakiecie',
     notIncluded: 'Poza pakietem',
+    get: 'Wybierz {plan}',
+    current: 'Twój plan',
+    opening: 'Otwieram…',
+    failed: 'Strona płatności się nie otworzyła. Spróbuj ponownie.',
     badges: ['Gwiazdka', 'Korona'],
     heroRows: ['Energia dziennie', 'Odnowa, godziny', 'Punkty za rundę'],
     more: 'Wszystko inne',

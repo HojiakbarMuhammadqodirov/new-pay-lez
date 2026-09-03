@@ -26,9 +26,9 @@ export interface AuditInput {
   at?: Iso;
 }
 
-export function record(db: Db, input: AuditInput): string {
+export async function record(db: Db, input: AuditInput): Promise<string> {
   const id = newId('aud');
-  db.run(
+  await db.run(
     `INSERT INTO audit_log
        (id, actor_id, actor_role, action, entity, entity_id, venue_id, before, after, ip, created_at)
      VALUES ($i, $a, $r, $ac, $e, $ei, $v, $b, $af, $ip, $t)`,
@@ -49,22 +49,22 @@ export function record(db: Db, input: AuditInput): string {
   return id;
 }
 
-export const forEntity = (db: Db, entity: string, entityId: string, limit = 50) =>
-  db.all(
+export const forEntity = async (db: Db, entity: string, entityId: string, limit = 50) =>
+  await db.all(
     `SELECT id, actor_id, actor_role, action, before, after, created_at FROM audit_log
       WHERE entity = $e AND entity_id = $i ORDER BY created_at DESC LIMIT $l`,
     { e: entity, i: entityId, l: limit },
   );
 
-export const forVenue = (db: Db, venueId: string, limit = 100) =>
-  db.all(
+export const forVenue = async (db: Db, venueId: string, limit = 100) =>
+  await db.all(
     `SELECT id, actor_id, action, entity, entity_id, created_at FROM audit_log
       WHERE venue_id = $v ORDER BY created_at DESC LIMIT $l`,
     { v: venueId, l: limit },
   );
 
-export const recent = (db: Db, limit = 200) =>
-  db.all(
+export const recent = async (db: Db, limit = 200) =>
+  await db.all(
     `SELECT id, actor_id, actor_role, action, entity, entity_id, venue_id, created_at
        FROM audit_log ORDER BY created_at DESC LIMIT $l`,
     { l: limit },

@@ -1,15 +1,13 @@
-import { useState, type CSSProperties } from 'react';
-import {
-  VOUCHER_CARDS,
-  VOUCHER_RULE_ICONS,
-  VOUCHER_STATS,
-  VOUCHER_STEP_ICONS,
-  VOUCHER_WALLET,
-} from './content';
+import { useState } from 'react';
+import { VOUCHER_RULE_ICONS, VOUCHER_STEP_ICONS } from './content';
 import { Icon } from './icons';
-import { useCopy, useMoney, useMoneyParts } from './i18n/context';
-import { fill } from './i18n/currency';
+import { useCopy, useLanguage, useMoneyParts } from './i18n/context';
+import { CURRENCIES, fill } from './i18n/currency';
+import { initialOf } from './adminMetrics';
+import { useApi } from './api/useApi';
+import { cheapestCost, faceValue, GIFT_CARDS_PATH, type GiftCardStock } from './api/wallet';
 import { PATHS } from './router';
+import { useCountUp } from './useReveal';
 
 /**
  * Vouchers — the fifth page.
@@ -40,10 +38,18 @@ import { PATHS } from './router';
  * rather than a picture of a tab strip: the whole argument of the section is
  * that a spent voucher does not vanish — it moves — and the only way to show
  * "moves" is to let someone move it.
+ *
+ * **It is an illustration, and everything on it is copy.** It used to carry
+ * "3 active · 11 used" and a face value read off the catalogue in `content.ts`,
+ * which made it a claim about stock: a wallet somebody had, holding a card the
+ * shelf sold. It holds neither now. The counts are gone — the picture makes its
+ * point without them — and the brand, the price and the code are the
+ * dictionary's, in the reader's own language, the way every other caption on a
+ * marketing page is. The **real** catalogue is `VouchersCatalogue` below, and it
+ * asks the server.
  */
 function Wallet() {
   const copy = useCopy();
-  const money = useMoney();
   const [tab, setTab] = useState<'active' | 'used'>('active');
   const wallet = copy.vouchers.wallet;
   const spent = tab === 'used';
@@ -53,12 +59,7 @@ function Wallet() {
       <div className="wallet-head">
         <div>
           <b>{wallet.title}</b>
-          <span>
-            {fill(wallet.counts, {
-              active: String(VOUCHER_WALLET.active),
-              used: String(VOUCHER_WALLET.used),
-            })}
-          </span>
+          <span>{wallet.example}</span>
         </div>
         <span className="wallet-mark" aria-hidden>
           <Icon name="ticket" size={16} />
@@ -73,7 +74,7 @@ function Wallet() {
           data-on={!spent ? 'true' : undefined}
           onClick={() => setTab('active')}
         >
-          {wallet.tabs.active} ({VOUCHER_WALLET.active})
+          {wallet.tabs.active}
         </button>
         <button
           type="button"
@@ -82,7 +83,7 @@ function Wallet() {
           data-on={spent ? 'true' : undefined}
           onClick={() => setTab('used')}
         >
-          {wallet.tabs.used} ({VOUCHER_WALLET.used})
+          {wallet.tabs.used}
         </button>
       </div>
 
@@ -91,16 +92,12 @@ function Wallet() {
           say it was a different thing. */}
       <div className="vcard" data-spent={spent ? 'true' : undefined}>
         <span className="pv-logo" aria-hidden>
-          {VOUCHER_WALLET.card.logo}
+          {initialOf(wallet.card.brand)}
         </span>
 
         <div className="vcard-main">
-          <b>{VOUCHER_WALLET.card.brand}</b>
-          {/* The face value is the catalogue row's, not a literal. `€25` used
-              to sit here and the catalogue at the bottom of this same page
-              charges 500 points for that card — one page quoting one voucher at
-              two prices is what the `eur` column in `content.ts` closes. */}
-          <span>{fill(wallet.card.meta, { amount: money(VOUCHER_WALLET.card.eur) })}</span>
+          <b>{wallet.card.brand}</b>
+          <span>{wallet.card.meta}</span>
         </div>
 
         {/* The perforation. It is the one place on the site where a dashed
@@ -137,9 +134,28 @@ function Wallet() {
 
 /* ─────────────────────────────────────────────────────────────────── hero ── */
 
-function VouchersHero() {
+/**
+ * The three figures under the hero, and two of them are counted off the shelf.
+ *
+ * They used to be `VOUCHER_STATS` — "8 partner brands", "from 100 points" — two
+ * claims about a catalogue written in `content.ts`. Both are now `null` until
+ * `GET /v1/gift-cards` answers, and `null` draws an em dash rather than a zero
+ * counting up: "we have not been told" and "there are none" are different, and
+ * a hero stat is exactly where somebody would believe the wrong one.
+ *
+ * The third has no shelf behind it and never had: **redeeming costs no money**
+ * is a property of the product, so it is a real zero and keeps its currency
+ * symbol.
+ */
+function VouchersHero({ shelf }: { shelf: GiftCardStock[] | null }) {
   const copy = useCopy();
   const moneyParts = useMoneyParts();
+
+  const stats: Array<{ value: number | null; suffix: string; money?: true }> = [
+    { value: shelf ? shelf.length : null, suffix: '' },
+    { value: shelf ? cheapestCost(shelf) : null, suffix: ' pts' },
+    { value: 0, suffix: '', money: true },
+  ];
 
   return (
     <section className="hero business-hero" id="vouchers-top">
@@ -181,10 +197,10 @@ function VouchersHero() {
           </div>
 
           <div className="hero-meta" data-reveal>
-            {VOUCHER_STATS.map((stat, i) => {
+            {stats.map((stat, i) => {
               // The last stat is a price — zero, but a price — so it carries the
               // reader's currency symbol rather than a hardcoded one.
-              const parts = stat.money ? moneyParts(stat.value, 'exact') : null;
+              const parts = stat.money && stat.value !== null ? moneyParts(stat.value, 'exact') : null;
 
               return (
                 <div className="hero-stat-row" key={copy.vouchers.hero.stats[i]}>
@@ -196,14 +212,18 @@ function VouchersHero() {
                         euro amount under a £ — masked here only because this
                         one happens to be zero. `DashTiles` in `business.tsx` is the
                         same line. */}
-                    <b
-                      data-count={parts ? parts.value : stat.value}
-                      data-prefix={parts?.prefix}
-                      data-suffix={parts ? parts.suffix : stat.suffix}
-                      data-group={parts?.group}
-                    >
-                      0
-                    </b>
+                    {stat.value === null ? (
+                      <b>—</b>
+                    ) : (
+                      <b
+                        data-count={parts ? parts.value : stat.value}
+                        data-prefix={parts?.prefix}
+                        data-suffix={parts ? parts.suffix : stat.suffix}
+                        data-group={parts?.group}
+                      >
+                        0
+                      </b>
+                    )}
                     <span>{copy.vouchers.hero.stats[i]}</span>
                   </div>
                 </div>
@@ -261,20 +281,39 @@ function VouchersSteps() {
 /**
  * What is in the wallet this month.
  *
- * Every card shows its allocation, and one of them is nearly gone. A catalogue
- * where everything is always available is a catalogue nobody opens on the first
- * of the month, and the scarcity is a real property of the product rather than a
- * decoration on it.
+ * **The real shelf, on a marketing page.** It was eight brands in `content.ts`,
+ * each with a points price, a face value and a "3 of 10 left" allocation, and
+ * every one of those numbers was written by hand. `GET /v1/gift-cards` is
+ * public — a visitor deciding whether to sign up should be able to look in the
+ * shop window before earning anything — so this reads the same rows the
+ * signed-in wallet buys from, and the two cannot disagree about a price.
+ *
+ * The stock **bar** did not survive with it: the old rows carried `left` *and*
+ * `of`, so a share could be drawn; `gift_card_stock` carries only `stock`, and
+ * a bar needs a denominator that would have to be invented. The count is
+ * printed instead.
+ *
+ * Two states rather than one. An empty shelf is the ordinary state of a new
+ * market and says so; a request that did not come back says *that*, because a
+ * catalogue that renders "nothing available" when the server is down has told a
+ * visitor the product is empty.
  */
 /* Nothing on `#/vouchers` reports an impression, and the reason is the same for
    every card on it: this page has no venue and no deal to report *about*. The
-   wallet above is a mock of somebody else's holdings, and the catalogue below is
-   gift-card stock at a brand — neither has a venue whose funnel an impression
-   would belong to, and the ids in `content.ts` are the site's own. See
-   `api/reach.ts`; a fabricated id is a 404 at best and another venue's numbers
-   at worst. */
-function VouchersCatalogue() {
+   wallet above is an illustration, and the catalogue below is gift-card stock
+   at a brand — neither has a venue whose funnel an impression would belong to.
+   See `api/reach.ts`. */
+function VouchersCatalogue({
+  shelf,
+  down,
+  onRetry,
+}: {
+  shelf: GiftCardStock[] | null;
+  down: boolean;
+  onRetry: () => void;
+}) {
   const copy = useCopy();
+  const [language] = useLanguage();
   const catalogue = copy.vouchers.catalogue;
 
   return (
@@ -286,34 +325,50 @@ function VouchersCatalogue() {
           <p>{catalogue.lede}</p>
         </div>
 
-        <div className="gifts">
-          {VOUCHER_CARDS.map((card) => (
-            <article className="gift" key={card.brand} data-reveal>
-              <div className="gift-top">
-                <span className="pv-logo" aria-hidden>
-                  {card.logo}
-                </span>
-                {/* The stock bar is the row's own meter: a number alone ("3 of
-                    10") is read as text, and the same number as a length is
-                    read before it is read. */}
-                <span className="gift-stock">
-                  {fill(catalogue.left, {
-                    left: String(card.left),
-                    of: String(card.of),
-                  })}
-                  <i style={{ '--share': `${(card.left / card.of) * 100}%` } as CSSProperties} />
-                </span>
-              </div>
+        {down ? (
+          <div className="console wal-empty" data-reveal>
+            <p>{catalogue.down}</p>
+            <button type="button" className="btn btn-ghost" onClick={onRetry}>
+              {catalogue.retry}
+            </button>
+          </div>
+        ) : shelf === null ? (
+          <p className="adm-empty">{catalogue.loading}</p>
+        ) : shelf.length === 0 ? (
+          <div className="console wal-empty" data-reveal>
+            <p>{catalogue.none}</p>
+          </div>
+        ) : (
+          <div className="gifts">
+            {shelf.map((card) => (
+              <article className="gift" key={card.id} data-reveal>
+                <div className="gift-top">
+                  <span className="pv-logo" aria-hidden>
+                    {card.logo || initialOf(card.brand)}
+                  </span>
+                  <span className="gift-left">
+                    {card.stock <= 0
+                      ? catalogue.soldOut
+                      : fill(catalogue.left, { n: String(card.stock) })}
+                  </span>
+                </div>
 
-              <b className="gift-brand">{card.brand}</b>
-              <span className="gift-where">{catalogue.everywhere}</span>
+                <b className="gift-brand">{card.brand}</b>
+                {/* The face value in the card's own currency, not the reader's:
+                    it is a thing on a shelf. See `faceValue` in `api/wallet.ts`;
+                    it is the one money rule on this site that runs the other
+                    way. */}
+                <span className="gift-where">
+                  {faceValue(card, CURRENCIES[language].group)} · {catalogue.everywhere}
+                </span>
 
-              <span className="gift-cost">
-                <b>{card.points}</b> {catalogue.cost}
-              </span>
-            </article>
-          ))}
-        </div>
+                <span className="gift-cost">
+                  <b>{card.points_cost}</b> {catalogue.cost}
+                </span>
+              </article>
+            ))}
+          </div>
+        )}
 
         <div className="dash-cta" data-reveal>
           <a href={PATHS.learn} className="btn btn-ghost btn-lg">
@@ -449,13 +504,39 @@ function VouchersCta() {
   );
 }
 
-/** The page, in order. */
+/**
+ * The page, in order.
+ *
+ * The shelf is fetched **once, here**, and handed to the two sections that need
+ * it: the hero counts it and the catalogue lists it. Two `useApi` calls for one
+ * endpoint would be two requests that can land at different times and disagree
+ * on the same screen — the hero saying eight brands over a grid showing none.
+ */
 export function VouchersPage() {
+  const shelf = useApi<GiftCardStock[]>(GIFT_CARDS_PATH);
+  const rows = shelf.state.status === 'ready' ? shelf.state.data : null;
+
+  /*
+   * A second count-up scan, keyed on the answer landing.
+   *
+   * `Site` scans once per route, and that scan happens before this request
+   * comes back. `useCountUp` writes digits into `textContent` imperatively and
+   * only when its key changes, so the two shelf-derived hero stats would render
+   * with a `data-count` nobody ever read and sit on the literal `0` inside the
+   * tag — a measured-looking zero over a shelf that has cards on it. The key
+   * changes exactly once, when the shelf resolves.
+   */
+  useCountUp(`shelf:${shelf.state.status}:${rows?.length ?? 0}`);
+
   return (
     <main>
-      <VouchersHero />
+      <VouchersHero shelf={rows} />
       <VouchersSteps />
-      <VouchersCatalogue />
+      <VouchersCatalogue
+        shelf={rows}
+        down={shelf.state.status === 'error'}
+        onRetry={shelf.reload}
+      />
       <VouchersRules />
       <VouchersFaq />
       <VouchersCta />

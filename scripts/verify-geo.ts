@@ -36,6 +36,7 @@ import { draw, shuffledRange } from '../src/site/games/bag';
 import {
   LOCAL_COUNTRIES,
   QUIZ_BANK_FOR_COUNTRY,
+  flagGlyph,
   flagOf,
   quizBankFor,
   quizCountryFor,
@@ -68,59 +69,48 @@ import {
   type UserRecord,
 } from '../src/site/auth/users';
 import {
-  activeVouchers,
   awardFlight,
   awardRound,
   bankableGaps,
   canAfford,
-  claimDeal,
-  dealsOf,
-  filterByCategory,
   flightAward,
   flightPoints,
   freezesOf,
-  inCategory,
-  isCardFull,
-  markUsed,
   MAX_FLIGHT_POINTS,
   MAX_FREEZES,
   MAX_ENERGY,
   memoryPoints,
   quizAward,
   quizSpeedBonus,
-  openDeals,
-  openNow,
-  redeem,
   ENERGY_REGEN_MINUTES,
   energyOf,
   newPlayer as freshPlayer,
-  seedPlayer,
   streakWeek,
-  today,
-  stampsLeft,
-  stampsOf,
-  stampVisit,
-  usedVouchers,
   wordPoints,
   wordRoundPoints,
   type PlayerState,
-  type StampCard,
 } from '../src/site/auth/player';
-import { toAccount } from '../src/site/auth/directory';
+import { RETIRED_IDS, toAccount } from '../src/site/auth/directory';
 import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, speedAt, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
 import {
-  DEAL_CATEGORIES,
+  BUSINESS_CATEGORIES,
   GAMES,
+  LEARN_STATS,
   PREVIEW,
   SUB_BADGE_ROW,
   SUB_HERO,
   SUB_PLANS,
   SUB_ROWS,
-  WALLET_DEALS,
-  type HotDeal,
 } from '../src/site/content';
+import {
+  cheapestCost,
+  dealsPath,
+  faceValue,
+  nextRung,
+  type GiftCardStock,
+} from '../src/site/api/wallet';
 /* The source dictionary, read for its *shapes* rather than its words: the
    dashboard's arrays are index-aligned with the seeds below, and a stale index
    renders `undefined` instead of throwing. */
@@ -167,6 +157,8 @@ import {
   serviceMetricsFrom,
   toCsv,
   voucherRowsFor,
+  categoryLabel,
+  initialOf,
 } from '../src/site/adminMetrics';
 import { Vector3 } from 'three';
 
@@ -891,8 +883,17 @@ console.log('\nthe profile');
 
   /* ── the handle ─────────────────────────────────────────────────────── */
 
+  /* Two rows built here rather than taken off `SEED_USERS`, which is empty:
+     what `checkUsername` needs is a directory with a handle already in it, and
+     the seeds it used to borrow were an account with a password in the bundle.
+     A fixture is the honest way to get one. */
   const directory: UserRecord[] = [
-    { ...SEED_USERS[2] },
+    {
+      id: 'u_me', name: 'A', email: 'a@a.c', password: 'x', created: '2026-01-01',
+      type: 'individual', business: null, player: null,
+      profile: { ...EMPTY_PROFILE, username: 'dilnoza' },
+      onboardedAt: '2026-01-01',
+    },
     {
       id: 'u_other', name: 'B', email: 'b@b.c', password: 'x', created: '2026-01-01',
       type: 'individual', business: null, player: null,
@@ -1015,14 +1016,15 @@ console.log('\nthe profile');
   check('…and a stored value outside them is not one', !isOccupation('headline'));
   check('…while each of the five is', OCCUPATIONS.every(isOccupation));
 
-  /* The seeded player is furnished for the same reason her wallet is, and she
-     is the account somebody signs in as to look at these screens. */
-  const seeded = SEED_USERS.find((user) => user.type === 'individual');
-  check('the seeded player has a profile', Boolean(seeded?.profile?.username));
-  check('…and has been through onboarding', seeded?.onboardedAt !== null);
+  /* There was a furnished seed here — a profile, an onboarding stamp and one
+     birthday correction already spent — and three checks that it stayed
+     furnished. It is gone, and what replaces it is the property that made it
+     go: a profile is something a person fills in, so the only profile the
+     bundle may contain is the blank one. */
+  check('nothing ships with a profile filled in', SEED_USERS.length === 0);
   check(
-    '…with one birthday correction spent',
-    seeded?.profile?.birthDateChangesLeft === BIRTH_DATE_WRITES - 1,
+    '…and a blank one has both birthday writes unspent',
+    EMPTY_PROFILE.birthDateChangesLeft === BIRTH_DATE_WRITES,
   );
 
   /* A brand-new account is the one case where `null` is *known* rather than
@@ -1142,6 +1144,22 @@ console.log('\nquestions — the flag glyphs');
   check('uz becomes its flag', flagOf('uz') === '🇺🇿', flagOf('uz'));
   check('case does not matter', flagOf('GB') === flagOf('gb'));
   check('a code that is not two letters yields nothing', flagOf('') === '' && flagOf('pol') === '');
+
+  /*
+   * `flagGlyph` is the same conversion applied to a *prompt*, and it exists
+   * because the server's flags bank stores the ISO code and derives the emoji
+   * beside it — "storing the emoji as the prompt would put a rendering decision
+   * in the database", which is right, and makes the conversion the client's job.
+   * It was not being done: a signed-in flag round asked "which country is UZ?",
+   * with the answer written on the front of the card.
+   *
+   * The pass-through half is not decoration. `flagOf` returns `''` for anything
+   * that is not two characters, so a server that ever sent the emoji would draw
+   * a blank question rather than a wrong one — which is the worse of the two.
+   */
+  check('a prompt that is an ISO code becomes the flag', flagGlyph('UZ') === flagOf('uz'));
+  check('…and one that is already a flag is left alone', flagGlyph('🇺🇿') === '🇺🇿');
+  check('…as is anything else a prompt might be', flagGlyph('Which country?') === 'Which country?');
 }
 
 console.log('\nbusiness listing');
@@ -1183,265 +1201,174 @@ console.log('\nbusiness listing');
   );
 }
 
-console.log('\nthe wallet');
+console.log('\nthe wallet reads the server');
 {
-  const seeded = seedPlayer();
-
   /*
-   * A stamp card rolls over; it does not overflow.
+   * ── what this block used to check, and why it does not any more ──
    *
-   * This is the rule that decides what the number on the card *means*. The
-   * eleventh visit to a ten-visit card is the first stamp of the next card, not
-   * an eleventh stamp on a card that cannot hold one — and `cycles` is what
-   * keeps that from losing anything, because "0 of 6, filled twice before" and
-   * "0 of 6" are different cards in front of different people.
-   */
-  const nearly = stampsOf(seeded).find((card) => stampsLeft(card) === 1);
-  check('a card exists that is one visit from full', Boolean(nearly));
-  const rolled = stampVisit(seeded, nearly!.id);
-  const after = stampsOf(rolled).find((card) => card.id === nearly!.id)!;
-  check('the last stamp rolls the card over', after.stamps === 0, `${after.stamps} stamps`);
-  check('…and the fill is counted', after.cycles === nearly!.cycles + 1);
-  check('…so nothing is lost by it', after.required === nearly!.required);
-
-  const midway = stampsOf(seeded).find((card) => card.stamps > 0 && stampsLeft(card) > 1)!;
-  const stamped = stampsOf(stampVisit(seeded, midway.id)).find((c) => c.id === midway.id)!;
-  check('an ordinary visit just adds one', stamped.stamps === midway.stamps + 1);
-  check('a full card reads as full', isCardFull({ ...midway, stamps: midway.required }));
-  check('and stamps left never goes negative', stampsLeft({ ...midway, stamps: 99 }) === 0);
-
-  /* A stamp is not a point, and adding one must not move the balance. That is
-     the whole of what "visits are not points" means in code. */
-  check('a visit does not touch the balance', stampVisit(seeded, midway.id).points === seeded.points);
-
-  /*
-   * A hot deal is one offer, not stock.
+   * It checked a board of nine hot deals and a shelf of eight gift cards, both
+   * written out in `content.ts`: that claiming moved a row from one list to the
+   * other, that a stamp card rolled over, that a chip counted what it listed,
+   * that `openNow` answered on the venue's own clock. Every one of those rules
+   * was real; every one of them operated on data the site had invented, and all
+   * of it is gone — the board is `GET /v1/deals`, the shelf is
+   * `GET /v1/gift-cards`, and what somebody holds is `GET /v1/wallet`.
    *
-   * Two guards, and the second is the one worth having: a button pressed twice
-   * would otherwise put two of the same offer in the wallet and charge for both.
+   * So the checks moved with the arithmetic. What is left in `src/` that a
+   * suite can hold to an invariant is the handful of pure functions that turn
+   * those responses into a screen — the shelf ladder, the face-value formatter,
+   * the category labeller — and those are what is checked here. They are not
+   * decorative: each one has a failure mode that would put a wrong number or a
+   * wrong currency in front of somebody.
+   */
+
+  /* A shelf, in the shape the server actually sends (`snake_case`, minor
+     units, EUR unless a row says otherwise — checked against a running
+     server). Built here rather than imported, because a fixture in a test is
+     not data the product ships. */
+  const shelf: GiftCardStock[] = [
+    { id: 'gcs_a', brand: 'Media Expert', logo: 'M', face_minor: 465, currency: 'EUR', points_cost: 100, stock: 250, priority_only: 0 },
+    { id: 'gcs_b', brand: 'Douglas', logo: 'D', face_minor: 698, currency: 'EUR', points_cost: 300, stock: 4, priority_only: 0 },
+    { id: 'gcs_c', brand: 'Zalando', logo: 'Z', face_minor: 1163, currency: 'EUR', points_cost: 500, stock: 0, priority_only: 1 },
+  ];
+
+  /*
+   * ── the ladder, and the two ways it is allowed to say nothing ──
    *
-   * Annotated `HotDeal` rather than left to inference. The row now carries the
-   * venue's own facts — where it is, when its door is open, and in which zone
-   * — and an invented deal missing them is one the wallet would happily store
-   * and the card could not draw. The annotation is what puts the next field
-   * added to that type here rather than on a screen.
+   * `cheapestCost` answers "what is enough", and the wallet's balance note, the
+   * Play screen's stat and the result card all read it. `null` is the state
+   * this whole pass exists to protect: with nothing stocked there is no price
+   * to be short of, and the screens drop the line rather than print the 100
+   * points that used to be written in `content.ts`.
    */
-  const free: HotDeal = {
-    id: 'd-test-free',
-    venue: 'V',
-    logo: 'V',
-    badge: '2+1',
-    points: 0,
-    expires: '31.12',
-    category: 'coffee',
-    city: 'Kraków',
-    address: 'ul. Testowa 1',
-    rating: 4.2,
-    reviews: 12,
-    hours: '09:00 – 17:00',
-    zone: 'Europe/Warsaw',
-  };
-  const claimed = claimDeal(seeded, free, 'PLZ-TEST', '01.08');
-  check('claiming a free deal costs nothing', claimed.points === seeded.points);
-  check('…and puts it in the wallet', dealsOf(claimed).length === dealsOf(seeded).length + 1);
-  check(
-    'claiming it again changes nothing',
-    dealsOf(claimDeal(claimed, free, 'PLZ-TWICE', '01.08')).length === dealsOf(claimed).length,
-  );
-
-  const paid = { ...free, id: 'd-test-paid', points: seeded.points + 1 };
-  check(
-    'a deal the balance will not cover is refused',
-    claimDeal(seeded, paid, 'PLZ-NOPE', '01.08') === seeded,
-  );
-
-  const affordable = { ...free, id: 'd-test-cheap', points: 50 };
-  check(
-    'and one it will cover is charged for',
-    claimDeal(seeded, affordable, 'PLZ-OK', '01.08').points === seeded.points - 50,
-  );
-
-  /* The two fields postdate the stored shape, so a session saved by an earlier
-     build has neither. Reading a missing one as empty is what stops the wallet
-     throwing on a page somebody is already looking at. */
-  const old = { ...seeded, stamps: undefined, deals: undefined };
-  check('a session that predates stamp cards reads as empty', stampsOf(old).length === 0);
-  check('…and so does one that predates deals', dealsOf(old).length === 0);
+  check('the cheapest rung is the cheapest card', cheapestCost(shelf) === 100, String(cheapestCost(shelf)));
+  check('an empty shelf has no cheapest', cheapestCost([]) === null);
+  check('…which is not zero', cheapestCost([]) !== 0);
 
   /*
-   * ── the board and the wallet are two lists, and a deal is in exactly one ──
+   * `nextRung` is what the points bar fills toward, and it has to be the
+   * cheapest card *above* the balance rather than the cheapest overall —
+   * otherwise the bar is full for every player past their first afternoon.
+   */
+  check('a new balance aims at the first rung', nextRung(shelf, 0) === 100);
+  check('…a balance on a rung aims at the next', nextRung(shelf, 100) === 300, String(nextRung(shelf, 100)));
+  check('…and one just under it still aims at it', nextRung(shelf, 299) === 300);
+  /* Both reasons for "no rung" are the same answer, and the screen does the
+     same thing with either: it draws no bar. */
+  check('a balance past the top has no rung', nextRung(shelf, 9999) === null);
+  check('…and neither does an empty shelf', nextRung([], 50) === null);
+
+  /*
+   * ── a face value is written in the card's own currency ──
    *
-   * The page puts what is on offer above what has already been taken, and the
-   * whole layout rests on nothing being in both: a row under "Hot deals" that
-   * is also under "Redeemed" offers a claim on something already held, and
-   * charges for it. Only one of the two lists is stored — `openDeals` derives
-   * the other — so the only way they can drift is if somebody computes the
-   * board a second way.
+   * The one money rule on this site that runs the *other* way. Every price the
+   * site quotes is euros converted for whoever is reading; a gift card is a
+   * thing on a shelf, and a card a shop will honour for 50 zł is 50 zł to a
+   * reader in London. Converting it is the bug this checks for, and it would be
+   * invisible — the number would simply be wrong by an exchange rate.
    */
-  const board = openDeals(WALLET_DEALS, seeded);
-  const dubai = WALLET_DEALS[0];
-  const inWallet = dealsOf(seeded)[0];
-  check('the seeded claim is off the board', !board.some((deal) => deal.id === inWallet.id), inWallet.id);
+  check('a euro card is written in euros', faceValue(shelf[0], ' ') === '€4.65', faceValue(shelf[0], ' '));
   check(
-    '…and the two lists exhaust the board',
-    board.length + dealsOf(seeded).length === WALLET_DEALS.length,
-    `${board.length} open + ${dealsOf(seeded).length} held of ${WALLET_DEALS.length}`,
+    '…a złoty card in złoty, whoever is reading',
+    faceValue({ face_minor: 5000, currency: 'PLN' }, ' ') === '50.00\u00a0zł',
+    faceValue({ face_minor: 5000, currency: 'PLN' }, ' '),
   );
-
-  /* Claiming moves a row across rather than copying it. */
-  const next = board.find((deal) => deal.points === 0)!;
-  const took = claimDeal(seeded, next, 'PLZ-BOARD', '02.08');
-  const shorter = openDeals(WALLET_DEALS, took);
-  check('claiming takes it off the board', !shorter.some((deal) => deal.id === next.id), next.id);
-  check('…and the board is one shorter', shorter.length === board.length - 1, `${shorter.length} open`);
-  check('…with every other row untouched', shorter.every((deal) => board.some((was) => was.id === deal.id)));
+  /* The separator is the *reader's* — digit grouping belongs to the language,
+     not to the currency being written (`i18n/fx.ts` declines to carry one for
+     exactly this reason). */
+  check(
+    'the reader supplies the separator, not the currency',
+    faceValue({ face_minor: 1234500, currency: 'PLN' }, ' ') === '12 345.00\u00a0zł' &&
+      faceValue({ face_minor: 1234500, currency: 'PLN' }, ',') === '12,345.00\u00a0zł',
+    faceValue({ face_minor: 1234500, currency: 'PLN' }, ','),
+  );
+  /* Soum has no minor unit, and a fractional soum is a number nobody can act
+     on. `decimals` comes off the currency, not off the caller. */
+  check(
+    'a currency with no minor unit grows no decimals',
+    faceValue({ face_minor: 5000000, currency: 'UZS' }, ' ') === "50 000\u00a0so'm",
+    faceValue({ face_minor: 5000000, currency: 'UZS' }, ' '),
+  );
+  /* An unknown code falls back rather than throwing: the column is free text on
+     the server, and a card nobody can price is worse than one priced in the
+     platform's own unit. */
+  check('an unknown currency still prices', faceValue({ face_minor: 100, currency: 'XXX' }, ' ') === '€1.00');
 
   /*
-   * ── the category strip ──
+   * ── the deals path ──
    *
-   * "All" is the absence of a filter rather than a sixth category: a venue
-   * cannot *be* in it, which is why it is drawn from `copy.wallet.deals.all`
-   * and why the predicate takes `null` instead of a string every row would
-   * have to be compared against. A chip called "all" in the list would be a
-   * category nothing could ever be filed under.
+   * The board's request. A missing `limit` is what made the first version of
+   * this return the server's default of 50 silently; the filters are optional
+   * and must not appear as empty parameters, because `?city=` is a *filter on
+   * the empty string* rather than no filter.
    */
-  check(
-    'nothing on the strip is an "all" category',
-    !DEAL_CATEGORIES.some((category) => String(category).toLowerCase() === 'all'),
-    DEAL_CATEGORIES.join(' '),
-  );
-  check('the "All" chip matches every deal', WALLET_DEALS.every((deal) => inCategory(deal, null)));
+  check('the board asks for a limit', dealsPath() === '/v1/deals?limit=50', dealsPath());
+  check('…and carries a city when there is one', dealsPath({ city: 'Kraków' }).includes('city=Krak'));
+  check('…and omits one when there is not', !dealsPath({ limit: 10 }).includes('city='));
+  check('…and takes the limit it is given', dealsPath({ limit: 10 }) === '/v1/deals?limit=10');
 
   /*
-   * A row with **no** category matches only "All". "We have not filed this one"
-   * is not the same claim as "this one is a bakery", and a filter that let
-   * unfiled rows fall through would put somebody's barber under Coffee. The
-   * field is optional because stamp cards existed before it did, not because a
-   * new one may skip it.
+   * ── a category is the server's word, and it may be a word this site has not
+   *    got ──
+   *
+   * The board's chips used to be five categories written in `content.ts`
+   * (Coffee, Food, Bakery, Services, Beauty) and a deal's category on the
+   * server is the *venue's* taxonomy — `cafe`, `restaurant`, `hotels`. The two
+   * never matched, so every chip would have been empty. `categoryLabel` maps
+   * what it can and prints the raw id for what it cannot, which is visibly a
+   * raw id rather than a plausible wrong word.
    */
-  const unfiled: StampCard = {
-    id: 's0',
-    venue: 'Stary Kleparz',
-    logo: 'S',
-    reward: 'a free coffee',
-    stamps: 2,
-    required: 6,
-    cycles: 0,
-  };
-  check('an unfiled card shows under "All"', inCategory(unfiled, null));
-  check('…and under no chip at all', DEAL_CATEGORIES.every((category) => !inCategory(unfiled, category)));
+  const names = en.listing.categories;
   check(
-    '…so filtering never invents a filing',
-    filterByCategory([...stampsOf(seeded), unfiled], 'coffee').every((card) => card.category === 'coffee'),
+    'the taxonomy and its words are the same length',
+    names.length === BUSINESS_CATEGORIES.length,
+    `${names.length} words, ${BUSINESS_CATEGORIES.length} ids`,
   );
+  check('a known category is translated', categoryLabel('cafe', names) === names[0], categoryLabel('cafe', names));
   check(
-    'and no chip drops a filed row',
-    filterByCategory([...stampsOf(seeded), unfiled], null).length === stampsOf(seeded).length + 1,
+    '…every one of them, and none to undefined',
+    BUSINESS_CATEGORIES.every((row, i) => categoryLabel(row.id, names) === names[i]),
   );
-
-  /*
-   * The number on a chip and the number in the list under it are one predicate,
-   * which is the only arrangement in which they cannot disagree.
-   */
-  for (const category of DEAL_CATEGORIES) {
-    const under = filterByCategory(WALLET_DEALS, category);
-    const counted = WALLET_DEALS.filter((deal) => inCategory(deal, category)).length;
-    check(`the ${category} chip lists what it counts`, under.length === counted, `${under.length}`);
-    /* A chip that can only ever be empty is a chip that should not be on the
-       strip. Nine rows is the size that keeps all five of them honest. */
-    check(`…and has something behind it`, under.length > 0, `${under.length} deals`);
+  /* `hotels` and `bakery` are on the server and are not in this site's listing
+     form. Neither may render as `undefined` under a venue's name. */
+  for (const id of ['hotels', 'bakery', 'something_new']) {
+    check(`an unknown category prints itself (${id})`, categoryLabel(id, names) === id);
   }
 
-  check(
-    'every deal is filed under a real chip',
-    WALLET_DEALS.every((deal) => DEAL_CATEGORIES.includes(deal.category)),
-  );
-  check(
-    'and so is every seeded stamp card',
-    stampsOf(seeded).every(
-      (card) => card.category !== undefined && DEAL_CATEGORIES.includes(card.category),
-    ),
-  );
+  /* The tile letter. A venue with a blank name is a row the server will accept
+     and a `''` in a circle is a hole in the layout. */
+  check('a tile takes the initial', initialOf('Kawiarnia Bratysławska') === 'K');
+  check('…upper-cased', initialOf('dubai cafe') === 'D');
+  check('…and a nameless row still gets one', initialOf('   ') === '?' && initialOf('') === '?');
 
   /*
-   * ── the offers, in five languages ──
+   * ── what a balance can reach ──
    *
-   * `Dictionary` is `typeof en`, which makes a missing *key* a compile error
-   * and says nothing about a missing array *element*: a tenth deal with nine
-   * lines of copy renders `undefined` under a badge and typechecks perfectly.
-   * The badge itself is the venue's own words and is never translated; this
-   * half is the app saying what they mean, so it has to exist wherever the
-   * board does.
+   * The last piece of wallet arithmetic left in `auth/player.ts`, and it stays
+   * because the catalogue has to decide whether a button is pressable *before*
+   * it posts: a button you can press that always fails is worse than one that
+   * says why it is dark.
    */
-  for (const code of LANGUAGE_ORDER) {
-    const deals = LANGUAGES[code].wallet.deals;
-    check(`${code} explains every offer`, deals.offers.length === WALLET_DEALS.length,
-      `${deals.offers.length} of ${WALLET_DEALS.length}`);
-    check(`…and none of them is blank`, deals.offers.every((line) => line.trim().length > 0));
-    check(`…and names every chip`, deals.categories.length === DEAL_CATEGORIES.length,
-      `${deals.categories.length} of ${DEAL_CATEGORIES.length}`);
-  }
+  const purse: PlayerState = { ...freshPlayer(), points: 300 };
+  check('a balance covers what it covers', canAfford(purse, 300) && canAfford(purse, 100));
+  check('…and not a penny more', !canAfford(purse, 301));
+  check('an empty balance covers a free thing', canAfford(freshPlayer(), 0));
 
   /*
-   * ── the door ──
+   * ── and a new player holds nothing ──
    *
-   * "Open now" is answered on the **venue's** clock. A Kraków café keeps Kraków
-   * hours to a reader standing in Tashkent, and the machine the page is
-   * rendered on is the one thing that cannot be asked — which is why every row
-   * carries a `zone`, and why this block pins an instant rather than letting
-   * `openNow` reach for `new Date()`.
+   * `seedPlayer` is gone: it furnished a demo wallet with four gift cards off
+   * the deleted catalogue, three stamp cards and a claimed deal. What a player
+   * holds is the server's answer now, so the only local player state is the
+   * mirror of `GET /v1/games/state` — and it starts empty.
    */
-  const sevenInKrakow = new Date('2026-06-15T05:00:00Z'); /* 07:00 CEST */
-  check('a venue that opens at 07:30 is shut at 07:00', openNow(dubai, sevenInKrakow) === false, dubai.hours);
-  check('…and open an hour later', openNow(dubai, new Date('2026-06-15T06:00:00Z')) === true);
-  /* The proof that the zone is what decides: one instant, one span, two zones,
-     two answers — which no single clock can produce, whichever clock the
-     machine running this suite happens to be set to. */
+  const fresh = freshPlayer();
+  check('a new player has no balance', fresh.points === 0);
+  check('…and a full tank', fresh.energy === MAX_ENERGY);
   check(
-    'the zone answers, not the reader',
-    openNow(dubai, sevenInKrakow) === false &&
-      openNow({ hours: dubai.hours, zone: 'Asia/Tashkent' }, sevenInKrakow) === true,
-  );
-
-  /* A span that ends before it starts has crossed midnight, and the test flips
-     from "between" to "outside" for it — otherwise every late venue on the
-     board reads as shut for exactly the evening it is open. */
-  const late = { hours: '22:00 – 02:00', zone: 'Europe/Warsaw' };
-  check('a late venue is open at 23:00', openNow(late, new Date('2026-06-15T21:00:00Z')) === true);
-  check('…and still open at 01:00', openNow(late, new Date('2026-06-15T23:00:00Z')) === true);
-  check('…and shut at midday', openNow(late, new Date('2026-06-15T10:00:00Z')) === false);
-
-  /*
-   * **Unreadable is `null`, never `false`.** "Closed now" is a claim about a
-   * venue and a malformed seed row must not make it: the third state is the
-   * only answer that says "nothing here to read" without saying something
-   * untrue about the place.
-   */
-  const warsaw = 'Europe/Warsaw';
-  check('no hours at all says nothing', openNow({ hours: '', zone: warsaw }, sevenInKrakow) === null);
-  check('…and neither does a span with no separator',
-    openNow({ hours: '07:30', zone: warsaw }, sevenInKrakow) === null);
-  check('…nor a span that is not a clock',
-    openNow({ hours: 'from dawn – till dusk', zone: warsaw }, sevenInKrakow) === null);
-  check('…nor an hour past 24:00',
-    openNow({ hours: '25:00 – 26:00', zone: warsaw }, sevenInKrakow) === null);
-  check('…nor a zone nobody has heard of',
-    openNow({ hours: dubai.hours, zone: 'Mars/Olympus' }, sevenInKrakow) === null);
-
-  /*
-   * A claimed deal carries the venue with it. The card in the wallet is spread
-   * off the board row rather than written out beside it, because two copies of
-   * one venue drift the first time an address is corrected in only one of them
-   * — the same argument the seeded vouchers make against hand-written face
-   * values.
-   */
-  check('the claimed deal is the board row', inWallet.id === dubai.id, inWallet.id);
-  check(
-    '…with the venue still on it',
-    inWallet.address === dubai.address &&
-      inWallet.rating === dubai.rating &&
-      inWallet.category === dubai.category,
-    `${inWallet.address} · ★${inWallet.rating} · ${inWallet.category}`,
+    '…and holds nothing at all, because holdings are not stored here',
+    !('vouchers' in fresh) && !('stamps' in fresh) && !('deals' in fresh),
+    Object.keys(fresh).join(','),
   );
 }
 
@@ -1449,14 +1376,14 @@ console.log('\nplaying');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
   const base = {
-    ...seedPlayer(),
+    ...freshPlayer(),
     points: 0,
     streak: 0,
     answered: 0,
     correct: 0,
     lastPlayed: null,
-    /* No freeze. A seeded player now starts with one, and it would absorb
-       every lapse below — which is the freeze block's business, not this one's. */
+    /* No freeze. A freeze would absorb every lapse below — which is the freeze
+       block's business, not this one's. */
     freezes: 0,
   };
   /* One point an answer, one for a clean sweep and two for doing it inside ten
@@ -1582,13 +1509,54 @@ console.log('\nplaying');
    */
   const perDay = MAX_ENERGY + Math.floor(1440 / ENERGY_REGEN_MINUTES);
   check('a day is sixteen finished rounds from a full tank', perDay === 16, `${perDay}`);
-  /* And the payout does not know how many of them have been played. That is the
-     other half of "energy is the only limiter", and the half a reintroduced
-     curve would break first — a whole day of one game pays a flat rate. */
-  let allDay = awardRound(base, win, day('2026-08-03'));
-  for (let i = 1; i < perDay; i += 1) allDay = awardRound(allDay, win, day('2026-08-03'));
+  /*
+   * And the payout does not know how many of them have been played. That is the
+   * other half of "energy is the only limiter", and the half a reintroduced
+   * curve would break first — a whole day of one game pays a flat rate.
+   *
+   * **The sixteen have to be played across the day rather than at one instant.**
+   * They used to be handed the same `Date` sixteen times, which passed only
+   * because a round on an empty tank still banked: four came out of the tank and
+   * twelve were free. Practice rounds made that visible — twelve of the sixteen
+   * now pay nothing — and the fixture was the thing that was wrong, because
+   * sixteen rounds in one moment is not a day, it is a burst on a four-unit
+   * tank. So the tank is emptied at noon and the remaining twelve are played one
+   * per refill interval, which is what `perDay` has always *meant*.
+   */
+  const noon = day('2026-08-03').getTime();
+  const regenMs = ENERGY_REGEN_MINUTES * 60_000;
+  /* Annotated, because `base` is a literal whose `lastPlayed` narrows to `null`
+     and the first award widens it to a date. */
+  let allDay: PlayerState = base;
+  for (let i = 0; i < MAX_ENERGY; i += 1) allDay = awardRound(allDay, win, new Date(noon));
+  for (let i = 1; i <= perDay - MAX_ENERGY; i += 1) {
+    allDay = awardRound(allDay, win, new Date(noon + i * regenMs));
+  }
   check('…and every one of them pays the same as the first',
     allDay.points === first.points * perDay, `${allDay.points} pts over ${perDay} rounds`);
+
+  /*
+   * ── the seventeenth round ──
+   *
+   * Which is a *practice* round: the day's energy is gone and the screen offers
+   * the round anyway rather than a locked door. What it must not do is pay, and
+   * that is the whole of the rule — the account comes back byte for byte the
+   * same, so nothing downstream has to know a practice round happened.
+   *
+   * Asserted on the state and not on the points alone, because "banks nothing"
+   * has five parts and only one of them is the balance: the streak, the freezes,
+   * the tallies and `lastPlayed` are the other four, and a rule that leaked into
+   * any of them would make the tank optional rather than unpaid.
+   */
+  const overrun = awardRound(allDay, win, new Date(noon + (perDay - MAX_ENERGY) * regenMs));
+  check('a round played on an empty tank pays nothing',
+    overrun.points === allDay.points, `${overrun.points} pts`);
+  check('…and changes nothing else about the account either',
+    JSON.stringify(overrun) === JSON.stringify(allDay));
+  /* And it costs nothing, which is the other half: a practice round that took
+     the refill somebody was waiting for would be worse than the locked door. */
+  check('…and leaves the refill clock exactly where it was',
+    energyOf(overrun, new Date(noon)).nextAt === energyOf(allDay, new Date(noon)).nextAt);
 }
 
 console.log('\nplaying — streak freezes');
@@ -1600,7 +1568,7 @@ console.log('\nplaying — streak freezes');
      keep in step. */
   const win = { game: 'brain' as const, correct: 5, total: 5, perCorrect: 1, seconds: 20 };
   const held = (n: number) => ({
-    ...seedPlayer(),
+    ...freshPlayer(),
     points: 100,
     streak: 4,
     answered: 0,
@@ -1678,7 +1646,7 @@ console.log('\nplaying — the week the streak draws');
    */
   const at = (iso: string) => new Date(`${iso}T12:00:00`);
   const player = (streak: number, lastPlayed: string | null): PlayerState => ({
-    ...seedPlayer(),
+    ...freshPlayer(),
     streak,
     lastPlayed,
   });
@@ -1910,7 +1878,7 @@ console.log('\nflying — scoring');
 {
   const day = (iso: string) => new Date(`${iso}T12:00:00`);
   const base = {
-    ...seedPlayer(),
+    ...freshPlayer(),
     points: 0,
     streak: 0,
     answered: 0,
@@ -2040,7 +2008,7 @@ console.log('\nplaying — a quiz cannot be lost, and a fast one pays more');
 {
   const day = () => new Date('2026-08-03T12:00:00');
   const base = {
-    ...seedPlayer(),
+    ...freshPlayer(),
     points: 0,
     streak: 0,
     answered: 0,
@@ -2686,30 +2654,91 @@ console.log('\nevery game is named in every language');
   }
 }
 
-console.log('\nwallet');
+console.log('\nthe shelf, in five languages');
 {
-  const seeded = seedPlayer();
-  check('a new wallet has something in it', seeded.vouchers.length > 0, `${seeded.vouchers.length} cards`);
-  check('…both active and spent', activeVouchers(seeded).length > 0 && usedVouchers(seeded).length > 0,
-    `${activeVouchers(seeded).length} active, ${usedVouchers(seeded).length} used`);
+  /*
+   * This block checked `redeem` and `markUsed` — buying a gift card off the
+   * catalogue in `content.ts` and spending it, both by editing an object in
+   * `localStorage`. Buying is `POST /v1/gift-cards` now: it takes points off a
+   * real ledger and issues a code, which is a request rather than a function
+   * and is not something a pure suite can hold to an invariant. What *is*
+   * checkable is the copy around it, and it is worth checking for a specific
+   * reason — the shelf's screens have three renderings (a shelf, an empty
+   * shelf, an unreachable server) and every language needs all three, or a
+   * Polish reader gets an English sentence at the worst possible moment.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    const wallet = LANGUAGES[code].wallet;
+    const catalogue = LANGUAGES[code].vouchers.catalogue;
 
-  const card = { brand: 'Zalando', logo: 'Z', points: 100, eur: 4.65 };
-  const rich = { ...seeded, points: 250 };
-  const bought = redeem(rich, card, 'PLZ-TEST', '30.09');
-  check('redeeming spends the points', bought.points === 150, `${bought.points} left`);
-  check('…and adds a card', bought.vouchers.length === seeded.vouchers.length + 1);
-  check('…which starts active', activeVouchers(bought).some((v) => v.code === 'PLZ-TEST'));
+    /* The three states, said differently. `Dictionary` makes a *missing* key a
+       build error and says nothing about two keys carrying the same sentence —
+       and "nothing here" reading identically to "we could not ask" is exactly
+       the failure this whole pass is about. */
+    check(
+      `${code} tells an empty shelf from an unreachable one`,
+      catalogue.none.trim() !== '' &&
+        catalogue.down.trim() !== '' &&
+        catalogue.none !== catalogue.down,
+    );
+    check(
+      `…and the signed-in wallet does too`,
+      wallet.noShelfYet.trim() !== '' &&
+        wallet.down.unreachable.trim() !== '' &&
+        wallet.noShelfYet !== wallet.down.unreachable,
+    );
+    /* An empty board is not a filter coming up short, either. */
+    check(
+      `…and an empty board from an empty chip`,
+      wallet.deals.noneAtAll.trim() !== '' && wallet.deals.noneAtAll !== wallet.deals.noneHere,
+    );
 
-  const poor = { ...seeded, points: 50 };
-  check('an unaffordable card is refused', redeem(poor, card, 'X', '30.09') === poor);
-  check('canAfford agrees', !canAfford(poor, 100) && canAfford(rich, 100));
+    /* The stock caption lost its denominator when the shelf became
+       `gift_card_stock`, which records how many are left and not what the
+       allocation was. A `{of}` left in any language renders the word "{of}". */
+    check(`${code} counts stock without a denominator`, !catalogue.left.includes('{of}'));
+    check(`…and still says how many`, catalogue.left.includes('{n}'));
+    check(`…in the wallet as well`, wallet.left.includes('{n}') && !wallet.left.includes('{of}'));
 
-  const id = activeVouchers(seeded)[0].id;
-  const spent = markUsed(seeded, id, '03.08');
-  check('showing the QR spends the voucher', usedVouchers(spent).length === usedVouchers(seeded).length + 1);
-  /* Idempotent on purpose: a double click must not rewrite the date on a
-     voucher that was already spent last month. */
-  check('spending twice is a no-op', markUsed(spent, id, '09.09').vouchers.find((v) => v.id === id)?.usedOn === '03.08');
+    /* The claim button is a disclosure now, and the sentence under it is the
+       one thing on the board a reader has to be told: the claim happens at the
+       counter, on the venue's scan. */
+    check(`${code} says where a claim happens`, wallet.deals.claimAtCounter.trim().length > 20);
+    check(`…and labels the control that shows it`, wallet.deals.howToClaim.trim() !== '');
+
+    /* Five tiles on the console, one label each. The array is index-aligned
+       with `admin.tsx` and a short one renders `undefined` under a figure. */
+    check(
+      `${code} names every console tile`,
+      LANGUAGES[code].admin.kpis.length === 5,
+      `${LANGUAGES[code].admin.kpis.length}`,
+    );
+    /* Two hero stats on L-Earn, and `LEARN_STATS` is what they count. */
+    check(
+      `…and every L-Earn hero stat`,
+      LANGUAGES[code].learn.hero.stats.length === LEARN_STATS.length,
+      `${LANGUAGES[code].learn.hero.stats.length} of ${LEARN_STATS.length}`,
+    );
+  }
+
+  /*
+   * And nothing anywhere still quotes a price off the shelf that was deleted.
+   *
+   * `{amount}` is the hole `fill()` finishes with a converted euro figure, and
+   * three marketing surfaces used to put a gift card's face value through it —
+   * Home's value card, the L-Earn FAQ and the Vouchers page's wallet mock. A
+   * gift card is priced in *its own* currency (`faceValue`), so a `{amount}`
+   * left on any of those three is both a wrong number and the wrong rule.
+   */
+  for (const code of LANGUAGE_ORDER) {
+    const d = LANGUAGES[code];
+    check(`${code} quotes no gift-card price on Home`, !d.value.card.meta.includes('{amount}'));
+    check(`…nor in the Vouchers mock`, !d.vouchers.wallet.card.meta.includes('{amount}'));
+    check(
+      `…nor in the L-Earn FAQ`,
+      d.learn.faq.items.every((item) => !item.a.includes('{amount}')),
+    );
+  }
 }
 
 console.log('\nsession');
@@ -2734,134 +2763,120 @@ console.log('\nsession');
   check('…including the listing', back.business?.spoken.join(',') === 'pl,en');
   check('…and the profile', back.profile.username === 'marta' && back.profile.city === 'Kraków');
 
-  const found = findUser(SEED_USERS, 'USER1@PAY-LEZ.COM', 'user123');
+  /* `findUser` over a fixture, not over `SEED_USERS` — which is empty, and an
+     assertion that a lookup fails over an empty list proves nothing about the
+     lookup. The rule is still worth checking; the data it needs is one row. */
+  const fixture: UserRecord[] = [{
+    id: 'u_fix', name: 'Fixture', email: 'fixture@example.com', password: 'hunter22',
+    created: '2026-01-01', type: 'individual', business: null, player: null,
+  }];
+  const found = findUser(fixture, 'FIXTURE@EXAMPLE.COM', 'hunter22');
   check('the address is matched case-insensitively', found.ok);
-  check('a wrong password is refused', findUser(SEED_USERS, 'user1@pay-lez.com', 'nope').ok === false);
-  check('an unknown address is refused', findUser(SEED_USERS, 'nobody@pay-lez.com', 'user123').ok === false);
+  check('a wrong password is refused', findUser(fixture, 'fixture@example.com', 'nope').ok === false);
+  check('an unknown address is refused', findUser(fixture, 'nobody@example.com', 'hunter22').ok === false);
 }
 
 console.log('\nthe directory');
 {
   /*
-   * The three seeded people, and what each of them is *for*. A demo account that
-   * signs in to a blank screen demonstrates nothing, so each seed is checked for
-   * the state that makes its screen worth opening — not merely for existing.
-   */
-  const byEmail = (email: string) => SEED_USERS.find((u) => u.email === email);
-
-  const admin = byEmail('admin@pay-lez.com');
-  const owner = byEmail('user1@pay-lez.com');
-  const player = byEmail('user2@pay-lez.com');
-
-  /*
-   * **Two seeds, and neither is an operator.**
+   * **The directory ships empty, and that is the check.**
    *
-   * There were three, and the third was an admin whose password sat in this
-   * file and therefore in the shipped bundle. It was defensible while the
-   * console only read this device's own `localStorage`; it stopped being so
-   * when two of its tabs started reading the live database, and it was always
-   * confusing to use — an operator signed in twice, with two different
-   * accounts, to see one screen.
+   * There were three seeded people here, then two, and this suite asked of each
+   * of them the thing that made its screen worth opening: that the owner landed
+   * on a finished listing rather than a form, that the player had a balance and
+   * a streak with the right days behind it, that neither could reach the
+   * console. Twenty-odd checks, all of them passing, all of them guarding
+   * accounts that should not exist.
    *
-   * An operator is now whoever the *server* has given the `admin` role, learned
-   * off `roles` on the session. The checks below are the property that
-   * guarantees it stays that way: nothing in the bundle can grant the console.
+   * They are gone. A seeded account is a password in the shipped bundle — and,
+   * since `server/` arrived, a *working* password to a system that hashes them
+   * — a real café’s name on a listing nobody at that café wrote, and a points
+   * balance the ledger has no entry for. What is checked now is the absence,
+   * stated four ways, so that putting any part of it back fails here rather
+   * than on somebody’s dashboard.
    */
-  check('two seeds exist', Boolean(owner && player), `${SEED_USERS.length} accounts`);
-  check('no operator is seeded', admin === undefined);
-  check('…and no seed can reach the console',
-    SEED_USERS.every((u) => u.type !== 'admin'));
-  check('…and the address that used to is gone',
-    !SEED_USERS.some((u) => sameEmail(u.email, 'admin@pay-lez.com')));
-
-  check('the owner is a business', owner?.type === 'business');
+  check('the directory ships empty', SEED_USERS.length === 0, `${SEED_USERS.length} accounts`);
+  check('so nothing in the bundle carries a password', SEED_USERS.every((u) => !u.password));
+  check('nothing in it can reach the console', !SEED_USERS.some((u) => u.type === 'admin'));
   check(
-    'the owner lands on a working dashboard, not a form',
-    Boolean(owner?.business && isBusinessReady(owner.business)),
-    owner?.business ? `${profileCompleteness(owner.business).percent}%` : 'no listing',
+    '…and the address that used to is gone',
+    !SEED_USERS.some((u) => sameEmail(u.email, 'admin@pay-lez.com')),
   );
 
-  check('the player is an individual', player?.type === 'individual');
+  /*
+   * The merge in `directory.ts` is still a merge, and still has to be correct
+   * over the empty set — `listUsers` appends the seeds a stored directory has
+   * not seen, and an empty append must leave the stored rows exactly as found.
+   * Modelled here rather than called, because `listUsers` reaches for
+   * `localStorage` and this file runs in Node.
+   */
+  const stored: UserRecord[] = [{
+    id: 'u_real', name: 'Somebody', email: 'somebody@example.com', password: 'hunter22',
+    created: '2026-01-01', type: 'individual', business: null, player: null,
+  }];
+  const known = new Set(stored.map((u) => u.id));
+  const merged = [...stored, ...SEED_USERS.filter((seed) => !known.has(seed.id))];
+  check('merging no seeds into a stored directory changes nothing', merged.length === 1);
+  check('…and leaves the row that was there', merged[0]!.id === 'u_real');
+
+  /*
+   * And the sweep that takes the two retired rows off a device that already has
+   * them. Deleting a seed from `users.ts` stops it being written; it does
+   * nothing about the copy in `localStorage`, and a stored row wins over a seed
+   * by design — so the demo café and the demo player would have outlived their
+   * own deletion on exactly the devices that had seen them.
+   */
+  const haunted: UserRecord[] = [
+    { ...stored[0]! },
+    { id: 'u_marta', name: 'M', email: 'user1@pay-lez.com', password: 'user123',
+      created: '2026-04-02', type: 'business', business: null, player: null },
+    { id: 'u_dilnoza', name: 'D', email: 'user2@pay-lez.com', password: 'user123',
+      created: '2026-05-19', type: 'individual', business: null, player: null },
+  ];
+  const swept = haunted.filter((u) => !RETIRED_IDS.has(u.id));
+  check('a device that stored the seeds loses them', swept.length === 1);
+  check('…and keeps the account that is somebody’s', swept[0]!.id === 'u_real');
   check(
-    'the player has something to spend and something to show',
-    Boolean(player?.player && player.player.points > 0 && player.player.vouchers.length > 0),
+    '…and no retired id is one a new account could be given',
+    [...RETIRED_IDS].every((id) => !SEED_USERS.some((u) => u.id === id)),
   );
-  /*
-   * The seed's streak has days behind it, and they are the right days.
-   *
-   * `lastPlayed` was `null` here, which is the one value that cannot lapse and
-   * was the right answer while a streak was only a number. It stopped being one
-   * when the Play screen started drawing the week: `streakWeek` reads the run
-   * back off `streak` + `lastPlayed`, so a seven-day streak with no last day
-   * played rendered as a great big 7 over seven empty circles.
-   *
-   * Yesterday is the only date that satisfies both — it is exactly the day that
-   * *continues* a streak, so this account's next round takes it to eight rather
-   * than resetting it, and it is a state the app could actually have produced.
-   * Checked against `today()` on a fresh `Date` rather than against a literal,
-   * because the seed computes it when the directory is first written.
-   */
-  const seedDay = new Date();
-  seedDay.setDate(seedDay.getDate() - 1);
-  check('…and a streak with days behind it',
-    player?.player?.lastPlayed === today(seedDay),
-    `${player?.player?.lastPlayed}`);
-  check('…which the next round continues rather than resets',
-    awardRound(player!.player!, { game: 'brain', correct: 5, total: 5, perCorrect: 1, seconds: 20 })
-      .streak === 8);
-  /*
-   * Drawn from the last day played, **not from today**, and that is the fix for
-   * a check that failed every Monday.
-   *
-   * `streakWeek` shows the week that `now` falls in, Monday-first. The seed's
-   * `lastPlayed` is yesterday; on a Monday, yesterday is Sunday and belongs to
-   * the *previous* week, so a seven-day run ending then correctly draws an
-   * empty strip — the player has not played yet this week. Asserting against
-   * `new Date()` was therefore asserting something untrue one day in seven,
-   * which is the same shape as the month-end fixture in `server/verify.ts`.
-   *
-   * What is actually invariant is that the run is drawable in the week it
-   * happened in, and that is what this checks.
-   */
-  check('…and a week the row can actually draw',
-    streakWeek(player!.player!, seedDay).some((day) => day.kept));
-
-  const ids = new Set(SEED_USERS.map((u) => u.id));
-  const emails = new Set(SEED_USERS.map((u) => u.email.toLowerCase()));
-  check('ids are unique', ids.size === SEED_USERS.length);
-  check('addresses are unique', emails.size === SEED_USERS.length);
-
-  /* Nothing prints these on the sign-in form any more — see the note where
-     `DEMO_USERS` used to be exported. What is checked instead is the property
-     that made the admin unprintable in the first place, now taken to its
-     conclusion: sign-up cannot produce one at the type level, and no seed is
-     one either, so nothing shipped to a browser can open the console. */
-  check('no seed is an operator', SEED_USERS.filter((u) => u.type === 'admin').length === 0);
-  check('and both seeds are ordinary accounts', SEED_USERS.filter((u) => u.type !== 'admin').length === 2);
 }
 
 console.log('\nsigning up');
 {
   const good = { name: 'Anna Kowalska', email: 'anna@example.com', password: 'secret1', type: 'individual' as const };
 
-  check('a complete sign-up is accepted', validateSignUp(SEED_USERS, good) === null);
-  check('a blank name is refused', validateSignUp(SEED_USERS, { ...good, name: '  ' }) === 'name');
-  check('a malformed address is refused', validateSignUp(SEED_USERS, { ...good, email: 'anna@' }) === 'email');
+  /* Validated against a directory built here. `SEED_USERS` is empty, and
+     `taken` is the one rule that needs a directory with somebody already in
+     it — an address cannot collide with nobody, so over the empty list that
+     one check would have passed by accident for ever. */
+  const roster: UserRecord[] = [{
+    id: 'u_taken', name: 'Kasia', email: 'kasia@example.com', password: 'hunter22',
+    created: '2026-01-01', type: 'individual', business: null, player: null,
+  }];
+
+  check('a complete sign-up is accepted', validateSignUp(roster, good) === null);
+  check('a blank name is refused', validateSignUp(roster, { ...good, name: '  ' }) === 'name');
+  check('a malformed address is refused', validateSignUp(roster, { ...good, email: 'anna@' }) === 'email');
   check(
     'an address already in the directory is refused',
-    validateSignUp(SEED_USERS, { ...good, email: 'USER2@pay-lez.com' }) === 'taken',
+    validateSignUp(roster, { ...good, email: 'KASIA@example.com' }) === 'taken',
+  );
+  check(
+    '…and over an empty directory nothing is taken',
+    validateSignUp(SEED_USERS, good) === null,
   );
   check(
     'a short password is refused',
-    validateSignUp(SEED_USERS, { ...good, password: 'x'.repeat(MIN_PASSWORD - 1) }) === 'password',
+    validateSignUp(roster, { ...good, password: 'x'.repeat(MIN_PASSWORD - 1) }) === 'password',
   );
-  check('an unanswered type is refused', validateSignUp(SEED_USERS, { ...good, type: null }) === 'type');
+  check('an unanswered type is refused', validateSignUp(roster, { ...good, type: null }) === 'type');
 
   /* The order matters: the message points at the first field that needs
      attention, so a form with two problems must name the earlier one. */
   check(
     'the first problem is the one reported',
-    validateSignUp(SEED_USERS, { ...good, name: '', email: 'nope' }) === 'name',
+    validateSignUp(roster, { ...good, name: '', email: 'nope' }) === 'name',
   );
 
   const person = newUser(good, 'u_test', '2026-08-03');
@@ -3479,9 +3494,15 @@ console.log('\na new account has earned nothing');
   /* A freeze is earned at a streak milestone. Handing one over at sign-up is
      the same category of gift as the points. */
   check('…and no freeze in hand', fresh.freezes === 0);
-  check('…an empty wallet', fresh.vouchers.length === 0);
-  check('…no stamp cards', (fresh.stamps ?? []).length === 0);
-  check('…and nothing claimed', (fresh.deals ?? []).length === 0);
+  /* There is no wallet on this object any more to be empty. What somebody holds
+     is `GET /v1/wallet`, so the check that matters is that nothing here is
+     pretending to hold anything — a `vouchers: []` left behind would be a shape
+     the next screen could start writing to again. */
+  check(
+    '…and no wallet on it at all',
+    !('vouchers' in fresh) && !('stamps' in fresh) && !('deals' in fresh),
+    Object.keys(fresh).join(','),
+  );
   /* The tank is the one thing that *is* full, and it has to be: energy is not
      earned, it is the limiter on a day, and a new player who cannot play is a
      new player who leaves. */
@@ -3495,12 +3516,18 @@ console.log('\na new account has earned nothing');
     String(fresh.points + WELCOME_POINTS),
   );
 
-  /* And the demo account is still the demo account — the separation is the
-     fix, not deleting the seeded wallet, which is what makes the printed
-     credentials on the sign-in form worth signing in with. */
-  const demo = seedPlayer();
-  check('the demo player still has a wallet to look at', demo.vouchers.length > 0);
-  check('…and is not what a new account gets', demo.points !== fresh.points);
+  /*
+   * And nothing ships ahead of a new one.
+   *
+   * There was a demo account here, and this checked it was *further along*
+   * than a fresh sign-up — it had points and a streak, and the failure being
+   * guarded against was a build that handed a new player the demo’s numbers.
+   * The account is gone, so the guard inverts: what must be true now is that
+   * the bundle contains no balance at all, because a balance is something the
+   * ledger says a person earned, and there is no ledger in a JavaScript file.
+   */
+  check('no account ships with a balance', SEED_USERS.every((u) => !u.player));
+  check('…because no account ships at all', SEED_USERS.length === 0);
 
   /*
    * **The path an actual sign-up takes**, which is the one that was still
@@ -3522,7 +3549,6 @@ console.log('\na new account has earned nothing');
   }, 'u_fresh', '2026-08-31');
   check('a sign-up produces an empty player', signedUp.player?.points === 0,
     String(signedUp.player?.points));
-  check('…with nothing in the wallet', (signedUp.player?.vouchers ?? []).length === 0);
   check('…and no streak', signedUp.player?.streak === 0);
   check('…and it is exactly `newPlayer`',
     JSON.stringify(signedUp.player) === JSON.stringify(fresh));

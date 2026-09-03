@@ -36,11 +36,11 @@ const cookieFor = (token: string, maxAgeDays: number): string => {
  * wrote; everything else reads the one already in hand rather than paying for a
  * second `SELECT`.
  */
-function me(ctx: Ctx, fresh?: accounts.User) {
+async function me(ctx: Ctx, fresh?: accounts.User) {
   const { user: resolved, session, roles } = actor(ctx);
   const user = fresh ?? resolved;
-  const ent = entitlements.entitlementsFor(ctx.db, { userId: user.id });
-  const plan = entitlements.planFor(ctx.db, { userId: user.id });
+  const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
+  const plan = await entitlements.planFor(ctx.db, { userId: user.id });
 
   return {
     user: {
@@ -81,10 +81,10 @@ function me(ctx: Ctx, fresh?: accounts.User) {
     mode: session.mode,
     /* The balance is read from the ledger, not the cache, on the one endpoint
        where being right matters more than being fast. */
-    points: ledger.balance(ctx.db, user.id),
+    points: await ledger.balance(ctx.db, user.id),
     plan: { code: plan.code, name: plan.name, audience: plan.audience },
     entitlements: ent,
-    venues: ctx.db.all(
+    venues: await ctx.db.all(
       `SELECT id, name, city, status FROM venues WHERE owner_user_id = $u AND deleted_at IS NULL`,
       { u: user.id },
     ),
@@ -120,7 +120,7 @@ export const authRoutes: Route[] = [
         provisionalId: optStr(ctx.body, 'provisionalId'),
         at: ctx.at,
       });
-      const session = accounts.createSession(ctx.db, {
+      const session = await accounts.createSession(ctx.db, {
         userId: user.id,
         mode: bool(ctx.body, 'partner') ? 'partner' : 'consumer',
         surface: oneOf(ctx.body, 'surface', ['web', 'mobile'] as const, 'web'),
@@ -210,7 +210,7 @@ export const authRoutes: Route[] = [
         throw new DomainError('unauthenticated', 'that Google sign-in could not be verified');
       }
 
-      const user = accounts.linkGoogleAccount(ctx.db, {
+      const user = await accounts.linkGoogleAccount(ctx.db, {
         sub: identity.sub,
         email: identity.email,
         name: identity.name,
@@ -218,7 +218,7 @@ export const authRoutes: Route[] = [
         at: ctx.at,
       });
 
-      const result = accounts.sessionForUser(ctx.db, {
+      const result = await accounts.sessionForUser(ctx.db, {
         user,
         surface: oneOf(ctx.body, 'surface', ['web', 'mobile'] as const, 'web'),
         deviceFingerprint: optStr(ctx.body, 'device'),
@@ -238,8 +238,8 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/auth/signout',
     auth: 'user',
-    handler: (ctx) => {
-      accounts.signOut(ctx.db, actor(ctx).session.id, ctx.at);
+    handler: async (ctx) => {
+      await accounts.signOut(ctx.db, actor(ctx).session.id, ctx.at);
       ctx.res.setHeader('set-cookie', 'paylez_session=; Path=/; HttpOnly; Max-Age=0');
       return { ok: true };
     },
@@ -249,9 +249,9 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/auth/guest',
     auth: 'none',
-    handler: (ctx) => {
-      const user = accounts.provisional(ctx.db, str(ctx.body, 'device'), ctx.at);
-      const session = accounts.createSession(ctx.db, {
+    handler: async (ctx) => {
+      const user = await accounts.provisional(ctx.db, str(ctx.body, 'device'), ctx.at);
+      const session = await accounts.createSession(ctx.db, {
         userId: user.id,
         mode: 'consumer',
         surface: oneOf(ctx.body, 'surface', ['web', 'mobile'] as const, 'mobile'),
@@ -293,14 +293,14 @@ export const authRoutes: Route[] = [
     method: 'PATCH',
     pattern: '/v1/me',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
       /* The opt-in first, the profile second, because the profile write is the
          one whose returned row is rendered — and it has to have seen both. */
       if (ctx.body.leaderboardOptIn !== undefined) {
-        social.setLeaderboardOptIn(ctx.db, user.id, bool(ctx.body, 'leaderboardOptIn'));
+        await social.setLeaderboardOptIn(ctx.db, user.id, bool(ctx.body, 'leaderboardOptIn'));
       }
-      const updated = accounts.updateProfile(
+      const updated = await accounts.updateProfile(
         ctx.db,
         user.id,
         {
@@ -335,7 +335,7 @@ export const authRoutes: Route[] = [
         },
         ctx.at,
       );
-      return me(ctx, updated);
+      return await me(ctx, updated);
     },
   },
   {
@@ -358,7 +358,7 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/me/onboarded',
     auth: 'user',
-    handler: (ctx) => accounts.completeOnboarding(ctx.db, actor(ctx).user.id, ctx.at),
+    handler: async (ctx) => await accounts.completeOnboarding(ctx.db, actor(ctx).user.id, ctx.at),
   },
   {
     method: 'POST',
@@ -386,17 +386,17 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/me/partner',
     auth: 'user',
-    handler: (ctx) => accounts.becomePartner(ctx.db, actor(ctx).user.id, ctx.at),
+    handler: async (ctx) => await accounts.becomePartner(ctx.db, actor(ctx).user.id, ctx.at),
   },
   {
     /* §1.2: one identity, two experiences, the active one held in the session. */
     method: 'POST',
     pattern: '/v1/me/mode',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user, session } = actor(ctx);
       const mode = oneOf(ctx.body, 'mode', ['consumer', 'partner', 'admin'] as const);
-      accounts.setMode(ctx.db, session.id, user.id, mode);
+      await accounts.setMode(ctx.db, session.id, user.id, mode);
       return { mode };
     },
   },
@@ -406,16 +406,16 @@ export const authRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/me/consents',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
       return {
-        account: (['terms', 'privacy', 'marketing', 'analytics'] as const).map((kind) => ({
+        account: await Promise.all((['terms', 'privacy', 'marketing', 'analytics'] as const).map(async (kind) => ({
           kind,
-          granted: consent.has(ctx.db, user.id, kind),
-        })),
+          granted: await consent.has(ctx.db, user.id, kind),
+        }))),
         /* §1.4 is a *separate* list on purpose: bundling it under "consents"
            is the presentational version of bundling it into the terms. */
-        dataSharing: consent.sharingWith(ctx.db, user.id),
+        dataSharing: await consent.sharingWith(ctx.db, user.id),
       };
     },
   },
@@ -423,8 +423,8 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/me/consents',
     auth: 'user',
-    handler: (ctx) => {
-      consent.record(ctx.db, {
+    handler: async (ctx) => {
+      await consent.record(ctx.db, {
         userId: actor(ctx).user.id,
         kind: oneOf(ctx.body, 'kind', ['terms', 'privacy', 'marketing', 'analytics'] as const),
         granted: bool(ctx.body, 'granted', true),
@@ -438,8 +438,8 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/me/sharing/:venueId',
     auth: 'user',
-    handler: (ctx) => {
-      const id = consent.grantSharing(ctx.db, {
+    handler: async (ctx) => {
+      const id = await consent.grantSharing(ctx.db, {
         userId: actor(ctx).user.id,
         venueId: ctx.params.venueId,
         at: ctx.at,
@@ -451,8 +451,8 @@ export const authRoutes: Route[] = [
     method: 'DELETE',
     pattern: '/v1/me/sharing/:venueId',
     auth: 'user',
-    handler: (ctx) => ({
-      revoked: consent.revokeSharing(ctx.db, actor(ctx).user.id, ctx.params.venueId, ctx.at),
+    handler: async (ctx) => ({
+      revoked: await consent.revokeSharing(ctx.db, actor(ctx).user.id, ctx.params.venueId, ctx.at),
     }),
   },
 
@@ -461,13 +461,13 @@ export const authRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/me/export',
     auth: 'user',
-    handler: (ctx) => consent.exportUser(ctx.db, actor(ctx).user.id),
+    handler: async (ctx) => await consent.exportUser(ctx.db, actor(ctx).user.id),
   },
   {
     method: 'DELETE',
     pattern: '/v1/me',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
       /* Typing the address is the confirmation step. An erasure that a mistyped
          DELETE can trigger is one nobody can undo. */
@@ -476,7 +476,7 @@ export const authRoutes: Route[] = [
           field: 'confirmEmail',
         });
       }
-      return consent.eraseUser(ctx.db, user.id, ctx.at);
+      return await consent.eraseUser(ctx.db, user.id, ctx.at);
     },
   },
 ];

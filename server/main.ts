@@ -5,15 +5,19 @@
  * fresh clone comes up with the old data in it and a restart does not do it
  * again. `--reimport` forces it; `--import-only` does it and exits.
  *
- * And if the catalogue is *still* empty after that, a demo set is written — see
- * the ordering note in `boot`, and `db/demo.ts` for why it exists at all.
+ * **Nothing else writes a venue, a deal or a voucher at boot.** There was a
+ * demonstration set — seven invented Kraków and Warsaw cafés with deals,
+ * campaigns, budgets and voucher tiers — written whenever the catalogue came up
+ * empty, and later only when `PAYLEZ_DEMO_SEED=1` asked for it. It is gone. An
+ * empty catalogue means no venue has signed up yet, which is a true and useful
+ * thing for a screen to say, and every screen that reads one now says it.
  */
 import { existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
-import { seedDemo } from './db/demo.ts';
+import { openDb as openPgDb } from './db/pg.ts';
 import { importLegacy } from './db/import.ts';
 import { provisionAdmin } from './domain/accounts.ts';
 import { seedPlatform } from './domain/settings.ts';
@@ -27,25 +31,48 @@ export interface BootOptions {
   legacyDir?: string;
   /** Where the three hand-delivered question banks live. See `db/import.ts` §8. */
   gamesDir?: string;
+  /** A Postgres connection string. Overrides `PAYLEZ_PG_URL`; used by tests. */
+  postgresUrl?: string;
   /** Import even when the database already has venues. */
   reimport?: boolean;
   quiet?: boolean;
 }
 
-export function boot(options: BootOptions = {}): { db: Db; routes: Route[] } {
+export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes: Route[] }> {
   const file = options.file ?? CONFIG.server.database;
-  if (file !== ':memory:') {
+
+  /*
+   * **Which database, decided here and nowhere else.**
+   *
+   * `PAYLEZ_PG_URL` set means Postgres; unset means the SQLite file. Both
+   * drivers implement the `Db` interface, so nothing past this line — not one
+   * of the 29 files that import it — knows or can ask which one it got.
+   *
+   * A presence check rather than a `PAYLEZ_DB_DRIVER=postgres` flag, because a
+   * flag and a connection string can disagree, and the failure when they do is
+   * a server that starts happily against the wrong database. There is no
+   * arrangement of one variable that is wrong.
+   *
+   * It is also the rollback: comment the line out of `/etc/paylez/paylez.env`,
+   * restart, and the SQLite file is serving again, untouched and still there.
+   */
+  const postgres = options.postgresUrl ?? process.env.PAYLEZ_PG_URL;
+
+  if (!postgres && file !== ':memory:') {
     const dir = dirname(file);
     if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
   }
 
-  const db = openDb(file);
-  seedPlatform(db);
+  const db = postgres ? await openPgDb(postgres) : await openDb(file);
+  if (!options.quiet) {
+    console.log(postgres ? 'database: postgres' : `database: sqlite ${file}`);
+  }
+  await seedPlatform(db);
 
-  const venues = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`)?.n ?? 0;
+  const venues = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`))?.n ?? 0;
   if (options.reimport || venues === 0) {
-    const summary = db.tx(() =>
-      importLegacy(db, options.legacyDir ?? 'new-data', options.gamesDir ?? 'updates'),
+    const summary = await db.tx(async () =>
+      await importLegacy(db, options.legacyDir ?? 'new-data', options.gamesDir ?? 'updates'),
     );
     if (!options.quiet) {
       const total = Object.entries(summary.counts)
@@ -57,49 +84,25 @@ export function boot(options: BootOptions = {}): { db: Db; routes: Route[] } {
   }
 
   /*
-   * The demo set, and the ordering is the whole of it: **after** the import has
-   * had its chance, and only if the catalogue is *still* empty.
+   * **Nothing is invented here, and the absence is the feature.**
    *
-   * A box that has `new-data/` gets the real import, ends up with venues, and
-   * must never see these rows — a demonstration cafe sitting beside migrated
-   * partners is a row nobody can tell from a real one. A box that does not have
-   * it — every remote, because `new-data/` is gitignored and is the old app's
-   * live personal data — would otherwise serve an empty catalogue for ever:
-   * `GET /v1/venues` and `GET /v1/deals` both `[]`, which is what production was
-   * doing. The count is re-read rather than reused, because the import between
-   * the two is exactly the thing that may have changed it.
+   * Two things used to run at this point. First a demonstration set of seven
+   * venues, written whenever the catalogue came up empty after the import —
+   * which is every remote, because `new-data/` is the old app's live personal
+   * data and is gitignored. Then, once that was plainly wrong on a box with
+   * real people on it, the same thing behind `PAYLEZ_DEMO_SEED=1`.
+   *
+   * Both are deleted, along with `db/demo.ts` and the gift-card shelf
+   * `seedPlatform` wrote beside them. The argument that finished them off is
+   * the one `analytics.reach` is built on: a venue nobody has heard of and a
+   * venue nobody has signed up are different findings, and a catalogue that
+   * fills itself in cannot tell an operator which one they have. A demo row is
+   * also immortal — delete it and the next restart writes it back.
+   *
+   * If a deployment needs something to look at, onboard a venue through the
+   * partner API the way a real one arrives. That path is tested and it leaves
+   * an audit trail; this one left rows nobody could tell from customer data.
    */
-  /*
-   * **And it is off unless somebody asks for it.**
-   *
-   * The rule above — seed when the catalogue is empty — was written for a box
-   * that had just been stood up and had nothing to show. It is the wrong rule
-   * once a product is live with real people on it: an empty catalogue then
-   * means "no venue has signed up yet", which is a true and useful thing for a
-   * screen to say, and quietly filling it with seven invented cafés replaces a
-   * fact with a decoration. It also makes the demo rows immortal — delete them
-   * and the next restart writes them back.
-   *
-   * So `PAYLEZ_DEMO_SEED=1` and nothing else. A fresh clone that wants
-   * something to look at sets it; production does not, and an operator who
-   * deletes the demo set gets to keep it deleted.
-   */
-  const wanted = process.env.PAYLEZ_DEMO_SEED === '1';
-  const stillEmpty = (db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`)?.n ?? 0) === 0;
-  if (wanted && stillEmpty) {
-    const demo = seedDemo(db);
-    if (!options.quiet) {
-      const total = Object.entries(demo)
-        .map(([key, value]) => `${key} ${value}`)
-        .join(', ');
-      console.log(`seeded demo: ${total}`);
-      console.log(
-        '  note: the catalogue was empty after the import, so a demonstration set was written. ' +
-          'These are not customer data — every id is prefixed `*_demo_*` and `platform_config.demo_seed` ' +
-          'records when they arrived. Delete them the day real venues are onboarded.',
-      );
-    }
-  }
 
   return { db, routes: allRoutes };
 }
@@ -124,10 +127,10 @@ function indexRoute(routes: Route[]): Route {
 
 export async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
-  const { db, routes } = boot({ reimport: args.has('--reimport') });
+  const { db, routes } = await boot({ reimport: args.has('--reimport') });
 
   if (args.has('--import-only')) {
-    db.close();
+    await db.close();
     return;
   }
 
@@ -168,8 +171,8 @@ export async function main(): Promise<void> {
 
   const shutdown = () => {
     stopScheduler();
-    server.close(() => {
-      db.close();
+    server.close(async () => {
+      await db.close();
       process.exit(0);
     });
   };
@@ -181,5 +184,5 @@ export async function main(): Promise<void> {
    Compared as file URLs rather than as paths: on Windows the two differ by
    separator and drive-letter case, and a substring check gets it wrong. */
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  void main();
+  void await main();
 }

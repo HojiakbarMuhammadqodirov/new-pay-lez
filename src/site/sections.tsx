@@ -15,7 +15,6 @@ import {
   SUB_ROWS,
   SUB_TERMS,
   subTermPrice,
-  VALUE_CARD,
   type SubRowKind,
   type SubValue,
 } from './content';
@@ -23,6 +22,7 @@ import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
+import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
 import { usePalette } from './theme/context';
 
@@ -280,7 +280,6 @@ export function Features() {
 
 export function Value() {
   const copy = useCopy();
-  const money = useMoney();
   const [revealed, setRevealed] = useState(false);
 
   return (
@@ -289,18 +288,21 @@ export function Value() {
         <div className="split-visual" data-reveal>
           <div className="preview-card">
             <div className="pv-merch">
-              <span className="pv-logo">{VALUE_CARD.logo}</span>
+              {/* An illustration of a voucher, and every word on it is copy.
+                  It used to read its brand and its face value out of the
+                  catalogue in `content.ts`, which made the picture a claim
+                  about stock — a card at a price, on a page that could not tell
+                  you whether either existed. The real shelf is
+                  `GET /v1/gift-cards`, and the page that lists it is
+                  `#/vouchers`. */}
+              <span className="pv-logo">{copy.value.card.merchant.trim().charAt(0)}</span>
               <div>
                 <b>{copy.value.card.merchant}</b>
-                {/* The voucher's face value is quoted in whatever the language
-                    prices in — and it is the catalogue's, not a literal. The
-                    price under it reads "500 pts", so this is the Zalando row
-                    the wallet would actually charge for. */}
-                <span>{fill(copy.value.card.meta, { amount: money(VALUE_CARD.eur) })}</span>
+                <span>{copy.value.card.meta}</span>
               </div>
             </div>
             <div className="pv-img">
-              <span>{VALUE_CARD.brand}</span>
+              <span>{copy.value.card.merchant}</span>
             </div>
             <div className="pv-title">{copy.value.card.title}</div>
             <div className="pv-prices">
@@ -570,19 +572,26 @@ export function Subscription() {
                       );
                     })}
                   </ul>
+
+                  {/* A press per paid card, which there is now something
+                      behind. This section used to carry one button for the
+                      whole strip, on the reasoning that three reading "Get
+                      Pro" would be three that do not — true while nothing
+                      could take a payment, and no longer. Signed out it still
+                      goes to sign-in, because checkout needs an account to
+                      attach a subscription to. */}
+                  <SubscribeButton planCode={plan.id} planName={named.name} />
                 </div>
               </article>
             );
           })}
         </div>
 
-        {/* One press for the section rather than one per card. There is no
-            checkout behind any of this, so three buttons reading "Get Pro"
-            would be three buttons that do not — and a button goes where its
-            words say. An account is the step the site can actually take you
-            through, and it is the step a plan is chosen after. */}
+        {/* Still here, and now the *other* half: the cards sell a plan, this
+            offers the account somebody needs before they can buy one — and is
+            the only thing on the strip for a visitor who wants neither. */}
         <div className="sub-foot" data-reveal>
-          <a href={PATHS.signin} className="btn btn-solid btn-lg">
+          <a href={PATHS.signin} className="btn btn-ghost btn-lg">
             <Icon name="arrow" size={18} strokeWidth={2.2} />
             {copy.action}
           </a>

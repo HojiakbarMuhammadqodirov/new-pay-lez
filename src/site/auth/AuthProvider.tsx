@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { blankBusiness, type BusinessProfile } from './business';
 import { newPlayer, today, type PlayerState } from './player';
 import {
@@ -17,7 +17,6 @@ import { ApiError, hasToken, setToken, signOut as apiSignOut } from '../api/clie
 import * as api from '../api/consumer';
 import { useLanguage } from '../i18n/context';
 import {
-  SEED_USERS,
   WELCOME_POINTS,
   checkBirthDate,
   checkUsername,
@@ -201,13 +200,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Account | null>(stored);
 
   /**
-   * Sign in against the server first, and fall back to a seed.
+   * Which plan this account is on, as the **server** understands it.
+   *
+   * It lives here rather than in each screen that shows it, because it is
+   * session state: one fetch when the session changes, shared by the header,
+   * the profile card and anything added later. Two components calling
+   * `useApi('/v1/me')` would be two requests answering one question.
+   *
+   * `null` while it is unknown — signed out, still loading, or the server did
+   * not answer. A badge is not drawn from a guess: "we have not been told" and
+   * "the free plan" are different things, and only the second is a fact.
+   */
+  const [plan, setPlan] = useState<AuthValue['plan']>(null);
+  const [entitlements, setEntitlements] = useState<AuthValue['entitlements']>(null);
+
+  useEffect(() => {
+    if (!account || !hasToken()) {
+      setPlan(null);
+      setEntitlements(null);
+      return;
+    }
+    let live = true;
+    void api
+      .me()
+      .then((server) => {
+        if (live) {
+          setPlan(server.plan);
+          setEntitlements(server.entitlements);
+        }
+      })
+      .catch(() => {
+        /* Silent: a badge that cannot be resolved is simply not shown. The
+           alternative — falling back to "Free" — states a fact we do not have,
+           and states it wrongly for exactly the people who paid. */
+        if (live) {
+          setPlan(null);
+          setEntitlements(null);
+        }
+      });
+    return () => {
+      live = false;
+    };
+  }, [account?.id, account]);
+
+  /**
+   * Sign in against the server, and fall back to the mirror only when there is
+   * no server to ask.
    *
    * The order matters and is not arbitrary. Asking the server first means a
    * real account is always a server account, even if a stale mirror of it is
    * sitting in this browser — a local row that has drifted must never be able
-   * to shadow the row that is actually authoritative. The seed fallback runs
-   * only after the server has said no, so it cannot capture a real address.
+   * to shadow the row that is actually authoritative.
+   *
+   * **The fallback is gated on `status === 0` and nothing else.** It used to be
+   * gated on the address matching a seeded account, which is gone; what it
+   * covers now is the one row this browser can hold that the server has never
+   * heard of — an account opened by `signUp` while the backend was unreachable.
+   * A server that answered and said no is authoritative and must not be
+   * second-guessed by a directory it did not write.
    *
    * On success the local directory is written with the **server's id**, which
    * is what makes the mirror a mirror rather than a second directory: the row
@@ -225,24 +275,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       } catch (cause) {
         /* A server that is not there is not a wrong password, and saying so is
-           the difference between "try again" and "check your details". The
-           seeds still work in that state, which is what keeps the demo usable
-           on a laptop with no backend running. */
+           the difference between "try again" and "check your details". */
         const offline = cause instanceof ApiError && cause.status === 0;
+        if (!offline) return { ok: false, error: 'password' };
 
-        const seed = SEED_USERS.find((user: UserRecord) => sameEmail(user.email, email));
-        if (seed) {
-          const found = findUser(listUsers(), email, password);
-          if (found.ok) {
-            const next = toAccount(found.user);
-            setAccount(next);
-            persist(next);
-            return { ok: true };
-          }
-          return found;
-        }
+        /* No server, so the mirror is all there is. It holds nothing but the
+           accounts this browser opened while the backend was down; on an
+           ordinary device it is empty and `findUser` says so. */
+        const found = findUser(listUsers(), email, password);
+        if (!found.ok) return { ok: false, error: 'offline' };
 
-        return { ok: false, error: offline ? 'offline' : 'password' };
+        const next = toAccount(found.user);
+        setAccount(next);
+        persist(next);
+        return { ok: true };
       }
     },
     [],
@@ -669,6 +715,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo<AuthValue>(
     () => ({
       account,
+      plan,
+      entitlements,
       signIn,
       signUp,
       signInWithGoogle,
@@ -681,6 +729,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }),
     [
       account,
+      plan,
+      entitlements,
       signIn,
       signUp,
       signInWithGoogle,

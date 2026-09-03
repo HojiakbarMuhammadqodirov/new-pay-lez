@@ -900,6 +900,10 @@
           "energyLeft": {
             "type": "integer",
             "description": "Energy in the tank *before* this round is paid for — starting costs nothing, finishing costs one. Was `livesLeft`."
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "Whether this round will bank anything. `false` is a **practice** round — one opened on an empty tank by a client that sent `practice: true`. It plays identically and banks nothing at all: no points, no streak, no energy, no ledger entry. Without `practice` an empty tank is still the `no_energy` refusal, so an existing client keeps the behaviour it shipped with."
           }
         }
       },
@@ -1019,10 +1023,14 @@
           },
           "energyLeft": {
             "type": "integer",
-            "description": "Energy left after this round, which is one lower than the round started with. Was `livesLeft`. See `Energy`."
+            "description": "Energy left after this round, which is one lower than the round started with — or unchanged at 0 when `paid` is false. Was `livesLeft`. See `Energy`."
           },
           "balance": {
             "type": "integer"
+          },
+          "paid": {
+            "type": "boolean",
+            "description": "Whether this round banked anything — the same fact `Round.paid` promised when it was opened. `false` is a practice round: `score` is 0, `streak` and `freezes` are unchanged, `balance` is unmoved and `energyLeft` is still 0. A client needs it to tell a practice round from a round that simply scored nothing — the two bodies are otherwise identical."
           },
           "nearest": {
             "nullable": true,
@@ -3123,7 +3131,7 @@
     "/v1/games/sessions": {
       "post": {
         "summary": "Start a round",
-        "description": "Refuses with `no_energy` when the tank is empty. **Starting costs nothing and finishing costs one, win or lose** — so `energyLeft` on this response is what the player has *before* paying for the round they are about to play, and the refusal is enforced here because finding out at the end means finding out after the round was played. An abandoned round costs nothing.\n\nNothing else refuses or shrinks a round: there is no daily points cap and no per-game decay curve. Energy is the whole limiter.\n\n**Access:** Any signed-in account.",
+        "description": "Refuses with `no_energy` when the tank is empty. **Starting costs nothing and finishing costs one, win or lose** — so `energyLeft` on this response is what the player has *before* paying for the round they are about to play, and the refusal is enforced here because finding out at the end means finding out after the round was played. An abandoned round costs nothing.\n\nSend `practice: true` to turn that refusal into an **unpaid round** instead: it plays identically and banks nothing — no points, no streak, no energy, no ledger entry — and both this response and the finish carry `paid: false`. Energy still buys everything it bought; what it no longer buys is playing at all. Without the flag an empty tank is still the refusal, so a client that has an out-of-energy screen keeps it until it decides to offer practice.\n\nNothing else refuses or shrinks a round: there is no daily points cap and no per-game decay curve. Energy is the whole limiter.\n\n**Access:** Any signed-in account.",
         "operationId": "postGamesSessions",
         "tags": [
           "games"
@@ -3148,6 +3156,10 @@
                       "flight"
                     ],
                     "description": "Eight values, seven cards. `poland` and `uzbekistan` are one local-knowledge quiz asked about two different countries — same protocol, same scoring, different bank — so send the one that matches the country on the player’s profile rather than showing both."
+                  },
+                  "practice": {
+                    "type": "boolean",
+                    "description": "Play on an empty tank for nothing rather than be refused. Ignored when there is energy — a round that can pay, pays. Optional; absent means false."
                   }
                 },
                 "required": [
@@ -7843,6 +7855,440 @@
         "parameters": [
           {
             "name": "category",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/deals": {
+      "get": {
+        "summary": "GET /v1/admin/deals",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminDeals",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/deals/{id}": {
+      "patch": {
+        "summary": "PATCH /v1/admin/deals/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "patchAdminDealsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /v1/admin/deals/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "deleteAdminDealsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/{id}": {
+      "delete": {
+        "summary": "DELETE /v1/admin/gift-cards/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "deleteAdminGiftCardsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/venues/{id}": {
+      "patch": {
+        "summary": "PATCH /v1/admin/venues/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "patchAdminVenuesById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /v1/admin/venues/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "deleteAdminVenuesById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/users/{id}/password": {
+      "post": {
+        "summary": "POST /v1/admin/users/:id/password",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminUsersByIdPassword",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/users/{id}": {
+      "delete": {
+        "summary": "DELETE /v1/admin/users/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "deleteAdminUsersById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /v1/admin/users/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "patchAdminUsersById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
             "in": "path",
             "required": true,
             "schema": {

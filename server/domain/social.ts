@@ -20,8 +20,8 @@ import { isoWeek, now, plusDays, type Iso } from './time.ts';
 
 /* ══════════════════════════════════════════════════════════════ referrals ══ */
 
-export function codeFor(db: Db, userId: string): string {
-  const existing = db.get<{ referral_code: string | null }>(
+export async function codeFor(db: Db, userId: string): Promise<string> {
+  const existing = await db.get<{ referral_code: string | null }>(
     `SELECT referral_code FROM users WHERE id = $u`,
     { u: userId },
   );
@@ -32,9 +32,9 @@ export function codeFor(db: Db, userId: string): string {
      invites to a stranger. */
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const code = referralCode();
-    const taken = db.get<{ id: string }>(`SELECT id FROM users WHERE referral_code = $c`, { c: code });
+    const taken = await db.get<{ id: string }>(`SELECT id FROM users WHERE referral_code = $c`, { c: code });
     if (taken) continue;
-    db.run(`UPDATE users SET referral_code = $c WHERE id = $u`, { c: code, u: userId });
+    await db.run(`UPDATE users SET referral_code = $c WHERE id = $u`, { c: code, u: userId });
     return code;
   }
   throw new DomainError('internal', 'could not allocate a referral code');
@@ -47,23 +47,23 @@ export function codeFor(db: Db, userId: string): string {
  * than at payout, because a bond that can never pay out is a "2 friends joined"
  * counter that lies to the person reading it.
  */
-export function bind(
+export async function bind(
   db: Db,
   input: { code: string; newUserId: string; at?: Iso },
-): { ok: boolean; reason?: string } {
+): Promise<{ ok: boolean; reason?: string }> {
   const at = input.at ?? now();
-  const referrer = db.get<{ id: string }>(`SELECT id FROM users WHERE referral_code = $c`, {
+  const referrer = await db.get<{ id: string }>(`SELECT id FROM users WHERE referral_code = $c`, {
     c: input.code,
   });
   if (!referrer) return { ok: false, reason: 'unknown_code' };
   if (referrer.id === input.newUserId) return { ok: false, reason: 'self_referral' };
 
-  const already = db.get<{ id: string }>(`SELECT id FROM referrals WHERE referred_id = $u`, {
+  const already = await db.get<{ id: string }>(`SELECT id FROM referrals WHERE referred_id = $u`, {
     u: input.newUserId,
   });
   if (already) return { ok: false, reason: 'already_referred' };
 
-  db.run(
+  await db.run(
     `INSERT INTO referrals (id, referrer_id, referred_id, code, status, created_at)
      VALUES ($i, $r, $u, $c, 'pending', $t)`,
     { i: newId('ref'), r: referrer.id, u: input.newUserId, c: input.code, t: at },
@@ -72,8 +72,8 @@ export function bind(
 }
 
 /** "2 friends joined · 400 points earned" — the display §8.1 asks for. */
-export function referralProgress(db: Db, userId: string) {
-  const row = db.get<{ joined: number; completed: number; points: number | null }>(
+export async function referralProgress(db: Db, userId: string) {
+  const row = await db.get<{ joined: number; completed: number; points: number | null }>(
     `SELECT COUNT(*) AS joined,
             SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
             SUM(points_awarded) AS points
@@ -81,7 +81,7 @@ export function referralProgress(db: Db, userId: string) {
     { u: userId },
   );
   return {
-    code: codeFor(db, userId),
+    code: await codeFor(db, userId),
     joined: row?.joined ?? 0,
     completed: row?.completed ?? 0,
     pointsEarned: row?.points ?? 0,
@@ -118,8 +118,8 @@ export interface Board {
  * that counted scan earnings would rank whoever spends the most money, which is
  * a different competition and not one to advertise.
  */
-function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?: string } = {}) {
-  return db.all<{ user_id: string; points: number; name: string; avatar: string | null; opted: number }>(
+async function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?: string } = {}) {
+  return await db.all<{ user_id: string; points: number; name: string; avatar: string | null; opted: number }>(
     `SELECT l.user_id, SUM(l.delta) AS points, u.display_name AS name,
             u.display_avatar AS avatar, u.leaderboard_opt_in AS opted
        FROM points_ledger l JOIN users u ON u.id = l.user_id
@@ -165,7 +165,7 @@ export const isScope = (value: string): value is Scope =>
  * rather than about a blank field. The scope in the response says which board
  * actually came back, so a client can label it honestly instead of guessing.
  */
-export function board(
+export async function board(
   db: Db,
   input: {
     userId?: string;
@@ -175,7 +175,7 @@ export function board(
     at?: Iso;
     limit?: number;
   },
-): Board {
+): Promise<Board> {
   const at = input.at ?? now();
   const week = isoWeek(at);
 
@@ -187,7 +187,7 @@ export function board(
       : input.scope === 'country' && !country ? 'global'
         : input.scope;
 
-  const rows = weeklyPoints(db, weekStart(at), {
+  const rows = await weeklyPoints(db, weekStart(at), {
     city: city ?? undefined,
     country: country ?? undefined,
   });
@@ -218,14 +218,14 @@ export function board(
   };
 }
 
-export function friendsBoard(db: Db, input: { userId: string; at?: Iso }): Board {
+export async function friendsBoard(db: Db, input: { userId: string; at?: Iso }): Promise<Board> {
   const at = input.at ?? now();
-  const friends = db.all<{ friend_id: string }>(
+  const friends = await db.all<{ friend_id: string }>(
     `SELECT friend_id FROM friendships WHERE user_id = $u`,
     { u: input.userId },
   );
   const ids = new Set([input.userId, ...friends.map((f) => f.friend_id)]);
-  const rows = weeklyPoints(db, weekStart(at)).filter((row) => ids.has(row.user_id));
+  const rows = (await weeklyPoints(db, weekStart(at))).filter((row) => ids.has(row.user_id));
 
   /* No opt-in filter: these are accounts the user connected with deliberately,
      which is a different consent from being listed to a whole city. */
@@ -265,18 +265,18 @@ function weekStart(at: Iso): Iso {
  * out — their historical rank stays a fact, it just stops being *listed*, which
  * the read path already enforces.
  */
-export function snapshotWeek(db: Db, at: Iso = now()): number {
+export async function snapshotWeek(db: Db, at: Iso = now()): Promise<number> {
   const week = isoWeek(plusDays(at, -1));
-  const cities = db.all<{ city: string }>(
+  const cities = await db.all<{ city: string }>(
     `SELECT DISTINCT city FROM users WHERE city IS NOT NULL AND status = 'active'`,
   );
 
   let written = 0;
-  db.tx(() => {
+  await db.tx(async () => {
     for (const { city } of cities) {
-      const rows = weeklyPoints(db, weekStart(plusDays(at, -1)), { city });
-      rows.forEach((row, index) => {
-        db.run(
+      const rows = await weeklyPoints(db, weekStart(plusDays(at, -1)), { city });
+      for (const [index, row] of rows.entries()) {
+        await db.run(
           `INSERT INTO leaderboard_entries (week, scope, user_id, points, rank)
            VALUES ($w, $s, $u, $p, $r)
              ON CONFLICT (week, scope, user_id)
@@ -284,25 +284,25 @@ export function snapshotWeek(db: Db, at: Iso = now()): number {
           { w: week, s: `city:${city}`, u: row.user_id, p: row.points, r: index + 1 },
         );
         written += 1;
-      });
+      };
     }
   });
   return written;
 }
 
-export function setLeaderboardOptIn(db: Db, userId: string, optIn: boolean): void {
-  db.run(`UPDATE users SET leaderboard_opt_in = $o WHERE id = $u`, { o: optIn, u: userId });
+export async function setLeaderboardOptIn(db: Db, userId: string, optIn: boolean): Promise<void> {
+  await db.run(`UPDATE users SET leaderboard_opt_in = $o WHERE id = $u`, { o: optIn, u: userId });
 }
 
 /** Friendship is mutual here — a one-way board is a follower list, not friends. */
-export function addFriend(db: Db, userId: string, friendId: string, at: Iso = now()): void {
+export async function addFriend(db: Db, userId: string, friendId: string, at: Iso = now()): Promise<void> {
   if (userId === friendId) throw new DomainError('bad_request', 'cannot befriend yourself');
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT OR IGNORE INTO friendships (user_id, friend_id, created_at) VALUES ($u, $f, $t)`,
       { u: userId, f: friendId, t: at },
     );
-    db.run(
+    await db.run(
       `INSERT OR IGNORE INTO friendships (user_id, friend_id, created_at) VALUES ($f, $u, $t)`,
       { u: userId, f: friendId, t: at },
     );

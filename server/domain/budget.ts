@@ -66,15 +66,15 @@ interface BudgetRow {
  * five hours earlier. Reading the period off the server's clock would put the
  * first hour of every month in the wrong pool.
  */
-export function budgetFor(db: Db, venueId: string, at: Iso = now()): BudgetView {
-  const venue = db.get<{ timezone: string; currency: string }>(
+export async function budgetFor(db: Db, venueId: string, at: Iso = now()): Promise<BudgetView> {
+  const venue = await db.get<{ timezone: string; currency: string }>(
     `SELECT timezone, currency FROM venues WHERE id = $v`,
     { v: venueId },
   );
   if (!venue) throw new DomainError('not_found', 'venue not found');
 
   const period = localMonth(at, venue.timezone);
-  let row = db.get<BudgetRow>(`SELECT * FROM budgets WHERE venue_id = $v AND period = $p`, {
+  let row = await db.get<BudgetRow>(`SELECT * FROM budgets WHERE venue_id = $v AND period = $p`, {
     v: venueId,
     p: period,
   });
@@ -84,12 +84,12 @@ export function budgetFor(db: Db, venueId: string, at: Iso = now()): BudgetView 
        zero: a budget that silently becomes zero on the 1st turns every voucher
        in the app off overnight, which reads to customers as the program ending.
        An owner who wants zero has to say so. */
-    const previous = db.get<BudgetRow>(
+    const previous = await db.get<BudgetRow>(
       `SELECT * FROM budgets WHERE venue_id = $v ORDER BY period DESC LIMIT 1`,
       { v: venueId },
     );
     const id = newId('bdg');
-    db.run(
+    await db.run(
       `INSERT INTO budgets (id, venue_id, period, currency, total_minor, loyalty_bp, created_at, updated_at)
        VALUES ($i, $v, $p, $c, $t, $l, $at, $at)`,
       {
@@ -102,20 +102,20 @@ export function budgetFor(db: Db, venueId: string, at: Iso = now()): BudgetView 
         at,
       },
     );
-    row = db.get<BudgetRow>(`SELECT * FROM budgets WHERE id = $i`, { i: id })!;
+    row = (await db.get<BudgetRow>(`SELECT * FROM budgets WHERE id = $i`, { i: id }))!;
   }
 
-  return viewOf(db, row);
+  return await viewOf(db, row);
 }
 
-export function viewById(db: Db, budgetId: string): BudgetView {
-  const row = db.get<BudgetRow>(`SELECT * FROM budgets WHERE id = $i`, { i: budgetId });
+export async function viewById(db: Db, budgetId: string): Promise<BudgetView> {
+  const row = await db.get<BudgetRow>(`SELECT * FROM budgets WHERE id = $i`, { i: budgetId });
   if (!row) throw new DomainError('not_found', 'budget not found');
-  return viewOf(db, row);
+  return await viewOf(db, row);
 }
 
-function viewOf(db: Db, row: BudgetRow): BudgetView {
-  const sums = db.all<{ allocation: Allocation; kind: string; total: number }>(
+async function viewOf(db: Db, row: BudgetRow): Promise<BudgetView> {
+  const sums = await db.all<{ allocation: Allocation; kind: string; total: number }>(
     `SELECT allocation, kind, SUM(amount_minor) AS total
        FROM budget_movements WHERE budget_id = $b GROUP BY allocation, kind`,
     { b: row.id },
@@ -173,7 +173,7 @@ export const toleranceOf = (view: BudgetView): number =>
 export const canSpend = (pool: Pool, amount: number, tolerance: number): boolean =>
   pool.available + tolerance >= amount;
 
-function move(
+async function move(
   db: Db,
   budgetId: string,
   allocation: Allocation,
@@ -181,9 +181,9 @@ function move(
   amount: number,
   source: { kind?: string; ref?: string; note?: string } = {},
   at: Iso = now(),
-): void {
+): Promise<void> {
   if (amount <= 0) return;
-  db.run(
+  await db.run(
     `INSERT INTO budget_movements
        (id, budget_id, allocation, kind, amount_minor, source_kind, source_ref, note, created_at)
      VALUES ($i, $b, $a, $k, $m, $sk, $sr, $n, $t)`,
@@ -208,15 +208,15 @@ function move(
  * says how far short it was — the caller (voucher issue, reward earn) turns that
  * into either a degraded tier (§4.4) or a refusal.
  */
-export function reserve(
+export async function reserve(
   db: Db,
   budgetId: string,
   allocation: Allocation,
   amount: number,
   source: { kind?: string; ref?: string } = {},
   at: Iso = now(),
-): void {
-  const view = viewById(db, budgetId);
+): Promise<void> {
+  const view = await viewById(db, budgetId);
   const pool = allocation === 'loyalty' ? view.loyalty : view.voucher;
   if (!canSpend(pool, amount, toleranceOf(view))) {
     throw new DomainError('budget_exhausted', 'allocation cannot cover this reserve', {
@@ -225,19 +225,19 @@ export function reserve(
       requested: amount,
     });
   }
-  move(db, budgetId, allocation, 'reserve', amount, source, at);
+  await move(db, budgetId, allocation, 'reserve', amount, source, at);
 }
 
 /** Give a reserve back — the voucher expired, or the redemption is now known. */
-export function release(
+export async function release(
   db: Db,
   budgetId: string,
   allocation: Allocation,
   amount: number,
   source: { kind?: string; ref?: string } = {},
   at: Iso = now(),
-): void {
-  move(db, budgetId, allocation, 'release', amount, source, at);
+): Promise<void> {
+  await move(db, budgetId, allocation, 'release', amount, source, at);
 }
 
 /**
@@ -248,29 +248,29 @@ export function release(
  * venue without the pool recording it. The guard belongs at *reserve* time,
  * which is why reserve is the phase that can fail.
  */
-export function debit(
+export async function debit(
   db: Db,
   budgetId: string,
   allocation: Allocation,
   amount: number,
   source: { kind?: string; ref?: string } = {},
   at: Iso = now(),
-): void {
-  move(db, budgetId, allocation, 'debit', amount, source, at);
+): Promise<void> {
+  await move(db, budgetId, allocation, 'debit', amount, source, at);
 }
 
 /** §11.2. The partner's urgent lever: more money in the pool, right now. */
-export function topUp(
+export async function topUp(
   db: Db,
   budgetId: string,
   allocation: Allocation,
   amount: number,
   note: string,
   at: Iso = now(),
-): BudgetView {
+): Promise<BudgetView> {
   if (amount <= 0) throw new DomainError('bad_request', 'top-up must be positive');
-  move(db, budgetId, allocation, 'topup', amount, { kind: 'admin', note }, at);
-  return viewById(db, budgetId);
+  await move(db, budgetId, allocation, 'topup', amount, { kind: 'admin', note }, at);
+  return await viewById(db, budgetId);
 }
 
 /**
@@ -280,16 +280,16 @@ export function topUp(
  * reserved money would break the promise that every reserve is honoured, which
  * is what a customer holding an unredeemed voucher is relying on.
  */
-export function rebalance(
+export async function rebalance(
   db: Db,
   budgetId: string,
   from: Allocation,
   amount: number,
   at: Iso = now(),
-): BudgetView {
+): Promise<BudgetView> {
   const to: Allocation = from === 'loyalty' ? 'voucher' : 'loyalty';
-  return db.tx(() => {
-    const view = viewById(db, budgetId);
+  return db.tx(async () => {
+    const view = await viewById(db, budgetId);
     const source = from === 'loyalty' ? view.loyalty : view.voucher;
     if (amount <= 0) throw new DomainError('bad_request', 'rebalance must be positive');
     if (source.available < amount) {
@@ -298,9 +298,9 @@ export function rebalance(
         requested: amount,
       });
     }
-    move(db, budgetId, from, 'rebalance_out', amount, { kind: 'admin' }, at);
-    move(db, budgetId, to, 'rebalance_in', amount, { kind: 'admin' }, at);
-    return viewById(db, budgetId);
+    await move(db, budgetId, from, 'rebalance_out', amount, { kind: 'admin' }, at);
+    await move(db, budgetId, to, 'rebalance_in', amount, { kind: 'admin' }, at);
+    return await viewById(db, budgetId);
   });
 }
 

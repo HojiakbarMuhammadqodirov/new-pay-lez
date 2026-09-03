@@ -14,6 +14,7 @@
  * that is Postgres-shaped (no SQLite-only types, no `rowid` tricks), so the port
  * is a driver swap rather than a rewrite.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -26,11 +27,38 @@ export type Row = Record<string, unknown>;
 /** What a bound parameter may be. `boolean` is widened to 0/1 on the way in. */
 export type Param = string | number | bigint | null | Uint8Array | boolean;
 
-export class Db {
+/**
+ * What the rest of the server may assume about a database.
+ *
+ * An **interface**, not a class, because there are two implementations now:
+ * `SqliteDb` below and `PgDb` in `pg.ts`. Structural typing alone would not do
+ * it — both classes carry private fields, and TypeScript treats a class with
+ * privates as nominal, so one is never assignable to the other however
+ * identical their public surface.
+ *
+ * The 29 files that import `Db` therefore depend on this contract and on
+ * neither engine. Note what is *not* here: `raw`, the underlying handle. It
+ * exists on the SQLite class and nothing outside that file has ever used it,
+ * which is what makes swapping the engine a boot-time decision rather than a
+ * refactor.
+ */
+export interface Db {
+  all<T = Row>(sql: string, params?: Record<string, Param> | Param[]): Promise<T[]>;
+  get<T = Row>(sql: string, params?: Record<string, Param> | Param[]): Promise<T | undefined>;
+  run(sql: string, params?: Record<string, Param> | Param[]): Promise<{ changes: number }>;
+  exec(sql: string): Promise<void>;
+  tx<T>(fn: () => Promise<T> | T): Promise<T>;
+  close(): Promise<void>;
+}
+
+export class SqliteDb implements Db {
   readonly raw: DatabaseSync;
   /** Prepared statements are cached: the same SQL string is prepared once. */
   private readonly cache = new Map<string, ReturnType<DatabaseSync['prepare']>>();
-  private depth = 0;
+  /** Set while a transaction is open *in this async context*. See `tx`. */
+  private readonly inTransaction = new AsyncLocalStorage<{ depth: number }>();
+  /** The tail of the queue that serialises top-level transactions. See `tx`. */
+  private queue: Promise<void> = Promise.resolve();
 
   constructor(file: string) {
     this.raw = new DatabaseSync(file);
@@ -52,20 +80,39 @@ export class Db {
     return s;
   }
 
-  all<T = Row>(sql: string, params: Record<string, Param> | Param[] = []): T[] {
+  /*
+   * These four are `async` over a synchronous engine, on purpose.
+   *
+   * `node:sqlite` answers immediately and nothing here waits on IO. The
+   * promises exist so this class and `db/pg.ts` present **one** interface: the
+   * domain layer then has a single code path rather than two, and which
+   * database is behind it stops being a fact any of it knows.
+   *
+   * It also keeps `verify:api` honest. Postgres has no `:memory:`, so a
+   * Postgres-only port would have forced the whole suite onto a live database;
+   * with both drivers sharing a shape, those 684 checks go on running offline
+   * against a file that is thrown away, exactly as they do now.
+   */
+  async all<T = Row>(sql: string, params: Record<string, Param> | Param[] = []): Promise<T[]> {
     return this.stmt(sql).all(...bound(params)) as T[];
   }
 
-  get<T = Row>(sql: string, params: Record<string, Param> | Param[] = []): T | undefined {
+  async get<T = Row>(
+    sql: string,
+    params: Record<string, Param> | Param[] = [],
+  ): Promise<T | undefined> {
     return this.stmt(sql).get(...bound(params)) as T | undefined;
   }
 
-  run(sql: string, params: Record<string, Param> | Param[] = []): { changes: number } {
+  async run(
+    sql: string,
+    params: Record<string, Param> | Param[] = [],
+  ): Promise<{ changes: number }> {
     const result = this.stmt(sql).run(...bound(params));
     return { changes: Number(result.changes) };
   }
 
-  exec(sql: string): void {
+  async exec(sql: string): Promise<void> {
     this.raw.exec(sql);
   }
 
@@ -78,12 +125,48 @@ export class Db {
    * would end the outer transaction and a later failure would leave the grant
    * half-applied — the exact thing §3.5 forbids.
    */
-  tx<T>(fn: () => T): T {
-    if (this.depth === 0) {
-      this.raw.exec('BEGIN IMMEDIATE');
-      this.depth = 1;
+  async tx<T>(fn: () => Promise<T> | T): Promise<T> {
+    /*
+     * **Serialised, and that is new.** While this method was synchronous a
+     * transaction could not be interrupted: it ran start to finish in one turn
+     * of the loop, so two of them could never interleave. Awaiting inside `fn`
+     * breaks that guarantee — a second request can now call `tx` while the
+     * first is suspended, and on SQLite's *single* connection that second
+     * `BEGIN` would either fail or, worse, silently join the first
+     * transaction and be committed by it.
+     *
+     * So a top-level transaction queues behind any other. `pg.ts` needs none
+     * of this because it checks out a connection per transaction and they are
+     * genuinely concurrent; here there is one connection and the queue is what
+     * restores the old behaviour.
+     *
+     * Re-entry is told from concurrency by `AsyncLocalStorage` rather than by
+     * the instance counter it replaced. A depth on `this` cannot distinguish
+     * "nested inside the running transaction" from "a different request that
+     * happens to overlap it", and would have turned the second into a
+     * savepoint inside the first.
+     */
+    const open = this.inTransaction.getStore();
+    if (open) {
+      const name = `sp_${(open.depth += 1)}`;
+      this.raw.exec(`SAVEPOINT ${name}`);
       try {
-        const out = fn();
+        const out = await fn();
+        this.raw.exec(`RELEASE ${name}`);
+        return out;
+      } catch (error) {
+        this.raw.exec(`ROLLBACK TO ${name}`);
+        this.raw.exec(`RELEASE ${name}`);
+        throw error;
+      } finally {
+        open.depth -= 1;
+      }
+    }
+
+    const begin = async (): Promise<T> => {
+      this.raw.exec('BEGIN IMMEDIATE');
+      try {
+        const out = await this.inTransaction.run({ depth: 0 }, () => fn());
         this.raw.exec('COMMIT');
         return out;
       } catch (error) {
@@ -93,28 +176,23 @@ export class Db {
           /* already rolled back by SQLite on some errors */
         }
         throw error;
-      } finally {
-        this.depth = 0;
       }
-    }
+    };
 
-    const name = `sp_${this.depth}`;
-    this.depth += 1;
-    this.raw.exec(`SAVEPOINT ${name}`);
-    try {
-      const out = fn();
-      this.raw.exec(`RELEASE ${name}`);
-      return out;
-    } catch (error) {
-      this.raw.exec(`ROLLBACK TO ${name}`);
-      this.raw.exec(`RELEASE ${name}`);
-      throw error;
-    } finally {
-      this.depth -= 1;
-    }
+    /* The queue itself. Each caller chains onto the last, and the tail is kept
+       settled so one failed transaction does not poison every transaction
+       queued behind it. */
+    const result = this.queue.then(begin, begin);
+    /* Deliberately NOT awaited: this is the queue's tail, and awaiting it here
+       would make every caller wait for its own transaction twice. */
+    this.queue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
-  close(): void {
+  async close(): Promise<void> {
     this.cache.clear();
     this.raw.close();
   }
@@ -163,10 +241,10 @@ const widen = (value: Param): unknown => (typeof value === 'boolean' ? (value ? 
  * renames, drops or retypes needs a real migration with a version number behind
  * it, and `schema_meta` is where that would go.
  */
-function addColumn(db: Db, table: string, column: string, definition: string): void {
-  const columns = db.all<{ name: string }>(`PRAGMA table_info(${table})`);
+async function addColumn(db: Db, table: string, column: string, definition: string): Promise<void> {
+  const columns = await db.all<{ name: string }>(`PRAGMA table_info(${table})`);
   if (columns.some((row) => row.name === column)) return;
-  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  await db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
 /**
@@ -246,8 +324,8 @@ export const GAME_TYPES = [
  */
 const SCHEMA_VERSION = 5;
 
-const schemaVersion = (db: Db): number => {
-  const row = db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
+const schemaVersion = async (db: Db): Promise<number> => {
+  const row = await db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
   const parsed = row ? Number(row.value) : 0;
   return Number.isFinite(parsed) ? parsed : 0;
 };
@@ -267,14 +345,14 @@ function checkedValues(sql: string, column: string): string[] {
 }
 
 /** The `CREATE TABLE` statement a table was made with, or null if it is absent. */
-const tableSql = (db: Db, name: string): string | null =>
-  db.get<{ sql: string }>(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $n`, {
+const tableSql = async (db: Db, name: string): Promise<string | null> =>
+  (await db.get<{ sql: string }>(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = $n`, {
     n: name,
-  })?.sql ?? null;
+  }))?.sql ?? null;
 
-const ledgerCounts = (db: Db): { entries: number; lots: number } => ({
-  entries: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_ledger`)?.n ?? 0,
-  lots: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_lots`)?.n ?? 0,
+const ledgerCounts = async (db: Db): Promise<{ entries: number; lots: number }> => ({
+  entries: (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_ledger`))?.n ?? 0,
+  lots: (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_lots`))?.n ?? 0,
 });
 
 /**
@@ -304,22 +382,22 @@ const ledgerCounts = (db: Db): { entries: number; lots: number } => ({
  * the constraint already in the file, because a database created fresh from
  * `schema.sql` has the new vocabulary and nothing to rebuild.
  */
-function widenLedgerReasons(db: Db): void {
-  if (schemaVersion(db) >= 2) return;
+async function widenLedgerReasons(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 2) return;
 
-  const table = tableSql(db, 'points_ledger');
+  const table = await tableSql(db, 'points_ledger');
   if (!table) return;
   const present = new Set(checkedValues(table, 'reason'));
   if (LEDGER_REASONS.every((reason) => present.has(reason))) return;
 
   const list = LEDGER_REASONS.map((reason) => `'${reason}'`).join(', ');
 
-  db.exec('PRAGMA foreign_keys = OFF');
+  await db.exec('PRAGMA foreign_keys = OFF');
   try {
-    db.tx(() => {
-      const before = ledgerCounts(db);
+    await db.tx(async () => {
+      const before = await ledgerCounts(db);
 
-      db.exec(`
+      await db.exec(`
         CREATE TABLE points_ledger_v2 (
           id         TEXT PRIMARY KEY,
           user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -334,29 +412,29 @@ function widenLedgerReasons(db: Db): void {
           created_at TEXT NOT NULL,
           expires_at TEXT
         )`);
-      db.exec(`
+      await db.exec(`
         INSERT INTO points_ledger_v2
           (id, user_id, delta, reason, source_ref, source_kind, multiplier, status,
            venue_id, created_at, expires_at)
         SELECT id, user_id, delta, reason, source_ref, source_kind, multiplier, status,
                venue_id, created_at, expires_at
           FROM points_ledger`);
-      db.exec('DROP TABLE points_ledger');
-      db.exec('ALTER TABLE points_ledger_v2 RENAME TO points_ledger');
+      await db.exec('DROP TABLE points_ledger');
+      await db.exec('ALTER TABLE points_ledger_v2 RENAME TO points_ledger');
       /* The old table's indexes went down with it. */
-      db.exec('CREATE INDEX IF NOT EXISTS idx_ledger_user ON points_ledger (user_id, created_at)');
-      db.exec(
+      await db.exec('CREATE INDEX IF NOT EXISTS idx_ledger_user ON points_ledger (user_id, created_at)');
+      await db.exec(
         'CREATE INDEX IF NOT EXISTS idx_ledger_source ON points_ledger (source_kind, source_ref)',
       );
 
-      const after = ledgerCounts(db);
+      const after = await ledgerCounts(db);
       if (after.entries !== before.entries || after.lots !== before.lots) {
         throw new Error(
           `ledger migration lost rows: entries ${before.entries} → ${after.entries}, ` +
             `lots ${before.lots} → ${after.lots}`,
         );
       }
-      const orphans = db.all(`PRAGMA foreign_key_check`);
+      const orphans = await db.all(`PRAGMA foreign_key_check`);
       if (orphans.length > 0) {
         throw new Error(`ledger migration left ${orphans.length} broken references`);
       }
@@ -364,12 +442,12 @@ function widenLedgerReasons(db: Db): void {
   } finally {
     /* Restored whether the rebuild committed or threw: the constructor turned
        them on and every other statement in the process assumes they are. */
-    db.exec('PRAGMA foreign_keys = ON');
+    await db.exec('PRAGMA foreign_keys = ON');
   }
 }
 
-const userCount = (db: Db): number =>
-  db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM users`)?.n ?? 0;
+const userCount = async (db: Db): Promise<number> =>
+  (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM users`))?.n ?? 0;
 
 /**
  * Version 3: nothing is verified any more, and a birthday may be corrected once.
@@ -402,11 +480,11 @@ const userCount = (db: Db): number =>
  * thing back. A drop is a table rewrite, and a rewrite that cannot show it kept
  * every row is not one worth running against production.
  */
-function retireContactVerification(db: Db): void {
-  if (schemaVersion(db) >= 3) return;
-  if (!db.get(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`)) return;
+async function retireContactVerification(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 3) return;
+  if (!await db.get(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`)) return;
 
-  const columns = db.all<{ name: string }>(`PRAGMA table_info(users)`).map((row) => row.name);
+  const columns = (await db.all<{ name: string }>(`PRAGMA table_info(users)`)).map((row) => row.name);
   const hasVerified = columns.includes('phone_verified');
   /* `addColumn` above has already added the counter, so the only question is
      whether any row is still sitting on its default with a birthday in place.
@@ -414,27 +492,27 @@ function retireContactVerification(db: Db): void {
      fresh file, where there are no rows at all. */
   const needsBackfill =
     columns.includes('birth_date_changes') &&
-    Boolean(db.get(`SELECT 1 FROM users WHERE birth_date IS NOT NULL AND birth_date_changes = 0`));
+    Boolean(await db.get(`SELECT 1 FROM users WHERE birth_date IS NOT NULL AND birth_date_changes = 0`));
   if (!hasVerified && !needsBackfill) return;
 
-  db.tx(() => {
-    const before = userCount(db);
+  await db.tx(async () => {
+    const before = await userCount(db);
 
     if (needsBackfill) {
       /* Only where the counter is still at its default: re-running this after a
          player has already used their correction must not walk it backwards. */
-      db.run(
+      await db.run(
         `UPDATE users SET birth_date_changes = 1
           WHERE birth_date IS NOT NULL AND birth_date_changes = 0`,
       );
     }
-    if (hasVerified) db.exec('ALTER TABLE users DROP COLUMN phone_verified');
+    if (hasVerified) await db.exec('ALTER TABLE users DROP COLUMN phone_verified');
 
-    const after = userCount(db);
+    const after = await userCount(db);
     if (after !== before) {
       throw new Error(`profile migration lost rows: users ${before} → ${after}`);
     }
-    const orphans = db.all(`PRAGMA foreign_key_check`);
+    const orphans = await db.all(`PRAGMA foreign_key_check`);
     if (orphans.length > 0) {
       throw new Error(`profile migration left ${orphans.length} broken references`);
     }
@@ -469,16 +547,16 @@ function retireContactVerification(db: Db): void {
  * is in no index, no CHECK, no view and no foreign key, which are the four
  * things SQLite refuses a drop for.
  */
-function retireTheHeadline(db: Db): void {
-  if (schemaVersion(db) >= 4) return;
-  if (!db.get(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`)) return;
-  const columns = db.all<{ name: string }>(`PRAGMA table_info(users)`).map((row) => row.name);
+async function retireTheHeadline(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 4) return;
+  if (!await db.get(`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'users'`)) return;
+  const columns = (await db.all<{ name: string }>(`PRAGMA table_info(users)`)).map((row) => row.name);
   if (!columns.includes('headline')) return;
 
   const written =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM users WHERE headline IS NOT NULL AND TRIM(headline) <> ''`,
-    )?.n ?? 0;
+    ))?.n ?? 0;
   if (written > 0) {
     console.warn(
       `migration 4: dropping users.headline discards ${written} written line(s) — ` +
@@ -487,23 +565,23 @@ function retireTheHeadline(db: Db): void {
     );
   }
 
-  db.tx(() => {
-    const before = userCount(db);
-    db.exec('ALTER TABLE users DROP COLUMN headline');
-    const after = userCount(db);
+  await db.tx(async () => {
+    const before = await userCount(db);
+    await db.exec('ALTER TABLE users DROP COLUMN headline');
+    const after = await userCount(db);
     if (after !== before) {
       throw new Error(`headline migration lost rows: users ${before} → ${after}`);
     }
-    const orphans = db.all(`PRAGMA foreign_key_check`);
+    const orphans = await db.all(`PRAGMA foreign_key_check`);
     if (orphans.length > 0) {
       throw new Error(`headline migration left ${orphans.length} broken references`);
     }
   });
 }
 
-const gameCounts = (db: Db): { sessions: number; events: number } => ({
-  sessions: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_sessions`)?.n ?? 0,
-  events: db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events`)?.n ?? 0,
+const gameCounts = async (db: Db): Promise<{ sessions: number; events: number }> => ({
+  sessions: (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_sessions`))?.n ?? 0,
+  events: (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events`))?.n ?? 0,
 });
 
 /**
@@ -533,22 +611,22 @@ const gameCounts = (db: Db): { sessions: number; events: number } => ({
  * the constraint already in the file, because a database created fresh from
  * `schema.sql` has the new vocabulary and nothing to rebuild.
  */
-function widenGameTypes(db: Db): void {
-  if (schemaVersion(db) >= 5) return;
+async function widenGameTypes(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 5) return;
 
-  const table = tableSql(db, 'game_sessions');
+  const table = await tableSql(db, 'game_sessions');
   if (!table) return;
   const present = new Set(checkedValues(table, 'game_type'));
   if (GAME_TYPES.every((type) => present.has(type))) return;
 
   const list = GAME_TYPES.map((type) => `'${type}'`).join(', ');
 
-  db.exec('PRAGMA foreign_keys = OFF');
+  await db.exec('PRAGMA foreign_keys = OFF');
   try {
-    db.tx(() => {
-      const before = gameCounts(db);
+    await db.tx(async () => {
+      const before = await gameCounts(db);
 
-      db.exec(`
+      await db.exec(`
         CREATE TABLE game_sessions_v5 (
           id          TEXT PRIMARY KEY,
           user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
@@ -566,28 +644,28 @@ function widenGameTypes(db: Db): void {
           finished_at TEXT,
           ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL
         )`);
-      db.exec(`
+      await db.exec(`
         INSERT INTO game_sessions_v5
           (id, user_id, game_type, language, seed, secret, state, score, answered,
            correct, life_spent, started_at, finished_at, ledger_id)
         SELECT id, user_id, game_type, language, seed, secret, state, score, answered,
                correct, life_spent, started_at, finished_at, ledger_id
           FROM game_sessions`);
-      db.exec('DROP TABLE game_sessions');
-      db.exec('ALTER TABLE game_sessions_v5 RENAME TO game_sessions');
+      await db.exec('DROP TABLE game_sessions');
+      await db.exec('ALTER TABLE game_sessions_v5 RENAME TO game_sessions');
       /* The old table's index went down with it. */
-      db.exec(
+      await db.exec(
         'CREATE INDEX IF NOT EXISTS idx_sessions_game ON game_sessions (user_id, started_at)',
       );
 
-      const after = gameCounts(db);
+      const after = await gameCounts(db);
       if (after.sessions !== before.sessions || after.events !== before.events) {
         throw new Error(
           `game type migration lost rows: sessions ${before.sessions} → ${after.sessions}, ` +
             `events ${before.events} → ${after.events}`,
         );
       }
-      const orphans = db.all(`PRAGMA foreign_key_check`);
+      const orphans = await db.all(`PRAGMA foreign_key_check`);
       if (orphans.length > 0) {
         throw new Error(`game type migration left ${orphans.length} broken references`);
       }
@@ -596,7 +674,7 @@ function widenGameTypes(db: Db): void {
     /* Restored whether the rebuild committed or threw, exactly as version 2
        restores it: the constructor turned them on and every other statement in
        the process assumes they are. */
-    db.exec('PRAGMA foreign_keys = ON');
+    await db.exec('PRAGMA foreign_keys = ON');
   }
 }
 
@@ -607,8 +685,8 @@ function widenGameTypes(db: Db): void {
  * reason the domain layer writes happily and the database rejects at 3am — or
  * worse, one the database accepts and no report knows how to name.
  */
-function assertLedgerReasons(db: Db): void {
-  const table = tableSql(db, 'points_ledger');
+async function assertLedgerReasons(db: Db): Promise<void> {
+  const table = await tableSql(db, 'points_ledger');
   if (!table) return;
   const inTable = checkedValues(table, 'reason');
   const missing = LEDGER_REASONS.filter((reason) => !inTable.includes(reason));
@@ -632,8 +710,8 @@ function assertLedgerReasons(db: Db): void {
  * Checked on every boot for the same reason the ledger's vocabulary is, and
  * against the live constraint rather than a copy of it.
  */
-function assertGameTypes(db: Db): void {
-  const table = tableSql(db, 'game_sessions');
+async function assertGameTypes(db: Db): Promise<void> {
+  const table = await tableSql(db, 'game_sessions');
   if (!table) return;
   const inTable = checkedValues(table, 'game_type');
   const missing = GAME_TYPES.filter((type) => !inTable.includes(type));
@@ -647,22 +725,22 @@ function assertGameTypes(db: Db): void {
 }
 
 /** Applied once, on an empty file. The schema is idempotent (`IF NOT EXISTS`). */
-export function migrate(db: Db): void {
+export async function migrate(db: Db): Promise<void> {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
   /* Not inside a transaction: `PRAGMA journal_mode = WAL` cannot run in one. */
-  db.exec(sql);
+  await db.exec(sql);
 
   /* Columns added after the first release. See `addColumn` for why the schema
      file alone cannot deliver these. */
-  addColumn(db, 'service_events', 'source', 'TEXT');
-  addColumn(db, 'users', 'phone', 'TEXT');
+  await addColumn(db, 'service_events', 'source', 'TEXT');
+  await addColumn(db, 'users', 'phone', 'TEXT');
   /* Nullable because "has not told us" is the state most accounts are in, and
      the *set* one is what pays `CONFIG.earn.birthday`. One correction is
      allowed; `birth_date_changes` counts, and the version-3 migration below is
      what stops its `DEFAULT 0` handing an existing birthday a second one. */
-  addColumn(db, 'users', 'birth_date', 'TEXT');
-  addColumn(db, 'users', 'birth_date_set_at', 'TEXT');
-  addColumn(db, 'users', 'birth_date_changes', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn(db, 'users', 'birth_date', 'TEXT');
+  await addColumn(db, 'users', 'birth_date_set_at', 'TEXT');
+  await addColumn(db, 'users', 'birth_date_changes', 'INTEGER NOT NULL DEFAULT 0');
   /* One of `OCCUPATIONS` in `domain/accounts.ts`, and nullable because "has not
      said" is the state every account starts in. No CHECK: see the column's own
      note in `schema.sql` for why a vocabulary that is a product decision does
@@ -670,13 +748,13 @@ export function migrate(db: Db): void {
      this replaced is dropped by the version-4 migration below — and the
      `addColumn` for it had to go with it, or every boot would re-add the column
      the migration had just removed. */
-  addColumn(db, 'users', 'occupation', 'TEXT');
-  addColumn(db, 'users', 'onboarded_at', 'TEXT');
+  await addColumn(db, 'users', 'occupation', 'TEXT');
+  await addColumn(db, 'users', 'onboarded_at', 'TEXT');
   /* The once-only guard on `CONFIG.earn.profileComplete`, claimed by an
      `UPDATE … WHERE profile_completed_at IS NULL` the way `onboarded_at` is. */
-  addColumn(db, 'users', 'profile_completed_at', 'TEXT');
-  addColumn(db, 'users', 'username', 'TEXT');
-  addColumn(db, 'users', 'username_norm', 'TEXT');
+  await addColumn(db, 'users', 'profile_completed_at', 'TEXT');
+  await addColumn(db, 'users', 'username', 'TEXT');
+  await addColumn(db, 'users', 'username_norm', 'TEXT');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an
@@ -691,26 +769,26 @@ export function migrate(db: Db): void {
      this being `COLLATE NOCASE`. One pattern for one problem — and a column
      holding the answer is a column every lookup, export and report can compare
      on, where a collation is a rule each of them has to remember to repeat. */
-  db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)');
+  await db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)');
 
   /* Anything that renames, drops or retypes goes here instead, behind the
      version — which is the line `addColumn` above draws. */
-  widenLedgerReasons(db);
-  assertLedgerReasons(db);
-  retireContactVerification(db);
-  retireTheHeadline(db);
-  widenGameTypes(db);
-  assertGameTypes(db);
+  await widenLedgerReasons(db);
+  await assertLedgerReasons(db);
+  await retireContactVerification(db);
+  await retireTheHeadline(db);
+  await widenGameTypes(db);
+  await assertGameTypes(db);
 
-  db.run(
+  await db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
     { v: String(SCHEMA_VERSION) },
   );
 }
 
-export function openDb(file: string): Db {
-  const db = new Db(file);
-  migrate(db);
+export async function openDb(file: string): Promise<Db> {
+  const db = new SqliteDb(file);
+  await migrate(db);
   return db;
 }

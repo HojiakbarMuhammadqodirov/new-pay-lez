@@ -47,16 +47,16 @@ export interface Venue {
   updated_at: string;
 }
 
-export function getVenue(db: Db, venueId: string): Venue {
-  const venue = db.get<Venue>(`SELECT * FROM venues WHERE id = $v AND deleted_at IS NULL`, {
+export async function getVenue(db: Db, venueId: string): Promise<Venue> {
+  const venue = await db.get<Venue>(`SELECT * FROM venues WHERE id = $v AND deleted_at IS NULL`, {
     v: venueId,
   });
   if (!venue) throw new DomainError('not_found', 'venue not found');
   return venue;
 }
 
-export const venuesOf = (db: Db, ownerId: string): Venue[] =>
-  db.all<Venue>(
+export const venuesOf = async (db: Db, ownerId: string): Promise<Venue[]> =>
+  await db.all<Venue>(
     `SELECT * FROM venues WHERE owner_user_id = $o AND deleted_at IS NULL ORDER BY created_at`,
     { o: ownerId },
   );
@@ -81,19 +81,19 @@ export const venueLocal = (venue: Venue, at: Iso = now()) => local(at, venue.tim
  * notification (§4.5) because the estimate the dashboard shows will visibly
  * move on the day it happens — an unexplained jump reads as a bug.
  */
-export function averageCheck(
+export async function averageCheck(
   db: Db,
   venue: Venue,
   at: Iso = now(),
-): { minor: number; source: 'category' | 'computed'; samples: number } {
+): Promise<{ minor: number; source: 'category' | 'computed'; samples: number }> {
   const since = plusDays(at, -CONFIG.vouchers.avgCheckWindowDays);
-  const amounts = db
+  const amounts = (await db
     .all<{ amount_minor: number }>(
       `SELECT amount_minor FROM transactions
         WHERE venue_id = $v AND status = 'committed' AND confirmed_at >= $s
           AND amount_minor IS NOT NULL`,
       { v: venue.id, s: since },
-    )
+    ))
     .map((row) => row.amount_minor);
 
   if (amounts.length >= CONFIG.vouchers.avgCheckMinSamples) {
@@ -108,10 +108,10 @@ export function averageCheck(
      default is what a venue with *nothing* falls back to. */
   const fallback =
     venue.avg_check_minor ??
-    db.get<{ avg_check_minor: number }>(
+    (await db.get<{ avg_check_minor: number }>(
       `SELECT avg_check_minor FROM category_defaults WHERE category = $c`,
       { c: venue.category },
-    )?.avg_check_minor ??
+    ))?.avg_check_minor ??
     6000;
 
   return { minor: fallback, source: 'category', samples: amounts.length };
@@ -124,10 +124,10 @@ export function averageCheck(
  * and the median is a scan of a month of transactions; the flip is what the
  * caller turns into a notification.
  */
-export function refreshAverageCheck(db: Db, venue: Venue, at: Iso = now()): { flipped: boolean; minor: number } {
-  const next = averageCheck(db, venue, at);
+export async function refreshAverageCheck(db: Db, venue: Venue, at: Iso = now()): Promise<{ flipped: boolean; minor: number }> {
+  const next = await averageCheck(db, venue, at);
   const flipped = next.source !== venue.avg_check_source;
-  db.run(
+  await db.run(
     `UPDATE venues SET avg_check_minor = $a, avg_check_source = $s, updated_at = $t WHERE id = $v`,
     { a: next.minor, s: next.source, t: at, v: venue.id },
   );
@@ -141,9 +141,9 @@ export function refreshAverageCheck(db: Db, venue: Venue, at: Iso = now()): { fl
  * a listing with no hours is incomplete, not shut, and hiding it would punish
  * the venue for a missing field rather than tell anyone anything true.
  */
-export function isOpen(db: Db, venue: Venue, at: Iso = now()): boolean {
+export async function isOpen(db: Db, venue: Venue, at: Iso = now()): Promise<boolean> {
   const l = local(at, venue.timezone);
-  const row = db.get<{ opens_min: number | null; closes_min: number | null; closed: number }>(
+  const row = await db.get<{ opens_min: number | null; closes_min: number | null; closed: number }>(
     `SELECT opens_min, closes_min, closed FROM venue_hours WHERE venue_id = $v AND weekday = $d`,
     { v: venue.id, d: l.weekday },
   );
@@ -180,7 +180,7 @@ export function isOpen(db: Db, venue: Venue, at: Iso = now()): boolean {
  *   venue's reach is only ever read through `analytics.reach`, which aggregates
  *   the rows. One source of truth, and no cache to drift.
  */
-export function trackListing(
+export async function trackListing(
   db: Db,
   input: {
     venueId: string;
@@ -191,14 +191,14 @@ export function trackListing(
     language?: string;
     at?: Iso;
   },
-): void {
+): Promise<void> {
   /* Reads the venue first so a bad id is a 404 rather than a row pointing at
      nothing: `service_events.venue_id` is `ON DELETE SET NULL`, so an unchecked
      insert against a missing venue would be accepted and then be unattributable
      forever. */
-  const venue = getVenue(db, input.venueId);
+  const venue = await getVenue(db, input.venueId);
 
-  db.run(
+  await db.run(
     `INSERT INTO service_events
        (id, service_id, venue_id, user_id, event_type, source, city, country_code, language, created_at)
      VALUES ($i, NULL, $v, $u, $e, $s, $c, $cc, $l, $t)`,

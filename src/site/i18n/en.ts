@@ -130,40 +130,164 @@ export const en = {
     back: 'Back to paylez',
     search: 'Search a venue, a service ID, an offer or a person…',
     noMatch: 'Nothing matches that search.',
-    /* Index-aligned with the six tiles in `admin.tsx`. */
+    /*
+     * Index-aligned with the five tiles in `admin.tsx`, and every one of them is
+     * a `COUNT` somebody could go and run. There were six: "total deals" and
+     * "active deals" collapsed into one, because the only deal route an
+     * operator can call returns the live ones and a total would have been the
+     * same figure under a different word.
+     */
     kpis: [
-      'Total services',
-      'Active services',
-      'Total deals',
-      'Active deals',
+      'Venues',
+      'Live venues',
+      'Live offers',
+      'Gift cards stocked',
       'Accounts',
-      'Players',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
     tabs: ['Services', 'Offers', 'People', 'Website', 'Messages'],
 
     services: {
       title: 'Business services',
-      lede: 'Every venue listed on paylez. Open one to read its analytics.',
+      lede: 'Every venue on the server. Open one to read what is measured about it.',
       serviceId: 'Service ID',
       copy: 'Copy',
       copied: 'Copied',
       analytics: 'Analytics',
       active: 'Active',
       paused: 'Paused',
-      vouchers: 'Vouchers',
-      /* The one venue on this list that a real owner filled in on this device. */
       live: 'Live listing',
+      /* Not a failed request and not a search coming up short: there are no
+         venues. It is what a platform looks like before anybody has signed up,
+         and it is the state production is in. */
+      none: {
+        title: 'No venues yet',
+        body: 'A venue appears here once an owner finishes their listing. Verify it in the People tab and its offers can go live.',
+      },
     },
 
     deals: {
       title: 'Offers and gift cards',
-      lede: 'What the app is showing across the country this month.',
+      lede: 'Every offer the platform holds and everything on the gift-card shelf — including the paused offers and the drafts, which the customer’s own catalogue cannot show.',
       kinds: { gift: 'Gift card', deal: 'Hot deal' },
       until: 'Until {date}',
+      cost: '{n} pts',
+      stock: '{n} in stock',
+      /* The stored state of an offer, which is what the pill says now that this
+         list is not live-only. Keyed rather than index-aligned, and typed as a
+         plain record, because it is indexed with a column value from the server
+         — a status this dictionary has not heard of falls back to the raw word
+         rather than to an empty pill. */
+      states: {
+        draft: 'Draft',
+        scheduled: 'Scheduled',
+        live: 'Live',
+        paused: 'Paused',
+        expired: 'Expired',
+      } as Record<string, string>,
+      untitled: 'No title yet',
+      none: {
+        title: 'Nothing on offer yet',
+        body: 'Hot deals come from venues once they are verified; gift cards are stocked by the platform.',
+      },
+    },
+
+    /* ── the write half (`adminControls.tsx`) ────────────────────────────────
+     *
+     * One block for every press on this console that changes something, because
+     * the words are the same wherever the press is: an offer, a venue and an
+     * account are removed by the same button with the same two questions around
+     * it.
+     *
+     * The sentence under each destructive one says what is **kept** as well as
+     * what goes, and that is the half an operator actually needs. "This cannot
+     * be undone" is true of the listing and false of the receipts, and choosing
+     * between suspending and removing is exactly that distinction. Every one of
+     * them also names the reversible alternative, because the press somebody
+     * reaches for is the one they were shown.
+     */
+    manage: {
+      working: 'Working…',
+      cancel: 'Cancel',
+      dismiss: 'Dismiss',
+      failed: 'That did not go through.',
+
+
+      /* venues */
+      suspend: 'Suspend',
+      restore: 'Restore',
+
+      /* offers */
+      pause: 'Pause',
+      resume: 'Resume',
+      cardRemoved: 'Taken off the shelf.',
+      cardDelisted:
+        'Off the shelf, and the row stays: {n} of these have been bought, and the codes in those wallets have to go on naming a brand.',
+
+      /* people */
+      ban: 'Suspend',
+      letBackIn: 'Let back in',
+      password: 'Password',
+      passwordFor: 'Set a password for {who}',
+      passwordBody:
+        'They can sign in with it straight away, and every device they are signed in on is signed out. How they originally signed up does not change.',
+      newPassword: 'New password',
+      passwordHelp: 'At least {n} characters. Read it out to them — nothing here sends it anywhere.',
+      setPassword: 'Set it',
+      passwordSet: 'Password set. Every session on that account was signed out.',
+      operatorRow: 'Operator',
+      closedRow: 'Closed',
+
+      /* ── edit mode ────────────────────────────────────────────────────────
+         The toolbar switch, the two icon buttons it puts on every row, and the
+         dialogue the bin opens. `editOn` / `editOff` are the two labels of one
+         control rather than a state read elsewhere: a button that says what
+         pressing it will do needs no second word beside it. */
+      edit: 'Edit',
+      editOn: 'Done editing',
+      editHint: 'Every row can be corrected or removed.',
+      editRow: 'Edit',
+      deleteRow: 'Delete',
+      save: 'Save',
+      saved: 'Saved.',
+
+      /* The dialogue. One sentence, the thing's own name in it, and two
+         buttons — see `ConfirmDialog` for why the typed answer is gone. */
+      deleteTitle: 'Delete {what}?',
+      deleteVenue:
+        'The venue and everything it owns — its offers, campaigns, budgets, tags and visits — are removed from the database. Suspending is the reversible version.',
+      deleteDeal:
+        'The offer and the impressions and claims it collected are removed from the database. Pausing is the reversible version.',
+      deleteUser:
+        'The name, address and profile are erased. If the account has never earned or spent anything the row goes too; if it has, it stays as anonymous rows, because a venue’s receipts have to keep adding up.',
+      deleteCard: 'The brand comes off the shelf.',
+      deleteYes: 'Yes, delete',
+      deleted: '{what} deleted.',
+      venueDeleted: 'Venue deleted. {n} offers went with it.',
+      userDeleted: 'The account is closed, and no row was left behind.',
+      userAnonymised:
+        'The account is closed. Its rows stay, anonymous, because a venue’s receipts are derived from them.',
+
+      /* Field labels for the three edit forms. Short, because they sit inside a
+         row rather than on a page of their own. */
+      fields: {
+        name: 'Name',
+        city: 'City',
+        country: 'Country',
+        category: 'Category',
+        address: 'Address',
+        phone: 'Phone',
+        email: 'Email',
+        title: 'Title',
+        description: 'Description',
+        terms: 'Terms',
+        until: 'Runs until',
+        occupation: 'Status',
+      },
     },
 
     people: {
+
       title: 'People',
       lede: 'The three seeded accounts, and everyone who has signed up since.',
       columns: ['Name', 'Email', 'Role', 'Joined', 'State'],
@@ -178,7 +302,8 @@ export const en = {
       none: '—',
     },
 
-    note: 'This directory lives in this browser. There is no server behind it yet, so the console reads rather than edits — see auth/users.ts.',
+    note: 'Every figure on this console is read from the server, and nothing here is seeded. What this screen can change, it can only take away or give back: a venue, an offer, an account, a password. No figure anybody reports from is editable from here, and every press is written to the audit log with your name on it.',
+
 
     /* ── the fourth tab: the site itself, and the only one that asks a server ── */
     /**
@@ -198,7 +323,11 @@ export const en = {
       switch: 'Which table to show',
       counts: { users: 'active accounts', venues: 'live venues', issued: 'points issued' },
       tables: { users: 'People', venues: 'Venues' },
-      userColumns: ['Name', 'Email', 'Signed up with', 'City', 'Points', 'Status', 'Joined'],
+      /* Eight now. The last is the write half — suspend, password, close — and
+         it is a column rather than a menu because there are three of them and a
+         table row has the width. */
+      userColumns: ['Name', 'Email', 'Signed up with', 'City', 'Points', 'Status', 'Joined', 'Actions'],
+
       venueColumns: ['Venue', 'City', 'Category', 'Owner', 'Visits', 'Verified'],
       /* The one thing on this screen somebody has to *do*. A venue waits here
          until a person looks; until then its owner's offers cannot go live. */
@@ -213,7 +342,8 @@ export const en = {
       unverified: 'Not yet',
       noUsers: 'Nobody has signed up yet.',
       noVenues: 'No venues yet.',
-      note: 'Showing {n} accounts. This screen reads; it never edits somebody else’s account.',
+      note: 'Showing {n} accounts. Suspending an account, closing one and setting a password are all written to the audit log with your name on them — and an operator’s own row cannot be changed from here at all.',
+
     },
     messages: {
       title: 'What people wrote',
@@ -326,9 +456,6 @@ export const en = {
         /** The banner: what on this screen is real. */
         measured:
           'Visits and customers are counted, from GET /v1/admin/venues. Everything else on this screen is partner-scoped or not collected, and is shown as “not measured” rather than as a zero.',
-        /** The banner: the request did not come back. */
-        notConnected:
-          'The backend is not answering, so even the visit and customer counts cannot be read. This is not a zero — we could not ask.',
       },
 
       states: { live: 'Active', paused: 'Paused' },
@@ -467,29 +594,53 @@ export const en = {
     lede: 'Everything you have earned, and everything you have spent.',
     balance: 'Balance',
     points: 'pts',
-    /* `{n}` is how many points short the cheapest voucher is. */
-    shortBy: '{n} points from your next voucher',
-    canRedeem: 'Enough for a voucher',
+    /* `{n}` is how many points short the cheapest card on the shelf is. */
+    shortBy: '{n} points from your next gift card',
+    canRedeem: 'Enough for a gift card',
+    /* The shelf is empty. Not "you are 0 points short" — there is nothing to be
+       short of, and saying so is the difference between a wallet that is
+       waiting for you and one that is waiting for us. */
+    noShelf: 'Nothing on the shelf yet — your points are safe until there is.',
+
+    loading: 'Asking the server…',
+
+    /* When the request itself did not come back. A catalogue that renders
+       "nothing available" because the backend is down has told somebody the
+       product is empty, which is the one thing this page must never do. */
+    down: {
+      unreachable: 'We could not reach the server, so this is not "nothing" — it is "we could not ask". Try again in a moment.',
+      refused: 'The server answered but refused the request. Signing in again usually fixes it.',
+      retry: 'Try again',
+    },
 
     tabs: ['Active', 'Used'],
-    counts: '{active} active · {used} used',
 
     valid: 'Valid until {date}',
-    usedOn: 'Used {date}',
     cost: '{n} pts',
-    show: 'Show QR code',
-    shown: 'Used — the code has been generated',
 
     emptyActive: 'Nothing in the wallet yet. Play a round and spend the points here.',
     emptyUsed: 'Nothing spent yet.',
     play: 'Play a round',
 
+    /* A discount voucher has no venue name on it — the row stores an id and
+       nothing else — so the card is named by what it *is*. */
+    voucherTitle: 'Discount voucher',
+    noVouchers: 'No vouchers yet. They are issued at a venue when you spend points there.',
+
     catalogue: 'What you can get',
-    catalogueLede: 'Refreshed monthly. Each card has a limited allocation.',
+    catalogueLede: 'Gift cards bought with points. What is here is what the platform has stocked.',
     redeem: 'Redeem',
     short: 'Not enough points',
-    soldOut: 'Back on the 1st',
-    left: '{left} of {of} left',
+    soldOut: 'Out of stock',
+    /* `{n}` is how many are left. There is no "of" — the shelf records stock,
+       not an allocation, so a bar has no denominator to draw against. */
+    left: '{n} left',
+    buying: 'Buying…',
+    buyFailed: 'That did not go through, and nothing was charged. Try again.',
+    priorityOnly: 'On a paid plan only',
+    noShelfYet: 'No gift cards stocked yet. Points keep — this fills up as brands come on.',
+
+    atCounter: 'A code is read at the counter. Nothing here is spent until somebody scans it.',
 
     /* ── stamp cards ──
        Visits, not points. The distinction is the one sentence about this
@@ -506,82 +657,53 @@ export const en = {
       goingOne: 'One more visit for {reward}',
       full: 'Complete — {reward} is waiting at the counter',
       cycles: 'Filled {n}× before',
-      none: 'No stamp cards yet. One starts on your first visit to a venue running a card.',
-      /* The same list, emptied by the strip rather than by having nothing in
-         it. A card filed before the strip existed has no category and shows
-         only under "All" — see `inCategory` in `auth/player.ts`. */
-      noneHere: 'No stamp cards under {category}.',
-      visit: 'Add a visit',
+      none: 'No stamp cards yet. One starts on your first scanned visit to a venue running a card.',
     },
 
     /* ── hot deals ──
-       The board at the top of the page — what is on offer near you — and the
-       strip of chips that filters it. A claimed deal leaves this list for the
-       "Redeemed" section below; nothing is ever in both. */
+       The board at the top of the page: what is on offer, read from the server.
+       Nothing here is claimed from a web page — see `claimAtCounter`. */
     deals: {
       title: 'Hot deals',
-      lede: 'Live offers near you. Most cost nothing to claim — the venue is paying for them.',
+      lede: 'Live offers from venues near you. Most cost nothing — the venue is paying for them.',
 
-      /* The category strip. `all` is deliberately not one of `categories`: it
-         is the absence of a filter rather than something a venue can be, and
-         `DEAL_CATEGORIES` in `content.ts` carries the reasoning. */
+      /* The category strip. `all` is deliberately not one of the chips: it is
+         the absence of a filter rather than something a venue can be. The chips
+         themselves are built from the categories the offers actually carry, so
+         there is no list of them here. */
       all: 'All',
-      categories: ['Coffee', 'Food', 'Bakery', 'Services', 'Beauty'],
       filter: 'Filter by category',
-      /* `{category}` is whichever chip is selected, in the words above. */
-      noneHere: 'Nothing under {category} near you yet.',
-      showAll: 'Show every deal',
+      /* `{category}` is whichever chip is selected. */
+      noneHere: 'Nothing under {category} right now.',
+      showAll: 'Show every offer',
+      /* No offers at all — which is what a new market looks like, and is not
+         the same sentence as the filter coming up empty. */
+      noneAtAll: 'No live offers yet. They appear here as venues join and publish them.',
 
-      /* The pill on the band: what the venue is doing **right now**, on its own
-         clock. The dot pulses on the first of these three and on nothing else. */
-      openNow: 'Open now',
-      closedNow: 'Closed now',
-      held: 'In your wallet',
-
-      /* The venue's lines. `{hours}` is its own published span, `{date}` the
-         last day of the offer, `{n}` how many people have rated it. */
-      everyDay: 'Every day, {hours}',
       until: 'Until {date}',
-      reviews: '{n} reviews',
-
       free: 'Free to claim',
-      claim: 'Claim this deal',
       /* `{n}` is the shortfall, not the price — the app's own wording, because
-         "500 pts" on a button a balance cannot reach says the wrong half. */
+         "500 pts" on a line a balance cannot reach says the wrong half. */
       shortBy: '{n} more points to go',
-      claimed: 'Claimed {date}',
-      /* What the card says for the second between the press and the move down
-         to the Redeemed section. */
-      justClaimed: 'Claimed — show this code at the counter',
       code: 'Your code',
 
-      /* Index-aligned with `WALLET_DEALS`. The badge itself ("2+1", "20%") is
-         the venue's own words and is never translated; this is the app saying
-         what they mean, which is why this half is copy. */
-      offers: [
-        'Two coffees, and the third is on the house.',
-        'Ten percent off the whole order, all day.',
-        'Twenty percent off everything on the counter.',
-        'Buy three loaves and the fourth is free.',
-        'Fifteen percent off lunch at any stall in the hall.',
-        'Two plates, and the third is on the house.',
-        'A free filter coffee with any book you buy.',
-        'Fifteen percent off a cut and a beard trim.',
-        'Twenty-five percent off your first treatment.',
-      ],
-
-      none: 'Nothing claimed yet. Take one from the board above.',
+      /* The board is read-only, and the button says what the offer requires
+         instead of pretending to hold it. A claim is written by the venue's
+         scan; nothing a browser can post makes one. */
+      howToClaim: 'How to claim',
+      hideTerms: 'Close',
+      claimAtCounter: 'Show the offer at the counter and the venue scans it. That scan is what claims it — nothing on this page can.',
     },
 
     /* ── what you have already taken ──
-       Everything below the board: the hot deals that have been claimed and the
-       gift cards bought with points. Both are things you hold rather than
+       Everything below the board: the discount vouchers issued at a venue and
+       the gift cards bought with points. Both are things you hold rather than
        things on offer, which is the whole reason they are down here. */
     redeemed: {
       title: 'Redeemed',
       lede: 'What you have already taken. Show the code at the counter — each one is used once.',
-      dealsTitle: 'Hot deals you claimed',
-      dealsLede: 'Yours until the offer ends. The venue reads the code at the till.',
+      vouchersTitle: 'Discount vouchers',
+      vouchersLede: 'Points spent at one venue. The venue reads the code at the till.',
     },
 
     /* The gift-card section's own heading. The holdings below it were the whole
@@ -738,6 +860,41 @@ export const en = {
        language). A "come back tomorrow" here was both wrong and a second,
        disagreeing answer to the question the countdown is already answering. */
     noEnergy: 'Out of energy',
+    /*
+     * ── practice ──
+     *
+     * What the Play button says on an empty tank. It used to say `noEnergy` on
+     * a button that was switched off, which is a card refusing to be pressed
+     * and explaining why — and the explanation is already under the gauge, in
+     * words and with a countdown. The press exists now, so the label is the
+     * offer rather than the refusal.
+     *
+     * One word, because it sits where "Play" sits on seven other cards and the
+     * grid does not resize itself for the state of the tank.
+     */
+    practice: 'Practice',
+    /* The gauge, once the tank is empty: what running out actually costs now
+       that it no longer costs the round. Under `noEnergy`, which still says the
+       state, because "you have none" and "here is what that means" are two
+       sentences and only the first is a heading. */
+    practiceFree: 'Rounds are free while it refills — they just don’t pay.',
+    /* The banner across a round being played for nothing. Present on every
+       question rather than shown once at the start: a player who pressed Play
+       on a full tank yesterday and an empty one today is looking at the same
+       screen, and the difference has to be on it. */
+    practiceRound: 'Practice round — no points',
+    /*
+     * The result card's line under a zero, replacing `resultNone`: this round
+     * was never going to pay, which is a different thing from a round that
+     * scored nothing.
+     *
+     * It deliberately does **not** quote what the round would have been worth.
+     * That is a second figure on a card whose whole design is one — the "scored
+     * versus banked" pair this screen already carried once and lost — and it
+     * would have to be a number the server does not send, invented on the one
+     * path where the client is not allowed to score.
+     */
+    practiceResult: 'Practice round — nothing banked. The next energy pays again.',
     /* The gauge's line when the tank is full and there is nothing to count to. */
     energyFull: 'Full — nothing to wait for',
     /*
@@ -1844,8 +2001,6 @@ export const en = {
       first: 'First visit',
       again: 'Came back',
       today: 'Today',
-      /* Index-aligned with `ScanRow.place`. */
-      places: ['Bratysławska 6', 'Bratysławska 6', 'Kleparz kiosk'],
       noCampaign: 'No campaign running',
       progress: '{done}/{need} scans',
       toGo: '{n} to go',
@@ -2397,16 +2552,22 @@ export const en = {
     eyebrow: 'Play & Earn',
     title: 'Your points are real money.',
     lede: "No gimmicks. Play to earn points, then cash them in for gift cards and discounts you'll actually use.",
+    /*
+     * A picture of a voucher, and every word on it is copy.
+     *
+     * `meta` used to carry an `{amount}` hole filled from the catalogue in
+     * `content.ts` — which made the illustration a price quote for a card the
+     * page could not confirm exists. The brand is generic for the same reason:
+     * what is actually stocked is a row on the server, and `#/vouchers` is the
+     * page that lists it.
+     */
     card: {
-      merchant: 'Zalando Gift Card',
-      // `{amount}` is filled at render in the reader's currency — the language
-      // picks it, so the hole has to be inside the sentence rather than
-      // bolted to one end of it. See `i18n/currency.ts`.
-      meta: 'Partner store · {amount} value',
+      merchant: 'Partner gift card',
+      meta: 'Spent like money at the store',
       title: 'Redeem your points for a real voucher.',
-      price: '500 pts',
-      revealed: 'Voucher ready · PLZ-9F3K',
-      action: 'Redeem 100 points',
+      price: 'Points',
+      revealed: 'Voucher ready',
+      action: 'Redeem your points',
     },
     benefits: [
       {
@@ -2471,7 +2632,9 @@ export const en = {
       lede: 'A few quick questions a day. Points that turn into vouchers at shops you already use.',
       primary: 'Start playing',
       secondary: 'See the games',
-      stats: ['Best round', 'Earns a freeze', 'Buys a voucher'],
+      /* Index-aligned with `LEARN_STATS`. Two, not three: the third was "buys a
+         voucher", read off a catalogue this file no longer has. */
+      stats: ['Best round', 'Earns a freeze'],
     },
 
     steps: {
@@ -2552,7 +2715,7 @@ export const en = {
         },
         {
           q: 'What is a voucher actually worth?',
-          a: 'It depends on the type of voucher and on what the partner business decides. A gift card paylez provides itself — for Zalando or Zara, say — costs 100 game points and is worth {amount}.',
+          a: 'It depends on the voucher and on what the partner business decides. Gift cards are priced in points and every one on the shelf shows what it costs and what it is worth — the Vouchers page lists what is stocked right now.',
         },
         {
           q: 'Which languages are the questions in?',
@@ -2990,17 +3153,26 @@ export const en = {
       trust: 'No card details · Free to start · Available across Poland',
     },
 
+    /*
+     * An illustration of the wallet, not a wallet.
+     *
+     * It used to print "3 active · 11 used" and a face value read off the
+     * catalogue in `content.ts` — a picture making a claim about stock. Every
+     * word on it is copy now, and `example` says out loud what it is. The real
+     * shelf is a section further down and asks the server.
+     */
     wallet: {
       title: 'Your vouchers',
-      counts: '{active} active · {used} used',
+      example: 'An example',
       tabs: { active: 'Active', used: 'Used' },
       note: 'A voucher counts as used the moment you generate its QR code — so generate it at the counter, not on the tram.',
       card: {
-        meta: 'Partner store · {amount} value',
+        brand: 'A partner store',
+        meta: 'Gift card, spent like money',
         cost: '500 pts',
         action: 'Show QR code',
         code: 'PLZ-9F3K',
-        expires: 'Valid until 31.08',
+        expires: 'Valid until the date on the card',
       },
     },
 
@@ -3031,12 +3203,20 @@ export const en = {
     catalogue: {
       eyebrow: 'What is in the wallet',
       title: 'Gift cards at the shops you were going to anyway.',
-      lede: 'The list is refreshed monthly and each card has a limited allocation — when a month runs out, it comes back on the first.',
+      lede: 'Read live from the platform. What is here is what is actually stocked, at the price points buy it for.',
       cost: 'pts',
-      left: '{left} of {of} left',
+      /* `{n}` is how many are left. The old copy said "{left} of {of}", which
+         needed an allocation the shelf does not record. */
+      left: '{n} left',
       everywhere: 'Any store · online too',
-      soldOut: 'Back on the 1st',
+      soldOut: 'Out of stock',
       action: 'Browse the full list',
+      loading: 'Asking the server…',
+      /* Empty, and honestly empty. */
+      none: 'No gift cards stocked yet. Points keep — this fills up as brands come on.',
+      /* Not empty: unanswered. Never the same sentence. */
+      down: 'We could not reach the server, so this is not an empty catalogue — it is one we could not read.',
+      retry: 'Try again',
     },
 
     rules: {
@@ -3541,6 +3721,17 @@ export const en = {
     /** Read instead of the tick and the dash, which say nothing out loud. */
     included: 'Included',
     notIncluded: 'Not included',
+    /**
+     * The one control on this site that takes money.
+     *
+     * `{plan}` is the plan's own name as the card already spells it, so the
+     * button and the heading above it cannot disagree.
+     */
+    get: 'Get {plan}',
+    /** Shown instead of the button on the plan somebody is already paying for. */
+    current: 'Your plan',
+    opening: 'Opening…',
+    failed: 'The payment page did not open. Try again.',
     /** Index-aligned with the `badge` row's values 1 and 2. */
     badges: ['Star', 'Crown'],
     /**

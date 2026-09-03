@@ -41,8 +41,8 @@ const estimated = (value: number): Metric => ({ value, kind: 'estimated', suppre
 const attributed = (value: number): Metric => ({ value, kind: 'attributed', suppressed: false });
 
 /** Suppress when the cohort is too small — see the note at the top. */
-function guarded(db: Db, value: number, cohort: number, kind: Kind = 'counted'): Metric {
-  const floor = minCohort(db);
+async function guarded(db: Db, value: number, cohort: number, kind: Kind = 'counted'): Promise<Metric> {
+  const floor = await minCohort(db);
   if (cohort < floor) return { value: null, kind, suppressed: true, cohort };
   return { value, kind, suppressed: false, cohort };
 }
@@ -59,9 +59,9 @@ interface Range {
   period: string;
 }
 
-function rangeFor(db: Db, venueId: string, window: Window): Range {
+async function rangeFor(db: Db, venueId: string, window: Window): Promise<Range> {
   const at = window.at ?? now();
-  const venue = getVenue(db, venueId);
+  const venue = await getVenue(db, venueId);
   const period = window.period ?? localMonth(at, venue.timezone);
   return {
     from: monthStart(period, venue.timezone),
@@ -88,12 +88,12 @@ export interface Overview {
   discountGivenMinor: number;
 }
 
-export function overview(db: Db, venueId: string, window: Window = {}): Overview {
-  const { from, to, period } = rangeFor(db, venueId, window);
-  const venue = getVenue(db, venueId);
+export async function overview(db: Db, venueId: string, window: Window = {}): Promise<Overview> {
+  const { from, to, period } = await rangeFor(db, venueId, window);
+  const venue = await getVenue(db, venueId);
   const at = window.at ?? now();
 
-  const visits = db.all<{ user_id: string; amount_minor: number; created_at: string }>(
+  const visits = await db.all<{ user_id: string; amount_minor: number; created_at: string }>(
     `SELECT user_id, amount_minor, created_at FROM venue_visits
       WHERE venue_id = $v AND created_at >= $f AND created_at < $t`,
     { v: venueId, f: from, t: to },
@@ -105,7 +105,7 @@ export function overview(db: Db, venueId: string, window: Window = {}): Overview
   /* New vs returning is decided by whether this venue had ever seen them before
      the window opened, not by whether they appear once inside it — otherwise a
      regular who visited twice this month would count as new the first time. */
-  const firstSeen = db.all<{ user_id: string; first_seen_at: string }>(
+  const firstSeen = await db.all<{ user_id: string; first_seen_at: string }>(
     `SELECT user_id, first_seen_at FROM venue_customers WHERE venue_id = $v`,
     { v: venueId },
   );
@@ -127,34 +127,34 @@ export function overview(db: Db, venueId: string, window: Window = {}): Overview
   const full = new Date(to).getTime() - new Date(from).getTime();
   const projected = Math.round(sales * (full / elapsed));
 
-  const attributedRows = db.all<{ user_id: string }>(
+  const attributedRows = await db.all<{ user_id: string }>(
     `SELECT DISTINCT t.user_id FROM transactions t
       WHERE t.venue_id = $v AND t.status = 'committed'
         AND t.confirmed_at >= $f AND t.confirmed_at < $t
         AND (t.deal_id IS NOT NULL OR t.intent != 'earn')`,
     { v: venueId, f: from, t: to },
   );
-  const attributedVisitCount = db.get<{ n: number }>(
+  const attributedVisitCount = (await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM transactions
       WHERE venue_id = $v AND status = 'committed' AND confirmed_at >= $f AND confirmed_at < $t
         AND (deal_id IS NOT NULL OR intent != 'earn')`,
     { v: venueId, f: from, t: to },
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
   const pointsIssued =
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(delta) AS total FROM points_ledger
         WHERE venue_id = $v AND delta > 0 AND status = 'committed'
           AND created_at >= $f AND created_at < $t`,
       { v: venueId, f: from, t: to },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   const discountGiven =
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(discount_minor) AS total FROM transactions
         WHERE venue_id = $v AND status = 'committed' AND confirmed_at >= $f AND confirmed_at < $t`,
       { v: venueId, f: from, t: to },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   return {
     period,
@@ -164,11 +164,11 @@ export function overview(db: Db, venueId: string, window: Window = {}): Overview
        identifiable people. Everything derived from them is. */
     visits: counted(visits.length),
     customers: counted(cohort),
-    newCustomers: guarded(db, fresh, cohort),
-    returningCustomers: guarded(db, cohort - fresh, cohort),
+    newCustomers: await guarded(db, fresh, cohort),
+    returningCustomers: await guarded(db, cohort - fresh, cohort),
     salesMinor: counted(sales),
     projectedSalesMinor: estimated(projected),
-    averageCheckMinor: guarded(db, median(amounts) ?? 0, cohort, 'estimated'),
+    averageCheckMinor: await guarded(db, median(amounts) ?? 0, cohort, 'estimated'),
     attributedVisits: attributed(attributedVisitCount),
     attributedCustomers: attributed(attributedRows.length),
     pointsIssued,
@@ -233,11 +233,11 @@ export interface Reach {
  * the same way — that is the same lie `suppressed` exists to prevent one metric
  * over.
  */
-export function reach(db: Db, venueId: string, window: Window = {}): Reach {
-  const { from, to, period } = rangeFor(db, venueId, window);
+export async function reach(db: Db, venueId: string, window: Window = {}): Promise<Reach> {
+  const { from, to, period } = await rangeFor(db, venueId, window);
   const bind = { v: venueId, f: from, t: to };
 
-  const listing = db.get<{ impressions: number; clicks: number }>(
+  const listing = await db.get<{ impressions: number; clicks: number }>(
     `SELECT
         SUM(CASE WHEN event_type = 'impression' THEN 1 ELSE 0 END) AS impressions,
         SUM(CASE WHEN event_type = 'click' THEN 1 ELSE 0 END) AS clicks
@@ -246,7 +246,7 @@ export function reach(db: Db, venueId: string, window: Window = {}): Reach {
     bind,
   );
 
-  const deals = db.all<{
+  const deals = await db.all<{
     id: string;
     title: string;
     impressions: number;
@@ -278,7 +278,7 @@ export function reach(db: Db, venueId: string, window: Window = {}): Reach {
   /* Sources are read off both tables and folded together, because "where were
      we seen" is one question. `deal_events.source` and `service_events` do not
      share a vocabulary by accident — both are written by the same clients. */
-  const sources = db.all<{ source: string; impressions: number; clicks: number }>(
+  const sources = await db.all<{ source: string; impressions: number; clicks: number }>(
     `SELECT source,
             SUM(CASE WHEN kind = 'impression' THEN 1 ELSE 0 END) AS impressions,
             SUM(CASE WHEN kind = 'click' THEN 1 ELSE 0 END) AS clicks
@@ -304,7 +304,7 @@ export function reach(db: Db, venueId: string, window: Window = {}): Reach {
      would double them. Signed-out clicks have no id and cannot be deduplicated,
      so they are excluded rather than counted as one anonymous person. */
   const clickers =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(DISTINCT user_id) AS n FROM (
           SELECT user_id FROM service_events
            WHERE venue_id = $v AND event_type = 'click' AND user_id IS NOT NULL
@@ -315,7 +315,7 @@ export function reach(db: Db, venueId: string, window: Window = {}): Reach {
              AND e.created_at >= $f AND e.created_at < $t
         )`,
       bind,
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   const listingImpressions = listing?.impressions ?? 0;
   const listingClicks = listing?.clicks ?? 0;
@@ -350,7 +350,7 @@ export function reach(db: Db, venueId: string, window: Window = {}): Reach {
     impressions,
     clicks,
     clickRate: rate(clicks, impressions),
-    uniqueClickers: guarded(db, clickers, clickers),
+    uniqueClickers: await guarded(db, clickers, clickers),
     claims,
     claimRate: rate(claims, clicks),
     sources,
@@ -368,9 +368,9 @@ export function reach(db: Db, venueId: string, window: Window = {}): Reach {
  * thing this dashboard says, and it is one `GROUP BY` away from the visits it
  * already stores in venue-local hours.
  */
-export function heatmap(db: Db, venueId: string, window: Window = {}) {
-  const { from, to, period } = rangeFor(db, venueId, window);
-  const rows = db.all<{ local_weekday: number; local_hour: number; n: number }>(
+export async function heatmap(db: Db, venueId: string, window: Window = {}) {
+  const { from, to, period } = await rangeFor(db, venueId, window);
+  const rows = await db.all<{ local_weekday: number; local_hour: number; n: number }>(
     `SELECT local_weekday, local_hour, COUNT(*) AS n FROM venue_visits
       WHERE venue_id = $v AND created_at >= $f AND created_at < $t
       GROUP BY local_weekday, local_hour`,
@@ -387,7 +387,7 @@ export function heatmap(db: Db, venueId: string, window: Window = {}) {
   /* Only opening hours are candidates for "quietest": 04:00 on a Monday is not a
      hole in the trade, it is a closed café, and offering to run a deal into it
      would be the dashboard's most obviously stupid suggestion. */
-  const open = db.all<{ weekday: number; opens_min: number | null; closes_min: number | null; closed: number }>(
+  const open = await db.all<{ weekday: number; opens_min: number | null; closes_min: number | null; closed: number }>(
     `SELECT weekday, opens_min, closes_min, closed FROM venue_hours WHERE venue_id = $v`,
     { v: venueId },
   );
@@ -423,9 +423,9 @@ export function heatmap(db: Db, venueId: string, window: Window = {}) {
  * days." A cohort smaller than the floor is reported as suppressed rather than
  * as a percentage of four people.
  */
-export function cohorts(db: Db, venueId: string, months = 6, window: Window = {}) {
+export async function cohorts(db: Db, venueId: string, months = 6, window: Window = {}) {
   const at = window.at ?? now();
-  const venue = getVenue(db, venueId);
+  const venue = await getVenue(db, venueId);
   const out: Array<{ cohort: string; size: number; returned: Metric }> = [];
 
   for (let back = months - 1; back >= 0; back -= 1) {
@@ -435,7 +435,7 @@ export function cohorts(db: Db, venueId: string, months = 6, window: Window = {}
     const from = monthStart(period, venue.timezone);
     const to = monthStart(nextPeriod(period), venue.timezone);
 
-    const firstTimers = db.all<{ user_id: string; first_seen_at: string }>(
+    const firstTimers = await db.all<{ user_id: string; first_seen_at: string }>(
       `SELECT user_id, first_seen_at FROM venue_customers
         WHERE venue_id = $v AND first_seen_at >= $f AND first_seen_at < $t`,
       { v: venueId, f: from, t: to },
@@ -443,7 +443,7 @@ export function cohorts(db: Db, venueId: string, months = 6, window: Window = {}
 
     let returned = 0;
     for (const person of firstTimers) {
-      const again = db.get<{ n: number }>(
+      const again = await db.get<{ n: number }>(
         `SELECT COUNT(*) AS n FROM venue_visits
           WHERE venue_id = $v AND user_id = $u AND created_at > $f AND created_at <= $w`,
         { v: venueId, u: person.user_id, f: person.first_seen_at, w: plusDays(person.first_seen_at, 30) },
@@ -454,7 +454,7 @@ export function cohorts(db: Db, venueId: string, months = 6, window: Window = {}
     out.push({
       cohort: period,
       size: firstTimers.length,
-      returned: guarded(db, firstTimers.length ? returned / firstTimers.length : 0, firstTimers.length),
+      returned: await guarded(db, firstTimers.length ? returned / firstTimers.length : 0, firstTimers.length),
     });
   }
   return out;
@@ -468,9 +468,9 @@ export function cohorts(db: Db, venueId: string, months = 6, window: Window = {}
  * is a member's own monthly rate before and after the join date, so it does not
  * need to know anything about them beyond when they visited.
  */
-export function repeatMultiple(db: Db, venueId: string, window: Window = {}): Metric {
+export async function repeatMultiple(db: Db, venueId: string, window: Window = {}): Promise<Metric> {
   const { at } = { at: window.at ?? now() };
-  const members = db.all<{ user_id: string; joined_at: string }>(
+  const members = await db.all<{ user_id: string; joined_at: string }>(
     `SELECT s.user_id, s.joined_at FROM stamp_cards s
        JOIN campaigns c ON c.id = s.campaign_id
       WHERE c.venue_id = $v`,
@@ -479,12 +479,12 @@ export function repeatMultiple(db: Db, venueId: string, window: Window = {}): Me
 
   const ratios: number[] = [];
   for (const member of members) {
-    const before = db.get<{ n: number; first: string | null }>(
+    const before = await db.get<{ n: number; first: string | null }>(
       `SELECT COUNT(*) AS n, MIN(created_at) AS first FROM venue_visits
         WHERE venue_id = $v AND user_id = $u AND created_at < $j`,
       { v: venueId, u: member.user_id, j: member.joined_at },
     );
-    const after = db.get<{ n: number }>(
+    const after = await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM venue_visits
         WHERE venue_id = $v AND user_id = $u AND created_at >= $j`,
       { v: venueId, u: member.user_id, j: member.joined_at },
@@ -499,7 +499,7 @@ export function repeatMultiple(db: Db, venueId: string, window: Window = {}): Me
   }
 
   const value = ratios.length ? ratios.reduce((a, b) => a + b, 0) / ratios.length : 0;
-  return guarded(db, value, ratios.length, 'estimated');
+  return await guarded(db, value, ratios.length, 'estimated');
 }
 
 const monthsBetween = (from: Iso, to: Iso): number =>
@@ -512,9 +512,9 @@ const monthsBetween = (from: Iso, to: Iso): number =>
  * *preference*, not an origin. That distinction is the whole reason it is
  * collectable at all.
  */
-export function languageMix(db: Db, venueId: string, window: Window = {}) {
-  const { from, to } = rangeFor(db, venueId, window);
-  const rows = db.all<{ language: string; n: number }>(
+export async function languageMix(db: Db, venueId: string, window: Window = {}) {
+  const { from, to } = await rangeFor(db, venueId, window);
+  const rows = await db.all<{ language: string; n: number }>(
     `SELECT u.language, COUNT(DISTINCT v.user_id) AS n
        FROM venue_visits v JOIN users u ON u.id = v.user_id
       WHERE v.venue_id = $v AND v.created_at >= $f AND v.created_at < $t
@@ -522,7 +522,7 @@ export function languageMix(db: Db, venueId: string, window: Window = {}) {
     { v: venueId, f: from, t: to },
   );
   const total = rows.reduce((sum, row) => sum + row.n, 0);
-  if (total < minCohort(db)) return { suppressed: true, total, rows: [] as Array<{ language: string; share: number }> };
+  if (total < (await minCohort(db))) return { suppressed: true, total, rows: [] as Array<{ language: string; share: number }> };
   return {
     suppressed: false,
     total,
@@ -539,47 +539,47 @@ export function languageMix(db: Db, venueId: string, window: Window = {}) {
  * this figure twice (a headline and the last column of a trend) and the site's
  * own rule is that a figure shown twice is computed once.
  */
-export function costPerNewCustomer(db: Db, venueId: string, window: Window = {}) {
-  const { from, to, period } = rangeFor(db, venueId, window);
+export async function costPerNewCustomer(db: Db, venueId: string, window: Window = {}) {
+  const { from, to, period } = await rangeFor(db, venueId, window);
 
   const subscription =
-    db.get<{ price: number }>(
+    (await db.get<{ price: number }>(
       `SELECT p.price_minor AS price FROM subscriptions s JOIN plans p ON p.id = s.plan_id
         WHERE s.venue_id = $v AND s.status IN ('active', 'trialing', 'grace')
         ORDER BY p.rank DESC LIMIT 1`,
       { v: venueId },
-    )?.price ?? 0;
+    ))?.price ?? 0;
 
   const loyalty =
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(amount_minor) AS total FROM budget_movements m
          JOIN budgets b ON b.id = m.budget_id
         WHERE b.venue_id = $v AND b.period = $p AND m.allocation = 'loyalty' AND m.kind = 'debit'`,
       { v: venueId, p: period },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   const vouchers =
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(amount_minor) AS total FROM budget_movements m
          JOIN budgets b ON b.id = m.budget_id
         WHERE b.venue_id = $v AND b.period = $p AND m.allocation = 'voucher' AND m.kind = 'debit'`,
       { v: venueId, p: period },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   const deals =
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(t.discount_minor) AS total FROM transactions t
         WHERE t.venue_id = $v AND t.status = 'committed' AND t.deal_id IS NOT NULL
           AND t.confirmed_at >= $f AND t.confirmed_at < $to`,
       { v: venueId, f: from, to },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   const newCustomers =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM venue_customers
         WHERE venue_id = $v AND first_seen_at >= $f AND first_seen_at < $to`,
       { v: venueId, f: from, to },
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   const spend = subscription + loyalty + vouchers + deals;
   return {
@@ -589,7 +589,7 @@ export function costPerNewCustomer(db: Db, venueId: string, window: Window = {})
     newCustomers,
     /* Guarded on the *customer* count for the same reason as everything else:
        "we spent 300 zł to win 2 customers" is a fact about two people. */
-    costPerNewCustomerMinor: guarded(
+    costPerNewCustomerMinor: await guarded(
       db,
       newCustomers ? Math.round(spend / newCustomers) : 0,
       newCustomers,
@@ -606,44 +606,44 @@ export function costPerNewCustomer(db: Db, venueId: string, window: Window = {})
  * voucher buys redemptions. Normalising them into one "outcome" would produce a
  * comparable-looking number that compares nothing.
  */
-export function roiByFeature(db: Db, venueId: string, window: Window = {}) {
-  const { from, to, period } = rangeFor(db, venueId, window);
+export async function roiByFeature(db: Db, venueId: string, window: Window = {}) {
+  const { from, to, period } = await rangeFor(db, venueId, window);
 
-  const spendOf = (allocation: 'loyalty' | 'voucher') =>
-    db.get<{ total: number | null }>(
+  const spendOf = async (allocation: 'loyalty' | 'voucher') =>
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(amount_minor) AS total FROM budget_movements m JOIN budgets b ON b.id = m.budget_id
         WHERE b.venue_id = $v AND b.period = $p AND m.allocation = $a AND m.kind = 'debit'`,
       { v: venueId, p: period, a: allocation },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   const rewardsRedeemed =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM earned_rewards
         WHERE venue_id = $v AND status = 'redeemed' AND redeemed_at >= $f AND redeemed_at < $to`,
       { v: venueId, f: from, to },
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   const vouchersRedeemed =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM issued_vouchers
         WHERE venue_id = $v AND status = 'redeemed' AND redeemed_at >= $f AND redeemed_at < $to`,
       { v: venueId, f: from, to },
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   const dealClaims =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM deal_events e JOIN hot_deals d ON d.id = e.deal_id
         WHERE d.venue_id = $v AND e.event_type = 'claim' AND e.created_at >= $f AND e.created_at < $to`,
       { v: venueId, f: from, to },
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   const dealSpend =
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT SUM(t.discount_minor) AS total FROM transactions t
         WHERE t.venue_id = $v AND t.deal_id IS NOT NULL AND t.status = 'committed'
           AND t.confirmed_at >= $f AND t.confirmed_at < $to`,
       { v: venueId, f: from, to },
-    )?.total ?? 0;
+    ))?.total ?? 0;
 
   const per = (spend: number, outcomes: number) =>
     outcomes > 0 ? Math.round(spend / outcomes) : null;
@@ -651,17 +651,17 @@ export function roiByFeature(db: Db, venueId: string, window: Window = {}) {
   return [
     {
       feature: 'loyalty',
-      spendMinor: spendOf('loyalty'),
+      spendMinor: await spendOf('loyalty'),
       outcome: rewardsRedeemed,
       outcomeLabel: 'rewards redeemed',
-      costPerOutcomeMinor: per(spendOf('loyalty'), rewardsRedeemed),
+      costPerOutcomeMinor: per(await spendOf('loyalty'), rewardsRedeemed),
     },
     {
       feature: 'vouchers',
-      spendMinor: spendOf('voucher'),
+      spendMinor: await spendOf('voucher'),
       outcome: vouchersRedeemed,
       outcomeLabel: 'vouchers redeemed',
-      costPerOutcomeMinor: per(spendOf('voucher'), vouchersRedeemed),
+      costPerOutcomeMinor: per(await spendOf('voucher'), vouchersRedeemed),
     },
     {
       feature: 'deals',
@@ -683,20 +683,20 @@ export function roiByFeature(db: Db, venueId: string, window: Window = {}) {
  * category, a benchmark plus your own number is a calculator away from a
  * competitor's number.
  */
-export function computeBenchmarks(db: Db, window: Window = {}): number {
+export async function computeBenchmarks(db: Db, window: Window = {}): Promise<number> {
   const at = window.at ?? now();
-  const floor = minVenues(db);
-  const groups = db.all<{ city: string; category: string; n: number }>(
+  const floor = await minVenues(db);
+  const groups = await db.all<{ city: string; category: string; n: number }>(
     `SELECT city, category, COUNT(*) AS n FROM venues
       WHERE status = 'live' AND deleted_at IS NULL GROUP BY city, category`,
   );
 
   let written = 0;
-  db.tx(() => {
+  await db.tx(async () => {
     for (const group of groups) {
       if (group.n < floor) continue;
       const period = localMonth(at, 'Europe/Warsaw');
-      const venues = db.all<{ id: string }>(
+      const venues = await db.all<{ id: string }>(
         `SELECT id FROM venues WHERE city = $c AND category = $cat AND status = 'live'`,
         { c: group.city, cat: group.category },
       );
@@ -705,25 +705,25 @@ export function computeBenchmarks(db: Db, window: Window = {}): number {
       const secondVisit: number[] = [];
       const costs: number[] = [];
       for (const venue of venues) {
-        const f = funnelRate(db, venue.id);
+        const f = await funnelRate(db, venue.id);
         if (f !== null) claimRates.push(f);
-        const c = cohorts(db, venue.id, 3, { at });
+        const c = await cohorts(db, venue.id, 3, { at });
         const usable = c.filter((row) => !row.returned.suppressed && row.returned.value !== null);
         if (usable.length) {
           secondVisit.push(
             usable.reduce((sum, row) => sum + (row.returned.value ?? 0), 0) / usable.length,
           );
         }
-        const cost = costPerNewCustomer(db, venue.id, { at });
+        const cost = await costPerNewCustomer(db, venue.id, { at });
         if (!cost.costPerNewCustomerMinor.suppressed && cost.costPerNewCustomerMinor.value) {
           costs.push(cost.costPerNewCustomerMinor.value);
         }
       }
 
-      const write = (metric: string, values: number[]) => {
+      const write = async (metric: string, values: number[]) => {
         if (values.length < floor) return;
         const value = values.reduce((a, b) => a + b, 0) / values.length;
-        db.run(
+        await db.run(
           `INSERT INTO benchmarks (id, period, city, category, metric, value, venue_count, computed_at)
            VALUES ($i, $p, $c, $cat, $m, $v, $n, $t)
              ON CONFLICT (period, city, category, metric)
@@ -743,16 +743,16 @@ export function computeBenchmarks(db: Db, window: Window = {}): number {
         written += 1;
       };
 
-      write('claim_rate', claimRates);
-      write('second_visit_rate', secondVisit);
-      write('cost_per_new_customer', costs);
+      await write('claim_rate', claimRates);
+      await write('second_visit_rate', secondVisit);
+      await write('cost_per_new_customer', costs);
     }
   });
   return written;
 }
 
-function funnelRate(db: Db, venueId: string): number | null {
-  const row = db.get<{ opened: number | null; claimed: number | null }>(
+async function funnelRate(db: Db, venueId: string): Promise<number | null> {
+  const row = await db.get<{ opened: number | null; claimed: number | null }>(
     `SELECT SUM(opened_count) AS opened, SUM(claimed_count) AS claimed FROM hot_deals WHERE venue_id = $v`,
     { v: venueId },
   );
@@ -760,8 +760,8 @@ function funnelRate(db: Db, venueId: string): number | null {
   return (row.claimed ?? 0) / row.opened;
 }
 
-export const benchmarksFor = (db: Db, city: string, category: string, at: Iso = now()) =>
-  db.all<{ metric: string; value: number; venue_count: number }>(
+export const benchmarksFor = async (db: Db, city: string, category: string, at: Iso = now()) =>
+  await db.all<{ metric: string; value: number; venue_count: number }>(
     `SELECT metric, value, venue_count FROM benchmarks
       WHERE city = $c AND category = $cat AND period = $p`,
     { c: city, cat: category, p: localMonth(at, 'Europe/Warsaw') },
@@ -776,14 +776,14 @@ export const benchmarksFor = (db: Db, city: string, category: string, at: Iso = 
  * Ranked rather than listed: a monthly email with eleven findings is an email
  * nobody reads to the end, and the ones that matter are the ones that changed.
  */
-export function findings(db: Db, venueId: string, window: Window = {}) {
+export async function findings(db: Db, venueId: string, window: Window = {}) {
   const at = window.at ?? now();
   const out: Array<{ key: string; weight: number; detail: Record<string, unknown> }> = [];
 
-  const view = overview(db, venueId, { at });
-  const map = heatmap(db, venueId, { at });
-  const cost = costPerNewCustomer(db, venueId, { at });
-  const retention = cohorts(db, venueId, 3, { at });
+  const view = await overview(db, venueId, { at });
+  const map = await heatmap(db, venueId, { at });
+  const cost = await costPerNewCustomer(db, venueId, { at });
+  const retention = await cohorts(db, venueId, 3, { at });
 
   if (map.quietest && map.total > 0) {
     out.push({
@@ -807,9 +807,9 @@ export function findings(db: Db, venueId: string, window: Window = {}) {
 }
 
 /** B10. A venue's own aggregate data, as CSV. Never a row about one person. */
-export function exportCsv(db: Db, venueId: string, window: Window = {}): string {
-  const { from, to, period } = rangeFor(db, venueId, window);
-  const rows = db.all<{ day: string; visits: number; customers: number; sales: number }>(
+export async function exportCsv(db: Db, venueId: string, window: Window = {}): Promise<string> {
+  const { from, to, period } = await rangeFor(db, venueId, window);
+  const rows = await db.all<{ day: string; visits: number; customers: number; sales: number }>(
     `SELECT local_day AS day, COUNT(*) AS visits, COUNT(DISTINCT user_id) AS customers,
             SUM(amount_minor) AS sales
        FROM venue_visits
@@ -823,13 +823,13 @@ export function exportCsv(db: Db, venueId: string, window: Window = {}): string 
 }
 
 /** The mobile companion's "today" screen (§11.1). */
-export function today(db: Db, venueId: string, at: Iso = now()) {
-  const venue = getVenue(db, venueId);
+export async function today(db: Db, venueId: string, at: Iso = now()) {
+  const venue = await getVenue(db, venueId);
   const day = localMonth(at, venue.timezone);
   const since = new Date(at);
   since.setUTCHours(0, 0, 0, 0);
 
-  const rows = db.all<{ user_id: string; amount_minor: number }>(
+  const rows = await db.all<{ user_id: string; amount_minor: number }>(
     `SELECT user_id, amount_minor FROM venue_visits WHERE venue_id = $v AND created_at >= $s`,
     { v: venueId, s: since.toISOString() },
   );
@@ -839,16 +839,16 @@ export function today(db: Db, venueId: string, at: Iso = now()) {
     visits: counted(rows.length),
     salesMinor: counted(rows.reduce((sum, row) => sum + row.amount_minor, 0)),
     pendingConfirmations:
-      db.get<{ n: number }>(
+      (await db.get<{ n: number }>(
         `SELECT COUNT(*) AS n FROM transactions WHERE venue_id = $v AND status = 'pending'`,
         { v: venueId },
-      )?.n ?? 0,
+      ))?.n ?? 0,
   };
 }
 
 /** Kept beside the metrics it bounds, so the floor is never a mystery. */
-export const cohortFloor = (db: Db) => ({
-  minCohort: minCohort(db),
-  minVenues: minVenues(db),
+export const cohortFloor = async (db: Db) => ({
+  minCohort: await minCohort(db),
+  minVenues: await minVenues(db),
   configured: CONFIG.privacy,
 });

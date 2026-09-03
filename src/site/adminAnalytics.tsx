@@ -1,27 +1,22 @@
 import { useMemo, useState } from 'react';
-import {
-  ADMIN_CARD_ICONS,
-  ADMIN_VIEW_TABS,
-  SPOKEN_LANGUAGES,
-  type AdminService,
-} from './content';
+import { ADMIN_CARD_ICONS, ADMIN_VIEW_TABS, SPOKEN_LANGUAGES } from './content';
 import { Icon } from './icons';
 import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import {
+  categoryLabel,
   dayLabel,
   inRange,
+  initialOf,
   RANGES,
   redemptionsFor,
   scanRowsFor,
-  serviceMetrics,
   serviceMetricsFrom,
   toCsv,
   voucherRowsFor,
   type AdminVenueRow,
   type ServiceMetrics,
 } from './adminMetrics';
-import { useApi } from './api/useApi';
 import { useCountUp, useReveal } from './useReveal';
 
 /**
@@ -804,12 +799,10 @@ function Insights({ m }: { m: ServiceMetrics }) {
 
 export function ServiceAnalytics({
   service,
-  live,
   onBack,
 }: {
-  service: AdminService;
-  /** True for the listing a real signed-up owner saved, rather than a seed. */
-  live?: boolean;
+  /** The row the console opened, straight off `GET /v1/admin/venues`. */
+  service: AdminVenueRow;
   onBack: () => void;
 }) {
   const dictionary = useCopy();
@@ -822,19 +815,17 @@ export function ServiceAnalytics({
    * a specific venue, and it answers two things: a visit count and a customer
    * count. Everything else this screen used to show came out of `service.scale`
    * — a number beside the venue's name in `content.ts`, multiplied through a
-   * table of invented figures. `serviceMetrics()` is now the unmeasured month
-   * and `serviceMetricsFrom` fills in the two that exist.
+   * table of invented figures. `serviceMetricsFrom` fills in the two that exist
+   * and leaves the rest `measured: false`.
    *
-   * **A failed request is a state, not a zero**, the same rule the website tab
-   * next door follows: `venues.state` stays a union, and the banner below says
-   * "not connected" rather than letting a venue look dead.
+   * **The row is passed in rather than re-read.** The console cannot reach this
+   * view without a ready list, so asking for the same list again would be a
+   * second request that can fail on its own and a second answer to disagree
+   * with. Where "the backend is not answering" is a *state* is one level up, in
+   * `admin.tsx`, and it stays there.
    */
-  const venues = useApi<AdminVenueRow[]>('/v1/admin/venues');
-  const m = useMemo(() => {
-    if (venues.state.status !== 'ready') return serviceMetrics();
-    const row = venues.state.data.find((venue) => venue.id === service.id);
-    return row ? serviceMetricsFrom(row) : serviceMetrics();
-  }, [venues.state, service.id]);
+  const m = useMemo(() => serviceMetricsFrom(service), [service]);
+  const live = service.status === 'live';
 
   /*
    * A rescan per tab, and per venue.
@@ -849,9 +840,9 @@ export function ServiceAnalytics({
   useCountUp(`${service.id}:${tab}`);
 
   const totals = [m.engagement, m.vouchers, m.scans];
-  /* The listing stores a category id; the word for it lives in the dictionary,
-     and `BUSINESS_CATEGORIES` is what maps between them. */
-  const category = dictionary.listing.categories[service.category];
+  /* The row stores a category id; the word for it lives in the dictionary, and
+     an id this site has no word for is printed as itself — see `categoryLabel`. */
+  const category = categoryLabel(service.category, dictionary.listing.categories);
 
   return (
     <div className="adm-stack">
@@ -862,18 +853,19 @@ export function ServiceAnalytics({
 
       <section className="adm-service-head" data-reveal>
         <span className="adm-logo" aria-hidden>
-          {service.logo}
+          {initialOf(service.name)}
         </span>
         <div className="adm-service-who">
           <h1>{service.name}</h1>
-          {/* Same rule as the card it was opened from: no star without a
-              rating behind it. */}
+          {/* No star, and not because the venue has no customers: `venues.rating`
+              exists on the server and `GET /v1/admin/venues` does not select it.
+              A figure this screen cannot read is a figure it does not print. */}
           <span className="adm-sub">
             {[
               category,
               service.city,
-              service.rating > 0 ? `★ ${service.rating.toFixed(1)}` : null,
-              live ? copy.services.live : null,
+              live ? copy.services.live : copy.services.paused,
+              service.verified_at ? copy.database.verified : copy.database.unverified,
             ]
               .filter(Boolean)
               .join(' · ')}
@@ -910,11 +902,7 @@ export function ServiceAnalytics({
         operator had no way to tell. Two counts survive that; the banner names
         them, and names the reason the rest are dashes.
       */}
-      <p className="adm-empty" data-reveal>
-        {venues.state.status === 'error'
-          ? copy.analytics.unmeasured.notConnected
-          : copy.analytics.unmeasured.measured}
-      </p>
+      <p className="adm-empty" data-reveal>{copy.analytics.unmeasured.measured}</p>
 
       <div className="adm-tabs" role="tablist" aria-label={copy.analytics.back}>
         {copy.analytics.tabs.map((name, index) => (

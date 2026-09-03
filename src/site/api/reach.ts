@@ -56,19 +56,22 @@ export type ReachTarget = 'venue' | 'deal';
  * over from the old database keep their 24-hex Base44 id, and anything minted
  * since is `ven_` / `del_` plus twenty hex (`server/domain/ids.ts`).
  *
- * This gate exists because nearly everything `src/` renders today is *seed*
- * content with ids of its own — `WALLET_DEALS` carries `d-dubai-2for1`, the
- * stamp cards carry `s1` — and posting one of those is not a harmless miss. A
- * venue id the server does not know is a **404** (`venues.trackListing` reads
- * the venue first, precisely so a bad id cannot become an unattributable row);
- * a deal id it does not know is a **500**, because `deals.track` inserts
- * against a foreign key without looking. Both were checked against a running
- * server rather than assumed.
+ * This gate was written when nearly everything `src/` rendered was *seed*
+ * content with ids of its own — the board in `content.ts` carried
+ * `d-dubai-2for1`, the stamp cards carried `s1` — and posting one of those is
+ * not a harmless miss. A venue id the server does not know is a **404**
+ * (`venues.trackListing` reads the venue first, precisely so a bad id cannot
+ * become an unattributable row); a deal id it does not know is a **500**,
+ * because `deals.track` inserts against a foreign key without looking. Both
+ * were checked against a running server rather than assumed.
  *
- * So the rule is: a call site passes whatever id its card carries, and an id
- * the server cannot attribute is dropped here without a request. The wiring is
- * then already the right shape for the day those lists come from
- * `GET /v1/venues` and `GET /v1/deals` instead of from `content.ts`.
+ * Those lists are `GET /v1/deals` and `GET /v1/venues` now, so the ids the
+ * wallet passes are the server's own and every one of them gets through — the
+ * gate went from dropping everything to dropping nothing without a line
+ * changing. **Keep it anyway.** It is one regular expression against the
+ * difference between an impression somebody can bill for and a 500 in the log,
+ * and the next screen to render a card will render it from something local
+ * first.
  */
 const IMPORTED_ID = /^[0-9a-f]{24}$/;
 const MINTED_ID: Record<ReachTarget, RegExp> = {

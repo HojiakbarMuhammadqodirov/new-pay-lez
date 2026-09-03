@@ -40,11 +40,11 @@ export interface JobReport {
 }
 
 /** Runs every few minutes. Cheap, and the two that matter most for correctness. */
-export function runFrequent(db: Db, at: Iso = now()): JobReport {
+export async function runFrequent(db: Db, at: Iso = now()): Promise<JobReport> {
   const detail: Record<string, unknown> = {};
 
-  detail.pendingExpired = gate.expirePending(db, at);
-  detail.dealLifecycle = deals.runLifecycle(db, at);
+  detail.pendingExpired = await gate.expirePending(db, at);
+  detail.dealLifecycle = await deals.runLifecycle(db, at);
 
   return { at, ran: ['pending', 'deals'], detail };
 }
@@ -53,9 +53,9 @@ export function runFrequent(db: Db, at: Iso = now()): JobReport {
 export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
   const detail: Record<string, unknown> = {};
 
-  detail.vouchers = vouchers.expireVouchers(db, at);
-  detail.rewards = campaigns.expireRewards(db, at);
-  detail.subscriptions = entitlements.runRenewals(db, at);
+  detail.vouchers = await vouchers.expireVouchers(db, at);
+  detail.rewards = await campaigns.expireRewards(db, at);
+  detail.subscriptions = await entitlements.runRenewals(db, at);
   detail.push = await push.drain(db);
 
   return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'push'], detail };
@@ -68,30 +68,30 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
  * about — in that order, which was the only order that made it a warning. Both
  * are gone with the window they read.
  */
-export function runDaily(db: Db, at: Iso = now()): JobReport {
+export async function runDaily(db: Db, at: Iso = now()): Promise<JobReport> {
   const detail: Record<string, unknown> = {};
 
   /* Retention is a job rather than a query filter: rows nobody deletes are rows
      that eventually have to be explained to a regulator. */
-  detail.trafficPruned = traffic.prune(db, at);
+  detail.trafficPruned = await traffic.prune(db, at);
 
   /* §4.5: recompute the median check, and tell the partner when the source flips
      from the category default to their own tills — the estimate they read every
      day will visibly move, and an unexplained jump reads as a bug. */
   let flipped = 0;
-  const venues = db.all<{ id: string; owner_user_id: string | null }>(
+  const venues = await db.all<{ id: string; owner_user_id: string | null }>(
     `SELECT id, owner_user_id FROM venues WHERE status = 'live' AND deleted_at IS NULL`,
   );
   for (const venue of venues) {
-    const full = db.get<Parameters<typeof refreshAverageCheck>[1]>(
+    const full = await db.get<Parameters<typeof refreshAverageCheck>[1]>(
       `SELECT * FROM venues WHERE id = $v`,
       { v: venue.id },
     );
     if (!full) continue;
-    const result = refreshAverageCheck(db, full, at);
+    const result = await refreshAverageCheck(db, full, at);
     if (result.flipped && venue.owner_user_id) {
       flipped += 1;
-      notifications.notify(db, {
+      await notifications.notify(db, {
         userId: venue.owner_user_id,
         mode: 'partner',
         kind: 'average_check_source',
@@ -110,8 +110,8 @@ export function runDaily(db: Db, at: Iso = now()): JobReport {
      nothing outside `ledger.ts` writes the cache — and the job exists precisely
      so that "should never" is a checked claim rather than an assumption. */
   let drifted = 0;
-  for (const player of db.all<{ id: string }>(`SELECT id FROM users`)) {
-    if (ledger.reconcile(db, player.id) !== 0) drifted += 1;
+  for (const player of await db.all<{ id: string }>(`SELECT id FROM users`)) {
+    if ((await ledger.reconcile(db, player.id)) !== 0) drifted += 1;
   }
   detail.reconciledDrift = drifted;
 
@@ -119,11 +119,11 @@ export function runDaily(db: Db, at: Iso = now()): JobReport {
 }
 
 /** Runs weekly, on Monday. The leaderboard snapshot and the benchmarks. */
-export function runWeekly(db: Db, at: Iso = now()): JobReport {
+export async function runWeekly(db: Db, at: Iso = now()): Promise<JobReport> {
   const detail: Record<string, unknown> = {
     week: isoWeek(at),
-    leaderboardRows: social.snapshotWeek(db, at),
-    benchmarks: analytics.computeBenchmarks(db, { at }),
+    leaderboardRows: await social.snapshotWeek(db, at),
+    benchmarks: await analytics.computeBenchmarks(db, { at }),
   };
   return { at, ran: ['leaderboard', 'benchmarks'], detail };
 }
@@ -135,15 +135,15 @@ export function runWeekly(db: Db, at: Iso = now()): JobReport {
  * so it obeys §9.3 — an owner in personal mode is not buzzed with business
  * alerts, but the item is still there when they switch.
  */
-export function runMonthly(db: Db, at: Iso = now()): JobReport {
+export async function runMonthly(db: Db, at: Iso = now()): Promise<JobReport> {
   let sent = 0;
-  const venues = db.all<{ id: string; name: string; owner_user_id: string | null }>(
+  const venues = await db.all<{ id: string; name: string; owner_user_id: string | null }>(
     `SELECT id, name, owner_user_id FROM venues WHERE status = 'live' AND owner_user_id IS NOT NULL`,
   );
   for (const venue of venues) {
-    const found = analytics.findings(db, venue.id, { at });
+    const found = await analytics.findings(db, venue.id, { at });
     if (found.length === 0) continue;
-    notifications.notify(db, {
+    await notifications.notify(db, {
       userId: venue.owner_user_id!,
       mode: 'partner',
       kind: 'monthly_summary',
@@ -168,10 +168,10 @@ export function runMonthly(db: Db, at: Iso = now()): JobReport {
  */
 export function startScheduler(db: Db): () => void {
   const timers = [
-    setInterval(() => void runFrequent(db), 5 * 60_000),
-    setInterval(() => void runHourly(db), 60 * 60_000),
-    setInterval(() => void runDaily(db), 24 * 60 * 60_000),
-    setInterval(() => void runWeekly(db), 7 * 24 * 60 * 60_000),
+    setInterval(async () => void await runFrequent(db), 5 * 60_000),
+    setInterval(async () => void await runHourly(db), 60 * 60_000),
+    setInterval(async () => void await runDaily(db), 24 * 60 * 60_000),
+    setInterval(async () => void await runWeekly(db), 7 * 24 * 60 * 60_000),
   ];
   for (const timer of timers) timer.unref();
   return () => timers.forEach(clearInterval);

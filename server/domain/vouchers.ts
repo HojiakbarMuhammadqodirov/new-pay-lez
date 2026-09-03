@@ -51,8 +51,8 @@ export interface IssuedVoucher {
   redeemed_at: string | null;
 }
 
-export const tiersFor = (db: Db, venueId: string): Tier[] =>
-  db.all<Tier>(
+export const tiersFor = async (db: Db, venueId: string): Promise<Tier[]> =>
+  await db.all<Tier>(
     `SELECT * FROM voucher_tiers WHERE venue_id = $v AND active = 1 ORDER BY discount_pct`,
     { v: venueId },
   );
@@ -75,12 +75,12 @@ export const estimateCost = (avgCheckMinor: number, pct: number, capMinor: numbe
  * closes first and the bottom rung stays open, so a customer is offered 5%
  * rather than nothing.
  */
-export function ladder(db: Db, venueId: string, at: Iso = now()) {
-  const venue = getVenue(db, venueId);
-  const tiers = tiersFor(db, venueId);
-  const view = budget.budgetFor(db, venueId, at);
+export async function ladder(db: Db, venueId: string, at: Iso = now()) {
+  const venue = await getVenue(db, venueId);
+  const tiers = await tiersFor(db, venueId);
+  const view = await budget.budgetFor(db, venueId, at);
   const open = new Set(budget.tiersAvailable(view, tiers));
-  const check = averageCheck(db, venue, at);
+  const check = await averageCheck(db, venue, at);
 
   return tiers.map((tier) => ({
     id: tier.id,
@@ -110,36 +110,36 @@ export function ladder(db: Db, venueId: string, at: Iso = now()) {
  * that is a support ticket, not a rollback, once the two are in separate
  * transactions. They are not, here; the ordering is belt and braces.
  */
-export function issue(
+export async function issue(
   db: Db,
   input: { userId: string; venueId: string; tierId: string; at?: Iso },
-): IssuedVoucher {
+): Promise<IssuedVoucher> {
   const at = input.at ?? now();
 
-  return db.tx(() => {
-    const venue = getVenue(db, input.venueId);
+  return db.tx(async () => {
+    const venue = await getVenue(db, input.venueId);
     if (!venue.accepts_vouchers) {
       throw new DomainError('invalid_state', 'venue does not accept vouchers');
     }
 
-    const tier = db.get<Tier>(`SELECT * FROM voucher_tiers WHERE id = $t AND venue_id = $v`, {
+    const tier = await db.get<Tier>(`SELECT * FROM voucher_tiers WHERE id = $t AND venue_id = $v`, {
       t: input.tierId,
       v: input.venueId,
     });
     if (!tier || !tier.active) throw new DomainError('not_found', 'tier not found');
 
-    const view = budget.budgetFor(db, input.venueId, at);
-    if (!budget.tiersAvailable(view, tiersFor(db, input.venueId)).includes(tier.discount_pct)) {
+    const view = await budget.budgetFor(db, input.venueId, at);
+    if (!budget.tiersAvailable(view, await tiersFor(db, input.venueId)).includes(tier.discount_pct)) {
       throw new DomainError('budget_exhausted', 'this tier is not being issued right now', {
         available: view.voucher.available,
       });
     }
 
-    const check = averageCheck(db, venue, at);
+    const check = await averageCheck(db, venue, at);
     const reserved = estimateCost(check.minor, tier.discount_pct, tier.max_discount_minor);
-    budget.reserve(db, view.id, 'voucher', reserved, { kind: 'issued_voucher' }, at);
+    await budget.reserve(db, view.id, 'voucher', reserved, { kind: 'issued_voucher' }, at);
 
-    const points = ledger.spend(db, {
+    const points = await ledger.spend(db, {
       userId: input.userId,
       points: tier.points_cost,
       reason: 'voucher_redeem',
@@ -169,12 +169,12 @@ export function issue(
      * does not grow a month because the buyer upgraded the next day.
      */
     const validityDays = entitlements.entNumber(
-      entitlements.entitlementsFor(db, { userId: input.userId }),
+      await entitlements.entitlementsFor(db, { userId: input.userId }),
       'voucher_validity_days',
       CONFIG.vouchers.validityDays,
     );
     const expires = plusDays(at, validityDays);
-    db.run(
+    await db.run(
       `INSERT INTO issued_vouchers
          (id, user_id, venue_id, tier_id, discount_pct, max_discount_minor, points_spent,
           reserved_minor, code, status, budget_id, issued_at, expires_at)
@@ -197,20 +197,20 @@ export function issue(
     /* The ledger entry is written before the voucher exists, so its `source_ref`
        is filled once the id does. The entry is still immutable — this is the
        first and only write of a column that was NULL. */
-    db.run(`UPDATE points_ledger SET source_ref = $r WHERE id = $i`, { r: id, i: points.id });
+    await db.run(`UPDATE points_ledger SET source_ref = $r WHERE id = $i`, { r: id, i: points.id });
 
-    return db.get<IssuedVoucher>(`SELECT * FROM issued_vouchers WHERE id = $i`, { i: id })!;
+    return (await db.get<IssuedVoucher>(`SELECT * FROM issued_vouchers WHERE id = $i`, { i: id }))!;
   });
 }
 
-export const activeVouchers = (db: Db, userId: string): IssuedVoucher[] =>
-  db.all<IssuedVoucher>(
+export const activeVouchers = async (db: Db, userId: string): Promise<IssuedVoucher[]> =>
+  await db.all<IssuedVoucher>(
     `SELECT * FROM issued_vouchers WHERE user_id = $u AND status = 'active' ORDER BY expires_at`,
     { u: userId },
   );
 
-export const voucherByCode = (db: Db, code: string): IssuedVoucher | undefined =>
-  db.get<IssuedVoucher>(`SELECT * FROM issued_vouchers WHERE code = $c`, { c: code });
+export const voucherByCode = async (db: Db, code: string): Promise<IssuedVoucher | undefined> =>
+  await db.get<IssuedVoucher>(`SELECT * FROM issued_vouchers WHERE code = $c`, { c: code });
 
 /**
  * Phase two, called from inside the gate's commit (§3.5) and nowhere else.
@@ -220,28 +220,28 @@ export const voucherByCode = (db: Db, code: string): IssuedVoucher | undefined =
  * ends up holding the amount that was really discounted. That is why a bad
  * estimate can never accumulate into overspend — every redemption resets it.
  */
-export function redeem(
+export async function redeem(
   db: Db,
   voucher: IssuedVoucher,
   venue: Venue,
   amountMinor: number,
   transactionId: string,
   at: Iso = now(),
-): { discountMinor: number } {
+): Promise<{ discountMinor: number }> {
   if (voucher.status !== 'active') throw new DomainError('already_used', 'voucher is not active');
   if (voucher.expires_at <= at) throw new DomainError('expired', 'voucher has expired');
   if (voucher.venue_id !== venue.id) throw new DomainError('forbidden', 'voucher is for another venue');
 
   const actual = discountCost(amountMinor, voucher.discount_pct, voucher.max_discount_minor);
-  const budgetId = voucher.budget_id ?? budget.budgetFor(db, venue.id, at).id;
+  const budgetId = voucher.budget_id ?? (await budget.budgetFor(db, venue.id, at)).id;
 
-  budget.release(db, budgetId, 'voucher', voucher.reserved_minor, {
+  await budget.release(db, budgetId, 'voucher', voucher.reserved_minor, {
     kind: 'issued_voucher',
     ref: voucher.id,
   }, at);
-  budget.debit(db, budgetId, 'voucher', actual, { kind: 'issued_voucher', ref: voucher.id }, at);
+  await budget.debit(db, budgetId, 'voucher', actual, { kind: 'issued_voucher', ref: voucher.id }, at);
 
-  db.run(
+  await db.run(
     `UPDATE issued_vouchers
         SET status = 'redeemed', spent_minor = $s, redeemed_at = $t, transaction_id = $x
       WHERE id = $i AND status = 'active'`,
@@ -258,22 +258,22 @@ export function redeem(
  * invisible from the outside, which is why it gets its own scheduled job rather
  * than being folded into a read.
  */
-export function expireVouchers(db: Db, at: Iso = now()): { expired: number; released: number } {
-  const due = db.all<IssuedVoucher>(
+export async function expireVouchers(db: Db, at: Iso = now()): Promise<{ expired: number; released: number }> {
+  const due = await db.all<IssuedVoucher>(
     `SELECT * FROM issued_vouchers WHERE status = 'active' AND expires_at <= $t`,
     { t: at },
   );
   let released = 0;
-  db.tx(() => {
+  await db.tx(async () => {
     for (const voucher of due) {
       if (voucher.budget_id) {
-        budget.release(db, voucher.budget_id, 'voucher', voucher.reserved_minor, {
+        await budget.release(db, voucher.budget_id, 'voucher', voucher.reserved_minor, {
           kind: 'issued_voucher',
           ref: voucher.id,
         }, at);
         released += voucher.reserved_minor;
       }
-      db.run(`UPDATE issued_vouchers SET status = 'expired' WHERE id = $i`, { i: voucher.id });
+      await db.run(`UPDATE issued_vouchers SET status = 'expired' WHERE id = $i`, { i: voucher.id });
       /* §12a.3 in spirit: the *points* are not given back. A voucher is a
          purchase, and an unredeemed one is a purchase that went unused — the
          alternative is a free option on the venue's budget. */
@@ -291,13 +291,13 @@ export function expireVouchers(db: Db, at: Iso = now()): { expired: number; rele
  * discounts and gift cards, never withdrawable — and putting it anywhere else
  * would make that rule look like two rules.
  */
-export function redeemGiftCard(
+export async function redeemGiftCard(
   db: Db,
   input: { userId: string; stockId: string; at?: Iso; entitled?: boolean },
-): { id: string; code: string; points: number } {
+): Promise<{ id: string; code: string; points: number }> {
   const at = input.at ?? now();
-  return db.tx(() => {
-    const stock = db.get<{
+  return db.tx(async () => {
+    const stock = await db.get<{
       id: string;
       points_cost: number;
       stock: number;
@@ -312,7 +312,7 @@ export function redeemGiftCard(
       });
     }
 
-    ledger.spend(db, {
+    await ledger.spend(db, {
       userId: input.userId,
       points: stock.points_cost,
       reason: 'gift_card_redeem',
@@ -323,8 +323,8 @@ export function redeemGiftCard(
 
     const id = newId('gcd');
     const code = voucherCode();
-    db.run(`UPDATE gift_card_stock SET stock = stock - 1 WHERE id = $i`, { i: stock.id });
-    db.run(
+    await db.run(`UPDATE gift_card_stock SET stock = stock - 1 WHERE id = $i`, { i: stock.id });
+    await db.run(
       `INSERT INTO gift_cards (id, user_id, stock_id, points_spent, code, status, issued_at, expires_at)
        VALUES ($i, $u, $s, $p, $c, 'active', $at, $e)`,
       { i: id, u: input.userId, s: stock.id, p: stock.points_cost, c: code, at, e: plusDays(at, 365) },

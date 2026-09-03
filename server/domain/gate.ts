@@ -76,10 +76,10 @@ interface QrPayload {
  * who scans the same code twice in the sixty seconds it is alive. Either alone
  * leaves a hole.
  */
-export function mintQr(db: Db, venueId: string, secret: string, at: Iso = now()) {
+export async function mintQr(db: Db, venueId: string, secret: string, at: Iso = now()) {
   const jti = newId('evt');
   const expires = plusMinutes(at, CONFIG.gate.qrTtlSeconds / 60);
-  db.run(
+  await db.run(
     `INSERT INTO qr_nonces (jti, venue_id, issued_at, expires_at) VALUES ($j, $v, $i, $e)`,
     { j: jti, v: venueId, i: at, e: expires },
   );
@@ -100,12 +100,12 @@ export function mintQr(db: Db, venueId: string, secret: string, at: Iso = now())
  * same code in the same millisecond both pass a SELECT; only one of them wins a
  * `WHERE used_at IS NULL`.
  */
-export function verifyQr(db: Db, token: string, secret: string, userId: string, at: Iso = now()): string {
+export async function verifyQr(db: Db, token: string, secret: string, userId: string, at: Iso = now()): Promise<string> {
   const payload = openToken<QrPayload>(secret, token);
   if (!payload?.v || !payload.jti) throw new DomainError('invalid_trigger', 'bad QR signature');
   if (payload.exp * 1000 < new Date(at).getTime()) throw new DomainError('expired', 'QR has expired');
 
-  const claimed = db.run(
+  const claimed = await db.run(
     `UPDATE qr_nonces SET used_at = $t, used_by = $u
       WHERE jti = $j AND used_at IS NULL AND expires_at > $t`,
     { t: at, u: userId, j: payload.jti },
@@ -129,22 +129,22 @@ export function verifyQr(db: Db, token: string, secret: string, userId: string, 
  * The counter check is the whole replay defence and it is `>`, never `>=`: a tap
  * that presents the counter we already saw is the same tap arriving twice.
  */
-export function verifyNfc(
+export async function verifyNfc(
   db: Db,
   input: { piccHex: string; cmacHex: string; masterKey: Buffer; userId: string; at?: Iso },
-): string {
+): Promise<string> {
   const at = input.at ?? now();
   const result = verifyTap(input.masterKey, input.piccHex, input.cmacHex);
   if (!result.ok) throw new DomainError('invalid_trigger', `NFC rejected: ${result.reason}`);
 
-  const tag = db.get<{ venue_id: string | null; last_counter: number; status: string }>(
+  const tag = await db.get<{ venue_id: string | null; last_counter: number; status: string }>(
     `SELECT venue_id, last_counter, status FROM tag_registry WHERE tag_uid = $u`,
     { u: result.uid },
   );
   if (!tag) throw new DomainError('invalid_trigger', 'unknown tag');
   if (tag.status !== 'active' || !tag.venue_id) throw new DomainError('invalid_trigger', 'tag is not active');
 
-  const advanced = db.run(
+  const advanced = await db.run(
     `UPDATE tag_registry SET last_counter = $c WHERE tag_uid = $u AND last_counter < $c`,
     { c: result.counter, u: result.uid },
   );
@@ -188,18 +188,18 @@ export type Trigger =
  * but nothing is granted, reserved or decremented. A pending transaction is a
  * promise to decide, not a decision.
  */
-export function openTransaction(db: Db, trigger: Trigger, input: OpenInput): Transaction {
+export async function openTransaction(db: Db, trigger: Trigger, input: OpenInput): Promise<Transaction> {
   const at = input.at ?? now();
   const intent = input.intent ?? 'earn';
 
   try {
-    return openInTransaction(db, trigger, input, intent, at);
+    return await openInTransaction(db, trigger, input, intent, at);
   } catch (error) {
     /* A replay is the one failure worth a record of its own, and it has to be
        written *after* the rollback or it rolls back with the attempt it
        describes. §13: replays are rejected and surfaced, not silently dropped. */
     if (error instanceof DomainError && error.code === 'replay_detected') {
-      fraud.openCase(db, {
+      await fraud.openCase(db, {
         kind: 'replay',
         severity: 'high',
         userId: input.userId,
@@ -212,22 +212,22 @@ export function openTransaction(db: Db, trigger: Trigger, input: OpenInput): Tra
   }
 }
 
-function openInTransaction(
+async function openInTransaction(
   db: Db,
   trigger: Trigger,
   input: OpenInput,
   intent: Intent,
   at: Iso,
-): Transaction {
-  return db.tx(() => {
+): Promise<Transaction> {
+  return db.tx(async () => {
     let venueId: string;
     let triggerRef: string | null = null;
 
     if (trigger.kind === 'qr') {
-      venueId = verifyQr(db, trigger.token, trigger.secret, input.userId, at);
+      venueId = await verifyQr(db, trigger.token, trigger.secret, input.userId, at);
       triggerRef = 'qr';
     } else if (trigger.kind === 'nfc') {
-      venueId = verifyNfc(db, {
+      venueId = await verifyNfc(db, {
         piccHex: trigger.piccHex,
         cmacHex: trigger.cmacHex,
         masterKey: trigger.masterKey,
@@ -238,15 +238,15 @@ function openInTransaction(
     } else {
       venueId = trigger.venueId;
       triggerRef = trigger.byUserId;
-      requireStaff(db, venueId, trigger.byUserId);
+      await requireStaff(db, venueId, trigger.byUserId);
     }
 
-    const venue = getVenue(db, venueId);
+    const venue = await getVenue(db, venueId);
     if (venue.status !== 'live') throw new DomainError('invalid_state', 'venue is not live');
 
     /* An account may hold exactly one pending transaction at a venue. Two open
        gates at one counter is how a customer ends up confirming the wrong one. */
-    const existing = db.get<{ id: string }>(
+    const existing = await db.get<{ id: string }>(
       `SELECT id FROM transactions WHERE user_id = $u AND venue_id = $v AND status = 'pending'`,
       { u: input.userId, v: venueId },
     );
@@ -263,7 +263,7 @@ function openInTransaction(
       intent === 'earn' ? venue.amount_entry : 'cashier';
 
     if (intent === 'voucher_redeem') {
-      const voucher = db.get<vouchers.IssuedVoucher>(
+      const voucher = await db.get<vouchers.IssuedVoucher>(
         `SELECT * FROM issued_vouchers WHERE id = $i AND user_id = $u`,
         { i: input.intentRef ?? '', u: input.userId },
       );
@@ -274,7 +274,7 @@ function openInTransaction(
     }
 
     if (intent === 'reward_redeem') {
-      const reward = db.get<campaigns.EarnedReward>(
+      const reward = await db.get<campaigns.EarnedReward>(
         `SELECT * FROM earned_rewards WHERE id = $i AND user_id = $u`,
         { i: input.intentRef ?? '', u: input.userId },
       );
@@ -285,7 +285,7 @@ function openInTransaction(
     }
 
     const id = newId('txn');
-    db.run(
+    await db.run(
       `INSERT INTO transactions
          (id, venue_id, user_id, trigger_type, trigger_ref, intent, intent_ref, status,
           currency, amount_entered_by, deal_id, client_ts, device_id, opened_at, created_at)
@@ -306,12 +306,12 @@ function openInTransaction(
         at,
       },
     );
-    return getTransaction(db, id);
+    return await getTransaction(db, id);
   });
 }
 
-export function getTransaction(db: Db, id: string): Transaction {
-  const txn = db.get<Transaction>(`SELECT * FROM transactions WHERE id = $i`, { i: id });
+export async function getTransaction(db: Db, id: string): Promise<Transaction> {
+  const txn = await db.get<Transaction>(`SELECT * FROM transactions WHERE id = $i`, { i: id });
   if (!txn) throw new DomainError('not_found', 'transaction not found');
   return txn;
 }
@@ -332,18 +332,18 @@ export function getTransaction(db: Db, id: string): Transaction {
  * makes the customer re-scan, and re-scanning after a typo is how a queue turns
  * into a complaint.
  */
-export function submitAmount(
+export async function submitAmount(
   db: Db,
   input: { transactionId: string; amountMinor: number; actorId: string; at?: Iso },
-): Transaction {
+): Promise<Transaction> {
   const at = input.at ?? now();
-  return db.tx(() => {
-    const txn = getTransaction(db, input.transactionId);
+  return db.tx(async () => {
+    const txn = await getTransaction(db, input.transactionId);
     if (txn.status !== 'pending') throw new DomainError('invalid_state', 'transaction is not pending');
 
-    const venue = getVenue(db, txn.venue_id);
-    if (txn.amount_entered_by === 'cashier') requireStaff(db, venue.id, input.actorId);
-    else if (input.actorId !== txn.user_id) requireStaff(db, venue.id, input.actorId);
+    const venue = await getVenue(db, txn.venue_id);
+    if (txn.amount_entered_by === 'cashier') await requireStaff(db, venue.id, input.actorId);
+    else if (input.actorId !== txn.user_id) await requireStaff(db, venue.id, input.actorId);
 
     const check = plausibleAmount(input.amountMinor, venue.max_amount_minor);
     if (!check.ok) {
@@ -353,12 +353,12 @@ export function submitAmount(
       });
     }
 
-    db.run(`UPDATE transactions SET amount_minor = $a WHERE id = $i AND status = 'pending'`, {
+    await db.run(`UPDATE transactions SET amount_minor = $a WHERE id = $i AND status = 'pending'`, {
       a: input.amountMinor,
       i: txn.id,
     });
     void at;
-    return getTransaction(db, txn.id);
+    return await getTransaction(db, txn.id);
   });
 }
 
@@ -390,22 +390,22 @@ export interface Receipt {
  * stamp card are separate modules with no side effects of their own: they can be
  * composed inside one `db.tx` because none of them commits on its own.
  */
-export function confirm(
+export async function confirm(
   db: Db,
   input: { transactionId: string; cashierId: string; at?: Iso },
-): Receipt {
+): Promise<Receipt> {
   const at = input.at ?? now();
 
-  const receipt = db.tx((): Receipt => {
-    const txn = getTransaction(db, input.transactionId);
+  const receipt = await db.tx(async (): Promise<Receipt> => {
+    const txn = await getTransaction(db, input.transactionId);
     if (txn.status !== 'pending') throw new DomainError('invalid_state', 'transaction is not pending');
     if (txn.amount_minor === null) throw new DomainError('invalid_state', 'no amount has been entered');
 
-    const venue = getVenue(db, txn.venue_id);
-    requireStaff(db, venue.id, input.cashierId);
+    const venue = await getVenue(db, txn.venue_id);
+    await requireStaff(db, venue.id, input.cashierId);
 
     if (minutesBetween(txn.opened_at, at) > CONFIG.gate.pendingTtlMinutes) {
-      db.run(
+      await db.run(
         `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = 'timeout'
           WHERE id = $i`,
         { t: at, i: txn.id },
@@ -421,23 +421,23 @@ export function confirm(
 
     /* ── the redemption intents ── */
     if (txn.intent === 'voucher_redeem' && txn.intent_ref) {
-      const voucher = db.get<vouchers.IssuedVoucher>(`SELECT * FROM issued_vouchers WHERE id = $i`, {
+      const voucher = (await db.get<vouchers.IssuedVoucher>(`SELECT * FROM issued_vouchers WHERE id = $i`, {
         i: txn.intent_ref,
-      })!;
-      discountMinor = vouchers.redeem(db, voucher, venue, amount, txn.id, at).discountMinor;
+      }))!;
+      discountMinor = (await vouchers.redeem(db, voucher, venue, amount, txn.id, at)).discountMinor;
     }
 
     if (txn.intent === 'reward_redeem' && txn.intent_ref) {
-      const earned = db.get<campaigns.EarnedReward>(`SELECT * FROM earned_rewards WHERE id = $i`, {
+      const earned = (await db.get<campaigns.EarnedReward>(`SELECT * FROM earned_rewards WHERE id = $i`, {
         i: txn.intent_ref,
-      })!;
-      discountMinor = campaigns.redeemReward(db, earned, txn.id, at).costMinor;
+      }))!;
+      discountMinor = (await campaigns.redeemReward(db, earned, txn.id, at)).costMinor;
     }
 
     /* ── the visit, which is what everything else keys off ── */
     const l = local(at, venue.timezone);
     const qualifies = amount >= venue.min_spend_minor;
-    const visitCounted = qualifies && recordVisit(db, {
+    const visitCounted = qualifies && (await recordVisit(db, {
       userId: txn.user_id,
       venue,
       amountMinor: amount,
@@ -446,14 +446,14 @@ export function confirm(
       hour: l.hour,
       weekday: l.weekday,
       at,
-    });
+    }));
 
     /* ── earning ── */
     if (txn.intent === 'earn' && visitCounted && venue.loyalty_active) {
-      pointsGranted = grantEarnings(db, {
+      pointsGranted = await grantEarnings(db, {
         txn,
         venue,
-        ent: entitlements.entitlementsFor(db, { userId: txn.user_id }),
+        ent: await entitlements.entitlementsFor(db, { userId: txn.user_id }),
         at,
       });
     }
@@ -466,7 +466,7 @@ export function confirm(
          would be a second definition of "one reward per visit". They are added
          to the receipt's one number because the cashier reads one number out
          loud; the ledger keeps them apart. */
-      const stamps = campaigns.applyVisit(db, {
+      const stamps = await campaigns.applyVisit(db, {
         userId: txn.user_id,
         venue,
         amountMinor: amount,
@@ -479,12 +479,12 @@ export function confirm(
     }
 
     /* ── the deal funnel's third step (§6.3) ── */
-    if (txn.deal_id && visitCounted) claimDeal(db, txn.deal_id, txn.user_id, txn.id, discountMinor, at);
+    if (txn.deal_id && visitCounted) await claimDeal(db, txn.deal_id, txn.user_id, txn.id, discountMinor, at);
 
     /* ── §8.1: the referral pays on the invited user's *first* confirmed scan ── */
-    completeReferral(db, txn.user_id, at);
+    await completeReferral(db, txn.user_id, at);
 
-    db.run(
+    await db.run(
       `UPDATE transactions
           SET status = 'committed', confirmed_at = $t, confirmed_by = $c,
               points_granted = $p, discount_minor = $d, stamp_granted = $s
@@ -499,32 +499,32 @@ export function confirm(
       },
     );
 
-    const balance = ledger.balance(db, txn.user_id);
+    const balance = await ledger.balance(db, txn.user_id);
     return {
-      transaction: getTransaction(db, txn.id),
+      transaction: await getTransaction(db, txn.id),
       pointsGranted,
       discountMinor,
       stamped,
       reward,
       visitCounted,
       balance,
-      nextTier: nearestTier(db, venue.id, balance),
+      nextTier: await nearestTier(db, venue.id, balance),
     };
   });
 
   /* Outside the transaction on purpose: a fraud *case* is a note for a human and
      must never be able to roll back money that legitimately changed hands at a
      counter (§13, and the reasoning in `fraud.ts`). */
-  fraud.checkTransaction(db, {
+  await fraud.checkTransaction(db, {
     userId: receipt.transaction.user_id,
     venueId: receipt.transaction.venue_id,
     transactionId: receipt.transaction.id,
     at,
   });
-  fraud.refreshTrust(db, receipt.transaction.user_id);
+  await fraud.refreshTrust(db, receipt.transaction.user_id);
 
   if (receipt.reward) {
-    notifications.notify(db, {
+    await notifications.notify(db, {
       userId: receipt.transaction.user_id,
       kind: 'reward_earned',
       title: receipt.reward.label,
@@ -540,24 +540,24 @@ export function confirm(
   return receipt;
 }
 
-export function cancel(
+export async function cancel(
   db: Db,
   input: { transactionId: string; reason: string; actorId: string; at?: Iso },
-): Transaction {
+): Promise<Transaction> {
   const at = input.at ?? now();
-  const txn = getTransaction(db, input.transactionId);
+  const txn = await getTransaction(db, input.transactionId);
   if (txn.status !== 'pending') throw new DomainError('invalid_state', 'transaction is not pending');
   /* Either side may walk away from a pending gate: the customer changed their
      mind, or the cashier is closing the till. Nothing has been granted, so there
      is nothing to protect and no reason to make it hard. */
-  if (input.actorId !== txn.user_id) requireStaff(db, txn.venue_id, input.actorId);
+  if (input.actorId !== txn.user_id) await requireStaff(db, txn.venue_id, input.actorId);
 
-  db.run(
+  await db.run(
     `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = $r
       WHERE id = $i AND status = 'pending'`,
     { t: at, r: input.reason, i: input.transactionId },
   );
-  return getTransaction(db, input.transactionId);
+  return await getTransaction(db, input.transactionId);
 }
 
 /**
@@ -567,18 +567,18 @@ export function cancel(
  * next scan there (see `openTransaction`), so a cashier who walked away without
  * confirming would otherwise lock a customer out until somebody noticed.
  */
-export function expirePending(db: Db, at: Iso = now()): number {
+export async function expirePending(db: Db, at: Iso = now()): Promise<number> {
   const cutoff = plusMinutes(at, -CONFIG.gate.pendingTtlMinutes);
-  return db.run(
+  return (await db.run(
     `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = 'timeout'
       WHERE status = 'pending' AND opened_at < $c`,
     { t: at, c: cutoff },
-  ).changes;
+  )).changes;
 }
 
 /** Pending transactions at a venue — the partner app's confirmation queue. */
-export const pendingAt = (db: Db, venueId: string): Transaction[] =>
-  db.all<Transaction>(
+export const pendingAt = async (db: Db, venueId: string): Promise<Transaction[]> =>
+  await db.all<Transaction>(
     `SELECT * FROM transactions WHERE venue_id = $v AND status = 'pending' ORDER BY opened_at`,
     { v: venueId },
   );
@@ -598,7 +598,7 @@ export const pendingAt = (db: Db, venueId: string): Transaction[] =>
  * is applied on top as the stricter of the two: a venue that set 48 hours meant
  * it, and the daily rule alone would ignore them.
  */
-function recordVisit(
+async function recordVisit(
   db: Db,
   input: {
     userId: string;
@@ -610,8 +610,8 @@ function recordVisit(
     weekday: number;
     at: Iso;
   },
-): boolean {
-  const last = db.get<{ created_at: string }>(
+): Promise<boolean> {
+  const last = await db.get<{ created_at: string }>(
     `SELECT created_at FROM venue_visits WHERE user_id = $u AND venue_id = $v
       ORDER BY created_at DESC LIMIT 1`,
     { u: input.userId, v: input.venue.id },
@@ -621,7 +621,7 @@ function recordVisit(
   }
 
   try {
-    db.run(
+    await db.run(
       `INSERT INTO venue_visits
          (id, user_id, venue_id, local_day, transaction_id, amount_minor, local_hour,
           local_weekday, created_at)
@@ -643,7 +643,7 @@ function recordVisit(
     return false;
   }
 
-  db.run(
+  await db.run(
     `INSERT INTO venue_customers (venue_id, user_id, first_seen_at, last_seen_at, visits, spend_minor)
      VALUES ($v, $u, $t, $t, 1, $a)
      ON CONFLICT (venue_id, user_id) DO UPDATE
@@ -685,10 +685,10 @@ function recordVisit(
  * the transaction, because "once, ever" is a claim about every scan this account
  * will ever make and not just about this one.
  */
-function grantEarnings(
+async function grantEarnings(
   db: Db,
   input: { txn: Transaction; venue: Venue; ent: entitlements.Entitlements; at: Iso },
-): number {
+): Promise<number> {
   const { txn, venue, ent, at } = input;
   const user = txn.user_id;
   let total = 0;
@@ -708,7 +708,7 @@ function grantEarnings(
     venue.points_per_scan > 0
       ? venue.points_per_scan
       : entitlements.entNumber(ent, 'scan_points', CONFIG.earn.scan);
-  total += ledger.earn(db, {
+  total += (await ledger.earn(db, {
     userId: user,
     points: perScan,
     reason: 'scan_earn',
@@ -716,7 +716,7 @@ function grantEarnings(
     sourceRef: txn.id,
     venueId: venue.id,
     at,
-  }).entry.delta;
+  })).entry.delta;
 
   /* First visit to *this* venue, ever — the line the whole discovery pitch rests
      on, and the one that must never pay twice.
@@ -729,12 +729,12 @@ function grantEarnings(
      has a failure mode — a counter can be rebuilt, and a ledger with no trigger
      would pay a fiftieth visit for a bonus that was introduced after the first
      forty-nine. */
-  const customer = db.get<{ visits: number }>(
+  const customer = await db.get<{ visits: number }>(
     `SELECT visits FROM venue_customers WHERE venue_id = $v AND user_id = $u`,
     { v: venue.id, u: user },
   );
-  if ((customer?.visits ?? 0) <= 1 && !ledger.alreadyPaid(db, user, 'first_visit', venue.id)) {
-    total += ledger.earn(db, {
+  if ((customer?.visits ?? 0) <= 1 && !(await ledger.alreadyPaid(db, user, 'first_visit', venue.id))) {
+    total += (await ledger.earn(db, {
       userId: user,
       points: entitlements.entNumber(ent, 'first_visit_points', CONFIG.earn.firstVisitToVenue),
       reason: 'venue_bonus',
@@ -742,7 +742,7 @@ function grantEarnings(
       sourceRef: venue.id,
       venueId: venue.id,
       at,
-    }).entry.delta;
+    })).entry.delta;
   }
 
   /* A category this account has never spent in. The visit for this scan is
@@ -750,13 +750,13 @@ function grantEarnings(
      — counting it would make every category look visited and this line would
      pay nothing, ever, which is the sort of bug that reads as "the feature is
      off" rather than as a fault. */
-  const seen = db.get<{ n: number }>(
+  const seen = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM venue_visits vv JOIN venues v ON v.id = vv.venue_id
       WHERE vv.user_id = $u AND v.category = $c AND vv.transaction_id <> $x`,
     { u: user, c: venue.category, x: txn.id },
   );
-  if ((seen?.n ?? 0) === 0 && !ledger.alreadyPaid(db, user, 'new_category', venue.category)) {
-    total += ledger.earn(db, {
+  if ((seen?.n ?? 0) === 0 && !(await ledger.alreadyPaid(db, user, 'new_category', venue.category))) {
+    total += (await ledger.earn(db, {
       userId: user,
       points: entitlements.entNumber(ent, 'new_category_points', CONFIG.earn.newCategory),
       reason: 'venue_bonus',
@@ -764,7 +764,7 @@ function grantEarnings(
       sourceRef: venue.category,
       venueId: venue.id,
       at,
-    }).entry.delta;
+    })).entry.delta;
   }
 
   return total;
@@ -777,15 +777,15 @@ function grantEarnings(
  * The per-deal cap stops further claims but never rolls one back: the customer
  * is standing at the counter and the offer was live when they walked in.
  */
-function claimDeal(
+async function claimDeal(
   db: Db,
   dealId: string,
   userId: string,
   transactionId: string,
   discountMinor: number,
   at: Iso,
-): void {
-  const deal = db.get<{
+): Promise<void> {
+  const deal = await db.get<{
     status: string;
     valid_from: string | null;
     valid_to: string | null;
@@ -802,19 +802,19 @@ function claimDeal(
 
   /* Opened first: an impression is not intent, and counting a claim against a
      deal the customer never opened would flatter every funnel on the platform. */
-  const opened = db.get<{ n: number }>(
+  const opened = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM deal_events
       WHERE deal_id = $d AND user_id = $u AND event_type = 'open'`,
     { d: dealId, u: userId },
   );
   if ((opened?.n ?? 0) === 0) return;
 
-  db.run(
+  await db.run(
     `INSERT INTO deal_events (id, deal_id, user_id, event_type, source, transaction_id, created_at)
      VALUES ($i, $d, $u, 'claim', 'gate', $x, $t)`,
     { i: newId('evt'), d: dealId, u: userId, x: transactionId, t: at },
   );
-  db.run(
+  await db.run(
     `UPDATE hot_deals SET claimed_count = claimed_count + 1, spend_minor = spend_minor + $s
       WHERE id = $i`,
     { s: discountMinor, i: dealId },
@@ -837,14 +837,14 @@ function claimDeal(
  * account finds nothing to pay — and a *retried* confirm never reaches here at
  * all, because `confirm` refuses a transaction that is no longer pending.
  */
-function completeReferral(db: Db, userId: string, at: Iso): void {
-  const bond = db.get<{ id: string; referrer_id: string }>(
+async function completeReferral(db: Db, userId: string, at: Iso): Promise<void> {
+  const bond = await db.get<{ id: string; referrer_id: string }>(
     `SELECT id, referrer_id FROM referrals WHERE referred_id = $u AND status = 'pending'`,
     { u: userId },
   );
   if (!bond) return;
 
-  ledger.earn(db, {
+  await ledger.earn(db, {
     userId: bond.referrer_id,
     points: CONFIG.earn.referrerFirstVisit,
     reason: 'referral',
@@ -852,7 +852,7 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
     sourceRef: bond.id,
     at,
   });
-  ledger.earn(db, {
+  await ledger.earn(db, {
     userId,
     points: CONFIG.earn.inviteeJoin,
     reason: 'referral',
@@ -864,7 +864,7 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
      one figure paid twice, so either reading gave the same answer; now that the
      two sides can differ, the total is the only one that answers the question an
      operator summing this column is asking. */
-  db.run(
+  await db.run(
     `UPDATE referrals SET status = 'completed', points_awarded = $p, completed_at = $t
       WHERE id = $i AND status = 'pending'`,
     { p: CONFIG.earn.referrerFirstVisit + CONFIG.earn.inviteeJoin, t: at, i: bond.id },
@@ -880,15 +880,15 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
      to ten later adds a *new* milestone for everybody instead of silently
      re-paying the one they already have. */
   const milestone = String(CONFIG.earn.friendMilestoneAt);
-  const completed = db.get<{ n: number }>(
+  const completed = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM referrals WHERE referrer_id = $r AND status = 'completed'`,
     { r: bond.referrer_id },
   );
   if (
     (completed?.n ?? 0) >= CONFIG.earn.friendMilestoneAt &&
-    !ledger.alreadyPaid(db, bond.referrer_id, 'friend_milestone', milestone)
+    !(await ledger.alreadyPaid(db, bond.referrer_id, 'friend_milestone', milestone))
   ) {
-    ledger.earn(db, {
+    await ledger.earn(db, {
       userId: bond.referrer_id,
       points: CONFIG.earn.friendMilestone,
       reason: 'referral',
@@ -900,12 +900,12 @@ function completeReferral(db: Db, userId: string, at: Iso): void {
 }
 
 /** §7.4's "you're 60 from 10% off" — computed from the real balance and tiers. */
-export function nearestTier(
+export async function nearestTier(
   db: Db,
   venueId: string,
   balance: number,
-): { discountPct: number; pointsNeeded: number } | null {
-  const tier = db.get<{ discount_pct: number; points_cost: number }>(
+): Promise<{ discountPct: number; pointsNeeded: number } | null> {
+  const tier = await db.get<{ discount_pct: number; points_cost: number }>(
     `SELECT discount_pct, points_cost FROM voucher_tiers
       WHERE venue_id = $v AND active = 1 AND points_cost > $b
       ORDER BY points_cost ASC LIMIT 1`,
@@ -923,14 +923,14 @@ export function nearestTier(
  * than a code change — which is exactly what "without schema migration" was
  * asking for.
  */
-export function requireStaff(db: Db, venueId: string, userId: string): void {
-  const owner = db.get<{ owner_user_id: string | null }>(
+export async function requireStaff(db: Db, venueId: string, userId: string): Promise<void> {
+  const owner = await db.get<{ owner_user_id: string | null }>(
     `SELECT owner_user_id FROM venues WHERE id = $v`,
     { v: venueId },
   );
   if (owner?.owner_user_id === userId) return;
 
-  const role = db.get<{ role: string }>(
+  const role = await db.get<{ role: string }>(
     `SELECT role FROM user_roles WHERE user_id = $u AND role IN ('admin', 'manager')`,
     { u: userId },
   );
@@ -940,5 +940,5 @@ export function requireStaff(db: Db, venueId: string, userId: string): void {
 }
 
 /** The pool position a partner app shows beside its confirmation queue. */
-export const budgetSnapshot = (db: Db, venueId: string, at: Iso = now()) =>
-  budget.budgetFor(db, venueId, at);
+export const budgetSnapshot = async (db: Db, venueId: string, at: Iso = now()) =>
+  await budget.budgetFor(db, venueId, at);

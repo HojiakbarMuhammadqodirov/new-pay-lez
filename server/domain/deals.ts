@@ -76,8 +76,8 @@ const FALLBACK_ORDER = ['en', 'pl', 'ru', 'uk', 'uz', 'tr', 'az'];
  * title in any language is not a deal a customer should be shown, and the caller
  * filtering it out is better than a card that says nothing.
  */
-export function copyFor(db: Db, dealId: string, language: string): Copy | null {
-  const rows = db.all<{ field: string; language: string; value: string }>(
+export async function copyFor(db: Db, dealId: string, language: string): Promise<Copy | null> {
+  const rows = await db.all<{ field: string; language: string; value: string }>(
     `SELECT field, language, value FROM translations WHERE entity = 'hot_deal' AND entity_id = $i`,
     { i: dealId },
   );
@@ -99,8 +99,8 @@ export function copyFor(db: Db, dealId: string, language: string): Copy | null {
 }
 
 /** B3's translation-completeness tracking, as the dashboard needs to show it. */
-export function completeness(db: Db, dealId: string, languages = ['en', 'pl', 'uz', 'ru', 'uk']) {
-  const rows = db.all<{ field: string; language: string }>(
+export async function completeness(db: Db, dealId: string, languages = ['en', 'pl', 'uz', 'ru', 'uk']) {
+  const rows = await db.all<{ field: string; language: string }>(
     `SELECT field, language FROM translations
       WHERE entity = 'hot_deal' AND entity_id = $i AND TRIM(value) != ''`,
     { i: dealId },
@@ -122,9 +122,9 @@ export function completeness(db: Db, dealId: string, languages = ['en', 'pl', 'u
  * — because that is a fact the product measures. Anything about where somebody
  * came from is not collected and never will be by this function.
  */
-export function segmentsFor(db: Db, userId: string, venueId: string | null, at: Iso = now()): Segment[] {
+export async function segmentsFor(db: Db, userId: string, venueId: string | null, at: Iso = now()): Promise<Segment[]> {
   const out: Segment[] = [];
-  const user = db.get<{ created_at: string }>(`SELECT created_at FROM users WHERE id = $u`, {
+  const user = await db.get<{ created_at: string }>(`SELECT created_at FROM users WHERE id = $u`, {
     u: userId,
   });
   if (user && daysBetween(user.created_at, at) <= CONFIG.deals.newcomerDays) out.push('newcomer');
@@ -134,7 +134,7 @@ export function segmentsFor(db: Db, userId: string, venueId: string | null, at: 
     return out;
   }
 
-  const relation = db.get<{ visits: number; last_seen_at: string }>(
+  const relation = await db.get<{ visits: number; last_seen_at: string }>(
     `SELECT visits, last_seen_at FROM venue_customers WHERE venue_id = $v AND user_id = $u`,
     { v: venueId, u: userId },
   );
@@ -159,11 +159,11 @@ export interface Viewer {
  * appear" and "may this claim", and two copies of a targeting rule is how a deal
  * ends up visible but unclaimable.
  */
-export function claimableNow(
+export async function claimableNow(
   db: Db,
   deal: Deal,
   viewer: Viewer,
-): { ok: true } | { ok: false; reason: string } {
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const at = viewer.at ?? now();
   if (deal.status !== 'live') return { ok: false, reason: 'not_live' };
   if (deal.valid_from && deal.valid_from > at) return { ok: false, reason: 'not_started' };
@@ -176,7 +176,7 @@ export function claimableNow(
   }
 
   const timezone = deal.venue_id
-    ? db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: deal.venue_id })
+    ? (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: deal.venue_id }))
         ?.timezone ?? 'Europe/Warsaw'
     : 'Europe/Warsaw';
   const l = local(at, timezone);
@@ -196,7 +196,7 @@ export function claimableNow(
   }
   if (deal.target_audience && viewer.userId) {
     const wanted = deal.target_audience.split(',') as Segment[];
-    const has = segmentsFor(db, viewer.userId, deal.venue_id, at);
+    const has = await segmentsFor(db, viewer.userId, deal.venue_id, at);
     if (!wanted.some((segment) => has.includes(segment))) {
       return { ok: false, reason: 'wrong_audience' };
     }
@@ -226,12 +226,12 @@ export interface DealCard {
  * A deal that says "not for you" is worse than one that was never mentioned, and
  * the funnel would count an impression for an audience the partner did not buy.
  */
-export function browse(
+export async function browse(
   db: Db,
   viewer: Viewer,
   filter: { city?: string; category?: string; venueId?: string; limit?: number } = {},
-): DealCard[] {
-  const rows = db.all<Deal>(
+): Promise<DealCard[]> {
+  const rows = await db.all<Deal>(
     `SELECT * FROM hot_deals
       WHERE status = 'live'
         AND ($city IS NULL OR city IS NULL OR city = $city)
@@ -249,9 +249,9 @@ export function browse(
 
   const out: DealCard[] = [];
   for (const deal of rows) {
-    const verdict = claimableNow(db, deal, viewer);
+    const verdict = await claimableNow(db, deal, viewer);
     if (!verdict.ok) continue;
-    const copy = copyFor(db, deal.id, viewer.language);
+    const copy = await copyFor(db, deal.id, viewer.language);
     if (!copy) continue;
     out.push({
       id: deal.id,
@@ -270,8 +270,8 @@ export function browse(
   return out;
 }
 
-export const getDeal = (db: Db, id: string): Deal => {
-  const deal = db.get<Deal>(`SELECT * FROM hot_deals WHERE id = $i`, { i: id });
+export const getDeal = async (db: Db, id: string): Promise<Deal> => {
+  const deal = await db.get<Deal>(`SELECT * FROM hot_deals WHERE id = $i`, { i: id });
   if (!deal) throw new DomainError('not_found', 'deal not found');
   return deal;
 };
@@ -285,7 +285,7 @@ export const getDeal = (db: Db, id: string): Deal => {
  * confirmed scan. A "claim" a client can post is a claim rate a client can
  * inflate, and the claim rate is the number the whole dashboard argues from.
  */
-export function track(
+export async function track(
   db: Db,
   input: {
     dealId: string;
@@ -295,10 +295,10 @@ export function track(
     pushId?: string;
     at?: Iso;
   },
-): void {
+): Promise<void> {
   const at = input.at ?? now();
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO deal_events (id, deal_id, user_id, event_type, source, push_id, created_at)
        VALUES ($i, $d, $u, $e, $s, $p, $t)`,
       {
@@ -312,19 +312,19 @@ export function track(
       },
     );
     const column = input.kind === 'impression' ? 'seen_count' : 'opened_count';
-    db.run(`UPDATE hot_deals SET ${column} = ${column} + 1 WHERE id = $i`, { i: input.dealId });
+    await db.run(`UPDATE hot_deals SET ${column} = ${column} + 1 WHERE id = $i`, { i: input.dealId });
 
     /* §9.2 attribution: a push-sourced open is what "Notified → Opened" counts,
        and it is distinguished from an organic one by the push id travelling with
        the event rather than by a guess from timing. */
     if (input.pushId && input.kind === 'open') {
-      db.run(`UPDATE deal_pushes SET opened = opened + 1 WHERE id = $p`, { p: input.pushId });
+      await db.run(`UPDATE deal_pushes SET opened = opened + 1 WHERE id = $p`, { p: input.pushId });
     }
   });
 }
 
-export const funnel = (db: Db, dealId: string) => {
-  const deal = getDeal(db, dealId);
+export const funnel = async (db: Db, dealId: string) => {
+  const deal = await getDeal(db, dealId);
   return {
     seen: deal.seen_count,
     opened: deal.opened_count,
@@ -347,19 +347,19 @@ export const funnel = (db: Db, dealId: string) => {
  * partner's intent separately from the window: a paused deal whose window is
  * still open must not come back to life on its own.
  */
-export function runLifecycle(db: Db, at: Iso = now()): { started: number; ended: number } {
-  const started = db.run(
+export async function runLifecycle(db: Db, at: Iso = now()): Promise<{ started: number; ended: number }> {
+  const started = (await db.run(
     `UPDATE hot_deals SET status = 'live', published_at = COALESCE(published_at, $t), updated_at = $t
       WHERE status = 'scheduled' AND (valid_from IS NULL OR valid_from <= $t)
         AND (valid_to IS NULL OR valid_to > $t)`,
     { t: at },
-  ).changes;
+  )).changes;
 
-  const ended = db.run(
+  const ended = (await db.run(
     `UPDATE hot_deals SET status = 'expired', updated_at = $t
       WHERE status IN ('live', 'scheduled') AND valid_to IS NOT NULL AND valid_to <= $t`,
     { t: at },
-  ).changes;
+  )).changes;
 
   return { started, ended };
 }
@@ -397,7 +397,7 @@ const PUBLIC_STATUSES: DealStatus[] = ['live', 'scheduled'];
  * entitlement to stop something is how a lapsed plan traps a live deal on
  * screen.
  */
-export function setStatus(
+export async function setStatus(
   db: Db,
   dealId: string,
   status: DealStatus,
@@ -408,30 +408,34 @@ export function setStatus(
    * Optional so the internal callers that have already earned the transition
    * are unchanged; a route handler passes it and gets the gates.
    */
-  guard?: { check: (deal: Deal) => void },
-): Deal {
-  if (PUBLIC_STATUSES.includes(status) && guard) guard.check(getDeal(db, dealId));
+  /* `Promise<void>` in the type, not just `void`: an async function IS assignable
+     to a `() => void` signature, and its promise is then dropped on the floor —
+     which is how a 403 from this guard became an unhandled rejection that killed
+     the process instead of refusing the request. */
+  guard?: { check: (deal: Deal) => unknown },
+): Promise<Deal> {
+  if (PUBLIC_STATUSES.includes(status) && guard) await guard.check(await getDeal(db, dealId));
 
-  db.run(`UPDATE hot_deals SET status = $s, updated_at = $t WHERE id = $i`, {
+  await db.run(`UPDATE hot_deals SET status = $s, updated_at = $t WHERE id = $i`, {
     s: status,
     t: at,
     i: dealId,
   });
-  return getDeal(db, dealId);
+  return await getDeal(db, dealId);
 }
 
-export function extend(db: Db, dealId: string, validTo: Iso, at: Iso = now()): Deal {
-  const deal = getDeal(db, dealId);
+export async function extend(db: Db, dealId: string, validTo: Iso, at: Iso = now()): Promise<Deal> {
+  const deal = await getDeal(db, dealId);
   if (deal.valid_to && validTo <= deal.valid_to) {
     throw new DomainError('bad_request', 'extending means a later end date');
   }
-  db.run(
+  await db.run(
     `UPDATE hot_deals SET valid_to = $v, status = CASE WHEN status = 'expired' THEN 'live' ELSE status END,
             updated_at = $t
       WHERE id = $i`,
     { v: validTo, t: at, i: dealId },
   );
-  return getDeal(db, dealId);
+  return await getDeal(db, dealId);
 }
 
 /* ─────────────────────────────────────────────────────────── pushes (B4/§9.2) ── */
@@ -445,16 +449,16 @@ export function extend(db: Db, dealId: string, validTo: Iso, at: Iso = now()): D
  * per-*user* frequency cap is the one thing that cannot be settled here: it
  * depends on what every other venue does between now and the send.
  */
-export function schedulePush(
+export async function schedulePush(
   db: Db,
   input: { dealId: string; scheduledAt: Iso; quota: number; at?: Iso },
-): { id: string; remaining: number } {
+): Promise<{ id: string; remaining: number }> {
   const at = input.at ?? now();
-  const deal = getDeal(db, input.dealId);
+  const deal = await getDeal(db, input.dealId);
   if (!deal.venue_id) throw new DomainError('invalid_state', 'deal has no venue');
 
   const timezone =
-    db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: deal.venue_id })
+    (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: deal.venue_id }))
       ?.timezone ?? 'Europe/Warsaw';
   const l = local(input.scheduledAt, timezone);
   if (!withinDailyWindow(l.minutes, CONFIG.deals.quietFromMin, CONFIG.deals.quietToMin)) {
@@ -463,10 +467,10 @@ export function schedulePush(
 
   const period = localMonth(input.scheduledAt, timezone);
   const used =
-    db.get<{ used: number }>(`SELECT used FROM push_quotas WHERE venue_id = $v AND period = $p`, {
+    (await db.get<{ used: number }>(`SELECT used FROM push_quotas WHERE venue_id = $v AND period = $p`, {
       v: deal.venue_id,
       p: period,
-    })?.used ?? 0;
+    }))?.used ?? 0;
   if (used >= input.quota) {
     throw new DomainError('quota_exceeded', 'monthly push quota is used up', {
       quota: input.quota,
@@ -474,37 +478,37 @@ export function schedulePush(
     });
   }
 
-  const existing = db.get<{ id: string }>(`SELECT id FROM deal_pushes WHERE deal_id = $d`, {
+  const existing = await db.get<{ id: string }>(`SELECT id FROM deal_pushes WHERE deal_id = $d`, {
     d: input.dealId,
   });
   if (existing) throw new DomainError('conflict', 'this deal already has a push');
 
   const id = newId('psh');
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO deal_pushes (id, deal_id, venue_id, scheduled_at, status, created_at)
        VALUES ($i, $d, $v, $s, 'scheduled', $t)`,
       { i: id, d: input.dealId, v: deal.venue_id, s: input.scheduledAt, t: at },
     );
-    db.run(
+    await db.run(
       `INSERT INTO push_quotas (venue_id, period, used) VALUES ($v, $p, 1)
-         ON CONFLICT (venue_id, period) DO UPDATE SET used = used + 1`,
+         ON CONFLICT (venue_id, period) DO UPDATE SET used = push_quotas.used + 1`,
       { v: deal.venue_id, p: period },
     );
   });
   return { id, remaining: input.quota - used - 1 };
 }
 
-export const pushQuota = (db: Db, venueId: string, quota: number, at: Iso = now()) => {
+export const pushQuota = async (db: Db, venueId: string, quota: number, at: Iso = now()) => {
   const timezone =
-    db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId })
+    (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId }))
       ?.timezone ?? 'Europe/Warsaw';
   const period = localMonth(at, timezone);
   const used =
-    db.get<{ used: number }>(`SELECT used FROM push_quotas WHERE venue_id = $v AND period = $p`, {
+    (await db.get<{ used: number }>(`SELECT used FROM push_quotas WHERE venue_id = $v AND period = $p`, {
       v: venueId,
       p: period,
-    })?.used ?? 0;
+    }))?.used ?? 0;
   return { period, quota, used, remaining: Math.max(0, quota - used) };
 };
 
@@ -516,9 +520,9 @@ export const pushQuota = (db: Db, venueId: string, quota: number, at: Iso = now(
  * because the other 110 were over a platform-level cap that has nothing to do
  * with this venue and everything to do with the customer's inbox.
  */
-export function audienceFor(db: Db, dealId: string, at: Iso = now()): string[] {
-  const deal = getDeal(db, dealId);
-  const candidates = db.all<{ id: string }>(
+export async function audienceFor(db: Db, dealId: string, at: Iso = now()): Promise<string[]> {
+  const deal = await getDeal(db, dealId);
+  const candidates = await db.all<{ id: string }>(
     `SELECT DISTINCT u.id FROM users u
        LEFT JOIN venue_customers vc ON vc.user_id = u.id AND vc.venue_id = $v
       WHERE u.status = 'active' AND u.deleted_at IS NULL
@@ -527,13 +531,13 @@ export function audienceFor(db: Db, dealId: string, at: Iso = now()): string[] {
   );
 
   return candidates
-    .filter((row) => {
+    .filter(async (row) => {
       const language =
-        db.get<{ language: string }>(`SELECT language FROM users WHERE id = $u`, { u: row.id })
+        (await db.get<{ language: string }>(`SELECT language FROM users WHERE id = $u`, { u: row.id }))
           ?.language ?? 'en';
       /* Never send a language the deal lacks (§9.2). */
-      if (!copyFor(db, dealId, language)) return false;
-      return claimableNow(db, deal, { userId: row.id, language, at }).ok;
+      if (!(await copyFor(db, dealId, language))) return false;
+      return (await claimableNow(db, deal, { userId: row.id, language, at })).ok;
     })
     .map((row) => row.id);
 }

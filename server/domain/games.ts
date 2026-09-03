@@ -91,10 +91,10 @@ export interface PlayerState {
 /** The user's own local day. What a *daily* allowance is counted in. */
 const dayOf = (at: Iso): string => at.slice(0, 10);
 
-export function playerState(db: Db, userId: string, at: Iso = now()): PlayerState {
-  let state = db.get<PlayerState>(`SELECT * FROM player_states WHERE user_id = $u`, { u: userId });
+export async function playerState(db: Db, userId: string, at: Iso = now()): Promise<PlayerState> {
+  let state = await db.get<PlayerState>(`SELECT * FROM player_states WHERE user_id = $u`, { u: userId });
   if (!state) {
-    db.run(
+    await db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
        VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
       /* `lives` is seeded and then left alone. It is not the tank — `energyFor`
@@ -104,7 +104,7 @@ export function playerState(db: Db, userId: string, at: Iso = now()): PlayerStat
          rebuild against a live database and buys nothing anybody can see. */
       { u: userId, l: CONFIG.points.dailyEnergy, t: at },
     );
-    state = db.get<PlayerState>(`SELECT * FROM player_states WHERE user_id = $u`, { u: userId })!;
+    state = (await db.get<PlayerState>(`SELECT * FROM player_states WHERE user_id = $u`, { u: userId }))!;
   }
   return state;
 }
@@ -164,8 +164,8 @@ export interface Energy {
  * cannot stand in either, for a reason that is not about its name: it is
  * bucketed by day, and a regen clock needs an instant.
  */
-export function energyFor(db: Db, userId: string, at: Iso = now()): Energy {
-  const ent = entitlements.entitlementsFor(db, { userId });
+export async function energyFor(db: Db, userId: string, at: Iso = now()): Promise<Energy> {
+  const ent = await entitlements.entitlementsFor(db, { userId });
   /* Both fall back to the free tier's own figure, so a deployment that has not
      seeded the keys yet plays like the free plan rather than like Premium. */
   const max = entitlements.entNumber(ent, 'daily_energy', CONFIG.points.dailyEnergy);
@@ -174,7 +174,7 @@ export function energyFor(db: Db, userId: string, at: Iso = now()): Energy {
     'energy_regen_minutes',
     CONFIG.points.energyRegenMinutes,
   );
-  return energyAt(db, userId, at, max, regen);
+  return await energyAt(db, userId, at, max, regen);
 }
 
 /**
@@ -214,7 +214,7 @@ const ENERGY_LOOKBACK = 64;
  * and integer milliseconds carry it exactly where a float carries it to the last
  * bit and then floors to the wrong count.
  */
-function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinutes: number): Energy {
+async function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinutes: number): Promise<Energy> {
   /* Floored: half an energy is not a thing the screen can draw, and a fractional
      ceiling never compares equal to a whole count, so `nextAt` would count down
      for ever to one that never lands. */
@@ -223,7 +223,7 @@ function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinutes: n
   const full = max * interval;
   const asked = Date.parse(at);
 
-  const rows = db.all<{ finished_at: string }>(
+  const rows = await db.all<{ finished_at: string }>(
     `SELECT finished_at FROM game_sessions
       WHERE user_id = $u AND life_spent > 0 AND finished_at IS NOT NULL AND finished_at <= $t
       ORDER BY finished_at DESC LIMIT $n`,
@@ -273,6 +273,18 @@ export interface Round {
   /** What the client may see. Never the answers. */
   content: unknown;
   energyLeft: number;
+  /**
+   * Whether this round will pay.
+   *
+   * `false` is a **practice** round — one opened on an empty tank by a client
+   * that asked for one. It plays exactly like any other round and banks nothing
+   * at all: no points, no streak, no energy, no ledger entry. See `finish`.
+   *
+   * It is sent on every round rather than only on the practice ones, because a
+   * screen that has to infer "this one pays" from a missing field will get it
+   * wrong the first time the field is added to something else.
+   */
+  paid: boolean;
 }
 
 /**
@@ -288,17 +300,39 @@ export interface Round {
  *
  * The refusal carries `nextAt`, because a gate that only says no is one a player
  * reads as a bug, and a gate that says when is one they wait out.
+ *
+ * **`practice: true` turns that refusal into an unpaid round instead.** An empty
+ * tank used to be a locked door, and a locked door is the one state of this
+ * product where there is nothing to do — a player who has run out is sent away
+ * for two hours rather than kept. So a client may ask for the round anyway, on
+ * the understanding that it pays nothing: `paid: false` comes back, and `finish`
+ * banks nothing. What energy still buys is what it always bought — points, the
+ * streak, a place on the board — and what it no longer buys is *playing*, which
+ * was never the thing worth rationing.
+ *
+ * The flag is asked for rather than assumed, and that is deliberate: an existing
+ * client (the phone) that has an "out of energy" screen built around the
+ * `no_energy` refusal keeps getting the refusal, and adopts practice rounds when
+ * it chooses to. A server that quietly started handing out rounds instead of the
+ * error would change what every client already shipped does.
  */
-export function startSession(
+export async function startSession(
   db: Db,
-  input: { userId: string; gameType: GameType; language?: string; at?: Iso },
-): Round {
+  input: {
+    userId: string;
+    gameType: GameType;
+    language?: string;
+    /** Play on an empty tank for nothing, rather than be refused. */
+    practice?: boolean;
+    at?: Iso;
+  },
+): Promise<Round> {
   const at = input.at ?? now();
   const language = input.language ?? 'en';
 
-  return db.tx(() => {
-    const energy = energyFor(db, input.userId, at);
-    if (energy.energy <= 0) {
+  return db.tx(async () => {
+    const energy = await energyFor(db, input.userId, at);
+    if (energy.energy <= 0 && input.practice !== true) {
       /* `nextAt` rather than the midnight this used to quote: energy does not
          come back with the day any more, and a reset time that is not when the
          thing resets is worse than no time at all. */
@@ -310,14 +344,14 @@ export function startSession(
 
     /* An abandoned round is closed rather than left open: two live sessions of
        the same game is an obvious way to shop for an easier question set. */
-    db.run(
+    await db.run(
       `UPDATE game_sessions SET state = 'abandoned' WHERE user_id = $u AND state = 'active'`,
       { u: input.userId },
     );
 
-    const built = buildRound(db, input.gameType, input.userId, language);
+    const built = await buildRound(db, input.gameType, input.userId, language);
     const id = newId('gms');
-    db.run(
+    await db.run(
       `INSERT INTO game_sessions
          (id, user_id, game_type, language, seed, secret, state, started_at)
        VALUES ($i, $u, $g, $l, $s, $sec, 'active', $t)`,
@@ -337,6 +371,7 @@ export function startSession(
       gameType: input.gameType,
       content: built.content,
       energyLeft: energy.energy,
+      paid: energy.energy > 0,
     };
   });
 }
@@ -349,9 +384,9 @@ interface Built {
   content: unknown;
 }
 
-function buildRound(db: Db, gameType: GameType, userId: string, language: string): Built {
-  if (QUIZZES.has(gameType)) return buildQuiz(db, gameType, userId, language);
-  if (gameType === 'word_builder') return buildWords(db, userId, language);
+async function buildRound(db: Db, gameType: GameType, userId: string, language: string): Promise<Built> {
+  if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language);
+  if (gameType === 'word_builder') return await buildWords(db, userId, language);
   if (gameType === 'memory_match') return buildDeck();
   return { seed: newId('gev'), secret: { kind: 'flight' }, content: { target: CONFIG.games.flightTarget } };
 }
@@ -365,9 +400,9 @@ function buildRound(db: Db, gameType: GameType, userId: string, language: string
  * reinstall, a second device — still cannot be fed the same five questions all
  * evening.
  */
-function buildQuiz(db: Db, gameType: GameType, userId: string, language: string): Built {
+async function buildQuiz(db: Db, gameType: GameType, userId: string, language: string): Promise<Built> {
   const count = CONFIG.games.quizQuestions;
-  const rows = db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
+  const rows = await db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
     `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
       WHERE q.bank = $b AND q.language = $l
         AND q.id NOT IN (
@@ -384,14 +419,14 @@ function buildQuiz(db: Db, gameType: GameType, userId: string, language: string)
 
   const at = now();
   for (const row of rows) {
-    db.run(
+    await db.run(
       `INSERT INTO game_recent_items (user_id, game_type, item_key, served_at) VALUES ($u, $g, $k, $t)
          ON CONFLICT (user_id, game_type, item_key) DO UPDATE SET served_at = excluded.served_at`,
       { u: userId, g: gameType, k: row.id, t: at },
     );
   }
   /* Trim the tail so the table does not grow without bound per player. */
-  db.run(
+  await db.run(
     `DELETE FROM game_recent_items
       WHERE user_id = $u AND game_type = $g AND item_key NOT IN (
         SELECT item_key FROM game_recent_items WHERE user_id = $u AND game_type = $g
@@ -435,8 +470,8 @@ function buildQuiz(db: Db, gameType: GameType, userId: string, language: string)
   };
 }
 
-function buildWords(db: Db, userId: string, language: string): Built {
-  const rows = db.all<{ id: string; word: string; tier: number; hint: string | null }>(
+async function buildWords(db: Db, userId: string, language: string): Promise<Built> {
+  const rows = await db.all<{ id: string; word: string; tier: number; hint: string | null }>(
     `SELECT id, word, tier, hint FROM word_bank
       WHERE language = $l
         AND id NOT IN (SELECT item_key FROM game_recent_items
@@ -449,7 +484,7 @@ function buildWords(db: Db, userId: string, language: string): Built {
 
   const at = now();
   for (const row of rows) {
-    db.run(
+    await db.run(
       `INSERT INTO game_recent_items (user_id, game_type, item_key, served_at)
        VALUES ($u, 'word_builder', $k, $t)
          ON CONFLICT (user_id, game_type, item_key) DO UPDATE SET served_at = excluded.served_at`,
@@ -561,22 +596,22 @@ export interface EventResult {
  * throws the 403 that names the key — which is what lets the client say "your
  * plan allows three a day" instead of "something went wrong".
  */
-function requireHint(db: Db, userId: string, sessionId: string, seq: number, at: Iso): void {
+async function requireHint(db: Db, userId: string, sessionId: string, seq: number, at: Iso): Promise<void> {
   const used =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM game_events e
          JOIN game_sessions s ON s.id = e.session_id
         WHERE s.user_id = $u AND e.kind = 'hint'
           AND substr(e.created_at, 1, 10) = $d
           AND NOT (e.session_id = $s AND e.seq = $q)`,
       { u: userId, d: dayOf(at), s: sessionId, q: seq },
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   /* The fallback is the free tier's own figure, so a deployment that has not
      seeded `word_hints_per_day` behaves like the free plan rather than like
      Premium — the same argument as `streak_freezes` below. */
   entitlements.requireCapacity(
-    entitlements.entitlementsFor(db, { userId }),
+    await entitlements.entitlementsFor(db, { userId }),
     'word_hints_per_day',
     used,
     3,
@@ -603,9 +638,9 @@ function requireHint(db: Db, userId: string, sessionId: string, seq: number, at:
  * to turn, and the honest direction for an unreadable row is to permit rather
  * than to block a move the player can see is legal.
  */
-function matchedCards(db: Db, sessionId: string): Set<number> {
+async function matchedCards(db: Db, sessionId: string): Promise<Set<number>> {
   const out = new Set<number>();
-  const rows = db.all<{ payload: string }>(
+  const rows = await db.all<{ payload: string }>(
     `SELECT payload FROM game_events WHERE session_id = $s AND correct = 1`,
     { s: sessionId },
   );
@@ -629,13 +664,13 @@ function matchedCards(db: Db, sessionId: string): Set<number> {
  * Returning the whole answer key on the first event — which is the shape a naive
  * "here is the round" endpoint takes — hands a modified client a perfect score.
  */
-export function submitEvent(
+export async function submitEvent(
   db: Db,
   input: { sessionId: string; userId: string; seq: number; kind: string; payload: Record<string, unknown>; at?: Iso },
-): EventResult {
+): Promise<EventResult> {
   const at = input.at ?? now();
-  return db.tx(() => {
-    const session = db.get<{ id: string; user_id: string; state: string; secret: string; game_type: GameType }>(
+  return db.tx(async () => {
+    const session = await db.get<{ id: string; user_id: string; state: string; secret: string; game_type: GameType }>(
       `SELECT id, user_id, state, secret, game_type FROM game_sessions WHERE id = $i`,
       { i: input.sessionId },
     );
@@ -693,7 +728,7 @@ export function submitEvent(
         if (!Number.isInteger(position) || position < 0 || position >= words[index].length) {
           throw new DomainError('bad_request', 'no such letter');
         }
-        requireHint(db, input.userId, input.sessionId, input.seq, at);
+        await requireHint(db, input.userId, input.sessionId, input.seq, at);
         answer = words[index][position];
         correct = undefined;
       }
@@ -765,7 +800,7 @@ export function submitEvent(
         if (!Number.isInteger(index) || index < 0 || index >= deck.length) {
           throw new DomainError('bad_request', 'no such card');
         }
-        if (matchedCards(db, session.id).has(index)) {
+        if ((await matchedCards(db, session.id)).has(index)) {
           throw new DomainError('bad_request', 'card already matched');
         }
         /* The one position asked for. Everything else in `deck` stays where it
@@ -791,7 +826,7 @@ export function submitEvent(
     }
 
     try {
-      db.run(
+      await db.run(
         `INSERT INTO game_events (id, session_id, seq, kind, payload, correct, created_at)
          VALUES ($i, $s, $q, $k, $p, $c, $t)`,
         {
@@ -843,6 +878,18 @@ export interface Finish {
   freezes: number;
   energyLeft: number;
   balance: number;
+  /**
+   * Whether this round banked anything — the same fact `Round.paid` promised
+   * when it was opened, restated at the end because that is where a client has
+   * to explain a `score` of 0.
+   *
+   * `false` is a practice round: `score` is 0, `streak` and `freezes` are what
+   * they already were, `balance` is unmoved and `energyLeft` is still 0. Without
+   * this field a practice round and a round somebody got every question wrong on
+   * are the same response body, and the screen has to guess which it is looking
+   * at.
+   */
+  paid: boolean;
   /** §7.4's reward connection, computed from the real balance. */
   nearest: { venueId: string; venueName: string; discountPct: number; pointsNeeded: number } | null;
 }
@@ -855,31 +902,54 @@ export interface Finish {
  * the backend is allowed to decide it — the site's own rule, for the same
  * reason: seven games score seven ways and none of them has any business
  * restating what a streak is.
+ *
+ * **A round opened on an empty tank banks nothing, and that is decided here from
+ * the tank as it stood when the round *started*.** Not as it stands now: energy
+ * only ever refills, so a two-hour round that began with nothing would otherwise
+ * finish paid, and the screen already told the player it would not pay. Asking
+ * `energyFor` about `started_at` reconstructs exactly the number `startSession`
+ * saw, which is what makes the two ends of one round agree without a column to
+ * remember it in — the spends the tank is built from are `finished_at` rows, and
+ * this session has none until the line below writes one.
+ *
+ * What "banks nothing" means is deliberately total: no ledger entry, no streak
+ * movement, no freeze earned or spent, no comeback payment, no day counted, and
+ * no energy taken (there is none to take). The session row is still written —
+ * the round happened — with `life_spent = 0`, which is the column `energyFor`
+ * filters on, so a practice round is invisible to the tank rather than being a
+ * spend the tank has to be taught to ignore.
  */
-export function finish(
+export async function finish(
   db: Db,
   input: { sessionId: string; userId: string; clientReport?: Record<string, unknown>; at?: Iso },
-): Finish {
+): Promise<Finish> {
   const at = input.at ?? now();
 
-  return db.tx(() => {
-    const session = db.get<{
+  return db.tx(async () => {
+    const session = await db.get<{
       id: string;
       user_id: string;
       state: string;
       secret: string;
       game_type: GameType;
-    }>(`SELECT id, user_id, state, secret, game_type FROM game_sessions WHERE id = $i`, {
-      i: input.sessionId,
-    });
+      started_at: string;
+    }>(
+      `SELECT id, user_id, state, secret, game_type, started_at FROM game_sessions WHERE id = $i`,
+      { i: input.sessionId },
+    );
     if (!session) throw new DomainError('not_found', 'session not found');
     if (session.user_id !== input.userId) throw new DomainError('forbidden', 'not your session');
     if (session.state !== 'active') throw new DomainError('invalid_state', 'session already finished');
 
+    /* Paid or practice — the tank as it was when this round opened. See the
+       note above the function for why it is asked about `started_at` and not
+       about now. */
+    const paid = (await energyFor(db, input.userId, session.started_at)).energy > 0;
+
     /* `created_at` is selected because Memory Match is scored on it. It is the
        server's stamp, written when the event arrived — the client has no clock
        this module is willing to read. */
-    const events = db.all<{
+    const events = await db.all<{
       seq: number;
       kind: string;
       payload: string;
@@ -900,7 +970,7 @@ export function finish(
             ? scoreDeck(events, CONFIG.games.memoryPairs)
             : scoreFlight(input.clientReport ?? {});
 
-    const ent = entitlements.entitlementsFor(db, { userId: input.userId });
+    const ent = await entitlements.entitlementsFor(db, { userId: input.userId });
     const multiplier = entitlements.entNumber(ent, 'points_multiplier', 1);
 
     /* The raw score goes to the ledger untouched, and the plan multiplier is
@@ -920,58 +990,78 @@ export function finish(
        decay curve used to, and it is gone: energy is charged on the way out of
        this function and is the only thing that bounds a day. A second brake
        that shrinks the reward is a result card that cannot explain itself. */
-    const banked = ledger.earn(db, {
-      userId: input.userId,
-      points: scored.score,
-      reason: 'game_win',
-      sourceKind: 'game_session',
-      sourceRef: session.id,
-      multiplier,
-      at,
-    });
+    /* A practice round writes no entry at all rather than an entry for zero.
+       The ledger is the answer to "where did my points come from", and a row
+       saying "nowhere" on every round played after a tank ran dry is noise in
+       the one place that has to stay readable. */
+    const banked = paid
+      ? await ledger.earn(db, {
+          userId: input.userId,
+          points: scored.score,
+          reason: 'game_win',
+          sourceKind: 'game_session',
+          sourceRef: session.id,
+          multiplier,
+          at,
+        })
+      : null;
 
-    db.run(
+    await db.run(
       `UPDATE game_sessions
           SET state = 'finished', score = $s, answered = $a, correct = $c,
               finished_at = $t, ledger_id = $l, life_spent = $ls
         WHERE id = $i`,
       {
-        s: banked.entry.delta,
+        s: banked?.entry.delta ?? 0,
         a: scored.answered,
         c: scored.correct,
         t: at,
-        l: banked.entry.id,
+        l: banked?.entry.id ?? null,
         /* **The energy is spent here, and this row is the record of it.** Every
-           finished round costs one, win or lose — which is still why the charge
+           *paid* round costs one, win or lose — which is still why the charge
            cannot live in `startSession`: a round that is abandoned rather than
            finished never reaches this line and never costs anything.
            `energyFor` reconstructs the whole tank from these rows and their
            `finished_at`, so this column is not bookkeeping beside the truth, it
            *is* the truth. Its name — `life_spent` — is historical; renaming a
            column needs a version-guarded table rebuild against a live database
-           and buys nothing a player can see. */
-        ls: 1,
+           and buys nothing a player can see.
+
+           A practice round writes 0, and that is the whole of how the tank
+           learns to ignore it: `energyFor` selects on `life_spent > 0`. There is
+           nothing to take from an empty tank, and a round that borrowed against
+           the next refill would make practice *cost* more than not playing. */
+        ls: paid ? 1 : 0,
         i: session.id,
       },
     );
 
-    /* The day's tally, written beside the row above and unconditionally, so the
-       two cannot disagree about what a round cost. It answers a different
-       question — how much energy went today — and it deliberately answers
-       nothing about the tank: a day is a bucket and a refill clock needs an
-       instant. `lives_used` is likewise a historical column name. */
-    db.run(
-      `INSERT INTO daily_counters (user_id, day, lives_used) VALUES ($u, $d, 1)
-         ON CONFLICT (user_id, day) DO UPDATE SET lives_used = lives_used + 1`,
-      { u: input.userId, d: dayOf(at) },
-    );
+    /* The day's tally, written beside the row above and under the same
+       condition, so the two cannot disagree about what a round cost. It answers
+       a different question — how much energy went today — and it deliberately
+       answers nothing about the tank: a day is a bucket and a refill clock needs
+       an instant. `lives_used` is likewise a historical column name. */
+    if (paid) {
+      await db.run(
+        `INSERT INTO daily_counters (user_id, day, lives_used) VALUES ($u, $d, 1)
+           ON CONFLICT (user_id, day) DO UPDATE SET lives_used = daily_counters.lives_used + 1`,
+        { u: input.userId, d: dayOf(at) },
+      );
+    }
 
-    const streak = applyStreak(db, input.userId, scored, ent, at);
-    const energy = energyFor(db, input.userId, at);
-    const balance = ledger.balance(db, input.userId);
+    /* The streak is what energy actually buys, so practice does not move it —
+       and it does not *break* it either, because nothing here writes
+       `last_played`. A player out of energy is in the same position they were
+       in before they pressed Play, plus a round they got to play. */
+    const state = await playerState(db, input.userId, at);
+    const streak = paid
+      ? await applyStreak(db, input.userId, scored, ent, at)
+      : { streak: state.streak, freezes: state.freezes };
+    const energy = await energyFor(db, input.userId, at);
+    const balance = await ledger.balance(db, input.userId);
 
     return {
-      score: banked.entry.delta,
+      score: banked?.entry.delta ?? 0,
       capped: 0,
       correct: scored.correct,
       answered: scored.answered,
@@ -980,7 +1070,8 @@ export function finish(
       freezes: streak.freezes,
       energyLeft: energy.energy,
       balance,
-      nearest: nearestReward(db, input.userId, balance),
+      paid,
+      nearest: await nearestReward(db, input.userId, balance),
     };
   });
 }
@@ -1310,14 +1401,14 @@ function scoreFlight(report: Record<string, unknown>): Scored {
  * which is exactly what `ledger.reverse` and `earn(..., 'adjustment')` are for.
  * The lapse pays in the other direction instead: `payComeback` below.
  */
-function applyStreak(
+async function applyStreak(
   db: Db,
   userId: string,
   scored: Scored,
   ent: entitlements.Entitlements,
   at: Iso,
-): { streak: number; freezes: number } {
-  const state = playerState(db, userId, at);
+): Promise<{ streak: number; freezes: number }> {
+  const state = await playerState(db, userId, at);
   const today = dayOf(at);
   const yesterday = dayOf(new Date(new Date(at).getTime() - 86_400_000).toISOString());
 
@@ -1345,9 +1436,9 @@ function applyStreak(
     freezes = Math.min(maxFreezes, freezes + 1);
   }
 
-  db.run(
+  await db.run(
     `UPDATE player_states
-        SET streak = $s, longest_streak = MAX(longest_streak, $s), freezes = $f,
+        SET streak = $s, longest_streak = (CASE WHEN longest_streak > $s THEN longest_streak ELSE $s END), freezes = $f,
             answered = answered + $a, correct = correct + $c, last_played = $d, updated_at = $t
       WHERE user_id = $u`,
     { s: streak, f: freezes, a: scored.answered, c: scored.correct, d: today, t: at, u: userId },
@@ -1357,7 +1448,7 @@ function applyStreak(
      Paid on the lapse whether or not a freeze absorbed it: a freeze protects the
      *streak*, not the fact that somebody was away and came back, and the two are
      different things to be pleased about. */
-  if (lapsed) payComeback(db, userId, at);
+  if (lapsed) await payComeback(db, userId, at);
 
   return { streak, freezes };
 }
@@ -1388,12 +1479,12 @@ function applyStreak(
  * to harvest the bonus for a month they were not here. `earn` defaults the
  * multiplier to 1, so this is expressed by not passing one.
  */
-function payComeback(db: Db, userId: string, at: Iso): void {
+async function payComeback(db: Db, userId: string, at: Iso): Promise<void> {
   const days = Math.floor(Date.parse(at) / 86_400_000);
   const ref = `comeback:${Math.floor(days / Math.max(1, CONFIG.earn.comebackEveryDays))}`;
-  if (ledger.alreadyPaid(db, userId, 'comeback', ref)) return;
+  if (await ledger.alreadyPaid(db, userId, 'comeback', ref)) return;
 
-  ledger.earn(db, {
+  await ledger.earn(db, {
     userId,
     points: CONFIG.earn.comeback,
     /* `occasion` is the reason a customer reads in their history; `comeback` is
@@ -1407,8 +1498,8 @@ function payComeback(db: Db, userId: string, at: Iso): void {
 }
 
 /** "You're 60 from 10% off at Café Bratysławska" — from the real balance. */
-function nearestReward(db: Db, userId: string, balance: number) {
-  const row = db.get<{ venue_id: string; name: string; discount_pct: number; points_cost: number }>(
+async function nearestReward(db: Db, userId: string, balance: number) {
+  const row = await db.get<{ venue_id: string; name: string; discount_pct: number; points_cost: number }>(
     `SELECT t.venue_id, v.name, t.discount_pct, t.points_cost
        FROM voucher_tiers t JOIN venues v ON v.id = t.venue_id
       WHERE t.active = 1 AND v.status = 'live' AND t.points_cost > $b
@@ -1417,7 +1508,7 @@ function nearestReward(db: Db, userId: string, balance: number) {
     {
       b: balance,
       city:
-        db.get<{ city: string | null }>(`SELECT city FROM users WHERE id = $u`, { u: userId })?.city ??
+        (await db.get<{ city: string | null }>(`SELECT city FROM users WHERE id = $u`, { u: userId }))?.city ??
         null,
     },
   );
@@ -1456,15 +1547,15 @@ export function shuffle<T>(items: T[], seed: string): T[] {
 }
 
 /** §7.3's daily shared word: the same word for everyone, keyed to the date. */
-export function dailyWord(db: Db, language: string, at: Iso = now()): string | null {
+export async function dailyWord(db: Db, language: string, at: Iso = now()): Promise<string | null> {
   const day = dayOf(at);
-  const existing = db.get<{ word: string }>(
+  const existing = await db.get<{ word: string }>(
     `SELECT word FROM daily_words WHERE day = $d AND language = $l`,
     { d: day, l: language },
   );
   if (existing) return existing.word;
 
-  const pool = db.all<{ word: string }>(
+  const pool = await db.all<{ word: string }>(
     `SELECT word FROM word_bank WHERE language = $l AND tier >= 2 ORDER BY word`,
     { l: language },
   );
@@ -1474,7 +1565,7 @@ export function dailyWord(db: Db, language: string, at: Iso = now()): string | n
      replica agrees without coordinating. */
   const index = Number(day.replace(/-/g, '')) % pool.length;
   const word = pool[index].word;
-  db.run(`INSERT OR REPLACE INTO daily_words (day, language, word) VALUES ($d, $l, $w)`, {
+  await db.run(`INSERT OR REPLACE INTO daily_words (day, language, word) VALUES ($d, $l, $w)`, {
     d: day,
     l: language,
     w: word,

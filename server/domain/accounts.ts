@@ -94,22 +94,22 @@ export interface Session {
 
 const normalise = (email: string): string => email.trim().toLowerCase();
 
-export const getUser = (db: Db, userId: string): User => {
-  const user = db.get<User>(`SELECT * FROM users WHERE id = $u`, { u: userId });
+export const getUser = async (db: Db, userId: string): Promise<User> => {
+  const user = await db.get<User>(`SELECT * FROM users WHERE id = $u`, { u: userId });
   if (!user) throw new DomainError('not_found', 'user not found');
   return user;
 };
 
-export const rolesOf = (db: Db, userId: string): Role[] =>
-  db.all<{ role: Role }>(`SELECT role FROM user_roles WHERE user_id = $u`, { u: userId }).map(
+export const rolesOf = async (db: Db, userId: string): Promise<Role[]> =>
+  (await db.all<{ role: Role }>(`SELECT role FROM user_roles WHERE user_id = $u`, { u: userId })).map(
     (row) => row.role,
   );
 
-export const hasRole = (db: Db, userId: string, role: Role): boolean =>
-  Boolean(db.get(`SELECT 1 FROM user_roles WHERE user_id = $u AND role = $r`, { u: userId, r: role }));
+export const hasRole = async (db: Db, userId: string, role: Role): Promise<boolean> =>
+  Boolean(await db.get(`SELECT 1 FROM user_roles WHERE user_id = $u AND role = $r`, { u: userId, r: role }));
 
-function grantRole(db: Db, userId: string, role: Role, at: Iso): void {
-  db.run(`INSERT OR IGNORE INTO user_roles (user_id, role, granted_at) VALUES ($u, $r, $t)`, {
+async function grantRole(db: Db, userId: string, role: Role, at: Iso): Promise<void> {
+  await db.run(`INSERT OR IGNORE INTO user_roles (user_id, role, granted_at) VALUES ($u, $r, $t)`, {
     u: userId,
     r: role,
     t: at,
@@ -134,12 +134,12 @@ function grantRole(db: Db, userId: string, role: Role, at: Iso): void {
  * Idempotent — `INSERT OR IGNORE` — so a second call from a retried request or
  * a second device is a no-op rather than an error.
  */
-export function becomePartner(db: Db, userId: string, at: Iso = now()): { roles: Role[] } {
-  getUser(db, userId);
-  grantRole(db, userId, 'partner_owner', at);
+export async function becomePartner(db: Db, userId: string, at: Iso = now()): Promise<{ roles: Role[] }> {
+  await getUser(db, userId);
+  await grantRole(db, userId, 'partner_owner', at);
   return {
-    roles: db
-      .all<{ role: Role }>(`SELECT role FROM user_roles WHERE user_id = $u`, { u: userId })
+    roles: (await db
+      .all<{ role: Role }>(`SELECT role FROM user_roles WHERE user_id = $u`, { u: userId }))
       .map((row) => row.role),
   };
 }
@@ -153,8 +153,8 @@ export function becomePartner(db: Db, userId: string, at: Iso = now()): { roles:
  * separate table, because the alternative is every downstream table needing to
  * know about two kinds of owner — and the ledger, in particular, must not.
  */
-export function provisional(db: Db, fingerprint: string, at: Iso = now()): User {
-  const existing = db.get<User>(
+export async function provisional(db: Db, fingerprint: string, at: Iso = now()): Promise<User> {
+  const existing = await db.get<User>(
     `SELECT u.* FROM users u JOIN devices d ON d.first_user_id = u.id
       WHERE d.fingerprint = $f AND u.status = 'provisional'`,
     { f: fingerprint },
@@ -162,27 +162,27 @@ export function provisional(db: Db, fingerprint: string, at: Iso = now()): User 
   if (existing) return existing;
 
   const id = newId('usr');
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO users (id, display_name, auth_provider, language, status, created_at, updated_at)
        VALUES ($i, 'Guest', 'provisional', 'en', 'provisional', $t, $t)`,
       { i: id, t: at },
     );
-    grantRole(db, id, 'consumer', at);
+    await grantRole(db, id, 'consumer', at);
     const deviceId = newId('dev');
-    db.run(
+    await db.run(
       `INSERT INTO devices (id, fingerprint, first_user_id, first_seen_at, last_seen_at)
        VALUES ($d, $f, $i, $t, $t)
          ON CONFLICT (fingerprint) DO UPDATE SET last_seen_at = excluded.last_seen_at`,
       { d: deviceId, f: fingerprint, i: id, t: at },
     );
-    db.run(
+    await db.run(
       `INSERT OR IGNORE INTO device_users (device_id, user_id, seen_at)
        SELECT id, $i, $t FROM devices WHERE fingerprint = $f`,
       { i: id, t: at, f: fingerprint },
     );
   });
-  return getUser(db, id);
+  return await getUser(db, id);
 }
 
 /**
@@ -193,29 +193,29 @@ export function provisional(db: Db, fingerprint: string, at: Iso = now()): User 
  * foreign keys that already point at it (a game session, a device link) stay
  * valid — and so the merge itself is visible afterwards.
  */
-export function merge(db: Db, provisionalId: string, realId: string, at: Iso = now()): void {
+export async function merge(db: Db, provisionalId: string, realId: string, at: Iso = now()): Promise<void> {
   if (provisionalId === realId) return;
-  const guest = getUser(db, provisionalId);
+  const guest = await getUser(db, provisionalId);
   if (guest.status !== 'provisional') {
     throw new DomainError('conflict', 'only a provisional account can be merged');
   }
 
-  db.tx(() => {
+  await db.tx(async () => {
     for (const table of ['points_ledger', 'points_lots', 'game_sessions', 'daily_counters']) {
-      db.run(`UPDATE ${table} SET user_id = $r WHERE user_id = $p`, { r: realId, p: provisionalId });
+      await db.run(`UPDATE ${table} SET user_id = $r WHERE user_id = $p`, { r: realId, p: provisionalId });
     }
-    db.run(`UPDATE device_users SET user_id = $r WHERE user_id = $p`, {
+    await db.run(`UPDATE device_users SET user_id = $r WHERE user_id = $p`, {
       r: realId,
       p: provisionalId,
     });
-    db.run(
+    await db.run(
       `UPDATE users SET status = 'erased', display_name = 'Merged guest', deleted_at = $t WHERE id = $p`,
       { t: at, p: provisionalId },
     );
     /* The balance is *derived* after the move, never copied. That is the whole
        reason the points survive verifiably rather than by assertion. */
-    ledger.reconcile(db, realId);
-    ledger.reconcile(db, provisionalId);
+    await ledger.reconcile(db, realId);
+    await ledger.reconcile(db, provisionalId);
   });
 }
 
@@ -258,7 +258,7 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     throw new DomainError('validation_failed', 'password is too short', { field: 'password' });
   }
   const name = checkName(input.name);
-  if (db.get(`SELECT 1 FROM users WHERE email_norm = $e`, { e: email })) {
+  if (await db.get(`SELECT 1 FROM users WHERE email_norm = $e`, { e: email })) {
     throw new DomainError('conflict', 'that address already has an account', { field: 'email' });
   }
 
@@ -274,8 +274,8 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
   const hash = await hashPassword(input.password);
   const id = newId('usr');
 
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO users (id, email, email_norm, display_name, password_hash, auth_provider,
                           language, city, country_code, status, created_at, updated_at)
        VALUES ($i, $e, $n, $d, $h, 'email', $l, $c, $cc, 'active', $t, $t)`,
@@ -291,17 +291,17 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
         t: at,
       },
     );
-    grantRole(db, id, 'consumer', at);
-    if (input.partner) grantRole(db, id, 'partner_owner', at);
+    await grantRole(db, id, 'consumer', at);
+    if (input.partner) await grantRole(db, id, 'partner_owner', at);
 
     /* §1.3: consent is recorded at account creation with the policy version. */
-    consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
-    consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+    await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
+    await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
 
-    social.codeFor(db, id);
+    await social.codeFor(db, id);
 
-    if (input.provisionalId) merge(db, input.provisionalId, id, at);
-    if (input.referralCode) social.bind(db, { code: input.referralCode, newUserId: id, at });
+    if (input.provisionalId) await merge(db, input.provisionalId, id, at);
+    if (input.referralCode) await social.bind(db, { code: input.referralCode, newUserId: id, at });
 
     /* **Sign-up grants nothing.** The welcome gift used to be paid here and is
        paid by `completeOnboarding` now, which is a different moment: an address
@@ -309,14 +309,14 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
        them is a bonus payable in bulk. Onboarding is the first thing that asks
        for effort, and `users.onboarded_at` is what makes it once-only. */
 
-    db.run(
+    await db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
        VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
       { u: id, l: CONFIG.points.dailyEnergy, t: at },
     );
   });
 
-  return getUser(db, id);
+  return await getUser(db, id);
 }
 
 /**
@@ -344,14 +344,14 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
  * against a null hash fails — so a Google-only account cannot be entered with a
  * guessed password.
  */
-export function linkGoogleAccount(
+export async function linkGoogleAccount(
   db: Db,
   input: { sub: string; email: string; name: string; language?: string; at?: Iso },
-): User {
+): Promise<User> {
   const at = input.at ?? now();
   const email = normalise(input.email);
 
-  const byProvider = db.get<User>(
+  const byProvider = await db.get<User>(
     `SELECT * FROM users WHERE auth_provider = 'google' AND provider_ref = $s AND deleted_at IS NULL`,
     { s: input.sub },
   );
@@ -362,7 +362,7 @@ export function linkGoogleAccount(
     return byProvider;
   }
 
-  const byEmail = db.get<User>(
+  const byEmail = await db.get<User>(
     `SELECT * FROM users WHERE email_norm = $e AND deleted_at IS NULL`,
     { e: email },
   );
@@ -373,7 +373,7 @@ export function linkGoogleAccount(
     /* Link, but leave `auth_provider` alone when the account already has a
        password: it can now be entered either way, and rewriting it to 'google'
        would claim the password no longer works when it does. */
-    db.run(
+    await db.run(
       `UPDATE users
           SET provider_ref = $s,
               auth_provider = CASE WHEN password_hash IS NULL THEN 'google' ELSE auth_provider END,
@@ -381,12 +381,12 @@ export function linkGoogleAccount(
         WHERE id = $i`,
       { s: input.sub, t: at, i: byEmail.id },
     );
-    return getUser(db, byEmail.id);
+    return await getUser(db, byEmail.id);
   }
 
   const id = newId('usr');
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO users (id, email, email_norm, display_name, password_hash, auth_provider,
                           provider_ref, language, status, created_at, updated_at)
        VALUES ($i, $e, $n, $d, NULL, 'google', $s, $l, 'active', $t, $t)`,
@@ -400,28 +400,28 @@ export function linkGoogleAccount(
         t: at,
       },
     );
-    grantRole(db, id, 'consumer', at);
+    await grantRole(db, id, 'consumer', at);
 
     /* §1.3, same as `signUp`. Signing in with Google is still the moment the
        account comes into existence, so it is still the moment consent is
        recorded — with the same policy version, so the two paths cannot drift. */
-    consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
-    consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+    await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
+    await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
 
-    social.codeFor(db, id);
+    await social.codeFor(db, id);
 
     /* No welcome grant here either, for the reason `signUp` gives: the gift is
        onboarding's, and the two paths have to agree or one of them is the
        cheaper way in. */
 
-    db.run(
+    await db.run(
       `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at)
        VALUES ($u, 0, 0, 0, $l, 0, 0, $t)`,
       { u: id, l: CONFIG.points.dailyEnergy, t: at },
     );
   });
 
-  return getUser(db, id);
+  return await getUser(db, id);
 }
 
 /* ══════════════════════════════════════════════════════════ onboarding ══ */
@@ -463,22 +463,22 @@ export interface Onboarded {
  * onboarding?" is yes, plus a `granted: false` saying this call is not what paid
  * for it.
  */
-export function completeOnboarding(db: Db, userId: string, at: Iso = now()): Onboarded {
+export async function completeOnboarding(db: Db, userId: string, at: Iso = now()): Promise<Onboarded> {
   /* Resolve first, so an unknown id is a 404 rather than a silent
      `granted: false` — zero changed rows would otherwise mean both "already
      onboarded" and "no such account". */
-  getUser(db, userId);
+  await getUser(db, userId);
 
-  return db.tx(() => {
+  return db.tx(async () => {
     const claimed =
-      db.run(
+      (await db.run(
         `UPDATE users SET onboarded_at = $t, updated_at = $t
           WHERE id = $u AND onboarded_at IS NULL`,
         { t: at, u: userId },
-      ).changes === 1;
+      )).changes === 1;
 
     if (claimed) {
-      ledger.earn(db, {
+      await ledger.earn(db, {
         userId,
         points: CONFIG.earn.onboarding,
         reason: 'welcome_bonus',
@@ -488,14 +488,14 @@ export function completeOnboarding(db: Db, userId: string, at: Iso = now()): Onb
       });
     }
 
-    const user = getUser(db, userId);
+    const user = await getUser(db, userId);
     return {
       granted: claimed,
       /* Read back rather than assumed: on the losing side of a race the stamp is
          the winner's timestamp, and that is the one the client should hold. */
       onboardedAt: user.onboarded_at ?? at,
       points: claimed ? CONFIG.earn.onboarding : 0,
-      balance: ledger.balance(db, userId),
+      balance: await ledger.balance(db, userId),
     };
   });
 }
@@ -508,19 +508,19 @@ export interface SignedIn {
 }
 
 /** The session half of a Google sign-in, shared with the password path. */
-export function sessionForUser(
+export async function sessionForUser(
   db: Db,
   input: { user: User; surface?: 'web' | 'mobile'; deviceFingerprint?: string; at?: Iso },
-): SignedIn {
+): Promise<SignedIn> {
   const at = input.at ?? now();
-  const roles = rolesOf(db, input.user.id);
+  const roles = await rolesOf(db, input.user.id);
   const mode: Mode = roles.includes('admin')
     ? 'admin'
     : roles.includes('partner_owner')
       ? 'partner'
       : 'consumer';
 
-  const session = createSession(db, {
+  const session = await createSession(db, {
     userId: input.user.id,
     mode,
     surface: input.surface ?? 'web',
@@ -572,18 +572,18 @@ export async function provisionAdmin(
 
   const norm = normalise(email);
   const hash = await hashPassword(password);
-  const existing = db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, { e: norm });
+  const existing = await db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, { e: norm });
 
-  return db.tx(() => {
+  return db.tx(async () => {
     const id = existing?.id ?? newId('usr');
     if (existing) {
-      db.run(`UPDATE users SET password_hash = $h, status = 'active', updated_at = $t WHERE id = $i`, {
+      await db.run(`UPDATE users SET password_hash = $h, status = 'active', updated_at = $t WHERE id = $i`, {
         h: hash,
         t: at,
         i: id,
       });
     } else {
-      db.run(
+      await db.run(
         `INSERT INTO users (id, email, email_norm, display_name, auth_provider, password_hash,
                             language, status, created_at, updated_at)
          VALUES ($i, $e, $n, 'Paylez operations', 'email', $h, 'en', 'active', $t, $t)`,
@@ -592,7 +592,7 @@ export async function provisionAdmin(
     }
     /* The role is granted separately and idempotently: an operator who existed
        as a customer first keeps that row and gains this one. */
-    grantRole(db, id, 'admin', at);
+    await grantRole(db, id, 'admin', at);
     return existing ? 'updated' : 'created';
   });
 }
@@ -611,9 +611,9 @@ export async function provisionAdmin(
  * than its own code: an attacker who can tell "throttled" from "wrong password"
  * has been told the address is real.
  */
-function throttleSignIn(db: Db, subject: string, at: Iso): void {
+async function throttleSignIn(db: Db, subject: string, at: Iso): Promise<void> {
   const since = plusMinutes(at, -60);
-  const recent = db.get<{ n: number }>(
+  const recent = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM auth_attempts WHERE subject = $s AND ok = 0 AND at >= $since`,
     { s: subject, since },
   );
@@ -628,12 +628,12 @@ function throttleSignIn(db: Db, subject: string, at: Iso): void {
  * the way to a lockout, and leaving the failures in place would mean their next
  * genuine slip counts as the fifth.
  */
-function recordAttempt(db: Db, subject: string, ok: boolean, at: Iso): void {
+async function recordAttempt(db: Db, subject: string, ok: boolean, at: Iso): Promise<void> {
   if (ok) {
-    db.run(`DELETE FROM auth_attempts WHERE subject = $s`, { s: subject });
+    await db.run(`DELETE FROM auth_attempts WHERE subject = $s`, { s: subject });
     return;
   }
-  db.run(`INSERT INTO auth_attempts (id, subject, at, ok) VALUES ($id, $s, $at, 0)`, {
+  await db.run(`INSERT INTO auth_attempts (id, subject, at, ok) VALUES ($id, $s, $at, 0)`, {
     id: newId('ath'),
     s: subject,
     at,
@@ -646,18 +646,18 @@ export async function signIn(
 ): Promise<SignedIn> {
   const at = input.at ?? now();
   const subject = normalise(input.email);
-  throttleSignIn(db, subject, at);
+  await throttleSignIn(db, subject, at);
 
-  const user = db.get<User>(`SELECT * FROM users WHERE email_norm = $e AND deleted_at IS NULL`, {
+  const user = await db.get<User>(`SELECT * FROM users WHERE email_norm = $e AND deleted_at IS NULL`, {
     e: subject,
   });
 
   const ok = await verifyPassword(input.password, user?.password_hash ?? null);
-  recordAttempt(db, subject, Boolean(user && ok), at);
+  await recordAttempt(db, subject, Boolean(user && ok), at);
   if (!user || !ok) throw new DomainError('unauthenticated', 'wrong email or password');
   if (user.status === 'banned') throw new DomainError('forbidden', 'this account is suspended');
 
-  const roles = rolesOf(db, user.id);
+  const roles = await rolesOf(db, user.id);
   /* §1.2: a partner owner defaults to business mode and can switch to personal
      within the same account. The default is a property of the sign-in, the
      switch is a property of the session. */
@@ -667,7 +667,7 @@ export async function signIn(
       ? 'partner'
       : 'consumer';
 
-  const session = createSession(db, {
+  const session = await createSession(db, {
     userId: user.id,
     mode,
     surface: input.surface ?? 'web',
@@ -678,37 +678,37 @@ export async function signIn(
   return { user, token: session.token, session: session.session, roles };
 }
 
-export function createSession(
+export async function createSession(
   db: Db,
   input: { userId: string; mode: Mode; surface: 'web' | 'mobile'; deviceFingerprint?: string; at?: Iso },
-): { token: string; session: Session } {
+): Promise<{ token: string; session: Session }> {
   const at = input.at ?? now();
   const token = newToken();
   const id = newId('ses');
 
-  db.tx(() => {
+  await db.tx(async () => {
     let deviceId: string | null = null;
     if (input.deviceFingerprint) {
-      const row = db.get<{ id: string }>(`SELECT id FROM devices WHERE fingerprint = $f`, {
+      const row = await db.get<{ id: string }>(`SELECT id FROM devices WHERE fingerprint = $f`, {
         f: input.deviceFingerprint,
       });
       deviceId = row?.id ?? newId('dev');
       if (!row) {
-        db.run(
+        await db.run(
           `INSERT INTO devices (id, fingerprint, first_user_id, first_seen_at, last_seen_at)
            VALUES ($i, $f, $u, $t, $t)`,
           { i: deviceId, f: input.deviceFingerprint, u: input.userId, t: at },
         );
       } else {
-        db.run(`UPDATE devices SET last_seen_at = $t WHERE id = $i`, { t: at, i: deviceId });
+        await db.run(`UPDATE devices SET last_seen_at = $t WHERE id = $i`, { t: at, i: deviceId });
       }
-      db.run(
+      await db.run(
         `INSERT OR IGNORE INTO device_users (device_id, user_id, seen_at) VALUES ($d, $u, $t)`,
         { d: deviceId, u: input.userId, t: at },
       );
     }
 
-    db.run(
+    await db.run(
       `INSERT INTO sessions (id, token_hash, user_id, mode, device_id, surface, created_at,
                              last_seen_at, expires_at)
        VALUES ($i, $h, $u, $m, $d, $s, $t, $t, $e)`,
@@ -725,30 +725,30 @@ export function createSession(
     );
   });
 
-  return { token, session: db.get<Session>(`SELECT * FROM sessions WHERE id = $i`, { i: id })! };
+  return { token, session: (await db.get<Session>(`SELECT * FROM sessions WHERE id = $i`, { i: id }))! };
 }
 
 /** Resolve a bearer token, or nothing. Touches `last_seen_at` for idle expiry. */
-export function resolveSession(db: Db, token: string, at: Iso = now()): { session: Session; user: User } | null {
-  const row = db.get<Session & { token_hash: string }>(
+export async function resolveSession(db: Db, token: string, at: Iso = now()): Promise<{ session: Session; user: User } | null> {
+  const row = await db.get<Session & { token_hash: string }>(
     `SELECT * FROM sessions WHERE token_hash = $h AND revoked_at IS NULL AND expires_at > $t`,
     { h: hashToken(token), t: at },
   );
   if (!row) return null;
 
-  const user = db.get<User>(`SELECT * FROM users WHERE id = $u AND deleted_at IS NULL`, {
+  const user = await db.get<User>(`SELECT * FROM users WHERE id = $u AND deleted_at IS NULL`, {
     u: row.user_id,
   });
   /* A session pointing at an account that no longer exists is dropped rather
      than honoured — the same rule the site's own `directory.ts` states. */
   if (!user || user.status === 'banned' || user.status === 'erased') return null;
 
-  db.run(`UPDATE sessions SET last_seen_at = $t WHERE id = $i`, { t: at, i: row.id });
+  await db.run(`UPDATE sessions SET last_seen_at = $t WHERE id = $i`, { t: at, i: row.id });
   return { session: row, user };
 }
 
-export const signOut = (db: Db, sessionId: string, at: Iso = now()): void => {
-  db.run(`UPDATE sessions SET revoked_at = $t WHERE id = $i`, { t: at, i: sessionId });
+export const signOut = async (db: Db, sessionId: string, at: Iso = now()): Promise<void> => {
+  await db.run(`UPDATE sessions SET revoked_at = $t WHERE id = $i`, { t: at, i: sessionId });
 };
 
 /**
@@ -758,14 +758,14 @@ export const signOut = (db: Db, sessionId: string, at: Iso = now()): void => {
  * matters here: the mode is not a permission, it is which of an owner's two
  * lives the session is currently living.
  */
-export function setMode(db: Db, sessionId: string, userId: string, mode: Mode): void {
-  if (mode === 'partner' && !hasRole(db, userId, 'partner_owner') && !hasRole(db, userId, 'manager')) {
+export async function setMode(db: Db, sessionId: string, userId: string, mode: Mode): Promise<void> {
+  if (mode === 'partner' && !(await hasRole(db, userId, 'partner_owner')) && !(await hasRole(db, userId, 'manager'))) {
     throw new DomainError('forbidden', 'this account owns no venue');
   }
-  if (mode === 'admin' && !hasRole(db, userId, 'admin')) {
+  if (mode === 'admin' && !(await hasRole(db, userId, 'admin'))) {
     throw new DomainError('forbidden', 'not an admin');
   }
-  db.run(`UPDATE sessions SET mode = $m WHERE id = $i`, { m: mode, i: sessionId });
+  await db.run(`UPDATE sessions SET mode = $m WHERE id = $i`, { m: mode, i: sessionId });
 }
 
 export async function changePassword(
@@ -774,7 +774,7 @@ export async function changePassword(
   current: string,
   next: string,
 ): Promise<void> {
-  const user = getUser(db, userId);
+  const user = await getUser(db, userId);
   if (!(await verifyPassword(current, user.password_hash))) {
     throw new DomainError('unauthenticated', 'current password is wrong');
   }
@@ -782,17 +782,66 @@ export async function changePassword(
     throw new DomainError('validation_failed', 'password is too short', { field: 'password' });
   }
   const hash = await hashPassword(next);
-  db.tx(() => {
-    db.run(`UPDATE users SET password_hash = $h, updated_at = $t WHERE id = $u`, {
+  await db.tx(async () => {
+    await db.run(`UPDATE users SET password_hash = $h, updated_at = $t WHERE id = $u`, {
       h: hash,
       t: now(),
       u: userId,
     });
     /* Every other session is dropped: changing a password is what somebody does
        when they think one of those sessions is not theirs. */
-    db.run(`UPDATE sessions SET revoked_at = $t WHERE user_id = $u`, { t: now(), u: userId });
+    await db.run(`UPDATE sessions SET revoked_at = $t WHERE user_id = $u`, { t: now(), u: userId });
   });
 }
+
+/**
+ * Set a password for somebody else — the operator's version of the function
+ * above, and the two differences from it are the whole design.
+ *
+ * **It does not ask for the current one, and it cannot.** That is the reason it
+ * exists: the person it is for has forgotten theirs, or never had one because
+ * they arrived through Google. Every guard `changePassword` applies still
+ * applies — the length floor, and dropping every session the account has open —
+ * and one is added: the account must have an address to sign in *with*, because
+ * a password on a row with no email is a secret for a door that does not exist.
+ *
+ * Setting one on a Google account is deliberately allowed and is not a mistake.
+ * `signIn` finds the row by address and verifies the hash; `auth_provider` does
+ * not gate it. So this gives somebody locked out of their Google account a
+ * second way in rather than converting the account, which is why the provider
+ * column is left exactly as it was.
+ *
+ * The audit entry is the caller's, because this function does not know who is
+ * asking. `routes/admin.ts` writes it.
+ */
+export async function resetPassword(
+  db: Db,
+  userId: string,
+  next: string,
+  at: Iso = now(),
+): Promise<void> {
+  const user = await getUser(db, userId);
+  if (!user.email) {
+    throw new DomainError('validation_failed', 'this account has no address to sign in with', {
+      field: 'password',
+    });
+  }
+  if (next.length < CONFIG.auth.minPasswordLength) {
+    throw new DomainError('validation_failed', 'password is too short', { field: 'password' });
+  }
+  const hash = await hashPassword(next);
+  await db.tx(async () => {
+    await db.run(`UPDATE users SET password_hash = $h, updated_at = $t WHERE id = $u`, {
+      h: hash,
+      t: at,
+      u: userId,
+    });
+    /* The same reason as above, and a stronger one: an operator resetting a
+       password is usually answering an account somebody else is inside. */
+    await db.run(`UPDATE sessions SET revoked_at = $t WHERE user_id = $u`, { t: at, u: userId });
+  });
+}
+
 
 /* ════════════════════════════════════════════════════════ the profile ══ */
 
@@ -1511,17 +1560,17 @@ const isProfileComplete = (user: User): boolean =>
  * complete, and a grant that could be re-earned by deleting a photo and adding
  * it back is not a grant, it is a faucet.
  */
-function payForACompleteProfile(db: Db, user: User, at: Iso): void {
+async function payForACompleteProfile(db: Db, user: User, at: Iso): Promise<void> {
   if (user.profile_completed_at !== null || !isProfileComplete(user)) return;
 
   const claimed =
-    db.run(
+    (await db.run(
       `UPDATE users SET profile_completed_at = $t WHERE id = $u AND profile_completed_at IS NULL`,
       { t: at, u: user.id },
-    ).changes === 1;
+    )).changes === 1;
   if (!claimed) return;
 
-  ledger.earn(db, {
+  await ledger.earn(db, {
     userId: user.id,
     points: CONFIG.earn.profileComplete,
     reason: 'profile_bonus',
@@ -1571,13 +1620,13 @@ function payForACompleteProfile(db: Db, user: User, at: Iso): void {
  * transaction as the write that finished it — so the grant and the fact it is
  * paid for either both happened or neither did.
  */
-export function updateProfile(
+export async function updateProfile(
   db: Db,
   userId: string,
   patch: ProfilePatch,
   at: Iso = now(),
-): User {
-  const user = getUser(db, userId);
+): Promise<User> {
+  const user = await getUser(db, userId);
 
   /* Both through `checkName`, which sign-up also calls: a blank name here used
      to be swallowed by the `COALESCE` below — a 200 that changed nothing — while
@@ -1587,7 +1636,7 @@ export function updateProfile(
 
   const handle = patch.username === undefined ? null : checkUsername(patch.username);
   if (handle && handle.norm !== user.username_norm) {
-    const taken = db.get(`SELECT 1 FROM users WHERE username_norm = $n AND id <> $u`, {
+    const taken = await db.get(`SELECT 1 FROM users WHERE username_norm = $n AND id <> $u`, {
       n: handle.norm,
       u: userId,
     });
@@ -1623,9 +1672,9 @@ export function updateProfile(
     }
   }
 
-  return db.tx(() => {
+  return db.tx(async () => {
     try {
-      db.run(
+      await db.run(
         `UPDATE users
             SET display_name = COALESCE($n, display_name),
                 username = COALESCE($un, username),
@@ -1674,8 +1723,8 @@ export function updateProfile(
 
     /* Read back before deciding: completeness is a fact about the row as it now
        is, and half of it may have arrived in this very patch. */
-    const updated = getUser(db, userId);
-    payForACompleteProfile(db, updated, at);
-    return getUser(db, userId);
+    const updated = await getUser(db, userId);
+    await payForACompleteProfile(db, updated, at);
+    return await getUser(db, userId);
   });
 }

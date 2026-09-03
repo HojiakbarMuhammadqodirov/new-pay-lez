@@ -59,8 +59,8 @@ export interface EarnedReward {
   redeemed_at: string | null;
 }
 
-export const activeCampaigns = (db: Db, venueId: string): Campaign[] =>
-  db.all<Campaign>(
+export const activeCampaigns = async (db: Db, venueId: string): Promise<Campaign[]> =>
+  await db.all<Campaign>(
     `SELECT * FROM campaigns WHERE venue_id = $v AND status = 'active'
       ORDER BY priority DESC, visits_required ASC`,
     { v: venueId },
@@ -113,9 +113,9 @@ export interface StampProgress {
   cycles: number;
 }
 
-export function progressFor(db: Db, userId: string, venueId: string): StampProgress[] {
-  return activeCampaigns(db, venueId).map((campaign) => {
-    const card = db.get<{ stamps: number; cycles: number }>(
+export async function progressFor(db: Db, userId: string, venueId: string): Promise<StampProgress[]> {
+  return await Promise.all((await activeCampaigns(db, venueId)).map(async (campaign) => {
+    const card = await db.get<{ stamps: number; cycles: number }>(
       `SELECT stamps, cycles FROM stamp_cards WHERE user_id = $u AND campaign_id = $c`,
       { u: userId, c: campaign.id },
     );
@@ -125,7 +125,7 @@ export function progressFor(db: Db, userId: string, venueId: string): StampProgr
       required: campaign.visits_required,
       cycles: card?.cycles ?? 0,
     };
-  });
+  }));
 }
 
 /**
@@ -142,8 +142,8 @@ export function progressFor(db: Db, userId: string, venueId: string): StampProgr
  * valid when a campaign pauses, so hiding the card would look like the stamps
  * were taken away.
  */
-export function cardsFor(db: Db, userId: string) {
-  return db.all<{
+export async function cardsFor(db: Db, userId: string) {
+  return await db.all<{
     campaign_id: string;
     venue_id: string;
     venue_name: string;
@@ -163,7 +163,7 @@ export function cardsFor(db: Db, userId: string) {
        JOIN campaigns c ON c.id = s.campaign_id
        JOIN venues v ON v.id = c.venue_id
       WHERE s.user_id = $u AND c.status <> 'ended' AND v.deleted_at IS NULL
-      ORDER BY (CAST(s.stamps AS REAL) / MAX(1, c.visits_required)) DESC, v.name`,
+      ORDER BY (CAST(s.stamps AS REAL) / (CASE WHEN c.visits_required > 1 THEN c.visits_required ELSE 1 END)) DESC, v.name`,
     { u: userId },
   );
 }
@@ -190,7 +190,7 @@ export interface VisitStamps {
  * Returns both halves, so the gate can put the reward in the receipt and add the
  * points to the one figure the cashier reads out.
  */
-export function applyVisit(
+export async function applyVisit(
   db: Db,
   input: {
     userId: string;
@@ -199,9 +199,9 @@ export function applyVisit(
     transactionId: string;
     at?: Iso;
   },
-): VisitStamps {
+): Promise<VisitStamps> {
   const at = input.at ?? now();
-  const campaigns = activeCampaigns(db, input.venue.id);
+  const campaigns = await activeCampaigns(db, input.venue.id);
   /* The cycle count is carried alongside the campaign because it is read
      *before* the completion increments it, and it is the idempotency key below:
      "the Nth completed card" is a thing that happens once, where "this card
@@ -212,15 +212,15 @@ export function applyVisit(
     const minSpend = campaign.min_spend_minor ?? input.venue.min_spend_minor;
     if (input.amountMinor < minSpend) continue;
 
-    db.run(
+    await db.run(
       `INSERT INTO stamp_cards (id, user_id, venue_id, campaign_id, stamps, cycles, joined_at, updated_at)
        VALUES ($i, $u, $v, $c, 1, 0, $t, $t)
        ON CONFLICT (user_id, campaign_id)
-       DO UPDATE SET stamps = stamps + 1, updated_at = excluded.updated_at`,
+       DO UPDATE SET stamps = stamp_cards.stamps + 1, updated_at = excluded.updated_at`,
       { i: newId('stc'), u: input.userId, v: input.venue.id, c: campaign.id, t: at },
     );
 
-    const card = db.get<{ stamps: number; cycles: number }>(
+    const card = await db.get<{ stamps: number; cycles: number }>(
       `SELECT stamps, cycles FROM stamp_cards WHERE user_id = $u AND campaign_id = $c`,
       { u: input.userId, c: campaign.id },
     );
@@ -240,7 +240,7 @@ export function applyVisit(
   );
   const winner = completed[0].campaign;
 
-  const reward = grantReward(db, {
+  const reward = await grantReward(db, {
     userId: input.userId,
     venue: input.venue,
     campaign: winner,
@@ -248,7 +248,7 @@ export function applyVisit(
     at,
   });
 
-  const points = grantStampPoints(db, {
+  const points = await grantStampPoints(db, {
     userId: input.userId,
     venue: input.venue,
     campaign: winner,
@@ -259,7 +259,7 @@ export function applyVisit(
   /* The card that paid out resets (or completes); the others keep their stamps,
      which is the honest reading of "one reward per visit" — the visit was spent
      on the winner, not on the cards that merely also advanced. */
-  db.run(
+  await db.run(
     `UPDATE stamp_cards
         SET stamps = CASE WHEN $rec = 1 THEN stamps - $need ELSE stamps END,
             cycles = cycles + 1, updated_at = $t
@@ -294,15 +294,15 @@ export function applyVisit(
  * see is not theirs to be punished for (§5.3 makes the same argument about the
  * stamp itself).
  */
-function grantStampPoints(
+async function grantStampPoints(
   db: Db,
   input: { userId: string; venue: Venue; campaign: Campaign; cycle: number; at: Iso },
-): number {
+): Promise<number> {
   const key = `${input.campaign.id}:${input.cycle}`;
-  if (ledger.alreadyPaid(db, input.userId, 'stamp_complete', key)) return 0;
+  if (await ledger.alreadyPaid(db, input.userId, 'stamp_complete', key)) return 0;
 
-  const ent = entitlements.entitlementsFor(db, { userId: input.userId });
-  return ledger.earn(db, {
+  const ent = await entitlements.entitlementsFor(db, { userId: input.userId });
+  return (await ledger.earn(db, {
     userId: input.userId,
     points: entitlements.entNumber(ent, 'stamp_points', CONFIG.earn.stampCardComplete),
     reason: 'stamp_complete',
@@ -310,7 +310,7 @@ function grantStampPoints(
     sourceRef: key,
     venueId: input.venue.id,
     at: input.at,
-  }).entry.delta;
+  })).entry.delta;
 }
 
 /**
@@ -321,7 +321,7 @@ function grantStampPoints(
  * budget decision they cannot see; refusing the reward is at least honest about
  * whose money ran out, and the partner is notified (§5.4).
  */
-export function grantReward(
+export async function grantReward(
   db: Db,
   input: {
     userId: string;
@@ -330,12 +330,12 @@ export function grantReward(
     transactionId?: string;
     at?: Iso;
   },
-): EarnedReward | null {
+): Promise<EarnedReward | null> {
   const at = input.at ?? now();
-  const view = budget.budgetFor(db, input.venue.id, at);
+  const view = await budget.budgetFor(db, input.venue.id, at);
 
   try {
-    budget.reserve(db, view.id, 'loyalty', input.campaign.reward_cost_minor, {
+    await budget.reserve(db, view.id, 'loyalty', input.campaign.reward_cost_minor, {
       kind: 'earned_reward',
       ref: input.campaign.id,
     }, at);
@@ -345,7 +345,7 @@ export function grantReward(
   }
 
   const id = newId('rwd');
-  db.run(
+  await db.run(
     `INSERT INTO earned_rewards
        (id, user_id, venue_id, campaign_id, label, cost_minor, reserved_minor, status, code,
         budget_id, transaction_id, earned_at, expires_at)
@@ -364,11 +364,11 @@ export function grantReward(
       e: plusDays(at, input.campaign.reward_valid_days),
     },
   );
-  return db.get<EarnedReward>(`SELECT * FROM earned_rewards WHERE id = $i`, { i: id })!;
+  return (await db.get<EarnedReward>(`SELECT * FROM earned_rewards WHERE id = $i`, { i: id }))!;
 }
 
-export const availableRewards = (db: Db, userId: string, venueId?: string): EarnedReward[] =>
-  db.all<EarnedReward>(
+export const availableRewards = async (db: Db, userId: string, venueId?: string): Promise<EarnedReward[]> =>
+  await db.all<EarnedReward>(
     `SELECT * FROM earned_rewards
       WHERE user_id = $u AND status = 'available' AND ($v IS NULL OR venue_id = $v)
       ORDER BY expires_at`,
@@ -383,26 +383,26 @@ export const availableRewards = (db: Db, userId: string, venueId?: string): Earn
  * readable: a pool's story should show the money being committed and then spent,
  * not appear from nowhere as a debit.
  */
-export function redeemReward(
+export async function redeemReward(
   db: Db,
   reward: EarnedReward,
   transactionId: string,
   at: Iso = now(),
-): { costMinor: number } {
+): Promise<{ costMinor: number }> {
   if (reward.status !== 'available') throw new DomainError('already_used', 'reward is not available');
   if (reward.expires_at <= at) throw new DomainError('expired', 'reward has expired');
 
   if (reward.budget_id) {
-    budget.release(db, reward.budget_id, 'loyalty', reward.reserved_minor, {
+    await budget.release(db, reward.budget_id, 'loyalty', reward.reserved_minor, {
       kind: 'earned_reward',
       ref: reward.id,
     }, at);
-    budget.debit(db, reward.budget_id, 'loyalty', reward.cost_minor, {
+    await budget.debit(db, reward.budget_id, 'loyalty', reward.cost_minor, {
       kind: 'earned_reward',
       ref: reward.id,
     }, at);
   }
-  db.run(
+  await db.run(
     `UPDATE earned_rewards SET status = 'redeemed', redeemed_at = $t, transaction_id = $x
       WHERE id = $i AND status = 'available'`,
     { t: at, x: transactionId, i: reward.id },
@@ -410,22 +410,22 @@ export function redeemReward(
   return { costMinor: reward.cost_minor };
 }
 
-export function expireRewards(db: Db, at: Iso = now()): { expired: number; released: number } {
-  const due = db.all<EarnedReward>(
+export async function expireRewards(db: Db, at: Iso = now()): Promise<{ expired: number; released: number }> {
+  const due = await db.all<EarnedReward>(
     `SELECT * FROM earned_rewards WHERE status = 'available' AND expires_at <= $t`,
     { t: at },
   );
   let released = 0;
-  db.tx(() => {
+  await db.tx(async () => {
     for (const reward of due) {
       if (reward.budget_id) {
-        budget.release(db, reward.budget_id, 'loyalty', reward.reserved_minor, {
+        await budget.release(db, reward.budget_id, 'loyalty', reward.reserved_minor, {
           kind: 'earned_reward',
           ref: reward.id,
         }, at);
         released += reward.reserved_minor;
       }
-      db.run(`UPDATE earned_rewards SET status = 'expired' WHERE id = $i`, { i: reward.id });
+      await db.run(`UPDATE earned_rewards SET status = 'expired' WHERE id = $i`, { i: reward.id });
     }
   });
   return { expired: due.length, released };
@@ -439,13 +439,13 @@ export function expireRewards(db: Db, at: Iso = now()): { expired: number; relea
  * customer who earned a free coffee last week gets it whatever the partner does
  * to the campaign this week.
  */
-export function setStatus(
+export async function setStatus(
   db: Db,
   campaignId: string,
   status: 'active' | 'paused' | 'ended',
   at: Iso = now(),
-): void {
-  db.run(`UPDATE campaigns SET status = $s, updated_at = $t WHERE id = $i`, {
+): Promise<void> {
+  await db.run(`UPDATE campaigns SET status = $s, updated_at = $t WHERE id = $i`, {
     s: status,
     t: at,
     i: campaignId,

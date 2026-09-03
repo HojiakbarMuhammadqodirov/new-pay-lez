@@ -159,6 +159,24 @@ export interface AuthValue {
   /** `null` when signed out. */
   account: Account | null;
   /**
+   * The plan the server says this account is on, or `null` when unknown.
+   *
+   * `null` covers signed out, still loading, and the server not answering —
+   * all three of which mean "do not draw a badge". It deliberately does not
+   * fall back to the free plan: that would label a paying customer as free
+   * whenever a request failed, which is the one error worth avoiding here.
+   */
+  plan: { code: string; name: string; audience: string } | null;
+  /**
+   * What this plan actually buys, as the server resolves it — a bigger energy
+   * tank, a faster refill, more word hints. `null` under the same three
+   * conditions as `plan`.
+   *
+   * Values are strings because that is how they are stored; read them with
+   * `Number(...)` and a free-plan fallback, never assume a key is present.
+   */
+  entitlements: Record<string, string> | null;
+  /**
    * Sign in against the **server**, falling back to the seeded demo accounts.
    *
    * Async now, where it used to read a row out of this device's directory

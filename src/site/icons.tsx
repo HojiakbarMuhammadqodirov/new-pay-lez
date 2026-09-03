@@ -114,6 +114,27 @@ const PATHS = {
   people: <><circle cx="6.8" cy="8.2" r="2.9" /><path d="M2 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /><circle cx="17.2" cy="8.2" r="2.9" /><path d="M12.4 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
   close: <><path d="M18 6 6 18M6 6l12 12" /></>,
+  /* The console's write half (`adminControls.tsx`). Four glyphs, and all four
+     are the transport-symbol shapes rather than anything invented: a removal, a
+     credential and a pair of playback states are the four ideas on this site
+     that already have a picture everybody knows, and a cleverer one would be a
+     puzzle on a button that deletes a business.
+
+     The bin's lid is a separate stroke from its body because at 14px a single
+     outline closes into a bag; `pause` and `play` are the one pair here drawn as
+     fills, because two 2px strokes 4px apart read as a grille and a stroked
+     triangle at that size is mostly its own outline. */
+  trash: <><path d="M4 7h16" /><path d="M10 4h4a1 1 0 0 1 1 1v2H9V5a1 1 0 0 1 1-1Z" /><path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" /><path d="M10 11v6M14 11v6" /></>,
+  /* The pencil beside the bin, and the pair is why it is drawn nib-down-left:
+     they sit next to each other at 14px on every row of the console, and two
+     glyphs whose masses lean the same way read as one smudge. The nib is a
+     separate stroke rather than part of the body — at this size a tapered
+     outline closes up into a filled wedge and the tool stops being a pencil. */
+  pencil: <><path d="M4 20h4L20.5 7.5a2.1 2.1 0 0 0-3-3L5 17v3Z" /><path d="M14.5 6 18 9.5" /></>,
+  lock: <><rect x="4" y="10" width="16" height="11" rx="2.5" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /><path d="M12 14.5v2.5" /></>,
+  pause: <><rect x="7" y="5" width="3.4" height="14" rx="1" fill="currentColor" stroke="none" /><rect x="13.6" y="5" width="3.4" height="14" rx="1" fill="currentColor" stroke="none" /></>,
+  play: <><path d="M8 5.4v13.2a1 1 0 0 0 1.53.85l10.2-6.6a1 1 0 0 0 0-1.7L9.53 4.55A1 1 0 0 0 8 5.4Z" fill="currentColor" stroke="none" /></>,
+
   download: <><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></>,
   eye: <><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,

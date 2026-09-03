@@ -4483,47 +4483,25 @@ button {
 }
 
 /*
- * Stock as a number *and* a length. The number alone is read as text; the same
- * number as a bar is read before it is read, which is the whole point of saying
- * that three of ten are left.
- */
-/*
- * The stock caption in the right slot of `.gift-top`, in both wallets.
+ * The stock caption in the right slot of `.gift-top`, on both catalogues.
  *
- * `.gift-stock` is the marketing catalogue's, which carries a depletion bar;
- * `.gift-left` is the signed-in wallet's, which is the same sentence without
- * one. They shared everything except that bar and only one of them was written,
- * so the signed-in card rendered "3 of 10 left" at 17px body type — it inherited
- * `.site`'s size and line height, wrapped, and shoved the brand tile out of
- * line. Same card, two different type scales, on the two screens most likely to
- * be compared.
+ * It used to be a caption **and a bar** — `.gift-stock` carried a depletion
+ * meter, because "3 of 10 left" read as text where the same number as a length
+ * is read before it is read. The bar needed a denominator, and the shelf it now
+ * reads (`gift_card_stock` on the server) records how many are left and never
+ * what the allocation was. So the meter is gone rather than drawn against an
+ * invented `of`, and one class serves both screens — which is what they should
+ * have shared in the first place: they were the same caption, and only one of
+ * them was ever written, so the signed-in card rendered at 17px body type,
+ * wrapped, and shoved the brand tile out of line.
  */
-.gift-stock,
 .gift-left {
-  position: relative;
   padding-bottom: 0.4rem;
   font-size: 0.68rem;
   font-weight: 700;
   color: var(--text-fnt);
   text-align: right;
   white-space: nowrap;
-}
-
-.gift-stock i {
-  position: absolute;
-  inset: auto 0 0;
-  height: 2px;
-  border-radius: 2px;
-  background: rgba(var(--accent-rgb), 0.18);
-}
-
-.gift-stock i::after {
-  content: '';
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--share);
-  border-radius: 2px;
-  background: var(--accent);
 }
 
 .gift-brand {
@@ -6041,6 +6019,29 @@ button {
 .account-who > span {
   font-size: 0.68rem;
   color: var(--text-fnt);
+}
+
+/*
+ * The plan, on the account pill and the profile card.
+ *
+ * A chip rather than more faint text, because it is the one thing on that line
+ * anybody is actively looking for — "am I on Pro?" has no other answer on this
+ * site. The accent at low alpha, which is what every other chip here is made
+ * of; no second hue, and `--accent-ink` because this is small text on paper.
+ *
+ * `font-style: normal` on purpose: the element is an `<em>` so that it carries
+ * emphasis to a screen reader, and italics are not what that should look like.
+ */
+.plan-tag {
+  margin-left: 0.42em;
+  padding: 0.1em 0.42em;
+  border-radius: 4px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-ink);
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 }
 
 .account-menu {
@@ -11913,6 +11914,18 @@ button {
   color: var(--text);
 }
 
+/* …and what that state costs, which is no longer the round. Set as body copy
+   under the line above rather than beside it: the state is the heading and this
+   is the sentence, and giving them the same weight would make an empty tank
+   read as two warnings instead of one warning and one way out. */
+.play-energy-practice {
+  position: relative;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--text-mut);
+}
+
 .play-energy-line {
   position: relative;
   font-size: 0.85rem;
@@ -13482,6 +13495,36 @@ button {
 
 /* ── a round in play ── */
 
+/*
+ * The practice banner: a round being played on an empty tank.
+ *
+ * A hairline strip above the board rather than a badge inside it, because it
+ * has to sit over five different game components and none of them has a slot
+ * for it — and because what it says is true of the whole round rather than of
+ * any part of the board. It is drawn as a *note* and not as a warning: nothing
+ * is wrong, the round works, it does not pay. The palette has one accent and no
+ * red to reach for anyway, which is the rule that makes this the only available
+ * register as well as the right one.
+ */
+.play-practice {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.play-practice svg {
+  flex: 0 0 auto;
+  color: var(--accent-ink);
+}
+
 .round {
   display: flex;
   flex-direction: column;
@@ -14850,14 +14893,15 @@ button {
 
 /* ── the venue, under its name ─────────────────────────────────────────────
  *
- * Three lines the app's list card does not carry, and the reason it does not is
- * that on a phone it is one of a column you scroll past — it puts the venue's
- * facts on the venue sheet a tap further in. There is no sheet here, and a
- * desktop card has the room, so the meta line the app's *venue screen* writes
- * (`_metaLine`: `category · address`) comes forward onto the card.
+ * `category · city`, and that is the whole of what `GET /v1/deals` says about
+ * the place. There were three lines here — the address and the star rating were
+ * the other two — and they came off a `VenueFacts` block written beside each
+ * offer in `content.ts`. The endpoint projects the *offer* rather than the
+ * venue, so the lines went with the seed rather than being joined back on from
+ * a second request.
  *
- * All three degrade rather than render a hole: a deal claimed before these
- * fields existed carries none of them and gets none of the lines.
+ * It degrades rather than rendering a hole: a row with neither field gets no
+ * line at all.
  */
 .wal-where {
   font-size: 0.76rem;
@@ -14866,44 +14910,41 @@ button {
 }
 
 /*
- * The rating: a figure and the cohort behind it, never one without the other.
+ * The offer's terms, opened from the card's own button.
  *
- * The star is a glyph rather than an icon because it has to sit *inside* the
- * figure's line box at the figure's own weight — an SVG beside it is a second
- * baseline to align, and this is one word.
+ * This is what the claim button became. There is nothing on this page that can
+ * claim a hot deal — a claim is written by the gate from a confirmed scan — so
+ * the press reports an `open` and shows the two things a reader needs before
+ * walking in: the venue's own conditions, and where the claim actually happens.
+ *
+ * Deliberately **not** animated. Everything the old claim did was a transition
+ * celebrating an event, and there is no event; a panel that is either present
+ * or absent also needs no `prefers-reduced-motion` branch, which is the
+ * cheapest way to honour it.
  */
-.wal-rate {
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-  font-size: 0.76rem;
+.wal-terms {
+  margin-top: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.6rem;
+  background: var(--surface);
+  font-size: 0.78rem;
+  line-height: 1.5;
   color: var(--text-fnt);
 }
 
-.wal-rate b {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 0.2rem;
-  font-size: 0.82rem;
+.wal-terms p + p {
+  margin-top: 0.45rem;
+}
+
+/* The sentence that says a claim happens at the counter. Weighted rather than
+   coloured: the palette has one accent and it is already spent on the offer
+   line above, and this is the one thing on the card a reader must not miss. */
+.wal-terms-how {
   font-weight: 700;
-  font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 
-.wal-rate i {
-  font-style: normal;
-  font-size: 0.8rem;
-  color: var(--accent-ink);
-}
-
-/* The window. Pushed off the bottom of the text block so the offer line above
-   it sits against the name rather than floating between the two. */
-.wal-when {
-  margin-top: 0.35rem;
-  font-size: 0.76rem;
-  line-height: 1.45;
-  color: var(--text-fnt);
-}
 
 /* The app's teal line — what the reader gets, said once. */
 .wal-offer {
@@ -14979,177 +15020,6 @@ button {
   transform: none;
 }
 
-/* ══════════════════════════════════════════════════════ claiming a deal ══
- *
- * What happens in the second between pressing "Claim this deal" and the card
- * moving down to Redeemed.
- *
- * The app does none of this, and the reason it does not is worth stating so
- * that this is not read as a port: on the phone the button *navigates* — it
- * arms the gate and drops you on the Scan tab, and a celebration on a screen
- * you are leaving is a celebration nobody sees. Nothing navigates here. The
- * card has to say by itself that the press worked, that the offer is now
- * yours, and that it has moved — three things, and a card that simply vanished
- * from the list would say none of them.
- *
- * So the motion is doing work rather than decorating: **the ring** is the claim
- * going out, **the sheen** is the card being marked, **the code** lands where
- * the button was, and only then does the card leave. Every curve is the app's
- * own kit (`lib/widgets/common.dart`) rather than invented here — `Pop` for the
- * code, the stamp-landing ring for the burst, `Sheen` for the sweep — because
- * this is the same product doing the same thing and it should move the same
- * way.
- *
- * All of it is off under `prefers-reduced-motion`, and the *hold* goes with it:
- * `CLAIM_HOLD_MS` in `wallet.tsx` is skipped entirely rather than left running
- * over a still card, so a reader who has asked for less movement gets the deal
- * in the Redeemed section immediately instead of a second of nothing.
- * ═══════════════════════════════════════════════════════════════════════ */
-
-/* The card itself: one short lift, on the same curve everything else here
-   settles with. Not a scale — the card is in a grid whose other cards do not
-   move, and a card that grows pushes its own text off its neighbours' lines. */
-.wal-deal[data-claiming='true'] {
-  border-color: var(--accent-soft);
-  animation: wal-claim 620ms var(--ease) both;
-}
-
-@keyframes wal-claim {
-  0% {
-    transform: translateY(0);
-  }
-  35% {
-    transform: translateY(-6px);
-  }
-  100% {
-    transform: translateY(0);
-  }
-}
-
-/*
- * The burst — the app's `pl-stampring` at card size.
- *
- * A ring rather than a filled disc, and it goes *out*: the claim leaving the
- * card is the thing being drawn. Centred on the band rather than on the plate
- * because the band is what the eye is already on, and clipped by the card's own
- * `overflow: hidden` so it reads as coming from under the card rather than
- * floating over the page.
- */
-.wal-burst {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 6rem;
-  height: 6rem;
-  margin: -3rem 0 0 -3rem;
-  border-radius: 999px;
-  border: 2px solid var(--accent);
-  pointer-events: none;
-  animation: wal-burst 620ms ease-out both;
-}
-
-@keyframes wal-burst {
-  0% {
-    opacity: 0.55;
-    transform: scale(0.35);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(2.6);
-  }
-}
-
-/*
- * The sheen — the app's `Sheen`, a `-18deg` bar crossing the plate once.
- *
- * A gradient rather than a solid bar, because a hard edge over a textured band
- * reads as a rendering fault. It runs the full height of the band and starts
- * off the left edge, so the first frame is empty rather than a bar sitting in
- * the middle of the card.
- */
-.wal-sheen {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 34%;
-  pointer-events: none;
-  transform: skewX(-18deg);
-  background: linear-gradient(
-    90deg,
-    transparent,
-    rgba(var(--accent-rgb), 0.28),
-    transparent
-  );
-  animation: wal-sheen 620ms ease-out both;
-}
-
-@keyframes wal-sheen {
-  0% {
-    transform: translateX(-140%) skewX(-18deg);
-  }
-  100% {
-    transform: translateX(340%) skewX(-18deg);
-  }
-}
-
-/*
- * What replaces the button: a tick, the sentence, and the code.
- *
- * The button is *gone* rather than disabled. A control that cannot do anything
- * any more should not still look like one, and pressing this one twice is
- * exactly what `claimDeal` guards against — a guard the screen should not be
- * inviting anybody to test.
- */
-.wal-won {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.55rem;
-  min-height: 2.75rem;
-  font-size: 0.8rem;
-  font-weight: 700;
-  line-height: 1.35;
-  color: var(--accent-ink);
-  animation: wal-rise 400ms var(--ease) both;
-}
-
-.wal-won svg {
-  flex: 0 0 auto;
-  margin-top: 0.1rem;
-}
-
-/* The code lands on the app's `Pop` curve — .86 up through 1.04 and back —
-   which is the one motion in the kit that means "this is now yours". */
-.wal-won .wcard-code {
-  display: block;
-  margin-top: 0.2rem;
-  animation: wal-pop 400ms 160ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
-}
-
-@keyframes wal-rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@keyframes wal-pop {
-  0% {
-    opacity: 0;
-    transform: scale(0.86);
-  }
-  60% {
-    opacity: 1;
-    transform: scale(1.04);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 /*
  * The code on a deal already held, which is not an event and does not animate.
  *
@@ -15170,16 +15040,6 @@ button {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-fnt);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wal-deal[data-claiming='true'],
-  .wal-burst,
-  .wal-sheen,
-  .wal-won,
-  .wal-won .wcard-code {
-    animation: none;
-  }
 }
 
 /* ══════════════════════════════════════════════════ the board, in a grid ══
@@ -15210,19 +15070,6 @@ button {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(17.5rem, 1fr));
   gap: 0.9rem;
-}
-
-/* A deal already in the wallet is not a thing you can take again, so it stops
-   looking like an offer and starts looking like a holding: the border firms up
-   and the band goes quiet. These live in their own section now rather than
-   among the offers, and the treatment is what makes the two sections read
-   differently when one is scrolled past the other. */
-.wal-deal[data-held='true'] {
-  border-color: var(--border-2);
-}
-
-.wal-deal[data-held='true'] .wal-band {
-  background: var(--surface);
 }
 
 /* ── stamp cards ──
@@ -15296,72 +15143,20 @@ button {
 }
 
 /*
- * The stamp that just landed — the app's `pl-stamp` and `pl-stampring`
- * (`lib/widgets/stamps.dart`).
+ * There was a landing animation here — the app's `pl-stamp` and `pl-stampring`,
+ * a disc dropping in oversized with a ring going out behind it, fired by the
+ * "Add a visit" button beside the card.
  *
- * It drops in oversized and settles, with a ring going out behind it. Only one
- * disc ever carries it, and only for as long as the visit is fresh: the row is
- * a picture of a count, and a picture in which two of the discs are moving is a
- * picture of nothing.
- *
- * The rotation is the app's, and it is what stops this reading as a scale
- * transition: a stamp is a thing pressed onto paper by a hand, and a hand does
- * not land square.
+ * Both are gone, and the button is why: a stamp is a *confirmed visit*, written
+ * by the gate from a scan at the counter, and a control on a web page that put
+ * one on the card was the clearest example on this site of a screen inventing
+ * its own data. With nothing to fire it, an animation for the arrival of a
+ * stamp is an animation for an event this page never sees.
  */
 .wal-slots span {
   position: relative;
 }
 
-.wal-slots span[data-landed='true'] {
-  animation: wal-stamp 520ms cubic-bezier(0.2, 0.9, 0.3, 1) both;
-}
-
-.wal-slots span[data-landed='true']::after {
-  content: '';
-  position: absolute;
-  inset: -7px;
-  border-radius: 999px;
-  border: 2px solid var(--accent);
-  animation: wal-stamp-ring 900ms 60ms ease-out both;
-}
-
-@keyframes wal-stamp {
-  0% {
-    opacity: 0;
-    transform: scale(2.4) rotate(-14deg);
-  }
-  52% {
-    opacity: 1;
-    transform: scale(0.9) rotate(3deg);
-  }
-  74% {
-    transform: scale(1.07) rotate(-1deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-
-@keyframes wal-stamp-ring {
-  0% {
-    opacity: 0.55;
-    transform: scale(0.55);
-  }
-  100% {
-    opacity: 0;
-    transform: scale(2.2);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wal-slots span[data-landed='true'] {
-    animation: none;
-  }
-
-  .wal-slots span[data-landed='true']::after {
-    display: none;
-  }
-}
 
 /* Filled `n×` before. Sits on the name row rather than the band, because it is
    the card's history and the band is its present. */
@@ -16202,6 +15997,49 @@ button {
 .adm-empty {
   font-size: 0.875rem;
   color: var(--text-mut);
+}
+
+/*
+ * The two panels every list on the console needs, and they are a panel rather
+ * than a line for a reason.
+ *
+ * `.adm-empty` is a sentence in the flow — right for "nothing matches that
+ * search", which is a state the operator caused a keystroke ago. These two are
+ * findings: **the platform has no venues**, or **the backend did not answer**.
+ * Both are things somebody has to act on, and both are the *ordinary* state of
+ * a platform that has just been purged — so they get a heading, a sentence and,
+ * where there is something to do, a button.
+ *
+ * One box for both because the difference is the words, not the drawing: what
+ * must never happen is the two states sharing a *sentence*, and that is checked
+ * in `npm run verify` rather than prevented here.
+ */
+.adm-block-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 1.15rem 1.25rem;
+  border: 1px dashed var(--border-2);
+  border-radius: 0.9rem;
+  background: var(--surface);
+}
+
+.adm-block-empty h3 {
+  font-size: 0.98rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.adm-block-empty p {
+  max-width: 52ch;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: var(--text-fnt);
+}
+
+.adm-block-empty .btn {
+  margin-top: 0.35rem;
 }
 
 .adm-note {
@@ -18166,6 +18004,66 @@ button {
     0 30px 80px -46px rgba(var(--glow-rgb), calc(1.1 * var(--glow-k)));
 }
 
+/*
+ * The buy button on a plan card.
+ *
+ * `margin-top: auto` inside `.sub-card-in`, which is already a flex column:
+ * the three cards carry different numbers of rows, and without it each button
+ * sits wherever its own card's content ended — three presses on three lines,
+ * which reads as three different kinds of control rather than one choice made
+ * three ways.
+ */
+.sub-buy {
+  width: 100%;
+  justify-content: center;
+  margin-top: 1.15rem;
+}
+
+/* The list takes the slack instead of the button taking an `auto` margin. Same
+   bottom alignment, but the gap above the button is a real `1.15rem` on the
+   shortest card rather than whatever is left over — which on the free card is
+   nothing. */
+.sub-card-in .sub-rows {
+  flex: 1 1 auto;
+}
+
+/* The same slot on the plan somebody already pays for. A word, not a control —
+   so it is quieter than the buttons beside it and does not invite a press. */
+.sub-current {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin: 1.15rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* One accent, so a failure is weighted rather than reddened — the rule the
+   `══ forms ══` block states for `.field-error`, applied here. */
+.sub-failed {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+}
+
+/* The upgrade offer on the Play screen's energy panel. Separated by a hairline
+   rather than a heading: it is an aside to the gauge above it, not a second
+   thing the panel is about. */
+.play-upgrade {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.play-upgrade .sub-buy {
+  margin-top: 0;
+  font-size: 0.82rem;
+}
+
 .sub-foot {
   display: grid;
   justify-items: center;
@@ -19595,4 +19493,551 @@ button {
   display: inline-flex;
   gap: 0.4rem;
   flex: none;
+}
+
+/* ── the console's write half (`adminControls.tsx`) ───────────────────────
+   `adm-act-` was grepped first, the way `site.css` requires. It is *not* quite
+   free — `.adm-actions` is the console header's button bar, six thousand lines
+   up — but the two never meet: that is one exact class name and these are all
+   `adm-act-` plus a suffix. Worth knowing before somebody adds `.adm-action`
+   and finds out the hard way, which is how `.dash-*` crushed the dashboard's
+   user pill to 26px.
+
+
+   Everything here is a control on a screen that removes things, so the whole
+   block is about **weight rather than hue**. The palette has one accent and a
+   destructive button cannot be red — that is the same constraint the
+   `══ forms ══` block answers for a field in error, and the answer is the same:
+   an armed press fills with `--solid`, and a failure is a heavier stroke down
+   the edge of a strip. Reaching for a second colour on a delete button is the
+   `[data-texture]` mistake wearing different clothes. */
+
+/*
+ * What the last press did, or why it did not.
+ *
+ * The bar down the leading edge is the whole signal, exactly as `.adm-msg` uses
+ * one: the accent when something happened, `--text` when it did not — the
+ * darkest thing on the page, which is louder than the accent without being a
+ * second colour.
+ */
+.adm-act-strip {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent-ink);
+  border-radius: var(--r);
+  background: var(--surface);
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.adm-act-strip svg {
+  flex: none;
+  /* Baseline-aligned text puts an icon a whisker high; nudged rather than
+     switched to `align-items: center`, which would centre the dismiss link
+     against a message that wraps to three lines. */
+  transform: translateY(0.15em);
+  color: var(--accent-ink);
+}
+
+.adm-act-strip p {
+  flex: 1 1 auto;
+  margin: 0;
+  min-width: 0;
+}
+
+.adm-act-strip[data-tone='failed'] {
+  border-left-color: var(--text);
+  font-weight: 600;
+}
+
+.adm-act-strip[data-tone='failed'] svg {
+  color: var(--text);
+}
+
+/* The server's own sentence, which is the one piece of untranslated text on
+   this console — see the note in `adminControls.tsx`. Set apart as data rather
+   than as prose, and *not* italic despite the tag: it is frequently a field
+   name or an id, and italics on a monospaced id is worse than either. */
+.adm-act-strip em {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-style: normal;
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--text-mut);
+  overflow-wrap: break-word;
+}
+
+.adm-act-strip .link-btn {
+  flex: none;
+  font-size: 0.76rem;
+}
+
+/* A row of presses is a row of small buttons: the console's own `.btn` at the
+   size the rest of this screen writes secondary actions in. */
+.adm-act-btn {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.76rem;
+  white-space: nowrap;
+}
+
+.adm-act-armed {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.adm-act-armed .link-btn {
+  font-size: 0.76rem;
+}
+
+/*
+ * The panel a row opens under itself.
+ *
+ * `flex-basis: 100%` is what puts it on its own line inside `.adm-service`,
+ * which is a wrapping flex row — it is a sibling of the logo and the body
+ * rather than a child of either, so it spans the card without the card needing
+ * a grid. Inside a table it is the only thing in a full-width cell and the
+ * basis is moot.
+ */
+.adm-act-panel {
+  flex: 1 1 100%;
+  margin-top: 0.4rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border-2);
+  border-radius: calc(var(--r) - 4px);
+  background: var(--surface-2);
+}
+
+.adm-act-panel-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.3rem;
+}
+
+.adm-act-panel-head b {
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+.adm-act-panel-head .link-btn {
+  flex: none;
+  font-size: 0.76rem;
+}
+
+/* The sentence that says what is kept as well as what goes. Held to a reading
+   measure: it is the only paragraph on this screen somebody is expected to read
+   before acting, and a line of it running the full width of a table is a line
+   nobody finishes. */
+.adm-act-panel > p {
+  max-width: 46ch;
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+/*
+ * The field and its press, side by side where there is room.
+ *
+ * `align-items: end` rather than `center`: the field is a stacked label,
+ * control and help line, so centring it puts the button opposite the label
+ * instead of opposite the box it belongs to.
+ */
+.adm-act-form {
+  display: flex;
+  align-items: end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.adm-act-form .field {
+  flex: 1 1 15rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.adm-act-form .adm-act-btn {
+  flex: none;
+  /* Matched to the field's own control height so the pair sits on one line
+     rather than the button riding a couple of pixels high. */
+  padding: 0.55rem 1rem;
+}
+
+/* The table's last column. `nowrap` on the cell and not on the row: three
+   buttons that wrap inside a 200-row table make every row a different height,
+   which is the one thing a table is for avoiding. */
+.adm-act-cell {
+  white-space: nowrap;
+}
+
+.adm-act-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+/* The panel's own row. It carries no border of its own — the panel inside it
+   has one — and drops the cell padding so the panel sits flush in the table's
+   own rhythm. */
+.adm-act-tr > td {
+  padding: 0 0 0.6rem;
+}
+
+/*
+ * The accounts table, which gained a column of controls and has to find the
+ * room for it.
+ *
+ * `.adm-scroll` would simply let it overflow — that is what the wrapper is for
+ * — but the column that ends up off the right edge is the one somebody came to
+ * this screen to press, and a control you have to scroll sideways to find is
+ * halfway to not being there. So the two greedy columns give the width back:
+ * an address wraps rather than reserving a line for the longest one in the
+ * table, and the actions cell asks for `1%`, which in an auto-layout table
+ * means "as narrow as my content" and makes every other column yield first.
+ *
+ * Scoped to this table rather than `.adm-table`, which the venue analytics
+ * screens also use: an address there is not the same column, and `anywhere`
+ * would break a receipt id mid-string for no reason.
+ */
+.adm-db-mail {
+  /* `.adm-table td` is `nowrap`, which is right for every other column here and
+     is the whole problem in this one: one long address reserves a line's worth
+     of width for the whole column. Overridden on the address alone rather than
+     on `.adm-mono`, which the date beside it also wears — "Sep 1, 26" broken
+     across three lines is the cure being worse. */
+  white-space: normal;
+  overflow-wrap: anywhere;
+  /* `anywhere` is what lets the column give width back — it drops the cell's
+     min-content width to a single character, which is exactly what an
+     auto-layout table needs to hear and exactly one step too far if it is the
+     only thing said. Squeezed against a narrow window it wrapped an address one
+     letter per line. The floor is what stops that: about two lines of a long
+     address, and never less. */
+  min-width: 10rem;
+}
+
+
+
+.adm-people-table .adm-act-cell {
+  width: 1%;
+}
+
+
+
+/* ═══════════════════════════════════════════════════════════════ crash ══
+   The panel `ErrorBoundary` draws when a render threw.
+
+   Deliberately made of nothing: tokens, the `.btn` kit and `.brand`. It has to
+   be paintable when whatever failed is still failing, so it reaches for no
+   component and no state — a stylesheet cannot throw, but a rule that depends
+   on a class some broken screen was supposed to set can still leave this
+   invisible, which is the failure it exists to end.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.crash {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: 2rem 1.25rem;
+  background: var(--bg);
+}
+
+.crash-card {
+  width: min(38rem, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.9rem;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg, 20px);
+  background: var(--surface);
+}
+
+.crash-card h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+
+.crash-card p {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* The message, verbatim. Wraps rather than scrolls sideways: somebody is about
+   to select it and paste it into a report, and a line clipped at the edge of a
+   card is a line that gets pasted half-length. */
+.crash-card pre {
+  margin: 0;
+  width: 100%;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(var(--panel-rgb), 0.6);
+  color: var(--text);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.crash-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+
+/* ═══════════════════════════════════════════════════════ console: editing ══
+   The switch in the toolbar, the two icon buttons it puts on every row, the
+   form a pencil opens and the dialogue a bin opens.
+
+   `adm-` prefixed like the rest of the console — the sub-prefixes here are
+   `adm-edit-`, `adm-row-`, `adm-ico-` and `adm-modal-`, all grepped and free.
+   `site.css` has no scoping and three collisions have already shipped bugs; a
+   name as generic as `.modal` on a sheet this size is the next one.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+/*
+ * The toggle sits between the search field and the tabs, and two things about
+ * where it lands are deliberate.
+ *
+ * **It is pulled up against the search rather than centred.** `.adm-toolbar` is
+ * `justify-content: space-between`, which splits the slack evenly on both sides
+ * of a middle child and leaves this floating in open space, belonging to
+ * neither neighbour. `margin-right: auto` collects all of it on the right
+ * instead: the button sits beside the field it qualifies, and the tabs stay
+ * anchored to the far edge where they were.
+ *
+ * **It is sized to the tab strip, not to `.btn`.** The default button is
+ * `0.75rem 1.35rem` at `0.9375rem` — correct for a page CTA and a third bigger
+ * than the tabs it shares a line with, which is what made it read as the
+ * loudest thing in the toolbar rather than a switch beside a filter. These are
+ * `.adm-tab`'s own numbers. `flex: none` because a two-word label that clips
+ * stops saying which state it is in.
+ */
+.adm-edit-toggle {
+  flex: none;
+  margin-right: auto;
+  gap: 0.4rem;
+  padding: 0.45rem 0.95rem;
+  font-size: 0.8125rem;
+}
+
+/* What edit mode is, said once, under the toolbar rather than on every row.
+   `--accent-ink` and not `--accent`: this is small text on paper, which is the
+   one job the middle step of the ramp does not do — see `src/site/CLAUDE.md`. */
+.adm-edit-note {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: -0.35rem 0 0;
+  font-size: 0.82rem;
+  color: var(--accent-ink);
+}
+
+/* ── the pair on a row ─────────────────────────────────────────────────── */
+
+.adm-row-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex: none;
+}
+
+/*
+ * A square, not a pill.
+ *
+ * Every other button on this console is `.btn`, which is a rounded rectangle
+ * sized by its words. These have no words, and a pill with one glyph in it
+ * reads as a lozenge with something spilt on it — so they are 30px squares with
+ * the sheet's own corner radius, which is what a tool button looks like
+ * everywhere else in the world.
+ *
+ * 30px and not 24: this sits in a row somebody is aiming at with a mouse or a
+ * thumb, and the two are 4px apart with a bin on the right of them.
+ */
+.adm-ico-btn {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  cursor: pointer;
+  transition:
+    color 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.adm-ico-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-2);
+}
+
+/* The open form's pencil stays lit, so a page of rows says which one is being
+   edited without the reader having to find the form. */
+.adm-ico-btn[data-on='true'] {
+  color: var(--on-accent);
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+/*
+ * The bin, and the one thing the palette will not let it be.
+ *
+ * There is one accent and no red, so danger cannot be a hue here — the same
+ * constraint `══ forms ══` answers for a field in error, and the same answer:
+ * weight. It sits at `--text` rather than `--muted`, so it is the darker of the
+ * two glyphs at rest, and on hover it takes the full accent border the way a
+ * primary control does. Louder by contrast, not by colour.
+ */
+.adm-ico-btn[data-danger='true'] {
+  color: var(--text);
+}
+
+.adm-ico-btn[data-danger='true']:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.adm-ico-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── the form a pencil opens ───────────────────────────────────────────── */
+
+/* `flex: 1 1 100%` puts it on its own line inside `.adm-service`, which is a
+   wrapping flex row — the same trick `.adm-act-panel` uses, and the reason
+   neither of them needs the row to know it might grow a panel. */
+.adm-edit-form {
+  flex: 1 1 100%;
+  margin-top: 0.55rem;
+  padding: 0.9rem 1rem 0.8rem;
+  border: 1px solid var(--border-2);
+  border-radius: calc(var(--r) - 4px);
+  background: var(--surface-2);
+}
+
+/* Auto-fit rather than a fixed column count: this form is rendered inside a
+   venue row, inside a table cell and at every width between, and a two-column
+   grid that cannot become one column puts a 9rem input in a phone. */
+.adm-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+  gap: 0.7rem 0.9rem;
+  /* Capped, because the console is a wide screen and these are short answers —
+     a name, a city, a date. Let auto-fit have the full 1200px and it makes six
+     columns of nothing, with two filled. The measure is what limits it, not the
+     window. */
+  max-width: 56rem;
+}
+
+/* A description or a set of terms is a paragraph, so it takes the whole width
+   wherever there is more than one column to take. */
+.adm-edit-grid .field[data-wide='true'] {
+  grid-column: 1 / -1;
+}
+
+.adm-edit-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.8rem;
+  margin-top: 0.85rem;
+}
+
+/* ── the dialogue ──────────────────────────────────────────────────────── */
+
+/*
+ * Over everything, including the console's own sticky bar.
+ *
+ * `position: fixed` and a grid that centres its one child, so the card is in
+ * the middle of the *viewport* rather than the middle of a list somebody has
+ * scrolled halfway down. That is the whole reason this is a dialogue and not
+ * the panel it replaced: a question asked off-screen is a question nobody
+ * answered.
+ */
+.adm-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgba(0, 0, 0, 0.55);
+  animation: adm-modal-in 0.14s ease-out;
+}
+
+/* The scrim is a dim, not a tint: it is the one surface on this site that is
+   deliberately outside the palette, because what it is made of is *absence of
+   the page*. Backdrop blur is left off — a dozen rows of tabular figures
+   smeared behind a warning is noise, and it is the most expensive filter on the
+   screen for something nobody is meant to be reading. */
+
+.adm-modal-card {
+  width: min(30rem, 100%);
+  padding: 1.4rem 1.5rem 1.2rem;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r);
+  background: var(--bg-2);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+}
+
+.adm-modal-card h3 {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  line-height: 1.25;
+  color: var(--text);
+  /* The name of the thing being destroyed is in here and can be long. It wraps
+     rather than clipping, because a dialogue that trims the noun it is asking
+     about is asking about nothing. */
+  overflow-wrap: anywhere;
+}
+
+.adm-modal-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.adm-modal-acts {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+  margin-top: 1.2rem;
+}
+
+@keyframes adm-modal-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* One frame instead of fourteen. The dialogue still appears — it has to, it is
+   the thing being asked — it just does not fade in. */
+@media (prefers-reduced-motion: reduce) {
+  .adm-modal {
+    animation: none;
+  }
 }

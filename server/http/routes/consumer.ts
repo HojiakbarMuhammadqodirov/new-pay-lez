@@ -49,15 +49,15 @@ const viewerOf = (ctx: Ctx) => ({
  * plans, so one allowance spanning both would let a busy afternoon writing deal
  * copy eat the questions the wallet was paid for.
  */
-function assistantAsksToday(ctx: Ctx, userId: string): number {
+async function assistantAsksToday(ctx: Ctx, userId: string): Promise<number> {
   return (
-    ctx.db.get<{ n: number }>(
+    (await ctx.db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM assistant_messages m
          JOIN assistant_sessions s ON s.id = m.session_id
         WHERE s.user_id = $u AND s.side = 'consumer' AND m.role = 'user'
           AND substr(m.created_at, 1, 10) = $d`,
       { u: userId, d: ctx.at.slice(0, 10) },
-    )?.n ?? 0
+    ))?.n ?? 0
   );
 }
 
@@ -77,10 +77,10 @@ function assistantAsksToday(ctx: Ctx, userId: string): number {
  * record, which is what §10.2's "an answer can be traced back to what grounded
  * it" wanted of it anyway.
  */
-function conversationFor(ctx: Ctx, userId: string): string {
+async function conversationFor(ctx: Ctx, userId: string): Promise<string> {
   const named = optStr(ctx.body, 'sessionId');
   if (!named) {
-    return assistant.startConversation(ctx.db, {
+    return await assistant.startConversation(ctx.db, {
       userId,
       side: 'consumer',
       language: ctx.language,
@@ -88,7 +88,7 @@ function conversationFor(ctx: Ctx, userId: string): string {
     });
   }
 
-  const session = ctx.db.get<{ user_id: string; side: string }>(
+  const session = await ctx.db.get<{ user_id: string; side: string }>(
     `SELECT user_id, side FROM assistant_sessions WHERE id = $s`,
     { s: named },
   );
@@ -106,8 +106,8 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/venues',
     auth: 'none',
-    handler: (ctx) =>
-      ctx.db.all(
+    handler: async (ctx) =>
+      await ctx.db.all(
         `SELECT id, name, category, subcategory, city, address, lat, lng, price_range,
                 image_url, rating, review_count, accepts_vouchers
            FROM venues
@@ -130,8 +130,8 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/venues/:id',
     auth: 'none',
-    handler: (ctx) => {
-      const venue = getVenue(ctx.db, ctx.params.id);
+    handler: async (ctx) => {
+      const venue = await getVenue(ctx.db, ctx.params.id);
       const userId = ctx.actor?.user.id;
       return {
         venue: {
@@ -152,22 +152,22 @@ export const consumerRoutes: Route[] = [
           acceptsVouchers: venue.accepts_vouchers === 1,
           pointsPerScan: venue.points_per_scan,
         },
-        links: linksOf(ctx.db, venue.id),
-        hours: ctx.db.all(
+        links: await linksOf(ctx.db, venue.id),
+        hours: await ctx.db.all(
           `SELECT weekday, opens_min, closes_min, closed FROM venue_hours WHERE venue_id = $v
             ORDER BY weekday`,
           { v: venue.id },
         ),
         description:
-          ctx.db.get<{ value: string }>(
+          (await ctx.db.get<{ value: string }>(
             `SELECT value FROM translations WHERE entity = 'venue' AND entity_id = $v
                AND field = 'description' AND language IN ($l, 'en') ORDER BY language = $l DESC LIMIT 1`,
             { v: venue.id, l: ctx.language },
-          )?.value ?? null,
-        tiers: vouchers.ladder(ctx.db, venue.id, ctx.at),
-        deals: deals.browse(ctx.db, viewerOf(ctx), { venueId: venue.id }),
-        stampCards: userId ? campaigns.progressFor(ctx.db, userId, venue.id) : [],
-        rewards: userId ? campaigns.availableRewards(ctx.db, userId, venue.id) : [],
+          ))?.value ?? null,
+        tiers: await vouchers.ladder(ctx.db, venue.id, ctx.at),
+        deals: await deals.browse(ctx.db, viewerOf(ctx), { venueId: venue.id }),
+        stampCards: userId ? await campaigns.progressFor(ctx.db, userId, venue.id) : [],
+        rewards: userId ? await campaigns.availableRewards(ctx.db, userId, venue.id) : [],
       };
     },
   },
@@ -177,8 +177,8 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/deals',
     auth: 'none',
-    handler: (ctx) =>
-      deals.browse(ctx.db, viewerOf(ctx), {
+    handler: async (ctx) =>
+      await deals.browse(ctx.db, viewerOf(ctx), {
         city: qStr(ctx, 'city'),
         category: qStr(ctx, 'category'),
         limit: qInt(ctx, 'limit', 50),
@@ -188,10 +188,10 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/deals/:id',
     auth: 'none',
-    handler: (ctx) => {
-      const deal = deals.getDeal(ctx.db, ctx.params.id);
-      const copy = deals.copyFor(ctx.db, deal.id, ctx.language);
-      const verdict = deals.claimableNow(ctx.db, deal, viewerOf(ctx));
+    handler: async (ctx) => {
+      const deal = await deals.getDeal(ctx.db, ctx.params.id);
+      const copy = await deals.copyFor(ctx.db, deal.id, ctx.language);
+      const verdict = await deals.claimableNow(ctx.db, deal, viewerOf(ctx));
       return {
         deal,
         copy,
@@ -206,8 +206,8 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/deals/:id/events',
     auth: 'none',
-    handler: (ctx) => {
-      deals.track(ctx.db, {
+    handler: async (ctx) => {
+      await deals.track(ctx.db, {
         dealId: ctx.params.id,
         userId: ctx.actor?.user.id ?? null,
         kind: oneOf(ctx.body, 'kind', ['impression', 'open'] as const),
@@ -233,8 +233,8 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/venues/:id/events',
     auth: 'none',
-    handler: (ctx) => {
-      trackListing(ctx.db, {
+    handler: async (ctx) => {
+      await trackListing(ctx.db, {
         venueId: ctx.params.id,
         userId: ctx.actor?.user.id ?? null,
         kind: oneOf(ctx.body, 'kind', ['impression', 'click'] as const),
@@ -251,24 +251,24 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/wallet',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
       return {
-        points: ledger.balance(ctx.db, user.id),
+        points: await ledger.balance(ctx.db, user.id),
         /* There is no `expiringSoon` any more, and it is *removed* rather than
            returned empty: points do not expire on any plan now, so the field
            would be an array that is always `[]` — a promise the wallet keeps
            making about a thing that cannot happen, and the client that renders
            "nothing expiring soon" off it is telling the customer about a rule
            the product dropped. `domain/ledger.ts` took the job with it. */
-        vouchers: vouchers.activeVouchers(ctx.db, user.id),
-        rewards: campaigns.availableRewards(ctx.db, user.id),
+        vouchers: await vouchers.activeVouchers(ctx.db, user.id),
+        rewards: await campaigns.availableRewards(ctx.db, user.id),
         /* The cards in progress, across every venue. The venue screen answers
            "what is on offer here"; this answers "what am I part-way through",
            which is the wallet's question and cannot be assembled from the other
            one without a request per venue. */
-        stampCards: campaigns.cardsFor(ctx.db, user.id),
-        giftCards: ctx.db.all(
+        stampCards: await campaigns.cardsFor(ctx.db, user.id),
+        giftCards: await ctx.db.all(
           `SELECT g.id, g.code, g.status, g.issued_at, g.expires_at, s.brand, s.logo,
                   s.face_minor, s.currency
              FROM gift_cards g JOIN gift_card_stock s ON s.id = g.stock_id
@@ -282,16 +282,16 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/wallet/history',
     auth: 'user',
-    handler: (ctx) =>
-      ledger.history(ctx.db, actor(ctx).user.id, qInt(ctx, 'limit', 50), qStr(ctx, 'before')),
+    handler: async (ctx) =>
+      await ledger.history(ctx.db, actor(ctx).user.id, qInt(ctx, 'limit', 50), qStr(ctx, 'before')),
   },
   {
     method: 'POST',
     pattern: '/v1/vouchers',
     auth: 'user',
     idempotent: true,
-    handler: (ctx) =>
-      vouchers.issue(ctx.db, {
+    handler: async (ctx) =>
+      await vouchers.issue(ctx.db, {
         userId: actor(ctx).user.id,
         venueId: str(ctx.body, 'venueId'),
         tierId: str(ctx.body, 'tierId'),
@@ -302,8 +302,8 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/gift-cards',
     auth: 'none',
-    handler: (ctx) =>
-      ctx.db.all(
+    handler: async (ctx) =>
+      await ctx.db.all(
         `SELECT id, brand, logo, face_minor, currency, points_cost, stock, priority_only
            FROM gift_card_stock WHERE active = 1 ORDER BY points_cost`,
       ),
@@ -313,10 +313,10 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/gift-cards',
     auth: 'user',
     idempotent: true,
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
-      const ent = entitlements.entitlementsFor(ctx.db, { userId: user.id });
-      return vouchers.redeemGiftCard(ctx.db, {
+      const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
+      return await vouchers.redeemGiftCard(ctx.db, {
         userId: user.id,
         stockId: str(ctx.body, 'stockId'),
         entitled: entitlements.entBool(ent, 'gift_card_priority'),
@@ -330,18 +330,18 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/games/state',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
-      const state = games.playerState(ctx.db, user.id, ctx.at);
+      const state = await games.playerState(ctx.db, user.id, ctx.at);
       return {
-        energy: games.energyFor(ctx.db, user.id, ctx.at),
+        energy: await games.energyFor(ctx.db, user.id, ctx.at),
         streak: state.streak,
         longestStreak: state.longest_streak,
         freezes: state.freezes,
         answered: state.answered,
         correct: state.correct,
-        points: ledger.balance(ctx.db, user.id),
-        dailyWord: games.dailyWord(ctx.db, ctx.language, ctx.at),
+        points: await ledger.balance(ctx.db, user.id),
+        dailyWord: await games.dailyWord(ctx.db, ctx.language, ctx.at),
       };
     },
   },
@@ -349,13 +349,19 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/games/sessions',
     auth: 'user',
-    handler: (ctx) =>
-      games.startSession(ctx.db, {
+    handler: async (ctx) =>
+      await games.startSession(ctx.db, {
         userId: actor(ctx).user.id,
         /* The same tuple the database's CHECK is built from, so a type this
            route accepts is a type the insert cannot reject. */
         gameType: oneOf(ctx.body, 'gameType', games.GAME_TYPES),
         language: ctx.language,
+        /* Opt-in, and only ever opt-in: without it an empty tank is the
+           `no_energy` refusal every shipped client already handles. Read as
+           `=== true` rather than coerced, so a client sending the string
+           "false" — which every truthiness test in JavaScript gets wrong — does
+           not silently give up the round's points. */
+        practice: ctx.body.practice === true,
         at: ctx.at,
       }),
   },
@@ -363,8 +369,8 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/games/sessions/:id/events',
     auth: 'user',
-    handler: (ctx) =>
-      games.submitEvent(ctx.db, {
+    handler: async (ctx) =>
+      await games.submitEvent(ctx.db, {
         sessionId: ctx.params.id,
         userId: actor(ctx).user.id,
         seq: Number(ctx.body.seq ?? 0),
@@ -378,8 +384,8 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/games/sessions/:id/finish',
     auth: 'user',
     idempotent: true,
-    handler: (ctx) =>
-      games.finish(ctx.db, {
+    handler: async (ctx) =>
+      await games.finish(ctx.db, {
         sessionId: ctx.params.id,
         userId: actor(ctx).user.id,
         clientReport: (ctx.body.report as Record<string, unknown>) ?? {},
@@ -392,7 +398,7 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/referrals',
     auth: 'user',
-    handler: (ctx) => social.referralProgress(ctx.db, actor(ctx).user.id),
+    handler: async (ctx) => await social.referralProgress(ctx.db, actor(ctx).user.id),
   },
   {
     /**
@@ -410,12 +416,12 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/leaderboard/:scope',
     auth: 'none',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const scope = ctx.params.scope;
       if (!social.isScope(scope)) {
         throw new DomainError('not_found', 'no such leaderboard');
       }
-      return social.board(ctx.db, {
+      return await social.board(ctx.db, {
         userId: ctx.actor?.user.id,
         scope,
         city: qStr(ctx, 'city') ?? ctx.actor?.user.city ?? null,
@@ -429,14 +435,14 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/leaderboard/friends',
     auth: 'user',
-    handler: (ctx) => social.friendsBoard(ctx.db, { userId: actor(ctx).user.id, at: ctx.at }),
+    handler: async (ctx) => await social.friendsBoard(ctx.db, { userId: actor(ctx).user.id, at: ctx.at }),
   },
   {
     method: 'POST',
     pattern: '/v1/friends',
     auth: 'user',
-    handler: (ctx) => {
-      social.addFriend(ctx.db, actor(ctx).user.id, str(ctx.body, 'userId'), ctx.at);
+    handler: async (ctx) => {
+      await social.addFriend(ctx.db, actor(ctx).user.id, str(ctx.body, 'userId'), ctx.at);
       return { ok: true };
     },
   },
@@ -446,12 +452,12 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/notifications',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user, session } = actor(ctx);
       const mode = session.mode === 'partner' ? 'partner' : 'consumer';
       return {
-        unread: notifications.unreadCount(ctx.db, user.id, mode),
-        items: notifications.inbox(ctx.db, user.id, mode, qInt(ctx, 'limit', 50)),
+        unread: await notifications.unreadCount(ctx.db, user.id, mode),
+        items: await notifications.inbox(ctx.db, user.id, mode, qInt(ctx, 'limit', 50)),
       };
     },
   },
@@ -459,8 +465,8 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/notifications/read',
     auth: 'user',
-    handler: (ctx) => ({
-      read: notifications.markRead(
+    handler: async (ctx) => ({
+      read: await notifications.markRead(
         ctx.db,
         actor(ctx).user.id,
         list(ctx.body, 'ids', (item) => String(item)),
@@ -472,9 +478,9 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/push-tokens',
     auth: 'user',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
-      ctx.db.run(
+      await ctx.db.run(
         `INSERT INTO push_tokens (id, user_id, platform, token, created_at)
          VALUES ($i, $u, $p, $t, $at) ON CONFLICT (token) DO UPDATE SET revoked_at = NULL`,
         {
@@ -517,16 +523,16 @@ export const consumerRoutes: Route[] = [
        * assistant somebody has learned to distrust is worth less than one that
        * says no.
        */
-      const ent = entitlements.entitlementsFor(ctx.db, { userId: user.id });
+      const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
       entitlements.requireCapacity(
         ent,
         'assistant_uses_per_day',
-        assistantAsksToday(ctx, user.id),
+        await assistantAsksToday(ctx, user.id),
         FREE_ASSISTANT_USES_PER_DAY,
       );
 
       return await assistant.askConsumer(ctx.db, {
-        sessionId: conversationFor(ctx, user.id),
+        sessionId: await conversationFor(ctx, user.id),
         userId: user.id,
         text: str(ctx.body, 'text', { max: 500 }),
         language: ctx.language,
@@ -539,8 +545,8 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/assistant/sessions',
     auth: 'user',
-    handler: (ctx) => ({
-      sessionId: assistant.startConversation(ctx.db, {
+    handler: async (ctx) => ({
+      sessionId: await assistant.startConversation(ctx.db, {
         userId: actor(ctx).user.id,
         side: 'consumer',
         language: ctx.language,
@@ -552,6 +558,6 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/assistant/sessions/:id',
     auth: 'user',
-    handler: (ctx) => assistant.transcript(ctx.db, ctx.params.id),
+    handler: async (ctx) => await assistant.transcript(ctx.db, ctx.params.id),
   },
 ];

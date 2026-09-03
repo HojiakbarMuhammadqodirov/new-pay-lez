@@ -32,7 +32,7 @@ export interface Delivered {
  * failure that affects one recipient should not stop the other 199.
  */
 export async function drain(db: Db, limit = 200): Promise<Delivered> {
-  const queued = notifications.pending(db, limit);
+  const queued = await notifications.pending(db, limit);
   if (queued.length === 0) return { attempted: 0, sent: 0, failed: 0 };
 
   if (mode() === 'live') {
@@ -43,6 +43,6 @@ export async function drain(db: Db, limit = 200): Promise<Delivered> {
   }
 
   const sent = queued.map((row) => row.id);
-  notifications.markSent(db, sent);
+  await notifications.markSent(db, sent);
   return { attempted: queued.length, sent: sent.length, failed: 0 };
 }

@@ -54,13 +54,13 @@ export interface Answer {
 
 /* ══════════════════════════════════════════════════════ sessions & turns ══ */
 
-export function startConversation(
+export async function startConversation(
   db: Db,
   input: { userId: string; side: Side; venueId?: string; language?: string; at?: Iso },
-): string {
+): Promise<string> {
   const at = input.at ?? now();
   const id = newId('ast');
-  db.run(
+  await db.run(
     `INSERT INTO assistant_sessions (id, user_id, venue_id, side, language, created_at, updated_at)
      VALUES ($i, $u, $v, $s, $l, $t, $t)`,
     {
@@ -75,20 +75,20 @@ export function startConversation(
   return id;
 }
 
-function appendMessage(
+async function appendMessage(
   db: Db,
   sessionId: string,
   role: 'user' | 'assistant',
   text: string,
   grounding: string[] = [],
   at: Iso = now(),
-): void {
+): Promise<void> {
   const seq =
-    (db.get<{ n: number | null }>(
+    ((await db.get<{ n: number | null }>(
       `SELECT MAX(seq) AS n FROM assistant_messages WHERE session_id = $s`,
       { s: sessionId },
-    )?.n ?? 0) + 1;
-  db.run(
+    ))?.n ?? 0) + 1;
+  await db.run(
     `INSERT INTO assistant_messages (id, session_id, seq, role, text, grounding, created_at)
      VALUES ($i, $s, $q, $r, $t, $g, $at)`,
     {
@@ -101,11 +101,11 @@ function appendMessage(
       at,
     },
   );
-  db.run(`UPDATE assistant_sessions SET updated_at = $t WHERE id = $s`, { t: at, s: sessionId });
+  await db.run(`UPDATE assistant_sessions SET updated_at = $t WHERE id = $s`, { t: at, s: sessionId });
 }
 
-export const transcript = (db: Db, sessionId: string) =>
-  db.all(`SELECT seq, role, text, grounding, created_at FROM assistant_messages
+export const transcript = async (db: Db, sessionId: string) =>
+  await db.all(`SELECT seq, role, text, grounding, created_at FROM assistant_messages
            WHERE session_id = $s ORDER BY seq`, { s: sessionId });
 
 /* ═══════════════════════════════════════════════════════ §10 the consumer ══ */
@@ -143,16 +143,16 @@ export async function askConsumer(
   const language = input.language ?? 'en';
   const text = input.text.trim().toLowerCase();
 
-  if (input.sessionId) appendMessage(db, input.sessionId, 'user', input.text, [], at);
+  if (input.sessionId) await appendMessage(db, input.sessionId, 'user', input.text, [], at);
 
-  const balance = ledger.balance(db, input.userId);
+  const balance = await ledger.balance(db, input.userId);
   const answer = /point|balance|punkt|баланс|ball/.test(text)
-    ? explainBalance(db, balance, input.city)
+    ? await explainBalance(db, balance, input.city)
     : /streak|seria|стрик/.test(text)
-      ? explainStreak(db, input.userId)
+      ? await explainStreak(db, input.userId)
       : /voucher|kupon|ваучер|discount|zniżk/.test(text)
-        ? explainVouchers(db, input.userId, balance, input.city)
-        : searchCatalogue(db, { text, language, city: input.city, userId: input.userId, at });
+        ? await explainVouchers(db, input.userId, balance, input.city)
+        : await searchCatalogue(db, { text, language, city: input.city, userId: input.userId, at });
 
   answer.text = await llm.compose({
     draft: answer.text,
@@ -161,14 +161,14 @@ export async function askConsumer(
     side: 'consumer',
   });
 
-  if (input.sessionId) appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
+  if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
   return answer;
 }
 
-function explainBalance(db: Db, balance: number, city: string | undefined): Answer {
+async function explainBalance(db: Db, balance: number, city: string | undefined): Promise<Answer> {
   /* §10.2's recommendation shape — "640 points is enough for 10% off at 12
      venues near you" — computed from the balance and the tiers, never generated. */
-  const reachable = db.all<{ venue_id: string; name: string; discount_pct: number; points_cost: number }>(
+  const reachable = await db.all<{ venue_id: string; name: string; discount_pct: number; points_cost: number }>(
     `SELECT t.venue_id, v.name, t.discount_pct, t.points_cost
        FROM voucher_tiers t JOIN venues v ON v.id = t.venue_id
       WHERE t.active = 1 AND v.status = 'live' AND t.points_cost <= $b
@@ -201,8 +201,8 @@ function explainBalance(db: Db, balance: number, city: string | undefined): Answ
   };
 }
 
-function explainStreak(db: Db, userId: string): Answer {
-  const state = db.get<{ streak: number; longest_streak: number; freezes: number; last_played: string | null }>(
+async function explainStreak(db: Db, userId: string): Promise<Answer> {
+  const state = await db.get<{ streak: number; longest_streak: number; freezes: number; last_played: string | null }>(
     `SELECT streak, longest_streak, freezes, last_played FROM player_states WHERE user_id = $u`,
     { u: userId },
   );
@@ -224,14 +224,14 @@ function explainStreak(db: Db, userId: string): Answer {
   };
 }
 
-function explainVouchers(db: Db, userId: string, balance: number, city: string | undefined): Answer {
-  const held = db.all<{ id: string; code: string; discount_pct: number; expires_at: string; name: string }>(
+async function explainVouchers(db: Db, userId: string, balance: number, city: string | undefined): Promise<Answer> {
+  const held = await db.all<{ id: string; code: string; discount_pct: number; expires_at: string; name: string }>(
     `SELECT i.id, i.code, i.discount_pct, i.expires_at, v.name FROM issued_vouchers i
        JOIN venues v ON v.id = i.venue_id
       WHERE i.user_id = $u AND i.status = 'active' ORDER BY i.expires_at`,
     { u: userId },
   );
-  if (held.length === 0) return explainBalance(db, balance, city);
+  if (held.length === 0) return await explainBalance(db, balance, city);
 
   const next = held[0];
   return {
@@ -257,12 +257,12 @@ function explainVouchers(db: Db, userId: string, balance: number, city: string |
  * fuzzy — a search that confidently returns the wrong café is worse than one
  * that says it found nothing and offers the nearest real thing.
  */
-function searchCatalogue(
+async function searchCatalogue(
   db: Db,
   input: { text: string; language: string; city?: string; userId?: string; at: Iso },
-): Answer {
+): Promise<Answer> {
   const term = `%${input.text.replace(/[%_]/g, '')}%`;
-  const venues = db.all<{ id: string; name: string; category: string; city: string; address: string | null }>(
+  const venues = await db.all<{ id: string; name: string; category: string; city: string; address: string | null }>(
     `SELECT id, name, category, city, address FROM venues
       WHERE status = 'live' AND deleted_at IS NULL
         AND (LOWER(name) LIKE $q OR LOWER(category) LIKE $q OR LOWER(COALESCE(subcategory,'')) LIKE $q)
@@ -271,7 +271,7 @@ function searchCatalogue(
     { q: term, city: input.city ?? null },
   );
 
-  const services = db.all<{ id: string; name: string; category_key: string | null; city: string | null }>(
+  const services = await db.all<{ id: string; name: string; category_key: string | null; city: string | null }>(
     `SELECT id, name, category_key, city FROM guidance_services
       WHERE active = 1 AND (LOWER(name) LIKE $q OR LOWER(COALESCE(category_key,'')) LIKE $q)
         AND ($city IS NULL OR city = $city)
@@ -279,7 +279,7 @@ function searchCatalogue(
     { q: term, city: input.city ?? null },
   );
 
-  const offers = deals.browse(
+  const offers = await deals.browse(
     db,
     { userId: input.userId, language: input.language, city: input.city, at: input.at },
     { limit: 6 },
@@ -335,12 +335,12 @@ export interface VenueContext {
  * card, set up a points discount. A brand-new partner shown invented benchmarks
  * learns on day one that the numbers here are decoration.
  */
-export function venueContext(db: Db, venueId: string, at: Iso = now()): VenueContext {
-  const venue = getVenue(db, venueId);
-  const view = budget.budgetFor(db, venueId, at);
-  const overview = analytics.overview(db, venueId, { at });
-  const map = analytics.heatmap(db, venueId, { at });
-  const mix = analytics.languageMix(db, venueId, { at });
+export async function venueContext(db: Db, venueId: string, at: Iso = now()): Promise<VenueContext> {
+  const venue = await getVenue(db, venueId);
+  const view = await budget.budgetFor(db, venueId, at);
+  const overview = await analytics.overview(db, venueId, { at });
+  const map = await analytics.heatmap(db, venueId, { at });
+  const mix = await analytics.languageMix(db, venueId, { at });
 
   const measured = overview.visits.value ?? 0;
   const empty = measured === 0;
@@ -447,14 +447,14 @@ export interface Draft {
  * prose — a suggestion the authoring endpoint would reject is not a suggestion,
  * it is a trap.
  */
-export function draftFor(
+export async function draftFor(
   db: Db,
   input: { venueId: string; goal: string; budgetMinor?: number; at?: Iso },
-): Draft {
+): Promise<Draft> {
   const at = input.at ?? now();
-  const venue = getVenue(db, input.venueId);
-  const context = venueContext(db, input.venueId, at);
-  const map = analytics.heatmap(db, input.venueId, { at });
+  const venue = await getVenue(db, input.venueId);
+  const context = await venueContext(db, input.venueId, at);
+  const map = await analytics.heatmap(db, input.venueId, { at });
   const goal = input.goal.toLowerCase();
 
   const reasoning: string[] = [];
@@ -522,11 +522,11 @@ export function draftFor(
  * Ordered and capped. An unranked list of fourteen recommendations is a list
  * nobody acts on, and the cap is what forces the ordering to mean something.
  */
-export function review(db: Db, venueId: string, at: Iso = now(), limit = 5) {
-  const view = budget.budgetFor(db, venueId, at);
+export async function review(db: Db, venueId: string, at: Iso = now(), limit = 5) {
+  const view = await budget.budgetFor(db, venueId, at);
   const out: Array<{ key: string; text: string; action: { label: string; href: string }; weight: number }> = [];
 
-  const stale = db.all<{ id: string; seen_count: number; opened_count: number; claimed_count: number }>(
+  const stale = await db.all<{ id: string; seen_count: number; opened_count: number; claimed_count: number }>(
     `SELECT id, seen_count, opened_count, claimed_count FROM hot_deals
       WHERE venue_id = $v AND status = 'live'`,
     { v: venueId },
@@ -552,7 +552,7 @@ export function review(db: Db, venueId: string, at: Iso = now(), limit = 5) {
     });
   }
 
-  const idle = db.get<{ n: number }>(
+  const idle = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active'`,
     { v: venueId },
   );
@@ -581,9 +581,9 @@ export async function askPartner(
 ): Promise<Answer> {
   const at = input.at ?? now();
   const text = input.text.trim().toLowerCase();
-  if (input.sessionId) appendMessage(db, input.sessionId, 'user', input.text, [], at);
+  if (input.sessionId) await appendMessage(db, input.sessionId, 'user', input.text, [], at);
 
-  const context = venueContext(db, input.venueId, at);
+  const context = await venueContext(db, input.venueId, at);
   if (context.empty) {
     const answer = emptyContext(
       "I have nothing measured for this venue yet — I'll learn as customers visit. Here is what you can start today.",
@@ -591,13 +591,13 @@ export async function askPartner(
     );
     answer.facts = context.facts;
     answer.results = context.suggestions;
-    if (input.sessionId) appendMessage(db, input.sessionId, 'assistant', answer.text, [], at);
+    if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, [], at);
     return answer;
   }
 
   let answer: Answer;
   if (/quiet|slow|busy|when/.test(text)) {
-    const map = analytics.heatmap(db, input.venueId, { at });
+    const map = await analytics.heatmap(db, input.venueId, { at });
     answer = {
       text: map.quietest
         ? `${dayName(map.quietest.weekday)} at ${map.quietest.hour}:00 is your quietest open hour — ${map.quietest.visits} visits this period.`
@@ -609,7 +609,7 @@ export async function askPartner(
       empty: false,
     };
   } else if (/cost|spend|budget|roi/.test(text)) {
-    const cost = analytics.costPerNewCustomer(db, input.venueId, { at });
+    const cost = await analytics.costPerNewCustomer(db, input.venueId, { at });
     answer = {
       text: cost.costPerNewCustomerMinor.suppressed
         ? 'Too few new customers this period to report a cost per customer without identifying them.'
@@ -624,7 +624,7 @@ export async function askPartner(
       empty: false,
     };
   } else {
-    const overview = analytics.overview(db, input.venueId, { at });
+    const overview = await analytics.overview(db, input.venueId, { at });
     answer = {
       text: `${overview.visits.value} visits from ${overview.customers.value} customers this period.`,
       facts: context.facts,
@@ -644,22 +644,22 @@ export async function askPartner(
     side: 'partner',
   });
 
-  if (input.sessionId) appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
+  if (input.sessionId) await appendMessage(db, input.sessionId, 'assistant', answer.text, answer.grounding, at);
   return answer;
 }
 
 /** Store the working draft so the dialogue survives a reload (B8). */
-export function saveDraft(db: Db, sessionId: string, draft: Draft, at: Iso = now()): void {
-  const changed = db.run(`UPDATE assistant_sessions SET draft = $d, updated_at = $t WHERE id = $s`, {
+export async function saveDraft(db: Db, sessionId: string, draft: Draft, at: Iso = now()): Promise<void> {
+  const changed = (await db.run(`UPDATE assistant_sessions SET draft = $d, updated_at = $t WHERE id = $s`, {
     d: JSON.stringify(draft),
     t: at,
     s: sessionId,
-  }).changes;
+  })).changes;
   if (changed === 0) throw new DomainError('not_found', 'conversation not found');
 }
 
-export function loadDraft(db: Db, sessionId: string): Draft | null {
-  const row = db.get<{ draft: string | null }>(
+export async function loadDraft(db: Db, sessionId: string): Promise<Draft | null> {
+  const row = await db.get<{ draft: string | null }>(
     `SELECT draft FROM assistant_sessions WHERE id = $s`,
     { s: sessionId },
   );
@@ -667,4 +667,4 @@ export function loadDraft(db: Db, sessionId: string): Draft | null {
 }
 
 /** Venues an owner may point the partner assistant at. */
-export const venuesForOwner = (db: Db, ownerId: string) => venuesOf(db, ownerId);
+export const venuesForOwner = async (db: Db, ownerId: string) => await venuesOf(db, ownerId);

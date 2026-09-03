@@ -129,13 +129,13 @@ export function termPricing(monthlyMinor: number, months: number, discountBp: nu
 }
 
 /** The terms a plan is sold on, cheapest commitment first. Empty means monthly only. */
-export const termsFor = (db: Db, planId: string): PlanTerm[] =>
-  db
+export const termsFor = async (db: Db, planId: string): Promise<PlanTerm[]> =>
+  (await db
     .all<{ months: number; discount_bp: number; price_minor: number; total_minor: number }>(
       `SELECT months, discount_bp, price_minor, total_minor FROM plan_terms
         WHERE plan_id = $p ORDER BY months`,
       { p: planId },
-    )
+    ))
     .map((row) => ({
       months: row.months,
       discountBp: row.discount_bp,
@@ -150,15 +150,15 @@ export const termsFor = (db: Db, planId: string): PlanTerm[] =>
  * term beside it is only one of the four prices this plan has, and a client
  * that has to ask twice will eventually render the first answer on its own.
  */
-export const plansFor = (db: Db, audience: Audience): Array<Plan & { terms: PlanTerm[] }> =>
-  db
+export const plansFor = async (db: Db, audience: Audience): Promise<Array<Plan & { terms: PlanTerm[] }>> =>
+  await Promise.all((await db
     .all<Plan>(`SELECT * FROM plans WHERE audience = $a AND active = 1 ORDER BY rank`, {
       a: audience,
-    })
-    .map((plan) => ({ ...plan, terms: termsFor(db, plan.id) }));
+    }))
+    .map(async (plan) => ({ ...plan, terms: await termsFor(db, plan.id) })));
 
-export const freePlan = (db: Db, audience: Audience): Plan => {
-  const plan = db.get<Plan>(
+export const freePlan = async (db: Db, audience: Audience): Promise<Plan> => {
+  const plan = await db.get<Plan>(
     `SELECT * FROM plans WHERE audience = $a AND active = 1 ORDER BY rank LIMIT 1`,
     { a: audience },
   );
@@ -176,10 +176,10 @@ export const freePlan = (db: Db, audience: Audience): Plan => {
  * alternative — refusing to answer — would take perks away from somebody who
  * paid twice.
  */
-export function activeSubscription(db: Db, subject: Subject): Subscription | undefined {
+export async function activeSubscription(db: Db, subject: Subject): Promise<Subscription | undefined> {
   const clause = 'userId' in subject ? 'user_id = $s' : 'venue_id = $s';
   const value = 'userId' in subject ? subject.userId : subject.venueId;
-  return db.get<Subscription>(
+  return await db.get<Subscription>(
     `SELECT s.* FROM subscriptions s JOIN plans p ON p.id = s.plan_id
       WHERE ${clause} AND s.status IN ('trialing', 'active', 'grace')
       ORDER BY p.rank DESC, s.started_at DESC LIMIT 1`,
@@ -187,22 +187,22 @@ export function activeSubscription(db: Db, subject: Subject): Subscription | und
   );
 }
 
-export function planFor(db: Db, subject: Subject): Plan {
+export async function planFor(db: Db, subject: Subject): Promise<Plan> {
   const audience: Audience = 'userId' in subject ? 'consumer' : 'partner';
-  const subscription = activeSubscription(db, subject);
-  if (!subscription) return freePlan(db, audience);
+  const subscription = await activeSubscription(db, subject);
+  if (!subscription) return await freePlan(db, audience);
   return (
-    db.get<Plan>(`SELECT * FROM plans WHERE id = $p`, { p: subscription.plan_id }) ??
-    freePlan(db, audience)
+    (await db.get<Plan>(`SELECT * FROM plans WHERE id = $p`, { p: subscription.plan_id })) ??
+    (await freePlan(db, audience))
   );
 }
 
 export type Entitlements = Record<string, string>;
 
 /** Every entitlement the account currently has, keyed. */
-export function entitlementsFor(db: Db, subject: Subject): Entitlements {
-  const plan = planFor(db, subject);
-  const rows = db.all<{ key: string; value: string }>(
+export async function entitlementsFor(db: Db, subject: Subject): Promise<Entitlements> {
+  const plan = await planFor(db, subject);
+  const rows = await db.all<{ key: string; value: string }>(
     `SELECT key, value FROM plan_entitlements WHERE plan_id = $p`,
     { p: plan.id },
   );
@@ -244,7 +244,7 @@ export function requireCapacity(ent: Entitlements, key: string, used: number, fa
 
 /* ─────────────────────────────────────────────────────────── the lifecycle ── */
 
-export function startSubscription(
+export async function startSubscription(
   db: Db,
   input: {
     subject: Subject;
@@ -253,22 +253,22 @@ export function startSubscription(
     externalRef?: string;
     at?: Iso;
   },
-): Subscription {
+): Promise<Subscription> {
   const at = input.at ?? now();
   const audience: Audience = 'userId' in input.subject ? 'consumer' : 'partner';
-  const plan = db.get<Plan>(`SELECT * FROM plans WHERE audience = $a AND code = $c`, {
+  const plan = await db.get<Plan>(`SELECT * FROM plans WHERE audience = $a AND code = $c`, {
     a: audience,
     c: input.planCode,
   });
   if (!plan) throw new DomainError('not_found', 'plan not found');
 
-  return db.tx(() => {
+  return db.tx(async () => {
     /* D2's "guard against double-billing": an existing entitled subscription is
        superseded rather than left running, and the supersession is visible in
        the row's `ended_at` rather than being a silent delete. */
-    const existing = activeSubscription(db, input.subject);
+    const existing = await activeSubscription(db, input.subject);
     if (existing) {
-      db.run(
+      await db.run(
         `UPDATE subscriptions SET status = 'cancelled', ended_at = $t, updated_at = $t WHERE id = $i`,
         { t: at, i: existing.id },
       );
@@ -290,7 +290,7 @@ export function startSubscription(
      * could tell it from a card that failed.
      */
     const trialing = plan.trial_days > 0;
-    db.run(
+    await db.run(
       `INSERT INTO subscriptions
          (id, user_id, venue_id, plan_id, status, source, external_ref, started_at,
           renews_at, created_at, updated_at)
@@ -307,7 +307,7 @@ export function startSubscription(
         r: plusDays(at, trialing ? plan.trial_days : plan.interval === 'year' ? 365 : 30),
       },
     );
-    return db.get<Subscription>(`SELECT * FROM subscriptions WHERE id = $i`, { i: id })!;
+    return (await db.get<Subscription>(`SELECT * FROM subscriptions WHERE id = $i`, { i: id }))!;
   });
 }
 
@@ -320,15 +320,15 @@ export function startSubscription(
  * backend disagreeing with the payment processor — which is the one party whose
  * view of whether money arrived is authoritative.
  */
-export function setStatus(
+export async function setStatus(
   db: Db,
   subscriptionId: string,
   status: Subscription['status'],
   at: Iso = now(),
   renewsAt?: Iso | null,
-): void {
+): Promise<void> {
   const ends = ENTITLED.has(status) ? null : at;
-  db.run(
+  await db.run(
     `UPDATE subscriptions
         SET status = $s, ended_at = $e, renews_at = COALESCE($r, renews_at), updated_at = $t
       WHERE id = $i`,
@@ -343,19 +343,19 @@ export function setStatus(
  * fails on a Sunday is a card that works on a Monday, and a program that cuts a
  * paying customer off at the first decline loses more than the dunning costs.
  */
-export function runRenewals(db: Db, at: Iso = now(), graceDays = 7): { moved: number } {
-  const due = db.all<Subscription>(
+export async function runRenewals(db: Db, at: Iso = now(), graceDays = 7): Promise<{ moved: number }> {
+  const due = await db.all<Subscription>(
     `SELECT * FROM subscriptions
       WHERE status IN ('trialing', 'active', 'grace') AND renews_at IS NOT NULL AND renews_at <= $t`,
     { t: at },
   );
   let moved = 0;
-  db.tx(() => {
+  await db.tx(async () => {
     for (const sub of due) {
       if (sub.status === 'grace') {
-        setStatus(db, sub.id, 'expired', at);
+        await setStatus(db, sub.id, 'expired', at);
       } else {
-        db.run(
+        await db.run(
           `UPDATE subscriptions SET status = 'grace', renews_at = $r, updated_at = $t WHERE id = $i`,
           { r: plusDays(at, graceDays), t: at, i: sub.id },
         );
@@ -373,17 +373,17 @@ export function runRenewals(db: Db, at: Iso = now(), graceDays = 7): { moved: nu
  * that extends the subscription twice is a month of free service. Returns
  * `false` when the event has already been seen.
  */
-export function recordBillingEvent(
+export async function recordBillingEvent(
   db: Db,
   input: { source: string; eventType: string; externalId: string; payload: unknown; at?: Iso },
-): boolean {
+): Promise<boolean> {
   const at = input.at ?? now();
-  const existing = db.get<{ id: string }>(
+  const existing = await db.get<{ id: string }>(
     `SELECT id FROM billing_events WHERE source = $s AND external_id = $e`,
     { s: input.source, e: input.externalId },
   );
   if (existing) return false;
-  db.run(
+  await db.run(
     `INSERT INTO billing_events (id, source, event_type, external_id, payload, received_at)
      VALUES ($i, $s, $t, $e, $p, $at)`,
     {

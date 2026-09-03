@@ -6,11 +6,12 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { GAMES, VOUCHER_CARDS, type GameId } from './content';
+import { GAMES, type GameId } from './content';
 import { useApi } from './api/useApi';
 import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
 import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
+import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './api/wallet';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -18,7 +19,6 @@ import { fxForCountry } from './i18n/fx';
 import { useAuth } from './auth/context';
 import {
   awardPoints,
-  CHEAPEST_VOUCHER,
   ENERGY_REGEN_MINUTES,
   flightAward,
   freezesOf,
@@ -33,6 +33,7 @@ import {
 } from './auth/player';
 import { FlightGame } from './flight/FlightGame';
 import {
+  flagGlyph,
   quizBankFor,
   quizCountryFor,
   wordListFor,
@@ -49,6 +50,7 @@ import {
   type Question,
 } from './games/rounds';
 import { WordBuilder, type ServerWord } from './games/WordBuilder';
+import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
 import '../components/GlobeHero/ui/flagFont.css';
@@ -119,23 +121,20 @@ type Game = (typeof GAMES)[number];
  */
 const FEATURED = 0;
 
-/** The voucher ladder, cheapest first and deduplicated. */
-const TIERS = [...new Set(VOUCHER_CARDS.map((card) => card.points))].sort((a, b) => a - b);
-
-/**
- * The rung the points bar is filling toward: the cheapest card in the catalogue
- * this balance will not yet buy.
+/*
+ * There was a `TIERS` ladder here — the distinct points prices on the catalogue
+ * in `content.ts`, cheapest first — and `nextTier` read the rung above a balance
+ * off it, so the points bar always had somewhere to go.
  *
- * Read out of `VOUCHER_CARDS` rather than fixed at `CHEAPEST_VOUCHER`, because a
- * bar pinned to 100 is full for every player past their first afternoon and
- * then says nothing for the rest of the account's life. The ladder is real —
- * 100, 200, 300, 400, 500 — so the bar has somewhere to go at every balance. A
- * player who can afford everything gets the top rung and a full bar, which is
- * the honest end of it.
+ * The catalogue is `GET /v1/gift-cards` now, so the ladder is whatever an
+ * operator has stocked and this file cannot know it without asking. `nextRung`
+ * and `cheapestCost` in `api/wallet.ts` do the same arithmetic over the fetched
+ * shelf, and both return `null` for an empty one — which is a state this screen
+ * has to render rather than paper over: with nothing on the shelf there is no
+ * rung, so the bar and the "N points from a voucher" line are simply not drawn.
+ * A bar filling toward a number nobody has set is the kind of figure this whole
+ * pass removed.
  */
-function nextTier(points: number): number {
-  return TIERS.find((cost) => cost > points) ?? TIERS[TIERS.length - 1];
-}
 
 /**
  * How far the tank is through the unit it is currently earning, plus the two
@@ -159,8 +158,15 @@ function nextTier(points: number): number {
  * is written again, and the animation re-syncs to the real clock. Which is also
  * the answer to a laptop lid closed for a week.
  */
-function chargeOf(nextAt: number, now: number): { span: number; into: number; at: number } {
-  const span = ENERGY_REGEN_MINUTES * 60_000;
+function chargeOf(
+  nextAt: number,
+  now: number,
+  regenMinutes: number = ENERGY_REGEN_MINUTES,
+): { span: number; into: number; at: number } {
+  /* The plan's own refill interval, defaulting to the free one: a Pro cell
+     fills over an hour and a free cell over two, and a bar that animated at
+     the free rate on a paid account would sit visibly still. */
+  const span = regenMinutes * 60_000;
   /* Clamped both ways: a clock dragged backwards must not run the bar past its
      own cell, and a `nextAt` already in the past is a full cell, not a negative
      one. */
@@ -807,10 +813,12 @@ function Result({
   correct,
   total,
   points,
+  paid,
   balance,
+  cheapest,
   streak,
   scoreLine,
-  canAgain,
+  nextPays,
   onAgain,
   onBack,
 }: {
@@ -819,18 +827,31 @@ function Result({
   total: number;
   /** What the round paid. The headline figure. */
   points: number;
+  /**
+   * Whether the round was ever going to pay.
+   *
+   * A practice round — one played on an empty tank — and a round where every
+   * answer went wrong both show a `0`, and only one of them is worth
+   * explaining. This is which.
+   */
+  paid: boolean;
   /** The balance *after* the round, for the line about what it is worth. */
   balance: number;
+  /**
+   * What the cheapest gift card on the shelf costs, or `null` for a shelf that
+   * is empty or has not answered. The card says nothing about vouchers in that
+   * case rather than quoting a price nobody set.
+   */
+  cheapest: number | null;
   streak: number;
   /** Replaces the "n / m correct" line for a round that does not ask questions. */
   scoreLine?: string;
-  /** False when the tank is empty. `start` refuses on no energy, so without this
-   *  the one button on the card that a player is certain to press did nothing
-   *  at all and gave no reason — the two start buttons already say `noEnergy`.
-   *  It fires far more often now: the round that just finished spent one
-   *  whether it was won or lost, so "Again" is the press that finds the tank
-   *  empty. */
-  canAgain: boolean;
+  /**
+   * Whether the round behind "Again" will pay — the tank *now*, not the round
+   * that just ended. The two differ in the commonest case there is: a paid
+   * round that spent the last energy in the tank.
+   */
+  nextPays: boolean;
   onAgain: () => void;
   onBack: () => void;
 }) {
@@ -842,9 +863,11 @@ function Result({
    * The supplied games spec is emphatic about this and it is right: a bare score
    * is a dead end, and "+40 points" means nothing until it is "+40 points, 60
    * from a discount". This is the line that makes a second round worth playing,
-   * so it is on every result card rather than only on the good ones.
+   * so it is on every result card rather than only on the good ones — **when
+   * there is a shelf to be short of.** With none, the line is dropped rather
+   * than quoting the 100 points this file used to carry.
    */
-  const short = Math.max(0, CHEAPEST_VOUCHER - balance);
+  const short = cheapest === null ? null : Math.max(0, cheapest - balance);
 
   return (
     <div className="round round-result">
@@ -870,26 +893,37 @@ function Result({
         {scoreLine ?? fill(copy.resultScore, { correct: String(correct), total: String(total) })}
       </p>
       {/* Only a round that needs explaining says anything in words, and with the
-          repeat-play taper gone there is exactly one such round left: the one
-          that paid nothing. `resultPoints` used to restate the figure directly
-          above it, which was fine as a line of body copy and is noise under a
-          4.5rem one. */}
-      {points === 0 && <p className="result-points">{copy.resultNone}</p>}
-      <p className="result-toward">
-        {short > 0
-          ? fill(copy.resultToward, { points: String(short) })
-          : copy.resultAfford}
-      </p>
+          repeat-play taper gone there are exactly two such rounds left: the one
+          that scored nothing, and the one that was never going to pay. They
+          print the same `0` and they are not the same news — one is "you got
+          none right", the other "the tank was empty and this was practice" —
+          so the second says so rather than letting the player read it as the
+          first. `resultPoints` used to restate the figure directly above it,
+          which was fine as a line of body copy and is noise under a 4.5rem
+          one. */}
+      {!paid ? (
+        <p className="result-points">{copy.practiceResult}</p>
+      ) : (
+        points === 0 && <p className="result-points">{copy.resultNone}</p>
+      )}
+      {short !== null && (
+        <p className="result-toward">
+          {short > 0 ? fill(copy.resultToward, { points: String(short) }) : copy.resultAfford}
+        </p>
+      )}
       <p className="result-streak">{fill(copy.resultStreak, { streak: String(streak) })}</p>
 
       <div className="result-actions">
-        <button
-          type="button"
-          className="btn btn-solid"
-          disabled={!canAgain}
-          onClick={onAgain}
-        >
-          {canAgain ? copy.again : copy.noEnergy}
+        {/* Always live now. This was the press most likely to find an empty
+            tank — the round that just finished spent the last one — and it used
+            to switch itself off and say so. There is a round behind it either
+            way; what changes is whether it pays.
+
+            Labelled off `nextPays` and not off `paid`: those are two different
+            rounds. The commonest case on this card is a *paid* round that took
+            the last energy with it, where the press underneath is practice. */}
+        <button type="button" className="btn btn-solid" onClick={onAgain}>
+          {nextPays ? copy.again : copy.practice}
         </button>
         <a className="btn btn-ghost" href={PATHS.vouchers}>
           {copy.resultSpend}
@@ -946,31 +980,17 @@ function Board() {
   /*
    * **Everybody on this board is a real account.**
    *
-   * It used to be five invented codes in `content.ts` — PY7178 with 21 correct,
+   * It was five invented codes in `content.ts` once — PY7178 with 21 correct,
    * and so on — which is why a brand-new player on a brand-new browser was
-   * ranked fourth behind four people who do not exist. The rows come off the
-   * directory now (`auth/directory.ts`, the same rows the console reads), so a
-   * board with one name on it is the honest answer to a product with one
-   * player, and it fills up as people sign up.
+   * ranked fourth behind four people who do not exist. Then it was this
+   * device’s directory, which had the same problem one step quieter: the two
+   * seeded accounts sat on it, and a filter had to exist to keep the demo
+   * player with her seven-day streak off the top of a real table.
    *
-   * The signed-in player is *in* it, ranked with everyone else — a leaderboard
-   * you are not on is a table of strangers — and is read from `player` rather
-   * than from their directory row, because the round they have just finished is
-   * in state before it is committed.
-   *
-   * Accounts with nothing yet are kept rather than filtered: a board that hides
-   * everybody on zero is a board that tells a new player they are alone.
-   *
-   * Two kinds *are* filtered. Business accounts, which have no player state at
-   * all. And **the seeded demo accounts**, which is the second half of the same
-   * complaint the invented codes were: Dilnoza ships with a seven-day streak and
-   * 108 correct answers so that somebody signing in with the credentials printed
-   * on the sign-in form can see a furnished account, and a new player has no way
-   * to tell that row apart from a stranger who is simply better than them. She
-   * is demo data sitting at the top of a real board.
-   *
-   * She still appears on the board she is signed into, as `You` — the filter is
-   * on other people's rows, not on the account itself.
+   * Both are gone — the codes, and then the seeds the filter existed for — so
+   * there is nothing left to filter and no filter left to write. Accounts with
+   * nothing yet are kept: a board that hides everybody on zero is a board that
+   * tells a new player they are alone.
    */
   /*
    * **The board is the server's, and the rows are people.**
@@ -1075,8 +1095,34 @@ function Board() {
 export function GamesApp() {
   const copy = useCopy();
   const games = copy.games;
+  /* The paid plan's own name, from the same dictionary block the pricing
+     cards read, so the button here and the card on the landing page cannot
+     end up calling the plan two different things. Index 1 is Pro — the list
+     is index-aligned with `SUB_PLANS` in `content.ts`. */
+  const upgradeName = copy.subscription.plans[1].name;
   const [language] = useLanguage();
-  const { account, setPlayer } = useAuth();
+  const { account, entitlements, plan, setPlayer } = useAuth();
+
+  /*
+   * What this account's plan actually buys, with the free figures as the
+   * fallback.
+   *
+   * The two numbers were module constants until subscriptions existed, and
+   * `auth/player.ts` said so: the free plan was the only one this site could
+   * resolve. It can resolve any of them now — `GET /v1/me` returns the
+   * entitlements the server itself charges a round against — so the gauge
+   * shows the tank the player actually has rather than everybody's smallest.
+   *
+   * `Number(undefined)` is `NaN` and `NaN || x` is `x`, so a missing key, an
+   * unparsable value and a signed-out session all land on the free figure.
+   */
+  const limits = useMemo(
+    () => ({
+      max: Number(entitlements?.daily_energy) || MAX_ENERGY,
+      regenMinutes: Number(entitlements?.energy_regen_minutes) || ENERGY_REGEN_MINUTES,
+    }),
+    [entitlements],
+  );
   const [playing, setPlaying] = useState<GameId | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
@@ -1096,6 +1142,13 @@ export function GamesApp() {
     /** What the round paid. */
     points: number;
     balance: number;
+    /**
+     * False for a **practice** round — one played on an empty tank, which banks
+     * nothing. The card has to say which kind of nothing a `0` is: a round
+     * everything went wrong on and a round that was never going to pay look
+     * identical on the figure alone.
+     */
+    paid: boolean;
   } | null>(null);
 
   /*
@@ -1137,12 +1190,13 @@ export function GamesApp() {
    * below, because the timer that watches it is a hook and hooks cannot sit
    * under a conditional.
    */
-  const tank = player ? energyOf(player) : null;
+  const tank = player ? energyOf(player, new Date(), limits) : null;
   const energy = tank?.count ?? 0;
   const nextEnergyAt = tank?.nextAt ?? null;
   /* The cell in the gauge that is currently filling. `null` on a full tank,
      which is the one state with nothing to draw. */
-  const charge = nextEnergyAt === null ? null : chargeOf(nextEnergyAt, Date.now());
+  const charge =
+    nextEnergyAt === null ? null : chargeOf(nextEnergyAt, Date.now(), limits.regenMinutes);
 
   /*
    * Wake the screen when energy lands, and once a minute until it does.
@@ -1184,15 +1238,37 @@ export function GamesApp() {
   const view = playing ?? (result ? 'result' : 'cards');
   useReveal(`games:${view}:${loading}`);
 
+  /*
+   * The shelf, for the one thing this screen says about vouchers: how far a
+   * balance is from the cheapest one.
+   *
+   * `null` covers both "not answered" and "nothing stocked", because the screen
+   * does the same thing with either — it says nothing about vouchers. There is
+   * no third rendering to earn a third state here, which is why this is the one
+   * `useApi` on the page whose union is collapsed. The catalogue that *does*
+   * have to tell them apart is `#/vouchers`, and it does.
+   */
+  const shelf = useApi<GiftCardStock[]>(GIFT_CARDS_PATH);
+  const shelfRows = shelf.state.status === 'ready' ? shelf.state.data : null;
+
   if (!player) return null;
 
   const game = GAMES.find((g) => g.id === playing);
 
-  /* The points panel's three numbers. `target` is the rung of the voucher
-     ladder above this balance, so the bar always has somewhere to go. */
-  const target = nextTier(player.points);
-  const short = Math.max(0, target - player.points);
-  const pct = Math.min(100, Math.round((player.points / target) * 100));
+  /*
+   * The points panel's numbers, and all of them are now conditional on a shelf.
+   *
+   * `target` is the rung of the voucher ladder above this balance, so the bar
+   * has somewhere to go — and the ladder is `GET /v1/gift-cards`, which may be
+   * empty or may not have answered. `null` means there is no rung, and the
+   * panel drops the bar, the scale and the goal sentence rather than filling
+   * toward a number this file made up. The balance itself is always shown: it
+   * is the player's, and it is true whatever is on the shelf.
+   */
+  const target = shelfRows === null ? null : nextRung(shelfRows, player.points);
+  const short = target === null ? null : Math.max(0, target - player.points);
+  const pct = target === null ? 0 : Math.min(100, Math.round((player.points / target) * 100));
+  const cheapest = shelfRows === null ? null : cheapestCost(shelfRows);
 
   /**
    * Start a round.
@@ -1201,10 +1277,21 @@ export function GamesApp() {
    * what `loading` is for. It is not only a label: it is the guard on the door,
    * refusing a second start while one is in flight, because two builds racing
    * would land the loser's questions on the winner's game.
+   *
+   * **An empty tank is no longer a closed door.** It opens a *practice* round
+   * instead — the same round, banking nothing — because "come back in two
+   * hours" was the one screen on this site with nothing on it to do, and the
+   * thing energy is supposed to ration is what a day is *worth*, not whether
+   * somebody may play. Every refusal that used to live here is now a label.
    */
   const start = (id: GameId) => {
     const chosen = GAMES.find((g) => g.id === id);
-    if (!chosen || energy <= 0 || loading) return;
+    if (!chosen || loading) return;
+
+    /* Read once for the whole start rather than per branch: the three server
+       paths below all have to ask for the same kind of round, and a second read
+       a few lines later is how one of them ends up asking for the other kind. */
+    const practice = energy <= 0;
 
     setResult(null);
     setSession(null);
@@ -1225,7 +1312,7 @@ export function GamesApp() {
     if ((chosen.kind === 'flight' || chosen.kind === 'memory' || chosen.kind === 'word') && hasToken()) {
       setQuestions([]);
       setLoading(true);
-      startRound(SERVER_GAME[id], language)
+      startRound(SERVER_GAME[id], language, practice)
         .then((round) => {
           setSession(round.sessionId);
           setContent(round.content);
@@ -1260,18 +1347,22 @@ export function GamesApp() {
     if (hasToken()) {
       setPlaying(null);
       setLoading(true);
-      startRound(SERVER_GAME[id], language)
+      startRound(SERVER_GAME[id], language, practice)
         .then((round) => {
           const content = round.content as ServerQuiz;
           setSession(round.sessionId);
           setQuestions(
             content.questions.map((q) => ({
               prompt: q.prompt,
-              /* A flag round's prompt *is* the flag. The server sends the emoji
-                 in the prompt for `flags`, so the site's glyph slot takes it and
-                 the text line goes to the question the site already owns. */
+              /* A flag round's prompt *is* the flag, so it goes to the site's
+                 glyph slot and the text line takes the question the site owns.
+                 It arrives as an **ISO code** rather than as the emoji — the
+                 server keeps the rendering decision out of its database — and
+                 `flagGlyph` is what turns one into the other. Reading it as the
+                 glyph directly was the bug: the question drew as "UZ", which is
+                 the answer written on the front of the card. */
               ...(chosen.kind === 'flag'
-                ? { glyph: q.prompt, prompt: games.whichCountry }
+                ? { glyph: flagGlyph(q.prompt), prompt: games.whichCountry }
                 : {}),
               options: q.options,
               /* Unknown here, and that is the point — see `Round.resolve`. */
@@ -1332,16 +1423,27 @@ export function GamesApp() {
    * pays what it scored and the card has one number to show.
    *
    * The `now` is still built once and passed in, because `awardPoints` defaults
-   * to a fresh `new Date()` and the streak arithmetic is day-boundary work.
+   * to a fresh `new Date()` and the streak arithmetic is day-boundary work —
+   * and it is now shared with the practice test, so the card cannot report a
+   * round as unpaid that `awardPoints` banked a millisecond earlier.
+   *
+   * **What the round *scored* is not what the card shows on an empty tank.**
+   * A practice round still computes its points — the scorers know nothing about
+   * energy and should not — and `awardPoints` declines to bank them. Showing
+   * the scored figure anyway would put a `+5` on a card above a balance that
+   * did not move, which is the one number on the screen a player checks.
    */
   const bank = (award: Award, correct: number) => {
-    const next = awardPoints(player, award, new Date());
+    const now = new Date();
+    const paid = energyOf(player, now, limits).count > 0;
+    const next = awardPoints(player, award, now);
     setPlayer(next);
     setResult({
       won: award.won,
       correct,
-      points: award.points,
+      points: paid ? award.points : 0,
       balance: next.points,
+      paid,
     });
   };
   /**
@@ -1397,34 +1499,55 @@ export function GamesApp() {
    * *from* the response — balance, streak, freezes, energy — because those are
    * the figures now in the database, and a locally recomputed one beside them
    * is a second number on the screen that disagrees with the first.
+   *
+   * **A practice round mirrors as "nothing happened", and the anchor is the
+   * part that has to be got right.** The server banked nothing and took no
+   * energy, so re-stamping `energyAt` at `Date.now()` would throw away however
+   * much of the current interval had already elapsed and push the next unit up
+   * to two hours out — the local mirror would punish a round the server charged
+   * nothing for. The lifetime tallies and `lastPlayed` are left alone for the
+   * same reason: they are what the server did not write.
    */
   const bankServer = (id: string, report?: Record<string, unknown>, fallbackCorrect = 0) => {
     setSession(null);
     finishRound(id, report)
       .then((done) => {
-        setPlayer({
-          ...player,
-          points: done.balance,
-          streak: done.streak,
-          freezes: done.freezes,
-          energy: done.energyLeft,
-          energyAt: done.energyLeft >= MAX_ENERGY ? null : Date.now(),
-          answered: player.answered + done.answered,
-          correct: player.correct + done.correct,
-          lastPlayed: todayLocal(),
-        });
+        setPlayer(
+          done.paid
+            ? {
+                ...player,
+                points: done.balance,
+                streak: done.streak,
+                freezes: done.freezes,
+                energy: done.energyLeft,
+                energyAt: done.energyLeft >= limits.max ? null : Date.now(),
+                answered: player.answered + done.answered,
+                correct: player.correct + done.correct,
+                lastPlayed: todayLocal(),
+              }
+            : player,
+        );
         setResult({
           won: done.won,
           correct: done.correct,
           points: done.score,
           balance: done.balance,
+          paid: done.paid,
         });
       })
       .catch(() => {
         /* The round happened and we cannot say what it was worth. A locally
            computed figure here would invent the one number the player came
-           for. */
-        setResult({ won: false, correct: fallbackCorrect, points: 0, balance: player.points });
+           for. `paid: true` because it very likely was — the card then shows a
+           bare 0 rather than claiming, of a round nobody got an answer about,
+           that it was never going to pay. */
+        setResult({
+          won: false,
+          correct: fallbackCorrect,
+          points: 0,
+          balance: player.points,
+          paid: true,
+        });
       });
   };
 
@@ -1513,27 +1636,38 @@ export function GamesApp() {
                 </span>
                 <p className="play-hero-line">
                   <b>{fill(games.pointsUnit, { points: String(player.points) })}</b>
-                  <span aria-hidden> · </span>
-                  {short > 0
-                    ? fill(games.pointsGoal, {
-                        points: String(short),
-                        target: String(target),
-                      })
-                    : games.pointsHave}
+                  {short !== null && (
+                    <>
+                      <span aria-hidden> · </span>
+                      {short > 0
+                        ? fill(games.pointsGoal, {
+                            points: String(short),
+                            target: String(target),
+                          })
+                        : games.pointsHave}
+                    </>
+                  )}
                 </p>
-                <div className="play-hero-bar">
-                  <i style={{ width: `${pct}%` }} />
-                </div>
-                {/* Both ends of the bar, as bare figures. The right-hand one
-                    used to carry a clause of its own — "400 unlocks the next
-                    one" — which was fine when the sentence above it said
-                    "the next discount" and became the same number written
-                    twice the moment that sentence started naming the rung. A
-                    scale prints numbers. */}
-                <div className="play-hero-scale">
-                  <span>{player.points}</span>
-                  <span>{target}</span>
-                </div>
+                {/* The bar and its scale go together, and both go when there is
+                    no rung: a bar with no target is a decoration, and a scale
+                    whose right-hand figure is blank is worse. */}
+                {target !== null && (
+                  <>
+                    <div className="play-hero-bar">
+                      <i style={{ width: `${pct}%` }} />
+                    </div>
+                    {/* Both ends of the bar, as bare figures. The right-hand one
+                        used to carry a clause of its own — "400 unlocks the next
+                        one" — which was fine when the sentence above it said
+                        "the next discount" and became the same number written
+                        twice the moment that sentence started naming the rung. A
+                        scale prints numbers. */}
+                    <div className="play-hero-scale">
+                      <span>{player.points}</span>
+                      <span>{target}</span>
+                    </div>
+                  </>
+                )}
               </div>
               <span className="play-hero-cta">
                 {games.redeemTitle}
@@ -1595,7 +1729,7 @@ export function GamesApp() {
                   away from the figure it belongs to. */}
               <p className="play-energy-count">
                 <b>{energy}</b>
-                <span aria-hidden>/{MAX_ENERGY}</span>
+                <span aria-hidden>/{limits.max}</span>
                 {nextEnergyAt !== null && (
                   <em className="play-energy-next">
                     {fill(games.energyNext, {
@@ -1608,10 +1742,10 @@ export function GamesApp() {
               <div
                 className="play-battery"
                 role="img"
-                aria-label={`${energy}/${MAX_ENERGY}`}
+                aria-label={`${energy}/${limits.max}`}
               >
                 <span className="play-battery-case">
-                  {Array.from({ length: MAX_ENERGY }, (_, i) => {
+                  {Array.from({ length: limits.max }, (_, i) => {
                     const charging = i === energy && charge !== null;
                     return (
                       <span
@@ -1652,8 +1786,20 @@ export function GamesApp() {
 
               {/* An empty tank says so in words before it says when. The
                   countdown alone answers a question a player who has just been
-                  refused a round has not asked yet. */}
-              {energy === 0 && <p className="play-energy-out">{games.noEnergy}</p>}
+                  refused a round has not asked yet.
+
+                  And then what it costs, which is no longer the round: the
+                  second line is the only place on the screen that says what
+                  running out actually means now, and it belongs here rather
+                  than on seven cards. Two sentences because they are two —
+                  "you have none" is the state and "play anyway, for nothing"
+                  is what to do about it. */}
+              {energy === 0 && (
+                <>
+                  <p className="play-energy-out">{games.noEnergy}</p>
+                  <p className="play-energy-practice">{games.practiceFree}</p>
+                </>
+              )}
 
               {/* Only the full state says anything here now. The countdown moved
                   up beside the count, and printing it twice would be the same
@@ -1662,6 +1808,17 @@ export function GamesApp() {
                 <p className="play-energy-line">{games.energyFull}</p>
               )}
               <p className="play-energy-cost">{games.energyCost}</p>
+
+              {/* The offer goes where the limit is felt, and only to somebody
+                  the limit applies to. A player already on Pro sees nothing
+                  here — the button would be selling them what they have — and
+                  neither does anyone whose plan has not resolved, because
+                  "we do not know yet" is not "you are on free". */}
+              {plan?.code === 'free' && (
+                <div className="play-upgrade">
+                  <SubscribeButton planCode="pro" planName={upgradeName} />
+                </div>
+              )}
             </section>
           </div>
 
@@ -1725,14 +1882,47 @@ export function GamesApp() {
                   </b>
                 </div>
                 {/* The reward connection, on the screen rather than only on the
-                    result card: what the balance is actually for. */}
-                <div>
-                  <span>{games.toVoucher}</span>
-                  <b>{Math.max(0, CHEAPEST_VOUCHER - player.points)}</b>
-                </div>
+                    result card: what the balance is actually for. Drawn only
+                    when there is something on the shelf to be short of — "0 to
+                    a voucher" over an empty catalogue is a promise nobody can
+                    keep. */}
+                {cheapest !== null && (
+                  <div>
+                    <span>{games.toVoucher}</span>
+                    <b>{Math.max(0, cheapest - player.points)}</b>
+                  </div>
+                )}
               </div>
             )}
           </div>
+
+          {/*
+            ── the practice banner ──
+
+            One strip above the play area rather than a prop threaded through
+            five game components, because it says the same thing about all of
+            them and none of them is the reason it is there. It is on screen for
+            the whole round, not shown once at the start: an empty tank and a
+            full one produce the identical board, so a player who saw a notice
+            ninety seconds ago has nothing on the screen to check it against.
+
+            Only while playing. The result card carries its own line, and the
+            catalogue has the gauge two panels up.
+
+            **No `data-reveal`.** Everything else on this screen fades in on the
+            observer, and this must not: it is the one element whose whole job is
+            to be read before the first question is answered, and a `data-reveal`
+            that never receives its `data-shown` — the failure mode this screen
+            has already shipped once, when a round left the cards at `opacity: 0`
+            — leaves a round that pays nothing looking exactly like one that
+            pays.
+          */}
+          {playing && !result && energy === 0 && (
+            <p className="play-practice">
+              <Icon name="clock" size={14} strokeWidth={2} />
+              {games.practiceRound}
+            </p>
+          )}
 
           {/* ── in play, or the cards ── */}
           {result && game ? (
@@ -1741,7 +1931,9 @@ export function GamesApp() {
               correct={result.correct}
               total={game.questions}
               points={result.points}
+              paid={result.paid}
               balance={result.balance}
+              cheapest={cheapest}
               streak={player.streak}
               scoreLine={
                 game.kind === 'flight'
@@ -1755,7 +1947,7 @@ export function GamesApp() {
                         })
                       : undefined
               }
-              canAgain={energy > 0}
+              nextPays={energy > 0}
               onAgain={() => start(game.id)}
               onBack={() => {
                 setPlaying(null);
@@ -1843,16 +2035,22 @@ export function GamesApp() {
                     rules={rulesFor(entry, games)}
                     featured={featured}
                     badge={featured ? games.featured : undefined}
+                    /* An empty tank changes the *label*, not the press. The
+                       card that said "Out of energy" and refused to be pressed
+                       was explaining itself in the one place with no room to —
+                       the gauge two panels up says the state, the countdown and
+                       what practice means — so all this has to say is what
+                       happens next. */
                     label={
                       loading
                         ? games.loading
-                        : energy > 0
-                          ? featured
+                        : energy <= 0
+                          ? games.practice
+                          : featured
                             ? games.start
                             : games.play
-                          : games.noEnergy
                     }
-                    disabled={energy <= 0 || loading}
+                    disabled={loading}
                     onStart={() => start(entry.id)}
                   />
                 );

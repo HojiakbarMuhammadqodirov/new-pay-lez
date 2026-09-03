@@ -253,7 +253,7 @@ export function ThemeToggle() {
  */
 function AccountChip() {
   const copy = useCopy();
-  const { account, signOut } = useAuth();
+  const { account, plan, signOut } = useAuth();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
@@ -303,7 +303,14 @@ function AccountChip() {
         </span>
         <span className="account-who">
           <b>{account.name}</b>
-          <span>{copy.auth.roles[account.type]}</span>
+          <span>
+            {copy.auth.roles[account.type]}
+            {/* The plan goes where somebody would look for it: on the line that
+                already says what kind of account this is. Absent rather than
+                "Free" while it is unknown — see `plan` in the auth context for
+                why a guess is the wrong default. */}
+            {plan && <em className="plan-tag">{plan.name}</em>}
+          </span>
         </span>
       </button>
 

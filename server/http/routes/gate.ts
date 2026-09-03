@@ -44,9 +44,9 @@ export const gateRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/venues/:id/qr',
     auth: 'partner',
-    handler: (ctx) => {
-      gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
-      return gate.mintQr(ctx.db, ctx.params.id, ctx.secret, ctx.at);
+    handler: async (ctx) => {
+      await gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
+      return await gate.mintQr(ctx.db, ctx.params.id, ctx.secret, ctx.at);
     },
   },
   {
@@ -54,8 +54,8 @@ export const gateRoutes: Route[] = [
     pattern: '/v1/gate/scan',
     auth: 'user',
     idempotent: true,
-    handler: (ctx) =>
-      gate.openTransaction(
+    handler: async (ctx) =>
+      await gate.openTransaction(
         ctx.db,
         { kind: 'qr', token: str(ctx.body, 'token'), secret: ctx.secret },
         {
@@ -74,8 +74,8 @@ export const gateRoutes: Route[] = [
     pattern: '/v1/gate/tap',
     auth: 'user',
     idempotent: true,
-    handler: (ctx) =>
-      gate.openTransaction(
+    handler: async (ctx) =>
+      await gate.openTransaction(
         ctx.db,
         {
           kind: 'nfc',
@@ -100,9 +100,9 @@ export const gateRoutes: Route[] = [
     pattern: '/v1/gate/manual',
     auth: 'partner',
     idempotent: true,
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
-      return gate.openTransaction(
+      return await gate.openTransaction(
         ctx.db,
         { kind: 'manual', venueId: str(ctx.body, 'venueId'), byUserId: user.id },
         {
@@ -118,12 +118,12 @@ export const gateRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/gate/transactions/:id',
     auth: 'user',
-    handler: (ctx) => {
-      const txn = gate.getTransaction(ctx.db, ctx.params.id);
+    handler: async (ctx) => {
+      const txn = await gate.getTransaction(ctx.db, ctx.params.id);
       const { user, roles } = actor(ctx);
       /* Either party to the transaction may look at it, and nobody else. */
       if (txn.user_id !== user.id && !roles.includes('admin')) {
-        gate.requireStaff(ctx.db, txn.venue_id, user.id);
+        await gate.requireStaff(ctx.db, txn.venue_id, user.id);
       }
       return txn;
     },
@@ -132,8 +132,8 @@ export const gateRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/gate/transactions/:id/amount',
     auth: 'user',
-    handler: (ctx) =>
-      gate.submitAmount(ctx.db, {
+    handler: async (ctx) =>
+      await gate.submitAmount(ctx.db, {
         transactionId: ctx.params.id,
         /* Minor units. A client sending 42.50 is refused by `int`, not
            silently rounded — see `http/input.ts`. */
@@ -147,14 +147,14 @@ export const gateRoutes: Route[] = [
     pattern: '/v1/gate/transactions/:id/confirm',
     auth: 'partner',
     idempotent: true,
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const { user } = actor(ctx);
-      const receipt = gate.confirm(ctx.db, {
+      const receipt = await gate.confirm(ctx.db, {
         transactionId: ctx.params.id,
         cashierId: user.id,
         at: ctx.at,
       });
-      audit.record(ctx.db, {
+      await audit.record(ctx.db, {
         actorId: user.id,
         actorRole: 'partner_owner',
         action: 'gate.confirm',
@@ -176,8 +176,8 @@ export const gateRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/gate/transactions/:id/cancel',
     auth: 'user',
-    handler: (ctx) =>
-      gate.cancel(ctx.db, {
+    handler: async (ctx) =>
+      await gate.cancel(ctx.db, {
         transactionId: ctx.params.id,
         reason: optStr(ctx.body, 'reason') ?? 'cancelled',
         actorId: actor(ctx).user.id,
@@ -189,9 +189,9 @@ export const gateRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/venues/:id/pending',
     auth: 'partner',
-    handler: (ctx) => {
-      gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
-      return gate.pendingAt(ctx.db, ctx.params.id);
+    handler: async (ctx) => {
+      await gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
+      return await gate.pendingAt(ctx.db, ctx.params.id);
     },
   },
   {
@@ -199,10 +199,10 @@ export const gateRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/gate/transactions/:id/dispute',
     auth: 'partner',
-    handler: (ctx) => {
-      const txn = gate.getTransaction(ctx.db, ctx.params.id);
-      gate.requireStaff(ctx.db, txn.venue_id, actor(ctx).user.id);
-      const result = fraud.dispute(ctx.db, ctx.params.id, str(ctx.body, 'note', { max: 500 }), ctx.at);
+    handler: async (ctx) => {
+      const txn = await gate.getTransaction(ctx.db, ctx.params.id);
+      await gate.requireStaff(ctx.db, txn.venue_id, actor(ctx).user.id);
+      const result = await fraud.dispute(ctx.db, ctx.params.id, str(ctx.body, 'note', { max: 500 }), ctx.at);
       if (!result.ok) {
         throw new DomainError(
           result.reason === 'expired' ? 'expired' : 'invalid_state',

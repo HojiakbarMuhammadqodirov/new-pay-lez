@@ -19,16 +19,16 @@ import { list, optStr, str, qInt, qStr } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
 /** `field → value` in the best available language, for one entity. */
-function copyOf(
+async function copyOf(
   ctx: Ctx,
   entity: string,
   ids: string[],
   fields: string[],
-): Map<string, Record<string, string>> {
+): Promise<Map<string, Record<string, string>>> {
   const out = new Map<string, Record<string, string>>();
   if (ids.length === 0) return out;
 
-  const rows = ctx.db.all<{ entity_id: string; field: string; language: string; value: string }>(
+  const rows = await ctx.db.all<{ entity_id: string; field: string; language: string; value: string }>(
     `SELECT entity_id, field, language, value FROM translations
       WHERE entity = $e AND language IN ($l, 'en')`,
     { e: entity, l: ctx.language },
@@ -51,19 +51,19 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/guide/categories',
     auth: 'none',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const country = qStr(ctx, 'country') ?? 'PL';
-      const categories = ctx.db.all<{ id: string; key: string; icon: string | null; color: string | null; position: number }>(
+      const categories = await ctx.db.all<{ id: string; key: string; icon: string | null; color: string | null; position: number }>(
         `SELECT id, key, icon, color, position FROM guidance_categories
           WHERE country_code = $c AND active = 1 ORDER BY position`,
         { c: country },
       );
-      const copy = copyOf(ctx, 'guidance_category', categories.map((c) => c.id), ['title', 'description']);
-      const subs = ctx.db.all<{ id: string; key: string; parent_key: string; icon: string | null; position: number }>(
+      const copy = await copyOf(ctx, 'guidance_category', categories.map((c) => c.id), ['title', 'description']);
+      const subs = await ctx.db.all<{ id: string; key: string; parent_key: string; icon: string | null; position: number }>(
         `SELECT id, key, parent_key, icon, position FROM guidance_subcategories
           WHERE active = 1 ORDER BY position`,
       );
-      const subCopy = copyOf(ctx, 'guidance_subcategory', subs.map((s) => s.id), ['title']);
+      const subCopy = await copyOf(ctx, 'guidance_subcategory', subs.map((s) => s.id), ['title']);
 
       return categories.map((category) => ({
         ...category,
@@ -78,8 +78,8 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/guide/services',
     auth: 'none',
-    handler: (ctx) => {
-      const rows = ctx.db.all<{ id: string; venue_id: string | null; name: string; category_key: string | null;
+    handler: async (ctx) => {
+      const rows = await ctx.db.all<{ id: string; venue_id: string | null; name: string; category_key: string | null;
         city: string | null; address: string | null; lat: number | null; lng: number | null;
         phone: string | null; price_range: string | null; rating: number | null;
         review_count: number; image_url: string | null; accepts_vouchers: number; subcategories: string }>(
@@ -98,8 +98,8 @@ export const guidanceRoutes: Route[] = [
           lim: qInt(ctx, 'limit', 100),
         },
       );
-      const copy = copyOf(ctx, 'guidance_service', rows.map((r) => r.id), ['description']);
-      const links = ctx.db.all<{ service_id: string; kind: string; value: string }>(
+      const copy = await copyOf(ctx, 'guidance_service', rows.map((r) => r.id), ['description']);
+      const links = await ctx.db.all<{ service_id: string; kind: string; value: string }>(
         `SELECT service_id, kind, value FROM guidance_service_links`,
       );
 
@@ -120,8 +120,8 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/guide/articles',
     auth: 'none',
-    handler: (ctx) => {
-      const rows = ctx.db.all<{ id: string; category_key: string | null; position: number }>(
+    handler: async (ctx) => {
+      const rows = await ctx.db.all<{ id: string; category_key: string | null; position: number }>(
         `SELECT id, category_key, position FROM guidance_articles
           WHERE active = 1 AND ($country IS NULL OR country_code = $country)
             AND ($cat IS NULL OR category_key = $cat)
@@ -135,7 +135,7 @@ export const guidanceRoutes: Route[] = [
       /* Headings only. The articles are long-form HTML — the largest of them is
          several hundred kilobytes — and a list endpoint that ships every body is
          a list endpoint nobody can use on a phone. */
-      const copy = copyOf(ctx, 'guidance_article', rows.map((r) => r.id), ['heading']);
+      const copy = await copyOf(ctx, 'guidance_article', rows.map((r) => r.id), ['heading']);
       return rows.map((row) => ({ ...row, heading: copy.get(row.id)?.heading ?? null }));
     },
   },
@@ -143,11 +143,11 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/guide/articles/:id',
     auth: 'none',
-    handler: (ctx) => {
-      const article = ctx.db.get(`SELECT * FROM guidance_articles WHERE id = $i`, {
+    handler: async (ctx) => {
+      const article = await ctx.db.get(`SELECT * FROM guidance_articles WHERE id = $i`, {
         i: ctx.params.id,
       });
-      const copy = copyOf(ctx, 'guidance_article', [ctx.params.id], ['heading', 'content']);
+      const copy = await copyOf(ctx, 'guidance_article', [ctx.params.id], ['heading', 'content']);
       return { article, ...(copy.get(ctx.params.id) ?? {}) };
     },
   },
@@ -155,14 +155,14 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/news',
     auth: 'none',
-    handler: (ctx) => {
-      const rows = ctx.db.all<{ id: string; icon: string | null; color: string | null; published_at: string | null; position: number }>(
+    handler: async (ctx) => {
+      const rows = await ctx.db.all<{ id: string; icon: string | null; color: string | null; published_at: string | null; position: number }>(
         `SELECT id, icon, color, published_at, position FROM news_items
           WHERE active = 1 AND ($country IS NULL OR country_code = $country)
           ORDER BY position, published_at DESC`,
         { country: qStr(ctx, 'country') ?? 'PL' },
       );
-      const copy = copyOf(ctx, 'news_item', rows.map((r) => r.id), ['title', 'content']);
+      const copy = await copyOf(ctx, 'news_item', rows.map((r) => r.id), ['title', 'content']);
       return rows.map((row) => ({ ...row, ...(copy.get(row.id) ?? {}) }));
     },
   },
@@ -170,8 +170,8 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/community',
     auth: 'none',
-    handler: (ctx) =>
-      ctx.db.all(
+    handler: async (ctx) =>
+      await ctx.db.all(
         `SELECT id, display_name, city, country_code, work, bio, interests, languages,
                 telegram, instagram
            FROM community_profiles WHERE visible = 1 ORDER BY created_at DESC LIMIT $l`,
@@ -190,8 +190,8 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/fx',
     auth: 'none',
-    handler: (ctx) => {
-      const rows = ctx.db.all<{ code: string; base: string; rate: number; decimals: number; updated_at: string }>(
+    handler: async (ctx) => {
+      const rows = await ctx.db.all<{ code: string; base: string; rate: number; decimals: number; updated_at: string }>(
         `SELECT code, base, rate, decimals, updated_at FROM exchange_rates ORDER BY code`,
       );
       const from = qStr(ctx, 'from');
@@ -213,9 +213,9 @@ export const guidanceRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/recommendations',
     auth: 'none',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const id = `rec_${Date.now().toString(36)}`;
-      ctx.db.run(
+      await ctx.db.run(
         `INSERT INTO service_recommendations
            (id, user_id, name, city, country_code, category_key, subcategory, status, created_at)
          VALUES ($i, $u, $n, $ci, $cc, $ck, $sc, 'pending', $t)`,
@@ -237,9 +237,9 @@ export const guidanceRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/feedback',
     auth: 'none',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const id = `fbk_${Date.now().toString(36)}`;
-      ctx.db.run(
+      await ctx.db.run(
         `INSERT INTO feedback (id, user_id, subject, body, rating, status, created_at)
          VALUES ($i, $u, $s, $b, $r, 'new', $t)`,
         {
@@ -265,15 +265,15 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/legacy/wallet',
     auth: 'user',
-    handler: (ctx) => ({
+    handler: async (ctx) => ({
       note: 'Archived. The money-movement track is out of scope for this backend.',
-      wallet: ctx.db.get(`SELECT * FROM legacy_wallets WHERE user_id = $u`, {
+      wallet: await ctx.db.get(`SELECT * FROM legacy_wallets WHERE user_id = $u`, {
         u: ctx.actor!.user.id,
       }),
-      recipients: ctx.db.all(`SELECT * FROM legacy_recipients WHERE user_id = $u`, {
+      recipients: await ctx.db.all(`SELECT * FROM legacy_recipients WHERE user_id = $u`, {
         u: ctx.actor!.user.id,
       }),
-      transfers: ctx.db.all(
+      transfers: await ctx.db.all(
         `SELECT * FROM legacy_transfers WHERE user_id = $u ORDER BY created_at DESC`,
         { u: ctx.actor!.user.id },
       ),
@@ -294,7 +294,7 @@ export const guidanceRoutes: Route[] = [
     pattern: '/v1/traffic',
     auth: 'none',
     name: 'traffic.record',
-    handler: (ctx) => {
+    handler: async (ctx) => {
       const events = list(ctx.body, 'events', (item) => {
         const bag = (item ?? {}) as Record<string, unknown>;
         return {
@@ -305,7 +305,7 @@ export const guidanceRoutes: Route[] = [
       });
       if (events.length === 0) return { ok: true, recorded: 0 };
 
-      traffic.record(
+      await traffic.record(
         ctx.db,
         {
           events,
@@ -346,8 +346,8 @@ export const guidanceRoutes: Route[] = [
     pattern: '/v1/contact',
     auth: 'none',
     name: 'contact.submit',
-    handler: (ctx) =>
-      contact.submit(ctx.db, {
+    handler: async (ctx) =>
+      await contact.submit(ctx.db, {
         topic: str(ctx.body, 'topic'),
         name: str(ctx.body, 'name'),
         email: str(ctx.body, 'email'),
@@ -364,12 +364,12 @@ export const guidanceRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/health',
     auth: 'none',
-    handler: (ctx) => ({
+    handler: async (ctx) => ({
       ok: true,
       at: ctx.at,
       policyVersion: CONFIG.privacy.policyVersion,
-      venues: ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`)?.n ?? 0,
-      users: ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM users`)?.n ?? 0,
+      venues: (await ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`))?.n ?? 0,
+      users: (await ctx.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM users`))?.n ?? 0,
     }),
   },
 ];

@@ -91,15 +91,15 @@ export interface TableQuery {
  * sort it has received the whole list, and "filtered in the UI" is how an
  * un-opted-in customer ends up in a network response nobody looked at.
  */
-export function customerTable(db: Db, venueId: string, query: TableQuery = {}): CustomerTable {
+export async function customerTable(db: Db, venueId: string, query: TableQuery = {}): Promise<CustomerTable> {
   const at = query.at ?? now();
 
   const total =
-    db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venue_customers WHERE venue_id = $v`, {
+    (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venue_customers WHERE venue_id = $v`, {
       v: venueId,
-    })?.n ?? 0;
+    }))?.n ?? 0;
 
-  const rows = db.all<{
+  const rows = await db.all<{
     user_id: string;
     name: string;
     avatar: string | null;
@@ -128,12 +128,12 @@ export function customerTable(db: Db, venueId: string, query: TableQuery = {}): 
   );
 
   const averageSpend =
-    db.get<{ avg: number | null }>(
+    (await db.get<{ avg: number | null }>(
       `SELECT AVG(spend_minor) AS avg FROM venue_customers WHERE venue_id = $v AND visits > 0`,
       { v: venueId },
-    )?.avg ?? 0;
+    ))?.avg ?? 0;
 
-  const mapped: CustomerRow[] = rows.map((row) => {
+  const mapped: CustomerRow[] = await Promise.all(rows.map(async (row) => {
     const base = {
       spendMinor: row.spend_minor,
       visits: row.visits,
@@ -148,26 +148,26 @@ export function customerTable(db: Db, venueId: string, query: TableQuery = {}): 
       daysSince: Math.floor(daysBetween(row.last_seen_at, at)),
       status: deriveStatus(base, averageSpend, at),
       stamps:
-        db.get<{ n: number | null }>(
+        (await db.get<{ n: number | null }>(
           `SELECT SUM(s.stamps) AS n FROM stamp_cards s WHERE s.user_id = $u AND s.venue_id = $v`,
           { u: row.user_id, v: venueId },
-        )?.n ?? 0,
+        ))?.n ?? 0,
       vouchersHeld:
-        db.get<{ n: number }>(
+        (await db.get<{ n: number }>(
           `SELECT COUNT(*) AS n FROM issued_vouchers
             WHERE user_id = $u AND venue_id = $v AND status = 'active'`,
           { u: row.user_id, v: venueId },
-        )?.n ?? 0,
+        ))?.n ?? 0,
     };
-  });
+  }));
 
   const shared =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM data_sharing_consents d
         JOIN venue_customers vc ON vc.user_id = d.user_id AND vc.venue_id = d.venue_id
        WHERE d.venue_id = $v AND d.revoked_at IS NULL`,
       { v: venueId },
-    )?.n ?? 0;
+    ))?.n ?? 0;
 
   return {
     totalCustomers: total,
@@ -184,14 +184,14 @@ export function customerTable(db: Db, venueId: string, query: TableQuery = {}): 
  * moment the rule has to hold, and it is the moment a "we already checked"
  * shortcut would miss.
  */
-export function customerDetail(db: Db, venueId: string, userId: string, at: Iso = now()) {
-  if (!hasSharingGrant(db, userId, venueId)) {
+export async function customerDetail(db: Db, venueId: string, userId: string, at: Iso = now()) {
+  if (!(await hasSharingGrant(db, userId, venueId))) {
     /* 404, not 403: telling a partner "that customer exists but has not shared
        with you" is itself a disclosure about a specific person. */
     throw new DomainError('not_found', 'customer not found');
   }
 
-  const relation = db.get<{
+  const relation = await db.get<{
     spend_minor: number;
     visits: number;
     first_seen_at: string;
@@ -202,25 +202,25 @@ export function customerDetail(db: Db, venueId: string, userId: string, at: Iso 
   });
   if (!relation) throw new DomainError('not_found', 'customer not found');
 
-  const identity = db.get<{ name: string; avatar: string | null; language: string }>(
+  const identity = await db.get<{ name: string; avatar: string | null; language: string }>(
     `SELECT display_name AS name, display_avatar AS avatar, language FROM users WHERE id = $u`,
     { u: userId },
   );
 
-  const trend = db.all<{ month: string; visits: number; spend: number }>(
+  const trend = await db.all<{ month: string; visits: number; spend: number }>(
     `SELECT SUBSTR(local_day, 1, 7) AS month, COUNT(*) AS visits, SUM(amount_minor) AS spend
        FROM venue_visits WHERE venue_id = $v AND user_id = $u
       GROUP BY month ORDER BY month`,
     { v: venueId, u: userId },
   );
 
-  const pattern = db.all<{ local_weekday: number; local_hour: number; n: number }>(
+  const pattern = await db.all<{ local_weekday: number; local_hour: number; n: number }>(
     `SELECT local_weekday, local_hour, COUNT(*) AS n FROM venue_visits
       WHERE venue_id = $v AND user_id = $u GROUP BY local_weekday, local_hour ORDER BY n DESC LIMIT 5`,
     { v: venueId, u: userId },
   );
 
-  const deals = db.all<{ deal_id: string; event_type: string; created_at: string }>(
+  const deals = await db.all<{ deal_id: string; event_type: string; created_at: string }>(
     `SELECT e.deal_id, e.event_type, e.created_at FROM deal_events e
        JOIN hot_deals d ON d.id = e.deal_id
       WHERE d.venue_id = $v AND e.user_id = $u AND e.event_type != 'impression'
@@ -228,7 +228,7 @@ export function customerDetail(db: Db, venueId: string, userId: string, at: Iso 
     { v: venueId, u: userId },
   );
 
-  const stamps = db.all<{ campaign_id: string; name: string; stamps: number; required: number }>(
+  const stamps = await db.all<{ campaign_id: string; name: string; stamps: number; required: number }>(
     `SELECT s.campaign_id, c.name, s.stamps, c.visits_required AS required
        FROM stamp_cards s JOIN campaigns c ON c.id = s.campaign_id
       WHERE s.user_id = $u AND s.venue_id = $v`,
@@ -236,10 +236,10 @@ export function customerDetail(db: Db, venueId: string, userId: string, at: Iso 
   );
 
   const averageSpend =
-    db.get<{ avg: number | null }>(
+    (await db.get<{ avg: number | null }>(
       `SELECT AVG(spend_minor) AS avg FROM venue_customers WHERE venue_id = $v AND visits > 0`,
       { v: venueId },
-    )?.avg ?? 0;
+    ))?.avg ?? 0;
 
   return {
     userId,
@@ -281,9 +281,9 @@ export function customerDetail(db: Db, venueId: string, userId: string, at: Iso 
  * from rather than messaging anybody, because a partner writing directly to a
  * named customer is not a thing this platform does.
  */
-export function segmentFor(db: Db, venueId: string, userId: string, at: Iso = now()) {
-  const detail = customerDetail(db, venueId, userId, at);
-  const peers = db.get<{ n: number }>(
+export async function segmentFor(db: Db, venueId: string, userId: string, at: Iso = now()) {
+  const detail = await customerDetail(db, venueId, userId, at);
+  const peers = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM venue_customers vc
       WHERE vc.venue_id = $v AND vc.visits >= $min AND vc.visits <= $max`,
     {

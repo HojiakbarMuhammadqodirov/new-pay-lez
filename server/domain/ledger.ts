@@ -85,8 +85,8 @@ export interface LedgerEntry {
 }
 
 /** The balance, from the ledger. The cache is never consulted here. */
-export function balance(db: Db, userId: string): number {
-  const row = db.get<{ total: number | null }>(
+export async function balance(db: Db, userId: string): Promise<number> {
+  const row = await db.get<{ total: number | null }>(
     `SELECT SUM(delta) AS total FROM points_ledger
       WHERE user_id = $u AND status = 'committed'`,
     { u: userId },
@@ -95,18 +95,18 @@ export function balance(db: Db, userId: string): number {
 }
 
 /** The fast read. Equal to `balance()` or the database is broken — see `reconcile`. */
-export function cachedBalance(db: Db, userId: string): number {
-  return db.get<{ points_cache: number }>(`SELECT points_cache FROM users WHERE id = $u`, {
+export async function cachedBalance(db: Db, userId: string): Promise<number> {
+  return (await db.get<{ points_cache: number }>(`SELECT points_cache FROM users WHERE id = $u`, {
     u: userId,
-  })?.points_cache ?? 0;
+  }))?.points_cache ?? 0;
 }
 
 /** Recompute the cache from the ledger. Returns the drift it corrected. */
-export function reconcile(db: Db, userId: string): number {
-  const truth = balance(db, userId);
-  const cached = cachedBalance(db, userId);
+export async function reconcile(db: Db, userId: string): Promise<number> {
+  const truth = await balance(db, userId);
+  const cached = await cachedBalance(db, userId);
   if (truth !== cached) {
-    db.run(`UPDATE users SET points_cache = $b WHERE id = $u`, { b: truth, u: userId });
+    await db.run(`UPDATE users SET points_cache = $b WHERE id = $u`, { b: truth, u: userId });
   }
   return truth - cached;
 }
@@ -120,12 +120,12 @@ export function reconcile(db: Db, userId: string): number {
  * (a cashier's confirmation, another human signing up), so they were never
  * counted here and still are not.
  */
-export function gamePointsToday(db: Db, userId: string, day: string): number {
+export async function gamePointsToday(db: Db, userId: string, day: string): Promise<number> {
   return (
-    db.get<{ total: number | null }>(
+    (await db.get<{ total: number | null }>(
       `SELECT game_points AS total FROM daily_counters WHERE user_id = $u AND day = $d`,
       { u: userId, d: day },
-    )?.total ?? 0
+    ))?.total ?? 0
   );
 }
 
@@ -149,7 +149,7 @@ export function gamePointsToday(db: Db, userId: string, day: string): number {
  * sits in `games.ts` where the round is scored. `earn` grants what it is
  * handed; deciding how much that should be belongs to the caller.
  */
-export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
+export async function earn(db: Db, input: EarnInput): Promise<{ entry: LedgerEntry }> {
   const at = input.at ?? now();
   const multiplier = input.multiplier ?? 1;
   const points = Math.floor(input.points * multiplier);
@@ -169,19 +169,19 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
      is what the old early return for a zero-point entry did, undercounts exactly
      the days somebody had a bad run. */
   if (input.reason === 'game_win') {
-    db.run(
+    await db.run(
       `INSERT INTO daily_counters (user_id, day, game_points, plays)
        VALUES ($u, $d, $p, 1)
        ON CONFLICT (user_id, day) DO UPDATE
-         SET game_points = game_points + $p, plays = plays + 1`,
+         SET game_points = daily_counters.game_points + $p, plays = daily_counters.plays + 1`,
       { u: input.userId, d: at.slice(0, 10), p: points },
     );
   }
 
-  const entry = writeEntry(db, input.userId, points, input.reason, input, at, multiplier);
+  const entry = await writeEntry(db, input.userId, points, input.reason, input, at, multiplier);
 
   if (points > 0) {
-    db.run(
+    await db.run(
       `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount)
        VALUES ($i, $u, $e, $x, $a)`,
       /* The entry's `expires_at` is NULL — nothing expires any more — and the
@@ -190,7 +190,7 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
          and a lot that is not there is a balance that cannot be spent. */
       { i: entry.id, u: input.userId, e: at, x: NEVER, a: points },
     );
-    db.run(`UPDATE users SET points_cache = points_cache + $p WHERE id = $u`, {
+    await db.run(`UPDATE users SET points_cache = points_cache + $p WHERE id = $u`, {
       p: points,
       u: input.userId,
     });
@@ -207,14 +207,14 @@ export function earn(db: Db, input: EarnInput): { entry: LedgerEntry } {
  * would let somebody spend the same points twice by racing two requests. The
  * transaction plus the lot arithmetic is what makes that race lose.
  */
-export function spend(
+export async function spend(
   db: Db,
   input: { userId: string; points: number; reason: SpendReason; sourceKind?: string; sourceRef?: string; venueId?: string | null; at?: Iso },
-): LedgerEntry {
+): Promise<LedgerEntry> {
   const at = input.at ?? now();
   if (input.points <= 0) throw new DomainError('bad_request', 'spend takes a positive amount');
 
-  const available = balance(db, input.userId);
+  const available = await balance(db, input.userId);
   if (available < input.points) {
     throw new DomainError('insufficient_points', 'not enough points', {
       required: input.points,
@@ -228,7 +228,7 @@ export function spend(
      random, so ordering by id would consume them in an arbitrary order — which
      is not FIFO and quietly changes which batch expires when. `rowid` is
      insertion order, which is what "oldest" means when the clock cannot tell. */
-  const lots = db.all<{ ledger_id: string; amount: number; consumed: number }>(
+  const lots = await db.all<{ ledger_id: string; amount: number; consumed: number }>(
     `SELECT ledger_id, amount, consumed FROM points_lots
       WHERE user_id = $u AND expired = 0 AND consumed < amount
       ORDER BY earned_at ASC, rowid ASC`,
@@ -238,7 +238,7 @@ export function spend(
   for (const lot of lots) {
     if (remaining === 0) break;
     const take = Math.min(remaining, lot.amount - lot.consumed);
-    db.run(`UPDATE points_lots SET consumed = consumed + $t WHERE ledger_id = $i`, {
+    await db.run(`UPDATE points_lots SET consumed = consumed + $t WHERE ledger_id = $i`, {
       t: take,
       i: lot.ledger_id,
     });
@@ -253,7 +253,7 @@ export function spend(
     });
   }
 
-  const entry = writeEntry(
+  const entry = await writeEntry(
     db,
     input.userId,
     -input.points,
@@ -262,7 +262,7 @@ export function spend(
     at,
     1,
   );
-  db.run(`UPDATE users SET points_cache = points_cache - $p WHERE id = $u`, {
+  await db.run(`UPDATE users SET points_cache = points_cache - $p WHERE id = $u`, {
     p: input.points,
     u: input.userId,
   });
@@ -287,13 +287,13 @@ export function spend(
  * `campaigns.ts` — and a guard against double payment written twice is a guard
  * that eventually disagrees with itself.
  */
-export function alreadyPaid(db: Db, userId: string, sourceKind: string, sourceRef: string): boolean {
+export async function alreadyPaid(db: Db, userId: string, sourceKind: string, sourceRef: string): Promise<boolean> {
   return (
-    db.get<{ id: string }>(
+    (await db.get<{ id: string }>(
       `SELECT id FROM points_ledger
         WHERE user_id = $u AND source_kind = $k AND source_ref = $r LIMIT 1`,
       { u: userId, k: sourceKind, r: sourceRef },
-    ) !== undefined
+    )) !== undefined
   );
 }
 
@@ -312,30 +312,30 @@ export function alreadyPaid(db: Db, userId: string, sourceKind: string, sourceRe
  * the account received value it was not entitled to, and the next earning pays
  * it back before anything else.
  */
-export function reverse(db: Db, ledgerId: string, note: string, at: Iso = now()): LedgerEntry {
-  const original = db.get<LedgerEntry>(`SELECT * FROM points_ledger WHERE id = $i`, { i: ledgerId });
+export async function reverse(db: Db, ledgerId: string, note: string, at: Iso = now()): Promise<LedgerEntry> {
+  const original = await db.get<LedgerEntry>(`SELECT * FROM points_ledger WHERE id = $i`, { i: ledgerId });
   if (!original) throw new DomainError('not_found', 'ledger entry not found');
 
-  const already = db.get<{ id: string }>(
+  const already = await db.get<{ id: string }>(
     `SELECT id FROM points_ledger WHERE reason = 'reversal' AND source_ref = $i`,
     { i: ledgerId },
   );
   if (already) throw new DomainError('conflict', 'already reversed');
 
-  return db.tx(() => {
+  return db.tx(async () => {
     let remaining = original.delta;
     /* Close the reversed batch first, then take the rest oldest-first — the
        points being clawed back are that batch's, wherever the arithmetic lands. */
-    const own = db.get<{ amount: number; consumed: number }>(
+    const own = await db.get<{ amount: number; consumed: number }>(
       `SELECT amount, consumed FROM points_lots WHERE ledger_id = $i AND expired = 0`,
       { i: ledgerId },
     );
     if (own) {
       remaining -= own.amount - own.consumed;
-      db.run(`UPDATE points_lots SET expired = 1 WHERE ledger_id = $i`, { i: ledgerId });
+      await db.run(`UPDATE points_lots SET expired = 1 WHERE ledger_id = $i`, { i: ledgerId });
     }
     if (remaining > 0) {
-      const lots = db.all<{ ledger_id: string; amount: number; consumed: number }>(
+      const lots = await db.all<{ ledger_id: string; amount: number; consumed: number }>(
         `SELECT ledger_id, amount, consumed FROM points_lots
           WHERE user_id = $u AND expired = 0 AND consumed < amount
           ORDER BY earned_at ASC, rowid ASC`,
@@ -344,7 +344,7 @@ export function reverse(db: Db, ledgerId: string, note: string, at: Iso = now())
       for (const lot of lots) {
         if (remaining <= 0) break;
         const take = Math.min(remaining, lot.amount - lot.consumed);
-        db.run(`UPDATE points_lots SET consumed = consumed + $t WHERE ledger_id = $i`, {
+        await db.run(`UPDATE points_lots SET consumed = consumed + $t WHERE ledger_id = $i`, {
           t: take,
           i: lot.ledger_id,
         });
@@ -352,7 +352,7 @@ export function reverse(db: Db, ledgerId: string, note: string, at: Iso = now())
       }
     }
 
-    const entry = writeEntry(
+    const entry = await writeEntry(
       db,
       original.user_id,
       -original.delta,
@@ -362,7 +362,7 @@ export function reverse(db: Db, ledgerId: string, note: string, at: Iso = now())
       1,
       note,
     );
-    db.run(`UPDATE users SET points_cache = points_cache - $d WHERE id = $u`, {
+    await db.run(`UPDATE users SET points_cache = points_cache - $d WHERE id = $u`, {
       d: original.delta,
       u: original.user_id,
     });
@@ -370,8 +370,8 @@ export function reverse(db: Db, ledgerId: string, note: string, at: Iso = now())
   });
 }
 
-export function history(db: Db, userId: string, limit = 50, before?: string): LedgerEntry[] {
-  return db.all<LedgerEntry>(
+export async function history(db: Db, userId: string, limit = 50, before?: string): Promise<LedgerEntry[]> {
+  return await db.all<LedgerEntry>(
     `SELECT * FROM points_ledger
       WHERE user_id = $u AND ($b IS NULL OR created_at < $b)
       ORDER BY created_at DESC, id DESC LIMIT $l`,
@@ -395,7 +395,7 @@ export function history(db: Db, userId: string, limit = 50, before?: string): Le
  */
 const NEVER: Iso = '9999-12-31T23:59:59.999Z';
 
-function writeEntry(
+async function writeEntry(
   db: Db,
   userId: string,
   delta: number,
@@ -404,7 +404,7 @@ function writeEntry(
   at: Iso,
   multiplier: number,
   _note?: string,
-): LedgerEntry {
+): Promise<LedgerEntry> {
   const id = newId('led');
   /* Always NULL. Points do not expire, and NULL is the only value that says so
      in a column whose other rows carry dates: a far-future date would read as a
@@ -413,7 +413,7 @@ function writeEntry(
      the old twelve-month rule wrote are still in the live database and a ledger
      is not rewritten to match a new policy. */
   const expires = null;
-  db.run(
+  await db.run(
     `INSERT INTO points_ledger
        (id, user_id, delta, reason, source_ref, source_kind, multiplier, status, venue_id,
         created_at, expires_at)

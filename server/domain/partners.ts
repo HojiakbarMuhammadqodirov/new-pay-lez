@@ -44,19 +44,19 @@ export interface VenueDraft {
   imageUrl?: string;
 }
 
-export function createVenue(
+export async function createVenue(
   db: Db,
   input: { ownerId: string; draft: VenueDraft; at?: Iso },
-): Venue {
+): Promise<Venue> {
   const at = input.at ?? now();
-  const ent = entitlements.entitlementsFor(db, { userId: input.ownerId });
+  const ent = await entitlements.entitlementsFor(db, { userId: input.ownerId });
 
-  return db.tx(() => {
+  return db.tx(async () => {
     const owned =
-      db.get<{ n: number }>(
+      (await db.get<{ n: number }>(
         `SELECT COUNT(*) AS n FROM venues WHERE owner_user_id = $o AND deleted_at IS NULL`,
         { o: input.ownerId },
-      )?.n ?? 0;
+      ))?.n ?? 0;
     /* B7: the number of venues is an entitlement, so a chain has to be on a plan
        that says so. The consumer-side entitlements are read here because the
        owner's *account* holds the plan until a venue exists to hold one. */
@@ -67,7 +67,7 @@ export function createVenue(
     }
 
     const id = newId('ven');
-    db.run(
+    await db.run(
       `INSERT INTO venues
          (id, owner_user_id, name, category, subcategory, city, country_code, address, lat, lng,
           timezone, currency, price_range, image_url, phone, email, status, amount_entry,
@@ -101,7 +101,7 @@ export function createVenue(
        partner who has to invent a points threshold before anything works is a
        new partner who does not finish onboarding. */
     for (const tier of CONFIG.vouchers.defaultTiers) {
-      db.run(
+      await db.run(
         `INSERT INTO voucher_tiers
            (id, venue_id, discount_pct, points_cost, max_discount_minor, active, created_at, updated_at)
          VALUES ($i, $v, $p, $pt, $m, 1, $t, $t)`,
@@ -116,12 +116,12 @@ export function createVenue(
       );
     }
 
-    db.run(
+    await db.run(
       `INSERT INTO moderation_queue (id, entity, entity_id, venue_id, reason, status, created_at)
        VALUES ($i, 'venue', $v, $v, 'new venue', 'pending', $t)`,
       { i: newId('mod'), v: id, t: at },
     );
-    audit.record(db, {
+    await audit.record(db, {
       actorId: input.ownerId,
       action: 'venue.create',
       entity: 'venue',
@@ -131,12 +131,12 @@ export function createVenue(
       at,
     });
 
-    return getVenue(db, id);
+    return await getVenue(db, id);
   });
 }
 
 /** B2. What consumers see, plus the amount-capture configuration. */
-export function updateVenue(
+export async function updateVenue(
   db: Db,
   input: {
     venueId: string;
@@ -150,12 +150,12 @@ export function updateVenue(
     };
     at?: Iso;
   },
-): Venue {
+): Promise<Venue> {
   const at = input.at ?? now();
-  const before = getVenue(db, input.venueId);
+  const before = await getVenue(db, input.venueId);
   const p = input.patch;
 
-  db.run(
+  await db.run(
     `UPDATE venues SET
         name = COALESCE($n, name), category = COALESCE($ca, category),
         subcategory = COALESCE($sc, subcategory), city = COALESCE($ci, city),
@@ -194,7 +194,7 @@ export function updateVenue(
     },
   );
 
-  audit.record(db, {
+  await audit.record(db, {
     actorId: input.actorId,
     action: 'venue.update',
     entity: 'venue',
@@ -206,7 +206,7 @@ export function updateVenue(
   });
   /* Changes propagate immediately (B2) — there is no publish step for a profile
      edit, because the consumer app reads the venue row directly. */
-  return getVenue(db, input.venueId);
+  return await getVenue(db, input.venueId);
 }
 
 /**
@@ -216,40 +216,40 @@ export function updateVenue(
  * shows whatever it recognises. A schema change to add a social network is the
  * thing the spec explicitly asked to avoid.
  */
-export function setLinks(
+export async function setLinks(
   db: Db,
   venueId: string,
   links: Array<{ kind: string; value: string }>,
   at: Iso = now(),
-): void {
-  db.tx(() => {
-    db.run(`DELETE FROM venue_links WHERE venue_id = $v`, { v: venueId });
-    links.forEach((link, index) => {
-      if (!link.value.trim()) return;
-      db.run(
+): Promise<void> {
+  await db.tx(async () => {
+    await db.run(`DELETE FROM venue_links WHERE venue_id = $v`, { v: venueId });
+    for (const [index, link] of links.entries()) {
+      if (!link.value.trim()) continue;
+      await db.run(
         `INSERT INTO venue_links (id, venue_id, kind, value, position) VALUES ($i, $v, $k, $val, $p)`,
         { i: newId('lnk'), v: venueId, k: link.kind, val: link.value.trim(), p: index },
       );
-    });
-    db.run(`UPDATE venues SET updated_at = $t WHERE id = $v`, { t: at, v: venueId });
+    };
+    await db.run(`UPDATE venues SET updated_at = $t WHERE id = $v`, { t: at, v: venueId });
   });
 }
 
-export const linksOf = (db: Db, venueId: string) =>
-  db.all<{ kind: string; value: string }>(
+export const linksOf = async (db: Db, venueId: string) =>
+  await db.all<{ kind: string; value: string }>(
     `SELECT kind, value FROM venue_links WHERE venue_id = $v ORDER BY position`,
     { v: venueId },
   );
 
-export function setHours(
+export async function setHours(
   db: Db,
   venueId: string,
   hours: Array<{ weekday: number; opensMin: number | null; closesMin: number | null; closed?: boolean }>,
-): void {
-  db.tx(() => {
-    db.run(`DELETE FROM venue_hours WHERE venue_id = $v`, { v: venueId });
+): Promise<void> {
+  await db.tx(async () => {
+    await db.run(`DELETE FROM venue_hours WHERE venue_id = $v`, { v: venueId });
     for (const row of hours) {
-      db.run(
+      await db.run(
         `INSERT INTO venue_hours (venue_id, weekday, opens_min, closes_min, closed)
          VALUES ($v, $d, $o, $c, $cl)`,
         {
@@ -265,14 +265,14 @@ export function setHours(
 }
 
 /** B1 verification. Submitted by the partner, decided by an admin (C1). */
-export function submitVerification(
+export async function submitVerification(
   db: Db,
   input: { venueId: string; method: 'email_domain' | 'business_details' | 'manual'; taxId?: string; legalName?: string; at?: Iso },
-): string {
+): Promise<string> {
   const at = input.at ?? now();
   const id = newId('ver');
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO verification_records
          (id, venue_id, method, status, tax_id, legal_name, submitted_at)
        VALUES ($i, $v, $m, 'pending', $t, $l, $at)`,
@@ -285,7 +285,7 @@ export function submitVerification(
         at,
       },
     );
-    db.run(`UPDATE venues SET status = 'pending_review', updated_at = $t WHERE id = $v`, {
+    await db.run(`UPDATE venues SET status = 'pending_review', updated_at = $t WHERE id = $v`, {
       t: at,
       v: input.venueId,
     });
@@ -294,19 +294,19 @@ export function submitVerification(
 }
 
 /** C1. The admin's decision. Only this makes a venue publishable. */
-export function decideVerification(
+export async function decideVerification(
   db: Db,
   input: { verificationId: string; approve: boolean; reviewerId: string; note?: string; at?: Iso },
-): void {
+): Promise<void> {
   const at = input.at ?? now();
-  const record = db.get<{ venue_id: string }>(
+  const record = await db.get<{ venue_id: string }>(
     `SELECT venue_id FROM verification_records WHERE id = $i`,
     { i: input.verificationId },
   );
   if (!record) throw new DomainError('not_found', 'verification not found');
 
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `UPDATE verification_records SET status = $s, reviewed_by = $r, reviewed_at = $t, note = $n
         WHERE id = $i`,
       {
@@ -317,7 +317,7 @@ export function decideVerification(
         i: input.verificationId,
       },
     );
-    db.run(
+    await db.run(
       `UPDATE venues SET status = $s, verified_at = $ver, updated_at = $t WHERE id = $v`,
       {
         s: input.approve ? 'live' : 'draft',
@@ -326,7 +326,7 @@ export function decideVerification(
         v: record.venue_id,
       },
     );
-    audit.record(db, {
+    await audit.record(db, {
       actorId: input.reviewerId,
       actorRole: 'admin',
       action: input.approve ? 'venue.verify' : 'venue.reject',
@@ -341,7 +341,7 @@ export function decideVerification(
 
 /* ══════════════════════════════════════════════════ B6 tiers and budgets ══ */
 
-export function setVoucherTiers(
+export async function setVoucherTiers(
   db: Db,
   input: {
     venueId: string;
@@ -349,16 +349,16 @@ export function setVoucherTiers(
     tiers: Array<{ discountPct: number; pointsCost: number; maxDiscountMinor: number; active?: boolean }>;
     at?: Iso;
   },
-): void {
+): Promise<void> {
   const at = input.at ?? now();
-  db.tx(() => {
+  await db.tx(async () => {
     for (const tier of input.tiers) {
       if (tier.pointsCost <= 0 || tier.maxDiscountMinor <= 0) {
         throw new DomainError('validation_failed', 'a tier needs a points cost and a cap', {
           discountPct: tier.discountPct,
         });
       }
-      db.run(
+      await db.run(
         `INSERT INTO voucher_tiers
            (id, venue_id, discount_pct, points_cost, max_discount_minor, active, created_at, updated_at)
          VALUES ($i, $v, $p, $pt, $m, $a, $t, $t)
@@ -377,7 +377,7 @@ export function setVoucherTiers(
         },
       );
     }
-    audit.record(db, {
+    await audit.record(db, {
       actorId: input.actorId,
       action: 'voucher_tiers.update',
       entity: 'venue',
@@ -397,12 +397,12 @@ export function setVoucherTiers(
  * the failure mode a "loyalty budget" field and a "voucher budget" field beside
  * each other invites on the very first edit.
  */
-export function setBudget(
+export async function setBudget(
   db: Db,
   input: { venueId: string; actorId: string; totalMinor: number; loyaltyBp?: number; at?: Iso },
-): budget.BudgetView {
+): Promise<budget.BudgetView> {
   const at = input.at ?? now();
-  const venue = getVenue(db, input.venueId);
+  const venue = await getVenue(db, input.venueId);
   const period = localMonth(at, venue.timezone);
 
   if (input.totalMinor < 0) throw new DomainError('validation_failed', 'a budget cannot be negative');
@@ -410,7 +410,7 @@ export function setBudget(
     throw new DomainError('validation_failed', 'the split is basis points, 0–10000');
   }
 
-  const view = budget.budgetFor(db, input.venueId, at);
+  const view = await budget.budgetFor(db, input.venueId, at);
   /* Refuse to shrink a budget below what is already committed: the reserves
      represent vouchers customers are holding, and a pool that cannot honour them
      is a promise already broken. */
@@ -421,12 +421,12 @@ export function setBudget(
     });
   }
 
-  db.run(
+  await db.run(
     `UPDATE budgets SET total_minor = $t, loyalty_bp = COALESCE($l, loyalty_bp), updated_at = $at
       WHERE venue_id = $v AND period = $p`,
     { t: input.totalMinor, l: input.loyaltyBp ?? null, at, v: input.venueId, p: period },
   );
-  audit.record(db, {
+  await audit.record(db, {
     actorId: input.actorId,
     action: 'budget.update',
     entity: 'budget',
@@ -436,12 +436,12 @@ export function setBudget(
     after: { total: input.totalMinor, loyaltyBp: input.loyaltyBp },
     at,
   });
-  return budget.budgetFor(db, input.venueId, at);
+  return await budget.budgetFor(db, input.venueId, at);
 }
 
 /* ═══════════════════════════════════════════════════════ B5 campaigns ══ */
 
-export function createCampaign(
+export async function createCampaign(
   db: Db,
   input: {
     venueId: string;
@@ -459,21 +459,21 @@ export function createCampaign(
     pointsThreshold?: number;
     at?: Iso;
   },
-): campaigns.Campaign {
+): Promise<campaigns.Campaign> {
   const at = input.at ?? now();
   campaigns.validateCampaign(input);
 
-  const ent = entitlements.entitlementsFor(db, { venueId: input.venueId });
+  const ent = await entitlements.entitlementsFor(db, { venueId: input.venueId });
   const active =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active'`,
       { v: input.venueId },
-    )?.n ?? 0;
+    ))?.n ?? 0;
   entitlements.requireCapacity(ent, 'active_campaigns', active, 1);
 
   const id = newId('cmp');
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO campaigns
          (id, venue_id, name, visits_required, reward_label, reward_cost_minor, priority,
           recurring, min_spend_minor, reward_valid_days, status, created_at, updated_at)
@@ -492,7 +492,7 @@ export function createCampaign(
         t: at,
       },
     );
-    audit.record(db, {
+    await audit.record(db, {
       actorId: input.actorId,
       action: 'campaign.create',
       entity: 'campaign',
@@ -503,7 +503,7 @@ export function createCampaign(
     });
   });
 
-  return db.get<campaigns.Campaign>(`SELECT * FROM campaigns WHERE id = $i`, { i: id })!;
+  return (await db.get<campaigns.Campaign>(`SELECT * FROM campaigns WHERE id = $i`, { i: id }))!;
 }
 
 /* ═══════════════════════════════════════════════════════ B3 hot deals ══ */
@@ -528,16 +528,16 @@ export interface DealDraft {
   aiGenerated?: boolean;
 }
 
-export function createDeal(
+export async function createDeal(
   db: Db,
   input: { actorId: string; draft: DealDraft; at?: Iso },
-): deals.Deal {
+): Promise<deals.Deal> {
   const at = input.at ?? now();
-  const venue = getVenue(db, input.draft.venueId);
+  const venue = await getVenue(db, input.draft.venueId);
   const id = newId('del');
 
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `INSERT INTO hot_deals
          (id, venue_id, partner_name, city, country_code, category, discount_text, promo_code,
           image_url, status, valid_from, valid_to, target_weekdays, target_from_min, target_to_min,
@@ -568,8 +568,8 @@ export function createDeal(
         t: at,
       },
     );
-    writeCopy(db, id, input.draft.copy, input.draft.aiGenerated ?? false, at);
-    audit.record(db, {
+    await writeCopy(db, id, input.draft.copy, input.draft.aiGenerated ?? false, at);
+    await audit.record(db, {
       actorId: input.actorId,
       action: 'deal.create',
       entity: 'hot_deal',
@@ -580,20 +580,20 @@ export function createDeal(
     });
   });
 
-  return deals.getDeal(db, id);
+  return await deals.getDeal(db, id);
 }
 
-function writeCopy(
+async function writeCopy(
   db: Db,
   dealId: string,
   copy: DealDraft['copy'],
   ai: boolean,
   at: Iso,
-): void {
+): Promise<void> {
   for (const [language, fields] of Object.entries(copy)) {
     for (const [field, value] of Object.entries(fields)) {
       if (!value?.trim()) continue;
-      db.run(
+      await db.run(
         `INSERT INTO translations (entity, entity_id, field, language, value, ai_generated, updated_at)
          VALUES ('hot_deal', $i, $f, $l, $v, $ai, $t)
            ON CONFLICT (entity, entity_id, field, language)
@@ -605,16 +605,16 @@ function writeCopy(
   }
 }
 
-export function updateDeal(
+export async function updateDeal(
   db: Db,
   input: { dealId: string; actorId: string; patch: Partial<DealDraft>; at?: Iso },
-): deals.Deal {
+): Promise<deals.Deal> {
   const at = input.at ?? now();
-  const before = deals.getDeal(db, input.dealId);
+  const before = await deals.getDeal(db, input.dealId);
   const p = input.patch;
 
-  db.tx(() => {
-    db.run(
+  await db.tx(async () => {
+    await db.run(
       `UPDATE hot_deals SET
           discount_text = COALESCE($dt, discount_text), promo_code = COALESCE($pc, promo_code),
           image_url = COALESCE($im, image_url), category = COALESCE($ca, category),
@@ -646,8 +646,8 @@ export function updateDeal(
         i: input.dealId,
       },
     );
-    if (p.copy) writeCopy(db, input.dealId, p.copy, p.aiGenerated ?? false, at);
-    audit.record(db, {
+    if (p.copy) await writeCopy(db, input.dealId, p.copy, p.aiGenerated ?? false, at);
+    await audit.record(db, {
       actorId: input.actorId,
       action: 'deal.update',
       entity: 'hot_deal',
@@ -659,7 +659,7 @@ export function updateDeal(
     });
   });
 
-  return deals.getDeal(db, input.dealId);
+  return await deals.getDeal(db, input.dealId);
 }
 
 /**
@@ -671,30 +671,30 @@ export function updateDeal(
  * (B3). Publishing a deal nobody can be shown is the failure that looks like
  * success.
  */
-export function publishDeal(
+export async function publishDeal(
   db: Db,
   input: { dealId: string; actorId: string; at?: Iso },
-): deals.Deal {
+): Promise<deals.Deal> {
   const at = input.at ?? now();
-  const deal = assertPublishable(db, input.dealId);
+  const deal = await assertPublishable(db, input.dealId);
   /* Re-read for the two things the audit entry and the moderation row need.
      `assertPublishable` proved them; it does not carry them back, because its
      job is the verdict rather than the payload. */
-  const venue = getVenue(db, deal.venue_id!);
-  const filled = deals.completeness(db, input.dealId);
+  const venue = await getVenue(db, deal.venue_id!);
+  const filled = await deals.completeness(db, input.dealId);
 
   const scheduled = deal.valid_from && deal.valid_from > at;
-  db.run(
+  await db.run(
     `UPDATE hot_deals SET status = $s, published_at = COALESCE(published_at, $t), updated_at = $t
       WHERE id = $i`,
     { s: scheduled ? 'scheduled' : 'live', t: at, i: input.dealId },
   );
-  db.run(
+  await db.run(
     `INSERT INTO moderation_queue (id, entity, entity_id, venue_id, reason, status, created_at)
      VALUES ($i, 'hot_deal', $d, $v, 'published copy', 'pending', $t)`,
     { i: newId('mod'), d: input.dealId, v: venue.id, t: at },
   );
-  audit.record(db, {
+  await audit.record(db, {
     actorId: input.actorId,
     action: 'deal.publish',
     entity: 'hot_deal',
@@ -704,20 +704,20 @@ export function publishDeal(
     at,
   });
 
-  return deals.getDeal(db, input.dealId);
+  return await deals.getDeal(db, input.dealId);
 }
 
 /** What the dashboard lists, with each deal's funnel and translation state. */
-export function dealsFor(db: Db, venueId: string) {
-  return db
+export async function dealsFor(db: Db, venueId: string) {
+  return await Promise.all((await db
     .all<deals.Deal>(`SELECT * FROM hot_deals WHERE venue_id = $v ORDER BY created_at DESC`, {
       v: venueId,
-    })
-    .map((deal) => ({
+    }))
+    .map(async (deal) => ({
       ...deal,
-      funnel: deals.funnel(db, deal.id),
-      translations: deals.completeness(db, deal.id),
-    }));
+      funnel: await deals.funnel(db, deal.id),
+      translations: await deals.completeness(db, deal.id),
+    })));
 }
 
 /**
@@ -734,25 +734,25 @@ export function dealsFor(db: Db, venueId: string) {
  * a thing an operator fixes, a full plan is a thing the owner fixes, and an
  * empty deal is a thing they fix in the drawer they just left.
  */
-export function assertPublishable(db: Db, dealId: string): deals.Deal {
-  const deal = deals.getDeal(db, dealId);
+export async function assertPublishable(db: Db, dealId: string): Promise<deals.Deal> {
+  const deal = await deals.getDeal(db, dealId);
   if (!deal.venue_id) throw new DomainError('invalid_state', 'deal has no venue');
-  const venue = getVenue(db, deal.venue_id);
+  const venue = await getVenue(db, deal.venue_id);
   requireVerified(venue);
 
-  const ent = entitlements.entitlementsFor(db, { venueId: venue.id });
+  const ent = await entitlements.entitlementsFor(db, { venueId: venue.id });
   /* The deal being resumed is not counted, because it is not live yet — so the
      comparison is "is there room for one more", which is the same question
      publishing asks. */
   const live =
-    db.get<{ n: number }>(
+    (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM hot_deals
         WHERE venue_id = $v AND status IN ('live', 'scheduled') AND id <> $d`,
       { v: venue.id, d: dealId },
-    )?.n ?? 0;
+    ))?.n ?? 0;
   entitlements.requireCapacity(ent, 'live_deals', live, 1);
 
-  const filled = deals.completeness(db, dealId);
+  const filled = await deals.completeness(db, dealId);
   if (filled.filled.length === 0) {
     throw new DomainError('validation_failed', 'a deal needs a title and description in at least one language', {
       missing: filled.missing,

@@ -366,6 +366,23 @@ the start, because finding out at the end means finding out after the round was
 played. `energyLeft` on that response is therefore what the player holds
 *before* paying for the round; the one on `/finish` is one lower.
 
+**Or it hands back an unpaid round instead, if you ask for one.** Send
+`practice: true` on that call and an empty tank opens the round rather than
+refusing it. The round plays identically — same questions, same events, same
+scoring — and banks **nothing**: no points, no ledger entry, no streak movement,
+no freeze earned or spent, no energy taken. Both the session and the finish carry
+`paid`, which is the field to branch the result screen on: a practice round and a
+round somebody got everything wrong on are otherwise the same body, `score: 0`
+in both. Energy still buys what it always bought; what it no longer buys is
+whether somebody may play at all.
+
+Three things to know before adopting it. The flag is **opt-in**: without it the
+refusal is exactly what it was, so nothing changes for a client that does not
+send it. Whether a round pays is decided from the tank **as it was when the round
+started**, not as it is at the finish — so a round that opens `paid: false`
+finishes `paid: false` however long it runs, and the screen's promise holds. And
+`practice` is ignored when there is energy: a round that can pay, pays.
+
 **A hint is metered.** Word Builder hints are capped per day by
 `word_hints_per_day` — 3 free, 6 on Pro, 10 on Premium — and past it the event is
 refused with `entitlement_required` rather than quietly answered with something
@@ -645,3 +662,62 @@ The console reads it back through `GET /v1/admin/traffic?from=&to=`, alongside
   precisely so that nobody computes it wrongly from the figures beside it.
   **Render it as "not knowable", never as 0** — the same rule §9's `suppressed`
   states for partner analytics, for the same reason.
+
+---
+
+## 12. Taking things down (admin)
+
+Eight endpoints, all `auth: 'admin'`, and what they have in common is the point:
+**an operator may remove a thing, or restore access to it, and may not edit a
+figure anybody reports from.** Nothing here touches a balance, a visit count or
+a funnel number. Every one writes an `audit_log` row with the actor on it.
+
+| | reversible | final |
+|---|---|---|
+| venue | `PATCH /v1/admin/venues/:id` `{status: live\|suspended}` | `DELETE /v1/admin/venues/:id` `{confirm}` |
+| offer | `PATCH /v1/admin/deals/:id` `{status: live\|paused}` | `DELETE /v1/admin/deals/:id` |
+| gift card | — | `DELETE /v1/admin/gift-cards/:id` |
+| account | `POST /v1/admin/users/:id/ban` `{banned}` | `DELETE /v1/admin/users/:id` `{confirm}` |
+
+`POST /v1/admin/users/:id/password` `{password}` is the ninth and the odd one
+out: it neither removes nor restores a *thing*, it gives a person their account
+back. `GET /v1/admin/deals` is the read that makes the pausing usable — the
+public `GET /v1/deals` is live rows only, so a paused offer could not be listed
+and therefore could not be resumed.
+
+Six things a client has to get right:
+
+- **`confirm` is required on the two irreversible ones**, and is the venue's
+  `name` or the account's `email` (its `id` when there is no address). Folded
+  for case and runs of whitespace on both sides; a wrong answer is a 400 with
+  `field: "confirm"` and the expected string in `expected`. This is the same
+  construction `DELETE /v1/me` uses to make somebody type their own address.
+- **Removing is archiving, not deleting.** A venue gets `status = 'archived'`
+  and `deleted_at`; a deal gets `status = 'archived'`. The rows stay because
+  `venue_visits`, `transactions`, `deal_events` and the ledger point at them and
+  a platform report has to keep adding up afterwards. They leave every list.
+- **Removing a venue takes its offers with it** — archived, its scheduled pushes
+  cancelled, its stamp campaigns ended and its tags revoked, in one transaction.
+  `deals.browse` selects on `hot_deals.status` and never joins `venues`, so an
+  archived venue with live deals leaves a claimable card on the board for a
+  business that no longer exists. The response returns `offersArchived`.
+- **Resuming an offer clears the owner's own three gates** (`assertPublishable`):
+  a verified venue, room on the plan for another live deal, and copy in at least
+  one language. Being an operator is not an exemption. Pausing is ungated —
+  taking something down never is.
+- **A gift card is deleted or delisted, and the server decides which.**
+  `gift_cards.stock_id` is `ON DELETE RESTRICT`, so a brand somebody holds a
+  card from cannot be dropped; it goes `active = 0` instead, and the response
+  says `outcome: "deleted" | "delisted"` with `issued`. They are different
+  facts and a client should say which happened.
+- **An operator's row is refused**, including your own: ban, erase and everything
+  else return 403 for an account holding the `admin` role. Banning your own row
+  revokes your own session inside the request that did it, and no screen undoes
+  that. Do not draw the controls for those rows.
+
+Erasure is `consent.eraseUser` — the *same* Article 17 routine a person runs on
+themselves through `DELETE /v1/me`. It anonymises rather than deleting: the
+person leaves, the accounting stays. The password reset drops every session the
+account has open, and the new password is deliberately **not** written to the
+audit entry.
+

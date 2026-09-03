@@ -28,6 +28,16 @@ export interface Ctx {
   params: Record<string, string>;
   query: URLSearchParams;
   body: Record<string, unknown>;
+  /**
+   * The request body exactly as it arrived, before parsing.
+   *
+   * Only one route needs it and that route could not work without it: Stripe
+   * signs the *bytes* it sent, so a webhook signature has to be checked
+   * against those bytes. Re-serialising the parsed object would produce a
+   * different string the day a key order or a number format differed, and the
+   * failure would look like a misconfigured secret rather than a bug.
+   */
+  rawBody: string;
   ip: string;
   language: string;
   at: Iso;

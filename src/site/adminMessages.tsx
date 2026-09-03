@@ -1,13 +1,18 @@
 /**
  * The console's inbox: what people wrote on the Contact page.
  *
- * The fifth tab, and the **second** one that asks a server — the first three
- * are derived on this device from `auth/directory.ts`, and "who wrote to us"
- * is, like "who visited the site", a question about people who were never in
- * this browser. It follows every rule `adminWebsite.tsx` established for that
- * case and reuses its `Connect` panel outright, because the console signs in to
- * the API separately from the site and doing that twice would be two places to
- * get a token from.
+ * The fifth tab. It was the *second* of five to ask a server, back when the
+ * first three were derived on this device from `auth/directory.ts`; all five do
+ * now, so what is left of that distinction is the reason this one was never in
+ * doubt — "who wrote to us" is, like "who visited the site", a question about
+ * people who were never in this browser.
+ *
+ * It follows every rule `adminWebsite.tsx` established for that case. What it
+ * no longer needs is that file's sign-in panel: reaching `#/admin` at all means
+ * the session already carries `admin` in its roles, so the token is in hand and
+ * a second login was one person signing in twice with two accounts on one
+ * screen. A token that has expired under a remembered session is a stale
+ * sign-in, not a password prompt, and it says so.
  *
  * Two of those rules matter enough to restate:
  *

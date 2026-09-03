@@ -1,18 +1,10 @@
 import { useState } from 'react';
-import {
-  GAMES,
-  LEARN_BOARD,
-  LEARN_STATS,
-  LEARN_STEP_ICONS,
-  LEARN_VOUCHER_EUR,
-  STREAK,
-} from './content';
+import { GAMES, LEARN_BOARD, LEARN_STATS, LEARN_STEP_ICONS, STREAK } from './content';
 import { MAX_FREEZES } from './auth/player';
 import { gameName, rulesFor } from './games/rules';
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
-import { useCopy, useMoney } from './i18n/context';
-import { fill } from './i18n/currency';
+import { useCopy } from './i18n/context';
 import { PATHS } from './router';
 import { usePalette } from './theme/context';
 
@@ -349,7 +341,6 @@ function LearnBoard() {
  */
 function LearnFaq() {
   const copy = useCopy();
-  const money = useMoney();
   const [open, setOpen] = useState<number | null>(0);
 
   return (
@@ -395,9 +386,14 @@ function LearnFaq() {
                   aria-labelledby={`faq-q-${i}`}
                 >
                   <div>
-                    {/* One answer quotes a voucher value; it is priced in the reader's
-                        currency like every other figure on the site. */}
-                    <p>{fill(item.a, { amount: money(LEARN_VOUCHER_EUR) })}</p>
+                    {/* One answer used to quote a voucher's face value, read off
+                        the catalogue in `content.ts` and priced in the reader's
+                        currency. There is no catalogue here to read: what a card
+                        is worth is a row on the server, and it may be nothing at
+                        all until an operator stocks one. The answer now says
+                        what points *do* and sends the reader to the page that
+                        can actually list them. */}
+                    <p>{item.a}</p>
                   </div>
                 </div>
               </div>

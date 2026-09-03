@@ -152,6 +152,33 @@ export interface GamesState {
 
 export const gamesState = () => call<GamesState>('/v1/games/state');
 
+/* ═════════════════════════════════════════════════════════════ checkout ══ */
+
+/**
+ * Start paying for a plan.
+ *
+ * Returns a **URL to send the browser to**, not a subscription: the server
+ * writes nothing at this point, deliberately, so that opening the payment page
+ * and closing it again entitles nobody. The plan arrives back through Stripe's
+ * webhook, which is why the caller's job ends at the redirect and the badge
+ * only changes on the next load.
+ *
+ * `mode` says which adapter answered. `live` is a real Stripe page; `local` is
+ * the development stand-in, whose `url` is an `about:blank` that says so rather
+ * than a page pretending to take a card.
+ */
+export interface Checkout {
+  mode: 'live' | 'local';
+  url: string;
+  sessionId?: string;
+}
+
+export const startCheckout = (planCode: string) =>
+  call<Checkout>('/v1/billing/checkout', {
+    method: 'POST',
+    body: { planCode, source: 'stripe' },
+  });
+
 /* ══════════════════════════════════════════════════════════════ a round ══ */
 
 /**
@@ -190,12 +217,33 @@ export interface Round {
   content: unknown;
   /** Before this round is paid for. Energy is charged at `finish`, never here. */
   energyLeft: number;
+  /**
+   * Whether this round will bank anything.
+   *
+   * `false` is a **practice** round — one opened on an empty tank. It plays
+   * identically and pays nothing at all: no points, no streak, no energy. The
+   * screen has to say so before the first question rather than after the last,
+   * which is why the server answers it here and not only at the finish.
+   */
+  paid: boolean;
 }
 
-export const startRound = (gameType: ServerGameType, language?: string) =>
+/**
+ * Open a round.
+ *
+ * `practice` is what turns an empty tank from a refusal into an unpaid round.
+ * Sent only when the tank is actually empty — the flag is ignored when there is
+ * energy, and a client that sent it unconditionally would be asking the server
+ * to decide something it has already decided.
+ */
+export const startRound = (gameType: ServerGameType, language?: string, practice?: boolean) =>
   call<Round>('/v1/games/sessions', {
     method: 'POST',
-    body: language ? { gameType, language } : { gameType },
+    body: {
+      gameType,
+      ...(language ? { language } : {}),
+      ...(practice ? { practice: true } : {}),
+    },
   });
 
 /**
@@ -265,6 +313,14 @@ export interface Finish {
   freezes: number;
   energyLeft: number;
   balance: number;
+  /**
+   * Whether the round banked anything — the same promise `Round.paid` made when
+   * it was opened.
+   *
+   * The result card needs it to tell a practice round from a round somebody got
+   * everything wrong on: both pay 0, and only one of them is worth explaining.
+   */
+  paid: boolean;
   nearest: {
     venueId: string;
     venueName: string;

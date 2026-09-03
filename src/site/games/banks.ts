@@ -291,3 +291,24 @@ export function flagOf(code: string): string {
     ...[...code.toLowerCase()].map((ch) => 0x1f1e6 + ch.charCodeAt(0) - 97),
   );
 }
+
+/**
+ * What a flag question's *prompt* should be drawn as.
+ *
+ * The server's flags bank stores the **ISO code** as the prompt and derives the
+ * emoji beside it (`server/db/import.ts`, `importFlags`): "storing the emoji as
+ * the prompt would put a rendering decision in the database". That is the right
+ * call there and it makes this the client's job — and it was not being done, so
+ * every flag question on a signed-in round asked "which country is UZ?", which
+ * answers itself. The local bank hands `flagOf` its code already, so the bug
+ * appeared on exactly the path nobody plays while the backend is down.
+ *
+ * Written as "code in, glyph out; anything else through unchanged" rather than
+ * as a call to `flagOf`, because both halves of the protocol have to survive it:
+ * `flagOf` returns `''` for a string that is not two characters, so a server
+ * that ever did send the emoji would render a blank question instead of a wrong
+ * one. A prompt that is already a flag is not two ASCII letters, and passes.
+ */
+export function flagGlyph(prompt: string): string {
+  return /^[A-Za-z]{2}$/.test(prompt) ? flagOf(prompt) : prompt;
+}

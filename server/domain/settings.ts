@@ -18,51 +18,52 @@ import { CONFIG } from '../config.ts';
 import { TERM_LADDER, termPricing } from './entitlements.ts';
 import { now, type Iso } from './time.ts';
 
-export function configValue(db: Db, key: string, fallback: number): number {
-  const row = db.get<{ value: string }>(`SELECT value FROM platform_config WHERE key = $k`, {
+export async function configValue(db: Db, key: string, fallback: number): Promise<number> {
+  const row = await db.get<{ value: string }>(`SELECT value FROM platform_config WHERE key = $k`, {
     k: key,
   });
   const parsed = row ? Number(row.value) : NaN;
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
-export function setConfig(db: Db, key: string, value: string | number, at: Iso = now()): void {
-  db.run(
+export async function setConfig(db: Db, key: string, value: string | number, at: Iso = now()): Promise<void> {
+  await db.run(
     `INSERT INTO platform_config (key, value, updated_at) VALUES ($k, $v, $t)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
     { k: key, v: String(value), t: at },
   );
 }
 
-export const minCohort = (db: Db): number => configValue(db, 'min_cohort', CONFIG.privacy.minCohort);
-export const minVenues = (db: Db): number => configValue(db, 'min_venues', CONFIG.privacy.minVenues);
+export const minCohort = async (db: Db): Promise<number> => await configValue(db, 'min_cohort', CONFIG.privacy.minCohort);
+export const minVenues = async (db: Db): Promise<number> => await configValue(db, 'min_venues', CONFIG.privacy.minVenues);
 
 /**
  * The plans, their perks, the terms they are sold on, the category average
  * checks, and a small gift-card catalogue. Idempotent: safe to run on every
  * boot.
  */
-export function seedPlatform(db: Db, at: Iso = now()): void {
-  db.tx(() => {
-    seedPlans(db, at);
-    seedCategoryDefaults(db);
+export async function seedPlatform(db: Db, at: Iso = now()): Promise<void> {
+  await db.tx(async () => {
+    await seedPlans(db, at);
+    await seedCategoryDefaults(db);
     /*
-     * **The gift-card catalogue is opt-in, and that is a correction rather than
-     * a preference.**
+     * **There is no gift-card catalogue here, and there must not be one.**
      *
-     * Five real brand names — Zalando, Empik, Douglas — were written on every
-     * boot with 250 in stock each, carried over from the prototype's own wallet
-     * so the two would agree. Nothing behind them is real: there is no
-     * agreement with any of those retailers, and a catalogue offering a 50 zł
-     * Zalando card for 500 points is a promise the product cannot keep to the
-     * first person who saves up for one. That is worse than an empty shelf,
-     * which at least says something true.
+     * Five real brand names — Zalando, Media Expert, Douglas, Hebe, Empik —
+     * were written on every boot with 250 in stock each, carried over from the
+     * prototype's own wallet so the two would agree. Nothing behind them was
+     * real: there is no agreement with any of those retailers, and a catalogue
+     * offering a 50 zł Zalando card for 500 points is a promise the product
+     * cannot keep to the first person who saves up for one. Worse, it is a
+     * promise made in *points*, which people spend a month earning.
      *
-     * The seeding stays, because an operator setting up a demonstration wants
-     * it and it is the only worked example of the shape. It runs when asked.
+     * Making it opt-in behind an env flag was the intermediate answer and it
+     * was not enough: the flag is set once on a box and forgotten, and the rows
+     * it wrote are indistinguishable from stock an operator entered. The shelf
+     * is `gift_card_stock`, it starts empty, and only an operator fills it.
+     * `wallet.tsx` and `games.tsx` both render the empty shelf as itself.
      */
-    if (process.env.PAYLEZ_DEMO_SEED === '1') seedGiftCards(db);
-    seedWords(db);
+    await seedWords(db);
   });
 }
 
@@ -391,10 +392,10 @@ const RETIRED_ENTITLEMENTS: readonly string[] = [
   'round_decay',
 ];
 
-function seedPlans(db: Db, at: Iso): void {
+async function seedPlans(db: Db, at: Iso): Promise<void> {
   for (const plan of PLANS) {
     const id = `pln_${plan.audience}_${plan.code}`;
-    db.run(
+    await db.run(
       `INSERT INTO plans (id, audience, code, name, price_minor, currency, interval, trial_days, rank, active)
        VALUES ($i, $a, $c, $n, $p, 'PLN', 'month', $t, $r, 1)
        ON CONFLICT (audience, code) DO UPDATE
@@ -411,35 +412,35 @@ function seedPlans(db: Db, at: Iso): void {
       },
     );
     for (const [key, value] of Object.entries(plan.entitlements)) {
-      db.run(
+      await db.run(
         `INSERT INTO plan_entitlements (plan_id, key, value) VALUES ($p, $k, $v)
            ON CONFLICT (plan_id, key) DO UPDATE SET value = excluded.value`,
         { p: id, k: key, v: String(value) },
       );
     }
-    seedTerms(db, id, plan.priceMinor, plan.terms === true);
+    await seedTerms(db, id, plan.priceMinor, plan.terms === true);
   }
 
   /* After the upsert loop, never before it: a key deleted first would be put
      straight back by a plan that still listed it, which is exactly the failure
      this is here to catch if one ever does. */
   for (const key of RETIRED_ENTITLEMENTS) {
-    db.run(`DELETE FROM plan_entitlements WHERE key = $k`, { k: key });
+    await db.run(`DELETE FROM plan_entitlements WHERE key = $k`, { k: key });
   }
 
   for (const plan of RETIRED) {
-    db.run(`UPDATE plans SET active = 0 WHERE audience = $a AND code = $c`, {
+    await db.run(`UPDATE plans SET active = 0 WHERE audience = $a AND code = $c`, {
       a: plan.audience,
       c: plan.code,
     });
-    db.run(
+    await db.run(
       `DELETE FROM plan_terms WHERE plan_id IN
          (SELECT id FROM plans WHERE audience = $a AND code = $c)`,
       { a: plan.audience, c: plan.code },
     );
   }
 
-  settleWithdrawnTrials(db, at);
+  await settleWithdrawnTrials(db, at);
 }
 
 /**
@@ -458,8 +459,8 @@ function seedPlans(db: Db, at: Iso): void {
  * makes it self-limiting: put a trial back on a plan and its subscriptions stop
  * being touched, which is what makes running this on every boot safe.
  */
-function settleWithdrawnTrials(db: Db, at: Iso): void {
-  db.run(
+async function settleWithdrawnTrials(db: Db, at: Iso): Promise<void> {
+  await db.run(
     `UPDATE subscriptions SET status = 'active', updated_at = $t
       WHERE status = 'trialing'
         AND plan_id IN (SELECT id FROM plans WHERE trial_days = 0)`,
@@ -485,13 +486,13 @@ function settleWithdrawnTrials(db: Db, at: Iso): void {
  * invoice agree by construction — 16.39 a month beside a charge of 98.35 is the
  * few-grosze disagreement nobody can explain at the counter.
  */
-function seedTerms(db: Db, planId: string, monthlyMinor: number, sold: boolean): void {
-  db.run(`DELETE FROM plan_terms WHERE plan_id = $p`, { p: planId });
+async function seedTerms(db: Db, planId: string, monthlyMinor: number, sold: boolean): Promise<void> {
+  await db.run(`DELETE FROM plan_terms WHERE plan_id = $p`, { p: planId });
   if (!sold) return;
 
   for (const rung of TERM_LADDER) {
     const term = termPricing(monthlyMinor, rung.months, rung.discountBp);
-    db.run(
+    await db.run(
       `INSERT INTO plan_terms (plan_id, months, discount_bp, price_minor, total_minor)
        VALUES ($p, $m, $d, $pm, $tm)`,
       {
@@ -531,9 +532,9 @@ const CATEGORY_DEFAULTS: Array<[string, number]> = [
   ['other', 6000],
 ];
 
-function seedCategoryDefaults(db: Db): void {
+async function seedCategoryDefaults(db: Db): Promise<void> {
   for (const [category, minor] of CATEGORY_DEFAULTS) {
-    db.run(
+    await db.run(
       `INSERT INTO category_defaults (category, avg_check_minor, currency) VALUES ($c, $m, 'PLN')
          ON CONFLICT (category) DO UPDATE SET avg_check_minor = excluded.avg_check_minor`,
       { c: category, m: minor },
@@ -541,40 +542,14 @@ function seedCategoryDefaults(db: Db): void {
   }
 }
 
-/**
- * The gift-card catalogue.
- *
- * The four brands and the points prices the site's own wallet already shows
- * (`src/site/auth/player.ts`), so a wallet migrated from the prototype and one
- * served by this backend hold the same things. Face values are euros because
- * that is the unit the site stores every amount in and converts on the way out.
+/*
+ * `GIFT_CARDS` and `seedGiftCards` were here — a five-row table of real retail
+ * brands with face values and points prices, upserted into `gift_card_stock` at
+ * boot. Both are deleted; see the note in `seedPlatform`. The table it wrote to
+ * is untouched and is still the only place a voucher can come from, which is
+ * what makes `vouchers.redeem` a real transaction rather than a lookup into a
+ * list somebody typed.
  */
-const GIFT_CARDS: Array<[string, string, number, number, boolean]> = [
-  ['Zalando', 'Z', 1163, 500, false],
-  ['Media Expert', 'M', 465, 100, false],
-  ['Douglas', 'D', 698, 300, false],
-  ['Hebe', 'H', 465, 100, false],
-  ['Empik', 'E', 930, 400, true],
-];
-
-function seedGiftCards(db: Db): void {
-  for (const [brand, logo, faceMinor, points, priority] of GIFT_CARDS) {
-    db.run(
-      `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
-       VALUES ($i, $b, $l, $f, 'EUR', $p, 250, $pr, 1)
-       ON CONFLICT (id) DO UPDATE
-         SET points_cost = excluded.points_cost, face_minor = excluded.face_minor`,
-      {
-        i: `gcs_${brand.toLowerCase().replace(/\s+/g, '_')}`,
-        b: brand,
-        l: logo,
-        f: faceMinor,
-        p: points,
-        pr: priority ? 1 : 0,
-      },
-    );
-  }
-}
 
 /**
  * The Word Builder bank.
@@ -624,7 +599,7 @@ const WORDS: Array<[string, string, string]> = [
   ['en', 'registration', 'putting your address on record'],
 ];
 
-function seedWords(db: Db): void {
+async function seedWords(db: Db): Promise<void> {
   for (const [language, word, hint] of WORDS) {
     /*
      * 3–4 easy, 5–7 medium, 8+ hard — the same bands
@@ -637,7 +612,7 @@ function seedWords(db: Db): void {
      * nine-letter ones and made the hard rung mostly not hard.
      */
     const tier = word.length <= 4 ? 1 : word.length <= 7 ? 2 : 3;
-    db.run(
+    await db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, $l, $w, $t, $h)
          ON CONFLICT (language, word) DO UPDATE SET tier = excluded.tier, hint = excluded.hint`,
       { i: `wrd_${language}_${word}`, l: language, w: word, t: tier, h: hint },

@@ -126,7 +126,7 @@ const dayOf = (at: Iso): string => at.slice(0, 10);
  * Record a beacon. Returns the session it landed in, mostly so the tests can
  * assert that two beacons inside the window are one visit and not two.
  */
-export function record(db: Db, beacon: Beacon, secret: string, at: Iso = now()): string {
+export async function record(db: Db, beacon: Beacon, secret: string, at: Iso = now()): Promise<string> {
   const events = beacon.events.slice(0, CONFIG.traffic.maxBatch);
   if (events.length === 0) return '';
 
@@ -138,7 +138,7 @@ export function record(db: Db, beacon: Beacon, secret: string, at: Iso = now()):
      well as the idle window means a session can never straddle the midnight the
      visitor key rotates at — which would otherwise leave a session whose second
      half belongs to a hash nothing else will ever match. */
-  const open = db.get<{ id: string; last_at: string }>(
+  const open = await db.get<{ id: string; last_at: string }>(
     `SELECT id, last_at FROM web_sessions
       WHERE visitor_day = $v AND day = $d ORDER BY last_at DESC LIMIT 1`,
     { v: visitor, d: day },
@@ -149,7 +149,7 @@ export function record(db: Db, beacon: Beacon, secret: string, at: Iso = now()):
 
   if (fresh) {
     sessionId = newId('wbs');
-    db.run(
+    await db.run(
       `INSERT INTO web_sessions
          (id, visitor_day, day, started_at, last_at, views, actions,
           entry_path, exit_path, referrer_host, country, language, device, user_id, account_type)
@@ -178,7 +178,7 @@ export function record(db: Db, beacon: Beacon, secret: string, at: Iso = now()):
     const kind: EventKind = event.kind === 'action' ? 'action' : 'view';
     if (kind === 'view') views += 1;
     else actions += 1;
-    db.run(
+    await db.run(
       `INSERT INTO web_events (id, session_id, at, day, kind, path, name, user_id)
        VALUES ($id, $s, $at, $d, $k, $p, $n, $u)`,
       {
@@ -196,7 +196,7 @@ export function record(db: Db, beacon: Beacon, secret: string, at: Iso = now()):
 
   /* Signing in mid-session attributes the session that was already running —
      the visit did not start when the sign-in finished. */
-  db.run(
+  await db.run(
     `UPDATE web_sessions
         SET last_at = $at, views = views + $v, actions = actions + $a, exit_path = $p,
             user_id = COALESCE($u, user_id), account_type = COALESCE($t, account_type)
@@ -235,10 +235,10 @@ export function defaultRange(at: Iso = now()): TrafficRange {
   return { from: dayOf(plusDays(at, -29)), to: dayOf(at) };
 }
 
-export function overview(db: Db, range: TrafficRange) {
+export async function overview(db: Db, range: TrafficRange) {
   const p = { from: range.from, to: range.to };
 
-  const totals = db.get<{
+  const totals = await db.get<{
     sessions: number;
     views: number;
     actions: number;
@@ -255,14 +255,14 @@ export function overview(db: Db, range: TrafficRange) {
      This is "visits by distinct people, added up over the range" and not
      "distinct people over the range" — the second is not answerable by design,
      and the field is named for what it is. */
-  const dailyVisitors = db.get<{ n: number }>(
+  const dailyVisitors = (await db.get<{ n: number }>(
     `SELECT COALESCE(SUM(n), 0) AS n FROM (
         SELECT COUNT(DISTINCT visitor_day) AS n FROM web_sessions
          WHERE day BETWEEN $from AND $to GROUP BY day)`,
     p,
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
-  const trend = db.all<{ day: string; visitors: number; sessions: number; views: number }>(
+  const trend = await db.all<{ day: string; visitors: number; sessions: number; views: number }>(
     `SELECT day, COUNT(DISTINCT visitor_day) AS visitors, COUNT(*) AS sessions,
             COALESCE(SUM(views), 0) AS views
        FROM web_sessions WHERE day BETWEEN $from AND $to
@@ -270,22 +270,22 @@ export function overview(db: Db, range: TrafficRange) {
     p,
   );
 
-  const pages = db.all<{ path: string; views: number; sessions: number }>(
+  const pages = await db.all<{ path: string; views: number; sessions: number }>(
     `SELECT path, COUNT(*) AS views, COUNT(DISTINCT session_id) AS sessions
        FROM web_events WHERE day BETWEEN $from AND $to AND kind = 'view'
       GROUP BY path ORDER BY views DESC LIMIT 25`,
     p,
   );
 
-  const actions = db.all<{ name: string; count: number }>(
+  const actions = await db.all<{ name: string; count: number }>(
     `SELECT COALESCE(name, path) AS name, COUNT(*) AS count
        FROM web_events WHERE day BETWEEN $from AND $to AND kind = 'action'
-      GROUP BY name ORDER BY count DESC LIMIT 25`,
+      GROUP BY COALESCE(name, path) ORDER BY count DESC LIMIT 25`,
     p,
   );
 
-  const bucket = (column: string, limit = 15) =>
-    db.all<{ key: string | null; sessions: number }>(
+  const bucket = async (column: string, limit = 15) =>
+    await db.all<{ key: string | null; sessions: number }>(
       `SELECT ${column} AS key, COUNT(*) AS sessions FROM web_sessions
         WHERE day BETWEEN $from AND $to GROUP BY ${column}
         ORDER BY sessions DESC LIMIT ${limit}`,
@@ -295,27 +295,27 @@ export function overview(db: Db, range: TrafficRange) {
   /* Direct traffic is a null host, not a missing row — an operator reading a
      referrer list wants to know how much of it arrived with no referrer at all,
      and that is usually the largest single line. */
-  const referrers = db.all<{ key: string; sessions: number }>(
+  const referrers = await db.all<{ key: string; sessions: number }>(
     `SELECT COALESCE(referrer_host, 'direct') AS key, COUNT(*) AS sessions
        FROM web_sessions WHERE day BETWEEN $from AND $to
-      GROUP BY key ORDER BY sessions DESC LIMIT 20`,
+      GROUP BY COALESCE(referrer_host, 'direct') ORDER BY sessions DESC LIMIT 20`,
     p,
   );
 
   /* Answerable for accounts and only for accounts — see the header. */
-  const returning = db.get<{ n: number }>(
+  const returning = (await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM (
         SELECT user_id FROM web_sessions
          WHERE day BETWEEN $from AND $to AND user_id IS NOT NULL
          GROUP BY user_id HAVING COUNT(DISTINCT day) > 1)`,
     p,
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
-  const knownVisitors = db.get<{ n: number }>(
+  const knownVisitors = (await db.get<{ n: number }>(
     `SELECT COUNT(DISTINCT user_id) AS n FROM web_sessions
       WHERE day BETWEEN $from AND $to AND user_id IS NOT NULL`,
     p,
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
   return {
     range,
@@ -336,10 +336,10 @@ export function overview(db: Db, range: TrafficRange) {
     pages,
     topActions: actions,
     referrers,
-    countries: bucket('country'),
-    languages: bucket('language'),
-    devices: bucket('device'),
-    accountTypes: bucket('account_type'),
+    countries: await bucket('country'),
+    languages: await bucket('language'),
+    devices: await bucket('device'),
+    accountTypes: await bucket('account_type'),
   };
 }
 
@@ -353,9 +353,9 @@ export function overview(db: Db, range: TrafficRange) {
  * is uniform, and every arm is bounded before the union so one busy table
  * cannot starve the others out of the window.
  */
-export function activity(db: Db, limit = 100) {
+export async function activity(db: Db, limit = 100) {
   const per = Math.max(10, Math.min(limit, 200));
-  const rows = db.all<{ at: string; kind: string; subject: string; detail: string | null }>(
+  const rows = await db.all<{ at: string; kind: string; subject: string; detail: string | null }>(
     `SELECT * FROM (
         SELECT created_at AS at, 'signup' AS kind,
                COALESCE(display_name, 'someone') AS subject,
@@ -390,10 +390,10 @@ export function activity(db: Db, limit = 100) {
 }
 
 /** Prune the per-event rows past the retention window. Called by the daily job. */
-export function prune(db: Db, at: Iso = now()): number {
+export async function prune(db: Db, at: Iso = now()): Promise<number> {
   const cutoff = dayOf(plusDays(at, -CONFIG.traffic.retentionDays));
-  const events = db.run(`DELETE FROM web_events WHERE day < $c`, { c: cutoff });
-  db.run(`DELETE FROM web_sessions WHERE day < $c`, { c: cutoff });
-  db.run(`DELETE FROM auth_attempts WHERE at < $c`, { c: plusDays(at, -2) });
+  const events = await db.run(`DELETE FROM web_events WHERE day < $c`, { c: cutoff });
+  await db.run(`DELETE FROM web_sessions WHERE day < $c`, { c: cutoff });
+  await db.run(`DELETE FROM auth_attempts WHERE at < $c`, { c: plusDays(at, -2) });
   return events.changes;
 }

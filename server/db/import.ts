@@ -53,7 +53,7 @@ export interface ImportSummary {
   notes: string[];
 }
 
-export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSummary {
+export async function importLegacy(db: Db, dir: string, gamesDir?: string): Promise<ImportSummary> {
   const at = now();
   const counts: Record<string, number> = {};
   const notes: string[] = [];
@@ -65,9 +65,9 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   /* ─────────────────────────────────────────────── translations, one helper ── */
 
-  const putText = (entity: string, id: string, field: string, lang: string, value: string) => {
+  const putText = async (entity: string, id: string, field: string, lang: string, value: string) => {
     if (!value.trim()) return;
-    db.run(
+    await db.run(
       `INSERT INTO translations (entity, entity_id, field, language, value, updated_at)
        VALUES ($e, $i, $f, $l, $v, $t)
        ON CONFLICT (entity, entity_id, field, language)
@@ -77,8 +77,8 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   };
 
   /** `title_en`, `title_ru`, … → one row per language that is actually filled. */
-  const putSuffixed = (entity: string, id: string, field: string, row: CsvRow, prefix: string) => {
-    for (const lang of LANGS) putText(entity, id, field, lang, str(row, `${prefix}_${lang}`));
+  const putSuffixed = async (entity: string, id: string, field: string, row: CsvRow, prefix: string) => {
+    for (const lang of LANGS) await putText(entity, id, field, lang, str(row, `${prefix}_${lang}`));
   };
 
   /* ────────────────────────────────────────────────────────────────── users ── */
@@ -94,12 +94,12 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   const isService = (id: string) => id === '' || id.startsWith('service_');
 
-  function userFor(
+  async function userFor(
     base44Id: string,
     email: string,
     name = '',
     created: string | null = null,
-  ): string | null {
+  ): Promise<string | null> {
     const mail = email.trim().toLowerCase();
     if (isService(base44Id) && !mail) return null;
 
@@ -111,12 +111,12 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
       (!isService(base44Id) && byId.get(base44Id)) ||
       (mail && byEmail.get(mail)) ||
       (!isService(base44Id) &&
-        db.get<{ id: string }>(`SELECT id FROM users WHERE id = $i`, { i: base44Id })?.id) ||
-      (mail && db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, { e: mail })?.id);
+        (await db.get<{ id: string }>(`SELECT id FROM users WHERE id = $i`, { i: base44Id }))?.id) ||
+      (mail && (await db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, { e: mail }))?.id);
 
     if (known) {
       if (name) {
-        db.run(
+        await db.run(
           `UPDATE users SET display_name = $n, updated_at = $t
              WHERE id = $i AND (display_name = '' OR display_name IS NULL)`,
           { n: name, i: known, t: at },
@@ -128,7 +128,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     }
 
     const id = isService(base44Id) ? newId('usr') : base44Id;
-    db.run(
+    await db.run(
       `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language,
                           status, trust_tier, created_at, updated_at)
        VALUES ($i, $e, $n, $d, 'email', 'en', 'active', 1, $c, $t)`,
@@ -141,7 +141,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         t: at,
       },
     );
-    db.run(
+    await db.run(
       `INSERT OR IGNORE INTO user_roles (user_id, role, granted_at) VALUES ($u, 'consumer', $t)`,
       { u: id, t: at },
     );
@@ -161,20 +161,20 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     /* The export stores all 342 ordered pairs. Only the anchor's row is kept —
        one anchor makes every cross rate `to / from` and exact, which is the rule
        `src/site/i18n/fx.ts` already states on the front end. */
-    const write = (code: string, rate: number) =>
-      db.run(
+    const write = async (code: string, rate: number) =>
+      await db.run(
         `INSERT INTO exchange_rates (code, base, rate, decimals, updated_at)
          VALUES ($c, $b, $r, $d, $u)
          ON CONFLICT (code) DO UPDATE SET rate = excluded.rate, updated_at = excluded.updated_at`,
         { c: code, b: base, r: rate, d: code === 'UZS' ? 0 : 2, u: updated },
       );
 
-    write(base, 1);
+    await write(base, 1);
     bump('rates');
     for (const [pair, rate] of Object.entries(rates)) {
       const match = pair.match(new RegExp(`^${base}_to_(\\w+)$`));
       if (!match || typeof rate !== 'number') continue;
-      write(match[1], rate);
+      await write(match[1], rate);
       bump('rates');
     }
   }
@@ -183,7 +183,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   for (const row of file('GuidanceCategory')) {
     const id = str(row, 'id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO guidance_categories (id, key, country_code, icon, color, position, active)
        VALUES ($i, $k, $c, $ic, $co, $p, $a)`,
       {
@@ -196,14 +196,14 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         a: bool(row, 'is_active'),
       },
     );
-    putSuffixed('guidance_category', id, 'title', row, 'title');
-    putSuffixed('guidance_category', id, 'description', row, 'description');
+    await putSuffixed('guidance_category', id, 'title', row, 'title');
+    await putSuffixed('guidance_category', id, 'description', row, 'description');
     bump('guidance_categories');
   }
 
   for (const row of file('GuidanceSubcategory')) {
     const id = str(row, 'id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO guidance_subcategories (id, key, parent_key, icon, color, position, active)
        VALUES ($i, $k, $p, $ic, $co, $o, $a)`,
       {
@@ -216,7 +216,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         a: bool(row, 'is_active'),
       },
     );
-    putSuffixed('guidance_subcategory', id, 'title', row, 'title');
+    await putSuffixed('guidance_subcategory', id, 'title', row, 'title');
     bump('guidance_subcategories');
   }
 
@@ -226,7 +226,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   for (const row of file('GuidanceService')) {
     const id = str(row, 'id');
     services.set(id, row);
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO guidance_services
          (id, venue_id, name, category_key, subcategories, city, country_code, country_codes,
           address, lat, lng, phone, email, price_range, rating, review_count, image_url,
@@ -261,7 +261,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     /* The description is single-language in the export (English), so it is filed
        under `en` rather than guessed at. The other four are a translation job,
        and an empty row is the honest record of that. */
-    putText('guidance_service', id, 'description', 'en', str(row, 'description'));
+    await putText('guidance_service', id, 'description', 'en', str(row, 'description'));
 
     for (const [kind, key] of [
       ['website', 'website'],
@@ -272,7 +272,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     ] as const) {
       const value = opt(row, key);
       if (value) {
-        db.run(
+        await db.run(
           `INSERT OR REPLACE INTO guidance_service_links (service_id, kind, value)
            VALUES ($s, $k, $v)`,
           { s: id, k: kind, v: value },
@@ -284,7 +284,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   for (const row of file('GuidanceArticle')) {
     const id = str(row, 'id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO guidance_articles
          (id, category_key, category_id, country_code, position, active, created_at, updated_at)
        VALUES ($i, $ck, $ci, $cc, $p, $a, $cr, $up)`,
@@ -299,14 +299,14 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         up: ts(row, 'updated_date', at),
       },
     );
-    putSuffixed('guidance_article', id, 'heading', row, 'heading');
-    putSuffixed('guidance_article', id, 'content', row, 'content');
+    await putSuffixed('guidance_article', id, 'heading', row, 'heading');
+    await putSuffixed('guidance_article', id, 'content', row, 'content');
     bump('guidance_articles');
   }
 
   for (const row of file('NewsFeed')) {
     const id = str(row, 'id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO news_items
          (id, country_code, icon, color, position, active, published_at, created_at)
        VALUES ($i, $cc, $ic, $co, $p, $a, $pu, $cr)`,
@@ -321,22 +321,22 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         cr: ts(row, 'created_date', at),
       },
     );
-    putSuffixed('news_item', id, 'title', row, 'title');
-    putSuffixed('news_item', id, 'content', row, 'content');
+    await putSuffixed('news_item', id, 'title', row, 'title');
+    await putSuffixed('news_item', id, 'content', row, 'content');
     bump('news_items');
   }
 
   /* ───────────────────────────────────── 3. people, and what they carried ── */
 
   for (const row of file('CommunityProfile')) {
-    const user = userFor(
+    const user = await userFor(
       str(row, 'created_by_id'),
       str(row, 'email') || str(row, 'created_by'),
       str(row, 'user_name'),
       ts(row, 'created_date', at),
     );
     const id = str(row, 'id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO community_profiles
          (id, user_id, display_name, email, city, country_code, work, bio, interests,
           languages, telegram, instagram, whatsapp, visible, created_at, updated_at)
@@ -363,7 +363,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     /* A profile that says which city you are in is the same fact the account
        carries (§1.1), so it is copied up rather than left in one table. */
     if (user) {
-      db.run(`UPDATE users SET city = COALESCE(city, $c), country_code = COALESCE(country_code, $cc) WHERE id = $u`, {
+      await db.run(`UPDATE users SET city = COALESCE(city, $c), country_code = COALESCE(country_code, $cc) WHERE id = $u`, {
         c: opt(row, 'city'),
         cc: opt(row, 'country_code'),
         u: user,
@@ -379,7 +379,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   };
 
   for (const row of file('GameProgress')) {
-    const user = userFor(
+    const user = await userFor(
       str(row, 'created_by_id'),
       str(row, 'created_by') || str(row, 'user_email'),
       str(row, 'user_name'),
@@ -387,7 +387,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     );
     if (!user) continue;
 
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO player_states
          (user_id, streak, longest_streak, freezes, lives, answered, correct,
           last_played, difficulty, updated_at)
@@ -407,7 +407,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     /* `user_id` in this table is the old `PY####` referral code, not an id. */
     const code = str(row, 'user_id');
     if (code) {
-      db.run(`UPDATE users SET referral_code = COALESCE(referral_code, $c) WHERE id = $u`, {
+      await db.run(`UPDATE users SET referral_code = COALESCE(referral_code, $c) WHERE id = $u`, {
         c: code,
         u: user,
       });
@@ -417,11 +417,11 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('ReferralRewards')) {
-    const user = userFor(str(row, 'created_by_id'), str(row, 'created_by'), '', ts(row, 'created_date', at));
+    const user = await userFor(str(row, 'created_by_id'), str(row, 'created_by'), '', ts(row, 'created_date', at));
     if (!user) continue;
     const code = str(row, 'referral_code');
     if (code) {
-      db.run(`UPDATE users SET referral_code = COALESCE(referral_code, $c) WHERE id = $u`, {
+      await db.run(`UPDATE users SET referral_code = COALESCE(referral_code, $c) WHERE id = $u`, {
         c: code,
         u: user,
       });
@@ -434,12 +434,12 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('Referral')) {
-    const referrer = userFor('', str(row, 'referrer_email'));
+    const referrer = await userFor('', str(row, 'referrer_email'));
     const referredEmail = str(row, 'referred_email');
-    const referred = referredEmail ? userFor('', referredEmail) : null;
+    const referred = referredEmail ? await userFor('', referredEmail) : null;
     if (!referrer) continue;
     const status = str(row, 'status') === 'completed' ? 'completed' : 'pending';
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO referrals
          (id, referrer_id, referred_id, referred_email, code, status, points_awarded,
           created_at, completed_at)
@@ -450,10 +450,10 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         rd: referred,
         re: referredEmail || null,
         c:
-          (db.get<{ referral_code: string | null }>(
+          ((await db.get<{ referral_code: string | null }>(
             `SELECT referral_code FROM users WHERE id = $u`,
             { u: referrer },
-          )?.referral_code) ?? referralCode(),
+          ))?.referral_code) ?? referralCode(),
         s: status,
         p: num(row, 'points_awarded'),
         cr: ts(row, 'created_date', at),
@@ -486,9 +486,9 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   /** Whoever configured the venue's economics owns it, in the absence of a
    *  partner account table in the export. The role is granted on the way past. */
-  const ownerFor = (rows: CsvRow[], serviceId: string): string | null => {
+  const ownerFor = async (rows: CsvRow[], serviceId: string): Promise<string | null> => {
     const row = rows.find((r) => str(r, 'service_id') === serviceId);
-    return row ? userFor(str(row, 'created_by_id'), str(row, 'created_by')) : null;
+    return row ? await userFor(str(row, 'created_by_id'), str(row, 'created_by')) : null;
   };
 
   for (const serviceId of partnerServiceIds) {
@@ -496,13 +496,13 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     if (!service) continue;
 
     const owner =
-      ownerFor(voucherCampaigns, serviceId) ??
-      ownerFor(stampCampaigns, serviceId) ??
-      ownerFor(loyaltyConfigs, serviceId) ??
-      ownerFor(deals, serviceId);
+      (await ownerFor(voucherCampaigns, serviceId)) ??
+      (await ownerFor(stampCampaigns, serviceId)) ??
+      (await ownerFor(loyaltyConfigs, serviceId)) ??
+      (await ownerFor(deals, serviceId));
 
     if (owner) {
-      db.run(
+      await db.run(
         `INSERT OR IGNORE INTO user_roles (user_id, role, granted_at) VALUES ($u, 'partner_owner', $t)`,
         { u: owner, t: at },
       );
@@ -511,7 +511,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     const loyalty = loyaltyConfigs.find((r) => str(r, 'service_id') === serviceId);
     const city = str(service, 'city') || 'Krakow';
 
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO venues
          (id, owner_user_id, name, category, subcategory, city, country_code, address,
           lat, lng, timezone, currency, price_range, image_url, rating, review_count,
@@ -555,7 +555,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         up: ts(service, 'updated_date', at),
       },
     );
-    db.run(`UPDATE guidance_services SET venue_id = $v WHERE id = $v`, { v: serviceId });
+    await db.run(`UPDATE guidance_services SET venue_id = $v WHERE id = $v`, { v: serviceId });
 
     for (const [kind, key] of [
       ['website', 'website'],
@@ -564,14 +564,14 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     ] as const) {
       const value = opt(service, key);
       if (value) {
-        db.run(
+        await db.run(
           `INSERT OR REPLACE INTO venue_links (id, venue_id, kind, value, position)
            VALUES ($i, $v, $k, $va, 0)`,
           { i: `lnk_legacy_${serviceId}_${kind}`, v: serviceId, k: kind, va: value },
         );
       }
     }
-    putText('venue', serviceId, 'description', 'en', str(service, 'description'));
+    await putText('venue', serviceId, 'description', 'en', str(service, 'description'));
     bump('venues');
   }
 
@@ -590,7 +590,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
        a tier that an issued voucher points at cannot be deleted at all, and the
        import that was supposed to be idempotent quietly destroys history. */
     const budgetId = `bdg_legacy_${venueId}_${period}`;
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO budgets
          (id, venue_id, period, currency, total_minor, loyalty_bp, created_at, updated_at)
        VALUES ($i, $v, $p, $c, $t, $l, $cr, $up)`,
@@ -610,7 +610,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
        a voucher debit, which is the allocation the old campaign belonged to. */
     const consumed = Math.round(num(row, 'budget_consumed') * 100);
     if (consumed > 0) {
-      db.run(
+      await db.run(
         `INSERT INTO budget_movements
            (id, budget_id, allocation, kind, amount_minor, source_kind, note, created_at)
          VALUES ($i, $b, 'voucher', 'debit', $a, 'legacy_import', 'imported budget_consumed', $t)`,
@@ -621,7 +621,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
     const avgCheck = Math.round(num(row, 'avg_check_amount') * 100);
     if (avgCheck > 0) {
-      db.run(`UPDATE venues SET avg_check_minor = $a WHERE id = $v`, { a: avgCheck, v: venueId });
+      await db.run(`UPDATE venues SET avg_check_minor = $a WHERE id = $v`, { a: avgCheck, v: venueId });
     }
 
     for (const [pct, defaults] of [
@@ -633,7 +633,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
       /* `tier_*_limit` is 0 throughout the export, and a zero cap would mean no
          voucher can ever pay out anything. Zero reads as "unset". */
       const cap = Math.round(num(row, `tier_${pct}_limit`) * 100) || defaults.maxDiscountMinor;
-      db.run(
+      await db.run(
         `INSERT OR REPLACE INTO voucher_tiers
            (id, venue_id, discount_pct, points_cost, max_discount_minor, active, created_at, updated_at)
          VALUES ($i, $v, $p, $pts, $cap, $a, $t, $t)`,
@@ -656,7 +656,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     const venueId = str(row, 'service_id');
     if (!partnerServiceIds.has(venueId)) continue;
 
-    const venue = db.get<{ avg_check_minor: number | null }>(
+    const venue = await db.get<{ avg_check_minor: number | null }>(
       `SELECT avg_check_minor FROM venues WHERE id = $v`,
       { v: venueId },
     );
@@ -672,7 +672,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     if (isPercentage) converted += 1;
 
     const id = str(row, 'id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO campaigns
          (id, venue_id, name, visits_required, reward_label, reward_cost_minor, priority,
           recurring, reward_valid_days, status, created_at, updated_at)
@@ -692,7 +692,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         up: ts(row, 'updated_date', at),
       },
     );
-    putText('campaign', id, 'reward_label', 'en', str(row, 'campaign_name'));
+    await putText('campaign', id, 'reward_label', 'en', str(row, 'campaign_name'));
     bump('campaigns');
   }
   if (converted > 0) {
@@ -714,7 +714,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
     const active = bool(row, 'is_active');
     const validTo = ts(row, 'valid_to', null);
 
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO hot_deals
          (id, venue_id, partner_name, city, country_code, category, subcategory,
           discount_text, promo_code, image_url, status, valid_from, valid_to,
@@ -737,15 +737,15 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         vt: validTo,
         cap: str(row, 'voucher_limit') ? num(row, 'voucher_limit') : null,
         pts: num(row, 'points_required'),
-        cb: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        cb: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         cr: ts(row, 'created_date', at),
         up: ts(row, 'updated_date', at),
         pu: active ? ts(row, 'created_date', at) : null,
       },
     );
-    putSuffixed('hot_deal', id, 'title', row, 'title');
-    putSuffixed('hot_deal', id, 'description', row, 'description');
-    putText('hot_deal', id, 'terms', 'en', str(row, 'terms'));
+    await putSuffixed('hot_deal', id, 'title', row, 'title');
+    await putSuffixed('hot_deal', id, 'description', row, 'description');
+    await putText('hot_deal', id, 'terms', 'en', str(row, 'terms'));
     bump('hot_deals');
   }
 
@@ -757,7 +757,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
        gate for, so no claims are imported rather than inventing them. */
     const kind = str(row, 'event_type') === 'click' ? 'open' : 'impression';
     const user = byId.get(str(row, 'user_id')) ?? null;
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO deal_events (id, deal_id, user_id, event_type, source, created_at)
        VALUES ($i, $d, $u, $e, $s, $c)`,
       {
@@ -774,7 +774,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   /* The counters on the deal are a materialised view of the events table, so
      they are recomputed here rather than incremented row by row. */
-  db.exec(`
+  await db.exec(`
     UPDATE hot_deals SET
       seen_count = (SELECT COUNT(*) FROM deal_events e
                      WHERE e.deal_id = hot_deals.id AND e.event_type = 'impression'),
@@ -788,7 +788,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   for (const row of file('ServiceAnalytics')) {
     const serviceId = str(row, 'service_id');
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO service_events
          (id, service_id, venue_id, user_id, event_type, city, country_code, language, created_at)
        VALUES ($i, $s, $v, $u, $e, $ci, $cc, $l, $c)`,
@@ -796,7 +796,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         i: str(row, 'id'),
         s: services.has(serviceId) ? serviceId : null,
         v: partnerServiceIds.has(serviceId) ? serviceId : null,
-        u: userFor(str(row, 'created_by_id'), str(row, 'user_email') || str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'user_email') || str(row, 'created_by')),
         e: str(row, 'event_type'),
         ci: opt(row, 'city'),
         cc: opt(row, 'country_code'),
@@ -808,13 +808,13 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('ServiceRecommendation')) {
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO service_recommendations
          (id, user_id, name, city, country_code, category_key, subcategory, status, created_at)
        VALUES ($i, $u, $n, $ci, $cc, $ck, $sc, $st, $c)`,
       {
         i: str(row, 'id'),
-        u: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         n: str(row, 'service_name'),
         ci: opt(row, 'city'),
         cc: opt(row, 'country_code'),
@@ -830,12 +830,12 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('Feedback')) {
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO feedback (id, user_id, subject, body, rating, status, created_at)
        VALUES ($i, $u, $s, $b, $r, 'new', $c)`,
       {
         i: str(row, 'id') || newId('fbk'),
-        u: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         s: opt(row, 'subject'),
         b: str(row, 'message') || str(row, 'body') || '',
         r: str(row, 'rating') ? num(row, 'rating') : null,
@@ -849,8 +849,8 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
 
   const countries = file('CountryCapital');
   assertComplete(countries.map((row) => str(row, 'country_name')));
-  importCapitals(db, countries, bump);
-  importFlags(db, countries, bump);
+  await importCapitals(db, countries, bump);
+  await importFlags(db, countries, bump);
 
   /* The other three banks are hand-delivered exports rather than Base44 tables,
      so they sit in `updates/` beside the front end's own copy of them and are
@@ -868,21 +868,21 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
         'a bank sitting at zero is a 404 on the game that draws from it',
     );
   }
-  importGeneralQuiz(db, general, bump);
-  importLetterQuiz(db, poland, 'poland', bump);
-  importLetterQuiz(db, uzbekistan, 'uzbekistan', bump);
+  await importGeneralQuiz(db, general, bump);
+  await importLetterQuiz(db, poland, 'poland', bump);
+  await importLetterQuiz(db, uzbekistan, 'uzbekistan', bump);
 
   /* ────────────────────────────── 9. the remittance tables, archived as-is ── */
 
   for (const row of file('Wallet')) {
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO legacy_wallets
          (id, user_id, owner_email, balance_eur_minor, balance_usdt_minor,
           total_topped_up_minor, total_sent_minor, created_at, updated_at)
        VALUES ($i, $u, $e, $be, $bu, $tt, $tsent, $c, $up)`,
       {
         i: str(row, 'id'),
-        u: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         e: opt(row, 'created_by'),
         be: Math.round(num(row, 'balance_eur') * 100),
         bu: Math.round(num(row, 'balance_usdt') * 100),
@@ -896,14 +896,14 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('Recipient')) {
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO legacy_recipients
          (id, user_id, owner_email, full_name, city, phone, method, bank_name,
           card_number, wallet_address, wallet_network, favorite, created_at)
        VALUES ($i, $u, $e, $n, $ci, $ph, $m, $b, $ca, $wa, $wn, $f, $c)`,
       {
         i: str(row, 'id'),
-        u: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         e: opt(row, 'created_by'),
         n: str(row, 'full_name'),
         ci: opt(row, 'city'),
@@ -921,7 +921,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('Transaction')) {
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO legacy_transfers
          (id, user_id, owner_email, recipient_id, recipient_name, source_currency,
           destination_currency, amount_sent_minor, amount_received_minor, fee_minor,
@@ -929,7 +929,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
        VALUES ($i, $u, $e, $r, $rn, $sc, $dc, $as, $ar, $f, $x, $st, $ds, $pm, $s, $h, $c)`,
       {
         i: str(row, 'id'),
-        u: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         e: opt(row, 'created_by'),
         r: opt(row, 'recipient_id'),
         rn: opt(row, 'recipient_name'),
@@ -951,14 +951,14 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
   }
 
   for (const row of file('PaymentMethod')) {
-    db.run(
+    await db.run(
       `INSERT OR REPLACE INTO legacy_payment_methods
          (id, user_id, owner_email, type, nickname, card_brand, card_last_four, card_expiry,
           bank_name, iban_last_four, is_default, is_verified, created_at)
        VALUES ($i, $u, $e, $t, $n, $cb, $cl, $cx, $bn, $ib, $d, $v, $c)`,
       {
         i: str(row, 'id'),
-        u: userFor(str(row, 'created_by_id'), str(row, 'created_by')),
+        u: await userFor(str(row, 'created_by_id'), str(row, 'created_by')),
         e: opt(row, 'created_by'),
         t: opt(row, 'type'),
         n: opt(row, 'nickname'),
@@ -984,7 +984,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
        already there and adds nothing — the alternative is a re-run that hands
        everybody their old balance a second time. */
     const ledgerId = `led_legacy_${user}`;
-    const inserted = db.run(
+    const inserted = (await db.run(
       `INSERT OR IGNORE INTO points_ledger
          (id, user_id, delta, reason, source_ref, source_kind, status, created_at, expires_at)
        VALUES ($i, $u, $d, 'adjustment', 'base44', 'legacy_import', 'committed', $c, $e)`,
@@ -993,10 +993,10 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
          365-day clock nothing reads is a date waiting to be believed by the
          next thing that looks at the column. */
       { i: ledgerId, u: user, d: points, c: at, e: null },
-    ).changes;
+    )).changes;
     if (inserted === 0) continue;
 
-    db.run(
+    await db.run(
       `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount)
        VALUES ($i, $u, $c, $e, $a)`,
       /* The lot's `expires_at` is NOT NULL, so it takes the same far-future
@@ -1007,7 +1007,7 @@ export function importLegacy(db: Db, dir: string, gamesDir?: string): ImportSumm
          believes. */
       { i: ledgerId, u: user, c: at, e: NEVER, a: points },
     );
-    db.run(`UPDATE users SET points_cache = points_cache + $d WHERE id = $u`, {
+    await db.run(`UPDATE users SET points_cache = points_cache + $d WHERE id = $u`, {
       d: points,
       u: user,
     });
@@ -1089,11 +1089,11 @@ function pickDistractors(pool: string[], answer: string, wide: string[], index: 
   return out;
 }
 
-function importCapitals(
+async function importCapitals(
   db: Db,
   rows: CsvRow[],
   bump: (key: string, by?: number) => void,
-): void {
+): Promise<void> {
   for (const lang of QUIZ_LANGS) {
     const items = rows
       .map((row) => ({
@@ -1113,8 +1113,8 @@ function importCapitals(
     }
     const all = items.map((item) => item.capital);
 
-    items.forEach((item, index) => {
-      db.run(
+    for (const [index, item] of items.entries()) {
+      await db.run(
         `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
          VALUES ($i, 'capitals', $l, $p, $a, $d, $m)`,
         {
@@ -1129,7 +1129,7 @@ function importCapitals(
         },
       );
       bump('quiz_items');
-    });
+    };
   }
 }
 
@@ -1146,11 +1146,11 @@ function importCapitals(
  * this bank exists in four: a flag quiz that only works in English is a
  * geography test in a second language.
  */
-function importFlags(
+async function importFlags(
   db: Db,
   rows: CsvRow[],
   bump: (key: string, by?: number) => void,
-): void {
+): Promise<void> {
   for (const lang of QUIZ_LANGS) {
     const items = rows
       .map((row) => ({
@@ -1171,8 +1171,8 @@ function importFlags(
     }
     const all = items.map((item) => item.country);
 
-    items.forEach((item, index) => {
-      db.run(
+    for (const [index, item] of items.entries()) {
+      await db.run(
         `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
          VALUES ($i, 'flags', $l, $p, $a, $d, $m)`,
         {
@@ -1191,7 +1191,7 @@ function importFlags(
         },
       );
       bump('quiz_items');
-    });
+    };
   }
 }
 
@@ -1219,7 +1219,7 @@ const BANK_LANGS = ['en', 'pl', 'ru', 'uz', 'uk'] as const;
  * shuffled here — `domain/games.ts` shuffles per round and remembers where the
  * answer went, which is the only place that can do it without losing the key.
  */
-function importGeneralQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: number) => void): void {
+async function importGeneralQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: number) => void): Promise<void> {
   for (const row of rows) {
     const id = str(row, 'id');
     if (!id) continue;
@@ -1236,7 +1236,7 @@ function importGeneralQuiz(db: Db, rows: CsvRow[], bump: (key: string, by?: numb
       const answer = options[correct];
       if (!answer) continue;
 
-      db.run(
+      await db.run(
         `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
          VALUES ($i, 'brain', $l, $p, $a, $d, $m)`,
         {
@@ -1297,12 +1297,12 @@ const UZBEKISTAN_BANK = /^Uzbekistan_Quiz_Questions_data_.*\.csv$/i;
  * shuffles the options per round and remembers where the answer went — and it is
  * the reason it must keep doing so.
  */
-function importLetterQuiz(
+async function importLetterQuiz(
   db: Db,
   rows: CsvRow[],
   bank: 'poland' | 'uzbekistan',
   bump: (key: string, by?: number) => void,
-): void {
+): Promise<void> {
   const letters = ['a', 'b', 'c', 'd'] as const;
 
   for (const row of rows) {
@@ -1318,7 +1318,7 @@ function importLetterQuiz(
       const options = letters.map((letter) => str(row, `option_${letter}_${lang}`));
       if (!prompt || options.some((option) => !option)) continue;
 
-      db.run(
+      await db.run(
         `INSERT OR REPLACE INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
          VALUES ($i, $b, $l, $p, $a, $d, $m)`,
         {

@@ -2,17 +2,18 @@
  * What an individual account accumulates by playing.
  *
  * React-free and pure, like `business.ts` beside it, so `npm run verify` can
- * check the scoring and the wallet arithmetic without a browser. Anything that
- * needs a hook belongs in `AuthProvider`.
+ * check the scoring and the streak without a browser. Anything that needs a
+ * hook belongs in `AuthProvider`.
  *
  * The model is the one the old paylez app used (see
  * `landing/screenshots/learn1.png`): a score, a daily streak, a tank of energy,
  * and running answered/correct counts.
  *
  * **What bounds a day is energy, and nothing else.** Every finished round
- * spends one, win or lose, and an empty tank is a shut door. What keeps it from
- * being a locked one is the clock — the tank gains one every
- * `ENERGY_REGEN_MINUTES` rather than all of it at midnight — and what that
+ * spends one, win or lose. What an empty tank stops is *earning*, not playing —
+ * it opens a practice round instead, and `awardPoints` is where that one rule
+ * lives (see the note above it). The tank gains one every
+ * `ENERGY_REGEN_MINUTES` rather than all of it at midnight, and what that
  * arithmetic comes to is sixteen finished rounds in a day from a full tank,
  * twelve a day sustained.
  *
@@ -29,24 +30,33 @@
  * The two energy numbers mirror the server's **free** plan (`CONFIG.points`),
  * which is the only plan this site can resolve: there are no subscriptions here
  * to read a faster regen off.
+ *
+ * ── this module used to hold a wallet, and does not any more ─────────────
+ *
+ * There were three holdings in `PlayerState` — bought gift cards, stamp cards
+ * and claimed hot deals — with the arithmetic for all three here: `redeem`,
+ * `markUsed`, `stampVisit`, `claimDeal`, `openDeals`, the category strip and
+ * `openNow`. Every one of them wrote to `localStorage`, and what they wrote to
+ * it was fiction: the cards came off a catalogue in `content.ts`, the deals off
+ * a board in the same file, and a "claim" was a code this browser made up.
+ *
+ * All of it is the server's now, read through `GET /v1/wallet` and
+ * `GET /v1/deals` (`api/wallet.ts`). That is not a tidy-up, it is the only
+ * arrangement in which a gift card bought with points that came off a real
+ * ledger can be shown back to the person who bought it. **A claim in particular
+ * cannot come back here**: `POST /v1/deals/:id/events` takes `impression` and
+ * `open` and nothing else, because a claim is written by the gate from a
+ * confirmed scan — so there is no local claim to keep either.
+ *
+ * What is left is the mirror of `GET /v1/games/state`: a balance, a streak, a
+ * tank, two counters, and the pure functions that read them into a gauge, seven
+ * circles and a score. `canAfford` stays because the wallet still has to decide
+ * whether a button is pressable before it posts.
  */
 
-/*
- * The one import, and it is the catalogue rather than anything React-shaped.
- * A wallet holds cards off a shelf, so what a card costs and what it is worth
- * are the shelf's business and not this module's — the four seeded vouchers
- * below used to carry their own face values and two of them disagreed with the
- * shelf they were supposedly bought from.
- */
-import {
-  CHEAPEST_VOUCHER_POINTS,
-  voucherCard,
-  WALLET_DEALS,
-  type DealCategory,
-  type GameId,
-  type HotDeal,
-  type VenueFacts,
-} from '../content';
+/* The one import left, and it is a *type*: which of the seven games a round
+   was. The catalogue and the board this file used to reach into are gone. */
+import type { GameId } from '../content';
 
 /**
  * How much energy a full tank holds, and what a round costs.
@@ -105,105 +115,6 @@ const ENERGY_REGEN_MS = ENERGY_REGEN_MINUTES * 60_000;
 export const MAX_FREEZES = 2;
 export const FREEZE_EVERY = 7;
 
-/**
- * Points needed for the cheapest voucher, so the wallet can say how far off you
- * are.
- *
- * Read off the catalogue rather than restated as `100`, which was right only
- * for as long as nobody moved the shelf. The same figure is the L-Earn hero's
- * third stat and the vouchers hero's second, and all three are now one
- * derivation from `VOUCHER_CARDS` — so "you are 40 points short" and the
- * cheapest card in the grid below it cannot disagree about what enough is.
- *
- * Kept under this name because every caller asks the player module what a
- * balance falls short of, not the content module what a card costs.
- */
-export const CHEAPEST_VOUCHER = CHEAPEST_VOUCHER_POINTS;
-
-export interface OwnedVoucher {
-  id: string;
-  brand: string;
-  /** The letter on the tile. Brands are never translated. */
-  logo: string;
-  /** What it cost in points. */
-  points: number;
-  /** Face value **in euros** — converted at render like every other amount. */
-  eur: number;
-  code: string;
-  /** `DD.MM`, already local-agnostic. */
-  expires: string;
-  /** `null` while it is still spendable. A date string once the QR was shown. */
-  usedOn: string | null;
-}
-
-/**
- * A visit card at one venue.
- *
- * **Visits are not points and cannot be spent anywhere else**, which is the one
- * sentence about it that has to survive every rewrite. A stamp is a confirmed
- * visit to *this* venue and it buys *this* venue's reward; a player who reads it
- * as a second currency will expect to spend it at the next place on the list.
- *
- * `cycles` is how many times the card has been filled and started again, and it
- * is kept rather than discarded because it is the only thing that separates a
- * card at 0 of 6 on its first day from one that has already paid out four times.
- * The card in front of a regular should say so.
- */
-export interface StampCard {
-  /** Stable across a refill — a card is the venue's, not the cycle's. */
-  id: string;
-  venue: string;
-  /** The letter on the tile. Venue names are never translated. */
-  logo: string;
-  /** What the card earns. The venue wrote this; the app does not translate it. */
-  reward: string;
-  stamps: number;
-  required: number;
-  cycles: number;
-  /**
-   * What kind of place it is, for the category strip at the top of the wallet.
-   *
-   * Optional, and the optionality is load-bearing: this field arrived after
-   * people had stamp cards, and a state written before it has none. `inCategory`
-   * reads a missing one as *unfiled* rather than as any particular category, so
-   * an old card keeps showing under "All" and never claims to be a bakery.
-   */
-  category?: DealCategory;
-}
-
-/**
- * A hot deal, as it sits in somebody's wallet.
- *
- * The mobile app keeps deals on their own screen and the wallet holds what came
- * *out* of them; here the two are one page, so a deal is in the wallet from the
- * moment it is claimed rather than from the moment it is spent. `claimedOn` is
- * what makes it a holding: an unclaimed deal is a row in the catalogue below,
- * and the same object with a date on it is a thing you own.
- *
- * `points` is what claiming cost, and it is **0 for most of them** — a hot deal
- * is an offer a venue is running, not something bought with a balance. The
- * handful that do cost points say so on the card.
- *
- * The venue's own facts are `Partial` for the same reason `StampCard.category`
- * is optional: a deal claimed before the card carried an address was stored
- * without one, and the card degrades to the parts that are actually known
- * rather than printing an empty meta line — which is the rule the app's own
- * `_metaLine` states ("degrades to the parts that are actually known rather
- * than printing 'null away'").
- */
-export interface ClaimedDeal extends Partial<VenueFacts> {
-  id: string;
-  venue: string;
-  logo: string;
-  /** The offer itself — "2 for 1", "20% off". Written by the venue. */
-  badge: string;
-  points: number;
-  /** `DD.MM`, like every other date the wallet writes. */
-  expires: string;
-  claimedOn: string;
-  code: string;
-}
-
 export interface PlayerState {
   points: number;
   streak: number;
@@ -234,7 +145,7 @@ export interface PlayerState {
    * `lastPlayed` is a string: each is stored in the shape its own comparison
    * wants, and this one's comparison is a subtraction.
    *
-   * Optional for the reason `freezes`, `stamps` and `deals` are, and read the
+   * Optional for the reason `freezes` is, and read the
    * generous way round: a session saved before the clock existed has no anchor,
    * and `energyOf` reads a missing one as a **full tank**. The alternative is
    * charging an existing player three rounds for a schema change they had no
@@ -254,26 +165,6 @@ export interface PlayerState {
    * missing one as zero rather than as a crash.
    */
   freezes?: number;
-  /**
-   * Gift cards bought off the catalogue.
-   *
-   * The field is named `vouchers` because that is what a stored session from an
-   * earlier build calls it, and renaming it would empty the wallet of everybody
-   * who already has one. What it holds is a *gift card*: a fixed face value at a
-   * named brand, paid for with points. The site's three holdings are that, the
-   * stamp cards below, and the claimed deals beside them.
-   */
-  vouchers: OwnedVoucher[];
-  /**
-   * Visit cards, and claimed offers.
-   *
-   * Both optional for the reason `freezes` is: a session saved before they
-   * existed has neither, and `stampsOf` / `dealsOf` read a missing one as an
-   * empty list rather than as a crash on a page somebody was already looking at.
-   */
-  stamps?: StampCard[];
-  deals?: ClaimedDeal[];
-
   /*
    * There was a `rounds` field here — a per-game tally of what had been played
    * today, read by the decay curve to price a repeat. The curve is gone and so
@@ -288,248 +179,25 @@ export interface PlayerState {
    */
 }
 
-/** Stamp cards held, for a state that may predate the field. */
-export const stampsOf = (state: PlayerState): StampCard[] => state.stamps ?? [];
-
-/** Claimed deals held, same. */
-export const dealsOf = (state: PlayerState): ClaimedDeal[] => state.deals ?? [];
-
-/* ──────────────────────────────────────────────────── the category strip ── */
-
-/**
- * Does this row belong under that chip?
- *
- * `null` is the "All" chip and is not a category — a venue cannot be filed in
- * it, so it is the absence of a filter rather than a value to compare against.
- *
- * A row with **no** category matches only `null`. That is the honest reading of
- * a missing field: "we have not filed this one" is not the same claim as "this
- * one is a bakery", and a filter that let unfiled rows fall through would put
- * somebody's barber under Coffee. The cost is that an old stamp card is only
- * visible with no chip selected, which is why the strip's counts are computed
- * from the same predicate — the number on the chip and the number in the list
- * cannot disagree.
- */
-export const inCategory = (
-  row: { category?: DealCategory },
-  category: DealCategory | null,
-): boolean => category === null || row.category === category;
-
-/** The rows under one chip. */
-export const filterByCategory = <T extends { category?: DealCategory }>(
-  rows: T[],
-  category: DealCategory | null,
-): T[] => rows.filter((row) => inCategory(row, category));
-
-/**
- * The deals still on the board for this player — everything not already held.
- *
- * The wallet shows the board at the top and what came out of it below, and the
- * rule the split rests on is that **a deal is in exactly one of the two**. It
- * has to be derived rather than tracked: a claim writes to `state.deals` and
- * nothing edits the board, so the only way the two lists can drift is if
- * somebody computes one of them a second way.
- */
-export const openDeals = (board: HotDeal[], state: PlayerState): HotDeal[] => {
-  const held = new Set(dealsOf(state).map((row) => row.id));
-  return board.filter((deal) => !held.has(deal.id));
-};
-
-/**
- * A held deal, with the board's facts about the venue where the board has them.
- *
- * The app's rule, in the note on `_titleFor`: **the venue list is the record of
- * what a place is called**, so where a claimed deal and the live board disagree
- * about an address, the board wins. Two things follow, and they are why this is
- * a merge rather than a lookup:
- *
- * - a deal claimed before the card carried an address at all — every one in
- *   anybody's `localStorage` today — gets the venue back, instead of showing a
- *   name and nothing else for as long as the offer runs;
- * - a deal whose offer has since come off the board keeps what was stored with
- *   it, because a holding does not stop being one when the offer ends. That is
- *   the case a lookup would render as a blank card.
- *
- * Only the venue's facts are taken. `badge`, `points`, `expires`, `claimedOn`
- * and `code` are what was *agreed* at the counter and are never re-read from a
- * board that may have been edited since.
- */
-export function heldWithVenue(deal: ClaimedDeal, board: HotDeal[]): ClaimedDeal {
-  const live = board.find((row) => row.id === deal.id);
-  if (!live) return deal;
-  const { category, city, address, rating, reviews, hours, zone } = live;
-  return { ...deal, category, city, address, rating, reviews, hours, zone };
-}
-
-/**
- * A stamp card, filed under the category the board already has for its venue.
- *
- * Same rule as `heldWithVenue` and a weaker join: a stamp card has no deal id
- * to match on — its `id` is the *card's* — so the only key available is the
- * venue's name, matched exactly. That is enough for what this is for, which is
- * the card written before the strip existed: a wallet holding three cards none
- * of which appear under any chip reads as a broken filter rather than as an
- * honest "unfiled".
- *
- * It only ever **fills a gap**. A card that already says what it is keeps
- * saying it, and a venue the board has never heard of stays unfiled — which is
- * the state `inCategory` is written for, and the reason this returns the card
- * unchanged rather than guessing at one.
- */
-export function stampWithVenue(card: StampCard, board: HotDeal[]): StampCard {
-  if (card.category) return card;
-  const live = board.find((row) => row.venue === card.venue);
-  return live ? { ...card, category: live.category } : card;
-}
-
-/* ─────────────────────────────────────────────────────────── the door ── */
-
-/** Minutes past midnight, or `null` if that is not an `HH:MM`. */
-function atMinute(clock: string): number | null {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(clock.trim());
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 24 || minutes > 59) return null;
-  return hours * 60 + minutes;
-}
-
-/**
- * Is the venue open right now, on **its own** clock?
- *
- * `null` means the card knows nothing — an unparseable span, or none at all —
- * and it is a third state rather than a `false` on purpose: "closed now" is a
- * claim about the venue, and making it because a seed row was malformed is the
- * class of bug this whole module writes its fallbacks around.
- *
- * `Intl.DateTimeFormat` with an explicit `en-GB` and the venue's zone is the
- * only part of the site that reaches for `Intl`, and the note in `currency.ts`
- * that says it is not used is about *numbers*: there, `Intl` would also impose
- * the locale's own currency placement, which is a property of the pitch. Here
- * the locale is pinned to one that writes `HH:MM` and the only thing being
- * asked of it is what hour it is in Kraków, which nothing else can answer.
- *
- * A span that ends before it starts has crossed midnight (`22:00 – 02:00`), and
- * the test flips from "between" to "outside" for it.
- */
-export function openNow(
-  facts: { hours: string; zone: string },
-  now: Date = new Date(),
-): boolean | null {
-  const [from, to] = facts.hours.split(/\s*[–-]\s*/);
-  const opens = from === undefined ? null : atMinute(from);
-  const closes = to === undefined ? null : atMinute(to);
-  if (opens === null || closes === null) return null;
-
-  let local: string;
-  try {
-    local = new Intl.DateTimeFormat('en-GB', {
-      timeZone: facts.zone,
-      hour: '2-digit',
-      minute: '2-digit',
-      hourCycle: 'h23',
-    }).format(now);
-  } catch {
-    /* An unknown zone is "nothing said", not "closed" — same rule as above. */
-    return null;
-  }
-
-  const minute = atMinute(local);
-  if (minute === null) return null;
-
-  return opens <= closes
-    ? minute >= opens && minute < closes
-    : minute >= opens || minute < closes;
-}
-
-/** A card with every slot filled. The reward is waiting at the counter. */
-export const isCardFull = (card: StampCard): boolean => card.stamps >= card.required;
-
-/** How many visits are left on a card. Never negative — a full card is 0. */
-export const stampsLeft = (card: StampCard): number =>
-  Math.max(0, card.required - card.stamps);
-
-/**
- * Add a visit to a card.
- *
- * **A full card rolls over rather than overflowing**, which is the rule that
- * decides what the number on screen means: the eleventh visit to a ten-visit
- * card is the first stamp of the next one, not an eleventh stamp on a card that
- * cannot hold it. `cycles` counts the rollovers, so nothing is lost by it.
- *
- * The reward itself is not modelled here. Filling a card is what earns it; a
- * player collects it at the counter, and a wallet that marked it collected on
- * the player's own say-so would be a wallet that can pay itself.
- */
-export function stampVisit(state: PlayerState, cardId: string): PlayerState {
-  return {
-    ...state,
-    stamps: stampsOf(state).map((card) => {
-      if (card.id !== cardId) return card;
-      const filled = card.stamps + 1;
-      return filled >= card.required
-        ? { ...card, stamps: 0, cycles: card.cycles + 1 }
-        : { ...card, stamps: filled };
-    }),
-  };
-}
-
-/**
- * Claim a hot deal.
- *
- * Returns the state unchanged when the balance will not cover it — the same
- * contract `redeem` has, so a caller may call it optimistically — and unchanged
- * again when this deal is already in the wallet. The second guard is the one
- * worth having: a deal is a single offer rather than a stock item, and a button
- * pressed twice would otherwise put two of it in the wallet and charge for both.
- */
-export function claimDeal(
-  state: PlayerState,
-  deal: HotDeal,
-  code: string,
-  on: string,
-): PlayerState {
-  if (!canAfford(state, deal.points)) return state;
-  if (dealsOf(state).some((held) => held.id === deal.id)) return state;
-  return {
-    ...state,
-    points: state.points - deal.points,
-    deals: [{ ...deal, code, claimedOn: on }, ...dealsOf(state)],
-  };
-}
-
 /** Freezes held, for a state that may predate the field. */
 export const freezesOf = (state: PlayerState): number =>
   typeof state.freezes === 'number' ? Math.max(0, state.freezes) : 0;
 
 /**
- * A card as it comes out of the catalogue, with the stock counts left behind.
- *
- * The projection is the point: `OwnedVoucher` is what a player holds, and
- * spreading the whole row would quietly store this month's remaining allocation
- * inside somebody's wallet, where it would be wrong by the next morning.
- */
-function bought(brand: string): Pick<OwnedVoucher, 'brand' | 'logo' | 'points' | 'eur'> {
-  const { logo, points, eur } = voucherCard(brand);
-  return { brand, logo, points, eur };
-}
-
-/**
  * A player who has just opened an account: **nothing, and a full tank.**
  *
- * Zero of everything, and that is the whole point. This used to return the
- * demo state below — 340 points, a three-day streak, 45 questions answered and
- * four vouchers — because a wallet with nothing in it cannot show what a used
- * voucher looks like. That argument was about *the demo account*, and applying
- * it to every new sign-up meant somebody who had played nothing opened L-Earn
- * on 340 points, took the 100-point welcome gift, and was looking at 440 before
- * their first round. It read as a bug because it was one: the number on the
- * screen was not about them.
+ * Zero of everything, and that is the whole point. There was a `seedPlayer`
+ * beside this once — 340 points, a three-day streak, four gift cards, three
+ * stamp cards and a claimed deal — kept for the demo account on the argument
+ * that a wallet with nothing in it cannot show what a used voucher looks like.
+ * That argument died with the shelf it bought from: the four cards came out of
+ * `VOUCHER_CARDS` and the deal out of `WALLET_DEALS[0]`, and neither exists.
  *
- * So the two are separated. A new account gets this. The demo account keeps
- * `seedPlayer` below, which is what a demo account is *for* — its credentials
- * are printed on the sign-in form precisely so somebody can look at a full
- * wallet without earning one.
+ * It is not replaced by a smaller seed. A wallet is `GET /v1/wallet` now, so a
+ * demo account's wallet shows whatever that account actually holds — which,
+ * until somebody plays and buys something, is nothing. That is the state the
+ * empty panels on `wallet.tsx` are written for, and it is the state every real
+ * account starts in.
  *
  * The welcome gift is then the only thing a new player has not earned, and it
  * is paid by `finishOnboarding` for finishing the flow rather than for
@@ -550,97 +218,6 @@ export function newPlayer(): PlayerState {
        `awardPoints`, and handing one over at sign-up is the same category of
        gift as the 340 points this function exists to stop. */
     freezes: 0,
-    vouchers: [],
-    stamps: [],
-    deals: [],
-  };
-}
-
-/**
- * The demo account's player, with something already in the wallet.
- *
- * Not empty on purpose, and **not what a new account gets** — see `newPlayer`
- * above. A wallet with nothing in it cannot show what a used voucher looks
- * like, what an expiry looks like, or what the Used tab is for, and those are
- * most of what the page is trying to explain. Two active and two spent is the
- * smallest set that shows all of it.
- *
- * Every row is a real card off the catalogue rather than four hand-written
- * ones. They were hand-written, and two of the four had drifted: a Zalando card
- * here read €11.63 while the catalogue a scroll below it charged 500 points for
- * the same brand, so the wallet and the shelf on one screen quoted the same
- * voucher at two prices. A seeded wallet is a wallet somebody played for, and
- * this is what makes it one.
- */
-export function seedPlayer(): PlayerState {
-  return {
-    points: 340,
-    streak: 3,
-    energy: MAX_ENERGY,
-    answered: 45,
-    correct: 38,
-    lastPlayed: null,
-    /* No anchor, because a full tank has no clock running. Stated rather than
-       left off so the field is visible to anyone reading what a player is. */
-    energyAt: null,
-    /* One in hand. A freeze nobody has ever held is a rule nobody has read, and
-       the streak card is where the rule is explained. */
-    freezes: 1,
-    vouchers: [
-      {
-        id: 'v1',
-        ...bought('Zalando'),
-        code: 'PLZ-9F3K',
-        expires: '31.08',
-        usedOn: null,
-      },
-      {
-        id: 'v2',
-        ...bought('Media Expert'),
-        code: 'PLZ-2B7Q',
-        expires: '14.09',
-        usedOn: null,
-      },
-      {
-        id: 'v3',
-        ...bought('Douglas'),
-        code: 'PLZ-7X1M',
-        expires: '02.08',
-        usedOn: '21.07',
-      },
-      {
-        id: 'v4',
-        ...bought('Hebe'),
-        code: 'PLZ-4K8D',
-        expires: '18.07',
-        usedOn: '11.07',
-      },
-    ],
-    /*
-     * Three cards at three stages, and that is the smallest set that shows what
-     * a stamp card *is*: one nearly full, one just started, and one that has
-     * already been filled and refilled. A wallet holding three cards all at
-     * 2 of 6 shows a progress bar; this one shows a rule.
-     */
-    stamps: [
-      { id: 's1', venue: 'Dubai Cafe', logo: 'D', reward: 'a free filter coffee', stamps: 5, required: 6, cycles: 1, category: 'coffee' },
-      { id: 's2', venue: 'Sablewski & Para', logo: 'S', reward: 'a free pastry', stamps: 1, required: 8, cycles: 0, category: 'bakery' },
-      { id: 's3', venue: 'Hala Forum', logo: 'H', reward: 'a free lunch set', stamps: 3, required: 10, cycles: 0, category: 'food' },
-    ],
-    /* One claimed, so the section is not an empty state on a page whose whole
-       job is to show what the wallet holds. The rest of the board is the
-       catalogue below it. */
-    deals: [
-      {
-        /* Spread off the board rather than written out, for the reason the
-           vouchers above are: this is the same offer the top of the page is
-           showing, and two hand-written copies of one venue drift the first
-           time an address is corrected in only one of them. */
-        ...WALLET_DEALS[0],
-        claimedOn: '19.07',
-        code: 'PLZ-D2F1',
-      },
-    ],
   };
 }
 
@@ -678,7 +255,6 @@ function twoDaysBack(now: Date = new Date()): string {
   back.setDate(back.getDate() - 2);
   return today(back);
 }
-
 
 /* ──────────────────────────────────────────────────────────── the week ── */
 
@@ -806,7 +382,32 @@ export interface EnergyTank {
  * whose remainder is the wait, and two functions each doing that division end up
  * showing a full tank counting down to one it already has.
  */
-export function energyOf(state: PlayerState, now: Date = new Date()): EnergyTank {
+/**
+ * The tank's two limits, which stop being constants the moment a plan is sold.
+ *
+ * `MAX_ENERGY` / `ENERGY_REGEN_MINUTES` are the **free** figures and remain the
+ * default, so every caller that does not know about plans keeps its old
+ * behaviour and `npm run verify` keeps testing the same arithmetic. A screen
+ * that has asked the server what this account is entitled to passes the real
+ * pair instead — Pro is 6 at 60 minutes, Premium 8 at 30 — and the same
+ * division then produces the right gauge without a second implementation.
+ *
+ * The server is still the authority: `games.energyFor` reads the identical two
+ * entitlements and its answer is what a round is actually charged against.
+ * This is the display agreeing with it rather than guessing.
+ */
+export interface EnergyLimits {
+  max: number;
+  regenMinutes: number;
+}
+
+export function energyOf(
+  state: PlayerState,
+  now: Date = new Date(),
+  limits: EnergyLimits = { max: MAX_ENERGY, regenMinutes: ENERGY_REGEN_MINUTES },
+): EnergyTank {
+  const MAX_ENERGY = Math.max(1, Math.floor(limits.max));
+  const ENERGY_REGEN_MS = Math.max(1, limits.regenMinutes) * 60_000;
   const anchor = state.energyAt;
   /* No anchor is no clock, and no clock means nothing is pending — which is a
      full tank. Every session saved before the clock existed takes this branch,
@@ -913,12 +514,28 @@ export interface Award {
  *
  * **And every finished round costs one energy**, which is the other thing this
  * function decides. See the note at the spend itself for why both sides pay.
+ *
+ * **A round played on an empty tank changes nothing here.** That is a
+ * *practice* round — the screen offers one rather than a locked door, because
+ * an empty tank was the single state of this product with nothing to do in it —
+ * and what it does not do is the whole of what energy buys: no points, no
+ * streak, no freeze earned or spent, no day marked as played, not even the
+ * accuracy tally. The one rule, in one place, so that "practice" cannot come to
+ * mean six slightly different things across eight games.
+ *
+ * The test is the tank *now*, and that is exact rather than approximate: energy
+ * only ever refills, and the only thing that takes it is the spend three lines
+ * below, so a tank reading empty at the end of a round was empty at the start
+ * of it. There is no state in which this pays nothing for a round that was
+ * offered as paid.
  */
 export function awardPoints(
   state: PlayerState,
   result: Award,
   now: Date = new Date(),
 ): PlayerState {
+  if (energyOf(state, now).count <= 0) return state;
+
   const day = today(now);
   const played = state.lastPlayed;
 
@@ -1330,59 +947,16 @@ export function memoryPoints(seconds: number): number {
  * with one division. Nothing writes energy back now; the tank is read.
  */
 
+/**
+ * Whether a balance covers a price.
+ *
+ * The last survivor of the wallet arithmetic that used to live here, and it
+ * survives because it is the one piece that is not a *holding*: the catalogue
+ * has to know whether to disable a button before it posts to
+ * `POST /v1/gift-cards`, and the server's refusal ("not enough points") is the
+ * wrong place to learn it — a button you can press that always fails is worse
+ * than one that says why it is dark.
+ */
 export function canAfford(state: PlayerState, points: number): boolean {
   return state.points >= points;
 }
-
-/**
- * Buy a voucher.
- *
- * Returns the state unchanged when the balance will not cover it, so callers
- * can call it optimistically; the button is disabled either way.
- */
-export function redeem(
-  state: PlayerState,
-  card: { brand: string; logo: string; points: number; eur: number },
-  code: string,
-  expires: string,
-): PlayerState {
-  if (!canAfford(state, card.points)) return state;
-  return {
-    ...state,
-    points: state.points - card.points,
-    vouchers: [
-      {
-        id: `v${state.vouchers.length + 1}_${code}`,
-        brand: card.brand,
-        logo: card.logo,
-        points: card.points,
-        eur: card.eur,
-        code,
-        expires,
-        usedOn: null,
-      },
-      ...state.vouchers,
-    ],
-  };
-}
-
-/**
- * Show the QR, which spends it.
- *
- * The rule the vouchers page has always stated: a voucher counts as used the
- * moment its code exists, whether or not anyone scans it. Generating at the
- * counter is the advice; this is the behaviour that makes the advice matter.
- */
-export function markUsed(state: PlayerState, id: string, on: string): PlayerState {
-  return {
-    ...state,
-    vouchers: state.vouchers.map((voucher) =>
-      voucher.id === id && voucher.usedOn === null ? { ...voucher, usedOn: on } : voucher,
-    ),
-  };
-}
-
-export const activeVouchers = (state: PlayerState) =>
-  state.vouchers.filter((v) => v.usedOn === null);
-export const usedVouchers = (state: PlayerState) =>
-  state.vouchers.filter((v) => v.usedOn !== null);

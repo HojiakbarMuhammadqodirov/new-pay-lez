@@ -33,6 +33,7 @@
  * React-free and pure, like `auth/business.ts` and `auth/player.ts`, so
  * `npm run verify` can hold it to its invariants outside a browser.
  */
+import { BUSINESS_CATEGORIES } from './content';
 import type { SpokenLanguage } from './auth/business';
 
 export interface ServiceMetrics {
@@ -165,11 +166,24 @@ export function serviceMetrics(): ServiceMetrics {
   };
 }
 
-/** One row of `GET /v1/admin/venues`, as far as this view uses it. */
+/**
+ * One row of `GET /v1/admin/venues` — and the console's whole idea of a venue.
+ *
+ * There used to be an `AdminService` beside this, in `content.ts`, carrying a
+ * letter for the tile, a rating, whether the venue took vouchers and a `scale`
+ * the analytics view multiplied everything by. Five of them were written out by
+ * hand. This is what an operator can actually be shown, and it is a row rather
+ * than a shape somebody designed: the console renders these fields and no
+ * others, so there is nowhere for an invented one to hide.
+ *
+ * `city` is nullable because the column is. `category` is the **server's**
+ * taxonomy id (`cafe`, `bakery`, `hotels`), not an index into anything here —
+ * see `categoryLabel`.
+ */
 export interface AdminVenueRow {
   id: string;
   name: string;
-  city: string;
+  city: string | null;
   category: string;
   status: string;
   verified_at: string | null;
@@ -178,6 +192,27 @@ export interface AdminVenueRow {
   visits: number;
   customers: number;
 }
+
+/**
+ * The word for a category, in the reader's language where there is one.
+ *
+ * The server's taxonomy is wider than the listing form's — it has `hotels` and
+ * `bakery`, which `BUSINESS_CATEGORIES` does not — so an id with no dictionary
+ * entry falls back to the id itself rather than to `undefined` under a venue's
+ * name. That is the honest rendering: it is what the row says, untranslated,
+ * and it is visibly a raw id rather than a plausible wrong word.
+ *
+ * `names` is `copy.listing.categories`, passed in rather than imported, because
+ * this module is React-free and the dictionary is a hook away.
+ */
+export function categoryLabel(id: string, names: readonly string[]): string {
+  const index = BUSINESS_CATEGORIES.findIndex((row) => row.id === id);
+  return index >= 0 ? (names[index] ?? id) : id;
+}
+
+/** The tile letter: a venue's own initial, or `?` for a name that has none. */
+export const initialOf = (name: string): string =>
+  name.trim().charAt(0).toUpperCase() || '?';
 
 /**
  * The two figures an operator can actually get, folded into the same shape.

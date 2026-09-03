@@ -105,36 +105,121 @@ export const uz: Dictionary = {
     search: 'Joy, xizmat ID’si, taklif yoki odamni qidirish…',
     noMatch: 'Bu so‘rovga hech narsa mos kelmadi.',
     kpis: [
-      'Jami xizmatlar',
-      'Faol xizmatlar',
-      'Jami takliflar',
+      'Joylar',
+      'Faol joylar',
       'Faol takliflar',
+      'Zaxiradagi kartalar',
       'Hisoblar',
-      'O‘yinchilar',
     ],
     tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar'],
 
     services: {
       title: 'Biznes xizmatlari',
-      lede: 'paylez’dagi har bir joy. Tahlilini ko‘rish uchun birini oching.',
+      lede: 'Serverdagi har bir joy. U haqida nima o‘lchanayotganini ko‘rish uchun birini oching.',
       serviceId: 'Xizmat ID',
       copy: 'Nusxa',
       copied: 'Nusxalandi',
       analytics: 'Tahlil',
       active: 'Faol',
       paused: 'To‘xtatilgan',
-      vouchers: 'Vaucherlar',
       live: 'Haqiqiy e’lon',
+      none: {
+        title: 'Hali joylar yo‘q',
+        body: 'Egasi e’lonini tugatgach joy shu yerda paydo bo‘ladi. Uni “Odamlar” bo‘limida tasdiqlang va takliflari efirga chiqa oladi.',
+      },
     },
 
     deals: {
       title: 'Takliflar va sovg‘a kartalari',
-      lede: 'Bu oy ilova butun mamlakat bo‘ylab nimani ko‘rsatyapti.',
+      lede: 'Platformadagi barcha takliflar va sovg‘a kartalari javonining hammasi — to‘xtatilgan takliflar va qoralamalar ham, ularni mijozning katalogi ko‘rsata olmaydi.',
       kinds: { gift: 'Sovg‘a kartasi', deal: 'Qaynoq taklif' },
       until: '{date} gacha',
+      cost: '{n} ball',
+      stock: 'zaxirada {n} ta',
+      states: {
+        draft: 'Qoralama',
+        scheduled: 'Rejalashtirilgan',
+        live: 'Faol',
+        paused: 'To‘xtatilgan',
+        expired: 'Muddati tugagan',
+      } as Record<string, string>,
+      untitled: 'Sarlavhasiz',
+      none: {
+        title: 'Hali hech qanday taklif yo‘q',
+        body: 'Qaynoq takliflar tasdiqlangan joylardan keladi; sovg‘a kartalarini platforma qo‘yadi.',
+      },
+    },
+
+    manage: {
+      working: 'Bajarilmoqda…',
+      cancel: 'Bekor qilish',
+      dismiss: 'Yopish',
+      failed: 'Bu amalga oshmadi.',
+
+
+      suspend: 'To‘xtatish',
+      restore: 'Tiklash',
+
+      pause: 'To‘xtatish',
+      resume: 'Davom ettirish',
+      cardRemoved: 'Javondan olindi.',
+      cardDelisted:
+        'Javondan olindi, lekin yozuv qoladi: bulardan {n} tasi sotib olingan va o‘sha hamyonlardagi kodlar brendni ko‘rsatishda davom etishi kerak.',
+
+      ban: 'To‘xtatish',
+      letBackIn: 'Qaytarish',
+      password: 'Parol',
+      passwordFor: '{who} uchun parol o‘rnatish',
+      passwordBody:
+        'U shu zahoti shu parol bilan kira oladi, kirgan barcha qurilmalaridan esa chiqariladi. Dastlab qanday ro‘yxatdan o‘tgani o‘zgarmaydi.',
+      newPassword: 'Yangi parol',
+      passwordHelp: 'Kamida {n} ta belgi. Uni o‘zingiz aytib bering — bu yerda hech narsa uni hech qayerga yubormaydi.',
+      setPassword: 'O‘rnatish',
+      passwordSet: 'Parol o‘rnatildi. Bu hisobdagi barcha seanslar yopildi.',
+      operatorRow: 'Operator',
+      closedRow: 'Yopilgan',
+
+      edit: 'Tahrirlash',
+      editOn: 'Tahrirni tugatish',
+      editHint: 'Har bir qatorni tuzatish yoki oʻchirish mumkin.',
+      editRow: 'Tahrirlash',
+      deleteRow: 'Oʻchirish',
+      save: 'Saqlash',
+      saved: 'Saqlandi.',
+
+      deleteTitle: '{what} oʻchirilsinmi?',
+      deleteVenue:
+        'Muassasa va unga tegishli hamma narsa — takliflari, kampaniyalari, byudjetlari, teglari va tashriflari — maʼlumotlar bazasidan oʻchiriladi. Vaqtincha toʻxtatish — qaytariladigan yoʻli.',
+      deleteDeal:
+        'Taklif va u toʻplagan koʻrsatishlar bilan olishlar maʼlumotlar bazasidan oʻchiriladi. Pauza — qaytariladigan yoʻli.',
+      deleteUser:
+        'Ism, manzil va profil oʻchiriladi. Agar hisob hech narsa ishlamagan va sarflamagan boʻlsa, qatori ham yoʻqoladi; ishlagan boʻlsa, qator anonim holda qoladi, chunki muassasaning hisob-kitobi oʻshandan chiqadi.',
+      deleteCard: 'Brend javondan olinadi.',
+      deleteYes: 'Ha, oʻchirilsin',
+      deleted: '{what} oʻchirildi.',
+      venueDeleted: 'Muassasa oʻchirildi. U bilan {n} ta taklif ketdi.',
+      userDeleted: 'Hisob yopildi, ortidan hech qanday qator qolmadi.',
+      userAnonymised:
+        'Hisob yopildi. Qatorlari anonim holda qoladi, chunki muassasaning hisob-kitobi oʻshandan chiqadi.',
+
+      fields: {
+        name: 'Nomi',
+        city: 'Shahar',
+        country: 'Mamlakat',
+        category: 'Turkum',
+        address: 'Manzil',
+        phone: 'Telefon',
+        email: 'E-pochta',
+        title: 'Sarlavha',
+        description: 'Tavsif',
+        terms: 'Shartlar',
+        until: 'Amal qiladi',
+        occupation: 'Status',
+      },
     },
 
     people: {
+
       title: 'Odamlar',
       lede: 'Uchta tayyor hisob va undan keyin ro‘yxatdan o‘tganlarning hammasi.',
       columns: ['Ism', 'Pochta', 'Rol', 'Qo‘shilgan', 'Holat'],
@@ -149,7 +234,7 @@ export const uz: Dictionary = {
       none: '—',
     },
 
-    note: 'Bu hisoblar ro‘yxati shu brauzerda saqlanadi. Hali server yo‘q, shuning uchun konsol tahrirlamaydi, faqat o‘qiydi — auth/users.ts’ga qarang.',
+    note: 'Bu konsoldagi har bir raqam serverdan o‘qiladi va bu yerda oldindan yozilgan ma’lumot yo‘q. Bu ekran o‘zgartira oladigan narsani faqat olib qo‘yishi yoki qaytarishi mumkin: joy, taklif, hisob, parol. Kimdir asoslanadigan biror raqamni bu yerdan tahrirlab bo‘lmaydi, har bir bosish esa audit jurnaliga sizning nomingiz bilan yoziladi.',
 
     /* ── to‘rtinchi bo‘lim: saytning o‘zi, serverdan so‘raydigan yagonasi ── */
     database: {
@@ -158,7 +243,7 @@ export const uz: Dictionary = {
       switch: 'Qaysi jadval ko‘rsatilsin',
       counts: { users: 'faol hisoblar', venues: 'faol joylar', issued: 'berilgan ballar' },
       tables: { users: 'Odamlar', venues: 'Joylar' },
-      userColumns: ['Ism', 'E-pochta', 'Ro‘yxatdan o‘tish', 'Shahar', 'Ballar', 'Holat', 'Qo‘shilgan'],
+      userColumns: ['Ism', 'E-pochta', 'Ro‘yxatdan o‘tish', 'Shahar', 'Ballar', 'Holat', 'Qo‘shilgan', 'Amallar'],
       venueColumns: ['Joy', 'Shahar', 'Turkum', 'Egasi', 'Tashriflar', 'Tasdiqlangan'],
       review: {
         title: 'Sizni kutmoqda',
@@ -171,7 +256,7 @@ export const uz: Dictionary = {
       unverified: 'Hali yo‘q',
       noUsers: 'Hali hech kim ro‘yxatdan o‘tmagan.',
       noVenues: 'Joylar yo‘q.',
-      note: '{n} ta hisob ko‘rsatilmoqda. Bu ekran o‘qiydi; birovning hisobini hech qachon tahrirlamaydi.',
+      note: '{n} ta hisob ko‘rsatilmoqda. Hisobni to‘xtatish, yopish va parol o‘rnatish — hammasi audit jurnaliga sizning nomingiz bilan yoziladi; operatorning o‘z qatorini esa bu yerdan umuman o‘zgartirib bo‘lmaydi.',
     },
     messages: {
       title: 'Odamlar nima yozgan',
@@ -268,8 +353,6 @@ export const uz: Dictionary = {
         noSource: 'O‘lchanmagan — operator o‘qiy oladigan hech narsa buni hali xabar qilmaydi.',
         measured:
           'Tashriflar va mijozlar sanaladi, GET /v1/admin/venues dan. Bu ekrandagi qolgan hamma narsa hamkorga tegishli yoki umuman yig‘ilmaydi va nol emas, «o‘lchanmagan» deb ko‘rsatiladi.',
-        notConnected:
-          'Backend javob bermayapti, shuning uchun hatto tashrif va mijoz sonlarini ham o‘qib bo‘lmaydi. Bu nol emas — biz so‘rab ololmadik.',
       },
 
       states: { live: 'Faol', paused: 'To‘xtatilgan' },
@@ -395,92 +478,84 @@ export const uz: Dictionary = {
   },
 
   wallet: {
-    title: 'Vaucherlaringiz',
-    lede: 'Yig‘gan hamma narsangiz va sarflagan hamma narsangiz.',
+    title: 'Sizning vaucherlaringiz',
+    lede: 'Nimani yig‘gan bo‘lsangiz va nimani sarflagan bo‘lsangiz — hammasi shu yerda.',
     balance: 'Balans',
     points: 'ball',
-    shortBy: 'Keyingi vaucherga {n} ball yetmayapti',
-    canRedeem: 'Vaucherga yetadi',
+    shortBy: 'Keyingi sovg‘a kartasiga {n} ball yetmayapti',
+    canRedeem: 'Sovg‘a kartasiga yetadi',
+    noShelf: 'Javonda hali hech narsa yo‘q — ballaringiz saqlanib turadi.',
+
+    loading: 'Serverdan so‘ralmoqda…',
+
+    down: {
+      unreachable: 'Serverga ulanib bo‘lmadi, ya’ni bu “hech narsa yo‘q” emas, “so‘ray olmadik”. Birozdan keyin urinib ko‘ring.',
+      refused: 'Server javob berdi, lekin so‘rovni rad etdi. Odatda qayta kirish yordam beradi.',
+      retry: 'Qayta urinish',
+    },
 
     tabs: ['Faol', 'Ishlatilgan'],
-    counts: '{active} faol · {used} ishlatilgan',
 
     valid: '{date} gacha amal qiladi',
-    usedOn: '{date} da ishlatilgan',
     cost: '{n} ball',
-    show: 'QR kodni ko‘rsatish',
-    shown: 'Kod yaratilishi bilan vaucher «Ishlatilgan»ga o‘tadi — buni kassada bajaring.',
 
-    emptyActive: 'Hozircha bo‘sh. Bitta raund o‘ynang va ballarni shu yerda sarflang.',
-    emptyUsed: 'Hozircha hech narsa sarflanmagan.',
-    play: 'Raund o‘ynash',
+    emptyActive: 'Hozircha bo‘sh. Bir raund o‘ynang va ballarni shu yerda sarflang.',
+    emptyUsed: 'Hali hech narsa sarflanmagan.',
+    play: 'Bir raund o‘ynash',
+
+    voucherTitle: 'Chegirma vaucheri',
+    noVouchers: 'Hali vaucher yo‘q. Ularni joyda ball sarflaganingizda o‘sha joy beradi.',
 
     catalogue: 'Nima olishingiz mumkin',
-    catalogueLede: 'Har oy yangilanadi. Har bir kartaning zaxirasi cheklangan.',
+    catalogueLede: 'Ballarga sotib olinadigan sovg‘a kartalari. Bu yerda platformada haqiqatan bor narsalar.',
     redeem: 'Olish',
     short: 'Ball yetarli emas',
-    soldOut: '1-sanada qaytadi',
-    left: '{of} dan {left} qoldi',
+    soldOut: 'Zaxirada yo‘q',
+    left: '{n} ta qoldi',
+    buying: 'Sotib olinmoqda…',
+    buyFailed: 'O‘tmadi va hech narsa yechilmadi. Qaytadan urinib ko‘ring.',
+    priorityOnly: 'Faqat pullik tarifda',
+    noShelfYet: 'Hali sovg‘a kartalari qo‘yilmagan. Ballar saqlanadi — brendlar qo‘shilgani sari ro‘yxat to‘ladi.',
+
+    atCounter: 'Kod kassada o‘qiladi. Kimdir uni skanerlamaguncha, bu yerdagi hech narsa sarflanmaydi.',
 
     stamps: {
       title: 'Shtamp kartalari',
-      lede: 'Har bir karta bitta joyga tashriflarni sanaydi. Tashriflar ball emas va boshqa joyda sarflanmaydi.',
-      progress: '{of} tadan {done} ta',
+      lede: 'Har bir karta bitta joyga tashriflarni sanaydi. Tashrif ball emas va boshqa joyda sarflab bo‘lmaydi.',
+      progress: '{of} dan {done}',
       empty: 'Hali tashrif yo‘q — {of} ta tashrif {reward} beradi',
-      going: '{reward} uchun yana {left} ta',
-      goingOne: '{reward} uchun yana bitta tashrif',
+      going: '{reward} gacha yana {left} ta',
+      goingOne: '{reward} gacha yana bitta tashrif',
       full: 'To‘ldi — {reward} kassada kutmoqda',
-      cycles: 'Avval {n}× to‘ldirilgan',
-      none: 'Hali karta yo‘q. Birinchisi karta ishlatadigan joyga birinchi tashrifda boshlanadi.',
-      noneHere: '{category} bo‘limida shtamp kartalari yo‘q.',
-      visit: 'Tashrif qo‘shish',
+      cycles: 'Ilgari {n}× to‘lgan',
+      none: 'Hali shtamp kartasi yo‘q. Birinchisi kartali joyga birinchi skanerlangan tashrifingizda boshlanadi.',
     },
 
     deals: {
       title: 'Qaynoq takliflar',
-      lede: 'Yaqin atrofdagi takliflar. Ko‘pchiligi bepul — joyning o‘zi to‘laydi.',
+      lede: 'Yaqin atrofdagi joylarning takliflari. Ko‘pi hech narsa turmaydi — ularni joyning o‘zi to‘laydi.',
 
       all: 'Hammasi',
-      categories: ['Qahva', 'Taom', 'Nonvoyxona', 'Xizmatlar', 'Go‘zallik'],
       filter: 'Toifa bo‘yicha filtr',
-      noneHere: 'Yaqin atrofda {category} bo‘yicha hozircha hech narsa yo‘q.',
+      noneHere: '“{category}” toifasida hozir hech narsa yo‘q.',
       showAll: 'Barcha takliflarni ko‘rsatish',
+      noneAtAll: 'Hali faol taklif yo‘q. Joylar qo‘shilib, e’lon qilgach shu yerda paydo bo‘ladi.',
 
-      openNow: 'Hozir ochiq',
-      closedNow: 'Hozir yopiq',
-      held: 'Hamyoningizda',
-
-      everyDay: 'Har kuni, {hours}',
       until: '{date} gacha',
-      reviews: '{n} ta sharh',
-
       free: 'Bepul',
-      claim: 'Olish',
       shortBy: 'Yana {n} ball kerak',
-      claimed: '{date} olingan',
-      justClaimed: 'Olindi — bu kodni kassada ko‘rsating',
       code: 'Sizning kodingiz',
 
-      offers: [
-        'Ikkita qahva, uchinchisi esa muassasa hisobidan.',
-        'Butun buyurtmaga kun bo‘yi o‘n foiz chegirma.',
-        'Peshtaxtadagi hamma narsaga yigirma foiz chegirma.',
-        'Uchta non oling, to‘rtinchisi bepul.',
-        'Zaldagi istalgan rastada tushlikka o‘n besh foiz chegirma.',
-        'Ikkita taom, uchinchisi esa muassasa hisobidan.',
-        'Har qanday kitob xaridiga bepul filtr qahva.',
-        'Soch olish va soqol tekislashga o‘n besh foiz chegirma.',
-        'Birinchi muolajangizga yigirma besh foiz chegirma.',
-      ],
-
-      none: 'Hali hech narsa olinmagan.',
+      howToClaim: 'Qanday olinadi',
+      hideTerms: 'Yopish',
+      claimAtCounter: 'Taklifni kassada ko‘rsating, joy uni skanerlaydi. Aynan shu skanerlash olish hisoblanadi — hech qaysi veb-sahifa buni qila olmaydi.',
     },
 
     redeemed: {
       title: 'Olinganlar',
-      lede: 'Siz allaqachon olganlaringiz. Kodni kassada ko‘rsating — har biri bir marta ishlaydi.',
-      dealsTitle: 'Siz olgan qaynoq takliflar',
-      dealsLede: 'Taklif tugaguncha sizniki. Muassasa kodni kassada o‘qiydi.',
+      lede: 'Siz allaqachon olgan narsalar. Kodni kassada ko‘rsating — har biri bir marta ishlaydi.',
+      vouchersTitle: 'Chegirma vaucherlari',
+      vouchersLede: 'Bitta joyda sarflangan ballar. Joy kodni kassada o‘qiydi.',
     },
 
     giftsTitle: 'Sovg‘a kartalari',
@@ -537,6 +612,10 @@ export const uz: Dictionary = {
     start: 'O‘yinni boshlash',
     play: 'O‘ynash',
     noEnergy: 'Energiya tugadi',
+    practice: 'Mashq',
+    practiceFree: 'U tiklanayotgan paytda raundlar bepul — shunchaki ball bermaydi.',
+    practiceRound: 'Mashq raundi — ballsiz',
+    practiceResult: 'Mashq raundi — hech narsa yozilmadi. Keyingi energiya yana to‘laydi.',
     energyFull: 'To‘la — kutadigan narsa yo‘q',
     energyNext: '+1 yana {time}',
     energyCost: 'Har raundga 1 ta',
@@ -1410,7 +1489,6 @@ export const uz: Dictionary = {
       first: 'Birinchi tashrif',
       again: 'Qaytib keldi',
       today: 'Bugun',
-      places: ['Bratislavska 6', 'Bratislavska 6', 'Kleparz kioski'],
       noCampaign: 'Kampaniya ishlamayapti',
       progress: '{need} tadan {done} ta skanerlash',
       toGo: 'yana {n} ta',
@@ -1906,12 +1984,12 @@ export const uz: Dictionary = {
     title: 'Ballaringiz — haqiqiy pul.',
     lede: "Hiyla yo‘q. Ball yig‘ish uchun o‘ynang, so‘ng ularni haqiqatan foydalanadigan sovg‘a kartalari va chegirmalarga almashtiring.",
     card: {
-      merchant: "Zalando sovg‘a kartasi",
-      meta: "Hamkor do‘kon · {amount} qiymat",
+      merchant: 'Hamkor sovg‘a kartasi',
+      meta: "Do‘konda pul kabi sarflanadi",
       title: 'Ballaringizni haqiqiy vaucherga almashtiring.',
-      price: '500 ball',
-      revealed: 'Vaucher tayyor · PLZ-9F3K',
-      action: '100 ballni almashtirish',
+      price: 'Ballar',
+      revealed: 'Vaucher tayyor',
+      action: 'Ballarni almashtirish',
     },
     benefits: [
       {
@@ -1974,7 +2052,7 @@ export const uz: Dictionary = {
       lede: "Kuniga bir nechta tezkor savol. Siz allaqachon foydalanadigan do‘konlarda vaucherga aylanadigan ballar.",
       primary: "O‘ynashni boshlash",
       secondary: "O‘yinlarni ko‘rish",
-      stats: ['Eng yaxshi raund', 'Muzlatish beradi', 'Vaucherga yetadi'],
+      stats: ['Eng yaxshi raund', 'Muzlatish beradi'],
     },
 
     steps: {
@@ -2055,7 +2133,7 @@ export const uz: Dictionary = {
         },
         {
           q: 'Vaucher aslida qanchaga arziydi?',
-          a: "Bu vaucher turiga va hamkor korxona qaroriga bog‘liq. Paylez o‘zi beradigan sovg‘a kartasi — masalan, Zalando yoki Zara uchun — 100 o‘yin balliga tushadi va {amount} qiymatga ega.",
+          a: "Bu vaucherga va hamkor korxona qaroriga bog‘liq. Sovg‘a kartalari ballarda narxlanadi va javondagi har biri qancha turishini va qiymatini ko‘rsatadi — “Vaucherlar” sahifasi hozir zaxirada nima borligini ro‘yxatlaydi.",
         },
         {
           q: 'Savollar qaysi tillarda?',
@@ -2506,15 +2584,16 @@ export const uz: Dictionary = {
 
     wallet: {
       title: 'Vaucherlaringiz',
-      counts: '{active} faol · {used} ishlatilgan',
+      example: 'Namuna',
       tabs: { active: 'Faol', used: 'Ishlatilgan' },
       note: "Vaucher QR kod yaratilgan zahoti ishlatilgan hisoblanadi — uni tramvayda emas, kassada yarating.",
       card: {
-        meta: "Hamkor do‘kon · {amount} qiymat",
+        brand: "Hamkor do‘kon",
+        meta: 'Sovg‘a kartasi, pul kabi sarflanadi',
         cost: '500 ball',
         action: 'QR kodni ko‘rsatish',
         code: 'PLZ-9F3K',
-        expires: '31.08 gacha amal qiladi',
+        expires: 'Kartadagi sanagacha amal qiladi',
       },
     },
 
@@ -2545,12 +2624,16 @@ export const uz: Dictionary = {
     catalogue: {
       eyebrow: 'Hamyonda nima bor',
       title: "Siz allaqachon bormoqchi bo‘lgan do‘konlarning sovg‘a kartalari.",
-      lede: "Ro‘yxat har oy yangilanadi va har bir kartaning zaxirasi cheklangan — oylik zaxira tugasa, karta oyning birinchi kunida qaytadi.",
+      lede: 'Platformadan jonli o‘qiladi. Bu yerda haqiqatan zaxirada bor narsalar, ballar uni sotib oladigan narxda.',
       cost: 'ball',
-      left: '{of} tadan {left} tasi qoldi',
+      left: '{n} ta qoldi',
       everywhere: "Istalgan do‘kon · onlayn ham",
-      soldOut: '1-sanada qaytadi',
+      soldOut: 'Zaxirada yo‘q',
       action: 'To‘liq ro‘yxatni ochish',
+      loading: 'Serverdan so‘ralmoqda…',
+      none: 'Hali sovg‘a kartalari qo‘yilmagan. Ballar saqlanadi — brendlar qo‘shilgani sari ro‘yxat to‘ladi.',
+      down: 'Serverga ulanib bo‘lmadi, ya’ni bu bo‘sh katalog emas — biz o‘qiy olmagan katalog.',
+      retry: 'Qayta urinish',
     },
 
     rules: {
@@ -2931,6 +3014,10 @@ export const uz: Dictionary = {
     unlimited: 'Cheksiz',
     included: 'Kiradi',
     notIncluded: 'Kirmaydi',
+    get: '{plan} olish',
+    current: 'Sizning tarifingiz',
+    opening: 'Ochilmoqda…',
+    failed: 'Toʻlov sahifasi ochilmadi. Qayta urinib koʻring.',
     badges: ['Yulduzcha', 'Toj'],
     heroRows: ['Kuniga energiya', 'Tiklanish, soat', 'Raund balli'],
     more: 'Qolgan hammasi',

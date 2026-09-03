@@ -27,7 +27,7 @@ export type CaseKind =
   | 'disputed_transaction'
   | 'replay';
 
-export function openCase(
+export async function openCase(
   db: Db,
   input: {
     kind: CaseKind;
@@ -39,9 +39,9 @@ export function openCase(
     deviceId?: string | null;
     at?: Iso;
   },
-): string {
+): Promise<string> {
   const id = newId('frd');
-  db.run(
+  await db.run(
     `INSERT INTO fraud_cases
        (id, kind, severity, user_id, venue_id, transaction_id, device_id, detail, status, created_at)
      VALUES ($i, $k, $s, $u, $v, $x, $d, $de, 'open', $at)`,
@@ -67,24 +67,24 @@ export function openCase(
  * already changed hands at the counter, and the question is whether a human
  * should look at it, not whether to embarrass a customer.
  */
-export function checkTransaction(
+export async function checkTransaction(
   db: Db,
   input: { userId: string; venueId: string; transactionId: string; deviceId?: string | null; at?: Iso },
-): string[] {
+): Promise<string[]> {
   const at = input.at ?? now();
   const cases: string[] = [];
 
   /* Impossible travel: the previous confirmed scan, and whether a human body
      could have covered the distance in the elapsed time. 900 km/h is a plane, so
      anything over it is either two people on one account or a forged trigger. */
-  const previous = db.get<{ venue_id: string; confirmed_at: string; lat: number | null; lng: number | null }>(
+  const previous = await db.get<{ venue_id: string; confirmed_at: string; lat: number | null; lng: number | null }>(
     `SELECT t.venue_id, t.confirmed_at, v.lat, v.lng
        FROM transactions t JOIN venues v ON v.id = t.venue_id
       WHERE t.user_id = $u AND t.status = 'committed' AND t.id != $x
       ORDER BY t.confirmed_at DESC LIMIT 1`,
     { u: input.userId, x: input.transactionId },
   );
-  const here = db.get<{ lat: number | null; lng: number | null }>(
+  const here = await db.get<{ lat: number | null; lng: number | null }>(
     `SELECT lat, lng FROM venues WHERE id = $v`,
     { v: input.venueId },
   );
@@ -102,7 +102,7 @@ export function checkTransaction(
     const possible = (CONFIG.gate.travelKmPerHour * minutes) / 60;
     if (km > 1 && km > possible) {
       cases.push(
-        openCase(db, {
+        await openCase(db, {
           kind: 'impossible_travel',
           severity: 'high',
           userId: input.userId,
@@ -115,14 +115,14 @@ export function checkTransaction(
     }
   }
 
-  const hour = db.get<{ n: number }>(
+  const hour = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM transactions
       WHERE user_id = $u AND status = 'committed' AND confirmed_at >= $s`,
     { u: input.userId, s: new Date(new Date(at).getTime() - 3_600_000).toISOString() },
   );
   if ((hour?.n ?? 0) > CONFIG.gate.burstPerHour) {
     cases.push(
-      openCase(db, {
+      await openCase(db, {
         kind: 'burst',
         userId: input.userId,
         venueId: input.venueId,
@@ -134,13 +134,13 @@ export function checkTransaction(
   }
 
   if (input.deviceId) {
-    const accounts = db.get<{ n: number }>(
+    const accounts = await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM device_users WHERE device_id = $d`,
       { d: input.deviceId },
     );
     if ((accounts?.n ?? 0) > CONFIG.fraud.accountsPerDevice) {
       cases.push(
-        openCase(db, {
+        await openCase(db, {
           kind: 'multi_account',
           userId: input.userId,
           deviceId: input.deviceId,
@@ -163,17 +163,17 @@ export function checkTransaction(
  * is read at the point of use, not encoded here — that keeps the tier a fact
  * about the account rather than a policy scattered across the codebase.
  */
-export function refreshTrust(db: Db, userId: string): number {
-  const confirmed = db.get<{ n: number }>(
+export async function refreshTrust(db: Db, userId: string): Promise<number> {
+  const confirmed = (await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM transactions WHERE user_id = $u AND status = 'committed'`,
     { u: userId },
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
   let tier = 0;
   CONFIG.fraud.tierThresholds.forEach((threshold, index) => {
     if (confirmed >= threshold) tier = index;
   });
-  db.run(`UPDATE users SET trust_tier = $t WHERE id = $u`, { t: tier, u: userId });
+  await db.run(`UPDATE users SET trust_tier = $t WHERE id = $u`, { t: tier, u: userId });
   return tier;
 }
 
@@ -184,13 +184,13 @@ export function refreshTrust(db: Db, userId: string): number {
  * it, the answer is "talk to support" rather than a silent no — hence the
  * explicit `expired` result rather than a boolean.
  */
-export function dispute(
+export async function dispute(
   db: Db,
   transactionId: string,
   note: string,
   at: Iso = now(),
-): { ok: boolean; reason?: 'expired' | 'not_committed' } {
-  const txn = db.get<{ status: string; confirmed_at: string | null; user_id: string; venue_id: string }>(
+): Promise<{ ok: boolean; reason?: 'expired' | 'not_committed' }> {
+  const txn = await db.get<{ status: string; confirmed_at: string | null; user_id: string; venue_id: string }>(
     `SELECT status, confirmed_at, user_id, venue_id FROM transactions WHERE id = $i`,
     { i: transactionId },
   );
@@ -200,12 +200,12 @@ export function dispute(
   const hours = minutesBetween(txn.confirmed_at, at) / 60;
   if (hours > CONFIG.fraud.disputeWindowHours) return { ok: false, reason: 'expired' };
 
-  db.run(`UPDATE transactions SET disputed_at = $t, dispute_note = $n WHERE id = $i`, {
+  await db.run(`UPDATE transactions SET disputed_at = $t, dispute_note = $n WHERE id = $i`, {
     t: at,
     n: note,
     i: transactionId,
   });
-  openCase(db, {
+  await openCase(db, {
     kind: 'disputed_transaction',
     userId: txn.user_id,
     venueId: txn.venue_id,
@@ -217,8 +217,8 @@ export function dispute(
 }
 
 /** Cases a human still has to look at (C3's queue). */
-export const openCases = (db: Db, limit = 100) =>
-  db.all(
+export const openCases = async (db: Db, limit = 100) =>
+  await db.all(
     `SELECT * FROM fraud_cases WHERE status IN ('open', 'reviewing')
       ORDER BY CASE severity WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END, created_at
       LIMIT $l`,
@@ -226,25 +226,25 @@ export const openCases = (db: Db, limit = 100) =>
   );
 
 /** Devices this account has been seen on, for the multi-accounting picture. */
-export function touchDevice(
+export async function touchDevice(
   db: Db,
   input: { fingerprint: string; userId: string; platform?: string; at?: Iso },
-): string {
+): Promise<string> {
   const at = input.at ?? now();
-  const existing = db.get<{ id: string }>(`SELECT id FROM devices WHERE fingerprint = $f`, {
+  const existing = await db.get<{ id: string }>(`SELECT id FROM devices WHERE fingerprint = $f`, {
     f: input.fingerprint,
   });
   const id = existing?.id ?? newId('dev');
   if (existing) {
-    db.run(`UPDATE devices SET last_seen_at = $t WHERE id = $i`, { t: at, i: id });
+    await db.run(`UPDATE devices SET last_seen_at = $t WHERE id = $i`, { t: at, i: id });
   } else {
-    db.run(
+    await db.run(
       `INSERT INTO devices (id, fingerprint, platform, first_user_id, first_seen_at, last_seen_at)
        VALUES ($i, $f, $p, $u, $t, $t)`,
       { i: id, f: input.fingerprint, p: input.platform ?? null, u: input.userId, t: at },
     );
   }
-  db.run(
+  await db.run(
     `INSERT OR IGNORE INTO device_users (device_id, user_id, seen_at) VALUES ($d, $u, $t)`,
     { d: id, u: input.userId, t: at },
   );
@@ -252,7 +252,7 @@ export function touchDevice(
 }
 
 /** Old cases nobody adjudicated. Surfaced rather than closed — see C3. */
-export const staleCases = (db: Db, at: Iso = now(), days = 14) =>
-  db.all(`SELECT * FROM fraud_cases WHERE status = 'open' AND created_at < $s`, {
+export const staleCases = async (db: Db, at: Iso = now(), days = 14) =>
+  await db.all(`SELECT * FROM fraud_cases WHERE status = 'open' AND created_at < $s`, {
     s: plusDays(at, -days),
   });

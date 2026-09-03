@@ -65,8 +65,8 @@ export function createApi(options: ServerOptions) {
     }
 
     try {
-      const body = await readBody(req);
-      const actor = authenticate(options.db, req);
+      const { parsed: body, raw: rawBody } = await readBody(req);
+      const actor = await authenticate(options.db, req);
 
       if (found.route.auth !== 'none') {
         if (!actor) throw new DomainError('unauthenticated', 'sign in first');
@@ -92,6 +92,7 @@ export function createApi(options: ServerOptions) {
         params: found.params,
         query: url.searchParams,
         body,
+        rawBody,
         ip: ipOf(req),
         language: languageOf(req, actor),
         at: now(),
@@ -121,8 +122,8 @@ export function createApi(options: ServerOptions) {
 
   return { router, handle, listen: (port = CONFIG.server.port, host = CONFIG.server.host) =>
     new Promise<ReturnType<typeof createServer>>((resolve) => {
-      const server = createServer((req, res) => {
-        void handle(req, res);
+      const server = createServer(async (req, res) => {
+        void await handle(req, res);
       });
       server.listen(port, host, () => resolve(server));
     }) };
@@ -130,15 +131,15 @@ export function createApi(options: ServerOptions) {
 
 /* ─────────────────────────────────────────────────────────── the four steps ── */
 
-function authenticate(db: Db, req: IncomingMessage): Actor | null {
+async function authenticate(db: Db, req: IncomingMessage): Promise<Actor | null> {
   const header = req.headers.authorization;
   const cookie = cookieValue(req.headers.cookie, 'paylez_session');
   const token = header?.startsWith('Bearer ') ? header.slice(7) : cookie;
   if (!token) return null;
 
-  const resolved = resolveSession(db, token);
+  const resolved = await resolveSession(db, token);
   if (!resolved) return null;
-  return { user: resolved.user, session: resolved.session, roles: rolesOf(db, resolved.user.id) };
+  return { user: resolved.user, session: resolved.session, roles: await rolesOf(db, resolved.user.id) };
 }
 
 /**
@@ -155,7 +156,7 @@ async function runIdempotent(ctx: Ctx, route: Route, run: () => unknown): Promis
 
   const endpoint = `${route.method} ${route.pattern}`;
   const hash = createHash('sha256').update(JSON.stringify(ctx.body ?? {})).digest('hex');
-  const existing = ctx.db.get<{ request_hash: string; response: string | null }>(
+  const existing = await ctx.db.get<{ request_hash: string; response: string | null }>(
     `SELECT request_hash, response FROM idempotency_keys
       WHERE key = $k AND user_id = $u AND endpoint = $e`,
     { k: ctx.idempotencyKey, u: ctx.actor.user.id, e: endpoint },
@@ -169,7 +170,7 @@ async function runIdempotent(ctx: Ctx, route: Route, run: () => unknown): Promis
   }
 
   const result = await run();
-  ctx.db.run(
+  await ctx.db.run(
     `INSERT INTO idempotency_keys (key, user_id, endpoint, request_hash, status_code, response, created_at)
      VALUES ($k, $u, $e, $h, 200, $r, $t)
        ON CONFLICT (key, user_id, endpoint) DO NOTHING`,
@@ -211,8 +212,8 @@ function send(res: ServerResponse, status: number, payload: unknown): void {
   res.end(body);
 }
 
-function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
-  if (req.method === 'GET' || req.method === 'HEAD') return Promise.resolve({});
+function readBody(req: IncomingMessage): Promise<{ parsed: Record<string, unknown>; raw: string }> {
+  if (req.method === 'GET' || req.method === 'HEAD') return Promise.resolve({ parsed: {}, raw: '' });
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
@@ -230,12 +231,15 @@ function readBody(req: IncomingMessage): Promise<Record<string, unknown>> {
     req.on('end', () => {
       const raw = Buffer.concat(chunks).toString('utf8');
       if (!raw.trim()) {
-        resolve({});
+        resolve({ parsed: {}, raw });
         return;
       }
       try {
         const parsed = JSON.parse(raw);
-        resolve(typeof parsed === 'object' && parsed !== null ? parsed : { value: parsed });
+        resolve({
+          parsed: typeof parsed === 'object' && parsed !== null ? parsed : { value: parsed },
+          raw,
+        });
       } catch {
         reject(new DomainError('bad_request', 'body is not JSON'));
       }

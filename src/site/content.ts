@@ -151,83 +151,23 @@ export const FEATURE_META: Array<{
   { icon: 'assistant' },
 ];
 
-/**
- * The voucher catalogue — the shelf every card on the site is taken off.
+/*
+ * There was a `VOUCHER_CARDS` shelf here — eight brands with a points price, a
+ * face value in euros and a monthly allocation — and four things across the
+ * site were derived from it: the value card on Home, the figure the L-Earn FAQ
+ * quoted, the wallet's own catalogue, and the two Vouchers hero stats.
  *
- * It sits up here rather than down in the Vouchers block it used to live in
- * because four other things are now derived from it, and a shelf has to be
- * declared before the things that read from it: the value card on Home, the
- * figure the L-Earn FAQ quotes, the wallet mock's own voucher, and the two
- * Vouchers hero stats. Each of those used to carry its own copy of a price, and
- * they disagreed — the same Zalando card was one figure in the wallet, another
- * behind the FAQ's "50 zł", and a third wherever `(points / 100) * 4.65` was
- * being computed at a call site.
+ * Every one of those numbers was written in this file. There is a real shelf
+ * now — `gift_card_stock` on the server, read through `GET /v1/gift-cards` —
+ * and it is the only thing that can say what a card costs, what it is worth and
+ * whether there are any left. So the catalogue screens read it (`api/wallet.ts`
+ * carries the shapes), and the figures that had no source anywhere are gone
+ * rather than estimated: a price quoted off a table nobody stocked is a price
+ * somebody will hold us to.
  *
- * `eur` is the face value **in euros**, like every other amount in this file;
- * `useMoney` converts on the way out. The zloty figures the copy was written
- * against are the round ones — 50 zł, 250 zł, 150 zł — and these are those in
- * the base unit, which is why they are not round here.
+ * The shelf is empty until an operator stocks it, and that is a state the
+ * screens render as itself. See the note on empty states in `wallet.tsx`.
  */
-export const VOUCHER_CARDS: Array<{
-  brand: string;
-  logo: string;
-  points: number;
-  eur: number;
-  left: number;
-  of: number;
-}> = [
-  { brand: 'Media Expert', logo: 'M', points: 100, eur: 11.63, left: 10, of: 10 },
-  { brand: 'Zalando', logo: 'Z', points: 500, eur: 58.15, left: 6, of: 10 },
-  { brand: 'Douglas', logo: 'D', points: 300, eur: 34.89, left: 8, of: 10 },
-  { brand: 'Allegro', logo: 'A', points: 500, eur: 58.15, left: 3, of: 10 },
-  { brand: 'Biedronka', logo: 'B', points: 100, eur: 11.63, left: 10, of: 10 },
-  { brand: 'Bolt', logo: 'B', points: 200, eur: 23.26, left: 7, of: 10 },
-  { brand: 'FlixBus', logo: 'F', points: 400, eur: 46.52, left: 5, of: 10 },
-  { brand: 'Hebe', logo: 'H', points: 100, eur: 11.63, left: 9, of: 10 },
-];
-
-/**
- * One row off the shelf, by brand.
- *
- * Throws rather than returning `undefined`: every caller here names a brand
- * that is written three lines up, so a miss is a typo at build-out time and not
- * a state to render. A `?.eur` at the call site would put `undefined` into a
- * price tag instead.
- */
-export function voucherCard(brand: string) {
-  const card = VOUCHER_CARDS.find((row) => row.brand === brand);
-  if (!card) throw new Error(`no voucher card for ${brand}`);
-  return card;
-}
-
-/** The cheapest thing on the shelf — what "enough points" means. */
-const CHEAPEST_VOUCHER_CARD = VOUCHER_CARDS.reduce((low, row) =>
-  row.points < low.points ? row : low,
-);
-
-/**
- * What the cheapest voucher costs, and what it is worth.
- *
- * Derived rather than restated, because three separate places quote them: the
- * L-Earn hero's third stat, the Vouchers hero's second, and the wallet's "you
- * are N points short". `auth/player.ts` re-exports the points figure under the
- * name a balance asks the question in.
- */
-export const CHEAPEST_VOUCHER_POINTS = CHEAPEST_VOUCHER_CARD.points;
-
-/**
- * The gift card the L-Earn FAQ quotes, in euros like every other amount here.
- *
- * The answer was written against 50 zł — what a Polish reader sees — and it is
- * the cheapest card on the shelf that costs that. Read off the shelf rather
- * than typed as `11.63`, which was the version before this one and drifted the
- * first time a price moved: the FAQ went on quoting 50 zł for a card the
- * catalogue two pages over had repriced.
- */
-export const LEARN_VOUCHER_EUR = CHEAPEST_VOUCHER_CARD.eur;
-
-/** The card on Home's value section. Its face value comes off the shelf. */
-export const VALUE_CARD = { brand: 'zalando', logo: 'Z', eur: voucherCard('Zalando').eur };
 
 /* ─────────────────────────────────────────────────────── subscription ── */
 
@@ -794,246 +734,24 @@ export const ACCOUNT_TYPES: Array<{
 
 /* ─────────────────────────────────────────────────────────────── console ── */
 
-/**
- * The platform, as the operator's console sees it.
+/*
+ * There were six seeded tables here, and every figure on the console came out
+ * of them: `PLATFORM` (the four headline counts), `ADMIN_SERVICES` (five
+ * venues, each carrying a `scale` the whole analytics view was multiplied by),
+ * `ADMIN_DEALS`, and three tables of redemptions, scans and vouchers with
+ * invented customer codes in them.
  *
- * Lifted from the original admin panel (`landing/screenshots/admin-b2b*.png`
- * and `admin-analytics*.png`) rather than invented here — same headline counts,
- * same service catalogue, same per-venue analytics. Two things are deliberately
- * *not* carried over: its colours, which are a fourth palette this site does not
- * have, and its PLN/USD toggle, which the language already decides (see the
- * money rule).
+ * They are gone, and what replaced them is not a smaller seed. The console asks
+ * the server: `GET /v1/admin/overview` for the counts, `GET /v1/admin/venues`
+ * for the venues, `GET /v1/deals` and `GET /v1/gift-cards` for what the app is
+ * showing. Where no operator-facing endpoint exists the figure is **not shown
+ * at all** rather than derived from a number typed beside a name —
+ * `adminMetrics.ts` carries that reasoning at length, and the `measured` flag
+ * it returns is what every panel branches on.
  *
- * Everything here is seed data for one platform-shaped month. The one venue on
- * the console that is *not* seeded is the listing a real signed-up owner saved —
- * `admin.tsx` puts it in the same list with no traffic behind it, which is the
- * state every screenshot in that folder was taken in.
+ * What stays below is structure: which icon sits on which tab, and in which
+ * order. None of it is data about anybody.
  */
-export const PLATFORM = { services: 308, active: 220, deals: 14, activeDeals: 10 };
-
-export interface AdminService {
-  /** The hash an owner pastes into the analytics search. */
-  id: string;
-  /** The letter on the tile. Venue names are brands and are never translated. */
-  logo: string;
-  /**
-   * The venue's own mark, if its owner uploaded one — a data URL, and `''` for
-   * every seeded venue here.
-   *
-   * Optional rather than a letter-or-image union because that is what it
-   * actually is: a listing either has a picture or it does not, and the letter
-   * above is the fallback rather than the other half of a choice. The console
-   * is the one screen that shows seeded venues and real ones side by side, so
-   * it is also the one screen where both cases are on screen at once.
-   */
-  mark?: string;
-  name: string;
-  /** Index into `BUSINESS_CATEGORIES`, and so into `copy.listing.categories`. */
-  category: number;
-  city: string;
-  rating: number;
-  vouchers: boolean;
-  active: boolean;
-  /**
-   * How busy this venue is, as a multiple of the base month below.
-   *
-   * One number instead of five hundred: every figure in the analytics view is
-   * derived from it (`adminMetrics.ts`), so a quiet venue is quiet *everywhere*
-   * — its trend, its tables and its country comparison all agree, which five
-   * separately invented data sets would not.
-   */
-  scale: number;
-}
-
-export const ADMIN_SERVICES: AdminService[] = [
-  { id: '6a68a301a5d97e02c4b715c3', logo: 'D', name: 'Dubai Cafe', category: 0, city: 'Kraków', rating: 3.5, vouchers: true, active: true, scale: 1 },
-  { id: '9f21c74e0b3a5d18e6c2470a', logo: 'B', name: 'Bollywood Masala House', category: 1, city: 'Kraków', rating: 4.9, vouchers: true, active: true, scale: 1.45 },
-  { id: '3d0b58fa9c17e4620d8a1f55', logo: 'S', name: 'Sultan Barbers', category: 2, city: 'Warszawa', rating: 4.6, vouchers: true, active: true, scale: 0.62 },
-  { id: 'c48e1207b6d9a35f0e7c9821', logo: 'L', name: 'Lingua Nova', category: 5, city: 'Wrocław', rating: 4.8, vouchers: false, active: true, scale: 0.34 },
-  { id: '71bd3e9c802af5461d0b7e34', logo: 'F', name: 'Forma Fitness', category: 6, city: 'Gdańsk', rating: 4.2, vouchers: true, active: false, scale: 0.79 },
-];
-
-/** Platform-wide offers. `until` is `DD.MM.YYYY`; brands are never translated. */
-export const ADMIN_DEALS: Array<{
-  id: string;
-  logo: string;
-  name: string;
-  kind: 'gift' | 'deal';
-  country: string;
-  until: string;
-  active: boolean;
-}> = [
-  { id: 'flixbus', logo: 'F', name: 'FlixBus Gift Card', kind: 'gift', country: 'PL', until: '31.08.2026', active: true },
-  { id: 'biedronka', logo: 'B', name: 'Biedronka Gift Card', kind: 'gift', country: 'PL', until: '31.08.2026', active: true },
-  { id: 'hebe', logo: 'H', name: 'Hebe Gift Card', kind: 'gift', country: 'PL', until: '31.08.2026', active: true },
-  { id: 'zalando', logo: 'Z', name: 'Zalando Gift Card', kind: 'gift', country: 'PL', until: '30.09.2026', active: true },
-  { id: 'mediaexpert', logo: 'M', name: 'Media Expert Gift Card', kind: 'gift', country: 'PL', until: '30.09.2026', active: false },
-  { id: 'dubai21', logo: '2', name: '2+1 at Dubai Cafe', kind: 'deal', country: 'PL', until: '31.07.2026', active: false },
-];
-
-/**
- * One month at a venue of `scale: 1`, and the seed everything else is derived
- * from. Money is euros like everywhere else in this file.
- *
- * The four contact counters, the two voucher pairs and the scan count are the
- * nine figures the original's Dashboard tab shows; `engagement` is not among
- * them because it is their sum, and computing it (in `adminMetrics.ts`) is what
- * stops the headline disagreeing with the cards under it.
- */
-export const ADMIN_BASE = {
-  maps: 1840,
-  website: 962,
-  phone: 314,
-  instagram: 587,
-
-  vouchersUsed: 168,
-  vouchersActive: 74,
-  loyaltyUsed: 96,
-  loyaltyActive: 41,
-  /** Combined discount given, as a percentage of the cheques it was used on. */
-  discount: 12,
-  scans: 1212,
-
-  /** Thirty days of engagement, oldest first. Shape, not noise. */
-  trend: [
-    118, 131, 126, 149, 162, 141, 108, 122, 138, 147,
-    166, 178, 159, 121, 134, 151, 163, 172, 188, 164,
-    129, 143, 157, 169, 181, 196, 174, 138, 152, 167,
-  ],
-  /** Daily QR scans over the same window. */
-  scanTrend: [
-    28, 34, 31, 39, 44, 37, 24, 29, 33, 36,
-    42, 47, 40, 27, 31, 38, 41, 45, 51, 43,
-    30, 35, 39, 44, 48, 53, 46, 32, 37, 42,
-  ],
-  /** Daily cheque total from voucher redemptions, in euros. */
-  salesTrend: [
-    186, 214, 198, 262, 291, 244, 152, 191, 223, 238,
-    276, 312, 268, 174, 205, 251, 274, 298, 341, 286,
-    196, 231, 259, 288, 317, 352, 302, 211, 246, 279,
-  ],
-  /** Six months of cheque value from redemptions, in euros. */
-  monthly: [4_820, 5_640, 6_180, 7_020, 8_460, 9_240],
-
-  loyalty: {
-    perVisit: 5,
-    /** Hours a customer must wait before a second scan counts. */
-    cooldown: 24,
-    active: true,
-    /** Visits needed → percent off. The prototype's two standing rewards. */
-    campaigns: [
-      { visits: 5, reward: 10 },
-      { visits: 10, reward: 20 },
-    ],
-    /** Cheque value from scanned visits, and the average behind it. Euros. */
-    sales: 8_640,
-    avg: 7.1,
-  },
-
-  vouchers: {
-    /** The discount budget this campaign runs against, in euros. */
-    budget: 907,
-    spent: 362,
-    issued: 214,
-    /** Cheque value the redemptions carried, and the basket behind it. Euros. */
-    sales: 12_480,
-    basket: 21.4,
-  },
-
-  /** Percent off, points it costs, how many went out, and the monthly cap. */
-  tiers: [
-    { pct: 5, points: 250, issued: 214, cap: 0 },
-    { pct: 10, points: 600, issued: 96, cap: 400 },
-    { pct: 15, points: 1200, issued: 31, cap: 120 },
-  ],
-
-  /** Where the customers came from. Cities are proper nouns, not copy. */
-  cities: [
-    { name: 'Kraków', n: 428 },
-    { name: 'Warszawa', n: 161 },
-    { name: 'Wrocław', n: 97 },
-    { name: 'Gdańsk', n: 64 },
-    { name: 'Poznań', n: 41 },
-  ],
-  /** Index-aligned with `SPOKEN_LANGUAGES`, so the names come from copy. */
-  languages: [
-    { code: 'pl' as SpokenLanguage, n: 342 },
-    { code: 'uk' as SpokenLanguage, n: 196 },
-    { code: 'ru' as SpokenLanguage, n: 154 },
-    { code: 'en' as SpokenLanguage, n: 89 },
-    { code: 'uz' as SpokenLanguage, n: 32 },
-  ],
-  /** What a similar venue in the same country averages, for the comparison. */
-  country: { maps: 1210, website: 640, phone: 268 },
-};
-
-/**
- * Sample rows for the three tables, newest first.
- *
- * `ago` is days back from today, which is what makes the All time / 7 / 30 / 90
- * filters do something rather than decorate: the row's date is computed at
- * render, so the table is never stale and the filter is never a lie. Money is
- * euros; `points` is what the customer spent or earned.
- */
-export const ADMIN_REDEMPTIONS: Array<{
-  ago: number;
-  deal: string;
-  user: string;
-  code: string;
-  points: number;
-  discount: number;
-  used: boolean;
-  cheque: number;
-}> = [
-  { ago: 0, deal: '2+1', user: 'PY7178', code: 'PLZ-9F3K', points: 2, discount: 10, used: true, cheque: 18.4 },
-  { ago: 1, deal: '20%', user: 'PY6722', code: 'PLZ-2B7Q', points: 250, discount: 20, used: true, cheque: 31.2 },
-  { ago: 3, deal: 'FREE', user: 'PY6307', code: 'PLZ-7X1M', points: 600, discount: 100, used: true, cheque: 12.8 },
-  { ago: 6, deal: '15%', user: 'PY5940', code: 'PLZ-4K8D', points: 1200, discount: 15, used: false, cheque: 0 },
-  { ago: 12, deal: '20%', user: 'PY5511', code: 'PLZ-8W2N', points: 250, discount: 20, used: true, cheque: 26.5 },
-  { ago: 19, deal: '10%', user: 'PY5203', code: 'PLZ-3T6V', points: 250, discount: 10, used: true, cheque: 22.9 },
-  { ago: 34, deal: '2+1', user: 'PY4988', code: 'PLZ-5R1J', points: 2, discount: 10, used: true, cheque: 16.7 },
-  { ago: 61, deal: '15%', user: 'PY4712', code: 'PLZ-1Z9H', points: 1200, discount: 15, used: true, cheque: 44.1 },
-];
-
-/** `progress` is visits done out of visits needed for the next reward. */
-export const ADMIN_SCAN_ROWS: Array<{
-  ago: number;
-  user: string;
-  points: number;
-  spent: number;
-  receipt: string;
-  city: string;
-  progress: [number, number];
-}> = [
-  { ago: 0, user: 'PY7178', points: 5, spent: 6.4, receipt: '#7F2A', city: 'Kraków', progress: [3, 5] },
-  { ago: 0, user: 'PY6722', points: 5, spent: 9.1, receipt: '#B14C', city: 'Kraków', progress: [1, 5] },
-  { ago: 2, user: 'PY6307', points: 5, spent: 4.8, receipt: '#C903', city: 'Warszawa', progress: [8, 10] },
-  { ago: 5, user: 'PY5940', points: 5, spent: 12.6, receipt: '#2D71', city: 'Kraków', progress: [2, 5] },
-  { ago: 9, user: 'PY5511', points: 5, spent: 7.3, receipt: '#A48E', city: 'Wrocław', progress: [4, 5] },
-  { ago: 21, user: 'PY5203', points: 5, spent: 5.2, receipt: '#66F1', city: 'Kraków', progress: [5, 5] },
-  { ago: 48, user: 'PY4988', points: 5, spent: 8.9, receipt: '#31DA', city: 'Gdańsk', progress: [2, 10] },
-];
-
-/** `pct` is the discount the voucher carried; `loyalty` marks the ones a scan
- *  earned rather than points bought. */
-export const ADMIN_VOUCHER_ROWS: Array<{
-  ago: number;
-  code: string;
-  loyalty: boolean;
-  user: string;
-  pct: number;
-  points: number;
-  used: boolean;
-  cheque: number;
-}> = [
-  { ago: 0, code: 'PLZ-9F3K', loyalty: false, user: 'PY7178', pct: 5, points: 250, used: true, cheque: 24.6 },
-  { ago: 1, code: 'PLZ-2B7Q', loyalty: true, user: 'PY6722', pct: 10, points: 0, used: true, cheque: 33.8 },
-  { ago: 4, code: 'PLZ-7X1M', loyalty: false, user: 'PY6307', pct: 10, points: 600, used: true, cheque: 19.2 },
-  { ago: 8, code: 'PLZ-4K8D', loyalty: false, user: 'PY5940', pct: 15, points: 1200, used: false, cheque: 0 },
-  { ago: 15, code: 'PLZ-8W2N', loyalty: true, user: 'PY5511', pct: 5, points: 0, used: true, cheque: 28.4 },
-  { ago: 27, code: 'PLZ-3T6V', loyalty: false, user: 'PY5203', pct: 5, points: 250, used: true, cheque: 21.1 },
-  { ago: 55, code: 'PLZ-5R1J', loyalty: false, user: 'PY4712', pct: 15, points: 1200, used: true, cheque: 52.3 },
-];
 
 /** The console's own tabs, and the analytics view's. Icons are structure. */
 export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'people', 'bars', 'send'];
@@ -1157,17 +875,9 @@ export const DASH_SCREENS: Array<{
 
 /* ─────────────────────────────────────────────────────────────── l-earn ── */
 
-/**
- * Index-aligned with `copy.learn.hero.stats`.
- *
- * The third is "what a voucher starts at", read off the catalogue rather than
- * typed. It was `500` — a figure that was true of some card at some point and
- * had stopped being the cheapest one long before anybody noticed, which is the
- * whole reason `CHEAPEST_VOUCHER_POINTS` exists.
- */
 /*
  * Index-aligned with `copy.learn.hero.stats`, which now reads
- * ['Best round', 'Earns a freeze', 'Buys a voucher'].
+ * ['Best round', 'Earns a freeze'].
  *
  * The first was 100 under the label "per game win", and both halves of that
  * were wrong at once: nothing pays 100 a round any more, and the biggest round
@@ -1176,11 +886,18 @@ export const DASH_SCREENS: Array<{
  * marketing model and importing the app's scoring into it would make the two
  * one thing — but it is the same number, and it is the number to change if the
  * ceiling moves.
+ *
+ * **There were three.** The third was "buys a voucher", read off the shelf
+ * `content.ts` used to carry, and there is no shelf here to read: what a
+ * voucher costs is `points_cost` on `gift_card_stock`, which is a row on the
+ * server and may be nothing at all until an operator stocks one. A hero stat
+ * cannot go and ask, and a hero stat that guesses is the thing this whole pass
+ * removed. Both figures left are properties of the *rules* — what a round can
+ * pay and what a week of streak earns — which this file does own.
  */
 export const LEARN_STATS = [
   { value: 20, suffix: ' pts' },
   { value: 7, suffix: '-day' },
-  { value: CHEAPEST_VOUCHER_POINTS, suffix: ' pts' },
 ];
 
 /** Index-aligned with `copy.learn.steps.items`. */
@@ -1447,281 +1164,31 @@ export const SALES_EMAIL = 'usepaylez@gmail.com';
 /* ───────────────────────────────────────────────────────────── vouchers ── */
 
 /*
- * The catalogue itself is `VOUCHER_CARDS`, near the top of this file, because
- * four things outside this block read from it. Everything below is the Vouchers
- * *page*, and all of it is derived from that shelf rather than restating it.
+ * The board used to be here too: `WALLET_DEALS`, nine hot deals at nine invented
+ * Kraków venues, each carrying a `VenueFacts` block — an address, a rating and
+ * a review count, an opening span and a timezone — and `DEAL_CATEGORIES`, the
+ * five-chip strip they were filed under.
+ *
+ * The board is `GET /v1/deals` now (`api/wallet.ts` carries the shape, checked
+ * against a running server). Three things did not survive the move, and all
+ * three are absences rather than regressions:
+ *
+ * - **the chips are the data's.** A deal's category on the server is the
+ *   *venue's* taxonomy — `cafe`, `bakery`, `hotels` — not the customer strip
+ *   invented here, so the strip is built from the categories the fetched rows
+ *   actually carry and labelled from `copy.listing.categories` where the id is
+ *   one this site knows. A chip that can only ever be empty is not drawn.
+ * - **there is no "Open now".** It was answered on the venue's own clock, which
+ *   needed a timezone, and nothing the server returns carries one. A pill that
+ *   answered it on the *reader's* clock would be worse than no pill.
+ * - **there is no address or rating on a deal card.** `GET /v1/deals` projects
+ *   the offer, not the venue, and joining a second request onto every card to
+ *   decorate it is not worth a line of grey text.
+ *
+ * `VOUCHER_WALLET` and `VOUCHER_STATS` went with the shelf above: a mock wallet
+ * holding "3 active · 11 used" and a hero counting eight partner brands were
+ * both claims about stock nobody has.
  */
-
-/**
- * The hot deals a player can claim, in the order the board lists them.
- *
- * A hot deal is not a catalogue item and the difference matters to the whole
- * section: a gift card is stock — eight brands, a monthly allocation, a points
- * price — and a hot deal is one venue running one offer for a fixed window.
- * So there is no `left of`, no monthly refresh, and `points` is **0 for most of
- * them**, because the venue is paying for it rather than the player.
- *
- * Venue names are brand names and are never translated, which is why they are
- * structure. The offer itself (`badge`) is the venue's own words and is not
- * translated either — a deal written as "2+1" by a Kraków café is "2+1" to
- * everybody who walks past it. `copy.wallet.deals.offers` is index-aligned with
- * this array and *is* translated: that half is the app explaining the offer
- * rather than the venue stating it.
- *
- * ── the venue travels with the offer ─────────────────────────────────────
- *
- * The app's card (`Pay-lez mobile`, `lib/screens/deals_screen.dart`, `_DealCard`)
- * is a **venue** card — the top line is the place, not the offer — and it reads
- * that line off a `Venue` the deals list has already fetched. There is no venue
- * list on this page and there is not going to be one for a seed of nine rows,
- * so the facts the card needs ride on the deal: `category`, `address`, `hours`
- * and the rating pair. Every one of them is a fact about the place rather than
- * about the reader, which is the line this seed will not cross — see `zone`.
- */
-export type DealCategory = 'coffee' | 'food' | 'bakery' | 'services' | 'beauty';
-
-/**
- * The chips on the deals strip, in the app's own order.
- *
- * The app's strip is `['All', 'Coffee', 'Food', 'Bakery', 'Services', 'Beauty']`
- * (`deals_screen.dart`, `_cats`) and this is the five that are actually a
- * category — "All" is the absence of a filter and is drawn from
- * `copy.wallet.deals.all` rather than being an entry here, because a venue
- * cannot *be* in it.
- *
- * Index-aligned with `copy.wallet.deals.categories`, like every other list here.
- * These are **not** `BUSINESS_CATEGORIES`: that taxonomy is the one a venue
- * owner files a listing under (café, restaurant, barbershop, beauty, dental,
- * language school, fitness) and this is the one a customer browses offers with.
- * Seven filing cabinets is the wrong strip to put in front of somebody deciding
- * where to have lunch, and the app already chose the shorter one.
- */
-export const DEAL_CATEGORIES: DealCategory[] = [
-  'coffee',
-  'food',
-  'bakery',
-  'services',
-  'beauty',
-];
-
-/** What the card says about the place, over and above the offer. */
-export interface VenueFacts {
-  category: DealCategory;
-  city: string;
-  /** Street and number. Joined with the category into the app's meta line. */
-  address: string;
-  /** One decimal, as the app's guide screen writes it: `★ 4.5`. */
-  rating: number;
-  reviews: number;
-  /**
-   * The door, as `HH:MM – HH:MM` in `zone`.
-   *
-   * One span for the whole week rather than seven, because that is what the
-   * card renders (`Every day, 07:30 – 19:00` — the app's `everyDaySpan` branch)
-   * and a seven-day editor is a listing form's problem, not a seed's.
-   */
-  hours: string;
-  /**
-   * The venue's own timezone, and the reason the pill may say "Open now".
-   *
-   * The pill used to say the window (`Until 15.09`) with a note admitting that
-   * the app's own dot means *open now* and that this page had no week to read
-   * one off. It has one now — and a week without a zone would be worse than no
-   * week at all, because it would answer "is it open?" against whichever clock
-   * the reader happens to be standing in. Kraków venues keep Kraków hours to a
-   * reader in Tashkent, and `openNow` in `auth/player.ts` evaluates them there.
-   */
-  zone: string;
-}
-
-export interface HotDeal extends VenueFacts {
-  id: string;
-  venue: string;
-  logo: string;
-  badge: string;
-  /** What claiming costs. Zero is the normal case — see the note above. */
-  points: number;
-  /** `DD.MM`, the format every date in the wallet is written in. */
-  expires: string;
-}
-
-/*
- * Nine rows, and the shape of the set is deliberate: every chip on the strip
- * has at least one deal behind it, two of the nine cost points (one of which
- * the seeded balance cannot reach, so the "N more points" branch is on screen
- * rather than only in the code), and one is already in the seeded wallet, so
- * the claimed section is not an empty state on a page whose job is to show what
- * the wallet holds.
- */
-export const WALLET_DEALS: HotDeal[] = [
-  {
-    id: 'd-dubai-2for1',
-    venue: 'Dubai Cafe',
-    logo: 'D',
-    badge: '2+1',
-    points: 0,
-    expires: '31.08',
-    category: 'coffee',
-    city: 'Kraków',
-    address: 'ul. Karmelicka 12',
-    rating: 4.5,
-    reviews: 218,
-    hours: '07:30 – 19:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-karma-10',
-    venue: 'Karma Coffee',
-    logo: 'K',
-    badge: '10%',
-    points: 0,
-    expires: '28.09',
-    category: 'coffee',
-    city: 'Kraków',
-    address: 'ul. Krupnicza 12',
-    rating: 4.7,
-    reviews: 402,
-    hours: '08:00 – 18:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-sablewski-20',
-    venue: 'Sablewski & Para',
-    logo: 'S',
-    badge: '20%',
-    points: 0,
-    expires: '15.09',
-    category: 'bakery',
-    city: 'Kraków',
-    address: 'ul. Sławkowska 17',
-    rating: 4.6,
-    reviews: 1180,
-    hours: '06:30 – 20:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-buczek-3for2',
-    venue: 'Buczek Piekarnia',
-    logo: 'B',
-    badge: '3+1',
-    points: 0,
-    expires: '22.09',
-    category: 'bakery',
-    city: 'Kraków',
-    address: 'ul. Długa 43',
-    rating: 4.4,
-    reviews: 640,
-    hours: '06:00 – 19:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-forum-lunch',
-    venue: 'Hala Forum',
-    logo: 'H',
-    badge: '15%',
-    points: 50,
-    expires: '30.09',
-    category: 'food',
-    city: 'Kraków',
-    address: 'Marii Konopnickiej 28',
-    rating: 4.3,
-    reviews: 2960,
-    hours: '12:00 – 23:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-hevre-2for1',
-    venue: 'Hevre',
-    logo: 'H',
-    badge: '2+1',
-    points: 0,
-    expires: '05.10',
-    category: 'food',
-    city: 'Kraków',
-    address: 'ul. Meiselsa 18',
-    rating: 4.5,
-    reviews: 1740,
-    hours: '10:00 – 23:30',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-massolit-free',
-    venue: 'Massolit Books',
-    logo: 'M',
-    badge: 'FREE',
-    points: 100,
-    expires: '12.09',
-    category: 'services',
-    city: 'Kraków',
-    address: 'ul. Felicjanek 4',
-    rating: 4.8,
-    reviews: 1120,
-    hours: '10:00 – 20:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-sultan-15',
-    venue: 'Sultan Barbers',
-    logo: 'S',
-    badge: '15%',
-    points: 0,
-    expires: '18.09',
-    category: 'services',
-    city: 'Warszawa',
-    address: 'ul. Chmielna 21',
-    rating: 4.6,
-    reviews: 512,
-    hours: '10:00 – 20:00',
-    zone: 'Europe/Warsaw',
-  },
-  {
-    id: 'd-nova-beauty',
-    venue: 'Nova Beauty Bar',
-    logo: 'N',
-    badge: '25%',
-    points: 500,
-    expires: '08.10',
-    category: 'beauty',
-    city: 'Kraków',
-    address: 'ul. Dietla 60',
-    rating: 4.6,
-    reviews: 380,
-    hours: '09:00 – 20:00',
-    zone: 'Europe/Warsaw',
-  },
-];
-
-/**
- * The wallet mock's own voucher, and the two tabs above it.
- *
- * `used` is deliberately non-zero. A wallet with an empty Used tab is a wallet
- * nobody has spent from, which is the opposite of what the page is arguing.
- *
- * The card is spread off the shelf rather than written out, so the price on the
- * mock and the price in the grid below it are one number. They were two, and
- * they disagreed.
- */
-export const VOUCHER_WALLET = {
-  active: 3,
-  used: 11,
-  card: { ...voucherCard('Zalando'), code: 'PLZ-9F3K' },
-};
-
-/**
- * Index-aligned with `copy.vouchers.hero.stats`.
- *
- * `money` marks the figure quoted in the reader's currency rather than in a
- * unit — the same flag the Business stats carry, and for the same reason.
- *
- * The first two are counted off the shelf: "eight brands" and "from 100 points"
- * are claims about the catalogue, and a hero that states them as literals is a
- * hero that goes stale the first time a card is added or repriced.
- */
-export const VOUCHER_STATS: Array<{ value: number; suffix: string; money?: true }> = [
-  { value: VOUCHER_CARDS.length, suffix: '' },
-  { value: CHEAPEST_VOUCHER_POINTS, suffix: ' pts' },
-  { value: 0, suffix: '', money: true },
-];
 
 /** Index-aligned with `copy.vouchers.steps.items`. */
 export const VOUCHER_STEP_ICONS: IconName[] = ['leisure', 'gift', 'qr', 'check'];
@@ -1765,11 +1232,15 @@ export const RELOCATE_TOPICS: Array<{ icon: IconName; featured?: true }> = [
 /**
  * The service providers behind each subject.
  *
- * **This is seed data and is meant to be replaced.** The real directory is being
- * supplied separately; what is here is a small fictional set in the same world
- * as `ADMIN_SERVICES` — invented venues in the cities the rest of the site
- * already uses — so the interaction, the city filter and the empty states are
- * all real and exercised. Swapping the rows changes nothing else.
+ * **This is seed data and is the last of it on the site.** Every other invented
+ * list in this file is gone — the venue catalogue, the offers, the gift-card
+ * shelf and the console's tables all read the server now. This one stayed
+ * because it belongs to a page nobody has moved yet, not because there is
+ * nowhere to move it to: `GET /v1/guide/services` already serves the 308
+ * `guidance_services` rows the old database was imported into, with their
+ * languages, cities and links. Relocate should read it, and until it does the
+ * rows below are invented — which is why this paragraph is here rather than a
+ * line saying they are "a small fictional set".
  *
  * `languages` is the one attribute that earns its place on a card here, and it
  * is the reason the shape is this and not a paragraph per provider: on a

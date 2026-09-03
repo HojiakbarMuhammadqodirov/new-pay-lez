@@ -29,10 +29,25 @@
  *   `loading | ready | error` so that "the backend is not answering" cannot
  *   render as "nobody has signed up". Somebody reading an empty table believes
  *   it.
- * - **It reports; it does not edit.** The server has exactly one write against
- *   a person (`/users/:id/ban`) and this screen does not call it. A console
- *   that edits somebody else's account has to answer what happens when two
- *   operators disagree, which is a decision, not a table.
+ * - **It reported and did not edit, and now it does both.** This bullet used to
+ *   say the server had one write against a person and that this screen declined
+ *   to call it. Both halves have changed: there are three now — suspend, set a
+ *   password, close the account — and the last column calls them.
+ *
+ *   The reason for the old rule survives the change, because it was never about
+ *   an operator being powerless. It was that a console editing somebody's
+ *   *numbers* has to answer what happens when two operators disagree, and
+ *   nothing here edits a number: every one of the three removes something or
+ *   restores access to it, and every one writes an audit row with an actor on
+ *   it. Two operators pressing "suspend" agree.
+ *
+ *   One row is exempt, and it is the row you are signed in as. An operator
+ *   cannot suspend, close or reset their own account, or another operator's —
+ *   banning your own row revokes your own session inside the request that did
+ *   it, and there is no screen anywhere that undoes that. The server refuses;
+ *   this screen does not draw the buttons, because a control that is always
+ *   refused is a control that should not be there.
+
  *
  * ## What it does not show
  *
@@ -42,13 +57,33 @@
  * this is a list somebody scans. `server/http/routes/admin.ts` draws that line
  * in the query rather than here, so it holds for every client.
  */
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { call, hasToken } from './api/client';
 import { useApi } from './api/useApi';
+import {
+  removeUser,
+  removeVenue,
+  setUserBanned,
+  setUserPassword,
+  updateUser,
+  updateVenue,
+} from './api/admin';
+import {
+  ActPanel,
+  ConfirmDialog,
+  EditForm,
+  PressTwice,
+  RowActions,
+  SetPassword,
+  WriteStrip,
+} from './adminControls';
+import { useWrite } from './adminWrite';
+
 import { Icon } from './icons';
 import { PATHS } from './router';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
+
 
 interface ServerUser {
   id: string;
@@ -109,11 +144,32 @@ const day = (iso: string | null, locale: string) =>
       )
     : '—';
 
-export function AdminPeople() {
+/**
+ * One thing a row has asked to have destroyed. The console's own `Doomed`, kept
+ * here rather than imported because these two files share no other type and a
+ * module dependency for one four-field interface is a larger coupling than the
+ * interface is worth.
+ */
+interface Doomed {
+  key: string;
+  what: string;
+  body: string;
+  run: () => Promise<unknown>;
+}
+
+export function AdminPeople({ editing }: { editing: boolean }) {
   const dictionary = useCopy();
   const [language] = useLanguage();
   const copy = dictionary.admin.database;
+  const act = dictionary.admin.manage;
   const [view, setView] = useState<'users' | 'venues'>('users');
+  /* One open panel across the table, keyed by what it is for. Two half-finished
+     closures on one screen is two chances to finish the wrong one. */
+  const [panel, setPanel] = useState<string | null>(null);
+  /* And one dialogue, for the same reason — see `ConfirmDialog`. */
+  const [doomed, setDoomed] = useState<Doomed | null>(null);
+  const write = useWrite();
+
 
   const overview = useApi<Overview>('/v1/admin/overview');
   const pending = useApi<Pending[]>('/v1/admin/verifications');
@@ -211,12 +267,33 @@ export function AdminPeople() {
   const venueRows = venues.state.status === 'ready' ? venues.state.data : [];
   const counts = overview.state.status === 'ready' ? overview.state.data : null;
 
+  /*
+   * The re-read every write hands over, and it is all four rather than the one
+   * that was pressed: closing an account moves the count above the table as
+   * well as the row inside it, and a suspended venue owner changes what the
+   * queue is waiting on. A screen quietly out of step with the server is the
+   * thing this whole file is written against.
+   */
+  const refresh = () => {
+    users.reload();
+    overview.reload();
+    venues.reload();
+    pending.reload();
+  };
+
+
   return (
     <section className="adm-block" data-reveal>
       <div className="adm-block-head">
         <h2>{copy.title}</h2>
         <p>{copy.lede}</p>
       </div>
+
+      {/* What the last press did, or why it did not — one strip for the whole
+          tab, because the row it happened to is often the row that has just
+          gone. */}
+      <WriteStrip write={write} />
+
 
       {/*
         The review queue, and it sits above everything because it is the only
@@ -307,34 +384,197 @@ export function AdminPeople() {
           <p className="adm-empty">{copy.noUsers}</p>
         ) : (
           <div className="adm-scroll">
-            <table className="adm-table">
+            <table className="adm-table adm-people-table">
               <thead>
                 <tr>
                   {copy.userColumns.map((column) => (
+
                     <th key={column}>{column}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((user) => (
-                  <tr key={user.id}>
-                    <td>
-                      <b>{user.display_name || copy.unnamed}</b>
-                      {user.roles && <span className="adm-db-role">{user.roles}</span>}
-                    </td>
-                    <td className="adm-mono">{user.email ?? '—'}</td>
-                    <td>{user.auth_provider}</td>
-                    <td>{user.city ?? '—'}</td>
-                    <td className="adm-db-num">{user.points}</td>
-                    <td>
-                      <span className="adm-role" data-role={user.status}>
-                        {user.status}
-                      </span>
-                    </td>
-                    <td className="adm-mono">{day(user.created_at, language)}</td>
-                  </tr>
-                ))}
+                {rows.map((user) => {
+                  /* An operator, or an account that has already been closed.
+                     Neither has an honest button on this row: the server refuses
+                     the first and there is nothing left to do to the second, and
+                     a control that is always refused is a control that should
+                     not be drawn. */
+                  const operator = (user.roles ?? '').split(',').includes('admin');
+                  const closed = user.status === 'erased';
+                  const banKey = `user:${user.id}:ban`;
+                  const passKey = `user:${user.id}:password`;
+                  const closeKey = `user:${user.id}:close`;
+                  const editKey = `user:${user.id}:edit`;
+                  /* The address, or the id where there is none — a provisional
+                     account has no email and still has to be confirmable against
+                     something visible on the row in front of you. The server
+                     folds the same pair. */
+                  const handle = user.email ?? user.id;
+
+                  return (
+                    <Fragment key={user.id}>
+                      <tr>
+                        <td>
+                          <b>{user.display_name || copy.unnamed}</b>
+                          {user.roles && <span className="adm-db-role">{user.roles}</span>}
+                        </td>
+                        <td className="adm-mono adm-db-mail">{user.email ?? '—'}</td>
+
+                        <td>{user.auth_provider}</td>
+                        <td>{user.city ?? '—'}</td>
+                        <td className="adm-db-num">{user.points}</td>
+                        <td>
+                          <span className="adm-role" data-role={user.status}>
+                            {user.status}
+                          </span>
+                        </td>
+                        <td className="adm-mono">{day(user.created_at, language)}</td>
+                        <td className="adm-act-cell">
+                          {operator || closed ? (
+                            <span className="adm-sub">
+                              {operator ? act.operatorRow : act.closedRow}
+                            </span>
+                          ) : (
+                            <span className="adm-act-row">
+                              <PressTwice
+                                label={user.status === 'banned' ? act.letBackIn : act.ban}
+                                icon={user.status === 'banned' ? 'play' : 'pause'}
+                                busy={write.busy === banKey}
+                                onPress={() =>
+                                  write.run(
+                                    banKey,
+                                    () => setUserBanned(user.id, user.status !== 'banned'),
+                                    refresh,
+                                  )
+                                }
+                              />
+                              <button
+                                type="button"
+                                className="btn btn-ghost adm-act-btn"
+                                onClick={() => setPanel(panel === passKey ? null : passKey)}
+                              >
+                                <Icon name="lock" size={14} strokeWidth={2.2} />
+                                {act.password}
+                              </button>
+                              {/* The pencil and the bin only in edit mode —
+                                  every destructive control on this console is
+                                  behind that switch now, and closing an account
+                                  is the most destructive one there is. */}
+                              {editing && (
+                                <RowActions
+                                  editing={panel === editKey}
+                                  busy={write.busy === closeKey}
+                                  onEdit={() => setPanel(panel === editKey ? null : editKey)}
+                                  onDelete={() =>
+                                    setDoomed({
+                                      key: closeKey,
+                                      what: user.display_name || handle,
+                                      body: act.deleteUser,
+                                      run: async () => {
+                                        const result = await removeUser(user.id, handle);
+                                        /* Which of the two endings the server
+                                           gave it. They are different facts —
+                                           see `removeUser` — and an operator
+                                           who has just closed an account is
+                                           owed the one that happened. */
+                                        return result.outcome === 'deleted'
+                                          ? act.userDeleted
+                                          : act.userAnonymised;
+                                      },
+                                    })
+                                  }
+                                />
+                              )}
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+
+                      {/* The panels are their own rows rather than an overlay:
+                          a table cell is not a place to grow a form, and a row
+                          spanning the table keeps the field the full width the
+                          `══ forms ══` kit expects. */}
+                      {panel === passKey && (
+                        <tr className="adm-act-tr">
+                          <td colSpan={copy.userColumns.length}>
+                            <ActPanel
+                              title={fill(act.passwordFor, { who: user.display_name || handle })}
+                              body={act.passwordBody}
+                              onClose={() => setPanel(null)}
+                            >
+                              <SetPassword
+                                busy={write.busy === passKey}
+                                onSubmit={(password) =>
+                                  write.run(
+                                    passKey,
+                                    async () => {
+                                      await setUserPassword(user.id, password);
+                                      setPanel(null);
+                                      return act.passwordSet;
+                                    },
+                                    refresh,
+                                  )
+                                }
+                              />
+                            </ActPanel>
+                          </td>
+                        </tr>
+                      )}
+
+                      {panel === editKey && (
+                        <tr className="adm-act-tr">
+                          <td colSpan={copy.userColumns.length}>
+                            {/*
+                              What a person is *called*, not what they are worth.
+                              No balance, no streak, no scan count, and no
+                              address — that last one is the credential they sign
+                              in with, and the tool for somebody locked out is
+                              the password button on the same row.
+
+                              The city and its country are one answer in two
+                              halves and the server treats them that way: a city
+                              off its own list of 114 is accepted only with a
+                              country beside it. So the two fields are adjacent,
+                              and the refusal that comes back names which half is
+                              missing.
+                            */}
+                            <EditForm
+                              fields={[
+                                {
+                                  key: 'name',
+                                  label: act.fields.name,
+                                  value: user.display_name,
+                                },
+                                { key: 'city', label: act.fields.city, value: user.city ?? '' },
+                                {
+                                  key: 'countryCode',
+                                  label: act.fields.country,
+                                  value: user.country_code ?? '',
+                                },
+                              ]}
+                              busy={write.busy === editKey}
+                              onClose={() => setPanel(null)}
+                              onSave={(patch) =>
+                                write.run(
+                                  editKey,
+                                  async () => {
+                                    await updateUser(user.id, patch);
+                                    setPanel(null);
+                                    return act.saved;
+                                  },
+                                  refresh,
+                                )
+                              }
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
+
             </table>
           </div>
         )
@@ -348,29 +588,97 @@ export function AdminPeople() {
                 {copy.venueColumns.map((column) => (
                   <th key={column}>{column}</th>
                 ))}
+                {/* A seventh column only while it has something in it. A
+                    permanently empty header is a column of nothing that every
+                    other cell has to be measured against. */}
+                {editing && <th>{act.editRow}</th>}
               </tr>
             </thead>
             <tbody>
-              {venueRows.map((venue) => (
-                <tr key={venue.id}>
-                  <td>
-                    <b>{venue.name}</b>
-                  </td>
-                  <td>{venue.city ?? '—'}</td>
-                  <td>{venue.category}</td>
-                  <td>{venue.owner ?? '—'}</td>
-                  <td className="adm-db-num">{venue.visits}</td>
-                  <td>
-                    {/* Verified is the gate a deal has to clear before it can go
-                        live — see the drawer's `savedUnverified`. It is on this
-                        table because "why will my offer not publish" is answered
-                        here and nowhere else on the site. */}
-                    <span className="adm-role" data-role={venue.verified_at ? 'active' : 'draft'}>
-                      {venue.verified_at ? copy.verified : copy.unverified}
-                    </span>
-                  </td>
-                </tr>
-              ))}
+              {venueRows.map((venue) => {
+                const venueEditKey = `pvenue:${venue.id}:edit`;
+                const venueDropKey = `pventue:${venue.id}:drop`;
+                return (
+                  <Fragment key={venue.id}>
+                    <tr>
+                      <td>
+                        <b>{venue.name}</b>
+                      </td>
+                      <td>{venue.city ?? '—'}</td>
+                      <td>{venue.category}</td>
+                      <td>{venue.owner ?? '—'}</td>
+                      <td className="adm-db-num">{venue.visits}</td>
+                      <td>
+                        {/* Verified is the gate a deal has to clear before it can
+                            go live — see the drawer's `savedUnverified`. It is on
+                            this table because "why will my offer not publish" is
+                            answered here and nowhere else on the site. */}
+                        <span
+                          className="adm-role"
+                          data-role={venue.verified_at ? 'active' : 'draft'}
+                        >
+                          {venue.verified_at ? copy.verified : copy.unverified}
+                        </span>
+                      </td>
+                      {editing && (
+                        <td className="adm-act-cell">
+                          <RowActions
+                            editing={panel === venueEditKey}
+                            busy={write.busy === venueDropKey}
+                            onEdit={() =>
+                              setPanel(panel === venueEditKey ? null : venueEditKey)
+                            }
+                            onDelete={() =>
+                              setDoomed({
+                                key: venueDropKey,
+                                what: venue.name,
+                                body: act.deleteVenue,
+                                run: async () => {
+                                  const result = await removeVenue(venue.id, venue.name);
+                                  return fill(act.venueDeleted, {
+                                    n: String(result.offersDeleted),
+                                  });
+                                },
+                              })
+                            }
+                          />
+                        </td>
+                      )}
+                    </tr>
+
+                    {panel === venueEditKey && (
+                      <tr className="adm-act-tr">
+                        <td colSpan={copy.venueColumns.length + 1}>
+                          <EditForm
+                            fields={[
+                              { key: 'name', label: act.fields.name, value: venue.name },
+                              { key: 'city', label: act.fields.city, value: venue.city ?? '' },
+                              {
+                                key: 'category',
+                                label: act.fields.category,
+                                value: venue.category,
+                              },
+                            ]}
+                            busy={write.busy === venueEditKey}
+                            onClose={() => setPanel(null)}
+                            onSave={(patch) =>
+                              write.run(
+                                venueEditKey,
+                                async () => {
+                                  await updateVenue(venue.id, patch);
+                                  setPanel(null);
+                                  return act.saved;
+                                },
+                                refresh,
+                              )
+                            }
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -380,6 +688,25 @@ export function AdminPeople() {
         <Icon name="shield" size={14} />
         {fill(copy.note, { n: String(rows.length) })}
       </p>
+
+      {/* Its own dialogue rather than the console's, because this tab is a
+          component the console renders and cannot reach into. Same kit, same
+          shape, same rule: one at a time, closed before the request lands so the
+          strip is the only thing reporting the ending. */}
+      {doomed && (
+        <ConfirmDialog
+          title={fill(act.deleteTitle, { what: doomed.what })}
+          body={doomed.body}
+          action={act.deleteYes}
+          busy={write.busy === doomed.key}
+          onClose={() => setDoomed(null)}
+          onConfirm={() => {
+            const { key, run } = doomed;
+            setDoomed(null);
+            write.run(key, run, refresh);
+          }}
+        />
+      )}
     </section>
   );
 }

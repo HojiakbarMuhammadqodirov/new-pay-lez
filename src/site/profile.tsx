@@ -492,7 +492,7 @@ interface Draft {
 }
 
 export function ProfilePage() {
-  const { account, saveProfile } = useAuth();
+  const { account, plan, saveProfile } = useAuth();
   const copy = useCopy().profile;
   const cities = useCities();
   /* The two captions that have to be referenced rather than wrapped. See the
@@ -958,6 +958,10 @@ export function ProfilePage() {
                     <b>{account.name}</b>
                     <span className="prof-handle">
                       {profile.username ? `@${profile.username}` : copy.cardNoName}
+                      {/* The same chip as the header pill. This is the page
+                          somebody opens to find out about their own account,
+                          so it is the second place the plan has to be. */}
+                      {plan && <em className="plan-tag">{plan.name}</em>}
                     </span>
                   </div>
                 </div>

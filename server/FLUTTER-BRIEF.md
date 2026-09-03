@@ -37,7 +37,8 @@ Read these three, in this order:
    dart run build_runner …    # or
    openapi-generator generate -i openapi.json -g dart-dio -o lib/api
    ```
-   Do not hand-write the client. It is 130 operations and it will drift.
+   Do not hand-write the client. It is 142 operations and it will drift.
+
 3. **The two PDFs in `new-data/`** — *context, not a work order.* They describe
    what the **server** must do and why. Reading them will make you build better
    screens; implementing from them will give you a second, disagreeing copy of
@@ -270,6 +271,24 @@ Notes that decide whether these feel right:
   and it is what a paid plan is actually sold on. **All six of those figures have
   just moved** (from 6/10, 8/14, 12/22), because the intervals were cut hard
   while the ceilings stayed put.
+- **An empty tank can now play for nothing, and the app decides whether to offer
+  it.** `POST /v1/games/sessions` still refuses with `no_energy` exactly as it
+  does today — nothing about the current out-of-energy screen breaks. Send
+  `practice: true` on that call and the empty tank opens the round instead: same
+  questions, same events, same scoring, and it banks **nothing** — no points, no
+  ledger entry, no streak, no freeze, no energy. The session and the finish both
+  carry `paid`, and that is the field to branch on, because a practice round and
+  a round somebody got everything wrong on both come back `score: 0` and are
+  otherwise identical. Whether a round pays is fixed when it **starts**, so
+  `paid: false` at the session is `paid: false` at the finish however long the
+  round runs; and `practice` is ignored when there is energy in the tank.
+
+  The reason it exists is worth having with the flag: an empty tank was the one
+  state of this product with nothing in it to do, and "come back in two hours" is
+  the screen people close the app on. Energy still buys everything it bought —
+  points, the streak, the board — it just no longer buys permission to play. The
+  web app already does this: the Play button reads "Practice", the round carries
+  a banner saying it pays nothing, and the result card explains its own zero.
 - Word Builder hints are capped per day by `word_hints_per_day` (3 / 6 / 10).
   Past it the hint event is refused with `entitlement_required`, carrying `limit`
   and `used`. A hint **halves that word's points** — it used to forfeit a tier
@@ -452,6 +471,27 @@ Two rendering rules that matter (`API.md` §9):
   receipt, never a plan name** — entitlements are granted only after the server
   validates it. `GET /v1/plans` carries each plan's commitment terms (1, 3, 6, 12
   months at 0/10/18/25 percent off) with the plan, so never ask twice for a price.
+- **Three things an operator can now do to a live app session, and none of them
+  changes a shape you call.** The web console gained a write half (`C7` in
+  `server/API.md`) — every endpoint in it is `auth: 'admin'`, so there is nothing
+  new for you to *call*. What is new is three states your session can be put into
+  from outside, all of which look like an ordinary failure and none of which the
+  app can prevent:
+  - **Suspended or closed account, or a password an operator reset.** All three
+    revoke every session the account holds, so the next request is a **401 in the
+    middle of a working app**. Whatever you do for an expired token is the right
+    behaviour here — sign out cleanly and land on the sign-in screen. What you
+    must not do is retry, or treat it as an outage; a banned account signing in
+    again gets refused, and that refusal is the message worth showing.
+  - **A venue that has been taken down.** It is archived rather than deleted, and
+    every read of it 404s: a saved deal, a bookmarked venue sheet, a QR at a
+    counter somebody has not cleared yet. Handle a 404 on a venue or deal the
+    app already holds as "this is gone now" rather than as an error state, and
+    drop it from the list rather than showing an empty sheet.
+  - **An offer that stopped being live.** `GET /v1/deals` already only returns
+    live ones, so a cached card is the case to think about — a claim against an
+    archived deal is refused, not silently accepted.
+
 
 ---
 
@@ -1013,13 +1053,51 @@ in a round, now fails on the sixth and the fourth. One that asserts a city off
 `GET /v1/cities` is refused now **passes** the write and fails the assertion:
 that refusal is gone, and only the missing `countryCode` is still a 400.
 
+### 12. `GET /v1/partner/venues/{id}/overview` — its `budget` block **grew**
+
+Additive, so nothing decodes worse than it did; it is here because it is the fix
+for a real crash and you may want the fields.
+
+`GET …/{id}/budget` has always returned the two pools *plus* four decorations —
+`tiers`, `averageCheck`, `rebalanceHint`, `tolerance`. `GET …/{id}/overview`
+returned the bare pools under the same field name, which is a different type
+wearing one name, and it cost the website its entire partner dashboard: the
+overview screen reads `budget.averageCheck.minor`, got `undefined`, and a
+`TypeError` thrown in render unmounts the whole view. Both routes now return the
+same body.
+
+```diff
+  "budget": {
+    "id": "bdg_…", "venueId": "…", "period": "2026-09", "currency": "PLN",
+    "total": 20000,
+    "loyalty": { "allocation": "loyalty", "base": 12000, "spent": 0, … },
+    "voucher": { "allocation": "voucher", "base": 8000,  "spent": 0, … },
++   "tiers": [ { "id": "vtr_…", "discountPct": 5, "pointsCost": 30, … } ],
++   "averageCheck": { "minor": 10000, "source": "category", "samples": 0 },
++   "rebalanceHint": null,
++   "tolerance": 1000
+  }
+```
+
+If the partner companion has a model for the overview's budget that is *narrower*
+than the one for `/budget`, delete it and share the one type. That the two could
+be different is what caused this.
+
 ### What did **not** change
 
 The gate's *sequence* — `/gate/scan`, `/amount`, `/confirm`, the polling and the
 error codes — is exactly as it was; only `pointsCapped` left the receipt (§7).
 Vouchers, gift cards, stamp cards, rewards, deals and their funnel, the guidebook,
 the converter, referrals, leaderboards, notifications, push registration, the
-per-venue consent routines, and every partner endpoint are untouched. The two
+per-venue consent routines, and every partner endpoint are untouched apart from
+the additive change in §12.
+
+**The `/v1/admin/*` routes moved and the app does not touch them.** Removing a
+venue or an offer is a real `DELETE` now rather than an archive flag, closing an
+account answers with an `outcome`, and three `PATCH`es were added so an operator
+can correct a name or a city. None of it is reachable from the app — it is
+`auth: 'admin'` throughout — and it is mentioned only so a schema diff does not
+look like a surprise. The two
 GDPR *endpoints* are unchanged too — same paths, same request bodies; what moved
 is how much the export discloses (§9). So is `GET /v1/wallet/history`: the ledger
 entries still carry an `expires_at` field, and every new one is `null`. Do not

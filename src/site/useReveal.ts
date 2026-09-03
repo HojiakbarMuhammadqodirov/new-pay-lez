@@ -46,16 +46,47 @@ export function useReveal(key?: unknown): void {
       return () => watcher.disconnect();
     }
 
+    /*
+     * "Enough of it is on screen", measured two ways because one of them fails
+     * on tall panels.
+     *
+     * `intersectionRatio` is a fraction of the **element**, not of the viewport,
+     * so a section taller than a few screens can be filling every pixel of the
+     * window and still be under 8% of itself. The console's People tab is
+     * exactly that — a table of every account on the platform, three and a half
+     * thousand pixels tall — and it sat at `opacity: 0` with a quarter of it in
+     * view, because a quarter of it is 8.07% of itself and the margin below
+     * rounds that under the bar. Adding one button per row was enough to cross
+     * the line, which is the tell: any threshold that is a fraction of the
+     * element is a bet on the element's height.
+     *
+     * So a slab of it counts too. Whichever measure is met first wins, and
+     * `SHOW_PX` is deliberately small — the point is not to judge how much of a
+     * panel is showing, it is to not fade something in one pixel at a time.
+     */
+    const SHOW_RATIO = 0.08;
+    const SHOW_PX = 120;
+
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
+          if (entry.intersectionRatio < SHOW_RATIO && entry.intersectionRect.height < SHOW_PX) {
+            continue;
+          }
           (entry.target as HTMLElement).dataset.shown = 'true';
           observer.unobserve(entry.target);
         }
       },
-      { rootMargin: '0px 0px -12% 0px', threshold: 0.08 },
+      /* Both thresholds are needed now that the callback can decline: `0` is
+         what delivers an entry the moment an element is observed or first
+         touches the edge, and `SHOW_RATIO` is what delivers the second one for
+         an element that arrived too small to show. Without the `0`, an element
+         observed while already well in view — which is every panel that mounts
+         when a `fetch` resolves — waits for a scroll that may never come. */
+      { rootMargin: '0px 0px -12% 0px', threshold: [0, SHOW_RATIO] },
     );
+
 
     const scan = () => {
       /* `observe` on an element already being watched is a no-op, so re-scanning

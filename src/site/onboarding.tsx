@@ -7,6 +7,7 @@ import { finishRound, sendMove, startRound } from './api/consumer';
 import { WELCOME_POINTS } from './auth/users';
 import { LANGUAGES, LANGUAGE_ORDER, useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
+import { flagGlyph } from './games/banks';
 import { buildFlagRound, type Question } from './games/rounds';
 /* Chromium on Windows ships no glyphs for regional-indicator pairs, so a flag
    renders as the two letters it is built from unless this family is loaded —
@@ -328,7 +329,12 @@ function FlagStep({
           setSession(started.sessionId);
           setRound(
             content.questions.slice(0, ROUND_POINTS.length).map((q) => ({
-              glyph: q.prompt,
+              /* The server's flags bank prompts with the **ISO code** and keeps
+                 the emoji out of the database on purpose, so the code is turned
+                 into the flag here. `buildFlagRound` below already hands this
+                 slot a glyph, which is why the welcome round drew flags on the
+                 local path and two letters on the server one. */
+              glyph: flagGlyph(q.prompt),
               prompt: copy.gameTitle,
               options: q.options,
               /* Unknown by design: the server holds it. */

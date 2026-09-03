@@ -18,7 +18,6 @@
 process.env.PAYLEZ_QUIET = '1';
 
 import { openDb } from './db/db.ts';
-import { seedDemo } from './db/demo.ts';
 import { importLegacy } from './db/import.ts';
 import { boot } from './main.ts';
 import { csvParts, parseCsv } from './db/csv.ts';
@@ -94,9 +93,9 @@ const eq = (what: string, actual: unknown, expected: unknown) =>
   });
 
 /** Assert that a call throws a specific domain code. */
-function throws(what: string, code: string, fn: () => unknown): void {
+async function throws(what: string, code: string, fn: () => unknown): Promise<void> {
   try {
-    fn();
+    await fn();
     check(what, false, 'did not throw');
   } catch (error) {
     if (error instanceof DomainError) check(what, error.code === code, { got: error.code, want: code });
@@ -114,9 +113,9 @@ function throws(what: string, code: string, fn: () => unknown): void {
  * Returns null rather than throwing when the call succeeds, so the check that
  * follows fails on the value instead of taking the suite down.
  */
-function refusal(fn: () => unknown): DomainError | null {
+async function refusal(fn: () => unknown): Promise<DomainError | null> {
   try {
-    fn();
+    await fn();
     return null;
   } catch (error) {
     return error instanceof DomainError ? error : null;
@@ -177,38 +176,38 @@ interface World {
   customerId: string;
 }
 
-function world(): World {
-  const db = openDb(':memory:');
-  seedPlatform(db);
-  db.tx(() => importLegacy(db, 'new-data'));
+async function world(): Promise<World> {
+  const db = await openDb(':memory:');
+  await seedPlatform(db);
+  await db.tx(async () => await importLegacy(db, 'new-data'));
 
   const at = now();
   const ownerId = newId('usr');
   const customerId = newId('usr');
   const venueId = newId('ven');
 
-  db.tx(() => {
+  await db.tx(async () => {
     for (const [id, email, name] of [
       [ownerId, 'owner@verify.test', 'Owner'],
       [customerId, 'customer@verify.test', 'Customer'],
     ]) {
-      db.run(
+      await db.run(
         `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, city,
                             status, created_at, updated_at)
          VALUES ($i, $e, $e, $n, 'email', 'en', 'Krakow', 'active', $t, $t)`,
         { i: id, e: email, n: name, t: at },
       );
-      db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'consumer', $t)`, {
+      await db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'consumer', $t)`, {
         u: id,
         t: at,
       });
     }
-    db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'partner_owner', $t)`, {
+    await db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'partner_owner', $t)`, {
       u: ownerId,
       t: at,
     });
 
-    db.run(
+    await db.run(
       `INSERT INTO venues (id, owner_user_id, name, category, city, country_code, timezone, currency,
                            status, verified_at, amount_entry, min_spend_minor, max_amount_minor,
                            avg_check_minor, avg_check_source, accepts_vouchers, points_per_scan,
@@ -222,14 +221,14 @@ function world(): World {
       [10, 300, 2500],
       [15, 600, 4000],
     ]) {
-      db.run(
+      await db.run(
         `INSERT INTO voucher_tiers (id, venue_id, discount_pct, points_cost, max_discount_minor,
                                     active, created_at, updated_at)
          VALUES ($i, $v, $p, $pt, $c, 1, $t, $t)`,
         { i: newId('vtr'), v: venueId, p: pct, pt: points, c: cap, t: at },
       );
     }
-    db.run(
+    await db.run(
       `INSERT INTO budgets (id, venue_id, period, currency, total_minor, loyalty_bp, created_at, updated_at)
        VALUES ($i, $v, $p, 'PLN', 100000, 6000, $t, $t)`,
       { i: newId('bdg'), v: venueId, p: localMonth(at, VENUE_TZ), t: at },
@@ -240,15 +239,15 @@ function world(): World {
 }
 
 /** Run one whole gate cycle and return the receipt. */
-function scan(w: World, amountMinor: number, at = now(), userId = w.customerId): gate.Receipt {
-  const qr = gate.mintQr(w.db, w.venueId, SECRET, at);
-  const txn = gate.openTransaction(
+async function scan(w: World, amountMinor: number, at = now(), userId = w.customerId): Promise<gate.Receipt> {
+  const qr = await gate.mintQr(w.db, w.venueId, SECRET, at);
+  const txn = await gate.openTransaction(
     w.db,
     { kind: 'qr', token: qr.token, secret: SECRET },
     { userId, at },
   );
-  gate.submitAmount(w.db, { transactionId: txn.id, amountMinor, actorId: w.ownerId, at });
-  return gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
+  await gate.submitAmount(w.db, { transactionId: txn.id, amountMinor, actorId: w.ownerId, at });
+  return await gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
 }
 
 /* ═══════════════════════════════════════════════════════════ the checks ══ */
@@ -326,24 +325,24 @@ async function passwords(): Promise<void> {
   check('the hash is not the password', !hash.includes('correct'));
 }
 
-function ledgerRules(): void {
+async function ledgerRules(): Promise<void> {
   describe('§2 the points ledger');
-  const w = world();
+  const w = await world();
   const { db, customerId } = w;
 
-  ledger.earn(db, { userId: customerId, points: 100, reason: 'game_win' });
-  ledger.earn(db, { userId: customerId, points: 50, reason: 'scan_earn' });
-  eq('balance is the sum of the entries', ledger.balance(db, customerId), 150);
-  eq('the cache agrees', ledger.cachedBalance(db, customerId), 150);
-  eq('nothing to reconcile', ledger.reconcile(db, customerId), 0);
+  await ledger.earn(db, { userId: customerId, points: 100, reason: 'game_win' });
+  await ledger.earn(db, { userId: customerId, points: 50, reason: 'scan_earn' });
+  eq('balance is the sum of the entries', await ledger.balance(db, customerId), 150);
+  eq('the cache agrees', await ledger.cachedBalance(db, customerId), 150);
+  eq('nothing to reconcile', await ledger.reconcile(db, customerId), 0);
 
-  ledger.spend(db, { userId: customerId, points: 120, reason: 'voucher_redeem' });
-  eq('spending moves the balance', ledger.balance(db, customerId), 30);
+  await ledger.spend(db, { userId: customerId, points: 120, reason: 'voucher_redeem' });
+  eq('spending moves the balance', await ledger.balance(db, customerId), 30);
 
   /* FIFO: the 100-point lot is fully consumed and the 50 is partly. */
   /* Ordered by `rowid`, for the same reason `spend` is: two lots opened in the
      same millisecond tie on `earned_at`, and the ids are random. */
-  const lots = db.all<{ amount: number; consumed: number }>(
+  const lots = await db.all<{ amount: number; consumed: number }>(
     `SELECT amount, consumed FROM points_lots WHERE user_id = $u ORDER BY earned_at, rowid`,
     { u: customerId },
   );
@@ -352,8 +351,8 @@ function ledgerRules(): void {
     [50, 20],
   ]);
 
-  throws('overdrawing is refused', 'insufficient_points', () =>
-    ledger.spend(db, { userId: customerId, points: 1000, reason: 'voucher_redeem' }),
+  await throws('overdrawing is refused', 'insufficient_points', async () =>
+    await ledger.spend(db, { userId: customerId, points: 1000, reason: 'voucher_redeem' }),
   );
 
   /*
@@ -365,19 +364,19 @@ function ledgerRules(): void {
    *
    * What is still worth asserting here is that a large earn arrives whole.
    */
-  const big = ledger.earn(db, { userId: customerId, points: 500, reason: 'game_win' });
+  const big = await ledger.earn(db, { userId: customerId, points: 500, reason: 'game_win' });
   eq('a game round is banked in full', big.entry.delta, 500);
   eq('…and the counter still records the day', big.entry.reason, 'game_win');
 
   /* §2.3: expiry is per-batch, FIFO, and only takes what is left of a lot. */
   const old = now();
-  const w2 = world();
+  const w2 = await world();
   /* `adjustment` rather than `game_win` is now only a labelling choice — the
      cap that used to trim this to 150 is gone — but the batch reads more
      clearly as an opening balance than as a quiz somebody played in 2025. */
-  ledger.earn(w2.db, { userId: w2.customerId, points: 200, reason: 'adjustment', at: plusDays(old, -400) });
-  ledger.earn(w2.db, { userId: w2.customerId, points: 60, reason: 'scan_earn', at: old });
-  ledger.spend(w2.db, { userId: w2.customerId, points: 50, reason: 'gift_card_redeem', at: old });
+  await ledger.earn(w2.db, { userId: w2.customerId, points: 200, reason: 'adjustment', at: plusDays(old, -400) });
+  await ledger.earn(w2.db, { userId: w2.customerId, points: 60, reason: 'scan_earn', at: old });
+  await ledger.spend(w2.db, { userId: w2.customerId, points: 50, reason: 'gift_card_redeem', at: old });
   /*
    * **Points do not expire.** `runExpiry` and its job are deleted, so what is
    * asserted here now is the opposite of what used to be: a batch earned four
@@ -385,37 +384,37 @@ function ledgerRules(): void {
    * it was. The FIFO lots survive because spending still walks them oldest
    * first — that is the half of the machinery that had a job.
    */
-  eq('a four-hundred-day-old batch is still there', ledger.balance(w2.db, w2.customerId), 210);
+  eq('a four-hundred-day-old batch is still there', await ledger.balance(w2.db, w2.customerId), 210);
   check('and nothing on the ledger carries an expiry date',
-    w2.db.get<{ n: number }>(
+    (await w2.db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM points_ledger WHERE expires_at IS NOT NULL`,
-    )?.n === 0);
-  eq('the ledger still balances against its cache', ledger.reconcile(w2.db, w2.customerId), 0);
+    ))?.n === 0);
+  eq('the ledger still balances against its cache', await ledger.reconcile(w2.db, w2.customerId), 0);
 
   /* C3: a reversal is a compensating entry, never a mutation. */
-  const balanceBefore = ledger.balance(db, customerId);
-  const entry = ledger.earn(db, { userId: customerId, points: 10, reason: 'adjustment' }).entry;
-  const reversal = ledger.reverse(db, entry.id, 'fraud');
+  const balanceBefore = await ledger.balance(db, customerId);
+  const entry = (await ledger.earn(db, { userId: customerId, points: 10, reason: 'adjustment' })).entry;
+  const reversal = await ledger.reverse(db, entry.id, 'fraud');
   eq('the reversal is its own entry', reversal.delta, -10);
   eq(
     'the original row is untouched',
-    db.get<{ delta: number; status: string }>(`SELECT delta, status FROM points_ledger WHERE id = $i`, {
+    await db.get<{ delta: number; status: string }>(`SELECT delta, status FROM points_ledger WHERE id = $i`, {
       i: entry.id,
     }),
     { delta: 10, status: 'committed' },
   );
-  eq('the pair nets to nothing', ledger.balance(db, customerId), balanceBefore);
-  eq('and the cache agrees', ledger.reconcile(db, customerId), 0);
-  throws('reversing twice is refused', 'conflict', () => ledger.reverse(db, entry.id, 'again'));
+  eq('the pair nets to nothing', await ledger.balance(db, customerId), balanceBefore);
+  eq('and the cache agrees', await ledger.reconcile(db, customerId), 0);
+  await throws('reversing twice is refused', 'conflict', async () => await ledger.reverse(db, entry.id, 'again'));
 
-  db.close();
-  w2.db.close();
+  await db.close();
+  await w2.db.close();
 }
 
-function budgetRules(): void {
+async function budgetRules(): Promise<void> {
   describe('§4–5 the budget pools');
-  const w = world();
-  const view = budget.budgetFor(w.db, w.venueId);
+  const w = await world();
+  const view = await budget.budgetFor(w.db, w.venueId);
 
   eq('the split is 60/40 and adds up', view.loyalty.base + view.voucher.base, view.total);
   eq('loyalty gets 60%', view.loyalty.base, 60000);
@@ -425,30 +424,30 @@ function budgetRules(): void {
     v.voucher.spent + v.voucher.reserved + v.voucher.available === v.voucher.base;
   check('three states exhaust the pool', exhausts(view));
 
-  budget.reserve(w.db, view.id, 'voucher', 5000);
-  budget.debit(w.db, view.id, 'voucher', 1200);
-  const after = budget.viewById(w.db, view.id);
+  await budget.reserve(w.db, view.id, 'voucher', 5000);
+  await budget.debit(w.db, view.id, 'voucher', 1200);
+  const after = await budget.viewById(w.db, view.id);
   eq('reserving moves money out of available', after.voucher.available, 40000 - 5000 - 1200);
   check('and the three states still exhaust it', exhausts(after));
 
   /* A reserve larger than the pool is refused — with the tolerance buffer
      included, which is the only reason it is not simply `available`. */
-  throws('an over-reserve is refused', 'budget_exhausted', () =>
-    budget.reserve(w.db, view.id, 'voucher', 999999),
+  await throws('an over-reserve is refused', 'budget_exhausted', async () =>
+    await budget.reserve(w.db, view.id, 'voucher', 999999),
   );
 
-  const rebalanced = budget.rebalance(w.db, view.id, 'loyalty', 10000);
+  const rebalanced = await budget.rebalance(w.db, view.id, 'loyalty', 10000);
   eq('rebalancing moves it across', rebalanced.voucher.base, 40000 + 10000);
   eq('…and out of the other side', rebalanced.loyalty.base, 60000 - 10000);
   eq('the total is unchanged', rebalanced.total, view.total);
   check('and it still exhausts', exhausts(rebalanced));
 
-  throws('you cannot move money that is reserved', 'budget_exhausted', () =>
-    budget.rebalance(w.db, view.id, 'voucher', 999999),
+  await throws('you cannot move money that is reserved', 'budget_exhausted', async () =>
+    await budget.rebalance(w.db, view.id, 'voucher', 999999),
   );
 
   /* §4.4: the ladder degrades from the top and never switches off entirely. */
-  const tiers = vouchers.tiersFor(w.db, w.venueId);
+  const tiers = await vouchers.tiersFor(w.db, w.venueId);
   const nearlyEmpty: budget.BudgetView = {
     ...rebalanced,
     voucher: { ...rebalanced.voucher, available: 200 },
@@ -456,15 +455,15 @@ function budgetRules(): void {
   const open = budget.tiersAvailable(nearlyEmpty, tiers);
   eq('only the lowest tier survives an empty pool', open, [5]);
 
-  w.db.close();
+  await w.db.close();
 }
 
-function gateRules(): void {
+async function gateRules(): Promise<void> {
   describe('§3 the amount-capture gate');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const receipt = scan(w, 4200, at);
+  const receipt = await scan(w, 4200, at);
   /*
    * A first scan at a venue now pays four things, and the receipt reports the
    * sum. Spelled out as the sum rather than as 165, so that a change to any
@@ -489,101 +488,101 @@ function gateRules(): void {
   eq('the amount is stored in minor units', receipt.transaction.amount_minor, 4200);
 
   /* §3.2: single-use, and the check is a conditional UPDATE, not a read. */
-  const qr = gate.mintQr(w.db, w.venueId, SECRET, at);
-  gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
+  const qr = await gate.mintQr(w.db, w.venueId, SECRET, at);
+  await gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
     userId: w.customerId,
     at,
   });
-  throws('a replayed QR is rejected', 'replay_detected', () =>
-    gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
+  await throws('a replayed QR is rejected', 'replay_detected', async () =>
+    await gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
       userId: w.customerId,
       at,
     }),
   );
   check(
     'and the replay opens a fraud case',
-    (w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM fraud_cases WHERE kind = 'replay'`)?.n ?? 0) > 0,
+    ((await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM fraud_cases WHERE kind = 'replay'`))?.n ?? 0) > 0,
   );
 
-  throws('a forged QR is rejected', 'invalid_trigger', () =>
-    gate.openTransaction(w.db, { kind: 'qr', token: 'nonsense.sig', secret: SECRET }, {
+  await throws('a forged QR is rejected', 'invalid_trigger', async () =>
+    await gate.openTransaction(w.db, { kind: 'qr', token: 'nonsense.sig', secret: SECRET }, {
       userId: w.customerId,
       at,
     }),
   );
 
   /* One pending transaction per customer per venue. */
-  throws('a second open gate at one counter is refused', 'conflict', () => {
-    const q = gate.mintQr(w.db, w.venueId, SECRET, at);
-    gate.openTransaction(w.db, { kind: 'qr', token: q.token, secret: SECRET }, {
+  await throws('a second open gate at one counter is refused', 'conflict', async () => {
+    const q = await gate.mintQr(w.db, w.venueId, SECRET, at);
+    await gate.openTransaction(w.db, { kind: 'qr', token: q.token, secret: SECRET }, {
       userId: w.customerId,
       at,
     });
   });
 
   /* Clear the pending one, then the same-day rule. */
-  const pending = gate.pendingAt(w.db, w.venueId)[0];
-  gate.cancel(w.db, { transactionId: pending.id, reason: 'test', actorId: w.customerId, at });
+  const pending = (await gate.pendingAt(w.db, w.venueId))[0];
+  await gate.cancel(w.db, { transactionId: pending.id, reason: 'test', actorId: w.customerId, at });
 
-  const second = scan(w, 3000, at);
+  const second = await scan(w, 3000, at);
   check('a second scan the same day is not a second visit', !second.visitCounted);
   eq('and pays nothing', second.pointsGranted, 0);
 
   /* §3.4: an implausible amount is refused, and the ceiling is the venue's. */
-  const q2 = gate.mintQr(w.db, w.venueId, SECRET, at);
-  const t2 = gate.openTransaction(w.db, { kind: 'qr', token: q2.token, secret: SECRET }, {
+  const q2 = await gate.mintQr(w.db, w.venueId, SECRET, at);
+  const t2 = await gate.openTransaction(w.db, { kind: 'qr', token: q2.token, secret: SECRET }, {
     userId: w.customerId,
     at,
   });
-  throws('an implausible amount is refused', 'invalid_amount', () =>
-    gate.submitAmount(w.db, { transactionId: t2.id, amountMinor: 5_000_000, actorId: w.ownerId, at }),
+  await throws('an implausible amount is refused', 'invalid_amount', async () =>
+    await gate.submitAmount(w.db, { transactionId: t2.id, amountMinor: 5_000_000, actorId: w.ownerId, at }),
   );
   /* …and the cashier corrects rather than cancelling. */
-  gate.submitAmount(w.db, { transactionId: t2.id, amountMinor: 4200, actorId: w.ownerId, at });
+  await gate.submitAmount(w.db, { transactionId: t2.id, amountMinor: 4200, actorId: w.ownerId, at });
   eq(
     'the corrected amount lands',
-    gate.getTransaction(w.db, t2.id).amount_minor,
+    (await gate.getTransaction(w.db, t2.id)).amount_minor,
     4200,
   );
 
   /* Only staff may confirm. */
-  throws('a customer cannot confirm their own transaction', 'forbidden', () =>
-    gate.confirm(w.db, { transactionId: t2.id, cashierId: w.customerId, at }),
+  await throws('a customer cannot confirm their own transaction', 'forbidden', async () =>
+    await gate.confirm(w.db, { transactionId: t2.id, cashierId: w.customerId, at }),
   );
-  gate.confirm(w.db, { transactionId: t2.id, cashierId: w.ownerId, at });
+  await gate.confirm(w.db, { transactionId: t2.id, cashierId: w.ownerId, at });
 
   /* Nothing is granted before the commit. */
-  const w2 = world();
-  const q3 = gate.mintQr(w2.db, w2.venueId, SECRET, at);
-  const t3 = gate.openTransaction(w2.db, { kind: 'qr', token: q3.token, secret: SECRET }, {
+  const w2 = await world();
+  const q3 = await gate.mintQr(w2.db, w2.venueId, SECRET, at);
+  const t3 = await gate.openTransaction(w2.db, { kind: 'qr', token: q3.token, secret: SECRET }, {
     userId: w2.customerId,
     at,
   });
-  gate.submitAmount(w2.db, { transactionId: t3.id, amountMinor: 9000, actorId: w2.ownerId, at });
-  eq('a pending transaction has granted nothing', ledger.balance(w2.db, w2.customerId), 0);
-  eq('and recorded no visit', w2.db.get<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM venue_visits WHERE user_id = $u`, { u: w2.customerId })?.n, 0);
+  await gate.submitAmount(w2.db, { transactionId: t3.id, amountMinor: 9000, actorId: w2.ownerId, at });
+  eq('a pending transaction has granted nothing', await ledger.balance(w2.db, w2.customerId), 0);
+  eq('and recorded no visit', (await w2.db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM venue_visits WHERE user_id = $u`, { u: w2.customerId }))?.n, 0);
 
   /* A pending transaction times out rather than blocking the customer forever. */
   const later = plusDays(at, 1);
-  eq('the sweeper cancels it', gate.expirePending(w2.db, later), 1);
+  eq('the sweeper cancels it', await gate.expirePending(w2.db, later), 1);
 
-  w.db.close();
-  w2.db.close();
+  await w.db.close();
+  await w2.db.close();
 }
 
-function voucherRules(): void {
+async function voucherRules(): Promise<void> {
   describe('§4 vouchers — reserve, debit, release');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
-  const tier = w.db.get<{ id: string }>(
+  await ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
+  const tier = (await w.db.get<{ id: string }>(
     `SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = 10`,
     { v: w.venueId },
-  )!;
+  ))!;
 
-  const issued = vouchers.issue(w.db, {
+  const issued = await vouchers.issue(w.db, {
     userId: w.customerId,
     venueId: w.venueId,
     tierId: tier.id,
@@ -591,24 +590,24 @@ function voucherRules(): void {
   });
   /* The estimate is min(avg check × 10%, cap) = min(400, 2500) = 400. */
   eq('issue reserves an estimate from the average check', issued.reserved_minor, 400);
-  eq('and spends the points', ledger.balance(w.db, w.customerId), 700);
-  eq('the pool holds it as reserved', budget.budgetFor(w.db, w.venueId, at).voucher.reserved, 400);
+  eq('and spends the points', await ledger.balance(w.db, w.customerId), 700);
+  eq('the pool holds it as reserved', (await budget.budgetFor(w.db, w.venueId, at)).voucher.reserved, 400);
 
   /* Redemption through the gate: release the estimate, debit the actual. The
      bill is 120 zł, so the actual discount is 1200 — three times the estimate,
      and the drift is corrected on the spot. */
-  const qr = gate.mintQr(w.db, w.venueId, SECRET, at);
-  const txn = gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
+  const qr = await gate.mintQr(w.db, w.venueId, SECRET, at);
+  const txn = await gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
     userId: w.customerId,
     intent: 'voucher_redeem',
     intentRef: issued.id,
     at,
   });
-  gate.submitAmount(w.db, { transactionId: txn.id, amountMinor: 12000, actorId: w.ownerId, at });
-  const receipt = gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
+  await gate.submitAmount(w.db, { transactionId: txn.id, amountMinor: 12000, actorId: w.ownerId, at });
+  const receipt = await gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
 
   eq('the discount is the actual, not the estimate', receipt.discountMinor, 1200);
-  const after = budget.budgetFor(w.db, w.venueId, at);
+  const after = await budget.budgetFor(w.db, w.venueId, at);
   eq('the estimate is released', after.voucher.reserved, 0);
   eq('and the actual is debited', after.voucher.spent, 1200);
   check(
@@ -616,9 +615,9 @@ function voucherRules(): void {
     after.voucher.spent + after.voucher.reserved + after.voucher.available === after.voucher.base,
   );
 
-  throws('a redeemed voucher cannot be redeemed again', 'already_used', () => {
-    const q = gate.mintQr(w.db, w.venueId, SECRET, at);
-    gate.openTransaction(w.db, { kind: 'qr', token: q.token, secret: SECRET }, {
+  await throws('a redeemed voucher cannot be redeemed again', 'already_used', async () => {
+    const q = await gate.mintQr(w.db, w.venueId, SECRET, at);
+    await gate.openTransaction(w.db, { kind: 'qr', token: q.token, secret: SECRET }, {
       userId: w.customerId,
       intent: 'voucher_redeem',
       intentRef: issued.id,
@@ -634,37 +633,37 @@ function voucherRules(): void {
      that took the reserve, not the one the clock is in when it expires. A
      reserve released into next month's pool would be a leak in the money rather
      than in the fixture, which is why the column is stored. */
-  const w2 = world();
-  ledger.earn(w2.db, { userId: w2.customerId, points: 1000, reason: 'adjustment', at });
-  const tier2 = w2.db.get<{ id: string }>(
+  const w2 = await world();
+  await ledger.earn(w2.db, { userId: w2.customerId, points: 1000, reason: 'adjustment', at });
+  const tier2 = (await w2.db.get<{ id: string }>(
     `SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = 5`,
     { v: w2.venueId },
-  )!;
-  vouchers.issue(w2.db, { userId: w2.customerId, venueId: w2.venueId, tierId: tier2.id, at });
-  const before = budget.budgetFor(w2.db, w2.venueId, at).voucher.available;
-  const released = vouchers.expireVouchers(w2.db, plusDays(at, CONFIG.vouchers.validityDays + 1));
+  ))!;
+  await vouchers.issue(w2.db, { userId: w2.customerId, venueId: w2.venueId, tierId: tier2.id, at });
+  const before = (await budget.budgetFor(w2.db, w2.venueId, at)).voucher.available;
+  const released = await vouchers.expireVouchers(w2.db, plusDays(at, CONFIG.vouchers.validityDays + 1));
   eq('expiry releases the reserve', released.expired, 1);
   eq(
     'and available goes back up',
-    budget.budgetFor(w2.db, w2.venueId, at).voucher.available,
+    (await budget.budgetFor(w2.db, w2.venueId, at)).voucher.available,
     before + released.released,
   );
-  eq('the points are not refunded', ledger.balance(w2.db, w2.customerId), 900);
+  eq('the points are not refunded', await ledger.balance(w2.db, w2.customerId), 900);
 
-  w.db.close();
-  w2.db.close();
+  await w.db.close();
+  await w2.db.close();
 }
 
-function campaignRules(): void {
+async function campaignRules(): Promise<void> {
   describe('§5 campaigns and stamp cards');
-  const w = world();
+  const w = await world();
   /* Mid-month, not `now()`: this section walks a customer through three visits
      two days apart and then reads one pool, and a reward earned on the 1st is
      reserved against a different budget than one earned on the 30th. See
      `midMonth`. */
   const at = midMonth();
 
-  throws('a percentage reward is not a campaign', 'validation_failed', () =>
+  await throws('a percentage reward is not a campaign', 'validation_failed', () =>
     campaigns.validateCampaign({
       visitsRequired: 3,
       rewardCostMinor: 500,
@@ -672,7 +671,7 @@ function campaignRules(): void {
       rewardKind: 'percentage_discount',
     }),
   );
-  throws('nor is a points threshold', 'validation_failed', () =>
+  await throws('nor is a points threshold', 'validation_failed', () =>
     campaigns.validateCampaign({
       visitsRequired: 3,
       rewardCostMinor: 500,
@@ -682,7 +681,7 @@ function campaignRules(): void {
   );
 
   /* Two overlapping campaigns; only the higher priority may fire (§5.1). */
-  partners.createCampaign(w.db, {
+  await partners.createCampaign(w.db, {
     venueId: w.venueId,
     actorId: w.ownerId,
     name: 'Two visits',
@@ -693,13 +692,13 @@ function campaignRules(): void {
     at,
   });
   /* The second needs a plan with room for it, so the venue is put on Growth. */
-  entitlements.startSubscription(w.db, {
+  await entitlements.startSubscription(w.db, {
     subject: { venueId: w.venueId },
     planCode: 'growth',
     source: 'manual',
     at,
   });
-  partners.createCampaign(w.db, {
+  await partners.createCampaign(w.db, {
     venueId: w.venueId,
     actorId: w.ownerId,
     name: 'Also two visits',
@@ -710,48 +709,48 @@ function campaignRules(): void {
     at,
   });
 
-  scan(w, 4000, at);
-  const second = scan(w, 4000, plusDays(at, 1));
+  await scan(w, 4000, at);
+  const second = await scan(w, 4000, plusDays(at, 1));
   eq('one reward per visit, and it is the higher priority', second.reward?.label, 'A coffee');
   eq(
     'exactly one reward exists',
-    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM earned_rewards WHERE user_id = $u`, {
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM earned_rewards WHERE user_id = $u`, {
       u: w.customerId,
-    })?.n,
+    }))?.n,
     1,
   );
   eq(
     'its exact cost is reserved',
-    budget.budgetFor(w.db, w.venueId, at).loyalty.reserved,
+    (await budget.budgetFor(w.db, w.venueId, at)).loyalty.reserved,
     1200,
   );
 
   /* §5.3: pausing stops new earning but existing rewards stay valid and reserved. */
-  const reward = campaigns.availableRewards(w.db, w.customerId)[0];
-  campaigns.setStatus(w.db, reward.campaign_id, 'paused', at);
+  const reward = (await campaigns.availableRewards(w.db, w.customerId))[0];
+  await campaigns.setStatus(w.db, reward.campaign_id, 'paused', at);
   eq(
     'a paused campaign still holds its money',
-    budget.budgetFor(w.db, w.venueId, at).loyalty.reserved,
+    (await budget.budgetFor(w.db, w.venueId, at)).loyalty.reserved,
     1200,
   );
-  eq('and the earned reward is still available', campaigns.availableRewards(w.db, w.customerId).length, 1);
+  eq('and the earned reward is still available', (await campaigns.availableRewards(w.db, w.customerId)).length, 1);
 
   /* Redeeming through the gate releases the reserve and debits the same amount. */
-  const qr = gate.mintQr(w.db, w.venueId, SECRET, plusDays(at, 2));
-  const txn = gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
+  const qr = await gate.mintQr(w.db, w.venueId, SECRET, plusDays(at, 2));
+  const txn = await gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
     userId: w.customerId,
     intent: 'reward_redeem',
     intentRef: reward.id,
     at: plusDays(at, 2),
   });
-  gate.submitAmount(w.db, {
+  await gate.submitAmount(w.db, {
     transactionId: txn.id,
     amountMinor: 3000,
     actorId: w.ownerId,
     at: plusDays(at, 2),
   });
-  gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at: plusDays(at, 2) });
-  const pool = budget.budgetFor(w.db, w.venueId, at).loyalty;
+  await gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at: plusDays(at, 2) });
+  const pool = (await budget.budgetFor(w.db, w.venueId, at)).loyalty;
   eq('the exact cost is spent, not an estimate', pool.spent, 1200);
   /* That third visit also paid out the *other* card — it completed on visit two
      and had to wait, because only one reward fires per visit. So the pool is
@@ -759,21 +758,21 @@ function campaignRules(): void {
   eq('the queued second reward fires on the next visit', pool.reserved, 900);
   eq(
     'and two rewards exist in total',
-    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM earned_rewards WHERE user_id = $u`, {
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM earned_rewards WHERE user_id = $u`, {
       u: w.customerId,
-    })?.n,
+    }))?.n,
     2,
   );
 
-  w.db.close();
+  await w.db.close();
 }
 
-function gameRules(): void {
+async function gameRules(): Promise<void> {
   describe('§7 the games engine');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const round = games.startSession(w.db, {
+  const round = await games.startSession(w.db, {
     userId: w.customerId,
     gameType: 'capitals',
     language: 'en',
@@ -790,13 +789,13 @@ function gameRules(): void {
 
   /* The server holds the key; the client is told one answer at a time. */
   const secret = JSON.parse(
-    w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
       i: round.sessionId,
-    })!.secret,
+    }))!.secret,
   ) as { answers: number[] };
 
-  content.questions.forEach((question, index) => {
-    const result = games.submitEvent(w.db, {
+  for (const [index, question] of content.questions.entries()) {
+    const result = await games.submitEvent(w.db, {
       sessionId: round.sessionId,
       userId: w.customerId,
       seq: index,
@@ -805,10 +804,10 @@ function gameRules(): void {
       at,
     });
     check(`question ${index} scores as correct`, result.correct === true);
-  });
+  };
 
   /* A replayed event is idempotent rather than a second answer. */
-  const replay = games.submitEvent(w.db, {
+  const replay = await games.submitEvent(w.db, {
     sessionId: round.sessionId,
     userId: w.customerId,
     seq: 0,
@@ -823,7 +822,7 @@ function gameRules(): void {
      card over. */
   check('a quiz reply names no cards, because a quiz has no board', replay.revealed === undefined);
 
-  const finished = games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
+  const finished = await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
   /* Five right at one apiece, the clean-sweep bonus, and the speed band on top
      of it — every event above was submitted at the same instant, so the round
      took nought seconds and takes the fastest band. That is the quiz ceiling,
@@ -839,43 +838,43 @@ function gameRules(): void {
      tank is what "every finished round costs one" looks like from outside. */
   eq('a win spends energy like any other round', finished.energyLeft,
     CONFIG.points.dailyEnergy - 1);
-  eq('the balance moved by the score', ledger.balance(w.db, w.customerId), finished.score);
+  eq('the balance moved by the score', await ledger.balance(w.db, w.customerId), finished.score);
 
-  throws('a finished session cannot be finished again', 'invalid_state', () =>
-    games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at }),
+  await throws('a finished session cannot be finished again', 'invalid_state', async () =>
+    await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at }),
   );
 
   /* Another player's session is not yours to finish. */
-  const other = games.startSession(w.db, { userId: w.ownerId, gameType: 'capitals', at });
-  throws('somebody else’s session is refused', 'forbidden', () =>
-    games.finish(w.db, { sessionId: other.sessionId, userId: w.customerId, at }),
+  const other = await games.startSession(w.db, { userId: w.ownerId, gameType: 'capitals', at });
+  await throws('somebody else’s session is refused', 'forbidden', async () =>
+    await games.finish(w.db, { sessionId: other.sessionId, userId: w.customerId, at }),
   );
 
   /* The streak, the lapse and the freeze. */
-  const play = (day: number) => {
+  const play = async (day: number) => {
     const when = plusDays(at, day);
-    const session = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: when });
-    return games.finish(w.db, { sessionId: session.sessionId, userId: w.customerId, at: when });
+    const session = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: when });
+    return await games.finish(w.db, { sessionId: session.sessionId, userId: w.customerId, at: when });
   };
-  let last = play(1);
+  let last = await play(1);
   eq('a consecutive day continues the streak', last.streak, 2);
-  for (let day = 2; day <= 6; day += 1) last = play(day);
+  for (let day = 2; day <= 6; day += 1) last = await play(day);
   eq('seven days of play', last.streak, 7);
   eq('…earns a freeze', last.freezes, 1);
 
-  const lapsed = play(10);
+  const lapsed = await play(10);
   eq('a missed window is absorbed by the freeze', lapsed.streak, 8);
   eq('and the freeze is spent', lapsed.freezes, 0);
 
-  const broken = play(20);
+  const broken = await play(20);
   eq('with no freeze left, the streak resets', broken.streak, 1);
   check(
     'but the points are not wiped — expiry is the only way points leave (§2.3)',
-    ledger.balance(w.db, w.customerId) > 0,
+    (await ledger.balance(w.db, w.customerId)) > 0,
   );
 
-  w.db.close();
-  energyRules();
+  await w.db.close();
+  await energyRules();
 }
 
 /**
@@ -890,26 +889,26 @@ function gameRules(): void {
  * answer: **a win spends**, **a loss spends**, **an abandoned round does not**,
  * and an **empty tank refuses the next start** rather than the next finish.
  */
-function energyRules(): void {
+async function energyRules(): Promise<void> {
   describe('§7.2 energy — every finished round costs one');
-  const w = world();
+  const w = await world();
   const at = now();
 
   /** Play a whole round, answering every question right or every one wrong. */
-  const round = (rightly: boolean, when = at) => {
-    const opened = games.startSession(w.db, {
+  const round = async (rightly: boolean, when = at) => {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'capitals',
       language: 'en',
       at: when,
     });
     const secret = JSON.parse(
-      w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+      (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
         i: opened.sessionId,
-      })!.secret,
+      }))!.secret,
     ) as { answers: number[] };
-    secret.answers.forEach((answer, index) => {
-      games.submitEvent(w.db, {
+    for (const [index, answer] of secret.answers.entries()) {
+      await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
         seq: index,
@@ -919,18 +918,18 @@ function energyRules(): void {
         payload: { index, choice: rightly ? answer : answer === 0 ? 1 : 0 },
         at: when,
       });
-    });
-    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: when });
+    };
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: when });
   };
 
   const full = CONFIG.points.dailyEnergy;
-  eq('a new player starts on a full tank', games.energyFor(w.db, w.customerId, at).energy, full);
+  eq('a new player starts on a full tank', (await games.energyFor(w.db, w.customerId, at)).energy, full);
 
-  const won = round(true);
+  const won = await round(true);
   eq('a won round is a win', won.won, true);
   eq('…and spends one anyway', won.energyLeft, full - 1);
 
-  const lost = round(false);
+  const lost = await round(false);
   eq('a lost round is a loss', lost.won, false);
   eq('…and spends exactly the same one', lost.energyLeft, full - 2);
 
@@ -943,23 +942,23 @@ function energyRules(): void {
    * a connection that drops before the first question must not cost anything,
    * because that is the one failure the player did not choose.
    */
-  const dropped = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
-  const kept = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  const dropped = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  const kept = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
   eq(
     'the first of two starts is abandoned',
-    w.db.get<{ state: string }>(`SELECT state FROM game_sessions WHERE id = $i`, {
+    (await w.db.get<{ state: string }>(`SELECT state FROM game_sessions WHERE id = $i`, {
       i: dropped.sessionId,
-    })?.state,
+    }))?.state,
     'abandoned',
   );
   eq(
     'and an abandoned round costs nothing',
-    games.energyFor(w.db, w.customerId, at).energy,
+    (await games.energyFor(w.db, w.customerId, at)).energy,
     full - 2,
   );
   eq(
     'the round that is finished still costs one',
-    games.finish(w.db, { sessionId: kept.sessionId, userId: w.customerId, at }).energyLeft,
+    (await games.finish(w.db, { sessionId: kept.sessionId, userId: w.customerId, at })).energyLeft,
     full - 3,
   );
 
@@ -968,15 +967,15 @@ function energyRules(): void {
      is a plan figure and has already moved once; a fixed count of rounds here
      turns that move into a failure in this file rather than a change in that
      one. */
-  while (games.energyFor(w.db, w.customerId, at).energy > 0) {
-    const drain = games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
-    games.finish(w.db, { sessionId: drain.sessionId, userId: w.customerId, at });
+  while ((await games.energyFor(w.db, w.customerId, at)).energy > 0) {
+    const drain = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+    await games.finish(w.db, { sessionId: drain.sessionId, userId: w.customerId, at });
   }
 
   /* An empty tank refuses the *start*. Refusing the finish instead would mean
      telling somebody the round they just played does not count. */
-  throws('an empty tank refuses the next round', 'no_energy', () =>
-    games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at }),
+  await throws('an empty tank refuses the next round', 'no_energy', async () =>
+    await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at }),
   );
 
   /*
@@ -985,13 +984,111 @@ function energyRules(): void {
    * `nextAt` is the whole of what makes a spend feel like a cost rather than a
    * lockout, and it is the field the mobile client draws its countdown from.
    */
-  const empty = games.energyFor(w.db, w.customerId, at);
+  const empty = await games.energyFor(w.db, w.customerId, at);
   eq('the refusal knows the ceiling', empty.max, full);
   eq(
     '…and when the next one lands',
     empty.nextAt,
     plusMinutes(at, CONFIG.points.energyRegenMinutes),
   );
+
+  /*
+   * ── practice: an empty tank plays, and pays nothing ──
+   *
+   * The refusal above is what `practice: true` opts out of. What has to be true
+   * of the round it opens instead is *everything stays where it was* — the
+   * balance, the streak, the freezes and the tank — because the whole of what
+   * energy buys is those, and a practice round that moved any one of them would
+   * make the tank optional rather than unpaid.
+   *
+   * Answered **rightly** on purpose: a practice round that pays nothing because
+   * it was played badly proves nothing at all. This one earns a full sweep and
+   * banks none of it.
+   */
+  const before = {
+    balance: await ledger.balance(w.db, w.customerId),
+    ...await games.playerState(w.db, w.customerId, at),
+  };
+
+  const practice = await games.startSession(w.db, {
+    userId: w.customerId,
+    gameType: 'capitals',
+    language: 'en',
+    practice: true,
+    at,
+  });
+  eq('an empty tank still opens a practice round', practice.gameType, 'capitals');
+  eq('…and says up front that it will not pay', practice.paid, false);
+
+  const practiceSecret = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+      i: practice.sessionId,
+    }))!.secret,
+  ) as { answers: number[] };
+  for (const [index, answer] of practiceSecret.answers.entries()) {
+    await games.submitEvent(w.db, {
+      sessionId: practice.sessionId,
+      userId: w.customerId,
+      seq: index,
+      kind: 'answer',
+      payload: { index, choice: answer },
+      at,
+    });
+  };
+  const practiced = await games.finish(w.db, { sessionId: practice.sessionId, userId: w.customerId, at });
+
+  eq('a practice round is scored', practiced.correct, practiceSecret.answers.length);
+  eq('…and won', practiced.won, true);
+  eq('…and still says it did not pay', practiced.paid, false);
+  eq('…and pays nothing for it', practiced.score, 0);
+  eq('…leaving the balance where it was', practiced.balance, before.balance);
+  eq('…the streak where it was', practiced.streak, before.streak);
+  eq('…the freezes where they were', practiced.freezes, before.freezes);
+  eq('…and the tank still empty rather than overdrawn', practiced.energyLeft, 0);
+
+  /* The two records that make the tank's arithmetic work. `life_spent = 0` is
+     what `energyFor` filters on, so the round is invisible to it rather than
+     being a spend it has to be taught to ignore; no ledger row is what keeps
+     "where did my points come from" answerable. */
+  eq(
+    'a practice round spends no energy in the row that records spends',
+    (await w.db.get<{ life_spent: number }>(`SELECT life_spent FROM game_sessions WHERE id = $i`, {
+      i: practice.sessionId,
+    }))?.life_spent,
+    0,
+  );
+  eq(
+    '…and writes no ledger entry at all',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM points_ledger WHERE source_ref = $r`,
+      { r: practice.sessionId },
+    ))?.n,
+    0,
+  );
+  eq(
+    '…so the next refill still arrives on the clock the last real spend started',
+    (await games.energyFor(w.db, w.customerId, at)).nextAt,
+    empty.nextAt,
+  );
+
+  /* And `last_played` is untouched, which is the half of "the streak did not
+     move" that a single round cannot show: a practice round on the day a streak
+     lapses must not be the round that resets it either. */
+  eq(
+    'a practice round does not count as having played today',
+    (await games.playerState(w.db, w.customerId, at)).last_played,
+    before.last_played,
+  );
+
+  /* The flag is opt-in and it is not a way to *avoid* paying: asked for on a
+     tank that has something in it, the round pays exactly as it always did. */
+  const paidAnyway = await games.startSession(w.db, {
+    userId: w.customerId,
+    gameType: 'capitals',
+    practice: true,
+    at: plusMinutes(at, CONFIG.points.energyRegenMinutes),
+  });
+  eq('practice on a tank with energy in it still pays', paidAnyway.paid, true);
 
   /*
    * The refill, which is what pays for charging both sides.
@@ -1001,22 +1098,22 @@ function energyRules(): void {
    * at `max × interval`, which on the free plan is sixteen hours.
    */
   const regen = CONFIG.points.energyRegenMinutes;
-  eq('nothing arrives early', games.energyFor(w.db, w.customerId, plusMinutes(at, regen - 1)).energy, 0);
-  eq('one at the interval', games.energyFor(w.db, w.customerId, plusMinutes(at, regen)).energy, 1);
-  eq('two at twice it', games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2)).energy, 2);
+  eq('nothing arrives early', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen - 1))).energy, 0);
+  eq('one at the interval', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen))).energy, 1);
+  eq('two at twice it', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2))).energy, 2);
   eq(
     'full at the ceiling times it',
-    games.energyFor(w.db, w.customerId, plusMinutes(at, regen * full)).energy,
+    (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * full))).energy,
     full,
   );
   eq(
     'and never past it',
-    games.energyFor(w.db, w.customerId, plusDays(at, 30)).energy,
+    (await games.energyFor(w.db, w.customerId, plusDays(at, 30))).energy,
     full,
   );
   eq(
     'a full tank has nothing to count down to',
-    games.energyFor(w.db, w.customerId, plusDays(at, 30)).nextAt,
+    (await games.energyFor(w.db, w.customerId, plusDays(at, 30))).nextAt,
     null,
   );
 
@@ -1040,21 +1137,21 @@ function energyRules(): void {
    */
   eq('a free day is sixteen finished rounds', full + Math.floor(1440 / regen), 16);
 
-  const daySizeOf = (code: string): number => {
-    const ent = (key: string) =>
+  const daySizeOf = async (code: string): Promise<number> => {
+    const ent = async (key: string) =>
       Number(
-        w.db.get<{ value: string }>(
+        (await w.db.get<{ value: string }>(
           `SELECT value FROM plan_entitlements WHERE plan_id = $p AND key = $k`,
           { p: `pln_consumer_${code}`, k: key },
-        )?.value,
+        ))?.value,
       );
-    return ent('daily_energy') + Math.floor(1440 / ent('energy_regen_minutes'));
+    return (await ent('daily_energy')) + Math.floor(1440 / (await ent('energy_regen_minutes')));
   };
-  eq('…and the free plan row agrees with the config', daySizeOf('free'), 16);
-  eq('a Pro day is thirty', daySizeOf('pro'), 30);
-  eq('a Premium day is fifty-eight', daySizeOf('premium'), 58);
+  eq('…and the free plan row agrees with the config', await daySizeOf('free'), 16);
+  eq('a Pro day is thirty', await daySizeOf('pro'), 30);
+  eq('a Premium day is fifty-eight', await daySizeOf('premium'), 58);
 
-  w.db.close();
+  await w.db.close();
 }
 
 /**
@@ -1084,9 +1181,9 @@ function energyRules(): void {
  *   separates "floor once" from "floor twice" — they agree on the free plan and
  *   differ by a point on a paid one, which is the shape this bug always takes.
  */
-function scoringRules(): void {
+async function scoringRules(): Promise<void> {
   describe('§7.4 scoring — the four games, band by band');
-  const w = world();
+  const w = await world();
   const base = now();
 
   /** Seconds, which is the unit two of these scorers band on. `plusMinutes` is
@@ -1107,11 +1204,11 @@ function scoringRules(): void {
   let played = 0;
   const nextAt = (): Iso => plusMinutes(base, (played += 1) * 180);
 
-  const secretOf = <T>(sessionId: string): T =>
+  const secretOf = async <T>(sessionId: string): Promise<T> =>
     JSON.parse(
-      w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+      (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
         i: sessionId,
-      })!.secret,
+      }))!.secret,
     ) as T;
 
   /* ── the quizzes ── */
@@ -1122,18 +1219,18 @@ function scoringRules(): void {
    * apart — which is the span the speed band reads, off the server's own stamps.
    */
   let accepted: boolean[] = [];
-  const quiz = (rights: boolean[], seconds: number, gameType: games.GameType = 'capitals') => {
+  const quiz = async (rights: boolean[], seconds: number, gameType: games.GameType = 'capitals') => {
     const at = nextAt();
     const done = plusSeconds(at, seconds);
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType,
       language: 'en',
       at,
     });
-    const secret = secretOf<{ answers: number[] }>(opened.sessionId);
-    accepted = secret.answers.map((answer, index) =>
-      games.submitEvent(w.db, {
+    const secret = await secretOf<{ answers: number[] }>(opened.sessionId);
+    accepted = await Promise.all(secret.answers.map(async (answer, index) =>
+      (await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
         seq: index,
@@ -1145,35 +1242,35 @@ function scoringRules(): void {
            so the questions in between decide nothing and pinning them to the
            start keeps the fixture readable. */
         at: index === secret.answers.length - 1 ? done : at,
-      }).accepted,
-    );
-    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
+      })).accepted,
+    ));
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
   };
 
   const allFive = [true, true, true, true, true];
   const perCorrect = CONFIG.games.quizPerCorrect;
   const sweep = CONFIG.games.quizPerfectBonus;
 
-  const fast = quiz(allFive, 4);
+  const fast = await quiz(allFive, 4);
   eq('five right in four seconds is the quiz ceiling', fast.score, 8);
   eq('…which is 5 + 1 + 2 and nothing else', fast.score, 5 * perCorrect + sweep + 2);
   eq('and a clean sweep is what `won` now names', fast.won, true);
 
-  eq('exactly ten seconds is still the fast band', quiz(allFive, 10).score, 8);
-  eq('a half-second past it drops to the middle one', quiz(allFive, 10.5).score, 7);
-  eq('exactly fifteen seconds is still the middle band', quiz(allFive, 15).score, 7);
-  eq('past fifteen the clock pays nothing at all', quiz(allFive, 16).score, 6);
+  eq('exactly ten seconds is still the fast band', (await quiz(allFive, 10)).score, 8);
+  eq('a half-second past it drops to the middle one', (await quiz(allFive, 10.5)).score, 7);
+  eq('exactly fifteen seconds is still the middle band', (await quiz(allFive, 15)).score, 7);
+  eq('past fifteen the clock pays nothing at all', (await quiz(allFive, 16)).score, 6);
 
   /*
    * **The speed bonus is a clean-sweep bonus.** Five wrong answers hammered out
    * in a second is the fastest possible round, and paying it would make not
    * reading the question the winning strategy in a quiz.
    */
-  const rushed = quiz([false, false, false, false, false], 1);
+  const rushed = await quiz([false, false, false, false, false], 1);
   eq('five wrong answers in one second pay nothing', rushed.score, 0);
   eq('…and the fastest possible round is not a win', rushed.won, false);
 
-  const four = quiz([true, true, true, true, false], 4);
+  const four = await quiz([true, true, true, true, false], 4);
   eq('four right pays four, with no sweep bonus', four.score, 4 * perCorrect);
   eq('…and no speed bonus either, however fast it was', four.score, 4);
   eq('four out of five is not a clean sweep', four.won, false);
@@ -1184,7 +1281,7 @@ function scoringRules(): void {
    * five are asked, the round banks what it earned, and `won: false` here means
    * "not a clean sweep" rather than "forfeited".
    */
-  const wobbly = quiz([false, false, false, false, true], 4);
+  const wobbly = await quiz([false, false, false, false, true], 4);
   check('the fifth question is still asked after four mistakes', accepted[4]);
   eq('…all five were recorded', accepted.filter(Boolean).length, 5);
   eq('…the one right answer still banks', wobbly.score, 1 * perCorrect);
@@ -1200,52 +1297,52 @@ function scoringRules(): void {
    * `domain/games.ts` distinguishes them and these three checks are what says
    * so: the same round pays the same, and each one draws from its own bank.
    */
-  const drawnFrom = (gameType: string) =>
-    w.db.get<{ own: number; total: number }>(
+  const drawnFrom = async (gameType: string) =>
+    await w.db.get<{ own: number; total: number }>(
       `SELECT SUM(q.bank = $b) AS own, COUNT(*) AS total
          FROM game_recent_items r JOIN quiz_items q ON q.id = r.item_key
         WHERE r.user_id = $u AND r.game_type = $b`,
       { u: w.customerId, b: gameType },
     );
-  const uzbekistan = quiz(allFive, 4, 'uzbekistan');
-  const poland = quiz(allFive, 4, 'poland');
+  const uzbekistan = await quiz(allFive, 4, 'uzbekistan');
+  const poland = await quiz(allFive, 4, 'poland');
   eq('the Uzbekistan quiz pays exactly what the Poland one does', uzbekistan.score, poland.score);
   eq('…and both are the quiz ceiling, on the same rules as the other two', uzbekistan.score, 8);
   eq(
     'the Uzbekistan round is served out of the Uzbekistan bank',
-    drawnFrom('uzbekistan'),
+    await drawnFrom('uzbekistan'),
     { own: CONFIG.games.quizQuestions, total: CONFIG.games.quizQuestions },
   );
   eq(
     '…and the Poland one out of Poland’s, rather than the two sharing a pool',
-    drawnFrom('poland'),
+    await drawnFrom('poland'),
     { own: CONFIG.games.quizQuestions, total: CONFIG.games.quizQuestions },
   );
 
   /* ── memory match ── */
 
   /** Play a whole board perfectly, finishing `seconds` after the first move. */
-  const board = (seconds: number) => {
+  const board = async (seconds: number) => {
     const at = nextAt();
     const done = plusSeconds(at, seconds);
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'memory_match',
       at,
     });
-    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
     /* Every symbol is in the deck twice, so pairing each one's first position
        with its second is the whole board played without a miss. */
     const first = new Map<string, number>();
     let seq = 0;
-    deck.forEach((symbol, index) => {
+    for (const [index, symbol] of deck.entries()) {
       const opener = first.get(symbol);
       if (opener === undefined) {
         first.set(symbol, index);
-        return;
+        continue;
       }
       seq += 1;
-      games.submitEvent(w.db, {
+      await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
         seq,
@@ -1253,8 +1350,8 @@ function scoringRules(): void {
         payload: { a: opener, b: index },
         at: seq === 1 ? at : done,
       });
-    });
-    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
+    };
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
   };
 
   /*
@@ -1266,28 +1363,28 @@ function scoringRules(): void {
    * tell and nothing read it — so a client could bank the top band from two
    * events a millisecond apart, forever, bounded by energy alone.
    */
-  const partialBoard = (seconds: number, howMany: number) => {
+  const partialBoard = async (seconds: number, howMany: number) => {
     const at = nextAt();
     const done = plusSeconds(at, seconds);
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'memory_match',
       at,
     });
-    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
     const first = new Map<string, number>();
     let seq = 0;
     let played = 0;
-    deck.forEach((symbol, index) => {
+    for (const [index, symbol] of deck.entries()) {
       const opener = first.get(symbol);
       if (opener === undefined) {
         first.set(symbol, index);
-        return;
+        continue;
       }
-      if (played >= howMany) return;
+      if (played >= howMany) continue;
       played += 1;
       seq += 1;
-      games.submitEvent(w.db, {
+      await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
         seq,
@@ -1295,30 +1392,30 @@ function scoringRules(): void {
         payload: { a: opener, b: index },
         at: seq === 1 ? at : done,
       });
-    });
-    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
+    };
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
   };
 
   /* The hole this closed: fast and empty used to pay what fast and finished
      does. It is the check that fails without the change. */
-  const empty = partialBoard(1, 0);
+  const empty = await partialBoard(1, 0);
   eq('a round that found nothing pays nothing', empty.score, 0);
   eq('…however fast it was', empty.correct, 0);
 
-  const half = partialBoard(10, 3);
+  const half = await partialBoard(10, 3);
   eq('half a board at the top band pays half of it', half.score, 4);
   eq('…and says how many it found', half.correct, 3);
 
   /* Rounded rather than floored, so a nearly-finished board does not lose its
      last point to arithmetic: five of six at eight is 6.67. */
-  eq('five of six at the top band rounds up', partialBoard(10, 5).score, 7);
+  eq('five of six at the top band rounds up', (await partialBoard(10, 5)).score, 7);
 
-  eq('a board in ten seconds takes the top band', board(10).score, 8);
-  eq('exactly eighteen seconds still does', board(18).score, 8);
-  eq('a half-second past it is the middle band', board(18.5).score, 6);
-  eq('exactly twenty-three seconds is still the middle band', board(23).score, 6);
-  eq('past it the floor band still pays', board(24).score, 3);
-  const slow = board(300);
+  eq('a board in ten seconds takes the top band', (await board(10)).score, 8);
+  eq('exactly eighteen seconds still does', (await board(18)).score, 8);
+  eq('a half-second past it is the middle band', (await board(18.5)).score, 6);
+  eq('exactly twenty-three seconds is still the middle band', (await board(23)).score, 6);
+  eq('past it the floor band still pays', (await board(24)).score, 3);
+  const slow = await board(300);
   eq('…and five minutes pays the same floor', slow.score, 3);
   eq('a finished deck is a win however slow it was', slow.won, true);
 
@@ -1333,19 +1430,19 @@ function scoringRules(): void {
    * the secret protects is the cards still face down, and a reply that named a
    * third position would be handing the board over one move at a time.
    */
-  const revealRound = () => {
+  const revealRound = async () => {
     const at = nextAt();
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'memory_match',
       at,
     });
-    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
     /* A guaranteed **mismatch**: the first position, and the first position
        after it holding a different symbol. That is the case the old reply was
        wrong about, so it is the case worth pinning. */
     const b = deck.findIndex((symbol, index) => index > 0 && symbol !== deck[0]);
-    const move = games.submitEvent(w.db, {
+    const move = await games.submitEvent(w.db, {
       sessionId: opened.sessionId,
       userId: w.customerId,
       seq: 0,
@@ -1356,7 +1453,7 @@ function scoringRules(): void {
     return { at, opened, deck, b, move };
   };
 
-  const reveal = revealRound();
+  const reveal = await revealRound();
   eq('a mismatched pair is judged a mismatch', reveal.move.correct, false);
   eq('…and it reveals both cards, not one', reveal.move.revealed, [
     { index: 0, face: reveal.deck[0] },
@@ -1381,7 +1478,7 @@ function scoringRules(): void {
      this client what those two cards were, so the duplicate carries them. A
      reply of `accepted: false` and nothing else leaves two permanent blanks on
      the board. */
-  const replayed = games.submitEvent(w.db, {
+  const replayed = await games.submitEvent(w.db, {
     sessionId: reveal.opened.sessionId,
     userId: w.customerId,
     seq: 0,
@@ -1402,18 +1499,18 @@ function scoringRules(): void {
    * either way — what would be wrong is the count printed beside the time,
    * seven pairs found on a six-pair board.
    */
-  const doubled = (() => {
+  const doubled = await (async () => {
     const at = nextAt();
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'memory_match',
       at,
     });
-    const deck = secretOf<{ deck: string[] }>(opened.sessionId).deck;
+    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
     const first = new Map<string, number>();
     let seq = 0;
-    const send = (a: number, b: number) => {
-      games.submitEvent(w.db, {
+    const send = async (a: number, b: number) => {
+      await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
         seq: (seq += 1),
@@ -1422,19 +1519,19 @@ function scoringRules(): void {
         at,
       });
     };
-    deck.forEach((symbol, index) => {
+    for (const [index, symbol] of deck.entries()) {
       const opener = first.get(symbol);
       if (opener === undefined) {
         first.set(symbol, index);
-        return;
+        continue;
       }
-      send(opener, index);
+      await send(opener, index);
       /* The same two cards again, the other way round — which is what a client
          re-turning them looks like, and is one pair of cards however it is
          written. */
-      send(index, opener);
-    });
-    return games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at });
+      await send(index, opener);
+    };
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at });
   })();
   eq(
     'a pair submitted twice counts once',
@@ -1454,24 +1551,24 @@ function scoringRules(): void {
    * not an answer, it shares one sequence with the pairs, and it refuses a
    * position that is off the board or already claimed.
    */
-  const openDeck = () => {
+  const openDeck = async () => {
     const at = nextAt();
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'memory_match',
       at,
     });
-    return { at, id: opened.sessionId, deck: secretOf<{ deck: string[] }>(opened.sessionId).deck };
+    return { at, id: opened.sessionId, deck: (await secretOf<{ deck: string[] }>(opened.sessionId)).deck };
   };
-  const move = (id: string, seq: number, kind: string, payload: Record<string, unknown>, at: Iso) =>
-    games.submitEvent(w.db, { sessionId: id, userId: w.customerId, seq, kind, payload, at });
-  const eventsIn = (id: string) =>
-    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events WHERE session_id = $s`, {
+  const move = async (id: string, seq: number, kind: string, payload: Record<string, unknown>, at: Iso) =>
+    await games.submitEvent(w.db, { sessionId: id, userId: w.customerId, seq, kind, payload, at });
+  const eventsIn = async (id: string) =>
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events WHERE session_id = $s`, {
       s: id,
-    })?.n ?? 0;
+    }))?.n ?? 0;
 
-  const single = openDeck();
-  const turned = move(single.id, 0, 'peek', { index: 3 }, single.at);
+  const single = await openDeck();
+  const turned = await move(single.id, 0, 'peek', { index: 3 }, single.at);
   eq('a peek turns exactly the card it named', turned.revealed, [
     { index: 3, face: single.deck[3] },
   ]);
@@ -1482,16 +1579,16 @@ function scoringRules(): void {
 
   /* The same argument the pair path makes: a retry after a dropped response is
      the only thing that will ever tell this client what that card was. */
-  const replayedPeek = move(single.id, 0, 'peek', { index: 3 }, single.at);
+  const replayedPeek = await move(single.id, 0, 'peek', { index: 3 }, single.at);
   check('a replayed peek is a duplicate rather than a second turn', !replayedPeek.accepted);
   eq('…and it still names the face', replayedPeek.revealed, turned.revealed);
 
   /* One sequence for both kinds, which is what makes `seq` a position in the
      round rather than a per-kind counter — a client that numbered its peeks and
      its pairs separately would collide on the second move of every board. */
-  const collided = move(single.id, 0, 'pair', { a: 0, b: 1 }, single.at);
+  const collided = await move(single.id, 0, 'pair', { a: 0, b: 1 }, single.at);
   check('a pair cannot reuse a peek’s number: the two share one sequence', !collided.accepted);
-  check('…while the next number along is free', move(single.id, 1, 'pair', { a: 0, b: 1 }, single.at).accepted);
+  check('…while the next number along is free', (await move(single.id, 1, 'pair', { a: 0, b: 1 }, single.at)).accepted);
 
   /*
    * **Refused, not clamped — and a refused peek is one that never happened.**
@@ -1501,20 +1598,20 @@ function scoringRules(): void {
    * written, so a client asking for a card that is not there has not spent a
    * number and has not put a row in the round's own clock.
    */
-  const stray = openDeck();
-  throws('a peek past the end of the deck is refused', 'bad_request', () =>
-    move(stray.id, 0, 'peek', { index: stray.deck.length }, stray.at),
+  const stray = await openDeck();
+  await throws('a peek past the end of the deck is refused', 'bad_request', async () =>
+    await move(stray.id, 0, 'peek', { index: stray.deck.length }, stray.at),
   );
-  throws('…as is a negative position', 'bad_request', () =>
-    move(stray.id, 1, 'peek', { index: -1 }, stray.at),
+  await throws('…as is a negative position', 'bad_request', async () =>
+    await move(stray.id, 1, 'peek', { index: -1 }, stray.at),
   );
-  throws('…and a fractional one, rather than being rounded into range', 'bad_request', () =>
-    move(stray.id, 2, 'peek', { index: 1.5 }, stray.at),
+  await throws('…and a fractional one, rather than being rounded into range', 'bad_request', async () =>
+    await move(stray.id, 2, 'peek', { index: 1.5 }, stray.at),
   );
-  throws('…and a peek naming no card at all', 'bad_request', () =>
-    move(stray.id, 3, 'peek', {}, stray.at),
+  await throws('…and a peek naming no card at all', 'bad_request', async () =>
+    await move(stray.id, 3, 'peek', {}, stray.at),
   );
-  eq('…and none of the four left a row behind', eventsIn(stray.id), 0);
+  eq('…and none of the four left a row behind', await eventsIn(stray.id), 0);
 
   /*
    * A matched card is not face down, so turning it is not a move that exists.
@@ -1522,23 +1619,23 @@ function scoringRules(): void {
    * client whose response was lost puts the cards back down and turns them
    * again, which is the case the distinct-pair counting above exists for.
    */
-  const locked = openDeck();
+  const locked = await openDeck();
   const twin = locked.deck.findIndex((face, index) => index > 0 && face === locked.deck[0]);
-  check('a matched pair is judged a match', move(locked.id, 0, 'pair', { a: 0, b: twin }, locked.at).correct === true);
-  throws('a peek at a card already matched is refused', 'bad_request', () =>
-    move(locked.id, 1, 'peek', { index: 0 }, locked.at),
+  check('a matched pair is judged a match', (await move(locked.id, 0, 'pair', { a: 0, b: twin }, locked.at)).correct === true);
+  await throws('a peek at a card already matched is refused', 'bad_request', async () =>
+    await move(locked.id, 1, 'peek', { index: 0 }, locked.at),
   );
-  throws('…from either side of the pair', 'bad_request', () =>
-    move(locked.id, 2, 'peek', { index: twin }, locked.at),
+  await throws('…from either side of the pair', 'bad_request', async () =>
+    await move(locked.id, 2, 'peek', { index: twin }, locked.at),
   );
   const free = locked.deck.findIndex((_, index) => index !== 0 && index !== twin);
   check(
     '…while a card still face down turns as it should',
-    move(locked.id, 3, 'peek', { index: free }, locked.at).accepted,
+    (await move(locked.id, 3, 'peek', { index: free }, locked.at)).accepted,
   );
   check(
     '…and the pair move still takes them, so a lost response is still retryable',
-    move(locked.id, 4, 'pair', { a: 0, b: twin }, locked.at).accepted,
+    (await move(locked.id, 4, 'pair', { a: 0, b: twin }, locked.at)).accepted,
   );
 
   /*
@@ -1553,30 +1650,32 @@ function scoringRules(): void {
    * only ever cost: 8 with none, 8 with twelve that took no time, 6 with twelve
    * that took nineteen seconds. There is no arrangement of them that pays more.
    */
-  const clearedBoard = (gap: number, peeking: boolean) => {
-    const round = openDeck();
+  const clearedBoard = async (gap: number, peeking: boolean) => {
+    const round = await openDeck();
     const paired = plusSeconds(round.at, gap);
     let seq = 0;
-    if (peeking) round.deck.forEach((_, index) => move(round.id, seq++, 'peek', { index }, round.at));
+    if (peeking) for (const [index, _] of round.deck.entries()) {
+  await move(round.id, seq++, 'peek', { index }, round.at);
+};
     const first = new Map<string, number>();
-    round.deck.forEach((symbol, index) => {
+    for (const [index, symbol] of round.deck.entries()) {
       const opener = first.get(symbol);
       if (opener === undefined) {
         first.set(symbol, index);
-        return;
+        continue;
       }
-      move(round.id, seq++, 'pair', { a: opener, b: index }, paired);
-    });
-    return games.finish(w.db, { sessionId: round.id, userId: w.customerId, at: paired });
+      await move(round.id, seq++, 'pair', { a: opener, b: index }, paired);
+    };
+    return await games.finish(w.db, { sessionId: round.id, userId: w.customerId, at: paired });
   };
 
-  const bare = clearedBoard(19, false);
+  const bare = await clearedBoard(19, false);
   eq('six pairs at one instant are a top-band board', bare.score, 8);
-  const quick = clearedBoard(0, true);
+  const quick = await clearedBoard(0, true);
   eq('…and peeking all twelve cards first does not change that, if it took no time', quick.score, 8);
   eq('a peek is not a pair', quick.correct, CONFIG.games.memoryPairs);
   eq('…and twelve of them do not enlarge a six-pair board', quick.answered, CONFIG.games.memoryPairs);
-  const dawdled = clearedBoard(19, true);
+  const dawdled = await clearedBoard(19, true);
   eq('…while nineteen seconds spent peeking costs the round a band', dawdled.score, 6);
   check('so a peek can only ever cost, which is what a counter would be for', dawdled.score < bare.score);
 
@@ -1593,20 +1692,20 @@ function scoringRules(): void {
    * a real round; `config.ts` says why, and says it at the point of use.)
    */
   const RAMP = [1, 1, 2, 2, 3];
-  RAMP.forEach((tier, index) => {
-    w.db.run(
+  for (const [index, tier] of RAMP.entries()) {
+    await w.db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, 'zz', $w, $t, 'planted')
          ON CONFLICT (language, word) DO UPDATE SET tier = excluded.tier`,
       { i: `wrd_zz_${index}`, w: `PLANTED${index}`, t: tier },
     );
-  });
+  };
 
   /**
    * Play the planted round. `plan` is handed the tiers in the order they were
    * drawn and says which words to reveal a letter on, which to get wrong once
    * before solving, and which to leave unsolved.
    */
-  const wordRound = (
+  const wordRound = async (
     plan: (tiers: number[]) => { hint?: number[]; fumble?: number[]; skip?: number[] },
   ) => {
     const at = nextAt();
@@ -1614,21 +1713,21 @@ function scoringRules(): void {
        round would find nothing left to ask. Clearing the window is what lets
        four rounds run against one known ramp — the no-repeat rule itself is
        `buildQuiz`'s and is not what this block is about. */
-    w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u AND game_type = 'word_builder'`, {
+    await w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u AND game_type = 'word_builder'`, {
       u: w.customerId,
     });
-    const opened = games.startSession(w.db, {
+    const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'word_builder',
       language: 'zz',
       at,
     });
-    const secret = secretOf<{ words: string[]; tiers: number[] }>(opened.sessionId);
+    const secret = await secretOf<{ words: string[]; tiers: number[] }>(opened.sessionId);
     const wanted = plan(secret.tiers);
     let seq = 0;
-    const send = (kind: string, payload: Record<string, unknown>) => {
+    const send = async (kind: string, payload: Record<string, unknown>) => {
       seq += 1;
-      games.submitEvent(w.db, {
+      await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
         seq,
@@ -1637,19 +1736,19 @@ function scoringRules(): void {
         at,
       });
     };
-    secret.words.forEach((word, index) => {
-      if (wanted.hint?.includes(index)) send('hint', { index, position: 0 });
-      if (wanted.fumble?.includes(index)) send('guess', { index, guess: 'NOTTHEWORD' });
-      if (wanted.skip?.includes(index)) return;
-      send('guess', { index, guess: word });
-    });
+    for (const [index, word] of secret.words.entries()) {
+      if (wanted.hint?.includes(index)) await send('hint', { index, position: 0 });
+      if (wanted.fumble?.includes(index)) await send('guess', { index, guess: 'NOTTHEWORD' });
+      if (wanted.skip?.includes(index)) continue;
+      await send('guess', { index, guess: word });
+    };
     return {
-      result: games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at }),
+      result: await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at }),
       tiers: secret.tiers,
     };
   };
 
-  const swept = wordRound(() => ({}));
+  const swept = await wordRound(() => ({}));
   eq('the planted round is the ramp', [...swept.tiers].sort().join(''), '11223');
   eq('a word is worth its tier: 1+1+2+2+3, plus one for the sweep', swept.result.score, 10);
 
@@ -1661,9 +1760,9 @@ function scoringRules(): void {
    * ramp pays 9 clean, 8.5 with the easiest word halved, and 9 under the old
    * rule, which never charged for a hint on a tier-1 word at all.
    */
-  const easyHint = wordRound((tiers) => ({ hint: [tiers.indexOf(1)] }));
+  const easyHint = await wordRound((tiers) => ({ hint: [tiers.indexOf(1)] }));
   eq('a hint on the easiest word costs half of it', easyHint.result.score, 8);
-  const hardHint = wordRound((tiers) => ({ hint: [tiers.indexOf(3)] }));
+  const hardHint = await wordRound((tiers) => ({ hint: [tiers.indexOf(3)] }));
   eq('a hint on the hardest word costs half of that', hardHint.result.score, 7);
   check(
     'either way the sweep bonus is refused, because a hint is not a clean round',
@@ -1675,7 +1774,7 @@ function scoringRules(): void {
    * the per-word rate is what somebody plays for — and costs the sweep
    * everything, which is what the bonus is for.
    */
-  const fumbled = wordRound((tiers) => ({ fumble: [tiers.indexOf(2)] }));
+  const fumbled = await wordRound((tiers) => ({ fumble: [tiers.indexOf(2)] }));
   eq('a wrong attempt still pays the word its tier', fumbled.result.score, 9);
   eq('…and still takes the sweep bonus away', fumbled.result.score, swept.result.score - 1);
 
@@ -1692,23 +1791,23 @@ function scoringRules(): void {
    * been spent, so the allowance is read before and after and must not move.
    */
   {
-    const w2 = world();
+    const w2 = await world();
     const at2 = now();
-    const opened = games.startSession(w2.db, {
+    const opened = await games.startSession(w2.db, {
       userId: w2.customerId,
       gameType: 'word_builder',
       language: 'en',
       at: at2,
     });
-    const spent = () =>
-      w2.db.get<{ n: number }>(
+    const spent = async () =>
+      (await w2.db.get<{ n: number }>(
         `SELECT COUNT(*) AS n FROM game_events WHERE kind = 'hint' AND session_id = $s`,
         { s: opened.sessionId },
-      )?.n ?? 0;
+      ))?.n ?? 0;
 
-    const before = spent();
-    throws('a hint past the end of the word is refused', 'bad_request', () =>
-      games.submitEvent(w2.db, {
+    const before = await spent();
+    await throws('a hint past the end of the word is refused', 'bad_request', async () =>
+      await games.submitEvent(w2.db, {
         sessionId: opened.sessionId,
         userId: w2.customerId,
         seq: 900,
@@ -1717,8 +1816,8 @@ function scoringRules(): void {
         at: at2,
       }),
     );
-    throws('…as is a negative one', 'bad_request', () =>
-      games.submitEvent(w2.db, {
+    await throws('…as is a negative one', 'bad_request', async () =>
+      await games.submitEvent(w2.db, {
         sessionId: opened.sessionId,
         userId: w2.customerId,
         seq: 901,
@@ -1727,10 +1826,10 @@ function scoringRules(): void {
         at: at2,
       }),
     );
-    eq('…and neither spent one of the day’s hints', spent(), before);
+    eq('…and neither spent one of the day’s hints', await spent(), before);
 
     /* And the legitimate case still works, so the guard is not simply off. */
-    const ok = games.submitEvent(w2.db, {
+    const ok = await games.submitEvent(w2.db, {
       sessionId: opened.sessionId,
       userId: w2.customerId,
       seq: 902,
@@ -1739,15 +1838,15 @@ function scoringRules(): void {
       at: at2,
     });
     eq('a hint inside the word still answers one letter', String(ok.answer).length, 1);
-    w2.db.close();
+    await w2.db.close();
   }
 
   /* ── the flight ── */
 
-  const flight = (cleared: number) => {
+  const flight = async (cleared: number) => {
     const at = nextAt();
-    const opened = games.startSession(w.db, { userId: w.customerId, gameType: 'flight', at });
-    return games.finish(w.db, {
+    const opened = await games.startSession(w.db, { userId: w.customerId, gameType: 'flight', at });
+    return await games.finish(w.db, {
       sessionId: opened.sessionId,
       userId: w.customerId,
       clientReport: { cleared },
@@ -1755,14 +1854,14 @@ function scoringRules(): void {
     });
   };
 
-  eq('four gaps is two points at half a point each', flight(4).score, 2);
-  eq('…and short of the five-gap target, so not a win', flight(4).won, false);
-  const banked = flight(5);
+  eq('four gaps is two points at half a point each', (await flight(4)).score, 2);
+  eq('…and short of the five-gap target, so not a win', (await flight(4)).won, false);
+  const banked = await flight(5);
   eq('five gaps banks the round', banked.won, true);
   eq('…and pays two and a half, which floors to two', banked.score, 2);
-  eq('seven gaps is three and a half, which floors to three rather than four', flight(7).score, 3);
-  eq('forty gaps reach the ceiling', flight(40).score, CONFIG.games.flightMaxPoints);
-  eq('and a thousand bank the same twenty', flight(1000).score, CONFIG.games.flightMaxPoints);
+  eq('seven gaps is three and a half, which floors to three rather than four', (await flight(7)).score, 3);
+  eq('forty gaps reach the ceiling', (await flight(40)).score, CONFIG.games.flightMaxPoints);
+  eq('and a thousand bank the same twenty', (await flight(1000)).score, CONFIG.games.flightMaxPoints);
 
   /*
    * **The floor is at the end of the round, after the plan multiplier — and it
@@ -1774,23 +1873,23 @@ function scoringRules(): void {
    * above cannot tell them apart and this one can — a half thrown away per item
    * is invisible until something multiplies what is left.
    */
-  entitlements.startSubscription(w.db, {
+  await entitlements.startSubscription(w.db, {
     subject: { userId: w.customerId },
     planCode: 'pro',
     source: 'stripe',
     at: plusMinutes(base, (played + 1) * 180),
   });
-  eq('half points survive to the multiplier: 3.5 × 1.25 banks 4, not 3', flight(7).score, 4);
+  eq('half points survive to the multiplier: 3.5 × 1.25 banks 4, not 3', (await flight(7)).score, 4);
 
-  w.db.close();
+  await w.db.close();
 }
 
-function dealRules(): void {
+async function dealRules(): Promise<void> {
   describe('§6 hot deals — targeting, funnel, caps');
-  const w = world();
+  const w = await world();
   const at = '2026-08-11T09:00:00.000Z'; // a Tuesday, 11:00 in Kraków
 
-  const deal = partners.createDeal(w.db, {
+  const deal = await partners.createDeal(w.db, {
     actorId: w.ownerId,
     draft: {
       venueId: w.venueId,
@@ -1803,141 +1902,141 @@ function dealRules(): void {
     },
     at,
   });
-  partners.publishDeal(w.db, { dealId: deal.id, actorId: w.ownerId, at });
+  await partners.publishDeal(w.db, { dealId: deal.id, actorId: w.ownerId, at });
 
   const viewer = { userId: w.customerId, language: 'en', at };
-  check('inside its window it is claimable', deals.claimableNow(w.db, deals.getDeal(w.db, deal.id), viewer).ok);
+  check('inside its window it is claimable', (await deals.claimableNow(w.db, await deals.getDeal(w.db, deal.id), viewer)).ok);
 
-  const wrongTime = deals.claimableNow(w.db, deals.getDeal(w.db, deal.id), {
+  const wrongTime = await deals.claimableNow(w.db, await deals.getDeal(w.db, deal.id), {
     ...viewer,
     at: '2026-08-11T14:00:00.000Z',
   });
   check('outside its hours it is not', !wrongTime.ok && wrongTime.reason === 'wrong_time');
 
-  const wrongDay = deals.claimableNow(w.db, deals.getDeal(w.db, deal.id), {
+  const wrongDay = await deals.claimableNow(w.db, await deals.getDeal(w.db, deal.id), {
     ...viewer,
     at: '2026-08-12T09:00:00.000Z',
   });
   check('on the wrong day it is not', !wrongDay.ok && wrongDay.reason === 'wrong_day');
 
   /* A deal with no copy in the reader's language is not shown to them. */
-  const noCopy = deals.browse(w.db, { ...viewer, language: 'uz' }, {});
+  const noCopy = await deals.browse(w.db, { ...viewer, language: 'uz' }, {});
   check('…and English copy still serves a reader with no translation', noCopy.length >= 1);
 
   /* §6.3: a claim needs an *open* and a confirmed scan, not a tap on a list. */
-  const beforeOpen = scanWithDeal(w, deal.id, at);
-  eq('a scan without an open does not claim', deals.funnel(w.db, deal.id).claimed, 0);
+  const beforeOpen = await scanWithDeal(w, deal.id, at);
+  eq('a scan without an open does not claim', (await deals.funnel(w.db, deal.id)).claimed, 0);
   check('…although it is still a visit', beforeOpen.visitCounted);
 
-  deals.track(w.db, { dealId: deal.id, userId: w.customerId, kind: 'open', at });
-  scanWithDeal(w, deal.id, plusDays(at, 1));
-  eq('an opened deal plus a confirmed scan claims', deals.funnel(w.db, deal.id).claimed, 1);
+  await deals.track(w.db, { dealId: deal.id, userId: w.customerId, kind: 'open', at });
+  await scanWithDeal(w, deal.id, plusDays(at, 1));
+  eq('an opened deal plus a confirmed scan claims', (await deals.funnel(w.db, deal.id)).claimed, 1);
 
   /* The cap stops the next one. */
-  scanWithDeal(w, deal.id, plusDays(at, 2));
-  eq('the per-deal cap holds', deals.funnel(w.db, deal.id).claimed, 1);
+  await scanWithDeal(w, deal.id, plusDays(at, 2));
+  eq('the per-deal cap holds', (await deals.funnel(w.db, deal.id)).claimed, 1);
 
   /* B3: publishing needs copy in at least one language. On its own venue,
      because the starter plan allows one live deal and the capacity gate would
      otherwise answer first — which is a true answer to a different question. */
-  const w3 = world();
-  const empty = partners.createDeal(w3.db, {
+  const w3 = await world();
+  const empty = await partners.createDeal(w3.db, {
     actorId: w3.ownerId,
     draft: { venueId: w3.venueId, copy: {} },
     at,
   });
-  throws('a deal with no copy cannot be published', 'validation_failed', () =>
-    partners.publishDeal(w3.db, { dealId: empty.id, actorId: w3.ownerId, at }),
+  await throws('a deal with no copy cannot be published', 'validation_failed', async () =>
+    await partners.publishDeal(w3.db, { dealId: empty.id, actorId: w3.ownerId, at }),
   );
-  w3.db.close();
+  await w3.db.close();
 
   eq(
     'translation completeness is tracked',
-    deals.completeness(w.db, deal.id).filled,
+    (await deals.completeness(w.db, deal.id)).filled,
     ['en'],
   );
 
-  w.db.close();
+  await w.db.close();
 }
 
-function scanWithDeal(w: World, dealId: string, at: string): gate.Receipt {
-  const qr = gate.mintQr(w.db, w.venueId, SECRET, at);
-  const txn = gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
+async function scanWithDeal(w: World, dealId: string, at: string): Promise<gate.Receipt> {
+  const qr = await gate.mintQr(w.db, w.venueId, SECRET, at);
+  const txn = await gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, {
     userId: w.customerId,
     dealId,
     at,
   });
-  gate.submitAmount(w.db, { transactionId: txn.id, amountMinor: 5000, actorId: w.ownerId, at });
-  return gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
+  await gate.submitAmount(w.db, { transactionId: txn.id, amountMinor: 5000, actorId: w.ownerId, at });
+  return await gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
 }
 
-function consentRules(): void {
+async function consentRules(): Promise<void> {
   describe('§1.4 / B9a consent-gated identified profiles');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  scan(w, 6000, at);
+  await scan(w, 6000, at);
 
-  const table = profiles.customerTable(w.db, w.venueId, { at });
+  const table = await profiles.customerTable(w.db, w.venueId, { at });
   eq('the customer counts toward the total', table.totalCustomers, 1);
   eq('but is not listed without a grant', table.rows.length, 0);
   eq('and the shared count is honest', table.sharedCustomers, 0);
 
-  throws('their detail is not reachable either', 'not_found', () =>
-    profiles.customerDetail(w.db, w.venueId, w.customerId, at),
+  await throws('their detail is not reachable either', 'not_found', async () =>
+    await profiles.customerDetail(w.db, w.venueId, w.customerId, at),
   );
 
-  consent.grantSharing(w.db, { userId: w.customerId, venueId: w.venueId, at });
-  const granted = profiles.customerTable(w.db, w.venueId, { at });
+  await consent.grantSharing(w.db, { userId: w.customerId, venueId: w.venueId, at });
+  const granted = await profiles.customerTable(w.db, w.venueId, { at });
   eq('with a grant they appear', granted.rows.length, 1);
   eq('and the gap is reportable', [granted.totalCustomers, granted.sharedCustomers], [1, 1]);
 
-  const detail = profiles.customerDetail(w.db, w.venueId, w.customerId, at);
+  const detail = await profiles.customerDetail(w.db, w.venueId, w.customerId, at);
   eq('the detail is scoped to this venue', detail.lifetimeValueMinor, 6000);
   check(
     'and never carries the global points balance',
     !Object.keys(detail).some((key) => /points|balance/i.test(key)),
   );
 
-  consent.revokeSharing(w.db, w.customerId, w.venueId, at);
-  eq('revoking drops them immediately', profiles.customerTable(w.db, w.venueId, { at }).rows.length, 0);
+  await consent.revokeSharing(w.db, w.customerId, w.venueId, at);
+  eq('revoking drops them immediately', (await profiles.customerTable(w.db, w.venueId, { at })).rows.length, 0);
   check(
     'and the revocation is recorded rather than deleted',
-    (w.db.get<{ n: number }>(
+    ((await w.db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM data_sharing_consents WHERE revoked_at IS NOT NULL`,
-    )?.n ?? 0) === 1,
+    ))?.n ?? 0) === 1,
   );
 
   /* §1.3 GDPR. */
-  const exported = consent.exportUser(w.db, w.customerId) as Record<string, unknown>;
+  const exported = await consent.exportUser(w.db, w.customerId) as Record<string, unknown>;
   check('the export carries the ledger', Array.isArray(exported.points));
   check('and the consent records', Array.isArray(exported.consents));
 
-  consent.eraseUser(w.db, w.customerId, at);
-  const erased = w.db.get<{ email: string | null; status: string }>(
+  await consent.eraseUser(w.db, w.customerId, at);
+  const erased = await w.db.get<{ email: string | null; status: string }>(
     `SELECT email, status FROM users WHERE id = $u`,
     { u: w.customerId },
   );
   eq('erasure anonymises rather than deleting', [erased?.email, erased?.status], [null, 'erased']);
   check(
     'the venue’s visits survive as numbers',
-    (w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venue_visits WHERE venue_id = $v`, {
+    ((await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venue_visits WHERE venue_id = $v`, {
       v: w.venueId,
-    })?.n ?? 0) === 1,
+    }))?.n ?? 0) === 1,
   );
 
-  w.db.close();
+  await w.db.close();
 }
 
-function analyticsRules(): void {
+async function analyticsRules(): Promise<void> {
   describe('§12 / B9 analytics — counted, estimated, attributed, suppressed');
-  const w = world();
+  const w = await world();
   const at = now();
 
   /* Two customers is below the cohort floor, so findings about them are
      suppressed while the raw counts are not. */
-  scan(w, 5000, at);
-  const overview = analytics.overview(w.db, w.venueId, { at });
+  await scan(w, 5000, at);
+  const overview = await analytics.overview(w.db, w.venueId, { at });
   eq('visits are counted exactly', overview.visits.value, 1);
   eq('and labelled as counted', overview.visits.kind, 'counted');
   check('a finding over one person is suppressed', overview.newCustomers.suppressed);
@@ -1945,26 +2044,26 @@ function analyticsRules(): void {
   eq('a projection is labelled an estimate', overview.projectedSalesMinor.kind, 'estimated');
 
   /* Enough customers, and the same finding is reportable. */
-  const many = world();
+  const many = await world();
   for (let i = 0; i < CONFIG.privacy.minCohort + 2; i += 1) {
     const id = newId('usr');
-    many.db.run(
+    await many.db.run(
       `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, city,
                           status, created_at, updated_at)
        VALUES ($i, $e, $e, 'P', 'email', 'en', 'Krakow', 'active', $t, $t)`,
       { i: id, e: `p${i}@verify.test`, t: at },
     );
-    scan(many, 4000 + i * 100, at, id);
+    await scan(many, 4000 + i * 100, at, id);
   }
-  const wide = analytics.overview(many.db, many.venueId, { at });
+  const wide = await analytics.overview(many.db, many.venueId, { at });
   check('above the floor it is reported', !wide.newCustomers.suppressed);
   eq('everybody is new the first month', wide.newCustomers.value, CONFIG.privacy.minCohort + 2);
 
-  const heat = analytics.heatmap(many.db, many.venueId, { at });
+  const heat = await analytics.heatmap(many.db, many.venueId, { at });
   eq('the heatmap counts every visit', heat.total, CONFIG.privacy.minCohort + 2);
   check('and finds a quiet window inside opening hours', heat.quietest !== null);
 
-  const cost = analytics.costPerNewCustomer(many.db, many.venueId, { at });
+  const cost = await analytics.costPerNewCustomer(many.db, many.venueId, { at });
   check('cost per new customer sums all four sources', 'breakdown' in cost);
   eq(
     'the breakdown adds up to the spend',
@@ -1980,7 +2079,7 @@ function analyticsRules(): void {
    * screen everywhere else on this dashboard, and telling them apart is the
    * entire reason this report exists.
    */
-  const quiet = analytics.reach(w.db, w.venueId, { at });
+  const quiet = await analytics.reach(w.db, w.venueId, { at });
   eq('a venue nobody has seen has no impressions', quiet.impressions, 0);
   eq('and its click rate is zero, not NaN', quiet.clickRate, 0);
   check('a zero rate is a number', Number.isFinite(quiet.clickRate));
@@ -1988,24 +2087,24 @@ function analyticsRules(): void {
   /* Six impressions, two clicks — on the listing itself, which is the half a
      venue has before it has published anything at all. */
   for (let i = 0; i < 6; i += 1) {
-    trackListing(w.db, { venueId: w.venueId, kind: 'impression', source: 'list', at });
+    await trackListing(w.db, { venueId: w.venueId, kind: 'impression', source: 'list', at });
   }
-  trackListing(w.db, { venueId: w.venueId, kind: 'click', source: 'list', userId: w.customerId, at });
-  trackListing(w.db, { venueId: w.venueId, kind: 'click', source: 'map', userId: w.customerId, at });
+  await trackListing(w.db, { venueId: w.venueId, kind: 'click', source: 'list', userId: w.customerId, at });
+  await trackListing(w.db, { venueId: w.venueId, kind: 'click', source: 'map', userId: w.customerId, at });
 
   /* And a deal, so the two halves are seen to sum. */
-  const seen = partners.createDeal(w.db, {
+  const seen = await partners.createDeal(w.db, {
     actorId: w.ownerId,
     draft: { venueId: w.venueId, copy: { en: { title: 'Seen', description: 'x' } } },
     at,
   });
-  partners.publishDeal(w.db, { dealId: seen.id, actorId: w.ownerId, at });
+  await partners.publishDeal(w.db, { dealId: seen.id, actorId: w.ownerId, at });
   for (let i = 0; i < 4; i += 1) {
-    deals.track(w.db, { dealId: seen.id, kind: 'impression', source: 'home_widget', at });
+    await deals.track(w.db, { dealId: seen.id, kind: 'impression', source: 'home_widget', at });
   }
-  deals.track(w.db, { dealId: seen.id, kind: 'open', source: 'home_widget', userId: w.customerId, at });
+  await deals.track(w.db, { dealId: seen.id, kind: 'open', source: 'home_widget', userId: w.customerId, at });
 
-  const reach = analytics.reach(w.db, w.venueId, { at });
+  const reach = await analytics.reach(w.db, w.venueId, { at });
   eq('the listing and the deals sum into one impression count', reach.impressions, 10);
   eq('…and into one click count', reach.clicks, 3);
   eq('the click rate is clicks over impressions', reach.clickRate, 0.3);
@@ -2021,16 +2120,16 @@ function analyticsRules(): void {
   eq('and the deal is beside it', reach.rows.length, 2);
   check('where it was seen is reported', reach.sources.some((row) => row.source === 'list'));
 
-  w.db.close();
-  many.db.close();
+  await w.db.close();
+  await many.db.close();
 }
 
-function entitlementRules(): void {
+async function entitlementRules(): Promise<void> {
   describe('§12a / B7 entitlements');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const free = entitlements.entitlementsFor(w.db, { userId: w.customerId });
+  const free = await entitlements.entitlementsFor(w.db, { userId: w.customerId });
   eq('an account with no subscription resolves to the free plan', free.points_multiplier, '1');
   check('and the free tier can still play', entitlements.entNumber(free, 'daily_energy', 0) > 0);
 
@@ -2052,7 +2151,7 @@ function entitlementRules(): void {
    */
   const stale = ['daily_lives', 'life_regen_minutes', 'round_decay'];
   for (const key of stale) {
-    w.db.run(
+    await w.db.run(
       `INSERT INTO plan_entitlements (plan_id, key, value) VALUES ('pln_consumer_free', $k, '99')
          ON CONFLICT (plan_id, key) DO UPDATE SET value = excluded.value`,
       { k: key },
@@ -2061,42 +2160,42 @@ function entitlementRules(): void {
   check(
     'a database seeded by an older build still has the withdrawn keys',
     entitlements.entNumber(
-      entitlements.entitlementsFor(w.db, { userId: w.customerId }),
+      await entitlements.entitlementsFor(w.db, { userId: w.customerId }),
       'daily_lives',
       0,
     ) === 99,
   );
 
-  seedPlatform(w.db);
+  await seedPlatform(w.db);
   for (const key of stale) {
     eq(
       `re-seeding removes the withdrawn key ${key}`,
-      w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM plan_entitlements WHERE key = $k`, {
+      (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM plan_entitlements WHERE key = $k`, {
         k: key,
-      })?.n,
+      }))?.n,
       0,
     );
   }
   check(
     '…and leaves the key that replaced it',
     entitlements.entNumber(
-      entitlements.entitlementsFor(w.db, { userId: w.customerId }),
+      await entitlements.entitlementsFor(w.db, { userId: w.customerId }),
       'daily_energy',
       0,
     ) === CONFIG.points.dailyEnergy,
   );
 
-  entitlements.startSubscription(w.db, {
+  await entitlements.startSubscription(w.db, {
     subject: { userId: w.customerId },
     planCode: 'pro',
     source: 'stripe',
     at,
   });
-  const pro = entitlements.entitlementsFor(w.db, { userId: w.customerId });
+  const pro = await entitlements.entitlementsFor(w.db, { userId: w.customerId });
   eq('a paid plan raises the multiplier', pro.points_multiplier, '1.25');
 
   /* §12a.4: the multiplier is applied at commit and recorded on the entry. */
-  const receipt = scan(w, 5000, at);
+  const receipt = await scan(w, 5000, at);
   /*
    * **Only the lines that scale take the multiplier.** The scan itself and the
    * spend steps do; the two once-ever bonuses — a first visit to this venue and
@@ -2124,10 +2223,10 @@ function entitlementRules(): void {
       entitlements.entNumber(pro, 'new_category_points', 0));
   eq(
     'and the entry records no multiplier at all',
-    w.db.get<{ multiplier: number }>(
+    (await w.db.get<{ multiplier: number }>(
       `SELECT multiplier FROM points_ledger WHERE source_ref = $r`,
       { r: receipt.transaction.id },
-    )?.multiplier,
+    ))?.multiplier,
     /* One, not 1.25. The column still exists and a game round still uses it;
        a scan does not, and the entry says so. Asserting the *absence* here is
        the point — this is the row that would prove a subscriber had been paid
@@ -2136,42 +2235,42 @@ function entitlementRules(): void {
   );
 
   /* A lapse restricts; it never claws back. */
-  const subscription = entitlements.activeSubscription(w.db, { userId: w.customerId })!;
-  const balanceBefore = ledger.balance(w.db, w.customerId);
-  entitlements.setStatus(w.db, subscription.id, 'expired', at);
+  const subscription = (await entitlements.activeSubscription(w.db, { userId: w.customerId }))!;
+  const balanceBefore = await ledger.balance(w.db, w.customerId);
+  await entitlements.setStatus(w.db, subscription.id, 'expired', at);
   eq(
     'a lapse falls back to free',
-    entitlements.entitlementsFor(w.db, { userId: w.customerId }).points_multiplier,
+    (await entitlements.entitlementsFor(w.db, { userId: w.customerId })).points_multiplier,
     '1',
   );
-  eq('and takes nothing back', ledger.balance(w.db, w.customerId), balanceBefore);
+  eq('and takes nothing back', await ledger.balance(w.db, w.customerId), balanceBefore);
 
   /* B7: capacity gates scale. Starter allows one live deal. */
-  const first = partners.createDeal(w.db, {
+  const first = await partners.createDeal(w.db, {
     actorId: w.ownerId,
     draft: { venueId: w.venueId, copy: { en: { title: 'One', description: 'x' } } },
     at,
   });
-  partners.publishDeal(w.db, { dealId: first.id, actorId: w.ownerId, at });
-  const second = partners.createDeal(w.db, {
+  await partners.publishDeal(w.db, { dealId: first.id, actorId: w.ownerId, at });
+  const second = await partners.createDeal(w.db, {
     actorId: w.ownerId,
     draft: { venueId: w.venueId, copy: { en: { title: 'Two', description: 'x' } } },
     at,
   });
-  throws('a second live deal needs a bigger plan', 'entitlement_required', () =>
-    partners.publishDeal(w.db, { dealId: second.id, actorId: w.ownerId, at }),
+  await throws('a second live deal needs a bigger plan', 'entitlement_required', async () =>
+    await partners.publishDeal(w.db, { dealId: second.id, actorId: w.ownerId, at }),
   );
 
-  w.db.close();
+  await w.db.close();
 }
 
 async function assistantRules(): Promise<void> {
   describe('§10 / B8 the assistant');
-  const w = world();
+  const w = await world();
   const at = now();
 
   /* B8: a new partner gets an honest empty signal and data-free options. */
-  const empty = assistant.venueContext(w.db, w.venueId, at);
+  const empty = await assistant.venueContext(w.db, w.venueId, at);
   check('a venue with no data says so', empty.empty);
   check('and offers a richer set of starting points', empty.suggestions.length >= 4);
   check(
@@ -2179,12 +2278,12 @@ async function assistantRules(): Promise<void> {
     empty.suggestions.every((s) => !/\d+%/.test(s.detail)),
   );
 
-  scan(w, 5000, at);
-  const filled = assistant.venueContext(w.db, w.venueId, at);
+  await scan(w, 5000, at);
+  const filled = await assistant.venueContext(w.db, w.venueId, at);
   check('once measured it stops being empty', !filled.empty);
   check('and the facts are grounded', filled.facts.length > 0);
 
-  const draft = assistant.draftFor(w.db, {
+  const draft = await assistant.draftFor(w.db, {
     venueId: w.venueId,
     goal: 'I want people to come back more often',
     at,
@@ -2262,44 +2361,44 @@ async function assistantRules(): Promise<void> {
     grounded,
   );
 
-  w.db.close();
+  await w.db.close();
 }
 
-function socialRules(): void {
+async function socialRules(): Promise<void> {
   describe('§8 referrals and leaderboards');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const code = social.codeFor(w.db, w.ownerId);
+  const code = await social.codeFor(w.db, w.ownerId);
   check('a referral code exists', code.length > 0);
-  eq('binding to yourself is refused', social.bind(w.db, { code, newUserId: w.ownerId, at }).reason, 'self_referral');
+  eq('binding to yourself is refused', (await social.bind(w.db, { code, newUserId: w.ownerId, at })).reason, 'self_referral');
 
-  eq('binding works', social.bind(w.db, { code, newUserId: w.customerId, at }).ok, true);
-  eq('and pays nothing yet', ledger.balance(w.db, w.ownerId), 0);
+  eq('binding works', (await social.bind(w.db, { code, newUserId: w.customerId, at })).ok, true);
+  eq('and pays nothing yet', await ledger.balance(w.db, w.ownerId), 0);
 
-  scan(w, 4000, at);
+  await scan(w, 4000, at);
   /* Both sides are paid on the invitee's first *confirmed* scan and not at
      sign-up, so an invite only pays for somebody who actually turned up. The
      two halves are separate constants now: the referrer is paid for bringing
      someone who visits, the invitee for joining. */
-  eq('the first confirmed scan pays the referrer', ledger.balance(w.db, w.ownerId), CONFIG.earn.referrerFirstVisit);
+  eq('the first confirmed scan pays the referrer', await ledger.balance(w.db, w.ownerId), CONFIG.earn.referrerFirstVisit);
   eq(
     'and the bond is completed',
-    w.db.get<{ status: string }>(`SELECT status FROM referrals WHERE referred_id = $u`, {
+    (await w.db.get<{ status: string }>(`SELECT status FROM referrals WHERE referred_id = $u`, {
       u: w.customerId,
-    })?.status,
+    }))?.status,
     'completed',
   );
 
   /* §8.2: not opted in means not listed, but still ranked and still shown. */
-  ledger.earn(w.db, { userId: w.customerId, points: 40, reason: 'game_win', at });
-  const board = social.board(w.db, { userId: w.customerId, scope: 'city', city: 'Krakow', at });
+  await ledger.earn(w.db, { userId: w.customerId, points: 40, reason: 'game_win', at });
+  const board = await social.board(w.db, { userId: w.customerId, scope: 'city', city: 'Krakow', at });
   check('you see yourself', board.you !== null);
   check('…and know you are hidden', board.hidden);
   eq('nobody else sees you', board.rows.filter((row) => !row.isYou).length, 0);
 
-  social.setLeaderboardOptIn(w.db, w.customerId, true);
-  const listed = social.board(w.db, { scope: 'city', city: 'Krakow', at });
+  await social.setLeaderboardOptIn(w.db, w.customerId, true);
+  const listed = await social.board(w.db, { scope: 'city', city: 'Krakow', at });
   check('opting in lists you', listed.rows.some((row) => row.userId === w.customerId));
 
   /*
@@ -2310,16 +2409,16 @@ function socialRules(): void {
    * filter is actually applied rather than ignored, because a board that
    * silently ranks everybody would pass all three of the positive cases.
    */
-  w.db.run(`UPDATE users SET country_code = 'PL' WHERE id = $u`, { u: w.customerId });
-  const byCountry = social.board(w.db, { scope: 'country', country: 'PL', at });
+  await w.db.run(`UPDATE users SET country_code = 'PL' WHERE id = $u`, { u: w.customerId });
+  const byCountry = await social.board(w.db, { scope: 'country', country: 'PL', at });
   check('a country board finds them', byCountry.rows.some((r) => r.userId === w.customerId));
   eq('…and says which scope answered', byCountry.scope, 'country:PL');
 
-  const global = social.board(w.db, { scope: 'global', at });
+  const global = await social.board(w.db, { scope: 'global', at });
   check('a global board finds them', global.rows.some((r) => r.userId === w.customerId));
   eq('…and names itself', global.scope, 'global');
 
-  const elsewhere = social.board(w.db, { scope: 'city', city: 'Warsaw', at });
+  const elsewhere = await social.board(w.db, { scope: 'city', city: 'Warsaw', at });
   check('another city does not', !elsewhere.rows.some((r) => r.userId === w.customerId));
 
   /*
@@ -2328,22 +2427,22 @@ function socialRules(): void {
    * question with no answer; an empty table would read as a claim about other
    * people rather than about a blank field.
    */
-  const noCity = social.board(w.db, { userId: w.customerId, scope: 'city', city: null, at });
+  const noCity = await social.board(w.db, { userId: w.customerId, scope: 'city', city: null, at });
   eq('a city board with no city falls back', noCity.scope, 'global');
   check('…and still ranks you', noCity.rows.some((r) => r.userId === w.customerId));
-  const noCountry = social.board(w.db, { scope: 'country', country: null, at });
+  const noCountry = await social.board(w.db, { scope: 'country', country: null, at });
   eq('…and so does a country board', noCountry.scope, 'global');
 
-  w.db.close();
+  await w.db.close();
 }
 
 async function trafficRules(): Promise<void> {
   describe('website traffic and the sign-in throttle');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const beacon = (over: Partial<Parameters<typeof traffic.record>[1]> = {}, when = at) =>
-    traffic.record(
+  const beacon = async (over: Partial<Parameters<typeof traffic.record>[1]> = {}, when = at) =>
+    await traffic.record(
       w.db,
       {
         events: [{ kind: 'view', path: '/' }],
@@ -2366,41 +2465,41 @@ async function trafficRules(): Promise<void> {
     traffic.visitorKey(SECRET, '2026-08-16', '198.51.100.4', 'agent') !== dayOne,
   );
 
-  const first = beacon();
-  const second = beacon({ events: [{ kind: 'view', path: '/#/learn' }] });
+  const first = await beacon();
+  const second = await beacon({ events: [{ kind: 'view', path: '/#/learn' }] });
   eq('two views inside the window are one visit', first, second);
 
-  const later = beacon({ events: [{ kind: 'view', path: '/' }] }, plusDays(at, 0.5));
+  const later = await beacon({ events: [{ kind: 'view', path: '/' }] }, plusDays(at, 0.5));
   check('a view after the idle window is a new visit', later !== first);
 
   check(
     'no IP address is stored anywhere',
-    w.db.all<{ visitor_day: string }>(`SELECT visitor_day FROM web_sessions`).every(
+    (await w.db.all<{ visitor_day: string }>(`SELECT visitor_day FROM web_sessions`)).every(
       (row) => !row.visitor_day.includes('203.0.113'),
     ),
   );
 
   /* A query string is where somebody's email ends up in an analytics tool. */
-  beacon({ events: [{ kind: 'view', path: '/search?email=a@b.com&q=x' }] });
+  await beacon({ events: [{ kind: 'view', path: '/search?email=a@b.com&q=x' }] });
   check(
     'a query string never lands in a path',
-    w.db.all<{ path: string }>(`SELECT path FROM web_events`).every((row) => !row.path.includes('@')),
+    (await w.db.all<{ path: string }>(`SELECT path FROM web_events`)).every((row) => !row.path.includes('@')),
   );
 
-  const own = beacon({ referrer: 'http://localhost:5173/#/b2b' }, plusDays(at, 1));
+  const own = await beacon({ referrer: 'http://localhost:5173/#/b2b' }, plusDays(at, 1));
   eq(
     'a referrer from the site itself is not a referrer',
-    w.db.get<{ referrer_host: string | null }>(`SELECT referrer_host FROM web_sessions WHERE id = $i`, {
+    (await w.db.get<{ referrer_host: string | null }>(`SELECT referrer_host FROM web_sessions WHERE id = $i`, {
       i: own,
-    })?.referrer_host,
+    }))?.referrer_host,
     null,
   );
 
   /* The feed is a five-arm union over five tables' real column names. */
-  const feed = traffic.activity(w.db, 20);
+  const feed = await traffic.activity(w.db, 20);
   check('the activity feed runs', Array.isArray(feed));
 
-  const report = traffic.overview(w.db, traffic.defaultRange(plusDays(at, 1)));
+  const report = await traffic.overview(w.db, traffic.defaultRange(plusDays(at, 1)));
   check('the console counts the visits', report.sessions >= 3);
   check('…and the pages', report.pages.length > 0);
   eq(
@@ -2410,16 +2509,16 @@ async function trafficRules(): Promise<void> {
   );
 
   /* Retention is a promise, so it is a check. */
-  traffic.record(
+  await traffic.record(
     w.db,
     { events: [{ kind: 'view', path: '/old' }], ip: '203.0.113.1', agent: 'a' },
     SECRET,
     plusDays(at, -500),
   );
-  traffic.prune(w.db, at);
+  await traffic.prune(w.db, at);
   eq(
     'events past the retention window are gone',
-    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM web_events WHERE path = '/old'`)?.n,
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM web_events WHERE path = '/old'`))?.n,
     0,
   );
 
@@ -2466,13 +2565,13 @@ async function trafficRules(): Promise<void> {
   for (let attempt = 0; attempt < CONFIG.auth.signInPerHour; attempt += 1) {
     await rejects(
       `wrong password ${attempt + 1} is refused`,
-      () => accounts.signIn(w.db, { email: 'throttle@verify.test', password: 'nope' }),
+      async () => await accounts.signIn(w.db, { email: 'throttle@verify.test', password: 'nope' }),
       'unauthenticated',
     );
   }
   await rejects(
     'and the right password is refused too, once the limit is reached',
-    () => accounts.signIn(w.db, { email: 'throttle@verify.test', password: 'correct horse' }),
+    async () => await accounts.signIn(w.db, { email: 'throttle@verify.test', password: 'correct horse' }),
     'unauthenticated',
   );
 
@@ -2487,7 +2586,7 @@ async function trafficRules(): Promise<void> {
   for (let attempt = 0; attempt < CONFIG.auth.signInPerHour - 1; attempt += 1) {
     await rejects(
       `a near miss ${attempt + 1}`,
-      () => accounts.signIn(w.db, { email: 'bystander@verify.test', password: 'nope' }),
+      async () => await accounts.signIn(w.db, { email: 'bystander@verify.test', password: 'nope' }),
       'unauthenticated',
     );
   }
@@ -2498,29 +2597,29 @@ async function trafficRules(): Promise<void> {
   check('getting it right just under the limit still works', recovered.token.length > 0);
   eq(
     'and clears the failures behind it',
-    w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM auth_attempts WHERE subject = 'bystander@verify.test'`)
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM auth_attempts WHERE subject = 'bystander@verify.test'`))
       ?.n,
     0,
   );
 
-  w.db.close();
+  await w.db.close();
 }
 
-function jobRules(): void {
+async function jobRules(): Promise<void> {
   describe('the scheduled jobs');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const frequent = jobs.runFrequent(w.db, at);
+  const frequent = await jobs.runFrequent(w.db, at);
   check('the frequent job runs clean', frequent.ran.length === 2);
 
-  const daily = jobs.runDaily(w.db, at);
+  const daily = await jobs.runDaily(w.db, at);
   eq('nothing has drifted', daily.detail.reconciledDrift, 0);
 
-  const weekly = jobs.runWeekly(w.db, at);
+  const weekly = await jobs.runWeekly(w.db, at);
   check('the weekly job snapshots', typeof weekly.detail.leaderboardRows === 'number');
 
-  w.db.close();
+  await w.db.close();
 }
 
 function routerRules(): void {
@@ -2538,7 +2637,7 @@ function routerRules(): void {
 
 async function httpSurface(): Promise<void> {
   describe('the HTTP surface, end to end');
-  const w = world();
+  const w = await world();
   const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET });
   const server = await api.listen(0, '127.0.0.1');
   const address = server.address();
@@ -2783,6 +2882,40 @@ async function httpSurface(): Promise<void> {
   eq('a partner can create a venue', mine.status, 200);
   eq('which starts as a draft', mine.body.status, 'draft');
 
+  /*
+   * **The two budget routes answer with the same shape.**
+   *
+   * They did not. `GET .../budget` decorated the pools with the ladder, the
+   * average check, the rebalance hint and the tolerance; `GET .../overview`
+   * returned the bare view under the same field name. The dashboard's overview
+   * screen reads `budget.averageCheck.minor` and `budget.tiers` off the second
+   * one, so both were `undefined`, and a `TypeError` thrown in render unmounts
+   * React's *entire* tree — every partner with a venue got a black page, and
+   * every partner without one got a correct "nothing measured yet", which is
+   * what made it look like a property of the account.
+   *
+   * Checked as a key-set rather than by naming the four, so a fifth decoration
+   * added to one route and not the other fails here instead of on a phone.
+   */
+  const budgetRoute = await call('GET', `/v1/partner/venues/${mine.body.id}/budget`, {
+    token: ownerToken,
+  });
+  eq('the budget route answers', budgetRoute.status, 200);
+  const overviewRoute = await call('GET', `/v1/partner/venues/${mine.body.id}/overview`, {
+    token: ownerToken,
+  });
+  eq('the overview route answers', overviewRoute.status, 200);
+  eq(
+    'and its budget is the same shape the budget route returns',
+    Object.keys(overviewRoute.body.budget).sort().join(','),
+    Object.keys(budgetRoute.body).sort().join(','),
+  );
+  check(
+    'including the average check every money estimate multiplies by',
+    typeof overviewRoute.body.budget.averageCheck?.minor === 'number',
+  );
+  check('and the ladder', Array.isArray(overviewRoute.body.budget.tiers));
+
   const unverified = await call('POST', `/v1/partner/venues/${mine.body.id}/deals`, {
     token: ownerToken,
     body: { copy: { en: { title: 'Hello', description: 'World' } } },
@@ -2847,7 +2980,7 @@ async function httpSurface(): Promise<void> {
    * regardless: a test that depends on production seeding is a test that breaks
    * when production stops seeding, and it broke exactly then.
    */
-  w.db.run(
+  await w.db.run(
     `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
      VALUES ('gcs_test', 'Test Brand', 'T', 465, 'EUR', 100, 250, 0, 1)
      ON CONFLICT (id) DO NOTHING`,
@@ -2918,7 +3051,9 @@ async function httpSurface(): Promise<void> {
     '/v1/admin/config',
     '/v1/admin/verifications',
     '/v1/admin/tags',
+    '/v1/admin/deals',
   ]) {
+
     const read = await call('GET', path, { token: adminToken });
     eq(`GET ${path} answers`, read.status, 200);
   }
@@ -2928,14 +3063,400 @@ async function httpSurface(): Promise<void> {
   const seenTraffic = await call('GET', '/v1/admin/traffic', { token: adminToken });
   check('the console sees the beacon', (seenTraffic.body.views as number) >= 1);
 
+  /* ═════════════════════════════════ C7, the console's write half ══
+   *
+   * Over HTTP for the reason the reads above are: these are hand-written
+   * statements against columns nothing else in this file touches, and a route
+   * that removes things is the last one anybody wants to find out is wrong.
+   *
+   * What each block is actually checking is the *rule*, not the SQL. A removal
+   * must take down everything the thing put in front of a customer; an operator
+   * must not be able to remove themselves; and the two irreversible removals
+   * must refuse a wrong answer to their confirmation rather than accepting a
+   * near miss.
+   */
+  const auditBefore =
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log`))?.n ?? 0;
+
+  /* An offer, built by hand so the fixture states exactly what the routes act
+     on: live, at the verified venue, with copy in one language. */
+  const dealId = newId('del');
+  await w.db.run(
+    `INSERT INTO hot_deals (id, venue_id, partner_name, city, country_code, status,
+                            points_required, created_at, updated_at)
+     VALUES ($i, $v, 'Verify Café', 'Krakow', 'PL', 'live', 0, $t, $t)`,
+    { i: dealId, v: w.venueId, t: now() },
+  );
+  for (const [field, value] of [
+    ['title', 'Two for one'],
+    ['description', 'All week, on filter coffee'],
+  ]) {
+    await w.db.run(
+      `INSERT INTO translations (entity, entity_id, field, language, value, updated_at)
+       VALUES ('hot_deal', $i, $f, 'en', $v, $t)`,
+      { i: dealId, f: field, v: value, t: now() },
+    );
+  }
+
+  const openDeals = await call('GET', '/v1/admin/deals', { token: adminToken });
+  eq('GET /v1/admin/deals answers', openDeals.status, 200);
+  const listed = (openDeals.body as Array<{ id: string; copy: { title: string } | null }>).find(
+    (row) => row.id === dealId,
+  );
+  check('…and carries the deal', listed !== undefined);
+  eq('…with the copy resolved rather than joined', listed?.copy?.title, 'Two for one');
+
+  const notMine = await call('PATCH', `/v1/admin/deals/${dealId}`, {
+    token,
+    body: { status: 'paused' },
+  });
+  eq('a customer cannot pause an offer', notMine.status, 403);
+
+  const paused = await call('PATCH', `/v1/admin/deals/${dealId}`, {
+    token: adminToken,
+    body: { status: 'paused' },
+  });
+  eq('an operator can', paused.status, 200);
+  eq('…and the row says so', paused.body.status, 'paused');
+
+  const resumed = await call('PATCH', `/v1/admin/deals/${dealId}`, {
+    token: adminToken,
+    body: { status: 'live' },
+  });
+  eq('…and can put it back', resumed.body.status, 'live');
+
+  /* The gate the console does not get an exemption from. Suspending the venue
+     is enough to make the offer unpublishable, because `requireVerified` reads
+     `status = 'live'` — so this checks both routes at once. */
+  const suspended = await call('PATCH', `/v1/admin/venues/${w.venueId}`, {
+    token: adminToken,
+    body: { status: 'suspended' },
+  });
+  eq('a venue can be suspended', suspended.body.status, 'suspended');
+  await call('PATCH', `/v1/admin/deals/${dealId}`, { token: adminToken, body: { status: 'paused' } });
+  const blocked = await call('PATCH', `/v1/admin/deals/${dealId}`, {
+    token: adminToken,
+    body: { status: 'live' },
+  });
+  check('…and an offer at a suspended venue cannot be resumed', blocked.status >= 400);
+  await call('PATCH', `/v1/admin/venues/${w.venueId}`, {
+    token: adminToken,
+    body: { status: 'live' },
+  });
+  eq(
+    'restoring a venue leaves its verification alone',
+    (await w.db.get<{ v: string | null }>(`SELECT verified_at AS v FROM venues WHERE id = $i`, {
+      i: w.venueId,
+    }))?.v !== null,
+    true,
+  );
+
+  /* The words on the card are editable from here, and the counts are not —
+     there is no route on that file that takes one. The edit goes in under the
+     request's language, which is the one the operator is reading the row in. */
+  const retitled = await call('PATCH', `/v1/admin/deals/${dealId}`, {
+    token: adminToken,
+    body: { title: 'Renamed by ops', description: 'Second thoughts' },
+  });
+  eq('an offer can be retitled', retitled.status, 200);
+  eq('…and answers with the new words', retitled.body.copy.title, 'Renamed by ops');
+
+  const deletedDeal = await call('DELETE', `/v1/admin/deals/${dealId}`, { token: adminToken });
+  eq('an offer can be removed', deletedDeal.status, 200);
+  eq(
+    '…and removal means the row is gone',
+    (await w.db.get(`SELECT id FROM hot_deals WHERE id = $i`, { i: dealId })) ?? null,
+    null,
+  );
+  /* And the words with it. `translations` is keyed by `(entity, entity_id)` and
+     has no foreign key to anything, so no cascade reaches it — a deal deleted
+     without this sweep leaves its title in the database under an id nothing
+     points at. */
+  eq(
+    '…including every language it was written in',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM translations WHERE entity = 'hot_deal' AND entity_id = $i`,
+      { i: dealId },
+    ))?.n,
+    0,
+  );
+  const afterDelete = await call('GET', '/v1/admin/deals', { token: adminToken });
+  check(
+    '…so it leaves the console too',
+    !(afterDelete.body as Array<{ id: string }>).some((row) => row.id === dealId),
+  );
+
+  /* The shelf. Two outcomes, and the database picks: a brand nobody has bought
+     from is deleted, one somebody holds a card from is delisted, because
+     `gift_cards.stock_id` is ON DELETE RESTRICT and that card's code has to go
+     on naming something. */
+  const freshCard = newId('gcs');
+  const heldCard = newId('gcs');
+  for (const id of [freshCard, heldCard]) {
+    await w.db.run(
+      `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, active)
+       VALUES ($i, 'Verify Store', '', 5000, 'PLN', 900, 4, 1)`,
+      { i: id },
+    );
+  }
+  await w.db.run(
+    `INSERT INTO gift_cards (id, user_id, stock_id, points_spent, code, status, issued_at, expires_at)
+     VALUES ($i, $u, $s, 900, 'GC-VERIFY-1', 'active', $t, $t)`,
+    { i: newId('gcd'), u: w.customerId, s: heldCard, t: now() },
+  );
+
+  const gone = await call('DELETE', `/v1/admin/gift-cards/${freshCard}`, { token: adminToken });
+  eq('an unbought gift card is deleted outright', gone.body.outcome, 'deleted');
+  eq(
+    '…and the row is gone',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM gift_card_stock WHERE id = $i`, {
+      i: freshCard,
+    }))?.n,
+    0,
+  );
+
+  const delisted = await call('DELETE', `/v1/admin/gift-cards/${heldCard}`, { token: adminToken });
+  eq('one somebody holds is delisted instead', delisted.body.outcome, 'delisted');
+  eq(
+    '…so the code in their wallet still names a brand',
+    (await w.db.get<{ a: number }>(`SELECT active AS a FROM gift_card_stock WHERE id = $i`, {
+      i: heldCard,
+    }))?.a,
+    0,
+  );
+  const shelf = await call('GET', '/v1/gift-cards');
+  check(
+    '…and it is off the public shelf',
+    !(shelf.body as Array<{ id: string }>).some((row) => row.id === heldCard),
+  );
+
+  /* A password an operator sets for somebody who cannot. */
+  const locked = await call('POST', '/v1/auth/signup', {
+    body: { email: 'locked-out@verify.test', password: 'hunter22', name: 'Locked Out' },
+  });
+  const lockedId = locked.body.user.id as string;
+  const lockedToken = locked.body.token as string;
+
+  const short = await call('POST', `/v1/admin/users/${lockedId}/password`, {
+    token: adminToken,
+    body: { password: 'abc' },
+  });
+  eq('a short reset is refused', short.status, 400);
+
+  const reset = await call('POST', `/v1/admin/users/${lockedId}/password`, {
+    token: adminToken,
+    body: { password: 'a-new-one-99' },
+  });
+  eq('an operator can set a password', reset.status, 200);
+  const oldSession = await call('GET', '/v1/me', { token: lockedToken });
+  eq('…and every session the account had is dropped', oldSession.status, 401);
+  const backIn = await call('POST', '/v1/auth/signin', {
+    body: { email: 'locked-out@verify.test', password: 'a-new-one-99' },
+  });
+  eq('…and the new one signs in', backIn.status, 200);
+  check(
+    '…without the password reaching the audit trail',
+    !JSON.stringify(await call('GET', '/v1/admin/audit', { token: adminToken })).includes(
+      'a-new-one-99',
+    ),
+  );
+
+  /* The two irreversible removals, and the answer they demand. */
+  const unconfirmed = await call('DELETE', `/v1/admin/users/${lockedId}`, {
+    token: adminToken,
+    body: { confirm: 'locked-out@verify.tes' },
+  });
+  eq('a near-miss confirmation is refused', unconfirmed.status, 400);
+  eq('…naming the field to fix', unconfirmed.body.error.field, 'confirm');
+
+  const erased = await call('DELETE', `/v1/admin/users/${lockedId}`, {
+    token: adminToken,
+    /* Folded, not exact: the operator is copying the address off the row beside
+       the button, and capitals are not a second confirmation. */
+    body: { confirm: ' Locked-Out@Verify.test ' },
+  });
+  eq('the right answer closes the account', erased.status, 200);
+
+  /*
+   * **Closing an account has two endings, and the database picks.**
+   *
+   * The Article 17 erasure runs either way — every personal field blanked, the
+   * row out of every list. The row *itself* is then dropped as well, but only
+   * when nothing is owed to it: `points_ledger.user_id` and
+   * `transactions.user_id` are `ON DELETE CASCADE`, so deleting somebody who
+   * actually spent would take with them every venue's record of what they spent
+   * — a third party's revenue history, removed from a screen about somebody
+   * else. The answer says which happened, the way the gift-card route does.
+   *
+   * This account never earned anything, so it is the `deleted` half and there is
+   * no row left to inspect.
+   */
+  eq('…and says which ending it got', erased.body.outcome, 'deleted');
+  eq(
+    '…leaving no row behind',
+    (await w.db.get(`SELECT id FROM users WHERE id = $u`, { u: lockedId })) ?? null,
+    null,
+  );
+
+  /* The other half. This one finished onboarding, so it has a ledger entry and
+     is anonymised in place: gone from every list, with nothing on it that names
+     a person, and the arithmetic behind it untouched. */
+  const spender = await call('POST', '/v1/auth/signup', {
+    body: { email: 'spender@verify.test', password: 'hunter22', name: 'Spender' },
+  });
+  await call('POST', '/v1/me/onboarded', { token: spender.body.token as string });
+  const spenderId = (await w.db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, {
+    e: 'spender@verify.test',
+  }))!.id;
+  const kept = await call('DELETE', `/v1/admin/users/${spenderId}`, {
+    token: adminToken,
+    body: { confirm: 'spender@verify.test' },
+  });
+  eq('an account with a ledger behind it also closes', kept.status, 200);
+  eq('…but is anonymised rather than dropped', kept.body.outcome, 'anonymised');
+  const closed = await w.db.get<{ status: string; email: string | null; name: string }>(
+    `SELECT status, email, display_name AS name FROM users WHERE id = $u`,
+    { u: spenderId },
+  );
+  eq('…which is the erasure a person can ask for', closed?.status, 'erased');
+  eq('…the address is gone', closed?.email, null);
+  eq('…and the name with it', closed?.name, 'Deleted account');
+  check(
+    '…while the entry it earned is still countable',
+    ((await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM points_ledger WHERE user_id = $u`, {
+      u: spenderId,
+    }))?.n ?? 0) > 0,
+  );
+
+  /* The guard that matters most, because the failure is unrecoverable from any
+     screen: an operator who bans or erases their own row revokes their own
+     session inside the request that did it. */
+  const adminId = (await w.db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, {
+    e: 'ops@verify.test',
+  }))!.id;
+  const selfErase = await call('DELETE', `/v1/admin/users/${adminId}`, {
+    token: adminToken,
+    body: { confirm: 'ops@verify.test' },
+  });
+  eq('an operator cannot erase themselves', selfErase.status, 403);
+  const selfBan = await call('POST', `/v1/admin/users/${adminId}/ban`, {
+    token: adminToken,
+    body: { banned: true },
+  });
+  eq('…nor ban themselves', selfBan.status, 403);
+  eq(
+    '…and the console still opens',
+    (await call('GET', '/v1/admin/overview', { token: adminToken })).status,
+    200,
+  );
+
+  /* Describing a venue, before removing it. Every field here is printed on a
+     card; none of them is counted — see the header of `routes/admin.ts` for the
+     line this stays on. It goes through `partners.updateVenue`, the owner's own
+     writer, so an operator gets the owner's validation rather than a second
+     implementation of it. */
+  const renamed = await call('PATCH', `/v1/admin/venues/${w.venueId}`, {
+    token: adminToken,
+    body: { name: 'Verify Café', city: 'Warsaw', phone: '+48 22 000 0000' },
+  });
+  eq('a venue can be corrected', renamed.status, 200);
+  eq('…and answers with the new city', renamed.body.city, 'Warsaw');
+  eq(
+    '…which is what the database holds',
+    (await w.db.get<{ c: string }>(`SELECT city AS c FROM venues WHERE id = $v`, { v: w.venueId }))?.c,
+    'Warsaw',
+  );
+
+  /* Removing a venue. The line that matters is the second one: a venue that is
+     gone whose deals are still live keeps a claimable card on the board for a
+     business that no longer exists. */
+  const doomed = newId('del');
+  await w.db.run(
+    `INSERT INTO hot_deals (id, venue_id, partner_name, city, country_code, status,
+                            points_required, created_at, updated_at)
+     VALUES ($i, $v, 'Verify Café', 'Krakow', 'PL', 'live', 0, $t, $t)`,
+    { i: doomed, v: w.venueId, t: now() },
+  );
+  const wrongName = await call('DELETE', `/v1/admin/venues/${w.venueId}`, {
+    token: adminToken,
+    body: { confirm: 'Verify Cafe' },
+  });
+  eq('a venue will not go on the wrong name', wrongName.status, 400);
+
+  const removed = await call('DELETE', `/v1/admin/venues/${w.venueId}`, {
+    token: adminToken,
+    body: { confirm: 'verify café' },
+  });
+  eq('and goes on the right one', removed.status, 200);
+  check('…taking its offers with it', (removed.body.offersDeleted as number) >= 1);
+  eq(
+    '…every one of them',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM hot_deals WHERE venue_id = $v`, {
+      v: w.venueId,
+    }))?.n,
+    0,
+  );
+  /*
+   * **Removal means the row is gone, and the schema is what makes that safe.**
+   *
+   * It used to be a `deleted_at` stamp, which left an operator told "removed"
+   * looking at a database that still held the venue. Everything that *belongs*
+   * to a venue is `ON DELETE CASCADE` and everything that merely *mentions* one
+   * is `ON DELETE SET NULL` — so the two assertions below are the pair that
+   * matters: the venue and its own rows are gone, and the ledger entries that
+   * named it are still there with the name detached. A platform report has to
+   * keep adding up after a removal.
+   */
+  eq(
+    '…and the venue itself is dropped, not stamped',
+    (await w.db.get(`SELECT id FROM venues WHERE id = $i`, { i: w.venueId })) ?? null,
+    null,
+  );
+  const venuesAfter = await call('GET', '/v1/admin/venues', { token: adminToken });
+  check(
+    '…so it leaves every list',
+    !(venuesAfter.body as Array<{ id: string }>).some((row) => row.id === w.venueId),
+  );
+  eq(
+    'its own rows went with it',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venue_visits WHERE venue_id = $v`, {
+      v: w.venueId,
+    }))?.n,
+    0,
+  );
+  eq(
+    '…and so did the copy no cascade reaches',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM translations WHERE entity = 'venue' AND entity_id = $v`,
+      { v: w.venueId },
+    ))?.n,
+    0,
+  );
+  eq(
+    'and the accounting still adds up, with the reference detached',
+    (await call('GET', '/v1/admin/overview', { token: adminToken })).status,
+    200,
+  );
+
+  check(
+    'every removal left a trace with an actor on it',
+    ((await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM audit_log WHERE actor_id IS NOT NULL AND action IN
+         ('deal.status', 'deal.delete', 'gift_card.delete', 'gift_card.delist',
+          'venue.status', 'venue.delete', 'user.password_reset', 'user.erase')`,
+    ))?.n ?? 0) >= 8,
+    auditBefore,
+  );
+
   server.close();
-  w.db.close();
+  await w.db.close();
 }
+
 
 async function accountRules(): Promise<void> {
   describe('§1.2 becoming a venue owner after the fact');
   {
-    const w = world();
+    const w = await world();
     const at = now();
 
     /*
@@ -2954,15 +3475,15 @@ async function accountRules(): Promise<void> {
     });
 
     check('a plain sign-up is not a partner',
-      !accounts.rolesOf(w.db, person.id).includes('partner_owner'));
+      !(await accounts.rolesOf(w.db, person.id)).includes('partner_owner'));
 
-    const promoted = accounts.becomePartner(w.db, person.id, at);
+    const promoted = await accounts.becomePartner(w.db, person.id, at);
     check('…and can become one', promoted.roles.includes('partner_owner'));
     check('…keeping what it already had', promoted.roles.includes('consumer'));
 
     /* Idempotent, which is what lets the site call it on every "I am a
        business" without checking first — and on every listing save. */
-    const again = accounts.becomePartner(w.db, person.id, at);
+    const again = await accounts.becomePartner(w.db, person.id, at);
     eq('…twice grants it once', again.roles.filter((r) => r === 'partner_owner').length, 1);
 
     /* The line this endpoint must not cross. `admin` is choosable at no moment,
@@ -2970,20 +3491,20 @@ async function accountRules(): Promise<void> {
        taking one. */
     check('…and never grants the console', !again.roles.includes('admin'));
 
-    throws('an unknown account cannot be promoted', 'not_found', () =>
-      accounts.becomePartner(w.db, 'usr_nobody', at),
+    await throws('an unknown account cannot be promoted', 'not_found', async () =>
+      await accounts.becomePartner(w.db, 'usr_nobody', at),
     );
 
-    w.db.close();
+    await w.db.close();
   }
 
   describe('§1.1 provisional accounts and the merge');
-  const w = world();
+  const w = await world();
   const at = now();
 
-  const guest = accounts.provisional(w.db, 'device-abc', at);
-  ledger.earn(w.db, { userId: guest.id, points: 60, reason: 'game_win', at });
-  eq('a guest can hold points', ledger.balance(w.db, guest.id), 60);
+  const guest = await accounts.provisional(w.db, 'device-abc', at);
+  await ledger.earn(w.db, { userId: guest.id, points: 60, reason: 'game_win', at });
+  eq('a guest can hold points', await ledger.balance(w.db, guest.id), 60);
 
   const real = await accounts.signUp(w.db, {
     email: 'merged@verify.test',
@@ -2994,26 +3515,26 @@ async function accountRules(): Promise<void> {
   });
   eq(
     'the points survive the merge',
-    ledger.balance(w.db, real.id),
+    await ledger.balance(w.db, real.id),
     /* Exactly what the guest earned, and nothing added: signing up grants
        nothing now, so the merge is a pure carry-over. */
     60,
   );
-  eq('the guest is closed', w.db.get<{ status: string }>(`SELECT status FROM users WHERE id = $u`, {
+  eq('the guest is closed', (await w.db.get<{ status: string }>(`SELECT status FROM users WHERE id = $u`, {
     u: guest.id,
-  })?.status, 'erased');
-  eq('and the balance is derived, not copied', ledger.reconcile(w.db, real.id), 0);
+  }))?.status, 'erased');
+  eq('and the balance is derived, not copied', await ledger.reconcile(w.db, real.id), 0);
 
   const signedIn = await accounts.signIn(w.db, {
     email: 'merged@verify.test',
     password: 'hunter22',
     at,
   });
-  check('the session resolves', accounts.resolveSession(w.db, signedIn.token) !== null);
-  accounts.signOut(w.db, signedIn.session.id, at);
-  check('and stops resolving once revoked', accounts.resolveSession(w.db, signedIn.token) === null);
+  check('the session resolves', (await accounts.resolveSession(w.db, signedIn.token)) !== null);
+  await accounts.signOut(w.db, signedIn.session.id, at);
+  check('and stops resolving once revoked', (await accounts.resolveSession(w.db, signedIn.token)) === null);
 
-  w.db.close();
+  await w.db.close();
 }
 
 /* ─────────────────────────────────────────── the profile: status and city ── */
@@ -3065,7 +3586,7 @@ const ERASURE_KEEPS = new Set([
 
 async function profileRules(): Promise<void> {
   describe('the profile — a chosen status, and a city that is a suggestion');
-  const db = openDb(':memory:');
+  const db = await openDb(':memory:');
   const at = now();
 
   const user = await accounts.signUp(db, {
@@ -3079,25 +3600,25 @@ async function profileRules(): Promise<void> {
      Five values and no sixth. The whole reason the column is not called
      `status` is checked below: setting one must not touch the account state. */
   for (const value of accounts.OCCUPATIONS) {
-    const saved = accounts.updateProfile(db, user.id, { occupation: value }, at);
+    const saved = await accounts.updateProfile(db, user.id, { occupation: value }, at);
     eq(`a status may be "${value}"`, saved.occupation, value);
   }
-  throws('but not one off the list', 'validation_failed', () =>
-    accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at),
+  await throws('but not one off the list', 'validation_failed', async () =>
+    await accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at),
   );
   eq(
     '…naming the field',
-    refusal(() => accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at))?.detail.field,
+    (await refusal(async () => await accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at)))?.detail.field,
     'occupation',
   );
   eq(
     '…and handing back the whole set, so a drifted client is told what it may send',
-    refusal(() => accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at))?.detail.allowed,
+    (await refusal(async () => await accounts.updateProfile(db, user.id, { occupation: 'ceo' }, at)))?.detail.allowed,
     accounts.OCCUPATIONS,
   );
   eq(
     'case is not a different answer',
-    accounts.updateProfile(db, user.id, { occupation: 'Student' }, at).occupation,
+    (await accounts.updateProfile(db, user.id, { occupation: 'Student' }, at)).occupation,
     'student',
   );
   /* The collision this column was renamed to avoid. `users.status` is the
@@ -3105,7 +3626,7 @@ async function profileRules(): Promise<void> {
      name again, this is the check that says so. */
   eq(
     'and writing a status leaves the *account* status alone',
-    accounts.getUser(db, user.id).status,
+    (await accounts.getUser(db, user.id)).status,
     'active',
   );
 
@@ -3139,35 +3660,35 @@ async function profileRules(): Promise<void> {
     ['Kryvyi Rih', 'Kryvyi Rih', 'Kryvyi Rih'],
   );
 
-  throws('without a country it is refused', 'validation_failed', () =>
+  await throws('without a country it is refused', 'validation_failed', () =>
     accounts.resolveCity('Kryvyi Rih'),
   );
   eq(
     '…naming the country, not the city — the form shows a picker, not an argument',
-    refusal(() => accounts.resolveCity('Kryvyi Rih'))?.detail.field,
+    (await refusal(() => accounts.resolveCity('Kryvyi Rih')))?.detail.field,
     'countryCode',
   );
-  throws('a country that is not two letters is refused', 'validation_failed', () =>
+  await throws('a country that is not two letters is refused', 'validation_failed', () =>
     accounts.resolveCity('Kryvyi Rih', 'Ukraine'),
   );
-  throws('and a city that is not a place name is refused', 'validation_failed', () =>
+  await throws('and a city that is not a place name is refused', 'validation_failed', () =>
     accounts.resolveCity('!!!', 'UA'),
   );
   eq(
     '…naming the city, because no country would save it',
-    refusal(() => accounts.resolveCity('!!!', 'UA'))?.detail.field,
+    (await refusal(() => accounts.resolveCity('!!!', 'UA')))?.detail.field,
     'city',
   );
-  throws('a city with no ceiling is where an essay goes', 'validation_failed', () =>
+  await throws('a city with no ceiling is where an essay goes', 'validation_failed', () =>
     accounts.resolveCity('x'.repeat(61), 'UA'),
   );
 
   /* Through the write, not just the resolver. */
-  const moved = accounts.updateProfile(db, user.id, { city: 'kryvyi rih', countryCode: 'ua' }, at);
+  const moved = await accounts.updateProfile(db, user.id, { city: 'kryvyi rih', countryCode: 'ua' }, at);
   eq('the write stores the canonical name', moved.city, 'Kryvyi Rih');
   eq('…and the country it was given', moved.country_code, 'UA');
-  throws('a country on its own means nothing and is refused', 'validation_failed', () =>
-    accounts.updateProfile(db, user.id, { countryCode: 'DE' }, at),
+  await throws('a country on its own means nothing and is refused', 'validation_failed', async () =>
+    await accounts.updateProfile(db, user.id, { countryCode: 'DE' }, at),
   );
   /* And sign-up gives the same refusal, because it is the same function. It used
      to drop the country instead — the endpoint most likely to be handed a
@@ -3176,8 +3697,8 @@ async function profileRules(): Promise<void> {
      row count is what says "dropped" has not come back as "created anyway". */
   await rejects(
     'and sign-up refuses it too rather than dropping it',
-    () =>
-      accounts.signUp(db, {
+    async () =>
+      await accounts.signUp(db, {
         email: 'orphan@verify.test',
         password: 'hunter22',
         name: 'Orphan',
@@ -3188,17 +3709,17 @@ async function profileRules(): Promise<void> {
   );
   eq(
     '…having created no account at all',
-    db.get(`SELECT 1 FROM users WHERE email_norm = 'orphan@verify.test'`) ?? null,
+    (await db.get(`SELECT 1 FROM users WHERE email_norm = 'orphan@verify.test'`)) ?? null,
     null,
   );
   /* The name, on the same terms: one function, so a blank is a refusal on both
      rather than a 400 on one and a 200-that-changed-nothing on the other. */
-  throws('a blank name is refused by the patch', 'validation_failed', () =>
-    accounts.updateProfile(db, user.id, { name: '   ' }, at),
+  await throws('a blank name is refused by the patch', 'validation_failed', async () =>
+    await accounts.updateProfile(db, user.id, { name: '   ' }, at),
   );
   eq(
     '…leaving the name it had',
-    accounts.getUser(db, user.id).display_name,
+    (await accounts.getUser(db, user.id)).display_name,
     'Profile',
   );
 
@@ -3216,7 +3737,7 @@ async function profileRules(): Promise<void> {
   eq('sign-up canonicalises too, or it is the hole in the rule', second.city, 'Kryvyi Rih');
   eq(
     'two spellings of one place are one board',
-    db.all<{ city: string }>(
+    await db.all<{ city: string }>(
       `SELECT DISTINCT city FROM users WHERE country_code = 'UA' ORDER BY city`,
     ),
     [{ city: 'Kryvyi Rih' }],
@@ -3225,15 +3746,15 @@ async function profileRules(): Promise<void> {
      revalidated out of existence — `Bayern` is really in the live `users` table. */
   eq(
     'a legacy value can be written back unchanged',
-    accounts.updateProfile(db, second.id, { city: 'Bayern', countryCode: 'DE' }, at).city,
+    (await accounts.updateProfile(db, second.id, { city: 'Bayern', countryCode: 'DE' }, at)).city,
     'Bayern',
   );
 
   /* ── the seven answers ──
      `occupation` took the seventh slot from `headline`, so the completion bonus
      is what proves the swap reached `isProfileComplete`. */
-  const before = ledger.balance(db, user.id);
-  const finished = accounts.updateProfile(
+  const before = await ledger.balance(db, user.id);
+  const finished = await accounts.updateProfile(
     db,
     user.id,
     {
@@ -3247,11 +3768,11 @@ async function profileRules(): Promise<void> {
     at,
   );
   check('all seven answers stamps the profile complete', finished.profile_completed_at !== null);
-  eq('…and pays once', ledger.balance(db, user.id) - before, CONFIG.earn.profileComplete);
-  accounts.updateProfile(db, user.id, { occupation: 'other' }, at);
+  eq('…and pays once', (await ledger.balance(db, user.id)) - before, CONFIG.earn.profileComplete);
+  await accounts.updateProfile(db, user.id, { occupation: 'other' }, at);
   eq(
     '…and only once, however often it is saved after',
-    ledger.balance(db, user.id) - before,
+    (await ledger.balance(db, user.id)) - before,
     CONFIG.earn.profileComplete,
   );
 
@@ -3267,7 +3788,7 @@ async function profileRules(): Promise<void> {
     name: 'Doomed',
     at,
   });
-  accounts.updateProfile(
+  await accounts.updateProfile(
     db,
     doomed.id,
     {
@@ -3282,16 +3803,16 @@ async function profileRules(): Promise<void> {
   );
   /* Set directly because the only route to it is a verified Google token, and
      what is being checked is the erasure rather than the sign-in. */
-  db.run(`UPDATE users SET provider_ref = 'google-sub-12345' WHERE id = $u`, { u: doomed.id });
+  await db.run(`UPDATE users SET provider_ref = 'google-sub-12345' WHERE id = $u`, { u: doomed.id });
 
-  const columns = db
-    .all<{ name: string }>(`PRAGMA table_info(users)`)
+  const columns = (await db
+    .all<{ name: string }>(`PRAGMA table_info(users)`))
     .map((row) => row.name)
     .filter((name) => !ERASURE_KEEPS.has(name));
-  const rowOf = (id: string) =>
-    db.get<Record<string, unknown>>(`SELECT * FROM users WHERE id = $u`, { u: id }) ?? {};
+  const rowOf = async (id: string) =>
+    (await db.get<Record<string, unknown>>(`SELECT * FROM users WHERE id = $u`, { u: id })) ?? {};
 
-  const populated = rowOf(doomed.id);
+  const populated = await rowOf(doomed.id);
   const unset = columns.filter((name) => populated[name] === null || populated[name] === undefined);
   check(
     'the fixture fills every column erasure is meant to clear',
@@ -3309,7 +3830,7 @@ async function profileRules(): Promise<void> {
      the bug it replaced was five columns the erasure cleared and the export
      never mentioned, and an export that under-reports is the one failure its
      reader cannot detect: nothing in the document says a column exists. */
-  const schema = db.all<{ name: string }>(`PRAGMA table_info(users)`).map((row) => row.name);
+  const schema = (await db.all<{ name: string }>(`PRAGMA table_info(users)`)).map((row) => row.name);
   const listed = consent.USER_COLUMNS.map((c) => c.column);
   eq('every column of `users` is decided about, and only those', [...listed].sort(), [...schema].sort());
   eq('…once each', listed.length, new Set(listed).size);
@@ -3346,7 +3867,7 @@ async function profileRules(): Promise<void> {
   );
 
   /* And the document itself, on an account with every column filled in. */
-  const account = (consent.exportUser(db, doomed.id) as { account: Record<string, unknown> }).account;
+  const account = (await consent.exportUser(db, doomed.id) as { account: Record<string, unknown> }).account;
   eq('the export’s account block is exactly the disclosed set', Object.keys(account).sort(), [...disclosed].sort());
   eq(
     '…including the five it used to drop',
@@ -3361,18 +3882,18 @@ async function profileRules(): Promise<void> {
      an account that still works. */
   check('and the credential is not in it', !('password_hash' in account));
 
-  consent.eraseUser(db, doomed.id, at);
-  const erased = rowOf(doomed.id);
+  await consent.eraseUser(db, doomed.id, at);
+  const erased = await rowOf(doomed.id);
   const left = columns.filter((name) => erased[name] !== null);
   check('and erasure leaves none of them behind', left.length === 0, left);
   eq('…including Google’s subject id', erased.provider_ref, null);
   eq('…and the status the UI calls Status', erased.occupation, null);
   eq('…while the row itself stays, for the ledger that references it', erased.status, 'erased');
 
-  db.close();
+  await db.close();
 }
 
-function countryRules(): void {
+async function countryRules(): Promise<void> {
   describe('the country table and the flags bank');
 
   eq('the flag emoji is built from the code', flagOf('PL'), '🇵🇱');
@@ -3395,18 +3916,18 @@ function countryRules(): void {
   eq('and so does the old name', codeFor('Swaziland'), 'SZ');
   eq('an unknown name is null, not a guess', codeFor('Atlantis'), null);
 
-  const db = openDb(':memory:');
-  seedPlatform(db);
-  db.tx(() => importLegacy(db, 'new-data'));
+  const db = await openDb(':memory:');
+  await seedPlatform(db);
+  await db.tx(async () => await importLegacy(db, 'new-data'));
 
-  const banks = db.all<{ bank: string; language: string; n: number }>(
+  const banks = await db.all<{ bank: string; language: string; n: number }>(
     `SELECT bank, language, COUNT(*) AS n FROM quiz_items GROUP BY bank, language`,
   );
   const flags = banks.filter((row) => row.bank === 'flags');
   eq('the flags bank exists in four languages', flags.length, 4);
   check('every country made it into every language', flags.every((row) => row.n === 196), flags);
 
-  const prompts = db.all<{ prompt: string }>(
+  const prompts = await db.all<{ prompt: string }>(
     `SELECT prompt FROM quiz_items WHERE bank = 'flags' AND language = 'en'`,
   );
   check(
@@ -3419,10 +3940,10 @@ function countryRules(): void {
     prompts.length,
   );
 
-  const poland = db.get<{ answer: string; distractors: string; meta: string }>(
+  const poland = (await db.get<{ answer: string; distractors: string; meta: string }>(
     `SELECT answer, distractors, meta FROM quiz_items
       WHERE bank = 'flags' AND language = 'pl' AND prompt = 'PL'`,
-  )!;
+  ))!;
   eq('the answer is in the player’s own language', poland.answer, 'Polska');
   eq('the emoji rides along', JSON.parse(poland.meta).flag, '🇵🇱');
   const wrong = JSON.parse(poland.distractors) as string[];
@@ -3431,22 +3952,22 @@ function countryRules(): void {
 
   /* The distractors come from the same continent, which is what makes it a
      question rather than a giveaway. */
-  const asia = db.get<{ distractors: string }>(
+  const asia = (await db.get<{ distractors: string }>(
     `SELECT distractors FROM quiz_items WHERE bank = 'flags' AND language = 'en' AND prompt = 'UZ'`,
-  )!;
+  ))!;
   const neighbours = JSON.parse(asia.distractors) as string[];
-  const continents = neighbours.map(
-    (name) =>
+  const continents = await Promise.all(neighbours.map(
+    async (name) =>
       JSON.parse(
-        db.get<{ meta: string }>(
+        (await db.get<{ meta: string }>(
           `SELECT meta FROM quiz_items WHERE bank = 'flags' AND language = 'en' AND answer = $a`,
           { a: name },
-        )?.meta ?? '{}',
+        ))?.meta ?? '{}',
       ).continent,
-  );
+  ));
   check('the wrong answers are from the same continent', continents.every((c) => c === 'Asia'), continents);
 
-  db.close();
+  await db.close();
 }
 
 /**
@@ -3455,52 +3976,52 @@ function countryRules(): void {
  * a row with a unique key turns `INSERT OR REPLACE` into delete-and-recreate,
  * and a minted ledger id hands everybody their opening balance twice.
  */
-function reimportRules(): void {
+async function reimportRules(): Promise<void> {
   describe('the import is repeatable');
 
-  const db = openDb(':memory:');
-  seedPlatform(db);
-  db.tx(() => importLegacy(db, 'new-data'));
+  const db = await openDb(':memory:');
+  await seedPlatform(db);
+  await db.tx(async () => await importLegacy(db, 'new-data'));
 
-  const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
+  const count = async (sql: string) => (await db.get<{ n: number }>(sql))?.n ?? 0;
   const before = {
-    quiz: count(`SELECT COUNT(*) AS n FROM quiz_items`),
-    users: count(`SELECT COUNT(*) AS n FROM users`),
-    venues: count(`SELECT COUNT(*) AS n FROM venues`),
-    tiers: count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
-    movements: count(`SELECT COUNT(*) AS n FROM budget_movements`),
-    ledger: count(`SELECT COUNT(*) AS n FROM points_ledger`),
-    points: count(`SELECT SUM(delta) AS n FROM points_ledger`),
+    quiz: await count(`SELECT COUNT(*) AS n FROM quiz_items`),
+    users: await count(`SELECT COUNT(*) AS n FROM users`),
+    venues: await count(`SELECT COUNT(*) AS n FROM venues`),
+    tiers: await count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
+    movements: await count(`SELECT COUNT(*) AS n FROM budget_movements`),
+    ledger: await count(`SELECT COUNT(*) AS n FROM points_ledger`),
+    points: await count(`SELECT SUM(delta) AS n FROM points_ledger`),
   };
-  const budgetId = db.get<{ id: string }>(`SELECT id FROM budgets LIMIT 1`)!.id;
+  const budgetId = (await db.get<{ id: string }>(`SELECT id FROM budgets LIMIT 1`))!.id;
 
-  db.tx(() => importLegacy(db, 'new-data'));
+  await db.tx(async () => await importLegacy(db, 'new-data'));
 
   const after = {
-    quiz: count(`SELECT COUNT(*) AS n FROM quiz_items`),
-    users: count(`SELECT COUNT(*) AS n FROM users`),
-    venues: count(`SELECT COUNT(*) AS n FROM venues`),
-    tiers: count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
-    movements: count(`SELECT COUNT(*) AS n FROM budget_movements`),
-    ledger: count(`SELECT COUNT(*) AS n FROM points_ledger`),
-    points: count(`SELECT SUM(delta) AS n FROM points_ledger`),
+    quiz: await count(`SELECT COUNT(*) AS n FROM quiz_items`),
+    users: await count(`SELECT COUNT(*) AS n FROM users`),
+    venues: await count(`SELECT COUNT(*) AS n FROM venues`),
+    tiers: await count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
+    movements: await count(`SELECT COUNT(*) AS n FROM budget_movements`),
+    ledger: await count(`SELECT COUNT(*) AS n FROM points_ledger`),
+    points: await count(`SELECT SUM(delta) AS n FROM points_ledger`),
   };
   eq('a second import changes nothing', after, before);
-  eq('the budget keeps its id, so its movements survive', db.get<{ id: string }>(
-    `SELECT id FROM budgets LIMIT 1`)?.id, budgetId);
+  eq('the budget keeps its id, so its movements survive', (await db.get<{ id: string }>(
+    `SELECT id FROM budgets LIMIT 1`))?.id, budgetId);
 
-  for (const user of db.all<{ id: string }>(`SELECT id FROM users`)) {
-    eq(`balance still derives for ${user.id.slice(0, 8)}`, ledger.reconcile(db, user.id), 0);
+  for (const user of await db.all<{ id: string }>(`SELECT id FROM users`)) {
+    eq(`balance still derives for ${user.id.slice(0, 8)}`, await ledger.reconcile(db, user.id), 0);
   }
 
-  db.close();
+  await db.close();
 }
 
-function importRules(): void {
+async function importRules(): Promise<void> {
   describe('the old database, imported');
-  const db = openDb(':memory:');
-  seedPlatform(db);
-  const summary = db.tx(() => importLegacy(db, 'new-data'));
+  const db = await openDb(':memory:');
+  await seedPlatform(db);
+  const summary = await db.tx(async () => await importLegacy(db, 'new-data'));
 
   check('the guidebook came across', (summary.counts.guidance_services ?? 0) > 300);
   check('the deals came across', (summary.counts.hot_deals ?? 0) > 0);
@@ -3510,20 +4031,20 @@ function importRules(): void {
   check('the lossy conversion is reported', summary.notes.some((note) => note.includes('percentage-reward')));
 
   /* Ids are preserved so a row can be traced back to the export. */
-  const venue = db.get<{ id: string }>(`SELECT id FROM venues WHERE name LIKE 'Chayxana%'`);
+  const venue = await db.get<{ id: string }>(`SELECT id FROM venues WHERE name LIKE 'Chayxana%'`);
   check('a venue keeps its Base44 id', /^[0-9a-f]{24}$/.test(venue?.id ?? ''));
 
   /* An opening balance is a ledger entry, not a number. */
-  const opening = db.get<{ n: number }>(
+  const opening = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM points_ledger WHERE source_kind = 'legacy_import'`,
   );
   check('balances arrived as ledger entries', (opening?.n ?? 0) > 0);
-  for (const user of db.all<{ id: string }>(`SELECT id FROM users`)) {
-    eq(`balance is derived for ${user.id.slice(0, 8)}`, ledger.reconcile(db, user.id), 0);
+  for (const user of await db.all<{ id: string }>(`SELECT id FROM users`)) {
+    eq(`balance is derived for ${user.id.slice(0, 8)}`, await ledger.reconcile(db, user.id), 0);
   }
 
   /* Every campaign has an exact cost, including the converted ones. */
-  const bad = db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM campaigns WHERE reward_cost_minor <= 0`);
+  const bad = await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM campaigns WHERE reward_cost_minor <= 0`);
   eq('every campaign has a cost to the partner', bad?.n, 0);
 
   /*
@@ -3562,189 +4083,83 @@ function importRules(): void {
    * pool than the player who reads English with nothing saying so. Pinning the
    * counts is what turns that into a failure.
    */
-  const local = (bank: string) =>
-    db.all<{ language: string; n: number }>(
+  const local = async (bank: string) =>
+    await db.all<{ language: string; n: number }>(
       `SELECT language, COUNT(*) AS n FROM quiz_items WHERE bank = $b GROUP BY language ORDER BY language`,
       { b: bank },
     );
   const five = (n: number) =>
     ['en', 'pl', 'ru', 'uk', 'uz'].map((language) => ({ language, n }));
-  eq('the Uzbekistan bank is 100 questions in each of the five', local('uzbekistan'), five(100));
-  eq('…and the Poland bank beside it is still 98', local('poland'), five(98));
+  eq('the Uzbekistan bank is 100 questions in each of the five', await local('uzbekistan'), five(100));
+  eq('…and the Poland bank beside it is still 98', await local('poland'), five(98));
 
-  db.close();
+  await db.close();
 }
 
-/**
- * `db/demo.ts` — the catalogue a deployment without `new-data/` gets.
- *
- * Three kinds of thing are checked here and they are not the same kind. That the
- * rows *satisfy the schema* is the least of it, because the foreign keys already
- * say so. What matters is that they are **reachable** (a listing nobody's query
- * returns is the empty catalogue with extra steps), that they are **honest**
- * (marked, unowned, and carrying no invented person), and that seeding them
- * **cannot happen on a box that has real data** — which is a property of the
- * ordering in `boot`, not of this module, and is checked as one below.
+/*
+ * `demoRules` was here — forty checks over `db/demo.ts`, the seven-venue
+ * catalogue a deployment without `new-data/` used to be given. It checked the
+ * rows were reachable, marked, unowned and arithmetically sound, and every one
+ * of those checks passed right up to the day the argument for having them at
+ * all was withdrawn. The module is deleted and so are they. What survives is
+ * `bootOrdering` below, inverted: it used to prove the catalogue was never
+ * empty after a boot, and now proves nothing was written into it.
  */
-function demoRules(): void {
-  describe('the demo catalogue');
-
-  const db = openDb(':memory:');
-  seedPlatform(db);
-  const summary = seedDemo(db);
-
-  const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
-
-  check('five to eight venues, as the brief asks', summary.venues >= 5 && summary.venues <= 8, summary);
-  check('a couple of deals each', summary.deals >= summary.venues * 2, summary);
-  check('two cities', count(`SELECT COUNT(DISTINCT city) AS n FROM venues`) === 2);
-  check(
-    'and more than one category, which is what the benchmarks read',
-    count(`SELECT COUNT(DISTINCT category) AS n FROM venues`) >= 5,
-  );
-
-  /* Reachable: the exact query `GET /v1/venues` runs, and the exact function
-     `GET /v1/deals` runs. A row that is `live` but filtered out by one of them
-     is a row that fixes nothing. */
-  const listed = db.all<{ id: string }>(
-    `SELECT id FROM venues WHERE status = 'live' AND deleted_at IS NULL`,
-  );
-  eq('every seeded venue is publicly listed', listed.length, summary.venues);
-  const browsed = deals.browse(db, { language: 'en' }, { limit: 100 });
-  eq('every seeded deal is publicly browsable', browsed.length, summary.deals);
-  check(
-    'and each one has copy rather than a blank card',
-    browsed.every((card) => card.copy.title.trim() !== ''),
-  );
-  eq(
-    'a Polish reader gets Polish',
-    deals.copyFor(db, browsed[0]!.id, 'pl')?.language,
-    'pl',
-  );
-  /* Written in two languages, and the completeness tracker says so rather than
-     pretending. Three missing is the honest answer, not a bug. */
-  const filled = deals.completeness(db, browsed[0]!.id).filled;
-  eq('two languages filled, and the gap is reported', filled, ['en', 'pl']);
-
-  /* Honest: marked, unowned, and carrying nobody. */
-  eq(
-    'every venue id says it is a demo',
-    count(`SELECT COUNT(*) AS n FROM venues WHERE id NOT LIKE 'ven!_demo!_%' ESCAPE '!'`),
-    0,
-  );
-  eq(
-    'so does every deal id',
-    count(`SELECT COUNT(*) AS n FROM hot_deals WHERE id NOT LIKE 'del!_demo!_%' ESCAPE '!'`),
-    0,
-  );
-  check(
-    'and the console can see it in the config table',
-    db.get(`SELECT value FROM platform_config WHERE key = 'demo_seed'`) !== undefined,
-  );
-  /* The safety property, and the reason it is stated as a count of *users*
-     rather than a count of nulls: the failure mode worth refusing is not an
-     owned venue, it is a partner account with a password in the repository
-     standing on production. Seeding creates no accounts at all. */
-  eq('no account was created to own them', count(`SELECT COUNT(*) AS n FROM users`), 0);
-  eq(
-    'and no venue claims an owner',
-    count(`SELECT COUNT(*) AS n FROM venues WHERE owner_user_id IS NOT NULL`),
-    0,
-  );
-  eq('no rating is invented', count(`SELECT COUNT(*) AS n FROM venues WHERE rating IS NOT NULL`), 0);
-  eq('no funnel event is invented', count(`SELECT COUNT(*) AS n FROM deal_events`), 0);
-  eq('no visit is invented', count(`SELECT COUNT(*) AS n FROM venue_visits`), 0);
-
-  /* §5.1 and §4.2, on the seeded rows: an exact cost, and a pool whose three
-     states exhaust it. A demo that breaks either teaches the wrong arithmetic. */
-  eq(
-    'every campaign has an exact cost to the partner',
-    count(`SELECT COUNT(*) AS n FROM campaigns WHERE reward_cost_minor <= 0`),
-    0,
-  );
-  for (const venue of listed) {
-    const view = budget.budgetFor(db, venue.id);
-    eq(
-      `${venue.id} — the pools exhaust the budget`,
-      view.loyalty.base + view.voucher.base,
-      view.total,
-    );
-    for (const pool of [view.loyalty, view.voucher]) {
-      eq(
-        `${venue.id} — ${pool.allocation} available is derived`,
-        pool.available,
-        pool.base - pool.spent - pool.reserved,
-      );
-    }
-  }
-
-  /* The reach recorder against a real row, which is the thing that returned 404
-     for every id while the catalogue was empty. */
-  const first = listed[0]!.id;
-  trackListing(db, { venueId: first, kind: 'impression', source: 'guide' });
-  trackListing(db, { venueId: first, kind: 'click', source: 'guide' });
-  const seen = analytics.reach(db, first);
-  eq('an impression lands on a seeded venue', seen.impressions, 1);
-  eq('and so does a click', seen.clicks, 1);
-  eq('the rate over one impression is one', seen.clickRate, 1);
-
-  /* Idempotent. It only runs on an empty catalogue, but a derived id that is not
-     is how `INSERT OR REPLACE` cascades a budget's movements away — the exact
-     bug `reimportRules` above exists for. */
-  const before = {
-    venues: count(`SELECT COUNT(*) AS n FROM venues`),
-    deals: count(`SELECT COUNT(*) AS n FROM hot_deals`),
-    tiers: count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
-    campaigns: count(`SELECT COUNT(*) AS n FROM campaigns`),
-    budgets: count(`SELECT COUNT(*) AS n FROM budgets`),
-    hours: count(`SELECT COUNT(*) AS n FROM venue_hours`),
-    copy: count(`SELECT COUNT(*) AS n FROM translations`),
-  };
-  const budgetId = db.get<{ id: string }>(`SELECT id FROM budgets ORDER BY id LIMIT 1`)!.id;
-  seedDemo(db);
-  eq('a second seeding changes nothing', {
-    venues: count(`SELECT COUNT(*) AS n FROM venues`),
-    deals: count(`SELECT COUNT(*) AS n FROM hot_deals`),
-    tiers: count(`SELECT COUNT(*) AS n FROM voucher_tiers`),
-    campaigns: count(`SELECT COUNT(*) AS n FROM campaigns`),
-    budgets: count(`SELECT COUNT(*) AS n FROM budgets`),
-    hours: count(`SELECT COUNT(*) AS n FROM venue_hours`),
-    copy: count(`SELECT COUNT(*) AS n FROM translations`),
-  }, before);
-  eq('the budget keeps its id, so its movements survive', db.get<{ id: string }>(
-    `SELECT id FROM budgets ORDER BY id LIMIT 1`)?.id, budgetId);
-  eq('and the tracked events are still there', count(`SELECT COUNT(*) AS n FROM service_events`), 2);
-
-  db.close();
-}
 
 /**
  * The ordering in `boot`, which is the half of this that lives in `main.ts`.
  *
  * Written so it is true in both worlds rather than in the one this machine
- * happens to be: a developer's box has `new-data/` and must take the real
- * import, a remote does not have it (it is gitignored, and it is the old app's
- * live personal data) and must take the demo set. Exactly one of the two, and
- * never an empty catalogue — which is what production was actually serving.
+ * happens to be: a developer's box has `new-data/` and takes the real import, a
+ * remote does not (it is gitignored, and it is the old app's live personal
+ * data) and takes nothing at all. **An empty catalogue on a remote is now the
+ * expected outcome**, which is the whole of the change — it means no venue has
+ * signed up, and that is a fact a screen can state.
+ *
+ * So the property is no longer "never empty". It is that every venue standing
+ * after a boot came from the import, and boot invented none: no row carrying
+ * the retired `ven_demo_` prefix, and no gift-card stock either, because the
+ * shelf was written by `seedPlatform` in the same spirit and went the same way.
  */
-function bootOrdering(): void {
-  describe('boot: import first, demo only if still empty');
+async function bootOrdering(): Promise<void> {
+  describe('boot: import, and nothing invented');
 
-  const { db } = boot({ file: ':memory:', quiet: true });
-  const count = (sql: string) => db.get<{ n: number }>(sql)?.n ?? 0;
+  const { db } = await boot({ file: ':memory:', quiet: true });
+  const count = async (sql: string) => (await db.get<{ n: number }>(sql))?.n ?? 0;
 
-  const total = count(`SELECT COUNT(*) AS n FROM venues`);
-  const demo = count(`SELECT COUNT(*) AS n FROM venues WHERE id LIKE 'ven!_demo!_%' ESCAPE '!'`);
-  const imported = total - demo;
-
-  check('the catalogue is never empty after boot', total > 0, { total, demo });
+  eq(
+    'boot writes no demonstration venue',
+    await count(`SELECT COUNT(*) AS n FROM venues WHERE id LIKE 'ven!_demo!_%' ESCAPE '!'`),
+    0,
+  );
+  eq(
+    'nor any demonstration deal',
+    await count(`SELECT COUNT(*) AS n FROM hot_deals WHERE id LIKE 'del!_demo!_%' ESCAPE '!'`),
+    0,
+  );
+  eq('nor a gift-card shelf', await count(`SELECT COUNT(*) AS n FROM gift_card_stock`), 0);
+  /* And not under another name either. The demo venues carried one address
+     between them — a domain we control, standing in for the inbox a made-up
+     café does not have — so it is the tell that survives a rename of the id
+     prefix, which is the way a seed most plausibly comes back. */
+  eq(
+    'nor a venue reachable at the address the demo set shared',
+    await count(`SELECT COUNT(*) AS n FROM venues WHERE email = 'demo@pay-lez.com'`),
+    0,
+  );
   check(
-    'exactly one of the two ran',
-    imported === 0 ? demo > 0 : demo === 0,
-    { imported, demo },
+    'and the marker the demo set used to leave is gone from the config table',
+    (await db.get(`SELECT value FROM platform_config WHERE key = 'demo_seed'`)) === undefined,
   );
 
-  db.close();
+  /* The two things boot *is* still allowed to write, so this suite fails if the
+     cut went too far: the plan ladder and the Word Builder bank are product
+     configuration rather than anybody's data, and every game and every
+     subscription screen is unusable without them. */
+  check('the plans are still seeded', (await count(`SELECT COUNT(*) AS n FROM plans`)) >= 3);
+  check('and the word bank with them', (await count(`SELECT COUNT(*) AS n FROM word_bank`)) > 0);
+
+  await db.close();
 }
 
 /* ══════════════════════════════════════════════════════════════ the run ══ */
@@ -3756,26 +4171,25 @@ async function run(): Promise<void> {
   crypto();
   await passwords();
   routerRules();
-  countryRules();
-  reimportRules();
-  importRules();
-  demoRules();
-  bootOrdering();
-  ledgerRules();
-  budgetRules();
-  gateRules();
-  voucherRules();
-  campaignRules();
-  gameRules();
-  scoringRules();
-  dealRules();
-  consentRules();
-  analyticsRules();
-  entitlementRules();
+  await countryRules();
+  await reimportRules();
+  await importRules();
+  await bootOrdering();
+  await ledgerRules();
+  await budgetRules();
+  await gateRules();
+  await voucherRules();
+  await campaignRules();
+  await gameRules();
+  await scoringRules();
+  await dealRules();
+  await consentRules();
+  await analyticsRules();
+  await entitlementRules();
   await assistantRules();
-  socialRules();
+  await socialRules();
   await trafficRules();
-  jobRules();
+  await jobRules();
   await accountRules();
   await profileRules();
   await httpSurface();
@@ -3789,4 +4203,4 @@ async function run(): Promise<void> {
   }
 }
 
-void run();
+void await run();

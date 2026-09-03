@@ -1,29 +1,31 @@
 /**
- * The seeded account directory, and the rules for adding to it.
+ * The account directory's shape, and the rules for adding to it.
  *
  * ─────────────────────────────────────────────────────────────────────────────
- * THIS IS NOT AUTHENTICATION. The credentials below ship inside the JavaScript
- * bundle, which means every visitor already has them — view-source is enough,
- * and anything typed into the sign-up form is kept beside them in plain text in
- * `localStorage` (see `directory.ts`). It exists so the prototype has a front
- * door and so the signed-in screens can be looked at, and it must be replaced by
- * a real server before this site is pointed at anybody's data.
+ * THIS IS NOT AUTHENTICATION. Anything typed into the sign-up form is kept in
+ * plain text in `localStorage` (see `directory.ts`). It exists so an account
+ * opened while the backend is unreachable is not lost, and it must be replaced
+ * by the server before this site is pointed at anybody's data.
  * ─────────────────────────────────────────────────────────────────────────────
  *
- * Three seeded people, one per kind of account, because "what a signed-in
- * account looks like" is now three different answers: an admin gets the console,
- * an owner gets a venue with a finished listing behind it, an individual gets a
- * wallet with something in it. Each is *furnished* rather than blank — a demo
- * account that lands on an empty dashboard demonstrates nothing.
+ * **There are no seeded accounts, and there must not be any.** There were two —
+ * a Kraków café owner with a finished listing, and a player with 1,240 points
+ * and a seven-day streak — and their passwords shipped in the bundle where
+ * anybody could read them. The argument for them was that the signed-in screens
+ * are worth looking at, and it was a good argument while `localStorage` was the
+ * whole account system. It stopped being one when `server/` arrived: those are
+ * working credentials to a system that hashes them, the venue was a real
+ * business's name on a listing nobody at that business had written, and the
+ * points were a balance the ledger had no entry for. Every screen they existed
+ * to demonstrate now has an empty state that says the true thing instead.
  *
- * This module is React-free and storage-free on purpose, the way `business.ts`
- * and `player.ts` beside it are: the seeds and the validation are pure data and
- * pure functions, so `npm run verify` can check them. Persistence — the users
- * who signed up, and the edits the seeded three make to their own state — lives
- * in `directory.ts`.
+ * What is left is the *shape* — `UserRecord`, `newUser`, `findUser`,
+ * `validateSignUp`. React-free and storage-free on purpose, the way
+ * `business.ts` and `player.ts` beside it are, so `npm run verify` can check
+ * the rules without a browser. Persistence lives in `directory.ts`.
  */
 import { isEmail, type BusinessProfile } from './business';
-import { newPlayer, seedPlayer, today, type PlayerState } from './player';
+import { newPlayer, type PlayerState } from './player';
 import { EMPTY_PROFILE } from './context';
 import type { AccountType, UserProfile } from './context';
 
@@ -71,160 +73,25 @@ export interface UserRecord {
 }
 
 /**
- * The venue behind `user1`.
+ * Nobody, and that is the whole of it.
  *
- * A real listing rather than a blank one: every required field is filled, so the
- * owner lands on a dashboard that is *working* — 100% complete, live in the app,
- * app preview populated — instead of on a form. The two optional link fields are
- * left empty on purpose; a small café with no iOS app is the ordinary case, and
- * a listing where literally everything is filled would hide the fact that some
- * of it is optional.
- *
- * Kraków, in złoty, in Polish: the operator is where the operator is. The price
- * is free text the owner types, which is the one figure on this site that is not
- * converted for the reader — it is a sign in their window, not our number.
+ * Kept as an exported empty array rather than deleted, because the directory
+ * still has to merge "seeds a stored directory has not seen" into what it
+ * finds in `localStorage` — the merge is the mechanism, and it is correct over
+ * an empty set. Putting a row back here puts a password back in the bundle;
+ * see the header.
  */
-const BRATYSLAWSKA: BusinessProfile = {
-  name: 'Kawiarnia Bratysławska',
-  category: 'cafe',
-  /* `copy.listing.subcategories[0][0]` — "Specialty coffee". */
-  subcategory: 0,
-  description:
-    'A twelve-table specialty café a minute from Nowy Kleparz, roasting on a 5 kg drum in the back room. Breakfast until noon, filter flights all day, and the long table fills with AGH students from three.',
-  price: '18–45 zł',
-  logo: 'bratyslawska-mark.png',
-
-  country: 'pl',
-  city: 'Kraków',
-  street: 'Bratysławska 6/2',
-  maps: 'https://maps.google.com/?q=Kawiarnia+Bratys%C5%82awska+Krak%C3%B3w',
-
-  phone: '+48 512 340 118',
-  email: 'kontakt@bratyslawska.pl',
-  website: 'https://bratyslawska.pl',
-  instagram: 'https://instagram.com/bratyslawska',
-  appStore: '',
-  googlePlay: '',
-
-  /* Kraków, and the two languages half the queue actually speaks. */
-  spoken: ['pl', 'en', 'uk'],
-};
-
-/**
- * The player behind `user2`.
- *
- * Further along than `seedPlayer()`'s own state — a week of streak, a
- * balance that can afford the top of the catalogue, and a history that shows the
- * accuracy figure meaning something.
- *
- * **`lastPlayed` is yesterday, computed when the directory is first written.**
- * It used to be `null`, which was the right answer while a streak was only ever
- * a number: `null` is the one value that cannot lapse, and the note here said
- * so. It stopped being the right answer when the Play screen started drawing
- * the streak as *seven days* — `streakWeek` reads the run back off
- * `streak` + `lastPlayed`, and a seven-day streak with no last day played is a
- * claim with no days behind it, so the row came out empty under a great big 7.
- * Two records of one fact, disagreeing on the screen.
- *
- * Yesterday is safe as well as honest. Yesterday is exactly the day that
- * *continues* a streak (`awardPoints`), so this account's next round takes it to
- * eight rather than resetting it — which is the property `null` was chosen for
- * — and it is now a state the app could actually have produced, which `null`
- * beside a 7 never was.
- *
- * Computed rather than written as a literal because the alternative is a date
- * that is correct on the day it is typed and a lapsed streak by the end of the
- * week. It is evaluated once, when this device first seeds its directory; from
- * then on the row lives in `localStorage` and ages like any other player's.
- */
-function seededPlayer(): PlayerState {
-  const back = new Date();
-  back.setDate(back.getDate() - 1);
-
-  return {
-    ...seedPlayer(),
-    points: 1240,
-    streak: 7,
-    answered: 132,
-    correct: 108,
-    lastPlayed: today(back),
-  };
-}
-
-/**
- * …and her profile, filled in for the same reason her wallet is.
- *
- * A demo account whose profile page is seven empty fields demonstrates a form,
- * not a profile. `birthDateChangesLeft` is 1 rather than 2 because a birthday
- * that is *set* has had one of its two writes spent — the counter is writes
- * remaining, and an account showing a birthday and two corrections left would
- * be showing a state the rule cannot produce.
- */
-const DILNOZA: UserProfile = {
-  username: 'dilnoza',
-  occupation: 'student',
-  city: 'Krakow',
-  countryCode: 'PL',
-  phone: '+48 668 214 907',
-  birthDate: '1998-03-14',
-  birthDateChangesLeft: 1,
-  avatar: '',
-};
-
-export const SEED_USERS: UserRecord[] = [
-  /*
-   * **There is no seeded operator, and there must not be one.**
-   *
-   * There was: `admin@pay-lez.com`, with its password in this file and
-   * therefore in the shipped bundle, where anybody could read it. That was
-   * defensible while the console only read this device’s own `localStorage`
-   * — it unlocked a view of data the reader already had — and it stopped
-   * being defensible when two of its tabs started reading the live database.
-   *
-   * An operator is now whoever the *server* has given the `admin` role, learned
-   * from `roles` on the session in `AuthProvider.adoptSession`. That is a row
-   * in `user_roles` on a machine this browser cannot write to, which is the
-   * only place a permission of that kind can honestly live. It also ends the
-   * thing that made it confusing to use: one sign-in, one account, one console.
-   */
-  {
-    id: 'u_marta',
-    name: 'Marta Wiśniewska',
-    email: 'user1@pay-lez.com',
-    password: 'user123',
-    created: '2026-04-02',
-    type: 'business',
-    business: BRATYSLAWSKA,
-    player: null,
-  },
-  {
-    id: 'u_dilnoza',
-    name: 'Dilnoza Yusupova',
-    email: 'user2@pay-lez.com',
-    password: 'user123',
-    created: '2026-05-19',
-    type: 'individual',
-    business: null,
-    player: seededPlayer(),
-    profile: DILNOZA,
-    /* Explicit, and it has to be: she is the account somebody signs in as to
-       look at the wallet, and `resolveRoute` holds an individual with a null
-       stamp at onboarding from every route. A seeded player who cannot reach
-       the screens she was seeded to demonstrate is not a seed. */
-    onboardedAt: '2026-05-19',
-  },
-];
+export const SEED_USERS: UserRecord[] = [];
 
 /*
  * There was a `DEMO_USERS` export here, and the sign-in form printed it.
  *
- * The argument for it was that the passwords ship in the bundle either way, so
- * showing them cost nothing and saved everyone guessing. That was true while the
- * seeds below were the whole of the account system. It stopped being true when
- * `server/` arrived: those are now credentials to a system that hashes them,
- * and a working pair printed on the front door is a working pair whoever reads
- * it. The seeds stay — they are what makes the prototype's screens worth looking
- * at — but nothing advertises them.
+ * The argument for it was that the passwords shipped in the bundle either way,
+ * so showing them cost nothing and saved everyone guessing. It stopped being
+ * true when `server/` arrived: those became credentials to a system that hashes
+ * them, and a working pair printed on the front door is a working pair whoever
+ * reads it. The export went first, and then — for the same reason carried one
+ * step further — the accounts it advertised. See the header.
  */
 
 /**
@@ -323,9 +190,11 @@ export function newUser(
     type: draft.type,
     business: null,
     /* `newPlayer`, and this is the line the whole separation exists for: this
-       is what a sign-up produces. `seedPlayer` — the furnished demo wallet — is
-       reached from exactly one place now, `seededPlayer` above, which is the
-       demo account whose credentials the sign-in form prints. */
+       is what a sign-up produces. There was a `seedPlayer` beside it — a
+       furnished demo wallet built from the catalogue in `content.ts` — and a
+       build once called it from here and handed 340 points to every sign-up.
+       Both the function and the catalogue are gone; a wallet is
+       `GET /v1/wallet` now, so there is nothing left to furnish. */
     player: draft.type === 'individual' ? newPlayer() : null,
     profile: { ...EMPTY_PROFILE },
     /*

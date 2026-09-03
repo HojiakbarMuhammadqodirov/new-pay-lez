@@ -55,7 +55,7 @@ export interface Delivery {
  * then the frequency cap. Each one is a different answer to "why didn't I get
  * this", and recording which one fired is what makes that answerable at all.
  */
-export function notify(db: Db, input: NotificationInput): Delivery {
+export async function notify(db: Db, input: NotificationInput): Promise<Delivery> {
   const at = input.at ?? now();
   const id = newId('ntf');
   const mode: Mode = input.mode ?? 'consumer';
@@ -64,7 +64,7 @@ export function notify(db: Db, input: NotificationInput): Delivery {
   let reason: string | undefined;
 
   if (input.push) {
-    const check = canPush(db, input.userId, mode, input.venueId, at);
+    const check = await canPush(db, input.userId, mode, input.venueId, at);
     if (check.ok) delivery = 'queued';
     else {
       delivery = 'suppressed';
@@ -74,11 +74,11 @@ export function notify(db: Db, input: NotificationInput): Delivery {
 
   const language =
     input.language ??
-    db.get<{ language: string }>(`SELECT language FROM users WHERE id = $u`, { u: input.userId })
+    (await db.get<{ language: string }>(`SELECT language FROM users WHERE id = $u`, { u: input.userId }))
       ?.language ??
     'en';
 
-  db.run(
+  await db.run(
     `INSERT INTO notifications
        (id, user_id, kind, mode, title, body, language, action_url, source_kind, source_ref,
         push_id, delivery, suppress_reason, created_at)
@@ -114,20 +114,20 @@ export type PushCheck = { ok: true } | { ok: false; reason: string };
  * "most of them never granted permission" is a different problem from "most of
  * them were over the cap".
  */
-export function canPush(
+export async function canPush(
   db: Db,
   userId: string,
   mode: Mode,
   venueId: string | undefined,
   at: Iso = now(),
-): PushCheck {
-  const tokens = db.get<{ n: number }>(
+): Promise<PushCheck> {
+  const tokens = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM push_tokens WHERE user_id = $u AND revoked_at IS NULL`,
     { u: userId },
   );
   if ((tokens?.n ?? 0) === 0) return { ok: false, reason: 'no_permission' };
 
-  const pref = db.get<{ enabled: number }>(
+  const pref = await db.get<{ enabled: number }>(
     `SELECT enabled FROM notification_prefs WHERE user_id = $u AND mode = $m AND channel = 'push'`,
     { u: userId, m: mode },
   );
@@ -138,7 +138,7 @@ export function canPush(
      stand-in, and Europe/Warsaw is where this product is. */
   const timezone =
     (venueId &&
-      db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId })
+      (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId }))
         ?.timezone) ||
     'Europe/Warsaw';
   const l = local(at, timezone);
@@ -146,14 +146,14 @@ export function canPush(
     return { ok: false, reason: 'quiet_hours' };
   }
 
-  const day = db.get<{ n: number }>(
+  const day = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM notifications
       WHERE user_id = $u AND delivery IN ('queued', 'sent') AND created_at >= $s`,
     { u: userId, s: plusDays(at, -1) },
   );
   if ((day?.n ?? 0) >= CONFIG.deals.userPushPerDay) return { ok: false, reason: 'frequency_cap' };
 
-  const week = db.get<{ n: number }>(
+  const week = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM notifications
       WHERE user_id = $u AND delivery IN ('queued', 'sent') AND created_at >= $s`,
     { u: userId, s: plusDays(at, -7) },
@@ -163,8 +163,8 @@ export function canPush(
   return { ok: true };
 }
 
-export const inbox = (db: Db, userId: string, mode?: Mode, limit = 50) =>
-  db.all(
+export const inbox = async (db: Db, userId: string, mode?: Mode, limit = 50) =>
+  await db.all(
     `SELECT id, kind, mode, title, body, action_url, read_at, created_at, delivery
        FROM notifications
       WHERE user_id = $u AND ($m IS NULL OR mode = $m)
@@ -172,21 +172,21 @@ export const inbox = (db: Db, userId: string, mode?: Mode, limit = 50) =>
     { u: userId, m: mode ?? null, l: limit },
   );
 
-export const unreadCount = (db: Db, userId: string, mode?: Mode): number =>
-  db.get<{ n: number }>(
+export const unreadCount = async (db: Db, userId: string, mode?: Mode): Promise<number> =>
+  (await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM notifications
       WHERE user_id = $u AND read_at IS NULL AND ($m IS NULL OR mode = $m)`,
     { u: userId, m: mode ?? null },
-  )?.n ?? 0;
+  ))?.n ?? 0;
 
-export function markRead(db: Db, userId: string, ids: string[], at: Iso = now()): number {
+export async function markRead(db: Db, userId: string, ids: string[], at: Iso = now()): Promise<number> {
   let changed = 0;
-  db.tx(() => {
+  await db.tx(async () => {
     for (const id of ids) {
-      changed += db.run(
+      changed += (await db.run(
         `UPDATE notifications SET read_at = $t WHERE id = $i AND user_id = $u AND read_at IS NULL`,
         { t: at, i: id, u: userId },
-      ).changes;
+      )).changes;
     }
   });
   return changed;
@@ -200,16 +200,16 @@ export function markRead(db: Db, userId: string, ids: string[], at: Iso = now())
  * delivered is here and is real. Swapping the adapter changes nothing about who
  * gets what.
  */
-export const pending = (db: Db, limit = 200) =>
-  db.all<{ id: string; user_id: string; title: string; body: string; language: string }>(
+export const pending = async (db: Db, limit = 200) =>
+  await db.all<{ id: string; user_id: string; title: string; body: string; language: string }>(
     `SELECT n.id, n.user_id, n.title, n.body, n.language FROM notifications n
       WHERE n.delivery = 'queued' ORDER BY n.created_at LIMIT $l`,
     { l: limit },
   );
 
-export function markSent(db: Db, ids: string[], failed: string[] = []): void {
-  db.tx(() => {
-    for (const id of ids) db.run(`UPDATE notifications SET delivery = 'sent' WHERE id = $i`, { i: id });
-    for (const id of failed) db.run(`UPDATE notifications SET delivery = 'failed' WHERE id = $i`, { i: id });
+export async function markSent(db: Db, ids: string[], failed: string[] = []): Promise<void> {
+  await db.tx(async () => {
+    for (const id of ids) await db.run(`UPDATE notifications SET delivery = 'sent' WHERE id = $i`, { i: id });
+    for (const id of failed) await db.run(`UPDATE notifications SET delivery = 'failed' WHERE id = $i`, { i: id });
   });
 }

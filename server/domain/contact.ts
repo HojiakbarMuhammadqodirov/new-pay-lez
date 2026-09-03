@@ -124,9 +124,9 @@ const BODY_MAX = 8_000;
 /** The shape of an address, matching the front end's own `isEmail`. */
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function limit(db: Db, column: 'email_norm' | 'sender_day', value: string, at: Iso): void {
+async function limit(db: Db, column: 'email_norm' | 'sender_day', value: string, at: Iso): Promise<void> {
   const since = plusMinutes(at, -60);
-  const row = db.get<{ n: number }>(
+  const row = await db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM contact_messages WHERE ${column} = $v AND created_at >= $since`,
     { v: value, since },
   );
@@ -135,7 +135,7 @@ function limit(db: Db, column: 'email_norm' | 'sender_day', value: string, at: I
   }
 }
 
-export function submit(
+export async function submit(
   db: Db,
   input: {
     topic: string;
@@ -152,7 +152,7 @@ export function submit(
     secret: string;
     at?: Iso;
   },
-): { id: string; createdAt: Iso } {
+): Promise<{ id: string; createdAt: Iso }> {
   const at = input.at ?? now();
 
   const topic = input.topic.trim().toLowerCase();
@@ -178,11 +178,11 @@ export function submit(
   const senderDay = visitorKey(input.secret, at.slice(0, 10), input.ip, input.agent);
   const emailNorm = email.toLowerCase();
 
-  limit(db, 'email_norm', emailNorm, at);
-  limit(db, 'sender_day', senderDay, at);
+  await limit(db, 'email_norm', emailNorm, at);
+  await limit(db, 'sender_day', senderDay, at);
 
   const id = newId('msg');
-  db.run(
+  await db.run(
     `INSERT INTO contact_messages
        (id, topic, name, email, email_norm, body, status, user_id, language, sender_day, created_at)
      VALUES ($id, $topic, $name, $email, $norm, $body, 'new', $user, $lang, $day, $at)`,
@@ -209,24 +209,24 @@ export function submit(
  * `status` filters; omitting it returns everything, because "what came in this
  * week" is as real a question as "what is still unanswered".
  */
-export function list(
+export async function list(
   db: Db,
   input: { status?: Status; limit?: number } = {},
-): { messages: ContactMessage[]; counts: Record<Status, number> } {
+): Promise<{ messages: ContactMessage[]; counts: Record<Status, number> }> {
   const take = Math.min(Math.max(input.limit ?? 100, 1), 500);
   const rows = input.status
-    ? db.all<Row>(
+    ? await db.all<Row>(
         `SELECT * FROM contact_messages WHERE status = $s ORDER BY created_at DESC LIMIT $n`,
         { s: input.status, n: take },
       )
-    : db.all<Row>(`SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT $n`, { n: take });
+    : await db.all<Row>(`SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT $n`, { n: take });
 
   /* Counted across the whole table rather than across the page, because the
      number beside a filter chip is about the table and not about this page of
      it — a chip reading "new 12" over a list of 12 that is actually 40 is the
      bug that makes an operator stop trusting the console. */
   const counts: Record<Status, number> = { new: 0, read: 0, done: 0 };
-  for (const row of db.all<{ status: string; n: number }>(
+  for (const row of await db.all<{ status: string; n: number }>(
     `SELECT status, COUNT(*) AS n FROM contact_messages GROUP BY status`,
   )) {
     if (isStatus(row.status)) counts[row.status] = row.n;
@@ -243,11 +243,11 @@ export function list(
  * A message somebody sent is a record; `done` is what "dealt with" looks like
  * on a record.
  */
-export function setStatus(db: Db, id: string, status: Status, at: Iso = now()): ContactMessage {
-  const row = db.get<Row>(`SELECT * FROM contact_messages WHERE id = $id`, { id });
+export async function setStatus(db: Db, id: string, status: Status, at: Iso = now()): Promise<ContactMessage> {
+  const row = await db.get<Row>(`SELECT * FROM contact_messages WHERE id = $id`, { id });
   if (!row) throw new DomainError('not_found', 'no such message');
 
-  db.run(`UPDATE contact_messages SET status = $s, handled_at = $at WHERE id = $id`, {
+  await db.run(`UPDATE contact_messages SET status = $s, handled_at = $at WHERE id = $id`, {
     s: status,
     at,
     id,
