@@ -30,9 +30,16 @@ import { PATHS } from './router';
 export function SubscribeButton({
   planCode,
   planName,
+  months = 1,
   size = 'md',
 }: {
   planCode: 'free' | 'pro' | 'premium';
+  /**
+   * The rung the card is currently showing, so the button charges the price
+   * beside it. Defaults to monthly for the callers with no ladder — the Play
+   * screen, which offers Pro and nothing else.
+   */
+  months?: number;
   /** The plan's own name, as the surrounding card already spells it. */
   planName: string;
   size?: 'md' | 'lg';
@@ -75,7 +82,7 @@ export function SubscribeButton({
           setBusy(true);
           setFailed(false);
           try {
-            const session = await startCheckout(planCode);
+            const session = await startCheckout(planCode, months);
             /* `assign` rather than `replace`: coming back from a payment page
                with the browser's own Back button should land on the plans, not
                on whatever preceded them. */

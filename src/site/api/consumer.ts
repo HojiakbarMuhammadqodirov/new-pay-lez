@@ -173,10 +173,10 @@ export interface Checkout {
   sessionId?: string;
 }
 
-export const startCheckout = (planCode: string) =>
+export const startCheckout = (planCode: string, months = 1) =>
   call<Checkout>('/v1/billing/checkout', {
     method: 'POST',
-    body: { planCode, source: 'stripe' },
+    body: { planCode, months, source: 'stripe' },
   });
 
 /* ══════════════════════════════════════════════════════════════ a round ══ */

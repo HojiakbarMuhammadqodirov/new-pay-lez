@@ -83,6 +83,16 @@ export interface StripePrice {
   product: string;
 }
 
+/**
+ * One price, to find out which product it belongs to.
+ *
+ * Needed when a plan is *partly* set up — its monthly rung exists from an
+ * earlier run and the longer terms do not. Without this the setup script would
+ * create a second product for the same plan, leaving two "Paylez Pro" entries
+ * in the dashboard with the ladder split across them.
+ */
+export const getPrice = (id: string) => call<StripePrice>(`/prices/${id}`, undefined, 'GET');
+
 export const createProduct = (name: string, metadata: Record<string, string>) =>
   call<{ id: string }>('/products', { name, metadata });
 
@@ -168,6 +178,10 @@ export const createCheckoutSession = (input: {
       metadata: {
         paylez_subject: input.clientReferenceId,
         ...(input.metadata?.plan_code ? { paylez_plan_code: input.metadata.plan_code } : {}),
+        /* The rung, so the webhook can set a renewal date that matches what was
+           bought. Without it a twelve-month subscription renews in thirty days
+           on our side and `runRenewals` expires a customer who has paid. */
+        ...(input.metadata?.months ? { paylez_months: input.metadata.months } : {}),
       },
       ...(input.trialDays && input.trialDays > 0
         ? { trial_period_days: input.trialDays }

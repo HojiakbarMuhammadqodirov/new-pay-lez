@@ -32,7 +32,7 @@
 import type { Db } from '../db/db.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
-import { now, plusDays, type Iso } from './time.ts';
+import { now, plusDays, plusMonths, type Iso } from './time.ts';
 
 export type Audience = 'consumer' | 'partner';
 
@@ -251,6 +251,24 @@ export async function startSubscription(
     planCode: string;
     source: Subscription['source'];
     externalRef?: string;
+    /**
+     * How many months were bought at once, off the `plan_terms` ladder.
+     *
+     * A plan's `interval` says how it is *priced*; this says how long was
+     * actually committed to, and they are not the same the moment 3, 6 and 12
+     * month rungs are sold. Without it every subscription renews in thirty
+     * days — and `runRenewals` sweeps anything past its renewal date, so a
+     * customer who paid for a year would be moved to `grace` after one month
+     * and expired a week later.
+     */
+    months?: number;
+    /**
+     * The period end the processor itself reports, which beats any arithmetic
+     * here. Stripe decides when it will charge again — proration, a clock
+     * skew, a month of a different length — and this row is a mirror of that
+     * decision rather than a second opinion about it.
+     */
+    renewsAt?: Iso;
     at?: Iso;
   },
 ): Promise<Subscription> {
@@ -304,7 +322,14 @@ export async function startSubscription(
         src: input.source,
         ref: input.externalRef ?? null,
         at,
-        r: plusDays(at, trialing ? plan.trial_days : plan.interval === 'year' ? 365 : 30),
+        /* In order of authority: what the processor said, then the term that
+           was bought, then the plan's own billing interval. */
+        r: trialing
+          ? plusDays(at, plan.trial_days)
+          : (input.renewsAt ??
+            (input.months && input.months > 1
+              ? plusMonths(at, input.months)
+              : plusDays(at, plan.interval === 'year' ? 365 : 30))),
       },
     );
     return (await db.get<Subscription>(`SELECT * FROM subscriptions WHERE id = $i`, { i: id }))!;

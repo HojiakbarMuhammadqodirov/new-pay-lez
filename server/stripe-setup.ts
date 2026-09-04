@@ -66,43 +66,87 @@ async function main(): Promise<void> {
   let skipped = 0;
 
   for (const plan of plans) {
-    const key = stripePriceKey(AUDIENCE, plan.code, 1);
-    const existing = await db.get<{ value: string }>(
-      `SELECT value FROM platform_config WHERE key = $k`,
-      { k: key },
+    /*
+     * **One Stripe price per rung of the commitment ladder**, not one per plan.
+     *
+     * `plan_terms` holds 1, 3, 6 and 12 months at rising discounts, and the
+     * pricing cards already show them — so a plan with only a monthly price
+     * advertised "179.88 zł for 12 months, save 25%" and charged 19.99 a month.
+     * The page quoted a price the checkout could not honour.
+     *
+     * A term is `total_minor` charged every `months` months, which is exactly
+     * what the card's own sentence says ("{total} charged once, for {n}
+     * months") and exactly what Stripe's `interval_count` expresses. Falling
+     * back to a single monthly rung keeps a plan with no ladder working.
+     */
+    const terms = await db.all<{ months: number; total_minor: number }>(
+      `SELECT months, total_minor FROM plan_terms WHERE plan_id = $p ORDER BY months`,
+      { p: plan.id },
     );
-    if (existing) {
-      console.log(`  skip  ${plan.code.padEnd(9)} already mapped to ${existing.value}`);
-      skipped += 1;
-      continue;
+    const rungs = terms.length
+      ? terms
+      : [{ months: 1, total_minor: plan.price_minor }];
+
+    /* One product per plan, shared by its rungs: they are the same thing bought
+       for different lengths, and Stripe's dashboard groups by product. */
+    let productId: string | null = null;
+
+    for (const rung of rungs) {
+      const key = stripePriceKey(AUDIENCE, plan.code, rung.months);
+      const existing = await db.get<{ value: string }>(
+        `SELECT value FROM platform_config WHERE key = $k`,
+        { k: key },
+      );
+      if (existing) {
+        console.log(
+          `  skip  ${plan.code.padEnd(9)} ${String(rung.months).padStart(2)}mo already mapped`,
+        );
+        skipped += 1;
+        /* Remember which product that rung sits on, so the rungs still to be
+           created join it rather than starting a second one. */
+        if (!productId && !DRY) productId = (await stripe.getPrice(existing.value)).product;
+        continue;
+      }
+
+      const amount = `${(rung.total_minor / 100).toFixed(2)} ${plan.currency}`;
+      if (DRY) {
+        console.log(
+          `  would create  ${plan.code.padEnd(9)} ${String(rung.months).padStart(2)}mo  ${amount} every ${rung.months} month(s)`,
+        );
+        continue;
+      }
+
+      if (!productId) {
+        const product = await stripe.createProduct(`Paylez ${plan.name}`, {
+          paylez_plan: plan.id,
+          paylez_code: plan.code,
+          paylez_audience: AUDIENCE,
+        });
+        productId = product.id;
+      }
+
+      const price = await stripe.createPrice({
+        product: productId,
+        currency: plan.currency,
+        unitAmount: rung.total_minor,
+        intervalCount: rung.months,
+        metadata: {
+          paylez_plan: plan.id,
+          paylez_code: plan.code,
+          paylez_months: String(rung.months),
+        },
+      });
+
+      await db.run(
+        `INSERT INTO platform_config (key, value, updated_at) VALUES ($k, $v, $t)
+           ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
+        { k: key, v: price.id, t: at },
+      );
+      console.log(
+        `  made  ${plan.code.padEnd(9)} ${String(rung.months).padStart(2)}mo  ${amount} every ${rung.months} month(s) -> ${price.id}`,
+      );
+      made += 1;
     }
-
-    const amount = `${(plan.price_minor / 100).toFixed(2)} ${plan.currency}`;
-    if (DRY) {
-      console.log(`  would create  ${plan.code.padEnd(9)} ${plan.name} at ${amount}/month`);
-      continue;
-    }
-
-    const product = await stripe.createProduct(`Paylez ${plan.name}`, {
-      paylez_plan: plan.id,
-      paylez_code: plan.code,
-      paylez_audience: AUDIENCE,
-    });
-    const price = await stripe.createPrice({
-      product: product.id,
-      currency: plan.currency,
-      unitAmount: plan.price_minor,
-      intervalCount: 1,
-      metadata: { paylez_plan: plan.id, paylez_code: plan.code },
-    });
-
-    await db.run(
-      `INSERT INTO platform_config (key, value, updated_at) VALUES ($k, $v, $t)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`,
-      { k: key, v: price.id, t: at },
-    );
-    console.log(`  made  ${plan.code.padEnd(9)} ${amount}/month -> ${price.id}`);
-    made += 1;
   }
 
   await db.close();

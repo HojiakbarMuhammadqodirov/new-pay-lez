@@ -92,6 +92,14 @@ export interface CheckoutInput {
   db: Db;
   subject: entitlements.Subject;
   planCode: string;
+  /**
+   * Which rung of the commitment ladder — 1, 3, 6 or 12 months.
+   *
+   * Defaults to monthly. The pricing cards let a visitor pick a rung and show
+   * the discount it earns, so a checkout that ignored it would charge a price
+   * the page did not quote.
+   */
+  months?: number;
   source: 'stripe' | 'apple' | 'google';
   actorId: string;
   at?: Iso;
@@ -110,11 +118,12 @@ export async function startCheckout(input: CheckoutInput) {
     );
     if (!plan) throw new DomainError('not_found', 'no such plan', { planCode: input.planCode });
 
-    const priceId = await stripePriceFor(input.db, audience, input.planCode);
+    const months = input.months && input.months > 0 ? Math.floor(input.months) : 1;
+    const priceId = await stripePriceFor(input.db, audience, input.planCode, months);
     if (!priceId) {
       throw new DomainError(
         'internal',
-        `no Stripe price is mapped for ${audience}/${input.planCode} — run \`npm run stripe:setup\``,
+        `no Stripe price is mapped for ${audience}/${input.planCode} at ${months} month(s) — run \`npm run stripe:setup\``,
       );
     }
 
@@ -140,7 +149,12 @@ export async function startCheckout(input: CheckoutInput) {
       successUrl: `${siteOrigin()}/#/wallet?checkout=done`,
       cancelUrl: `${siteOrigin()}/#/wallet?checkout=cancelled`,
       trialDays: plan.trial_days,
-      metadata: { plan_code: input.planCode, audience, actor: input.actorId },
+      metadata: {
+        plan_code: input.planCode,
+        months: String(months),
+        audience,
+        actor: input.actorId,
+      },
     });
 
     /*
@@ -357,11 +371,23 @@ export async function handleWebhook(input: WebhookInput) {
         return { applied: false, reason: 'event without a subject or plan' };
       }
 
+      /*
+       * The renewal date, in order of authority. `current_period_end` is on a
+       * subscription object and is Stripe's own answer, in seconds; a session
+       * event does not carry it, and then the rung bought is the next best
+       * thing. Both beat "thirty days", which is what a twelve-month customer
+       * would otherwise get before `runRenewals` expired them.
+       */
+      const periodEnd = Number(object.current_period_end);
       const created = await entitlements.startSubscription(input.db, {
         subject: kind === 'venue' ? { venueId: id } : { userId: id },
         planCode,
         source: 'stripe',
         externalRef,
+        months: Number(metadata.paylez_months ?? metadata.months) || 1,
+        renewsAt: Number.isFinite(periodEnd) && periodEnd > 0
+          ? new Date(periodEnd * 1000).toISOString()
+          : undefined,
         at,
       });
       await input.db.run(

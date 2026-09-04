@@ -580,7 +580,11 @@ export function Subscription() {
                       could take a payment, and no longer. Signed out it still
                       goes to sign-in, because checkout needs an account to
                       attach a subscription to. */}
-                  <SubscribeButton planCode={plan.id} planName={named.name} />
+                  <SubscribeButton
+                    planCode={plan.id}
+                    planName={named.name}
+                    months={rung.months}
+                  />
                 </div>
               </article>
             );

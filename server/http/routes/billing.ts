@@ -24,7 +24,7 @@ import * as audit from '../../domain/audit.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import { DomainError } from '../../domain/errors.ts';
 import * as billingPort from '../../ports/billing.ts';
-import { actor, oneOf, optStr, str } from '../input.ts';
+import { actor, oneOf, optInt, optStr, str } from '../input.ts';
 import type { Route } from '../router.ts';
 
 export const billingRoutes: Route[] = [
@@ -84,6 +84,9 @@ export const billingRoutes: Route[] = [
         db: ctx.db,
         subject,
         planCode: str(ctx.body, 'planCode'),
+        /* Which rung of the ladder. Absent means monthly, which is what the
+           cards default to for a plan that is not sold on a ladder. */
+        months: optInt(ctx.body, 'months'),
         source,
         actorId: user.id,
         at: ctx.at,
