@@ -15,9 +15,12 @@ is still the landing route's backdrop and still the largest single component
 here, but it is now one route's backdrop out of several rather than the thing
 the site is built on.
 
-`server/` is the backend the front end and the Flutter app both talk to: zero
-runtime dependencies, `node:sqlite` and `node:http`, run straight from
-TypeScript by Node 22.
+`server/` is the backend the front end and the Flutter app both talk to:
+`node:http` and `node:crypto`, run straight from TypeScript by Node 22, with
+**one** runtime dependency — `pg`, because production is Supabase Postgres now
+and Postgres speaks a binary protocol `fetch` cannot. It still runs on SQLite
+when no Postgres is configured, which is what keeps a checkout runnable and the
+test suite offline.
 
 Three files document their own halves in depth and this one covers the repo as
 a whole:
@@ -62,6 +65,23 @@ the generators in `scripts/`. `npm run openapi` regenerates
 changing an endpoint and commit what it writes. `npm run server:import`
 re-reads the old database in `new-data/` and exits.
 
+Four scripts belong to Postgres and Stripe, and three of them write to services
+outside this repo:
+
+- **`npm run pg:schema`** regenerates `server/db/schema.pg.sql` and
+  `server/db/conflicts.ts` from `schema.sql`. **Never edit either output.** Run
+  it after any schema change and commit what it writes.
+- **`npm run pg:migrate -- --from <file.db>`** copies a SQLite database into
+  Postgres, once. It refuses a target that already has rows, and re-reads both
+  sides at the end rather than trusting the count it kept while inserting.
+- **`npm run pg:backup -- --to <file.db>`** is the reverse, and is what the
+  VPS's nightly timer runs. What it writes is a **bootable database**, not a
+  dump: recovery is `cp` it into place, comment out `PAYLEZ_PG_URL`, restart.
+- **`npm run stripe:setup`** creates the products and prices in the Stripe
+  account the current key points at, from `plans` and `plan_terms`. Safe to
+  re-run — a mapped price is skipped, not duplicated — and it refuses a
+  `sk_live_` key without `--live`.
+
 ## Layout
 
 The site is `src/site/` — one file per route, plus `games/`, `i18n/`, `theme/`
@@ -88,8 +108,25 @@ before changing anything under it.
 
 ### `server/` is a separate program in the same repo
 
-Zero runtime dependencies, like the front end: `node:sqlite`, `node:http` and
-`node:crypto`, run straight from TypeScript by Node 22. `npm run server` boots
+**Two databases behind one interface, and the boot picks.** `Db` in `db/db.ts`
+is an *interface*, implemented twice: `SqliteDb` in that same file over
+`node:sqlite`, and `PgDb` in `db/pg.ts` over `pg`. Both are `async`, so the 29
+files that import `Db` have one code path and none of them can ask which engine
+answered. `boot()` chooses from the presence of **`PAYLEZ_PG_URL`** — set means
+Postgres, unset means the SQLite file — and that one variable is also the
+rollback: comment it out, restart, and the file is serving again.
+
+An interface rather than structural typing because both classes carry private
+fields, and TypeScript treats a class with privates as nominal: neither would
+ever be assignable to the other however identical their public surface.
+
+**Keeping the SQLite driver is deliberate and is what keeps `verify:api`
+honest.** Postgres has no `:memory:`, so a Postgres-only port would have dragged
+all 684 checks onto a live database. They still run offline against a file that
+is thrown away.
+
+`node:http` and `node:crypto` otherwise, run straight from TypeScript by Node
+22. `npm run server` boots
 it (migrating, seeding and importing the old database on an empty file — and
 **"seeding" is product configuration only**: `seedPlatform` writes the plans,
 the category defaults and the word bank, and nothing else. There is no venue
@@ -156,8 +193,43 @@ composed, and every figure in what comes back is checked against those facts
 before it is used (`onlyKnownNumbers`); a rewrite that introduced a number is
 discarded whole and the grounded draft is sent. Timeouts, refusals and errors
 all resolve to the same thing: the draft. Called with `fetch` rather than the
-SDK on purpose — the zero-dependency rule below is worth more than one request
-to one endpoint.
+SDK on purpose — one dependency at one boundary is the budget, and `pg` has
+spent it.
+
+**A plan can be paid for, and the money is Stripe's.** `ports/billing.ts` is the
+boundary and `ports/stripe.ts` is the transport, over `fetch` for the same
+reason the model is. Three rules hold it together and each one has already been
+the bug:
+
+- **Nothing is written when checkout starts.** A session is an intention to pay.
+  The subscription row is written when the webhook says the money moved, so
+  opening the payment page and closing it entitles nobody.
+- **The subject rides on the subscription, not only on the session.**
+  `client_reference_id` appears on one event, and Stripe does not guarantee
+  delivery order — `invoice.paid` and `customer.subscription.created` really did
+  arrive before `checkout.session.completed`, with nothing to identify the
+  payer. It is stamped into `subscription_data.metadata` as well, and any of
+  three events may be the one that creates the row.
+- **The signature is checked against the raw bytes.** `Ctx.rawBody` exists for
+  this one route. Verifying `JSON.stringify(payload)` would pass today and fail
+  the first time a key order changed — and fail as "bad signature", which reads
+  as a wrong secret rather than as this mistake. The timestamp is checked too,
+  or a captured delivery could be replayed to re-grant a cancelled plan.
+
+**Eight prices, one per plan per rung.** `plan_terms` sells 1, 3, 6 and 12
+months at up to 25% off and the cards *open* on the twelve-month rung, so a
+checkout that took only a plan code quoted 179.88 zł and charged 19.99 a month.
+The term travels card → button → route → port → Stripe and back on the
+subscription's metadata, because `renews_at` needs it: `runRenewals` sweeps
+anything past its renewal date, and a year-long customer given thirty days is
+one moved to `grace` after a month and expired a week later. The renewal date
+takes, in order: what Stripe reports, the term bought, the plan's interval.
+
+**BLIK cannot do subscriptions.** It is how Poland pays online and Stripe
+refuses it in `subscription` mode — it authorises a single payment and cannot be
+stored and charged again. `payment_method_types` is therefore **not** set at
+all: a Checkout Session offers whatever the account has enabled and the mode
+allows. Naming a list would both break and freeze it.
 
 Two things about it are easy to undo by accident and both are checked:
 
@@ -572,6 +644,26 @@ longer valid. All three reads are wrapped in `try`, because storage throws in a
 private window with cookies blocked and a console that cannot open is worse than
 one that cannot remember.
 
+**The plan and its entitlements are session state, not a per-screen fetch.**
+`AuthValue` carries `plan` and `entitlements`, filled by one `GET /v1/me` when
+the session changes — the header pill, the profile card and the Play screen's
+gauge all read the same answer, where three `useApi('/v1/me')` calls would be
+three requests to one question. Both are **`null` while unknown**, and that is
+load-bearing rather than lazy: signed out, still loading and *the server did not
+answer* are all "do not draw a badge". Falling back to the free plan would label
+a paying customer as free every time a request failed, which is the one error
+here worth avoiding.
+
+**`SubscribeButton` has three faces, and which one it wears is what the site can
+honestly do next** (`subscribe.tsx`). Signed out it is a link to sign-in, because
+checkout needs an account to attach a subscription to. On the plan somebody
+already pays for it is a *word*, not a control. Otherwise it is a real press. It
+writes nothing on the way out — the badge changes on the next load, after the
+webhook, because a badge that flipped before the payment cleared would be a lie
+for everybody who abandoned the page. It appears on the pricing cards (carrying
+the selected rung) and on the Play screen (Pro, monthly, and only to somebody on
+free).
+
 **Sign-up asks which kind of account it is; sign-in does not.** The question is
 answered *before* the account exists, so nothing new is ever created in the
 undecided state. `ChooseType` on the sign-in route still exists for the sessions
@@ -700,8 +792,14 @@ that looks like a wipe. Bringing one back is a product decision, not a tidy-up.
 **Energy is what bounds a day, and it is not called lives.** `MAX_ENERGY` and
 `ENERGY_REGEN_MINUTES` mirror the server's *free-plan* figures (`CONFIG.points`):
 four in the tank, one back every two hours — twelve rounds a day sustained and
-sixteen from a full start. The free plan is the only one this site can resolve, because
-it sells no subscription it could read a bigger tank off. `energyOf` derives the
+sixteen from a full start. **They are the *defaults* now, not the only answer.**
+`energyOf` takes an optional `EnergyLimits`, and the Play screen passes the real
+pair off `entitlements` in the auth context (`daily_energy`,
+`energy_regen_minutes`) — Pro is 6 at 60 minutes, Premium 8 at 30. The server has
+always read those two keys in `games.energyFor`; what changed is that the gauge
+agrees with it instead of drawing everybody the smallest tank. A missing key, an
+unparsable value and a signed-out session all land back on the free figure, which
+is why the constants stay. `energyOf` derives the
 tank from `energy` + `energyAt` on demand rather than storing a count that would
 be stale the moment the tab was left open — the same construction
 `games.energyFor` uses one repo over, for the same reason. Every finished round
@@ -839,6 +937,38 @@ bundled, the flag font copied into `public/`), geometry comes from the
 
 ## Things that will bite
 
+- **Postgres is stricter than SQLite in seven places, and six of them fail
+  loudly.** All are handled and commented where they live; the list is here so a
+  new query does not walk into one. `pg` returns **bigint and numeric as
+  strings**, so `SUM(delta)` would have made the ledger disagree with itself on
+  every account (type parsers in `db/pg.ts`). A parameter tested with
+  **`$x IS NULL` cannot have its type inferred** — the optional-filter idiom is
+  used 26 times and broke every list endpoint with a 500, so `translate()` casts
+  that occurrence to `::text`. The pooler forces **`extra_float_digits = 0`**,
+  truncating float reads; storage is exact but a read-modify-write makes it
+  permanent. Scalar **`MAX(a, b)`** is SQLite-only (written as `CASE WHEN`).
+  **`GROUP_CONCAT`** is translated to `STRING_AGG`. **`ON CONFLICT … DO UPDATE
+  SET x = x + 1`** is ambiguous and must qualify the table. And **`GROUP BY` an
+  output alias** binds to a *column* of that name if one exists, which silently
+  broke the traffic report.
+- **Three kinds of async bug the type checker cannot see.** The whole server is
+  promise-based now, and `tsc` catches only the cases where the value is used.
+  It says nothing about a **floating promise** — a statement like `db.tx(…)`
+  whose result is discarded, which type-checks perfectly while no longer
+  happening before the next line (97 of these existed; one was in a live admin
+  route). Nor about **`forEach(async …)`**, which throws the callback's promise
+  away so the loop finishes before any body runs — and converting it to `for…of`
+  changes what `return` means, from *continue* to *leave the function*. Nor
+  about **an async callback typed `() => void`**, which is assignable and whose
+  promise is then dropped: that turned a routine 403 into a process-killing
+  unhandled rejection. If something "did not happen", suspect these before
+  suspecting the database.
+- **`index.html` is served with no `Cache-Control`.** A deploy therefore looks
+  like it did nothing until the browser revalidates — the page keeps loading the
+  *previous* bundle while `curl` shows the new one. **Hard-refresh before
+  judging a deploy, and tell whoever asked to do the same.** The durable fix is
+  a `location = /index.html` block with `add_header Cache-Control "no-cache";`
+  in the nginx site config, which is not applied.
 - The globe must be mounted `position: fixed` (`.site__globe`). Its scroll
   transition moves it *within* the viewport, so it needs a stable frame of
   reference. Without that, it will not behave.

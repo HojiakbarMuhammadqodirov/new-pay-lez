@@ -50,21 +50,36 @@ Node 22.18+ runs the TypeScript directly (`--experimental-strip-types` is on by
 default), so there is no build step and no bundler. `npx tsc -b` type-checks the
 whole repo including this project.
 
-**Zero runtime dependencies.** `node:sqlite` for storage, `node:http` for the
-server, `node:crypto` for scrypt, HMAC and AES-CMAC. That is the same rule the
-front end follows for fonts and geometry, and it matters more here: this process
-holds the points ledger, and a supply chain is a thing that can be compromised.
+**One runtime dependency, and it is named.** `node:http` for the server,
+`node:crypto` for scrypt, HMAC and AES-CMAC, `node:sqlite` for local storage —
+and **`pg`**, because production is Supabase Postgres and Postgres speaks a
+binary protocol `fetch` cannot. That is the same rule the front end follows for
+fonts and geometry, and it matters more here: this process holds the points
+ledger, and a supply chain is a thing that can be compromised. The budget is one
+dependency at one boundary; Stripe and Claude are both called with `fetch`
+rather than their SDKs for exactly that reason.
+
+**Which database is a boot-time decision.** `Db` in `db/db.ts` is an interface
+with two implementations — `SqliteDb` beside it and `PgDb` in `db/pg.ts` — and
+`boot()` picks from the presence of `PAYLEZ_PG_URL`. Nothing past that line
+knows which one answered. Keeping the SQLite driver is what lets this test suite
+go on running offline against `:memory:`; Postgres has no such thing.
 
 ### Environment
 
 | Variable | Default | What it does |
 | --- | --- | --- |
 | `PORT` / `HOST` | `8787` / `127.0.0.1` | Where to listen. |
-| `PAYLEZ_DB` | `server/data/paylez.db` | SQLite file. `:memory:` for tests. |
+| `PAYLEZ_PG_URL` | unset | **Secret.** Postgres connection string. Set means Postgres, unset means the SQLite file below — that is the whole switch, and the rollback. Supabase: the **session pooler** string, not the IPv6-only direct one and not the 6543 transaction pooler. |
+| `PAYLEZ_PG_SSL` | unset | `off` only for a Postgres on localhost. Against Supabase the CA is pinned (`db/supabase-ca.crt`) and verification stays on. |
+| `PAYLEZ_DB` | `server/data/paylez.db` | SQLite file, used when `PAYLEZ_PG_URL` is unset. `:memory:` for tests. |
 | `PAYLEZ_SECRET` | *dev fallback, warns loudly* | Signs QR payloads and sessions. |
 | `PAYLEZ_NFC_KEY` | unset | 16-byte hex master key for NTAG 424 DNA taps. |
 | `PAYLEZ_ORIGINS` | `http://localhost:5173` | CORS allow-list. |
-| `PAYLEZ_BILLING` | `local` | `live` refuses to run without a real adapter. |
+| `PAYLEZ_BILLING` | `local` | `live` refuses to run without a real adapter. With the Stripe keys set, `live` is what makes checkout real. |
+| `STRIPE_SECRET_KEY` | unset | **Secret.** `sk_test_…` moves no real money however live everything else is; `sk_live_…` is the switch that matters. |
+| `STRIPE_WEBHOOK_SECRET` | unset | **Secret.** Per endpoint, shown once at creation, and different for test and live. Without it a delivery cannot be verified and is refused — which is correct: a trusted unauthenticated webhook is an endpoint anybody can use to grant themselves a plan. |
+| `PAYLEZ_SITE_ORIGIN` | first of `PAYLEZ_ORIGINS` | Where checkout returns the customer to. |
 | `PAYLEZ_PUSH` | `local` | Same, for FCM/APNs. |
 | `PAYLEZ_LLM` | `off` | `live` lets a model reword the assistant's answer. Off, it composes deterministically. |
 | `ANTHROPIC_API_KEY` | unset | **Secret.** The Claude key. Both this and `PAYLEZ_LLM=live` are required; either one alone leaves the model off. |
