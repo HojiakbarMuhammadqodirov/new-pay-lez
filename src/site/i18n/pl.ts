@@ -97,6 +97,7 @@ export const pl: Dictionary = {
     typeHint: 'Wybierz jedną opcję, aby przejść dalej.',
 
     signOut: 'Wyloguj się',
+    cancel: 'Anuluj',
     accountMenu: 'Twoje konto',
     dashboard: 'Panel',
     roles: { individual: 'Użytkownik', business: 'Firma', admin: 'Administrator' },
@@ -479,7 +480,7 @@ export const pl: Dictionary = {
     you: 'Ty',
     stubReply:
       'W tej wersji asystent nie jest podłączony do modelu, więc nie odpowiem jeszcze na to pytanie. Wszystko dookoła tej wiadomości — rozmowa, pole tekstowe, Twoje konto — działa naprawdę.',
-    stubTag: 'Bez połączenia',
+    stubTag: 'W tej wersji nie podłączono modelu.',
   },
 
   wallet: {
@@ -2711,8 +2712,11 @@ export const pl: Dictionary = {
       swap: 'Zamień waluty miejscami',
       result: '{from} = {to}',
       enter: 'Wpisz kwotę do przeliczenia.',
-      saved: 'Zapisane pary',
-      savedNote: 'Przypięte na górze ekranu, więc sprawdzenie kursu to jedno dotknięcie, a nie wyszukiwanie.',
+      saved: 'Twoje pary',
+      common: 'Najczęstsze',
+      pin: 'Przypnij tę parę',
+      pinned: 'Przypięta',
+      unpin: 'Odepnij {pair}',
       pick: 'Waluta',
       search: 'Szukaj wśród 19 walut',
       noMatch: 'Nic nie pasuje do „{query}”.',
@@ -2755,25 +2759,19 @@ export const pl: Dictionary = {
 
     guide: {
       eyebrow: 'Pomoc i wskazówki',
-      title: 'Dziewięć tematów. Otwórz jeden.',
-      lede: 'Mieszkanie i papiery są na przedzie, bo pierwszy miesiąc jest właśnie o nich. Każdy temat otwiera się w listę miejsc, które się tym zajmują — z filtrem na Twoje miasto.',
+      title: 'Wybierz kraj. Otwórz temat.',
+      lede: 'Przewodnik pisany jest osobno dla każdego kraju, a każdy temat otwiera się w listę miejsc, które naprawdę się tym zajmują — z adresem, telefonem i informacją, które z nich są na Paylez.',
+      country: 'Wybierz kraj',
       cities: 'Wszystkie miasta',
       city: 'Filtruj po mieście',
       count: 'Miejsc na liście: {n}',
-      speaks: 'Mówią:',
       none: 'Na razie nic w tym temacie w mieście {city}. Spróbuj wszystkich miast.',
       soon: 'Ten temat wciąż powstaje. Asystent poniżej odpowie w międzyczasie.',
-      items: [
-        { name: 'Miejsca', blurb: 'Sklepy, restauracje i usługi warte drogi' },
-        { name: 'Bankowość i finanse', blurb: 'Konta, karty, kredyt i po co komu IBAN' },
-        { name: 'Mieszkanie', blurb: 'Szukanie, kaucje, umowy i meldunek' },
-        { name: 'Zdrowie', blurb: 'Ubezpieczenie, zapisanie się do przychodni, nagłe przypadki' },
-        { name: 'Prawo i wizy', blurb: 'Zezwolenia, pobyt, przedłużenia i dokumenty' },
-        { name: 'Praca', blurb: 'Szukanie pracy, umowy i prawa, które z nich wynikają' },
-        { name: 'Edukacja', blurb: 'Szkoły, uczelnie, kursy językowe i nostryfikacja' },
-        { name: 'Transport', blurb: 'Bilety, karty miejskie, prawo jazdy i poruszanie się' },
-        { name: 'Kultura i integracja', blurb: 'Język, zwyczaje, święta i poznawanie ludzi' },
-      ],
+      loading: 'Pobieramy przewodnik…',
+      empty: 'Dla tego kraju przewodnik jest jeszcze pusty. Wybierz inny albo zapytaj poniżej.',
+      failed: 'Nie udało się teraz połączyć z przewodnikiem. Nic nie zginęło — spróbuj za chwilę.',
+      onPaylez: 'Na Paylez',
+      visit: 'Strona',
     },
 
     countries: {
@@ -2944,6 +2942,11 @@ export const pl: Dictionary = {
     meterDone: 'Wszystkie siedem uzupełnione.',
     meterStill: 'Wciąż puste',
     meterProgress: 'Uzupełnione w {pct}%',
+    meterReward: 'Uzupełnij wszystkie siedem i zdobądź {points} punktów.',
+    meterRewardPaid: 'Zdobyto {points} punktów za uzupełnienie profilu.',
+    wonTitle: 'Profil uzupełniony',
+    wonBody: 'Brawo. {points} punktów trafiło na Twoje konto.',
+    wonClose: 'Świetnie',
     fieldNames: {
       avatar: 'Zdjęcie',
       username: 'Nazwa użytkownika',
@@ -2991,6 +2994,16 @@ export const pl: Dictionary = {
       'Punkty biorą się z grania i z pojawiania się w lokalach w Twoim mieście. Nie tracą ważności — czekają na Ciebie.',
     payGo: 'Zacznij grać',
     payProfile: 'Najpierw uzupełnij profil',
+
+    introTitle: 'Zdobądź pierwsze punkty',
+    introLede: 'Odpowiedz na {n} pytań o flagi i zdobądź nawet {points} punktów. Pomiń te, których nie znasz — pominięte pytanie po prostu nic nie daje.',
+    introGo: 'Dalej',
+    gameSkip: 'Pomiń to pytanie',
+    moreTitle: 'Czeka {n} kolejnych gier',
+    moreLede: 'Quizy, gry słowne, pamięć i lot — każda z nich daje punkty i wszystkie są w L-Earn.',
+    moreGo: 'Zobacz gry',
+    reelPrev: 'Poprzednia gra',
+    reelNext: 'Następna gra',
   },
 
   subscription: {
@@ -3019,7 +3032,13 @@ export const pl: Dictionary = {
     opening: 'Otwieram…',
     failed: 'Strona płatności się nie otworzyła. Spróbuj ponownie.',
     badges: ['Gwiazdka', 'Korona'],
-    heroRows: ['Energia dziennie', 'Odnowa, godziny', 'Punkty za rundę'],
+    heroRows: ['Energia dziennie', 'Odnowa, minuty', 'Punkty za rundę'],
+    day: {
+      rounds: 'rund dziennie',
+      from: 'z pełnego zapasu',
+      vs: '+{n} wobec {plan}',
+      base: 'Plan, do którego porównywana jest każda liczba obok.',
+    },
     more: 'Wszystko inne',
     mark: 'Oznaczenie planu: {name}',
     plans: [
@@ -3029,7 +3048,7 @@ export const pl: Dictionary = {
     ],
     rows: [
       'Energia na dzień',
-      'Godziny na odnowienie jednej energii',
+      'Minuty na odnowienie jednej energii',
       'Punkty za rundę gry',
       'Dni ważności vouchera',
       'Podpowiedzi w Ułóż słowo dziennie',

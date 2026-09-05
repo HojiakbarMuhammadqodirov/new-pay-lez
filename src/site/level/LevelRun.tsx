@@ -178,8 +178,13 @@ export const LevelRun = memo(function LevelRun({
       host.height = Math.round(height * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      T = Math.max(LEVEL.tile.min, Math.min(LEVEL.tile.max, height * LEVEL.tile.of));
-      groundPx = height * LEVEL.groundY;
+      /* Stacked layouts get the smaller world — see `tileNarrow` in
+         `config.ts`. Read here rather than hoisted because this runs on every
+         resize, which is exactly when the answer changes. */
+      const narrow = width <= LEVEL.narrowWidth;
+      const tile = narrow ? LEVEL.tileNarrow : LEVEL.tile;
+      T = Math.max(tile.min, Math.min(tile.max, height * tile.of));
+      groundPx = height * (narrow ? LEVEL.groundYNarrow : LEVEL.groundY);
     };
 
     /* ── the script ─────────────────────────────────────────────────────── */

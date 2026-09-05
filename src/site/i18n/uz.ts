@@ -92,6 +92,7 @@ export const uz: Dictionary = {
     typeHint: 'Davom etish uchun bittasini tanlang.',
 
     signOut: 'Chiqish',
+    cancel: 'Bekor qilish',
     accountMenu: 'Hisobingiz',
     dashboard: 'Panel',
     roles: { individual: 'Foydalanuvchi', business: 'Biznes', admin: 'Administrator' },
@@ -474,7 +475,7 @@ export const uz: Dictionary = {
     you: 'Siz',
     stubReply:
       'Bu versiyada yordamchi modelga ulanmagan, shuning uchun hozircha javob bera olmayman. Bu xabar atrofidagi hamma narsa — suhbat, matn maydoni, hisobingiz — haqiqatan ishlaydi.',
-    stubTag: 'Ulanmagan',
+    stubTag: 'Bu qurilmada model ulanmagan.',
   },
 
   wallet: {
@@ -2711,8 +2712,11 @@ export const uz: Dictionary = {
       swap: 'Valyutalarni almashtirish',
       result: '{from} = {to}',
       enter: 'Hisoblash uchun summa kiriting.',
-      saved: 'Saqlangan juftliklar',
-      savedNote: "Ekranning tepasiga mahkamlangan, shuning uchun kursni tekshirish qidiruv emas, bitta tegish.",
+      saved: 'Sizning juftliklaringiz',
+      common: 'Eng ko‘p ishlatiladigan',
+      pin: 'Bu juftlikni mahkamlash',
+      pinned: 'Mahkamlangan',
+      unpin: '{pair} juftligini olib tashlash',
       pick: 'Valyuta',
       search: '19 ta valyuta ichidan qidiring',
       noMatch: '"{query}" bo\'yicha hech narsa topilmadi.',
@@ -2755,25 +2759,19 @@ export const uz: Dictionary = {
 
     guide: {
       eyebrow: 'Yordam va yo‘l-yo‘riq',
-      title: "To‘qqiz mavzu. Bittasini oching.",
-      lede: "Uy-joy va hujjatlar birinchi o‘rinda, chunki birinchi oy aynan shular haqida. Har bir mavzu shu ish bilan shug‘ullanadigan joylar ro‘yxatiga ochiladi — shahringiz bo‘yicha filtr bilan.",
+      title: 'Mamlakatni tanlang. Mavzuni oching.',
+      lede: 'Qo‘llanma har bir mamlakat uchun alohida yoziladi, har bir mavzu esa shu ish bilan haqiqatan shug‘ullanadigan joylar ro‘yxatiga ochiladi — manzili, telefoni va qaysi biri Paylezda ekani bilan.',
+      country: 'Mamlakatni tanlang',
       cities: 'Barcha shaharlar',
-      city: "Shahar bo‘yicha filtr",
-      count: "Ro‘yxatdagi joylar: {n}",
-      speaks: 'Tillari:',
-      none: "{city} shahrida bu mavzu bo‘yicha hozircha hech nima yo‘q. Barcha shaharlarni sinab ko‘ring.",
-      soon: "Bu mavzu hali yozilmoqda. Shu orada quyidagi yordamchi javob beradi.",
-      items: [
-        { name: 'Joylar', blurb: "Borishga arziydigan do‘konlar, restoranlar va xizmatlar" },
-        { name: 'Bank va moliya', blurb: 'Hisoblar, kartalar, kredit va IBAN nima uchun kerak' },
-        { name: 'Uy-joy', blurb: 'Kvartira topish, zakalat, shartnoma va ro‘yxatdan o‘tish' },
-        { name: 'Sog‘liq', blurb: "Sug‘urta, klinikaga biriktirilish, shoshilinch holatlar" },
-        { name: 'Huquq va viza', blurb: 'Ruxsatnomalar, yashash huquqi, uzaytirish va hujjatlar' },
-        { name: 'Ish', blurb: 'Ish topish, shartnomalar va ular bilan keladigan huquqlar' },
-        { name: 'Ta’lim', blurb: 'Maktablar, universitetlar, til kurslari va diplom tan olinishi' },
-        { name: 'Transport', blurb: 'Chiptalar, abonementlar, guvohnoma va yurish-turish' },
-        { name: 'Madaniyat va integratsiya', blurb: 'Til, urf-odatlar, bayramlar va o‘zingnikilarni topish' },
-      ],
+      city: 'Shahar bo‘yicha filtr',
+      count: 'Ro‘yxatdagi joylar: {n}',
+      none: '{city} shahrida bu mavzu bo‘yicha hozircha hech nima yo‘q. Barcha shaharlarni sinab ko‘ring.',
+      soon: 'Bu mavzu hali yozilmoqda. Shu orada quyidagi yordamchi javob beradi.',
+      loading: 'Qo‘llanma yuklanmoqda…',
+      empty: 'Bu mamlakat uchun qo‘llanmada hozircha hech nima yo‘q. Boshqasini tanlang yoki quyida so‘rang.',
+      failed: 'Hozir qo‘llanmaga ulana olmadik. Hech nima yo‘qolgani yo‘q — birozdan keyin urinib ko‘ring.',
+      onPaylez: 'Paylezda',
+      visit: 'Sayt',
     },
 
     countries: {
@@ -2944,6 +2942,11 @@ export const uz: Dictionary = {
     meterDone: 'Yettitasiga ham javob berilgan.',
     meterStill: 'Hamon bo‘sh',
     meterProgress: '{pct}% to‘ldirilgan',
+    meterReward: 'Yettitasini ham to‘ldiring va {points} ball oling.',
+    meterRewardPaid: 'Profilni to‘ldirganingiz uchun {points} ball berildi.',
+    wonTitle: 'Profil to‘ldirildi',
+    wonBody: 'Zo‘r. {points} ball hisobingizga tushdi.',
+    wonClose: 'Zo‘r',
     fieldNames: {
       avatar: 'Surat',
       username: 'Foydalanuvchi nomi',
@@ -2991,6 +2994,16 @@ export const uz: Dictionary = {
       'Ballar o‘yindan va shahringizdagi joylarga borishdan yig‘iladi. Ularning muddati tugamaydi — ular sizni kutib turadi.',
     payGo: 'O‘ynashni boshlash',
     payProfile: 'Avval profilingizni to‘ldiring',
+
+    introTitle: 'Birinchi ballaringizni yuting',
+    introLede: 'Bayroqlar haqidagi {n} ta savolga javob bering va {points} ballgacha oling. Bilmaganingizni o‘tkazib yuboring — o‘tkazib yuborilgan savol shunchaki ball bermaydi.',
+    introGo: 'Keyingisi',
+    gameSkip: 'Bu savolni o‘tkazib yuborish',
+    moreTitle: 'Yana {n} ta o‘yin kutmoqda',
+    moreLede: 'Viktorina, so‘z o‘yinlari, xotira va uchish — barchasi ball beradi va barchasi L-Earn’da.',
+    moreGo: 'O‘yinlarni ko‘rish',
+    reelPrev: 'Oldingi o‘yin',
+    reelNext: 'Keyingi o‘yin',
   },
 
   subscription: {
@@ -3019,7 +3032,13 @@ export const uz: Dictionary = {
     opening: 'Ochilmoqda…',
     failed: 'Toʻlov sahifasi ochilmadi. Qayta urinib koʻring.',
     badges: ['Yulduzcha', 'Toj'],
-    heroRows: ['Kuniga energiya', 'Tiklanish, soat', 'Raund balli'],
+    heroRows: ['Kuniga energiya', 'Tiklanish, daqiqa', 'Raund balli'],
+    day: {
+      rounds: 'kuniga raund',
+      from: 'to‘la zaxiradan boshlab',
+      vs: '{plan}ga nisbatan +{n}',
+      base: 'Yonidagi har bir raqam shu tarifga solishtiriladi.',
+    },
     more: 'Qolgan hammasi',
     mark: '{name} reja belgisi',
     plans: [
@@ -3029,7 +3048,7 @@ export const uz: Dictionary = {
     ],
     rows: [
       'Kuniga energiya',
-      'Bitta energiya tiklanadigan soatlar',
+      'Bitta energiya tiklanadigan daqiqalar',
       'O‘yin raundidagi ballar',
       'Vaucher amal qiladigan kunlar',
       'Kuniga «So‘z yig‘» maslahatlari',

@@ -524,6 +524,12 @@ export function Header({ route }: { route: Route }) {
                 {copy.signIn}
               </a>
             )}
+            {/* On narrow viewports the language and theme controls live in the
+                sheet rather than inline in the header. */}
+            <div className="nav-sheet-controls">
+              <ThemeToggle />
+              <LanguageMenu />
+            </div>
           </nav>
         </div>
       )}

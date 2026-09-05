@@ -131,7 +131,33 @@ export const CONFIG = {
      * reward for clicking a link in an email was paying for a formality rather
      * than for anything a venue or a player gets.
      */
-    onboarding: 100,
+    /*
+     * The welcome gift, paid for *finishing* onboarding.
+     *
+     * Half of the first hundred. The other half is the welcome round itself --
+     * five flags at ten points each -- so somebody who answers all five walks
+     * out with 100 and somebody who skips every one still walks out with 50
+     * for opening the account. That split is the point: the gift is for
+     * turning up and the rest is for playing, and the screen can say so
+     * because the two numbers are separate.
+     */
+    onboarding: 50,
+
+    /**
+     * The welcome round, per correct answer.
+     *
+     * Ten rather than the quiz's one (`CONFIG.games.quizPerCorrect`), because
+     * this is the round the welcome screen offers fifty points for and the two
+     * numbers have to be the same promise: five right is fifty, four is forty,
+     * none is nothing. Paid with no sweep or speed bonus for the same reason —
+     * a total the offer did not name is a total that contradicts it.
+     *
+     * Read only where `scoreQuiz` is told the round is the welcome one, which
+     * `finishSession` decides from the server's own secret **and** from this
+     * being the player's first finished round. It is not a rate a client can
+     * ask for.
+     */
+    welcomeRoundPerCorrect: 10,
     profileComplete: 50,
     categoriesPicked: 25,
     firstScanEver: 100,

@@ -2979,10 +2979,21 @@ async function httpSurface(): Promise<void> {
    * something on the shelf has to put it there. Which is the right shape
    * regardless: a test that depends on production seeding is a test that breaks
    * when production stops seeding, and it broke exactly then.
+   *
+   * **Its price is derived from the grant rather than written as a round
+   * number**, for the same reason one step further on. The card cost exactly
+   * 100 and the account's whole balance was `CONFIG.earn.onboarding`, which was
+   * also 100 — so the two were equal by coincidence rather than by construction.
+   * When the grant became 50 (the welcome round pays the other half now) this
+   * became a 409 for insufficient points, and took the two checks after it down
+   * with it: the retry had nothing to be idempotent about and the conflict check
+   * never reached the conflict. Half the grant is affordable whatever the grant
+   * is next.
    */
+  const giftCost = Math.floor(CONFIG.earn.onboarding / 2);
   await w.db.run(
     `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
-     VALUES ('gcs_test', 'Test Brand', 'T', 465, 'EUR', 100, 250, 0, 1)
+     VALUES ('gcs_test', 'Test Brand', 'T', 465, 'EUR', ${giftCost}, 250, 0, 1)
      ON CONFLICT (id) DO NOTHING`,
   );
 
@@ -3001,7 +3012,7 @@ async function httpSurface(): Promise<void> {
   eq(
     'and spent the points only once',
     (await call('GET', '/v1/me', { token })).body.points,
-    CONFIG.earn.onboarding - 100,
+    CONFIG.earn.onboarding - giftCost,
   );
 
   const conflict = await call('POST', '/v1/gift-cards', {

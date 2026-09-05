@@ -3,6 +3,7 @@ import { ACCOUNT_TYPES } from './content';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
+import { PATHS } from './router';
 import { useAuth } from './auth/context';
 import { GoogleButton } from './auth/GoogleButton';
 import {
@@ -319,7 +320,7 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
  */
 function ChooseType({ name }: { name: string }) {
   const copy = useCopy();
-  const { setType } = useAuth();
+  const { setType, signOut } = useAuth();
   const [picked, setPicked] = useState<ChoosableType | null>(null);
 
   const onSubmit = (event: FormEvent) => {
@@ -333,6 +334,13 @@ function ChooseType({ name }: { name: string }) {
      * route and redirect over the top of it.
      */
     setType(picked);
+  };
+
+  const onCancel = () => {
+    // If the user does not want to answer the question now, sign them out
+    // and return to the landing page so they can continue browsing.
+    signOut();
+    window.location.hash = PATHS.landing;
   };
 
   return (
@@ -352,6 +360,11 @@ function ChooseType({ name }: { name: string }) {
         {copy.auth.typeSubmit}
       </button>
       {!picked && <p className="auth-demo">{copy.auth.typeHint}</p>}
+      <div className="auth-cancel">
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          {copy.auth.cancel}
+        </button>
+      </div>
     </form>
   );
 }

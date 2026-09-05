@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './icons';
 import { useAuth } from './auth/context';
+import { PATHS } from './router';
 import { matchCities, savePlace, useCities, type City } from './api/profile';
 import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound } from './api/consumer';
+import { GAMES } from './content';
 import { WELCOME_POINTS } from './auth/users';
 import { LANGUAGES, LANGUAGE_ORDER, useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
 import { flagGlyph } from './games/banks';
 import { buildFlagRound, type Question } from './games/rounds';
+import { gameName, rulesFor } from './games/rules';
+import { useSpotlight } from './pointer';
 /* Chromium on Windows ships no glyphs for regional-indicator pairs, so a flag
    renders as the two letters it is built from unless this family is loaded —
    which would make "which country is this?" answer itself. Imported the way
@@ -56,15 +60,86 @@ import '../components/GlobeHero/ui/flagFont.css';
  */
 
 /**
- * Three rounds, worth 30, 30 and 40.
+ * Five flags at ten points each: fifty for the round.
  *
- * The phone's own `kFlagRounds` values, kept rather than rounded off, because
- * the last round being worth more is the small thing that makes three rounds a
- * *round* instead of a list — and the total, 100, is deliberately the same as
- * the welcome gift, so the payoff screen reads as "you earned as much as we
- * gave you" rather than as a tip beside a grant.
+ * Flat rather than escalating, because every question is drawn from the same
+ * short list of well-known flags -- there is no last-one-is-harder to pay for,
+ * and a flat rate is the one a player can predict while they are answering.
+ *
+ * Fifty is deliberately **half** of the first hundred, and `CONFIG.earn.onboarding`
+ * is the other half. So the two ends of the welcome are:
+ *
+ *   skip everything   50   the gift, for opening the account
+ *   answer all five  100   the gift plus the round
+ *
+ * Anything between is what they actually scored, ten at a time -- the round is
+ * paid per question rather than for a clean sweep, so four right is forty and
+ * not nothing.
  */
-const ROUND_POINTS = [30, 30, 40];
+const ROUND_POINTS = [10, 10, 10, 10, 10];
+
+/** What the whole round is worth. Summed, never written down twice. */
+const ROUND_TOTAL = ROUND_POINTS.reduce((sum, points) => sum + points, 0);
+
+/**
+ * The flags the welcome round is allowed to ask.
+ *
+ * The bank is all 196 countries and the draw was uniform, which made the first
+ * ninety seconds of an account a geography exam: real runs opened with Sao Tome
+ * and Principe against Benin, Togo and Guinea. Somebody who has just signed up
+ * is being shown what the product *is*; getting four of five wrong teaches them
+ * they are bad at it, which is the opposite lesson.
+ *
+ * So the welcome round draws from flags most people can name -- the big
+ * economies, the neighbours of the markets Paylez is in, and the handful of
+ * flags that are famous for their design. The real game keeps the whole bank:
+ * this list exists for one round, once, and `buildFlagRound` ignores it
+ * everywhere else.
+ *
+ * ISO 3166-1 alpha-2, matching the `codes` column of the flags bank.
+ */
+const EASY_FLAGS = [
+  'PL',
+  'UZ',
+  'UA',
+  'RU',
+  'TR',
+  'DE',
+  'FR',
+  'IT',
+  'ES',
+  'GB',
+  'US',
+  'CA',
+  'BR',
+  'AR',
+  'MX',
+  'CN',
+  'JP',
+  'KR',
+  'IN',
+  'ID',
+  'SA',
+  'EG',
+  'ZA',
+  'NG',
+  'AU',
+  'NL',
+  'BE',
+  'SE',
+  'NO',
+  'FI',
+  'DK',
+  'CH',
+  'AT',
+  'PT',
+  'GR',
+  'CZ',
+  'KZ',
+  'AZ',
+  'GE',
+  'IE',
+] as const;
 
 /**
  * The first reward worth having, and so the denominator of the payoff bar.
@@ -89,9 +164,7 @@ function Steps({ at }: { at: number }) {
           <i key={index} data-on={index <= at ? 'true' : undefined} />
         ))}
       </div>
-      <span className="onb-count">
-        {fill(copy.step, { n: String(at + 1), total: '4' })}
-      </span>
+      <span className="onb-count">{fill(copy.step, { n: String(at + 1), total: '4' })}</span>
     </div>
   );
 }
@@ -101,6 +174,7 @@ function Steps({ at }: { at: number }) {
 function LanguageStep({ onNext }: { onNext: () => void }) {
   const [language, setLanguage] = useLanguage();
   const copy = useCopy().onboarding;
+  const { signOut } = useAuth();
 
   return (
     <>
@@ -130,6 +204,18 @@ function LanguageStep({ onNext }: { onNext: () => void }) {
       <div className="onb-actions">
         <button type="button" className="btn btn-solid btn-lg" onClick={onNext}>
           {copy.langNext}
+        </button>
+        <button
+          type="button"
+          className="link-btn"
+          /* Sign out and stop. The hash is *not* set here: `resolveRoute` now
+             answers `landing` for a signed-out visitor on this route, and the
+             correcting effect in `Site` follows it. Setting it here as well was
+             the bug — the guard ran against the new account and the old route
+             and replaced `#top` with `#/sign-in`. See the note in `router.ts`. */
+          onClick={signOut}
+        >
+          {copy.back}
         </button>
       </div>
     </>
@@ -256,7 +342,12 @@ function PlaceStep({ onNext, onBack }: { onNext: () => void; onBack: () => void 
       </div>
 
       <div className="onb-actions">
-        <button type="button" className="btn btn-solid btn-lg" disabled={busy} onClick={() => void save()}>
+        <button
+          type="button"
+          className="btn btn-solid btn-lg"
+          disabled={busy}
+          onClick={() => void save()}
+        >
           {busy ? copy.placeSaving : copy.langNext}
         </button>
         <button type="button" className="link-btn" onClick={onBack}>
@@ -288,6 +379,20 @@ function FlagStep({
   /* The server round, when there is a session to open one on. */
   const [session, setSession] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<number | null>(null);
+  /*
+   * Whether the pick was right, as a separate fact from *which* option was.
+   *
+   * The server answers both — `correct` and `answer` — and they can arrive
+   * apart: a dropped response, or a game whose move reports a verdict without
+   * an index. One state for the pair meant `-1` had to stand for "not told",
+   * and `-1` matches no option, so a correct answer with a missing index was
+   * struck through as wrong while the score went up behind it. Two states
+   * cannot disagree that way: the verdict marks the button that was pressed,
+   * the index marks the button that was right, and either can be missing.
+   */
+  const [verdict, setVerdict] = useState<boolean | null>(null);
+  /* The round does not begin until the offer above has been read. */
+  const [started, setStarted] = useState(false);
 
   /*
    * **The first round is a real round.**
@@ -320,7 +425,7 @@ function FlagStep({
     setSession(null);
 
     if (hasToken()) {
-      startRound('flags', language)
+      startRound('flags', language, false, true)
         .then((started) => {
           if (!live) return;
           const content = started.content as {
@@ -350,7 +455,7 @@ function FlagStep({
       };
     }
 
-    buildFlagRound(language, ROUND_POINTS.length, copy.gameTitle)
+    buildFlagRound(language, ROUND_POINTS.length, copy.gameTitle, EASY_FLAGS)
       .then((built) => {
         if (live) setRound(built);
       })
@@ -396,13 +501,93 @@ function FlagStep({
     );
   }
 
+  /*
+   * The offer, before the first question.
+   *
+   * The round used to open straight onto a flag, which asks somebody to answer
+   * before they have been told there is anything in it for them. This screen is
+   * the deal in one line -- five questions, this many points -- and a button
+   * that starts it. It costs one tap and is the difference between a quiz
+   * somebody was given and one they agreed to.
+   *
+   * The total is summed from `ROUND_POINTS` rather than written in the copy, so
+   * the promise on this screen and the points the questions actually pay are
+   * the same number by construction.
+   */
+  if (!started) {
+    return (
+      <>
+        <Steps at={2} />
+        <span className="onb-prize-mark" aria-hidden>
+          <Icon name="trophy" size={30} strokeWidth={2} />
+        </span>
+        <b className="onb-prize-pts">+{ROUND_TOTAL}</b>
+        <h1 className="onb-title">{copy.introTitle}</h1>
+        <p className="onb-lede">
+          {fill(copy.introLede, {
+            n: String(ROUND_POINTS.length),
+            points: String(ROUND_TOTAL),
+          })}
+        </p>
+        <div className="onb-actions">
+          <button type="button" className="btn btn-solid btn-lg" onClick={() => setStarted(true)}>
+            {copy.introGo}
+            <Icon name="arrow" size={16} />
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onBack}>
+            {copy.gameBack}
+          </button>
+        </div>
+      </>
+    );
+  }
+
   const question = round[at];
   const answered = picked !== null;
   /* On a server round the answer arrives with the verdict; until then there is
      nothing honest to mark. See the same rule in `Round` in `games.tsx`. */
   const rightIndex = session ? revealed : question.answer;
-  const right = answered && rightIndex !== null && picked === rightIndex;
+  /* `-1` is "not told" on both paths — the server round stores it in `answer`
+     when it builds the question, and `setRevealed(-1)` writes it when a reply
+     carries no index. It is not an option, so it must not be compared against
+     one. */
+  const known = rightIndex !== null && rightIndex >= 0;
+  const right = verdict ?? (known && picked === rightIndex);
+  /*
+   * Whether the outcome is in.
+   *
+   * On a server round the press and the verdict are one request apart, and in
+   * that gap `right` is false — not because the answer was wrong but because
+   * nothing has been said yet. The line below read that as "Wrong" and then
+   * corrected itself when the reply landed, which is the one thing a quiz must
+   * never do: tell somebody they were wrong and take it back.
+   */
+  const settled = verdict !== null || known;
   const last = at === round.length - 1;
+
+  /**
+   * What one option is, once the question has been answered.
+   *
+   * **The right answer is marked whatever was pressed**, which is the whole
+   * point of the reveal: the moment you most want to be told what the answer
+   * was is the moment you got it wrong. The pressed one is struck through, the
+   * two that were neither fade, and the pair being compared are the only things
+   * left at full strength.
+   *
+   * The last branch is the honest degradation. With no index there is nothing
+   * to point at, so only the button that was pressed is marked, and it is
+   * marked from the verdict — right or wrong — rather than assumed wrong.
+   */
+  const stateOf = (index: number): string | undefined => {
+    if (!answered) return undefined;
+    if (known) {
+      if (index === rightIndex) return 'right';
+      if (index === picked) return 'wrong';
+      return 'dim';
+    }
+    if (index !== picked) return 'dim';
+    return verdict === null ? 'picked' : verdict ? 'right' : 'wrong';
+  };
 
   /* One-way per round: the buttons repaint to show which was right, so a second
      tap must not score again. Same rule as the phone's `answer`. */
@@ -411,7 +596,9 @@ function FlagStep({
     setPicked(index);
 
     if (!session) {
-      if (index === question.answer) setPoints((total) => total + ROUND_POINTS[at]);
+      const won = index === question.answer;
+      if (won) setPoints((total) => total + ROUND_POINTS[at]);
+      setVerdict(won);
       setRevealed(question.answer);
       return;
     }
@@ -422,6 +609,7 @@ function FlagStep({
     void sendMove(session, at, { index: at, choice: index })
       .then((move) => {
         setRevealed(typeof move.answer === 'number' ? move.answer : -1);
+        setVerdict(typeof move.correct === 'boolean' ? move.correct : null);
         /* The points shown are still the flow's own 30/30/40 — what the round
            *pays* is the server's arithmetic, banked at `finish`, and the payoff
            screen reads the real balance rather than this. See `PayoffStep`. */
@@ -448,6 +636,7 @@ function FlagStep({
     setAt((n) => n + 1);
     setPicked(null);
     setRevealed(null);
+    setVerdict(null);
   };
 
   return (
@@ -466,7 +655,10 @@ function FlagStep({
       </div>
 
       <span className="onb-round">
-        {fill(copy.gameRound, { n: String(at + 1), total: String(round.length) })}
+        {fill(copy.gameRound, {
+          n: String(at + 1),
+          total: String(round.length),
+        })}
       </span>
 
       {/* The flag is the question, so it is the largest thing on the screen. It
@@ -480,33 +672,34 @@ function FlagStep({
       <h1 className="onb-title">{question.prompt}</h1>
 
       <div className="onb-options">
-        {question.options.map((option, index) => (
-          <button
-            key={option}
-            type="button"
-            className="onb-option"
-            disabled={answered}
-            data-state={
-              !answered
-                ? undefined
-                : rightIndex === null
-                  ? index === picked
-                    ? 'picked'
-                    : 'dim'
-                  : index === rightIndex
-                    ? 'right'
-                    : index === picked
-                      ? 'wrong'
-                      : 'dim'
-            }
-            onClick={() => answer(index)}
-          >
-            {option}
-          </button>
-        ))}
+        {question.options.map((option, index) => {
+          const state = stateOf(index);
+          return (
+            <button
+              key={option}
+              type="button"
+              className="onb-option"
+              disabled={answered}
+              data-state={state}
+              onClick={() => answer(index)}
+            >
+              <span className="onb-option-tx">{option}</span>
+              {/* The tick, on whichever option was right — the one mark that
+                  says "this is the answer" without a word to translate. It is
+                  `aria-hidden` because the verdict line below announces the
+                  outcome to a screen reader as a `role="status"`, and a second
+                  voice saying "check" on one of four buttons is noise. */}
+              {state === 'right' && (
+                <span className="onb-option-mark" aria-hidden>
+                  <Icon name="check" size={14} strokeWidth={3} />
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
-      {answered && (
+      {answered && settled && (
         <div className="onb-verdict" role="status">
           <b>{right ? copy.gameRight : copy.gameWrong}</b>
           {right && <span>+{ROUND_POINTS[at]}</span>}
@@ -514,12 +707,7 @@ function FlagStep({
       )}
 
       <div className="onb-actions">
-        <button
-          type="button"
-          className="btn btn-solid btn-lg"
-          disabled={!answered}
-          onClick={next}
-        >
+        <button type="button" className="btn btn-solid btn-lg" disabled={!answered} onClick={next}>
           {last ? copy.gameLast : copy.gameNext}
         </button>
         {at === 0 && !answered && (
@@ -528,52 +716,348 @@ function FlagStep({
           </button>
         )}
       </div>
+
+      {/*
+        Skip *this question*, not the round.
+
+        It calls `next` -- the same function the Next button calls -- so the
+        skipped question simply goes unanswered and pays nothing, and the one
+        after it opens. On the last question `next` finishes the round and
+        banks whatever was earned, which is the same ending answering it would
+        have reached.
+
+        Nothing special happens on the server: `finishRound` scores what was
+        *answered*, so a skipped question is worth zero without needing to be
+        reported as anything.
+
+        Quietest control on the screen and set apart from the actions row: it
+        is the alternative to answering, not a second offer.
+      */}
+      <button type="button" className="onb-skip" onClick={next}>
+        {copy.gameSkip}
+      </button>
     </>
   );
 }
 
 /* ───────────────────────────────────────────────────────────── step three ── */
 
+/**
+ * How long one game holds the reel.
+ *
+ * The Guide carousel on the landing page runs at 2400ms and this is a beat
+ * slower, because the card here carries a rule sentence rather than a two-word
+ * blurb — the interval has to clear reading it, not glancing at it. Under three
+ * seconds either way: a reel a reader has to *wait* on has stopped being a
+ * preview and become a queue.
+ */
+const REEL_INTERVAL = 2600;
+
+/**
+ * The other seven games, one at a time.
+ *
+ * A grid of seven cards is a list to be scanned; a reel is a thing to be
+ * watched, and the difference is what this screen needs — a player who has just
+ * finished their first round is being *shown* what else is here, not asked to
+ * audit a catalogue. Each card carries the game's name, the rule it is played
+ * by and what it pays, which together are the answer to "what would I be
+ * playing?".
+ *
+ * The construction is the Guide carousel's, deliberately and line for line: a
+ * flex track translated by whole cards off a `--index` custom property, dots
+ * that are `role="tablist"`, the interval suspended while a pointer or the
+ * keyboard is on it, and no interval at all under `prefers-reduced-motion` —
+ * an auto-advancing panel is the exact thing that preference is asked for. Only
+ * the class names and the card differ, because this is a different surface in a
+ * 30rem column rather than the same component in a new place.
+ *
+ * `aria-hidden` on the cards that are not showing, so a screen reader is handed
+ * one game rather than seven read out in a row from a region that keeps moving.
+ */
+function GameReel({ label }: { label: string }) {
+  const dict = useCopy();
+  const copy = dict.onboarding;
+  /* Paired with the index before filtering: `gameName` takes a position in
+     `GAMES`, and a filtered array renumbers every row after the one removed —
+     which would name each game as the one after it. */
+  const shelf = GAMES.map((game, index) => ({ game, index })).filter(
+    (entry) => entry.game.id !== 'flag',
+  );
+  const [at, setAt] = useState(0);
+  const [paused, setPaused] = useState(false);
+
+  /* Wraps in both directions. A reel that stops at either end has two dead
+     controls on a panel whose whole point is that it keeps going. */
+  const go = (step: number) =>
+    setAt((i) => (i + step + shelf.length) % shelf.length);
+
+  useEffect(() => {
+    if (paused) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+
+    const timer = window.setInterval(
+      () => setAt((i) => (i + 1) % shelf.length),
+      REEL_INTERVAL,
+    );
+    return () => window.clearInterval(timer);
+    /*
+     * `at` is a dependency, and that is the behaviour rather than an oversight:
+     * changing the card restarts the clock, so a game reached by pressing an
+     * arrow or a dot gets the full 2.6 seconds like every other one. Without it
+     * a press made halfway through an interval would be answered by the reel
+     * moving on a second later — the panel arguing with the hand that just used
+     * it. Hovering already suspends the interval, so on a pointer device the
+     * press is inside a pause; this is what makes it right on a touchscreen,
+     * where there is no hover to suspend anything.
+     */
+  }, [paused, shelf.length, at]);
+
+  return (
+    <div
+      className="onb-reel"
+      role="group"
+      aria-roledescription="carousel"
+      aria-label={label}
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)}
+      onBlur={() => setPaused(false)}
+    >
+      {/*
+        * The two arrows, on the edges of the window rather than beside it.
+        *
+        * Beside it they would take width from a card that is already only 30rem
+        * wide; on it they sit over the plate's own margin, clear of the name and
+        * the rule. They are the manual half of a panel that advances on its own
+        * — pressing one is also what pauses the reel, because a reader who has
+        * reached for a control is no longer watching.
+        */}
+      <button
+        type="button"
+        className="onb-reel-arrow"
+        data-side="prev"
+        aria-label={copy.reelPrev}
+        onClick={() => go(-1)}
+      >
+        <Icon name="chevron" size={16} strokeWidth={2.4} />
+      </button>
+      <button
+        type="button"
+        className="onb-reel-arrow"
+        data-side="next"
+        aria-label={copy.reelNext}
+        onClick={() => go(1)}
+      >
+        <Icon name="chevron" size={16} strokeWidth={2.4} />
+      </button>
+
+      <div className="onb-reel-win">
+        <div className="onb-reel-track" style={{ ['--index' as string]: at }}>
+          {shelf.map(({ game, index }, slot) => {
+            const [rule, reward] = rulesFor(game, dict.games);
+            return (
+              <article
+                className="onb-reel-card"
+                key={game.id}
+                aria-hidden={slot !== at}
+                data-on={slot === at ? 'true' : undefined}
+              >
+                {/* The game's own mark at cabinet-art size, bleeding off the
+                    corner and clipped by the plate. It is the same glyph as the
+                    badge above it rather than a second picture: a card that
+                    carries its subject twice, once to identify it and once
+                    because a panel with nothing in the lower right is a form. */}
+                <span className="onb-reel-art" aria-hidden>
+                  <Icon name={game.icon} size={120} />
+                </span>
+
+                <span className="onb-reel-head">
+                  <span className="onb-reel-ico" aria-hidden>
+                    <Icon name={game.icon} size={20} />
+                  </span>
+                  {/* The slot, two digits over two. Numerals only, so it needs
+                      no dictionary entry and reads the same in five languages —
+                      and a numbered slot is what a shelf of games is. */}
+                  <span className="onb-reel-slot" aria-hidden>
+                    {String(slot + 1).padStart(2, '0')}
+                    <i>/</i>
+                    {String(shelf.length).padStart(2, '0')}
+                  </span>
+                </span>
+
+                <b>{gameName(index, dict.games, 'pl', 'PL')}</b>
+                <p>{rule}</p>
+                <span className="onb-reel-meta">{reward}</span>
+              </article>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="onb-reel-dots" role="tablist" aria-label={label}>
+        {shelf.map(({ game }, slot) => (
+          <button
+            key={game.id}
+            type="button"
+            role="tab"
+            aria-selected={slot === at}
+            aria-label={gameName(shelf[slot].index, dict.games, 'pl', 'PL')}
+            className="onb-reel-dot"
+            data-on={slot === at ? 'true' : undefined}
+            onClick={() => setAt(slot)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function PayoffStep({ earned, onFinish }: { earned: number; onFinish: () => void }) {
-  const copy = useCopy().onboarding;
+  const dict = useCopy();
+  const copy = dict.onboarding;
   const total = earned + WELCOME_POINTS;
   const pct = Math.min(100, Math.round((total / FIRST_TIER) * 100));
+
+  /*
+   * The total arrives rather than being printed, and the bar fills rather than
+   * being drawn full.
+   *
+   * This is the one screen in the product where a number is a *reward*, and a
+   * reward that is simply already there is a receipt. Both of these are the
+   * same trick — start at zero, land on the value — and both are one-shot.
+   *
+   * The count is local rather than the site's `[data-count]` scan, and that is
+   * not a preference: `useCountUp` queries the document once when the route
+   * mounts and has no observer for what arrives later, and this screen mounts
+   * three steps into the flow. It would never be scanned. A dozen lines here
+   * beat teaching a shared hook about a screen it cannot see.
+   */
+  const [shown, setShown] = useState(0);
+  const [filled, setFilled] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(total);
+      setFilled(pct);
+      return;
+    }
+
+    /* The bar is a CSS transition on `width`; it only needs the value to change
+       once, a frame after the mount, for the transition to have somewhere to
+       travel from. */
+    const bar = requestAnimationFrame(() => setFilled(pct));
+
+    const DURATION = 1100;
+    let start: number | null = null;
+    let frame = 0;
+    const step = (at: number) => {
+      start ??= at;
+      const t = Math.min(1, (at - start) / DURATION);
+      /* easeOutCubic — fast off the mark, gentle landing. The same curve the
+         site's other count-ups use, so the two never look like two devices. */
+      setShown(Math.round(total * (1 - (1 - t) ** 3)));
+      if (t < 1) frame = requestAnimationFrame(step);
+    };
+    frame = requestAnimationFrame(step);
+
+    return () => {
+      cancelAnimationFrame(bar);
+      cancelAnimationFrame(frame);
+    };
+  }, [total, pct]);
 
   return (
     <>
       <Steps at={3} />
 
-      <span className="onb-total" aria-hidden>
-        {total}
-      </span>
-      <h1 className="onb-title">{copy.payTitle}</h1>
+      {/*
+       * `display: contents`, so the cascade below can be written as
+       * `.onb-pay > *` without this wrapper becoming a flex item and
+       * collapsing seven rows into one.
+       */}
+      <div className="onb-pay">
+        <span className="onb-total" aria-hidden>
+          {shown}
+        </span>
+        <h1 className="onb-title">{copy.payTitle}</h1>
 
-      <ul className="onb-split">
-        <li>
-          <span>{copy.payEarned}</span>
-          <b>+{earned}</b>
-        </li>
-        <li>
-          <span>{copy.payGift}</span>
-          <b>+{WELCOME_POINTS}</b>
-        </li>
-        <li data-total="true">
-          <span>{copy.payTotal}</span>
-          <b>{total}</b>
-        </li>
-      </ul>
+        <ul className="onb-split">
+          <li>
+            <span>{copy.payEarned}</span>
+            <b>+{earned}</b>
+          </li>
+          <li>
+            <span>{copy.payGift}</span>
+            <b>+{WELCOME_POINTS}</b>
+          </li>
+          <li data-total="true">
+            <span>{copy.payTotal}</span>
+            <b>{total}</b>
+          </li>
+        </ul>
 
-      <div className="onb-tier">
-        <div className="onb-bar">
-          <i style={{ width: `${pct}%` }} />
+        <div className="onb-tier">
+          <div className="onb-bar">
+            <i style={{ width: `${filled}%` }} />
+          </div>
+          <span>{fill(copy.payTier, { n: String(FIRST_TIER) })}</span>
         </div>
-        <span>{fill(copy.payTier, { n: String(FIRST_TIER) })}</span>
-      </div>
 
-      <p className="onb-lede">{copy.payLede}</p>
+        <p className="onb-lede">{copy.payLede}</p>
 
-      <div className="onb-actions">
         {/*
+        The rest of the product, offered where somebody has just finished the
+        only part of it they have seen.
+
+        This screen used to end the flow with a button and nothing else, which
+        left a new player knowing that flags exist. Seven other games do, and
+        the count is `GAMES.length - 1` rather than a number in the sentence --
+        the L-Earn marketing section already shipped the bug where a page
+        claimed three games after five had launched, and the rule that came out
+        of it is that a page renders the list it is describing.
+
+        The icons are the games' own, so this is a picture of the shelf rather
+        than a promise about it.
+
+        **And each one is named.** It was seven bare icons in a bulleted list,
+        which is a row of small shapes a player has no way to read: the whole
+        claim of the paragraph above is that seven more games exist, and seven
+        anonymous glyphs are not evidence of that. `gameName` is the same
+        function the L-Earn page and the signed-in grid name their cards with,
+        so the shelf cannot start calling a game something the rest of the site
+        does not.
+
+        Mapped with the index and skipped rather than filtered first, because
+        `gameName` takes a position in `GAMES` — a filtered array renumbers
+        every row after the one removed, which would name each game as the one
+        after it.
+      */}
+        <div className="onb-more">
+          <b className="onb-more-title">{fill(copy.moreTitle, { n: String(GAMES.length - 1) })}</b>
+          <p>{copy.moreLede}</p>
+          {/*
+            One at a time, on a reel.
+
+            It was a grid of seven cards, and before that seven bare icons in a
+            bulleted list. A grid is a catalogue to be audited; the thing this
+            screen wants is to *show* somebody what else is here, one game at a
+            time, while they are still looking at what they just won.
+
+            `rulesFor` is the pair the L-Earn page and the signed-in Play grid
+            both open a card with — the rule and what it pays — so a player
+            reads the same description here that they will read when they get
+            there, and there is no second wording to keep in step.
+          */}
+          <GameReel label={fill(copy.moreTitle, { n: String(GAMES.length - 1) })} />
+
+          <a className="btn btn-ghost" href={PATHS.learn}>
+            {copy.moreGo}
+            <Icon name="arrow" size={15} />
+          </a>
+        </div>
+
+        <div className="onb-actions">
+          {/*
           This button ends onboarding and nothing else. It must **not**
           navigate: `finishOnboarding` changes the session, and a handler that
           also sets the hash would have the guard run once against the new
@@ -581,13 +1065,14 @@ function PayoffStep({ earned, onFinish }: { earned: number; onFinish: () => void
           for `onboarding` once the stamp is set, and the correcting effect in
           `Site` follows it — see the note in `router.ts`.
         */}
-        <button type="button" className="btn btn-solid btn-lg" onClick={onFinish}>
-          {copy.payGo}
-          <Icon name="arrow" size={16} />
-        </button>
-        <a className="btn btn-ghost" href="#/profile">
-          {copy.payProfile}
-        </a>
+          <button type="button" className="btn btn-solid btn-lg" onClick={onFinish}>
+            {copy.payGo}
+            <Icon name="arrow" size={16} />
+          </button>
+          <a className="btn btn-ghost" href="#/profile">
+            {copy.payProfile}
+          </a>
+        </div>
       </div>
     </>
   );
@@ -598,6 +1083,9 @@ function PayoffStep({ earned, onFinish }: { earned: number; onFinish: () => void
 export function OnboardingPage() {
   const { account, finishOnboarding } = useAuth();
   const [language] = useLanguage();
+  /* The field below reads the cursor off these two properties. Same hook, same
+     two names, same construction as the plan cards on the landing page. */
+  const field = useSpotlight<HTMLElement>();
   const [step, setStep] = useState<Step>('lang');
   const [earned, setEarned] = useState(0);
 
@@ -606,9 +1094,22 @@ export function OnboardingPage() {
   if (!account) return null;
 
   return (
-    <main className="onb" id="welcome-top">
+    <main className="onb" id="welcome-top" ref={field}>
+      {/*
+       * The ruled field the whole gate is printed on.
+       *
+       * No canvas, no context and no frame loop — two repeating hairline
+       * gradients under a mask that follows the pointer, which is the same
+       * device the subscription section uses and deliberately so: a player
+       * meets it here on their first screen and again on the page that sells
+       * them a plan. This route has no backdrop of its own (`Site.tsx` renders
+       * none for `onboarding`), so nothing is competing with it.
+       */}
+      <span className="onb-field" aria-hidden="true" />
+
       <div className="onb-shell">
-        <span className="brand">Paylez</span>
+        {/* Lowercase, like every other surface: the word is the mark. */}
+        <span className="brand">paylez</span>
 
         {step === 'lang' ? (
           <LanguageStep onNext={() => setStep('place')} />

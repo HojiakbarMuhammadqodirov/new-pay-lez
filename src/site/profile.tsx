@@ -18,7 +18,7 @@ import {
   type City,
   type CityList,
 } from './api/profile';
-import { useAuth } from './auth/context';
+import { useAuth, type UserProfile } from './auth/context';
 import { AVATAR_PX, toSquareDataUrl } from './imageFile';
 import { Face } from './auth/Avatar';
 import { useCopy } from './i18n/context';
@@ -29,6 +29,9 @@ import {
   USERNAME_MAX,
   USERNAME_MIN,
   isOccupation,
+  PROFILE_BONUS,
+  isProfileComplete,
+  type ProfileField,
   profileGaps,
   profilePercent,
   type Occupation,
@@ -117,6 +120,7 @@ const toAvatar = (file: File): Promise<string | null> => toSquareDataUrl(file, A
 function Field({
   label,
   labelId,
+  field,
   help,
   error,
   wraps = true,
@@ -134,6 +138,8 @@ function Field({
    * word saying what Student is an answer to.
    */
   labelId?: string;
+  /** Which of the seven this row is, so the reward card can jump to it. */
+  field?: ProfileField;
   help?: ReactNode;
   error?: string;
   wraps?: boolean;
@@ -141,7 +147,7 @@ function Field({
 }) {
   const Row = wraps ? 'label' : 'div';
   return (
-    <Row className="field">
+    <Row className="field" data-field={field}>
       <span className="field-label" id={labelId}>
         {label}
       </span>
@@ -521,6 +527,9 @@ export function ProfilePage() {
   });
   const [error, setError] = useState<{ field: string; message: string } | null>(null);
   const [saved, setSaved] = useState(false);
+  /* The celebration. Opened by the save that finishes the profile and closed
+     by the reader -- never re-opened, because `paidBonus` is true from then on. */
+  const [won, setWon] = useState(false);
 
   /* The confirmation is a fact about the last save, so it has to stop being
      true the moment the form stops matching what was saved. A timer would say
@@ -574,8 +583,62 @@ export function ProfilePage() {
 
   if (!account) return null;
   const profile = account.profile;
-  const gaps = profileGaps(profile, account.email);
-  const percent = profilePercent(profile, account.email);
+  /*
+   * The meter reads the **draft**, so it moves as the form is filled.
+   *
+   * It read the saved profile before, which meant the bar only ever jumped on
+   * save -- typing a username changed nothing, and the card sat at 14% while
+   * somebody filled six fields in front of it. A progress meter that does not
+   * move while you make progress is telling you about a different moment than
+   * the one you are in.
+   *
+   * It falls as well as rises, because it is the draft: clearing a field takes
+   * the bar back down. That is the honest reading -- the form is what will be
+   * saved, and the chips under it are the fields that will still be blank.
+   *
+   * The card *above* it stays on the saved profile deliberately: it answers
+   * "what do other people see", and nobody sees a draft.
+   */
+  const draftProfile: UserProfile = {
+    ...profile,
+    username: draft.username,
+    occupation: draft.occupation,
+    phone: draft.phone,
+    birthDate: draft.birthDate,
+    avatar: draft.avatar,
+    city: draft.city,
+    countryCode: draft.countryCode,
+  };
+  const gaps = profileGaps(draftProfile, account.email);
+  const percent = profilePercent(draftProfile, account.email);
+  /* The stamp, not the gaps: the bonus is paid once and the seven fields stay
+     editable, so a profile can be complete-and-paid, complete-and-not-yet-paid
+     (the moment between the save and the commit) or incomplete-but-paid
+     (somebody cleared a field afterwards). Only the stamp answers all three. */
+  const paidBonus = account.profileCompletedAt !== null;
+
+  /**
+   * Take the reader to a field they have not answered.
+   *
+   * `Field` stamps each row with `data-field`, so this finds the row by the
+   * same name `profileGaps` returns and there is no second mapping to keep in
+   * step. Scroll first, then focus: focusing alone jumps the page with no
+   * sense of travel, and on a phone the rail is *below* the form, so the
+   * chip is asking to go back up.
+   *
+   * The focus target is whatever control the row holds -- an input for five of
+   * them, a button for the status, the combobox input for the city. Querying
+   * for all three rather than naming one keeps this working when a row changes
+   * shape, which the birthday row already does once it is spent.
+   */
+  const goToField = (field: ProfileField) => {
+    const row = document.querySelector<HTMLElement>(`[data-field="${field}"]`);
+    if (!row) return;
+    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const control = row.querySelector<HTMLElement>('input, select, textarea, button');
+    /* After the scroll, not during: focusing mid-scroll cancels it in Safari. */
+    window.setTimeout(() => control?.focus({ preventScroll: true }), 320);
+  };
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
@@ -599,6 +662,20 @@ export function ProfilePage() {
       return;
     }
 
+    /* The seven as this submit leaves them, in the shape `profileGaps` reads.
+       Built from the draft rather than from `profile` because the celebration
+       below has to judge the save that is happening, not the one before it. */
+    const justSaved = {
+      ...profile,
+      username: draft.username,
+      occupation: draft.occupation,
+      phone: draft.phone,
+      birthDate: draft.birthDate,
+      avatar: draft.avatar,
+      city: draft.city,
+      countryCode: draft.countryCode,
+    };
+
     const result = saveProfile({
       username: draft.username,
       occupation: draft.occupation,
@@ -612,6 +689,18 @@ export function ProfilePage() {
     if (result.ok) {
       setError(null);
       setSaved(true);
+      /*
+       * The one moment worth celebrating, decided *before* the save lands.
+       *
+       * `paidBonus` is read from the render that is on screen now, so it still
+       * says what was true a moment ago -- which is exactly the question:
+       * was this the save that finished it? Reading it after `saveProfile`
+       * would always say yes and the panel would open on every later edit.
+       *
+       * The draft is what was just submitted, so completeness is judged on it
+       * rather than on `profile`, which React has not re-rendered from yet.
+       */
+      if (!paidBonus && isProfileComplete(justSaved, account.email)) setWon(true);
       return;
     }
 
@@ -751,6 +840,7 @@ export function ProfilePage() {
 
                   <Field
                     label={copy.username}
+                    field="username"
                     help={fill(copy.usernameHelp, { min: MIN, max: MAX })}
                     error={error?.field === 'username' ? error.message : undefined}
                   >
@@ -785,6 +875,7 @@ export function ProfilePage() {
                       is read. */}
                   <Field
                     label={copy.status}
+                    field="occupation"
                     labelId={statusLabelId}
                     help={copy.statusHelp}
                     wraps={false}
@@ -803,6 +894,7 @@ export function ProfilePage() {
                   {writesLeft > 0 ? (
                     <Field
                       label={copy.birthday}
+                      field="birthDate"
                       help={birthdayHelp}
                       error={error?.field === 'birthDate' ? error.message : undefined}
                     >
@@ -818,7 +910,7 @@ export function ProfilePage() {
                       />
                     </Field>
                   ) : (
-                    <Field label={copy.birthday} help={birthdayHelp} wraps={false}>
+                    <Field label={copy.birthday} help={birthdayHelp} wraps={false} field="birthDate">
                       <p className="prof-fact">{profile.birthDate || '—'}</p>
                     </Field>
                   )}
@@ -834,6 +926,7 @@ export function ProfilePage() {
                       on a click meant for an option. */}
                   <Field
                     label={copy.city}
+                    field="city"
                     labelId={cityLabelId}
                     help={cityHelp(copy, cities.state.status, list, draft)}
                     error={error?.field === 'city' ? error.message : undefined}
@@ -907,6 +1000,7 @@ export function ProfilePage() {
 
                 <Field
                   label={copy.phone}
+                  field="phone"
                   help={copy.phoneHelp}
                   error={error?.field === 'phone' ? error.message : undefined}
                 >
@@ -977,8 +1071,42 @@ export function ProfilePage() {
                 </p>
               </div>
 
-              <div className="console prof-meter" data-reveal>
+              {/*
+                The prize, and it leads the card rather than trailing it.
+
+                This was a quiet line under the meter and that was the wrong
+                call: a reward nobody notices changes nobody's behaviour, and
+                the whole point of the number is to be the reason somebody
+                fills the form. So the figure is the largest thing on the card
+                and the meter reports underneath it -- the offer first, the
+                progress second.
+
+                Still one accent on one ground. What makes it loud is size and
+                a filled face, not a second hue.
+              */}
+              <div
+                className="console prof-meter"
+                data-reveal
+                data-paid={paidBonus ? 'true' : undefined}
+              >
                 <span className="console-label">{copy.meterTitle}</span>
+
+                <div className="prof-prize">
+                  <span className="prof-prize-mark" aria-hidden>
+                    <Icon name={paidBonus ? 'check' : 'gift'} size={20} strokeWidth={2.4} />
+                  </span>
+                  <div>
+                    {/* The figure, not the sentence, is the hook. `+50` reads
+                        before anything around it is parsed. */}
+                    <b className="prof-prize-pts">+{PROFILE_BONUS}</b>
+                    <span className="prof-prize-say">
+                      {fill(paidBonus ? copy.meterRewardPaid : copy.meterReward, {
+                        points: String(PROFILE_BONUS),
+                      })}
+                    </span>
+                  </div>
+                </div>
+
                 <b className="prof-pct">{fill(copy.meterProgress, { pct: String(percent) })}</b>
                 <div className="prof-bar">
                   <i style={{ width: `${percent}%` }} />
@@ -986,9 +1114,23 @@ export function ProfilePage() {
                 {gaps.length > 0 ? (
                   <>
                     <span className="prof-still">{copy.meterStill}</span>
+                    {/*
+                      Buttons, not list items -- this is the interactive half.
+
+                      A reader who is told "Photo, City, Birthday" still has to
+                      go and find those three in a form of seven. Each chip
+                      takes them straight to its field and focuses it, so the
+                      card is a route through the work rather than a report on
+                      it. `data-field` is put on the row by `Field`, which is
+                      why the mapping cannot drift from the form.
+                    */}
                     <ul className="prof-list">
                       {gaps.map((field) => (
-                        <li key={field}>{copy.fieldNames[field]}</li>
+                        <li key={field}>
+                          <button type="button" onClick={() => goToField(field)}>
+                            {copy.fieldNames[field]}
+                          </button>
+                        </li>
                       ))}
                     </ul>
                   </>
@@ -999,6 +1141,37 @@ export function ProfilePage() {
                   </p>
                 )}
               </div>
+
+              {/*
+                The moment it lands.
+
+                A panel in the rail rather than a `window.alert`, and rather
+                than a toast that slides away: an alert is the browser's chrome
+                over the page, untranslatable and unstyleable, and a reward
+                that vanishes on a timer is one somebody can miss entirely.
+                This sits under the meter it completes, says what was earned,
+                and is dismissed by the reader.
+
+                `role="status"` rather than `alert`: this is good news arriving
+                beside the thing that caused it, not an error interrupting a
+                task, so it is announced politely rather than cutting in.
+              */}
+              {won && (
+                <div className="console prof-won" role="status">
+                  <span className="prof-won-mark" aria-hidden>
+                    <Icon name="trophy" size={22} strokeWidth={2.2} />
+                  </span>
+                  <b>{copy.wonTitle}</b>
+                  <p>{fill(copy.wonBody, { points: String(PROFILE_BONUS) })}</p>
+                  <button
+                    type="button"
+                    className="btn btn-solid"
+                    onClick={() => setWon(false)}
+                  >
+                    {copy.wonClose}
+                  </button>
+                </div>
+              )}
             </aside>
           </div>
         </div>

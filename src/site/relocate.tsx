@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import {
+  GUIDE_ICON_FALLBACK,
+  GUIDE_ICONS,
   RELOCATE_AMOUNT,
-  RELOCATE_CITIES,
   RELOCATE_COUNTRIES,
   RELOCATE_PAIRS,
-  RELOCATE_PROVIDERS,
   RELOCATE_STATS,
-  RELOCATE_TOPICS,
-  SPOKEN_LANGUAGES,
-  type RelocateProvider,
 } from './content';
+import {
+  categoriesPath,
+  servicesPath,
+  type GuideCategory,
+  type GuideService,
+} from './api/guide';
+import { useApi } from './api/useApi';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
 import { CURRENCIES, fill } from './i18n/currency';
@@ -23,6 +27,15 @@ import {
   type FxCode,
 } from './i18n/fx';
 import { PATHS } from './router';
+import {
+  addPair,
+  hasPair,
+  keyOf,
+  readPairs,
+  removePair,
+  writePairs,
+  type Pair,
+} from './savedPairs';
 /*
  * The flag subset, borrowed from the globe's country card rather than declared
  * again here. Chromium on Windows ships no glyphs for regional-indicator pairs,
@@ -37,17 +50,43 @@ import '../components/GlobeHero/ui/flagFont.css';
  * The other pages sell something. This one is the part of the product that is
  * free, and the page is written that way: no pricing, no CTA that asks for a
  * card, and the guide readable without an account. What it has instead of a
- * pitch is specificity — nine subjects, fourteen countries, and a rate card that
- * quotes the mid-market number rather than one with a spread hidden in it.
+ * pitch is specificity — the subjects the guide actually carries for the country
+ * you pick, and a rate card that quotes the mid-market number rather than one
+ * with a spread hidden in it. Both halves are the server's: `#relocate-guide`
+ * reads `/v1/guide/*`, and the last invented list on this site went with it.
  *
- * The backdrop is `.site__rings` — CSS contour rings meaning distance from
- * where you are standing, the way a map draws "near you". The page had the
- * globe once, on the argument that it was about a border being crossed; it is
- * not — it is a guide to the place you have already arrived in. See the
+ * The backdrop is `city/CityRise` — a city building itself around the reader,
+ * which is this page's own subject rather than a picture beside it. The page had
+ * the globe once, on the argument that it was about a border being crossed; it
+ * is not — it is a guide to the place you have already arrived in. Two answers
+ * stood in between and both are recorded in `CityRise`'s header. See the
  * backdrop note in CLAUDE.md.
  */
 
 /* ───────────────────────────────────────────────────────── the exchange ── */
+
+/**
+ * How wide the amount field has to be, in `ch`, for what it is showing.
+ *
+ * This replaces `field-sizing: content`, which does the same job natively and
+ * only on Chromium — see the note on `.fx-amount input` in `site.css`. Three
+ * things make a hand-rolled version safe here rather than the usual guess:
+ *
+ * - The field is `tabular-nums`, so every **digit** is exactly `1ch` wide by
+ *   definition. There is no measuring to do and nothing to be wrong about.
+ * - A separator is not, so it counts as roughly half. Overshooting by a
+ *   character on a grouped figure is the whole bug this is fixing, and `1,234`
+ *   with two full-width separators is a character clear of where it belongs.
+ * - The floor is 1.5 rather than the length of the placeholder, so an empty
+ *   field still has somewhere to put a caret, and the caret at the end of a full
+ *   one is inside the box rather than clipped against its edge — that is what
+ *   the extra 0.6 is for.
+ */
+function sizeOf(shown: string): string {
+  let width = 0.6;
+  for (const character of shown) width += character >= '0' && character <= '9' ? 1 : 0.5;
+  return `${Math.max(1.5, width)}ch`;
+}
 
 /**
  * A number the field can be seeded with, as opposed to one it can display.
@@ -237,6 +276,20 @@ function ExchangeCard() {
   const separator = CURRENCIES[language].group;
 
   const home = FX_FOR_LANGUAGE[language];
+
+  /**
+   * The pairs this reader pinned, and the defaults under them.
+   *
+   * Two rows and two different things, which is the whole point: `shortcuts` is
+   * the same four pairs for everybody who reads in this language, and `pinned`
+   * is whatever this person actually checks. The row used to be labelled "Saved
+   * pairs" and be neither — see the header of `savedPairs.ts` for what that
+   * promise cost.
+   *
+   * Read lazily rather than in an effect, so the pins are on screen in the first
+   * paint instead of appearing a frame later.
+   */
+  const [pinned, setPinned] = useState<Pair[]>(() => readPairs());
   const shortcuts = useShortcuts(home);
 
   /* Opened on the first shortcut rather than on a pair of its own, so the chip
@@ -258,6 +311,9 @@ function ExchangeCard() {
   const [typed, setTyped] = useState(String(RELOCATE_AMOUNT));
   /** Which side is being typed into — the other one is the answer. */
   const [edge, setEdge] = useState<'from' | 'to'>('from');
+
+  /** Whether the pair on screen is one of the pinned ones. */
+  const saved = hasPair(pinned, [from, to]);
 
   /** One unit of the left-hand currency in the right-hand one. */
   const rate = FX[to].rate / FX[from].rate;
@@ -304,6 +360,22 @@ function ExchangeCard() {
     }
   };
 
+  /**
+   * Pin the pair on screen, or take it off again.
+   *
+   * One control for both, because the alternative is a save button that does
+   * nothing the second time it is pressed and a separate way to undo it. The
+   * store is written here rather than in an effect: this is the only thing that
+   * changes the list, and an effect would also fire on the first render and
+   * write back what it had just read.
+   */
+  const pin = () => {
+    const pair: Pair = [from, to];
+    const next = hasPair(pinned, pair) ? removePair(pinned, pair) : addPair(pinned, pair);
+    setPinned(next);
+    writePairs(next);
+  };
+
   const swap = () => {
     setFrom(to);
     setTo(from);
@@ -312,11 +384,25 @@ function ExchangeCard() {
        answer a question nobody asked. */
   };
 
+  /* Both rows do the same thing, so they call the same thing. `edge` goes back
+     to the left-hand side because a shortcut is read as "show me this pair", and
+     leaving the caret on the answer would show it backwards. */
+  const show = (pair: Pair) => {
+    setFrom(pair[0]);
+    setTo(pair[1]);
+    setEdge('from');
+  };
+
   const field = (side: 'from' | 'to') => {
     const code = side === 'from' ? from : to;
     const currency = FX[code];
     const mine = edge === side;
     const label = side === 'from' ? text.send : text.gets;
+    /* The typed side shows the raw string; the other shows the answer, grouped.
+       Computed once because the width is measured off the same string that is
+       rendered — deriving it from `typed` on both sides would size the answer to
+       the question. */
+    const shown = mine ? typed : formatFx(answer, currency, separator);
 
     return (
       <div className="fx-row" data-out={side === 'to' ? 'true' : undefined}>
@@ -329,10 +415,10 @@ function ExchangeCard() {
               type="text"
               inputMode="decimal"
               placeholder="0"
-              /* The typed side shows the raw string; the other shows the
-                 answer, grouped and with its symbol left to the `<i>` beside
-                 it so the two rows line up. */
-              value={mine ? typed : formatFx(answer, currency, separator)}
+              /* The symbol is left to the `<i>` beside it so the two rows line
+                 up. */
+              value={shown}
+              style={{ width: sizeOf(shown) }}
               aria-label={label}
               onChange={(event) => {
                 setEdge(side);
@@ -366,28 +452,60 @@ function ExchangeCard() {
   return (
     <div className="console fx-card">
       <div className="fx-quick">
-        <span className="console-label">{text.saved}</span>
-        <div className="fx-chips">
-          {shortcuts.map(([a, b]) => (
-            <button
-              type="button"
-              key={`${a}${b}`}
-              className="fx-chip"
-              data-on={a === from && b === to ? 'true' : undefined}
-              onClick={() => {
-                setFrom(a);
-                setTo(b);
-                /* Back to the left-hand side: a shortcut is read as "show me
-                   this pair", and leaving the caret on the answer would show
-                   it backwards. */
-                setEdge('from');
-              }}
-            >
-              <i className="fx-flag">{FX[a].flag}</i>
-              {a} <Icon name="arrow" size={12} strokeWidth={2.4} /> {b}
-              <i className="fx-flag">{FX[b].flag}</i>
-            </button>
-          ))}
+        {/* The pinned row exists only when something is pinned. An empty
+            "Saved pairs" heading over nothing is the same empty promise the
+            label used to make when it sat over four defaults. */}
+        {pinned.length > 0 && (
+          <div className="fx-group">
+            <span className="console-label">{text.saved}</span>
+            <div className="fx-chips">
+              {pinned.map((pair) => (
+                <span className="fx-chip fx-chip-pin" key={keyOf(pair)}>
+                  <button
+                    type="button"
+                    className="fx-chip-go"
+                    data-on={pair[0] === from && pair[1] === to ? 'true' : undefined}
+                    onClick={() => show(pair)}
+                  >
+                    <Pill pair={pair} />
+                  </button>
+                  {/* Its own button, not a second job for the chip: pressing a
+                      shortcut and unpinning it are opposite intentions and must
+                      not share a target. */}
+                  <button
+                    type="button"
+                    className="fx-chip-off"
+                    aria-label={fill(text.unpin, { pair: `${pair[0]} ${pair[1]}` })}
+                    title={fill(text.unpin, { pair: `${pair[0]} ${pair[1]}` })}
+                    onClick={() => {
+                      const next = removePair(pinned, pair);
+                      setPinned(next);
+                      writePairs(next);
+                    }}
+                  >
+                    <Icon name="close" size={12} strokeWidth={2.6} />
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="fx-group">
+          <span className="console-label">{text.common}</span>
+          <div className="fx-chips">
+            {shortcuts.map(([a, b]) => (
+              <button
+                type="button"
+                key={`${a}${b}`}
+                className="fx-chip"
+                data-on={a === from && b === to ? 'true' : undefined}
+                onClick={() => show([a, b])}
+              >
+                <Pill pair={[a, b]} />
+              </button>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -404,6 +522,23 @@ function ExchangeCard() {
       </button>
 
       {field('to')}
+
+      {/*
+        The control the label above was promising.
+        Sitting here rather than beside the chips because this is where the pair
+        is *chosen* — the picker is two rows up, and a save button at the top of
+        the card would be asking about something the reader has not decided yet.
+      */}
+      <button
+        type="button"
+        className="fx-pin"
+        data-on={saved ? 'true' : undefined}
+        aria-pressed={saved}
+        onClick={pin}
+      >
+        <Icon name="star" size={14} strokeWidth={2.2} />
+        {saved ? text.pinned : text.pin}
+      </button>
 
       <p className="fx-total" aria-live="polite">
         {valid
@@ -428,8 +563,19 @@ function ExchangeCard() {
   );
 }
 
+/** A pair written out: flag, code, arrow, code, flag. Shared by both rows. */
+function Pill({ pair }: { pair: Pair }) {
+  return (
+    <>
+      <i className="fx-flag">{FX[pair[0]].flag}</i>
+      {pair[0]} <Icon name="arrow" size={12} strokeWidth={2.4} /> {pair[1]}
+      <i className="fx-flag">{FX[pair[1]].flag}</i>
+    </>
+  );
+}
+
 /**
- * The shortcuts above the card — one tap sets both sides.
+ * The defaults above the card — one tap sets both sides.
  *
  * The reader's own currency leads, paired with złoty (the market the guide is
  * written for) or with euros if they are already reading in złoty. The rest
@@ -581,48 +727,131 @@ function RelocateRates() {
 
 /* ────────────────────────────────────────────────────────────────── guide ── */
 
+/*
+ * Frozen singletons, not `[]` at the point of use.
+ *
+ * Both feed a `useMemo` dependency list, and a fresh literal every render is a
+ * new identity every render — which recomputes the grouping over three hundred
+ * services on every keystroke elsewhere on the page, and defeats the memo
+ * entirely.
+ */
+const EMPTY_SERVICES: readonly GuideService[] = [];
+const EMPTY_CATEGORIES: readonly GuideCategory[] = [];
+
 /**
- * The nine subjects, and the providers behind each one.
+ * The country's name in the reader's language, from the platform rather than
+ * from a dictionary.
  *
- * Three things changed here and they are one change: the rows **open**.
+ * Fourteen countries in five languages is seventy strings that say nothing this
+ * product knows and the browser does not — and the fifteenth country would need
+ * five more. `Intl.DisplayNames` is the same table `Intl` already uses for the
+ * currency names two sections up. Older engines without it fall back to the ISO
+ * code, which is what the strip beside `relocate.countries` shows anyway.
+ */
+function countryNamer(language: string): (code: string) => string {
+  try {
+    const names = new Intl.DisplayNames([language], { type: 'region' });
+    return (code) => names.of(code) ?? code;
+  } catch {
+    return (code) => code;
+  }
+}
+
+/**
+ * The subjects, and the real places filed under each one.
  *
- * - They were `<article>`s with a decorative chevron that went nowhere, on the
- *   argument that a marketing page cannot honour the click. It can now: each
- *   opens into the providers filed under it, which is the thing a reader came
- *   for. See `RELOCATE_PROVIDERS` — seed data, replaced by the real directory.
- * - **The city filter is a filter.** It was a static pill reading "All cities".
- *   It is a real control, it narrows every open list, and the options are
- *   derived from the providers so it can never offer a city with nothing in it.
- * - **The search pill is gone.** It duplicated the assistant two sections down,
- *   which is a real input against a fake one — and the fake one was above.
+ * **This section used to be the last seed directory on the site.** Nine
+ * hard-coded topics, nine names and blurbs in each of five dictionaries, and
+ * twenty-four invented businesses underneath — a "Wisła Bank — Newcomer Desk"
+ * that does not exist, on the one page in this product whose promise is that it
+ * will tell somebody three weeks into a new country where to actually go. Two of
+ * the twenty-four were real businesses that had never heard of us. It reads
+ * `GET /v1/guide/categories` and `GET /v1/guide/services` now — the imported
+ * rows of the old database — and `api/guide.ts` says what that cost and bought.
  *
- * Two subjects lead the list at double width rather than sitting in the nine-up
- * grid: see the `featured` note in `RELOCATE_TOPICS`.
+ * Four consequences worth knowing before editing this:
+ *
+ * - **The subject list is the server's, so nothing here may say "nine".** The
+ *   count is whatever the country has; the heading and the lede were rewritten
+ *   in all five languages to stop claiming a number this file no longer owns.
+ * - **The country picker is new and it is upstream of everything.** The guide is
+ *   written per country — that is what `relocate.countries` two sections down
+ *   has always claimed — so the country chooses the subjects *and* the places,
+ *   and the city filter narrows what came back.
+ * - **The cities are derived from the answer, never declared.** A filter
+ *   offering a city with nothing in it is a control that silently returns
+ *   nothing, and the old array could drift from the rows the moment either was
+ *   edited. Now it cannot.
+ * - **Three states, and "none" is not "could not ask".** `useApi`'s union, for
+ *   the reason the console states at length: after the seed purge an empty guide
+ *   is the *ordinary* answer for most countries, and a reader told "nothing here
+ *   yet" when the server is down has been told something false.
  */
 function RelocateGuide() {
   const copy = useCopy();
-  const [open, setOpen] = useState<number | null>(null);
+  const [language] = useLanguage();
+  const [open, setOpen] = useState<string | null>(null);
   /** `''` is every city — the filter's own first option. */
   const [city, setCity] = useState('');
+  const [country, setCountry] = useState(RELOCATE_COUNTRIES[0].code);
 
   const guide = copy.relocate.guide;
 
-  /* Grouped once rather than filtered per row: nine rows each scanning the
-     whole table is nine passes for one answer. */
-  const byTopic = useMemo(() => {
-    const out = new Map<number, RelocateProvider[]>();
-    for (const provider of RELOCATE_PROVIDERS) {
-      if (city && provider.city !== city) continue;
-      const group = out.get(provider.topic);
-      if (group) group.push(provider);
-      else out.set(provider.topic, [provider]);
+  /* Named and sorted in the reader's language: an alphabetical list of country
+     names is only alphabetical in the language it was sorted in. */
+  const countryOptions = useMemo(() => {
+    const name = countryNamer(language);
+    return RELOCATE_COUNTRIES.map((entry) => ({ code: entry.code, name: name(entry.code) })).sort(
+      (a, b) => a.name.localeCompare(b.name, language),
+    );
+  }, [language]);
+
+  /* Two reads rather than one: the subjects have to render — with their counts
+     — before anybody opens one, so there is no version of this where the places
+     can wait for a press. Both are keyed on the country and on the reader's
+     language, which is what re-fetches translated copy when the header's
+     switcher moves. */
+  const cats = useApi<GuideCategory[]>(categoriesPath(country), [country], { language });
+  const svcs = useApi<GuideService[]>(servicesPath(country), [country], { language });
+
+  const rows = svcs.state.status === 'ready' ? svcs.state.data : EMPTY_SERVICES;
+
+  /* Derived, never declared — see the note above. Sorted by the reader's own
+     collation, because these are Polish and Uzbek city names and `<` is not a
+     sort order for either. */
+  const cities = useMemo(
+    () =>
+      [
+        ...new Set(rows.map((row) => row.city).filter((name): name is string => Boolean(name))),
+      ].sort((a, b) => a.localeCompare(b, language)),
+    [rows, language],
+  );
+
+  /* Grouped once rather than filtered per row: a dozen subjects each scanning
+     three hundred services is a dozen passes for one answer. */
+  const byCategory = useMemo(() => {
+    const out = new Map<string, GuideService[]>();
+    for (const row of rows) {
+      if (city && row.city !== city) continue;
+      if (!row.category_key) continue;
+      const group = out.get(row.category_key);
+      if (group) group.push(row);
+      else out.set(row.category_key, [row]);
     }
     return out;
-  }, [city]);
+  }, [rows, city]);
 
-  const order = RELOCATE_TOPICS.map((topic, i) => ({ topic, i })).sort(
-    (a, b) => Number(Boolean(b.topic.featured)) - Number(Boolean(a.topic.featured)),
-  );
+  /* A city that vanished under a country change would otherwise leave the
+     filter set to somewhere with nothing in it, and every subject empty with no
+     visible reason why. */
+  useEffect(() => {
+    if (city && !cities.includes(city)) setCity('');
+  }, [cities, city]);
+
+  const listed = city ? rows.filter((row) => row.city === city).length : rows.length;
+  const loading = cats.state.status === 'loading' || svcs.state.status === 'loading';
+  const failed = cats.state.status === 'error' || svcs.state.status === 'error';
+  const subjects = cats.state.status === 'ready' ? cats.state.data : EMPTY_CATEGORIES;
 
   return (
     <section className="section" id="relocate-guide">
@@ -635,110 +864,177 @@ function RelocateGuide() {
 
         <div className="guide-bar" data-reveal>
           <label className="guide-city">
-            <Icon name="map" size={14} />
-            <span className="visually-hidden">{guide.city}</span>
-            <select value={city} onChange={(event) => setCity(event.target.value)}>
-              <option value="">{guide.cities}</option>
-              {RELOCATE_CITIES.map((name) => (
-                <option key={name} value={name}>
-                  {name}
+            <i aria-hidden="true">
+              {RELOCATE_COUNTRIES.find((entry) => entry.code === country)?.flag}
+            </i>
+            <span className="visually-hidden">{guide.country}</span>
+            <select value={country} onChange={(event) => setCountry(event.target.value)}>
+              {countryOptions.map((entry) => (
+                <option key={entry.code} value={entry.code}>
+                  {entry.name}
                 </option>
               ))}
             </select>
           </label>
 
+          {/* Only once there is something to narrow. A filter over an answer
+              with one city in it is a control that cannot change anything. */}
+          {cities.length > 1 && (
+            <label className="guide-city">
+              <Icon name="map" size={14} />
+              <span className="visually-hidden">{guide.city}</span>
+              <select value={city} onChange={(event) => setCity(event.target.value)}>
+                <option value="">{guide.cities}</option>
+                {cities.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* An em dash while it is unknown, never a 0 — the console's rule, and
+              this page has the same reason for it. */}
           <span className="guide-count">
-            {fill(guide.count, {
-              n: String(
-                city
-                  ? RELOCATE_PROVIDERS.filter((p) => p.city === city).length
-                  : RELOCATE_PROVIDERS.length,
-              ),
-            })}
+            {fill(guide.count, { n: loading || failed ? '—' : String(listed) })}
           </span>
         </div>
 
-        <div className="topics">
-          {order.map(({ topic, i }) => {
-            const item = guide.items[i];
-            const providers = byTopic.get(i) ?? [];
-            const isOpen = open === i;
+        {failed ? (
+          <p className="guide-state" data-reveal>
+            {guide.failed}
+          </p>
+        ) : loading ? (
+          <p className="guide-state" data-reveal>
+            {guide.loading}
+          </p>
+        ) : subjects.length === 0 ? (
+          <p className="guide-state" data-reveal>
+            {guide.empty}
+          </p>
+        ) : (
+          <div className="topics">
+            {subjects.map((subject, index) => {
+              const places = byCategory.get(subject.key) ?? EMPTY_SERVICES;
+              const isOpen = open === subject.key;
 
-            return (
-              <article
-                className="topic"
-                key={item.name}
-                data-featured={topic.featured ? 'true' : undefined}
-                data-open={isOpen ? 'true' : undefined}
-                data-reveal
-              >
-                <button
-                  type="button"
-                  className="topic-head"
-                  aria-expanded={isOpen}
-                  aria-controls={`topic-panel-${i}`}
-                  onClick={() => setOpen(isOpen ? null : i)}
+              return (
+                <article
+                  className="topic"
+                  key={subject.id}
+                  /* The first two, at double width. The emphasis is the
+                     server's `position` rather than a list of keys here: the
+                     app already orders housing and paperwork first because that
+                     is what a first month is about, and reading the order we
+                     were given beats keeping a second opinion about it in the
+                     front end. */
+                  data-featured={index < 2 ? 'true' : undefined}
+                  data-open={isOpen ? 'true' : undefined}
+                  data-reveal
                 >
-                  <span className="topic-ico">
-                    <Icon name={topic.icon} size={20} />
-                  </span>
-                  <span className="topic-tx">
-                    <b>{item.name}</b>
-                    <span>{item.blurb}</span>
-                  </span>
-                  <span className="topic-n">{providers.length}</span>
-                  <Icon name="chevron" size={16} strokeWidth={2.2} className="topic-go" />
-                </button>
+                  <button
+                    type="button"
+                    className="topic-head"
+                    aria-expanded={isOpen}
+                    aria-controls={`topic-panel-${subject.key}`}
+                    onClick={() => setOpen(isOpen ? null : subject.key)}
+                  >
+                    <span className="topic-ico">
+                      <Icon name={GUIDE_ICONS[subject.key] ?? GUIDE_ICON_FALLBACK} size={20} />
+                    </span>
+                    <span className="topic-tx">
+                      {/* Translated by the server, with English filling any
+                          hole. A category with neither is drawn under its key
+                          rather than blank — an untranslated row is still a row
+                          somebody can open. */}
+                      <b>{subject.title ?? subject.key}</b>
+                      {subject.description && <span>{subject.description}</span>}
+                    </span>
+                    <span className="topic-n">{places.length}</span>
+                    <Icon name="chevron" size={16} strokeWidth={2.2} className="topic-go" />
+                  </button>
 
-                {/* Same `0fr → 1fr` grid collapse the FAQ uses: the provider
-                    lists are different lengths in every language, so nothing
-                    here may need a pixel height up front. */}
-                <div className="topic-panel" id={`topic-panel-${i}`} role="region">
-                  <div>
-                    {providers.length === 0 ? (
-                      <p className="topic-empty">
-                        {city ? fill(guide.none, { city }) : guide.soon}
-                      </p>
-                    ) : (
-                      /* No reach wiring on these rows. `RelocateProvider` has a
-                         name, a topic, a city and its languages — and no id at
-                         all, because it is the seed directory the real one
-                         replaces. There is nothing to report an impression
-                         *against*, and keying one on the name would attribute
-                         a stranger's listing to whichever venue happened to be
-                         called that. Wire this the day the guide reads
-                         `GET /v1/venues`; see `api/reach.ts`. */
-                      <ul className="topic-list">
-                        {providers.map((provider) => (
-                          <li key={provider.name}>
-                            <b>{provider.name}</b>
-                            <span className="topic-where">
-                              <Icon name="map" size={13} />
-                              {provider.city}
-                            </span>
-                            <span className="topic-langs">
-                              {guide.speaks}{' '}
-                              {provider.languages
-                                .map(
-                                  (code) =>
-                                    copy.listing.spokenLanguages[
-                                      SPOKEN_LANGUAGES.indexOf(code)
-                                    ],
-                                )
-                                .join(' · ')}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
+                  {/* Same `0fr → 1fr` grid collapse the FAQ uses: the lists are
+                      different lengths in every language, so nothing here may
+                      need a pixel height up front. */}
+                  <div className="topic-panel" id={`topic-panel-${subject.key}`} role="region">
+                    <div>
+                      {places.length === 0 ? (
+                        <p className="topic-empty">
+                          {city ? fill(guide.none, { city }) : guide.soon}
+                        </p>
+                      ) : (
+                        /* No reach wiring on these rows yet. `service_events` is
+                           what `venues.trackListing` writes and it is keyed on a
+                           *venue*, which only the promoted listings have —
+                           reporting an impression against the rest would file it
+                           under nobody. See `api/reach.ts`. */
+                        <ul className="topic-list">
+                          {places.map((place) => (
+                            <li key={place.id}>
+                              <b>{place.name}</b>
+                              {place.venueId !== null && (
+                                <span className="topic-tag">{guide.onPaylez}</span>
+                              )}
+                              {place.city && (
+                                <span className="topic-where">
+                                  <Icon name="map" size={13} />
+                                  {place.address ? `${place.address}, ${place.city}` : place.city}
+                                </span>
+                              )}
+                              {place.description && (
+                                <span className="topic-blurb">{place.description}</span>
+                              )}
+                              <GuideLinks place={place} />
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
+                </article>
+              );
+            })}
+          </div>
+        )}
       </div>
     </section>
+  );
+}
+
+/**
+ * The two ways to reach a place, and only the two we can label.
+ *
+ * `guidance_service_links.kind` is free text out of the export — `website`,
+ * `instagram`, `menu`, whatever an editor typed — and printing a kind we have no
+ * word for would put untranslated server text on a marketing page that ships in
+ * five languages. The phone is a column rather than a link row, so it is always
+ * safe; a website is the one kind worth a dictionary entry. Anything else is
+ * dropped rather than guessed at, which is why this is a component and not two
+ * lines inline: the rule wants somewhere to be written down.
+ */
+function GuideLinks({ place }: { place: GuideService }) {
+  const guide = useCopy().relocate.guide;
+  const site = place.links.find((link) => link.kind === 'website')?.value;
+
+  if (!place.phone && !site) return null;
+
+  return (
+    <span className="topic-links">
+      {place.phone && (
+        <a href={`tel:${place.phone.replace(/\s+/g, '')}`}>
+          <Icon name="send" size={12} />
+          {place.phone}
+        </a>
+      )}
+      {site && (
+        <a href={site} target="_blank" rel="noreferrer noopener">
+          <Icon name="chevron" size={12} />
+          {guide.visit}
+        </a>
+      )}
+    </span>
   );
 }
 
@@ -784,7 +1080,7 @@ function RelocateCountries() {
 /* ──────────────────────────────────────────────────────────────────── ask ── */
 
 /**
- * The assistant, as the escape hatch from a fixed list of nine subjects.
+ * The assistant, as the escape hatch from a fixed list of subjects.
  *
  * The field is still a picture of one — a real input on a marketing page is a
  * promise to answer, and this page cannot keep it. What changed is that the

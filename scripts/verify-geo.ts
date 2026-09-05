@@ -703,6 +703,10 @@ console.log('\naccess control');
      * welcome screen. `newPlayer` is the fixture that carries the `null`.
      */
     onboardedAt: '2026-01-01',
+    /* `null` on every fixture here: the profile bonus is not what any of these
+       assertions are about, and a stamp would only make one of them read as if
+       it were. */
+    profileCompletedAt: null,
   };
   const person: Account = { ...undecided, type: 'individual' };
   const newPlayer: Account = { ...person, onboardedAt: null };
@@ -792,7 +796,19 @@ console.log('\naccess control');
    * no venue, and it does not replace their own name and city.
    */
   check('anon is sent from the profile to sign-in', resolveRoute('profile', anon) === 'signin');
-  check('anon is sent from onboarding to sign-in', resolveRoute('onboarding', anon) === 'signin');
+  /*
+   * Onboarding is the exception, and it exists to make sense of the Back
+   * button on the welcome flow. Signing out of onboarding has to resolve to a
+   * page, and `signin` made the flow's own "Back" land on the login form: the
+   * handler sets `#top`, the guard runs against the new account and the old
+   * route, and replaces it. `analytics` set the precedent — a private route
+   * whose signed-out answer is the marketing page, because signing in would
+   * not get an anonymous visitor there either.
+   */
+  check(
+    'anon is sent from onboarding to the landing page',
+    resolveRoute('onboarding', anon) === 'landing',
+  );
   check('an individual keeps the profile', resolveRoute('profile', person) === 'profile');
   check('an owner keeps the profile', resolveRoute('profile', ownerSet) === 'profile');
   check('an admin keeps the profile', resolveRoute('profile', admin) === 'profile');
@@ -2757,6 +2773,7 @@ console.log('\nsession');
        account — the first one this check would have missed. */
     profile: { ...EMPTY_PROFILE, username: 'marta', city: 'Kraków' },
     onboardedAt: null,
+    profileCompletedAt: null,
   };
   const back = JSON.parse(JSON.stringify(account)) as Account;
   check('an account survives a round trip', back.id === account.id && back.type === 'business');

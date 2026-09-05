@@ -14,6 +14,7 @@ import {
   SUB_PLANS,
   SUB_ROWS,
   SUB_TERMS,
+  subBeatsFree,
   subTermPrice,
   type SubRowKind,
   type SubValue,
@@ -21,9 +22,11 @@ import {
 import { Controller3D } from './controller/Controller3D';
 import { Icon } from './icons';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
+import { useAccount } from './auth/context';
 import { fill } from './i18n/currency';
 import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
+import { useSpotlight } from './pointer';
 import { usePalette } from './theme/context';
 
 /* ────────────────────────────────────────────────────────────────── hero ── */
@@ -359,31 +362,300 @@ function SubNone() {
   );
 }
 
-/** One plan's answer to one row. */
-function SubCell({ kind, value }: { kind: SubRowKind; value: SubValue }) {
+/**
+ * One plan's answer to one row.
+ *
+ * `up` is the cell being an improvement on the free column — `subBeatsFree`,
+ * computed off the table rather than decided here — and it is the whole of what
+ * makes three columns of small print readable as an offer. A lit cell is
+ * something this plan buys you; the free column has none and Premium has nearly
+ * all of them, which is a shape rather than a paragraph.
+ */
+function SubCell({
+  kind,
+  value,
+  up = false,
+}: {
+  kind: SubRowKind;
+  value: SubValue;
+  up?: boolean;
+}) {
   const copy = useCopy().subscription;
+  /* `undefined` rather than `"false"`: the sheet selects on the attribute's
+     presence, and an attribute reading "false" is present. */
+  const lit = up ? 'true' : undefined;
 
-  if (value === null) return <b className="sub-val">{copy.unlimited}</b>;
+  if (value === null) {
+    return (
+      <b className="sub-val" data-up={lit}>
+        {copy.unlimited}
+      </b>
+    );
+  }
 
   if (kind === 'flag') {
     return value === 0 ? (
       <SubNone />
     ) : (
-      <b className="sub-val" data-yes="true" aria-label={copy.included}>
+      <b className="sub-val" data-yes="true" data-up={lit} aria-label={copy.included}>
         <Icon name="check" size={14} strokeWidth={3} />
       </b>
     );
   }
 
   if (kind === 'badge') {
-    return value === 0 ? <SubNone /> : <b className="sub-val">{copy.badges[value - 1]}</b>;
+    return value === 0 ? (
+      <SubNone />
+    ) : (
+      <b className="sub-val" data-up={lit}>
+        {copy.badges[value - 1]}
+      </b>
+    );
   }
 
   /* A `number` row writes zero as nothing: no hours of head start and no points
      credited are the absence of a perk, not a quantity of one. */
   if (value === 0) return <SubNone />;
 
-  return <b className="sub-val">{kind === 'multiplier' ? `${value}×` : value}</b>;
+  return (
+    <b className="sub-val" data-up={lit}>
+      {kind === 'multiplier' ? `${value}×` : value}
+    </b>
+  );
+}
+
+/**
+ * Hovering one feature lights that feature on all three plans.
+ *
+ * The nine rows under the strip are a comparison, and until this existed the
+ * reader had to do the comparing with their eyes and their memory: find "Streak
+ * freezes" on the free card, hold "2", track across two cards of identically
+ * weighted small print to the same line. That is the one job the table is for
+ * and it was the one thing the design did not help with.
+ *
+ * It cannot be done in CSS. A `:hover` reaches the row under the cursor and its
+ * ancestors; the *same* row in a sibling card is not on that path, and there is
+ * no selector for "the nth child of every other card". So one delegated
+ * listener on the grid marks all three by hand.
+ *
+ * It is deliberately not React state. Every row would re-render three cards on
+ * every pointer crossing — nine of them on the way down the list — for a change
+ * that is one attribute on three nodes, which is the rule the root `CLAUDE.md`
+ * states about continuous work and the same construction `focusStore` and the
+ * scroll listener use. `pointerover` rather than `pointerenter` because only
+ * the first bubbles, and one listener on the grid is the whole point.
+ */
+function useRowCompare() {
+  const grid = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = grid.current;
+    if (!el) return;
+
+    let lit: HTMLElement[] = [];
+    const clear = () => {
+      for (const node of lit) delete node.dataset.on;
+      lit = [];
+    };
+
+    const over = (event: PointerEvent) => {
+      const row = (event.target as HTMLElement).closest?.('.sub-row');
+      const index = row instanceof HTMLElement ? row.dataset.row : undefined;
+      if (index === undefined) {
+        clear();
+        return;
+      }
+      /* Already lit. Moving between the label and the value of one row is two
+         `pointerover`s and no change. */
+      if (lit[0]?.dataset.row === index) return;
+      clear();
+      lit = Array.from(
+        el.querySelectorAll<HTMLElement>(`.sub-row[data-row="${index}"]`),
+      );
+      for (const node of lit) node.dataset.on = 'true';
+    };
+
+    el.addEventListener('pointerover', over, { passive: true });
+    el.addEventListener('pointerleave', clear, { passive: true });
+
+    return () => {
+      el.removeEventListener('pointerover', over);
+      el.removeEventListener('pointerleave', clear);
+      clear();
+    };
+  }, []);
+
+  return grid;
+}
+
+/**
+ * One plan, as a card.
+ *
+ * Its own component rather than a block inside the section's `map`, because it
+ * holds a hook — the spotlight — and a hook cannot live in a loop body. The
+ * loop is over a module constant of fixed length, so React would in fact never
+ * see the count change; that is an argument for it working, not for writing it.
+ *
+ * **The rows are marked where they beat the free column.** That is the same
+ * thirteen rows the section always carried; what changed is that the offer is
+ * legible as a shape before it is read as a list. It is arithmetic on the table
+ * above it and not a claim: this section has no subscriber count, no "most
+ * popular" ribbon and nothing else it could not show its working for.
+ */
+function PlanCard({ planIndex, term }: { planIndex: number; term: number }) {
+  const copy = useCopy().subscription;
+  const money = useMoney();
+  const currency = useCurrency();
+  const card = useSpotlight();
+
+  const plan = SUB_PLANS[planIndex];
+  const named = copy.plans[planIndex];
+  const rung = SUB_TERMS[term];
+
+  /* The free plan is not on the ladder, so it is not priced by one — `terms` is
+     a property of the plan on the server for exactly this reason, rather than a
+     rule about which plans cost nothing. */
+  const priced = plan.terms
+    ? subTermPrice(plan.eur, rung.months, rung.discountBp, currency)
+    : null;
+  /* 0, 1 or 2 — none, star, crown. A `badge` row's value is an index into
+     `copy.badges` and not a count, which is why it is read here rather than
+     through `SubCell`. */
+  const seal = SUB_ROWS[SUB_BADGE_ROW].values[planIndex] ?? 0;
+
+  return (
+    <article
+      className="sub-card"
+      data-tier={plan.id}
+      data-reveal
+      ref={card}
+      /* Its place in the row, for the sheet: the three cards arrive one after
+         another and each one's rail, figure and chip are timed off the same
+         number. A custom property rather than three inline delays, because the
+         staging belongs to the stylesheet and the index is the only thing the
+         component knows. */
+      style={{ ['--sub-i' as string]: planIndex }}
+    >
+      <div className="sub-card-in">
+        {/* First child, so it paints under the content rather than over it —
+            everything else in the plate is lifted a layer by `.sub-card-in > *`
+            and siblings at one z-index stack in source order. */}
+        <span className="sub-glint" aria-hidden="true" />
+
+        {/*
+          * The plan's mark, its name, and the seal it wears.
+          *
+          * The disc and the seal's glyph were stripped for a version and are
+          * back: this section sells an arcade, and a rank badge with a crown on
+          * it is the honest picture of what a subscription here buys. The disc
+          * is drawn as a **pixel plate** rather than a circle — hard corners,
+          * stepped highlight — which is the register the rest of the card now
+          * works in.
+          */}
+        <header className="sub-head">
+          <span className="sub-ico" aria-hidden>
+            <Icon name={plan.icon} size={19} />
+          </span>
+          <span className="sub-titles">
+            <h3>{named.name}</h3>
+            <span className="sub-note">{named.note}</span>
+          </span>
+          {/* Read off the end of the table rather than printed as its last
+              row — see `SUB_BADGE_ROW`. */}
+          {seal !== 0 && (
+            <span
+              className="sub-seal"
+              aria-label={fill(copy.mark, { name: copy.badges[seal - 1] })}
+            >
+              <Icon name={seal === 1 ? 'star' : 'crown'} size={12} />
+              {copy.badges[seal - 1]}
+            </span>
+          )}
+        </header>
+
+        {/* Keyed on the term so a new price animates in rather than swapping
+            under the eye. Remounting one `<p>` is the whole cost of it. */}
+        <p className="sub-price" key={term}>
+          {priced === null ? (
+            <b>{copy.free}</b>
+          ) : (
+            <>
+              <b>{money(priced.perMonth, 'unit')}</b>
+              <span>{copy.perMonth}</span>
+              {/* The rung's own saving, on the card it is taken off. It is the
+                  ladder's figure rather than a second one: the chip above says
+                  which rung is selected and this says what that rung is doing
+                  to *this* price, which is the question a reader has while
+                  looking at the price rather than at the ladder. */}
+              {rung.discountBp > 0 && (
+                <span className="sub-save">
+                  {fill(copy.term.save, { pct: String(rung.discountBp / 100) })}
+                </span>
+              )}
+            </>
+          )}
+        </p>
+
+        {/* What is actually charged, which is what makes opening on the
+            twelve-month rung honest rather than sly. */}
+        <p className="sub-billed">
+          {priced === null
+            ? copy.billed.free
+            : rung.months === 1
+              ? copy.billed.monthly
+              : fill(copy.billed.term, {
+                  total: money(priced.total, 'unit'),
+                  n: String(rung.months),
+                })}
+        </p>
+
+        {/* The three figures the plan is actually bought for, at a size that
+            can make the case. */}
+        <ul className="sub-hero">
+          {SUB_ROWS.slice(0, SUB_HERO).map((row, rowIndex) => (
+            <li key={rowIndex}>
+              <b>
+                <SubCell kind={row.kind} value={row.values[planIndex]} />
+              </b>
+              <span>{copy.heroRows[rowIndex]}</span>
+            </li>
+          ))}
+        </ul>
+
+        <span className="sub-more">{copy.more}</span>
+
+        <ul className="sub-rows">
+          {SUB_ROWS.slice(SUB_HERO, SUB_BADGE_ROW).map((row, offset) => {
+            const rowIndex = offset + SUB_HERO;
+            return (
+              <li className="sub-row" key={rowIndex} data-row={rowIndex}>
+                <span className="sub-row-label">{copy.rows[rowIndex]}</span>
+                <SubCell
+                  kind={row.kind}
+                  value={row.values[planIndex]}
+                  up={subBeatsFree(rowIndex, planIndex)}
+                />
+              </li>
+            );
+          })}
+        </ul>
+
+        {/* A press per paid card, which there is now something behind. This
+            section used to carry one button for the whole strip, on the
+            reasoning that three reading "Get Pro" would be three that do not —
+            true while nothing could take a payment, and no longer. Signed out
+            it still goes to sign-in, because checkout needs an account to
+            attach a subscription to. `SubscribeButton` renders nothing at all
+            for the free plan, which is why this is unconditional. */}
+        <SubscribeButton
+          planCode={plan.id}
+          planName={named.name}
+          months={rung.months}
+        />
+
+      </div>
+    </article>
+  );
 }
 
 /**
@@ -415,13 +687,34 @@ function SubCell({ kind, value }: { kind: SubRowKind; value: SubValue }) {
  */
 export function Subscription() {
   const copy = useCopy().subscription;
-  const money = useMoney();
-  const currency = useCurrency();
+  const account = useAccount();
   const [term, setTerm] = useState(SUB_DEFAULT_TERM);
-  const rung = SUB_TERMS[term];
+  const grid = useRowCompare();
+  /* The same two properties the cards use for their own light, written on the
+     section instead — the field below reads them. A card sets its own and
+     shadows the section's inside itself, which is what makes one hook serve
+     both without either knowing about the other. */
+  const field = useSpotlight();
 
   return (
-    <section className="section" id="subscription">
+    <section className="section" id="subscription" ref={field}>
+      {/*
+        * The ruled field this section is printed on.
+        *
+        * Not a backdrop in the sense the root `CLAUDE.md` means — it holds no
+        * canvas and no context, it is two repeating hairline gradients under a
+        * mask, and it lives inside this one section rather than behind the
+        * route. The landing page's backdrop is still the globe and still the
+        * only one.
+        *
+        * What it means is the point of it existing at all: a price list is a
+        * ruled table, and this is the paper it is ruled on. It is invisible
+        * except where the reader's hand is, so it is discovered rather than
+        * decorated with — which is also why it costs nothing to a reader who
+        * never moves the pointer into the section.
+        */}
+      <span className="sub-field" aria-hidden="true" />
+
       <div className="wrap">
         <div className="section-head" data-reveal>
           <span className="eyebrow">{copy.eyebrow}</span>
@@ -463,144 +756,25 @@ export function Subscription() {
           ))}
         </div>
 
-        <div className="sub-grid">
-          {SUB_PLANS.map((plan, planIndex) => {
-            const named = copy.plans[planIndex];
-            /* The free plan is not on the ladder, so it is not priced by one —
-               `terms` is a property of the plan on the server for exactly this
-               reason, rather than a rule about which plans cost nothing. */
-            const priced = plan.terms
-              ? subTermPrice(plan.eur, rung.months, rung.discountBp, currency)
-              : null;
-            /* 0, 1 or 2 — none, star, crown. A `badge` row's value is an index
-               into `copy.badges` and not a count, which is why it is read here
-               rather than through `SubCell`. */
-            const seal = SUB_ROWS[SUB_BADGE_ROW].values[planIndex] ?? 0;
-
-            return (
-              <article
-                className="sub-card"
-                key={plan.id}
-                data-tier={plan.id}
-                data-reveal
-              >
-                <div className="sub-card-in">
-                  <header className="sub-head">
-                    <span className="sub-ico">
-                      <Icon name={plan.icon} size={20} />
-                    </span>
-                    <span className="sub-titles">
-                      <h3>{named.name}</h3>
-                      <span className="sub-note">{named.note}</span>
-                    </span>
-                    {/* The seal, read off the end of the table rather than
-                        printed as its last row — see `SUB_BADGE_ROW`. */}
-                    {seal !== 0 && (
-                      <span
-                        className="sub-seal"
-                        aria-label={fill(copy.mark, { name: copy.badges[seal - 1] })}
-                      >
-                        <Icon name={seal === 1 ? 'star' : 'crown'} size={13} />
-                        {copy.badges[seal - 1]}
-                      </span>
-                    )}
-                  </header>
-
-                  {/* Keyed on the term so a new price animates in rather than
-                      swapping under the eye. Remounting one `<p>` is the whole
-                      cost of it. */}
-                  <p className="sub-price" key={term}>
-                    {priced === null ? (
-                      <b>{copy.free}</b>
-                    ) : (
-                      <>
-                        <b>{money(priced.perMonth, 'unit')}</b>
-                        <span>{copy.perMonth}</span>
-                        {/* The rung's own saving, on the card it is taken off.
-                            It is the ladder's figure rather than a second one:
-                            the chip above says which rung is selected and this
-                            says what that rung is doing to *this* price, which
-                            is the question a reader has while looking at the
-                            price rather than at the ladder. */}
-                        {rung.discountBp > 0 && (
-                          <span className="sub-save">
-                            {fill(copy.term.save, {
-                              pct: String(rung.discountBp / 100),
-                            })}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </p>
-
-                  {/* What is actually charged, which is what makes opening on
-                      the twelve-month rung honest rather than sly. */}
-                  <p className="sub-billed">
-                    {priced === null
-                      ? copy.billed.free
-                      : rung.months === 1
-                        ? copy.billed.monthly
-                        : fill(copy.billed.term, {
-                            total: money(priced.total, 'unit'),
-                            n: String(rung.months),
-                          })}
-                  </p>
-
-                  {/* The three figures the plan is actually bought for, at a
-                      size that can make the case. */}
-                  <ul className="sub-hero">
-                    {SUB_ROWS.slice(0, SUB_HERO).map((row, rowIndex) => (
-                      <li key={rowIndex}>
-                        <b>
-                          <SubCell kind={row.kind} value={row.values[planIndex]} />
-                        </b>
-                        <span>{copy.heroRows[rowIndex]}</span>
-                      </li>
-                    ))}
-                  </ul>
-
-                  <span className="sub-more">{copy.more}</span>
-
-                  <ul className="sub-rows">
-                    {SUB_ROWS.slice(SUB_HERO, SUB_BADGE_ROW).map((row, offset) => {
-                      const rowIndex = offset + SUB_HERO;
-                      return (
-                        <li className="sub-row" key={rowIndex}>
-                          <span className="sub-row-label">{copy.rows[rowIndex]}</span>
-                          <SubCell kind={row.kind} value={row.values[planIndex]} />
-                        </li>
-                      );
-                    })}
-                  </ul>
-
-                  {/* A press per paid card, which there is now something
-                      behind. This section used to carry one button for the
-                      whole strip, on the reasoning that three reading "Get
-                      Pro" would be three that do not — true while nothing
-                      could take a payment, and no longer. Signed out it still
-                      goes to sign-in, because checkout needs an account to
-                      attach a subscription to. */}
-                  <SubscribeButton
-                    planCode={plan.id}
-                    planName={named.name}
-                    months={rung.months}
-                  />
-                </div>
-              </article>
-            );
-          })}
+        <div className="sub-grid" ref={grid}>
+          {SUB_PLANS.map((plan, planIndex) => (
+            <PlanCard key={plan.id} planIndex={planIndex} term={term} />
+          ))}
         </div>
 
         {/* Still here, and now the *other* half: the cards sell a plan, this
             offers the account somebody needs before they can buy one — and is
             the only thing on the strip for a visitor who wants neither. */}
-        <div className="sub-foot" data-reveal>
-          <a href={PATHS.signin} className="btn btn-ghost btn-lg">
-            <Icon name="arrow" size={18} strokeWidth={2.2} />
-            {copy.action}
-          </a>
-          <p className="sub-foot-note">{copy.note}</p>
-        </div>
+        {/* Only show the account CTA when the visitor is not signed in. */}
+        {!account && (
+          <div className="sub-foot" data-reveal>
+            <a href={PATHS.signin} className="btn btn-ghost btn-lg">
+              <Icon name="arrow" size={18} strokeWidth={2.2} />
+              {copy.action}
+            </a>
+            <p className="sub-foot-note">{copy.note}</p>
+          </div>
+        )}
       </div>
     </section>
   );

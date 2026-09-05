@@ -72,6 +72,29 @@ export { GAME_TYPES };
  */
 const QUIZZES = new Set<GameType>(['flags', 'capitals', 'brain', 'poland', 'uzbekistan']);
 
+/**
+ * The flags the **welcome** round may ask, by ISO code.
+ *
+ * The flags bank prompts with the country's ISO 3166-1 alpha-2 code -- the
+ * emoji is built by the client from it -- so restricting the welcome round is a
+ * filter on `quiz_items.prompt` and needs no column and no migration.
+ *
+ * It exists because a uniform draw from 196 countries is the wrong first
+ * ninety seconds of an account: real runs opened with Comoros against
+ * Seychelles and Grenada against Dominica. Somebody who has just signed up is
+ * being shown what the product is, and getting four of five wrong teaches them
+ * that they are bad at it.
+ *
+ * Only the welcome round is restricted. The game on the Play screen keeps the
+ * whole bank, because by then the player chose to play it.
+ */
+const WELCOME_FLAGS = [
+  'PL', 'UZ', 'UA', 'RU', 'TR', 'DE', 'FR', 'IT', 'ES', 'GB',
+  'US', 'CA', 'BR', 'AR', 'MX', 'CN', 'JP', 'KR', 'IN', 'ID',
+  'SA', 'EG', 'ZA', 'NG', 'AU', 'NL', 'BE', 'SE', 'NO', 'FI',
+  'DK', 'CH', 'AT', 'PT', 'GR', 'CZ', 'KZ', 'AZ', 'GE', 'IE',
+];
+
 export interface PlayerState {
   user_id: string;
   streak: number;
@@ -324,6 +347,15 @@ export async function startSession(
     language?: string;
     /** Play on an empty tank for nothing, rather than be refused. */
     practice?: boolean;
+    /**
+     * The onboarding round, which draws flags from `WELCOME_FLAGS`.
+     *
+     * A hint about *which* questions, never about what they are worth: the
+     * round is scored, charged and written to the ledger exactly like any
+     * other, so a client that sends this on every round makes its own flags
+     * game easier and gains nothing. That is why it needs no trust.
+     */
+    welcome?: boolean;
     at?: Iso;
   },
 ): Promise<Round> {
@@ -349,7 +381,7 @@ export async function startSession(
       { u: input.userId },
     );
 
-    const built = await buildRound(db, input.gameType, input.userId, language);
+    const built = await buildRound(db, input.gameType, input.userId, language, input.welcome);
     const id = newId('gms');
     await db.run(
       `INSERT INTO game_sessions
@@ -384,8 +416,14 @@ interface Built {
   content: unknown;
 }
 
-async function buildRound(db: Db, gameType: GameType, userId: string, language: string): Promise<Built> {
-  if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language);
+async function buildRound(
+  db: Db,
+  gameType: GameType,
+  userId: string,
+  language: string,
+  welcome = false,
+): Promise<Built> {
+  if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language, welcome);
   if (gameType === 'word_builder') return await buildWords(db, userId, language);
   if (gameType === 'memory_match') return buildDeck();
   return { seed: newId('gev'), secret: { kind: 'flight' }, content: { target: CONFIG.games.flightTarget } };
@@ -400,11 +438,33 @@ async function buildRound(db: Db, gameType: GameType, userId: string, language: 
  * reinstall, a second device — still cannot be fed the same five questions all
  * evening.
  */
-async function buildQuiz(db: Db, gameType: GameType, userId: string, language: string): Promise<Built> {
+async function buildQuiz(
+  db: Db,
+  gameType: GameType,
+  userId: string,
+  language: string,
+  /** Restrict a `flags` draw to `WELCOME_FLAGS`. Ignored for every other bank. */
+  welcome = false,
+): Promise<Built> {
   const count = CONFIG.games.quizQuestions;
+
+  /*
+   * The welcome round's narrower pool, as a literal `IN (...)`.
+   *
+   * Built from a constant this file owns rather than from anything a request
+   * carries, so there is no user input in the string -- the codes are two
+   * letters each and are checked against that by the guard below before they
+   * are ever interpolated. Every other value in this query is still bound.
+   */
+  const easy = welcome && gameType === 'flags' ? WELCOME_FLAGS : null;
+  if (easy && easy.some((code) => !/^[A-Z]{2}$/.test(code))) {
+    throw new Error('WELCOME_FLAGS must be ISO 3166-1 alpha-2 codes');
+  }
+  const poolClause = easy ? ` AND q.prompt IN ('${easy.join("','")}')` : '';
+
   const rows = await db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
     `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
-      WHERE q.bank = $b AND q.language = $l
+      WHERE q.bank = $b AND q.language = $l${poolClause}
         AND q.id NOT IN (
           SELECT item_key FROM game_recent_items
            WHERE user_id = $u AND game_type = $g
@@ -451,7 +511,14 @@ async function buildQuiz(db: Db, gameType: GameType, userId: string, language: s
 
   return {
     seed: questions.map((q) => q.itemId).join(','),
-    secret: { kind: 'quiz', answers: questions.map((q) => q.answerIndex) },
+    secret: {
+      kind: 'quiz',
+      answers: questions.map((q) => q.answerIndex),
+      /* Recorded on the **server** side of the round, never sent to the client
+         and never read back from one: `finishSession` decides the welcome rate
+         from this, so a client cannot ask for it at the moment it is paid. */
+      welcome,
+    },
     /* `mistakesAllowed` is gone from here because the rule is: **all five
        questions are asked and a quiz cannot be lost.** A key that always said
        "two" is a screen drawing two hearts that never empty.
@@ -961,9 +1028,34 @@ export async function finish(
     );
     const secret = JSON.parse(session.secret) as Record<string, unknown>;
 
+    /*
+     * The welcome round pays a flat rate per correct answer, and only ever once.
+     *
+     * A quiz is a point a question (`quizPerCorrect`), which is right for a game
+     * somebody chose to play and wrong for the one the welcome screen promises
+     * fifty points for. So the first round pays `welcomeRoundPerCorrect` and the
+     * screen's arithmetic holds: five right is fifty, four is forty, none is
+     * nothing.
+     *
+     * Two conditions, and the second is the one that matters. `secret.welcome`
+     * says the round was *started* as the welcome round — it lives in the
+     * server's own secret, so a client cannot assert it here. And the count says
+     * this player has never finished a round before, which is what makes it
+     * once: without it, a client could open welcome rounds until its energy ran
+     * out and take the rate every time, since nothing else about onboarding has
+     * to have happened yet.
+     */
+    const firstEver =
+      secret.welcome === true &&
+      ((await db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM game_sessions
+          WHERE user_id = $u AND finished_at IS NOT NULL AND id <> $s`,
+        { u: input.userId, s: session.id },
+      ))?.n ?? 0) === 0;
+
     const scored =
       secret.kind === 'quiz'
-        ? scoreQuiz(events, (secret.answers as number[]).length)
+        ? scoreQuiz(events, (secret.answers as number[]).length, firstEver)
         : secret.kind === 'words'
           ? scoreWords(events, secret.words as string[], (secret.tiers as number[] | undefined) ?? [])
           : secret.kind === 'deck'
@@ -1153,19 +1245,29 @@ function bandFor<T extends { throughSeconds: number | null }>(
 function scoreQuiz(
   events: Array<{ correct: number | null; created_at: string }>,
   total: number,
+  /** The welcome round: a flat rate a question and no sweep or speed bonus. */
+  welcomeRate = false,
 ): Scored {
   const answers = events.filter((e) => e.correct !== null);
   const correct = answers.filter((e) => e.correct === 1).length;
   const wrong = answers.length - correct;
   const swept = wrong === 0 && correct >= total;
 
-  const bonus = swept
-    ? CONFIG.games.quizPerfectBonus +
-      bandFor(CONFIG.games.quizSpeedBands, elapsedSeconds(events)).points
-    : 0;
+  /* No sweep or speed bonus on the welcome round. The screen before it promises
+     a flat ten a question and nothing else; a bonus nobody was told about is a
+     total that does not match the offer, and the offer is the point of it. */
+  const bonus =
+    swept && !welcomeRate
+      ? CONFIG.games.quizPerfectBonus +
+        bandFor(CONFIG.games.quizSpeedBands, elapsedSeconds(events)).points
+      : 0;
+
+  const rate = welcomeRate
+    ? CONFIG.earn.welcomeRoundPerCorrect
+    : CONFIG.games.quizPerCorrect;
 
   return {
-    score: correct * CONFIG.games.quizPerCorrect + bonus,
+    score: correct * rate + bonus,
     correct,
     answered: total,
     won: swept,

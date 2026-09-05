@@ -73,8 +73,53 @@ export const LEVEL = {
 
   /** Tile size: this fraction of the viewport height, clamped to a range. */
   tile: { of: 0.048, min: 21, max: 42 },
+
+  /*
+   * The same world once the page has stacked, and why it has to be smaller.
+   *
+   * The level is a fixed backdrop and the copy scrolls over it, so on a wide
+   * screen the two rarely meet: the text sits in a column a third of the width
+   * and the action plays out across the rest. Stacked, the copy is the *whole*
+   * width and lands in the middle of the screen — which is exactly where a
+   * 37px tile puts the lucky box and the runner's head. On a 360px phone the
+   * `?` box was drawn between the words of "Four steps, about two minutes." and
+   * the runner stood on the sentence under it.
+   *
+   * A smaller tile, not a lower ground line: `groundY` is already at 0.9, so
+   * there is nowhere left to move down to, and everything that collides does so
+   * because it is *tall* — blocks sit up to four tiles above the ground and the
+   * grown runner is four more. Scaling the world down pulls all of it toward
+   * the floor at once and keeps the level a level, which moving one piece would
+   * not. It reads as a strip along the bottom of the screen, which is what a
+   * backdrop on a phone has room to be.
+   *
+   * `min` comes down with it. The clamp existed to stop the art turning to mush
+   * on a short window, and 15px is still three times the sprite's own cell.
+   */
+  tileNarrow: { of: 0.03, min: 15, max: 26 },
+
+  /**
+   * Widest viewport that gets `tileNarrow`, CSS px. 820 again — the
+   * stylesheet's hero-stacking step, and the same number the globe and the
+   * market tape reframe on, because all three are answering the same change.
+   */
+  narrowWidth: 820,
+
   /** The ground line, as a fraction of the viewport height. */
   groundY: 0.9,
+
+  /*
+   * And the ground line drops with the tile, for the last of the overlap.
+   *
+   * Scaling the world down was most of the fix but not all of it: the tallest
+   * thing in the level is a lucky box four tiles up, and four narrow tiles
+   * above a ground line at 0.9 still reaches 78% of the way up a phone — which
+   * is where the lede sits. Dropping the floor to 0.965 moves the whole level,
+   * furniture and all, into the last fifth of the screen. There is room for it
+   * because the world is smaller now; at the full tile size this would push the
+   * runner's feet off the bottom edge.
+   */
+  groundYNarrow: 0.965,
   /**
    * How fast the runner crosses the level, tiles per second.
    *

@@ -24,7 +24,22 @@ export interface ApiResult<T> {
   reload: () => void;
 }
 
-export function useApi<T>(path: string | null, deps: readonly unknown[] = []): ApiResult<T> {
+/**
+ * Extra request settings, for the callers that need one.
+ *
+ * `language` is here rather than baked into `call()` because the two callers
+ * want different things: the console reads figures, which have no language, and
+ * the guide reads prose, which has five. See `CallOptions.language`.
+ */
+export interface UseApiOptions {
+  language?: string;
+}
+
+export function useApi<T>(
+  path: string | null,
+  deps: readonly unknown[] = [],
+  options: UseApiOptions = {},
+): ApiResult<T> {
   const [state, setState] = useState<ApiState<T>>({ status: 'loading' });
   const [nonce, setNonce] = useState(0);
 
@@ -37,7 +52,7 @@ export function useApi<T>(path: string | null, deps: readonly unknown[] = []): A
     const controller = new AbortController();
     setState({ status: 'loading' });
 
-    call<T>(path, { signal: controller.signal })
+    call<T>(path, { signal: controller.signal, language: options.language })
       .then((data) => {
         if (!controller.signal.aborted) setState({ status: 'ready', data });
       })
@@ -54,7 +69,7 @@ export function useApi<T>(path: string | null, deps: readonly unknown[] = []): A
     /* `path` and the caller's own deps. Spreading is what lets a caller key a
        request on a date range without this hook knowing what one is. */
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, nonce, ...deps]);
+  }, [path, nonce, options.language, ...deps]);
 
   return { state, reload };
 }

@@ -236,13 +236,20 @@ export interface Round {
  * energy, and a client that sent it unconditionally would be asking the server
  * to decide something it has already decided.
  */
-export const startRound = (gameType: ServerGameType, language?: string, practice?: boolean) =>
+export const startRound = (
+  gameType: ServerGameType,
+  language?: string,
+  practice?: boolean,
+  /** Onboarding only: asks the server for the easier flag pool. */
+  welcome?: boolean,
+) =>
   call<Round>('/v1/games/sessions', {
     method: 'POST',
     body: {
       gameType,
       ...(language ? { language } : {}),
       ...(practice ? { practice: true } : {}),
+      ...(welcome ? { welcome: true } : {}),
     },
   });
 

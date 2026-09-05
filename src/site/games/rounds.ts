@@ -70,8 +70,55 @@ export async function buildFlagRound(
   language: LanguageCode,
   count: number,
   prompt: string,
+  /*
+   * Restrict the pool to these ISO codes.
+   *
+   * The bank is all 196 countries, which is right for the game on the Play
+   * screen and wrong for the first ninety seconds of somebody's account: a
+   * welcome round that opens with Sao Tome and Principe against Benin and Togo
+   * is a test somebody fails before they have seen what the product is.
+   * `onboarding.tsx` passes a short list of flags most people can name.
+   *
+   * Omitted everywhere else, so the game itself is unchanged.
+   */
+  only?: readonly string[],
 ): Promise<Question[]> {
   const { rows, answers, codes } = await loadFlags(language);
+
+  /*
+   * Filtered by *index*, so `rows`, `answers` and `codes` stay in step -- they
+   * are three parallel arrays and a filter that rebuilt only one of them would
+   * pair a flag with somebody else's answer.
+   *
+   * The bag is keyed on the pool size (`drawFrom`), so a restricted draw gets
+   * its own bag and cannot exhaust the full bank's one. Falls back to the whole
+   * bank if the list matches nothing -- a welcome round with no questions in it
+   * is worse than a hard one.
+   */
+  /*
+   * Case-folded on both sides, and that is not defensive tidying: the local
+   * bank stores its codes **lower** case (`ua`, `us`, `gb`) while the server's
+   * flags bank prompts with them **upper** (`UA`), and `verify.ts` asserts the
+   * upper form. A list written in either case therefore matches one of the two
+   * and silently misses the other -- which is exactly what happened: an
+   * uppercase list matched 0 of 196 rows here, the guard below fell back to the
+   * whole bank, and the welcome round went on asking about Comoros while
+   * looking like it had been restricted.
+   */
+  const wanted = only ? new Set(only.map((code) => code.toUpperCase())) : null;
+  const pool = wanted
+    ? codes.map((code, i) => (wanted.has(code.toUpperCase()) ? i : -1)).filter((i) => i >= 0)
+    : null;
+  if (pool && pool.length >= count) {
+    return drawFrom(`flags:easy`, pool.length, count).map((slot) => {
+      const index = pool[slot];
+      return {
+        prompt,
+        glyph: flagOf(codes[index]),
+        ...scramble(rows[index], answers[index]),
+      };
+    });
+  }
 
   return drawFrom('flags', rows.length, count).map((index) => ({
     prompt,

@@ -333,8 +333,12 @@ export const MarketTape = memo(function MarketTape({
     const yAt = (i: number, value: number) => {
       const span = Math.max(candles.length - 1, 1);
       const t = i / span;
-      const reach = tape.band.to - tape.band.from;
-      const level = tape.band.from + t * reach + value * tape.wiggle * reach;
+      /* Read per call rather than hoisted: `width` is reassigned by the resize
+         handler, and a band captured once would keep a rotated phone drawing
+         the desktop tape until something else forced a re-run. */
+      const band = width <= tape.narrowWidth ? tape.bandNarrow : tape.band;
+      const reach = band.to - band.from;
+      const level = band.from + t * reach + value * tape.wiggle * reach;
       return height * (1 - level);
     };
 
