@@ -103,6 +103,8 @@ import {
   SUB_HERO,
   SUB_PLANS,
   SUB_ROWS,
+  subBeatsFree,
+  subRoundsPerDay,
 } from '../src/site/content';
 import {
   cheapestCost,
@@ -480,6 +482,14 @@ console.log('\nlayout — hero state in portrait');
   }
 }
 
+/** The end pose's coverage, mirroring `layout.ts` — see the block there. */
+function endCoverageOf(w: number, h: number): number {
+  const wide = SCROLL.end.heightCoverage / SCROLL.end.visibleFraction;
+  return w <= SCROLL.end.narrowWidth
+    ? Math.min((w / h) * SCROLL.end.widthOverhang, wide)
+    : wide;
+}
+
 console.log('\nlayout — scrolled end state');
 for (const [w, h, label] of [
   [1920, 1080, '16:9'],
@@ -500,14 +510,48 @@ for (const [w, h, label] of [
   const ofScreen = cap / end.visibleHeight;
   const ofGlobe = cap / (2 * GLOBE.radius);
 
+  /*
+   * Which framing applies at this width. A narrow screen sizes the disc to the
+   * viewport *width* so it stops running off the sides, and shows more of the
+   * sphere to make up for how much smaller that makes it — see the end-pose
+   * block in `layout.ts`.
+   */
+  const narrow = w <= SCROLL.end.narrowWidth;
+  const fraction = narrow
+    ? SCROLL.end.visibleFractionNarrow
+    : SCROLL.end.visibleFraction;
+
+  /*
+   * The cap never grows past the wide framing, whichever rule set it. That is
+   * the invariant worth holding: the globe is behind at most the bottom two
+   * fifths of any screenful, so the carousel riding on it is never dim text on
+   * a bright sphere. On a narrow screen the width fit makes it smaller still
+   * (about a quarter of the height), and the check below states which.
+   */
+  const expectedCap = narrow
+    ? fraction * endCoverageOf(w, h)
+    : SCROLL.end.heightCoverage;
+
   check(
-    `${label}: visible cap is 40% of viewport height`,
-    Math.abs(ofScreen - SCROLL.end.heightCoverage) < 1e-9,
+    `${label}: visible cap is ${(expectedCap * 100).toFixed(0)}% of viewport height`,
+    Math.abs(ofScreen - expectedCap) < 1e-9 &&
+      ofScreen <= SCROLL.end.heightCoverage + 1e-9,
     `${(ofScreen * 100).toFixed(1)}%`,
   );
+  /*
+   * A narrow screen deliberately overhangs — an edge that runs off both sides
+   * is a curve, one that stops short of them is an object — so the assertion
+   * is a bound on how far, not that it fits. Wide screens still fit outright.
+   */
+  const ofWidth = (2 * GLOBE.radius * h) / (end.visibleHeight * w);
   check(
-    `${label}: only 30% of the globe shows`,
-    Math.abs(ofGlobe - SCROLL.end.visibleFraction) < 1e-9,
+    `${label}: the globe spans the width without becoming a wall`,
+    ofWidth <= (narrow ? SCROLL.end.widthOverhang : 1) + 1e-9,
+    `${(ofWidth * 100).toFixed(1)}% of width`,
+  );
+  check(
+    `${label}: ${(fraction * 100).toFixed(0)}% of the globe shows`,
+    Math.abs(ofGlobe - fraction) < 1e-9,
     `${(ofGlobe * 100).toFixed(1)}%`,
   );
   check(
@@ -703,6 +747,7 @@ console.log('\naccess control');
      * welcome screen. `newPlayer` is the fixture that carries the `null`.
      */
     onboardedAt: '2026-01-01',
+    profileCompletedAt: null,
   };
   const person: Account = { ...undecided, type: 'individual' };
   const newPlayer: Account = { ...person, onboardedAt: null };
@@ -792,7 +837,19 @@ console.log('\naccess control');
    * no venue, and it does not replace their own name and city.
    */
   check('anon is sent from the profile to sign-in', resolveRoute('profile', anon) === 'signin');
-  check('anon is sent from onboarding to sign-in', resolveRoute('onboarding', anon) === 'signin');
+  /*
+   * Onboarding parts company with `profile` here, and the reason is the Back
+   * button on the welcome flow. Signing out of onboarding has to resolve to a
+   * page, and `signin` made the flow's own "Back" land on the login form: the
+   * handler sets `#top`, the guard runs against the new account and the old
+   * route, and replaces it. `analytics` set the precedent — a private route
+   * whose signed-out answer is the marketing page, because signing in would
+   * not get an anonymous visitor there either.
+   */
+  check(
+    'anon is sent from onboarding to the landing page',
+    resolveRoute('onboarding', anon) === 'landing',
+  );
   check('an individual keeps the profile', resolveRoute('profile', person) === 'profile');
   check('an owner keeps the profile', resolveRoute('profile', ownerSet) === 'profile');
   check('an admin keeps the profile', resolveRoute('profile', admin) === 'profile');
@@ -893,12 +950,14 @@ console.log('\nthe profile');
       type: 'individual', business: null, player: null,
       profile: { ...EMPTY_PROFILE, username: 'dilnoza' },
       onboardedAt: '2026-01-01',
+      profileCompletedAt: null,
     },
     {
       id: 'u_other', name: 'B', email: 'b@b.c', password: 'x', created: '2026-01-01',
       type: 'individual', business: null, player: null,
       profile: { ...EMPTY_PROFILE, username: 'KasiaPL' },
       onboardedAt: '2026-01-01',
+      profileCompletedAt: null,
     },
   ];
 
@@ -2757,6 +2816,7 @@ console.log('\nsession');
        account — the first one this check would have missed. */
     profile: { ...EMPTY_PROFILE, username: 'marta', city: 'Kraków' },
     onboardedAt: null,
+    profileCompletedAt: null,
   };
   const back = JSON.parse(JSON.stringify(account)) as Account;
   check('an account survives a round trip', back.id === account.id && back.type === 'business');
@@ -3616,6 +3676,50 @@ console.log('\nthe plan table says what the product does');
   check('every row has one value per plan',
     SUB_ROWS.every((row) => row.values.length === SUB_PLANS.length));
 
+  /*
+   * The day the card leads with, and the two things it must never stop being.
+   *
+   * `subRoundsPerDay` is the tank plus what the refill clock hands back, and it
+   * is the one figure on the section that is not printed anywhere in the table
+   * it is derived from — so nothing else would notice if it drifted. The two
+   * rows behind it are checked above; these check the multiplication and, more
+   * importantly, its *direction*: the chip beside the figure is written "+{n}",
+   * so a paid plan whose day came out no bigger than the free one would print a
+   * plus sign in front of nothing, or a minus after one.
+   */
+  const days = SUB_PLANS.map((_, i) => subRoundsPerDay(i));
+  check('a day is the tank plus what the clock gives back',
+    days.every((day, i) => day === (SUB_ROWS[0].values[i] as number)
+      + Math.floor((24 * 60) / (SUB_ROWS[1].values[i] as number))),
+    String(days));
+  check('…and every paid day is bigger than the free one',
+    days[1] > days[0] && days[2] > days[1], String(days));
+  /* The floor in `subRoundsPerDay` is there for a refill that does not divide
+     the day, and while all three do, the figure on the card is the whole of
+     what the clock hands back rather than a rounding of it. The day one of them
+     stops dividing, this is what says so — the card will then be advertising a
+     round short, which is the right direction to be wrong in and still worth
+     knowing about rather than discovering. */
+  check('…and every refill divides the day, so the floor takes nothing',
+    SUB_ROWS[1].values.every((m) => (24 * 60) % (m as number) === 0),
+    String(SUB_ROWS[1].values));
+
+  /*
+   * The lit cells. The free column may never light one — it is the column the
+   * others are measured against — and each paid tier must light at least one,
+   * or a card is charging for a table it does not improve.
+   */
+  const listRows = SUB_ROWS.map((_, i) => i).slice(SUB_HERO, SUB_BADGE_ROW);
+  check('the free column marks nothing as a gain',
+    listRows.every((row) => !subBeatsFree(row, 0)));
+  check('…and both paid columns mark something',
+    listRows.some((row) => subBeatsFree(row, 1))
+    && listRows.some((row) => subBeatsFree(row, 2)));
+  /* The one row where less is better. Read straight, 60 minutes would be the
+     worse cell on the more expensive card. */
+  check('…and a faster refill counts as a gain, not a loss',
+    subBeatsFree(1, 1) && subBeatsFree(1, 2));
+
   for (const code of LANGUAGE_ORDER) {
     const sub = LANGUAGES[code].subscription;
     check(`${code} labels every row`, sub.rows.length === SUB_ROWS.length,
@@ -3625,6 +3729,12 @@ console.log('\nthe plan table says what the product does');
     check(`…and names both seals`, sub.badges.length === 2);
     check(`…and its seal label has a name to put in it`, sub.mark.includes('{name}'),
       sub.mark);
+    /* The step-up chip names the plan it counts from, so it cannot start
+       calling the free tier something the card above it does not. */
+    check(`…and its step-up chip has both holes`,
+      sub.day.vs.includes('{n}') && sub.day.vs.includes('{plan}'), sub.day.vs);
+    check(`…and the day carries its unit and its reading`,
+      sub.day.rounds.trim().length > 0 && sub.day.from.trim().length > 0);
     check(`…and nothing in the strip is blank`,
       sub.heroRows.every((label) => label.trim().length > 0));
     /* The unit lives in the label, which is the rule that keeps "hours" and

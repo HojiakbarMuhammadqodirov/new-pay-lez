@@ -148,6 +148,15 @@
   --r-lg: 26px;
   --header-h: 84px;
 
+  /*
+   * The smallest a control may be under a thumb. One token because the number
+   * is a guideline (WCAG 2.5.5) rather than a taste, and because the
+   * `pointer: coarse` block near the bottom of this sheet spends it about
+   * twenty times — a figure written out twenty times is a figure that ends up
+   * being twenty different figures.
+   */
+  --tap: 44px;
+
   --font-display: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-body: 'Manrope', ui-sans-serif, system-ui, sans-serif;
   /*
@@ -422,32 +431,6 @@ html {
 }
 
 /*
- * Relocate's backdrop: distance rings.
- *
- * It used to have the globe, on the argument that the page was about a border
- * being crossed. It is not — it is a guide to the place you have already
- * arrived in, plus a converter. So the picture is proximity: contour rings
- * spreading from a point off to one side, the way a map draws "near you".
- *
- * `repeating-radial-gradient` and a mask, so it costs no context at all — and
- * the globe's WebGL budget goes back to being spent only on the landing page.
- */
-.site__rings {
-  position: fixed;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-  background-image: repeating-radial-gradient(
-    circle at 78% 26%,
-    transparent 0 78px,
-    var(--border) 78px 79px
-  );
-  -webkit-mask-image: radial-gradient(circle at 78% 26%, black, transparent 72%);
-  mask-image: radial-gradient(circle at 78% 26%, black, transparent 72%);
-  opacity: 0.75;
-}
-
-/*
  * Lift the page off the globe layer. The header is deliberately *not* in this
  * list: `.site > header` (0,1,1) out-specifies `.site-header` (0,1,0), so
  * including it here replaces `position: sticky` with `relative` and the bar
@@ -464,6 +447,29 @@ html {
   margin-inline: auto;
 }
 
+/*
+ * The narrowest phones, where the gutter is worth more than the column.
+ *
+ * There is deliberately no `overflow-x` guard here. `body` is `height: 100%`
+ * (`index.css`), and `overflow-x` on a full-height body makes **body** the
+ * scroll container — `document.documentElement.scrollHeight` collapses to one
+ * viewport, `window.scrollY` never moves, and every measurement that reads it
+ * (the globe transition, the reveal scan, `scrollIntoView`) is looking at a
+ * page that, as far as it can tell, does not scroll. The axis is cut where it
+ * actually overflows instead — `.carousel` and `.marquee` both take
+ * `overflow-x: clip`, which cuts the paint without opening a scroll port.
+ */
+@media (max-width: 480px) {
+  .wrap {
+    width: calc(100% - 2rem);
+    padding-inline: 1rem;
+  }
+
+  .hero-copy {
+    max-width: none;
+  }
+}
+
 h1,
 h2,
 h3,
@@ -474,6 +480,21 @@ h5 {
   line-height: 1.06;
   letter-spacing: -0.03em;
   margin: 0;
+  /*
+   * A heading may break a word rather than leave the column.
+   *
+   * Five languages set this copy, and the display sizes here are large enough
+   * that one long compound is wider than a 320px phone column on its own —
+   * Russian and Uzbek both have them. `break-word` only acts when the word
+   * cannot fit at all, so nothing that fits today wraps differently.
+   *
+   * `hyphens: auto` is the half that makes the break legible, and it works
+   * because `LanguageProvider` sets `document.documentElement.lang` on every
+   * switch: the browser hyphenates with the right dictionary, or does nothing
+   * where it has none, and `break-word` is still underneath it either way.
+   */
+  overflow-wrap: break-word;
+  hyphens: auto;
 }
 
 p {
@@ -884,6 +905,13 @@ button {
   align-items: center;
   gap: 0.5rem;
   font-size: 0.8125rem;
+  /* Position the action group at the far right edge of the header. This
+     takes it out of the `wrap` flow so language and theme sit on the page
+     edge rather than inside the max-width container. */
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .lang {
@@ -1481,7 +1509,10 @@ button {
 
   cursor: default;
   transform-origin: 50% 50%;
-  transition: transform 0.25s ease;
+  /* `var(--ease)` like everything else. This and the filter below were two
+     of the only three places in the sheet using the browser default, so the
+     controller settled on a different curve from the page around it. */
+  transition: transform 250ms var(--ease);
 }
 
 .controller-3d:hover {
@@ -1498,7 +1529,7 @@ button {
   background: transparent;
   filter: drop-shadow(0 0 16px rgba(var(--glow-rgb), calc(0.38 * var(--glow-k))))
     drop-shadow(0 0 46px rgba(var(--glow-rgb), calc(0.16 * var(--glow-k))));
-  transition: filter 0.25s ease;
+  transition: filter 250ms var(--ease);
 }
 
 .controller-3d:hover canvas {
@@ -4731,8 +4762,11 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  /* 44px tall with the border: the tap target a thumb needs, and the reason
-     the padding is not tuned to the glyphs. */
+  /* The tap target a thumb needs, and the reason the padding is not tuned to
+     the glyphs. Stated as a floor rather than left to the padding: the comment
+     here said "44px tall with the border" and the box measured 43, because the
+     sum depends on a line-height nobody edits this rule thinking about. */
+  min-height: var(--tap);
   padding: 0.6rem 0.7rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-2);
@@ -15321,7 +15355,7 @@ button {
   }
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1160px) {
   .main-nav {
     display: none;
   }
@@ -15411,10 +15445,22 @@ button {
   /* `.learn-hero .hero-grid` out-specifies a bare `.hero-grid`, so each hero
      that sets its own columns has to be named again or it stays in two on a
      phone. */
+  /*
+   * `minmax(0, 1fr)` and not `1fr`, which is the same distinction the desktop
+   * `.hero-grid` already makes one block up and which this override dropped.
+   *
+   * A bare `1fr` is `minmax(auto, 1fr)`, and an `auto` minimum is the track's
+   * *min-content* — so one word too long to fit pushes the column wider than
+   * its container instead of wrapping. The Russian Business headline does
+   * exactly that at 360px: the copy column measured 357px inside a 320px
+   * `.wrap`, and the whole page picked up 17px of horizontal scroll. Every
+   * language with a long compound is a candidate, so the fix belongs on the
+   * track rather than on the sentence.
+   */
   .hero-grid,
   .learn-hero .hero-grid,
   .business-hero .hero-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   /* Paired fields, the account-type cards and the listing rail all stack. */
@@ -15485,6 +15531,22 @@ button {
   .hero-visual {
     min-height: 46vh;
   }
+
+  /* Avoid an overly large reserved gap on narrow phones: cap the min-height
+     so the hero doesn't push too much empty space below the fold. */
+  @media (max-width: 480px) {
+    .hero-visual {
+      min-height: 34vh;
+      margin-top: 1rem;
+    }
+  }
+
+@media (max-width: 360px) {
+  .hero-visual {
+    min-height: 30vh;
+    margin-top: 0.75rem;
+  }
+}
 
   /* Except these two: they are cards, not canvases, and they are already
      exactly as tall as they need to be. 46vh of reserved air under them is
@@ -15899,6 +15961,19 @@ button {
   border-bottom: 1px solid var(--border);
   vertical-align: middle;
   color: var(--text-mut);
+}
+
+/* The row under the cursor lights, which `.pd-table` has done since it
+   shipped (`.pd-table tbody tr:hover`) and this table never did. Both are
+   wide tables of small type where the eye has to carry a value back to its
+   label across the width of the screen — the reason the partner one has it
+   is the reason this one needed it. Same token, same idea. */
+.adm-table tbody tr {
+  transition: background 160ms var(--ease);
+}
+
+.adm-table tbody tr:hover {
+  background: var(--surface);
 }
 
 .adm-table tr:last-child td {
@@ -16931,28 +17006,61 @@ button {
   }
 
   /*
+   * The two hero buttons go full width and share one.
+   *
+   * `flex-wrap` already put them on their own lines by 30rem, and shrink-wrapped
+   * they came out at whatever their words measured — "Play & Earn" over a wider
+   * "How it works", "Talk to sales" over a wider "See the dashboard". Two
+   * stacked buttons with two different right edges read as two unrelated
+   * controls, and the ragged edge is the first thing the eye lands on under a
+   * headline that is flush left.
+   *
+   * One rule for all six heroes: `.hero-cta` is the landing page's, L-Earn's,
+   * Business's, Analytics's, Vouchers' and Relocate's alike. `.btn` centres its
+   * own label already; the width is the whole change.
+   *
+   * `auto` rather than `100%` for the basis, which is the difference between
+   * tidying the row and forcing it apart. At 390px the pair still fits on one
+   * line, and a `100%` basis stacked them anyway — 60px of a short phone's hero
+   * spent to fix an edge that was not ragged. With `auto` they take the line
+   * they need and grow into whatever is left: side by side and flush at 390,
+   * stacked and full width at 360, and never a label squeezed under its own
+   * text in the languages that run long.
+   */
+  .hero-cta .btn {
+    flex: 1 1 auto;
+  }
+
+  /*
+   * The Business page's dashboard mock, which could not be made narrower.
+   *
+   * `.dash-bar` is `white-space: nowrap` so the venue, the screen name, the
+   * range and the user pill read as one status line. Nowrap also makes the
+   * bar's min-content the *sum* of all of them, and a flex item cannot shrink
+   * under its min-content — so in Russian the bar wanted 326px inside a 320px
+   * column and pushed the card, and the page, into horizontal scroll.
+   *
+   * Wrapping the container rather than clearing `white-space` is the whole fix:
+   * each item stays on its own line as intended, and the bar's min-content
+   * becomes the widest single item instead of the row. The padding comes down
+   * with it, because 1.6rem a side is 51px of a 320px column spent on air
+   * around a picture of a screen.
+   */
+  .dash-bar {
+    flex-wrap: wrap;
+  }
+
+  .console {
+    padding: 1.1rem;
+  }
+
+  /*
    * `auto-fit` cannot go below its own `minmax` floor, so a 21rem track on a
    * ~286px column overflows by about 50px rather than reflowing. One column is
    * the only thing that fits.
    */
   .pd-cards {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  /*
-   * A 7px dot is a fifth of the 44px touch target guidance, and the carousel
-   * has no swipe. The dot stays 7px — it is the right size to *look* at — and
-   * grows a transparent square around itself to be hit.
-   */
-  .carousel-dot {
-    position: relative;
-  }
-
-  .carousel-dot::after {
-    content: '';
-    position: absolute;
-    /* (44 - 7) / 2, so the target is centred on the mark. */
-    inset: -18.5px;
   }
 
   /*
@@ -17214,7 +17322,7 @@ button {
   justify-content: center;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1160px) {
   .nav-burger {
     display: flex;
   }
@@ -17223,6 +17331,35 @@ button {
      A signed-in chip stays, because it is how you reach your own account. */
   .header-actions > .sign-in {
     display: none;
+  }
+}
+
+/* Hide inline language/theme controls at mobile breakpoint; they are shown
+   inside the nav sheet instead. */
+@media (max-width: 1160px) {
+  .header-actions .lang,
+  .header-actions .theme-toggle {
+    display: none;
+  }
+
+  .nav-sheet-controls {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    padding: 1rem 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+}
+
+/* Keep header actions in the normal flow on narrower viewports so they do not
+   overlap the hero or other content. */
+@media (max-width: 1160px) {
+  .header-actions {
+    position: static !important;
+    right: auto !important;
+    top: auto !important;
+    transform: none !important;
+    margin-left: auto;
   }
 }
 
@@ -17263,8 +17400,8 @@ button {
   }
 
   .fsoc {
-    width: 44px;
-    height: 44px;
+    width: var(--tap);
+    height: var(--tap);
   }
 
   .fx-chip {
@@ -17280,9 +17417,173 @@ button {
     gap: 0.1rem;
   }
 
+  /*
+   * `min-height` rather than padding alone, here and below.
+   *
+   * Padding is the right instrument — it grows the target without redrawing the
+   * mark — but on its own it is arithmetic done against a line-height, and the
+   * arithmetic was quietly wrong: 0.62rem either side of a 0.9rem line landed
+   * these two at 43px and 39px, one and five short of the number the comment
+   * above promises. A floor states the promise instead of recomputing it, and
+   * `inline-flex` is what lets the floor centre its own label.
+   */
   .footer-col a,
   .footer-link-btn {
-    padding-block: 0.62rem;
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+    padding-block: 0.4rem;
+  }
+
+  /*
+   * ── the rest of the finger targets ──
+   *
+   * Everything below was measured under emulated touch at 360, 768 and 1024
+   * and came back short. They are grouped by what they are rather than by which
+   * page they sit on, because the fix is the same shape each time and the pages
+   * are not what they have in common.
+   */
+
+  /* Chrome: the two controls beside the wordmark, and the wordmark itself.
+     2.55rem is 41px, and a header is the one strip on every page. */
+  .theme-toggle {
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  .lang-trigger {
+    min-height: var(--tap);
+  }
+
+  /* The wordmark is 21px of Onest in a bar with room to spare either side of
+     it, so this is padding nobody sees and a target everybody hits. */
+  .brand {
+    min-height: var(--tap);
+  }
+
+  /* Text links that act like buttons: the way back from a sub-page, a pillar's
+     "read more", the sign-in form's "Create one", the footer's address and its
+     two legal links. Inline-flex so the floor can centre the words. */
+  .learn-back,
+  .pillar-more,
+  .link-btn,
+  .footer-contact a,
+  .footer-legal a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+  }
+
+  /*
+   * `.wallet-tabs` is the *marketing* Vouchers page and `.wal-tabs` is the
+   * signed-in wallet — two components, two names, and only one of them was in
+   * this block. That is the collision `site.css` warns about at the top,
+   * showing up as an accessibility gap rather than as a visual one.
+   */
+  .wallet-tabs button {
+    padding-block: 0.72rem;
+  }
+
+  /* Round controls, where a floor would only stretch a circle into a stadium. */
+  .fx-swap,
+  .news-form button {
+    width: var(--tap);
+    height: var(--tap);
+  }
+
+  /*
+   * The converter's amount.
+   *
+   * The `<input>` inside this measures about 39x32 and is *not* the target —
+   * the label wraps the whole line and clicking its empty half puts the caret
+   * in the digits, which is what the note beside `.fx-amount` is about and what
+   * an emulated tap confirms. So the floor goes on the label, which was 37px:
+   * the one control here whose target is real but a little short, rather than
+   * one whose target is somewhere other than where it looks.
+   */
+  .fx-amount {
+    min-height: var(--tap);
+    align-items: center;
+  }
+
+  .guide-city select {
+    padding-block: 0.72rem;
+  }
+
+  /*
+   * The legal pages' contents list, and the one link in their body.
+   *
+   * Eleven to fifteen anchors stacked 0.3rem apart at a 20px line: the tightest
+   * run of targets on the site, and on the two pages a reader is most likely to
+   * be scanning rather than reading. The list keeps its own `gap` for the look
+   * and the rows take the height as padding, which is the same trade
+   * `.footer-col` makes above.
+   */
+  .legal-toc ol {
+    gap: 0;
+  }
+
+  .legal-toc a,
+  .legal-body a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--tap);
+  }
+
+  /*
+   * ── the carousel dots ──
+   *
+   * A 7px dot is a sixth of the guidance and the carousel has no swipe, so the
+   * dots are the only way through it. What stood here grew a transparent
+   * `::after` of `inset: -18.5px` around each mark, and it was two bugs:
+   *
+   *   • it lived in the `max-width: 30rem` block, so a *touch tablet* — 768 or
+   *     1024, where this carousel is at its widest — got the bare 7px mark.
+   *     The trigger is the finger, not the screen, which is the argument the
+   *     top of this block already makes for the 16px field rule;
+   *   • the marks sit on a 15px pitch (7px wide, 0.5rem apart), so 44px of
+   *     target around each one covers its neighbours three deep. Every dot's
+   *     box overlapped every nearby dot's, the last one painted won, and a tap
+   *     aimed at the third slide opened the fifth.
+   *
+   * Overlapping targets cannot be fixed by making them bigger. The row has to
+   * be able to *hold* them, so on a coarse pointer the dot becomes a 44px cell
+   * with the mark drawn inside it and the gap goes to zero: the targets tile
+   * edge to edge, each one owns exactly its own mark, and the strip is 44px
+   * tall instead of 7px. The drawing is unchanged — same 7px mark, same 22px
+   * stadium when active, same 380ms transition, now on the `::before` that
+   * carries it.
+   */
+  .carousel-dots {
+    gap: 0;
+  }
+
+  .carousel-dot,
+  .carousel-dot[data-on='true'] {
+    display: grid;
+    place-items: center;
+    width: var(--tap);
+    height: var(--tap);
+    background: none;
+    /* The box no longer animates; the mark inside it does. */
+    transition: none;
+  }
+
+  .carousel-dot::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--border-2);
+    transition:
+      width 380ms var(--ease),
+      background 380ms var(--ease);
+  }
+
+  .carousel-dot[data-on='true']::before {
+    width: 22px;
+    border-radius: 999px;
+    background: var(--accent);
   }
 }
 
@@ -17393,6 +17694,39 @@ button {
  * that reason, and paired with `orientation` so a short desktop window (which
  * has the width to be fine) is not caught by it.
  */
+/*
+ * ── the short portrait phone ──
+ *
+ * 360 x 640 and 375 x 667 are still a large share of Android and the small
+ * iPhone, and the hero was written for a 844px screen: 8vh of block padding at
+ * each end plus 1.35 / 2.1 / 2.6rem of stacked margin is around 150px of air in
+ * a viewport with 580px to spend. The copy ran to 79.5% of the screen, which is
+ * a problem twice over — the stats sit on the fold, and the globe is aimed at
+ * whatever is left under them (`heroFloor.ts`), so a copy block that reaches
+ * four fifths of the way down leaves the globe a coin.
+ *
+ * Only the rhythm is tightened; nothing changes size. Keyed on height and
+ * orientation together so a short *desktop* window — which has the width to be
+ * fine, and is the case the landscape rule below was written for — is not caught.
+ */
+@media (orientation: portrait) and (max-height: 44rem) {
+  .hero {
+    padding-block: 2rem;
+  }
+
+  .hero-lede {
+    margin-top: 1rem;
+  }
+
+  .hero-cta {
+    margin-top: 1.5rem;
+  }
+
+  .hero-meta {
+    margin-top: 1.6rem;
+  }
+}
+
 @media (orientation: landscape) and (max-height: 30rem) {
   :root {
     --header-h: 56px;
@@ -18701,8 +19035,26 @@ button {
   gap: 0.75rem;
   flex-wrap: wrap;
   width: 100%;
-  margin-top: 0.6rem;
+
 }
+
+/* The Back link beside Continue on the onboarding step: looks like a link
+   at rest (transparent) and turns into the filled Continue pill on hover. */
+.onb-actions .link-btn {
+  padding: 0.875rem 1.6rem;
+  margin-top: 0.25rem;
+  border-radius: var(--r-lg);
+  /* `2px var(--accent)` with no line style is an invalid shorthand and the whole
+     declaration is dropped, so the button had no border at all. */
+  border: 2px solid var(--accent);
+  background: transparent;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  font-weight: 700;
+  transition: background 240ms var(--ease), color 240ms var(--ease), transform 240ms var(--ease), box-shadow 240ms var(--ease);
+}
+
 
 /* ── step one: the language ────────────────────────────────────────────── */
 
@@ -18829,6 +19181,9 @@ button {
 }
 
 .onb-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   padding: 0.9rem 1rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--border-2);
@@ -18843,7 +19198,37 @@ button {
   transition:
     border-color 200ms var(--ease),
     background 200ms var(--ease),
+    color 200ms var(--ease),
     opacity 200ms var(--ease);
+}
+
+/* The label takes the row and the mark sits at the end of it, so a two-line
+   answer wraps against the tick rather than under it. */
+.onb-option-tx {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/*
+ * The tick on the right answer.
+ *
+ * It is the difference between a button that happens to be filled and a button
+ * that is *saying something*. On a screen where somebody has just been told
+ * they were wrong, the fill alone asks them to work out what it means; a tick
+ * is the sentence.
+ */
+.onb-option-mark {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  /* No disc behind it. `--panel-rgb` is near-black in dark and *white* in
+     light, so a wash of it under a `--on-accent` tick is a dark plate under
+     near-black in one theme and white under white in the other. The tick sits
+     straight on the fill instead, where it is the same ink as the label beside
+     it and clears the 3:1 a non-text mark is held to in both. */
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
 .onb-option:hover:not(:disabled) {
@@ -18863,6 +19248,11 @@ button {
  * louder by contrast, which is the rule `.field-error` already follows. The
  * unpicked options fade, which is what makes the pair being compared the only
  * two things still at full strength.
+ *
+ * The right answer is marked **whether or not it was the one pressed** — see
+ * `stateOf` in `onboarding.tsx`. Getting it wrong is the moment a player most
+ * needs to be told what the answer was, and a reveal that only confirms correct
+ * guesses teaches nothing to the person who needed it.
  */
 .onb-option[data-state='right'] {
   border-color: transparent;
@@ -18870,14 +19260,77 @@ button {
   color: var(--on-accent);
 }
 
+/*
+ * The mistake, struck out and stepped back.
+ *
+ * `line-through` on the label rather than on the button, so the rule crosses
+ * the words and stops — a strike running under a tick or out into the padding
+ * reads as a broken border. The colour drops to `--text-mut` and the border to
+ * a hairline: this is the accent being *removed*, which is the only "wrong"
+ * a one-hue palette has.
+ */
 .onb-option[data-state='wrong'] {
-  border-color: var(--text-mut);
+  border-color: var(--border);
   background: transparent;
+  color: var(--text-mut);
+}
+
+.onb-option[data-state='wrong'] .onb-option-tx {
   text-decoration: line-through;
+  text-decoration-thickness: 2px;
+}
+
+/* Pressed, with no verdict yet. It is not called wrong — that would be a guess,
+   and it would be a wrong one about a third of the time. */
+.onb-option[data-state='picked'] {
+  border-color: var(--accent-ink);
 }
 
 .onb-option[data-state='dim'] {
-  opacity: 0.4;
+  opacity: 0.35;
+}
+
+/*
+ * The answer arrives, rather than appearing.
+ *
+ * One-shot, on the button being marked right — a short rise and a settle, which
+ * is the whole of it. A quiz that flashed or shook would be answering the
+ * player's mistake with a noise; this is the card turning over.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .onb-option[data-state='right'] {
+    animation: onb-reveal 420ms var(--ease) both;
+  }
+
+  .onb-option-mark {
+    animation: onb-mark 300ms var(--ease) 120ms both;
+  }
+}
+
+@keyframes onb-reveal {
+  from {
+    transform: scale(0.97);
+  }
+
+  60% {
+    transform: scale(1.015);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+@keyframes onb-mark {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .onb-verdict {
@@ -18896,6 +19349,166 @@ button {
   font-family: var(--font-display);
   font-weight: 600;
   color: var(--accent-ink);
+}
+
+/* ── the gate is printed on ruled paper too ───────────────────────────────
+   The same field the subscription section carries, on the first screen a
+   player ever sees, and the repeat is the point: this is where the device is
+   introduced, and by the time somebody reaches the plans it is a surface they
+   recognise rather than an effect being performed at them.
+
+   Two hairline gradients under a mask that follows the pointer. No canvas, no
+   context, no frame loop — `Site.tsx` renders no backdrop for this route, so
+   this is the only thing behind the column and it costs a repaint of whatever
+   the mask exposes. */
+
+.onb {
+  position: relative;
+}
+
+.onb-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(to right, rgba(var(--accent-rgb), 0.18) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(var(--accent-rgb), 0.18) 1px, transparent 1px);
+  background-size: 56px 56px;
+  /* Centred low and wide before a pointer has ever moved, because this screen
+     is one column in the middle of a tall page: the opening patch sits behind
+     the card rather than in a corner nobody is looking at. */
+  mask-image: radial-gradient(
+    24rem 24rem at var(--sub-x, 50%) var(--sub-y, 42%),
+    #000 0,
+    transparent 72%
+  );
+  -webkit-mask-image: radial-gradient(
+    24rem 24rem at var(--sub-x, 50%) var(--sub-y, 42%),
+    #000 0,
+    transparent 72%
+  );
+}
+
+.onb-shell {
+  position: relative;
+  z-index: 1;
+}
+
+@media (hover: none) {
+  .onb-field {
+    display: none;
+  }
+}
+
+/* ── the payoff arrives ───────────────────────────────────────────────────
+   The last screen of the flow is the one place in this product where a number
+   is a *reward* rather than a fact, and it was being printed like a receipt:
+   the total already at its value, the tier bar already full, seven rows of it
+   simply present. Nothing on it was wrong and nothing on it felt earned.
+
+   So it arrives in the order it should be read — the total, what it is made
+   of, how far it gets you, and then what to do next — and the two figures that
+   are the reward *land* rather than appear: the number counts and the bar
+   fills, both from `PayoffStep`, both one-shot.
+
+   It is a cascade and not a performance. Six steps at 90ms is a little over
+   half a second from the first to the last, which is under the time it takes
+   to read the heading — a player who is already reading never waits for the
+   screen, and a player who has just finished a round gets the beat that says
+   something happened. */
+
+.onb-pay {
+  display: contents;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .onb-pay > * {
+    animation: onb-rise 520ms var(--ease) both;
+  }
+
+  .onb-pay > *:nth-child(1) {
+    animation-delay: 40ms;
+  }
+
+  .onb-pay > *:nth-child(2) {
+    animation-delay: 130ms;
+  }
+
+  .onb-pay > *:nth-child(3) {
+    animation-delay: 220ms;
+  }
+
+  .onb-pay > *:nth-child(4) {
+    animation-delay: 310ms;
+  }
+
+  .onb-pay > *:nth-child(5) {
+    animation-delay: 400ms;
+  }
+
+  .onb-pay > *:nth-child(6) {
+    animation-delay: 490ms;
+  }
+
+  .onb-pay > *:nth-child(7) {
+    animation-delay: 580ms;
+  }
+
+  /*
+   * One ring off the total, once.
+   *
+   * The pricing cards took every ambient light out of themselves and this
+   * screen is the exception that proves the rule rather than a relapse: it
+   * fires a single time, on arrival, on the one element that is a reward, and
+   * then it is gone. It is a **hairline** and not a bloom — a ring expanding
+   * and fading is a pulse of attention; a soft halo sitting behind a number
+   * forever is the game vibe.
+   */
+  .onb-total {
+    position: relative;
+  }
+
+  .onb-total::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 9rem;
+    height: 9rem;
+    margin: -4.5rem 0 0 -4.5rem;
+    border: 1px solid rgba(var(--accent-rgb), 0.55);
+    border-radius: 50%;
+    animation: onb-ring 1000ms var(--ease) 260ms both;
+  }
+}
+
+@keyframes onb-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 12px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes onb-ring {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+
+  30% {
+    opacity: 1;
+  }
+
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
 }
 
 /* ── step three: the payoff ────────────────────────────────────────────── */
@@ -18963,12 +19576,58 @@ button {
   overflow: hidden;
 }
 
+/* It travels from 0 to the value `PayoffStep` sets a frame after the mount.
+   The delay lands it after the rows above have arrived, so the screen is read
+   downwards rather than everything moving at once. */
 .onb-bar i {
   display: block;
   height: 100%;
   border-radius: inherit;
   background: var(--accent);
-  transition: width 600ms var(--ease);
+  transition: width 900ms var(--ease) 620ms;
+}
+
+/*
+ * ── the shelf, at the end of the flow ────────────────────────────────────
+ *
+ * Seven games the player has not seen yet, offered on the one screen where
+ * they have just finished the only part of the product they have.
+ *
+ * It shipped with **no rules at all**, which is worth recording because of what
+ * that looks like rather than what it is: an unstyled `<ul>` is a column of
+ * browser bullets, and the seven `<li>`s held nothing but an icon, so the
+ * screen ended on seven grey dots each followed by a shape. A list with no
+ * stylesheet does not look unfinished, it looks broken — and it read as the
+ * plainest thing in a flow whose whole job is to make somebody want the next
+ * screen.
+ *
+ * It is a shelf of named tags now, ruled off from the payoff above it.
+ */
+
+.onb-more {
+  width: 100%;
+  margin-top: 1.15rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--border);
+}
+
+.onb-more-title {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.onb-more > p {
+  margin: 0.35rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.onb-more .btn {
+  margin-top: 0.95rem;
 }
 
 /*
@@ -19878,9 +20537,9 @@ button {
   color: var(--text-mut);
   cursor: pointer;
   transition:
-    color 0.16s ease,
-    border-color 0.16s ease,
-    background 0.16s ease;
+    color 160ms var(--ease),
+    border-color 160ms var(--ease),
+    background 160ms var(--ease);
 }
 
 .adm-ico-btn:hover:not(:disabled) {
@@ -20039,5 +20698,1505 @@ button {
 @media (prefers-reduced-motion: reduce) {
   .adm-modal {
     animation: none;
+  }
+}
+
+/*
+ * NOTE ON PLACEMENT: this block is at the end of the sheet on purpose.
+ *
+ * It has the same specificity as the rules it overrides — `.tcard:hover` beats
+ * `.tcard:hover` only by source order — so sitting it near the top silently did
+ * nothing for every lift declared below it. Three cards still stuck on touch
+ * with the guard already "in place". Last in the file is the only position that
+ * covers all of them.
+ */
+/*
+ * ── lifts belong to a pointer ──────────────────────────────────────────
+ *
+ * Sixteen rules move an element on `:hover`. Two of them — the Play cards —
+ * are wrapped in `@media (hover: hover)` with a comment saying why: on a touch
+ * screen `:hover` is applied on tap and **stays applied** until something else
+ * is tapped. The other fourteen were not wrapped, so on a phone every card you
+ * touched stayed lifted behind you: a gift card, a game tile, a wallet row, a
+ * voucher, an account-type card, all frozen 3px above the page with a shadow
+ * under them, until you happened to tap something else.
+ *
+ * This is the same guard, written once against the list rather than by moving
+ * fourteen rules into a wrapper. Only the *movement* is dropped. The colour and
+ * border changes stay, because those read as "this is the one you touched",
+ * which on a list you have just tapped is useful rather than stuck.
+ *
+ * `.fsoc` carries its lift here rather than in its own rule for the same
+ * reason: a lift that only makes sense under a cursor may as well be declared
+ * where the cursor is the condition.
+ */
+@media (hover: hover) {
+  .fsoc:hover {
+    transform: translateY(-2px);
+  }
+}
+
+@media (hover: none) {
+  .btn-solid:hover,
+  .btn-ghost:hover,
+  .sign-in:hover,
+  .assistant-fab:hover,
+  .controller-3d:hover,
+  .tcard:hover,
+  .news-form button:hover,
+  .game:hover,
+  .gift:hover,
+  .type-card:hover,
+  .ai-send:not(:disabled):hover,
+  .play-hero:hover,
+  .mm-card[data-face='down']:hover,
+  .wal-deal:hover,
+  .wal-stamp:hover,
+  .wcard:hover {
+    transform: none;
+  }
+
+  /* The shadow goes with the lift — a card that is not raised should not be
+     casting. Named separately because only these two draw one. */
+  .btn-solid:hover,
+  .game:hover {
+    box-shadow: none;
+  }
+}
+
+/* ══ the tier materials ══════════════════════════════════════════════════ */
+
+/*
+ * Three tiers, three materials — Premium loudest, Pro a step back, Free flat.
+ *
+ * This reverses the two notes above about keeping the plates blank, at the
+ * product owner's request, and is kept in one piece so deleting it restores
+ * them. What is kept from them is the discipline rather than the conclusion:
+ *
+ *   - no second hue. Every value is `--accent-rgb` or `--ink-on-rgb` at an
+ *     alpha, so the two-colour rule holds and Premium's local token scope
+ *     re-skins all of it without a rule of its own;
+ *   - no ambient light. Nothing pulses or glows by itself; the texture is a
+ *     flat print and the only thing that moves answers a pointer;
+ *   - `transform` and `opacity` only, so none of it costs a layout.
+ *
+ * A pixel grid rather than a hatch: a 45° hatch is a texture, a square grid on
+ * a small cell is a *material* — it reads as pixels, and it registers with the
+ * 56px section field behind it at exactly eight cells.
+ */
+.sub-card[data-tier='pro'] .sub-card-in::before,
+.sub-card[data-tier='premium'] .sub-card-in::before {
+  opacity: 1;
+  background-image:
+    repeating-linear-gradient(
+      0deg,
+      rgba(var(--accent-rgb), var(--pixel-a)) 0 1px,
+      transparent 1px var(--pixel-c)
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(var(--accent-rgb), var(--pixel-a)) 0 1px,
+      transparent 1px var(--pixel-c)
+    );
+  /* Gone before the copy starts, so it is a corner treatment rather than a page
+     the nine rows are printed on. */
+  -webkit-mask-image: linear-gradient(200deg, #000 0, transparent 62%);
+  mask-image: linear-gradient(200deg, #000 0, transparent 62%);
+}
+
+/* Pro: same material, half the ink, a coarser cell. */
+.sub-card[data-tier='pro'] .sub-card-in {
+  --pixel-a: 0.028;
+  --pixel-c: 14px;
+  /* The inner hairline that seats the plate in its tray: a drawn line, not an
+     edge catching light. */
+  box-shadow: inset 0 0 0 1px rgba(var(--accent-rgb), 0.07);
+}
+
+/* Premium: tighter cell, more ink. Inside the ink scope `--accent-rgb` is
+   already `--ink-on-rgb`, so this is mint on near-black without naming either. */
+.sub-card[data-tier='premium'] .sub-card-in {
+  --pixel-a: 0.05;
+  --pixel-c: 7px;
+}
+
+/*
+ * The ink scope has to re-resolve `color`, or half of it never arrives.
+ *
+ * Children that *name* a token pick up Premium's re-pointed palette. A child
+ * that merely inherits `color` does not — inheritance carries the computed
+ * value from `.site`. `.sub-card h3` is exactly that child, and in light theme
+ * it computed to rgb(4,32,31) on an rgb(4,32,31) plate: the word "Premium" was
+ * invisible. Legible in dark, quietly broken in light.
+ */
+.sub-card-in {
+  color: var(--text);
+}
+
+/*
+ * The hand answering. The lift is on the plate, not the tray: the tray stays
+ * put and its 6px reveals along the bottom edge as the plate rises, which is
+ * the reason a double bezel is built that way at all.
+ *
+ * `transform` is named as its own property beside `border-color`, never a
+ * shorthand — `.sub-card` carries `data-reveal`, and a `transition: all` here
+ * silently retimes the 700ms arrival to 320ms.
+ */
+.sub-card[data-tier='pro'] .sub-card-in,
+.sub-card[data-tier='premium'] .sub-card-in {
+  transition:
+    border-color 260ms var(--ease),
+    transform 320ms var(--ease),
+    box-shadow 320ms var(--ease);
+}
+
+@media (hover: hover) {
+  .sub-card[data-tier='pro']:hover .sub-card-in {
+    transform: translate3d(0, -4px, 0);
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--accent-rgb), 0.07),
+      0 26px 60px -38px rgba(var(--glow-rgb), calc(0.85 * var(--glow-k)));
+  }
+
+  .sub-card[data-tier='premium']:hover .sub-card-in {
+    transform: translate3d(0, -7px, 0);
+    box-shadow:
+      inset 0 0 0 1px rgba(var(--ink-on-rgb), 0.14),
+      0 34px 74px -40px rgba(var(--glow-rgb), calc(1 * var(--glow-k)));
+  }
+}
+
+/*
+ * The arrow gets its own well. A trailing glyph beside a label is the default;
+ * nesting it in a circle flush with the button's inner padding is what makes
+ * the control read as machined. The circle is a tint of the label's own ink, so
+ * it costs no token and inverts inside the Premium scope for free.
+ */
+.sub-buy svg {
+  /* `background` as well as the `transform` declared elsewhere: the well
+     brightens and travels together, and listing only one made the colour snap. */
+  transition: background 240ms var(--ease);
+  flex: 0 0 auto;
+  box-sizing: content-box;
+  width: 16px;
+  height: 16px;
+  padding: 6px;
+  border-radius: 50%;
+  background: rgba(var(--ink-rgb), 0.16);
+}
+
+@media (hover: hover) {
+  .sub-buy:hover svg {
+    background: rgba(var(--ink-rgb), 0.26);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sub-card[data-tier='pro'] .sub-card-in,
+  .sub-card[data-tier='premium'] .sub-card-in {
+    transition: none;
+  }
+
+  .sub-card[data-tier='pro']:hover .sub-card-in,
+  .sub-card[data-tier='premium']:hover .sub-card-in {
+    transform: none;
+  }
+}
+
+
+/* ══ reconstructed: the field, the glint and the day band ════════════════ */
+
+/*
+ * These three were lost when an editor buffer overwrote `site.css`, and they
+ * are not in git either — they were uncommitted. `sections.tsx` still renders
+ * all six elements (`.sub-field`, `.sub-glint`, `.sub-day` and its three
+ * children), so without this block they draw as unstyled text: "16rounds a
+ * dayfrom a full tank" running together under the price.
+ *
+ * Rebuilt from a full audit of the file taken while the rules were still
+ * present, so the values are the originals rather than a redesign.
+ */
+
+/* The ruled field behind all three cards: a 56px hairline grid, revealed
+   through a pool of light that follows the pointer across the section. */
+.sub-field {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.2) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(var(--accent-rgb), 0.2) 1px, transparent 1px);
+  background-size: 56px 56px;
+  opacity: 0.72;
+  -webkit-mask-image: radial-gradient(
+    22rem 22rem at var(--sub-x, 50%) var(--sub-y, 22%),
+    #000 0,
+    transparent 72%
+  );
+  mask-image: radial-gradient(
+    22rem 22rem at var(--sub-x, 50%) var(--sub-y, 22%),
+    #000 0,
+    transparent 72%
+  );
+  transition: opacity 260ms var(--ease);
+}
+
+/* Figure/ground: the ruling behind the cards brightens when any card is held. */
+#subscription:has(.sub-card:hover) .sub-field {
+  opacity: 1;
+}
+
+/* No pointer, no pool of light — deleted rather than frozen at its default
+   mask position, which would be a bright blob nobody put there. */
+@media (hover: none) {
+  .sub-field {
+    display: none;
+  }
+}
+
+/* The per-card spotlight: a 1px accent border revealed through a small radial
+   mask anchored to the cursor, so the edge lights only where the hand is. */
+.sub-glint {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  border: 1px solid rgba(var(--accent-rgb), 0.85);
+  border-radius: inherit;
+  opacity: 0;
+  -webkit-mask-image: radial-gradient(
+    9rem 9rem at var(--sub-x, 50%) var(--sub-y, 0%),
+    #000 0,
+    transparent 68%
+  );
+  mask-image: radial-gradient(
+    9rem 9rem at var(--sub-x, 50%) var(--sub-y, 0%),
+    #000 0,
+    transparent 68%
+  );
+  transition: opacity 280ms var(--ease);
+}
+
+.sub-card:hover .sub-glint {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .sub-glint {
+    display: none;
+  }
+}
+
+/* The rounds-a-day band. A grid rather than a flex row because `.sub-day-up`
+   is pinned to the first row's second column while the unit and the note span
+   the full width — that placement is what keeps the nine feature rows starting
+   at the same y on all three cards. */
+.sub-day {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: baseline;
+  gap: 0 0.5rem;
+  margin-top: 0.95rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  background: var(--surface-2);
+}
+
+.sub-day b {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.1vw, 1.8rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sub-day-unit,
+.sub-day-note {
+  grid-column: 1 / -1;
+}
+
+.sub-day-unit {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.sub-day-note {
+  font-size: 0.68rem;
+  color: var(--text-fnt);
+}
+
+/* The gain over Free. Unfilled: a solid pill here competed with the figure it
+   was annotating. */
+.sub-day-up {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: end;
+  padding: 0;
+  background: none;
+  font-size: 0.74rem;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* A paid plan's band carries the accent; Free's stays neutral, so the figure
+   that costs nothing does not advertise itself. */
+.sub-card[data-tier='pro'] .sub-day,
+.sub-card[data-tier='premium'] .sub-day {
+  border-color: rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.sub-card[data-tier='pro'] .sub-day b,
+.sub-card[data-tier='premium'] .sub-day b {
+  color: var(--accent-lit);
+}
+
+/* ══ restored pass: responsive type, spacing, and the interaction work ═══ */
+
+/*
+ * Appended rather than edited in place, deliberately. Every rule here has the
+ * same specificity as the one it supersedes, so source order does the work and
+ * the originals above are left legible. It also means this whole block can be
+ * lifted out in one piece.
+ */
+
+/*
+ * The type ramp. `clamp(2.5rem, 5.4vw, 4.4rem)` is not fluid below 741px — the
+ * floor wins — so a 360px phone and a 768px tablet were set in the same 40px.
+ * Rewritten as `clamp(min, REM + VW, max)`, fitted through the existing desktop
+ * values so 1440 is unchanged and only phone/tablet move.
+ */
+.hero h1 {
+  font-size: clamp(2rem, 1.2rem + 3.56vw, 4.4rem);
+}
+
+.section-head h2 {
+  font-size: clamp(1.5rem, 1rem + 2.23vw, 3rem);
+}
+
+.hero-lede {
+  font-size: clamp(1rem, 0.93rem + 0.33vw, 1.2rem);
+}
+
+/* Prose in a collapsed list keeps a readable measure. `ch` and no media query:
+   on a phone the cap is wider than the column, on a desktop the grid's own
+   tracks are narrower, so it binds only in the tablet band it is for. */
+.step p,
+.fx-points span,
+.feature-tx p {
+  max-width: 66ch;
+}
+
+@media (max-width: 1200px) {
+  /*
+   * The features stage stays stacked until the side columns can hold prose. It
+   * collapsed at 820px, so 900px got a 168px text column — about 22 characters
+   * a line — and 1024px got 200px. The design's own measure is 256px, reached
+   * at about 1200.
+   */
+  .features-stage {
+    grid-template-columns: 1fr;
+    gap: 2.25rem;
+    min-height: 0;
+  }
+
+  .controller-3d {
+    grid-column: 1;
+    grid-row: 1;
+    height: 17rem;
+  }
+
+  .feature-list[data-side='left'],
+  .feature-list[data-side='right'] {
+    grid-column: 1;
+    grid-row: auto;
+    text-align: left;
+  }
+
+  .feature-list[data-side='left'] .feature-item {
+    flex-direction: row;
+  }
+}
+
+@media (max-width: 820px) {
+  /*
+   * Vertical rhythm, once the page is one column. Both of these measured
+   * spacing in viewport *height* on a layout whose content got narrower:
+   * `.guide` reserved 100dvh and centred ~600px of content in it, and
+   * `.section` paid 12vh at each end — 246px between two sections on a tablet.
+   * A taller phone got more air, which is backwards.
+   */
+  .guide {
+    min-height: 0;
+  }
+
+  .section {
+    padding-block: clamp(2.75rem, 1.5rem + 4vh, 4.5rem);
+  }
+
+  /*
+   * The backdrops step back. All four 2D ones mount as `.site__web` and all
+   * five are fixed behind copy that scrolls; stacked, the copy is the whole
+   * width and a fixed drawing will intersect it at some offset wherever it is
+   * put. Same rule `--glass` states for cards: text wins.
+   *
+   * The globe goes further because it is brighter than the other four by a
+   * long way — lit coastlines and route heads with bloom on them, against
+   * canvases that draw hairlines. At the end pose it is a quarter of a phone
+   * screen tall and a section heading lands on it, which at 0.62 is white
+   * type over a lit continent. It is a backdrop on every viewport; on this one
+   * it has to behave like one.
+   */
+  .site__web {
+    opacity: 0.62;
+  }
+
+  .site__globe {
+    opacity: 0.4;
+  }
+
+  /*
+   * And the platformer with it, for the same reason and not the same one as
+   * the other three: it is the one backdrop that draws *filled* shapes — a
+   * brick, a lucky box, a pipe — rather than hairlines, and the stats row
+   * under the L-Earn hero lands on the block run. `data-route` on `.site` is
+   * the hook (see `Site.tsx`), because all five mount as `.site__web`.
+   */
+  .site[data-route='learn'] .site__web {
+    opacity: 0.42;
+  }
+}
+
+@media (max-width: 30rem) {
+  /* Two stacked CTAs with different right edges read as two unrelated controls.
+     `auto` rather than `100%`, so they still share a line where one fits. */
+  .hero-cta .btn {
+    flex: 1 1 auto;
+  }
+}
+
+/* ── the interaction pass ─────────────────────────────────────────────── */
+
+/*
+ * The press. Every button lifted toward the cursor and then did nothing when
+ * clicked — there were four `:active` rules in the whole sheet and none on
+ * `.btn`. Down and smaller, because that is what a physical button does, and at
+ * 40ms because a press is instant.
+ */
+.btn:active:not(:disabled) {
+  transform: translateY(0) scale(0.975);
+  transition-duration: 40ms;
+}
+
+/* A disabled button should not lift: `.btn-solid:hover` has no `:not(:disabled)`,
+   so a submit waiting on a request still rose and glowed. */
+.btn:disabled {
+  transform: none;
+  box-shadow: none;
+}
+
+/* The burger had no hover, no press and no transition — the one control a phone
+   cannot browse this site without. It is not a `.btn`, so it needs its own. */
+.nav-burger {
+  transition:
+    background 200ms var(--ease),
+    border-color 200ms var(--ease),
+    transform 200ms var(--ease);
+}
+
+.nav-burger:hover {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+}
+
+.nav-burger:active {
+  transform: scale(0.94);
+  transition-duration: 40ms;
+}
+
+/* The dots had no hover at all: eight identical marks and nothing to say which
+   one a click would take. Half the selected width — a preview of the state the
+   click produces, not the accent, which would claim it was already selected. */
+.carousel-dot:hover:not([data-on='true']) {
+  width: 14px;
+  background: var(--accent-soft);
+}
+
+@media (pointer: coarse) {
+  .carousel-dot:hover:not([data-on='true']) {
+    width: var(--tap);
+    background: none;
+  }
+
+  .carousel-dot:hover:not([data-on='true'])::before {
+    width: 14px;
+    background: var(--accent-soft);
+  }
+}
+
+/*
+ * The arrow travels; the gap does not. Animating `gap` relayouts the flex line
+ * on every frame for exactly the picture a transform gives on the compositor.
+ */
+.learn-back:hover,
+.pillar-more:hover {
+  gap: 0.5rem;
+}
+
+.learn-back svg,
+.pillar-more svg {
+  transition: transform 240ms var(--ease);
+}
+
+.learn-back:hover svg {
+  /* The glyph is a mirrored arrow, so away from the label is negative. */
+  transform: rotate(180deg) translateX(3px);
+}
+
+.pillar-more:hover svg {
+  transform: translateX(4px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn:active:not(:disabled),
+  .nav-burger:active {
+    transform: none;
+  }
+
+  .learn-back svg,
+  .pillar-more svg {
+    transition: none;
+  }
+
+  .learn-back:hover svg {
+    /* Keeps the mirror, drops the travel: clearing it would point the arrow the
+       wrong way. */
+    transform: rotate(180deg);
+  }
+
+  .pillar-more:hover svg {
+    transform: none;
+  }
+}
+
+/* ══ restored: the profile reward and the onboarding intro ═══════════════ */
+
+/*
+ * `profile.tsx` and `onboarding.tsx` render these; without them the prize card,
+ * the completion notice and the welcome screen draw as unstyled text.
+ */
+
+/* The prize leads the card. A reward nobody notices changes nobody's
+   behaviour, so the figure is the largest thing on it and the meter reports
+   underneath. Weight comes from size and a filled mark, not a second hue. */
+.prof-prize {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin: 0.35rem 0 1rem;
+  padding: 0.7rem 0.8rem;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.prof-prize-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.prof-prize-pts {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  color: var(--accent-lit);
+}
+
+.prof-prize-say {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+/* Earned: the offer is over, so the panel stops advertising and reports. */
+.prof-meter[data-paid='true'] .prof-prize {
+  border-color: var(--border);
+  background: var(--surface-2);
+}
+
+/* The gaps are things to press, not things to read: each chip scrolls to its
+   field and focuses the control. Naming three fields still leaves the reader to
+   find them in a form of seven. */
+.prof-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.55rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prof-list button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease),
+    color 200ms var(--ease);
+}
+
+.prof-list button:hover,
+.prof-list button:focus-visible {
+  border-color: var(--accent-lit);
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent-ink);
+}
+
+/*
+ * The completion notice arrives over the page, not inside the rail — on a phone
+ * the rail is below the form, so the one moment worth noticing happened
+ * off-screen. Dismissed by the reader rather than by a timer.
+ */
+.prof-won {
+  position: fixed;
+  z-index: 60;
+  top: calc(var(--header-h) + 0.75rem);
+  left: 50%;
+  width: min(26rem, calc(100vw - 2rem));
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: start;
+  gap: 0.5rem;
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 24px 70px -30px rgba(var(--glow-rgb), calc(0.9 * var(--glow-k)));
+  animation: prof-won-in 460ms var(--ease) both;
+}
+
+.prof-won-mark {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.prof-won b {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--text);
+}
+
+.prof-won p {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.prof-won .btn {
+  margin-top: 0.25rem;
+}
+
+/* Drops in from under the header, which is where it came from. */
+@keyframes prof-won-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -12px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* ── onboarding: the offer, and the way out ─────────────────────────────── */
+
+/* The figure is the largest thing on the screen for the same reason it is on
+   the profile card: the number is the reason to play. */
+.onb-prize-mark {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 18px;
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.onb-prize-pts {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 1.6rem + 4.4vw, 4rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  color: var(--accent-lit);
+}
+
+/*
+ * Skip *this question*, not the round. The quietest control on the screen and
+ * set apart from the actions row: it is the alternative to answering, not a
+ * second offer, so it reads as a link rather than a peer button.
+ */
+.onb-skip {
+  align-self: center;
+  margin-top: 1.1rem;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 0.82rem;
+  color: var(--text-fnt);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 200ms var(--ease);
+}
+
+.onb-skip:hover,
+.onb-skip:focus-visible {
+  color: var(--accent-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .prof-won {
+    animation: none;
+  }
+}
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   Plans — the arcade layer.
+
+   Appended at the end of the sheet, after the tier materials, so source order
+   does the work: nothing here is edited into a rule above it and deleting this
+   block returns the section to the flat pass exactly.
+
+   What it is for: the product this section sells is a game. It sells energy, a
+   points multiplier, streak freezes and a crown that goes beside your name on a
+   board — and a price list for that written as a bank statement is describing
+   something other than what you get. The three tiers are a difficulty select
+   screen, and the reading that makes somebody want the top one is the arcade
+   one.
+
+   Four things, and every one of them is a *hard edge* rather than a glow. That
+   distinction is the whole craft here: soft light on a dark panel is a crypto
+   exchange, and hard-edged light on a dark panel is a CRT. Same colour, same
+   alpha, opposite genre.
+
+     1  8-bit type   a 2px hard shadow under every display figure, no blur
+     2  scanlines    3px horizontal ruling across the Premium plate
+     3  power-on     one band travelling down each paid plate as it arrives
+     4  the caret    a block cursor blinking after the day's figure
+
+   The palette does not move: everything is `--accent-rgb` or `--ink-on-rgb` at
+   an alpha, so the two-colour rule holds and Premium's local token scope
+   re-skins all of it without a rule of its own.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. the type is stamped ────────────────────────────────────────────────
+   A hard offset shadow with `0` blur is how a sprite font is drawn, and it is
+   the cheapest possible way to make a number read as arcade rather than as
+   finance. It goes only on the three figures set in the display face — the
+   price, the day, and the strip — because those are the ones a player is meant
+   to compare at a glance; putting it under body copy would be a costume. */
+
+.sub-price b,
+.sub-day b,
+.sub-hero b .sub-val {
+  text-shadow: 2px 2px 0 rgba(var(--accent-rgb), 0.28);
+}
+
+/* Free's figures are `--text` rather than the accent, so their shadow is the
+   accent doing the work the fill is not — the tier still reads as stamped, and
+   the colour is still only ever spent on what a plan gains you. */
+.sub-card[data-tier='free'] .sub-price b,
+.sub-card[data-tier='free'] .sub-day b,
+.sub-card[data-tier='free'] .sub-hero b .sub-val {
+  text-shadow: 2px 2px 0 rgba(var(--accent-rgb), 0.16);
+}
+
+/* ── 2. the Premium plate is a screen ──────────────────────────────────────
+   Scanlines, at 1px on 3, over the ink. This is the one place in the building
+   where a repeating stripe is right rather than a texture reached for: a CRT is
+   what the top tier's plate is *depicting*, and the lines are the depiction
+   rather than a pattern chosen to tell three cards apart.
+
+   On the plate's own background rather than on `::before`, because `::before`
+   carries the pixel grid under a corner mask and these have to run the whole
+   height. `background-color` is restated with them: a `background-image` alone
+   would leave the ink behind it to whatever the rule above set. */
+
+.sub-card[data-tier='premium'] .sub-card-in {
+  background-image: repeating-linear-gradient(
+    0deg,
+    rgba(var(--ink-on-rgb), 0.038) 0 1px,
+    transparent 1px 3px
+  );
+  background-color: rgb(var(--ink-rgb));
+}
+
+/* ── 3. the plate powers on ────────────────────────────────────────────────
+   One band, once, travelling top to bottom as the card arrives — a monitor
+   coming up rather than a card fading in. It is the tray's own `::after`, which
+   nothing else uses, so no existing layer had to move.
+
+   `steps()` on purpose. A smooth sweep is a sheen and this repo has already
+   thrown one of those away; a band that advances in eight jumps is a scan, and
+   the jumps are what make it read as a machine drawing a screen rather than as
+   light moving over glass.
+
+   It is one-shot and keyed to `[data-shown]`, so it fires when the section
+   scrolls into view and never again. The rule about nothing looping stands. */
+
+/*
+ * The clip is lifted while the card is held, and that is not a detail.
+ *
+ * The sweep has to be clipped to the tray or it paints past the bottom edge on
+ * its way out. But the tray is 6px and the hover lift raises the plate by 4px
+ * on Pro and **7px** on Premium — one pixel more than the tray has — so a
+ * permanent `overflow: hidden` shaves the top border off the most expensive
+ * card at exactly the moment somebody is pointing at it.
+ *
+ * `:not(:hover)` costs nothing to be right about: the sweep is one-shot and
+ * fires as the section scrolls into view, and a pointer that is already resting
+ * on a card during that window has nothing left to clip.
+ */
+.sub-card[data-tier='pro'],
+.sub-card[data-tier='premium'] {
+  position: relative;
+}
+
+.sub-card[data-tier='pro']:not(:hover),
+.sub-card[data-tier='premium']:not(:hover) {
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sub-card[data-tier='pro'][data-shown='true']::after,
+  .sub-card[data-tier='premium'][data-shown='true']::after {
+    content: '';
+    position: absolute;
+    inset: 0 0 auto;
+    height: 34%;
+    pointer-events: none;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      rgba(var(--accent-rgb), 0.16),
+      transparent
+    );
+    animation: sub-scan 900ms steps(8, end) calc(var(--sub-i, 0) * 110ms + 160ms)
+      both;
+  }
+}
+
+@keyframes sub-scan {
+  from {
+    transform: translate3d(0, -120%, 0);
+    opacity: 1;
+  }
+
+  to {
+    transform: translate3d(0, 420%, 0);
+    opacity: 0;
+  }
+}
+
+/* ── 4. the row under the hand ─────────────────────────────────────────────
+   A block caret used to blink here, after the day's figure — a terminal cursor
+   saying the number was a live readout. It is gone at the product owner's
+   request and the reason is worth keeping: the count-up already says the figure
+   is being produced rather than printed, and once it lands there is nothing
+   left for a cursor to mean. A caret that outlives its typing is a decoration
+   pretending to be a state, which is the same test everything else in this
+   section is held to.
+
+   What is here instead is the interaction that was *supposed* to be, and had
+   been lost: hovering any row of the comparison lights **that same row on all
+   three cards** (`useRowCompare` in `sections.tsx`). Free's 2, Pro's 5 and
+   Premium's Unlimited come up together, which is the one job a three-column
+   table exists to do and the one thing the reader was otherwise doing from
+   memory.
+
+   The mark is a band and a brighter label — never a border, never a shift.
+   Nine rows that moved by a pixel as the cursor went down them would be the
+   busiest thing on the page. It is pulled out past the label with a negative
+   inline margin so it reads as a **row of the table**; sized to the text it
+   would read as a selection highlight, which is exactly what it was mistaken
+   for. */
+
+.sub-row {
+  margin-inline: -0.55rem;
+  padding-inline: 0.55rem;
+  border-radius: 6px;
+  transition: background-color 160ms var(--ease);
+}
+
+.sub-row[data-on='true'] {
+  background-color: rgba(var(--accent-rgb), 0.08);
+}
+
+.sub-row[data-on='true'] .sub-row-label {
+  color: var(--text);
+}
+
+/* On the ink plate the same alpha over near-black is invisible: a fill over ink
+   needs more than a fill over glass, the way the seal does. */
+.sub-card[data-tier='premium'] .sub-row[data-on='true'] {
+  background-color: rgba(var(--ink-on-rgb), 0.11);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sub-row {
+    transition: none;
+  }
+}
+
+/* The section's own ruling is a grid of cells rather than of lines while the
+   arcade layer is on: the card material is a pixel grid at 7px and 14px, and a
+   ground ruled in the same units is what makes the cards look cut from it.
+   Eight card cells to one ground cell, exactly. */
+.sub-field {
+  background-image:
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.2) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(var(--accent-rgb), 0.2) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--accent-rgb), 0.07) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(var(--accent-rgb), 0.07) 1px, transparent 1px);
+  background-size:
+    56px 56px,
+    56px 56px,
+    14px 14px,
+    14px 14px;
+}
+
+
+/* ── the shelf is a reel ──────────────────────────────────────────────────
+   Seven games, one at a time, advancing on their own — the last thing a player
+   sees before the flow hands them the site.
+
+   It replaces a two-column grid of tags, and the reason is what the two are
+   for: a grid is a catalogue somebody audits, and a reel is a thing they watch.
+   This screen is not asking for a decision, it is answering "what else is
+   there?" while the player is still looking at the points they just won.
+
+   The card is drawn in the plans section's own arcade register, because it is
+   the same product being shown: a pixel-grid plate, a hard-cornered mark, a
+   stamped heading, and a band that sweeps the plate each time a new game lands.
+   Nothing here is a soft glow; every edge is hard. */
+
+/*
+ * Three columns: a gutter, the window, a gutter.
+ *
+ * The arrows used to sit *on* the card, and a control laid over the thing it
+ * controls is the shape a lightbox has, not a slider. Out here they are what a
+ * slider's buttons have always been — outside the frame, either side of it —
+ * and the layout takes care of what negative offsets could not: the card simply
+ * gets narrower, so nothing hangs off the shell on a phone and nothing has to
+ * be turned off at a breakpoint.
+ *
+ * The dots span all three, because they belong to the reel rather than to the
+ * window.
+ */
+.onb-reel {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  margin-top: 0.9rem;
+}
+
+/* The window. `clip` rather than `hidden` so nothing establishes a scroll
+   container — a track translated inside an overflow box is otherwise reachable
+   with a two-finger swipe and lands between two cards. */
+/*
+ * `min-width: 0`, and it is the whole reason the reel was hanging off its own
+ * frame.
+ *
+ * A grid item's `min-width` is `auto`, which means it refuses to be narrower
+ * than its content — and this item's content is a track holding seven cards.
+ * `minmax(0, 1fr)` lets the *column* collapse; it says nothing about the item
+ * sitting in it. So the window sized itself to the track, the card ran past the
+ * gutter, and the next one started somewhere off the edge.
+ *
+ * It appeared the moment the arrows moved outside: while this was a plain block
+ * its width came from the containing block and there was nothing to overflow.
+ * That is the trap — the bug is in the box that changed, not in the layout that
+ * looks wrong.
+ */
+.onb-reel-win {
+  grid-row: 1;
+  grid-column: 2;
+  min-width: 0;
+  overflow-x: clip;
+  border-radius: var(--r-sm);
+}
+
+.onb-reel-track {
+  display: flex;
+  /* Stated rather than inferred. A `translateX` percentage resolves against the
+     element's *own* border box, so this only ever means "one card" while the
+     track is exactly one window wide — which is what `auto` gives it, right up
+     until something upstream lets it size to its content instead. Pinning it
+     makes the transform independent of that. */
+  width: 100%;
+  /* Whole cards, off one custom property — the Guide carousel's mechanism, at
+     one card per window instead of a centred three. */
+  transform: translate3d(calc(var(--index) * -100%), 0, 0);
+  transition: transform 520ms var(--ease);
+  will-change: transform;
+}
+
+/*
+ * The plate.
+ *
+ * `flex: 0 0 100%` and `min-height`, both load-bearing: the first makes one
+ * card exactly one window wide whatever the shell is, and the second stops the
+ * whole panel from resizing between a two-line rule and a four-line one. Seven
+ * cards that each set their own height would make the button under them jump
+ * every 2.6 seconds.
+ */
+.onb-reel-card {
+  flex: 0 0 100%;
+  /* Same rule as the window above: a flex item will not go under its content's
+     min-content width unless it is told it may, and one long word in a rule
+     sentence is enough to widen the card past the window. */
+  min-width: 0;
+  display: grid;
+  /*
+   * Centred in the plate, not stacked at the top of it.
+   *
+   * The card is a fixed 11rem so the button under the reel cannot jump every
+   * 2.6 seconds, and with `start` that height showed up as dead space under a
+   * short rule — four lines pinned to the ceiling of a panel with a hole below
+   * them. Centring spends the slack on both sides instead.
+   *
+   * The cost is that the mark sits a few pixels higher on a card whose rule
+   * runs to three lines than on one whose rule runs to two. That is the right
+   * trade here and would not be in a grid: only one card is ever on screen, so
+   * there is nothing beside it for the mark to fail to line up with.
+   */
+  align-content: center;
+  gap: 0.4rem;
+  /* Taller than the tallest rule at this width, and fixed: seven cards that
+     each set their own height would make the button under them jump every 2.6
+     seconds. */
+  min-height: 11rem;
+  /* Even padding again. The arrows moved out to the gutters, so no side of the
+     plate has to be kept clear of a control any more. */
+  padding: 0.95rem 1rem 1.05rem;
+  /* Clips the cabinet art to the plate. */
+  overflow: hidden;
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  border-radius: var(--r-sm);
+  background:
+    repeating-linear-gradient(
+      0deg,
+      rgba(var(--accent-rgb), 0.03) 0 1px,
+      transparent 1px 12px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      rgba(var(--accent-rgb), 0.03) 0 1px,
+      transparent 1px 12px
+    ),
+    var(--surface);
+  /* The 8-bit tile's light: bright top-left, nothing bottom-right. A drawn
+     line, not an edge catching a lamp. */
+  box-shadow:
+    inset 1px 1px 0 rgba(var(--accent-rgb), 0.16),
+    inset -1px -1px 0 rgba(var(--accent-rgb), 0.05);
+}
+
+/* The mark, on a plate rather than in a circle — an inventory slot, the same
+   shape the plan cards' icon sits on. */
+.onb-reel-ico {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--accent-lit);
+}
+
+/* Stamped: a 2px hard offset, no blur, which is how a sprite font is drawn. The
+   same treatment the plans section gives its display figures. */
+.onb-reel-card b {
+  margin-top: 0.15rem;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+  text-shadow: 2px 2px 0 rgba(var(--accent-rgb), 0.22);
+}
+
+.onb-reel-card p {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+/* What it pays. Tabular, because it is figures, and set apart because it is the
+   answer to a different question from the rule above it. */
+.onb-reel-meta {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The new game is *selected*, not swept.
+ *
+ * A band used to travel down the plate each time the reel advanced, and it read
+ * as exactly what it was: an object falling across the words somebody had
+ * started reading. The reel already moves — the slide is the transition — so a
+ * second thing moving on top of it is one motion too many, and the one that
+ * moves is the one covering the copy.
+ *
+ * What replaces it does not travel at all. The plate's edge lights hard and
+ * steps back down in three frames, which is the highlight an arcade menu puts
+ * on the row under the cursor: it says *this one now* and it is finished before
+ * the eye has left the name. Nothing crosses the text, nothing falls, and the
+ * only thing that moved is the reel itself.
+ *
+ * `steps(3)` rather than a fade, for the reason everything else in this
+ * register uses it: a smooth ramp is a glow arriving, and a jump is a state
+ * changing. `both` holds the last frame, which is the card's resting edge, so
+ * the animation ends by handing the plate exactly what the rule above gives it.
+ */
+.onb-reel-card {
+  position: relative;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .onb-reel-card[data-on='true'] {
+    animation: onb-reel-select 340ms steps(3, end) both;
+  }
+
+  /* The mark lands with it — one step of scale, no bounce. A game's icon
+     arriving is the smallest possible way to say the card changed. */
+  .onb-reel-card[data-on='true'] .onb-reel-ico {
+    animation: onb-reel-mark 260ms steps(2, end) both;
+  }
+}
+
+@keyframes onb-reel-select {
+  from {
+    border-color: rgba(var(--accent-rgb), 0.8);
+    box-shadow:
+      inset 1px 1px 0 rgba(var(--accent-rgb), 0.4),
+      inset -1px -1px 0 rgba(var(--accent-rgb), 0.18);
+  }
+
+  to {
+    border-color: rgba(var(--accent-rgb), 0.28);
+    box-shadow:
+      inset 1px 1px 0 rgba(var(--accent-rgb), 0.16),
+      inset -1px -1px 0 rgba(var(--accent-rgb), 0.05);
+  }
+}
+
+@keyframes onb-reel-mark {
+  from {
+    transform: scale(0.82);
+  }
+
+  to {
+    transform: none;
+  }
+}
+
+/*
+ * Square dots, and they are the one control in the block.
+ *
+ * Square rather than round because everything else here is drawn on a grid, and
+ * a circle in an arcade panel is the one shape that has to be justified. The
+ * active one widens into a bar the way the Guide carousel's does — same idea,
+ * hard corners.
+ */
+.onb-reel-dots {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: center;
+  gap: 0.32rem;
+  margin-top: 0.7rem;
+}
+
+.onb-reel-dot {
+  width: 7px;
+  height: 7px;
+  padding: 0;
+  border: 0;
+  border-radius: 1px;
+  background: var(--border-2);
+  cursor: pointer;
+  transition:
+    width 320ms var(--ease),
+    background 320ms var(--ease);
+}
+
+.onb-reel-dot[data-on='true'] {
+  width: 20px;
+  background: var(--accent);
+}
+
+.onb-reel-dot:hover {
+  background: var(--accent-ink);
+}
+
+/*
+ * Reduced motion stops the reel dead rather than slowing it.
+ *
+ * The interval is never started in `GameReel` under the preference, so the
+ * track never moves on its own; these two turn off the travel and the sweep for
+ * the presses that still work, because a dot is a control and pressing it must
+ * still change the card.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .onb-reel-track,
+  .onb-reel-dot {
+    transition: none;
+  }
+}
+
+/* ── the reel's furniture ─────────────────────────────────────────────────
+   Three things that turned a plain panel into a cabinet: the game's own mark at
+   art size behind the copy, a numbered slot, and two arrows on the edges. */
+
+/*
+ * Cabinet art.
+ *
+ * The game's icon at 120px, bleeding off the bottom-right corner and clipped by
+ * the plate, at an alpha low enough to read *through*. It is the same glyph as
+ * the badge in the header rather than a second picture, which is the whole
+ * argument for it being there at all: the card carries its subject twice, once
+ * to name it and once because a panel with nothing in the lower right is a form.
+ *
+ * `pointer-events: none` and `aria-hidden` in the markup: it is the same
+ * information as the badge, and a screen reader hearing it twice learns nothing
+ * the second time.
+ */
+.onb-reel-art {
+  position: absolute;
+  right: -1.6rem;
+  bottom: -2.2rem;
+  pointer-events: none;
+  color: rgba(var(--accent-rgb), 0.07);
+}
+
+/* The mark and the slot on one line, so the two lines of copy start at the same
+   height on every card whatever the name does. */
+.onb-reel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+/*
+ * The slot, two digits over two.
+ *
+ * Numerals only, so it needs no dictionary entry and reads the same in five
+ * languages — and a numbered slot is what a shelf of games *is*. Tabular, so
+ * the counter does not shuffle as the reel advances, which is the one thing
+ * that would make it read as a glitch rather than a readout.
+ */
+.onb-reel-slot {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.onb-reel-slot i {
+  margin: 0 0.1em;
+  font-style: normal;
+  color: var(--text-fnt);
+}
+
+/*
+ * The arrows.
+ *
+ * Square plates on the window's edges, drawn like the icon slot: hard corners, a
+ * lit top-left, nothing bottom-right. They sit *on* the card rather than beside
+ * it because the shell is 30rem and a control outside the window would take
+ * width from the copy — the card's right padding is opened to 2.6rem so the
+ * rule never runs under one.
+ *
+ * The left one is the same glyph rotated, because the icon set has one chevron
+ * and a mirrored copy of a symmetrical mark is the same mark.
+ */
+.onb-reel-arrow {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  border-radius: 6px;
+  background: rgba(var(--panel-rgb), 0.72);
+  box-shadow:
+    inset 1px 1px 0 rgba(var(--accent-rgb), 0.18),
+    inset -1px -1px 0 rgba(var(--accent-rgb), 0.05);
+  color: var(--accent-lit);
+  cursor: pointer;
+  transition:
+    background 180ms var(--ease),
+    border-color 180ms var(--ease);
+}
+
+/*
+ * The set's chevron points **down** — `m6 9 6 6 6-6` — so neither arrow is it
+ * unrotated. A quarter turn each way is what makes the pair read as `<` and
+ * `>`; a half turn, which is what was here, produced `^` on the left and left
+ * the right one pointing at the floor.
+ */
+/*
+ * The row is named as well as the column, and that is what puts the arrows
+ * beside the card instead of above it.
+ *
+ * Both buttons come before the window in the DOM. Auto-placement walks the
+ * items in order: prev takes row 1 column 1, next takes row 1 column 3, and the
+ * cursor is then past column 3 — so the window, which asks for column 2, cannot
+ * be placed behind the cursor and is pushed to **row 2**. The result is a row
+ * of two arrows sitting on top of a card, which is exactly what it looked like.
+ *
+ * Naming the row on all three places them before the auto pass runs, and the
+ * DOM keeps the order it wants for its own reasons.
+ */
+.onb-reel-arrow[data-side='prev'] {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.onb-reel-arrow[data-side='prev'] svg {
+  transform: rotate(90deg);
+}
+
+.onb-reel-arrow[data-side='next'] {
+  grid-row: 1;
+  grid-column: 3;
+}
+
+.onb-reel-arrow[data-side='next'] svg {
+  transform: rotate(-90deg);
+}
+
+.onb-reel-arrow:hover,
+.onb-reel-arrow:focus-visible {
+  border-color: rgba(var(--accent-rgb), 0.7);
+  background: rgba(var(--accent-rgb), 0.16);
+}
+
+/* A press that moves a reel should feel like one going down. Not in the
+   transition above, so it lands on the frame it is asked for. */
+.onb-reel-arrow:active {
+  transform: translateY(1px);
+}
+
+/*
+ * The card prints itself.
+ *
+ * The plate's edge still flashes and steps back — the arcade menu highlight —
+ * and now its contents arrive with it, one after another, 70ms apart: the mark
+ * and the slot, then the name, then the rule, then what it pays. That is a
+ * panel being *filled in*, which is the thing an arcade cabinet does and the
+ * thing a card sliding into place does not.
+ *
+ * It is `opacity` and `transform` only, and it is short — the last line has
+ * landed 280ms after the first, well inside the 2.6s the game holds the reel.
+ * Nothing crosses the copy on its way, which is what the swept band it replaced
+ * got wrong.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .onb-reel-card[data-on='true'] > *:not(.onb-reel-art) {
+    animation: onb-reel-line 300ms var(--ease) both;
+  }
+
+  .onb-reel-card[data-on='true'] > *:nth-child(2) {
+    animation-delay: 40ms;
+  }
+
+  .onb-reel-card[data-on='true'] > *:nth-child(3) {
+    animation-delay: 110ms;
+  }
+
+  .onb-reel-card[data-on='true'] > *:nth-child(4) {
+    animation-delay: 180ms;
+  }
+
+  .onb-reel-card[data-on='true'] > *:nth-child(5) {
+    animation-delay: 250ms;
+  }
+
+  /* The art comes up under all of it, once, and slower — it is the backdrop
+     arriving rather than a line of the panel. */
+  .onb-reel-card[data-on='true'] .onb-reel-art {
+    animation: onb-reel-art 520ms var(--ease) both;
+  }
+}
+
+@keyframes onb-reel-line {
+  from {
+    opacity: 0;
+    transform: translate3d(-6px, 0, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes onb-reel-art {
+  from {
+    opacity: 0;
+    transform: translate3d(10px, 10px, 0);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
   }
 }

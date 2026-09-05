@@ -362,6 +362,9 @@ export const consumerRoutes: Route[] = [
            "false" — which every truthiness test in JavaScript gets wrong — does
            not silently give up the round's points. */
         practice: ctx.body.practice === true,
+        /* Chooses an easier flag pool for the welcome round and nothing else
+           -- see `welcome` on `startSession`. Same strict `=== true`. */
+        welcome: ctx.body.welcome === true,
         at: ctx.at,
       }),
   },

@@ -59,6 +59,16 @@ export interface Account {
    * `resolveRoute` holds an individual there until it is.
    */
   onboardedAt: string | null;
+  /**
+   * When the profile first held all seven fields, or `null` if it never has.
+   *
+   * A stamp rather than a boolean derived from the profile, because the grant
+   * behind it is once-only: `isProfileComplete` would go false again the moment
+   * somebody cleared their phone number, and paying on the way back would make
+   * the bonus a faucet. The server keeps the same stamp in
+   * `users.profile_completed_at` and is the record; this is the device's copy.
+   */
+  profileCompletedAt: string | null;
 }
 
 /**

@@ -84,6 +84,17 @@ export interface CallOptions {
   /** Anything that moves value. Generated once per attempt, reused on retry. */
   idempotencyKey?: string;
   signal?: AbortSignal;
+  /**
+   * The reader's language, as `accept-language`.
+   *
+   * The browser sends one of its own, and it is the wrong one: it says what
+   * language the *machine* is set to, and this site's language is whatever the
+   * switcher in the header says. The server reads the header for every piece of
+   * translated content it serves (`copyOf` in `routes/guidance.ts`), so a guide
+   * read by somebody who has switched the site to Ukrainian on an English
+   * laptop would come back in English without this.
+   */
+  language?: string;
 }
 
 export async function call<T>(path: string, options: CallOptions = {}): Promise<T> {
@@ -97,6 +108,7 @@ export async function call<T>(path: string, options: CallOptions = {}): Promise<
         ...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
         ...(options.idempotencyKey ? { 'idempotency-key': options.idempotencyKey } : {}),
+        ...(options.language ? { 'accept-language': options.language } : {}),
       },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: options.signal,

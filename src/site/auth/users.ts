@@ -70,6 +70,10 @@ export interface UserRecord {
    * the wrong reading of a schema change they had no part in.
    */
   onboardedAt?: string | null;
+  /** When the profile first held all seven. Absent on rows that predate it,
+      which `toAccount` reads as `null` -- never having been complete is the
+      true answer for a row written before the field existed. */
+  profileCompletedAt?: string | null;
 }
 
 /**
@@ -455,4 +459,30 @@ export const profilePercent = (profile: UserProfile, email: string): number =>
  * it a reasonable thing to pay for — provided "cannot be done twice" is
  * actually enforced, which is `finishOnboarding` in `AuthProvider`.
  */
-export const WELCOME_POINTS = 100;
+export const WELCOME_POINTS = 50;
+
+/**
+ * What finishing the profile is worth, mirroring `CONFIG.earn.profileComplete`.
+ *
+ * Paid **once**, for the same reason the welcome gift is: a grant that could be
+ * re-earned by deleting a photo and adding it back is not a grant, it is a
+ * faucet. The server says so in `payForACompleteProfile` and enforces it with
+ * an `UPDATE ... WHERE profile_completed_at IS NULL`; this side mirrors the
+ * number so the form can name it *before* it is earned, and stamps
+ * `profileCompletedAt` so a device that is offline still only pays once.
+ *
+ * The server remains the record. Where a token is in hand the balance it
+ * returns wins over the local addition, exactly as `finishOnboarding` does.
+ */
+export const PROFILE_BONUS = 50;
+
+/**
+ * Whether all seven are answered.
+ *
+ * The same seven `profileGaps` counts and the same seven
+ * `isProfileComplete` checks on the server -- `display_avatar`, `username`,
+ * `occupation`, `city`, `email`, `phone`, `birth_date`. Written as "no gaps"
+ * rather than as a second list, so the two cannot fall out of step.
+ */
+export const isProfileComplete = (profile: UserProfile, email: string): boolean =>
+  profileGaps(profile, email).length === 0;

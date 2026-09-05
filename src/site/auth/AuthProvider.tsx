@@ -30,6 +30,8 @@ import {
   type SignUpDraft,
   type SignUpError,
   type UserRecord,
+  PROFILE_BONUS,
+  isProfileComplete,
 } from './users';
 
 const STORAGE_KEY = 'paylez-session';
@@ -164,6 +166,7 @@ function adoptSession(
   else if (type !== null && record.type === null) record.type = type;
   if (record.type === 'individual' && !record.player) record.player = newPlayer();
 
+
   if (existing) patchUser(record.id, record);
   else addUser(record);
 
@@ -227,6 +230,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (live) {
           setPlan(server.plan);
           setEntitlements(server.entitlements);
+          /*
+           * The completion stamp is the server's record, not this device's.
+           *
+           * `users.profile_completed_at` is what the ledger entry was written
+           * against, and it cannot come in on the sign-in response --
+           * `SignedIn.user` carries an id, a name and an address and nothing
+           * else. It arrives here instead, on the `GET /v1/me` this effect
+           * already makes for the plan badge.
+           *
+           * Adopting it matters on a *second* device: without it a player who
+           * finished their profile on a phone signs in on a laptop with a null
+           * stamp, and the first save there adds fifty points the server will
+           * not credit again -- a number on screen that the next state sync
+           * silently takes back. Only ever set *forward*, from null to a date:
+           * a stamp this device has just written is not something a slower
+           * response is allowed to clear.
+           */
+          if (server.user.profileCompletedAt) {
+            setAccount((held) =>
+              held && held.profileCompletedAt === null
+                ? { ...held, profileCompletedAt: server.user.profileCompletedAt }
+                : held,
+            );
+          }
         }
       })
       .catch(() => {
@@ -336,12 +363,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 0) {
-          /* No server. Rather than refuse the sign-up outright, open the
-             account here and let it be reconciled on the next successful
-             sign-in — the id is minted locally and the mirror is all there is
-             until then. This is the one path that still writes a purely local
-             account, and it exists so a dead backend does not read as a broken
-             form. */
+          /*
+           * No server. Rather than refuse the sign-up outright, open the
+           * account here and let it be reconciled on the next successful
+           * sign-in — the id is minted locally and the mirror is all there is
+           * until then. This is the one path that still writes a purely local
+           * account, and it exists so a dead backend does not read as a broken
+           * form.
+           *
+           * **But `taken` still counts here, and ignoring it opened a real
+           * hole.** The check above defers the question to the server on the
+           * argument that whether an address is registered is a fact about the
+           * server's table rather than about this browser. That argument holds
+           * only while there *is* a server to ask. On this path there is not,
+           * and the local directory stops being a weaker answer than the
+           * server's — it becomes the only evidence there is.
+           *
+           * Without this, signing up with an address this browser already
+           * knows minted a *second* row for it: the id carries a timestamp, so
+           * the two never collided, and the directory ended up with two
+           * accounts for one address. `findUser` then answers with whichever
+           * it reaches first, which is a sign-in that lands on an account at
+           * random.
+           */
+          if (problem === 'taken') return { ok: false, error: 'taken' };
+
           const id = `u_${Date.now().toString(36)}_${draft.email.trim().toLowerCase()}`;
           const record = newUser({ ...draft, type: draft.type as ChoosableType }, id, today());
           addUser(record);
@@ -466,6 +512,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          that anywhere on this device. */
       profile: next.profile,
       onboardedAt: next.onboardedAt,
+      /* Persisted for the same reason the stamp above is: it is the only
+         record on this device that the bonus has been paid. */
+      profileCompletedAt: next.profileCompletedAt,
     });
   }, []);
 
@@ -615,7 +664,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 birthDateChangesLeft: Math.max(0, live.profile.birthDateChangesLeft - 1),
               }),
         };
-        const next: Account = { ...live, profile };
+        /*
+         * The profile bonus, claimed once and only on the way *into* complete.
+         *
+         * The server does this in `payForACompleteProfile`, guarded by
+         * `UPDATE ... WHERE profile_completed_at IS NULL` while it holds the
+         * write lock. This is the local half and it needs the same guard for
+         * the same reason: without the stamp, clearing a field and filling it
+         * back in would pay again, and the seven fields are all editable.
+         *
+         * The points are added optimistically. Where a token is in hand the
+         * server has already written the ledger entry inside the same
+         * `PATCH /v1/me` that saved these fields, and the next
+         * `/v1/games/state` reconciles this number against the balance it
+         * returns -- the same arrangement `finishOnboarding` settles for.
+         */
+        const earnsBonus =
+          live.profileCompletedAt === null &&
+          live.player !== null &&
+          isProfileComplete(profile, live.email);
+
+        const next: Account = {
+          ...live,
+          profile,
+          profileCompletedAt: earnsBonus
+            ? new Date().toISOString()
+            : live.profileCompletedAt,
+          player:
+            earnsBonus && live.player
+              ? { ...live.player, points: live.player.points + PROFILE_BONUS }
+              : live.player,
+        };
         commit(next);
         return next;
       });

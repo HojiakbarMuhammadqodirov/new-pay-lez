@@ -218,6 +218,32 @@ export function resolveRoute(route: Route, account: Account | null): Route {
      * it is not locked, it is not theirs.
      */
     if (route === 'analytics') return 'landing';
+
+    /*
+     * Onboarding, for somebody who is not signed in, is the landing page.
+     *
+     * It sat with `profile` in `PRIVATE` and resolved to `signin`, which reads
+     * correctly — the welcome flow belongs to an account — and made the flow's
+     * own Back button do the opposite of what it says. That button signs out
+     * and asks for `#top`; the guard then runs once against the *new* account
+     * and the *old* route, resolves `onboarding` for a null account, and
+     * `location.replace`s `#/sign-in` over the top of it. Pressing "Back" on
+     * the welcome screen landed on the sign-in form.
+     *
+     * The note further down this file says the remedy is to derive the
+     * destination here rather than to set the hash in a handler that also
+     * changes the session, and this is that: signing out of onboarding now
+     * resolves to `landing`, so the guard agrees with the button instead of
+     * overruling it, and the handler needs no navigation at all.
+     *
+     * `analytics` is the precedent one line up — a private route whose
+     * signed-out answer is the marketing page rather than a login, because a
+     * login would not get an anonymous visitor there either. Nobody can sign
+     * *in* to somebody else's welcome flow; there is nothing to offer them but
+     * the front page.
+     */
+    if (route === 'onboarding') return 'landing';
+
     return PRIVATE.includes(route) ? 'signin' : route;
   }
 

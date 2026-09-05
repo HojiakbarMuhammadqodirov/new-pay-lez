@@ -62,6 +62,19 @@ the generators in `scripts/`. `npm run openapi` regenerates
 changing an endpoint and commit what it writes. `npm run server:import`
 re-reads the old database in `new-data/` and exits.
 
+**`npm run dev` reads `.env.development.local`, and that file is why sign-up
+works locally.** `.env.local` is loaded in *every* mode and its own header says
+it holds the **production** values — so `dev` was picking up
+`VITE_API_URL=https://api.pay-lez.com`, every request failed CORS, and
+`api/client.ts` reports an unreachable server as `status === 0`, which is its
+offline path: no token after sign-up, an empty wallet, an empty Play screen and
+purely local accounts. Vite resolves `.env.[mode].local` above `.env.local` and
+only in that mode, so the dev-only override lives there and production is
+untouched. It repeats `VITE_GOOGLE_CLIENT_ID` rather than inheriting it: a
+variable absent from the file Vite actually reads is absent from the bundle, and
+an empty client id makes `googleConfigured()` remove the Google button. Both
+files are gitignored, so a fresh clone has neither.
+
 ## Layout
 
 The site is `src/site/` — one file per route, plus `games/`, `i18n/`, `theme/`
@@ -336,6 +349,29 @@ box are different things rather than differently-decorated ones and no label
 exists to tell them apart. Deciding which of the three you have is the whole
 judgement.
 
+**The plan cards are the fourth answer, and it is texture plus depth rather than
+a fourth hue.** Three tiers have to read as three grades of the same thing — and
+the ask was for Premium to feel like the expensive one — which is exactly the
+case where a colour per card would be easiest and would break the palette. What
+separates them instead is *material*: a pixel grid at different densities
+(`--pixel-a` / `--pixel-c`), a rail and an inset highlight on the two paid
+tiers, and a light that only exists where a hand is. `.sub-field` is one pool of
+it behind the whole section (a 22rem mask following the cursor, brightening the
+ruling when any card is held) and `.sub-glint` is the per-card version — a 1px
+accent border revealed through a 9rem mask anchored to the pointer, so the edge
+lights only where the hand is. Both are driven by `site/pointer.ts`, which
+writes `--sub-x` / `--sub-y` as custom properties on the element rather than
+routing a pointer stream through React, and measures the box on the way in
+because the property written on the previous move dirties style — a
+`getBoundingClientRect` per event forces a synchronous layout a hundred times a
+second, for a light.
+
+Both are `display: none` under `@media (hover: none)`, deleted rather than
+frozen at their default mask position, which would be a bright blob nobody put
+there. And **hover marks these cards, it never lifts them**: the two paid tiers
+take a stronger glow because they have a rail for it to come off, and that is
+the whole of the difference.
+
 **The brand is the word, and the word is `900 21px/1 Onest`.** That is the app's
 own declaration, carried over exactly: `--font-brand` / `--brand-size` in
 `site.css`, and `.brand` is the class every one of them uses — header, footer,
@@ -491,6 +527,19 @@ That is the whole argument, and it is why an empty catalogue is a *feature* —
 every screen that used to demonstrate the seeds now has an empty state that says
 it. Do not helpfully seed any of it back.
 
+**The last seed directory was Relocate's, and it is gone too.**
+`RELOCATE_PROVIDERS` in `content.ts` was twenty-four invented businesses on a
+page that promises somebody three weeks into a new country somewhere to actually
+go, and two of the names were real businesses that had never heard of us. The
+section reads `GET /v1/guide/categories` and `GET /v1/guide/services` now
+(`api/guide.ts`, split from `api/consumer.ts` because both are `auth: 'none'` and
+mixing them with calls that need a session hides which is which). What is *not*
+in the new cards is as much of the point: the seed rows carried a `languages`
+field — "somebody here speaks Ukrainian", the single most useful thing on the
+card — and `guidance_services` has no such column, so the card no longer claims
+it. Inventing the one attribute the real data lacks is how the directory got
+fictional in the first place.
+
 **Who is signed in decides what exists, and the rule is one pure function.**
 `resolveRoute(route, account)` in `router.ts` is the whole access policy: an
 individual has no Business, Analytics, dashboard or setup; an owner with no listing
@@ -509,12 +558,58 @@ that accepted what the server refuses works until the day the two halves are
 wired together. It is the one private route an operator keeps: the console
 replaces the partner screens because an admin has no venue, and it does not
 replace their own name and city. **`#/welcome`** (`onboarding.tsx`) is the third
-frame — language, three rounds of flags, the payoff — and `resolveRoute` holds a
-new player *there from every route*, which is why it has no header: a nav above
-a gate is a bar whose every link bounces straight back. Its questions come
+frame — language, an offer, five rounds of flags, the payoff — and `resolveRoute`
+holds a new player *there from every route*, which is why it has no header: a nav
+above a gate is a bar whose every link bounces straight back. Its questions come
 through `games/bag.ts` out of the real 196-row flag bank, so they are translated
-and they are three the player will not be asked again; the welcome gift is paid
-for **finishing it**, not for opening an account. `Site` resolves the route *during render*, so a page this account may
+and they are five the player will not be asked again; the welcome gift is paid
+for **finishing it**, not for opening an account.
+
+**The first hundred points are two halves and the screen says so.** The gift is
+`CONFIG.points.onboarding` (50) for turning up, and the round is
+`welcomeRoundPerCorrect` (10) × five — so five right is 100, none right is 50,
+and both numbers can be named because they are separate. Ten rather than the
+quiz's one, and paid with **no sweep or speed bonus**, because this is the round
+the welcome screen offered fifty points for and a total the offer did not name is
+a total that contradicts it. The rate is not a rate a client can ask for:
+`finishSession` decides it from the server's own secret **and** from this being
+the player's first finished round.
+
+Three things about that screen are load-bearing and easy to undo. The questions
+are drawn from a **vetted easy set** (`WELCOME_FLAGS` on the server,
+`EASY_FLAGS` on the client) rather than from the whole bank — the first thing a
+new account is asked should not be a flag nobody knows, and the codes are
+case-folded on the way in because the bank stores them lower-case and an
+un-folded set matched **0 of 196**. **Skip opens the next question**, it does not
+end the round: a player who cannot place one flag has four more chances at ten
+points each, and skipping simply earns nothing. And an anonymous visitor who
+asks for `#/welcome` goes to `landing`, not to `signin` — there is nothing to
+sign into yet, and a gate that bounces a stranger to a password form is a gate
+with the wrong door on it.
+
+**The profile pays for being finished, and the meter moves while you type.**
+`CONFIG.points.profileComplete` (50) lands once, and the front end draws the
+prize *above* the form (`.prof-prize`) rather than as a line under it, because a
+reward nobody notices changes nobody's behaviour. The meter is derived from the
+**draft** — what is in the fields right now — so it rises as they are filled and
+falls when one is cleared; a meter computed from the saved record is a meter that
+only moves after the thing it is measuring has already happened. Completion
+arrives as a notification pinned to the top of the screen (`.prof-won`), not as a
+row that scrolls past. Note the three states the code has to distinguish, which
+is why completeness is judged on the draft and payment is not: complete-and-paid,
+complete-and-not-yet-paid (the moment between the save and the commit), and
+incomplete-but-paid — a profile can be emptied after the fifty is banked, and the
+fifty is not clawed back.
+
+**An email is folded before it is compared.** Signing up again with an address
+that already had an account minted a *second* account, because the two strings
+differed by a space, a case or an invisible control character.
+`normalizeEmail` in `signin.tsx` is module-scope and does the folding for both
+the sign-in and the sign-up path, so there is one answer to "is this the same
+person" rather than two. It strips the C0 control range and DEL, which needs an
+`eslint-disable-next-line no-control-regex` — the lint rule is right in general
+and wrong here: a pasted address is exactly where a stray control character
+comes from. `Site` resolves the route *during render*, so a page this account may
 not see never mounts for a frame, and corrects the address bar in an effect
 afterwards.
 
@@ -568,9 +663,15 @@ question for the server (`GET /v1/admin/users`, which the console's People tab
 reads), and this store answers only *what this browser knows about them*. The
 API token is a **third** key, `paylez-api-token` (`api/client.ts`) — a pointer
 rather than a credential store, dropped the moment the server says it is no
-longer valid. All three reads are wrapped in `try`, because storage throws in a
-private window with cookies blocked and a console that cannot open is worse than
-one that cannot remember.
+longer valid. There is a **fourth**, `savedPairs.ts`: the currency pairs a reader
+has pinned on Relocate, deliberately not on the server, because there is no
+endpoint for it, the guide is readable with no account at all — which is that
+page's whole pitch — and "the rates I check" is a per-device convenience rather
+than a record. It exists because the card was already claiming it: the chips were
+labelled "Saved pairs" and nothing was saved, which is the honesty rule the
+partner dashboard states, failing quietly on a marketing page. Every read is
+wrapped in `try`, because storage throws in a private window with cookies blocked
+and a console that cannot open is worse than one that cannot remember.
 
 **Sign-up asks which kind of account it is; sign-in does not.** The question is
 answered *before* the account exists, so nothing new is ever created in the
@@ -779,6 +880,60 @@ let a player grind all evening and never see a third of it. Anything that can
 renumber the rows has to invalidate the bag — the key encodes the pool size for
 that reason, and missing translations are filled at build time so an index means
 the same question in every language.
+
+**Responsive is a measurement, not a breakpoint you liked.** Four things this
+sheet learned the hard way, all of them checked headlessly in Chrome with the
+viewport and the pointer emulated rather than by looking at a narrow window:
+
+- **A fluid clamp with a floor is not fluid.** `clamp(2.5rem, 5.4vw, 4.4rem)`
+  stops moving below 741px — the floor wins — so a 360px phone and a 768px
+  tablet were set in the same 40px, which is what "telefon planshet
+  versiyalarida bir xil text" was. The form to reach for is the two-point
+  `clamp(min, REM + VW, max)`, fitted through the existing desktop value so the
+  wide end is unchanged and only the small end moves.
+- **`--tap: 44px`, and the touch rules key off `pointer: coarse`, not width.**
+  A small laptop window is the same width as a tablet and has none of the
+  problem; the on-screen keyboard is the trigger, not the screen. That is why
+  the field kit goes to `1rem` under `pointer: coarse` — anything under 16px
+  makes iOS zoom the page on focus and leaves the visitor on a page 1.3× too
+  wide with no obvious way back — and why a control smaller than the token grows
+  its target with a `::before` rather than its box, so the drawn size stays the
+  designed one.
+- **Vertical rhythm measured in `vh` is backwards once the page is one column.**
+  `.guide` reserved `100dvh` for ~600px of content and `.section` paid 12vh at
+  each end — 246px between two sections on a tablet — so a taller phone got
+  *more* air around less content. The `@media (max-width: 820px)` block takes
+  both back to a clamp.
+- **A backdrop that is hidden on a phone is not responsive, it is absent.** The
+  fix is damping: `.site__web` to 0.62 in that same block, `.site__globe` to 0.4
+  because lit coastlines with bloom on them are far brighter than four canvases
+  drawing hairlines, and the L-Earn platformer to 0.42 via
+  `.site[data-route='learn']` because it is the one backdrop that draws *filled*
+  shapes and the stats row lands on the block run. Same rule `--glass` states
+  for cards: text wins.
+
+**A hover implies a press, and a press has to exist.** There were four `:active`
+rules in the whole sheet and none on `.btn` — every button lifted toward the
+cursor and then did nothing when clicked. `.btn:active:not(:disabled)` is down
+and smaller at 40ms, because that is what a physical button does and because a
+press is instant; `.btn:disabled` clears the lift and the glow, since
+`.btn-solid:hover` has no `:not(:disabled)` and a submit waiting on a request
+still rose. Three more controls got the interaction they were missing: the
+burger (the one control a phone cannot browse this site without, and not a
+`.btn`, so it needs its own), the carousel dots (eight identical marks with
+nothing to say which one a click would take — hover previews *half* the selected
+width, not the accent, which would claim it was already selected), and the two
+"more" links, whose arrow **travels on a transform** while the `gap` stays put:
+animating `gap` relayouts the flex line every frame for exactly the picture the
+compositor gives free.
+
+Two mechanical notes. **The `@media (hover: none)` guard drops movement only**,
+never the colour and border changes — on a list you have just tapped, "this is
+the one you touched" is useful rather than stuck — and because it is written
+once against a list of selectors at the same specificity, **it has to stay below
+every rule it guards.** And `prefers-reduced-motion` gets its own branch:
+`.learn-back`'s glyph is a *mirrored* arrow, so clearing its transform points it
+the wrong way; the reduced branch keeps the mirror and drops the travel.
 
 **Namespace new component classes, and grep before you name one.** `site.css` is
 one 6,000-line sheet with no scoping, and three separate collisions have already
@@ -1072,30 +1227,38 @@ bundled, the flag font copied into `public/`), geometry comes from the
 - **The globe belongs to the landing page, and to nothing else now.** Relocate
   had it on the argument that the page was about a border being crossed; it is
   not — it is a guide to where you have already arrived, plus a currency
-  converter, and it takes `.site__rings`, CSS contour rings that mean distance
-  from where you are standing. Contact had it next, on the better argument that
-  "reachable from anywhere" is the one other thing the globe honestly says — and
-  lost it when the page became a single screen. A fixed backdrop needs a page
-  long enough to scroll it out of the hero pose; a one-section form is not one,
-  and a pinned globe sits straight on top of it. The document's single WebGL
-  context is spent on at most one route at a time.
+  converter — and it has had three backdrops since: CSS contour rings meaning
+  distance from where you are standing, a street map in plan, and now
+  `city/CityRise`. (`.site__rings` is gone from `site.css` with the second of
+  those: a rule nothing mounts is a rule the next person has to read before
+  finding out it does nothing.) Contact had the globe next, on the better
+  argument that "reachable from anywhere" is the one other thing the globe
+  honestly says, and lost it when the page became a single screen.
+
+  **That last argument is about the globe, not about backdrops**, which is why
+  Contact has one again. What a one-section page cannot support is a **scroll
+  transition** — it needs enough page below the fold to retire the hero pose
+  through, and without it the globe sits pinned straight on top of the form. A
+  flat canvas has no hero pose and no transition; it is a layer, and a layer
+  over one screen is what a layer is for. The document's single WebGL context is
+  still spent on at most one route at a time.
 - **The backdrop is per route, and one route per backdrop.** Landing gets the
-  globe (the only WebGL one); L-Earn gets the platformer (`level/`), Analytics
-  the node web (`network/`), Business **and Business setup** the candle tape
-  (`market/`) and Vouchers the drifting stubs (`stubs/`) — all four canvas-2D,
-  all on `.site__web`; Relocate keeps CSS rings (`.site__rings`), and Contact,
-  Privacy, Terms and **Profile** have none at all. Business setup shares the
-  tape because describing your venue is the first move in the thing the tape
-  already means; the profile has none because its subject is somebody's own
-  name, city and photograph, which no backdrop here is a picture of.
-  `Site.tsx` renders exactly one, and that is what makes five
-  components affordable: the document holds at most one backdrop context at a
+  globe (the only WebGL one); L-Earn the platformer (`level/`), Analytics the
+  node web (`network/`), Business **and Business setup** the candle tape
+  (`market/`), Vouchers the drifting stubs (`stubs/`), Relocate the city rising
+  (`city/`) and Contact the street map (`streets/`) — all six canvas-2D, all on
+  `.site__web`; Privacy, Terms and **Profile** have none at all. Business setup
+  shares the tape because describing your venue is the first move in the thing
+  the tape already means; the profile has none because its subject is somebody's
+  own name, city and photograph, which no backdrop here is a picture of.
+  `Site.tsx` renders exactly one, and that is what makes seven components
+  affordable: the document holds at most one backdrop context at a
   time, plus the controller's on L-Earn. Rendering two at once costs a second
   context on that page; browsers cap how many a document may hold and start
-  dropping the oldest. The four 2D backdrops share one construction — props for
+  dropping the oldest. The six 2D backdrops share one construction — props for
   `primaryColor`/`tone`, a config file, nothing per-frame through React state,
   a one-frame still under `prefers-reduced-motion` — so read one before writing
-  a fifth. **L-Earn's used to be keyed to the session** — the arcade trail signed
+  a seventh. **L-Earn's used to be keyed to the session** — the arcade trail signed
   out, the platformer signed in — and is not any more: the platformer is the
   page's promise in the one grammar nobody has to be taught, which is *more*
   use to a visitor who has not signed up than to a player who has. The arcade
@@ -1106,6 +1269,71 @@ bundled, the flag font copied into `public/`), geometry comes from the
   sits *on top of it* — Contact's form was unreadable under a pinned one for
   exactly as long as it took to look. Give the page an anchor at its **third**
   section (`scrollAnchorId` in `Site.tsx`) and let the globe retire into the arc.
+- **The globe's frame is the camera's, and CSS must not restate it.**
+  `resolveLayout` sizes the globe by moving the camera, not by scaling the mesh
+  or the canvas — that is what keeps arc altitude, ribbon width and border
+  offset in world units across both poses. So `.site__globe` and `.site__web`
+  get `position`, `inset`, `z-index` and `pointer-events`, and **nothing else**.
+
+  Three rules that pinned the canvas instead shipped here and between them they
+  are the whole of "the globe is standing at the edge":
+  `.site__globe canvas { position: absolute; right: 0; bottom: 0; height: 60vh;
+  width: auto }` overwrote every number the layout resolved, and two media
+  queries — one at 1160px, one at 480px — `display: none`'d the globe *and all
+  six 2D backdrops* on every phone and tablet. Sizing a self-measuring canvas
+  from the stylesheet is also the compounding-measure bug two bullets down: R3F
+  measures with `getBoundingClientRect`. If the globe is in the wrong place, the
+  fix is in `geo/layout.ts`. If it is too loud, see the damping rule under
+  Conventions — a backdrop that is hidden on a phone is not responsive, it is
+  absent.
+- **The globe's two responsive framings are measured, not constant.** Both exist
+  because a constant that is right on one phone is wrong on the next.
+
+  **Portrait, hero pose:** the copy stacks above the globe and the globe sinks
+  into the slot left under it. `RESPONSIVE.portraitCopyDepth` says where that
+  copy ends as a *fraction* of viewport height, and the copy is a headline, a
+  lede, two buttons and a stat row — a roughly fixed **pixel** height, so the
+  fraction it occupies moves with the screen. The constant is right at 390×844
+  and puts the globe 90px into the stats at 360×780. `site/heroFloor.ts`
+  measures the real floor and publishes it through the `focusStore`
+  construction (`useSyncExternalStore`, not a prop threaded through `Hero`);
+  `resolveLayout` takes it as a `copyDepth` **parameter defaulting to the
+  constant**, so every existing caller and every check in `verify-geo.ts`
+  resolves exactly as it did.
+
+  **Narrow, end pose:** framed by height alone the disc is 133% of it, which is
+  1123px across a 390px screen — a wall behind the bottom of every screenful
+  rather than a horizon under it. Fitting it to the width exactly is the obvious
+  correction and it overshoots the other way: 30% of a disc 0.46
+  viewport-heights across is a cap 14% of the screen tall, a smear of glow along
+  the bottom edge. So below `SCROLL.end.narrowWidth` **both** numbers move —
+  diameter is the viewport width × `widthOverhang` (1.3), and
+  `visibleFractionNarrow` (0.42) puts the cap back at about a quarter of the
+  height. The overhang is the point rather than a tolerance: an edge that runs
+  off both sides is a curve, an edge that stops short of them is an object. And
+  the fraction stays **under a half** — past that the widest point of the disc
+  is on screen and the silhouette curls back in at the bottom, which reads as a
+  ball resting on the edge. Wide screens are untouched: the branch is on width,
+  and `aspect × 1.3` exceeds 1.33 on every landscape ratio anyway, so they get
+  the exact 30% / 40% framing `README.md` argues for. `verify-geo.ts` checks
+  both framings, that the cap never exceeds `heightCoverage` whichever applied,
+  and that the centre stays below the fold.
+- **Never guard `overflow-x` on `html` or `body`.** `index.css` sets
+  `html, body, #root { height: 100% }`, and `overflow-x` on a full-height `body`
+  makes **body** the scroll container: `documentElement.scrollHeight` collapses
+  to one viewport and `window.scrollY` never moves again. Everything that reads
+  it is then looking at a page that, as far as it can tell, does not scroll —
+  the globe's scroll transition, the `data-reveal` scan, `scrollIntoView`, and
+  every headless measurement of any of them. `overflow-x: clip` on `html` is the
+  other version of the same trap and is worse: `clip` on one axis forces the
+  other to `clip` too, so the document stops scrolling outright.
+
+  Cut the axis where it actually overflows instead. `.carousel` and `.marquee`
+  both take `overflow-x: clip` on the element whose transformed track is three
+  screens wide — `clip` rather than `hidden` because `hidden` opens a scroll
+  port and focusing an offscreen card then desynchronises the track from
+  `--index`. Both have been checked: `scrollWidth === innerWidth` on six routes
+  at 360, 390, 768 and 1440.
 - **Each backdrop has to *mean* something, or it is wallpaper.** The globe is a
   border being crossed; the node web behind Analytics is the customer base being
   measured (drifting points that link to each other — it moved there from L-Earn,
@@ -1116,9 +1344,22 @@ bundled, the flag font copied into `public/`), geometry comes from the
   Vouchers are the tickets themselves, notched and tear-lined, settling into a
   wallet; the platformer behind L-Earn is the page's promise in the one grammar
   nobody has to be taught — a runner breaks blocks, takes a power-up out of a
-  lucky box, grows, and leaves down a pipe, which is play, get bigger, cash out.
+  lucky box, grows, and leaves down a pipe, which is play, get bigger, cash out;
+  the city rising behind Relocate is an unfamiliar place becoming known, blocks
+  standing up in a wave with always more of it beyond the horizon than you have
+  learnt; the street map behind Contact is the route to reach us, an avenue
+  reaching out with side-streets off it and landmarks lighting where it arrives.
   They are different pictures on purpose. A new one that is "the node web but
   different particles" is a reason not to add it.
+
+  **The last two are the rule working, and it is worth reading them in order.**
+  The street map drew itself on *Relocate* for an afternoon and said the right
+  sentence in the wrong medium: a place becoming legible is areas and volumes,
+  and hairlines on black are a wiring diagram with no mass and nothing a page
+  can stand on. So Relocate got the volumes and Contact got the lines, because
+  on Contact the subject genuinely *is* a route. Same drawing, and only one of
+  the two routes was ever right for it — which is what "one route per backdrop"
+  is actually about.
 
   **A candle says direction with a fill, not a hue.** Green and red are not
   available here, so an up candle is solid and a down candle is hollow — the

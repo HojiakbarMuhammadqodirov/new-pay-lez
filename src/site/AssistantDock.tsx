@@ -19,7 +19,21 @@ import { PATHS } from './router';
  * The screen is a panel *over* the page rather than a route or a column beside
  * it — the assistant is something you consult while reading, so sending someone
  * to a different address to ask a question loses the thing they were asking
- * about. It slides in from the same corner as the button that opened it.
+ * about. It grows out of the button that opened it, in the corner that button
+ * sits in.
+ *
+ * **It is not modal, and it used to be.** It was a full-height drawer down the
+ * left edge under a 42%-black scrim with the page behind it blurred and trapped
+ * — which is the shape of an *alert*: something that has interrupted you and
+ * must be dealt with before the page comes back. That contradicted the sentence
+ * above it. You consult an assistant *while* reading, and a panel that blacks
+ * out the thing you were reading has taken away the reason you opened it.
+ *
+ * So: a card in the corner, the page live behind it, no scrim, no focus trap
+ * (`aria-modal` is gone with it — a non-modal dialog that claimed to be modal
+ * would be lying to a screen reader). Escape closes it, the cross closes it, the
+ * button toggles it, and focus goes back to the button every time. A press on
+ * the *page* deliberately does not close it — see the note in the effect.
  *
  * Button and panel are one component with one piece of state rather than two
  * components and a context: they are siblings that only ever talk to each
@@ -40,7 +54,7 @@ interface Turn {
 
 /* ───────────────────────────────────────────────────────────── the thread ── */
 
-function Thread({ turns, tag }: { turns: Turn[]; tag: string }) {
+function Thread({ turns, note }: { turns: Turn[]; note: string }) {
   const endRef = useRef<HTMLDivElement>(null);
 
   // Keep the newest turn in view as the thread grows.
@@ -52,8 +66,12 @@ function Thread({ turns, tag }: { turns: Turn[]; tag: string }) {
     <div className="ai-thread">
       {turns.map((turn) => (
         <div className="ai-turn" key={turn.id} data-from={turn.from}>
-          {turn.from === 'bot' && <span className="ai-tag">{tag}</span>}
           <p>{turn.text}</p>
+          {/* Under the reply, not over it, and set as a footnote rather than as
+              a bordered uppercase chip. The disclosure is the same; what changed
+              is that the panel no longer opens with a warning label as the first
+              thing in it. */}
+          {turn.from === 'bot' && <span className="ai-note">{note}</span>}
         </div>
       ))}
       <div ref={endRef} />
@@ -138,17 +156,50 @@ function Panel({ onClose, titleId }: { onClose: () => void; titleId: string }) {
     [copy.assistantPanel.stubReply],
   );
 
+  /*
+   * Signed out: the same panel, showing what it is for.
+   *
+   * It was a centred icon, a heading, a sentence and a button — the layout of a
+   * permission dialog, which is exactly the thing this panel was accused of
+   * being. It reads as a wall in front of a feature nobody has seen. Now the
+   * suggestions are visible (they *are* the pitch — three questions this thing
+   * can answer), the composer is where it will be, and the sign-in row is the
+   * last thing rather than the only thing.
+   */
   if (!account) {
     return (
-      <div className="ai-body ai-locked">
-        <span className="ai-lock-ico">
-          <Icon name="bot" size={26} strokeWidth={1.7} />
-        </span>
-        <h2 id={titleId}>{copy.assistantPanel.lockedTitle}</h2>
-        <p>{copy.assistantPanel.lockedBody}</p>
-        <a className="btn btn-solid" href={PATHS.signin} onClick={onClose}>
-          {copy.assistantPanel.lockedAction}
-        </a>
+      <div className="ai-body">
+        <div className="ai-greet">
+          <h2 id={titleId}>{copy.assistantPanel.lockedTitle}</h2>
+          <p>{copy.assistantPanel.lockedBody}</p>
+        </div>
+
+        <div className="ai-foot">
+          {/*
+            Links, not decorated spans.
+
+            These were `<span className="chip">` inside an `aria-hidden` wrapper:
+            pixel-identical to the chips a signed-in reader presses, and inert.
+            That is the "picture of a control" this repo's own rule forbids, and
+            the rule is at its sharpest here — a question you are *invited* to
+            ask, that does nothing when you ask it, is the panel demonstrating
+            the opposite of what it claims to do.
+
+            They go where the button under them goes. Pressing a question is a
+            reader saying "I want to ask this", and sign-in is the honest next
+            step for it.
+          */}
+          <div className="chips ai-suggestions">
+            {copy.assistantPanel.suggestions.map((suggestion) => (
+              <a className="chip" key={suggestion} href={PATHS.signin} onClick={onClose}>
+                {suggestion}
+              </a>
+            ))}
+          </div>
+          <a className="btn btn-solid ai-signin" href={PATHS.signin} onClick={onClose}>
+            {copy.assistantPanel.lockedAction}
+          </a>
+        </div>
       </div>
     );
   }
@@ -170,7 +221,7 @@ function Panel({ onClose, titleId }: { onClose: () => void; titleId: string }) {
           <h2 id={titleId} className="visually-hidden">
             {copy.assistantPanel.title}
           </h2>
-          <Thread turns={turns} tag={copy.assistantPanel.stubTag} />
+          <Thread turns={turns} note={copy.assistantPanel.stubTag} />
         </>
       )}
 
@@ -222,52 +273,27 @@ export function AssistantDock() {
     if (!open) return;
 
     const onKey = (event: globalThis.KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        close();
-        return;
-      }
-      if (event.key !== 'Tab') return;
-
-      /*
-       * The trap, and it is what `aria-modal="true"` on the panel below is
-       * promising. The dock is a *sibling* of `<main>`, the header and the
-       * footer (see `Site.tsx`), so without this, Tab out of the composer walks
-       * straight into the page — content the panel has just told assistive tech
-       * does not exist. The scrim hides it from a pointer and from a screen
-       * reader; only the keyboard could still reach it.
-       *
-       * A live query rather than a list captured on open: the panel's contents
-       * change as the conversation grows, and a stale list would trap focus on
-       * buttons that are no longer there. `:not([disabled])` because the send
-       * button spends most of its life disabled, and it would otherwise be the
-       * boundary the wrap lands on.
-       */
-      const panel = panelRef.current;
-      if (!panel) return;
-      const focusable = panel.querySelectorAll<HTMLElement>(
-        'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusable.length === 0) return;
-
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-
-      /* Focus may be on the panel itself (it is `tabIndex={-1}` and is focused
-         on open) or, if something outside stole it, out of the panel entirely.
-         Both are handled by treating "not on the edge we are moving away from"
-         as the ordinary case and letting the browser move. */
-      if (event.shiftKey && (active === first || active === panel)) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && active === last) {
-        event.preventDefault();
-        first.focus();
-      } else if (!panel.contains(active)) {
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-      }
+      if (event.key === 'Escape') close();
     };
+
+    /*
+     * **A press on the page does not close it**, and that is the whole reason
+     * this panel stopped being modal.
+     *
+     * An outside-press handler was here, inherited from the scrim it replaced,
+     * and it undid the change: the panel exists so you can consult it *while
+     * reading*, and dismissing it on any press means selecting a word, following
+     * a link or tapping a card takes it away mid-question. A scrim closing on a
+     * press is right — the scrim is a "get out of the way" target and nothing
+     * else. A live page is not one.
+     *
+     * Three ways out is already one more than most things here get: the cross in
+     * the header, Escape, and the button, which toggles.
+     *
+     * There is deliberately **no focus trap** either. Tab out of the composer
+     * and you are in the page, which is correct for a non-modal dialog and is
+     * the point of this one: the page is still there to be read.
+     */
     document.addEventListener('keydown', onKey);
 
     // Move focus into the panel so the composer is one Tab away, not thirty.
@@ -284,43 +310,38 @@ export function AssistantDock() {
         className="assistant-fab"
         aria-label={copy.assistant}
         aria-expanded={open}
-        onClick={() => setOpen(true)}
+        /* Toggles, because there is no scrim to press any more and the button
+           is the thing the panel visibly came out of. */
+        onClick={() => (open ? close() : setOpen(true))}
       >
         <Icon name="bot" size={24} strokeWidth={1.9} />
       </button>
 
       {open && (
-        <>
-          {/* The scrim closes on click and is inert to a screen reader — the
-              dialog below carries the semantics. */}
-          <div className="ai-scrim" onClick={close} aria-hidden />
-
-          <div
-            ref={panelRef}
-            className="ai-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby={titleId}
-            tabIndex={-1}
-          >
-            <div className="ai-head">
-              <span className="ai-title">
-                <Icon name="bot" size={18} strokeWidth={1.9} />
-                {copy.assistantPanel.title}
-              </span>
-              <button
-                type="button"
-                className="ai-close"
-                onClick={close}
-                aria-label={copy.assistantPanel.close}
-              >
-                <Icon name="chevron" size={17} strokeWidth={2.2} />
-              </button>
-            </div>
-
-            <Panel onClose={close} titleId={titleId} />
+        <div
+          ref={panelRef}
+          className="ai-panel"
+          role="dialog"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+        >
+          <div className="ai-head">
+            <span className="ai-title">
+              <span className="ai-title-dot" aria-hidden />
+              {copy.assistantPanel.title}
+            </span>
+            <button
+              type="button"
+              className="ai-close"
+              onClick={close}
+              aria-label={copy.assistantPanel.close}
+            >
+              <Icon name="close" size={15} strokeWidth={2.4} />
+            </button>
           </div>
-        </>
+
+          <Panel onClose={close} titleId={titleId} />
+        </div>
       )}
     </>
   );

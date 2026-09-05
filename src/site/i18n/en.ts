@@ -116,6 +116,7 @@ export const en = {
     typeHint: 'Choose one to continue.',
 
     signOut: 'Sign out',
+    cancel: 'Cancel',
     accountMenu: 'Your account',
     dashboard: 'Dashboard',
     roles: { individual: 'User', business: 'Business', admin: 'Admin' },
@@ -584,7 +585,9 @@ export const en = {
        note in `AssistantDock.tsx`. */
     stubReply:
       'The assistant is not connected to a model in this build, so I cannot answer that yet. Everything around this message — the thread, the composer, your account — is real and working.',
-    stubTag: 'Not connected',
+    /* A footnote under each reply, not a chip over it — see `.ai-note`.
+       So it is a sentence now rather than a label. */
+    stubTag: 'No model is connected in this build.',
   },
 
   /* ────────────────────────────────────────────────────────────── wallet ── */
@@ -3294,8 +3297,26 @@ export const en = {
       swap: 'Swap the two currencies',
       result: '{from} = {to}',
       enter: 'Type an amount to convert.',
-      saved: 'Saved pairs',
-      savedNote: 'Pinned to the top of the screen, so a rate check is one tap rather than a search.',
+      /*
+       * Two rows and two different claims, which is the point.
+       *
+       * `saved` sits over the pairs this reader pinned and `common` over the
+       * four the card offers everyone reading in this language. One label used
+       * to cover the second row while saying the first, which is a promise with
+       * no store behind it — see the header of `savedPairs.ts`.
+       *
+       * `savedNote` went with it: it said the pairs were "pinned to the top of
+       * the screen", which is now true and is demonstrated by the row rather
+       * than asserted under it, and nothing had ever rendered the string.
+       */
+      saved: 'Your pairs',
+      common: 'Most used',
+      /* The toggle under the two amounts. `pinned` is a state, not a
+         confirmation — it is what the button says while the pair is up there,
+         and pressing it again takes it down. */
+      pin: 'Pin this pair',
+      pinned: 'Pinned',
+      unpin: 'Unpin {pair}',
       /* The picker. `pick` is read out by a screen reader with the chosen
          currency after it, so it is a noun phrase rather than a sentence. */
       pick: 'Currency',
@@ -3345,30 +3366,34 @@ export const en = {
 
     guide: {
       eyebrow: 'Help and guidance',
-      title: 'Nine subjects. Open one.',
-      lede: 'Housing and paperwork lead, because the first month is about those two. Each opens into the places that handle it, filtered to your city.',
+      title: 'Pick a country. Open a subject.',
+      lede: 'The guide is written per country, and each subject opens into the places that actually handle it — with their address, their phone number and whichever of them are on Paylez.',
+      /* The two filters' own labels, read out rather than shown — the flag, the
+         map pin and the chosen value are the visible half. */
+      country: 'Choose a country',
       cities: 'All cities',
-      /* The filter's own label, read out rather than shown — the map pin and the
-         chosen city are the visible half. */
       city: 'Filter by city',
       count: '{n} places listed',
-      speaks: 'Speaks',
       /* A city with nothing under this subject *yet*, and a subject with nothing
          under it anywhere. Two different sentences, because "nothing in Gdańsk"
          and "nothing at all" are different things to be told. */
       none: 'Nothing under this in {city} yet. Try all cities.',
       soon: 'This one is still being written. The assistant below can answer in the meantime.',
-      items: [
-        { name: 'Places', blurb: 'Shops, restaurants and services worth the trip' },
-        { name: 'Banking & finance', blurb: 'Accounts, cards, credit and what an IBAN is for' },
-        { name: 'Housing', blurb: 'Finding a flat, deposits, contracts and registration' },
-        { name: 'Healthcare', blurb: 'Insurance, registering with a clinic, emergencies' },
-        { name: 'Legal & visa', blurb: 'Permits, residency, renewals and the documents behind them' },
-        { name: 'Employment', blurb: 'Finding work, contracts and the rights that come with them' },
-        { name: 'Education', blurb: 'Schools, universities, language courses and recognition' },
-        { name: 'Transport', blurb: 'Tickets, passes, licences and getting around' },
-        { name: 'Culture & integration', blurb: 'Language, customs, holidays and finding people' },
-      ],
+      /*
+       * The three states of a read, and they are three on purpose.
+       *
+       * `empty` is a true and useful answer — a country whose guide nobody has
+       * written yet — and `failed` is not an answer at all. Rendering one as the
+       * other is the lie the console's `loading | ready | error` union exists to
+       * prevent, and this page has the same reason for it.
+       */
+      loading: 'Fetching the guide…',
+      empty: 'The guide has nothing for this country yet. Pick another, or ask below.',
+      failed: 'We could not reach the guide just now. Nothing has gone missing — try again in a moment.',
+      /* A directory listing that is also a Paylez venue: the same place further
+         along, with tiers and a stamp card behind it. */
+      onPaylez: 'On Paylez',
+      visit: 'Website',
     },
 
     countries: {
@@ -3610,6 +3635,11 @@ export const en = {
     /* The percentage sits inside the sentence: "60% answered" and "wypełnione w
        60%" do not agree about which side of the word the figure goes. */
     meterProgress: '{pct}% answered',
+    meterReward: 'Fill all seven and earn {points} points.',
+    meterRewardPaid: '{points} points earned for finishing it.',
+    wonTitle: 'Profile complete',
+    wonBody: 'Nice one. {points} points are in your balance.',
+    wonClose: 'Great',
     /* Keyed by `ProfileField`, so a field added to the form is a build error
        here rather than a blank row in the panel beside it. */
     fieldNames: {
@@ -3680,6 +3710,28 @@ export const en = {
       'Points come from playing and from turning up at the venues in your city. They do not expire — they wait for you.',
     payGo: 'Start playing',
     payProfile: 'Finish your profile first',
+    /* The way out of the round. Quiet on purpose -- the alternative, not the offer. */
+    /* The offer, shown before the first flag. `{n}` is the question count and
+       `{points}` the round's total -- both summed from `ROUND_POINTS`, so the
+       promise and the payout are one number. */
+    introTitle: 'Win your first points',
+    introLede: 'Answer {n} questions about flags and earn up to {points} points. Skip any you do not know — a skipped question just pays nothing.',
+    introGo: 'Next',
+    gameSkip: 'Skip this question',
+    /* The payoff screen's offer of the rest of the product. `{n}` is a count
+       of the other games, filled from `GAMES` so the number cannot drift. */
+    moreTitle: '{n} more games are waiting',
+    moreLede: 'Quizzes, word puzzles, memory and a flight run — all of them pay points, all of them are in L-Earn.',
+    moreGo: 'See the games',
+    /**
+     * The reel's two arrows, read out rather than shown.
+     *
+     * Both are `aria-label`s on buttons whose visible content is a chevron, so
+     * these are the only words a screen reader gets for them — which is exactly
+     * why they are dictionary copy and not typed into the component.
+     */
+    reelPrev: 'Previous game',
+    reelNext: 'Next game',
   },
 
   /* ─────────────────────────────────────────────────────── subscription ── */
@@ -3743,7 +3795,29 @@ export const en = {
      * still lives in the label rather than welded to the number — that rule is
      * about where a translator can reach it, not about how long the words are.
      */
-    heroRows: ['Energy a day', 'Refill, hours', 'Points a round'],
+    heroRows: ['Energy a day', 'Refill, minutes', 'Points a round'],
+    /**
+     * The band under the price: what a day on this plan actually holds.
+     *
+     * Every figure in it is derived — `subRoundsPerDay` multiplies the two rows
+     * printed directly beneath it — because this is the one line on the card
+     * that answers the question a reader is actually asking, and a number typed
+     * here would be a claim rather than a consequence.
+     */
+    day: {
+      /** The unit for that figure. It lives in the label, like every other. */
+      rounds: 'rounds a day',
+      /** Which reading it is: the tank counts, so the day starts full. */
+      from: 'from a full tank',
+      /**
+       * The paid cards' step up on the free column. `{n}` is a count of rounds
+       * and `{plan}` is the free plan's own name, so the chip cannot start
+       * calling it something the card above it does not.
+       */
+      vs: '+{n} vs {plan}',
+      /** The free card's own slot, which is what those two chips are measured from. */
+      base: 'The plan every figure beside it is measured against.',
+    },
     /** Heads the nine rows under the strip. */
     more: 'Everything else',
     /** Names the seal for a screen reader: "Star plan mark". */

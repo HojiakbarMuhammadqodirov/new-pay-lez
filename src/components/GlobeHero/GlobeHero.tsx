@@ -41,6 +41,7 @@ export const GlobeHero = memo(function GlobeHero({
   glowStrength = DEFAULTS.glowStrength,
   offsetX = DEFAULTS.offsetX,
   heightCoverage = DEFAULTS.heightCoverage,
+  copyDepth = RESPONSIVE.portraitCopyDepth,
   scrollTransition = DEFAULTS.scrollTransition,
   scrollAnchorId,
   className,
@@ -153,6 +154,7 @@ export const GlobeHero = memo(function GlobeHero({
           routeCount={routeCount}
           offsetX={offsetX}
           heightCoverage={heightCoverage}
+          copyDepth={copyDepth}
           paused={reducedMotion}
           scrollTransition={scrollTransition}
           scrollProgress={scrollProgress}

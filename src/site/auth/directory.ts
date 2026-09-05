@@ -165,5 +165,18 @@ export function toAccount(user: UserRecord): Account {
      * written by a build that knew the difference.
      */
     onboardedAt: user.onboardedAt === undefined ? user.created : user.onboardedAt,
+    /*
+     * And here absent and `null` are the *same* answer, which is the opposite
+     * of the stamp above and worth saying why.
+     *
+     * `onboardedAt` reads absent as the join date because a returning player
+     * has demonstrably been through onboarding -- the evidence is the streak.
+     * A profile carries no such evidence: a row written before this field
+     * existed says nothing about whether all seven were filled, and the
+     * profile itself is right there to answer it. So absent is `null`, and if
+     * the seven are in fact complete the next save stamps it and pays once.
+     * The server's own guard means a second payment cannot land either way.
+     */
+    profileCompletedAt: user.profileCompletedAt ?? null,
   };
 }

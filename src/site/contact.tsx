@@ -34,13 +34,23 @@ import { PATHS } from './router';
  * those is the one a `setTimeout` and a green tick would hide, and it is the
  * one where the reader still has something to do about it.
  *
- * **No backdrop, for the same reason the two legal pages have none.** Every
- * canvas on this site is a fixed layer behind a page long enough to scroll it
- * out of the way — that is what `scrollAnchorId` is for — and this page is now
- * one screenful. A globe held in the hero pose over a one-screen page sits
- * straight on top of the form, which is precisely the failure the anchor rule in
- * the root `CLAUDE.md` describes. The page is a form; the honest ground under a
- * form is the page.
+ * **The backdrop is `streets/StreetMap`, and the rule it broke is worth
+ * restating.** This page had no backdrop for a while, and the reason was sound
+ * but narrower than it read: a globe held in its **hero pose** over a
+ * one-screen page sits straight on top of the form, and `scrollAnchorId` — the
+ * thing that retires it into an arc — needs content below the fold to do it
+ * with. That is an argument about the globe's scroll transition, not about
+ * whether a form may have a layer behind it. The four canvas backdrops have no
+ * hero pose and no transition.
+ *
+ * So the page gets the one picture it can honestly carry: getting in touch is a
+ * **route**. The two legal pages keep their empty ground, on the other half of
+ * the old argument — a retention schedule has no honest picture, and a moving
+ * field under six pages of clauses is a readability cost paid for decoration.
+ *
+ * The map's alphas are the lowest on the site (`STREETS.tone`), because this is
+ * the only backdrop here sitting under fields somebody is typing an address
+ * into.
  */
 export function ContactPage() {
   const copy = useCopy();

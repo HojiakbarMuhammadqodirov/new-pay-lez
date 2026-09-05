@@ -179,6 +179,55 @@ export const SCROLL = {
     visibleFraction: 0.3,
     /** Height of that visible cap, as a fraction of the viewport. */
     heightCoverage: 0.4,
+
+    /*
+     * The same cap once the page has stacked, and why it has to be smaller.
+     *
+     * The end pose is framed by viewport *height* alone — diameter is
+     * `heightCoverage / visibleFraction` of it, or 133%. On a wide screen that
+     * is a sphere a little narrower than the window and it reads as a horizon
+     * the page sits above. On a narrow one the same rule gives:
+     *
+     *     1440 x 900   diameter 1200px on a 1440 screen   a horizon
+     *      768 x 1024  diameter 1365px on a  768 screen   a wall
+     *      360 x 780   diameter 1040px on a  360 screen   a wall
+     *
+     * — and a cap 40% of the viewport tall means the globe is behind the
+     * bottom two fifths of every screenful for the whole scroll. The carousel
+     * rides on it, and its unselected cards are drawn dimmed, so on a tablet
+     * they end up dim text on a bright sphere.
+     *
+     * A shorter cap is the fix rather than a smaller globe: keep
+     * `visibleFraction` — the sphere still shows the same slice of itself, so
+     * the geometry and the rotation are untouched — and take the cap down to
+     * 22% of the viewport, which is a band along the foot of the screen with
+     * the content above it. That is the same judgement the market tape makes
+     * one directory over: on a phone a backdrop stays out of the copy.
+     */
+    /**
+     * How much of the globe shows, and how far it spills past the screen,
+     * once a narrow page has stacked.
+     *
+     * Neither number is a taste. The diameter is capped near the viewport
+     * *width* so the disc stops being a wall three screens across; 30% of
+     * something that small is a 14%-tall smear, so more of it shows. 0.42
+     * puts the cap back around a quarter of the height and stays under a
+     * half — past a half the widest point of the disc is on screen and the
+     * silhouette curls back in at the bottom, which reads as a ball resting
+     * on the edge rather than as a horizon. The 1.3 does the same job from
+     * the other side: an edge that runs off both sides of the screen is a
+     * curve, an edge that stops short of them is an object.
+     */
+    visibleFractionNarrow: 0.42,
+    widthOverhang: 1.3,
+
+    /**
+     * Widest viewport that gets the shorter cap, CSS px. 820 is the
+     * stylesheet's own hero-stacking step and `RESPONSIVE.portraitStackWidth`,
+     * for the same reason those two agree: the globe is being reframed because
+     * the page went to one column, so both have to change on the same pixel.
+     */
+    narrowWidth: 820,
     /** Axial tilt at rest. 90° turns the spin axis to face the camera. */
     tiltDegrees: 90,
     /** Horizontal offset at rest; 0 centres the arc. */

@@ -40,6 +40,17 @@ export function resolveLayout(
   height: number,
   offsetX: number,
   heightCoverage: number,
+  /*
+   * Where the copy above the globe ends, as a fraction of viewport height.
+   *
+   * Defaults to the constant so every existing caller — and every check in
+   * `verify-geo.ts` — resolves exactly as it did. It is a parameter because the
+   * constant is only ever right for the phone it was tuned on: the copy is a
+   * fixed pixel height and this is a fraction, so the two agree at one viewport
+   * height and drift either side of it. `site/heroFloor.ts` measures the real
+   * one and carries the full argument.
+   */
+  copyDepth: number = RESPONSIVE.portraitCopyDepth,
 ): GlobeLayout {
   const aspect = width / Math.max(height, 1);
   const portrait = aspect < RESPONSIVE.portraitAspect;
@@ -80,7 +91,7 @@ export function resolveLayout(
 
   // Negative is down. Half the copy's depth puts the centre in the middle of
   // what the copy left over, in viewport heights.
-  const heroOffsetY = -(RESPONSIVE.portraitCopyDepth / 2) * sink;
+  const heroOffsetY = -(copyDepth / 2) * sink;
 
   /*
    * The vertical twin of the clamp above, with no margin term and no aspect
@@ -125,11 +136,41 @@ export function resolveLayout(
    * down simply shortens the journey. `useGlobeTransition` lerps the two, and
    * a lerp between two finite numbers stays continuous however they are set.
    */
-  const { visibleFraction, heightCoverage: capHeight } = SCROLL.end;
+  /*
+   * The end pose, and the two things it has to be at once on a phone.
+   *
+   * Framed by viewport **height** alone the disc is 133% of it, which on
+   * 390 x 844 is 1123px across a 390px screen — 288% of the width, so the
+   * globe is a wall behind the bottom of every screenful rather than a horizon
+   * under it. Sizing it to fit the width exactly is the obvious correction and
+   * it overshoots: 30% of a disc 0.46 viewport-heights across is a cap 14% of
+   * the screen tall, a smear of glow along the bottom edge.
+   *
+   * So a narrow screen gets its own pair. The diameter is the viewport width
+   * plus `widthOverhang` — a little wider than the screen, which is what makes
+   * the visible edge a curve running off both sides instead of a ball sitting
+   * on the bottom — and the fraction on show rises to keep the cap around a
+   * quarter of the height. Both stay under the wide framing: the cap is never
+   * taller than `heightCoverage`, and the fraction is under a half, so the
+   * centre is still below the fold and the silhouette never curls back in.
+   *
+   * Wide screens are untouched. `aspect * widthOverhang` exceeds 1.33 on every
+   * landscape and desktop ratio, and the branch is on width anyway, so they
+   * get the exact 30% / 40% framing README.md argues for.
+   */
+  const narrow = width <= SCROLL.end.narrowWidth;
 
-  // Diameter follows from the two numbers that define the end state, so
-  // "30% of the globe" and "40% of the screen" can never drift apart.
-  const endCoverage = capHeight / visibleFraction;
+  const visibleFraction = narrow
+    ? SCROLL.end.visibleFractionNarrow
+    : SCROLL.end.visibleFraction;
+
+  /* `coverage = aspect` is exactly "diameter = viewport width": the aspect
+     ratio *is* the width measured in viewport heights, which is the unit
+     coverage is already in. */
+  const wideCoverage = SCROLL.end.heightCoverage / SCROLL.end.visibleFraction;
+  const endCoverage = narrow
+    ? Math.min(aspect * SCROLL.end.widthOverhang, wideCoverage)
+    : wideCoverage;
   const endVisibleHeight = (2 * R) / endCoverage;
 
   // Sink the centre until exactly `visibleFraction` of the diameter clears the

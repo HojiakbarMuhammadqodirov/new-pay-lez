@@ -3,6 +3,7 @@ import { ACCOUNT_TYPES } from './content';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
+import { PATHS } from './router';
 import { useAuth } from './auth/context';
 import { GoogleButton } from './auth/GoogleButton';
 import {
@@ -31,6 +32,38 @@ import {
  * See `auth/users.ts` for why this is a prototype door and not authentication.
  */
 
+/**
+ * Fold an address to the one form both doors agree on.
+ *
+ * It lived inside the sign-in form, so sign-up could not reach it and grew its
+ * own copy that stripped zero-width characters and nothing else. That is a
+ * difference with a cost: paste an address carrying a stray tab or DEL -- mobile
+ * autofill and a copy out of a spreadsheet both do it -- and sign-up stored one
+ * string while sign-in looked up a different one. The account existed and could
+ * not be signed into.
+ *
+ * Three passes, in this order:
+ *   NFKC    folds compatibility forms, so a full-width address becomes plain;
+ *   C0/DEL  removes the control bytes a paste can carry invisibly;
+ *   ZWSP..  removes the zero-width joiners and the BOM, which are not controls.
+ *
+ * Written with escapes rather than the literal bytes. The class used to hold a
+ * real NUL, which put one in the source -- and git calls a file with a NUL in
+ * its first 8000 bytes **binary**, so every diff, blame and review of this
+ * screen came back as `Bin 13614 -> 14880 bytes` instead of a hunk.
+ */
+function normalizeEmail(value: string): string {
+  return value
+    .normalize?.('NFKC')
+    /* Matching control characters is the point of this line, not an accident:
+       they are what a paste carries invisibly. `no-control-regex` cannot tell
+       the two apart, so it is silenced here and nowhere else. */
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001F\u007F]/g, '')
+    .replace(/\u200B|\u200C|\u200D|\uFEFF/g, '')
+    .trim();
+}
+
 /* ─────────────────────────────────────────────────────────── credentials ── */
 
 function Credentials({ onSwap }: { onSwap: () => void }) {
@@ -43,7 +76,8 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
 
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (!email.trim() || !password) {
+    const e = normalizeEmail(email);
+    if (!e || !password) {
       setError('empty');
       return;
     }
@@ -51,7 +85,7 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
        that can be submitted twice opens two sessions. */
     if (busy) return;
     setBusy(true);
-    void signIn(email, password)
+    void signIn(e, password)
       .then((result) => {
         /*
          * No navigation on success. Signing in changes the session, which
@@ -195,7 +229,9 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
     event.preventDefault();
     if (busy) return;
     setBusy(true);
-    void signUp({ name, email, password, type })
+    const normalizedEmail = normalizeEmail(email);
+
+    void signUp({ name, email: normalizedEmail, password, type })
       .then((result) => {
         /* Nothing to navigate to here either: an owner resolves to setup and an
            individual to the landing page, both from the account this just
@@ -319,7 +355,7 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
  */
 function ChooseType({ name }: { name: string }) {
   const copy = useCopy();
-  const { setType } = useAuth();
+  const { setType, signOut } = useAuth();
   const [picked, setPicked] = useState<ChoosableType | null>(null);
 
   const onSubmit = (event: FormEvent) => {
@@ -333,6 +369,13 @@ function ChooseType({ name }: { name: string }) {
      * route and redirect over the top of it.
      */
     setType(picked);
+  };
+
+  const onCancel = () => {
+    // If the user does not want to answer the question now, sign them out
+    // and return to the landing page so they can continue browsing.
+    signOut();
+    window.location.hash = PATHS.landing;
   };
 
   return (
@@ -352,6 +395,11 @@ function ChooseType({ name }: { name: string }) {
         {copy.auth.typeSubmit}
       </button>
       {!picked && <p className="auth-demo">{copy.auth.typeHint}</p>}
+      <div style={{ marginTop: '0.75rem' }}>
+        <button type="button" className="btn btn-ghost" onClick={onCancel}>
+          {copy.auth.cancel}
+        </button>
+      </div>
     </form>
   );
 }

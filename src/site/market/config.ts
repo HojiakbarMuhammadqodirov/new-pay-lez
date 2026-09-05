@@ -56,6 +56,40 @@ export const MARKET = {
      * "up and to the right" is guaranteed on every frame of every session.
      */
     band: { from: 0.16, to: 0.66 },
+
+    /**
+     * The same band once the page has stacked, and the reason there are two.
+     *
+     * The band above spans 34%–84% of the viewport measured from the top, which
+     * on a desktop Business page is the empty half of the hero: the copy is a
+     * column down the left and the tape prints beside and under it. Stacked,
+     * that column becomes the full width — a five-line lede in `--text-mut`
+     * landing exactly in the band — and the tape stops being a backdrop behind
+     * the copy and becomes a pattern printed through it.
+     *
+     * The alphas are not the lever. They are already set by the worst frame
+     * (see the note on `tone` below), and taking them lower to survive a phone
+     * would wash the tape out on every screen to fix one. What actually differs
+     * is *where the words are*, so what moves is the band: on a narrow viewport
+     * the tape drops into the bottom third and reads as a ticker along the foot
+     * of the screen, which is a shape a market tape is allowed to have.
+     *
+     * This is the rule the globe follows one component over — a backdrop on a
+     * phone stays out of the copy rather than being dimmed under it.
+     */
+    bandNarrow: { from: 0.05, to: 0.33 },
+
+    /**
+     * Widest viewport that gets `bandNarrow`, CSS px.
+     *
+     * 820 is the stylesheet's own hero-stacking step (`max-width: 820px` in
+     * `site.css`), and it has to be that number rather than near it: the band
+     * moves because the copy went full width, so the two have to change on the
+     * same pixel or there is a viewport where one has happened and the other
+     * has not.
+     */
+    narrowWidth: 820,
+
     /** How much of the band the walk is allowed to spend, as a fraction. */
     wiggle: 0.17,
 

@@ -23,6 +23,7 @@ interface GlobeSceneProps {
   routeCount: number;
   offsetX: number;
   heightCoverage: number;
+  copyDepth: number;
   paused: boolean;
   scrollTransition: boolean;
   scrollProgress: RefObject<number>;
@@ -54,6 +55,7 @@ export function GlobeScene({
   routeCount,
   offsetX,
   heightCoverage,
+  copyDepth,
   paused,
   scrollTransition,
   scrollProgress,
@@ -63,7 +65,7 @@ export function GlobeScene({
   const frameRef = useRef<Group>(null);
   const globeRef = useRef<Group>(null);
   const atlas = useAtlas();
-  const layout = useGlobeLayout(offsetX, heightCoverage);
+  const layout = useGlobeLayout(offsetX, heightCoverage, copyDepth);
 
   const width = useThree((state) => state.size.width);
   const height = useThree((state) => state.size.height);

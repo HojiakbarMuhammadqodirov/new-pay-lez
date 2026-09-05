@@ -220,6 +220,16 @@ export const SUB_PLANS: Array<{
   terms: boolean;
   icon: IconName;
 }> = [
+  /*
+   * A spark, a coin and a trophy.
+   *
+   * These were taken off for a version, on the argument that three game glyphs
+   * make a price list read as a shop screen. That argument was answering a
+   * question nobody had asked: this product **is** a game, the section sells
+   * energy and points and a mark that goes beside your name, and the arcade
+   * reading is the one it wants. They are back, and the card is built around
+   * them rather than apologising for them.
+   */
   { id: 'free', eur: 0, terms: false, icon: 'spark' },
   { id: 'pro', eur: eurFromPln(SUB_PLN_PER_MONTH.pro), terms: true, icon: 'coin' },
   { id: 'premium', eur: eurFromPln(SUB_PLN_PER_MONTH.premium), terms: true, icon: 'trophy' },
@@ -319,7 +329,21 @@ export type SubRowKind = 'number' | 'multiplier' | 'flag' | 'badge';
  * feels on the first evening and the rest is the difference they feel in a
  * month.
  */
-export const SUB_ROWS: Array<{ kind: SubRowKind; values: [SubValue, SubValue, SubValue] }> = [
+export const SUB_ROWS: Array<{
+  kind: SubRowKind;
+  values: [SubValue, SubValue, SubValue];
+  /**
+   * Set on the one row where a *smaller* figure is the better one.
+   *
+   * The card marks every cell a paid tier improves on the free column
+   * (`subBeatsFree`), which is a comparison and therefore needs a direction.
+   * Twelve of the thirteen rows climb; the refill clock comes down. Writing the
+   * direction on the row rather than special-casing an index in the component
+   * is what stops the next lower-is-better row — a cooldown, a fee — from
+   * quietly rendering as the worst cell on the most expensive card.
+   */
+  lower?: true;
+}> = [
   /* `daily_energy` — the tank, which is also finished rounds a day from a full
      one before the clock gives anything back. These three moved from 3/5/7 when
      energy started being spent on every round rather than only on a lost one,
@@ -334,7 +358,7 @@ export const SUB_ROWS: Array<{ kind: SubRowKind; values: [SubValue, SubValue, Su
      got fast enough that hours stopped being the unit: half an hour on Premium
      is "0.5" in a column of whole numbers, which reads as a rounding error
      rather than as the best row on the table. */
-  { kind: 'number', values: [120, 60, 30] },
+  { kind: 'number', values: [120, 60, 30], lower: true },
   /* `points_multiplier`. **Game rounds only** — the venue lines are their own
      per-tier figures on the server, and multiplying those as well would pay a
      paid plan twice for one visit. The row's label has to say so. */
@@ -400,6 +424,66 @@ export const SUB_HERO = 3;
 
 /** The seal's row. Last, and the card reads it from the end for that reason. */
 export const SUB_BADGE_ROW = SUB_ROWS.length - 1;
+
+/** The tank, and the clock that refills it. The first two rows of the strip. */
+const SUB_TANK_ROW = 0;
+const SUB_REFILL_ROW = 1;
+
+/**
+ * Finished rounds a plan buys in a day, starting from a full tank.
+ *
+ * `daily_energy + 1440 / energy_regen_minutes` — the tank you woke up with plus
+ * everything the clock hands back over the day — which is the arithmetic the
+ * root `CLAUDE.md` states and the server's `CONFIG.points` implements. It comes
+ * out at 16 / 30 / 58, and that spread is the reason anybody pays: it is the
+ * only figure on this card that says what a *day* is worth rather than what one
+ * column of a table holds.
+ *
+ * It is **derived and never typed**, for the reason the whole file is: the two
+ * rows it multiplies are already on the page directly above it, and a headline
+ * that stopped agreeing with the two figures under it would be worse than no
+ * headline. Change the tank or the clock and this moves with them.
+ *
+ * The floor matters. A refill that does not divide the day evenly hands back a
+ * whole energy only when the clock reaches it, so a fraction of one is a round
+ * that cannot be played — and rounding it up would advertise a round that is
+ * not there, which is the same failure as a seeded balance the ledger has no
+ * entry for.
+ */
+export function subRoundsPerDay(planIndex: number): number {
+  const tank = SUB_ROWS[SUB_TANK_ROW].values[planIndex] as number;
+  const refill = SUB_ROWS[SUB_REFILL_ROW].values[planIndex] as number;
+  return tank + Math.floor((24 * 60) / refill);
+}
+
+/**
+ * Whether a paid tier's cell is an improvement on the free one beside it.
+ *
+ * The card lights every cell this returns `true` for, and that mark is the
+ * whole of what the section was missing: three columns of identically-weighted
+ * small print gave a reader nothing to *see*, so the case for paying had to be
+ * read row by row and reconstructed. Lit against unlit, the free column is
+ * plain and the Premium one is almost entirely accent, and the shape of the
+ * offer arrives before a single figure is read.
+ *
+ * It is a comparison of the table against itself rather than a judgement typed
+ * into it — nothing here can claim a perk the entitlement table does not grant,
+ * which is the same rule the prices are held to. `null` is the no-ceiling
+ * sentinel and beats every number; `lower` inverts the test for the one row
+ * where less is more.
+ */
+export function subBeatsFree(rowIndex: number, planIndex: number): boolean {
+  if (planIndex === 0) return false;
+  const row = SUB_ROWS[rowIndex];
+  const free = row.values[0];
+  const mine = row.values[planIndex];
+  /* Unlimited beats anything, including unlimited on the free column — which
+     no row has, and which would be a table where the free tier could not be
+     improved on rather than a comparison this function got wrong. */
+  if (mine === null) return free !== null;
+  if (free === null) return false;
+  return row.lower ? mine < free : mine > free;
+}
 
 /**
  * Where the footer's two columns go, index-aligned with
@@ -1199,109 +1283,59 @@ export const VOUCHER_RULE_ICONS: IconName[] = ['ticket', 'qr', 'coin'];
 /* ───────────────────────────────────────────────────────────── relocate ── */
 
 /**
- * The nine guidance categories, index-aligned with
- * `copy.relocate.guide.items`.
+ * A guidance category's icon, keyed by the category key the server sends.
  *
- * Nine and not eight: this is the list the app ships, and dropping one to make
- * the grid divide evenly would be letting the layout edit the product.
+ * The subject list itself is **not** here any more. It was: nine
+ * `RELOCATE_TOPICS` with nine names and blurbs in each of five dictionaries,
+ * and under them twenty-four invented businesses. All of it read
+ * `GET /v1/guide/categories` and `GET /v1/guide/services` now — see
+ * `api/guide.ts` for what that replaced and why.
+ *
+ * What stays local is the drawing. `guidance_categories.icon` holds the old
+ * app's icon names, which are not this site's, and mapping them here rather
+ * than shipping the export's glyphs keeps the section inside the one icon set
+ * the rest of the page uses. The map is by **category key**, not by the export's
+ * icon name, because the key is the stable thing — an editor may restyle a
+ * category, and the reader's answer to "which subject is this" must not move
+ * when they do.
+ *
+ * An unknown key gets the pin rather than nothing. The icon is decoration and
+ * the server's translated title is the information, so a subject we have no
+ * glyph for still has to render — the alternative is a guide that hides a
+ * category because we did not recognise its name.
  */
-export const RELOCATE_TOPICS: Array<{ icon: IconName; featured?: true }> = [
-  { icon: 'map' },
-  { icon: 'card' },
-  /*
-   * Housing and Legal & visa are lifted out of the grid and shown first, at
-   * double width.
-   *
-   * Not a layout preference — it is what the first month is actually about. A
-   * nine-up grid of equal tiles says every subject is equally likely to be the
-   * one you came for, and for somebody three weeks into a new country that is
-   * plainly false: they need somewhere to live and permission to stay, and the
-   * other seven can wait a fortnight.
-   */
-  { icon: 'housing', featured: true },
+export const GUIDE_ICON_FALLBACK: IconName = 'map';
+
+export const GUIDE_ICONS: Record<string, IconName> = {
+  places: 'map',
+  food: 'map',
+  shopping: 'map',
+  banking: 'card',
+  finance: 'card',
+  banking_finance: 'card',
+  housing: 'housing',
+  accommodation: 'housing',
   /* Healthcare. It borrowed the halal glyph back when that was a shield with a
      tick on it; now that halal is a crescent, the shield is its own name. */
-  { icon: 'shield' },
-  { icon: 'book', featured: true },
-  { icon: 'briefcase' },
-  { icon: 'leisure' },
-  { icon: 'send' },
-  { icon: 'assistant' },
-];
-
-/**
- * The service providers behind each subject.
- *
- * **This is seed data and is the last of it on the site.** Every other invented
- * list in this file is gone — the venue catalogue, the offers, the gift-card
- * shelf and the console's tables all read the server now. This one stayed
- * because it belongs to a page nobody has moved yet, not because there is
- * nowhere to move it to: `GET /v1/guide/services` already serves the 308
- * `guidance_services` rows the old database was imported into, with their
- * languages, cities and links. Relocate should read it, and until it does the
- * rows below are invented — which is why this paragraph is here rather than a
- * line saying they are "a small fictional set".
- *
- * `languages` is the one attribute that earns its place on a card here, and it
- * is the reason the shape is this and not a paragraph per provider: on a
- * relocation guide, "somebody here speaks Ukrainian" is more of what a reader
- * needs than a sentence of marketing, and it translates for free out of
- * `copy.listing.spokenLanguages` rather than needing a blurb in five languages
- * per row.
- */
-export interface RelocateProvider {
-  name: string;
-  /** Index into `RELOCATE_TOPICS`, and so into `copy.relocate.guide.items`. */
-  topic: number;
-  city: string;
-  languages: SpokenLanguage[];
-}
-
-export const RELOCATE_PROVIDERS: RelocateProvider[] = [
-  { name: 'Kazimierz Bazar', topic: 0, city: 'Kraków', languages: ['pl', 'en'] },
-  { name: 'Dubai Cafe', topic: 0, city: 'Kraków', languages: ['pl', 'en', 'tr'] },
-  { name: 'Hala Koszyki', topic: 0, city: 'Warszawa', languages: ['pl', 'en'] },
-
-  { name: 'Wisła Bank — Newcomer Desk', topic: 1, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
-  { name: 'Nowa Kasa', topic: 1, city: 'Warszawa', languages: ['pl', 'en', 'ru'] },
-  { name: 'Odra Credit Union', topic: 1, city: 'Wrocław', languages: ['pl', 'uk'] },
-
-  { name: 'Podgórze Lettings', topic: 2, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
-  { name: 'Mokotów Mieszkania', topic: 2, city: 'Warszawa', languages: ['pl', 'en'] },
-  { name: 'Rynek Rentals', topic: 2, city: 'Wrocław', languages: ['pl', 'en', 'ru'] },
-  { name: 'Wrzeszcz Housing Help', topic: 2, city: 'Gdańsk', languages: ['pl', 'uk'] },
-
-  { name: 'Klinika Zdrowie', topic: 3, city: 'Kraków', languages: ['pl', 'en', 'uk', 'ru'] },
-  { name: 'Centrum Medyczne Wisła', topic: 3, city: 'Warszawa', languages: ['pl', 'en'] },
-  { name: 'Poznań Family Practice', topic: 3, city: 'Poznań', languages: ['pl', 'en'] },
-
-  { name: 'Kancelaria Migracja', topic: 4, city: 'Kraków', languages: ['pl', 'en', 'uk', 'ru'] },
-  { name: 'Warsaw Residency Advisors', topic: 4, city: 'Warszawa', languages: ['pl', 'en', 'uz'] },
-  { name: 'Wrocław Permit Office Help', topic: 4, city: 'Wrocław', languages: ['pl', 'uk'] },
-
-  { name: 'Praca Start', topic: 5, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
-  { name: 'Gdańsk Jobs Point', topic: 5, city: 'Gdańsk', languages: ['pl', 'en'] },
-
-  { name: 'Lingua Nova', topic: 6, city: 'Wrocław', languages: ['pl', 'en', 'ru'] },
-  { name: 'Szkoła Otwarta', topic: 6, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
-
-  { name: 'MPK Info Point', topic: 7, city: 'Kraków', languages: ['pl', 'en'] },
-  { name: 'Poznań Transport Desk', topic: 7, city: 'Poznań', languages: ['pl', 'en', 'uk'] },
-
-  { name: 'Dom Kultury Podgórze', topic: 8, city: 'Kraków', languages: ['pl', 'en', 'uk'] },
-  { name: 'Warszawa Welcome Point', topic: 8, city: 'Warszawa', languages: ['pl', 'en', 'ru', 'uz'] },
-];
-
-/**
- * The cities the filter offers, in the order it offers them.
- *
- * Derived rather than declared: a city in the list with nothing under it is a
- * filter that silently returns nothing, and a provider in a city the filter
- * does not offer is a provider nobody can reach. Deriving makes both impossible.
- */
-export const RELOCATE_CITIES = [
-  ...new Set(RELOCATE_PROVIDERS.map((provider) => provider.city)),
-].sort((a, b) => a.localeCompare(b));
+  health: 'shield',
+  healthcare: 'shield',
+  medical: 'shield',
+  legal: 'book',
+  visa: 'book',
+  legal_visa: 'book',
+  documents: 'book',
+  employment: 'briefcase',
+  jobs: 'briefcase',
+  work: 'briefcase',
+  education: 'leisure',
+  schools: 'leisure',
+  language: 'leisure',
+  transport: 'send',
+  transportation: 'send',
+  culture: 'assistant',
+  community: 'assistant',
+  integration: 'assistant',
+};
 
 /**
  * The shortcut pairs above the converter — one tap, both sides set.

@@ -13,6 +13,7 @@ import { BusinessPage } from './business';
 import { BusinessSetupPage } from './businessSetup';
 import { ContactPage } from './contact';
 import { DashboardPage } from './dashboard';
+import { CityRise } from './city/CityRise';
 import { LevelRun } from './level/LevelRun';
 import { Header } from './Header';
 import { useLanguage } from './i18n/context';
@@ -27,6 +28,7 @@ import { ProfilePage } from './profile';
 import { RelocatePage } from './relocate';
 import { PATHS, navigate, resolveRoute, useRoute } from './router';
 import { SignInPage } from './signin';
+import { StreetMap } from './streets/StreetMap';
 import { StubDrift } from './stubs/StubDrift';
 import { VouchersPage } from './vouchers';
 import { usePalette } from './theme/context';
@@ -42,6 +44,7 @@ import {
   Value,
   Voices,
 } from './sections';
+import { useHeroCopyDepth } from './heroFloor';
 import { useCountUp, useReveal } from './useReveal';
 import './site.css';
 
@@ -71,6 +74,8 @@ import './site.css';
 function SiteContent() {
   const [introDone, setIntroDone] = useState(false);
   const palette = usePalette();
+  /* Published by the landing hero's own copy column — see `heroFloor.ts`. */
+  const heroCopyDepth = useHeroCopyDepth();
   const requested = useRoute();
   const [language] = useLanguage();
   const { account } = useAuth();
@@ -232,7 +237,8 @@ function SiteContent() {
         promise — play, get bigger, cash out; the node web is the player base
         whose behaviour Analytics measures; the candle tape is repeat custom
         compounding into Business revenue; the stubs are the vouchers, settling
-        into a wallet; Relocate's rings are distance from where you stand. A
+        into a wallet; the city rising is an unfamiliar place becoming known;
+        the street map is the route to reach us. A
         backdrop that cannot say what it means like that is wallpaper, and does
         not ship.
       */}
@@ -257,17 +263,59 @@ function SiteContent() {
         />
       ) : route === 'relocate' ? (
         /*
-         * Rings, not the globe.
+         * A city building itself around you — the route's third backdrop, and
+         * the first two are the argument for this one.
          *
          * The globe was a border being crossed, which was right when this page
-         * was about sending money over one. It is a guide to the place you have
-         * already arrived in and a converter — so the picture is distance from
-         * where you are standing: contour rings spreading out from a point, the
-         * way a map draws "near you". CSS, not a canvas, which also means
-         * Relocate no longer spends the document's one WebGL context.
+         * was about sending money over one. `.site__rings` replaced it and meant
+         * distance from where you are standing: true, and the only backdrop here
+         * that never moved, on the one page whose subject is something you are
+         * in the middle of doing. Then a street map drew itself in plan, which
+         * said the right thing and looked like a wiring diagram — hairlines on
+         * black, no mass, nothing a page can stand on.
+         *
+         * A city is areas and volumes, so this one is built from them: opaque
+         * blocks standing up in a wave, streets as the gaps between them, and a
+         * horizon the far ones dissolve into. Still canvas 2D, so Relocate does
+         * not spend the document's one WebGL context — and still the same
+         * sentence, which is what the route needed all along: an unfamiliar
+         * place becoming legible, with always more of it than you have learnt.
          */
-        <div className="site__rings" aria-hidden />
-      ) : route === 'privacy' || route === 'terms' || route === 'contact' || route === 'profile' ? (
+        <CityRise
+          className="site__web"
+          primaryColor={palette.primary}
+          backgroundColor={palette.background}
+          tone={palette.tone}
+        />
+      ) : route === 'contact' ? (
+        /*
+         * A route drawing itself — and the reason Contact has one again.
+         *
+         * It had the globe, and losing it was right for a reason that does not
+         * generalise: a **scroll transition** needs a page long enough to retire
+         * the hero pose through, and a one-section form has nothing below the
+         * fold. That is an argument about `scrollAnchorId`, not about backdrops.
+         * A flat canvas has no hero pose and no transition — it is a layer, and
+         * a layer over one screen is what a layer is for.
+         *
+         * The picture is the page's own: getting in touch is a **route**, not a
+         * place. An avenue reaches out, side-streets come off it, landmarks
+         * light where the map arrives at something, and then another starts from
+         * somewhere else — because this page is asked the same question by a
+         * different person every day and the answer is always a way through.
+         *
+         * It was Relocate's for an afternoon and was the wrong picture there:
+         * that page's subject is a whole place becoming legible, which is areas
+         * and volumes and is now `city/CityRise`. Here the subject genuinely is
+         * lines. Same drawing, and only one of the two routes was ever right for
+         * it — which is what "one route per backdrop" is actually about.
+         */
+        <StreetMap
+          className="site__web"
+          primaryColor={palette.primary}
+          tone={palette.tone}
+        />
+      ) : route === 'privacy' || route === 'terms' || route === 'profile' ? (
         /*
          * No backdrop at all, and that is the point rather than an omission.
          *
@@ -278,15 +326,12 @@ function SiteContent() {
          * field under six pages of clauses is a readability cost paid for
          * decoration.
          *
-         * Contact joined them when it became one screen. It had the globe, and
-         * the globe was the right picture for it — reachable from anywhere is
-         * the one other thing that shape honestly says — but a fixed backdrop
-         * needs a page long enough to scroll it out of the hero pose, and a
-         * one-section form is not one. A pinned globe sitting on top of the
-         * form is the exact failure `scrollAnchorId` exists to prevent, and no
-         * anchor fixes a page with nothing below the fold.
+         * Contact was here for a while and has left again — it is one screen,
+         * which rules out the *globe* and rules out nothing else; see the branch
+         * above. What keeps the two legal pages on this list is the subject
+         * rather than the length.
          *
-         * The profile is the fourth, on both counts at once. It is one section
+         * The profile is the third, on both counts at once. It is one section
          * — a form and a rail — so there is nothing for the globe to travel
          * through and it would sit straight on top of the fields; and the
          * subject is somebody's own name, city and photograph, which no
@@ -335,6 +380,12 @@ function SiteContent() {
           glowStrength={palette.glow}
           offsetX={0.18}
           heightCoverage={0.62}
+          /*
+           * Measured, not assumed. On a phone the globe sinks into the slot
+           * below the hero copy, and the constant it used to be aimed with is
+           * only correct on a ~844px-tall screen — see `heroFloor.ts`.
+           */
+          copyDepth={heroCopyDepth}
           routeCount={16}
           /*
            * No country label. The flag-and-name card that popped in beside the
