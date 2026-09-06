@@ -473,9 +473,12 @@ export const uz: Dictionary = {
       'Hozir yaqin atrofda nima ochiq?',
     ],
     you: 'Siz',
-    stubReply:
-      'Bu versiyada yordamchi modelga ulanmagan, shuning uchun hozircha javob bera olmayman. Bu xabar atrofidagi hamma narsa — suhbat, matn maydoni, hisobingiz — haqiqatan ishlaydi.',
-    stubTag: 'Bu qurilmada model ulanmagan.',
+    thinking: 'O‘ylayapman…',
+    limitReached:
+      'Bugungi savollaringiz shu bilan tugadi. Limit ertaga yangilanadi, pullik tarif esa uni oshiradi.',
+    offline: 'Serverga ulana olmadim, shuning uchun hali javob bermadim.',
+    failed: 'Bu o‘tmadi.',
+    retry: 'Yana so‘rash',
   },
 
   wallet: {

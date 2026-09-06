@@ -478,9 +478,12 @@ export const pl: Dictionary = {
       'Co jest teraz otwarte w pobliżu?',
     ],
     you: 'Ty',
-    stubReply:
-      'W tej wersji asystent nie jest podłączony do modelu, więc nie odpowiem jeszcze na to pytanie. Wszystko dookoła tej wiadomości — rozmowa, pole tekstowe, Twoje konto — działa naprawdę.',
-    stubTag: 'W tej wersji nie podłączono modelu.',
+    thinking: 'Myślę…',
+    limitReached:
+      'To już wszystkie pytania na dziś. Limit odnawia się jutro, a płatny plan go podnosi.',
+    offline: 'Nie udało mi się połączyć z serwerem, więc jeszcze nie odpowiedziałem.',
+    failed: 'To nie przeszło.',
+    retry: 'Zapytaj ponownie',
   },
 
   wallet: {

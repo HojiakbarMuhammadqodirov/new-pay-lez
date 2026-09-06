@@ -581,13 +581,15 @@ export const en = {
       'What is open near me right now?',
     ],
     you: 'You',
-    /* Honest rather than a canned answer that pretends to be one. See the
-       note in `AssistantDock.tsx`. */
-    stubReply:
-      'The assistant is not connected to a model in this build, so I cannot answer that yet. Everything around this message — the thread, the composer, your account — is real and working.',
-    /* A footnote under each reply, not a chip over it — see `.ai-note`.
-       So it is a sentence now rather than a label. */
-    stubTag: 'No model is connected in this build.',
+    /* The states a real call has that a canned reply did not. See the note at
+       the top of `AssistantDock.tsx`: a refusal, an unreachable server and a
+       broken one are three different findings and must not read as one. */
+    thinking: 'Thinking…',
+    limitReached:
+      'That is all your questions for today. The allowance resets tomorrow, and a paid plan raises it.',
+    offline: 'I could not reach the server, so I have not answered that yet.',
+    failed: 'That did not go through.',
+    retry: 'Ask again',
   },
 
   /* ────────────────────────────────────────────────────────────── wallet ── */

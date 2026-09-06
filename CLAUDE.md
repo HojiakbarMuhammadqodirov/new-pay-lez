@@ -172,6 +172,45 @@ all resolve to the same thing: the draft. Called with `fetch` rather than the
 SDK on purpose — the zero-dependency rule below is worth more than one request
 to one endpoint.
 
+**And the site's own dock asks it now.** `AssistantDock` had a working thread, a
+working composer and a canned reply that said "not connected to a model in this
+build" — honest when it was written, and stale for a while before it was fixed:
+its own header comment still claimed there was "no network layer anywhere in
+`src/`". `api/assistant.ts` is that layer, and the three things it made the
+panel responsible for are states rather than copy:
+
+- **A real call takes time**, and the model leg has a three-second timeout, so a
+  *thinking* turn goes into the thread where the answer will be — not a spinner
+  somewhere else — and the send button is disabled while it is in flight.
+- **The facts are the receipt.** Every figure in the sentence was checked against
+  `answer.facts` before the server returned it, so drawing those facts under the
+  answer is what makes "640 points" verifiable instead of trusted. Hiding them
+  would ask for exactly the trust the server went to the trouble of not needing.
+- **A refusal is not an error.** Over the daily allowance (five free, twenty on
+  Pro) the server refuses rather than answering from a cheaper path, so
+  "that is your questions for today", "the server is not there" and "something
+  broke" are three different panels — the same union `useApi` draws — and only
+  the last two offer a retry. A button whose only outcome is the message already
+  on screen is a button that exists to fail.
+
+Two smaller rules travel with it. `startConversation` is called on the **first
+question**, not when the panel opens, so a panel somebody glanced at leaves no
+row on the server — and failing to open one is deliberately not fatal, because
+`/v1/assistant/ask` mints its own session and a bookkeeping call must not cost
+somebody their answer. And the `results` rows are drawn as **text, not cards you
+can press**: they carry venue ids and this site has no venue route to open one
+in, which is the picture-of-a-control rule again. The one pressable thing in a
+reply is `action`, because the server sent somewhere real to go.
+
+The panel's *shape* changed with it, and that was a stale rule rather than a new
+idea: `AssistantDock.tsx` has argued for a while that this is a card in the
+corner you consult **while reading**, and `site.css` still pinned a 27rem drawer
+from `top: 0` to `bottom: 0` under a scrim. It sits above the button it grew out
+of now, is as tall as the conversation up to a ceiling, and spans the gutters on
+a phone without going full height — the composer summons a keyboard, and a panel
+sized to the viewport puts its own input underneath it. `.ai-scrim` is gone;
+nothing had rendered one since the panel stopped being modal.
+
 Two things about it are easy to undo by accident and both are checked:
 
 - **The balance is derived, never edited.** `users.points_cache` is written only

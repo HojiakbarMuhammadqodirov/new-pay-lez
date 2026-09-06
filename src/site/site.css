@@ -6123,48 +6123,78 @@ button {
    question was about.
    ═══════════════════════════════════════════════════════════════════════ */
 
-.ai-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  animation: ai-fade 220ms var(--ease) both;
-}
-
-@keyframes ai-fade {
-  from {
-    opacity: 0;
-  }
-}
-
+/*
+ * The panel: a card in the corner the button is in.
+ *
+ * It was a full-height drawer down the left edge with a scrim over the page —
+ * `AssistantDock.tsx` argues at length that this was wrong (that is the shape
+ * of an *alert*, and you consult an assistant while reading) and the component
+ * was rewritten, but this rule was not. So the sheet still pinned a 27rem
+ * column from `top: 0` to `bottom: 0`: on a 900px-tall window that is a strip
+ * of empty panel two thirds of the way down, and the page it exists to sit
+ * beside lost a third of its width to hold it.
+ *
+ * Now it is what the component says it is. It sits **above the button** it grew
+ * out of, is only as tall as the conversation in it up to a ceiling, and leaves
+ * the page it is consulted against on screen. `.ai-scrim` is gone with the
+ * drawer — nothing has rendered one since the panel stopped being modal, and a
+ * rule for an element that does not exist is one the next person has to read
+ * before finding out it does nothing.
+ */
 .ai-panel {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  left: clamp(1rem, 2.5vw, 2rem);
+  /* Clears the 3.5rem button plus its own gap, and rides the same safe-area
+     `max()` the button does — otherwise the panel is correct and the control
+     that closes it is under the home indicator. */
+  bottom: calc(max(clamp(1rem, 2.5vh, 2rem), env(safe-area-inset-bottom) + 0.75rem) + 4.25rem);
   z-index: 61;
-  width: min(27rem, 100%);
+
+  width: min(24rem, calc(100vw - 2rem));
+  /* Tall enough for a real exchange, never taller than the room above the
+     button. `min()` of the two rather than a `vh` figure alone: on a short
+     laptop window the second term is what binds, and on a tall phone the
+     first stops the panel becoming a full-height drawer again by accident. */
+  max-height: min(32rem, calc(100dvh - 9rem));
+
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
   /* Opaque, not `--glass`: this one has a whole moving page behind it, and a
      conversation is the last thing that should be read through a backdrop. */
   background: var(--bg);
-  box-shadow: 30px 0 80px -40px var(--shadow);
-  animation: ai-in 300ms var(--ease) both;
+  box-shadow: 0 30px 80px -40px var(--shadow);
+  animation: ai-in 260ms var(--ease) both;
 }
 
+/* Out of the button rather than in from the edge: the origin is the corner the
+   button occupies, so the panel reads as the thing that opened. */
 @keyframes ai-in {
   from {
-    transform: translateX(-100%);
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+/*
+ * On a phone it spans the gutters and stands off the bottom, because 24rem of
+ * a 360px screen is the whole width anyway and a centred card with a 4px
+ * margin reads as a mistake. Still not full height: the composer summons a
+ * keyboard, and a panel sized to the viewport ends up with its input under it.
+ */
+@media (max-width: 30rem) {
+  .ai-panel {
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    max-height: min(30rem, 68dvh);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-scrim,
   .ai-panel {
     animation: none;
   }
@@ -6193,8 +6223,10 @@ button {
   color: var(--accent-lit);
 }
 
-/* The chevron points down by default; rotated a quarter turn it points back at
-   the edge the panel came from, which is where it is going. */
+/* No rotation. It was a quarter turn, from when this was a chevron pointing
+   back at the edge the drawer came from; the glyph has been a cross for a while
+   and a cross turned 90 degrees is the same cross, drawn crooked at the pixel
+   level for nothing. */
 .ai-close {
   display: grid;
   place-items: center;
@@ -6204,7 +6236,6 @@ button {
   background: none;
   color: var(--text-mut);
   cursor: pointer;
-  transform: rotate(90deg);
   transition: background 200ms var(--ease), color 200ms var(--ease);
 }
 
@@ -6299,24 +6330,17 @@ button {
   color: var(--text);
 }
 
+/* The answer is the page's own body text now rather than a muted aside: it is
+   the thing the panel was opened for, and it carries figures somebody is going
+   to read off it. */
 .ai-turn[data-from='bot'] {
   align-self: flex-start;
-  color: var(--text-mut);
+  max-width: 100%;
+  color: var(--text);
 }
 
-/* Says what it is on every reply. The panel is a working shell and the answers
-   are not real yet; labelling each one is the honest version of that. */
-.ai-tag {
-  display: inline-block;
-  margin-bottom: 0.35rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 5px;
-  border: 1px solid var(--border-2);
-  color: var(--accent-ink);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.ai-turn[data-from='bot'] p {
+  margin: 0;
 }
 
 .ai-foot {
@@ -6391,6 +6415,220 @@ button {
 
 .ai-suggestions .chip {
   font-size: 0.78rem;
+}
+
+/* ── the assistant's four reply states ─────────────────────────────────────
+ *
+ * A real call has states a canned line did not, and each of these is one of
+ * them. See the header note in `AssistantDock.tsx` for why a refusal, an
+ * unreachable server and a broken one are drawn as three different things.
+ */
+
+/*
+ * Thinking. Three dots on one timeline offset by a third each, so the wave
+ * reads as one object rather than three blinking marks — and `opacity` only,
+ * because it is the one property here the compositor can carry on its own.
+ */
+.ai-typing {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.55em;
+  margin: 0;
+}
+
+.ai-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.25;
+  animation: ai-think 1.25s var(--ease) infinite;
+}
+
+.ai-dot:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.ai-dot:nth-child(4) {
+  animation-delay: 0.28s;
+}
+
+@keyframes ai-think {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* Stilled rather than dropped: the dots are the only thing saying a question is
+   in flight, so they have to stay visible when motion is not wanted. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/*
+ * The receipt. Every figure in the sentence above came from one of these, so
+ * they are set as data — the value leading, tabular, and the label under it —
+ * rather than as a second sentence.
+ */
+.ai-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.ai-fact b {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-fact span {
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  color: var(--text-fnt);
+}
+
+/*
+ * The rows behind an answer. Deliberately not pressable and deliberately not
+ * shaped like something that is: no hover, no lift, no chevron. There is no
+ * venue route on this site to open one in, and a row that invites a tap it
+ * cannot honour is the picture-of-a-control this sheet's own rule forbids.
+ */
+.ai-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.65rem;
+  border-left: 2px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+}
+
+.ai-result b {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-result span {
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+/* The one thing in a reply that is pressable, because the server sent somewhere
+   real to go. The arrow travels on a transform; the gap stays put. */
+.ai-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+
+.ai-action svg {
+  transition: transform 240ms var(--ease);
+}
+
+.ai-action:hover svg {
+  transform: translateX(3px);
+}
+
+/*
+ * A refusal, drawn as a refusal.
+ *
+ * The palette has one accent, so this cannot be red — it is weighted instead,
+ * the same answer `.field-error` gives one block over: body weight in `--text`
+ * on a tinted rule, which is louder by contrast rather than by hue.
+ */
+.ai-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.ai-error p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The server's own words, under ours and quieter: they name which gate closed,
+   and they are the one line on this panel that is not translated. */
+.ai-error-why {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-size: 0.76rem;
+  color: var(--text-fnt);
+}
+
+/* Marks rather than lifts, so it needs no entry in the touch guard: a control
+   inside a message that has already gone wrong should not also be springy. */
+.ai-retry {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 200ms var(--ease),
+    border-color 200ms var(--ease);
+}
+
+.ai-retry:hover {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+}
+
+.ai-retry:active {
+  transform: scale(0.96);
+  transition-duration: 40ms;
 }
 
 /* ═══════════════════════════════════════════════════ business + listing ══ */
