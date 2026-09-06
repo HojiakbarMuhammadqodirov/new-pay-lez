@@ -1122,6 +1122,39 @@ bundled, the flag font copied into `public/`), geometry comes from the
   (`PD_ASSIST_COPY`): the point of the panel is that an owner reading in Polish
   sees what a Russian-speaking customer will read, so the set is fixed and
   `npm run verify` checks it covers `LANGUAGE_ORDER`.
+- **The dashboard is themed by tokens, and four things had slipped past that.**
+  All four were invisible in a screenshot of one theme and obvious in a
+  screenshot of both, which is the argument for capturing the pair:
+
+  - `Bar` in `dashboardScreens.tsx` gave its track `className="pd-bar"`.
+    **`.pd-bar` is the dashboard's sticky top bar** — `position: sticky`,
+    `min-height: 4rem`, a bottom border, a backdrop filter — so every budget
+    pool rendered as a 64px empty box with a rule under it. Same family as the
+    `.dash-*` collision below; `pd-bar-track` and `pd-bar-label` already
+    existed and were simply unused. **Grep before you name a class.**
+  - The deal-status filter used `pd-filters` / `pd-filter`, which have no rule
+    anywhere in `site.css`, so five statuses stacked down the right-hand edge.
+    It is `.pd-seg` now — the same segmented control the budget's pool picker
+    uses, because it is the same component.
+  - `.pd-panel-head > div` sets `flex-direction: column` for the head's *title
+    block* and was catching that control too. Scoped with
+    `.pd-panel-head > .pd-seg` rather than narrowed: every other panel head
+    relies on the column, and this is the one child that is not a title block.
+  - `.pd-withheld` — the em dash `Figure` renders for a suppressed metric —
+    had no rule, so it came out at the same weight and colour as a real
+    figure, which is the one thing a withheld figure must not look like. It is
+    faint and un-bolded now, with `cursor: help` for the `title` it carries.
+
+  A fifth was a colour: `--solid-lit` was a bare `#0f3b39` inside
+  `:root[data-theme='light'] .pd-app`, under a comment claiming nothing there
+  named one. It is `--ink-lit-rgb` in the `:root` ink block now, beside
+  `--ink-rgb` and `--ink-on-rgb`, because an ink press cannot lighten with
+  alpha — there is no ground behind it — so its hover is a third member of
+  that family rather than a transform of the first. **`.pd-scrim`'s
+  `rgba(0, 0, 0, 0.45)` is not a violation and stays**: a scrim is a dim
+  rather than a tint, deliberately outside the palette, and `site.css` says so
+  where the console's modal scrim is defined.
+
 - **The dashboard's surface is glass, and dense panels opt out of it.** Every
   panel is `.pd-glass` over the aurora on `.pd-app::before` — two radial fields
   of `rgba(var(--glow-rgb), …)`, the accent at alpha, not a second hue. The sheet

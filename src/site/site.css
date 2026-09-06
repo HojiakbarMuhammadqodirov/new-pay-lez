@@ -111,6 +111,18 @@
   --ink-on-rgb: 88, 233, 212;
 
   /*
+   * The ink when a hand is on it.
+   *
+   * An ink press cannot lighten with alpha — there is no ground behind it to
+   * let through — so its hover is a third member of the family rather than a
+   * transform of the first. It lives here with the other two for the reason
+   * stated above: it belongs to the *surface*, not to a theme. It was a bare
+   * hex sitting inside `:root[data-theme='light'] .pd-app`, under a comment
+   * claiming that nothing there named a colour.
+   */
+  --ink-lit-rgb: 15, 59, 57;
+
+  /*
    * The solid — the face of a thing you press, separate from `--accent`
    * because only one of the two is the accent.
    *
@@ -622,7 +634,7 @@ button {
 :root[data-theme='light'] .pd-app {
   --solid-rgb: var(--ink-rgb);
   --solid: rgb(var(--solid-rgb));
-  --solid-lit: #0f3b39;
+  --solid-lit: rgb(var(--ink-lit-rgb));
   --on-solid: rgb(var(--ink-on-rgb));
 }
 
@@ -7630,6 +7642,21 @@ button {
   min-width: 0;
 }
 
+/*
+ * ...except a segmented control, which is also a `div`.
+ *
+ * The column above is for the head's *title block* — a label with fine print
+ * under it — and it was catching the deal-status filter as well, standing five
+ * buttons on end down the right-hand edge where they read as a stray list
+ * rather than as one control. Scoped rather than narrowed: every other panel
+ * head in this sheet relies on that column, and this is the one child that is
+ * not a title block. Same specificity, placed after, so source order decides.
+ */
+.pd-panel-head > .pd-seg {
+  display: inline-flex;
+  flex-direction: row;
+}
+
 .pd-fine {
   font-size: 0.78rem;
   line-height: 1.55;
@@ -7960,6 +7987,25 @@ button {
  * first month of reach against, and inventing one is the thing this dashboard
  * has a whole panel of copy about not doing.
  */
+/*
+ * A figure the server withheld, and why it is not just a dash.
+ *
+ * `Figure` in `dashboardScreens.tsx` renders an em dash for a suppressed or
+ * unmeasured metric, and says in its own docstring that this is "not a zero
+ * and not a blank". It carried no rule at all, so it came out as a full-weight
+ * `<b>` in body colour — the same weight a real figure has, in every slot a
+ * real figure appears in, which is the one thing it must not look like.
+ *
+ * Faint and un-bolded, so the eye reads it as an absence at a glance and the
+ * `title` explains it on hover. `cursor: help` because there *is* a title;
+ * a tooltip nothing invites you to open is a tooltip nobody opens.
+ */
+.pd-withheld {
+  font-weight: 400;
+  color: var(--text-fnt);
+  cursor: help;
+}
+
 .pd-reach-figures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));

@@ -148,9 +148,15 @@ function Figure({ metric, format }: { metric: Metric | undefined; format?: (n: n
 /** A labelled proportion bar. One accent, so the parts differ by width alone. */
 function Bar({ label, value, of, note }: { label: string; value: number; of: number; note: string }) {
   return (
+    /* `pd-bar-track`, not `pd-bar`. `.pd-bar` is the dashboard's **sticky top
+       bar** — `position: sticky`, `min-height: 4rem`, a bottom border and a
+       backdrop filter — so a track wearing that class rendered every budget
+       pool as a 64px empty box with a rule under it, in both themes. Same
+       family as the `.dash-*` collision the root `CLAUDE.md` records; the
+       track and label classes below already existed and were simply unused. */
     <div className="pd-bar-row">
-      <span>{label}</span>
-      <span className="pd-bar">
+      <span className="pd-bar-label">{label}</span>
+      <span className="pd-bar-track">
         <i style={{ width: `${of > 0 ? Math.max(1, Math.min(100, (value / of) * 100)) : 0}%` }} />
       </span>
       <b>{note}</b>
@@ -1110,12 +1116,16 @@ function Deals() {
                     {fill(copy.count, { n: String(shown.length), total: String(deals.length) })}
                   </p>
                 </div>
-                <div className="pd-filters">
+                {/* `pd-seg`, the dashboard's one segmented control — the same
+                    component the budget's pool picker uses. It was `pd-filters`
+                    / `pd-filter`, which have no rule anywhere in `site.css`, so
+                    the five statuses stacked down the right-hand edge as bare
+                    buttons and read as a stray list rather than a filter. */}
+                <div className="pd-seg">
                   {copy.filters.map((label, index) => (
                     <button
                       key={label}
                       type="button"
-                      className="pd-filter"
                       data-on={index === filter ? 'true' : undefined}
                       onClick={() => setFilter(index)}
                     >
