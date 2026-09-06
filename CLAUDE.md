@@ -244,7 +244,28 @@ Two of the five question banks do not come from `new-data/`. The capitals and
 flags banks are derived from the `CountryCapital` export; **the general, Poland
 and Uzbekistan banks are the hand-delivered CSVs in `updates/`**, the same files
 `npm run banks` reads for the front end, and `db/import.ts` reads that directory
-as a second source. They were missing for a while and the symptom is worth
+as a second source.
+
+**And `new-data/` is not in the repository, so the country banks fall back to
+`updates/` too.** That is not tidiness — it is the difference between a clone
+that works and one that cannot be signed up for. Without `CountryCapital` both
+derived banks import as empty, `POST /v1/games/sessions {gameType:"flags"}` is a
+404, and **flags is the round the welcome gate asks for**: the new account gets
+"The flags did not load" with a Try again that will never succeed, and
+`resolveRoute` holds it at `#/welcome` from every route. One missing file three
+directories away locks every new player out of the entire product. The same 196
+countries are in `updates/`, split across the two exports the front end's own
+generator already reads, so the import prefers the Base44 table when it is there
+and reads those when it is not. Two details make the fallback equal rather than
+approximate: the flags export spells three countries its own way
+(`Saint Vincent`, `Congo (Brazzaville)`, `Central African Rep.`), which are
+aliases in `db/countries.ts` now because `assertComplete` throws rather than let
+a bank shrink quietly; and it carries no `continent`, which is joined across from
+the capitals export **on the ISO code** — the two files disagree about spelling,
+and the code is what `codeFor` exists to make them agree on. Without that join
+every country lands in one bucket and the wrong answers stop being from the same
+continent, which is the difference between a question and a giveaway.
+`verify:api` checks both. They were missing for a while and the symptom is worth
 recognising: `POST /v1/games/sessions {gameType:"brain"}` returns a 404 saying
 "no questions in the brain bank", and two of the eight games are unplayable
 while every other endpoint looks fine. The import reports it in its notes when

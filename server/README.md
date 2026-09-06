@@ -15,9 +15,12 @@ sheet. `db/import.ts` is the only file that knows those shapes.
 
 Three of the five question banks come from somewhere else, and it is worth
 knowing where. The capitals and flags banks are derived from `CountryCapital` in
-the export; the **general, Poland and Uzbekistan banks are hand-delivered
-exports** and live in `updates/` beside the front end's own copy of them, so the
-import reads that directory too. Without one of them
+the export — **or, when there is no export, from `updates/` as well**: that
+directory is in the repository and `new-data/` is not, and an empty flags bank
+is what makes the welcome gate a locked door for every new account (see the
+block in `db/import.ts`). The **general, Poland and Uzbekistan banks are
+hand-delivered exports** and live in `updates/` beside the front end's own copy
+of them, so the import reads that directory too. Without one of them
 `POST /v1/games/sessions {gameType:"brain"}` is a 404 and the game that draws on
 it cannot be played at all — which is a data gap rather than a missing feature,
 and the import reports it in its notes when the files are not found.

@@ -847,10 +847,81 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
 
   /* ───────────────────────────────── 8. the quiz banks, from CountryCapital ── */
 
+  /*
+   * `CountryCapital_export.csv` carries the country, its capital and both in
+   * four languages, so one table feeds both banks. It lives in `new-data/`,
+   * which is **not in the repository** — and when it is absent the two banks
+   * derived from it are silently empty, which is not a quiet degradation:
+   * `POST /v1/games/sessions {gameType:'flags'}` 404s, and the flags round is
+   * the one the **welcome gate** asks for. A new account then cannot finish
+   * onboarding, and `resolveRoute` holds it there from every route — so a
+   * missing file three directories away locks every new player out of the whole
+   * product, behind a "Try again" that will never succeed.
+   *
+   * The same material is in the repo, in `updates/`, split across the two
+   * hand-delivered exports the front end's own generator reads
+   * (`scripts/build-question-banks.mjs`). Their columns are the ones
+   * `importCapitals` and `importFlags` already read — `country_name`,
+   * `capital_name`, `continent` and the `_pl` / `_ru` / `_uz` pairs — so this is
+   * the same import from a second source rather than a second code path.
+   *
+   * Preferring the Base44 export keeps an existing deployment byte-for-byte: it
+   * is one table and therefore the one both banks agree on. The fallback is per
+   * bank, because the two files are separate and a clone may have either.
+   */
   const countries = file('CountryCapital');
-  assertComplete(countries.map((row) => str(row, 'country_name')));
-  await importCapitals(db, countries, bump);
-  await importFlags(db, countries, bump);
+  const capitalRows = countries.length
+    ? countries
+    : readCsv(join(gamesDir ?? 'updates', 'Country - Capital game data.csv'));
+  /*
+   * The flags export carries no `continent`, and that column is not cosmetic:
+   * `importFlags` picks its three wrong answers from the same continent, which
+   * is the difference between a question and a giveaway — Austria against
+   * Kuwait, China and Singapore is not a flag quiz. Left empty, every row falls
+   * into one 'Other' bucket and the distractors come from all 196.
+   *
+   * The capitals export beside it *does* carry it, for the same 196 countries.
+   * So the continent is joined across on the **ISO code** rather than on the
+   * name: the two files disagree about spelling ("Saint Vincent" against
+   * "St. Vincent & Grenadines"), and the code is what `codeFor` exists to make
+   * them agree on.
+   */
+  const flagRows = countries.length
+    ? countries
+    : (() => {
+        const rows = readCsv(join(gamesDir ?? 'updates', 'Flag Question data.csv'));
+        const continents = new Map<string, string>();
+        for (const row of capitalRows) {
+          const code = codeFor(str(row, 'country_name'));
+          const continent = str(row, 'continent');
+          if (code && continent) continents.set(code, continent);
+        }
+        return rows.map((row) => {
+          if (str(row, 'continent')) return row;
+          const continent = continents.get(codeFor(str(row, 'country_name')) ?? '');
+          return continent ? { ...row, continent } : row;
+        });
+      })();
+
+  /* Checked against whichever source was used, and only when there is one: an
+     empty list has no unknown country in it, and throwing on "no data" would
+     turn a missing optional export into a failed boot. */
+  assertComplete(capitalRows.map((row) => str(row, 'country_name')));
+  assertComplete(flagRows.map((row) => str(row, 'country_name')));
+
+  if (countries.length === 0) {
+    notes.push(
+      capitalRows.length || flagRows.length
+        ? `country banks: no CountryCapital export — read ${capitalRows.length} capitals ` +
+          `and ${flagRows.length} flags from ${gamesDir ?? 'updates'}/ instead`
+        : 'country banks: no CountryCapital export and no fallback in ' +
+          `${gamesDir ?? 'updates'}/ — the flags round the welcome gate asks for ` +
+          'will 404, and a new account cannot finish onboarding',
+    );
+  }
+
+  await importCapitals(db, capitalRows, bump);
+  await importFlags(db, flagRows, bump);
 
   /* The other three banks are hand-delivered exports rather than Base44 tables,
      so they sit in `updates/` beside the front end's own copy of them and are
