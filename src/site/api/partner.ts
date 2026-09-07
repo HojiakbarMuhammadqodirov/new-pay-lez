@@ -197,6 +197,16 @@ export interface AnalyticsResponse {
     | { suppressed: true; total: number; rows: [] }
     | { suppressed: false; total: number; rows: Array<{ language: string; share: number }> };
   costPerNewCustomer: CostPerNewCustomerBody;
+  /* The same figure for the last three months, oldest first — the trend beside
+     the headline. Not behind `deep_analytics`: it is the month's own arithmetic
+     run twice more rather than a new report. Optional all the same, so a client
+     built against this shape does not throw on a server that predates it. */
+  costPerNewCustomerTrend?: Array<{
+    period: string;
+    costPerNewCustomerMinor: Metric;
+    newCustomers: number;
+    spendMinor: number;
+  }>;
   cohorts?: Array<{ cohort: string; size: number; returned: Metric }>;
   repeatMultiple?: Metric;
   roi?: Array<{
@@ -245,6 +255,13 @@ export interface DealResponse {
   valid_from: string | null;
   valid_to: string | null;
   target_audience: string | null;
+  /* When the deal runs, as the drawer stored it: a comma-separated weekday set
+     ('mon,tue,…') and two minute offsets from midnight. All three are null on a
+     deal that runs whenever it is live, which is a different thing from one
+     that runs every day — the row prints nothing rather than "Every day". */
+  target_weekdays: string | null;
+  target_from_min: number | null;
+  target_to_min: number | null;
   cap_claims: number | null;
   spend_minor: number;
   seen_count: number;
@@ -261,6 +278,24 @@ export interface DealResponse {
     capSpendMinor: number | null;
   };
   translations: { languages: string[]; filled: string[]; missing: string[] };
+  /* The deal's own words in the reader's language, or the nearest filled one.
+     `discount_text` above is the *badge* — "20% OFF" — and is not a name. Null
+     when nothing is written in any language, which is a real state: a deal can
+     be created before it is written. */
+  copy: { title: string; description: string; terms: string; language: string } | null;
+  /** Claims per day for the last seven days, oldest first. Zeros, never gaps. */
+  series: number[];
+  /* The deal's one notification, or null if none was ever scheduled — which is
+     not the same as one that was scheduled and cancelled, and the row says so. */
+  push: {
+    status: string;
+    scheduledAt: string;
+    sentAt: string | null;
+    delivered: number;
+    opened: number;
+    /** People who were sent it and later scanned. Written by the gate. */
+    cameIn: number;
+  } | null;
 }
 
 /** A row of `GET /v1/partner/venues/:id/campaigns` — `campaigns.*` plus counts. */
@@ -749,6 +784,33 @@ export const setDealStatus = (dealId: string, status: DealAction) =>
  * statement, which is what makes this the correct control on an offer that has
  * already run out rather than a second "publish".
  */
+/**
+ * Change a deal that already exists.
+ *
+ * `PATCH /v1/partner/deals/:id` takes a *partial* — every field is optional and
+ * an absent one is left alone, which is what makes this safe to call from a
+ * form that only shows some of them. `copy` is keyed by language and merges
+ * per language, so writing the Polish title does not blank the English one.
+ *
+ * It is deliberately not a second `createDeal`: the two differ in what the
+ * server does with the fields it is *not* given, and a PUT here would quietly
+ * clear a targeting rule an owner set from the assistant.
+ */
+export interface DealPatch {
+  discountText?: string;
+  validFrom?: string;
+  validTo?: string;
+  capClaims?: number;
+  capSpendMinor?: number;
+  copy?: Record<string, { title?: string; description?: string }>;
+}
+
+export const updateDeal = (dealId: string, patch: DealPatch) =>
+  call<DealResponse>(`/v1/partner/deals/${encodeURIComponent(dealId)}`, {
+    method: 'PATCH',
+    body: patch as unknown as Record<string, unknown>,
+  });
+
 export const extendDeal = (dealId: string, validTo: string) =>
   call<DealResponse>(`/v1/partner/deals/${encodeURIComponent(dealId)}/extend`, {
     method: 'POST',

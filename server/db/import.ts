@@ -1144,17 +1144,43 @@ const QUIZ_LANGS = [
 /**
  * Three wrong answers from the same continent, chosen deterministically.
  *
- * The stride is coprime with most pool sizes, so it walks the list without
- * repeating and without a PRNG — which means re-running the import produces the
- * same bank rather than a second one, and a question a player disputes can be
- * reconstructed exactly.
+ * Deterministic on purpose: re-running the import produces the same bank
+ * rather than a second one, and a question a player disputes can be
+ * reconstructed exactly. That rules out a PRNG, which is why this walks the
+ * candidate list with a stride instead.
+ *
+ * **The stride has to be coprime with the list, and 13 was only coprime with
+ * most of them.** Oceania has 14 countries, so a question there left 13
+ * candidates, and `step * 13 % 13` is 0 at every step — the walk sat on one
+ * entry, `out` collected a single distractor, and 14 of the 196 flags and 14
+ * of the 196 capitals were asked as a coin flip between two options. It is
+ * computed against the actual length now, so the walk visits every candidate
+ * exactly once and always returns `min(3, candidates)`.
+ *
+ * The narrow pool is also chosen on what is left **after** the answer is
+ * removed. `pool.length >= 3` counted the answer itself, so a three-country
+ * continent fell through the guard and furnished two.
  */
+function coprimeStride(n: number): number {
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  for (let candidate = Math.min(13, n - 1); candidate > 1; candidate -= 1) {
+    if (gcd(candidate, n) === 1) return candidate;
+  }
+  return 1;
+}
+
 function pickDistractors(pool: string[], answer: string, wide: string[], index: number): string[] {
-  const from = pool.length >= 3 ? pool : wide;
-  const candidates = from.filter((value) => value !== answer);
+  const near = pool.filter((value) => value !== answer);
+  const candidates = near.length >= 3 ? near : wide.filter((value) => value !== answer);
+  const n = candidates.length;
+  if (n === 0) return [];
+
+  const stride = coprimeStride(n);
   const out: string[] = [];
-  for (let step = 1; out.length < 3 && step <= candidates.length; step += 1) {
-    const pick = candidates[(index * 7 + step * 13) % candidates.length];
+  /* `step < n` with a coprime stride touches every candidate exactly once, so
+     the loop cannot run out of steps while unseen answers remain. */
+  for (let step = 0; out.length < 3 && step < n; step += 1) {
+    const pick = candidates[(index * 7 + step * stride) % n];
     if (pick && !out.includes(pick)) out.push(pick);
   }
   return out;

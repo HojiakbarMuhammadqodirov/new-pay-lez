@@ -15,7 +15,6 @@ import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './a
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
-import { fxForCountry } from './i18n/fx';
 import { useAuth } from './auth/context';
 import {
   awardPoints,
@@ -465,16 +464,30 @@ function BatteryLightning() {
 function StreakRow({ player }: { player: PlayerState }) {
   const copy = useCopy().games;
   const [language] = useLanguage();
-  const { account } = useAuth();
 
   const week = useMemo(() => streakWeek(player, new Date()), [player]);
   const held = freezesOf(player);
 
-  /* The mark itself. `null` from `fxForCountry` is "we do not know where this
-     person is", which is a different thing from "we know, and it is dollars" —
-     and both draw a `$`, because there is nothing better to draw. What must not
-     happen is inventing a currency for the first one. */
-  const mark = fxForCountry(account?.profile?.countryCode)?.symbol ?? '$';
+  /*
+   * The mark itself, and it is `$` for everybody — asked for, and worth writing
+   * down because it overrules the paragraph above.
+   *
+   * What the local mark bought was a Kraków player seeing `zł`. What it cost is
+   * that the row changes shape between people and between profiles: `zł` is two
+   * characters and `so'm` is four, so a circle sized for `$` either clips them
+   * or has to grow for the widest one, and a player who has not filled in a
+   * city gets the fallback anyway — so the local mark was never the thing most
+   * people saw. `$` reads as "money" nearly everywhere, which is the whole job
+   * the glyph is doing here; these circles are not prices and nothing is being
+   * quoted in dollars.
+   *
+   * Putting the local mark back is one line and one import —
+   * `fxForCountry(account?.profile?.countryCode)?.symbol ?? '$'`, out of
+   * `i18n/fx.ts`, which is where it came from. The rest of the site is
+   * untouched: a price is still written in the reader's own currency through
+   * `useMoney`, which is a different rule about a different thing.
+   */
+  const mark = '$';
 
   /* Monday first, in the reader's own language. `narrow` is one or two
      characters, which is what fits under a circle; the position in the row is
@@ -951,11 +964,26 @@ function Result({
  * which one a player gets is the bank the site already picks from their country,
  * so the mapping is the site's own `quizBankFor` decision expressed once more.
  */
-const SERVER_GAME: Record<GameId, ServerGameType> = {
+/**
+ * The eight cards, as the server names them — except the one that cannot be a
+ * constant.
+ *
+ * `local` is deliberately **not** in here. It was, as `local: 'poland'`, and
+ * that single line was the whole of the bug: the card's *name* is resolved
+ * from the profile's country through `quizCountryFor`, so a player in Tashkent
+ * read "Uzbekistan Quiz" and was then asked five questions about Poland. The
+ * two axes CLAUDE.md separates — what you read, and where you live — were
+ * being resolved from different places, and only one of them moved.
+ *
+ * Typing the map as `Exclude<GameId, 'local'>` is what stops it coming back: a
+ * constant cannot answer a question that depends on the account, so the
+ * compiler refuses to let anyone look `local` up here at all. `serverGame`
+ * below is the only way through.
+ */
+const SERVER_GAME: Record<Exclude<GameId, 'local'>, ServerGameType> = {
   brain: 'brain',
   flag: 'flags',
   capital: 'capitals',
-  local: 'poland',
   word: 'word_builder',
   /* The local-language word game. The server has one Word Builder and the
      language is a property of the session, not of the game. */
@@ -1182,6 +1210,20 @@ export function GamesApp() {
    */
   const localCountry = quizCountryFor(account?.profile?.countryCode);
 
+  /*
+   * What to ask the server for, for a given card.
+   *
+   * Seven of the eight are a constant and live in `SERVER_GAME`. The eighth
+   * depends on the account, so it is resolved here from the same country the
+   * card's *name* is resolved from — `quizBankFor` is `QUIZ_BANK_FOR_COUNTRY`
+   * applied to the folded country, which is the fold `localCountry` above just
+   * did. One source for both halves is the whole point: they disagreed before,
+   * and the disagreement was silent because a wrong bank still returns five
+   * perfectly good questions.
+   */
+  const serverGame = (id: GameId): ServerGameType =>
+    id === 'local' ? quizBankFor(account?.profile?.countryCode) : SERVER_GAME[id];
+
   const player = account?.player;
 
   /*
@@ -1312,7 +1354,7 @@ export function GamesApp() {
     if ((chosen.kind === 'flight' || chosen.kind === 'memory' || chosen.kind === 'word') && hasToken()) {
       setQuestions([]);
       setLoading(true);
-      startRound(SERVER_GAME[id], language, practice)
+      startRound(serverGame(id), language, practice)
         .then((round) => {
           setSession(round.sessionId);
           setContent(round.content);
@@ -1347,7 +1389,7 @@ export function GamesApp() {
     if (hasToken()) {
       setPlaying(null);
       setLoading(true);
-      startRound(SERVER_GAME[id], language, practice)
+      startRound(serverGame(id), language, practice)
         .then((round) => {
           const content = round.content as ServerQuiz;
           setSession(round.sessionId);

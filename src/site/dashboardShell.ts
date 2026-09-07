@@ -18,13 +18,32 @@ import { RANGE_DAYS, type RangeDays } from './partnerMetrics';
 /** Which body the create drawer is showing, or `null` for closed. */
 export type DrawerKind = 'deal' | 'campaign';
 
+/**
+ * What the drawer is open *on*.
+ *
+ * The panel started as create-only, so a bare `DrawerKind` said everything
+ * there was to say. Editing needs one more fact — which row — and it is carried
+ * here rather than in the drawer's own state because the thing that knows is
+ * the table, and the drawer lives on the frame: six places open it, and threading
+ * a deal through six call sites is what the context exists to avoid.
+ *
+ * `id` rather than the whole row on purpose. The drawer re-reads the deal from
+ * the list it is already subscribed to, so a row edited in one tab and reloaded
+ * in another cannot leave the form filled with a copy that has drifted.
+ */
+export interface DrawerTarget {
+  kind: DrawerKind;
+  /** The deal being edited, or `undefined` when the drawer is creating one. */
+  dealId?: string;
+}
+
 export interface DashboardShell {
   /** Index into `DASH_SCREENS`. */
   screen: number;
   go: (index: number) => void;
   /** Go by id, so a caller can say `'campaigns'` rather than count the rail. */
   goTo: (id: string) => void;
-  openDrawer: (kind: DrawerKind) => void;
+  openDrawer: (kind: DrawerKind, dealId?: string) => void;
   closeDrawer: () => void;
   /**
    * Raise the confirmation strip.

@@ -337,6 +337,85 @@ export const funnel = async (db: Db, dealId: string) => {
   };
 };
 
+/**
+ * A deal's last `days` days of claims, oldest first, one entry per day.
+ *
+ * This is the series behind the "7 DAYS" column on the partner's deals table,
+ * and it is **claims** rather than impressions on purpose: the column sits at
+ * the end of a row that already prints seen, opened and claimed as totals, and
+ * the only one of the three whose *shape over time* tells the owner anything is
+ * the one that costs them money.
+ *
+ * Two details are load-bearing:
+ *
+ *   - **Days with no claims are zeros, not gaps.** `GROUP BY` returns only the
+ *     days that have rows, and a sparkline drawn straight off that silently
+ *     closes the gaps — a deal claimed twice a week renders as a healthy line.
+ *     The window is built first and the counts are filled into it.
+ *   - **The bucket is a date, not a rolling 24 hours.** `substr(created_at, 1,
+ *     10)` is the ISO day, which is what the labels under the chart say. It is
+ *     UTC rather than venue-local, which is the same simplification
+ *     `analytics.reach` makes and is worth knowing before this is used for
+ *     anything finer than a shape.
+ */
+export async function claimSeries(db: Db, dealId: string, days = 7): Promise<number[]> {
+  const span = Math.max(1, Math.min(days, 90));
+  const rows = await db.all<{ day: string; n: number }>(
+    `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n
+       FROM deal_events
+      WHERE deal_id = $d AND event_type = 'claim'
+        AND created_at >= $from
+      GROUP BY day`,
+    { d: dealId, from: new Date(Date.now() - span * 86_400_000).toISOString() },
+  );
+
+  const counts = new Map(rows.map((row) => [row.day, row.n]));
+  const series: number[] = [];
+  for (let i = span - 1; i >= 0; i -= 1) {
+    const day = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
+    series.push(counts.get(day) ?? 0);
+  }
+  return series;
+}
+
+/**
+ * The one notification a deal is allowed, if it has one.
+ *
+ * `deal_pushes` is `UNIQUE (deal_id)`, so this is at most one row, and every
+ * field the partner's table needs is already on it — which is why this is a
+ * read rather than a new table. `came_in` is the figure the row's chip quotes
+ * ("Notification sent · 112 came in"); it is the count of people who were sent
+ * the push and later scanned, written by the gate, and **not** something a
+ * client can post.
+ *
+ * Returns `null` when no push was ever scheduled, which the row draws as "No
+ * notification" — a different statement from a push that was scheduled and
+ * cancelled, and the two must not collapse.
+ */
+export async function pushFor(db: Db, dealId: string) {
+  const row = await db.get<{
+    status: string;
+    scheduled_at: string;
+    sent_at: string | null;
+    delivered: number;
+    opened: number;
+    came_in: number;
+  }>(
+    `SELECT status, scheduled_at, sent_at, delivered, opened, came_in
+       FROM deal_pushes WHERE deal_id = $d`,
+    { d: dealId },
+  );
+  if (!row) return null;
+  return {
+    status: row.status,
+    scheduledAt: row.scheduled_at,
+    sentAt: row.sent_at,
+    delivered: row.delivered,
+    opened: row.opened,
+    cameIn: row.came_in,
+  };
+}
+
 /* ───────────────────────────────────────────────────────────── the lifecycle ── */
 
 /**

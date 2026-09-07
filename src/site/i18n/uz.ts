@@ -891,6 +891,10 @@ export const uz: Dictionary = {
       column: 'Amallar',
 
       publish: 'Chop etish',
+
+      /** The row's own control: open this deal in the create panel. */
+
+      edit: 'Tahrirlash',
       pause: 'To‘xtatib turish',
       resume: 'Davom ettirish',
       extend: 'Uzaytirish',
@@ -983,6 +987,10 @@ export const uz: Dictionary = {
       monthOnly:
         'Raqamlar butun kalendar oy uchun beriladi — server shu oynada sanaydi. Yuqoridagi oraliq tanlagichi ularni hali qimirlatmaydi.',
       noFindings: 'Bu oy hech narsa ajralib turmadi.',
+      /** A panel drawn from the reference design's figures rather than
+          from measured ones, so the layout can be seen while the endpoint
+          behind it does not exist. Never shown when `PD_SEED` is off. */
+      sample: 'Namuna maʼlumotlar',
       tierUnit: 'Ularning har biri hisobdan {unit} chegiradi.',
       plan: 'Ko‘rsatadigan byudjet yo‘q — bu qurilma Paylez API’siga kirmagan.',
       assistant:
@@ -1085,6 +1093,8 @@ export const uz: Dictionary = {
         'Kassadagi har bir QR skanerlash mijozlar haqiqatan sarflagan vaucherlarga qarshi',
       chartVisits: 'Tashriflar',
       chartRedeemed: 'Ishlatilgan vaucherlar',
+      /** The right-hand end of the chart's date axis. */
+      chartToday: 'bugun',
 
       holdingTitle: 'Siz ushlab turgan pul',
       holding:
@@ -1183,6 +1193,10 @@ export const uz: Dictionary = {
       count: '{total} tadan {n} ta taklif',
       sortNote:
         'Olish ulushi bo‘yicha saralangan, eng yaxshisi yuqorida. Faol va rejalashtirilganlar birinchi turadi.',
+      /** A deal published with no discount text on it yet. */
+      untitled: 'Nomsiz',
+      /** Half of the sent-notification chip: people it reached who then scanned. */
+      cameIn: '{n} keldi',
       insight:
         'Bepul mahsulotli takliflaringiz foizli chegirmalarga qaraganda 2,4 barobar ko‘p olinadi. 5% li tushlik to‘plami sust ishladi — kichik chegirmalar odamlarni kamdan-kam qo‘zg‘atadi.',
       langsAll: 'Beshala tilda yozilgan',
@@ -1191,6 +1205,7 @@ export const uz: Dictionary = {
         none: 'Bildirishnomasiz',
         scheduled: 'Bildirishnoma rejalashtirilgan',
         sent: 'Bildirishnoma yuborilgan',
+        stopped: 'Bildirishnoma toʻxtatildi',
       },
       reach: '{total} odamdan {n} tasiga xabar berish mumkin',
       limit: '{limit} tadan {claimed} tasi olingan',
@@ -1234,6 +1249,12 @@ export const uz: Dictionary = {
       notifyChange: 'Vaqtni o‘zgartirish',
       notifyCancel: 'Bekor qilish',
       whoTitle: 'Kim ko‘radi va qachon',
+      /* The two fallbacks in the expanded row's targeting card. A deal
+         with no window runs whenever it is live, and one with no audience
+         is shown to everyone — both are real states rather than gaps, so
+         they are named rather than left blank. */
+      anytime: 'Har kuni',
+      everyone: 'Hamma',
 
       limitForecast: 'Shu sur’atda bu taklif {limit} ta olish chegarasiga taxminan {date} da yetadi.',
       limitDates: ['22-avgust', '', '', '', '', ''],
@@ -1514,6 +1535,12 @@ export const uz: Dictionary = {
     },
 
     drawer: {
+
+      /* The panel's heading when it was opened on an existing deal. One
+
+         panel does both jobs and the heading is what says which. */
+
+      editDeal: 'Qaynoq chegirmani tahrirlash',
       close: 'Yopish',
       cancel: 'Bekor qilish',
       later: 'Saqlab, keyinroq tugatish',
@@ -2775,6 +2802,12 @@ export const uz: Dictionary = {
       failed: 'Hozir qo‘llanmaga ulana olmadik. Hech nima yo‘qolgani yo‘q — birozdan keyin urinib ko‘ring.',
       onPaylez: 'Paylezda',
       visit: 'Sayt',
+      reviews: '({n} ta sharh)',
+      takesVouchers: 'Paylez vaucherlarini qabul qiladi',
+      about: 'Haqida',
+      pricing: 'Narxlar',
+      contact: 'Aloqa',
+      close: 'Yopish',
     },
 
     countries: {

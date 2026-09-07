@@ -81,9 +81,14 @@ export const guidanceRoutes: Route[] = [
     handler: async (ctx) => {
       const rows = await ctx.db.all<{ id: string; venue_id: string | null; name: string; category_key: string | null;
         city: string | null; address: string | null; lat: number | null; lng: number | null;
-        phone: string | null; price_range: string | null; rating: number | null;
+        phone: string | null; email: string | null; price_range: string | null; rating: number | null;
         review_count: number; image_url: string | null; accepts_vouchers: number; subcategories: string }>(
-        `SELECT id, venue_id, name, category_key, city, address, lat, lng, phone, price_range,
+        /* `email` joined the select when the guide's cards grew a detail panel
+           with a Contact block in it. The column has always been here; nothing
+           was reading it, so a listing with a desk address and no phone had no
+           way of being reached at all. Additive, so an older client is
+           unaffected. */
+        `SELECT id, venue_id, name, category_key, city, address, lat, lng, phone, email, price_range,
                 rating, review_count, image_url, accepts_vouchers, subcategories
            FROM guidance_services
           WHERE active = 1

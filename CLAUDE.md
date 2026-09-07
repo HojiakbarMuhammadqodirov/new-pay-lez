@@ -600,6 +600,42 @@ card — and `guidance_services` has no such column, so the card no longer claim
 it. Inventing the one attribute the real data lacks is how the directory got
 fictional in the first place.
 
+**And a listing is a card that opens, because the row always held more than the
+list drew.** An expanded subject was a `<ul>` of `<li>`s showing a name, an
+address and a blurb — which was exactly what `GuideService` in `api/guide.ts`
+declared a row to have. `guidance_services` has carried the rating, the review
+count, the price band, the subcategories and the voucher flag the whole time,
+and the route has been selecting them the whole time; **a missing field on an
+interface is invisible in a way a missing column is not.** The rows are
+`.gs-card` buttons now — the whole card is the target, the Play grid's rule —
+and one opens `.gs-panel` with everything the row carries.
+
+Four rules travel with it:
+
+- **Every block in the panel is conditional on its own field.** No description,
+  no About; no `price_range`, no Pricing; nothing to reach the place by, no
+  Contact. A heading over an em dash promises something the row does not hold,
+  which is the failure this directory has already had once.
+- **`price_range` is the one figure on the site that does not go through
+  `useMoney`.** It is what a Kraków restaurant charges, in złoty, for everybody
+  who walks in — the reader's currency is the rule for *our* prices, and
+  converting a venue's own band would quote somebody a price they cannot pay.
+- **There is no photograph.** `image_url` is an external URL and nothing in
+  `src/` makes a third-party runtime request, so the card draws the name's
+  initial on the accent, exactly as the wallet's brands do. The column stays off
+  the interface for that reason rather than being fetched and hidden.
+- **No Translate control**, which the design asked for: `copyOf` in
+  `routes/guidance.ts` already returns this copy in the reader's language with
+  English filling any hole, so the button would either do nothing or claim a
+  second translation nothing performs. A control with nothing honest behind it
+  is not drawn.
+
+`email` joined the services select at the same time — the column was always
+there and nothing read it, so a listing with an address and no phone could not
+be reached at all. Additive, so no client breaks; `npm run openapi` was rerun.
+The panel is **modal**, unlike the assistant dock, and for the opposite reason:
+the dock is consulted *while* reading, and this is the page's own row opened.
+
 **Who is signed in decides what exists, and the rule is one pure function.**
 `resolveRoute(route, account)` in `router.ts` is the whole access policy: an
 individual has no Business, Analytics, dashboard or setup; an owner with no listing
@@ -705,6 +741,14 @@ And a matching rule for the labels: **a button goes where its words say.**
 visitor, correctly); "Play & Earn" goes to L-Earn; "Talk to us" goes to Contact.
 Several of these pointed at a section on the page they were already on, which is
 what a page does when nobody has anywhere to send you yet.
+
+The landing hero's **"How it works"** is the version of that which survived
+longest, because it *did* scroll somewhere: `#guide`, the city carousel. A
+visitor asking how the product works was dropped on a list of shop categories.
+It goes to `#features` — "How paylez works / Play a little. Earn a lot." —
+which is the section that answers the question. `#guide` keeps its other job as
+the globe's scroll anchor in `Site.tsx`; the two are different things that
+happen to share a name.
 
 **Two storage keys, and they are different things.** `paylez-session` is who is
 signed in *on this device*; `paylez-users` (`auth/directory.ts`) is every
@@ -846,12 +890,21 @@ disagree with it the first time either was written without the other, and the
 number is printed next to the circles. A live streak whose `lastPlayed` is
 `null` reads as ending **yesterday**, because that is the branch `awardPoints`
 already gives it — a state stored directories still carry and the app itself
-cannot produce. A day the streak counts shows the
-**currency mark of wherever the player lives** (`fxForCountry`, off the
-profile's country, not off the language switcher), because the argument a streak
-makes is that turning up is worth money and a row of ticks makes it to nobody. A
-country the rate sheet does not carry falls back to `$`. A day that has not
-happened yet is `ahead` and must not be drawn as missed.
+cannot produce. A day that has not happened yet is `ahead` and must not be drawn
+as missed.
+
+**A day the streak counts shows a `$`, for everyone.** It showed the currency
+mark of wherever the player lives — `fxForCountry` off the profile's country,
+not off the language switcher — on the argument that a streak's whole claim is
+that turning up is worth money and a row of ticks makes that claim to nobody.
+The glyph still makes it; which glyph does not. What the local mark cost is that
+the row changed shape between people: `zł` is two characters and `so'm` is four,
+so a circle sized for `$` either clips them or grows for the widest one, and a
+player who has not filled in a city got the fallback regardless — so the local
+mark was never what most people saw. These circles are not prices and nothing is
+quoted in dollars. Putting it back is one line and one import in `StreakRow`,
+named at the point of use. **The site's prices are a different rule** and are
+untouched: a price is written in the *reader's* currency through `useMoney`.
 
 **A lapse takes the streak and nothing else.** It used to take the balance with
 it — the old app's own hot-deal terms say so — and the server does not do that
@@ -927,6 +980,28 @@ The row in `GAMES` is called `local` and **not** `poland`. It was `poland` while
 Poland was the only bank there was; a second one made the id a lie, which is the
 same trap `occupation` was renamed to avoid one screen over.
 
+**And the id it is *sent* under has to be resolved the same way.** The card
+picked the right bank for its name and its hover sample, then asked the server
+for `'poland'` — a fixed entry in `SERVER_GAME`, written when Poland was the
+only answer — so a player in Tashkent read "Uzbekistan Quiz" on the card and was
+asked about Poland. `SERVER_GAME` is now
+`Record<Exclude<GameId, 'local'>, ServerGameType>` and `local` is resolved by
+`serverGame()` through the same `quizBankFor` everything else on that screen
+uses. The exclusion is the point: the row whose bank depends on the profile
+cannot be given a constant, because the type no longer has a slot to put one in.
+
+**A quiz question with two options is a data bug, and it is upstream.** Flags
+and Capitals sometimes offered two answers instead of four. `pickDistractors` in
+`server/db/import.ts` walked its candidate pool with a fixed stride, and where
+that stride shared a factor with the pool size the walk revisited the same few
+entries and came back short — every affected question was in a small continent
+group, which is why Oceania was all of them (14 of 196 in each bank). The stride
+is now the largest value under 13 that is **coprime** with the pool size, so the
+walk visits every candidate before repeating. Two things follow: it is still
+deterministic, which is what lets `INSERT OR REPLACE` on a stable id repair the
+rows in place; and **an existing database is not fixed by deploying this** —
+`npm run server:import` re-reads the exports and rewrites them.
+
 **Adding a country is one export and one row.** Drop
 `updates/<Country>_Quiz_Questions_data_*.csv` in — the generator globs, so a bank
 may arrive in parts — add a branch to `scripts/build-question-banks.mjs`, widen
@@ -971,6 +1046,29 @@ viewport and the pointer emulated rather than by looking at a narrow window:
   `.site[data-route='learn']` because it is the one backdrop that draws *filled*
   shapes and the stats row lands on the block run. Same rule `--glass` states
   for cards: text wins.
+
+**A stretched `.btn` centres its own label.** `.btn` is an `inline-flex` and set
+no `justify-content`, which is invisible everywhere it shrink-wraps — content
+and box are the same width, so nothing can move — and wrong everywhere a parent
+stretches it. The Contact form's submit is a column child of `.form-block`, so
+it is the width of the fieldset and its icon and label sat against the left edge
+with 340px of empty pill after them; the same was true of the sign-in button,
+the Google button, both plan cards' CTAs, and every hero CTA at phone widths,
+where `.hero-cta` wraps and each button takes the row. One declaration on `.btn`
+rather than a rule per instance, because the ones that are not stretched cannot
+notice it.
+
+**A hero with an empty second column is centred, not left-packed.** `.hero-grid`
+is two columns because the right-hand one reserves the space the *globe* renders
+into, and the globe is a fixed layer that cannot see the page. Relocate copied
+the arrangement when it had the globe and kept it through three backdrops; the
+one it has now is full-bleed like every other 2D backdrop, so the reserved
+column reserved nothing and the copy sat in the left half of an empty screen.
+`hero-mid` is the answer — one column, the 34rem measure kept, and the flex rows
+(buttons, stats) centred with it, because a centred paragraph over a left-packed
+button row is worse than either. Reach for it on any hero that is not sharing
+the viewport with the globe; `text-align` alone would not have been the fix,
+since the problem was the track.
 
 **A hover implies a press, and a press has to exist.** There were four `:active`
 rules in the whole sheet and none on `.btn` — every button lifted toward the
@@ -1021,9 +1119,37 @@ itself; and the assistant's ask box was a `<span>` that looked exactly like a
 field and did nothing at all. The fixes are the pattern — wrap the input in a
 `<label>` that fills the row, so the well, the currency symbol and the empty
 space after the digits all put the caret in it; and give a decorative field a
-real destination (the ask box is an `<a>` to sign-in, which is where the
-assistant lives). A picture of a control is only honest when nothing about it
+real destination. A picture of a control is only honest when nothing about it
 invites a tap.
+
+**And the destination has to be the thing, not a form in front of it.** The ask
+box went to sign-in for a while, which was honest and sent somebody asking about
+tram tickets to a password field. It **opens the dock** now — `openAssistant()`
+in `content.ts` — which draws its own signed-out pitch, so a visitor sees what
+they are being asked to join before being asked. The four suggested questions
+under it were the worse half: `<span>`s wearing the styling of the dock's chips,
+which *are* buttons and *do* ask what they say. Each now opens the panel **with
+its question already asked**. Making them links would have answered the
+complaint ("not clickable") and kept the part that was actually wrong — the
+point of a suggested question is the question.
+
+Three things about that hand-off are load-bearing, and two of them were bugs
+first:
+
+- **The payload carries a sequence number, not just the text.** Clearing the
+  dock's state and guarding on non-null asked everything **twice**: StrictMode
+  runs an effect, tears it down and runs it again against the same props, and
+  the clear has not committed in between. A plain string cannot be the guard
+  either — setting state to the string it already holds is a React bail-out, so
+  the *same* chip pressed twice would do nothing. A counter says "once each"
+  and "again" with one comparison.
+- **The guard has to let a re-run through.** That same teardown aborts the
+  request in flight, so an effect that refused its second run left the question
+  spinning forever with nothing coming back.
+- **An aborted question leaves nothing behind.** `send` used to `return` on an
+  abort and leave the pair in the thread — a question with dots under it that
+  nothing can ever settle. It removes them now. A thread is a record of the
+  conversation, and an exchange that did not happen does not belong in it.
 
 **Per-frame work does not go through React state.** This is the load-bearing
 rule of the codebase. Scroll position is written to a ref by a passive listener

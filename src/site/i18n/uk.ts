@@ -896,6 +896,10 @@ export const uk: Dictionary = {
       column: 'Дії',
 
       publish: 'Опублікувати',
+
+      /** The row's own control: open this deal in the create panel. */
+
+      edit: 'Змінити',
       pause: 'Призупинити',
       resume: 'Відновити',
       extend: 'Продовжити',
@@ -988,6 +992,10 @@ export const uk: Dictionary = {
       monthOnly:
         'Цифри рахуються за повний календарний місяць — це вікно, у якому рахує сервер. Вибір періоду вище їх поки не рухає.',
       noFindings: 'Цього місяця нічого не вирізнилося.',
+      /** A panel drawn from the reference design's figures rather than
+          from measured ones, so the layout can be seen while the endpoint
+          behind it does not exist. Never shown when `PD_SEED` is off. */
+      sample: 'Демонстраційні дані',
       tierUnit: 'Кожен знімає з рахунку {unit}.',
       plan: 'Бюджету для показу немає — цей пристрій не авторизований в API Paylez.',
       assistant:
@@ -1089,6 +1097,8 @@ export const uk: Dictionary = {
         'Кожне сканування QR біля каси проти ваучерів, які клієнти справді витратили',
       chartVisits: 'Візити',
       chartRedeemed: 'Погашено ваучерів',
+      /** The right-hand end of the chart's date axis. */
+      chartToday: 'сьогодні',
 
       holdingTitle: 'Гроші, які ви тримаєте',
       holding:
@@ -1187,6 +1197,10 @@ export const uk: Dictionary = {
       count: '{n} з {total} пропозицій',
       sortNote:
         'Відсортовано за часткою забраних, найкращі вгорі. Активні та заплановані йдуть першими.',
+      /** A deal published with no discount text on it yet. */
+      untitled: 'Без назви',
+      /** Half of the sent-notification chip: people it reached who then scanned. */
+      cameIn: '{n} прийшли',
       insight:
         'Ваші пропозиції з безкоштовним товаром забирають у 2,4 раза частіше, ніж відсоткові знижки. Ланч-набір із 5% спрацював слабко — маленькі знижки рідко когось рухають.',
       langsAll: 'Написано всіма п’ятьма мовами',
@@ -1195,6 +1209,7 @@ export const uk: Dictionary = {
         none: 'Без сповіщення',
         scheduled: 'Сповіщення заплановано',
         sent: 'Сповіщення надіслано',
+        stopped: 'Сповіщення зупинено',
       },
       reach: '{n} з {total} людей можна сповістити',
       limit: '{claimed} з {limit} забраних',
@@ -1238,6 +1253,12 @@ export const uk: Dictionary = {
       notifyChange: 'Змінити час',
       notifyCancel: 'Скасувати його',
       whoTitle: 'Хто це бачить і коли',
+      /* The two fallbacks in the expanded row's targeting card. A deal
+         with no window runs whenever it is live, and one with no audience
+         is shown to everyone — both are real states rather than gaps, so
+         they are named rather than left blank. */
+      anytime: 'Щодня',
+      everyone: 'Усі',
 
       limitForecast: 'За такого темпу знижка досягне ліміту в {limit} отримань близько {date}.',
       limitDates: ['22 серпня', '', '', '', '', ''],
@@ -1514,6 +1535,12 @@ export const uk: Dictionary = {
     },
 
     drawer: {
+
+      /* The panel's heading when it was opened on an existing deal. One
+
+         panel does both jobs and the heading is what says which. */
+
+      editDeal: 'Змінити гарячу знижку',
       close: 'Закрити',
       cancel: 'Скасувати',
       later: 'Зберегти й закінчити пізніше',
@@ -2768,6 +2795,12 @@ export const uk: Dictionary = {
       failed: 'Зараз не вдалося зв’язатися з путівником. Нічого не зникло — спробуйте за хвилину.',
       onPaylez: 'На Paylez',
       visit: 'Сайт',
+      reviews: '({n} відгуків)',
+      takesVouchers: 'Приймає ваучери Paylez',
+      about: 'Про місце',
+      pricing: 'Ціни',
+      contact: 'Контакти',
+      close: 'Закрити',
     },
 
     countries: {

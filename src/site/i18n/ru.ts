@@ -891,6 +891,10 @@ export const ru: Dictionary = {
       column: 'Действия',
 
       publish: 'Опубликовать',
+
+      /** The row's own control: open this deal in the create panel. */
+
+      edit: 'Изменить',
       pause: 'Приостановить',
       resume: 'Возобновить',
       extend: 'Продлить',
@@ -983,6 +987,10 @@ export const ru: Dictionary = {
       monthOnly:
         'Цифры считаются за полный календарный месяц — это окно, в котором считает сервер. Выбор периода выше их пока не двигает.',
       noFindings: 'В этом месяце ничего не выделилось.',
+      /** A panel drawn from the reference design's figures rather than
+          from measured ones, so the layout can be seen while the endpoint
+          behind it does not exist. Never shown when `PD_SEED` is off. */
+      sample: 'Демонстрационные данные',
       tierUnit: 'Каждый снимает со счёта {unit}.',
       plan: 'Бюджета для показа нет — это устройство не авторизовано в API Paylez.',
       assistant:
@@ -1084,6 +1092,8 @@ export const ru: Dictionary = {
         'Каждое сканирование QR у кассы против ваучеров, которые клиенты действительно потратили',
       chartVisits: 'Визиты',
       chartRedeemed: 'Погашено ваучеров',
+      /** The right-hand end of the chart's date axis. */
+      chartToday: 'сегодня',
 
       holdingTitle: 'Деньги, которые вы держите',
       holding:
@@ -1182,6 +1192,10 @@ export const ru: Dictionary = {
       count: '{n} из {total} предложений',
       sortNote:
         'Отсортировано по доле забравших, лучшие сверху. Активные и запланированные идут первыми.',
+      /** A deal published with no discount text on it yet. */
+      untitled: 'Без названия',
+      /** Half of the sent-notification chip: people it reached who then scanned. */
+      cameIn: '{n} пришли',
       insight:
         'Ваши предложения с бесплатным товаром забирают в 2,4 раза чаще, чем процентные скидки. Ланч-набор с 5% сработал слабо — маленькие скидки редко кого-то двигают.',
       langsAll: 'Написано на всех пяти языках',
@@ -1190,6 +1204,7 @@ export const ru: Dictionary = {
         none: 'Без уведомления',
         scheduled: 'Уведомление запланировано',
         sent: 'Уведомление отправлено',
+        stopped: 'Уведомление остановлено',
       },
       reach: '{n} из {total} человек можно уведомить',
       limit: '{claimed} из {limit} забранных',
@@ -1233,6 +1248,12 @@ export const ru: Dictionary = {
       notifyChange: 'Изменить время',
       notifyCancel: 'Отменить его',
       whoTitle: 'Кто это видит и когда',
+      /* The two fallbacks in the expanded row's targeting card. A deal
+         with no window runs whenever it is live, and one with no audience
+         is shown to everyone — both are real states rather than gaps, so
+         they are named rather than left blank. */
+      anytime: 'Каждый день',
+      everyone: 'Все',
 
       limitForecast: 'При таком темпе скидка достигнет лимита в {limit} получений около {date}.',
       limitDates: ['22 августа', '', '', '', '', ''],
@@ -1510,6 +1531,12 @@ export const ru: Dictionary = {
     },
 
     drawer: {
+
+      /* The panel's heading when it was opened on an existing deal. One
+
+         panel does both jobs and the heading is what says which. */
+
+      editDeal: 'Изменить горячую скидку',
       close: 'Закрыть',
       cancel: 'Отмена',
       later: 'Сохранить и закончить позже',
@@ -2762,6 +2789,12 @@ export const ru: Dictionary = {
       failed: 'Сейчас не получилось связаться с путеводителем. Ничего не пропало — попробуйте через минуту.',
       onPaylez: 'На Paylez',
       visit: 'Сайт',
+      reviews: '({n} отзывов)',
+      takesVouchers: 'Принимает ваучеры Paylez',
+      about: 'О месте',
+      pricing: 'Цены',
+      contact: 'Контакты',
+      close: 'Закрыть',
     },
 
     countries: {

@@ -166,3 +166,17 @@ export function nextPeriod(period: string): string {
     ? `${year + 1}-01`
     : `${year}-${String(month + 1).padStart(2, '0')}`;
 }
+
+/**
+ * `YYYY-MM` one month back, for a comparison against the month before.
+ *
+ * The mirror of `nextPeriod` and written the same way rather than as
+ * `nextPeriod` run eleven times: a trend that walks backwards needs this, and
+ * deriving it from the forward one is how January comes out as month 0.
+ */
+export function prevPeriod(period: string): string {
+  const [year, month] = period.split('-').map(Number);
+  return month === 1
+    ? `${year - 1}-12`
+    : `${year}-${String(month - 1).padStart(2, '0')}`;
+}

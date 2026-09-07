@@ -3338,6 +3338,9 @@ console.log('\nthe partner dashboard');
     valid_from: '2026-08-01',
     valid_to: '2026-08-31',
     target_audience: null,
+    target_weekdays: 'mon,tue,wed,thu,fri',
+    target_from_min: 7 * 60,
+    target_to_min: 10 * 60,
     cap_claims: null,
     spend_minor: 12_300,
     seen_count: 400,
@@ -3358,6 +3361,21 @@ console.log('\nthe partner dashboard');
       filled: ['en', 'pl'],
       missing: ['uz', 'ru', 'uk'],
     },
+    copy: {
+      title: 'Free filter with any bake',
+      description: 'A filter coffee on us with anything from the counter.',
+      terms: 'One per customer per day.',
+      language: 'en',
+    },
+    series: [2, 0, 5, 4, 0, 9, 11],
+    push: {
+      status: 'sent',
+      scheduledAt: '2026-08-12T07:30:00.000Z',
+      sentAt: '2026-08-12T07:30:04.000Z',
+      delivered: 940,
+      opened: 312,
+      cameIn: 112,
+    },
   };
   const deal = dealFromApi(dealRow, (minor) => minor / 100);
 
@@ -3374,6 +3392,22 @@ console.log('\nthe partner dashboard');
      nothing to hit. */
   check('…and no cap reading as no limit', deal.limit === 0);
   check('…the badge trimmed to the venue’s own words', deal.badge === 'Free filter coffee');
+  /*
+   * The badge and the name are two fields, and conflating them is what the row
+   * looked like before `dealsFor` joined the copy: `discount_text` printed
+   * twice, once as a chip and once as a heading. The chip is what the deal
+   * *gives*; the name is what it is *called*.
+   */
+  check(
+    '…and the name coming from the copy, not the badge',
+    deal.name === 'Free filter with any bake' && deal.name !== deal.badge,
+  );
+  /* A deal can exist before it is written, and an unwritten one has no name —
+     which the row draws as "no title yet" rather than as a blank heading. */
+  check(
+    '…with an unwritten deal having no name at all',
+    dealFromApi({ ...dealRow, copy: null }, (m) => m).name === '',
+  );
   /* A deal with nothing written on it says nothing, rather than rendering the
      empty string as a gap in a bold tag — the `|| ''` in the mapper. */
   check(
@@ -3383,6 +3417,64 @@ console.log('\nthe partner dashboard');
   check(
     'the language count is what is filled, not what is offered',
     deal.langs === 2 && deal.missing.length === 3,
+  );
+
+  /*
+   * The schedule is one line, and the weekday run is folded.
+   *
+   * `mon,tue,wed,thu,fri` printed long is five chips in a cell that already
+   * carries a name, a date range and an audience, which is what made the
+   * reference row wrap. Folding is only correct for a *contiguous* run — a
+   * Mon/Wed/Fri deal folded to "Mon–Fri" would be the row claiming the offer
+   * runs on two days it does not — so both cases are checked.
+   */
+  check('a weekday run folds to a range', deal.schedule === 'Mon–Fri, 07:00–10:00', `${deal.schedule}`);
+  check(
+    '…and a set that is not a run is listed',
+    dealFromApi({ ...dealRow, target_weekdays: 'mon,wed,fri' }, (m) => m).schedule ===
+      'Mon, Wed, Fri, 07:00–10:00',
+  );
+  /* Minutes to a clock face, both halves padded: 7:0 is not a time, and the
+     column is tabular. */
+  check(
+    '…with both halves of the clock padded',
+    dealFromApi({ ...dealRow, target_from_min: 9 * 60 + 5, target_to_min: 60 }, (m) => m)
+      .schedule === 'Mon–Fri, 09:05–01:00',
+  );
+  /*
+   * A deal with no window at all says nothing. "Every day" is a different
+   * offer from one that simply runs whenever it is live, and the row must not
+   * invent the stronger claim.
+   */
+  check(
+    '…and no window at all reading as no schedule',
+    dealFromApi(
+      { ...dealRow, target_weekdays: null, target_from_min: null, target_to_min: null },
+      (m) => m,
+    ).schedule === null,
+  );
+  /* Seven days, oldest first, carried through unchanged — the sparkline is
+     drawn straight off it and a reversed series draws the week backwards. */
+  check('the claim series survives the mapper', deal.series.length === 7 && deal.series[6] === 11);
+  /*
+   * `deal_pushes.status` has five values and the row draws three. The two that
+   * fold together are `cancelled` and `failed` — both "it is not going" — and
+   * neither may fold into *null*, which is the deal that never had one.
+   */
+  check('a sent push reads as sent', deal.push?.kind === 'sent' && deal.push?.cameIn === 112);
+  check(
+    '…a cancelled one as stopped, not as none',
+    dealFromApi({ ...dealRow, push: { ...dealRow.push!, status: 'cancelled' } }, (m) => m).push
+      ?.kind === 'stopped',
+  );
+  check(
+    '…a scheduled one as scheduled',
+    dealFromApi({ ...dealRow, push: { ...dealRow.push!, status: 'scheduled' } }, (m) => m).push
+      ?.kind === 'scheduled',
+  );
+  check(
+    '…and no push at all as null',
+    dealFromApi({ ...dealRow, push: null }, (m) => m).push === null,
   );
 
   /*

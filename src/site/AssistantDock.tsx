@@ -6,7 +6,7 @@ import {
   useState,
   type KeyboardEvent,
 } from 'react';
-import { ASSISTANT_OPEN_EVENT } from './content';
+import { ASSISTANT_OPEN_EVENT, type AssistantOpenDetail } from './content';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -97,6 +97,18 @@ import {
  * `text?: string` that is empty during `thinking` is a state machine written in
  * `undefined`.
  */
+/**
+ * A question the dock was opened with, and the press it came from.
+ *
+ * `seq` is what makes two presses of one chip two questions and one press one
+ * question — see the effect in `Panel` that reads it, which is the only place
+ * either field is used.
+ */
+interface Opening {
+  text: string;
+  seq: number;
+}
+
 type Turn =
   | { id: number; from: 'you'; text: string }
   | { id: number; from: 'bot'; state: 'thinking' }
@@ -309,7 +321,18 @@ function Composer({ onSend, busy }: { onSend: (text: string) => void; busy: bool
 
 /* ───────────────────────────────────────────────────────────────── panel ── */
 
-function Panel({ onClose, titleId }: { onClose: () => void; titleId: string }) {
+function Panel({
+  onClose,
+  titleId,
+  opening,
+  onOpeningAsked,
+}: {
+  onClose: () => void;
+  titleId: string;
+  /** A question the panel was opened *with* — see `openAssistant`. */
+  opening: Opening | null;
+  onOpeningAsked: () => void;
+}) {
   const copy = useCopy();
   const [language] = useLanguage();
   const { account } = useAuth();
@@ -380,7 +403,22 @@ function Panel({ onClose, titleId }: { onClose: () => void; titleId: string }) {
         });
         settle({ id: botId, from: 'bot', state: 'answer', answer });
       } catch (error) {
-        if (controller.signal.aborted) return;
+        /*
+         * An abandoned question leaves nothing behind.
+         *
+         * This used to `return` and leave the pair in the thread: a question
+         * with dots under it that never resolve, because the only thing that
+         * settles them is the reply that was cancelled. It is visible in dev
+         * every time — StrictMode tears the panel's effects down and runs them
+         * again, and the teardown above aborts whatever is in flight — and it
+         * is visible in production the moment a request is abandoned for any
+         * other reason. A thread is a record of the conversation; an exchange
+         * that did not happen should not be in it.
+         */
+        if (controller.signal.aborted) {
+          setTurns((current) => current.filter((row) => row.id !== youId && row.id !== botId));
+          return;
+        }
         settle({
           id: botId,
           from: 'bot',
@@ -397,6 +435,45 @@ function Panel({ onClose, titleId }: { onClose: () => void; titleId: string }) {
     },
     [language],
   );
+
+  /*
+   * A question the panel was opened with is asked once, here.
+   *
+   * It has to live below `send` and above the signed-out return, which is the
+   * only place all three of those things exist.
+   *
+   * **The guard is the `seq`, and both halves of that are load-bearing.**
+   * Clearing the dock's state and testing for non-null was the first version
+   * and it asked everything twice: StrictMode runs an effect, tears it down and
+   * runs it again against the *same* props, and the clear had not committed in
+   * between — two identical questions in the thread, the first still spinning
+   * under the second. And a plain string cannot be the guard either, because
+   * setting state to the string it already holds is a bail-out in React: the
+   * same chip pressed a second time would not re-render, so the second press
+   * would do nothing at all. A number that goes up on every dispatch says
+   * "asked once each" and "asked again" with one comparison.
+   *
+   * Signed out it is dropped rather than queued: the panel below is the pitch,
+   * and holding a question against a sign-in that may never happen means
+   * something somebody pressed minutes ago arriving out of nowhere.
+   */
+  const askedRef = useRef(-1);
+  useEffect(() => {
+    if (!opening || !account) return;
+    if (askedRef.current === opening.seq) return;
+    askedRef.current = opening.seq;
+    onOpeningAsked();
+    void send(opening.text);
+
+    /* And the guard has to let a *re-run* through. StrictMode proves an effect
+       can be restarted by tearing it down and running it again, and the
+       teardown one effect up aborts the request in between — a guard that
+       refused the second run would leave the question hanging with nothing
+       coming back, which is exactly what it did before this line existed. */
+    return () => {
+      askedRef.current = -1;
+    };
+  }, [opening, account, send, onOpeningAsked]);
 
   /* Retry drops the failed exchange and asks again, rather than appending a
      second copy of the question under the first. The thread is a record of the
@@ -508,23 +585,40 @@ function Panel({ onClose, titleId }: { onClose: () => void; titleId: string }) {
 export function AssistantDock() {
   const copy = useCopy();
   const [open, setOpen] = useState(false);
+  /* A question an opener sent along with the open. State rather than a ref
+     because the panel renders from it — it is the thing that gets asked. */
+  const [opening, setOpening] = useState<Opening | null>(null);
+  const seqRef = useRef(0);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const titleId = useId();
 
   const close = useCallback(() => {
     setOpen(false);
+    /* A question that never got asked must not survive the panel — reopening
+       from the button would then ask something the person walked away from. */
+    setOpening(null);
     // Back where they came from, or the tab order restarts at the top of the page.
     triggerRef.current?.focus();
   }, []);
 
   /* Opened from somewhere that is not this button — the footer's "AI Assistant"
-     entry, which names the dock rather than a page. See `ASSISTANT_OPEN_EVENT`. */
+     entry, which names the dock rather than a page, and Relocate's suggested
+     questions, which name a question and now carry it. See `openAssistant`. */
   useEffect(() => {
-    const onOpen = () => setOpen(true);
+    const onOpen = (event: Event) => {
+      /* Read defensively: the footer opens with no detail at all, and the cast
+         is the only place this file trusts the event's shape. */
+      const detail = (event as CustomEvent<AssistantOpenDetail>).detail;
+      setOpen(true);
+      seqRef.current += 1;
+      setOpening(detail?.text ? { text: detail.text, seq: seqRef.current } : null);
+    };
     window.addEventListener(ASSISTANT_OPEN_EVENT, onOpen);
     return () => window.removeEventListener(ASSISTANT_OPEN_EVENT, onOpen);
   }, []);
+
+  const clearOpening = useCallback(() => setOpening(null), []);
 
   useEffect(() => {
     if (!open) return;
@@ -597,7 +691,12 @@ export function AssistantDock() {
             </button>
           </div>
 
-          <Panel onClose={close} titleId={titleId} />
+          <Panel
+            onClose={close}
+            titleId={titleId}
+            opening={opening}
+            onOpeningAsked={clearOpening}
+          />
         </div>
       )}
     </>

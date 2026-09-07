@@ -368,7 +368,7 @@ export const partnerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/partner/venues/:id/deals',
     auth: 'partner',
-    handler: async (ctx) => partners.dealsFor(ctx.db, (await mine(ctx)).id),
+    handler: async (ctx) => partners.dealsFor(ctx.db, (await mine(ctx)).id, ctx.language),
   },
   {
     method: 'POST',
@@ -572,6 +572,16 @@ export const partnerRoutes: Route[] = [
         heatmap: await analytics.heatmap(ctx.db, venue.id, window),
         languageMix: await analytics.languageMix(ctx.db, venue.id, window),
         costPerNewCustomer: await analytics.costPerNewCustomer(ctx.db, venue.id, window),
+        /* The same figure for the two months before, so the headline has a
+           direction. In `base` rather than behind `deep_analytics`: it is the
+           month's own arithmetic run twice more, not a new report, and the
+           headline it qualifies is already here — a figure that moved with no
+           way to see which way it moved is the state this fixes. */
+        costPerNewCustomerTrend: await analytics.costPerNewCustomerTrend(
+          ctx.db,
+          venue.id,
+          window,
+        ),
       };
       /* B7: the deeper analytics are a paid tier. The *shape* of the response
          does not change — the keys are absent rather than nulled — so a client
