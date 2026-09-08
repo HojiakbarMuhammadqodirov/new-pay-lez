@@ -673,6 +673,29 @@ complete-and-not-yet-paid (the moment between the save and the commit), and
 incomplete-but-paid — a profile can be emptied after the fifty is banked, and the
 fifty is not clawed back.
 
+**An email is folded before it is compared, and both doors fold it the same
+way.** `normalizeEmail` in `signin.tsx` is module-scope precisely so sign-up can
+reach it: it used to live inside the sign-in form and sign-up had grown its own
+copy that stripped zero-width characters and nothing else. Paste an address
+carrying a stray tab or DEL — mobile autofill and a copy out of a spreadsheet
+both do it — and sign-up stored one string while sign-in looked up another, so
+the account existed and could not be signed into. Three passes in order: NFKC,
+then the C0 range and DEL, then the zero-width joiners and the BOM. The control
+range needs an `eslint-disable-next-line no-control-regex`; the rule is right in
+general and wrong here, because a pasted address is exactly where a stray
+control character comes from. Write the class with `\u` escapes rather than the
+literal bytes — a real NUL in the source makes git call the file **binary**, and
+every diff and blame of this screen comes back as `Bin 13614 -> 14880 bytes`
+instead of a hunk.
+
+**And `taken` counts on the offline path.** Sign-up defers "is this address
+registered" to the server, which is right while there *is* a server; on the
+`status === 0` fallback there is not, and the local directory stops being the
+weaker answer — it is the only evidence there is. Without the check, signing up
+with an address this browser already knew minted a *second* row: the ids carry a
+timestamp so they never collide, and `findUser` then answers with whichever it
+reaches first, which is a sign-in that lands on an account at random.
+
 **And the account-type question has a way out of it.** `ChooseType` is the one
 auth screen `resolveRoute` holds a session on from every route, so until it had
 a Cancel there was no answer to "I do not want to decide this now" but closing
@@ -1412,20 +1435,40 @@ bundled, the flag font copied into `public/`), geometry comes from the
   responsive, it is absent — see the damping rule under Conventions. If the
   globe is in the wrong place, the fix is in `geo/layout.ts`; if it is too loud,
   the fix is an `opacity` in the `max-width: 820px` block.
-- **The globe's two responsive framings are still constants, and both are known
-  to be wrong on some phones.** `RESPONSIVE.portraitCopyDepth` says where the
-  hero copy ends as a *fraction* of viewport height, but the copy is a headline,
-  a lede, two buttons and a stat row — a roughly fixed **pixel** height, so the
-  fraction it occupies moves with the screen. 0.55 is right at 390×844 and puts
-  the globe about 90px into the stats at 360×780; tuning it only moves which
-  phones are wrong. The end pose has the matching problem: framed by height
-  alone the disc is 133% of it, which is 1123px across a 390px screen — a wall
-  behind the bottom of every screenful rather than a horizon under it.
+- **The globe has two responsive framings. The portrait one is measured; the
+  end pose is still a constant and is still wrong on a phone.**
 
-  Both are **open**, deliberately: the fix is a measurement rather than a better
-  constant, and it has to come with `verify-geo.ts` checks for the cap never
-  exceeding `heightCoverage` and the centre staying below the fold. Do not
-  correct either from the stylesheet — that is the bullet above.
+  **Portrait, hero pose — measured.** The copy stacks above the globe and the
+  globe sinks into the slot left under it. `RESPONSIVE.portraitCopyDepth` says
+  where that copy ends as a *fraction* of viewport height, and the copy is a
+  headline, a lede, two buttons and a stat row — a roughly fixed **pixel**
+  height, so the fraction it occupies moves with the screen. 0.55 is right at
+  390×844 and puts the globe about 90px into the stats at 360×780; tuning it
+  only moves which phones are wrong. `site/heroFloor.ts` measures the real floor
+  and publishes it through the `focusStore` construction
+  (`useSyncExternalStore`, resize-only — this is not per-frame work);
+  `resolveLayout` takes it as a `copyDepth` **parameter defaulting to the
+  constant**, so every existing caller and every check in `verify-geo.ts`
+  resolves exactly as it did. Above phone width it is inert *by construction*
+  rather than by test: `sink` is 0 unless the viewport is both narrower than
+  `portraitStackWidth` and portrait, and `heroOffsetY` is
+  `-(copyDepth / 2) * sink`.
+
+  The half worth knowing about is the **reset**. The globe outlives the hero —
+  it is a fixed backdrop `Site` keeps across routes — so `useReportHeroFloor`
+  publishes the constant back on unmount. Without that, a measurement taken on
+  the landing page goes on aiming the globe on a route whose hero is a different
+  shape, or gone.
+
+  **Narrow, end pose — open.** Framed by height alone the disc is 133% of it,
+  which is 1123px across a 390px screen: a wall behind the bottom of every
+  screenful rather than a horizon under it, with the carousel's dimmed cards
+  landing on a bright sphere. The fix is a second pair of numbers below a width
+  step — a diameter near the viewport *width* and a larger visible fraction to
+  keep the cap around a quarter of the height — and it has to come with
+  `verify-geo.ts` checks that the cap never exceeds `heightCoverage` whichever
+  framing applied and that the centre stays below the fold. Do not correct it
+  from the stylesheet; that is the bullet above.
 - **Never put `overflow-x` on `html`.** `overflow-x: clip` there is the trap:
   `clip` on one axis forces the other to `clip` too, so the document stops
   scrolling outright and everything reading `window.scrollY` — the globe's
