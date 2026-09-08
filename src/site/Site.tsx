@@ -44,6 +44,7 @@ import {
   Value,
   Voices,
 } from './sections';
+import { useHeroCopyDepth } from './heroFloor';
 import { useCountUp, useReveal } from './useReveal';
 import './site.css';
 
@@ -73,6 +74,8 @@ import './site.css';
 function SiteContent() {
   const [introDone, setIntroDone] = useState(false);
   const palette = usePalette();
+  /* Published by the landing hero's own copy column — see `heroFloor.ts`. */
+  const heroCopyDepth = useHeroCopyDepth();
   const requested = useRoute();
   const [language] = useLanguage();
   const { account } = useAuth();
@@ -377,6 +380,12 @@ function SiteContent() {
           glowStrength={palette.glow}
           offsetX={0.18}
           heightCoverage={0.62}
+          /*
+           * Measured, not assumed. On a phone the globe sinks into the slot
+           * below the hero copy, and the constant it used to be aimed with is
+           * only correct on a ~844px-tall screen — see `heroFloor.ts`.
+           */
+          copyDepth={heroCopyDepth}
           routeCount={16}
           /*
            * No country label. The flag-and-name card that popped in beside the

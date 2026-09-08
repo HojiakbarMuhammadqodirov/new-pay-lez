@@ -40,6 +40,17 @@ export function resolveLayout(
   height: number,
   offsetX: number,
   heightCoverage: number,
+  /*
+   * Where the copy above the globe ends, as a fraction of viewport height.
+   *
+   * Defaults to the constant so every existing caller — and every check in
+   * `verify-geo.ts` — resolves exactly as it did. It is a parameter because the
+   * constant is only ever right for the phone it was tuned on: the copy is a
+   * fixed pixel height and this is a fraction, so the two agree at one viewport
+   * height and drift either side of it. `site/heroFloor.ts` measures the real
+   * one and carries the full argument.
+   */
+  copyDepth: number = RESPONSIVE.portraitCopyDepth,
 ): GlobeLayout {
   const aspect = width / Math.max(height, 1);
   const portrait = aspect < RESPONSIVE.portraitAspect;
@@ -80,7 +91,7 @@ export function resolveLayout(
 
   // Negative is down. Half the copy's depth puts the centre in the middle of
   // what the copy left over, in viewport heights.
-  const heroOffsetY = -(RESPONSIVE.portraitCopyDepth / 2) * sink;
+  const heroOffsetY = -(copyDepth / 2) * sink;
 
   /*
    * The vertical twin of the clamp above, with no margin term and no aspect

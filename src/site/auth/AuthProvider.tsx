@@ -363,12 +363,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { ok: true };
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 0) {
-          /* No server. Rather than refuse the sign-up outright, open the
-             account here and let it be reconciled on the next successful
-             sign-in — the id is minted locally and the mirror is all there is
-             until then. This is the one path that still writes a purely local
-             account, and it exists so a dead backend does not read as a broken
-             form. */
+          /*
+           * No server. Rather than refuse the sign-up outright, open the
+           * account here and let it be reconciled on the next successful
+           * sign-in — the id is minted locally and the mirror is all there is
+           * until then. This is the one path that still writes a purely local
+           * account, and it exists so a dead backend does not read as a broken
+           * form.
+           *
+           * **But `taken` still counts here, and ignoring it opened a real
+           * hole.** The check above defers the question to the server on the
+           * argument that whether an address is registered is a fact about the
+           * server's table rather than about this browser. That argument holds
+           * only while there *is* a server to ask. On this path there is not,
+           * and the local directory stops being a weaker answer than the
+           * server's — it becomes the only evidence there is.
+           *
+           * Without this, signing up with an address this browser already
+           * knows minted a *second* row for it: the id carries a timestamp, so
+           * the two never collided, and the directory ended up with two
+           * accounts for one address. `findUser` then answers with whichever
+           * it reaches first, which is a sign-in that lands on an account at
+           * random.
+           */
+          if (problem === 'taken') return { ok: false, error: 'taken' };
+
           const id = `u_${Date.now().toString(36)}_${draft.email.trim().toLowerCase()}`;
           const record = newUser({ ...draft, type: draft.type as ChoosableType }, id, today());
           addUser(record);

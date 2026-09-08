@@ -20,6 +20,7 @@ import {
   type SubValue,
 } from './content';
 import { Controller3D } from './controller/Controller3D';
+import { useReportHeroFloor } from './heroFloor';
 import { Icon } from './icons';
 import { useCopy, useCurrency, useMoney } from './i18n/context';
 import { useAccount } from './auth/context';
@@ -39,10 +40,19 @@ import { usePalette } from './theme/context';
 export function Hero() {
   const copy = useCopy();
 
+  /*
+   * The globe is a fixed layer behind this page and, on a phone, is aimed at
+   * the space *under* this column. It cannot see the column, so the column
+   * reports where it ends — see `heroFloor.ts` for why a constant could not do
+   * the job.
+   */
+  const copyRef = useRef<HTMLDivElement>(null);
+  useReportHeroFloor(copyRef);
+
   return (
     <section className="hero" id="hero">
       <div className="wrap hero-grid">
-        <div className="hero-copy">
+        <div className="hero-copy" ref={copyRef}>
           <h1 data-reveal>
             {copy.hero.lines.map((line, i) => (
               <span className="ln" key={line}>

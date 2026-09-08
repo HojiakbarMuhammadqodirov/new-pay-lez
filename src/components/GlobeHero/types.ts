@@ -58,6 +58,18 @@ export interface GlobeHeroProps {
   heightCoverage?: number;
 
   /**
+   * Where the copy above the globe ends, as a fraction of viewport height.
+   *
+   * Only read on a portrait phone, where the hero stacks and the globe sinks
+   * into the slot underneath the copy. Defaults to `RESPONSIVE.portraitCopyDepth`
+   * — a constant that is right at one viewport height and wrong either side of
+   * it, because the copy is a fixed pixel height rather than a fixed fraction.
+   * Pass the measured value (`site/heroFloor.ts`) to have the globe clear the
+   * words on every phone rather than on one.
+   */
+  copyDepth?: number;
+
+  /**
    * Scroll the globe from its hero pose into the large, tilted, mostly
    * off-screen footer pose. See the `SCROLL` block in `config.ts` for the end
    * state. No effect on a page that does not scroll.

@@ -16,14 +16,15 @@ export type { GlobeLayout, GlobeState } from '../geo/layout';
 export function useGlobeLayout(
   offsetX: number,
   heightCoverage: number,
+  copyDepth: number,
 ): GlobeLayout {
   const camera = useThree((state) => state.camera);
   const width = useThree((state) => state.size.width);
   const height = useThree((state) => state.size.height);
 
   const layout = useMemo(
-    () => resolveLayout(width, height, offsetX, heightCoverage),
-    [width, height, offsetX, heightCoverage],
+    () => resolveLayout(width, height, offsetX, heightCoverage, copyDepth),
+    [width, height, offsetX, heightCoverage, copyDepth],
   );
 
   // Projection only — position is owned by `useGlobeTransition`.
