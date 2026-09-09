@@ -56,6 +56,20 @@ import { Assistant } from './dashboardAssistant';
 import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
 import { PD_SEED, SEED_DELTAS, SEED_REPEAT, seedSeries, sparkPath } from './dashboardSeed';
+import { DEMO_MODE } from './demoMode';
+import {
+  DEMO_ANALYTICS,
+  DEMO_CUSTOMERS,
+  DEMO_PENDING,
+  DEMO_QUOTA,
+  DEMO_REACH,
+  DEMO_VENUE,
+  DEMO_BUDGET,
+  DEMO_CAMPAIGNS,
+  DEMO_DEALS,
+  DEMO_OVERVIEW,
+  DEMO_TODAY,
+} from './dashboardDemo';
 
 /**
  * The six dashboard screens that are not the assistant or the profile form.
@@ -302,14 +316,27 @@ function Asking() {
 function Screen<T>({
   state,
   index,
+  demo,
   children,
 }: {
   state: ApiState<T>;
   index: number;
+  /*
+   * What to draw instead of "we could not ask", in demo mode only.
+   *
+   * The order of the two conditions below is the whole safety of it: the real
+   * call is made and allowed to fail first, so a venue with a listing can never
+   * reach this — its state is `ready` and the demonstration data is not looked
+   * at. And `DEMO_MODE` is off unless this browser was sent `?demo=1`, so the
+   * venues that *do* fail this call still get the honest panel. See
+   * `dashboardDemo.ts`.
+   */
+  demo?: T;
   children: (data: T) => React.ReactNode;
 }) {
   if (state.status === 'loading') return <div className="pd-stack"><Asking /></div>;
   if (state.status === 'error') {
+    if (DEMO_MODE && demo !== undefined) return <>{children(demo)}</>;
     return (
       <div className="pd-stack">
         <Unmeasured index={index} error={state.error} />
@@ -551,15 +578,36 @@ function Overview() {
   /* Reach is its own request and its own state: it is the one report worth
      reading for a venue with no visits at all, which is precisely when the rest
      of this screen is a screen of "nothing yet". */
-  const reach = reachApi.state.status === 'ready' ? reachFromApi(reachApi.state.data) : null;
-  const reachPeriod = reachApi.state.status === 'ready' ? reachApi.state.data.period : null;
+  const reachRaw =
+    reachApi.state.status === 'ready'
+      ? reachApi.state.data
+      : DEMO_MODE
+        ? DEMO_REACH
+        : null;
+  const reach = reachRaw ? reachFromApi(reachRaw) : null;
+  const reachPeriod = reachRaw?.period ?? null;
 
-  const analytics = analyticsApi.state.status === 'ready' ? analyticsApi.state.data : null;
-  const deals = dealsApi.state.status === 'ready' ? dealsApi.state.data : null;
-  const campaigns = campaignsApi.state.status === 'ready' ? campaignsApi.state.data : null;
+  /* The overview reads analytics *alongside* its own call rather than through
+     `Screen`, so the demo fallback has to be repeated here — same order and
+     same rule: the real answer wins, and this is reached only after it has
+     failed and only in demo mode. */
+  const analytics =
+    analyticsApi.state.status === 'ready'
+      ? analyticsApi.state.data
+      : DEMO_MODE
+        ? DEMO_ANALYTICS
+        : null;
+  const deals =
+    dealsApi.state.status === 'ready' ? dealsApi.state.data : DEMO_MODE ? DEMO_DEALS : null;
+  const campaigns =
+    campaignsApi.state.status === 'ready'
+      ? campaignsApi.state.data
+      : DEMO_MODE
+        ? DEMO_CAMPAIGNS
+        : null;
 
   return (
-    <Screen state={state} index={0}>
+    <Screen state={state} index={0} demo={DEMO_OVERVIEW}>
       {(data) => {
         const toEuro = (minor: number) => minorToEuro(minor, data.budget.currency);
         /* The venue's *own* average transaction, from `budget.averageCheck` —
@@ -1505,14 +1553,14 @@ function Deals() {
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
 
   const venueApi = usePartnerVenue();
-  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : DEMO_MODE ? DEMO_VENUE : null;
   const dealsApi = usePartnerDeals(venue?.id ?? null);
   /* The month's notification allowance. Its own request and its own state: it
      is the one figure in this toolbar that is not about the deals themselves,
      and a venue whose deals load while the quota call fails should still get
      its table. */
   const quotaApi = usePartnerPushQuota(venue?.id ?? null);
-  const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : null;
+  const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : DEMO_MODE ? DEMO_QUOTA : null;
   const state = chain(venueApi, dealsApi);
 
   /* The venue's own currency, off the venue row rather than off the budget.
@@ -1537,7 +1585,7 @@ function Deals() {
   };
 
   return (
-    <Screen state={state} index={1}>
+    <Screen state={state} index={1} demo={DEMO_DEALS}>
       {(rows) => {
         const deals: PartnerDeal[] = rows.map((row) =>
           dealFromApi(row, (minor) => minorToEuro(minor, currency)),
@@ -1936,19 +1984,19 @@ function Campaigns() {
   const num = useNum();
 
   const venueApi = usePartnerVenue();
-  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : DEMO_MODE ? DEMO_VENUE : null;
   const campaignsApi = usePartnerCampaigns(venue?.id ?? null);
   const budgetApi = usePartnerBudget(venue?.id ?? null);
   const state = chain(venueApi, campaignsApi);
 
-  const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : null;
+  const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : DEMO_MODE ? DEMO_BUDGET : null;
   /* The pool comes from `/budget`, but the *currency* comes from the venue: a
      screen that can list campaigns and cannot read the budget still knows what
      a reward costs, and must not quote it in the wrong money. */
   const currency = venue?.currency ?? 'EUR';
 
   return (
-    <Screen state={state} index={2}>
+    <Screen state={state} index={2} demo={DEMO_CAMPAIGNS}>
       {(rows) => {
         const toEuro = (minor: number) => minorToEuro(minor, currency);
         const list: CampaignRow[] = rows.map((row) => campaignFromApi(row, toEuro));
@@ -2511,12 +2559,12 @@ function Vouchers() {
   const money = useMoney();
 
   const venueApi = usePartnerVenue();
-  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : DEMO_MODE ? DEMO_VENUE : null;
   const budgetApi = usePartnerBudget(venue?.id ?? null);
   const state = chain(venueApi, budgetApi);
 
   return (
-    <Screen state={state} index={3}>
+    <Screen state={state} index={3} demo={DEMO_BUDGET}>
       {(budget) => {
         const toEuro = (minor: number) => minorToEuro(minor, budget.currency);
         const avgSpend = toEuro(budget.averageCheck.minor);
@@ -2625,19 +2673,19 @@ function Customers() {
   const [people, setPeople] = useState(0);
 
   const venueApi = usePartnerVenue();
-  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : DEMO_MODE ? DEMO_VENUE : null;
   const analyticsApi = usePartnerAnalytics(venue?.id ?? null);
   const customersApi = usePartnerCustomers(venue?.id ?? null);
   const state = chain(venueApi, analyticsApi);
 
-  const roster = customersApi.state.status === 'ready' ? customersApi.state.data : null;
+  const roster = customersApi.state.status === 'ready' ? customersApi.state.data : DEMO_MODE ? DEMO_CUSTOMERS : null;
   /* Off the venue row rather than off the budget. Reading it from `/budget`
      meant a screen that could reach `/analytics` and not `/budget` priced a
      Kraków café's spend in euros — the same number, at four times the value. */
   const currency = venue?.currency ?? 'EUR';
 
   return (
-    <Screen state={state} index={4}>
+    <Screen state={state} index={4} demo={DEMO_ANALYTICS}>
       {(data) => {
         const toEuro = (minor: number) => minorToEuro(minor, currency);
         const heat = heatFromApi(data.heatmap.grid);
@@ -3116,7 +3164,7 @@ function Queue({ venueId, currency }: { venueId: string | null; currency: string
   const pendingApi = usePartnerPending(venueId);
   const { busy, run } = useAction(pendingApi.reload);
 
-  const rows = pendingApi.state.status === 'ready' ? pendingApi.state.data : null;
+  const rows = pendingApi.state.status === 'ready' ? pendingApi.state.data : DEMO_MODE ? DEMO_PENDING : null;
 
   return (
     <div className="pd-glass pd-panel" data-solid="true" data-reveal>
@@ -3276,7 +3324,7 @@ function Scans() {
   const num = useNum();
 
   const venueApi = usePartnerVenue();
-  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : DEMO_MODE ? DEMO_VENUE : null;
   const venueId = venue?.id ?? null;
   const todayApi = usePartnerToday(venueId);
   const state = chain(venueApi, todayApi);
@@ -3284,7 +3332,7 @@ function Scans() {
   const currency = venue?.currency ?? 'EUR';
 
   return (
-    <Screen state={state} index={6}>
+    <Screen state={state} index={6} demo={DEMO_TODAY}>
       {(today) => {
         const visits = metricValue(today.visits) ?? 0;
         const quiet = visits === 0 && today.pendingConfirmations === 0;

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Account } from './auth/context';
+import { DEMO_MODE } from './demoMode';
 
 /**
  * The whole router.
@@ -340,13 +341,45 @@ export function resolveRoute(route: Route, account: Account | null): Route {
      * with no dashboard to show it on.
      */
     if (route === 'profile') return 'profile';
+    /*
+     * The demo switch reaches this branch too, and only for `dashboard`.
+     *
+     * "See the full dashboard from any account" is the whole point of the flag,
+     * and most accounts anybody has to hand are consumer ones. It is safe here
+     * for a reason worth writing down rather than assuming: no screen in
+     * `dashboard*.tsx` dereferences `account.business` — every figure is read
+     * from the partner API or, where the server has nothing, from
+     * `dashboardSeed`. So an account with no venue draws the demonstration
+     * numbers and empty states rather than throwing, and never draws somebody
+     * else's business, because the API answers a token that owns no venue with
+     * nothing.
+     *
+     * `business-setup` is deliberately *not* opened up: that form writes, and a
+     * consumer account filling it in is the exact bug the note above records.
+     */
+    if (route === 'dashboard' && DEMO_MODE) return 'dashboard';
     return route === 'business' || route === 'analytics' || PRIVATE.includes(route)
       ? 'landing'
       : route;
   }
 
-  // A dashboard with nothing behind it is a form nobody filled in.
-  if (route === 'dashboard' && account.business === null) return 'business-setup';
+  /*
+   * A dashboard with nothing behind it is a form nobody filled in.
+   *
+   * `DEMO_MODE` is the one way past that, and it is past *this* check only —
+   * the individual/owner split above still holds, because a consumer account
+   * has no venue for any of these screens to be about and sending one here
+   * would draw somebody else's business. What it lets through is the case the
+   * flag exists for: an owner account that has not been through setup, which is
+   * every account somebody makes to look at the screen.
+   *
+   * Still a fixed point, which is the rule this function lives under: with the
+   * flag on, `dashboard` resolves to `dashboard`, and `npm run verify` walks
+   * the whole matrix with the flag off, because Node has no `window`.
+   */
+  if (route === 'dashboard' && account.business === null && !DEMO_MODE) {
+    return 'business-setup';
+  }
   return route;
 }
 

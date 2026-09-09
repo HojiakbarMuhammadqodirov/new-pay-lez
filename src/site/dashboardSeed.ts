@@ -1,3 +1,5 @@
+import { DEMO_MODE } from './demoMode';
+
 /*
  * The reference design's own numbers, so the dashboard can be *seen*.
  *
@@ -39,16 +41,20 @@
  * measured ones — which is the argument `bootOrdering` makes on the server for
  * the demo seeds it refuses to write.
  *
- * **It is `false`, and it arrived here `true`.** The branch this came from set
- * it while the screen was being matched against the export, which is what it is
- * for. It is off because there are real venues on the box now: with it on, ten
- * panels draw the mock's numbers — a sine-wave fortnight, three period deltas,
- * and a 2.4× repeat multiple sitting under the words "the one thing we can
- * prove" — and a venue owner has no way to tell those from their own. Turn it
- * on to compare against the export; turn it off before that build goes
- * anywhere near a person.
+ * **It arrived here `true` and is now the demo switch instead.** The branch
+ * this came from set it while the screen was being matched against the export,
+ * which is what it is for. Shipped on, ten panels draw the mock's numbers — a
+ * sine-wave fortnight, three period deltas, and a 2.4× repeat multiple sitting
+ * under the words "the one thing we can prove" — and a venue owner has no way
+ * to tell those from their own takings. There are twelve real venues on the box.
+ *
+ * So it is neither hard-coded value any more: it follows `DEMO_MODE`, which is
+ * off unless this browser has been sent `?demo=1`. Somebody who typed that has
+ * asked for demonstration figures; a venue owner who has not still gets the
+ * "not measured" state, which is the honest one. See `demoMode.ts` for why the
+ * switch is per browser rather than per deployment.
  */
-export const PD_SEED = false;
+export const PD_SEED = DEMO_MODE;
 
 /*
  * The mock's series, verbatim: two sine components on a 38-visit base, with a

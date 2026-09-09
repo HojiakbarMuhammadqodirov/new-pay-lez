@@ -17,6 +17,8 @@ import { useCopy, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
+import { DEMO_MODE } from './demoMode';
+import { DEMO_BUDGET } from './dashboardDemo';
 import { BusinessForm } from './businessSetup';
 import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
@@ -98,7 +100,16 @@ function Rail({
   const dealsApi = usePartnerDeals(venueId);
   const campaignsApi = usePartnerCampaigns(venueId);
 
-  const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : null;
+  /* The rail's own budget read, which is not one of the seven `Screen`s and so
+     needs the demo fallback stated again — see `dashboardDemo.ts`. Same order:
+     a venue that has a budget draws its own, and this is reached only after the
+     real call failed and only in demo mode. */
+  const budget =
+    budgetApi.state.status === 'ready'
+      ? budgetApi.state.data
+      : DEMO_MODE
+        ? DEMO_BUDGET
+        : null;
   const toEuro = (minor: number) => minorToEuro(minor, budget?.currency ?? 'EUR');
   const spent = budget ? toEuro(budget.loyalty.spent + budget.voucher.spent) : null;
   const total = budget ? toEuro(budget.total) : null;
