@@ -297,6 +297,16 @@ for (const [alias, name] of [
   ['Korea, North', 'North Korea'],
   ['Federated States of Micronesia', 'Micronesia'],
   ['Saint Vincent and the Grenadines', 'St. Vincent & Grenadines'],
+  /* The three the flags export in `updates/` spells its own way. It is the
+     fallback source for the flags bank when `new-data/` is absent (see the
+     block in `import.ts`), and without these `assertComplete` throws on boot
+     rather than letting the bank shrink — which is the throw doing its job and
+     the fix it asks for. Brazzaville is the *Republic*, CG; Kinshasa is CD and
+     already reachable through `DR Congo` above. */
+  ['Saint Vincent', 'St. Vincent & Grenadines'],
+  ['Congo (Brazzaville)', 'Congo, Rep.'],
+  ['Congo (Kinshasa)', 'Congo, Dem. Rep.'],
+  ['Central African Rep.', 'Central African Republic'],
   ['Sao Tome and Principe', 'São Tomé and Príncipe'],
 ] as const) {
   const code = COUNTRY_CODES[name];

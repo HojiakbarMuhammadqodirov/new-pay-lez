@@ -478,9 +478,12 @@ export const pl: Dictionary = {
       'Co jest teraz otwarte w pobliżu?',
     ],
     you: 'Ty',
-    stubReply:
-      'W tej wersji asystent nie jest podłączony do modelu, więc nie odpowiem jeszcze na to pytanie. Wszystko dookoła tej wiadomości — rozmowa, pole tekstowe, Twoje konto — działa naprawdę.',
-    stubTag: 'W tej wersji nie podłączono modelu.',
+    thinking: 'Myślę…',
+    limitReached:
+      'To już wszystkie pytania na dziś. Limit odnawia się jutro, a płatny plan go podnosi.',
+    offline: 'Nie udało mi się połączyć z serwerem, więc jeszcze nie odpowiedziałem.',
+    failed: 'To nie przeszło.',
+    retry: 'Zapytaj ponownie',
   },
 
   wallet: {
@@ -893,6 +896,10 @@ export const pl: Dictionary = {
       column: 'Działania',
 
       publish: 'Opublikuj',
+
+      /** The row's own control: open this deal in the create panel. */
+
+      edit: 'Edytuj',
       pause: 'Wstrzymaj',
       resume: 'Wznów',
       extend: 'Przedłuż',
@@ -985,6 +992,10 @@ export const pl: Dictionary = {
       monthOnly:
         'Liczby są raportowane za cały miesiąc kalendarzowy — to okno, w którym liczy serwer. Wybór zakresu powyżej jeszcze nimi nie porusza.',
       noFindings: 'W tym miesiącu nic się nie wyróżniło.',
+      /** A panel drawn from the reference design's figures rather than
+          from measured ones, so the layout can be seen while the endpoint
+          behind it does not exist. Never shown when `PD_SEED` is off. */
+      sample: 'Dane poglądowe',
       tierUnit: 'Każdy z nich zdejmuje {unit} z rachunku.',
       plan: 'Brak budżetu do pokazania — to urządzenie nie jest zalogowane do API Paylez.',
       assistant:
@@ -1086,6 +1097,8 @@ export const pl: Dictionary = {
         'Każde skanowanie QR przy kasie zestawione z voucherami, które klienci naprawdę wykorzystali',
       chartVisits: 'Wizyty',
       chartRedeemed: 'Zrealizowane vouchery',
+      /** The right-hand end of the chart's date axis. */
+      chartToday: 'dziś',
 
       holdingTitle: 'Pieniądze, które trzymasz',
       holding:
@@ -1184,6 +1197,10 @@ export const pl: Dictionary = {
       count: '{n} z {total} okazji',
       sortNote:
         'Sortowane po odsetku odebrań, najlepsze u góry. Aktywne i zaplanowane okazje idą pierwsze.',
+      /** A deal published with no discount text on it yet. */
+      untitled: 'Brak tytułu',
+      /** Half of the sent-notification chip: people it reached who then scanned. */
+      cameIn: '{n} przyszło',
       insight:
         'Twoje okazje z darmowym produktem są odbierane 2,4× częściej niż rabaty procentowe. Zestaw lunchowy z 5% wypadł słabo — małe rabaty rzadko kogoś ruszają.',
       langsAll: 'Napisana we wszystkich pięciu językach',
@@ -1192,6 +1209,7 @@ export const pl: Dictionary = {
         none: 'Bez powiadomienia',
         scheduled: 'Powiadomienie zaplanowane',
         sent: 'Powiadomienie wysłane',
+        stopped: 'Powiadomienie zatrzymane',
       },
       reach: '{n} z {total} osób można powiadomić',
       limit: '{claimed} z {limit} odebrań',
@@ -1235,6 +1253,12 @@ export const pl: Dictionary = {
       notifyChange: 'Zmień godzinę',
       notifyCancel: 'Anuluj je',
       whoTitle: 'Kto to widzi i kiedy',
+      /* The two fallbacks in the expanded row's targeting card. A deal
+         with no window runs whenever it is live, and one with no audience
+         is shown to everyone — both are real states rather than gaps, so
+         they are named rather than left blank. */
+      anytime: 'Codziennie',
+      everyone: 'Wszyscy',
 
       limitForecast: 'W tym tempie ta okazja osiągnie limit {limit} odebrań około {date}.',
       limitDates: ['22 sierpnia', '', '', '', '', ''],
@@ -1515,6 +1539,12 @@ export const pl: Dictionary = {
     },
 
     drawer: {
+
+      /* The panel's heading when it was opened on an existing deal. One
+
+         panel does both jobs and the heading is what says which. */
+
+      editDeal: 'Edytuj gorącą ofertę',
       close: 'Zamknij',
       cancel: 'Anuluj',
       later: 'Zapisz i dokończ później',
@@ -2772,6 +2802,12 @@ export const pl: Dictionary = {
       failed: 'Nie udało się teraz połączyć z przewodnikiem. Nic nie zginęło — spróbuj za chwilę.',
       onPaylez: 'Na Paylez',
       visit: 'Strona',
+      reviews: '({n} opinii)',
+      takesVouchers: 'Przyjmuje vouchery Paylez',
+      about: 'O miejscu',
+      pricing: 'Ceny',
+      contact: 'Kontakt',
+      close: 'Zamknij',
     },
 
     countries: {

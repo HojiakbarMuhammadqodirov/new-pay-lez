@@ -11,6 +11,8 @@ import {
   euroToMinor,
   publishDeal,
   scheduleDealPush,
+  updateDeal,
+  usePartnerDeals,
   usePartnerPushQuota,
   usePartnerVenue,
   venueInstant,
@@ -145,6 +147,12 @@ const minutesOf = (clock: string): number => {
   return (h || 0) * 60 + (m || 0);
 };
 
+/** The inverse, for filling the two time wells when a deal is opened to edit. */
+const clockOf = (minutes: number): string => {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+};
+
 const DEFAULT_FROM = '2026-08-04';
 const DEFAULT_TO = '2026-09-01';
 
@@ -162,8 +170,14 @@ const PLANS_ANCHOR = '#business-pricing';
 function DealBody({
   onValid,
   submit,
+  dealId,
 }: {
   onValid: (problems: number) => void;
+  /* The deal being edited, or undefined when this is a new one. The row is
+     re-read from the list the screen already holds rather than passed in, so a
+     deal changed in another tab cannot leave this form filled with a stale
+     copy. */
+  dealId?: string;
   /* How the footer reaches the form. The buttons live on the frame — six places
      open this drawer and all of them get the same footer — so the body hands
      its filing function up the same way it hands up its validation count. */
@@ -211,6 +225,7 @@ function DealBody({
    * audience from a seed was telling an owner how many people their offer would
    * reach, which is the single most consequential number on this panel.
    */
+
   const reach = PD_AUDIENCES[audience] ?? null;
   const suggested = reach?.sendAt ?? notifyTime;
 
@@ -223,6 +238,61 @@ function DealBody({
    */
   const venueApi = usePartnerVenue();
   const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+
+  /*
+   * The deal being edited, off the same request the table drew.
+   *
+   * `usePartnerDeals` is already mounted and cached by the screen behind this
+   * panel, so this costs no second round trip — and the form is filled from the
+   * row the owner just pressed Edit on rather than from a copy handed across,
+   * which is the version that goes stale when a second tab publishes.
+   */
+  const dealsApi = usePartnerDeals(dealId ? (venue?.id ?? null) : null);
+  const editing = dealId !== undefined;
+  const existing =
+    dealsApi.state.status === 'ready'
+      ? (dealsApi.state.data.find((row) => row.id === dealId) ?? null)
+      : null;
+
+  /*
+   * Fill the form when the row arrives, and only then.
+   *
+   * Keyed on the deal's id rather than run on every render: this writes to the
+   * same state the owner is typing into, and an effect that re-ran would undo
+   * a keystroke every time the list refetched. The one-shot ref is what makes
+   * "the server answered again" and "the user opened a different deal"
+   * different events.
+   */
+  const filled = useRef<string | null>(null);
+  useEffect(() => {
+    if (!existing || filled.current === existing.id) return;
+    filled.current = existing.id;
+
+    setBadge(existing.discount_text ?? '');
+    setTitle(existing.copy?.title ?? '');
+    setDesc(existing.copy?.description ?? '');
+    if (existing.valid_from) setFrom(existing.valid_from.slice(0, 10));
+    if (existing.valid_to) setTo(existing.valid_to.slice(0, 10));
+
+    /* The weekday set is stored as the server's own names; the form holds seven
+       booleans in Monday-first order. An empty or absent set means "every day",
+       which is all seven on rather than none. */
+    const stored = (existing.target_weekdays ?? '')
+      .split(',')
+      .map((day: string) => day.trim().toLowerCase())
+      .filter(Boolean);
+    const order = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+    setDays(stored.length === 0 ? order.map(() => true) : order.map((d) => stored.includes(d)));
+
+    if (existing.target_from_min !== null) setHourFrom(clockOf(existing.target_from_min));
+    if (existing.target_to_min !== null) setHourTo(clockOf(existing.target_to_min));
+
+    /* Only one of the two caps can be set, and which one decides the radio. */
+    if (existing.cap_claims) {
+      setStop(1);
+      setStopClaims(existing.cap_claims);
+    }
+  }, [existing]);
   const quotaApi = usePartnerPushQuota(venue?.id ?? null);
   const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : null;
   const quotaOut = quota !== null && quota.remaining === 0;
@@ -284,6 +354,42 @@ function DealBody({
          appears to work and leaves nothing behind, which is exactly what this
          change exists to stop. */
       toast(copy.needsSession);
+      return;
+    }
+
+    /*
+     * Editing is a different verb and a different ending.
+     *
+     * `PATCH` sends only the fields this form owns, so a targeting rule set
+     * elsewhere survives; and it does not touch the deal's status, which is
+     * what the row's own Pause and Publish are for. Saving an edit therefore
+     * never puts a paused deal back in front of customers — the failure mode a
+     * PUT here would have.
+     */
+    if (editing && dealId) {
+      try {
+        await updateDeal(dealId, {
+          discountText: badge.trim(),
+          validFrom: from,
+          validTo: to,
+          copy: { [language]: { title: title.trim(), description: desc.trim() } },
+          ...(stop === 1 ? { capClaims: stopClaims } : {}),
+          ...(stop === 2
+            ? { capSpendMinor: euroToMinor(stopMoney / currency.rate, venue?.currency ?? 'EUR') }
+            : {}),
+        });
+      } catch (cause) {
+        toast(
+          cause instanceof ApiError && cause.status === 0
+            ? copy.filingOffline
+            : fill(copy.filingRefused, {
+                why: cause instanceof Error ? cause.message : String(cause),
+              }),
+        );
+        return;
+      }
+      toast(copy.saved);
+      closeDrawer();
       return;
     }
 
@@ -974,7 +1080,14 @@ function CampaignBody({
 
 /* ───────────────────────────────────────────────────────────────── frame ── */
 
-export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
+export function DashboardDrawer({
+  kind,
+  dealId,
+}: {
+  kind: DrawerKind;
+  /** Set when the drawer was opened on an existing deal rather than on nothing. */
+  dealId?: string;
+}) {
   const copy = useCopy().dashboard.drawer;
   const { closeDrawer } = useDashboard();
   const [problems, setProblems] = useState(0);
@@ -998,6 +1111,7 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
   };
 
   const body = kind === 'deal' ? copy.deal : copy.campaign;
+  const editing = kind === 'deal' && dealId !== undefined;
 
   /* Escape closes, and focus starts inside — a slide-over that leaves the
      keyboard on the page behind it is a modal in appearance only. */
@@ -1025,7 +1139,10 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
         <header>
           <div>
             <span className="console-label">{body.kicker}</span>
-            <h2>{body.title}</h2>
+            {/* One panel, two jobs, and the heading is what says which. An
+                edit form wearing "Create a hot deal" is the kind of thing
+                somebody only notices after they have pressed the button. */}
+            <h2>{editing ? copy.editDeal : body.title}</h2>
             <p className="pd-fine">{body.sub}</p>
           </div>
           <button type="button" className="pd-icon" aria-label={copy.close} onClick={closeDrawer}>
@@ -1035,7 +1152,7 @@ export function DashboardDrawer({ kind }: { kind: DrawerKind }) {
 
         <div className="pd-drawer-body">
           {kind === 'deal' ? (
-            <DealBody onValid={setProblems} submit={submit} />
+            <DealBody onValid={setProblems} submit={submit} dealId={dealId} />
           ) : (
             <CampaignBody onValid={setProblems} submit={submit} />
           )}

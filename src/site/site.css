@@ -40,6 +40,32 @@
 @import '@fontsource/manrope/latin-500.css';
 @import '@fontsource/manrope/latin-700.css';
 
+/*
+ * Plus Jakarta Sans is the partner dashboard's face and nothing else's.
+ *
+ * It is the reference design's own type (`b2b/Paylez Partner Dashboard
+ * v2.dc.html` sets it on `body`), and the dashboard is the one surface here
+ * asked to be a match for that file rather than a translation of it. Scoped to
+ * `.pd-app` through `--font-pd` below, so the marketing pages keep Manrope and
+ * nothing outside the frame pays for a fourth family.
+ *
+ * Five weights because the mock spends five — 400 body, 500 quiet labels, 600
+ * row figures, 700 headings, 800 the big tabular numbers — and cyrillic with
+ * them, unlike the wordmark above: this screen *is* translated, and a Russian
+ * or Ukrainian owner reading a fallback face while the latin around it is
+ * Jakarta is worse than not loading it at all.
+ */
+@import '@fontsource/plus-jakarta-sans/latin-400.css';
+@import '@fontsource/plus-jakarta-sans/latin-500.css';
+@import '@fontsource/plus-jakarta-sans/latin-600.css';
+@import '@fontsource/plus-jakarta-sans/latin-700.css';
+@import '@fontsource/plus-jakarta-sans/latin-800.css';
+@import '@fontsource/plus-jakarta-sans/cyrillic-ext-400.css';
+@import '@fontsource/plus-jakarta-sans/cyrillic-ext-500.css';
+@import '@fontsource/plus-jakarta-sans/cyrillic-ext-600.css';
+@import '@fontsource/plus-jakarta-sans/cyrillic-ext-700.css';
+@import '@fontsource/plus-jakarta-sans/cyrillic-ext-800.css';
+
 :root {
   /* ── dark: the native theme ─────────────────────────────────────────── */
   --bg: #0d0d0e;
@@ -109,6 +135,18 @@
    */
   --ink-rgb: 4, 32, 31;
   --ink-on-rgb: 88, 233, 212;
+
+  /*
+   * The ink when a hand is on it.
+   *
+   * An ink press cannot lighten with alpha — there is no ground behind it to
+   * let through — so its hover is a third member of the family rather than a
+   * transform of the first. It lives here with the other two for the reason
+   * stated above: it belongs to the *surface*, not to a theme. It was a bare
+   * hex sitting inside `:root[data-theme='light'] .pd-app`, under a comment
+   * claiming that nothing there named a colour.
+   */
+  --ink-lit-rgb: 15, 59, 57;
 
   /*
    * The solid — the face of a thing you press, separate from `--accent`
@@ -561,6 +599,14 @@ button {
 .btn {
   display: inline-flex;
   align-items: center;
+  /* A button that shrink-wraps does not need this — content and box are the
+     same width, so it cannot move anything. A button *stretched* by its parent
+     does: the Contact form's submit is a column child of `.form-block`, so it
+     is the width of the fieldset, and its icon and label sat against the left
+     edge with the rest of the pill empty. Centring here rather than on that one
+     button because every stretched `.btn` in the sheet has the same problem and
+     the ones that are not stretched are unaffected. */
+  justify-content: center;
   gap: 0.55rem;
   padding: 0.75rem 1.35rem;
   border-radius: 999px;
@@ -622,7 +668,7 @@ button {
 :root[data-theme='light'] .pd-app {
   --solid-rgb: var(--ink-rgb);
   --solid: rgb(var(--solid-rgb));
-  --solid-lit: #0f3b39;
+  --solid-lit: rgb(var(--ink-lit-rgb));
   --on-solid: rgb(var(--ink-on-rgb));
 }
 
@@ -1212,6 +1258,37 @@ button {
 /* The globe renders behind this column; it only reserves the space. */
 .hero-visual {
   min-height: min(60vh, 34rem);
+}
+
+/*
+ * A hero with nothing in its second column.
+ *
+ * The two-column grid above exists to reserve the right-hand half for the
+ * globe, which is a *fixed* layer aimed at that space. Relocate copied the
+ * arrangement when it had the globe and kept it through three backdrops; the
+ * one it has now (`city/CityRise`) is full-bleed on `.site__web`, like every
+ * other 2D backdrop, so the reserved column reserves nothing and the copy sat
+ * in the left half of a screen with an empty right half — which is what "should
+ * we centre this" was noticing.
+ *
+ * So the fix is the layout rather than `text-align` on its own: one column, the
+ * measure kept (34rem is what makes the headline read), and the rows that are
+ * flex — the buttons and the stats — centred too, because a centred paragraph
+ * over a left-packed button row is worse than either.
+ */
+.hero-mid .hero-grid {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: center;
+}
+
+.hero-mid .hero-copy {
+  text-align: center;
+}
+
+.hero-mid .hero-cta,
+.hero-mid .hero-meta,
+.hero-mid .learn-back {
+  justify-content: center;
 }
 
 /* ────────────────────────────────────────────────────────────── proof ── */
@@ -5218,14 +5295,9 @@ button {
   overflow: hidden;
 }
 
-.topic-list,
+.gs-grid,
 .topic-empty {
   padding: 0 1.1rem 1rem;
-}
-
-/* No global `ul` reset in this sheet — every list turns its own markers off. */
-.topic-list {
-  list-style: none;
 }
 
 .topic-empty {
@@ -5234,29 +5306,388 @@ button {
   text-wrap: pretty;
 }
 
-.topic-list li {
-  padding: 0.65rem 0;
-  border-top: 1px solid var(--border);
+/* ── a service, as a card ─────────────────────────────────────────────────
+   `gs-` was grepped and was free. These sit inside `.topic-panel`, which is a
+   `0fr → 1fr` collapse, so nothing here may state a height: whatever the cards
+   come to is what the panel opens to.
+
+   The list they replaced was `<li>`s with a name, an address and a blurb —
+   which was everything the *type* in `api/guide.ts` admitted a row had. The
+   rating, the price band, the subcategories and the voucher flag were all on
+   the wire the whole time with nowhere to be drawn. */
+
+.gs-grid {
+  display: grid;
+  /* Two up where there is room, one where there is not, with no media query —
+     the two featured topics are double-width and the rest are not, so a
+     breakpoint on the viewport would be answering the wrong question. */
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: 0.5rem;
 }
 
-.topic-list b {
-  font-size: 0.9rem;
+.gs-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), 0.5);
+  transition:
+    border-color 200ms var(--ease),
+    background 200ms var(--ease),
+    transform 200ms var(--ease);
 }
 
-.topic-where {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-top: 0.15rem;
-  font-size: 0.75rem;
+.gs-card:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: rgba(var(--panel-rgb), 0.8);
+  transform: translateY(-1px);
+}
+
+/* The button is the card, not a link inside it — the rule the Play screen's
+   game grid states. It fills the row so there is no dead margin to hit. */
+.gs-hit {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.7rem 0.75rem;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.gs-card:active {
+  transform: scale(0.995);
+}
+
+.gs-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: var(--r-sm);
+  background: rgba(var(--accent-rgb), 0.14);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 800;
   color: var(--accent-ink);
 }
 
-.topic-langs {
+.gs-tx {
   display: block;
-  margin-top: 0.1rem;
-  font-size: 0.72rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.gs-name {
+  display: -webkit-box;
+  font-size: 0.9rem;
+  line-height: 1.25;
+  /* Two lines, then an ellipsis: a restaurant with a long legal name must not
+     push the rating and the price off the bottom of every card beside it. */
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gs-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
+}
+
+.gs-rating {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.76rem;
+  color: var(--text-mut);
+}
+
+.gs-rating svg {
+  color: var(--accent-lit);
+}
+
+.gs-rating b {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+/* The venue's own band, in the venue's own currency — never `useMoney`. It is
+   weighted rather than tinted, so it reads as a figure without spending the
+   accent on it twice in one row. */
+.gs-price {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.gs-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  font-size: 0.74rem;
   color: var(--text-fnt);
+}
+
+.gs-flags {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+  flex: 0 0 auto;
+}
+
+.gs-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(var(--accent-rgb), 0.35);
+  background: rgba(var(--accent-rgb), 0.1);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+.gs-tag-vouchers {
+  padding: 0.2rem;
+}
+
+/* Under the button rather than in it: a `tel:` inside a `<button>` is a control
+   inside a control. `.topic-links` is mounted and had no rule at all until the
+   cards arrived. */
+.topic-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0 0.75rem 0.6rem;
+}
+
+.topic-links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.topic-links a:hover {
+  color: var(--accent-ink);
+}
+
+/* ── a service, opened ─────────────────────────────────────────────────────
+   Modal, unlike the assistant dock, and for the opposite reason: the dock is
+   consulted *while* reading and this is the page's own row, opened. */
+
+.gs-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  /* A dim rather than a tint, and so deliberately outside the palette — the
+     same exception `.pd-scrim` takes and for the same reason. */
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: gs-fade 180ms var(--ease);
+}
+
+.gs-panel {
+  position: relative;
+  width: min(30rem, 100%);
+  /* Scrolls inside itself. The panel must not size to the description — some
+     of these run to a paragraph and some are `null`. */
+  max-height: min(80vh, 42rem);
+  overflow-y: auto;
+  padding: 1.35rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  /* Near-opaque rather than `--glass`: this sits over a scrim with body copy on
+     it, which is the worst case the glass token is *not* set by. There is no
+     `--panel` token — the sheet has `--panel-rgb` and composes. */
+  background: rgba(var(--panel-rgb), 0.97);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+  animation: gs-rise 220ms var(--ease);
+}
+
+.gs-panel:focus {
+  outline: none;
+}
+
+@keyframes gs-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes gs-rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+.gs-close {
+  position: absolute;
+  top: 0.7rem;
+  right: 0.7rem;
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  height: var(--tap);
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-fnt);
+  cursor: pointer;
+  transition: color 180ms var(--ease);
+}
+
+.gs-close:hover {
+  color: var(--text);
+}
+
+.gs-panel-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.8rem;
+  /* Clear of the close button, which is absolutely positioned over this row. */
+  padding-right: 2.6rem;
+}
+
+.gs-panel-head .gs-mark {
+  width: 3.1rem;
+  height: 3.1rem;
+  font-size: 1.35rem;
+}
+
+.gs-panel-head h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  line-height: 1.25;
+}
+
+.gs-subs {
+  margin-top: 0.9rem;
+}
+
+.gs-block {
+  margin-top: 1.2rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.gs-block h4 {
+  margin: 0 0 0.45rem;
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.gs-block p {
+  margin: 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+.gs-price-big {
+  font-size: 1rem !important;
+  font-weight: 700;
+  color: var(--accent-ink) !important;
+}
+
+.gs-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gs-contact li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+  color: var(--text-mut);
+}
+
+/* The token applies to the rows that are *targets*. An address is text and does
+   not need 44px of height; giving it the same left the block twice as tall as
+   it had any reason to be. */
+.gs-contact li:has(a) {
+  min-height: var(--tap);
+}
+
+.gs-contact svg {
+  flex: 0 0 auto;
+  color: var(--accent-lit);
+}
+
+.gs-contact a {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.gs-contact a:hover {
+  color: var(--accent-ink);
+}
+
+.gs-vouchers {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 1.2rem 0 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.08);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+@media (hover: none) {
+  /* Movement only. The colour and border changes stay — on a list you have just
+     tapped, "this is the one you touched" is useful rather than stuck. */
+  .gs-card:hover,
+  .gs-card:active {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gs-card,
+  .gs-scrim,
+  .gs-panel,
+  .gs-close {
+    transition: none;
+    animation: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5328,8 +5759,12 @@ button {
  * keep it — the assistant lives in the app. The sample questions underneath
  * carry what it is for instead.
  */
+/* A `<button>` since it opens the dock, which is why the four resets are here:
+   a button brings its own font, its own centred text and no width, and inherits
+   none of the three from the row it is pretending to be. */
 .ask-box {
   display: flex;
+  width: 100%;
   align-items: center;
   gap: 0.6rem;
   padding: 0.5rem 0.5rem 0.5rem 1.1rem;
@@ -5338,6 +5773,32 @@ button {
   background: var(--glass);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.22s ease,
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ask-box:hover {
+  border-color: rgba(var(--accent-rgb), 0.42);
+}
+
+/* The press is on the whole row rather than on `.ask-go` inside it: the row is
+   what takes the click, and a lift on the label alone reads as two controls. */
+.ask-box:active {
+  transform: scale(0.995);
+}
+
+@media (hover: none) {
+  .ask-box {
+    transition: border-color 0.22s ease;
+  }
+
+  .ask-box:active {
+    transform: none;
+  }
 }
 
 .ask-field {
@@ -6132,48 +6593,78 @@ button {
    question was about.
    ═══════════════════════════════════════════════════════════════════════ */
 
-.ai-scrim {
-  position: fixed;
-  inset: 0;
-  z-index: 60;
-  background: rgba(0, 0, 0, 0.42);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
-  animation: ai-fade 220ms var(--ease) both;
-}
-
-@keyframes ai-fade {
-  from {
-    opacity: 0;
-  }
-}
-
+/*
+ * The panel: a card in the corner the button is in.
+ *
+ * It was a full-height drawer down the left edge with a scrim over the page —
+ * `AssistantDock.tsx` argues at length that this was wrong (that is the shape
+ * of an *alert*, and you consult an assistant while reading) and the component
+ * was rewritten, but this rule was not. So the sheet still pinned a 27rem
+ * column from `top: 0` to `bottom: 0`: on a 900px-tall window that is a strip
+ * of empty panel two thirds of the way down, and the page it exists to sit
+ * beside lost a third of its width to hold it.
+ *
+ * Now it is what the component says it is. It sits **above the button** it grew
+ * out of, is only as tall as the conversation in it up to a ceiling, and leaves
+ * the page it is consulted against on screen. `.ai-scrim` is gone with the
+ * drawer — nothing has rendered one since the panel stopped being modal, and a
+ * rule for an element that does not exist is one the next person has to read
+ * before finding out it does nothing.
+ */
 .ai-panel {
   position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
+  left: clamp(1rem, 2.5vw, 2rem);
+  /* Clears the 3.5rem button plus its own gap, and rides the same safe-area
+     `max()` the button does — otherwise the panel is correct and the control
+     that closes it is under the home indicator. */
+  bottom: calc(max(clamp(1rem, 2.5vh, 2rem), env(safe-area-inset-bottom) + 0.75rem) + 4.25rem);
   z-index: 61;
-  width: min(27rem, 100%);
+
+  width: min(24rem, calc(100vw - 2rem));
+  /* Tall enough for a real exchange, never taller than the room above the
+     button. `min()` of the two rather than a `vh` figure alone: on a short
+     laptop window the second term is what binds, and on a tall phone the
+     first stops the panel becoming a full-height drawer again by accident. */
+  max-height: min(32rem, calc(100dvh - 9rem));
+
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 
-  border-right: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
   /* Opaque, not `--glass`: this one has a whole moving page behind it, and a
      conversation is the last thing that should be read through a backdrop. */
   background: var(--bg);
-  box-shadow: 30px 0 80px -40px var(--shadow);
-  animation: ai-in 300ms var(--ease) both;
+  box-shadow: 0 30px 80px -40px var(--shadow);
+  animation: ai-in 260ms var(--ease) both;
 }
 
+/* Out of the button rather than in from the edge: the origin is the corner the
+   button occupies, so the panel reads as the thing that opened. */
 @keyframes ai-in {
   from {
-    transform: translateX(-100%);
+    opacity: 0;
+    transform: translateY(12px) scale(0.96);
+  }
+}
+
+/*
+ * On a phone it spans the gutters and stands off the bottom, because 24rem of
+ * a 360px screen is the whole width anyway and a centred card with a 4px
+ * margin reads as a mistake. Still not full height: the composer summons a
+ * keyboard, and a panel sized to the viewport ends up with its input under it.
+ */
+@media (max-width: 30rem) {
+  .ai-panel {
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+    max-height: min(30rem, 68dvh);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ai-scrim,
   .ai-panel {
     animation: none;
   }
@@ -6202,8 +6693,10 @@ button {
   color: var(--accent-lit);
 }
 
-/* The chevron points down by default; rotated a quarter turn it points back at
-   the edge the panel came from, which is where it is going. */
+/* No rotation. It was a quarter turn, from when this was a chevron pointing
+   back at the edge the drawer came from; the glyph has been a cross for a while
+   and a cross turned 90 degrees is the same cross, drawn crooked at the pixel
+   level for nothing. */
 .ai-close {
   display: grid;
   place-items: center;
@@ -6213,7 +6706,6 @@ button {
   background: none;
   color: var(--text-mut);
   cursor: pointer;
-  transform: rotate(90deg);
   transition: background 200ms var(--ease), color 200ms var(--ease);
 }
 
@@ -6308,24 +6800,17 @@ button {
   color: var(--text);
 }
 
+/* The answer is the page's own body text now rather than a muted aside: it is
+   the thing the panel was opened for, and it carries figures somebody is going
+   to read off it. */
 .ai-turn[data-from='bot'] {
   align-self: flex-start;
-  color: var(--text-mut);
+  max-width: 100%;
+  color: var(--text);
 }
 
-/* Says what it is on every reply. The panel is a working shell and the answers
-   are not real yet; labelling each one is the honest version of that. */
-.ai-tag {
-  display: inline-block;
-  margin-bottom: 0.35rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 5px;
-  border: 1px solid var(--border-2);
-  color: var(--accent-ink);
-  font-size: 0.62rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+.ai-turn[data-from='bot'] p {
+  margin: 0;
 }
 
 .ai-foot {
@@ -6400,6 +6885,220 @@ button {
 
 .ai-suggestions .chip {
   font-size: 0.78rem;
+}
+
+/* ── the assistant's four reply states ─────────────────────────────────────
+ *
+ * A real call has states a canned line did not, and each of these is one of
+ * them. See the header note in `AssistantDock.tsx` for why a refusal, an
+ * unreachable server and a broken one are drawn as three different things.
+ */
+
+/*
+ * Thinking. Three dots on one timeline offset by a third each, so the wave
+ * reads as one object rather than three blinking marks — and `opacity` only,
+ * because it is the one property here the compositor can carry on its own.
+ */
+.ai-typing {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 1.55em;
+  margin: 0;
+}
+
+.ai-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.25;
+  animation: ai-think 1.25s var(--ease) infinite;
+}
+
+.ai-dot:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.ai-dot:nth-child(4) {
+  animation-delay: 0.28s;
+}
+
+@keyframes ai-think {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* Stilled rather than dropped: the dots are the only thing saying a question is
+   in flight, so they have to stay visible when motion is not wanted. */
+@media (prefers-reduced-motion: reduce) {
+  .ai-dot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
+/*
+ * The receipt. Every figure in the sentence above came from one of these, so
+ * they are set as data — the value leading, tabular, and the label under it —
+ * rather than as a second sentence.
+ */
+.ai-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.ai-fact b {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-fact span {
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  color: var(--text-fnt);
+}
+
+/*
+ * The rows behind an answer. Deliberately not pressable and deliberately not
+ * shaped like something that is: no hover, no lift, no chevron. There is no
+ * venue route on this site to open one in, and a row that invites a tap it
+ * cannot honour is the picture-of-a-control this sheet's own rule forbids.
+ */
+.ai-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ai-result {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.5rem 0.65rem;
+  border-left: 2px solid rgba(var(--accent-rgb), 0.45);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+}
+
+.ai-result b {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ai-result span {
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+/* The one thing in a reply that is pressable, because the server sent somewhere
+   real to go. The arrow travels on a transform; the gap stays put. */
+.ai-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+  text-decoration: none;
+}
+
+.ai-action svg {
+  transition: transform 240ms var(--ease);
+}
+
+.ai-action:hover svg {
+  transform: translateX(3px);
+}
+
+/*
+ * A refusal, drawn as a refusal.
+ *
+ * The palette has one accent, so this cannot be red — it is weighted instead,
+ * the same answer `.field-error` gives one block over: body weight in `--text`
+ * on a tinted rule, which is louder by contrast rather than by hue.
+ */
+.ai-error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.ai-error p {
+  margin: 0;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* The server's own words, under ours and quieter: they name which gate closed,
+   and they are the one line on this panel that is not translated. */
+.ai-error-why {
+  display: block;
+  margin-top: 0.25rem;
+  font-weight: 400;
+  font-size: 0.76rem;
+  color: var(--text-fnt);
+}
+
+/* Marks rather than lifts, so it needs no entry in the touch guard: a control
+   inside a message that has already gone wrong should not also be springy. */
+.ai-retry {
+  padding: 0.35rem 0.7rem;
+  border: 1px solid var(--border-2);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent-ink);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 200ms var(--ease),
+    border-color 200ms var(--ease);
+}
+
+.ai-retry:hover {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+}
+
+.ai-retry:active {
+  transform: scale(0.96);
+  transition-duration: 40ms;
 }
 
 /* ═══════════════════════════════════════════════════ business + listing ══ */
@@ -6642,13 +7341,22 @@ button {
 
 .pd-app {
   display: grid;
-  grid-template-columns: 15rem minmax(0, 1fr);
+  /* 240px open and 74px collapsed: the reference export's own two widths, in
+     its own unit. They are px rather than rem because the rail's contents are
+     a 32px mark, a 17px icon and a 13.5px label — none of which scale with the
+     root size — and the two numbers have to agree with the mock at 1440.
+
+     Declared here rather than beside the rest of the match at the foot of this
+     file, and that placement is load-bearing: the phones block below collapses
+     the frame to a single column, and a later rule at equal specificity would
+     win against it and leave a 240px rail down the side of a 360px screen. */
+  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100dvh;
   transition: grid-template-columns 260ms var(--ease);
 }
 
 .pd-app[data-collapsed='true'] {
-  grid-template-columns: 4.6rem minmax(0, 1fr);
+  grid-template-columns: 74px minmax(0, 1fr);
 }
 
 /* ── rail ── */
@@ -7401,6 +8109,21 @@ button {
   min-width: 0;
 }
 
+/*
+ * ...except a segmented control, which is also a `div`.
+ *
+ * The column above is for the head's *title block* — a label with fine print
+ * under it — and it was catching the deal-status filter as well, standing five
+ * buttons on end down the right-hand edge where they read as a stray list
+ * rather than as one control. Scoped rather than narrowed: every other panel
+ * head in this sheet relies on that column, and this is the one child that is
+ * not a title block. Same specificity, placed after, so source order decides.
+ */
+.pd-panel-head > .pd-seg {
+  display: inline-flex;
+  flex-direction: row;
+}
+
 .pd-fine {
   font-size: 0.78rem;
   line-height: 1.55;
@@ -7731,6 +8454,25 @@ button {
  * first month of reach against, and inventing one is the thing this dashboard
  * has a whole panel of copy about not doing.
  */
+/*
+ * A figure the server withheld, and why it is not just a dash.
+ *
+ * `Figure` in `dashboardScreens.tsx` renders an em dash for a suppressed or
+ * unmeasured metric, and says in its own docstring that this is "not a zero
+ * and not a blank". It carried no rule at all, so it came out as a full-weight
+ * `<b>` in body colour — the same weight a real figure has, in every slot a
+ * real figure appears in, which is the one thing it must not look like.
+ *
+ * Faint and un-bolded, so the eye reads it as an absence at a glance and the
+ * `title` explains it on hover. `cursor: help` because there *is* a title;
+ * a tooltip nothing invites you to open is a tooltip nobody opens.
+ */
+.pd-withheld {
+  font-weight: 400;
+  color: var(--text-fnt);
+  cursor: help;
+}
+
 .pd-reach-figures {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
@@ -22208,4 +22950,1605 @@ button {
     opacity: 1;
     transform: none;
   }
+}
+
+/* ════════════════════════════════════ the dashboard, as the mock draws it ══
+   `Paylez Partner Dashboard.html` — the bundled export of
+   `b2b/Paylez Partner Dashboard v2.dc.html` — is the design this frame is now
+   asked to *match* rather than to translate. The section above ported its
+   layout and deliberately kept this file's colours; that decision is reversed
+   here, on request, and the reversal is scoped to `.pd-app` so nothing outside
+   the frame moves.
+
+   It is one block of tokens rather than a rewrite of the 2 800 lines above,
+   and that is the whole design of it: every `.pd-*` rule already reads
+   `--bg`, `--panel-rgb`, `--border`, `--text*`, `--accent*`, `--solid*` and
+   `--font-*`. Re-pointing those inside the frame re-skins all of them at once,
+   the same trick `[data-ink]` uses one level down, and anything added to the
+   dashboard later inherits the match without having to know this block exists.
+   The thing that breaks it is a rule that names a colour instead of reading a
+   token — which is what the rest of `src/site/CLAUDE.md` is about.
+
+   Two departures from that file's standing rules are deliberate and are the
+   point of the exercise, so they are written down rather than left to be
+   discovered:
+
+   1. **A third hue, inside this frame only.** The mock's green is 163°, not
+      the site's 179° cyan — `#0B7F63` where paper would otherwise use
+      `#007a78`. Outside `.pd-app` the cyan is untouched.
+   2. **A fourth family, inside this frame only.** Plus Jakarta Sans, set by
+      re-pointing `--font-body` and `--font-display` rather than by naming a
+      face in any rule. `--font-brand` is left alone: the wordmark is Onest in
+      the mock too.
+
+   The mock is a light page and has no dark half. Dark here is therefore a
+   *twin* rather than a transcription — same geometry, same spacing, same flat
+   cards and hairlines, with the roles resolved for a dark ground and the mint
+   carrying what the deep green carries on paper.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+.pd-app {
+  /* The mock's type, for the frame and everything in it. */
+  --font-body: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+  /* The mock draws flat cards on a flat ground: no wash behind them, so no
+     sheet to see through and nothing for a blur to sample. Both are switched
+     off in both themes rather than only on paper, because the geometry is what
+     the two halves are meant to share. */
+  --pd-glass: 1;
+  --pd-blur: 0px;
+
+  /* The mock's ink and its mint, which `[data-ink='paper']` reads to build the
+     black slabs — `#0B1512` and `#5FE9C4`, a touch greener and a touch darker
+     than the site's own pair. Scoped, so the site's ink is unchanged. */
+  --ink-rgb: 11, 21, 18;
+  --ink-on-rgb: 95, 233, 196;
+  --ink-lit-rgb: 22, 48, 42;
+
+  font-family: var(--font-body);
+}
+
+/* Dark: the twin. The ground stays this site's, because a near-white dashboard
+   is the one thing a reader who chose dark did not ask for; everything else —
+   the card step, the hairline, the radii, the mint — follows the mock. */
+.pd-app {
+  --bg: #0d0d0e;
+  --bg-2: #14171a;
+  --panel-rgb: 23, 27, 29;
+  --border: rgba(255, 255, 255, 0.09);
+  --border-2: rgba(255, 255, 255, 0.16);
+
+  /* On a dark ground the mock's deep green has nowhere to go — it is a fill
+     colour for paper — so the mint carries all three steps, exactly as the
+     site's own dark theme does with its own mint. */
+  --accent-rgb: 95, 233, 196;
+  --accent: rgb(var(--accent-rgb));
+  --accent-lit: var(--accent);
+  --accent-ink: var(--accent);
+  --accent-soft: rgba(var(--accent-rgb), 0.72);
+  --on-accent: #04120d;
+  --tint-rgb: var(--accent-rgb);
+
+  --text: #f2f6f4;
+  --text-mut: rgba(242, 246, 244, 0.66);
+  --text-fnt: rgba(242, 246, 244, 0.44);
+
+  /* A press on dark is the mint, which is what the whole site does on dark. */
+  --solid-rgb: var(--accent-rgb);
+  --solid: rgb(var(--solid-rgb));
+  --solid-lit: rgb(var(--solid-rgb));
+  --on-solid: var(--on-accent);
+}
+
+/* Light: the transcription. Every value below is the mock's own. */
+:root[data-theme='light'] .pd-app {
+  --bg: #f6f8f7;
+  --bg-2: #eef1f0;
+  --panel-rgb: 255, 255, 255;
+
+  /* Neutral hairlines, not tinted ones. The mock rules its cards in `#E6E9E8`,
+     a grey with no green in it, and the tint the site uses instead is visible
+     at card size as a faint wash round every panel. */
+  --border: #e6e9e8;
+  --border-2: #d5dbd9;
+
+  --accent-rgb: 11, 127, 99;
+  --accent: rgb(var(--accent-rgb));
+  --accent-lit: var(--accent);
+  --accent-ink: var(--accent);
+  --accent-soft: rgba(var(--accent-rgb), 0.72);
+  --on-accent: #ffffff;
+
+  /* Two different jobs, and the mock does not use one colour for both.
+     `--tint-rgb` is the *mint*, because the mock's accented blocks are
+     `rgba(95,233,196,0.2)` behind a `#0B7F63` label — a pale mint chip, not a
+     pale green one, and tinting those with the deep green gives a grey-green
+     the mock never draws.
+
+     The two `--surface` steps are **neutral**, and that is the correction worth
+     writing down: they are the large-panel washes — a card head, a table
+     stripe, a well behind a figure — and the mock paints every one of those
+     `#EEF1F0` or `#F6F8F7`, with no green in them at all. Carrying the mint
+     through at chip alpha turns each of them into a block of colour, which is
+     exactly the failure `src/site/CLAUDE.md` describes for `--tint-rgb` and the
+     reason its own light alphas are 5% and 11% rather than 20%. The mint stays
+     available to anything that asks for it by name. */
+  --tint-rgb: 95, 233, 196;
+  --surface: #eef1f0;
+  --surface-2: #e6e9e8;
+
+  --text: #0b1512;
+  --text-mut: #6b7772;
+  --text-fnt: #9aa5a0;
+
+  /* The press stays the ink — which is what the section at the top of this file
+     already argued for this one screen, and which the mock does on every
+     button it draws. Restated because `--solid` resolves where it is written. */
+  --solid-rgb: var(--ink-rgb);
+  --solid: rgb(var(--solid-rgb));
+  --solid-lit: rgb(var(--ink-lit-rgb));
+  --on-solid: rgb(var(--ink-on-rgb));
+}
+
+/* The wash is gone with the glass. `.pd-app::before` is two radial fields of
+   accent at alpha; the mock's ground is one flat colour, and a gradient under
+   flat white cards is the one thing that would still read as a different
+   design after every token above matched. */
+.pd-app::before {
+  display: none;
+}
+
+/* Flat cards. `.pd-glass` keeps its sheet (now opaque) and loses the blur and
+   the inner top highlight — the `::after` hairline is a glass tell, and there
+   is no glass here any more. */
+.pd-glass {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.pd-glass::after {
+  display: none;
+}
+
+/* ── the mock's geometry ──────────────────────────────────────────────────
+ *
+ * The tokens above make the frame the right colour; these make it the right
+ * shape. Every number is read off `Paylez Partner Dashboard.html` and is
+ * written here in the unit that file uses — px, not rem — because the mock is
+ * a fixed 1440 design and the whole point of this block is that the two agree
+ * at that width. The responsive block further down still overrides them below
+ * 1100px, which is where the mock stops having an opinion.
+ */
+
+.pd-app {
+  /* 16px cards, 18px on the hero slab. The site's 18px `--r` is close enough
+     to look right and wrong enough to see side by side. */
+  --r: 16px;
+  --r-sm: 10px;
+  --r-lg: 18px;
+}
+
+/* 22px between panels — the mock's `gap:22px` on the overview column. */
+.pd-stack {
+  gap: 22px;
+}
+
+/*
+ * A flat card: the sheet, one hairline, 24px of padding, and no shadow at all.
+ *
+ * The shadow is the part worth naming. Glass needed one — a translucent pane
+ * over a moving wash has to be lifted off it or it reads as a stain — and a
+ * flat white card on flat paper does not: the mock rules its cards and stops,
+ * and a drop shadow under each one is the single loudest tell that this is a
+ * different design. `--shadow` is left defined for the drawer and the toast,
+ * which do float.
+ */
+.pd-glass {
+  box-shadow: none;
+  padding: 24px;
+}
+
+/* The tiles: `minmax(232px, 1fr)` at a 14px gutter, 20px of padding, and the
+   label a hair smaller and heavier than the site's own. */
+.pd-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+  gap: 14px;
+}
+
+.pd-tile {
+  gap: 14px;
+}
+
+.pd-tile > span {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.pd-tile b {
+  font-size: 27px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+/* The headline slab. 18px corners and a deeper, wider pad than a plain card,
+   because it carries a 52px figure and three stacked blocks beside it. */
+.pd-hero {
+  border-radius: var(--r-lg);
+  padding: 32px 34px;
+  gap: 34px;
+}
+
+/* The one figure the whole screen is built around. */
+.pd-counted b {
+  font-size: 52px;
+  font-weight: 800;
+  letter-spacing: -0.04em;
+  line-height: 1;
+}
+
+/* Section headings: 16px/700 on a card, which is the mock's `h2` throughout. */
+.pd-panel-head > div > h2,
+.pd-panel-head h2 {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+/* The eyebrow every panel opens with — 11px, 700, wide-tracked, in the accent
+   on paper and the mint on dark. */
+.pd-app .console-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+/* Body copy and the quiet notes under it. */
+.pd-fine {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+
+/*
+ * The rail's mark. `--logo` is the theme's own square tile — it carries its own
+ * ground, which is why this shows the whole image rather than laying a glyph on
+ * the accent, and why only the matched theme's file is ever fetched.
+ *
+ * `flex: 0 0 32px` and not a bare `width`: the rail is a flex row and the
+ * wordmark beside it is the item that should give way when the rail collapses.
+ */
+.rail-mark {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--logo) center / cover no-repeat;
+}
+
+/* Collapsed, the mark is the only thing left in the brand row — the word and
+   the tag are gone, so it centres itself in the 74px rail. */
+.rail[data-collapsed='true'] .rail-brand {
+  justify-content: center;
+}
+
+/* ── the overview chart, and the marks that read off it ───────────────────
+ *
+ * The plot is stretched (`preserveAspectRatio: none`) so the line always spans
+ * the panel, which means everything with letters in it lives outside the SVG:
+ * the value scale down the left and the day labels under it are DOM, in the
+ * frame's own face and its own tokens.
+ */
+
+.pd-chart {
+  position: relative;
+  /* The 42px the plot reserves on its left, as a share of the mock's 1000-unit
+     box, so the scale sits in the gutter the paths already leave empty. */
+  padding-left: 4.2%;
+}
+
+.pd-chart-scale {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4.2%;
+  display: flex;
+  flex-direction: column;
+  /* Three labels against three gridlines: the top one sits 16px down from the
+     top of the plot and the bottom one 30px up from its foot, which is what
+     the padding pair reproduces. */
+  justify-content: space-between;
+  padding: calc(16 / 260 * 100%) 0 calc(30 / 260 * 100%);
+  align-items: flex-end;
+}
+
+.pd-chart-scale span,
+.pd-chart-days span {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-fnt);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.pd-chart-scale span {
+  padding-right: 0.6rem;
+  /* Each label is centred on its gridline rather than sitting above it. */
+  transform: translateY(50%);
+}
+
+.pd-chart-days {
+  position: relative;
+  height: 1rem;
+  margin-top: 0.35rem;
+}
+
+.pd-chart-days span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+/* A path with no `fill` declared paints black inside the curve it closes. The
+   line series close nothing, but `fill: none` is not the initial value and the
+   dashboard's own chart has always relied on it being set. */
+.pd-chart-line {
+  fill: none;
+  stroke-linejoin: round;
+}
+
+/* ── sparklines ──
+ *
+ * Two inks, because the tiles pair with the chart: visits and claims are the
+ * accent, vouchers and rewards the ink — the same two the two lines use, so a
+ * tile and the series it belongs to are marked the same way.
+ */
+.pd-spark[data-ink='text'] .pd-spark-line {
+  stroke: var(--text-mut);
+}
+
+.pd-spark[data-ink='text'] .pd-spark-fill {
+  fill: rgba(var(--tint-rgb), 0.1);
+}
+
+:root[data-theme='light'] .pd-spark[data-ink='text'] .pd-spark-line {
+  stroke: var(--solid);
+}
+
+.pd-spark-line {
+  fill: none;
+  stroke-linejoin: round;
+}
+
+/* ── the period delta ──
+ *
+ * A chip, not a coloured number. The palette has one accent, so a fall cannot
+ * be red — it is the *arrow* and the weight that carry direction, and the two
+ * chips differ by tint rather than by hue, which is the same answer the field
+ * kit gives for an error.
+ */
+.pd-delta em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  border-radius: 6px;
+  padding: 3px 7px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pd-delta[data-dir='up'] em {
+  color: var(--accent-ink);
+  background: rgba(var(--tint-rgb), 0.22);
+}
+
+/* Down is the same chip at low contrast rather than a second colour: on a
+   screen with one accent, "not the accent" is the only other thing a mark can
+   be, and quieting it is the honest direction — a fall should not shout. */
+.pd-delta[data-dir='down'] em {
+  color: var(--text-mut);
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  padding: 2px 6px;
+}
+
+/* ── the sample chip ──
+ *
+ * `.pd-chip` is the panel head's neutral pill. This variant marks a panel whose
+ * figures are the reference design's, and it is deliberately the *loudest*
+ * chip on the screen — outlined rather than filled, in the accent — because the
+ * one failure mode of seeding a dashboard is somebody reading a number off it
+ * and believing it.
+ */
+.pd-chip[data-sample='true'] {
+  color: var(--accent-ink);
+  background: none;
+  border: 1px dashed var(--accent-ink);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/*
+ * The match, on a phone.
+ *
+ * The export is a fixed 1440 design and has no opinion below that; the fixed
+ * pads above are its opinion, and 24px of card padding either side of a 360px
+ * screen leaves 312px for a paragraph. These take the three biggest numbers
+ * back to the clamps the rest of this sheet uses, and change nothing else —
+ * the colours, the hairlines, the radii and the face are the match and stay.
+ *
+ * Last in the file on purpose: every rule it overrides is in the block above
+ * it, at equal specificity, so position is what decides. The `.pd-app` rail
+ * widths are the exception and live up beside the original rule instead — see
+ * the note there.
+ */
+@media (max-width: 48rem) {
+  .pd-glass {
+    padding: clamp(1rem, 3.6vw, 1.4rem);
+  }
+
+  .pd-hero {
+    padding: clamp(1.15rem, 4.4vw, 2rem);
+    gap: 1.4rem;
+  }
+
+  .pd-stack {
+    gap: 1.05rem;
+  }
+
+  /* 232px is wider than a 360px phone once the card padding is taken off, so
+     the tiles would sit one to a row at their own minimum anyway; saying so
+     directly keeps the gutter from collapsing with them. */
+  .pd-tiles {
+    grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
+    gap: 0.7rem;
+  }
+
+  .pd-counted b {
+    font-size: clamp(2.4rem, 11vw, 3.25rem);
+  }
+
+  .pd-tile b {
+    font-size: 1.5rem;
+  }
+}
+
+/* ══════════════════════════════════════════════ the deals table, as drawn ══
+ *
+ * The reference export's Hot deals screen: one card containing a toolbar, an
+ * insight strip, a sort note and a nine-column table that scrolls sideways
+ * rather than wrapping.
+ *
+ * The card is `data-solid`, so it keeps the sheet and drops the blur — the
+ * rule the dashboard already states for tables: tabular figures at 0.78rem
+ * over a live gradient is exactly the reading `--pd-glass` exists to protect,
+ * and this is the densest panel in the product.
+ *
+ * The whole panel is padding-less and its children own their own gutters,
+ * because the toolbar, the insight strip and the sort note are separated by
+ * rules that must run the full width of the card. A padded panel would inset
+ * every one of them.
+ */
+.pd-deals {
+  padding: 0;
+  gap: 0;
+  overflow: hidden;
+}
+
+.pd-deals > .pd-toolbar {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  margin: 0;
+}
+
+/* The count sits hard right, past a spacer that eats whatever is left. */
+.pd-count {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+.pd-deals .pd-search input {
+  border: none;
+  background: none;
+  outline: none;
+  width: 100%;
+  min-width: 0;
+  font: inherit;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.pd-deals .pd-search svg {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+}
+
+/* `search` inputs grow a browser-drawn clear affordance that is a different
+   shape in every engine and lands on the accent nowhere. The row already has
+   a filter set that clears it. */
+.pd-deals .pd-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+/*
+ * The insight strip: one sentence on a mint wash, under the toolbar.
+ *
+ * It reads as a finding rather than as a warning, which is why it takes the
+ * accent tint rather than the amber the budget alert uses — nothing here needs
+ * doing, it is something noticed.
+ */
+.pd-deal-insight {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 0;
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(var(--tint-rgb), 0.1);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.pd-deal-insight svg {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: var(--accent-ink);
+}
+
+.pd-deal-insight .pd-chip {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.pd-deals .pd-sort-note {
+  margin: 0;
+  padding: 11px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-fnt);
+}
+
+.pd-deals .pd-fine:not(.pd-deal-insight *) {
+  padding: 18px 24px;
+  margin: 0;
+}
+
+/*
+ * The table scrolls sideways inside its own port.
+ *
+ * Nine columns carrying a name, three counts, a rate, a money figure, a
+ * sparkline and two buttons do not fit a laptop, and the alternative to
+ * scrolling is a wrap that puts a deal's cost under its own name. `min-width`
+ * is the reference design's own 1120px: below that the port scrolls, and the
+ * page itself never does — which is the rule `.carousel` states one file over.
+ */
+.pd-deals .pd-table-wrap {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.pd-table-deals {
+  width: 100%;
+  min-width: 1120px;
+  border-collapse: collapse;
+}
+
+/*
+ * The headings wrap; they do not run into each other.
+ *
+ * `white-space: nowrap` was right for the reference design, whose eight labels
+ * are one English word each. "ДОЛЯ ЗАБРАВШИХ" is two long ones, and with fixed
+ * column widths a nowrap heading does not widen its column — it overflows into
+ * the next one, which is how "CLAIM RATE" ended up printed through "COST".
+ * Two short lines in a header row is the correct trade at every language this
+ * site ships.
+ */
+.pd-table-deals th {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--text-mut);
+  text-align: left;
+  vertical-align: bottom;
+  overflow-wrap: anywhere;
+}
+
+.pd-table-deals th:first-child,
+.pd-table-deals td:first-child {
+  padding-left: 20px;
+}
+
+.pd-table-deals th:last-child,
+.pd-table-deals td:last-child {
+  padding-right: 20px;
+}
+
+.pd-table-deals th[data-align='right'],
+.pd-table-deals td[data-align='right'] {
+  text-align: right;
+}
+
+/*
+ * A sortable heading is a button, not a `<th>` with a click handler.
+ *
+ * It has to be reachable from the keyboard and announce itself as pressable,
+ * and `aria-sort` on the `<th>` is what says which way the column is running.
+ * The button is `inherit` on every axis so the header still reads as one row
+ * of small caps rather than nine controls.
+ */
+/* `flex`, not `inline-flex`: an inline-flex button shrink-wraps its own text,
+   so the label never wraps and overflows the fixed column instead — which is
+   what put "CLAIM RATE" through "COST". A block-level flex takes the cell's
+   width and the label wraps inside it. */
+.pd-table-deals th button {
+  display: flex;
+  width: 100%;
+  align-items: flex-end;
+  gap: 6px;
+  text-align: left;
+  min-width: 0;
+  /* The label is the flex item, and it is what has to break — the container
+     wrapping does nothing for a two-word Russian heading in an 8% column. */
+  overflow-wrap: anywhere;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.pd-table-deals th button:hover {
+  color: var(--accent-ink);
+}
+
+.pd-table-deals th button i {
+  font-style: normal;
+  font-size: 9px;
+  color: var(--accent-ink);
+  /* Reserved whether or not this column is the sorted one, so the header does
+     not shift sideways as the arrow appears. */
+  min-width: 0.55em;
+}
+
+.pd-table-deals td {
+  padding: 16px 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-table-deals tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.pd-table-deals tbody tr:hover td {
+  background: var(--bg-2);
+}
+
+/* The three funnel counts are quiet on purpose: they are context for the two
+   figures that matter, and printing all five at one weight makes the row a
+   wall of numbers with no shape. */
+.pd-table-deals td[data-quiet='true'] {
+  color: var(--text-fnt);
+  font-size: 13px;
+}
+
+.pd-table-deals td b {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+/* An expired or ended deal keeps its figures and loses its weight. */
+.pd-table-deals tr[data-dim='true'] td {
+  opacity: 0.62;
+}
+
+/* ── the deal cell ── */
+
+.pd-deal-cell {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+
+.pd-deal-cell > div {
+  min-width: 0;
+}
+
+.pd-deal-cell b {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+/*
+ * The badge: what the deal gives away, as a chip.
+ *
+ * It repeats the name, which looks like a duplication and is not — the export
+ * carries a short form here ("20% OFF") and the full offer beside it, and this
+ * has only the one string to work with. Capped and clipped rather than wrapped,
+ * so a long offer does not turn a 1120px row into three lines.
+ */
+.pd-deal-badge {
+  flex: 0 0 auto;
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: rgba(var(--tint-rgb), 0.22);
+  color: var(--accent-ink);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+/* Window · schedule · audience, separated by dots drawn by the rule rather
+   than typed into the markup — a separator in the copy is a separator five
+   translators have to remember. */
+.pd-deal-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--text-mut);
+  margin-bottom: 5px;
+}
+
+.pd-deal-meta > * + *::before {
+  content: '·';
+  margin-right: 7px;
+  color: var(--border-2);
+}
+
+/* The schedule is the one of the three an owner scans for, so it is the one
+   with weight. */
+.pd-deal-meta em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pd-deal-chips {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pd-deal-chips .pd-fine {
+  font-size: 11.5px;
+}
+
+/*
+ * The notification chip, in its four states.
+ *
+ * Sent is the accent, because it is the one that carries a figure worth
+ * reading. Scheduled is neutral-but-present. Stopped and none are the quietest
+ * thing in the row — and they are two chips rather than one, because a deal
+ * that never had a notification and one whose notification was cancelled are
+ * different facts and an owner chasing the second must be able to see it.
+ */
+.pd-notif[data-kind='sent'] {
+  background: rgba(var(--tint-rgb), 0.2);
+  color: var(--accent-ink);
+}
+
+.pd-notif[data-kind='scheduled'] {
+  background: var(--surface-2);
+  color: var(--text-mut);
+}
+
+.pd-notif[data-kind='stopped'] {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-fnt);
+}
+
+.pd-notif[data-kind='none'] {
+  background: none;
+  color: var(--text-fnt);
+  padding-left: 0;
+}
+
+/* ── the state pill ── */
+
+/*
+ * Six states, and they are told apart by *weight and fill*, not by six hues.
+ *
+ * Live is the accent because it is the one state that means customers can see
+ * the deal right now. Everything else is a step of the neutral ramp: the
+ * palette has one accent, and a dashboard that spends a colour on "paused" has
+ * nothing left to spend on "live".
+ */
+.pd-state-pill {
+  display: inline-block;
+  padding: 5px 10px;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-size: 11.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pd-state-pill[data-state='live'] {
+  background: rgba(var(--tint-rgb), 0.22);
+  color: var(--accent-ink);
+}
+
+.pd-state-pill[data-state='scheduled'] {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+.pd-state-pill[data-state='paused'] {
+  background: none;
+  color: var(--text-mut);
+  box-shadow: inset 0 0 0 1px var(--border-2);
+}
+
+.pd-state-pill[data-state='expired'],
+.pd-state-pill[data-state='archived'],
+.pd-state-pill[data-state='draft'] {
+  background: var(--bg-2);
+  color: var(--text-fnt);
+}
+
+/* ── the claim limit ── */
+
+/*
+ * The bar under a capped deal's claim count.
+ *
+ * It exists because "149" and "149 of 300 allowed" are different facts and the
+ * second is the one that tells an owner the deal is about to stop selling.
+ * Only drawn when there is a cap: an uncapped deal has nothing to fill.
+ */
+.pd-limit i {
+  display: block;
+  width: 5.5rem;
+  height: 5px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pd-limit em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.pd-limit .pd-fine {
+  font-size: 11px;
+}
+
+/* The sparkline column: fixed, so eight rows of trend line up as a column
+   rather than each sizing to its own path. */
+.pd-table-deals .pd-spark {
+  width: 76px;
+  height: 30px;
+}
+
+/* ── the deals table on a narrow screen ── */
+
+@media (max-width: 48rem) {
+  .pd-deals > .pd-toolbar,
+  .pd-deal-insight,
+  .pd-deals .pd-sort-note {
+    padding-left: clamp(1rem, 3.6vw, 1.4rem);
+    padding-right: clamp(1rem, 3.6vw, 1.4rem);
+  }
+
+  .pd-count {
+    /* Under the filters rather than squeezed beside them: at this width the
+       row already wraps, and a count pinned right ends up alone on a line
+       hard against the edge. */
+    margin-left: 0;
+  }
+
+  .pd-deal-insight .pd-chip {
+    margin-left: 0;
+  }
+}
+
+/* ══════════════════════════════════════════ what a new customer costs you ══
+ *
+ * The ink slab at the top of the customers screen: a figure, the arithmetic in
+ * words, the four addends as boxes, and the last three months beside them.
+ *
+ * It reads its colours from `[data-ink='paper']` — near-black on light, already
+ * dark on dark — so nothing below names one. That is the whole reason the
+ * children can be this plain.
+ */
+.pd-cost {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  padding: 26px 28px;
+}
+
+.pd-cost-main {
+  flex: 1 1 420px;
+  min-width: 300px;
+}
+
+/* The sentence under the figure. Larger than `.pd-fine` and not muted: it is
+   the arithmetic, not a footnote to it. */
+.pd-cost-line {
+  margin: 0 0 20px;
+  max-width: 46ch;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+/*
+ * The four addends.
+ *
+ * `auto-fit` with a 8.5rem floor rather than four fixed columns: at the slab's
+ * narrow end four boxes of tabular currency do not fit a phone, and two rows of
+ * two is the right answer there — the four are a set, not a sequence, so
+ * wrapping them costs nothing.
+ */
+.pd-cost-boxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 10px;
+}
+
+.pd-cost-boxes > div {
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: var(--bg-2);
+}
+
+.pd-cost-boxes span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+.pd-cost-boxes b {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* ── the three months ── */
+
+.pd-cost-trend {
+  flex: 0 1 260px;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/*
+ * Three bars on a shared floor.
+ *
+ * `align-items: flex-end` is what makes them stand on it; the row states a
+ * definite height because the bars inside are percentages, and a percentage
+ * height against an `auto` parent resolves to nothing — the rule every chart in
+ * this sheet has to obey.
+ */
+.pd-cost-cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  height: 7.5rem;
+}
+
+.pd-cost-cols > span {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+}
+
+.pd-cost-cols b {
+  font-size: 12px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+.pd-cost-cols i {
+  display: block;
+  width: 100%;
+  max-width: 2.4rem;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-2);
+}
+
+/* The month being reported is the filled one; the two behind it are the
+   context. One accent, spent on the column the headline is about. */
+.pd-cost-cols > span[data-on='true'] i {
+  background: var(--accent);
+}
+
+.pd-cost-cols > span[data-on='true'] b {
+  color: var(--text);
+}
+
+.pd-cost-cols em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-fnt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ══════════════════════════════════════════════════════════ the roster ══ */
+
+.pd-roster .pd-seg {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+
+/* The count inside each segment. It is the reason the strip is worth a row:
+   "Regulars 11" says something before anything has been pressed. */
+.pd-roster .pd-seg button i {
+  font-style: normal;
+  margin-left: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-table-roster {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+}
+
+.pd-table-roster th {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.pd-table-roster th[data-align='right'],
+.pd-table-roster td[data-align='right'] {
+  text-align: right;
+}
+
+.pd-table-roster th:first-child,
+.pd-table-roster td:first-child {
+  padding-left: 0;
+}
+
+.pd-table-roster th:last-child,
+.pd-table-roster td:last-child {
+  padding-right: 0;
+}
+
+.pd-table-roster td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
+.pd-table-roster tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.pd-table-roster td[data-quiet='true'] {
+  color: var(--text-mut);
+  font-size: 13px;
+}
+
+.pd-table-roster td b {
+  font-weight: 700;
+}
+
+/* ── a person ── */
+
+.pd-person {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+/*
+ * The initials disc.
+ *
+ * A ring rather than a fill: sixteen filled accent circles down the left edge
+ * of a table is the loudest thing on the screen, and the column it belongs to
+ * is a list of names. `1ch`-ish sizing is deliberate — two letters, centred,
+ * with the mark carrying the accent and the ground staying the page.
+ */
+.pd-person > i {
+  flex: 0 0 2rem;
+  width: 2rem;
+  height: 2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(var(--tint-rgb), 0.2);
+  color: var(--accent-ink);
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.pd-person > span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pd-person b {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The spend bar under the name: a share of the top spender, so the column
+   reads as a ranking with a shape rather than as sixteen numbers. */
+.pd-person > span > em {
+  display: block;
+  width: 5.5rem;
+  max-width: 100%;
+  height: 3px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pd-person > span > em > em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+/*
+ * The status pill, on the same component as the deals table's.
+ *
+ * `data-person` rather than `data-state` so the two sets cannot collide: a
+ * deal is `live` and a customer is `regular`, and one attribute carrying both
+ * vocabularies is the `.dash-*` collision this sheet has already paid for once.
+ *
+ * Slipping away is the only one that earns a mark, because it is the only one
+ * that is a prompt to do something. Regular and new are statements.
+ */
+.pd-state-pill[data-person='regular'] {
+  background: rgba(var(--tint-rgb), 0.22);
+  color: var(--accent-ink);
+}
+
+.pd-state-pill[data-person='lapsed'] {
+  background: none;
+  color: var(--text-mut);
+  box-shadow: inset 0 0 0 1px var(--border-2);
+  font-weight: 700;
+}
+
+.pd-state-pill[data-person='new'] {
+  background: var(--bg-2);
+  color: var(--text-mut);
+}
+
+@media (max-width: 48rem) {
+  .pd-cost {
+    padding: clamp(1.15rem, 4.4vw, 1.75rem);
+    gap: 1.4rem;
+  }
+
+  .pd-cost-cols {
+    height: 6rem;
+  }
+}
+
+/* ══════════════════════════════════════════ a deal, opened ══════════════
+ *
+ * Pressing a row drops a panel under it: the three funnel stages as cards, and
+ * the targeting beside them. The panel is a `<td colSpan>` inside a `<tr>`, so
+ * it is part of the table and stays aligned to it when the table scrolls
+ * sideways — a floating panel would sit still while the row moved under it.
+ */
+
+/* The row is pressable, so it says so — and it must not take the text cursor,
+   because the whole row is a click target and a caret over a name that cannot
+   be selected is a lie. */
+.pd-deal-row {
+  cursor: pointer;
+}
+
+.pd-deal-row:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: -2px;
+}
+
+/* The opened row keeps the wash its panel has, so the two read as one object
+   rather than as a row with something unrelated stuck to it. */
+.pd-deal-row[data-open='true'] td {
+  background: var(--bg-2);
+}
+
+.pd-drawer-row > td {
+  padding: 0;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-detail {
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+  padding: 20px 20px 22px;
+}
+
+.pd-detail-main {
+  flex: 1 1 420px;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/*
+ * Three stages, side by side.
+ *
+ * `1fr` each rather than `auto-fit`: a funnel is read left to right and the
+ * three stages must stay in that order at the same width, or the shape the
+ * bars draw stops being a shape. They wrap only on a phone, below.
+ */
+.pd-detail-steps {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+}
+
+.pd-detail-steps > div {
+  padding: 15px 16px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), var(--pd-glass));
+}
+
+.pd-detail-steps span {
+  display: block;
+  margin-bottom: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.pd-detail-steps b {
+  display: block;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The bar is a share of the *first* stage, so the three together draw the
+   funnel's shape. The last one takes the accent because it is the stage the
+   deal was bought for. */
+.pd-detail-steps i {
+  display: block;
+  height: 4px;
+  margin-top: 10px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pd-detail-steps em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-fnt);
+}
+
+.pd-detail-steps > div:last-child em {
+  background: var(--accent);
+}
+
+.pd-detail-steps > div:last-child b {
+  color: var(--accent-ink);
+}
+
+.pd-detail-steps p {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* ── who sees it ── */
+
+.pd-detail-who {
+  flex: 1 1 300px;
+  min-width: 240px;
+  align-self: flex-start;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  border-radius: 13px;
+  border: 1px solid var(--border);
+  background: rgba(var(--panel-rgb), var(--pd-glass));
+}
+
+.pd-detail-who b {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pd-detail-who p {
+  margin: 0;
+}
+
+/* The terms sit under a rule: they are the deal's small print and belong to a
+   different register from the two targeting lines above them. */
+.pd-detail-terms {
+  margin-top: 10px !important;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 48rem) {
+  .pd-detail {
+    padding: 1rem;
+  }
+
+  /* Two up, then one: three stages at a phone's width give each 90px, which
+     is narrower than the 26px figure inside it needs with a label above. */
+  .pd-detail-steps {
+    grid-template-columns: repeat(auto-fit, minmax(8rem, 1fr));
+  }
+}
+
+/*
+ * The notification allowance, in the deals toolbar.
+ *
+ * Two states and they are not two colours: having some left is the accent —
+ * this is a thing you can spend — and having none is the neutral chip, because
+ * a count nobody can act on should not wear the colour that means "you can".
+ * That is the same argument the state pills make one table down.
+ */
+.pd-quota {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  padding: 7px 12px;
+  border-radius: 9px;
+  background: rgba(var(--tint-rgb), 0.18);
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pd-quota svg {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+}
+
+.pd-quota[data-out='true'] {
+  background: var(--surface-2);
+  color: var(--text-mut);
+}
+
+/* With the quota present it is the chip that takes the spacer, so the count
+   goes back to sitting immediately after it. */
+.pd-quota + .pd-count {
+  margin-left: 0;
+}
+
+@media (max-width: 48rem) {
+  .pd-quota {
+    margin-left: 0;
+  }
+}
+
+/* ── the deal cell, corrected against the render ─────────────────────────
+ *
+ * Three things the first pass got wrong, all of them the same mistake: a table
+ * cell with no declared width sizes to its content, and the content here is a
+ * paragraph. The widths are on the `<th>`s now; these are the rest.
+ */
+
+/* `table-layout: fixed` is what makes those widths binding. Without it they are
+   a suggestion the browser overrides as soon as one cell has a long word in
+   it — which is exactly what a translated sentence is. */
+.pd-table-deals {
+  table-layout: fixed;
+}
+
+/* The cell is the width it was given, and its contents wrap inside it rather
+   than widening it. */
+.pd-deal-cell > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pd-deal-cell b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
+ * The meta line stays one line and clips.
+ *
+ * It wrapped to three, each fragment on its own row with a leading dot, which
+ * is what a flex row does at 120px wide. The window, the schedule and the
+ * audience are context for a name — worth showing when there is room and not
+ * worth three lines of row height when there is not.
+ */
+.pd-deal-meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pd-deal-meta > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+/* The translation note is supplementary and is the one thing here allowed to be
+   long, so it is the one thing truncated to a single line. The full sentence is
+   still reachable — it is the row's `title`. */
+.pd-deal-chips {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.pd-deal-chips .pd-fine {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.pd-deal-chips .pd-notif {
+  flex: 0 0 auto;
+}
+
+/* The action column: never wrapped, never clipped. Two buttons side by side is
+   the whole of it, and a row whose controls have been pushed off the edge is a
+   row you cannot operate. */
+/* The action column's width is declared on the `<th>` in the component, beside
+   the other eight, so all nine are in one table. Here only the cell refuses to
+   wrap — its heading is a word like any other. */
+.pd-table-deals td:last-child {
+  white-space: nowrap;
+}
+
+/* A right-aligned heading puts its label and arrow at the right-hand end, over
+   the figures they belong to. */
+.pd-table-deals th[data-align='right'] button {
+  justify-content: flex-end;
+  text-align: right;
+}
+
+.pd-table-deals .pd-row-acts {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+  flex-wrap: nowrap;
+}
+
+/* The row's own buttons are the small kind — the `.btn` default is a marketing
+   press and is twice the height a table row can carry. */
+.pd-table-deals .pd-row-acts .btn {
+  padding: 7px 11px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* The claimed cell stacks a figure over a limit bar, so it is the one cell that
+   is allowed two lines — and it centres them rather than letting the bar sit
+   against the next row's rule. */
+.pd-table-deals .pd-limit {
+  align-items: flex-end;
+}
+
+/* The secondary controls, in the opened row. A rule above them, because they
+   are a different register from the report they sit under — that is a reading
+   and these change the deal. */
+.pd-detail-acts {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0 20px 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.pd-detail-acts .btn {
+  padding: 8px 14px;
+  border-radius: 9px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* "End it" sits apart from the two that are reversible. */
+.pd-detail-acts .pd-end {
+  margin-left: auto;
+}
+
+@media (max-width: 48rem) {
+  .pd-detail-acts {
+    margin: 0 1rem 1rem;
+  }
+
+  .pd-detail-acts .pd-end {
+    margin-left: 0;
+  }
+}
+
+
+/* The translation count. Quiet, because it is a note on a row rather than a
+   state of it — and outlined rather than filled so it cannot be mistaken for
+   the notification chip beside it. */
+.pd-langs {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border: 1px solid var(--border-2);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-fnt);
+  font-variant-numeric: tabular-nums;
+  cursor: help;
 }

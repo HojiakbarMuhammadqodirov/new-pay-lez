@@ -199,8 +199,13 @@ const counted = (metric: Metric | undefined): number => metricValue(metric) ?? 0
  */
 export interface PartnerDeal {
   id: string;
-  /** What the deal gives away, in the venue's own words. */
+  /* The short label on the chip — "20% OFF", "FREE FILTER". This is
+     `discount_text`, which is what the deal *gives*, and is not its name. */
   badge: string;
+  /** The deal's title in the reader's language. Empty when nothing is written. */
+  name: string;
+  /** The terms, for the expanded row. Empty when nothing is written. */
+  terms: string;
   /* The server's own union rather than a copy of it. It *was* a copy, and the
      copy had `ended` where the server says `archived` — which nothing caught,
      because a state nobody had reached is a key nobody looks up. */
@@ -217,6 +222,85 @@ export interface PartnerDeal {
   missing: string[];
   from: string | null;
   to: string | null;
+  /* When it runs inside its window: the weekday set and the two clock times,
+     already formatted. Null when the deal runs whenever it is live — which the
+     row leaves blank rather than calling "Every day", because those are
+     different offers. */
+  schedule: string | null;
+  /** Who it is shown to, in the server's own vocabulary. */
+  audience: string | null;
+  /** Claims per day for the last seven days, oldest first. */
+  series: number[];
+  /** The deal's one notification, or null if it never had one. */
+  push: PartnerDealPush | null;
+}
+
+/**
+ * What became of a deal's notification.
+ *
+ * `kind` collapses `deal_pushes.status` into the three things the row actually
+ * draws differently — one that has gone, one that is still to go, and one that
+ * will not go at all — while `cameIn` keeps the figure that makes the chip
+ * worth reading. A cancelled or failed push is *not* folded into "none": a
+ * deal that never had a notification and one whose notification failed are
+ * different facts about the same row.
+ */
+export interface PartnerDealPush {
+  kind: 'sent' | 'scheduled' | 'stopped';
+  at: string | null;
+  cameIn: number;
+}
+
+/**
+ * Minutes from midnight to a 24-hour clock face.
+ *
+ * Padded on both halves, because `7:0` is not a time anybody writes and the
+ * column it lands in is tabular.
+ */
+function clock(minutes: number): string {
+  const m = ((Math.round(minutes) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+/**
+ * The weekday set and the hours, as one line.
+ *
+ * The days are folded back into a range when they *are* one — `mon,tue,wed,thu,
+ * fri` reads as "Mon–Fri" and not as five chips — because the run of weekdays
+ * is the common case and printing it long is what made the reference design's
+ * own row wrap. Anything that is not a contiguous run is listed.
+ */
+const DAY_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const DAY_LABEL: Record<string, string> = {
+  mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat', sun: 'Sun',
+};
+
+export function scheduleOf(
+  weekdays: string | null,
+  fromMin: number | null,
+  toMin: number | null,
+): string | null {
+  const days = (weekdays ?? '')
+    .split(',')
+    .map((d) => d.trim().toLowerCase())
+    .filter((d) => DAY_ORDER.includes(d))
+    .sort((a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b));
+
+  let dayPart = '';
+  if (days.length > 0 && days.length < 7) {
+    const first = DAY_ORDER.indexOf(days[0]);
+    const contiguous = days.every((d, i) => DAY_ORDER.indexOf(d) === first + i);
+    dayPart =
+      days.length > 2 && contiguous
+        ? `${DAY_LABEL[days[0]]}–${DAY_LABEL[days[days.length - 1]]}`
+        : days.map((d) => DAY_LABEL[d]).join(', ');
+  }
+
+  const hourPart =
+    fromMin === null || toMin === null ? '' : `${clock(fromMin)}–${clock(toMin)}`;
+
+  const parts = [dayPart, hourPart].filter(Boolean);
+  return parts.length ? parts.join(', ') : null;
 }
 
 /**
@@ -252,6 +336,8 @@ export function dealFromApi(row: DealResponse, currencyToEuro: (minor: number) =
   return {
     id: row.id,
     badge: row.discount_text?.trim() || '',
+    name: row.copy?.title?.trim() || '',
+    terms: row.copy?.terms?.trim() || '',
     state: row.status,
     seen: row.funnel.seen,
     opened: row.funnel.opened,
@@ -262,6 +348,24 @@ export function dealFromApi(row: DealResponse, currencyToEuro: (minor: number) =
     missing: row.translations.missing,
     from: row.valid_from,
     to: row.valid_to,
+    schedule: scheduleOf(row.target_weekdays, row.target_from_min, row.target_to_min),
+    audience: row.target_audience?.trim() || null,
+    /* Defaulted rather than assumed present: these two are new on the response,
+       and a client built against the old shape must not throw on a server that
+       has not been restarted yet. */
+    series: Array.isArray(row.series) ? row.series : [],
+    push: row.push
+      ? {
+          kind:
+            row.push.status === 'sent'
+              ? 'sent'
+              : row.push.status === 'cancelled' || row.push.status === 'failed'
+                ? 'stopped'
+                : 'scheduled',
+          at: row.push.sentAt ?? row.push.scheduledAt,
+          cameIn: row.push.cameIn,
+        }
+      : null,
   };
 }
 

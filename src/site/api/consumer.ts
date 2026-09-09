@@ -193,7 +193,12 @@ export type ServerGameType =
   | 'flags'
   | 'capitals'
   | 'brain'
+  /* The two local-knowledge banks. `uzbekistan` was missing here while the
+     server had carried it in `GAME_TYPES` since the bank landed, which is why
+     the Play screen could only ever ask for Poland — see `serverGame` in
+     `games.tsx`. Keep this in step with `GAME_TYPES` in `server/db/db.ts`. */
   | 'poland'
+  | 'uzbekistan'
   | 'word_builder'
   | 'memory_match'
   | 'flight';

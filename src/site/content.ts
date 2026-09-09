@@ -542,6 +542,38 @@ export const SOCIALS: Array<{ id: 'instagram' | 'youtube'; href: string; handle:
  */
 export const ASSISTANT_OPEN_EVENT = 'paylez:assistant-open';
 
+/**
+ * What an opener may hand the dock: a question to ask on arrival.
+ *
+ * Relocate's suggested prompts were `<span>`s — four sentences styled exactly
+ * like the chips inside the dock, which *are* buttons, and which do ask what
+ * they say. Making them links to sign-in would have answered the complaint
+ * ("not clickable") and thrown the useful half away: the point of a suggested
+ * question is the question, and a chip that only proves it can be pressed is a
+ * decoration with a cursor. Opening the panel *with the question already asked*
+ * is what the words on the chip promise.
+ */
+export interface AssistantOpenDetail {
+  /** Asked as soon as the panel opens, when there is somebody to ask it for. */
+  text?: string;
+}
+
+/**
+ * Opens the dock, optionally with a question.
+ *
+ * A helper rather than a `dispatchEvent` at each call site, because there are
+ * three of them now and the detail's shape is the kind of thing that goes out
+ * of step silently — a `new Event` (no detail) and a `new CustomEvent` reading
+ * `detail.text` fail by doing nothing at all rather than by throwing.
+ */
+export function openAssistant(text?: string): void {
+  window.dispatchEvent(
+    new CustomEvent<AssistantOpenDetail>(ASSISTANT_OPEN_EVENT, {
+      detail: text ? { text } : {},
+    }),
+  );
+}
+
 /* ─────────────────────────────────────────────────────────────── contact ── */
 
 /*

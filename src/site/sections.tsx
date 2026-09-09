@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  ASSISTANT_OPEN_EVENT,
   CONTACT_EMAIL,
   FEATURE_META,
   FOOTER_LINKS,
@@ -14,6 +13,7 @@ import {
   SUB_PLANS,
   SUB_ROWS,
   SUB_TERMS,
+  openAssistant,
   subBeatsFree,
   subTermPrice,
   type SubRowKind,
@@ -71,7 +71,16 @@ export function Hero() {
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.hero.primary}
             </a>
-            <a href="#guide" className="btn btn-ghost btn-lg">
+            {/* And "How it works" goes to the section that answers it —
+                `#features`, headed "How paylez works / Play a little. Earn a
+                lot." It pointed at `#guide`, which is the city carousel: a
+                visitor asking how the product works was dropped on a list of
+                shop categories. Same rule as its neighbour above, and the same
+                rule the anchor table states — a button goes where its words
+                say. `#guide` keeps its other job as the globe's scroll anchor
+                in `Site.tsx`; that is a different thing that happens to share
+                the name. */}
+            <a href="#features" className="btn btn-ghost btn-lg">
               {copy.hero.secondary}
             </a>
           </div>
@@ -913,9 +922,9 @@ export function SiteFooter() {
                     type="button"
                     className="footer-link-btn"
                     key={link}
-                    onClick={() =>
-                      window.dispatchEvent(new Event(ASSISTANT_OPEN_EVENT))
-                    }
+                    /* No question with it: the footer entry names the dock,
+                       not anything to ask it. */
+                    onClick={() => openAssistant()}
                   >
                     {link}
                   </button>

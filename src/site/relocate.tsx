@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import {
   GUIDE_ICON_FALLBACK,
@@ -7,6 +7,7 @@ import {
   RELOCATE_COUNTRIES,
   RELOCATE_PAIRS,
   RELOCATE_STATS,
+  openAssistant,
 } from './content';
 import {
   categoriesPath,
@@ -611,7 +612,7 @@ function RelocateHero() {
   const copy = useCopy();
 
   return (
-    <section className="hero" id="relocate-top">
+    <section className="hero hero-mid" id="relocate-top">
       <div className="wrap hero-grid">
         <div className="hero-copy">
           <a className="learn-back" href={PATHS.landing} data-reveal>
@@ -668,9 +669,11 @@ function RelocateHero() {
           </p>
         </div>
 
-        {/* Empty on purpose: the globe renders behind this column, exactly as it
-            does on the landing page. This only reserves the space. */}
-        <div className="hero-visual" aria-hidden />
+        {/* No reserved column. There was one, holding the space the globe
+            rendered into — and this page has not had the globe since it got
+            `CityRise`, which is full-bleed. Keeping the column meant a hero
+            written into the left half of an empty screen; `hero-mid` centres
+            what is actually here. */}
       </div>
     </section>
   );
@@ -791,6 +794,11 @@ function RelocateGuide() {
   const copy = useCopy();
   const [language] = useLanguage();
   const [open, setOpen] = useState<string | null>(null);
+  /* The place whose panel is up. The row itself rather than an id: the list is
+     already in hand, and holding an id means re-finding it on every render and
+     deciding what a panel open on a row that vanished under a filter change
+     should do. Holding the row, it simply stays until it is closed. */
+  const [detail, setDetail] = useState<GuideService | null>(null);
   /** `''` is every city — the filter's own first option. */
   const [city, setCity] = useState('');
   const [country, setCountry] = useState(RELOCATE_COUNTRIES[0].code);
@@ -970,26 +978,15 @@ function RelocateGuide() {
                            *venue*, which only the promoted listings have —
                            reporting an impression against the rest would file it
                            under nobody. See `api/reach.ts`. */
-                        <ul className="topic-list">
+                        <div className="gs-grid">
                           {places.map((place) => (
-                            <li key={place.id}>
-                              <b>{place.name}</b>
-                              {place.venueId !== null && (
-                                <span className="topic-tag">{guide.onPaylez}</span>
-                              )}
-                              {place.city && (
-                                <span className="topic-where">
-                                  <Icon name="map" size={13} />
-                                  {place.address ? `${place.address}, ${place.city}` : place.city}
-                                </span>
-                              )}
-                              {place.description && (
-                                <span className="topic-blurb">{place.description}</span>
-                              )}
-                              <GuideLinks place={place} />
-                            </li>
+                            <GuideCard
+                              key={place.id}
+                              place={place}
+                              onOpen={() => setDetail(place)}
+                            />
                           ))}
-                        </ul>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -999,7 +996,261 @@ function RelocateGuide() {
           </div>
         )}
       </div>
+
+      {detail && <GuideDetail place={detail} onClose={() => setDetail(null)} />}
     </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────── one place, listed ── */
+
+/**
+ * The initial, on the accent, in place of a photograph.
+ *
+ * `guidance_services.image_url` exists and is an external URL, and nothing in
+ * `src/` makes a third-party runtime request — the whole front end is built
+ * that way, fonts and map geometry included. So the mark is the same one the
+ * wallet's gift cards use for a brand: the first letter, which is a real piece
+ * of the row rather than a grey rectangle standing in for one.
+ *
+ * `codePointAt` rather than `[0]`, because a name beginning with an emoji or
+ * any astral character would otherwise be cut in half and render as a
+ * replacement glyph.
+ */
+function GuideMark({ name }: { name: string }) {
+  const first = [...name.trim()][0] ?? '?';
+  return (
+    <span className="gs-mark" aria-hidden="true">
+      {first.toLocaleUpperCase()}
+    </span>
+  );
+}
+
+/**
+ * A rating, or nothing at all.
+ *
+ * `rating` is `null` where nobody has rated the place, and that is a different
+ * finding from a rating of zero — the same distinction the console draws with
+ * an em dash and `measured`. A card with no stars says "we do not know"; a card
+ * showing 0.0 would be saying the place is bad.
+ */
+function GuideStars({ place }: { place: GuideService }) {
+  const guide = useCopy().relocate.guide;
+  const [language] = useLanguage();
+  if (place.rating === null) return null;
+
+  return (
+    <span className="gs-rating">
+      <Icon name="star" size={13} />
+      <b>{place.rating.toLocaleString(language, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</b>
+      {place.review_count > 0 && (
+        <span>{fill(guide.reviews, { n: place.review_count.toLocaleString(language) })}</span>
+      )}
+    </span>
+  );
+}
+
+/**
+ * One place, as a card you can press.
+ *
+ * **The whole card is the button**, which is the rule the Play screen's game
+ * grid states: a card with a "details" link in the corner has a target the size
+ * of two words inside a target the size of a card, and the reader has to find
+ * the small one. Here it was worse than that — the rows were `<li>`s with no
+ * affordance at all, so the address and the blurb were the entire listing and
+ * everything else the server sends (the rating, the price band, the
+ * subcategories, whether it takes vouchers) had nowhere to go.
+ *
+ * The links are **outside** the card for that reason: a `tel:` inside a
+ * `<button>` is a control inside a control, which is invalid and which browsers
+ * resolve by guessing. They sit under it, where a press on the number dials and
+ * a press on anything else opens the panel.
+ */
+function GuideCard({ place, onOpen }: { place: GuideService; onOpen: () => void }) {
+  const guide = useCopy().relocate.guide;
+
+  return (
+    <div className="gs-card">
+      <button type="button" className="gs-hit" onClick={onOpen}>
+        <GuideMark name={place.name} />
+        <span className="gs-tx">
+          <b className="gs-name">{place.name}</b>
+          <span className="gs-meta">
+            <GuideStars place={place} />
+            {/* Verbatim, in the venue's own currency — see `price_range` in
+                `api/guide.ts` for why this one figure does not go through
+                `useMoney` like every other price on the site. */}
+            {place.price_range && <span className="gs-price">{place.price_range}</span>}
+          </span>
+          {place.city && (
+            <span className="gs-where">
+              <Icon name="map" size={12} />
+              {place.city}
+            </span>
+          )}
+        </span>
+        <span className="gs-flags">
+          {place.venueId !== null && <span className="gs-tag">{guide.onPaylez}</span>}
+          {place.acceptsVouchers && (
+            <span className="gs-tag gs-tag-vouchers" title={guide.takesVouchers}>
+              <Icon name="ticket" size={13} />
+              <span className="visually-hidden">{guide.takesVouchers}</span>
+            </span>
+          )}
+        </span>
+      </button>
+      <GuideLinks place={place} />
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────── one place, opened ── */
+
+/**
+ * Everything the row actually carries.
+ *
+ * The panel is the answer to "what else do we know about this place", so the
+ * rule that governs it is which blocks are **absent**. Every one of them is
+ * conditional on its own field: no description, no About; no `price_range`, no
+ * Pricing; no phone, no email, no address and no links, no Contact. A heading
+ * over an em dash is a promise that the row holds something it does not, and
+ * this directory has already been fictional once.
+ *
+ * Two things the mock has that are deliberately not here. There is no
+ * **Translate** control: the server already returns this copy in the reader's
+ * language with English filling any hole (`copyOf` in `routes/guidance.ts`), so
+ * the button would either do nothing or claim a second translation nothing
+ * performs. And there is no photograph — see `GuideMark`.
+ *
+ * It is modal, unlike the assistant dock, and for the opposite reason. The dock
+ * is a thing you consult *while* reading the page; this is the page's own row,
+ * opened. Escape and the scrim both close it, and focus goes back to the card
+ * that opened it rather than to the top of the document.
+ */
+function GuideDetail({ place, onClose }: { place: GuideService; onClose: () => void }) {
+  const guide = useCopy().relocate.guide;
+  const panelRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const site = place.links.find((link) => link.kind === 'website')?.value;
+  const hasContact = Boolean(place.phone || place.email || place.address || site);
+
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    panelRef.current?.focus();
+
+    /* The page behind must not scroll under an open panel — on a phone the
+       panel is most of the screen and a scroll gesture that moved the list
+       instead reads as the panel being stuck. Restored on the way out rather
+       than cleared, so a page that was already locked by something else stays
+       locked. */
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  return (
+    <div className="gs-scrim" onClick={onClose}>
+      <div
+        ref={panelRef}
+        className="gs-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        /* The panel is inside the scrim so a press outside it closes; the press
+           must not travel back up from inside the panel itself. */
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button type="button" className="gs-close" onClick={onClose} aria-label={guide.close}>
+          <Icon name="close" size={16} strokeWidth={2.2} />
+        </button>
+
+        <div className="gs-panel-head">
+          <GuideMark name={place.name} />
+          <div>
+            <h3 id={titleId}>{place.name}</h3>
+            <div className="gs-meta">
+              <GuideStars place={place} />
+              {place.venueId !== null && <span className="gs-tag">{guide.onPaylez}</span>}
+            </div>
+          </div>
+        </div>
+
+        {place.subcategories.length > 0 && (
+          <div className="chips gs-subs">
+            {place.subcategories.map((sub) => (
+              <span className="chip" key={sub}>
+                {sub}
+              </span>
+            ))}
+          </div>
+        )}
+
+        {place.description && (
+          <section className="gs-block">
+            <h4>{guide.about}</h4>
+            <p>{place.description}</p>
+          </section>
+        )}
+
+        {place.price_range && (
+          <section className="gs-block">
+            <h4>{guide.pricing}</h4>
+            <p className="gs-price-big">{place.price_range}</p>
+          </section>
+        )}
+
+        {hasContact && (
+          <section className="gs-block">
+            <h4>{guide.contact}</h4>
+            <ul className="gs-contact">
+              {place.address && (
+                <li>
+                  <Icon name="map" size={14} />
+                  <span>{place.city ? `${place.address}, ${place.city}` : place.address}</span>
+                </li>
+              )}
+              {place.phone && (
+                <li>
+                  <Icon name="phone" size={14} />
+                  <a href={`tel:${place.phone.replace(/\s+/g, '')}`}>{place.phone}</a>
+                </li>
+              )}
+              {place.email && (
+                <li>
+                  <Icon name="send" size={14} />
+                  <a href={`mailto:${place.email}`}>{place.email}</a>
+                </li>
+              )}
+              {site && (
+                <li>
+                  <Icon name="link" size={14} />
+                  <a href={site} target="_blank" rel="noreferrer noopener">
+                    {guide.visit}
+                  </a>
+                </li>
+              )}
+            </ul>
+          </section>
+        )}
+
+        {/* Last, because it is the one line that is about us rather than about
+            them, and because it is only true for some rows. */}
+        {place.acceptsVouchers && (
+          <p className="gs-vouchers">
+            <Icon name="ticket" size={14} />
+            {guide.takesVouchers}
+          </p>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1082,13 +1333,19 @@ function RelocateCountries() {
 /**
  * The assistant, as the escape hatch from a fixed list of subjects.
  *
- * The field is still a picture of one — a real input on a marketing page is a
- * promise to answer, and this page cannot keep it. What changed is that the
- * picture is now a **link**: it looks like somewhere to type, and a visitor who
- * taps it gets sign-in, which is where the assistant dock actually lives. As a
- * `<span>` it looked like somewhere to type and did nothing at all, which is
- * the same complaint as the converter's hairline-thin amount field — anything
- * shaped like a control has to be one.
+ * The field is still a picture of one — a real input here would be a second
+ * composer to keep in step with the dock's. What it does has changed twice. As
+ * a `<span>` it looked like somewhere to type and did nothing at all; as an
+ * `<a>` to sign-in it was at least honest, and it sent a visitor to a password
+ * form to answer a question about tram tickets. It **opens the dock** now,
+ * which is where the assistant lives and which draws its own signed-out pitch,
+ * so a visitor sees the thing before being asked to join it.
+ *
+ * The suggestions are the better half of the change. They were four sentences
+ * wearing the dock's chip styling, and the dock's chips ask what they say —
+ * these did nothing. Each one now opens the panel **with its question already
+ * asked**, which is what a suggested question is for; making them links would
+ * have fixed "not clickable" and kept the part that was actually wrong.
  */
 function RelocateAsk() {
   const copy = useCopy();
@@ -1102,23 +1359,30 @@ function RelocateAsk() {
           <p>{copy.relocate.ask.lede}</p>
         </div>
 
-        <a className="ask-box" href={PATHS.signin} data-reveal>
+        <button
+          type="button"
+          className="ask-box"
+          onClick={() => openAssistant()}
+          data-reveal
+        >
           <span className="ask-field">
             <Icon name="assistant" size={17} />
             {copy.relocate.ask.placeholder}
           </span>
           <span className="btn btn-solid ask-go">{copy.relocate.ask.action}</span>
-        </a>
+        </button>
 
         <div className="chips ask-chips" data-reveal>
           {copy.relocate.ask.samples.map((sample, i) => (
-            <span
+            <button
+              type="button"
               className="chip"
               key={sample}
+              onClick={() => openAssistant(sample)}
               style={{ '--i': i } as CSSProperties}
             >
               {sample}
-            </span>
+            </button>
           ))}
         </div>
       </div>

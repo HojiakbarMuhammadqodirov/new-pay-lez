@@ -244,6 +244,45 @@ stored and charged again. `payment_method_types` is therefore **not** set at
 all: a Checkout Session offers whatever the account has enabled and the mode
 allows. Naming a list would both break and freeze it.
 
+**And the site's own dock asks it now.** `AssistantDock` had a working thread, a
+working composer and a canned reply that said "not connected to a model in this
+build" — honest when it was written, and stale for a while before it was fixed:
+its own header comment still claimed there was "no network layer anywhere in
+`src/`". `api/assistant.ts` is that layer, and the three things it made the
+panel responsible for are states rather than copy:
+
+- **A real call takes time**, and the model leg has a three-second timeout, so a
+  *thinking* turn goes into the thread where the answer will be — not a spinner
+  somewhere else — and the send button is disabled while it is in flight.
+- **The facts are the receipt.** Every figure in the sentence was checked against
+  `answer.facts` before the server returned it, so drawing those facts under the
+  answer is what makes "640 points" verifiable instead of trusted. Hiding them
+  would ask for exactly the trust the server went to the trouble of not needing.
+- **A refusal is not an error.** Over the daily allowance (five free, twenty on
+  Pro) the server refuses rather than answering from a cheaper path, so
+  "that is your questions for today", "the server is not there" and "something
+  broke" are three different panels — the same union `useApi` draws — and only
+  the last two offer a retry. A button whose only outcome is the message already
+  on screen is a button that exists to fail.
+
+Two smaller rules travel with it. `startConversation` is called on the **first
+question**, not when the panel opens, so a panel somebody glanced at leaves no
+row on the server — and failing to open one is deliberately not fatal, because
+`/v1/assistant/ask` mints its own session and a bookkeeping call must not cost
+somebody their answer. And the `results` rows are drawn as **text, not cards you
+can press**: they carry venue ids and this site has no venue route to open one
+in, which is the picture-of-a-control rule again. The one pressable thing in a
+reply is `action`, because the server sent somewhere real to go.
+
+The panel's *shape* changed with it, and that was a stale rule rather than a new
+idea: `AssistantDock.tsx` has argued for a while that this is a card in the
+corner you consult **while reading**, and `site.css` still pinned a 27rem drawer
+from `top: 0` to `bottom: 0` under a scrim. It sits above the button it grew out
+of now, is as tall as the conversation up to a ceiling, and spans the gutters on
+a phone without going full height — the composer summons a keyboard, and a panel
+sized to the viewport puts its own input underneath it. `.ai-scrim` is gone;
+nothing had rendered one since the panel stopped being modal.
+
 Two things about it are easy to undo by accident and both are checked:
 
 - **The balance is derived, never edited.** `users.points_cache` is written only
@@ -277,7 +316,28 @@ Two of the five question banks do not come from `new-data/`. The capitals and
 flags banks are derived from the `CountryCapital` export; **the general, Poland
 and Uzbekistan banks are the hand-delivered CSVs in `updates/`**, the same files
 `npm run banks` reads for the front end, and `db/import.ts` reads that directory
-as a second source. They were missing for a while and the symptom is worth
+as a second source.
+
+**And `new-data/` is not in the repository, so the country banks fall back to
+`updates/` too.** That is not tidiness — it is the difference between a clone
+that works and one that cannot be signed up for. Without `CountryCapital` both
+derived banks import as empty, `POST /v1/games/sessions {gameType:"flags"}` is a
+404, and **flags is the round the welcome gate asks for**: the new account gets
+"The flags did not load" with a Try again that will never succeed, and
+`resolveRoute` holds it at `#/welcome` from every route. One missing file three
+directories away locks every new player out of the entire product. The same 196
+countries are in `updates/`, split across the two exports the front end's own
+generator already reads, so the import prefers the Base44 table when it is there
+and reads those when it is not. Two details make the fallback equal rather than
+approximate: the flags export spells three countries its own way
+(`Saint Vincent`, `Congo (Brazzaville)`, `Central African Rep.`), which are
+aliases in `db/countries.ts` now because `assertComplete` throws rather than let
+a bank shrink quietly; and it carries no `continent`, which is joined across from
+the capitals export **on the ISO code** — the two files disagree about spelling,
+and the code is what `codeFor` exists to make them agree on. Without that join
+every country lands in one bucket and the wrong answers stop being from the same
+continent, which is the difference between a question and a giveaway.
+`verify:api` checks both. They were missing for a while and the symptom is worth
 recognising: `POST /v1/games/sessions {gameType:"brain"}` returns a 404 saying
 "no questions in the brain bank", and two of the eight games are unplayable
 while every other endpoint looks fine. The import reports it in its notes when
@@ -612,6 +672,42 @@ card — and `guidance_services` has no such column, so the card no longer claim
 it. Inventing the one attribute the real data lacks is how the directory got
 fictional in the first place.
 
+**And a listing is a card that opens, because the row always held more than the
+list drew.** An expanded subject was a `<ul>` of `<li>`s showing a name, an
+address and a blurb — which was exactly what `GuideService` in `api/guide.ts`
+declared a row to have. `guidance_services` has carried the rating, the review
+count, the price band, the subcategories and the voucher flag the whole time,
+and the route has been selecting them the whole time; **a missing field on an
+interface is invisible in a way a missing column is not.** The rows are
+`.gs-card` buttons now — the whole card is the target, the Play grid's rule —
+and one opens `.gs-panel` with everything the row carries.
+
+Four rules travel with it:
+
+- **Every block in the panel is conditional on its own field.** No description,
+  no About; no `price_range`, no Pricing; nothing to reach the place by, no
+  Contact. A heading over an em dash promises something the row does not hold,
+  which is the failure this directory has already had once.
+- **`price_range` is the one figure on the site that does not go through
+  `useMoney`.** It is what a Kraków restaurant charges, in złoty, for everybody
+  who walks in — the reader's currency is the rule for *our* prices, and
+  converting a venue's own band would quote somebody a price they cannot pay.
+- **There is no photograph.** `image_url` is an external URL and nothing in
+  `src/` makes a third-party runtime request, so the card draws the name's
+  initial on the accent, exactly as the wallet's brands do. The column stays off
+  the interface for that reason rather than being fetched and hidden.
+- **No Translate control**, which the design asked for: `copyOf` in
+  `routes/guidance.ts` already returns this copy in the reader's language with
+  English filling any hole, so the button would either do nothing or claim a
+  second translation nothing performs. A control with nothing honest behind it
+  is not drawn.
+
+`email` joined the services select at the same time — the column was always
+there and nothing read it, so a listing with an address and no phone could not
+be reached at all. Additive, so no client breaks; `npm run openapi` was rerun.
+The panel is **modal**, unlike the assistant dock, and for the opposite reason:
+the dock is consulted *while* reading, and this is the page's own row opened.
+
 **Who is signed in decides what exists, and the rule is one pure function.**
 `resolveRoute(route, account)` in `router.ts` is the whole access policy: an
 individual has no Business, Analytics, dashboard or setup; an owner with no listing
@@ -740,6 +836,14 @@ And a matching rule for the labels: **a button goes where its words say.**
 visitor, correctly); "Play & Earn" goes to L-Earn; "Talk to us" goes to Contact.
 Several of these pointed at a section on the page they were already on, which is
 what a page does when nobody has anywhere to send you yet.
+
+The landing hero's **"How it works"** is the version of that which survived
+longest, because it *did* scroll somewhere: `#guide`, the city carousel. A
+visitor asking how the product works was dropped on a list of shop categories.
+It goes to `#features` — "How paylez works / Play a little. Earn a lot." —
+which is the section that answers the question. `#guide` keeps its other job as
+the globe's scroll anchor in `Site.tsx`; the two are different things that
+happen to share a name.
 
 **Two storage keys, and they are different things.** `paylez-session` is who is
 signed in *on this device*; `paylez-users` (`auth/directory.ts`) is every
@@ -901,12 +1005,21 @@ disagree with it the first time either was written without the other, and the
 number is printed next to the circles. A live streak whose `lastPlayed` is
 `null` reads as ending **yesterday**, because that is the branch `awardPoints`
 already gives it — a state stored directories still carry and the app itself
-cannot produce. A day the streak counts shows the
-**currency mark of wherever the player lives** (`fxForCountry`, off the
-profile's country, not off the language switcher), because the argument a streak
-makes is that turning up is worth money and a row of ticks makes it to nobody. A
-country the rate sheet does not carry falls back to `$`. A day that has not
-happened yet is `ahead` and must not be drawn as missed.
+cannot produce. A day that has not happened yet is `ahead` and must not be drawn
+as missed.
+
+**A day the streak counts shows a `$`, for everyone.** It showed the currency
+mark of wherever the player lives — `fxForCountry` off the profile's country,
+not off the language switcher — on the argument that a streak's whole claim is
+that turning up is worth money and a row of ticks makes that claim to nobody.
+The glyph still makes it; which glyph does not. What the local mark cost is that
+the row changed shape between people: `zł` is two characters and `so'm` is four,
+so a circle sized for `$` either clips them or grows for the widest one, and a
+player who has not filled in a city got the fallback regardless — so the local
+mark was never what most people saw. These circles are not prices and nothing is
+quoted in dollars. Putting it back is one line and one import in `StreakRow`,
+named at the point of use. **The site's prices are a different rule** and are
+untouched: a price is written in the *reader's* currency through `useMoney`.
 
 **A lapse takes the streak and nothing else.** It used to take the balance with
 it — the old app's own hot-deal terms say so — and the server does not do that
@@ -988,6 +1101,28 @@ The row in `GAMES` is called `local` and **not** `poland`. It was `poland` while
 Poland was the only bank there was; a second one made the id a lie, which is the
 same trap `occupation` was renamed to avoid one screen over.
 
+**And the id it is *sent* under has to be resolved the same way.** The card
+picked the right bank for its name and its hover sample, then asked the server
+for `'poland'` — a fixed entry in `SERVER_GAME`, written when Poland was the
+only answer — so a player in Tashkent read "Uzbekistan Quiz" on the card and was
+asked about Poland. `SERVER_GAME` is now
+`Record<Exclude<GameId, 'local'>, ServerGameType>` and `local` is resolved by
+`serverGame()` through the same `quizBankFor` everything else on that screen
+uses. The exclusion is the point: the row whose bank depends on the profile
+cannot be given a constant, because the type no longer has a slot to put one in.
+
+**A quiz question with two options is a data bug, and it is upstream.** Flags
+and Capitals sometimes offered two answers instead of four. `pickDistractors` in
+`server/db/import.ts` walked its candidate pool with a fixed stride, and where
+that stride shared a factor with the pool size the walk revisited the same few
+entries and came back short — every affected question was in a small continent
+group, which is why Oceania was all of them (14 of 196 in each bank). The stride
+is now the largest value under 13 that is **coprime** with the pool size, so the
+walk visits every candidate before repeating. Two things follow: it is still
+deterministic, which is what lets `INSERT OR REPLACE` on a stable id repair the
+rows in place; and **an existing database is not fixed by deploying this** —
+`npm run server:import` re-reads the exports and rewrites them.
+
 **Adding a country is one export and one row.** Drop
 `updates/<Country>_Quiz_Questions_data_*.csv` in — the generator globs, so a bank
 may arrive in parts — add a branch to `scripts/build-question-banks.mjs`, widen
@@ -1032,6 +1167,29 @@ viewport and the pointer emulated rather than by looking at a narrow window:
   `.site[data-route='learn']` because it is the one backdrop that draws *filled*
   shapes and the stats row lands on the block run. Same rule `--glass` states
   for cards: text wins.
+
+**A stretched `.btn` centres its own label.** `.btn` is an `inline-flex` and set
+no `justify-content`, which is invisible everywhere it shrink-wraps — content
+and box are the same width, so nothing can move — and wrong everywhere a parent
+stretches it. The Contact form's submit is a column child of `.form-block`, so
+it is the width of the fieldset and its icon and label sat against the left edge
+with 340px of empty pill after them; the same was true of the sign-in button,
+the Google button, both plan cards' CTAs, and every hero CTA at phone widths,
+where `.hero-cta` wraps and each button takes the row. One declaration on `.btn`
+rather than a rule per instance, because the ones that are not stretched cannot
+notice it.
+
+**A hero with an empty second column is centred, not left-packed.** `.hero-grid`
+is two columns because the right-hand one reserves the space the *globe* renders
+into, and the globe is a fixed layer that cannot see the page. Relocate copied
+the arrangement when it had the globe and kept it through three backdrops; the
+one it has now is full-bleed like every other 2D backdrop, so the reserved
+column reserved nothing and the copy sat in the left half of an empty screen.
+`hero-mid` is the answer — one column, the 34rem measure kept, and the flex rows
+(buttons, stats) centred with it, because a centred paragraph over a left-packed
+button row is worse than either. Reach for it on any hero that is not sharing
+the viewport with the globe; `text-align` alone would not have been the fix,
+since the problem was the track.
 
 **A hover implies a press, and a press has to exist.** There were four `:active`
 rules in the whole sheet and none on `.btn` — every button lifted toward the
@@ -1082,9 +1240,37 @@ itself; and the assistant's ask box was a `<span>` that looked exactly like a
 field and did nothing at all. The fixes are the pattern — wrap the input in a
 `<label>` that fills the row, so the well, the currency symbol and the empty
 space after the digits all put the caret in it; and give a decorative field a
-real destination (the ask box is an `<a>` to sign-in, which is where the
-assistant lives). A picture of a control is only honest when nothing about it
+real destination. A picture of a control is only honest when nothing about it
 invites a tap.
+
+**And the destination has to be the thing, not a form in front of it.** The ask
+box went to sign-in for a while, which was honest and sent somebody asking about
+tram tickets to a password field. It **opens the dock** now — `openAssistant()`
+in `content.ts` — which draws its own signed-out pitch, so a visitor sees what
+they are being asked to join before being asked. The four suggested questions
+under it were the worse half: `<span>`s wearing the styling of the dock's chips,
+which *are* buttons and *do* ask what they say. Each now opens the panel **with
+its question already asked**. Making them links would have answered the
+complaint ("not clickable") and kept the part that was actually wrong — the
+point of a suggested question is the question.
+
+Three things about that hand-off are load-bearing, and two of them were bugs
+first:
+
+- **The payload carries a sequence number, not just the text.** Clearing the
+  dock's state and guarding on non-null asked everything **twice**: StrictMode
+  runs an effect, tears it down and runs it again against the same props, and
+  the clear has not committed in between. A plain string cannot be the guard
+  either — setting state to the string it already holds is a React bail-out, so
+  the *same* chip pressed twice would do nothing. A counter says "once each"
+  and "again" with one comparison.
+- **The guard has to let a re-run through.** That same teardown aborts the
+  request in flight, so an effect that refused its second run left the question
+  spinning forever with nothing coming back.
+- **An aborted question leaves nothing behind.** `send` used to `return` on an
+  abort and leave the pair in the thread — a question with dots under it that
+  nothing can ever settle. It removes them now. A thread is a record of the
+  conversation, and an exchange that did not happen does not belong in it.
 
 **Per-frame work does not go through React state.** This is the load-bearing
 rule of the codebase. Scroll position is written to a ref by a passive listener
@@ -1215,6 +1401,39 @@ bundled, the flag font copied into `public/`), geometry comes from the
   (`PD_ASSIST_COPY`): the point of the panel is that an owner reading in Polish
   sees what a Russian-speaking customer will read, so the set is fixed and
   `npm run verify` checks it covers `LANGUAGE_ORDER`.
+- **The dashboard is themed by tokens, and four things had slipped past that.**
+  All four were invisible in a screenshot of one theme and obvious in a
+  screenshot of both, which is the argument for capturing the pair:
+
+  - `Bar` in `dashboardScreens.tsx` gave its track `className="pd-bar"`.
+    **`.pd-bar` is the dashboard's sticky top bar** — `position: sticky`,
+    `min-height: 4rem`, a bottom border, a backdrop filter — so every budget
+    pool rendered as a 64px empty box with a rule under it. Same family as the
+    `.dash-*` collision below; `pd-bar-track` and `pd-bar-label` already
+    existed and were simply unused. **Grep before you name a class.**
+  - The deal-status filter used `pd-filters` / `pd-filter`, which have no rule
+    anywhere in `site.css`, so five statuses stacked down the right-hand edge.
+    It is `.pd-seg` now — the same segmented control the budget's pool picker
+    uses, because it is the same component.
+  - `.pd-panel-head > div` sets `flex-direction: column` for the head's *title
+    block* and was catching that control too. Scoped with
+    `.pd-panel-head > .pd-seg` rather than narrowed: every other panel head
+    relies on the column, and this is the one child that is not a title block.
+  - `.pd-withheld` — the em dash `Figure` renders for a suppressed metric —
+    had no rule, so it came out at the same weight and colour as a real
+    figure, which is the one thing a withheld figure must not look like. It is
+    faint and un-bolded now, with `cursor: help` for the `title` it carries.
+
+  A fifth was a colour: `--solid-lit` was a bare `#0f3b39` inside
+  `:root[data-theme='light'] .pd-app`, under a comment claiming nothing there
+  named one. It is `--ink-lit-rgb` in the `:root` ink block now, beside
+  `--ink-rgb` and `--ink-on-rgb`, because an ink press cannot lighten with
+  alpha — there is no ground behind it — so its hover is a third member of
+  that family rather than a transform of the first. **`.pd-scrim`'s
+  `rgba(0, 0, 0, 0.45)` is not a violation and stays**: a scrim is a dim
+  rather than a tint, deliberately outside the palette, and `site.css` says so
+  where the console's modal scrim is defined.
+
 - **The dashboard's surface is glass, and dense panels opt out of it.** Every
   panel is `.pd-glass` over the aurora on `.pd-app::before` — two radial fields
   of `rgba(var(--glow-rgb), …)`, the accent at alpha, not a second hue. The sheet

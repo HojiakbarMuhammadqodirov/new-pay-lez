@@ -708,7 +708,7 @@ export async function publishDeal(
 }
 
 /** What the dashboard lists, with each deal's funnel and translation state. */
-export async function dealsFor(db: Db, venueId: string) {
+export async function dealsFor(db: Db, venueId: string, language = 'en') {
   return await Promise.all((await db
     .all<deals.Deal>(`SELECT * FROM hot_deals WHERE venue_id = $v ORDER BY created_at DESC`, {
       v: venueId,
@@ -717,6 +717,21 @@ export async function dealsFor(db: Db, venueId: string) {
       ...deal,
       funnel: await deals.funnel(db, deal.id),
       translations: await deals.completeness(db, deal.id),
+      /* The deal's own words, in the owner's language or the nearest filled
+         one. `discount_text` is the *badge* — "20% OFF" — and is not a name; a
+         table that prints it twice is what a row looks like with no title
+         joined, which is what this list did. Null when nothing is written in
+         any language, which the row draws as "no title yet" rather than as a
+         blank cell. */
+      copy: await deals.copyFor(db, deal.id, language),
+      /* The two the partner's table draws beside the totals: the shape of the
+         last week's claims, and whatever became of the deal's one notification.
+         Both are reads of tables that were already being written — the funnel
+         events and `deal_pushes` — rather than anything new being recorded, and
+         both are per-deal, which is why they are joined here rather than in
+         `analytics`, whose figures are all venue-wide. */
+      series: await deals.claimSeries(db, deal.id, 7),
+      push: await deals.pushFor(db, deal.id),
     })));
 }
 

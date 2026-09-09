@@ -103,6 +103,8 @@ import {
   SUB_HERO,
   SUB_PLANS,
   SUB_ROWS,
+  subBeatsFree,
+  subRoundsPerDay,
 } from '../src/site/content';
 import {
   cheapestCost,
@@ -909,12 +911,14 @@ console.log('\nthe profile');
       type: 'individual', business: null, player: null,
       profile: { ...EMPTY_PROFILE, username: 'dilnoza' },
       onboardedAt: '2026-01-01',
+      profileCompletedAt: null,
     },
     {
       id: 'u_other', name: 'B', email: 'b@b.c', password: 'x', created: '2026-01-01',
       type: 'individual', business: null, player: null,
       profile: { ...EMPTY_PROFILE, username: 'KasiaPL' },
       onboardedAt: '2026-01-01',
+      profileCompletedAt: null,
     },
   ];
 
@@ -3295,6 +3299,9 @@ console.log('\nthe partner dashboard');
     valid_from: '2026-08-01',
     valid_to: '2026-08-31',
     target_audience: null,
+    target_weekdays: 'mon,tue,wed,thu,fri',
+    target_from_min: 7 * 60,
+    target_to_min: 10 * 60,
     cap_claims: null,
     spend_minor: 12_300,
     seen_count: 400,
@@ -3315,6 +3322,21 @@ console.log('\nthe partner dashboard');
       filled: ['en', 'pl'],
       missing: ['uz', 'ru', 'uk'],
     },
+    copy: {
+      title: 'Free filter with any bake',
+      description: 'A filter coffee on us with anything from the counter.',
+      terms: 'One per customer per day.',
+      language: 'en',
+    },
+    series: [2, 0, 5, 4, 0, 9, 11],
+    push: {
+      status: 'sent',
+      scheduledAt: '2026-08-12T07:30:00.000Z',
+      sentAt: '2026-08-12T07:30:04.000Z',
+      delivered: 940,
+      opened: 312,
+      cameIn: 112,
+    },
   };
   const deal = dealFromApi(dealRow, (minor) => minor / 100);
 
@@ -3331,6 +3353,22 @@ console.log('\nthe partner dashboard');
      nothing to hit. */
   check('…and no cap reading as no limit', deal.limit === 0);
   check('…the badge trimmed to the venue’s own words', deal.badge === 'Free filter coffee');
+  /*
+   * The badge and the name are two fields, and conflating them is what the row
+   * looked like before `dealsFor` joined the copy: `discount_text` printed
+   * twice, once as a chip and once as a heading. The chip is what the deal
+   * *gives*; the name is what it is *called*.
+   */
+  check(
+    '…and the name coming from the copy, not the badge',
+    deal.name === 'Free filter with any bake' && deal.name !== deal.badge,
+  );
+  /* A deal can exist before it is written, and an unwritten one has no name —
+     which the row draws as "no title yet" rather than as a blank heading. */
+  check(
+    '…with an unwritten deal having no name at all',
+    dealFromApi({ ...dealRow, copy: null }, (m) => m).name === '',
+  );
   /* A deal with nothing written on it says nothing, rather than rendering the
      empty string as a gap in a bold tag — the `|| ''` in the mapper. */
   check(
@@ -3340,6 +3378,64 @@ console.log('\nthe partner dashboard');
   check(
     'the language count is what is filled, not what is offered',
     deal.langs === 2 && deal.missing.length === 3,
+  );
+
+  /*
+   * The schedule is one line, and the weekday run is folded.
+   *
+   * `mon,tue,wed,thu,fri` printed long is five chips in a cell that already
+   * carries a name, a date range and an audience, which is what made the
+   * reference row wrap. Folding is only correct for a *contiguous* run — a
+   * Mon/Wed/Fri deal folded to "Mon–Fri" would be the row claiming the offer
+   * runs on two days it does not — so both cases are checked.
+   */
+  check('a weekday run folds to a range', deal.schedule === 'Mon–Fri, 07:00–10:00', `${deal.schedule}`);
+  check(
+    '…and a set that is not a run is listed',
+    dealFromApi({ ...dealRow, target_weekdays: 'mon,wed,fri' }, (m) => m).schedule ===
+      'Mon, Wed, Fri, 07:00–10:00',
+  );
+  /* Minutes to a clock face, both halves padded: 7:0 is not a time, and the
+     column is tabular. */
+  check(
+    '…with both halves of the clock padded',
+    dealFromApi({ ...dealRow, target_from_min: 9 * 60 + 5, target_to_min: 60 }, (m) => m)
+      .schedule === 'Mon–Fri, 09:05–01:00',
+  );
+  /*
+   * A deal with no window at all says nothing. "Every day" is a different
+   * offer from one that simply runs whenever it is live, and the row must not
+   * invent the stronger claim.
+   */
+  check(
+    '…and no window at all reading as no schedule',
+    dealFromApi(
+      { ...dealRow, target_weekdays: null, target_from_min: null, target_to_min: null },
+      (m) => m,
+    ).schedule === null,
+  );
+  /* Seven days, oldest first, carried through unchanged — the sparkline is
+     drawn straight off it and a reversed series draws the week backwards. */
+  check('the claim series survives the mapper', deal.series.length === 7 && deal.series[6] === 11);
+  /*
+   * `deal_pushes.status` has five values and the row draws three. The two that
+   * fold together are `cancelled` and `failed` — both "it is not going" — and
+   * neither may fold into *null*, which is the deal that never had one.
+   */
+  check('a sent push reads as sent', deal.push?.kind === 'sent' && deal.push?.cameIn === 112);
+  check(
+    '…a cancelled one as stopped, not as none',
+    dealFromApi({ ...dealRow, push: { ...dealRow.push!, status: 'cancelled' } }, (m) => m).push
+      ?.kind === 'stopped',
+  );
+  check(
+    '…a scheduled one as scheduled',
+    dealFromApi({ ...dealRow, push: { ...dealRow.push!, status: 'scheduled' } }, (m) => m).push
+      ?.kind === 'scheduled',
+  );
+  check(
+    '…and no push at all as null',
+    dealFromApi({ ...dealRow, push: null }, (m) => m).push === null,
   );
 
   /*
@@ -3633,6 +3729,50 @@ console.log('\nthe plan table says what the product does');
   check('every row has one value per plan',
     SUB_ROWS.every((row) => row.values.length === SUB_PLANS.length));
 
+  /*
+   * The day the card leads with, and the two things it must never stop being.
+   *
+   * `subRoundsPerDay` is the tank plus what the refill clock hands back, and it
+   * is the one figure on the section that is not printed anywhere in the table
+   * it is derived from — so nothing else would notice if it drifted. The two
+   * rows behind it are checked above; these check the multiplication and, more
+   * importantly, its *direction*: the chip beside the figure is written "+{n}",
+   * so a paid plan whose day came out no bigger than the free one would print a
+   * plus sign in front of nothing, or a minus after one.
+   */
+  const days = SUB_PLANS.map((_, i) => subRoundsPerDay(i));
+  check('a day is the tank plus what the clock gives back',
+    days.every((day, i) => day === (SUB_ROWS[0].values[i] as number)
+      + Math.floor((24 * 60) / (SUB_ROWS[1].values[i] as number))),
+    String(days));
+  check('…and every paid day is bigger than the free one',
+    days[1] > days[0] && days[2] > days[1], String(days));
+  /* The floor in `subRoundsPerDay` is there for a refill that does not divide
+     the day, and while all three do, the figure on the card is the whole of
+     what the clock hands back rather than a rounding of it. The day one of them
+     stops dividing, this is what says so — the card will then be advertising a
+     round short, which is the right direction to be wrong in and still worth
+     knowing about rather than discovering. */
+  check('…and every refill divides the day, so the floor takes nothing',
+    SUB_ROWS[1].values.every((m) => (24 * 60) % (m as number) === 0),
+    String(SUB_ROWS[1].values));
+
+  /*
+   * The lit cells. The free column may never light one — it is the column the
+   * others are measured against — and each paid tier must light at least one,
+   * or a card is charging for a table it does not improve.
+   */
+  const listRows = SUB_ROWS.map((_, i) => i).slice(SUB_HERO, SUB_BADGE_ROW);
+  check('the free column marks nothing as a gain',
+    listRows.every((row) => !subBeatsFree(row, 0)));
+  check('…and both paid columns mark something',
+    listRows.some((row) => subBeatsFree(row, 1))
+    && listRows.some((row) => subBeatsFree(row, 2)));
+  /* The one row where less is better. Read straight, 60 minutes would be the
+     worse cell on the more expensive card. */
+  check('…and a faster refill counts as a gain, not a loss',
+    subBeatsFree(1, 1) && subBeatsFree(1, 2));
+
   for (const code of LANGUAGE_ORDER) {
     const sub = LANGUAGES[code].subscription;
     check(`${code} labels every row`, sub.rows.length === SUB_ROWS.length,
@@ -3642,6 +3782,12 @@ console.log('\nthe plan table says what the product does');
     check(`…and names both seals`, sub.badges.length === 2);
     check(`…and its seal label has a name to put in it`, sub.mark.includes('{name}'),
       sub.mark);
+    /* The step-up chip names the plan it counts from, so it cannot start
+       calling the free tier something the card above it does not. */
+    check(`…and its step-up chip has both holes`,
+      sub.day.vs.includes('{n}') && sub.day.vs.includes('{plan}'), sub.day.vs);
+    check(`…and the day carries its unit and its reading`,
+      sub.day.rounds.trim().length > 0 && sub.day.from.trim().length > 0);
     check(`…and nothing in the strip is blank`,
       sub.heroRows.every((label) => label.trim().length > 0));
     /* The unit lives in the label, which is the rule that keeps "hours" and

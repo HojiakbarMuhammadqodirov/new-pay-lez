@@ -581,13 +581,15 @@ export const en = {
       'What is open near me right now?',
     ],
     you: 'You',
-    /* Honest rather than a canned answer that pretends to be one. See the
-       note in `AssistantDock.tsx`. */
-    stubReply:
-      'The assistant is not connected to a model in this build, so I cannot answer that yet. Everything around this message — the thread, the composer, your account — is real and working.',
-    /* A footnote under each reply, not a chip over it — see `.ai-note`.
-       So it is a sentence now rather than a label. */
-    stubTag: 'No model is connected in this build.',
+    /* The states a real call has that a canned reply did not. See the note at
+       the top of `AssistantDock.tsx`: a refusal, an unreachable server and a
+       broken one are three different findings and must not read as one. */
+    thinking: 'Thinking…',
+    limitReached:
+      'That is all your questions for today. The allowance resets tomorrow, and a paid plan raises it.',
+    offline: 'I could not reach the server, so I have not answered that yet.',
+    failed: 'That did not go through.',
+    retry: 'Ask again',
   },
 
   /* ────────────────────────────────────────────────────────────── wallet ── */
@@ -1306,6 +1308,10 @@ export const en = {
       column: 'Actions',
 
       publish: 'Publish',
+
+      /** The row's own control: open this deal in the create panel. */
+
+      edit: 'Edit',
       pause: 'Pause',
       resume: 'Resume',
       extend: 'Extend',
@@ -1424,6 +1430,10 @@ export const en = {
         'Figures are reported for a whole calendar month, which is the window the server counts in — the range picker above does not move them yet.',
       /** The server had nothing worth ranking this period. */
       noFindings: 'Nothing stood out this month.',
+      /** A panel drawn from the reference design's figures rather than from
+          measured ones, so the layout can be seen while the endpoint behind it
+          does not exist. Never shown when `PD_SEED` is off. */
+      sample: 'Sample figures',
       /** Half of `vouchers.tierDetail` — the half we can stand behind. */
       tierUnit: 'Each one takes {unit} off a bill.',
       /** The rail's plan card, with no budget to draw a bar from. */
@@ -1567,6 +1577,8 @@ export const en = {
         'Every QR scan at the counter, against the vouchers customers actually spent',
       chartVisits: 'Visits',
       chartRedeemed: 'Vouchers redeemed',
+      /** The right-hand end of the chart's date axis. */
+      chartToday: 'today',
 
       holdingTitle: 'Money you are holding',
       holding:
@@ -1673,6 +1685,10 @@ export const en = {
       filters: ['All', 'Live', 'Scheduled', 'Paused', 'Expired'],
       count: '{n} of {total} deals',
       sortNote: 'Sorted by claim rate, best first. Live and scheduled deals come first.',
+      /** A deal published with no discount text on it yet. */
+      untitled: 'No title yet',
+      /** Half of the sent-notification chip: people it reached who then scanned. */
+      cameIn: '{n} came in',
       insight:
         'Your free-item deals get 2.4× more claims than your percentage discounts. The 5% lunch bundle underperformed — small discounts rarely move people.',
       langsAll: 'Written in all five languages',
@@ -1681,6 +1697,7 @@ export const en = {
         none: 'No notification',
         scheduled: 'Notification scheduled',
         sent: 'Notification sent',
+        stopped: 'Notification stopped',
       },
       reach: '{n} of {total} people can be notified',
       limit: '{claimed} of {limit} claims',
@@ -1733,6 +1750,12 @@ export const en = {
       notifyChange: 'Change the time',
       notifyCancel: 'Cancel it',
       whoTitle: 'Who sees it, and when',
+      /* The two fallbacks in the expanded row's targeting card. A deal
+         with no window runs whenever it is live, and one with no audience
+         is shown to everyone — both are real states rather than gaps, so
+         they are named rather than left blank. */
+      anytime: 'Every day',
+      everyone: 'Everyone',
 
       /* The claim ceiling, from the two sides it can be seen from. Only the
          first deal has one, so both are written for that case. */
@@ -2044,6 +2067,9 @@ export const en = {
      * prototype builds it that way for the same reason.
      */
     drawer: {
+      /* The panel's heading when it was opened on an existing deal. One
+         panel does both jobs and the heading is what says which. */
+      editDeal: 'Edit this hot deal',
       close: 'Close',
       cancel: 'Cancel',
       later: 'Save and finish later',
@@ -3394,6 +3420,14 @@ export const en = {
          along, with tiers and a stamp card behind it. */
       onPaylez: 'On Paylez',
       visit: 'Website',
+      /* The card and the panel that opens from it. `reviews` takes a formatted
+         count, so the grouping is the reader's own. */
+      reviews: '({n} reviews)',
+      takesVouchers: 'Accepts Paylez vouchers',
+      about: 'About',
+      pricing: 'Pricing',
+      contact: 'Contact',
+      close: 'Close',
     },
 
     countries: {

@@ -21,7 +21,7 @@ import { BusinessForm } from './businessSetup';
 import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
 import { DashboardContext, useDashboard } from './dashboardShell';
-import type { DrawerKind } from './dashboardShell';
+import type { DrawerKind, DrawerTarget } from './dashboardShell';
 import { LanguageMenu, ThemeToggle } from './Header';
 import { PATHS } from './router';
 import { useCountUp, useReveal } from './useReveal';
@@ -131,7 +131,15 @@ function Rail({
 
   return (
     <aside className="rail" data-collapsed={collapsed ? 'true' : undefined}>
+      {/* The mark, then the word. The site's chrome carries no tile beside the
+          wordmark — a 30px square of art next to six letters was the one place
+          the site and the app disagreed — but this frame is a match for the
+          reference export rather than a translation of it, and that file opens
+          its rail with the mark at 32px on 10px corners. It is decoration
+          beside a word that already names the destination, so it is hidden
+          from the accessibility tree rather than given a second label. */}
       <a className="rail-brand" href={PATHS.landing}>
+        <span className="rail-mark" aria-hidden="true" />
         <span className="rail-word">paylez</span>
         <span className="rail-tag">{copy.dashboard.tag}</span>
       </a>
@@ -564,7 +572,7 @@ export function DashboardPage() {
      the prototype opens on. It used to open on the profile because that was the
      only screen with anything on it. */
   const [screen, setScreen] = useState(0);
-  const [drawer, setDrawer] = useState<DrawerKind | null>(null);
+  const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
   /* Opens on the month, which is what every figure was written against and what
      the copy's own "August" crumb still says. */
   const [range, setRange] = useState<RangeDays>(RANGE_DAYS);
@@ -594,7 +602,7 @@ export function DashboardPage() {
         const index = DASH_SCREENS.findIndex((entry) => entry.id === id);
         if (index >= 0) setScreen(index);
       },
-      openDrawer: (kind: DrawerKind) => setDrawer(kind),
+      openDrawer: (kind: DrawerKind, dealId?: string) => setDrawer({ kind, dealId }),
       closeDrawer: () => setDrawer(null),
       toast: (message: string) => setToastText(message),
       range,
@@ -636,7 +644,11 @@ export function DashboardPage() {
               <div className="pd-head-acts">
                 <HeadSecondary isProfile={id === 'profile'} onPreview={setPreview} />
                 {primary && (
-                  <button type="button" className="btn btn-solid" onClick={() => setDrawer(primary)}>
+                  <button
+                    type="button"
+                    className="btn btn-solid"
+                    onClick={() => setDrawer({ kind: primary })}
+                  >
                     <Icon name="plus" size={15} strokeWidth={2} />
                     {primary === 'deal'
                       ? copy.dashboard.actions.newDeal
@@ -657,7 +669,7 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {drawer && <DashboardDrawer kind={drawer} />}
+        {drawer && <DashboardDrawer kind={drawer.kind} dealId={drawer.dealId} />}
         {preview && <ListingPreview venueId={preview} onClose={() => setPreview(null)} />}
         {toastText && <DashboardToast message={toastText} onDone={dismiss} />}
       </main>

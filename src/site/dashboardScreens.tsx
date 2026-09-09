@@ -38,6 +38,7 @@ import {
   usePartnerDeals,
   usePartnerOverview,
   usePartnerPending,
+  usePartnerPushQuota,
   usePartnerToday,
   usePartnerVenue,
   usePartnerVenueId,
@@ -54,6 +55,7 @@ import type { ApiState } from './api/useApi';
 import { Assistant } from './dashboardAssistant';
 import { NumberWell } from './dashboardControls';
 import { useDashboard } from './dashboardShell';
+import { PD_SEED, SEED_DELTAS, SEED_REPEAT, seedSeries, sparkPath } from './dashboardSeed';
 
 /**
  * The six dashboard screens that are not the assistant or the profile form.
@@ -148,9 +150,15 @@ function Figure({ metric, format }: { metric: Metric | undefined; format?: (n: n
 /** A labelled proportion bar. One accent, so the parts differ by width alone. */
 function Bar({ label, value, of, note }: { label: string; value: number; of: number; note: string }) {
   return (
+    /* `pd-bar-track`, not `pd-bar`. `.pd-bar` is the dashboard's **sticky top
+       bar** — `position: sticky`, `min-height: 4rem`, a bottom border and a
+       backdrop filter — so a track wearing that class rendered every budget
+       pool as a 64px empty box with a rule under it, in both themes. Same
+       family as the `.dash-*` collision the root `CLAUDE.md` records; the
+       track and label classes below already existed and were simply unused. */
     <div className="pd-bar-row">
-      <span>{label}</span>
-      <span className="pd-bar">
+      <span className="pd-bar-label">{label}</span>
+      <span className="pd-bar-track">
         <i style={{ width: `${of > 0 ? Math.max(1, Math.min(100, (value / of) * 100)) : 0}%` }} />
       </span>
       <b>{note}</b>
@@ -325,6 +333,202 @@ function NoSource({ title, detail }: { title: string; detail?: string }) {
   );
 }
 
+/**
+ * A chip marking a panel whose figures are the reference design's rather than
+ * the venue's. Drawn *inside* the panel head, next to the title, because the
+ * whole risk of seeding a screen is somebody reading a number off it and
+ * believing it — and a label somewhere else on the page does not travel with
+ * the figure it qualifies.
+ */
+function SampleTag() {
+  const dashboard = useCopy().dashboard;
+  return <span className="pd-chip" data-sample="true">{dashboard.unmeasured.sample}</span>;
+}
+
+/**
+ * The overview's line chart: visits against voucher redemptions.
+ *
+ * The geometry is the mock's — a 1000 × 260 viewBox, a 42px gutter for the
+ * three axis labels and 30px under the plot for the dates — and it is a
+ * `viewBox` with `width: 100%` rather than a measured canvas, so it resizes
+ * without React hearing about it. `.pd-chart` states a definite height for the
+ * same reason every chart in this sheet does.
+ *
+ * Two series, and the fill belongs to the *first* one only: two stacked
+ * translucent areas on one plot make the overlap a third tone that means
+ * nothing. Redemptions are the ink line on top, unfilled.
+ */
+function MainChart({ visits, redemptions }: { visits: number[]; redemptions: number[] }) {
+  const copy = useCopy().dashboard.overview;
+
+  const W = 1000;
+  const H = 260;
+  const PB = 30;
+  const PL = 42;
+  const n = visits.length;
+  /* 1.18 rather than the exact maximum: a line that touches the top edge of
+     its own box reads as clipped, and the gap is where the top gridline goes. */
+  const max = Math.max(...visits, 1) * 1.18;
+  const x = (i: number) => PL + (i * (W - PL - 8)) / Math.max(n - 1, 1);
+  const y = (v: number) => H - PB - (v / max) * (H - PB - 16);
+  const line = (arr: number[]) =>
+    arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join(' ');
+
+  /* One label every eighth point at most. A date under every day is a grey bar
+     at this width, which is the axis the mock avoids by stepping. */
+  const step = n <= 10 ? 1 : Math.ceil(n / 8);
+
+  return (
+    <div className="pd-chart-panel">
+      {/* The sheet's own key, with the swatches it already draws: the second
+          one is dashed on dark and the ink on paper, matched to the line. */}
+      <div className="pd-legend">
+        <span>
+          <i />
+          {copy.chartVisits}
+        </span>
+        <span>
+          <i data-part="held" />
+          {copy.chartRedeemed}
+        </span>
+      </div>
+      <div className="pd-chart">
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="presentation">
+          {[0, 0.5, 1].map((f) => {
+            const gy = H - PB - f * (H - PB - 16);
+            return (
+              <line key={f} className="pd-chart-grid" x1={PL} x2={W - 8} y1={gy} y2={gy} />
+            );
+          })}
+
+          <path
+            className="pd-chart-fill"
+            d={`${line(visits)} L${x(n - 1)} ${H - PB} L${PL} ${H - PB} Z`}
+          />
+          <path className="pd-chart-line" d={line(visits)} />
+          <path className="pd-chart-line" data-second="true" d={line(redemptions)} />
+        </svg>
+        {/*
+          The two axes are DOM, not SVG text.
+
+          `preserveAspectRatio="none"` stretches the plot to whatever box the
+          panel gives it, which is what keeps the line full-width at every
+          width — and it would stretch lettering with it. Labels outside the
+          SVG also inherit the theme tokens and the dashboard's own face
+          instead of needing a `fill` and a `font-size` per node.
+        */}
+        <div className="pd-chart-scale" aria-hidden="true">
+          {[1, 0.5, 0].map((f) => (
+            <span key={f}>{Math.round(max * f)}</span>
+          ))}
+        </div>
+      </div>
+      <div className="pd-chart-days" aria-hidden="true">
+        {visits.map((_, i) =>
+          i % step === 0 || i === n - 1 ? (
+            <span key={i} style={{ left: `${(x(i) / W) * 100}%` }}>
+              {n - 1 - i === 0 ? copy.chartToday : `-${n - 1 - i}d`}
+            </span>
+          ) : null,
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The deals table's sortable columns, in the order the reference design draws
+ * them. `key: null` is a column there is nothing sensible to sort by — the
+ * sparkline, whose order *is* the sort you would ask it for.
+ *
+ * Index-aligned with `copy.dashboard.deals.columns`, which is where the labels
+ * live: this table is structure, and the eight words are translated.
+ */
+type DealSort = 'name' | 'state' | 'seen' | 'opened' | 'claimed' | 'rate' | 'cost';
+
+const DEAL_COLUMNS: { key: DealSort | null; align: 'left' | 'right'; width: string }[] = [
+  { key: 'name', align: 'left', width: '24%' },
+  { key: 'state', align: 'left', width: '8%' },
+  { key: 'seen', align: 'right', width: '6%' },
+  { key: 'opened', align: 'right', width: '7%' },
+  { key: 'claimed', align: 'right', width: '11%' },
+  { key: 'rate', align: 'right', width: '10%' },
+  { key: 'cost', align: 'right', width: '8%' },
+  { key: null, align: 'left', width: '10%' },
+];
+
+/* The last column is not in the table above because it has no label of its own
+   and nothing to sort by — but it still needs a width, or `table-layout: fixed`
+   gives it whatever is left and the two buttons in it overflow across the cost
+   cells. 17% is two buttons plus the gutter at every language this site ships;
+   the widths above are the reference design's, trimmed to make room for it. */
+const DEAL_ACTS_WIDTH = '17%';
+
+/**
+ * Claims as a share of the people who *saw* the deal, in percent.
+ *
+ * Seen and not opened, deliberately, and it is the difference between two
+ * questions: "of the people who looked at this, how many took it" is the
+ * server's `funnel.claimRate`, and it flatters a deal nobody opened. The
+ * column an owner is reading asks how much of the audience the offer converted,
+ * which is claims over impressions — the same figure the reference design
+ * prints, and the reason its best deal reads 3.9% rather than 60%.
+ */
+const claimRate = (deal: PartnerDeal) =>
+  deal.seen === 0 ? 0 : (deal.claimed / deal.seen) * 100;
+
+/**
+ * The dates a deal runs between, as one short line, or null when it has no
+ * window at all.
+ *
+ * Formatted through `Intl` off the reader's own language rather than by
+ * slicing the ISO string, because "3 Aug – 31 Aug" is written in a different
+ * order in half the languages this site ships.
+ */
+function dealWindow(deal: PartnerDeal): string | null {
+  if (!deal.from && !deal.to) return null;
+  const fmt = (iso: string | null) =>
+    iso
+      ? new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+      : '';
+  const from = fmt(deal.from);
+  const to = fmt(deal.to);
+  if (from && to) return `${from} – ${to}`;
+  return from || to || null;
+}
+
+/**
+ * A person's initials, for the roster's avatar.
+ *
+ * Two letters at most, from the first and last word of whatever the server
+ * sent — which is a display name the customer chose, so it may be one word, an
+ * initial already, or an emoji. Everything is upper-cased with the *locale*
+ * left to the browser: `toUpperCase` on a Turkish dotless ı is the classic way
+ * to put the wrong letter in a circle.
+ *
+ * Falls back to a bullet rather than to an empty circle, because a row with no
+ * mark at all reads as a rendering failure next to fifteen that have one.
+ */
+function initials(name: string): string {
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return '•';
+  const first = [...words[0]][0] ?? '';
+  const last = words.length > 1 ? [...words[words.length - 1]][0] ?? '' : '';
+  return (first + last).toLocaleUpperCase() || '•';
+}
+
+/** The mock's 76 × 30 sparkline, in whichever of the two inks it is handed. */
+function Spark({ values, ink }: { values: number[]; ink: 'accent' | 'text' }) {
+  const path = sparkPath(values);
+  if (!path) return null;
+  return (
+    <svg className="pd-spark" viewBox="0 0 76 30" role="presentation" data-ink={ink}>
+      <path d={path.area} className="pd-spark-fill" />
+      <path d={path.line} className="pd-spark-line" />
+    </svg>
+  );
+}
+
 /* ───────────────────────────────────────────────────────────── overview ── */
 
 function Overview() {
@@ -480,72 +684,6 @@ function Overview() {
               </div>
             </div>
 
-            {/*
-              Who saw you — above the cost panel, because it is the top of the
-              funnel every other figure on this screen sits below.
-
-              Without it a venue nobody has heard of and a venue everybody
-              scrolls past render identically: zeroes, with nothing to say
-              which. Those two have opposite fixes.
-            */}
-            <div className="pd-glass pd-panel pd-reach" data-reveal>
-              <div className="pd-panel-head">
-                <span className="console-label">{copy.reachTitle}</span>
-                {reachPeriod && <span className="pd-chip">{reachPeriod}</span>}
-              </div>
-
-              {reach === null ? (
-                <p className="pd-fine">
-                  {reachApi.state.status === 'loading' ? dashboard.unmeasured.asking : dashboard.unmeasured.serverSilent}
-                </p>
-              ) : reach.seen === 0 && reach.clicks === 0 ? (
-                <p className="pd-fine">{copy.reachEmpty}</p>
-              ) : (
-                <>
-                  <p className="pd-fine">{copy.reachLive}</p>
-                  <div className="pd-reach-figures">
-                    <div>
-                      <b>{num(reach.seen)}</b>
-                      <span>{copy.reachSeen}</span>
-                      <i>{copy.reachSeenNote}</i>
-                    </div>
-                    <div>
-                      <b>{num(reach.clicks)}</b>
-                      <span>{copy.reachClicks}</span>
-                      <i>{copy.reachClicksNote}</i>
-                    </div>
-                    <div>
-                      <b>{reach.clickRate.toFixed(1)}%</b>
-                      <span>{copy.reachRate}</span>
-                      <i>{copy.reachRateNote}</i>
-                    </div>
-                  </div>
-
-                  <p className="pd-fine pd-reach-funnel">
-                    {fill(copy.reachFunnel, {
-                      seen: num(reach.seen),
-                      clicks: num(reach.clicks),
-                      claims: num(reach.claims),
-                    })}
-                  </p>
-
-                  <div className="pd-panel-head pd-reach-split-head">
-                    <span className="console-label">{copy.reachSplit}</span>
-                  </div>
-                  <div className="pd-rows">
-                    <div>
-                      <span>{copy.reachListing}</span>
-                      <b>{num(reach.listingSeen)}</b>
-                    </div>
-                    <div>
-                      <span>{copy.reachDeals}</span>
-                      <b>{num(reach.dealSeen)}</b>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
             {/* What it cost, and the verdict. The verdict is picked by the
                 arithmetic — a month where Paylez cost more than it can be shown
                 to have returned has to say so — but only when both halves are
@@ -607,58 +745,87 @@ function Overview() {
                 the slot is the thing this rewrite removed. No sparklines
                 either — there is no daily series endpoint. */}
             <div className="pd-tiles">
-              <div className="pd-glass pd-tile" data-reveal>
-                <span>{copy.tiles[0]}</span>
-                <div className="pd-tile-body">
-                  <div>
-                    <b>{num(totals.visits)}</b>
-                    <span className="pd-delta" data-dir="flat">
-                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="pd-glass pd-tile" data-reveal>
-                <span>{copy.tiles[1]}</span>
-                <div className="pd-tile-body">
-                  <div>
-                    <b>{reach ? num(reach.claims) : '—'}</b>
-                    <span className="pd-delta" data-dir="flat">
-                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="pd-glass pd-tile" data-reveal>
-                <span>{copy.tiles[2]}</span>
-                <div className="pd-tile-body">
-                  <div>
-                    <b>
-                      {analytics?.roi
-                        ? num(analytics.roi.find((r) => r.feature === 'vouchers')?.outcome ?? 0)
-                        : '—'}
-                    </b>
-                    <span className="pd-delta" data-dir="flat">
-                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <div className="pd-glass pd-tile" data-reveal>
-                <span>{copy.tiles[3]}</span>
-                <div className="pd-tile-body">
-                  <div>
-                    <b>
-                      {analytics?.roi
-                        ? num(analytics.roi.find((r) => r.feature === 'loyalty')?.outcome ?? 0)
-                        : '—'}
-                    </b>
-                    <span className="pd-delta" data-dir="flat">
-                      <i>{fill(copy.inMonth, { month: data.overview.period })}</i>
-                    </span>
-                  </div>
-                </div>
-              </div>
+              {(() => {
+                /* Four counts, in the mock's own order. The value is the
+                   server's; the delta and the sparkline are the reference
+                   design's, because neither has an endpoint — there is no
+                   previous-period comparison and no daily series — and both are
+                   dropped entirely when `PD_SEED` is off rather than drawn as a
+                   zero or a flat line. */
+                const seed = PD_SEED ? seedSeries(14) : null;
+                const claimSeries = seed
+                  ? seed.visits.map((v) => Math.round(v * 0.46))
+                  : null;
+                const rewardSeries = seed
+                  ? seed.visits.map((v) => Math.round(v * 0.07))
+                  : null;
+
+                const tiles: {
+                  label: string;
+                  value: string;
+                  series: number[] | null;
+                  ink: 'accent' | 'text';
+                }[] = [
+                  {
+                    label: copy.tiles[0],
+                    value: num(totals.visits),
+                    series: seed?.visits ?? null,
+                    ink: 'accent',
+                  },
+                  {
+                    label: copy.tiles[1],
+                    value: reach ? num(reach.claims) : '—',
+                    series: claimSeries,
+                    ink: 'accent',
+                  },
+                  {
+                    label: copy.tiles[2],
+                    value: analytics?.roi
+                      ? num(analytics.roi.find((r) => r.feature === 'vouchers')?.outcome ?? 0)
+                      : '—',
+                    series: seed?.redemptions ?? null,
+                    ink: 'text',
+                  },
+                  {
+                    label: copy.tiles[3],
+                    value: analytics?.roi
+                      ? num(analytics.roi.find((r) => r.feature === 'loyalty')?.outcome ?? 0)
+                      : '—',
+                    series: rewardSeries,
+                    ink: 'text',
+                  },
+                ];
+
+                return tiles.map((tile, index) => {
+                  const delta = PD_SEED ? SEED_DELTAS[index] : null;
+                  return (
+                    <div className="pd-glass pd-tile" data-reveal key={tile.label}>
+                      <span>{tile.label}</span>
+                      <div className="pd-tile-body">
+                        <div>
+                          <b>{tile.value}</b>
+                          <span
+                            className="pd-delta"
+                            data-dir={delta === null ? 'flat' : delta >= 0 ? 'up' : 'down'}
+                          >
+                            {delta !== null && (
+                              <em>
+                                {delta >= 0 ? '↑' : '↓'} {Math.abs(delta)}%
+                              </em>
+                            )}
+                            <i>
+                              {delta === null
+                                ? fill(copy.inMonth, { month: data.overview.period })
+                                : copy.since}
+                            </i>
+                          </span>
+                        </div>
+                        {tile.series && <Spark values={tile.series} ink={tile.ink} />}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
 
             {/*
@@ -671,46 +838,99 @@ function Overview() {
               Absent from the response entirely on a plan without deep
               analytics, which is a third state and gets its own sentence.
             */}
-            {analytics === undefined || analytics === null ? null : analytics.repeatMultiple === undefined ? (
-              <NoSource title={copy.proofTitle} detail={dashboard.unmeasured.planLocked} />
-            ) : analytics.repeatMultiple.suppressed ? (
-              <NoSource title={copy.proofTitle} detail={dashboard.unmeasured.withheld} />
-            ) : (
-              <div className="pd-glass pd-panel pd-proof-panel" data-reveal>
-                <div>
-                  <span className="console-label">{copy.proofTitle}</span>
-                  <p className="pd-proof">
-                    {/* One hole, because the server answers with a *ratio* —
-                        each member's visit rate after joining over their rate
-                        before it, averaged. Its baseline is 1 by construction,
-                        which is what the column beside it draws; the sentence
-                        used to quote that 1 as though it were a measured
-                        visits-per-month figure. */}
-                    {fill(copy.proof, {
-                      n: (analytics.repeatMultiple.value ?? 0).toFixed(1),
-                    })}
-                  </p>
-                  <p className="pd-fine">{copy.proofNote}</p>
-                </div>
-                <div className="pd-columns">
-                  <span>
-                    <i style={{ height: `${100 / Math.max(1, analytics.repeatMultiple.value ?? 1)}%` }} />
-                    <b>1.0</b>
-                    {copy.before}
-                  </span>
-                  <span data-on="true">
-                    <i style={{ height: '100%' }} />
-                    <b>{(analytics.repeatMultiple.value ?? 0).toFixed(1)}</b>
-                    {copy.now}
-                  </span>
-                </div>
-              </div>
-            )}
+            {(() => {
+              /*
+                Three states before a figure, and they are not the same state:
+                the plan does not include the report, the cohort was too small
+                to report without identifying somebody, or the server has not
+                answered at all. Each keeps its own sentence.
 
-            {/* The chart the prototype drew from two overlaid sine waves. There
-                is no daily-series endpoint, so it says so rather than drawing a
-                flat line through zero — which reads as a month of no trade. */}
-            <NoSource title={copy.chartTitle} detail={dashboard.unmeasured.noSource} />
+                Under `PD_SEED` all three fall through to the reference design's
+                own pair instead — 2.4 against 1.5 — so the panel can be seen.
+                The measured branch is untouched and still wins whenever there
+                is a measured value, which is the rule this whole file follows:
+                a seeded figure is never mixed with a real one.
+              */
+              const measured =
+                analytics?.repeatMultiple && !analytics.repeatMultiple.suppressed
+                  ? analytics.repeatMultiple.value ?? null
+                  : null;
+
+              if (measured === null && !PD_SEED) {
+                if (analytics === undefined || analytics === null) return null;
+                return (
+                  <NoSource
+                    title={copy.proofTitle}
+                    detail={
+                      analytics.repeatMultiple === undefined
+                        ? dashboard.unmeasured.planLocked
+                        : dashboard.unmeasured.withheld
+                    }
+                  />
+                );
+              }
+
+              /* The server answers with a *ratio* — each member's visit rate
+                 after joining over their rate before it, averaged — so its
+                 baseline is 1 by construction, which is what the left column
+                 draws. The seeded pair is a rate rather than a ratio, so its
+                 baseline is the mock's own 1.5. */
+              const now = measured ?? SEED_REPEAT.now;
+              const before = measured === null ? SEED_REPEAT.before : 1;
+
+              return (
+                <div className="pd-glass pd-panel pd-proof-panel" data-reveal>
+                  <div>
+                    <div className="pd-panel-head">
+                      <span className="console-label">{copy.proofTitle}</span>
+                      {measured === null && <SampleTag />}
+                    </div>
+                    <p className="pd-proof">
+                      {fill(copy.proof, { n: (now / before).toFixed(1) })}
+                    </p>
+                    <p className="pd-fine">{copy.proofNote}</p>
+                  </div>
+                  <div className="pd-columns">
+                    <span>
+                      <i style={{ height: `${(before / Math.max(now, 0.01)) * 100}%` }} />
+                      <b>{before.toFixed(1)}</b>
+                      {copy.before}
+                    </span>
+                    <span data-on="true">
+                      <i style={{ height: '100%' }} />
+                      <b>{now.toFixed(1)}</b>
+                      {copy.now}
+                    </span>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/*
+              Visits against redemptions, day by day.
+
+              There is still no daily-series endpoint — this is the one panel on
+              the screen with nothing measured behind it at all — so it draws the
+              reference design's own series and says so in the head. Without
+              `PD_SEED` it falls back to the sentence it had before, which is
+              what a real venue should see: a flat line through zero reads as a
+              month of no trade, and that is a different claim from "we do not
+              collect this".
+            */}
+            {PD_SEED ? (
+              <div className="pd-glass pd-panel" data-reveal>
+                <div className="pd-panel-head">
+                  <div>
+                    <h2>{copy.chartTitle}</h2>
+                    <p className="pd-fine">{copy.chartNote}</p>
+                  </div>
+                  <SampleTag />
+                </div>
+                <MainChart {...seedSeries(14)} />
+              </div>
+            ) : (
+              <NoSource title={copy.chartTitle} detail={dashboard.unmeasured.noSource} />
+            )}
 
             <div className="pd-glass pd-panel pd-holding" data-reveal>
               <div>
@@ -811,6 +1031,76 @@ function Overview() {
                 </>
               )}
             </div>
+            {/*
+              Who saw you.
+
+              It sat above the cost panel, on the argument that it is the top of
+              the funnel every other figure here hangs below — which is true, and
+              is not the order the reference design draws. The export this screen
+              now matches has no reach panel at all, so it goes last rather than
+              being dropped: it is the one report worth reading for a venue with
+              no visits yet, because without it a venue nobody has heard of and a
+              venue everybody scrolls past render identically — zeroes, with
+              nothing to say which, and those two have opposite fixes.
+            */}
+            <div className="pd-glass pd-panel pd-reach" data-reveal>
+              <div className="pd-panel-head">
+                <span className="console-label">{copy.reachTitle}</span>
+                {reachPeriod && <span className="pd-chip">{reachPeriod}</span>}
+              </div>
+
+              {reach === null ? (
+                <p className="pd-fine">
+                  {reachApi.state.status === 'loading' ? dashboard.unmeasured.asking : dashboard.unmeasured.serverSilent}
+                </p>
+              ) : reach.seen === 0 && reach.clicks === 0 ? (
+                <p className="pd-fine">{copy.reachEmpty}</p>
+              ) : (
+                <>
+                  <p className="pd-fine">{copy.reachLive}</p>
+                  <div className="pd-reach-figures">
+                    <div>
+                      <b>{num(reach.seen)}</b>
+                      <span>{copy.reachSeen}</span>
+                      <i>{copy.reachSeenNote}</i>
+                    </div>
+                    <div>
+                      <b>{num(reach.clicks)}</b>
+                      <span>{copy.reachClicks}</span>
+                      <i>{copy.reachClicksNote}</i>
+                    </div>
+                    <div>
+                      <b>{reach.clickRate.toFixed(1)}%</b>
+                      <span>{copy.reachRate}</span>
+                      <i>{copy.reachRateNote}</i>
+                    </div>
+                  </div>
+
+                  <p className="pd-fine pd-reach-funnel">
+                    {fill(copy.reachFunnel, {
+                      seen: num(reach.seen),
+                      clicks: num(reach.clicks),
+                      claims: num(reach.claims),
+                    })}
+                  </p>
+
+                  <div className="pd-panel-head pd-reach-split-head">
+                    <span className="console-label">{copy.reachSplit}</span>
+                  </div>
+                  <div className="pd-rows">
+                    <div>
+                      <span>{copy.reachListing}</span>
+                      <b>{num(reach.listingSeen)}</b>
+                    </div>
+                    <div>
+                      <span>{copy.reachDeals}</span>
+                      <b>{num(reach.dealSeen)}</b>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+
           </div>
         );
       }}
@@ -862,18 +1152,24 @@ function DealRow({
   deal,
   venue,
   reload,
+  onEdit,
   children,
 }: {
   deal: PartnerDeal;
   venue: PartnerVenue | null;
   reload: () => void;
+  /** Open the drawer on this deal. Lives on the frame, so it is handed down. */
+  onEdit: (deal: PartnerDeal) => void;
   /** The read-only cells, which are the caller's business rather than this one's. */
   children: React.ReactNode;
 }) {
   const dashboard = useCopy().dashboard;
   const copy = dashboard.acts;
   const { busy, run } = useAction(reload);
-  const [open, setOpen] = useState<'extend' | 'notify' | null>(null);
+  /* Three panels can hang under a row, and only one at a time. `detail` is the
+     read — what happened, step by step — and is opened by pressing the row
+     itself; the other two are forms and are opened by their own buttons. */
+  const [open, setOpen] = useState<'extend' | 'notify' | 'detail' | null>(null);
   const [sure, setSure] = useState(false);
   const [until, setUntil] = useState(() => deal.to?.slice(0, 10) ?? isoDay(14));
   const [pushDay, setPushDay] = useState(() => isoDay());
@@ -884,11 +1180,60 @@ function DealRow({
 
   return (
     <>
-      <tr data-dim={deal.state === 'expired' || deal.state === 'archived' ? 'true' : undefined}>
+      {/*
+        The row opens itself.
+
+        It is a `<tr>` with a handler rather than a button, because a button
+        cannot wrap nine cells — so the affordance has to be carried by the
+        cursor, the hover and `aria-expanded`, and the keyboard needs the
+        `onKeyDown` to reach it at all. The action buttons in the last cell stop
+        propagation by being buttons: a click on them fires their own handler
+        and this one, so the toggle checks the target is not inside a control.
+      */}
+      <tr
+        data-dim={deal.state === 'expired' || deal.state === 'archived' ? 'true' : undefined}
+        data-open={open === 'detail' ? 'true' : undefined}
+        className="pd-deal-row"
+        tabIndex={0}
+        role="button"
+        aria-expanded={open === 'detail'}
+        onClick={(event) => {
+          if ((event.target as HTMLElement).closest('button, a, input, label')) return;
+          setOpen((was) => (was === 'detail' ? null : 'detail'));
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          if ((event.target as HTMLElement).closest('button, a, input, label')) return;
+          event.preventDefault();
+          setOpen((was) => (was === 'detail' ? null : 'detail'));
+        }}
+      >
         {children}
         <td>
+          {/*
+            Two controls in the row, and the rest in the panel under it.
+
+            There were six here — publish, pause, resume, extend, notify, end —
+            and at a table's column width they overflowed sideways across the
+            claim-rate and cost cells, which is a row you cannot read *and*
+            cannot operate. The reference design puts two in the row: change it,
+            and the one state change that matters for the state it is in.
+
+            The other four are not lost, they have moved to where there is room
+            for them — the opened row — which is also where an owner is already
+            looking when they are deciding to extend or notify.
+          */}
           <span className="pd-row-acts">
-            {deal.state === 'draft' && (
+            <button
+              type="button"
+              className="btn btn-ghost"
+              disabled={working}
+              onClick={() => onEdit(deal)}
+            >
+              {copy.edit}
+            </button>
+
+            {deal.state === 'draft' ? (
               <button
                 type="button"
                 className="btn btn-solid"
@@ -897,8 +1242,7 @@ function DealRow({
               >
                 {copy.publish}
               </button>
-            )}
-            {reachable && (
+            ) : reachable ? (
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -909,8 +1253,7 @@ function DealRow({
               >
                 {copy.pause}
               </button>
-            )}
-            {deal.state === 'paused' && (
+            ) : deal.state === 'paused' ? (
               <button
                 type="button"
                 className="btn btn-ghost"
@@ -921,55 +1264,70 @@ function DealRow({
               >
                 {copy.resume}
               </button>
-            )}
-            {deal.state !== 'draft' && deal.state !== 'archived' && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={working}
-                onClick={() => setOpen((was) => (was === 'extend' ? null : 'extend'))}
-              >
-                {copy.extend}
-              </button>
-            )}
-            {reachable && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={working}
-                onClick={() => setOpen((was) => (was === 'notify' ? null : 'notify'))}
-              >
-                {copy.notify}
-              </button>
-            )}
-            {deal.state !== 'draft' && deal.state !== 'archived' && (
-              /* Two presses, because this is the one status change the screen
-                 cannot take back. The second label is a question rather than a
-                 warning: a palette with one accent cannot make a button red, so
-                 the confirmation is in the words. */
-              <button
-                type="button"
-                className="btn btn-ghost"
-                disabled={working}
-                onClick={() => {
-                  if (!sure) {
-                    setSure(true);
-                    return;
-                  }
-                  setSure(false);
-                  void run('end', copy.ended, () => setDealStatus(deal.id, 'archived'));
-                }}
-              >
-                {sure ? copy.endSure : copy.end}
-              </button>
-            )}
+            ) : null}
           </span>
         </td>
       </tr>
 
       {open !== null && (
         <tr className="pd-drawer-row">
-          <td colSpan={6}>
+          {/* Nine columns plus the action column. A short `colSpan` leaves the
+              panel boxed under the first few cells with the rest of the row
+              still ruled beside it. */}
+          <td colSpan={9}>
+            {open === 'detail' ? (
+              <>
+                <DealDetail deal={deal} />
+                {/* The controls that used to crowd the row. They belong here:
+                    an owner deciding to extend a deal or push a notification is
+                    already reading the funnel above, and a table cell is not
+                    wide enough to hold four buttons and the columns they were
+                    overlapping. */}
+                <div className="pd-detail-acts">
+                  {deal.state !== 'draft' && deal.state !== 'archived' && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={working}
+                      onClick={() => setOpen('extend')}
+                    >
+                      {copy.extend}
+                    </button>
+                  )}
+                  {reachable && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={working}
+                      onClick={() => setOpen('notify')}
+                    >
+                      {copy.notify}
+                    </button>
+                  )}
+                  {deal.state !== 'draft' && deal.state !== 'archived' && (
+                    /* Two presses, because this is the one status change the
+                       screen cannot take back. The second label is a question
+                       rather than a warning: a palette with one accent cannot
+                       make a button red, so the confirmation is in the words. */
+                    <button
+                      type="button"
+                      className="btn btn-ghost pd-end"
+                      disabled={working}
+                      onClick={() => {
+                        if (!sure) {
+                          setSure(true);
+                          return;
+                        }
+                        setSure(false);
+                        void run('end', copy.ended, () => setDealStatus(deal.id, 'archived'));
+                      }}
+                    >
+                      {sure ? copy.endSure : copy.end}
+                    </button>
+                  )}
+                </div>
+              </>
+            ) : (
             <div className="pd-inline-form">
               {open === 'extend' ? (
                 <>
@@ -1038,10 +1396,87 @@ function DealRow({
                 {copy.close}
               </button>
             </div>
+            )}
           </td>
         </tr>
       )}
     </>
+  );
+}
+
+/**
+ * What happened to one deal, step by step.
+ *
+ * The panel under an opened row: the three funnel stages as cards, and who the
+ * deal is shown to beside them. Every figure is a count the server already
+ * keeps — `seen_count`, `opened_count`, `claimed_count` — and the two
+ * percentages are those counts divided, so the cards cannot disagree with the
+ * columns above them.
+ *
+ * The bar under each figure is a share of the *first* stage, not of its own
+ * maximum: a funnel is a shape, and three bars each full to their own scale is
+ * three unrelated facts. The first stage is therefore always full, which is
+ * correct — everything that happened, happened to people who saw it.
+ */
+function DealDetail({ deal }: { deal: PartnerDeal }) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.deals;
+  const num = useNum();
+
+  const stages = [deal.seen, deal.opened, deal.claimed];
+  const pct = [
+    null,
+    deal.seen === 0 ? null : (deal.opened / deal.seen) * 100,
+    deal.opened === 0 ? null : (deal.claimed / deal.opened) * 100,
+  ];
+
+  return (
+    <div className="pd-detail">
+      <div className="pd-detail-main">
+        <span className="console-label">{copy.funnelTitle}</span>
+        <div className="pd-detail-steps">
+          {copy.funnel.map((label, index) => (
+            <div key={label}>
+              <span>{label}</span>
+              <b>{stages[index] === 0 ? '—' : num(stages[index])}</b>
+              <i>
+                <em
+                  style={{
+                    width:
+                      deal.seen === 0
+                        ? '0%'
+                        : Math.max(2, (stages[index] / deal.seen) * 100) + '%',
+                  }}
+                />
+              </i>
+              {/* The first note states where the impressions came from; the
+                  other two are a share of the stage above, and are blank rather
+                  than 0% when that stage is empty — a rate over nothing is not
+                  a rate. */}
+              <p className="pd-fine">
+                {index === 0
+                  ? copy.funnelNotes[0]
+                  : pct[index] === null
+                    ? copy.notStarted
+                    : fill(copy.funnelNotes[index], {
+                        pct: (pct[index] ?? 0).toFixed(1),
+                      })}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Who sees it, and when. The two targeting facts the row shows in
+          passing, given room — they are what an owner changes when the funnel
+          above is the wrong shape. */}
+      <div className="pd-detail-who">
+        <span className="console-label">{copy.whoTitle}</span>
+        <b>{deal.schedule ?? copy.anytime}</b>
+        <p className="pd-fine">{deal.audience ?? copy.everyone}</p>
+        {deal.terms && <p className="pd-fine pd-detail-terms">{deal.terms}</p>}
+      </div>
+    </div>
   );
 }
 
@@ -1062,10 +1497,22 @@ function Deals() {
   const money = useMoney();
   const num = useNum();
   const [filter, setFilter] = useState(0);
+  const [search, setSearch] = useState('');
+  /* Claim rate, best first, is the reference design's own default and it is the
+     right one: it is the only column that says whether a deal *worked*, as
+     opposed to how many people happened to scroll past it. */
+  const [sort, setSort] = useState<DealSort>('rate');
+  const [dir, setDir] = useState<'asc' | 'desc'>('desc');
 
   const venueApi = usePartnerVenue();
   const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
   const dealsApi = usePartnerDeals(venue?.id ?? null);
+  /* The month's notification allowance. Its own request and its own state: it
+     is the one figure in this toolbar that is not about the deals themselves,
+     and a venue whose deals load while the quota call fails should still get
+     its table. */
+  const quotaApi = usePartnerPushQuota(venue?.id ?? null);
+  const quota = quotaApi.state.status === 'ready' ? quotaApi.state.data : null;
   const state = chain(venueApi, dealsApi);
 
   /* The venue's own currency, off the venue row rather than off the budget.
@@ -1075,21 +1522,25 @@ function Deals() {
   const currency = venue?.currency ?? 'EUR';
   const reload = dealsApi.reload;
 
+  /* Editing opens the create panel on this row. The panel lives on the frame —
+     six places open it — so the screen asks the context rather than holding a
+     second copy of it. */
+  const { openDrawer } = useDashboard();
+  const editDeal = (deal: PartnerDeal) => openDrawer('deal', deal.id);
+
+  const onSort = (key: DealSort) => {
+    if (key === sort) setDir((was) => (was === 'desc' ? 'asc' : 'desc'));
+    else {
+      setSort(key);
+      setDir('desc');
+    }
+  };
+
   return (
     <Screen state={state} index={1}>
       {(rows) => {
         const deals: PartnerDeal[] = rows.map((row) =>
           dealFromApi(row, (minor) => minorToEuro(minor, currency)),
-        );
-        const states: Array<PartnerDeal['state'] | null> = [
-          null,
-          'live',
-          'scheduled',
-          'paused',
-          'expired',
-        ];
-        const shown = deals.filter(
-          (deal) => states[filter] === null || deal.state === states[filter],
         );
 
         if (deals.length === 0) {
@@ -1100,22 +1551,76 @@ function Deals() {
           );
         }
 
+        /* Six segments, and the fifth is `archived` — the server's word for a
+           deal an owner stopped. The segment is labelled the way an owner
+           thinks of it rather than the way the column is spelled. */
+        const states: Array<PartnerDeal['state'] | null> = [
+          null,
+          'live',
+          'scheduled',
+          'paused',
+          'archived',
+          'expired',
+        ];
+        const q = search.trim().toLowerCase();
+        const shown = deals
+          .filter((deal) => states[filter] === null || deal.state === states[filter])
+          .filter(
+            (deal) =>
+              q === '' ||
+              (deal.badge + ' ' + (deal.audience ?? '') + ' ' + deal.state)
+                .toLowerCase()
+                .includes(q),
+          )
+          .sort((a, b) => {
+            /* Live and scheduled first, whatever the sort — the two an owner can
+               still do something about. The chosen column orders within each
+               group, so sorting never buries a running deal under a year of
+               expired ones. */
+            const rank = (d: PartnerDeal) =>
+              d.state === 'live' || d.state === 'scheduled' ? 0 : 1;
+            if (rank(a) !== rank(b)) return rank(a) - rank(b);
+            const value = (d: PartnerDeal): string | number => {
+              if (sort === 'name') return d.badge.toLowerCase();
+              if (sort === 'state') return d.state;
+              if (sort === 'seen') return d.seen;
+              if (sort === 'opened') return d.opened;
+              if (sort === 'claimed') return d.claimed;
+              if (sort === 'cost') return d.cost;
+              return claimRate(d);
+            };
+            const va = value(a);
+            const vb = value(b);
+            if (va === vb) return 0;
+            return (va > vb ? 1 : -1) * (dir === 'asc' ? 1 : -1);
+          });
+
         return (
           <div className="pd-stack">
-            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
-              <div className="pd-panel-head">
-                <div>
-                  <span className="console-label">{dashboard.screens[1].name}</span>
-                  <p className="pd-fine">
-                    {fill(copy.count, { n: String(shown.length), total: String(deals.length) })}
-                  </p>
-                </div>
-                <div className="pd-filters">
+            <div className="pd-glass pd-panel pd-deals" data-solid="true" data-reveal>
+              {/* The toolbar: search, the six states, and the count at the far
+                  end. `.pd-search` is a `<label>` wrapping the input so the
+                  whole well takes the caret, not just the text — the rule the
+                  converter and the assistant's ask box both learned. */}
+              <div className="pd-toolbar">
+                <label className="pd-search">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3.5-3.5" />
+                  </svg>
+                  <input
+                    type="search"
+                    value={search}
+                    placeholder={copy.search}
+                    onChange={(event) => setSearch(event.target.value)}
+                  />
+                </label>
+
+                <div className="pd-seg">
                   {copy.filters.map((label, index) => (
                     <button
                       key={label}
                       type="button"
-                      className="pd-filter"
                       data-on={index === filter ? 'true' : undefined}
                       onClick={() => setFilter(index)}
                     >
@@ -1123,67 +1628,236 @@ function Deals() {
                     </button>
                   ))}
                 </div>
+
+                {/* What is left of the month's notifications. The two states
+                    are drawn differently on purpose: having some is the accent,
+                    having none is neutral — a count nobody can act on should
+                    not wear the colour that means "you can". */}
+                {quota && (
+                  <span className="pd-quota" data-out={quota.remaining === 0 ? 'true' : undefined}>
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                      <path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8" />
+                      <path d="M13.7 21a2 2 0 0 1-3.4 0" />
+                    </svg>
+                    {/* The two quota strings live on `overview`, because the
+                        "Running right now" panel says the same thing — one
+                        sentence, one place, read from both screens. */}
+                    {quota.remaining === 0
+                      ? dashboard.overview.quotaOut
+                      : fill(dashboard.overview.quota, {
+                          n: String(quota.remaining),
+                          total: String(quota.quota),
+                        })}
+                  </span>
+                )}
+
+                <span className="pd-count">
+                  {fill(copy.count, { n: String(shown.length), total: String(deals.length) })}
+                </span>
               </div>
+
+              {/* What this month's deals have in common. The reference design
+                  states a comparison it had measured; nothing on the server
+                  ranks deals by kind, so ours is seeded and carries the chip
+                  that says so. */}
+              {PD_SEED && (
+                <p className="pd-deal-insight">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" aria-hidden="true">
+                    <path d="M9 18h6M10 21h4" />
+                    <path d="M12 3a6 6 0 0 1 3.6 10.8c-.5.4-.6 1-.6 1.5H9c0-.5-.1-1.1-.6-1.5A6 6 0 0 1 12 3Z" />
+                  </svg>
+                  <span>{copy.insight}</span>
+                  <SampleTag />
+                </p>
+              )}
+
+              <p className="pd-sort-note">{copy.sortNote}</p>
 
               {shown.length === 0 ? (
                 <p className="pd-fine">{copy.emptyFiltered}</p>
               ) : (
-                <table className="pd-table">
-                  <thead>
-                    <tr>
-                      <th>{copy.columns[0]}</th>
-                      <th>{copy.funnel[0]}</th>
-                      <th>{copy.funnel[1]}</th>
-                      <th>{copy.funnel[2]}</th>
-                      <th>{dashboard.words.costSoFar}</th>
-                      <th>{dashboard.acts.column}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((deal) => (
-                      <DealRow key={deal.id} deal={deal} venue={venue} reload={reload}>
-                        <td>
-                          <b>{deal.badge}</b>
-                          <span className="pd-fine">
-                            <State on={deal.state === 'live'}>
+                <div className="pd-table-wrap">
+                  <table className="pd-table pd-table-deals">
+                    <thead>
+                      <tr>
+                        {DEAL_COLUMNS.map((column, index) => {
+                          /* Pulled out of the JSX so the narrowing survives into
+                             the click handler: `column.key` is a union with
+                             `null`, and TypeScript does not carry a narrowing on
+                             a property across a closure boundary. */
+                          const key = column.key;
+                          return (
+                          <th
+                            key={copy.columns[index]}
+                            /* The widths are the reference design's own, and
+                               they have to be declared: without them the browser
+                               sizes columns by content, the deal cell collapses
+                               to the width of its longest word, and the
+                               translation note wraps into a column three
+                               hundred pixels tall. */
+                            style={{ width: column.width }}
+                            data-align={column.align}
+                            aria-sort={
+                              column.key === sort
+                                ? dir === 'asc'
+                                  ? 'ascending'
+                                  : 'descending'
+                                : undefined
+                            }
+                          >
+                            {key ? (
+                              <button type="button" onClick={() => onSort(key)}>
+                                {copy.columns[index]}
+                                <i aria-hidden="true">
+                                  {key === sort ? (dir === 'asc' ? '▲' : '▼') : ''}
+                                </i>
+                              </button>
+                            ) : (
+                              copy.columns[index]
+                            )}
+                          </th>
+                          );
+                        })}
+                        <th data-align="right" style={{ width: DEAL_ACTS_WIDTH }}>
+                          {dashboard.acts.column}
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {shown.map((deal) => (
+                        <DealRow key={deal.id} deal={deal} venue={venue} reload={reload} onEdit={editDeal}>
+                          <td>
+                            <div className="pd-deal-cell">
+                              {deal.badge && (
+                                <span className="pd-deal-badge">{deal.badge}</span>
+                              )}
+                              <div>
+                                {/* The name, not the badge. They are two fields
+                                    — `copy.title` and `discount_text` — and the
+                                    row printed the second one twice until the
+                                    server started joining the first. */}
+                                <b>{deal.name || deal.badge || copy.untitled}</b>
+                                <span className="pd-deal-meta">
+                                  {dealWindow(deal) && <span>{dealWindow(deal)}</span>}
+                                  {deal.schedule && <em>{deal.schedule}</em>}
+                                  {/* The audience, unless it is the default.
+                                      `target_audience` is the server's own
+                                      vocabulary and "all" is what a deal shown
+                                      to everybody carries — a word that adds
+                                      nothing to the row and, at this column
+                                      width, adds it as an ellipsis. */}
+                                  {deal.audience && deal.audience !== 'all' && (
+                                    <span>{deal.audience}</span>
+                                  )}
+                                </span>
+                                <span className="pd-deal-chips">
+                                  <span className="pd-notif" data-kind={deal.push?.kind ?? 'none'}>
+                                    {deal.push === null
+                                      ? copy.notify.none
+                                      : deal.push.kind === 'sent'
+                                        ? copy.notify.sent +
+                                          ' · ' +
+                                          fill(copy.cameIn, { n: num(deal.push.cameIn) })
+                                        : deal.push.kind === 'scheduled'
+                                          ? copy.notify.scheduled
+                                          : copy.notify.stopped}
+                                  </span>
+                                  {/* The translation count, as a chip rather
+                                      than the sentence. The sentence is thirty
+                                      words in Russian and was the one thing in
+                                      this cell that could not be truncated
+                                      without looking broken; the count is the
+                                      part an owner acts on, and the sentence is
+                                      still there as the chip's title.
+
+                                      A fully translated deal shows nothing at
+                                      all: five of five is the expected state,
+                                      and a chip on every row that says so is a
+                                      chip nobody reads. */}
+                                  {deal.langs < 5 && (
+                                    <span
+                                      className="pd-langs"
+                                      title={fill(copy.langsSome, {
+                                        n: String(deal.langs),
+                                        /* The share of the five languages the
+                                           deal is *not* written in — a count of
+                                           missing translations, which is a fact,
+                                           rather than the seeded "reach lost"
+                                           percentage nobody measured. */
+                                        pct: String(Math.round((deal.missing.length / 5) * 100)),
+                                      })}
+                                    >
+                                      {deal.langs}/5
+                                    </span>
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td>
+                            <span className="pd-state-pill" data-state={deal.state}>
                               {copy.states[deal.state]}
-                            </State>
-                            {' · '}
-                            {deal.langs === 5
-                              ? copy.langsAll
-                              : fill(copy.langsSome, {
-                                  n: String(deal.langs),
-                                  /* The share of the five languages the deal is
-                                     *not* written in. The seeded column called
-                                     this "reach lost" and quoted a percentage
-                                     nobody had measured; this is a count of
-                                     missing translations, which is a fact. */
-                                  pct: String(Math.round((deal.missing.length / 5) * 100)),
-                                })}
-                          </span>
-                        </td>
-                        <td>{num(deal.seen)}</td>
-                        <td>{num(deal.opened)}</td>
-                        <td>
-                          {num(deal.claimed)}
-                          {deal.limit > 0 && (
-                            <span className="pd-fine">
-                              {' '}
-                              {fill(copy.limitAllowed, { limit: String(deal.limit) })}
                             </span>
-                          )}
-                        </td>
-                        <td>{money(deal.cost, 'exact')}</td>
-                      </DealRow>
-                    ))}
-                  </tbody>
-                </table>
+                          </td>
+
+                          <td data-align="right" data-quiet="true">
+                            {deal.seen === 0 ? '—' : num(deal.seen)}
+                          </td>
+                          <td data-align="right" data-quiet="true">
+                            {deal.opened === 0 ? '—' : num(deal.opened)}
+                          </td>
+
+                          <td data-align="right">
+                            <b>{deal.claimed === 0 ? '—' : num(deal.claimed)}</b>
+                            {deal.limit > 0 && (
+                              <span className="pd-limit">
+                                <i>
+                                  <em
+                                    style={{
+                                      width:
+                                        Math.min(100, (deal.claimed / deal.limit) * 100) + '%',
+                                    }}
+                                  />
+                                </i>
+                                <span className="pd-fine">
+                                  {fill(copy.limitAllowed, { limit: String(deal.limit) })}
+                                </span>
+                              </span>
+                            )}
+                          </td>
+
+                          <td data-align="right">
+                            {/* An em dash rather than 0.0% on a deal nobody has
+                                seen: a rate over nothing is not a rate, and a 0%
+                                reads as a deal that failed rather than one that
+                                has not started. */}
+                            <b>{deal.seen === 0 ? '—' : claimRate(deal).toFixed(1) + '%'}</b>
+                          </td>
+
+                          <td data-align="right">
+                            <b>{deal.cost === 0 ? '—' : money(deal.cost, 'exact')}</b>
+                          </td>
+
+                          <td>
+                            {deal.series.some((n) => n > 0) ? (
+                              <Spark values={deal.series} ink="accent" />
+                            ) : (
+                              <span className="pd-fine">{copy.notStarted}</span>
+                            )}
+                          </td>
+                        </DealRow>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
 
-            {/* The notification funnel the prototype drew. `deal_pushes` holds
-                the real sends and opens; `partners.dealsFor` does not join it,
-                so there is nothing to draw and the panel says which. */}
+            {/* The notification funnel the prototype drew venue-wide.
+                `partners.dealsFor` joins `deal_pushes` now, but per deal — the
+                chip in each row above. There is still no venue-wide source for
+                this panel, so it still says so. */}
             <NoSource title={copy.notifyTitle} />
           </div>
         );
@@ -1946,6 +2620,9 @@ function Customers() {
   const copy = dashboard.customers;
   const money = useMoney();
   const num = useNum();
+  /* Which of the four roster segments is showing. 0 is everyone, which is the
+     absence of a filter rather than a status — see the note at the segments. */
+  const [people, setPeople] = useState(0);
 
   const venueApi = usePartnerVenue();
   const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
@@ -1966,6 +2643,21 @@ function Customers() {
         const heat = heatFromApi(data.heatmap.grid);
         const heatMax = Math.max(...heat.flat());
         const cost = data.costPerNewCustomer;
+        const trend = data.costPerNewCustomerTrend;
+        /* The tallest month the row is allowed to draw against. Withheld months
+           are excluded rather than counted as 0, which would scale every other
+           bar against a month nobody is being shown. */
+        /* What venues like this one pay. `benchmarks` is absent on a plan
+           without it and withheld until the group is large enough — two
+           thresholds, and either one means there is no line to print. */
+        const benchmark =
+          data.benchmarks?.find((row) => row.metric.includes('cost'))?.value ?? null;
+        const trendMax = Math.max(
+          0,
+          ...(trend ?? [])
+            .filter((m) => !m.costPerNewCustomerMinor.suppressed)
+            .map((m) => m.costPerNewCustomerMinor.value ?? 0),
+        );
 
         return (
           <div className="pd-stack">
@@ -1973,38 +2665,108 @@ function Customers() {
                 server sums the subscription, both pools and the deal discounts
                 and divides by the new customers it counted. It is
                 cohort-suppressed, because "we spent 300 zł to win 2 customers"
-                is a fact about two people. */}
-            <div className="pd-glass pd-panel" data-ink="paper" data-reveal>
-              <span className="console-label">{copy.costKicker}</span>
-              {cost.costPerNewCustomerMinor.suppressed ? (
-                <p className="pd-fine">{dashboard.unmeasured.withheld}</p>
-              ) : (
-                <>
-                  <p className="pd-counted">
-                    <b>{money(toEuro(cost.costPerNewCustomerMinor.value ?? 0), 'unit')}</b>
-                    <span>{fill(copy.costUnit, { month: cost.period })}</span>
-                  </p>
-                  <div className="pd-rows">
-                    {copy.costBreakdown.map((label, index) => (
-                      <div key={label}>
-                        <span>{label}</span>
-                        <b>
-                          {money(
-                            toEuro(
-                              [
-                                cost.breakdown.subscription,
-                                cost.breakdown.loyalty,
-                                cost.breakdown.vouchers,
-                                cost.breakdown.deals,
-                              ][index] ?? 0,
-                            ),
-                            'exact',
-                          )}
-                        </b>
-                      </div>
-                    ))}
+                is a fact about two people.
+
+                The slab is `data-ink='paper'`: near-black on light, already
+                dark on dark. It is the one panel on this screen the reference
+                design builds around a single number, and the ink is what makes
+                that number the first thing read. */}
+            <div className="pd-glass pd-cost" data-ink="paper" data-reveal>
+              <div className="pd-cost-main">
+                <span className="console-label">{copy.costKicker}</span>
+                {cost.costPerNewCustomerMinor.suppressed ? (
+                  <p className="pd-fine">{dashboard.unmeasured.withheld}</p>
+                ) : (
+                  <>
+                    <p className="pd-counted">
+                      <b>{money(toEuro(cost.costPerNewCustomerMinor.value ?? 0), 'unit')}</b>
+                      <span>{fill(copy.costUnit, { month: cost.period })}</span>
+                    </p>
+                    {/* The sentence under it is the arithmetic in words: what
+                        went out, how many came in, and the division. It is one
+                        `fill` rather than three fragments because the three
+                        clauses do not sit in this order in every language. */}
+                    <p className="pd-cost-line">
+                      {fill(copy.costLine, {
+                        cost: money(toEuro(cost.spendMinor), 'exact'),
+                        month: cost.period,
+                        n: num(cost.newCustomers),
+                        each: money(toEuro(cost.costPerNewCustomerMinor.value ?? 0), 'unit'),
+                      })}
+                    </p>
+                  </>
+                )}
+
+                {/* The four things that made up the spend, as boxes rather than
+                    rows: they are the addends of the figure above, and a column
+                    of label/value rows reads as a list of unrelated facts. */}
+                <div className="pd-cost-boxes">
+                  {copy.costBreakdown.map((label, index) => (
+                    <div key={label}>
+                      <span>{label}</span>
+                      <b>
+                        {money(
+                          toEuro(
+                            [
+                              cost.breakdown.subscription,
+                              cost.breakdown.loyalty,
+                              cost.breakdown.vouchers,
+                              cost.breakdown.deals,
+                            ][index] ?? 0,
+                          ),
+                          'exact',
+                        )}
+                      </b>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/*
+                The trend, and it is the reason the headline is worth printing:
+                a cost per new customer with no direction is a number nobody can
+                act on. Each month carries its own suppression, so a quiet month
+                is a gap in the row rather than a figure inferred from the two
+                either side of it.
+              */}
+              {trend && trend.length > 0 && (
+                <div className="pd-cost-trend">
+                  <span className="console-label">{copy.trendTitle}</span>
+                  <div className="pd-cost-cols">
+                    {trend.map((month) => {
+                      const value = month.costPerNewCustomerMinor.suppressed
+                        ? null
+                        : month.costPerNewCustomerMinor.value ?? 0;
+                      return (
+                        <span key={month.period} data-on={month.period === cost.period ? 'true' : undefined}>
+                          <b>{value === null ? '—' : money(toEuro(value), 'unit')}</b>
+                          {/* Heights are a share of the *tallest* month, not of
+                              an axis: three bars have no room for one, and the
+                              only reading being offered is which way the line
+                              went. A withheld month draws no bar at all. */}
+                          <i
+                            style={{
+                              height:
+                                value === null || trendMax === 0
+                                  ? '0%'
+                                  : Math.max(8, (value / trendMax) * 100) + '%',
+                            }}
+                          />
+                          <em>{month.period}</em>
+                        </span>
+                      );
+                    })}
                   </div>
-                </>
+                  {/* The peer figure, from `analytics.benchmarksFor` — which
+                      is withheld until enough venues are in the group, so the
+                      line is drawn only when there is one. Never a fallback
+                      number: "the average café pays —" is worse than silence. */}
+                  {benchmark !== null && (
+                    <p className="pd-fine">
+                      {fill(copy.benchmark, { amount: money(benchmark, 'unit') })}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
 
@@ -2156,18 +2918,37 @@ function Customers() {
                   ))}
                 </div>
               )}
-              <p className="pd-fine">{copy.compareNote}</p>
+              {/* The sentence has a hole and it was being printed with the
+                  hole still in it — "Compared with {n} other Kraków cafés".
+                  `venue_count` is on every benchmark row and is the same for
+                  all of them (it is the size of the comparison group), so the
+                  first row answers it. With no benchmarks there is no group and
+                  no sentence to make about one. */}
+              {data.benchmarks && data.benchmarks.length > 0 && (
+                <p className="pd-fine">
+                  {fill(copy.compareNote, {
+                    n: num(data.benchmarks[0].venue_count),
+                  })}
+                </p>
+              )}
             </div>
 
             {/* The roster. Gated twice — by the plan's `identified_profiles`
                 entitlement and by an unrevoked sharing consent per person — and
                 that gap is the whole reason the count beside it is smaller than
                 the customer total. Sixteen invented people used to be here. */}
-            <div className="pd-glass pd-panel" data-solid="true" data-reveal>
+            <div className="pd-glass pd-panel pd-roster" data-solid="true" data-reveal>
               <div className="pd-panel-head">
                 <div>
                   <span className="console-label">{copy.rosterTitle}</span>
-                  <p className="pd-fine">{copy.rosterIntro}</p>
+                  <p className="pd-fine">
+                    {roster
+                      ? fill(copy.rosterIntro, {
+                          n: String(roster.sharedCustomers),
+                          total: num(data.overview.customers.value ?? roster.sharedCustomers),
+                        })
+                      : copy.rosterIntro}
+                  </p>
                 </div>
                 {roster && (
                   <span className="pd-chip">
@@ -2175,6 +2956,7 @@ function Customers() {
                   </span>
                 )}
               </div>
+
               {roster === null ? (
                 <p className="pd-fine">
                   {customersApi.state.status === 'loading'
@@ -2187,34 +2969,114 @@ function Customers() {
               ) : roster.rows.length === 0 ? (
                 <p className="pd-fine">{copy.privacy}</p>
               ) : (
-                <table className="pd-table">
-                  <thead>
-                    <tr>
-                      {copy.rosterColumns.map((label) => (
-                        <th key={label}>{label}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roster.rows.map((row) => (
-                      <tr key={row.userId}>
-                        <td>{row.name}</td>
-                        <td>{money(toEuro(row.spendMinor), 'exact')}</td>
-                        <td>{num(row.visits)}</td>
-                        <td>
-                          {row.daysSince === 0
-                            ? copy.today
-                            : row.daysSince === 1
-                              ? copy.dayAgo
-                              : fill(copy.daysAgo, { n: String(row.daysSince) })}
-                        </td>
-                        <td>{row.status}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                (() => {
+                  /* The four segments, each carrying its own count. The count is
+                     the point: "Regulars 11" tells an owner something before
+                     they have pressed anything, and a bare set of four words
+                     tells them nothing. `everyone` is the absence of a filter
+                     rather than a status, which is why it is not in
+                     `copy.statuses`. */
+                  const kinds = ['regular', 'lapsed', 'new'] as const;
+                  const counts = kinds.map(
+                    (kind) => roster.rows.filter((row) => row.status === kind).length,
+                  );
+                  const shown =
+                    people === 0
+                      ? roster.rows
+                      : roster.rows.filter((row) => row.status === kinds[people - 1]);
+                  /* Bars are a share of the biggest spender on the list, not of
+                     an axis — the column is a ranking, and what it has to show
+                     is the shape of the drop from the top. */
+                  const topSpend = Math.max(...roster.rows.map((row) => row.spendMinor), 1);
+
+                  return (
+                    <>
+                      <div className="pd-seg">
+                        {copy.rosterFilters.map((label, index) => (
+                          <button
+                            key={label}
+                            type="button"
+                            data-on={index === people ? 'true' : undefined}
+                            onClick={() => setPeople(index)}
+                          >
+                            {label}
+                            <i>{index === 0 ? roster.rows.length : counts[index - 1]}</i>
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="pd-table-wrap">
+                        <table className="pd-table pd-table-roster">
+                          <thead>
+                            <tr>
+                              {copy.rosterColumns.map((label, index) => (
+                                <th key={label} data-align={index === 0 ? 'left' : 'right'}>
+                                  {label}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {shown.map((row) => (
+                              <tr key={row.userId}>
+                                <td>
+                                  <span className="pd-person">
+                                    {/* Initials, not a photograph. `avatar` is a
+                                        URL the customer set and this site ships
+                                        no image assets at all — a remote fetch
+                                        per row would be the third-party runtime
+                                        request the whole front end avoids. */}
+                                    <i aria-hidden="true">{initials(row.name)}</i>
+                                    <span>
+                                      <b>{row.name}</b>
+                                      <em>
+                                        <em
+                                          style={{
+                                            width:
+                                              Math.max(
+                                                4,
+                                                (row.spendMinor / topSpend) * 100,
+                                              ) + '%',
+                                          }}
+                                        />
+                                      </em>
+                                    </span>
+                                  </span>
+                                </td>
+                                <td data-align="right">
+                                  <b>{money(toEuro(row.spendMinor), 'exact')}</b>
+                                </td>
+                                <td data-align="right" data-quiet="true">{num(row.visits)}</td>
+                                <td data-align="right" data-quiet="true">
+                                  {row.daysSince === 0
+                                    ? copy.today
+                                    : row.daysSince === 1
+                                      ? copy.dayAgo
+                                      : fill(copy.daysAgo, { n: String(row.daysSince) })}
+                                </td>
+                                <td data-align="right">
+                                  <span className="pd-state-pill" data-person={row.status}>
+                                    {copy.statuses[row.status as keyof typeof copy.statuses] ??
+                                      row.status}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Why this list is shorter than the customer count, and
+                          what happens when somebody changes their mind. It is
+                          the sentence that makes the gap above readable rather
+                          than looking like a bug. */}
+                      <p className="pd-fine">{copy.withdrew}</p>
+                    </>
+                  );
+                })()
               )}
             </div>
+
           </div>
         );
       }}

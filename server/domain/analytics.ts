@@ -22,7 +22,7 @@ import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { median } from './money.ts';
 import { minCohort, minVenues } from './settings.ts';
-import { localMonth, monthStart, nextPeriod, now, plusDays, type Iso } from './time.ts';
+import { localMonth, monthStart, nextPeriod, now, plusDays, prevPeriod, type Iso } from './time.ts';
 import { getVenue } from './venues.ts';
 
 /** What kind of number this is, so the client can label it (§12). */
@@ -596,6 +596,56 @@ export async function costPerNewCustomer(db: Db, venueId: string, window: Window
       'estimated',
     ),
   };
+}
+
+/**
+ * The same figure for the last three months, oldest first.
+ *
+ * The partner's customers screen prints the headline and this trend beside each
+ * other, and the repository's rule is that **a figure shown twice is computed
+ * once** — so this calls `costPerNewCustomer` per month rather than
+ * re-implementing the four-way sum. The prototype it is ported from carried a
+ * separate seed for the trend's last column that disagreed with its own
+ * headline by a few pence; running the same function is what makes that
+ * impossible rather than merely unlikely.
+ *
+ * Each month keeps its own suppression. A venue that won two customers in June
+ * and two hundred in August must not have June's figure revealed by being
+ * averaged into a line, so the entries are `Metric`s and the screen draws a gap
+ * where one is withheld.
+ *
+ * Three because that is what the screen draws, and because a trend needs enough
+ * points to have a direction and few enough to read without axes.
+ */
+export async function costPerNewCustomerTrend(
+  db: Db,
+  venueId: string,
+  window: Window = {},
+  months = 3,
+) {
+  const { period } = await rangeFor(db, venueId, window);
+
+  const periods: string[] = [];
+  for (let back = months - 1; back >= 0; back -= 1) {
+    let p = period;
+    for (let step = 0; step < back; step += 1) p = prevPeriod(p);
+    periods.push(p);
+  }
+
+  return await Promise.all(
+    periods.map(async (p) => {
+      /* `period` overrides the window's own, and `at` is dropped with it:
+         `rangeFor` prefers an explicit period, so passing both would let the
+         clock decide a month the caller has already named. */
+      const month = await costPerNewCustomer(db, venueId, { period: p });
+      return {
+        period: p,
+        costPerNewCustomerMinor: month.costPerNewCustomerMinor,
+        newCustomers: month.newCustomers,
+        spendMinor: month.spendMinor,
+      };
+    }),
+  );
 }
 
 /**

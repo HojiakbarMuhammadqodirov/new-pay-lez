@@ -37,7 +37,19 @@ export interface GuideCategory {
   subcategories: Array<{ id: string; key: string; title?: string }>;
 }
 
-/** One place filed under a subject. */
+/**
+ * One place filed under a subject.
+ *
+ * Most of this was already on the wire and simply undeclared — `rating`,
+ * `review_count`, `price_range` and `subcategories` have been in the select
+ * since the route was written, and the section rendered a name, an address and
+ * a blurb because those were the only fields the *type* admitted existed. A
+ * missing field on an interface is invisible in a way a missing column is not.
+ *
+ * `image_url` is deliberately still absent. The column holds an external URL
+ * and nothing in `src/` makes a third-party runtime request; the card draws the
+ * name's initial on the accent, exactly as the wallet's brands do.
+ */
 export interface GuideService {
   id: string;
   name: string;
@@ -45,7 +57,22 @@ export interface GuideService {
   city: string | null;
   address: string | null;
   phone: string | null;
+  email: string | null;
   description: string | null;
+  /** Out of five. `null` where nobody has rated the place — not a 0. */
+  rating: number | null;
+  review_count: number;
+  /**
+   * The place's own price band, verbatim — "50-150 PLN".
+   *
+   * **Not run through `useMoney`, and that is the rule rather than an
+   * exception.** The site's prices are ours and are written in the reader's
+   * currency; this is what a restaurant in Kraków charges, which is złoty for
+   * everybody who walks in regardless of what language they read the page in.
+   * Converting it would quote somebody a price they cannot pay.
+   */
+  price_range: string | null;
+  subcategories: string[];
   /**
    * Set when the listing is also a Paylez venue — the same place at a later
    * stage of its relationship with us, and the one badge on the card that says
