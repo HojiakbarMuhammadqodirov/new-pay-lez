@@ -33,6 +33,7 @@ import {
   PROFILE_BONUS,
   isProfileComplete,
 } from './users';
+import { DEMO_ACCOUNT, DEMO_MODE } from '../demoMode';
 
 const STORAGE_KEY = 'paylez-session';
 
@@ -176,6 +177,17 @@ function adoptSession(
 }
 
 function persist(account: Account | null): void {
+  /*
+   * The demonstration account is never written down.
+   *
+   * It has no row in the directory, so `stored()` would drop it on the next
+   * load anyway — but leaving it in `paylez-session` means a browser that has
+   * turned the flag off still carries a session blob for somebody who does not
+   * exist, and the next person to read that key has to work out why. It costs
+   * one line to not create the puzzle.
+   */
+  if (account?.id === DEMO_ACCOUNT.id) return;
+
   try {
     if (account) localStorage.setItem(STORAGE_KEY, JSON.stringify(account));
     else localStorage.removeItem(STORAGE_KEY);
@@ -200,7 +212,17 @@ function persist(account: Account | null): void {
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [language] = useLanguage();
-  const [account, setAccount] = useState<Account | null>(stored);
+  /*
+   * Demo mode signs itself in, because otherwise it cannot be looked at: the
+   * dashboard is private, so `?demo=1#/dashboard` on a signed-out browser
+   * resolves to the sign-in form and the flag achieves nothing. A real session
+   * still wins — open the link while signed in and it is *your* account, with
+   * your own venue's figures where the API answers. See `demoMode.ts` for why
+   * this is a browser-only account rather than a row on the server.
+   */
+  const [account, setAccount] = useState<Account | null>(
+    () => stored() ?? (DEMO_MODE ? DEMO_ACCOUNT : null),
+  );
 
   /**
    * Which plan this account is on, as the **server** understands it.

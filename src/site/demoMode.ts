@@ -83,3 +83,45 @@ function read(): boolean {
  * owner's phone, and Node — and only true where somebody typed the query.
  */
 export const DEMO_MODE: boolean = read();
+
+/**
+ * Somebody to be, so the demo does not need a password.
+ *
+ * The dashboard is a private route, so `?demo=1#/dashboard` on a signed-out
+ * browser resolves to the sign-in form and the demo is unreachable without an
+ * account — which is the one thing it was supposed to save you from. The
+ * alternative was minting a real account on the production server, and that is
+ * worse for three reasons that all outlive the afternoon: it puts a row in the
+ * live users table, it puts a password somewhere it has to be remembered, and
+ * it is one more thing to clean up and forget to.
+ *
+ * So this session exists **only in the browser** and only under the flag. It is
+ * never written to `paylez-session`, never added to the directory, and carries
+ * no API token — so every partner call it makes fails exactly as it would for
+ * any account with no venue, which is the path `dashboardDemo.ts` was written
+ * against. Signing out of it, or clearing the flag, simply ends it.
+ *
+ * `type: 'business'` and `business: null` because that is the shape the flag is
+ * about: an owner who has not been through setup. `resolveRoute` lets that
+ * reach the dashboard in demo mode, and only there.
+ */
+export const DEMO_ACCOUNT = {
+  id: 'u_demo_browser',
+  name: 'Demo Owner',
+  email: 'demo@paylez.local',
+  type: 'business' as const,
+  business: null,
+  player: null,
+  profile: {
+    username: 'demo',
+    occupation: 'business' as const,
+    city: 'Kraków',
+    countryCode: 'PL',
+    phone: '',
+    birthDate: '',
+    birthDateChangesLeft: 2,
+    avatar: '',
+  },
+  onboardedAt: '2026-01-01',
+  profileCompletedAt: null,
+};
