@@ -995,6 +995,46 @@ asked about Poland. `SERVER_GAME` is now
 uses. The exclusion is the point: the row whose bank depends on the profile
 cannot be given a constant, because the type no longer has a slot to put one in.
 
+**A round that cannot be got from the server is played here, and a press that
+does nothing is the bug underneath every report of a card "not working".** The
+Play screen had three `.catch(() => setPlaying(null))`es and no error state, so
+an expired token, a 404 and a dead backend all arrived as a card that greyed out
+for a moment and stayed where it was — indistinguishable from a press that never
+registered. Three things came out of that, and the order matters:
+
+- **A server that refuses is now the same sentence as a server that is absent.**
+  `offline()` in `start` is the path this screen has always taken with no API
+  token — the local banks are complete, code-split and in all five languages —
+  and every server branch now falls through to it instead of giving up. That is
+  what fixes the card that worked every *other* press: `client.ts` drops a token
+  the moment the server answers 401, so the first press died in a `.catch` and
+  the second found `hasToken()` false and took the local path.
+- **`startFailed` is the one real dead end**, and it is only ever shown when the
+  server would not answer *and* the bank would not load. `.play-warn` is the
+  field kit's error treatment — weighted, never coloured, because the palette
+  has one accent.
+- **The bank the card asks for has to exist on that server**, and the reason it
+  sometimes did not is one line in `server/main.ts`: the import ran on
+  `venues === 0`, which means "first boot" and was true exactly once. Every quiz
+  bank arrives through that import, so `uzbekistan` — added after most databases
+  were first filled — was never written, and `buildQuiz` 404'd on that one bank
+  while the other four answered perfectly. The gate is now "is any bank the code
+  can ask for empty", which also fixes the next one. `QUIZZES` in
+  `domain/games.ts` is the list both sides read.
+
+**A bank with no rows in your language is a translation gap, not an absent
+game.** `buildQuiz` falls back — the reader's language without the no-repeat
+window first, then English, then English without it — and only then refuses.
+Two real holes sat behind that 404 and neither is fixable from the client: the
+capitals and flags exports carry four of the five languages (`QUIZ_LANGS` has no
+`uk`) and the general export carries no Ukrainian columns at all, so a Ukrainian
+account 404'd on **three of the four quiz cards**; and `languageOf` admits `tr`
+and `az`, which no bank is imported in. `buildWords` takes the window half of
+the same fallback and not the language half — the seeded English list is ten
+words and a round is five, so two rounds emptied it for that player forever,
+while handing an English round to somebody who pressed the card that practises
+the language of the city they moved to would be answering a different question.
+
 **A quiz question with two options is a data bug, and it is upstream.** Flags
 and Capitals sometimes offered two answers instead of four. `pickDistractors` in
 `server/db/import.ts` walked its candidate pool with a fixed stride, and where

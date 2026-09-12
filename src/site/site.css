@@ -13073,6 +13073,30 @@ button {
 }
 
 /*
+ * Why the last press did nothing.
+ *
+ * The row above the cards, and it is the field kit's error treatment rather
+ * than a colour: the palette has one accent, so an error cannot be red — it is
+ * weighted instead, which is louder by contrast than by hue. See `.field-error`
+ * in the forms block, whose weight and colour this is.
+ *
+ * It only ever appears when a round could not be built *at all* — the server
+ * refusing now falls through to the local bank — so it is rare enough to be
+ * worth a whole row and important enough to deserve one.
+ */
+.play-warn {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 0.7rem;
+  background: rgba(var(--panel-rgb), 0.5);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/*
  * ── one card ──
  *
  * A `<button>`, and every part of it is the press. That is what let the Play

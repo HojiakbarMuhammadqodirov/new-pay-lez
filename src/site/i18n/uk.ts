@@ -629,6 +629,7 @@ export const uk: Dictionary = {
     energyNext: '+1 через {time}',
     energyCost: '1 за раунд',
     loading: 'Роздаємо…',
+    startFailed: 'Не вдалося почати раунд. Спробуйте ще раз за мить.',
 
     /* Fixed samples of the kind of question each bank asks — short enough to
        read at preview size. `options[0]` is the right answer everywhere here,

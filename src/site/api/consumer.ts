@@ -250,9 +250,24 @@ export const startRound = (
 ) =>
   call<Round>('/v1/games/sessions', {
     method: 'POST',
+    /*
+     * As the header, not as a body field.
+     *
+     * It was a body field and nothing read it: `call` builds `accept-language`
+     * from `options.language` only, and the route reads `ctx.language`, which is
+     * the account's own setting with the header as its fallback. So the
+     * parameter was dead — a round came back in whatever language the account
+     * was created with, whatever the switcher in the header said, and a player
+     * who had never set one got English.
+     *
+     * Sending it where the server looks fixes the second of those. The first is
+     * the account's stored language winning over the request's, which is
+     * deliberate (§15: content follows the language a person *chose*) and stays
+     * that way — but it is now the only reason the two can disagree.
+     */
+    language,
     body: {
       gameType,
-      ...(language ? { language } : {}),
       ...(practice ? { practice: true } : {}),
       ...(welcome ? { welcome: true } : {}),
     },
