@@ -4,12 +4,19 @@
  * ── why this exists ───────────────────────────────────────────────────────
  *
  * The partner dashboard draws a fortnight of visits, a sparkline on every tile
- * and a period delta beside every figure. The server answers none of those —
- * there is no daily-series endpoint and no previous-period comparison — so on a
- * real venue those panels say "not measured", which is the honest state and is
- * also a screen with nothing on it to look at. `dashboardSeed.ts` holds the
- * reference design's own numbers so the screen can be *seen* and compared
- * against the export it was ported from.
+ * and a period delta beside every figure. The server answers **all** of those
+ * now — `/series`, `/insights` and the previous-period window in
+ * `domain/dashboard.ts` — and this paragraph used to say it answered none of
+ * them, which was true when the switch was written and stopped being true when
+ * the server caught up.
+ *
+ * What is still unanswerable is a request from a browser holding **no venue**,
+ * and that is every browser this switch is opened in: the demo account carries
+ * no token, so `chain()` fails the whole state before any panel is reached and
+ * all seven screens draw "Unmeasured". That is the honest state, and it is also
+ * a screen with nothing on it to look at. `dashboardSeed.ts` holds the reference
+ * design's own numbers so the screen can be *seen* and compared against the
+ * export it was ported from.
  *
  * The problem is who sees them. Shipping `PD_SEED = true` puts a sine-wave
  * fortnight and a "2.4× repeat multiple" in front of twelve real venue owners

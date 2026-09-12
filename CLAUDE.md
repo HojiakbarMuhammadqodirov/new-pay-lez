@@ -35,7 +35,7 @@ a whole:
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 789 checks: it
+There is no test runner. `npm run verify` is the test suite — 942 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, and the rotation accumulator over an hour of
@@ -135,7 +135,7 @@ ever be assignable to the other however identical their public surface.
 
 **Keeping the SQLite driver is deliberate and is what keeps `verify:api`
 honest.** Postgres has no `:memory:`, so a Postgres-only port would have dragged
-all 684 checks onto a live database. They still run offline against a file that
+all 925 checks onto a live database. They still run offline against a file that
 is thrown away.
 
 `node:http` and `node:crypto` otherwise, run straight from TypeScript by Node
@@ -146,7 +146,7 @@ the category defaults and the word bank, and nothing else. There is no venue
 catalogue, no offer and no gift-card shelf on any boot; see "nothing is seeded"
 under Conventions for why, and `bootOrdering` in `server/verify.ts` for the
 guard that keeps it true);
-`npm run verify:api` is its test suite — 684 checks, the counterpart of
+`npm run verify:api` is its test suite — 925 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture
@@ -358,10 +358,30 @@ Two things follow and both are load-bearing:
   the session, which is `user_roles` on the server and nothing this browser can
   write. That is why the console no longer has a sign-in panel of its own — see
   the note under `#/admin` below.
-- **What the server does not model is still local**, and honestly so: the
-  account type and the venue's listing are carried over from an existing local
-  row and left blank when there is none. Somebody signing in on a new device is
-  known to the server and unknown to that browser, which is the true state.
+- **The mirror runs both ways now, and it did not.** What stood here was "what
+  the server does not model is still local" — the account type and the listing
+  carried over from an existing local row and left blank when there was none, on
+  the argument that somebody signing in on a new device is known to the server
+  and unknown to that browser, "which is the true state". It was not the true
+  state, it was a mirror with one direction: the server knew the account type,
+  the listing, the seven profile answers and whether onboarding was done, and
+  none of it was asked for. So an owner was asked "individual or business?" a
+  second time and dropped on the setup form, a returning player was walked
+  through the welcome round again, and the profile page was blank while the
+  server held every answer on it. `auth/mirror.ts` folds those answers into the
+  row; `AuthProvider` does the asking and calls it to decide what each one means
+  for the account it already has. **Everything in that file is pure**, so
+  `npm run verify` owns the rules rather than a browser does.
+- **A picture the server holds is not always a picture this site may draw.**
+  Every image the site makes itself is a `data:` URL, but the Base44 import
+  brought venue logos over as `https://base44.app/…` addresses, and an `<img>`
+  pointed at one is the third-party runtime request this whole front end is built
+  to avoid. `auth/picture.ts` is the one-line judgement, and the handling is the
+  part worth keeping: such a value is **kept and not drawn** — it still counts as
+  answered, because the server says the listing has a logo and a readiness meter
+  calling it missing would be calling the server wrong, and it still round-trips
+  untouched, because a write only ever sends a picture that file approves. The
+  disc shows the initial in its place.
 
 Nothing here is authentication *by itself* — a password typed into the sign-up
 form is still written to `localStorage` in plain text on the way past, and
@@ -949,6 +969,25 @@ which is what `cycles` counts. Collapsing any two of them loses the rule that
 tells them apart, and each of those rules is one a player would otherwise learn
 by being wrong at a counter.
 
+**A venue opens, and it is the one place a player can *act* on one.**
+`venueSheet.tsx` is `GET /v1/venues/:id` behind the wallet's cards. The wallet
+knew a venue only as a name: a deal said who was offering it, a stamp card said
+where the visits counted, and a voucher said nothing at all — the row is a
+`venue_id` and a code. None of them answered the question somebody standing
+outside a café actually has, which is *what do my points get me here*. The sheet
+answers it, and two of its rules are the ones to keep:
+
+- **Every block is conditional on its own field**, the same rule the Relocate
+  card states — a heading over an em dash promises something the row does not
+  hold.
+- **Consent is the player's, on the sheet.** Deciding whether a venue may know
+  who you are belongs next to the thing it is about, not in a settings page two
+  routes away. It is the other press on the sheet besides buying a voucher off
+  the ladder, and it is why this is a sheet rather than a card that expands.
+
+It portals itself out of the wallet's tree, so read the note in `wallet.tsx`
+before moving it.
+
 **The claim button is a disclosure, not a claim, and that is the load-bearing
 change.** `POST /v1/deals/:id/events` accepts `impression` and `open` and nothing
 else: a **claim is written by the gate**, from a confirmed scan at the venue,
@@ -1443,26 +1482,48 @@ bundled, the flag font copied into `public/`), geometry comes from the
   different numbers so a screenshot of the running app can never be mistaken for
   a screenshot of the mock.
 
-- **The dashboard's front end is ahead of the server, deliberately and in a
-  known list.** Every panel below draws from `dashboardDemo.ts` under `?demo=1`
-  and renders the honest "not reported yet" state otherwise. **This is the deploy
-  checklist**: until each endpoint exists, a real venue sees a sentence, not a
-  figure — which is correct, and is also why the screens look emptier on the box
-  than in a screenshot.
+- **The server has caught up with the dashboard, and the deploy checklist is
+  gone.** What stood here was a table of eight panels the front end could draw
+  and the API could not answer — the daily series, the "what we noticed" rows,
+  the KPI deltas, the Remind-them fan-out, the ladder's take-up, the customer
+  tiers, the scan log — under the heading "the front end is ahead of the server,
+  deliberately and in a known list". It is not any more. `domain/dashboard.ts`
+  and the routes beside it answer all of them (`/series`, `/insights`,
+  `/remind`, `/audiences`, `/tiers`, `/customers`, `/scans`, `/counter`), and
+  `verify:api` covers each as its own numbered section.
 
-  | panel | needs |
-  |---|---|
-  | the overview's chart | a daily series; the query already exists inside `…/export`, which emits it as CSV |
-  | the overview's "what we noticed" rows | the assistant composing from measured facts — `copy.overview.insights` is the sentence, `DEMO_INSIGHT_FACTS` the figures |
-  | the KPI deltas | a previous-period comparison |
-  | "money you are holding" → Remind them | an audience query plus a fan-out; **the button writes nothing today** |
-  | the voucher ladder's given-out / used / cost | counts on `vouchers.ladder`; the three fields are optional on `BudgetBody` for exactly this reason |
-  | "money returned" | nothing counts voucher expiries — permanently an em dash |
-  | a customer's tier and spend direction | `tierPct` / `spendTrend`, optional on the row for the same reason |
-  | the scan log | `GET /v1/partner/venues/:id/scans`; the TODO at the head of `dashboardScans.tsx` names every column and the consent join it must not skip |
+  **One row of that table survives and is permanent:** "money returned" is still
+  an em dash, because nothing counts voucher expiries and an unclaimed reward and
+  a budget nobody has spent are the same picture. That is a finding the screen
+  declines to make up, not a gap waiting on an endpoint.
 
-  **No server code changed in this rebuild.** `npm run verify:api` is 684 and
-  the API is untouched; everything above is a front end waiting on one.
+  Two things the old note got right still hold, and both are easy to undo. The
+  optional fields on `BudgetBody` and the campaign row — `issuedCount`,
+  `redeemedCount`, `near`, `available`, `reserved_minor` — **stay optional**, but
+  the reason has changed: the server sends them now, and the `?` is about a site
+  meeting an API that predates it. Absent is still not zero, every reader still
+  branches on `undefined`, and a `?? 0` would print "0 issued" over a venue that
+  has issued hundreds. And a real venue still sees a sentence rather than a
+  figure wherever *its own* data is thin, which is why the screens look emptier
+  on the box than in a screenshot.
+
+- **`dashboardDemo.ts` is a fallback for a browser with no venue, not a stand-in
+  for the API.** That is the other half of the change above, and reading it the
+  old way is how it would get deleted or reached for wrongly. It is consulted
+  **only** under `?demo=1` and **only after the real call has already failed** —
+  which for the demo account is every call, because it carries no token and
+  `chain()` fails the whole state before any panel is reached. A venue with a
+  listing never touches the file; a browser that was not sent `?demo=1` never
+  looks. It is typed against the real response interfaces on purpose, so an
+  endpoint growing a field stops the build rather than quietly rendering a screen
+  the server can no longer produce.
+
+  It is also not the same thing as `npm run demo:seed`, and the two answer
+  different questions: this file is one plausible response per endpoint for
+  *looking at* the screens, and the seed writes a removable café through the
+  domain so the screens can be *tested* against real arithmetic. See
+  `server/demo/README.md` for why seeding that way is allowed where boot seeding
+  is not.
 
 - **Two hues sit outside the palette on this screen, and both are scoped.** The
   rule is one accent on one ground, and `dashboard.acts.endSure` states the
