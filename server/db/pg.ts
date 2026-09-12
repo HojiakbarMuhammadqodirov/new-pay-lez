@@ -438,6 +438,12 @@ export async function migrate(db: PgDb): Promise<void> {
   await add('users', 'profile_completed_at', 'TEXT');
   await add('users', 'username', 'TEXT');
   await add('users', 'username_norm', 'TEXT');
+  /* FIFO's tiebreak. **This list and the one in `db.ts` are one list written
+     twice** — `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already
+     has the table, so a column added only there reaches a fresh Postgres and
+     never an existing one. Adding `seq` to `db.ts` alone shipped an `INSERT`
+     naming a column production did not have, which is every earn there is. */
+  await add('points_lots', 'seq', 'INTEGER NOT NULL DEFAULT 0');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',

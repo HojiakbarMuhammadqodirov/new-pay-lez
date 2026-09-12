@@ -4339,6 +4339,44 @@ function sqliteOnlySql(): void {
     /\browid\b/i.test(stripped(readFileSync(join(here, file), 'utf8'))),
   );
   check('no query orders or filters by `rowid` — Postgres has no such column', offenders.length === 0, offenders);
+
+  /*
+   * The two post-release column lists are one list written twice.
+   *
+   * `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already has the
+   * table, so a column added to `schema.sql` alone reaches a *fresh* database
+   * and never an existing one. Both engines therefore keep an explicit list —
+   * `addColumn` in `db.ts`, `add` in `pg.ts` — and they must carry the same
+   * columns or one engine is missing one.
+   *
+   * `points_lots.seq` was added to `db.ts` only. Every check here passed (they
+   * run on SQLite), and production — Postgres — got an `INSERT` naming a column
+   * it did not have, which is every earn there is: a game win, a scan, a
+   * referral. Caught by a query against the live database, which is far too late
+   * for something two greps can prove.
+   */
+  const columns = (source: string, call: RegExp): Set<string> => {
+    const found = new Set<string>();
+    for (const m of stripped(source).matchAll(call)) found.add(`${m[1]}.${m[2]}`);
+    return found;
+  };
+  const sqlite = columns(
+    readFileSync(join(here, 'db', 'db.ts'), 'utf8'),
+    /addColumn\(\s*db\s*,\s*'([a-z_]+)'\s*,\s*'([a-z_]+)'/g,
+  );
+  const postgres = columns(
+    readFileSync(join(here, 'db', 'pg.ts'), 'utf8'),
+    /\badd\(\s*'([a-z_]+)'\s*,\s*'([a-z_]+)'/g,
+  );
+
+  check('both engines list post-release columns', sqlite.size > 5 && postgres.size > 5, {
+    sqlite: sqlite.size,
+    postgres: postgres.size,
+  });
+  const missingOnPg = [...sqlite].filter((c) => !postgres.has(c));
+  const missingOnSqlite = [...postgres].filter((c) => !sqlite.has(c));
+  check('every column `db.ts` adds, `pg.ts` adds too', missingOnPg.length === 0, missingOnPg);
+  check('…and the other way round', missingOnSqlite.length === 0, missingOnSqlite);
 }
 
 async function bootOrdering(): Promise<void> {
