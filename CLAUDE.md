@@ -527,7 +527,11 @@ the whole of the difference.
 **The brand is the word, and the word is `900 21px/1 Onest`.** That is the app's
 own declaration, carried over exactly: `--font-brand` / `--brand-size` in
 `site.css`, and `.brand` is the class every one of them uses — header, footer,
-dashboard rail, admin console, and the intro. There is **no tile beside it**.
+dashboard rail and admin console. The intro is the one surface that does not,
+and cannot: it draws the word into a canvas, where a custom property is
+invisible, so `FACE` in `PaylezIntro.tsx` restates the same family and fallbacks
+the way `THEMES` restates the palette. Those two are the only copies.
+There is **no tile beside it**.
 The square logo files are still in `public/logo/` behind the `--logo` token, but
 no chrome shows them: the product has never put a mark next to the name, and a
 30px square of art beside six letters was the one place the site and the app
@@ -578,7 +582,8 @@ canvas and a mint headline for a button to belong to. The note on `--solid` in
 `src/site/CLAUDE.md` carries the contrast this costs and why it is taken.
 
 **Constants live in config files, not inline.** Every tunable for the globe is
-in `GlobeHero/config.ts`; the intro's timings are in `PaylezIntro/config.ts`;
+in `GlobeHero/config.ts`; the intro's whole sequence is in
+`PaylezIntro/config.ts`;
 the node web's density, link radius and alphas are in `site/network/config.ts`;
 the candle tape's scroll speed, band, wick spread, tick size and venue density are in
 `site/market/config.ts`. If you find yourself typing a magic number into a component, it probably
@@ -1180,6 +1185,46 @@ asked about Poland. `SERVER_GAME` is now
 `serverGame()` through the same `quizBankFor` everything else on that screen
 uses. The exclusion is the point: the row whose bank depends on the profile
 cannot be given a constant, because the type no longer has a slot to put one in.
+
+**A round that cannot be got from the server is played here, and a press that
+does nothing is the bug underneath every report of a card "not working".** The
+Play screen had three `.catch(() => setPlaying(null))`es and no error state, so
+an expired token, a 404 and a dead backend all arrived as a card that greyed out
+for a moment and stayed where it was — indistinguishable from a press that never
+registered. Three things came out of that, and the order matters:
+
+- **A server that refuses is now the same sentence as a server that is absent.**
+  `offline()` in `start` is the path this screen has always taken with no API
+  token — the local banks are complete, code-split and in all five languages —
+  and every server branch now falls through to it instead of giving up. That is
+  what fixes the card that worked every *other* press: `client.ts` drops a token
+  the moment the server answers 401, so the first press died in a `.catch` and
+  the second found `hasToken()` false and took the local path.
+- **`startFailed` is the one real dead end**, and it is only ever shown when the
+  server would not answer *and* the bank would not load. `.play-warn` is the
+  field kit's error treatment — weighted, never coloured, because the palette
+  has one accent.
+- **The bank the card asks for has to exist on that server**, and the reason it
+  sometimes did not is one line in `server/main.ts`: the import ran on
+  `venues === 0`, which means "first boot" and was true exactly once. Every quiz
+  bank arrives through that import, so `uzbekistan` — added after most databases
+  were first filled — was never written, and `buildQuiz` 404'd on that one bank
+  while the other four answered perfectly. The gate is now "is any bank the code
+  can ask for empty", which also fixes the next one. `QUIZZES` in
+  `domain/games.ts` is the list both sides read.
+
+**A bank with no rows in your language is a translation gap, not an absent
+game.** `buildQuiz` falls back — the reader's language without the no-repeat
+window first, then English, then English without it — and only then refuses.
+Two real holes sat behind that 404 and neither is fixable from the client: the
+capitals and flags exports carry four of the five languages (`QUIZ_LANGS` has no
+`uk`) and the general export carries no Ukrainian columns at all, so a Ukrainian
+account 404'd on **three of the four quiz cards**; and `languageOf` admits `tr`
+and `az`, which no bank is imported in. `buildWords` takes the window half of
+the same fallback and not the language half — the seeded English list is ten
+words and a round is five, so two rounds emptied it for that player forever,
+while handing an English round to somebody who pressed the card that practises
+the language of the city they moved to would be answering a different question.
 
 **A quiz question with two options is a data bug, and it is upstream.** Flags
 and Capitals sometimes offered two answers instead of four. `pickDistractors` in
@@ -1876,6 +1921,81 @@ bundled, the flag font copied into `public/`), geometry comes from the
   page's promise in the one grammar nobody has to be taught, which is *more*
   use to a visitor who has not signed up than to a player who has. The arcade
   trail went with the split.
+- **The cold-open is the app icon opening into the name.** `public/logo/logo-dark.jpg`
+  is a lowercase **p** in the accent on near-black — the mark on a phone's home
+  screen, and also exactly the first letter of the wordmark. So `PaylezIntro` is
+  a dark engraved surface with one light crossing it: the light finds the p, the
+  p holds for a beat, then it travels into its place in the lockup and shrinks to
+  type size while the light carries on and uncovers `aylez` behind it. Three
+  seconds, canvas 2D — not WebGL, because this renders *over* the landing page
+  and the landing page already spends the document's one WebGL context on the
+  globe.
+
+  **This is not the tile coming back.** There is still no mark *beside* the
+  wordmark; the header, the footer and the dashboard rail have never had one, and
+  the first version of this screen opened on a square tile next to the name and
+  was introducing a lockup the product does not use. The distinction is that this
+  mark is never beside the name — it **is** the name's first letter, from the
+  same face at the same weight, and it ends up sitting *in* the word. The final
+  frame is the wordmark and nothing else.
+
+  Six versions preceded it and two are worth naming so nobody builds them again.
+  **Three seconds of particles gathering into the word** was the most work of the
+  lot and the worst result: a particle field assembling into type is a *tech
+  demo*, and a tech demo in front of a payments product reads as a studio showing
+  off rather than as a brand arriving. **Six letters rising out of focus** is the
+  other — a list of events rather than a gesture.
+
+  Seven rules travel with it:
+
+  - **Nothing is loading, so nothing may claim to measure a load.** The bundle
+    finished before the first frame. The hairline under the word is an underline
+    arriving with the name, not a meter. The one thing that *does* deplete is the
+    rule under the Skip, and that is honest precisely because it measures this
+    sequence's own length — a real number `config.ts` owns.
+  - **A skippable sequence is one you can actually skip.** The Skip used to
+    appear with the hairline, two thirds of the way through a 1.9-second screen,
+    which left about a second to notice a control in the corner, move to it and
+    press it. It arrives at 400ms now and is pressable for ~2.5s, and
+    `npm run verify` holds that floor.
+  - **`markHome` is measured, not guessed.** It is the p at the *word's* size and
+    the word's own origin — which, because p is the first glyph, is exactly where
+    `fillText('paylez')` puts its p. The travelling mark therefore lands on the
+    word's own first letter to the pixel, and the hand-off is a crossfade with
+    nothing to reconcile.
+  - **The word is a high-water mark, and that is what makes the pointer safe.**
+    The light is a blend of the scripted path and the cursor, so a hand sweeping
+    right and then left would *un-write* the wordmark. Tracking the furthest the
+    light has ever reached means a lit letter stays lit, and with nothing left to
+    protect the pointer can have the light from the first frame.
+  - **The site is uncovered *while* the screen is leaving.** `onComplete` fires
+    at `exit.delay`, not at the end. This ground is `--bg`, the *page's* ground,
+    so an overlay fading off a page still hidden behind `data-intro='running'`
+    fades onto a rectangle of the colour it just removed.
+  - **The engraving stops where the brand is.** Everything is composited
+    additively on black, so nothing occludes anything — a lattice drawn over the
+    letters read as graph paper laid on the brand rather than as the surface it
+    is cut into. The ticks fade toward the ink box rather than clipping at it.
+  - **The light's reach has a ceiling in pixels.** Its radius is a fraction of
+    the viewport diagonal, which is the right look and the wrong cost curve: the
+    pool is alpha-composited every frame, so its price is the *square* of the
+    radius, and uncapped at 1920×1080 on a 2× display it measured 18ms a frame
+    against `StubDrift`'s 7ms. See `light.maxRadius` and `lattice.maxSpan`.
+
+  Two construction traps, both of which cost a debugging session:
+
+  - **`onComplete` is read through a ref.** The caller passes an inline arrow, so
+    it is a new function on every render of the page shell — and the shell
+    re-renders during the intro for ordinary reasons. Depending on it put
+    `reveal` and `finish` in the draw effect's dependency array, which tore the
+    effect down and ran it again *mid-sequence*: the clock back to -1, the light
+    back to the left edge, the reveal back to nothing. The symptom was a screen
+    that never got as far as the wordmark.
+  - **`document.fonts.load` is wrapped in `try`.** It is specified to reject on a
+    font it cannot parse, but engines have thrown synchronously — and a throw
+    escapes the promise executor and rejects the promise the whole sequence hangs
+    off, which is a permanently black page rather than a worse-looking intro.
+
 - **A reused globe still needs its scroll anchor.** `scrollTransition` is off only
   for sign-in, which is one screenful with nothing under it. Any other page that
   takes the globe has content below the fold, and a globe held in the hero pose
@@ -1886,7 +2006,13 @@ bundled, the flag font copied into `public/`), geometry comes from the
   `resolveLayout` sizes the globe by moving the camera, not by scaling the mesh
   or the canvas — that is what keeps arc altitude, ribbon width and border
   offset in world units across both poses. So `.site__globe` and `.site__web`
-  get `position`, `inset`, `z-index` and `pointer-events`, and **nothing else**.
+  get `position`, `inset`, `z-index` and `pointer-events` — plus `width` and
+  `height` at 100%, which is not a size *opinion* but a size *fix*: a `<canvas>`
+  is a replaced element, and an absolutely positioned replaced element with
+  `width: auto` takes its **intrinsic** size (the backing store) rather than
+  filling its offsets, so `inset: 0` alone gives a 2× display a CSS box twice
+  the viewport and draws the whole picture at double scale off the bottom-right
+  corner. Nothing else.
 
   The two ways to break that are a fixed `height`/`width` on the canvas, and a
   `display: none` on a backdrop at some breakpoint. The first overwrites every

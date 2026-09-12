@@ -1029,6 +1029,9 @@ export const en = {
     energyCost: '1 per round',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
+    /* Only ever shown when the server would not answer *and* the local
+       bank would not load — everything short of that now opens a round. */
+    startFailed: 'That round would not start. Try again in a moment.',
 
     /*
      * ── the card previews ──

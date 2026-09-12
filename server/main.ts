@@ -1,9 +1,11 @@
 /**
  * The entry point: open the database, migrate, seed, import if empty, serve.
  *
- * The import runs only when the database has no venues, so `npm run server` on a
- * fresh clone comes up with the old data in it and a restart does not do it
- * again. `--reimport` forces it; `--import-only` does it and exits.
+ * The import runs when the database has no venues *or* when a question bank the
+ * code can ask for is empty, so `npm run server` on a fresh clone comes up with
+ * the old data in it, a restart does not do it again, and a bank added after
+ * this database was first filled is not left out forever. `--reimport` forces
+ * it; `--import-only` does it and exits.
  *
  * **Nothing else writes a venue, a deal or a voucher at boot.** There was a
  * demonstration set — seven invented Kraków and Warsaw cafés with deals,
@@ -20,6 +22,7 @@ import { openDb, type Db } from './db/db.ts';
 import { openDb as openPgDb } from './db/pg.ts';
 import { importLegacy } from './db/import.ts';
 import { provisionAdmin } from './domain/accounts.ts';
+import { QUIZZES } from './domain/games.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { createApi } from './http/server.ts';
 import { allRoutes } from './http/routes/index.ts';
@@ -70,7 +73,34 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
   await seedPlatform(db);
 
   const venues = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`))?.n ?? 0;
-  if (options.reimport || venues === 0) {
+
+  /*
+   * **A bank that was added after this database was first filled.**
+   *
+   * The import used to run on `venues === 0` alone, which reads as "this is a
+   * fresh database" and was true exactly once. Every quiz bank arrives *through*
+   * that import, so a bank added to the code later — `uzbekistan` was — lands on
+   * a box whose venues table has had a row in it since before the feature
+   * existed, and is therefore never imported. `buildQuiz` then 404s on that one
+   * bank while the other four answer perfectly, which is a card that is dead for
+   * everybody whose profile points at it and fine for everybody else: the
+   * hardest shape of bug to be told about, and the one this was reported as.
+   *
+   * So the gate is "is anything the code can ask for missing" rather than "is
+   * this the first boot". It is cheap (one grouped count), it is idempotent
+   * (the import writes with `INSERT OR REPLACE` on stable ids), and it fixes the
+   * next bank as well as this one.
+   */
+  const banked = await db.all<{ bank: string }>(
+    `SELECT bank FROM quiz_items GROUP BY bank HAVING COUNT(*) > 0`,
+  );
+  const present = new Set(banked.map((row) => row.bank));
+  const missing = [...QUIZZES].filter((bank) => !present.has(bank));
+
+  if (options.reimport || venues === 0 || missing.length > 0) {
+    if (!options.quiet && missing.length > 0 && venues > 0) {
+      console.log(`re-importing: empty question bank(s) ${missing.join(', ')}`);
+    }
     const summary = await db.tx(async () =>
       await importLegacy(db, options.legacyDir ?? 'new-data', options.gamesDir ?? 'updates'),
     );

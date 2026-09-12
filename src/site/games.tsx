@@ -1154,6 +1154,22 @@ export function GamesApp() {
   const [playing, setPlaying] = useState<GameId | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
+  /*
+   * Why a press did nothing.
+   *
+   * There was no such state, and three `.catch(() => setPlaying(null))`es
+   * between them made every way a round can fail to start look identical to a
+   * press that never registered: no message, no console line, and `loading`
+   * greying out all eight cards for the length of the attempt. That is the
+   * whole of the "it works sometimes" this screen was reported for — an expired
+   * token, a bank the server has never imported and a dead backend all arrived
+   * as a card that flickered and stayed where it was.
+   *
+   * It is only ever set once the *offline* round has failed too, because a
+   * server that will not answer is no longer a reason not to play — see
+   * `offline` in `start`.
+   */
+  const [startError, setStartError] = useState<string | null>(null);
   /* The server round in flight, or null for a locally built one. */
   const [session, setSession] = useState<string | null>(null);
   /* What the server sent with that session — the words, the board size, the
@@ -1335,9 +1351,83 @@ export function GamesApp() {
        a few lines later is how one of them ends up asking for the other kind. */
     const practice = energy <= 0;
 
+    setStartError(null);
     setResult(null);
     setSession(null);
     setContent(null);
+
+    /**
+     * The same round, built here, with nothing on the other end.
+     *
+     * **This is not a new path.** It is the one this screen has always taken
+     * when there is no API token — the local banks are the whole 196-row flag
+     * set, the 196 capitals, the 2,102-question general bank and both
+     * hundred-question local banks, code-split and complete in all five
+     * languages. What is new is *when* it is taken.
+     *
+     * A server that **refuses** a round was a dead end and a server that is
+     * **absent** was an ordinary Tuesday, and that is backwards. An expired
+     * token, a bank this particular server has never imported, and a 500 are
+     * all the same sentence — "no round from over there" — and the player's
+     * answer to all three is the round they pressed for. The local one is
+     * unranked and pays into the local mirror, which is the honest treatment of
+     * a round nobody can verify and is exactly what the no-token path has
+     * always done.
+     *
+     * It owns `loading` from the moment it is called, which is why the server
+     * branches below hand over rather than keeping a `.finally`: one firing
+     * after this had already raised the flag would grey the cards out and then
+     * un-grey them with a 220 kB bank still in flight.
+     */
+    const offline = () => {
+      /* The four that build their own round need nothing from here. */
+      if (chosen.kind !== 'text' && chosen.kind !== 'flag' && chosen.kind !== 'capital') {
+        setQuestions([]);
+        setPlaying(id);
+        setLoading(false);
+        return;
+      }
+
+      /* Leave the round *before* the build starts, not when it lands.
+         "Again" arrives here with `playing` and `questions` still set from the
+         round that just finished, and a bank is up to 389 kB — so a round view
+         kept alive across the fetch is a live clock over the previous round's
+         questions, answered and scored, with the prompts swapping underneath the
+         player at whatever index they had reached when the bank arrived. The
+         cards, whose buttons already read "Loading…", are the honest screen for
+         those few hundred milliseconds. */
+      setPlaying(null);
+      setLoading(true);
+
+      const build =
+        chosen.kind === 'text'
+          ? buildQuizRound(
+              chosen.id === 'brain' ? 'general' : quizBankFor(account?.profile?.countryCode),
+              language,
+              chosen.questions,
+            )
+          : chosen.kind === 'flag'
+            ? buildFlagRound(language, chosen.questions, games.whichCountry)
+            : buildCapitalRound(language, chosen.questions, (country) =>
+                fill(games.whichCapital, { country }),
+              );
+
+      build
+        .then((built) => {
+          setQuestions(built);
+          setPlaying(id);
+        })
+        .catch(() => {
+          /* The one real dead end, and now the only one: the server would not
+             answer *and* the bank would not load. Staying on the cards is still
+             right — an empty round is a worse screen than none — but leaving
+             without a word is what made every other failure look like a press
+             that had not registered. */
+          setPlaying(null);
+          setStartError(games.startFailed);
+        })
+        .finally(() => setLoading(false));
+    };
 
     /*
      * The three that are not quizzes each open a session and then play it their
@@ -1359,16 +1449,9 @@ export function GamesApp() {
           setSession(round.sessionId);
           setContent(round.content);
           setPlaying(id);
+          setLoading(false);
         })
-        .catch(() => setPlaying(null))
-        .finally(() => setLoading(false));
-      return;
-    }
-
-    /* The rest that build their own round need nothing from here. */
-    if (chosen.kind !== 'text' && chosen.kind !== 'flag' && chosen.kind !== 'capital') {
-      setQuestions([]);
-      setPlaying(id);
+        .catch(offline);
       return;
     }
 
@@ -1412,47 +1495,26 @@ export function GamesApp() {
             })),
           );
           setPlaying(id);
+          setLoading(false);
         })
-        .catch(() => setPlaying(null))
-        .finally(() => setLoading(false));
+        /*
+         * **The fix for the card that works every other press.**
+         *
+         * `client.ts` drops a token the moment the server answers 401, so a
+         * stale session made the *first* press a silent nothing — this `.catch`
+         * used to end the story — and the *second* press work, because
+         * `hasToken()` was false by then and the local bank took over. The
+         * local quiz is a 404 away from the same thing on any server whose
+         * `quiz_items` never got the Uzbekistan import, where only that one
+         * card is dead while the other seven are fine.
+         *
+         * Both are now one press and one round.
+         */
+        .catch(offline);
       return;
     }
 
-    /* Leave the round *before* the build starts, not when it lands.
-       "Again" arrives here with `playing` and `questions` still set from the
-       round that just finished, and a bank is up to 389 kB — so a round view
-       kept alive across the fetch is a live clock over the previous round's
-       questions, answered and scored, with the prompts swapping underneath the
-       player at whatever index they had reached when the bank arrived. The
-       cards, whose buttons already read "Loading…", are the honest screen for
-       those few hundred milliseconds. */
-    setPlaying(null);
-
-    setLoading(true);
-    const build =
-      chosen.kind === 'text'
-        ? buildQuizRound(
-            chosen.id === 'brain' ? 'general' : quizBankFor(account?.profile?.countryCode),
-            language,
-            chosen.questions,
-          )
-        : chosen.kind === 'flag'
-          ? buildFlagRound(language, chosen.questions, games.whichCountry)
-          : buildCapitalRound(language, chosen.questions, (country) =>
-              fill(games.whichCapital, { country }),
-            );
-
-    build
-      .then((built) => {
-        setQuestions(built);
-        setPlaying(id);
-      })
-      .catch(() => {
-        /* A bank that will not load is the one failure with no good screen: the
-           honest thing is to stay on the cards rather than open an empty round. */
-        setPlaying(null);
-      })
-      .finally(() => setLoading(false));
+    offline();
   };
 
   /**
@@ -2064,6 +2126,20 @@ export function GamesApp() {
               different hovers the last time they were written out separately.
             */
             <div className="play-catalogue">
+              {/*
+                Why the last press did nothing.
+
+                Inside the catalogue rather than above it so it sits with the
+                cards it is about, and `role="status"` so a screen reader is
+                told — the failure it reports is one whose only other symptom is
+                that nothing visibly happened. It clears itself on the next
+                press, which is the only thing that can change the answer.
+              */}
+              {startError && (
+                <p className="play-warn" role="status">
+                  {startError}
+                </p>
+              )}
               {GAMES.map((entry, index) => {
                 const featured = index === FEATURED;
                 return (

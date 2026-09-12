@@ -641,51 +641,205 @@ console.log('\nintro — brand sequence');
   const t = INTRO_TIMING;
 
   /*
-   * The sequence is one gesture now, not three: the letters arrive staggered, a
-   * rule draws itself underneath, and the whole lockup eases down from a hair
-   * oversize. There is no mark and no loading bar, so what is checked changed
-   * with them — what has not is that every stage lands before the fade, and that
-   * the fade lands exactly on `duration`, which is when the timer in
-   * `PaylezIntro` fires `onComplete`. A stage that overran it would leave the
-   * site visible underneath a half-finished animation.
+   * Six versions of this screen have shared these checks, because none of them
+   * is about the picture. They are about the sequence being a sequence: the
+   * parts overlapping rather than queueing, the exit landing exactly where the
+   * timer expects it, the Skip being reachable, and the light's own geometry
+   * staying coherent.
    */
-  const lastLetter =
-    t.letterIn.delay + (t.letters - 1) * t.letterIn.stagger + t.letterIn.duration;
 
-  const stages: Array<[string, { delay: number; duration: number }]> = [
-    ['ruleIn', t.ruleIn],
-    ['settle', t.settle],
-    ['outro', t.outro],
-  ];
+  const arrives = t.light.arrive.delay + t.light.arrive.duration;
+  const unfolds = t.unfold.delay + t.unfold.duration;
+  const ruleEnds = t.rule.delay + t.rule.duration;
 
   check(
     'every stage fits inside the run time',
-    stages.every(([, stage]) => stage.delay + stage.duration <= t.duration),
+    unfolds <= t.duration &&
+      ruleEnds <= t.duration &&
+      t.exit.delay + t.exit.duration <= t.duration,
     `duration ${t.duration}ms`,
   );
+  /* The light lands on the mark and *waits* there. Without the beat the p is
+     uncovered and abandoned inside one gesture, and it reads as a letter the
+     sweep happened to pass rather than as the thing the screen is about. */
   check(
-    'the last letter lands before the fade',
-    lastLetter <= t.outro.delay,
-    `last letter ${lastLetter}ms, fade starts ${t.outro.delay}ms`,
-  );
-  // The rule has to start while letters are still arriving, or it reads as a
-  // second event rather than as part of the word being written.
-  check(
-    'the rule starts before the word finishes',
-    t.ruleIn.delay < lastLetter,
-    `rule ${t.ruleIn.delay}ms, word ends ${lastLetter}ms`,
+    'the mark is held before it unfolds',
+    t.unfold.delay > arrives,
+    `lands ${arrives}ms, unfolds ${t.unfold.delay}ms — a ${t.unfold.delay - arrives}ms beat`,
   );
   check(
-    'the rule finishes drawing before the fade',
-    t.ruleIn.delay + t.ruleIn.duration <= t.outro.delay,
-    `rule ends ${t.ruleIn.delay + t.ruleIn.duration}ms, fade starts ${t.outro.delay}ms`,
+    'the word finishes unfolding before the screen leaves',
+    unfolds <= t.exit.delay,
+    `unfold ends ${unfolds}ms, exit at ${t.exit.delay}ms`,
+  );
+  /* The hairline has to start while the p is still travelling, or it reads as a
+     flourish after the word rather than as part of one gesture. */
+  check(
+    'the rule starts before the unfold finishes',
+    t.rule.delay < unfolds,
+    `rule ${t.rule.delay}ms, unfold ends ${unfolds}ms`,
   );
   check(
-    'the fade completes exactly at the end',
-    t.outro.delay + t.outro.duration === t.duration,
-    `${t.outro.delay + t.outro.duration}ms vs ${t.duration}ms`,
+    'the rule finishes drawing before the screen leaves',
+    ruleEnds <= t.exit.delay,
+    `rule ends ${ruleEnds}ms, exit at ${t.exit.delay}ms`,
   );
-  check('intro stays under three seconds', t.duration <= 3000, `${t.duration}ms`);
+  /* The travelling p hands off to the word's own first letter, so the fade has
+     to sit *inside* the unfold — by its end the two glyphs are identical and in
+     the same place, which is the only moment a crossfade is invisible. */
+  check(
+    'the mark hands off inside the unfold',
+    t.markFade > 0 && t.markFade < t.unfold.duration,
+    `${t.markFade}ms of a ${t.unfold.duration}ms unfold`,
+  );
+  check(
+    'the exit completes exactly at the end',
+    t.exit.delay + t.exit.duration === t.duration,
+    `${t.exit.delay + t.exit.duration}ms vs ${t.duration}ms`,
+  );
+  /*
+   * The site is uncovered **as** the screen leaves, not after it. This ground is
+   * the page's ground, so an overlay fading off a page still hidden behind
+   * `data-intro='running'` fades onto a rectangle of the colour it just removed.
+   */
+  check(
+    'the site is uncovered while the screen is still leaving',
+    t.exit.delay < t.duration,
+    `revealed at ${t.exit.delay}ms, overlay gone at ${t.duration}ms`,
+  );
+
+  /* ── the Skip has to be reachable ────────────────────────────────────────── */
+
+  /*
+   * **This is the check that exists because the screen failed it.** The Skip
+   * used to appear with the hairline, two thirds of the way through a
+   * 1.9-second sequence, which left about a second to notice a control in the
+   * corner, move to it and press it — and in practice that is not enough. A
+   * skippable sequence is one you can actually skip.
+   */
+  const reachable = t.duration - t.skip.delay;
+  check(
+    'the Skip is on screen long enough to press',
+    reachable >= 2000,
+    `visible from ${t.skip.delay}ms, ${reachable}ms of screen time`,
+  );
+  check(
+    'the Skip does not precede the thing it skips',
+    t.skip.delay >= t.light.arrive.delay,
+    `skip ${t.skip.delay}ms, light enters ${t.light.arrive.delay}ms`,
+  );
+  /* …and the whole thing still has to be short. A brand screen is a courtesy
+     the visitor did not ask for. */
+  check('intro stays under three and a half seconds', t.duration <= 3500, `${t.duration}ms`);
+  /* The wait for the brand face is dead time *before* `duration`, not inside it,
+     so on a cold cache it is time a visitor spends on this screen too. */
+  check(
+    'the wait for the face cannot outlast the sequence',
+    t.fontWait < t.duration,
+    `${t.fontWait}ms wait, ${t.duration}ms sequence`,
+  );
+
+  /* ── the light's geometry ────────────────────────────────────────────────── */
+
+  /* It enters and leaves outside the frame. A light that appears at the left
+     edge and stops at the right is a thing being switched on and off. */
+  check(
+    'the light crosses from off-screen to off-screen',
+    t.light.from < 0 && t.light.to > 1,
+    `${t.light.from} → ${t.light.to} of the viewport width`,
+  );
+  /*
+   * The pool is alpha-composited over the destination every frame, so its price
+   * is the *square* of the radius. Uncapped, `0.3` of a 1920×1080 diagonal on a
+   * 2× display is seven megapixels of blending a frame and measured 18ms
+   * against `StubDrift`'s 7ms on the same screen; the cap brought it to 12.
+   */
+  check(
+    'the light has a ceiling on its reach',
+    t.light.maxRadius > 0 && t.light.maxRadius < 1000,
+    `${t.light.radius} of the diagonal, capped at ${t.light.maxRadius}px`,
+  );
+  /* The node count goes as the square of the radius too, so the cell widens on a
+     large screen rather than the lattice multiplying. */
+  check(
+    'the lattice is bounded by node count, not by pitch',
+    t.lattice.maxSpan > 0 && t.lattice.maxSpan <= 80,
+    `at most ${t.lattice.maxSpan} nodes across`,
+  );
+  /* The pointer moves the light toward itself, never *to* itself: at a pull of
+     1 a cursor in a corner takes the light off the lockup entirely, and the
+     brand screen goes dark while somebody is looking at it. */
+  check(
+    'the pointer pulls the light without owning it',
+    t.light.pull > 0 && t.light.pull < 1,
+    `pull ${t.light.pull}`,
+  );
+  /* The easing is a lerp factor, so it has to stay inside 0..1 or the light
+     overshoots its target every frame and oscillates. */
+  check(
+    'the light has weight and does not snap',
+    t.light.follow > 0 && t.light.follow < 0.5,
+    `follow ${t.light.follow} per frame`,
+  );
+
+  /* ── the lockup ──────────────────────────────────────────────────────────── */
+
+  /* The mark has to be unmistakably bigger than the type it becomes, or the
+     unfold is a letter nudging sideways rather than an icon opening. */
+  check(
+    'the mark stands well above type size',
+    t.markScale >= 2,
+    `${t.markScale}× the wordmark`,
+  );
+  /* The word gains something when the specular arrives. Already at full
+     strength, there is nothing for the glint to add and it stops reading as
+     light falling on a surface. */
+  check(
+    'the word has headroom for the glint',
+    t.word.base > 0 && t.word.base < 1,
+    `base ${t.word.base}`,
+  );
+  /*
+   * Both grounds, because they are two sets of values rather than one with a
+   * switch on it — and `ink` is the easy half to leave behind, being the theme
+   * the author is not looking at. The pool is the one that has to differ: the
+   * same soft disc that is a glow on black is a pale cloud on near-white, with
+   * the wordmark floating in the middle of it.
+   */
+  check(
+    'paper takes a fraction of the pool',
+    t.tone.ink.pool < t.tone.glow.pool / 2,
+    `glow ${t.tone.glow.pool}, ink ${t.tone.ink.pool}`,
+  );
+  /* …and gets it back in the engraving, which is a mark rather than a glow and
+     reads perfectly well on white. */
+  check(
+    'paper gets the strength back in the engraving',
+    t.tone.ink.lattice > t.tone.glow.lattice,
+    `glow ${t.tone.glow.lattice}, ink ${t.tone.ink.lattice}`,
+  );
+  /* There is no headroom above white, so a specular on paper can only ever land
+     the letter on solid accent — never past it. */
+  check(
+    'the specular cannot overshoot on paper',
+    t.tone.ink.spark + t.word.base <= 1.2 && t.tone.ink.spark < t.tone.glow.spark,
+    `ink ${t.word.base} + ${t.tone.ink.spark}`,
+  );
+  /* One bucket is a flat disc and two is a poster; the alpha range is wide
+     enough that the banding shows below about six. */
+  check(
+    'enough distance buckets to hide the banding',
+    t.lattice.buckets >= 6,
+    `${t.lattice.buckets} buckets`,
+  );
+  /* The parallax is a fraction of the pointer's offset from centre. Past a few
+     percent the lattice slides further than the light does and the surface
+     stops reading as something the light is moving over. */
+  check(
+    'the parallax is a hint rather than a slide',
+    t.lattice.parallax > 0 && t.lattice.parallax <= 0.08,
+    `${t.lattice.parallax} of the pointer offset`,
+  );
 }
 
 console.log('\nrotation');

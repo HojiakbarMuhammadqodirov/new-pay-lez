@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GlobeHero } from '../components/GlobeHero';
-import { PaylezIntro } from '../components/PaylezIntro';
+import { SquawkIntro } from '../components/SquawkIntro';
 import { AdminPage } from './admin';
 import { ErrorBoundary } from './ErrorBoundary';
 import { AnalyticsPage } from './analytics';
@@ -211,17 +211,27 @@ function SiteContent() {
 
           `oncePerSession` is load-bearing rather than a nicety: the dashboard
           and the console return early above, which *unmounts* this, and a
-          remount with the default would replay the whole 2.8s cold-open over
-          the landing page every time an owner clicked "Back to site" — with
+          remount with the default would replay the cold-open over the landing
+          page every time an owner clicked "Back to site" — with
           `introDone` still true, so the wrapper would claim the intro was done
           while a fixed, full-viewport overlay covered the page. The component
           keeps the flag in `sessionStorage`, which is exactly what survives an
           unmount and not a new tab. */}
-      <PaylezIntro
+      <SquawkIntro
         oncePerSession
         onComplete={() => setIntroDone(true)}
         primaryColor={palette.primary}
         backgroundColor={palette.background}
+        /* The parrot's beak and feet are the ink that pairs with an accent
+           fill, and the note's rule and `$` are knocked out in the page's own
+           ground — so this screen needs the third token the old one did not. */
+        onPrimaryColor={palette.onPrimary}
+        /* The sequence is a light on a dark surface, so it composites like
+           every other canvas here: added on near-black, laid over on paper.
+           Without this it would be `'glow'` on a light page, which has no
+           headroom above white — the same reason `tone: 'ink'` forces the
+           globe's bloom off. */
+        tone={palette.tone}
       />
 
       {/*

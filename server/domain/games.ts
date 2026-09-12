@@ -70,7 +70,13 @@ export { GAME_TYPES };
  * selects on `quiz_items.bank` and the bank name *is* the game type. They score
  * by exactly the same rules; nothing downstream distinguishes them.
  */
-const QUIZZES = new Set<GameType>(['flags', 'capitals', 'brain', 'poland', 'uzbekistan']);
+export const QUIZZES = new Set<GameType>([
+  'flags',
+  'capitals',
+  'brain',
+  'poland',
+  'uzbekistan',
+]);
 
 /**
  * The flags the **welcome** round may ask, by ISO code.
@@ -462,16 +468,45 @@ async function buildQuiz(
   }
   const poolClause = easy ? ` AND q.prompt IN ('${easy.join("','")}')` : '';
 
-  const rows = await db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
-    `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
-      WHERE q.bank = $b AND q.language = $l${poolClause}
-        AND q.id NOT IN (
-          SELECT item_key FROM game_recent_items
-           WHERE user_id = $u AND game_type = $g
-           ORDER BY served_at DESC LIMIT $w)
-      ORDER BY RANDOM() LIMIT $n`,
-    { b: gameType, l: language, u: userId, g: gameType, w: CONFIG.games.recentWindow, n: count },
-  );
+  const pick = (lang: string, window: number) =>
+    db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
+      `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
+        WHERE q.bank = $b AND q.language = $l${poolClause}
+          AND q.id NOT IN (
+            SELECT item_key FROM game_recent_items
+             WHERE user_id = $u AND game_type = $g
+             ORDER BY served_at DESC LIMIT $w)
+        ORDER BY RANDOM() LIMIT $n`,
+      { b: gameType, l: lang, u: userId, g: gameType, w: window, n: count },
+    );
+
+  /*
+   * Two fallbacks, in the order they stop being the player's fault.
+   *
+   * **The language.** A bank is imported per language and the coverage is not
+   * square: the capitals and flags exports carry four of the five, and the
+   * general export carries no Ukrainian at all. An account reading in Ukrainian
+   * therefore asked for a bank that exists, in a language that bank has no rows
+   * in, and got a 404 that looked exactly like the game being broken. A
+   * translation gap is not an absent game, and the question in English is
+   * strictly better than no round — so English is tried before giving up, and
+   * only for a bank that is genuinely empty in the reader's own language.
+   *
+   * **The recent window.** A small bank plus the no-repeat window is an
+   * arithmetic dead end: `recentWindow` rows are excluded per player per game,
+   * and a bank at or under that size eventually has nothing left to offer.
+   * Falling back to the unfiltered draw says "you have seen all of these
+   * lately, here they are again", which is what the rule was always for — it is
+   * a floor under the client's own bag, not a promise that a hundred questions
+   * can be a thousand.
+   *
+   * Both are tried in the reader's language first, so a player only ever loses
+   * their language to a gap and never to their own history.
+   */
+  let rows = await pick(language, CONFIG.games.recentWindow);
+  if (rows.length === 0) rows = await pick(language, 0);
+  if (rows.length === 0 && language !== 'en') rows = await pick('en', CONFIG.games.recentWindow);
+  if (rows.length === 0 && language !== 'en') rows = await pick('en', 0);
 
   if (rows.length === 0) {
     throw new DomainError('not_found', `no questions in the ${gameType} bank for ${language}`);
@@ -538,15 +573,31 @@ async function buildQuiz(
 }
 
 async function buildWords(db: Db, userId: string, language: string): Promise<Built> {
-  const rows = await db.all<{ id: string; word: string; tier: number; hint: string | null }>(
-    `SELECT id, word, tier, hint FROM word_bank
-      WHERE language = $l
-        AND id NOT IN (SELECT item_key FROM game_recent_items
-                        WHERE user_id = $u AND game_type = 'word_builder'
-                        ORDER BY served_at DESC LIMIT $w)
-      ORDER BY RANDOM() LIMIT $n`,
-    { l: language, u: userId, w: CONFIG.games.recentWindow, n: CONFIG.games.wordsPerRound },
-  );
+  const pick = (window: number) =>
+    db.all<{ id: string; word: string; tier: number; hint: string | null }>(
+      `SELECT id, word, tier, hint FROM word_bank
+        WHERE language = $l
+          AND id NOT IN (SELECT item_key FROM game_recent_items
+                          WHERE user_id = $u AND game_type = 'word_builder'
+                          ORDER BY served_at DESC LIMIT $w)
+        ORDER BY RANDOM() LIMIT $n`,
+      { l: language, u: userId, w: window, n: CONFIG.games.wordsPerRound },
+    );
+
+  /*
+   * The word bank is the sharpest case of the arithmetic `buildQuiz` explains,
+   * and it is not hypothetical: the seeded English list is ten words, the round
+   * is five of them, and `recentWindow` is forty. Two rounds and that player
+   * could never play Word Builder again — a game that worked and then stopped,
+   * permanently, for one account. The unfiltered draw is the floor.
+   *
+   * No language fallback here, unlike the quizzes. A word list is the thing
+   * being practised rather than the wrapping around it, and handing an English
+   * round to somebody who pressed the card that practises the language of the
+   * city they have moved to is answering a different question.
+   */
+  let rows = await pick(CONFIG.games.recentWindow);
+  if (rows.length === 0) rows = await pick(0);
   if (rows.length === 0) throw new DomainError('not_found', `no words for ${language}`);
 
   const at = now();

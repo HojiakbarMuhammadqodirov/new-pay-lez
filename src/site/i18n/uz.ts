@@ -698,6 +698,7 @@ export const uz: Dictionary = {
     energyNext: '+1 yana {time}',
     energyCost: 'Har raundga 1 ta',
     loading: 'Tarqatilmoqda…',
+    startFailed: 'Bu raundni boshlab bo‘lmadi. Bir ozdan so‘ng qayta urinib ko‘ring.',
 
     /* Fixed samples of the kind of question each bank asks — short enough to
        read at preview size. `options[0]` is the right answer everywhere here,
