@@ -191,7 +191,7 @@ export const gateRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       await gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
-      return await gate.pendingAt(ctx.db, ctx.params.id);
+      return await gate.pendingAt(ctx.db, ctx.params.id, ctx.at);
     },
   },
   {

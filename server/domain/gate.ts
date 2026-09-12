@@ -33,7 +33,7 @@ import { newId } from './ids.ts';
 import { plausibleAmount } from './money.ts';
 import { open as openToken, seal } from '../crypto/tokens.ts';
 import { verifyTap } from '../crypto/nfc.ts';
-import { local, minutesBetween, now, plusMinutes, type Iso } from './time.ts';
+import { local, minutesBetween, now, plusDays, plusMinutes, type Iso } from './time.ts';
 import { getVenue, type Venue } from './venues.ts';
 
 export type Intent = 'earn' | 'voucher_redeem' | 'reward_redeem';
@@ -246,11 +246,22 @@ async function openInTransaction(
 
     /* An account may hold exactly one pending transaction at a venue. Two open
        gates at one counter is how a customer ends up confirming the wrong one. */
-    const existing = await db.get<{ id: string }>(
-      `SELECT id FROM transactions WHERE user_id = $u AND venue_id = $v AND status = 'pending'`,
+    const existing = await db.get<{ id: string; opened_at: string }>(
+      `SELECT id, opened_at FROM transactions WHERE user_id = $u AND venue_id = $v AND status = 'pending'`,
       { u: input.userId, v: venueId },
     );
-    if (existing) {
+    if (existing && minutesBetween(existing.opened_at, at) > CONFIG.gate.pendingTtlMinutes) {
+      /* One past the time limit cannot be confirmed — `confirm` refuses it — so
+         it is not an open gate, it is litter the five-minute sweep has not
+         reached. Refusing a fresh scan over it told a customer standing at the
+         counter that a transaction nobody could complete was "already open".
+         It is cancelled as a timeout here, the way the sweep would. */
+      await db.run(
+        `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = 'timeout'
+          WHERE id = $i AND status = 'pending'`,
+        { t: at, i: existing.id },
+      );
+    } else if (existing) {
       throw new DomainError('conflict', 'a transaction is already open at this venue', {
         transactionId: existing.id,
       });
@@ -395,6 +406,8 @@ export async function confirm(
   input: { transactionId: string; cashierId: string; at?: Iso },
 ): Promise<Receipt> {
   const at = input.at ?? now();
+  /* Set inside the transaction, acted on outside it — see the `.catch` below. */
+  let timedOut = false;
 
   const receipt = await db.tx(async (): Promise<Receipt> => {
     const txn = await getTransaction(db, input.transactionId);
@@ -405,11 +418,7 @@ export async function confirm(
     await requireStaff(db, venue.id, input.cashierId);
 
     if (minutesBetween(txn.opened_at, at) > CONFIG.gate.pendingTtlMinutes) {
-      await db.run(
-        `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = 'timeout'
-          WHERE id = $i`,
-        { t: at, i: txn.id },
-      );
+      timedOut = true;
       throw new DomainError('expired', 'this transaction timed out; scan again');
     }
 
@@ -481,6 +490,9 @@ export async function confirm(
     /* ── the deal funnel's third step (§6.3) ── */
     if (txn.deal_id && visitCounted) await claimDeal(db, txn.deal_id, txn.user_id, txn.id, discountMinor, at);
 
+    /* ── §9.2: a push that brought somebody in ── */
+    if (visitCounted) await creditPushVisit(db, txn, at);
+
     /* ── §8.1: the referral pays on the invited user's *first* confirmed scan ── */
     await completeReferral(db, txn.user_id, at);
 
@@ -510,6 +522,24 @@ export async function confirm(
       balance,
       nextTier: await nearestTier(db, venue.id, balance),
     };
+  }).catch(async (error: unknown): Promise<never> => {
+    /*
+     * **A timeout cancels the transaction, and the cancel has to land after the
+     * rollback.** It used to be written inside the transaction a line before the
+     * throw — so the throw rolled it straight back, the row stayed `pending`,
+     * and the customer standing at the counter was refused a fresh scan
+     * ("a transaction is already open") until the five-minute sweep came round.
+     * The same shape as the replay case in `openTransaction`: a record of a
+     * refusal is written outside the attempt it describes.
+     */
+    if (timedOut) {
+      await db.run(
+        `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = 'timeout'
+          WHERE id = $i AND status = 'pending'`,
+        { t: at, i: input.transactionId },
+      );
+    }
+    throw error;
   });
 
   /* Outside the transaction on purpose: a fraud *case* is a note for a human and
@@ -576,11 +606,19 @@ export async function expirePending(db: Db, at: Iso = now()): Promise<number> {
   )).changes;
 }
 
-/** Pending transactions at a venue — the partner app's confirmation queue. */
-export const pendingAt = async (db: Db, venueId: string): Promise<Transaction[]> =>
+/**
+ * Pending transactions at a venue — the partner app's confirmation queue.
+ *
+ * Only those still inside the time limit: one past it is refused at confirm,
+ * so listing it puts a Confirm button on the queue whose only outcome is an
+ * error.
+ */
+export const pendingAt = async (db: Db, venueId: string, at: Iso = now()): Promise<Transaction[]> =>
   await db.all<Transaction>(
-    `SELECT * FROM transactions WHERE venue_id = $v AND status = 'pending' ORDER BY opened_at`,
-    { v: venueId },
+    `SELECT * FROM transactions
+      WHERE venue_id = $v AND status = 'pending' AND opened_at >= $cutoff
+      ORDER BY opened_at`,
+    { v: venueId, cutoff: plusMinutes(at, -CONFIG.gate.pendingTtlMinutes) },
   );
 
 /* ───────────────────────────────────────────────────────────────── private ── */
@@ -643,13 +681,20 @@ async function recordVisit(
     return false;
   }
 
+  /* The two self-references are qualified with the table, and on Postgres they
+     have to be: inside `DO UPDATE SET` both the target row and `excluded` are in
+     scope, so a bare `visits` is ambiguous (42702) and the statement is refused
+     at parse time — before any conflict, on *every* counted visit. SQLite
+     resolves the bare name to the target row, which is why the suite never saw
+     it; the qualified form means the same thing on both. `verify.ts` scans every
+     upsert in `server/` for the bare form so the next one fails offline. */
   await db.run(
     `INSERT INTO venue_customers (venue_id, user_id, first_seen_at, last_seen_at, visits, spend_minor)
      VALUES ($v, $u, $t, $t, 1, $a)
      ON CONFLICT (venue_id, user_id) DO UPDATE
        SET last_seen_at = excluded.last_seen_at,
-           visits = visits + 1,
-           spend_minor = spend_minor + excluded.spend_minor`,
+           visits = venue_customers.visits + 1,
+           spend_minor = venue_customers.spend_minor + excluded.spend_minor`,
     { v: input.venue.id, u: input.userId, t: input.at, a: input.amountMinor },
   );
   return true;
@@ -819,6 +864,46 @@ async function claimDeal(
       WHERE id = $i`,
     { s: discountMinor, i: dealId },
   );
+}
+
+/**
+ * §9.2. Credit the pushes this visit answered — `deal_pushes.came_in`.
+ *
+ * A push counts somebody as having come in when it was actually **pushed** to
+ * them (the inbox-only copies of a suppressed send are not an invitation anybody
+ * received), it was sent in the last `CONFIG.deals.pushCameInDays`, and this is
+ * their **first** counted visit here since it was sent. The last rule is the
+ * `NOT EXISTS`: without it a regular's third visit of the week would be credited
+ * three times to one notification, and `came_in` would count visits where the
+ * dashboard reads it as people. The visit being recorded is already in
+ * `venue_visits`, so it is excluded by its transaction.
+ *
+ * Inside the commit, so a confirm that rolls back credits nothing. A plain
+ * `UPDATE … SET came_in = came_in + 1`, which Postgres resolves unambiguously —
+ * the qualification an upsert needs is only for `DO UPDATE`.
+ */
+async function creditPushVisit(db: Db, txn: Transaction, at: Iso): Promise<void> {
+  const pushes = await db.all<{ id: string }>(
+    `SELECT DISTINCT p.id FROM deal_pushes p
+       JOIN notifications n ON n.push_id = p.id
+      WHERE p.venue_id = $v AND p.status = 'sent'
+        AND p.sent_at <= $at AND p.sent_at > $since
+        AND n.user_id = $u AND n.delivery IN ('queued', 'sent')
+        AND NOT EXISTS (
+          SELECT 1 FROM venue_visits vv
+           WHERE vv.user_id = $u AND vv.venue_id = $v
+             AND vv.created_at > p.sent_at AND vv.transaction_id <> $x)`,
+    {
+      v: txn.venue_id,
+      u: txn.user_id,
+      at,
+      since: plusDays(at, -CONFIG.deals.pushCameInDays),
+      x: txn.id,
+    },
+  );
+  for (const push of pushes) {
+    await db.run(`UPDATE deal_pushes SET came_in = came_in + 1 WHERE id = $p`, { p: push.id });
+  }
 }
 
 /**

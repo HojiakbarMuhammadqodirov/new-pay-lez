@@ -151,6 +151,10 @@ export const consumerRoutes: Route[] = [
           phone: venue.phone,
           acceptsVouchers: venue.accepts_vouchers === 1,
           pointsPerScan: venue.points_per_scan,
+          /* The clock the venue's deal hours, opening hours and budget month are
+             in — a client printing "12:00–14:00" for a deal has to know whose
+             twelve o'clock it is. */
+          timezone: venue.timezone,
         },
         links: await linksOf(ctx.db, venue.id),
         hours: await ctx.db.all(

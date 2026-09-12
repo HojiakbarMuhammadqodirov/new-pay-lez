@@ -45,8 +45,12 @@ export async function runFrequent(db: Db, at: Iso = now()): Promise<JobReport> {
 
   detail.pendingExpired = await gate.expirePending(db, at);
   detail.dealLifecycle = await deals.runLifecycle(db, at);
+  /* After the lifecycle, so a deal that expired this minute is expired before
+     its push is weighed — and every few minutes rather than hourly, because a
+     push has a time on it and a partner chose that time. */
+  detail.dealPushes = await deals.sendDuePushes(db, at);
 
-  return { at, ran: ['pending', 'deals'], detail };
+  return { at, ran: ['pending', 'deals', 'pushes'], detail };
 }
 
 /** Runs hourly. Everything with money in it. */

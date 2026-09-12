@@ -51,6 +51,34 @@ export interface BusinessProfile {
   googlePlay: string;
 
   spoken: SpokenLanguage[];
+
+  /**
+   * The venue this listing is on the server — `venues.id` — or absent while it
+   * lives only in this browser.
+   *
+   * The listing carried no server id at all, so every write asked the server
+   * which venue this account owns and took the first. A brand-new listing still
+   * finds its row that way; once one has been read, the id is kept, so an owner
+   * with several venues edits the one the screen is showing.
+   */
+  venueId?: string;
+  /**
+   * Which language `description` was read in, when it came from the server.
+   *
+   * The server keeps a description per language and this form edits one text,
+   * so a save has to know where the text came from — or the English fallback a
+   * Polish reader was shown is filed back under Polish.
+   */
+  descriptionLanguage?: string;
+  /**
+   * The server's own words for the three fields this form offers a closed list
+   * for, when those words are not on the list — see `api/listing.ts`.
+   *
+   * Present means "the choice on screen is not what the server holds". The view
+   * prints these, and a save leaves the field alone until the owner picks from
+   * the list, which clears the key.
+   */
+  unmapped?: { category?: string; subcategory?: string; country?: string };
 }
 
 /**

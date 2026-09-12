@@ -55,6 +55,7 @@ import type {
   Metric,
   OverviewBody,
   Pool,
+  ScanRowResponse,
 } from './api/partner';
 
 /* ══════════════════════════════════════════════════════════════ structure ══ */
@@ -185,6 +186,33 @@ export const metricValue = (metric: Metric | undefined): number | null =>
 /** The same, for the places that genuinely want "nothing happened" as zero. */
 const counted = (metric: Metric | undefined): number => metricValue(metric) ?? 0;
 
+/**
+ * One figure against the same figure over the window before it.
+ *
+ * Four answers rather than a number, because two of them are not percentages at
+ * all and a tile that forced them into one would lie: a count that went from
+ * nothing to something has no percentage change (it is infinite, and "+100%"
+ * would be a made-up cap), and a count that was nothing both times has no
+ * direction to report. Those are `new` and `none`, and the tile says each in
+ * words.
+ *
+ * Rounded to a whole percent, and a change that rounds to nothing is `flat`
+ * rather than "up 0%" — an arrow is a claim about direction, and 0.3% is not one
+ * a reader can act on.
+ */
+export type Delta =
+  | { kind: 'up' | 'down'; pct: number }
+  | { kind: 'flat' }
+  | { kind: 'new' }
+  | { kind: 'none' };
+
+export function deltaOf(current: number, previous: number): Delta {
+  if (previous === 0) return current === 0 ? { kind: 'none' } : { kind: 'new' };
+  const pct = Math.round(((current - previous) / previous) * 100);
+  if (pct === 0) return { kind: 'flat' };
+  return { kind: pct > 0 ? 'up' : 'down', pct: Math.abs(pct) };
+}
+
 /* ═══════════════════════════════════════════════════════════ the deals ══ */
 
 /**
@@ -248,6 +276,17 @@ export interface PartnerDeal {
 export interface PartnerDealPush {
   kind: 'sent' | 'scheduled' | 'stopped';
   at: string | null;
+  /*
+   * The notification's own three stages, in the same shape as the deal's.
+   *
+   * `delivered` and `opened` were on the response the whole time and this
+   * mapper dropped them, keeping only `cameIn` — which is the *last* stage, so
+   * the expanded row could say how many walked in and not how many were
+   * reached or how many looked. A funnel with only its final number is not a
+   * funnel; it is a total with no denominator.
+   */
+  delivered: number;
+  opened: number;
   cameIn: number;
 }
 
@@ -363,6 +402,11 @@ export function dealFromApi(row: DealResponse, currencyToEuro: (minor: number) =
                 ? 'stopped'
                 : 'scheduled',
           at: row.push.sentAt ?? row.push.scheduledAt,
+          /* Defaulted rather than assumed present, like `series` above: a
+             client built against the old shape must not throw on a server that
+             has not been restarted yet. */
+          delivered: row.push.delivered ?? 0,
+          opened: row.push.opened ?? 0,
           cameIn: row.push.cameIn,
         }
       : null,
@@ -404,6 +448,30 @@ export interface CampaignRow {
   earned: number;
   used: number;
   expired: number;
+  /*
+   * Three counts the server now sends per campaign, optional because an older
+   * API does not — and each has a fallback that is what the screen said before
+   * rather than a zero it never received.
+   */
+  /** Members one stamp short of a reward. Absent: say nothing about it. */
+  near?: number;
+  /** Rewards earned and still collectable. Absent: derived from earned − used − expired. */
+  available?: number;
+  /** What those hold out of the loyalty pool, in euros. Absent: available × cost. */
+  reserved?: number;
+  /** Minimum bill for a visit to count, in euros. 0 when there is none. */
+  minSpend: number;
+  /** Days a reward stays valid once earned. 0 when it does not expire. */
+  expiryDays: number;
+  /**
+   * Hours before the same customer's next scan counts — the **venue's** rule,
+   * read off the venue row, and `null` when that row was not read. Null prints
+   * no clause; it used to be a constant 24, which was right only for venues
+   * that had never changed it.
+   */
+  cooldownHours: number | null;
+  /** When it started running, ISO date, or null. */
+  startedAt: string | null;
 }
 
 export interface CampaignModel {
@@ -449,12 +517,15 @@ export interface CampaignModel {
  */
 export function campaignModel(rows: CampaignRow[], pool: Pool | null): CampaignModel {
   const list = rows.map((c) => {
-    const outstanding = Math.max(0, c.earned - c.used - c.expired);
+    /* The server's own count and reserve when it sent them. Derived otherwise,
+       and the derivation over-counts by whatever was cancelled — which is why
+       the measured figure wins whenever it exists. */
+    const outstanding = c.available ?? Math.max(0, c.earned - c.used - c.expired);
     return {
       ...c,
       outstanding,
       spent: c.used * c.cost,
-      aside: outstanding * c.cost,
+      aside: c.reserved ?? outstanding * c.cost,
       returned: c.expired * c.cost,
       /** How much of what was earned actually got used. */
       rate: c.earned > 0 ? c.used / c.earned : 0,
@@ -502,10 +573,18 @@ export const PD_CAMPAIGNS: CampaignRow[] = [];
 /** The pool a device with no partner session knows about: none of one. */
 export const PD_CAMPAIGN_MODEL: CampaignModel = campaignModel(PD_CAMPAIGNS, null);
 
-/** One server campaign row, as the dashboard's shape. */
+/**
+ * One server campaign row, as the dashboard's shape.
+ *
+ * `cooldownHours` is the venue's, passed in from the venue row: the campaigns
+ * endpoint is the campaign table, and the cooldown is a gate rule that belongs
+ * to the venue. It was a module constant of 24 here — the column's default —
+ * quoted at venues that had set their own.
+ */
 export const campaignFromApi = (
   row: CampaignResponse,
   currencyToEuro: (minor: number) => number,
+  cooldownHours: number | null = null,
 ): CampaignRow => ({
   id: row.id,
   name: row.name,
@@ -516,10 +595,25 @@ export const campaignFromApi = (
   live: row.status === 'active',
   earned: row.earned,
   used: row.redeemed,
-  /* The list endpoint counts earned and redeemed and nothing between them, so
-     "expired" is not a figure this screen has. Zero here is the count of
-     expiries *we can see*, and the screen does not label it as a total. */
-  expired: 0,
+  /* Counted by the server now. The fallback is the zero this mapper always
+     used against an API that does not send it, which is the count of expiries
+     *we can see* — and the screen does not print it as a total either way. */
+  expired: row.expired ?? 0,
+  near: row.near,
+  available: row.available,
+  reserved: row.reserved_minor === undefined ? undefined : currencyToEuro(row.reserved_minor),
+  /* Null on the column is "this campaign sets no floor of its own", which is
+     what 0 says here — the venue's own `min_spend_minor` is a gate rule rather
+     than a campaign rule and is not this card's to quote. */
+  minSpend: row.min_spend_minor === null ? 0 : currencyToEuro(row.min_spend_minor),
+  expiryDays: row.reward_valid_days,
+  cooldownHours,
+  /* `created_at` is when the row was written, and `partners.createCampaign`
+     inserts it `active` — so for every campaign that exists, created is started.
+     A draft is the one state where those come apart, and it has not started
+     running, so it gets the null rather than a date the card would print under
+     "Running since". */
+  startedAt: row.status === 'draft' ? null : row.created_at,
 });
 
 /**
@@ -617,19 +711,45 @@ export type VoucherModel = ReturnType<typeof voucherModelFor>;
  * is *for* — "raising the points on this tier sends less of the budget that
  * way" is the sentence the screen leads with, and it needs a price per tier.
  */
+/**
+ * The voucher model from a server pool.
+ *
+ * ── the unit seam, and the bug that lived in it ───────────────────────────
+ *
+ * `Pool` is **minor units of the venue's currency** — grosz — and everything
+ * `voucherModelFor` prices with is **euros**: `avgSpend`, `maxPerVoucher` and
+ * every `cap` on a `TierRow`. This function passed `pool.base` straight through
+ * as the budget, so the arithmetic inside subtracted euros from grosz.
+ *
+ * Nothing rendered the result until the Vouchers screen was rebuilt, and then
+ * it said **"about 192,847 more vouchers"** — a £133 pool divided by a voucher
+ * priced in the wrong unit. The three figures beside it were right, because the
+ * screen reads those off the pool itself and converts for display; only the
+ * number that went *through* the model was wrong, which is why it survived.
+ *
+ * `toEuro` closes the seam here rather than at each call site. The returned
+ * `spent` / `reserved` / `available` are euros too, so the whole model speaks
+ * one unit and a caller cannot pick the wrong one.
+ */
 export function voucherModelFrom(
   pool: Pool | null,
   tiers: TierRow[],
   avgSpend: number,
   maxPerVoucher: number,
+  toEuro: (minor: number) => number = (minor) => minor,
 ) {
-  const derived = voucherModelFor(pool?.base ?? 0, avgSpend, maxPerVoucher, tiers);
+  const derived = voucherModelFor(
+    pool === null ? 0 : toEuro(pool.base),
+    avgSpend,
+    maxPerVoucher,
+    tiers,
+  );
   if (pool === null) return { ...derived, measured: false };
   return {
     ...derived,
-    spent: pool.spent,
-    reserved: pool.reserved,
-    available: pool.available,
+    spent: toEuro(pool.spent),
+    reserved: toEuro(pool.reserved),
+    available: toEuro(pool.available),
     measured: true,
   };
 }
@@ -900,23 +1020,89 @@ export const PD_ROSTER: RosterEntry[] = [];
 /* ═══════════════════════════════════════════════════════════ the scans ══ */
 
 /**
- * A scan at the counter.
+ * One committed scan at the counter — a receipt, not a summary.
  *
- * Forty-eight were generated from the row index — a name from a list of
- * sixteen, a receipt code, a spend, a campaign — and paged twelve at a time.
- * There is no endpoint that lists a venue's scans: `analytics.today` counts
- * them and `GET /v1/venues/:id/pending` lists the ones waiting to be confirmed,
- * and neither is a till log. So the screen reports the counts it can get and
- * says the log itself is not available, rather than generating one.
+ * `GET /v1/partner/venues/:id/scans` returns these a page at a time, and
+ * `scanFromApi` below is the one place its shape becomes this one. `PD_SCANS`
+ * stays `[]`: a device with no session has no till log, and the screen says so
+ * rather than drawing a table of nothing.
+ *
+ * Four fields are worth the words:
+ *
+ *  - **`who` is `null` for everybody who has not shared with this venue**, which
+ *    is most people. The screen writes a translated "not shared" in its place
+ *    and draws no initials — two letters are a hint at a name the customer
+ *    chose not to give.
+ *  - **`spent` is euros** for the reader's line, and **`spentMinor` is kept** for
+ *    the till's: converting euros back into złoty re-rounds a figure the till
+ *    printed exactly, and the whole point of the second line is that it matches
+ *    the receipt.
+ *  - **`counted` is false** for a scan that granted nothing toward the venue's
+ *    rules — under the minimum bill, inside the cooldown, or a second that day.
+ *    It is still a row: it happened at the counter, and hiding it would make the
+ *    log disagree with the till roll.
+ *  - **`site` is the venue's own address, not the scan's.** No per-scan GPS is
+ *    collected anywhere and none should be; the coordinates may be null on a
+ *    venue that never set them.
  */
 export interface ScanRow {
-  hour: number;
-  minute: number;
-  who: string;
+  id: string;
+  /** ISO-8601 instant. The screen formats it in the venue's own timezone. */
+  at: string;
+  who: string | null;
+  /** Their first visit to *this venue*, ever. Not "new to Paylez". */
   first: boolean;
+  counted: boolean;
+  intent: 'earn' | 'voucher_redeem' | 'reward_redeem';
+  /** The bill, in euros. */
   spent: number;
+  /** The same bill in the venue's minor units, exactly as the till printed it. */
+  spentMinor: number;
+  /** What a voucher or reward took off it, in euros. 0 on a plain earn. */
+  discount: number;
+  /** What the scan paid, all sources added up. */
   points: number;
+  /** The till's own short code, as printed on the customer's receipt. */
   receipt: string;
+  site: { name: string; address: string | null; lat: number | null; lng: number | null };
+  /**
+   * How close this scan left them to a reward, or `null` when it counted
+   * toward no campaign — none running, or the bill under the campaign's floor.
+   * `rewardEarned` is the server's own fact (a reward row carries this
+   * transaction), not `done === need` inferred from a card that rolls over.
+   */
+  progress: null | { campaign: string; done: number; need: number; rewardEarned: boolean };
+}
+
+/** One `ScanRowResponse` as the log's shape. Pure, so the demo goes through it too. */
+export function scanFromApi(row: ScanRowResponse, toEuro: (minor: number) => number): ScanRow {
+  return {
+    id: row.id,
+    at: row.at,
+    who: row.who?.trim() ? row.who.trim() : null,
+    first: row.first,
+    counted: row.counted,
+    intent: row.intent,
+    spent: toEuro(row.spentMinor),
+    spentMinor: row.spentMinor,
+    discount: toEuro(row.discountMinor),
+    points: row.points,
+    receipt: row.receipt,
+    site: {
+      name: row.site.name,
+      address: row.site.address,
+      lat: row.site.lat,
+      lng: row.site.lng,
+    },
+    progress: row.progress
+      ? {
+          campaign: row.progress.campaign,
+          done: row.progress.done,
+          need: row.progress.need,
+          rewardEarned: row.progress.rewardEarned,
+        }
+      : null,
+  };
 }
 
 export const PD_SCANS: ScanRow[] = [];

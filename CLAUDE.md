@@ -586,10 +586,41 @@ cannot drift from the product. Where a marketing section is describing something
 `content.ts` already models, render from the model.
 
 Adding a language: create the dictionary, then add it to `LANGUAGE_ORDER` and
-`LANGUAGES` in `i18n/context.ts` — nothing else. The provider's runtime guard is
-derived from `LANGUAGE_ORDER` precisely so it cannot be forgotten. Give it a
-currency in `i18n/currency.ts` at the same time; there is no fallback, and a
-missing entry is a type error rather than a page that quietly prices in euros.
+`LANGUAGES` in `i18n/context.ts`, and write its legal module (below). The
+provider's runtime guard is derived from `LANGUAGE_ORDER` precisely so it cannot
+be forgotten. Give it a currency in `i18n/currency.ts` at the same time; there is
+no fallback, and a missing entry is a type error rather than a page that quietly
+prices in euros. Every one of those three is a *type* error rather than a
+discovery in production — `LANGUAGES`, `CURRENCIES` and `LOADERS` are all keyed
+by `LanguageCode`, so widening that type is what fails the build until they are
+filled in.
+
+**The two legal documents are translated, the English still binds, and each
+language is its own chunk.** `legal.tsx` is the shell; the text is
+`legal/<code>.tsx`, one module per language, built from the shared `Meta`,
+`Notice`, `Section` and `Table` in `legal/parts.tsx` and fetched by
+`legal/load.ts` for the language being read. Four rules travel with it:
+
+- **`en.tsx` is authoritative.** Edit a clause there and the other four are stale
+  until they are edited too. `copy.legal.english` says so on the page, in the
+  reader's own language — and English's own copy of that key says the opposite
+  thing, because telling somebody reading the English that the English prevails
+  is nonsense.
+- **The section ids are never translated.** They are the anchors `ANCHOR_ROUTES`
+  files under `privacy` / `terms`, and an id that misses that table resolves to
+  `landing` — dropping a reader onto marketing copy from the middle of a clause.
+  They are also what keeps a reader's place when they switch language mid-document.
+- **The head is outside the `Suspense` boundary and the text is inside it.** The
+  title, the version and the prevailing-language line are dictionary copy and
+  need no fetch, so a cold load of `#/privacy` shows *which document you are on*
+  while the chunk arrives instead of a blank page. `setLanguage` is a transition
+  for the same reason: switching language holds the document rather than blanking
+  it.
+- **`npm run verify` checks the five agree.** `LegalText` catches a missing
+  *field* and says nothing about the ids inside the two arrays, which is exactly
+  where a typo would be invisible — in one language, to anybody who does not read
+  it. The check walks `LANGUAGE_ORDER` and the real `LOADERS` table rather than a
+  list of its own.
 
 **The language picks the currency, and every amount is written in euros.** The
 switcher is the only thing a visitor tells us about where they are, so English
@@ -1359,6 +1390,127 @@ bundled, the flag font copied into `public/`), geometry comes from the
   trend beside it are one value, the plan card in the rail reads the same pool
   the Campaigns screen does, and the prototype's own third seed for that column
   (which disagreed with its headline by a few pence) is gone.
+- **The dashboard is seven files now, and each screen owns its own class
+  prefix.** `dashboardScreens.tsx` was a single 3,800-line module holding every
+  screen; four of them have moved out, and the split is by *screen* rather than
+  by layer because that is the unit a redesign arrives in.
+
+  | file | screen | prefix |
+  |---|---|---|
+  | `dashboardScreens.tsx` | the index, Deals, Assistant, Scans' frame | `pd-` |
+  | `dashboardLoyalty.tsx` | Loyalty campaigns | `pl-` |
+  | `dashboardVouchers.tsx` | Vouchers | `vch-` |
+  | `dashboardCustomers.tsx` | Customers | `pc-` |
+  | `dashboardScans.tsx` | the till log on Scan activity | `ps-` |
+  | `dashboardChart.tsx` | the overview's line chart | `pa-chart*` |
+  | `dashboardFormat.ts` | `useNum`, and nothing else | — |
+
+  Three things about that table are load-bearing. **`vch-` is not `pv-`**, which
+  is the L-Earn game previews and already has 68 rules — the fourth collision
+  this dashboard has nearly shipped, caught by grepping before naming, which is
+  the rule. **`dashboardFormat.ts` exists for one hook**: exporting `useNum` from
+  a module that also exports components breaks React fast refresh
+  (`react(only-export-components)`), the same split `theme/` and `i18n/` make.
+  And `Screen`, `Figure` and `useNum` are the only shared vocabulary — everything
+  else a screen needs, it owns.
+
+- **The frame changed with the screens, and five of those are decisions rather
+  than styling.** The rail's 32px logo tile is gone — it was the one piece of
+  chrome on the site that carried one, against this file's own "the brand is the
+  word" rule, so the disagreement was settled in favour of the rule. The rail's
+  head and the top bar are both `min-height: 4rem`, so their bottom rules form
+  one line across the screen. Every control in the bar is one box — white, one
+  height, ink text — and the two listboxes are read in ink with the accent
+  demoted to a *background* on the selected row, because a menu of dates is text
+  to read rather than a mark. The user pill is a real `<button>` with a menu, and
+  **"Back to paylez" lives in it**: it is a way off the frame, not a thing to do
+  on it, and it was taking header width from the two controls that are. And
+  `.pd-page` lost its `width: min(100%, 1400px)` — with no `margin-inline: auto`
+  it was left-packing the whole dashboard with a band of empty page down the
+  right.
+
+  Each screen's title also lost the sentence under it. The `lede` strings stay in
+  all five dictionaries: this is a presentation decision that may well be
+  reversed, and removing a key means editing five files to change what one screen
+  renders.
+
+- **The design this was built against is in `b2b/uploads/`.** `loyalty1-3`,
+  `vouchers1-2`, `customers1-2` and `scan1-2` are the reference screenshots for
+  the four rebuilt screens. They are reference material like the rest of `b2b/` —
+  nothing imports them, Vite does not build them, and where they and the live
+  screen disagree, read the note on that panel before assuming the screen is
+  wrong. **Their figures are not the demo's**, deliberately: the demo carries
+  different numbers so a screenshot of the running app can never be mistaken for
+  a screenshot of the mock.
+
+- **The dashboard's front end is ahead of the server, deliberately and in a
+  known list.** Every panel below draws from `dashboardDemo.ts` under `?demo=1`
+  and renders the honest "not reported yet" state otherwise. **This is the deploy
+  checklist**: until each endpoint exists, a real venue sees a sentence, not a
+  figure — which is correct, and is also why the screens look emptier on the box
+  than in a screenshot.
+
+  | panel | needs |
+  |---|---|
+  | the overview's chart | a daily series; the query already exists inside `…/export`, which emits it as CSV |
+  | the overview's "what we noticed" rows | the assistant composing from measured facts — `copy.overview.insights` is the sentence, `DEMO_INSIGHT_FACTS` the figures |
+  | the KPI deltas | a previous-period comparison |
+  | "money you are holding" → Remind them | an audience query plus a fan-out; **the button writes nothing today** |
+  | the voucher ladder's given-out / used / cost | counts on `vouchers.ladder`; the three fields are optional on `BudgetBody` for exactly this reason |
+  | "money returned" | nothing counts voucher expiries — permanently an em dash |
+  | a customer's tier and spend direction | `tierPct` / `spendTrend`, optional on the row for the same reason |
+  | the scan log | `GET /v1/partner/venues/:id/scans`; the TODO at the head of `dashboardScans.tsx` names every column and the consent join it must not skip |
+
+  **No server code changed in this rebuild.** `npm run verify:api` is 684 and
+  the API is untouched; everything above is a front end waiting on one.
+
+- **Two hues sit outside the palette on this screen, and both are scoped.** The
+  rule is one accent on one ground, and `dashboard.acts.endSure` states the
+  standing consequence — a destructive control asks in words, not in colour.
+  Two places take a colour anyway:
+
+  - **A warm red**, for a KPI delta that fell, the Delete button on a running
+    row, and a customer who is slipping away. The dashboard's whole job is
+    saying which way a number moved, and grey says "we are not saying". Every
+    one is paired with a word or an arrow, so the reading survives without the
+    hue.
+  - **An amber**, for a paused campaign card — its pill, bar, chip, border and
+    note. Light mode takes a darker value because a highlighter yellow is
+    illegible on paper, which is the `--accent`/`--accent-ink` arrangement
+    rather than a second colour.
+
+  Both are single scoped custom properties on one selector. Neither may leak,
+  and a third is not licence for a fourth.
+
+- **Four bugs this rebuild fixed are rules, not one-offs.**
+
+  - **`voucherModelFrom` mixed minor units with euros.** `Pool` is grosz and
+    everything it prices with is euros, so the model subtracted one from the
+    other. Nothing rendered the result until the Vouchers screen was rebuilt and
+    it read **"about 192,847 more vouchers"**. It takes a `toEuro` now and speaks
+    one unit throughout. Any `…Minor` field crossing into this file needs the
+    same seam — the benchmark on Customers had the identical fault and printed
+    "£1,251.74 per new customer".
+  - **A `display: flex` that does not state `flex-direction` inherits one.**
+    `.pd-panel` sets `column`, so a later rule adding only `display: flex` gets a
+    column silently. It caught `.pd-holding` and then `.pd-detail`; both now
+    state `row`.
+  - **`repeat(3, 1fr)` is `minmax(auto, 1fr)`,** whose floor is the content's
+    minimum — so a cell with `white-space: nowrap` cannot shrink and overflows
+    its container. Use `minmax(0, 1fr)` and let the text wrap.
+  - **A figure nobody measured is never a zero.** The findings panel printed
+    `quiet hours` because the demo emitted keys the copy map had no entry for;
+    the customer status `newcomer` matched no segment and no dictionary key and
+    rendered its own raw id. Both are the same failure — a lookup that misses
+    must not fall through to the key.
+
+- **"Waiting to be confirmed" is gone from Scan activity, and the endpoint is
+  not.** `POST /v1/gate/transactions/:id/confirm` is untouched and is still
+  where every point, stamp and discount in the product is granted — what was
+  removed is the *dashboard's* way of pressing it, so a waiting scan is
+  confirmed from the counter's own device. `Queue` and its row were deleted
+  rather than hidden; git history has them if that is reversed.
+
 - **Eight screens, and two of them belong to the frame.** The rail lists the
   prototype's eight — the six report screens, the profile form, and **the
   assistant** (`dashboardAssistant.tsx`), which is the largest single thing in

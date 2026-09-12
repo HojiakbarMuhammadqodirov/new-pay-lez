@@ -1,10 +1,18 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useId, useState } from 'react';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
 import { CURRENCIES, fill } from './i18n/currency';
 import { categoryLabel, initialOf } from './adminMetrics';
-import { dealOpen, useImpressionRef } from './api/reach';
-import { useApi, type ApiResult } from './api/useApi';
+import type { Me } from './api/consumer';
+import { dealOpen, useImpressionRef, venueClick } from './api/reach';
+import { useApi, type ApiResult, type ApiState } from './api/useApi';
+import {
+  ME_PATH,
+  venuesPath,
+  type EarnedReward,
+  type VenueListRow,
+  type VenueRef,
+} from './api/venue';
 import {
   cheapestCost,
   dealsPath,
@@ -22,6 +30,7 @@ import {
 import { useAuth } from './auth/context';
 import { canAfford } from './auth/player';
 import { PATHS } from './router';
+import { CounterCode, VenueMark, VenueSheet } from './venueSheet';
 
 /**
  * The wallet, for someone who is signed in.
@@ -35,12 +44,28 @@ import { PATHS } from './router';
  * put a stamp on a card nobody had visited. None of it was wrong to look at and
  * all of it was made up.
  *
- * Four reads now, and every one of them is a real row:
+ * Every read now is a real row:
  *
- *   `GET /v1/deals`       the board — what is on offer
- *   `GET /v1/wallet`      the holdings — vouchers, stamp cards, gift cards
- *   `GET /v1/gift-cards`  the shelf — what points can buy
- *   `POST /v1/gift-cards` the one press that moves value
+ *   `GET /v1/deals`         the board — what is on offer
+ *   `GET /v1/venues?city=`  the places — who is on Paylez in the player's city
+ *   `GET /v1/wallet`        the holdings — vouchers, rewards, stamp cards, gift cards
+ *   `GET /v1/gift-cards`    the shelf — what points can buy
+ *   `GET /v1/me`            the counter code (the username) and the city
+ *   `POST /v1/gift-cards`   a press that moves value
+ *
+ * and one venue at a time in `venueSheet.tsx`, which adds the other press that
+ * moves value — a voucher off that venue's ladder — and the switch that decides
+ * whether the venue may know who this is.
+ *
+ * ── the player and the venue meet at the counter ─────────────────────────
+ *
+ * The dashboard's counter tool resolves exactly three strings: a player's
+ * `@username`, a voucher code and a reward code. So all three are on this page,
+ * large and copyable, and each says what it is for. The username is read from
+ * `GET /v1/me` here rather than from the session's mirror of the profile, and
+ * that is a deliberate second request: it is the one string on the site that
+ * has to match the server character for character, and a mirror one rename out
+ * of date sends somebody to a till with a handle that resolves to nobody.
  *
  * ── what the claim button became, and why ────────────────────────────────
  *
@@ -79,10 +104,12 @@ import { PATHS } from './router';
  * is what the `loading | ready | error` union in `useApi` is for, and it is the
  * rule the console states at length one file over.
  *
- * ── the three holdings, and why they are three ───────────────────────────
+ * ── the holdings, and why they are separate ──────────────────────────────
  *
  * - a **discount voucher** is points already spent at one venue — a code and a
  *   percentage, honoured at that venue's till;
+ * - a **reward** is what a full stamp card earned — a code for a named thing at
+ *   one venue, paid for by the venue rather than by points;
  * - a **gift card** is stock — a fixed face value at a named brand, bought with
  *   points off the shelf below;
  * - a **stamp card** counts *visits to one venue*, and a visit is not a point.
@@ -109,6 +136,9 @@ const WAL_TEXTURES = ['dots', 'stripe', 'orbit', 'weave', 'chevron', 'grid', 'ha
 
 const textureAt = (index: number): string => WAL_TEXTURES[index % WAL_TEXTURES.length];
 
+/** Opens the venue sheet, remembering which control to hand focus back to. */
+type OpenPlace = (venue: VenueRef, from: HTMLElement) => void;
+
 /**
  * A date the server wrote, in the reader's own locale.
  *
@@ -121,6 +151,27 @@ const on = (iso: string | null, locale: string): string | null =>
   iso
     ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short' }).format(new Date(iso))
     : null;
+
+/**
+ * The last answer a request gave, held while it is being asked again.
+ *
+ * `useApi` answers a reload by going back to `loading`, which is right for a
+ * first read and wrong for the re-read after a purchase: the holdings would
+ * collapse to "Asking the server…" and back, the page would change height under
+ * an open sheet, and the balance would drop for a moment to the session's
+ * mirror — a number the purchase has already made stale. So while a re-read is
+ * in flight the previous answer stands; an *error* still replaces it, because
+ * "we could not ask" must never be drawn as the last thing we heard.
+ *
+ * State set during render, guarded, is the pattern React documents for keeping
+ * a value from a previous render — it re-renders before committing, once.
+ */
+function useLastReady<T>(state: ApiState<T>): T | null {
+  const [kept, setKept] = useState<T | null>(null);
+  if (state.status === 'ready' && state.data !== kept) setKept(state.data);
+  if (state.status === 'ready') return state.data;
+  return state.status === 'loading' ? kept : null;
+}
 
 /** The status pill on a band. Static text — see the note about "Open now". */
 function BandPill({ text }: { text: string }) {
@@ -144,6 +195,27 @@ function BrandMark({ letter }: { letter: string }) {
 }
 
 /**
+ * The button that opens a venue from anything that belongs to one.
+ *
+ * Drawn only where there is a venue id to open — a deal carried over from the
+ * old catalogue can have none, and a control with nothing behind it is not
+ * drawn.
+ */
+function SeePlace({ onOpen }: { onOpen: (from: HTMLElement) => void }) {
+  const copy = useCopy().wallet;
+  return (
+    <button
+      type="button"
+      className="btn btn-ghost wal-cta"
+      onClick={(event) => onOpen(event.currentTarget)}
+    >
+      <Icon name="pin" size={15} />
+      {copy.see}
+    </button>
+  );
+}
+
+/**
  * The two panels every list here needs.
  *
  * `error` is "we could not ask"; the empty state is "we asked, and there is
@@ -163,6 +235,125 @@ function Down({ result }: { result: ApiResult<unknown> }) {
   );
 }
 
+/* ─────────────────────────────────────────────────────────── counter code ── */
+
+/**
+ * The player's counter code — their `@username`, as the server holds it.
+ *
+ * Three states and a fourth that is not an error. Loading and failure are the
+ * page's usual pair. The fourth is an account with no username, which is a real
+ * and common state (the handle is optional until somebody picks one), and it has
+ * a real next step: the profile, where the Edit button sets one. Drawing an
+ * empty code there would be a card telling somebody to show staff nothing.
+ */
+function CounterCard({ me }: { me: ApiResult<Me> }) {
+  const copy = useCopy().wallet;
+  const titleId = useId();
+  const { state } = me;
+
+  return (
+    <section className="wal-counter" aria-labelledby={titleId} data-reveal>
+      <h2 id={titleId} className="wal-counter-title">
+        {copy.counter.title}
+      </h2>
+
+      {state.status === 'loading' ? (
+        <p className="wal-counter-note">{copy.loading}</p>
+      ) : state.status === 'error' ? (
+        <>
+          <p className="wal-counter-note">
+            {state.error.status === 0 ? copy.down.unreachable : copy.down.refused}
+          </p>
+          <button type="button" className="btn btn-ghost" onClick={me.reload}>
+            {copy.down.retry}
+          </button>
+        </>
+      ) : state.data.user.username ? (
+        <CounterCode
+          code={`@${state.data.user.username}`}
+          hint={copy.counter.lede}
+          size="hero"
+        />
+      ) : (
+        <>
+          <p className="wal-counter-note">{copy.counter.none}</p>
+          <a className="btn btn-solid" href={PATHS.profile}>
+            {copy.counter.setUp}
+          </a>
+        </>
+      )}
+    </section>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────── places ── */
+
+/**
+ * One venue in the player's city, as a row you press.
+ *
+ * **Seen and opened are both reported, through the doors `api/reach.ts` already
+ * has.** The impression is `useImpressionRef` — the same one the deal cards use
+ * — so it fires once the row has been half on screen for half a second, once per
+ * mount, and is coalesced per page load by the module-level set in that file. That
+ * last property is also what makes it safe under StrictMode: the ref callback
+ * runs twice and the second run is dropped before it is sent. The click is
+ * `venueClick`, posted from the press itself and never coalesced, because
+ * somebody who opens a place twice opened it twice.
+ *
+ * Only this row posts a venue click. Opening a venue from a stamp card or a
+ * voucher is a player looking at their own holdings, not a listing reaching
+ * somebody, and counting it would inflate the one funnel an owner reads to find
+ * out whether anyone has heard of them.
+ */
+function PlaceRow({
+  place,
+  categories,
+  onOpen,
+}: {
+  place: VenueListRow;
+  categories: readonly string[];
+  onOpen: OpenPlace;
+}) {
+  const copy = useCopy().wallet.places;
+  const seen = useImpressionRef('venue', place.id, 'wallet');
+  const meta = [
+    place.category ? categoryLabel(place.category, categories) : '',
+    place.address ?? '',
+  ].filter(Boolean);
+  const takesVouchers = Boolean(place.accepts_vouchers);
+
+  return (
+    <div ref={seen} className="wal-place" data-reveal>
+      <button
+        type="button"
+        className="wal-place-hit"
+        onClick={(event) => {
+          venueClick(place.id, 'wallet');
+          onOpen({ id: place.id, name: place.name }, event.currentTarget);
+        }}
+      >
+        <VenueMark name={place.name} image={place.image_url} />
+        <span className="wal-place-tx">
+          <b className="wal-place-name">{place.name}</b>
+          {meta.length > 0 && <span className="wal-place-meta">{meta.join(' · ')}</span>}
+          {(place.price_range || takesVouchers) && (
+            <span className="wal-place-foot">
+              {place.price_range && <span className="wal-place-price">{place.price_range}</span>}
+              {takesVouchers && (
+                <span className="wal-place-tag">
+                  <Icon name="ticket" size={12} />
+                  {copy.vouchers}
+                </span>
+              )}
+            </span>
+          )}
+        </span>
+        <Icon name="arrow" size={16} className="wal-place-go" />
+      </button>
+    </div>
+  );
+}
+
 /* ────────────────────────────────────────────────────────────── gift card ── */
 
 /**
@@ -177,6 +368,9 @@ function Down({ result }: { result: ApiResult<unknown> }) {
  * when the card was a local object; a real gift card is spent at the till and
  * `status` on the row is what says so, and there is no endpoint for a web page
  * to burn one. The code is simply on the card, which is what the till wants.
+ *
+ * Its code is not a `CounterCode`: the counter tool resolves vouchers and
+ * rewards at a venue, and a gift card is spent at a brand's own till.
  */
 function GiftCardRow({
   card,
@@ -222,18 +416,23 @@ function GiftCardRow({
  * A discount voucher: points already spent at one venue.
  *
  * The row is `SELECT * FROM issued_vouchers` and carries **no venue name** —
- * only a `venue_id` — so the card does not print one. Naming the venue would
- * mean a request per voucher for one line of grey text, and guessing at it
- * would be the thing this page stopped doing.
+ * only a `venue_id`. The name is printed when this page already holds it from
+ * another list (a stamp card, a place, a deal at the same venue) and left off
+ * when it does not; it is never fetched per voucher, and it is never guessed.
+ * "See the place" opens the venue either way, because the id is all that needs.
  */
 function VoucherRow({
   voucher,
+  venueName,
   texture,
   locale,
+  onPlace,
 }: {
   voucher: WalletVoucher;
+  venueName: string | null;
   texture: string;
   locale: string;
+  onPlace: OpenPlace;
 }) {
   const copy = useCopy().wallet;
   const spent = voucher.status !== 'active';
@@ -243,20 +442,76 @@ function VoucherRow({
     <article className="wcard" data-spent={spent ? 'true' : undefined} data-reveal>
       <div className="wal-band" data-texture={texture}>
         <div className="wal-band-top">
-          <BrandMark letter="%" />
+          <BrandMark letter={venueName ? initialOf(venueName) : '%'} />
           <BandPill text={until ? fill(copy.valid, { date: until }) : copy.tabs[spent ? 1 : 0]} />
         </div>
         <span className="wal-fig">{voucher.discount_pct}%</span>
       </div>
 
       <div className="wal-body">
-        <b className="wal-name">{copy.voucherTitle}</b>
+        <b className="wal-name">{venueName ?? copy.voucherTitle}</b>
+        {venueName && <span className="wal-where">{copy.voucherTitle}</span>}
         <span className="wal-meta">{fill(copy.cost, { n: String(voucher.points_spent) })}</span>
-        <div className="wal-act">
+
+        {/* A used voucher's code is a receipt, not something to show anybody. */}
+        {spent ? (
           <span className="wal-code-block">
             <i>{copy.deals.code}</i>
             <b className="wcard-code">{voucher.code}</b>
           </span>
+        ) : (
+          <CounterCode code={voucher.code} />
+        )}
+
+        <div className="wal-act">
+          <SeePlace onOpen={(from) => onPlace({ id: voucher.venue_id, name: venueName }, from)} />
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────────── reward ── */
+
+/**
+ * A reward a full stamp card earned.
+ *
+ * `GET /v1/wallet` has always sent these and nothing drew them, so the code the
+ * counter needed to hand one over was nowhere a player could find it on the web.
+ * The plate is the reward's own label — what the venue called it — because that
+ * is what somebody asks for at the till.
+ */
+function RewardRow({
+  reward,
+  venueName,
+  texture,
+  locale,
+  onPlace,
+}: {
+  reward: EarnedReward;
+  venueName: string | null;
+  texture: string;
+  locale: string;
+  onPlace: OpenPlace;
+}) {
+  const copy = useCopy().wallet;
+  const until = on(reward.expires_at, locale);
+
+  return (
+    <article className="wcard" data-reveal>
+      <div className="wal-band" data-texture={texture}>
+        <div className="wal-band-top">
+          <BrandMark letter={initialOf(venueName ?? reward.label)} />
+          {until && <BandPill text={fill(copy.valid, { date: until })} />}
+        </div>
+        <span className="wal-fig wal-fig-text">{reward.label}</span>
+      </div>
+
+      <div className="wal-body">
+        {venueName && <b className="wal-name">{venueName}</b>}
+        <CounterCode code={reward.code} />
+        <div className="wal-act">
+          <SeePlace onOpen={(from) => onPlace({ id: reward.venue_id, name: venueName }, from)} />
         </div>
       </div>
     </article>
@@ -280,7 +535,15 @@ function VoucherRow({
  * counter, and a button here that put one on the card was the clearest example
  * on the site of a screen inventing its own data.
  */
-function StampRow({ card, texture }: { card: WalletStampCard; texture: string }) {
+function StampRow({
+  card,
+  texture,
+  onPlace,
+}: {
+  card: WalletStampCard;
+  texture: string;
+  onPlace: OpenPlace;
+}) {
   const copy = useCopy().wallet;
   const full = card.stamps >= card.required;
   const left = Math.max(0, card.required - card.stamps);
@@ -330,6 +593,12 @@ function StampRow({ card, texture }: { card: WalletStampCard; texture: string })
         </div>
 
         <p className="wal-stamp-words">{words}</p>
+
+        <div className="wal-act">
+          <SeePlace
+            onOpen={(from) => onPlace({ id: card.venue_id, name: card.venue_name }, from)}
+          />
+        </div>
       </div>
     </article>
   );
@@ -347,14 +616,15 @@ function StampRow({ card, texture }: { card: WalletStampCard; texture: string })
  * - the **name** is `partnerName`, the venue rather than the offer;
  * - the **accent line** is `copy.description`, the offer explained, already in
  *   the reader's language with the server's own fallback applied;
- * - the **action** opens `copy.terms` and reports an `open`.
+ * - the **actions** open `copy.terms` (reporting an `open`) and the venue.
  *
  * Three things the seeded card had are absent, and each is absent because
  * nothing the server returns carries it: the **distance** (no position fix
  * either side), the **address and rating** (`GET /v1/deals` projects the offer,
- * not the venue), and the **"Open now" pill** — that one was answered on the
- * venue's own clock, which needs a timezone, and no endpoint has one. A pill
- * answering it on the *reader's* clock would be worse than no pill.
+ * not the venue — the venue sheet is where those live now), and the **"Open
+ * now" pill** — that one was answered on the venue's own clock, which needs a
+ * timezone, and no endpoint has one. A pill answering it on the *reader's* clock
+ * would be worse than no pill.
  */
 function DealCard({
   deal,
@@ -364,6 +634,7 @@ function DealCard({
   balance,
   open,
   onToggle,
+  onPlace,
 }: {
   deal: BrowsedDeal;
   texture: string;
@@ -373,6 +644,7 @@ function DealCard({
   /** Whether this card's terms are showing. */
   open: boolean;
   onToggle: () => void;
+  onPlace: OpenPlace;
 }) {
   const copy = useCopy().wallet;
   const deals = copy.deals;
@@ -388,6 +660,7 @@ function DealCard({
     deal.category ? categoryLabel(deal.category, categories) : '',
     deal.city ?? '',
   ].filter(Boolean);
+  const venueId = deal.venueId;
 
   return (
     <article ref={seen} className="wal-deal" data-reveal>
@@ -414,7 +687,7 @@ function DealCard({
             type="button"
             className="btn btn-ghost wal-cta"
             aria-expanded={open}
-            /* An `open`, not a claim — and the only funnel step this page is
+            /* An `open`, not a claim — and the only funnel step this card is
                allowed to post. See the header. */
             onClick={() => {
               dealOpen(deal.id, 'wallet');
@@ -424,6 +697,9 @@ function DealCard({
             <Icon name={open ? 'chevron' : 'qr'} size={15} />
             {open ? deals.hideTerms : deals.howToClaim}
           </button>
+          {venueId && (
+            <SeePlace onOpen={(from) => onPlace({ id: venueId, name: deal.partnerName }, from)} />
+          )}
         </div>
 
         {/*
@@ -515,16 +791,29 @@ export function WalletApp() {
   /** The stock id whose purchase is in flight, and how the last one ended. */
   const [buying, setBuying] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
+  /** The venue open in the sheet, and the control that opened it. */
+  const [sheet, setSheet] = useState<{ venue: VenueRef; from: HTMLElement | null } | null>(null);
 
   const board = useApi<BrowsedDeal[]>(dealsPath({ limit: 50 }));
   const held = useApi<Wallet>(WALLET_PATH);
   const shelf = useApi<GiftCardStock[]>(GIFT_CARDS_PATH);
+  const me = useApi<Me>(ME_PATH);
+
+  /* The city the server stores on the account — the spelling `GET /v1/venues`
+     matches literally. Not asked for until it is known: `useApi(null)` sends
+     nothing, and the section below never reads that result until there is a
+     city to have asked about. */
+  const city = me.state.status === 'ready' ? me.state.data.user.city : null;
+  const places = useApi<VenueListRow[]>(city ? venuesPath(city) : null);
 
   const player = account?.player;
 
   const dealRows = board.state.status === 'ready' ? board.state.data : [];
   const shelfRows = shelf.state.status === 'ready' ? shelf.state.data : [];
-  const purse = held.state.status === 'ready' ? held.state.data : null;
+  const placeRows = places.state.status === 'ready' ? places.state.data : [];
+  const purse = useLastReady(held.state);
+  const holdings: 'loading' | 'error' | 'ready' =
+    held.state.status === 'error' ? 'error' : purse ? 'ready' : 'loading';
 
   /*
    * The balance, and which of the two copies of it wins.
@@ -558,6 +847,9 @@ export function WalletApp() {
     [reload],
   );
 
+  const openPlace = useCallback<OpenPlace>((venue, from) => setSheet({ venue, from }), []);
+  const closePlace = useCallback(() => setSheet(null), []);
+
   if (!player) return null;
 
   /* The chips, and the counts under them, from one predicate over one list. */
@@ -573,6 +865,23 @@ export function WalletApp() {
   ]);
   const chipLabel =
     category === null ? wallet.deals.all : categoryLabel(category, copy.listing.categories);
+
+  /*
+   * Venue names this page already holds, by id.
+   *
+   * A voucher and a reward carry a `venue_id` and nothing else. Every list on
+   * this screen that names a venue is the server's answer about that venue, so a
+   * name found in one of them is a name, not a guess — and an id found in none
+   * prints no name at all. Later lists win because a stamp card joins
+   * `venues.name` live, where a deal carries the name it was published under.
+   */
+  const venueNames = new Map<string, string>();
+  for (const deal of dealRows) {
+    if (deal.venueId && deal.partnerName) venueNames.set(deal.venueId, deal.partnerName);
+  }
+  for (const place of placeRows) venueNames.set(place.id, place.name);
+  for (const card of purse?.stampCards ?? []) venueNames.set(card.venue_id, card.venue_name);
+  const nameOf = (venueId: string): string | null => venueNames.get(venueId) ?? null;
 
   const giftCards = purse?.giftCards ?? [];
   const shownCards = giftCards.filter((card) =>
@@ -610,6 +919,9 @@ export function WalletApp() {
                   : wallet.canRedeem}
             </span>
           </div>
+
+          {/* ── the code staff type ── */}
+          <CounterCard me={me} />
 
           {/* ══ the board ══
               What is on offer, first, because it is what somebody opens this
@@ -662,11 +974,54 @@ export function WalletApp() {
                       balance={balance}
                       open={terms === deal.id}
                       onToggle={() => setTerms(terms === deal.id ? null : deal.id)}
+                      onPlace={openPlace}
                     />
                   ))}
                 </div>
               )}
             </>
+          )}
+
+          {/* ══ places near you ══
+              Five states, and each is its own sentence: still asking who the
+              player is, could not ask, no city to ask about, asked and nobody
+              has joined, and the list. "No city" is not a failure — it is the
+              profile's next step, and it links there. */}
+          <div className="section-head left cat-head" id="wallet-places" data-reveal>
+            <h2>{wallet.places.title}</h2>
+            {city && <p>{fill(wallet.places.lede, { city })}</p>}
+          </div>
+
+          {me.state.status === 'error' ? (
+            <Down result={me} />
+          ) : me.state.status === 'loading' ? (
+            <p className="adm-empty">{wallet.loading}</p>
+          ) : !city ? (
+            <div className="console wal-empty" data-reveal>
+              <p>{wallet.places.noCity}</p>
+              <a className="btn btn-ghost" href={PATHS.profile}>
+                {wallet.places.setCity}
+              </a>
+            </div>
+          ) : places.state.status === 'error' ? (
+            <Down result={places} />
+          ) : places.state.status === 'loading' ? (
+            <p className="adm-empty">{wallet.loading}</p>
+          ) : placeRows.length === 0 ? (
+            <div className="console wal-empty" data-reveal>
+              <p>{fill(wallet.places.none, { city })}</p>
+            </div>
+          ) : (
+            <div className="wal-places">
+              {placeRows.map((place) => (
+                <PlaceRow
+                  key={place.id}
+                  place={place}
+                  categories={copy.listing.categories}
+                  onOpen={openPlace}
+                />
+              ))}
+            </div>
           )}
 
           {/* ── stamp cards ── */}
@@ -675,9 +1030,9 @@ export function WalletApp() {
             <p>{wallet.stamps.lede}</p>
           </div>
 
-          {held.state.status === 'error' ? (
+          {holdings === 'error' ? (
             <Down result={held} />
-          ) : held.state.status === 'loading' ? (
+          ) : holdings === 'loading' ? (
             <p className="adm-empty">{wallet.loading}</p>
           ) : (purse?.stampCards ?? []).length === 0 ? (
             <div className="console wal-empty" data-reveal>
@@ -692,13 +1047,14 @@ export function WalletApp() {
                   /* Offset so the first stamp card and the first deal do not
                      land on the same pattern in two lists on one page. */
                   texture={textureAt(index + 2)}
+                  onPlace={openPlace}
                 />
               ))}
             </div>
           )}
 
           {/* ══ what has already been taken ══
-              Both halves are one request, so they share one failure. Three
+              All three lists are one request, so they share one failure. Three
               "the server refused" panels down one page is noise where one is
               information — and the wallet request is the only one on this screen
               that needs a token, so it is the one that fails on its own while
@@ -708,9 +1064,9 @@ export function WalletApp() {
             <p>{wallet.redeemed.lede}</p>
           </div>
 
-          {held.state.status === 'error' ? (
+          {holdings === 'error' ? (
             <Down result={held} />
-          ) : held.state.status === 'loading' ? (
+          ) : holdings === 'loading' ? (
             <p className="adm-empty">{wallet.loading}</p>
           ) : (
             <>
@@ -729,8 +1085,35 @@ export function WalletApp() {
                     <VoucherRow
                       key={voucher.id}
                       voucher={voucher}
+                      venueName={nameOf(voucher.venue_id)}
                       texture={textureAt(index)}
                       locale={language}
+                      onPlace={openPlace}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {/* ── rewards held ── */}
+              <h3 className="wal-subhead" id="wallet-rewards" data-reveal>
+                {wallet.rewards.title}
+                <span>{wallet.rewards.lede}</span>
+              </h3>
+
+              {(purse?.rewards ?? []).length === 0 ? (
+                <div className="console wal-empty" data-reveal>
+                  <p>{wallet.rewards.none}</p>
+                </div>
+              ) : (
+                <div className="wcards">
+                  {(purse?.rewards ?? []).map((reward, index) => (
+                    <RewardRow
+                      key={reward.id}
+                      reward={reward}
+                      venueName={nameOf(reward.venue_id)}
+                      texture={textureAt(index + 3)}
+                      locale={language}
+                      onPlace={openPlace}
                     />
                   ))}
                 </div>
@@ -865,6 +1248,20 @@ export function WalletApp() {
           </p>
         </div>
       </section>
+
+      {/* Keyed by venue, so opening a second place starts a fresh sheet — its
+          own request, its own purchase state — instead of reusing the first
+          one's. It portals itself out of this tree; see `venueSheet.tsx`. */}
+      {sheet && (
+        <VenueSheet
+          key={sheet.venue.id}
+          venue={sheet.venue}
+          balance={purse ? purse.points : null}
+          returnFocus={sheet.from}
+          onClose={closePlace}
+          onChanged={reload}
+        />
+      )}
     </main>
   );
 }

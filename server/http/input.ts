@@ -96,6 +96,42 @@ export const qInt = (ctx: Ctx, key: string, fallback: number): number => {
 
 export const qStr = (ctx: Ctx, key: string): string | undefined => ctx.query.get(key) ?? undefined;
 
+/**
+ * A query parameter from a closed set: absent is the fallback, anything else
+ * outside the set is a 400 naming the field.
+ *
+ * `qInt` falls back silently, which is right for a page size nobody sends and
+ * wrong for a *window*: a dashboard that asks for `days=45` and is quietly
+ * handed thirty draws a month under a label that says something else, and
+ * nothing on the screen can tell.
+ */
+export function qChoice<T extends string>(ctx: Ctx, key: string, allowed: readonly T[], fallback: T): T {
+  const raw = ctx.query.get(key);
+  if (raw === null) return fallback;
+  if (!allowed.includes(raw as T)) {
+    throw new DomainError('validation_failed', `${key} must be one of ${allowed.join(', ')}`, {
+      field: key,
+      allowed,
+    });
+  }
+  return raw as T;
+}
+
+/** A whole-number query parameter inside a range, with the same refusal. */
+export function qRange(ctx: Ctx, key: string, fallback: number, opts: { min: number; max: number }): number {
+  const raw = ctx.query.get(key);
+  if (raw === null || raw === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < opts.min || value > opts.max) {
+    throw new DomainError(
+      'validation_failed',
+      `${key} must be a whole number from ${opts.min} to ${opts.max}`,
+      { field: key, min: opts.min, max: opts.max },
+    );
+  }
+  return value;
+}
+
 /** The signed-in actor, where a route declared it needs one. */
 export function actor(ctx: Ctx) {
   if (!ctx.actor) throw new DomainError('unauthenticated', 'sign in first');

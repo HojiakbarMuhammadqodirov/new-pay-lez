@@ -66,6 +66,54 @@ export const activeCampaigns = async (db: Db, venueId: string): Promise<Campaign
     { v: venueId },
   );
 
+export type CampaignRow = Campaign & {
+  created_at: string;
+  updated_at: string;
+  members: number;
+  earned: number;
+  redeemed: number;
+  near: number;
+  available: number;
+  expired: number;
+  reserved_minor: number;
+};
+
+/**
+ * The campaigns table as the dashboard reads it: every column, and what the
+ * cards and rewards under each campaign add up to.
+ *
+ * One function for the list and for the row an edit answers with, so a saved
+ * campaign comes back in exactly the shape the list drew it in — the lesson of
+ * the budget body one file over, where two routes answering "the same thing"
+ * in two shapes cost the whole dashboard.
+ *
+ * `near` counts cards one stamp from paying out, and only on an **active**
+ * campaign: a paused card one stamp short is not one visit from anything.
+ * `reserved_minor` is what the uncollected rewards still hold in the loyalty
+ * pool — money that has left "available" and has not been spent.
+ */
+export async function campaignRows(db: Db, venueId: string, campaignId?: string): Promise<CampaignRow[]> {
+  return await db.all<CampaignRow>(
+    `SELECT c.*,
+            (SELECT COUNT(*) FROM stamp_cards s WHERE s.campaign_id = c.id) AS members,
+            (SELECT COUNT(*) FROM earned_rewards r WHERE r.campaign_id = c.id) AS earned,
+            (SELECT COUNT(*) FROM earned_rewards r WHERE r.campaign_id = c.id
+               AND r.status = 'redeemed') AS redeemed,
+            (SELECT COUNT(*) FROM stamp_cards s WHERE s.campaign_id = c.id
+               AND c.status = 'active' AND s.stamps = c.visits_required - 1) AS near,
+            (SELECT COUNT(*) FROM earned_rewards r WHERE r.campaign_id = c.id
+               AND r.status = 'available') AS available,
+            (SELECT COUNT(*) FROM earned_rewards r WHERE r.campaign_id = c.id
+               AND r.status = 'expired') AS expired,
+            (SELECT COALESCE(SUM(r.reserved_minor), 0) FROM earned_rewards r
+              WHERE r.campaign_id = c.id AND r.status = 'available') AS reserved_minor
+       FROM campaigns c
+      WHERE c.venue_id = $v ${campaignId === undefined ? '' : 'AND c.id = $c'}
+      ORDER BY c.priority DESC, c.created_at DESC`,
+    campaignId === undefined ? { v: venueId } : { v: venueId, c: campaignId },
+  );
+}
+
 /**
  * B5. What a campaign may and may not be.
  *

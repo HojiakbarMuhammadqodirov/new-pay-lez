@@ -41,6 +41,7 @@
  */
 import { call } from './client';
 import { FX, formatFx, type FxCode } from '../i18n/fx';
+import type { EarnedReward } from './venue';
 
 /* ═════════════════════════════════════════════════════════ what is held ══ */
 
@@ -98,7 +99,14 @@ export interface WalletStampCard {
 export interface Wallet {
   points: number;
   vouchers: WalletVoucher[];
-  rewards: unknown[];
+  /**
+   * Rewards earned on a full stamp card and not yet used, at every venue.
+   *
+   * It was `unknown[]` and nothing drew it, so a player who filled a card could
+   * not find the code the counter needed anywhere on the web. The row carries a
+   * `venue_id` and no name, like a voucher's.
+   */
+  rewards: EarnedReward[];
   stampCards: WalletStampCard[];
   giftCards: WalletGiftCard[];
 }
@@ -156,7 +164,14 @@ export function faceValue(
      priced in the platform's own unit. */
   const fx = FX[card.currency.toUpperCase() as FxCode] ?? FX.EUR;
   /* Every `*_minor` column on the server is hundredths, whatever the currency's
-     own decimal count is; `formatFx` then writes it to that count. */
+     own decimal count is; `formatFx` then writes it to that count.
+
+     Contested, and left as it is on purpose: `decimalsFor` in
+     `server/domain/money.ts` says a so'm has no minor unit, which would make a
+     UZS `face_minor` whole so'm, while `npm run verify` pins hundredths here. No
+     code writes gift-card stock yet, so nothing on the server settles it — it is
+     recorded in the beta contract's CHANGELOG rather than decided in a file whose
+     check belongs to somebody else. */
   const amount = formatFx(card.face_minor / 100, fx, separator);
   /* No-break space on the trailing form, exactly as `money()` writes it:
      "50 zł" must never break between the number and its unit, and the leading

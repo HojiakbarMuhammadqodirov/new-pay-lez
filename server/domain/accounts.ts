@@ -1070,8 +1070,18 @@ const RESERVED_USERNAMES = new Set([
   'noreply', 'no_reply', 'postmaster', 'webmaster',
 ]);
 
-/** The comparison key. Lowercase is total here because the shape is ASCII. */
-const foldUsername = (value: string): string => value.trim().toLowerCase();
+/**
+ * The comparison key. Lowercase is total here because the shape is ASCII.
+ *
+ * Exported for the counter tool, which finds a customer by the handle they read
+ * out at the till: a lookup that folded differently from this index would miss
+ * `@KasiaPL` for the account the index knows as `kasiapl`.
+ */
+export const foldUsername = (value: string): string => value.trim().toLowerCase();
+
+/** Whether a folded string could be a handle at all — the shape rule, not the reserved list. */
+export const isUsernameShaped = (norm: string): boolean =>
+  norm.length >= USERNAME_MIN && norm.length <= USERNAME_MAX && USERNAME_SHAPE.test(norm);
 
 /**
  * A handle, or a refusal naming the field.
@@ -1520,6 +1530,24 @@ export interface ProfilePatch {
   occupation?: string;
   /** ISO `YYYY-MM-DD`. Accepted twice: the answer, and one correction. */
   birthDate?: string;
+  /**
+   * Answers to take back. Every other field here can only *set* a value — the
+   * write `COALESCE`s, so an absent key and an empty string both leave the column
+   * alone, which is what an existing client resending its whole profile relies on
+   * — and that left nobody able to remove a photo or a phone number once given.
+   * A privacy problem before it is a form problem: the answer to "delete my
+   * number" was "replace it with another one".
+   *
+   * `city` clears the city **and its country**, because the country is a fact
+   * about the city (see `resolveCity`) and a country left behind would describe
+   * nowhere. The name, the handle, the birthday and the language are not here and
+   * cannot be: an account always has a name and a language, a handle is what
+   * other people were told, and a birthday is corrected rather than withdrawn.
+   *
+   * Clearing never touches `profile_completed_at`: a completion bonus already paid
+   * stays paid — see `payForACompleteProfile`.
+   */
+  clear?: ReadonlyArray<'avatar' | 'phone' | 'occupation' | 'city'>;
 }
 
 /**
@@ -1649,6 +1677,14 @@ export async function updateProfile(
      carrying only one of them means is `resolveCityAnswer`'s to say — the same
      function sign-up calls, so the two cannot give different replies to the same
      form again. */
+  const clears = new Set(patch.clear ?? []);
+  if (clears.has('city') && (patch.city !== undefined || patch.countryCode !== undefined)) {
+    /* One request cannot both remove a city and name one, and a country sent
+       beside a removed city would have no city to be the country of. */
+    throw new DomainError('validation_failed', 'clearing the city clears its country too', {
+      field: patch.city !== undefined ? 'city' : 'countryCode',
+    });
+  }
   const city = resolveCityAnswer(patch.city, patch.countryCode);
   const phone = patch.phone === undefined ? null : checkPhone(patch.phone.trim());
 
@@ -1680,12 +1716,15 @@ export async function updateProfile(
                 username = COALESCE($un, username),
                 username_norm = COALESCE($unn, username_norm),
                 language = COALESCE($l, language),
-                city = COALESCE($c, city),
+                /* A clear is a flag beside the value rather than a NULL in its
+                   place, because NULL in the value's slot already means "not
+                   sent" to the COALESCE every existing client relies on. */
+                city = CASE WHEN $xc = 1 THEN NULL ELSE COALESCE($c, city) END,
                 /* From the city, never from the request: see resolveCity. */
-                country_code = COALESCE($cc, country_code),
-                display_avatar = COALESCE($a, display_avatar),
-                occupation = COALESCE($oc, occupation),
-                phone = COALESCE($ph, phone),
+                country_code = CASE WHEN $xc = 1 THEN NULL ELSE COALESCE($cc, country_code) END,
+                display_avatar = CASE WHEN $xa = 1 THEN NULL ELSE COALESCE($a, display_avatar) END,
+                occupation = CASE WHEN $xo = 1 THEN NULL ELSE COALESCE($oc, occupation) END,
+                phone = CASE WHEN $xp = 1 THEN NULL ELSE COALESCE($ph, phone) END,
                 birth_date = COALESCE($bd, birth_date),
                 /* When it was last written, which is now one of two moments. */
                 birth_date_set_at = CASE WHEN $bd IS NULL THEN birth_date_set_at ELSE $t END,
@@ -1705,6 +1744,10 @@ export async function updateProfile(
           a: patch.avatar ?? null,
           oc: occupation,
           ph: phone,
+          xc: clears.has('city') ? 1 : 0,
+          xa: clears.has('avatar') ? 1 : 0,
+          xo: clears.has('occupation') ? 1 : 0,
+          xp: clears.has('phone') ? 1 : 0,
           bd: birthDate,
           t: at,
           u: userId,

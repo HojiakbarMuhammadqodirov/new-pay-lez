@@ -145,18 +145,69 @@ export function isoWeek(at: Iso): string {
   return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
+/**
+ * How far a zone's wall clock is ahead of UTC at one instant, in milliseconds.
+ *
+ * Read by formatting the instant *in* the zone and taking the difference —
+ * the offset with daylight saving already applied, and no table of offsets.
+ * Floored to the minute first, because `local` carries no seconds and a
+ * difference taken against a fractional minute would be off by the fraction.
+ */
+function offsetAt(instantMs: number, timezone: string): number {
+  const minute = Math.floor(instantMs / 60_000) * 60_000;
+  const l = local(new Date(minute).toISOString(), timezone);
+  const [year, month, date] = l.day.split('-').map(Number);
+  return Date.UTC(year, month - 1, date, l.hour, l.minute) - minute;
+}
+
+/**
+ * The first instant of a venue-local calendar day, as UTC.
+ *
+ * Every day-bucketed report — a dashboard's thirty days, a till log's window,
+ * "today" — is a range of these, and the range has to start where the venue's
+ * day starts rather than where the server's does: a Kraków visit at 00:30 on
+ * the 5th is the 5th's trade, not the 4th's.
+ *
+ * Two passes of the offset, because one is wrong across a daylight-saving
+ * change (the offset read at the naive guess is the other side of the jump).
+ * Then a walk, for the two days a year where the answer is not simply "local
+ * 00:00": a zone that springs forward *at* midnight has no 00:00 at all and its
+ * day starts at 01:00, and one that falls back across midnight has two of them
+ * and its day starts at the first. Both walks are bounded, and both are a
+ * no-op on every ordinary day.
+ *
+ * It replaced an hour-by-hour search that stopped at the first whole hour whose
+ * local minutes were zero — which never happens in a half-hour zone (Kolkata,
+ * Adelaide) or a quarter-hour one (Kathmandu), so every month there silently
+ * started at UTC midnight instead.
+ */
+export function localMidnight(day: string, timezone: string): Iso {
+  const [year, month, date] = day.split('-').map(Number);
+  const wall = Date.UTC(year, month - 1, date);
+  let instant = wall - offsetAt(wall, timezone);
+  instant = wall - offsetAt(instant, timezone);
+
+  const dayAt = (ms: number) => local(new Date(ms).toISOString(), timezone).day;
+  for (let step = 0; step < 240 && dayAt(instant) < day; step += 1) instant += 60_000;
+  for (let step = 0; step < 240 && dayAt(instant - 60_000) === day; step += 1) instant -= 60_000;
+  return new Date(instant).toISOString();
+}
+
+/**
+ * A `YYYY-MM-DD` calendar day moved by whole days.
+ *
+ * Arithmetic on the *date*, not on an instant: "the day before" a local day is
+ * a local day, and stepping an instant by 24 hours lands on the wrong one twice
+ * a year wherever the clocks change.
+ */
+export function shiftDay(day: string, days: number): string {
+  const [year, month, date] = day.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1, date + days)).toISOString().slice(0, 10);
+}
+
 /** The first instant of a `YYYY-MM` period in a zone, as UTC. */
 export function monthStart(period: string, timezone: string): Iso {
-  const [year, month] = period.split('-').map(Number);
-  /* Walk back from the UTC midnight guess until the local day is the 1st: the
-     offset is at most a day either way and this needs no offset arithmetic. */
-  let guess = new Date(Date.UTC(year, month - 1, 1, 0, 0, 0));
-  for (let step = 0; step < 48; step += 1) {
-    const l = local(guess.toISOString(), timezone);
-    if (l.day === `${period}-01` && l.minutes === 0) return guess.toISOString();
-    guess = new Date(guess.getTime() + (l.day < `${period}-01` ? 3_600_000 : -3_600_000));
-  }
-  return new Date(Date.UTC(year, month - 1, 1)).toISOString();
+  return localMidnight(`${period}-01`, timezone);
 }
 
 /** `YYYY-MM` one month on, for a renewal or a quota reset. */

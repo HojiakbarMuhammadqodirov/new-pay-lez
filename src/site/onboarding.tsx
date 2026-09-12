@@ -250,6 +250,7 @@ function LanguageStep({ onNext }: { onNext: () => void }) {
  */
 function PlaceStep({ onNext, onBack }: { onNext: () => void; onBack: () => void }) {
   const copy = useCopy().onboarding;
+  const { refreshAccount } = useAuth();
   const cities = useCities();
   const [query, setQuery] = useState('');
   const [picked, setPicked] = useState<City | null>(null);
@@ -273,6 +274,11 @@ function PlaceStep({ onNext, onBack }: { onNext: () => void; onBack: () => void 
         countryCode: picked.country,
         leaderboardOptIn: listed,
       });
+      /* The city is on the server now, canonicalised, and the mirror has not
+         seen it — so the profile page, one click after this flow ends, would
+         say "no city yet" about a city this account has. Asked for, not
+         awaited: the next step does not depend on it. */
+      void refreshAccount();
     } catch {
       /* A place that did not save is not a reason to trap somebody in
          onboarding. The profile page asks the same two questions and the

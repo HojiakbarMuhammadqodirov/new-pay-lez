@@ -1083,14 +1083,82 @@ If the partner companion has a model for the overview's budget that is *narrower
 than the one for `/budget`, delete it and share the one type. That the two could
 be different is what caused this.
 
+### 13. `GET /v1/venues/{id}` — `deals` stopped hiding, `venue.timezone` arrived
+
+Additive in shape, visible on the venue screen. `deals` used to be filtered by
+the **reader's** city as well as the venue, so a player whose profile says Warsaw
+opening a Kraków café was shown no deals for it. A venue's own deals are now
+listed wherever the reader lives; the city board (`GET /v1/deals`) still keeps
+to its city. `venue.timezone` is the IANA zone the venue's deal hours and opening
+hours are in — format `12:00–14:00` in it, not in the device's zone.
+
+### 14. Notifications: two new `kind`s, and scheduled pushes are really sent
+
+Nothing sent a scheduled deal push before; now a job does, every few minutes.
+Expect in the inbox (and as pushes, where permission, quiet hours and the
+frequency cap allow):
+
+- `kind: "deal_push"` — `source_kind: "hot_deal"`, `source_ref` the deal id,
+  and the notification's `push_id`. **Send that push id back** on the open:
+  `POST /v1/deals/{id}/events { kind: "open", pushId }`. It is how the partner's
+  "opened" figure is counted.
+- `kind: "venue_reminder"` — a venue reminding somebody who holds an unused
+  reward or voucher there. Open the wallet on it.
+
+A kind the app does not recognise should still render as a plain inbox row.
+
+### 15. `PATCH /v1/me` — `null` now clears
+
+Additive. An explicit JSON `null` clears `avatar`, `phone` and `occupation`, and
+`city: null` clears the city **and** `countryCode` together (a `countryCode` sent
+beside `city: null` is a 400). `null` for `name`, `username`, `birthDate` or
+`language` is a `400 validation_failed` naming the field. **An absent key and an
+empty string still mean "leave it"**, so an app that resends its whole profile
+behaves exactly as before. Clearing never takes back the profile-completion
+bonus. `PATCH /v1/partner/venues/{id}` follows the same rule for `subcategory`,
+`address`, `priceRange`, `phone`, `email` and `imageUrl`.
+
+### 16. The gate: a timed-out scan no longer blocks the customer
+
+Same sequence, same codes. A pending transaction past the 15-minute limit used to
+stay `pending` after its own confirm was refused with `expired` — the refusal
+rolled the cancellation back — and until a sweep ran the customer's next scan
+there was a `409 conflict`. Now the timed-out transaction is `cancelled`, a new
+scan cancels a stale one instead of refusing, and `GET /v1/venues/{id}/pending`
+lists only transactions that can still be confirmed.
+
+### 17. Partner companion — values that were wrong, and fields that grew
+
+| Call | Change |
+| --- | --- |
+| `GET …/venues/{id}/today` | `period` is the **venue-local day** `YYYY-MM-DD` — it was the month, which was a bug — and counts from the venue's midnight, not UTC's. `timezone` added. `pendingConfirmations` leaves out scans that can no longer be confirmed |
+| `GET …/budget`, `GET …/overview` | each `tiers[]` rung gains `issuedCount`, `redeemedCount`, `activeCount`, `spentMinor`, `active`; a rung switched off while its vouchers are out appears with `active: false`, `available: false` |
+| `GET …/overview?period=` | `findings` now follow the month asked for; a `period` that is not `YYYY-MM` is a 400 (it was a 500) — also on `/analytics`, `/reach`, `/export` |
+| `GET …/campaigns` | rows gain `near`, `available`, `expired`, `reserved_minor` |
+| `GET …/push-quota` | gains `funnel: { sent, delivered, opened, cameIn }` |
+| `GET …/customers` | rows may gain `tierPct` and `spendTrend` (absent when unknown); an unknown `sort` or `status` is a 400; the status filter now applies before paging |
+| `GET …/analytics` | `costPerNewCustomer.excluded` (usually `[]`): the plan fee is converted into the venue's currency, and left out and named when no rate exists |
+| `POST /v1/partner/deals/{id}/extend` | a bare `YYYY-MM-DD` runs to the end of that venue-local day; not a date → 400; reviving an **expired** deal needs the publish gates (`403 not_verified` / `entitlement_required`) |
+| `POST /v1/partner/campaigns/{id}/status` | resuming can be `403 entitlement_required`, like creating |
+
+New partner endpoints, all venue-scoped and refused for anybody who is not staff
+at that venue: `GET …/series`, `GET …/insights`, `GET` and `POST …/remind`,
+`GET …/scans`, `GET …/audiences`, `GET …/listing`, `POST …/counter/lookup`,
+`POST …/counter`, and `PATCH /v1/partner/campaigns/{id}`. The two counter routes
+are the ones the companion app is most likely to want: a cashier types a
+customer's `@handle`, a voucher code or a reward code and a bill, and the sale
+goes through the gate without the customer's phone. Their shapes are in
+`openapi.json`.
+
 ### What did **not** change
 
 The gate's *sequence* — `/gate/scan`, `/amount`, `/confirm`, the polling and the
 error codes — is exactly as it was; only `pointsCapped` left the receipt (§7).
 Vouchers, gift cards, stamp cards, rewards, deals and their funnel, the guidebook,
-the converter, referrals, leaderboards, notifications, push registration, the
-per-venue consent routines, and every partner endpoint are untouched apart from
-the additive change in §12.
+the converter, referrals, leaderboards, push registration and the per-venue
+consent routines are untouched in shape. The partner endpoints grew additively
+(§12, §17), `/today`'s `period` value was corrected (§17), and two notification
+kinds are new (§14).
 
 **The `/v1/admin/*` routes moved and the app does not touch them.** Removing a
 venue or an offer is a real `DELETE` now rather than an archive flag, closing an

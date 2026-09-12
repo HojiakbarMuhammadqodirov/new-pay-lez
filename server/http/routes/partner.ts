@@ -16,6 +16,7 @@ import * as assistant from '../../domain/assistant.ts';
 import * as audit from '../../domain/audit.ts';
 import * as budget from '../../domain/budget.ts';
 import * as campaigns from '../../domain/campaigns.ts';
+import * as dashboard from '../../domain/dashboard.ts';
 import * as deals from '../../domain/deals.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as gate from '../../domain/gate.ts';
@@ -24,7 +25,7 @@ import * as profiles from '../../domain/profiles.ts';
 import * as vouchers from '../../domain/vouchers.ts';
 import { averageCheck, getVenue, venuesOf } from '../../domain/venues.ts';
 import { DomainError } from '../../domain/errors.ts';
-import { actor, bool, int, list, oneOf, optInt, optStr, qInt, qStr, str } from '../input.ts';
+import { actor, bool, int, list, oneOf, optInt, optStr, qChoice, qInt, qRange, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
 /** The venue in the path, with the caller's access to it already checked. */
@@ -35,6 +36,42 @@ async function mine(ctx: Ctx, param = 'id') {
 }
 
 const entOf = async (ctx: Ctx, venueId: string) => await entitlements.entitlementsFor(ctx.db, { venueId });
+
+/** `mine`, for a route addressed by campaign: its venue, with the caller's access to it checked. */
+async function campaignVenue(ctx: Ctx): Promise<string> {
+  const campaign = await ctx.db.get<{ venue_id: string }>(`SELECT venue_id FROM campaigns WHERE id = $i`, {
+    i: ctx.params.id,
+  });
+  if (!campaign) throw new DomainError('not_found', 'campaign not found');
+  await gate.requireStaff(ctx.db, campaign.venue_id, actor(ctx).user.id);
+  return campaign.venue_id;
+}
+
+/**
+ * A `YYYY-MM` report month, or none.
+ *
+ * Checked here because nothing downstream can refuse it: a period that is not a
+ * month reached `monthStart`, built an invalid date and threw a `RangeError` —
+ * a 500 for a typo in a query string.
+ */
+function qPeriod(ctx: Ctx): string | undefined {
+  const period = qStr(ctx, 'period');
+  if (period === undefined) return undefined;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period)) {
+    throw new DomainError('validation_failed', 'period is a month, YYYY-MM', { field: 'period' });
+  }
+  return period;
+}
+
+/** The five words `profiles.deriveStatus` can produce, and so the five a filter may ask for. */
+const CUSTOMER_STATUSES: readonly profiles.CustomerStatus[] = ['new', 'regular', 'lapsed', 'at_risk', 'high_value'];
+
+/** The listing's non-column parts, as sent. `null` is "not sent", like everywhere else in a patch. */
+const extrasOf = (ctx: Ctx) => ({
+  description: ctx.body.description ?? undefined,
+  links: ctx.body.links ?? undefined,
+  languages: ctx.body.languages ?? undefined,
+});
 
 /**
  * The budget, as every client reads it — one shape, from one function.
@@ -62,9 +99,12 @@ async function budgetBody(db: Ctx['db'], venue: Awaited<ReturnType<typeof getVen
   const view = await budget.budgetFor(db, venue.id, at);
   return {
     ...view,
-    /* B6: the voucher-count estimate the dashboard shows, and the word
-       "estimate" is load-bearing — enforcement is on money at redemption. */
-    tiers: await vouchers.ladder(db, venue.id, at),
+    /* B6: the voucher-count estimate the dashboard shows — the word "estimate"
+       is load-bearing, enforcement is on money at redemption — and, on this
+       body only, what each rung actually did this month. The partner ladder and
+       never the public one: `GET /v1/venues/:id` serves `vouchers.ladder` to
+       anybody who opens a venue, and a venue's issuance is its own trading. */
+    tiers: await vouchers.partnerLadder(db, venue.id, at),
     averageCheck: await averageCheck(db, venue, at),
     rebalanceHint: budget.rebalanceHint(view),
     tolerance: budget.toleranceOf(view),
@@ -100,6 +140,10 @@ export const partnerRoutes: Route[] = [
           email: optStr(ctx.body, 'email'),
           imageUrl: optStr(ctx.body, 'imageUrl'),
         },
+        /* The description, links and languages ride with the create, so the
+           listing form's one save is one request (§2.9). The answer is still the
+           venue row; `GET …/listing` reads the whole listing back. */
+        extras: extrasOf(ctx),
         at: ctx.at,
       }),
   },
@@ -109,7 +153,18 @@ export const partnerRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       const venue = await mine(ctx);
+      /* An explicit `null` takes a listing detail back (§2.13); an absent key
+         leaves it. The three a listing cannot exist without say so instead. */
+      for (const field of ['name', 'category', 'city'] as const) {
+        if (ctx.body[field] === null) {
+          throw new DomainError('validation_failed', `${field} can be changed but not removed`, { field });
+        }
+      }
+      const clear = (['subcategory', 'address', 'priceRange', 'phone', 'email', 'imageUrl'] as const).filter(
+        (field) => ctx.body[field] === null,
+      );
       return await partners.updateVenue(ctx.db, {
+        clear,
         venueId: venue.id,
         actorId: actor(ctx).user.id,
         patch: {
@@ -130,6 +185,7 @@ export const partnerRoutes: Route[] = [
           pointsPerScan: optInt(ctx.body, 'pointsPerScan', { min: 0, max: 100 }),
           scanCooldownHours: optInt(ctx.body, 'scanCooldownHours', { min: 0, max: 720 }),
         },
+        extras: extrasOf(ctx),
         at: ctx.at,
       });
     },
@@ -143,10 +199,12 @@ export const partnerRoutes: Route[] = [
       await partners.setLinks(
         ctx.db,
         venue.id,
-        list(ctx.body, 'links', (item) => {
-          const link = item as { kind?: unknown; value?: unknown };
-          return { kind: String(link.kind ?? ''), value: String(link.value ?? '') };
-        }),
+        /* Handed over as sent: `setLinks` checks them, for this route and for
+           links saved with the listing alike. A `null` in the list is a row with
+           nothing in it, not a TypeError. */
+        list(ctx.body, 'links', (item) =>
+          (item !== null && typeof item === 'object' ? item : {}) as { kind?: unknown; value?: unknown },
+        ),
         ctx.at,
       );
       return await partners.linksOf(ctx.db, venue.id);
@@ -162,11 +220,13 @@ export const partnerRoutes: Route[] = [
         ctx.db,
         venue.id,
         list(ctx.body, 'hours', (item) => {
-          const row = item as Record<string, unknown>;
+          const row = (item !== null && typeof item === 'object' ? item : {}) as Record<string, unknown>;
+          /* A closed day sends no times at all; absent is null, not `NaN`. */
+          const minutes = (value: unknown) => (value === null || value === undefined ? null : Number(value));
           return {
             weekday: Number(row.weekday),
-            opensMin: row.opensMin === null ? null : Number(row.opensMin),
-            closesMin: row.closesMin === null ? null : Number(row.closesMin),
+            opensMin: minutes(row.opensMin),
+            closesMin: minutes(row.closesMin),
             closed: Boolean(row.closed),
           };
         }),
@@ -289,7 +349,7 @@ export const partnerRoutes: Route[] = [
         }),
         at: ctx.at,
       });
-      return await vouchers.ladder(ctx.db, venue.id, ctx.at);
+      return await vouchers.partnerLadder(ctx.db, venue.id, ctx.at);
     },
   },
 
@@ -298,18 +358,7 @@ export const partnerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/partner/venues/:id/campaigns',
     auth: 'partner',
-    handler: async (ctx) => {
-      const venue = await mine(ctx);
-      return await ctx.db.all(
-        `SELECT c.*,
-                (SELECT COUNT(*) FROM stamp_cards s WHERE s.campaign_id = c.id) AS members,
-                (SELECT COUNT(*) FROM earned_rewards r WHERE r.campaign_id = c.id) AS earned,
-                (SELECT COUNT(*) FROM earned_rewards r WHERE r.campaign_id = c.id
-                   AND r.status = 'redeemed') AS redeemed
-           FROM campaigns c WHERE c.venue_id = $v ORDER BY c.priority DESC, c.created_at DESC`,
-        { v: venue.id },
-      );
-    },
+    handler: async (ctx) => campaigns.campaignRows(ctx.db, (await mine(ctx)).id),
   },
   {
     method: 'POST',
@@ -340,26 +389,49 @@ export const partnerRoutes: Route[] = [
     pattern: '/v1/partner/campaigns/:id/status',
     auth: 'partner',
     handler: async (ctx) => {
-      const campaign = await ctx.db.get<{ venue_id: string }>(
-        `SELECT venue_id FROM campaigns WHERE id = $i`,
-        { i: ctx.params.id },
-      );
-      if (!campaign) throw new DomainError('not_found', 'campaign not found');
-      await gate.requireStaff(ctx.db, campaign.venue_id, actor(ctx).user.id);
-
+      await campaignVenue(ctx);
       const status = oneOf(ctx.body, 'status', ['active', 'paused', 'ended'] as const);
-      await campaigns.setStatus(ctx.db, ctx.params.id, status, ctx.at);
-      await audit.record(ctx.db, {
+      /* §5.3: pausing stops new earning; rewards already earned stay valid and
+         stay reserved. Nothing is cancelled here, deliberately. Resuming is
+         held to the plan's campaign allowance — see `setCampaignStatus`. */
+      await partners.setCampaignStatus(ctx.db, {
+        campaignId: ctx.params.id,
+        status,
         actorId: actor(ctx).user.id,
-        action: `campaign.${status}`,
-        entity: 'campaign',
-        entityId: ctx.params.id,
-        venueId: campaign.venue_id,
         at: ctx.at,
       });
-      /* §5.3: pausing stops new earning; rewards already earned stay valid and
-         stay reserved. Nothing is cancelled here, deliberately. */
       return { status };
+    },
+  },
+  {
+    /*
+     * Edit a campaign (§2.7). Every field is optional; the answer is the row in
+     * the shape `GET …/campaigns` lists it in. `minSpendMinor: null` is a value
+     * — "no override, the venue's minimum applies" — so it is read before
+     * `optInt`, which treats null as absent.
+     */
+    method: 'PATCH',
+    pattern: '/v1/partner/campaigns/:id',
+    auth: 'partner',
+    handler: async (ctx) => {
+      await campaignVenue(ctx);
+      const body = ctx.body;
+      const sent = (field: string) => body[field] !== undefined && body[field] !== null;
+      return await partners.updateCampaign(ctx.db, {
+        campaignId: ctx.params.id,
+        actorId: actor(ctx).user.id,
+        patch: {
+          name: sent('name') ? str(body, 'name', { max: 120 }) : undefined,
+          rewardLabel: sent('rewardLabel') ? str(body, 'rewardLabel', { max: 120 }) : undefined,
+          rewardCostMinor: optInt(body, 'rewardCostMinor', { min: 1 }),
+          visitsRequired: optInt(body, 'visitsRequired', { min: 1, max: 50 }),
+          minSpendMinor: body.minSpendMinor === null ? null : optInt(body, 'minSpendMinor', { min: 0 }),
+          rewardValidDays: optInt(body, 'rewardValidDays', { min: 1, max: 365 }),
+          priority: optInt(body, 'priority', { min: 0, max: 100 }),
+          recurring: sent('recurring') ? bool(body, 'recurring') : undefined,
+        },
+        at: ctx.at,
+      });
     },
   },
 
@@ -368,7 +440,7 @@ export const partnerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/partner/venues/:id/deals',
     auth: 'partner',
-    handler: async (ctx) => partners.dealsFor(ctx.db, (await mine(ctx)).id, ctx.language),
+    handler: async (ctx) => partners.dealsFor(ctx.db, (await mine(ctx)).id, ctx.language, ctx.at),
   },
   {
     method: 'POST',
@@ -473,14 +545,19 @@ export const partnerRoutes: Route[] = [
     handler: async (ctx) => {
       const deal = await deals.getDeal(ctx.db, ctx.params.id);
       if (deal.venue_id) await gate.requireStaff(ctx.db, deal.venue_id, actor(ctx).user.id);
-      const updated = await deals.extend(ctx.db, deal.id, str(ctx.body, 'validTo'), ctx.at);
+      /* An expired deal comes back live through here, so it passes the same
+         three gates publishing does — see `deals.extend`. */
+      const updated = await deals.extend(ctx.db, deal.id, str(ctx.body, 'validTo'), ctx.at, {
+        check: async () => await partners.assertPublishable(ctx.db, deal.id),
+      });
       await audit.record(ctx.db, {
         actorId: actor(ctx).user.id,
         action: 'deal.extend',
         entity: 'hot_deal',
         entityId: deal.id,
         venueId: deal.venue_id,
-        after: { validTo: ctx.body.validTo },
+        /* What was stored, which for a bare day is the end of that day. */
+        after: { validTo: updated.valid_to },
         at: ctx.at,
       });
       return updated;
@@ -521,7 +598,7 @@ export const partnerRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       const venue = await mine(ctx);
-      const window = { period: qStr(ctx, 'period'), at: ctx.at };
+      const window = { period: qPeriod(ctx), at: ctx.at };
       return {
         overview: await analytics.overview(ctx.db, venue.id, window),
         /* The *same* body `GET .../budget` returns — see `budgetBody`. It was
@@ -556,7 +633,7 @@ export const partnerRoutes: Route[] = [
     pattern: '/v1/partner/venues/:id/reach',
     auth: 'partner',
     handler: async (ctx) =>
-      analytics.reach(ctx.db, (await mine(ctx)).id, { period: qStr(ctx, 'period'), at: ctx.at }),
+      analytics.reach(ctx.db, (await mine(ctx)).id, { period: qPeriod(ctx), at: ctx.at }),
   },
   {
     method: 'GET',
@@ -565,7 +642,7 @@ export const partnerRoutes: Route[] = [
     handler: async (ctx) => {
       const venue = await mine(ctx);
       const ent = await entOf(ctx, venue.id);
-      const window = { period: qStr(ctx, 'period'), at: ctx.at };
+      const window = { period: qPeriod(ctx), at: ctx.at };
 
       const base = {
         overview: await analytics.overview(ctx.db, venue.id, window),
@@ -594,7 +671,7 @@ export const partnerRoutes: Route[] = [
         repeatMultiple: await analytics.repeatMultiple(ctx.db, venue.id, window),
         roi: await analytics.roiByFeature(ctx.db, venue.id, window),
         benchmarks: entitlements.entBool(ent, 'benchmarks')
-          ? await analytics.benchmarksFor(ctx.db, venue.city, venue.category, ctx.at)
+          ? await analytics.benchmarksFor(ctx.db, venue.city, venue.category, ctx.at, window.period)
           : undefined,
       };
     },
@@ -608,7 +685,10 @@ export const partnerRoutes: Route[] = [
       entitlements.requireEntitlement(await entOf(ctx, venue.id), 'export_csv');
       /* B10: a venue's own aggregate data, respecting the no-individual rule —
          the CSV is a day-by-day roll-up and contains no user column. */
-      return { filename: `paylez-${venue.id}.csv`, csv: await analytics.exportCsv(ctx.db, venue.id, { at: ctx.at }) };
+      return {
+        filename: `paylez-${venue.id}.csv`,
+        csv: await analytics.exportCsv(ctx.db, venue.id, { period: qPeriod(ctx), at: ctx.at }),
+      };
     },
   },
 
@@ -621,8 +701,10 @@ export const partnerRoutes: Route[] = [
       const venue = await mine(ctx);
       entitlements.requireEntitlement(await entOf(ctx, venue.id), 'identified_profiles');
       return await profiles.customerTable(ctx.db, venue.id, {
-        sort: (qStr(ctx, 'sort') as 'spend' | 'visits' | 'recent') ?? 'spend',
-        status: qStr(ctx, 'status') as profiles.CustomerStatus | undefined,
+        sort: qChoice(ctx, 'sort', ['spend', 'visits', 'recent'] as const, 'spend'),
+        /* An unknown status used to be an empty table — a filter that matched
+           nobody, read as "you have no customers like that". */
+        status: ctx.query.get('status') === null ? undefined : qChoice(ctx, 'status', CUSTOMER_STATUSES, 'new'),
         limit: qInt(ctx, 'limit', 50),
         offset: qInt(ctx, 'offset', 0),
         at: ctx.at,
@@ -647,6 +729,117 @@ export const partnerRoutes: Route[] = [
       const venue = await mine(ctx);
       entitlements.requireEntitlement(await entOf(ctx, venue.id), 'identified_profiles');
       return await profiles.segmentFor(ctx.db, venue.id, ctx.params.userId, ctx.at);
+    },
+  },
+
+  /* ══════════════════════════════════════════════ the dashboard's own reports ══ */
+  {
+    /*
+     * The day series under the overview's chart, and the same span before it
+     * (§2.1). `days` is one of the range picker's four spans and nothing else: a
+     * window the screen does not offer is a 400, not a quietly different span
+     * drawn under the label that was asked for.
+     */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/series',
+    auth: 'partner',
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      const days = Number(qChoice(ctx, 'days', dashboard.WINDOW_DAYS, '30'));
+      return await dashboard.series(ctx.db, venue.id, days, ctx.at);
+    },
+  },
+  {
+    /* "What we noticed" (§2.2). Each finding is null when it does not apply. */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/insights',
+    auth: 'partner',
+    handler: async (ctx) => dashboard.insights(ctx.db, (await mine(ctx)).id, ctx.at, ctx.language),
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/remind',
+    auth: 'partner',
+    handler: async (ctx) => dashboard.remindStatus(ctx.db, (await mine(ctx)).id, ctx.at),
+  },
+  {
+    /*
+     * Remind everybody holding an unused reward or voucher here (§2.3). Once a
+     * week, enforced by the audit row the send writes. Idempotent, so a retry
+     * after a dropped response returns the send that happened instead of
+     * tripping its own rate limit.
+     */
+    method: 'POST',
+    pattern: '/v1/partner/venues/:id/remind',
+    auth: 'partner',
+    idempotent: true,
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      return await dashboard.sendReminder(ctx.db, { venueId: venue.id, actorId: actor(ctx).user.id, at: ctx.at });
+    },
+  },
+  {
+    /* The till log (§2.6). Names only where a customer shared them with this venue. */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/scans',
+    auth: 'partner',
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      return await dashboard.scans(ctx.db, venue.id, {
+        days: Number(qChoice(ctx, 'days', dashboard.WINDOW_DAYS, '30')),
+        segment: qChoice(ctx, 'segment', dashboard.SCAN_SEGMENTS, 'all'),
+        limit: qRange(ctx, 'limit', 50, { min: 1, max: 100 }),
+        offset: qRange(ctx, 'offset', 0, { min: 0, max: 1_000_000 }),
+        at: ctx.at,
+      });
+    },
+  },
+  {
+    /* How many people each targeting segment is, and how many a push reaches (§2.8). */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/audiences',
+    auth: 'partner',
+    handler: async (ctx) => dashboard.audiences(ctx.db, (await mine(ctx)).id, ctx.at),
+  },
+  {
+    /* The whole listing, as the profile screen edits it (§2.9). */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/listing',
+    auth: 'partner',
+    handler: async (ctx) => dashboard.listing(ctx.db, (await mine(ctx)).id),
+  },
+  {
+    /*
+     * The counter tool's first half (§2.11): who a handle or a code belongs to,
+     * before anybody types a bill. Writes nothing; a miss of any kind is one 404.
+     */
+    method: 'POST',
+    pattern: '/v1/partner/venues/:id/counter/lookup',
+    auth: 'partner',
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      return await dashboard.counterLookup(ctx.db, venue.id, str(ctx.body, 'code', { max: 64 }), ctx.at);
+    },
+  },
+  {
+    /*
+     * The second half: the sale, through the gate's own four steps with the
+     * caller at the till. Idempotent, because this is a press that moves money
+     * and a slow connection is exactly when a cashier presses twice.
+     */
+    method: 'POST',
+    pattern: '/v1/partner/venues/:id/counter',
+    auth: 'partner',
+    idempotent: true,
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      return await dashboard.counterRecord(ctx.db, {
+        venueId: venue.id,
+        actorId: actor(ctx).user.id,
+        code: str(ctx.body, 'code', { max: 64 }),
+        amountMinor: int(ctx.body, 'amountMinor', { min: 1 }),
+        at: ctx.at,
+      });
     },
   },
 

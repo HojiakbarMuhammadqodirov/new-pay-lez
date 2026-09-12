@@ -17,6 +17,9 @@
    line that matters, which is the count at the bottom. */
 process.env.PAYLEZ_QUIET = '1';
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { openDb } from './db/db.ts';
 import { importLegacy } from './db/import.ts';
 import { boot } from './main.ts';
@@ -31,6 +34,7 @@ import * as assistant from './domain/assistant.ts';
 import * as budget from './domain/budget.ts';
 import * as campaigns from './domain/campaigns.ts';
 import * as consent from './domain/consent.ts';
+import * as dashboard from './domain/dashboard.ts';
 import * as deals from './domain/deals.ts';
 import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
@@ -43,6 +47,7 @@ import * as traffic from './domain/traffic.ts';
 import * as vouchers from './domain/vouchers.ts';
 import * as jobs from './jobs.ts';
 import * as llm from './ports/llm.ts';
+import * as push from './ports/push.ts';
 import { trackListing } from './domain/venues.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { DomainError } from './domain/errors.ts';
@@ -54,11 +59,15 @@ import { discountCost, median, plausibleAmount } from './domain/money.ts';
 import {
   isoWeek,
   local,
+  localDay,
+  localMidnight,
   localMonth,
+  monthStart,
   now,
   plusDays,
   plusMinutes,
   plusMonths,
+  shiftDay,
   withinDailyWindow,
   type Iso,
 } from './domain/time.ts';
@@ -2611,7 +2620,8 @@ async function jobRules(): Promise<void> {
   const at = now();
 
   const frequent = await jobs.runFrequent(w.db, at);
-  check('the frequent job runs clean', frequent.ran.length === 2);
+  /* Three now: the pending sweep, the deal lifecycle, and the push dispatch. */
+  check('the frequent job runs clean', frequent.ran.length === 3);
 
   const daily = await jobs.runDaily(w.db, at);
   eq('nothing has drifted', daily.detail.reconciledDrift, 0);
@@ -2960,6 +2970,156 @@ async function httpSurface(): Promise<void> {
     body: { status: 'paused' },
   });
   eq('but pausing is never gated', pauseIt.status, 200);
+
+  /*
+   * ── the dashboard's routes, as a client meets them (contract §2) ──
+   *
+   * Every venue-scoped route resolves the venue through `mine()`, so each one is
+   * put to a partner who does not own the venue in its path. A route that forgot
+   * would answer here with somebody else's customers.
+   */
+  const wCampaign = await partners.createCampaign(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    name: 'Stamp',
+    visitsRequired: 3,
+    rewardLabel: 'Tea',
+    rewardCostMinor: 500,
+    at: now(),
+  });
+  for (const [method, suffix, body] of [
+    ['GET', 'series'],
+    ['GET', 'insights'],
+    ['GET', 'remind'],
+    ['POST', 'remind', {}],
+    ['GET', 'scans'],
+    ['GET', 'audiences'],
+    ['GET', 'listing'],
+    ['POST', 'counter/lookup', { code: '@anyone' }],
+    ['POST', 'counter', { code: '@anyone', amountMinor: 100 }],
+  ] as Array<[string, string, unknown?]>) {
+    eq(`another partner is refused ${method} …/${suffix}`, (await call(method, `/v1/partner/venues/${w.venueId}/${suffix}`, { token: ownerToken, body })).status, 403);
+  }
+  eq('…and cannot edit the venue’s campaign', (await call('PATCH', `/v1/partner/campaigns/${wCampaign.id}`, { token: ownerToken, body: { name: 'Mine now' } })).status, 403);
+
+  const own = `/v1/partner/venues/${mine.body.id}`;
+  const badDays = await call('GET', `${own}/series?days=45`, { token: ownerToken });
+  eq('a series window the range picker does not offer is a 400 naming days', [badDays.status, badDays.body.error.code, badDays.body.error.field], [400, 'validation_failed', 'days']);
+  const badSegment = await call('GET', `${own}/scans?segment=everyone`, { token: ownerToken });
+  eq('…a till-log segment that is not one names segment', [badSegment.status, badSegment.body.error.field], [400, 'segment']);
+  const badLimit = await call('GET', `${own}/scans?limit=500`, { token: ownerToken });
+  eq('…and a page over a hundred names limit', [badLimit.status, badLimit.body.error.field], [400, 'limit']);
+  const badPeriod = await call('GET', `${own}/overview?period=June`, { token: ownerToken });
+  eq('a report month that is not a month is a 400, not a 500', [badPeriod.status, badPeriod.body.error.field], [400, 'period']);
+  const weekSeries = await call('GET', `${own}/series?days=7`, { token: ownerToken });
+  eq('the series answers the venue’s owner', [weekSeries.status, weekSeries.body.series.length], [200, 7]);
+  for (const suffix of ['insights', 'remind', 'scans', 'audiences', 'listing', 'today']) {
+    eq(`GET …/${suffix} answers its owner`, (await call('GET', `${own}/${suffix}`, { token: ownerToken })).status, 200);
+  }
+  eq(
+    'the push quota carries its funnel',
+    Object.keys((await call('GET', `${own}/push-quota`, { token: ownerToken })).body.funnel).sort(),
+    ['cameIn', 'delivered', 'opened', 'sent'],
+  );
+  eq('the partner budget’s ladder carries take-up', typeof budgetRoute.body.tiers[0]?.issuedCount, 'number');
+  const publicVenue = await call('GET', `/v1/venues/${w.venueId}`);
+  check(
+    'the public venue page’s ladder carries none of it',
+    publicVenue.body.tiers.length > 0 &&
+      (publicVenue.body.tiers as Array<Record<string, unknown>>).every((tier) => !('issuedCount' in tier) && !('spentMinor' in tier) && !('activeCount' in tier)),
+  );
+  eq('…and names the clock its hours are in', publicVenue.body.venue.timezone, 'Europe/Warsaw');
+
+  const stampCard = await call('POST', `${own}/campaigns`, {
+    token: ownerToken,
+    body: { name: 'Stamp card', visitsRequired: 4, rewardLabel: 'A tea', rewardCostMinor: 600 },
+  });
+  const outOfRange = await call('PATCH', `/v1/partner/campaigns/${stampCard.body.id}`, { token: ownerToken, body: { visitsRequired: 51 } });
+  eq('a campaign edit out of range is a 400 naming the field', [outOfRange.status, outOfRange.body.error.field], [400, 'visitsRequired']);
+  const renamedCard = await call('PATCH', `/v1/partner/campaigns/${stampCard.body.id}`, {
+    token: ownerToken,
+    body: { name: 'Stamp card, renamed', minSpendMinor: null },
+  });
+  eq(
+    '…and a good one answers with the row as the list draws it',
+    [renamedCard.status, renamedCard.body.name, renamedCard.body.min_spend_minor, typeof renamedCard.body.near],
+    [200, 'Stamp card, renamed', null, 'number'],
+  );
+
+  const extrasSaved = await call('PATCH', own, {
+    token: ownerToken,
+    body: { description: { en: 'Hello' }, links: [{ kind: 'website', value: 'https://http.test' }], languages: ['pl'] },
+  });
+  eq('the listing form saves in one request and answers with the venue row', [extrasSaved.status, extrasSaved.body.id, 'description' in extrasSaved.body], [200, mine.body.id, false]);
+  const listingRead = await call('GET', `${own}/listing`, { token: ownerToken });
+  eq('…and reads back whole', [listingRead.body.description, listingRead.body.links, listingRead.body.languages], [{ en: 'Hello' }, [{ kind: 'website', value: 'https://http.test' }], ['pl']]);
+
+  await entitlements.startSubscription(w.db, { subject: { venueId: mine.body.id }, planCode: 'growth', source: 'manual', at: now() });
+  const unknownStatus = await call('GET', `${own}/customers?status=vip`, { token: ownerToken });
+  eq('a customer filter no status matches is a 400, not an empty table', [unknownStatus.status, unknownStatus.body.error.field], [400, 'status']);
+
+  /* The counter needs a live venue and a customer with a handle — a separate
+     account, so the balance the gift-card checks below rely on is untouched. */
+  await w.db.run(`UPDATE venues SET status = 'live', verified_at = $t WHERE id = $v`, { t: now(), v: mine.body.id });
+  const shopper = await call('POST', '/v1/auth/signup', { body: { email: 'counter@verify.test', password: 'hunter22', name: 'Counter' } });
+  await call('PATCH', '/v1/me', { token: shopper.body.token as string, body: { username: 'http_counter' } });
+  const lookedUp = await call('POST', `${own}/counter/lookup`, { token: ownerToken, body: { code: '@HTTP_counter' } });
+  eq('the counter finds a customer by the handle they read out', [lookedUp.status, lookedUp.body.kind, lookedUp.body.customer.handle], [200, 'customer', '@http_counter']);
+  eq('…and a code nobody holds here is a 404', (await call('POST', `${own}/counter/lookup`, { token: ownerToken, body: { code: 'PLZ-NONE' } })).status, 404);
+  const press = { token: ownerToken, key: 'counter-press-1', body: { code: '@http_counter', amountMinor: 4200 } };
+  const firstPress = await call('POST', `${own}/counter`, press);
+  const secondPress = await call('POST', `${own}/counter`, press);
+  eq('a sale at the counter goes through', [firstPress.status, firstPress.body.receipt.amountMinor, firstPress.body.receipt.visitCounted], [200, 4200, true]);
+  eq('…a retried press returns the same sale', secondPress.body, firstPress.body);
+  eq(
+    '…with one transaction behind it',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM transactions WHERE venue_id = $v AND trigger_type = 'manual'`, { v: mine.body.id }))?.n,
+    1,
+  );
+  check('…and nothing about the customer’s wallet on the wire', !('balance' in firstPress.body.receipt) && !('nextTier' in firstPress.body.receipt));
+
+  /* ── §2.13: an explicit null takes an answer back ── */
+  const shopperToken = shopper.body.token as string;
+  const finished = await call('PATCH', '/v1/me', {
+    token: shopperToken,
+    body: { avatar: 'data:image/png;base64,AAAA', occupation: 'student', city: 'Krakow', phone: '+48600000000', birthDate: '1999-05-05' },
+  });
+  eq('a finished profile is stamped', [finished.status, typeof finished.body.user.profileCompletedAt], [200, 'string']);
+  const cleared = await call('PATCH', '/v1/me', { token: shopperToken, body: { avatar: null, phone: null, occupation: null, city: null } });
+  eq(
+    'null clears the photo, the phone, the status, and the city with its country',
+    [cleared.status, cleared.body.user.avatar, cleared.body.user.phone, cleared.body.user.occupation, cleared.body.user.city, cleared.body.user.countryCode],
+    [200, null, null, null, null, null],
+  );
+  eq('…and the completion bonus stays paid and stamped', [cleared.body.points, typeof cleared.body.user.profileCompletedAt], [finished.body.points, 'string']);
+  await call('PATCH', '/v1/me', { token: shopperToken, body: { phone: '+48600000001' } });
+  eq('an empty string still means leave it', (await call('PATCH', '/v1/me', { token: shopperToken, body: { phone: '' } })).body.user.phone, '+48600000001');
+  for (const field of ['name', 'username', 'birthDate', 'language']) {
+    const kept = await call('PATCH', '/v1/me', { token: shopperToken, body: { [field]: null } });
+    eq(`a profile’s ${field} cannot be cleared — a 400 naming it`, [kept.status, kept.body.error.field], [400, field]);
+  }
+  const halfCity = await call('PATCH', '/v1/me', { token: shopperToken, body: { city: null, countryCode: 'PL' } });
+  eq('clearing the city while naming a country is a 400 naming the country', [halfCity.status, halfCity.body.error.field], [400, 'countryCode']);
+
+  await call('PATCH', own, {
+    token: ownerToken,
+    body: { subcategory: 'espresso', address: 'Rynek 1', priceRange: '$$', phone: '+48120000000', email: 'hello@http.test', imageUrl: 'data:image/png;base64,AAAA' },
+  });
+  const bareVenue = await call('PATCH', own, {
+    token: ownerToken,
+    body: { subcategory: null, address: null, priceRange: null, phone: null, email: null, imageUrl: null },
+  });
+  eq(
+    'null clears a venue’s subcategory, address, price band, phone, email and photo',
+    [bareVenue.status, bareVenue.body.subcategory, bareVenue.body.address, bareVenue.body.price_range, bareVenue.body.phone, bareVenue.body.email, bareVenue.body.image_url],
+    [200, null, null, null, null, null, null],
+  );
+  for (const field of ['name', 'category', 'city']) {
+    const kept = await call('PATCH', own, { token: ownerToken, body: { [field]: null } });
+    eq(`a venue’s ${field} cannot be cleared — a 400 naming it`, [kept.status, kept.body.error.field], [400, field]);
+  }
+  const partial = await call('PATCH', own, { token: ownerToken, body: { address: 'Rynek 2' } });
+  eq('…and a key left out is left alone', [partial.body.address, partial.body.name, partial.body.phone], ['Rynek 2', 'HTTP Café', null]);
 
   /* Idempotency: the same key returns the same response, a different body 409s. */
   const key = 'verify-key-1';
@@ -4175,6 +4335,868 @@ async function bootOrdering(): Promise<void> {
 
 /* ══════════════════════════════════════════════════════════════ the run ══ */
 
+/* ═════════════════════════════════════ the partner dashboard (contract §2) ══ */
+
+/** One gate cycle for any customer of the fixture venue, carrying a deal or a redemption. */
+async function scanAs(
+  w: World,
+  userId: string,
+  amountMinor: number,
+  at: Iso,
+  extra: { dealId?: string; intent?: gate.Intent; intentRef?: string } = {},
+): Promise<gate.Receipt> {
+  const qr = await gate.mintQr(w.db, w.venueId, SECRET, at);
+  const txn = await gate.openTransaction(w.db, { kind: 'qr', token: qr.token, secret: SECRET }, { userId, at, ...extra });
+  await gate.submitAmount(w.db, { transactionId: txn.id, amountMinor, actorId: w.ownerId, at });
+  return await gate.confirm(w.db, { transactionId: txn.id, cashierId: w.ownerId, at });
+}
+
+/** An account made the day before `created`, carrying the fields these sections look people up by. */
+async function person(
+  w: World,
+  label: string,
+  created: Iso,
+  extra: { city?: string; language?: string; username?: string } = {},
+): Promise<string> {
+  const id = newId('usr');
+  await w.db.run(
+    `INSERT INTO users (id, email, email_norm, display_name, username, username_norm, auth_provider,
+                        language, city, display_avatar, status, created_at, updated_at)
+     VALUES ($i, $e, $e, $n, $un, $unn, 'email', $l, $c, $av, 'active', $t, $t)`,
+    {
+      i: id,
+      e: `${id}@verify.test`,
+      n: `Person ${label}`,
+      un: extra.username ?? null,
+      unn: extra.username?.toLowerCase() ?? null,
+      l: extra.language ?? 'en',
+      c: extra.city ?? 'Krakow',
+      av: `avatar-${label}`,
+      t: plusDays(created, -1),
+    },
+  );
+  return id;
+}
+
+/**
+ * The `DO UPDATE SET` assignments in a piece of source that add to a column by
+ * its bare name — `visits = visits + 1`.
+ *
+ * Postgres refuses those at parse time (42702: the target row and `excluded`
+ * are both in scope) and SQLite resolves them happily, so this suite would never
+ * see one fail; `gate.recordVisit` carried one, which would have refused every
+ * counted visit on the production database. Reading the source is the only
+ * offline way to catch the next one.
+ */
+function bareUpserts(source: string): string[] {
+  const hits: string[] = [];
+  for (const clause of source.matchAll(/DO\s+UPDATE\s+SET([\s\S]*?)(?:`|\bWHERE\b|\bRETURNING\b)/gi)) {
+    let depth = 0;
+    let current = '';
+    const assignments: string[] = [];
+    for (const char of clause[1]) {
+      if (char === '(') depth += 1;
+      if (char === ')') depth -= 1;
+      if (char === ',' && depth === 0) {
+        assignments.push(current);
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    assignments.push(current);
+    for (const assignment of assignments) {
+      const split = assignment.indexOf('=');
+      if (split < 0) continue;
+      const column = assignment.slice(0, split).trim();
+      if (!/^[a-z_][a-z0-9_]*$/i.test(column)) continue;
+      if (new RegExp(`(^|[^.\\w$])${column}\\b`, 'i').test(assignment.slice(split + 1))) hits.push(assignment.trim());
+    }
+  }
+  return hits;
+}
+
+async function dashboardHelperRules(): Promise<void> {
+  describe('venue-local days, receipts, spend direction, deal dates, portable upserts');
+
+  eq('local midnight in Kraków in summer is 22:00 UTC the day before', localMidnight('2026-10-01', 'Europe/Warsaw'), '2026-09-30T22:00:00.000Z');
+  eq('…and 23:00 in winter', localMidnight('2026-01-15', 'Europe/Warsaw'), '2026-01-14T23:00:00.000Z');
+  eq('a Tashkent month starts at 19:00 UTC', monthStart('2026-09', 'Asia/Tashkent'), '2026-08-31T19:00:00.000Z');
+  /* The two the old hour-by-hour search could never find, because it only ever
+     stopped on a whole UTC hour — so both fell back to UTC midnight. */
+  eq('a half-hour zone’s month starts on its own midnight', monthStart('2026-09', 'Asia/Kolkata'), '2026-08-31T18:30:00.000Z');
+  eq('…and a quarter-hour zone’s', monthStart('2026-09', 'Asia/Kathmandu'), '2026-08-31T18:15:00.000Z');
+
+  /* The property itself, on the days that are not simple: clocks that jump at
+     midnight so the day has no 00:00 (Havana, Santiago), clocks that change
+     after it (Warsaw), and changes of half an hour (Lord Howe, Chatham). */
+  for (const [zone, day] of [
+    ['Europe/Warsaw', '2026-03-29'],
+    ['Europe/Warsaw', '2026-10-25'],
+    ['America/Havana', '2026-03-08'],
+    ['America/Santiago', '2026-09-06'],
+    ['America/Santiago', '2026-04-05'],
+    ['Australia/Lord_Howe', '2026-10-04'],
+    ['Pacific/Chatham', '2026-09-27'],
+  ]) {
+    const start = localMidnight(day, zone);
+    const before = new Date(Date.parse(start) - 1).toISOString();
+    check(
+      `${zone} ${day} starts at the first instant that is that day`,
+      localDay(start, zone) === day && localDay(before, zone) < day,
+      { start },
+    );
+  }
+
+  eq('a day moves back across a month end', shiftDay('2026-03-01', -1), '2026-02-28');
+  eq('…and forward into a leap day', shiftDay('2028-02-28', 1), '2028-02-29');
+
+  const june = dashboard.dayWindow('Europe/Warsaw', 30, '2026-06-30T12:00:00.000Z');
+  eq('thirty days ending on the 30th of June are June', [june.from, june.to], ['2026-06-01', '2026-06-30']);
+  eq('…cut at Kraków midnight at both ends', [june.start, june.end], ['2026-05-31T22:00:00.000Z', '2026-06-30T22:00:00.000Z']);
+  const may = dashboard.windowBefore(june, 'Europe/Warsaw');
+  eq('the window before is the thirty days before', [may.from, may.to, may.end], ['2026-05-02', '2026-05-31', june.start]);
+
+  const receipt = dashboard.receiptOf('txn_example');
+  check('a receipt mark is a hash and four letters somebody can read out', /^#[A-HJ-NP-Z2-9]{4}$/.test(receipt), receipt);
+  eq('…and one transaction always prints the same one', dashboard.receiptOf('txn_example'), receipt);
+
+  eq('spend with nothing on either side has no direction', profiles.spendTrendOf(0, 0), undefined);
+  eq('spend from nothing is up', profiles.spendTrendOf(1, 0), 'up');
+  eq('spend to nothing is down', profiles.spendTrendOf(0, 1), 'down');
+  eq('a tenth more is still flat', profiles.spendTrendOf(1100, 1000), 'flat');
+  eq('…past it is up', profiles.spendTrendOf(1101, 1000), 'up');
+  eq('a tenth less is still flat', profiles.spendTrendOf(900, 1000), 'flat');
+  eq('…past it is down', profiles.spendTrendOf(899, 1000), 'down');
+
+  /* The bug the end-date rule fixes, stated as the comparison that made it: a
+     bare day sorts before its own morning, so "valid until the 30th" had ended
+     before the 30th began. */
+  check('a bare day sorts before that day’s own morning', '2026-09-30' < '2026-09-30T08:00:00.000Z');
+  eq('a bare end day is the last millisecond of that day in the venue’s clock', deals.checkValidTo('2026-09-30', 'Europe/Warsaw'), '2026-09-30T21:59:59.999Z');
+  eq('…which reads back as the same date', deals.checkValidTo('2026-09-30', 'Asia/Tashkent')?.slice(0, 10), '2026-09-30');
+  eq('a bare start day is kept as the day', deals.checkValidFrom('2026-09-01'), '2026-09-01');
+  eq('an instant is normalised to UTC', deals.checkValidTo('2026-09-30T10:00:00+02:00', 'Europe/Warsaw'), '2026-09-30T08:00:00.000Z');
+  await throws('a date that is not a date is refused', 'validation_failed', () => deals.checkValidTo('banana', 'Europe/Warsaw'));
+  await throws('…and so is a day the calendar does not have', 'validation_failed', () => deals.checkValidFrom('2026-02-30'));
+
+  eq('the lint catches the upsert that refused every counted visit on Postgres', bareUpserts('DO UPDATE SET last_seen_at = excluded.last_seen_at, visits = visits + 1`'), ['visits = visits + 1']);
+  eq('…and passes the qualified form', bareUpserts('DO UPDATE SET visits = venue_customers.visits + 1, spend_minor = venue_customers.spend_minor + excluded.spend_minor`'), []);
+  const here = fileURLToPath(new URL('.', import.meta.url));
+  const offenders: string[] = [];
+  for (const file of readdirSync(here, { recursive: true, encoding: 'utf8' })) {
+    /* The server itself — not this file, whose checks quote the bad shape on
+       purpose, and not `demo/`, a script still being written by another hand. */
+    if (!file.endsWith('.ts') || file === 'verify.ts' || file.startsWith('demo')) continue;
+    for (const hit of bareUpserts(readFileSync(join(here, file), 'utf8'))) offenders.push(`${file}: ${hit}`);
+  }
+  eq('no upsert in the server adds to a bare column name', offenders, []);
+}
+
+interface DashboardWorld {
+  d: World;
+  /** 14:00 in Kraków on the 30th of June — so a thirty-day window is exactly June. */
+  T: Iso;
+  c: string[];
+  dealA: string;
+  tier5: string;
+  tier10: string;
+  campaignId: string;
+  receipts: Record<'c0First' | 'c1First' | 'lateNight' | 'redeemPastry' | 'small', gate.Receipt>;
+}
+
+/**
+ * A June at one café, written in the order it happened (the gate's cooldown
+ * reads the last visit, so history has to arrive forwards):
+ *
+ *   * c2 buys a 5% voucher in May and spends it on a first visit;
+ *   * twelve customers come in June, c1 three times — once at 00:30 Kraków
+ *     time, which is the 14th in UTC and the 15th at the café;
+ *   * a two-visit stamp campaign starts on the 11th; c1 fills it and spends the
+ *     pastry on the 20th, c4 fills it with a voucher redemption on the 19th;
+ *   * c3 opens a deal and claims it at the counter;
+ *   * c0 comes back on the 24th with a bill under the venue's minimum.
+ */
+async function dashboardFixture(): Promise<DashboardWorld> {
+  const d = await world();
+  const T = '2026-06-30T12:00:00.000Z';
+  const c: string[] = [];
+  for (let i = 0; i < 12; i += 1) c.push(await person(d, `c${i}`, '2026-05-01T00:00:00.000Z'));
+  const tierOf = async (pct: number) =>
+    (await d.db.get<{ id: string }>(`SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = $p`, {
+      v: d.venueId,
+      p: pct,
+    }))!.id;
+  const tier5 = await tierOf(5);
+  const tier10 = await tierOf(10);
+
+  const dealA = await partners.createDeal(d.db, {
+    actorId: d.ownerId,
+    draft: { venueId: d.venueId, discountText: '2 for 1', copy: { en: { title: 'Tuesday treat', description: 'Two coffees for one' } } },
+    at: '2026-06-01T08:00:00.000Z',
+  });
+  await partners.publishDeal(d.db, { dealId: dealA.id, actorId: d.ownerId, at: '2026-06-01T08:00:00.000Z' });
+
+  await ledger.earn(d.db, { userId: c[2], points: 1000, reason: 'adjustment', at: '2026-05-19T10:00:00.000Z' });
+  const mayVoucher = await vouchers.issue(d.db, { userId: c[2], venueId: d.venueId, tierId: tier5, at: '2026-05-19T11:00:00.000Z' });
+  await scanAs(d, c[2], 5000, '2026-05-20T10:00:00.000Z', { intent: 'voucher_redeem', intentRef: mayVoucher.id });
+
+  const c0First = await scanAs(d, c[0], 4000, '2026-06-10T10:00:00.000Z');
+  const campaign = await partners.createCampaign(d.db, {
+    venueId: d.venueId,
+    actorId: d.ownerId,
+    name: 'Two visits',
+    visitsRequired: 2,
+    rewardLabel: 'A pastry',
+    rewardCostMinor: 900,
+    at: '2026-06-11T09:00:00.000Z',
+  });
+  const c1First = await scanAs(d, c[1], 4100, '2026-06-11T10:00:00.000Z');
+  await scanAs(d, c[2], 4200, '2026-06-12T10:00:00.000Z');
+  await deals.track(d.db, { dealId: dealA.id, userId: c[3], kind: 'open', at: '2026-06-13T09:00:00.000Z' });
+  await scanAs(d, c[3], 4300, '2026-06-13T10:00:00.000Z', { dealId: dealA.id });
+  await scanAs(d, c[4], 4400, '2026-06-14T10:00:00.000Z');
+  const lateNight = await scanAs(d, c[1], 4500, '2026-06-14T22:30:00.000Z');
+  for (const [index, day, amount] of [[5, '15', 4500], [6, '16', 4600], [7, '17', 4700], [8, '18', 4800]] as const) {
+    await scanAs(d, c[index], amount, `2026-06-${day}T10:00:00.000Z`);
+  }
+  await ledger.earn(d.db, { userId: c[4], points: 1000, reason: 'adjustment', at: '2026-06-18T11:00:00.000Z' });
+  const juneVoucher = await vouchers.issue(d.db, { userId: c[4], venueId: d.venueId, tierId: tier10, at: '2026-06-18T11:05:00.000Z' });
+  await scanAs(d, c[4], 12000, '2026-06-19T10:00:00.000Z', { intent: 'voucher_redeem', intentRef: juneVoucher.id });
+  const pastry = (await campaigns.availableRewards(d.db, c[1], d.venueId))[0];
+  const redeemPastry = await scanAs(d, c[1], 3000, '2026-06-20T10:00:00.000Z', { intent: 'reward_redeem', intentRef: pastry.id });
+  for (const [index, day, amount] of [[9, '21', 4900], [10, '22', 5000], [11, '23', 5100]] as const) {
+    await scanAs(d, c[index], amount, `2026-06-${day}T10:00:00.000Z`);
+  }
+  const small = await scanAs(d, c[0], 900, '2026-06-24T10:00:00.000Z');
+
+  return {
+    d,
+    T,
+    c,
+    dealA: dealA.id,
+    tier5,
+    tier10,
+    campaignId: campaign.id,
+    receipts: { c0First, c1First, lateNight, redeemPastry, small },
+  };
+}
+
+async function dashboardReports(fixture: DashboardWorld): Promise<void> {
+  describe('§2.1 the day series · §2.6 the till log · §2.5 customers');
+  const { d, T, c, receipts, campaignId } = fixture;
+
+  const month = await dashboard.series(d.db, d.venueId, 30, T);
+  eq('a window is exactly as many rows as days', month.series.length, 30);
+  eq('…from the 1st to the 30th of June', [month.from, month.to], ['2026-06-01', '2026-06-30']);
+  eq('…in the venue’s own clock and money', [month.timezone, month.currency], ['Europe/Warsaw', 'PLN']);
+  eq('the rows add up to the total', month.series.reduce((sum, row) => sum + row.visits, 0), month.totals.visits);
+  eq('…fifteen counted visits, the bill under the minimum not among them', month.totals.visits, 15);
+  const june = await analytics.overview(d.db, d.venueId, { period: '2026-06', at: T });
+  eq('a window that is a whole month agrees with its overview — visits', month.totals.visits, june.visits.value);
+  eq('…sales', month.totals.salesMinor, june.salesMinor.value);
+  eq('…customers', month.totals.customers, june.customers.value);
+  eq('…and new customers, floored the same way', month.totals.newCustomers, june.newCustomers.value);
+  eq('eleven of the twelve were new in June', month.totals.newCustomers, 11);
+
+  const dayOf = (day: string) => month.series.find((row) => row.day === day);
+  eq('half past midnight in Kraków is the next day’s trade', [dayOf('2026-06-14')?.visits, dayOf('2026-06-15')?.visits], [1, 2]);
+  eq('a claim lands on the day it was made', dayOf('2026-06-13')?.claims, 1);
+  eq('a voucher redemption on its day', dayOf('2026-06-19')?.vouchersRedeemed, 1);
+  eq('a reward redemption on its day', dayOf('2026-06-20')?.rewardsRedeemed, 1);
+  eq('a day nobody came is a row of zeros, not a gap', dayOf('2026-06-02'), {
+    day: '2026-06-02',
+    visits: 0,
+    customers: 0,
+    salesMinor: 0,
+    claims: 0,
+    vouchersRedeemed: 0,
+    rewardsRedeemed: 0,
+  });
+  eq('the span before is the thirty days before', [month.previous.visits, month.previous.vouchersRedeemed], [1, 1]);
+  eq('…and its one new customer is withheld, being below the floor', month.previous.newCustomers, null);
+  eq('a week is seven rows', (await dashboard.series(d.db, d.venueId, 7, T)).series.length, 7);
+
+  const logOf = async (segment: dashboard.ScanSegment, limit = 50, offset = 0) =>
+    await dashboard.scans(d.db, d.venueId, { days: 30, segment, limit, offset, at: T });
+  const log = await logOf('all');
+  eq('the till log counts every committed scan in the window', log.total, 16);
+  eq('…eleven of them somebody’s first visit here', [log.firstCount, log.againCount], [11, 5]);
+  check('newest first', log.rows.every((row, index) => index === 0 || log.rows[index - 1].at >= row.at));
+  const line = (receipt: gate.Receipt) => log.rows.find((row) => row.id === receipt.transaction.id);
+  eq('a bill under the minimum is a sale and not a visit', [line(receipts.small)?.counted, line(receipts.small)?.first], [false, false]);
+  eq('a first visit says so', line(receipts.c0First)?.first, true);
+  eq('nobody is named without a grant', log.rows.filter((row) => row.who !== null || row.avatar !== null).length, 0);
+  eq(
+    'each row carries its receipt mark and its site',
+    [line(receipts.small)?.receipt, line(receipts.small)?.site.venueId],
+    [dashboard.receiptOf(receipts.small.transaction.id), d.venueId],
+  );
+  eq('the visit that filled a card says so', line(receipts.lateNight)?.progress, {
+    campaignId,
+    campaign: 'Two visits',
+    done: 2,
+    need: 2,
+    rewardEarned: true,
+  });
+  eq('…the visit before it stood at one of two', line(receipts.c1First)?.progress?.done, 1);
+  /* The reward's `transaction_id` now names this visit — the redemption wrote it
+     — and it must not make this the visit that *earned* one. */
+  eq('…and the card starts again on the visit that spent the reward', line(receipts.redeemPastry)?.progress, {
+    campaignId,
+    campaign: 'Two visits',
+    done: 1,
+    need: 2,
+    rewardEarned: false,
+  });
+  eq('a visit before any campaign existed is on no card', line(receipts.c0First)?.progress, null);
+  eq('the first-visit segment is the first visits', (await logOf('first')).rows.length, 11);
+  eq('…and "again" is the rest, counted or not', (await logOf('again')).rows.length, 5);
+  const page = await logOf('all', 5, 15);
+  eq('a page is cut after the counting', [page.total, page.rows.length], [16, 1]);
+
+  await consent.grantSharing(d.db, { userId: c[5], venueId: d.venueId, at: T });
+  eq(
+    'a customer who shared with this venue is named on their own scans and nowhere else',
+    (await logOf('all')).rows.filter((row) => row.who !== null).map((row) => [row.who, row.avatar]),
+    [['Person c5', 'avatar-c5']],
+  );
+  await consent.revokeSharing(d.db, c[5], d.venueId, T);
+  eq('…and anonymous again the moment they withdraw it', (await logOf('all')).rows.filter((row) => row.who !== null || row.avatar !== null).length, 0);
+
+  for (const who of [c[1], c[2], c[4], c[5]]) await consent.grantSharing(d.db, { userId: who, venueId: d.venueId, at: T });
+  const table = await profiles.customerTable(d.db, d.venueId, { at: T });
+  const rowOf = (id: string) => table.rows.find((row) => row.userId === id);
+  eq('the shared customers, by spend', table.rows.map((row) => row.userId), [c[4], c[1], c[2], c[5]]);
+  eq('a customer’s highest voucher tier here, whatever became of the voucher', [rowOf(c[4])?.tierPct, rowOf(c[2])?.tierPct], [10, 5]);
+  check('…and the key is absent, not zero, for somebody who never bought one', rowOf(c[1]) !== undefined && !('tierPct' in rowOf(c[1])!));
+  eq('spend that grew from nothing is up', rowOf(c[4])?.spendTrend, 'up');
+  eq('spend that fell by more than a tenth is down', rowOf(c[2])?.spendTrend, 'down');
+  /* The fix: the filter used to run on the page, so "new" among the top one
+     spender was nobody, with a new customer two rows further down. */
+  eq(
+    'a status filter finds its match past the first page of spenders',
+    (await profiles.customerTable(d.db, d.venueId, { at: T, status: 'new', limit: 1 })).rows.map((row) => row.userId),
+    [c[5]],
+  );
+}
+
+async function dashboardLevers(fixture: DashboardWorld): Promise<void> {
+  describe('§2.2 insights · §2.4 the ladder · §2.7 campaigns · the existing reports’ clocks · §2.3 reminders');
+  const { d, T, c, campaignId } = fixture;
+
+  const noticed = await dashboard.insights(d.db, d.venueId, T, 'en');
+  eq('insights are about the venue’s current month', noticed.period, '2026-06');
+  /* Fifteen June visits against May's one over the same span; one voucher each. */
+  eq('month to date against the same span of the month before', noticed.trend, { visitsPct: 1400, vouchersPct: 0 });
+  /* Balances: two customers past 300, c1 at 235, nine at 130. The cheapest cut
+     that reaches anybody without undercutting the 5% rung is 200. */
+  eq('the tier a lower price would open to more of the regulars', noticed.tierReach, {
+    tierId: fixture.tier10,
+    pct: 10,
+    points: 300,
+    eligible: 12,
+    reached: 2,
+    lower: 200,
+    more: 1,
+  });
+  eq('no deal has been seen enough times to compare', noticed.itemVsPercent, null);
+  eq('the one reward earned and not collected', noticed.unusedRewards, { n: 1, amountMinor: 900 });
+
+  const early = await dashboard.insights(d.db, d.venueId, '2026-05-25T12:00:00.000Z', 'en');
+  eq('a trend needs a month before it', early.trend, null);
+  eq('…and a tier finding needs enough recent customers to be about nobody', early.tierReach, null);
+
+  const percentDeal = await partners.createDeal(d.db, {
+    actorId: d.ownerId,
+    draft: { venueId: d.venueId, discountText: '20% off', copy: { en: { title: 'Twenty off', description: 'Any bill' } } },
+    at: T,
+  });
+  await d.db.run(`UPDATE hot_deals SET seen_count = 40, claimed_count = 6 WHERE id = $i`, { i: fixture.dealA });
+  await d.db.run(`UPDATE hot_deals SET seen_count = 50, claimed_count = 5 WHERE id = $i`, { i: percentDeal.id });
+  eq('free-item deals against percentages, on this venue’s own funnel', (await dashboard.insights(d.db, d.venueId, T, 'en')).itemVsPercent, {
+    item: { dealId: fixture.dealA, title: 'Tuesday treat', badge: '2 for 1', claims: 6, seen: 40 },
+    percent: { dealId: percentDeal.id, title: 'Twenty off', badge: '20% off', claims: 5, seen: 50 },
+    multiple: 1.5,
+  });
+
+  const pool = await budget.budgetFor(d.db, d.venueId, T);
+  const rungs = await vouchers.partnerLadder(d.db, d.venueId, T);
+  eq('the month’s voucher spending is its one redemption', pool.voucher.spent, 1200);
+  eq('Σ spent over the rungs is the pool’s spent', rungs.reduce((sum, rung) => sum + rung.spentMinor, 0), pool.voucher.spent);
+  const ten = rungs.find((rung) => rung.discountPct === 10);
+  eq('the rung it was bought on counts it', [ten?.issuedCount, ten?.redeemedCount, ten?.activeCount, ten?.spentMinor, ten?.active], [1, 1, 0, 1200, true]);
+  check(
+    'the public ladder carries none of it',
+    (await vouchers.ladder(d.db, d.venueId, T)).every((rung) => !('issuedCount' in rung) && !('spentMinor' in rung) && !('active' in rung)),
+  );
+  const retire = async (active: boolean) =>
+    await partners.setVoucherTiers(d.db, {
+      venueId: d.venueId,
+      actorId: d.ownerId,
+      tiers: [{ discountPct: 10, pointsCost: 300, maxDiscountMinor: 2500, active }],
+      at: T,
+    });
+  await retire(false);
+  const retired = (await vouchers.partnerLadder(d.db, d.venueId, T)).find((rung) => rung.discountPct === 10);
+  eq('a rung switched off with its vouchers counted is still listed, and sells nothing', [retired?.active, retired?.available, retired?.estimatedRemaining], [false, false, 0]);
+  eq(
+    '…so the rungs still add up to the pool',
+    (await vouchers.partnerLadder(d.db, d.venueId, T)).reduce((sum, rung) => sum + rung.spentMinor, 0),
+    pool.voucher.spent,
+  );
+  check('…while the public ladder drops it', !(await vouchers.ladder(d.db, d.venueId, T)).some((rung) => rung.discountPct === 10));
+  await retire(true);
+  await throws('a tier of 0% is refused by name rather than by the table', 'validation_failed', async () =>
+    await partners.setVoucherTiers(d.db, { venueId: d.venueId, actorId: d.ownerId, tiers: [{ discountPct: 0, pointsCost: 100, maxDiscountMinor: 1000 }], at: T }),
+  );
+  await throws('…and so is a points cost with half a point in it', 'validation_failed', async () =>
+    await partners.setVoucherTiers(d.db, { venueId: d.venueId, actorId: d.ownerId, tiers: [{ discountPct: 20, pointsCost: 12.5, maxDiscountMinor: 1000 }], at: T }),
+  );
+
+  const [row] = await campaigns.campaignRows(d.db, d.venueId, campaignId);
+  eq(
+    'a campaign row carries what its cards and rewards add up to',
+    [row.members, row.earned, row.redeemed, row.near, row.available, row.expired, row.reserved_minor],
+    [11, 2, 1, 10, 1, 0, 900],
+  );
+  const edited = await partners.updateCampaign(d.db, {
+    campaignId,
+    actorId: d.ownerId,
+    patch: { name: '  Two visits, one pastry ', rewardCostMinor: 1500, minSpendMinor: 2000 },
+    at: T,
+  });
+  eq('an edit answers in the list’s own shape', [edited.name, edited.reward_cost_minor, edited.min_spend_minor, edited.near], ['Two visits, one pastry', 1500, 2000, 10]);
+  eq(
+    'a reward already earned keeps the cost it was reserved at',
+    (await d.db.get<{ r: number }>(`SELECT reserved_minor AS r FROM earned_rewards WHERE venue_id = $v AND status = 'available'`, { v: d.venueId }))?.r,
+    900,
+  );
+  eq('null clears the minimum-bill override', (await partners.updateCampaign(d.db, { campaignId, actorId: d.ownerId, patch: { minSpendMinor: null }, at: T })).min_spend_minor, null);
+  await throws('a campaign is validated as it will be after the edit', 'validation_failed', async () =>
+    await partners.updateCampaign(d.db, { campaignId, actorId: d.ownerId, patch: { rewardCostMinor: 0 }, at: T }),
+  );
+  eq(
+    'every edit that changed something is audited',
+    (await d.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'campaign.update' AND entity_id = $c`, { c: campaignId }))?.n,
+    2,
+  );
+  await partners.setCampaignStatus(d.db, { campaignId, status: 'paused', actorId: d.ownerId, at: T });
+  const second = await partners.createCampaign(d.db, {
+    venueId: d.venueId,
+    actorId: d.ownerId,
+    name: 'Five visits',
+    visitsRequired: 5,
+    rewardLabel: 'A cake',
+    rewardCostMinor: 2000,
+    at: T,
+  });
+  await throws('resuming a campaign counts against the plan, the way starting one does', 'entitlement_required', async () =>
+    await partners.setCampaignStatus(d.db, { campaignId, status: 'active', actorId: d.ownerId, at: T }),
+  );
+  await partners.setCampaignStatus(d.db, { campaignId: second.id, status: 'ended', actorId: d.ownerId, at: T });
+  await partners.setCampaignStatus(d.db, { campaignId, status: 'active', actorId: d.ownerId, at: T });
+  eq('…and fits again once the other has ended', (await campaigns.campaignRows(d.db, d.venueId, campaignId))[0].status, 'active');
+
+  const morning = await analytics.today(d.db, d.venueId, '2026-06-15T08:00:00.000Z');
+  eq('today is the venue’s day, stated as a day', [morning.period, morning.timezone], ['2026-06-15', 'Europe/Warsaw']);
+  eq('…counting the visit at 00:30 in Kraków, which UTC files under the day before', morning.visits.value, 2);
+
+  const manual = { kind: 'manual' as const, venueId: d.venueId, byUserId: d.ownerId };
+  const stale = await gate.openTransaction(d.db, manual, { userId: c[6], at: plusMinutes(T, -20) });
+  const waiting = await gate.openTransaction(d.db, manual, { userId: c[7], at: plusMinutes(T, -5) });
+  eq('what needs confirming leaves out what can no longer be confirmed', (await analytics.today(d.db, d.venueId, T)).pendingConfirmations, 1);
+  eq('…and so does the queue at the counter', (await gate.pendingAt(d.db, d.venueId, T)).map((txn) => txn.id), [waiting.id]);
+  const fresh = await gate.openTransaction(d.db, manual, { userId: c[6], at: T });
+  eq(
+    'a pending scan past its time does not block a fresh one; it is cancelled as a timeout',
+    await d.db.get(`SELECT status, cancel_reason FROM transactions WHERE id = $i`, { i: stale.id }),
+    { status: 'cancelled', cancel_reason: 'timeout' },
+  );
+  await gate.submitAmount(d.db, { transactionId: fresh.id, amountMinor: 4000, actorId: d.ownerId, at: T });
+  await throws('a confirm past the time limit is refused', 'expired', async () =>
+    await gate.confirm(d.db, { transactionId: fresh.id, cashierId: d.ownerId, at: plusMinutes(T, 16) }),
+  );
+  /* The cancel used to be written inside the transaction the refusal rolled back. */
+  eq('…and the transaction it refused is cancelled, not left blocking the customer', (await gate.getTransaction(d.db, fresh.id)).status, 'cancelled');
+  await gate.cancel(d.db, { transactionId: waiting.id, reason: 'verify', actorId: d.ownerId, at: T });
+
+  const juneFindings = await analytics.findings(d.db, d.venueId, { period: '2026-06', at: now() });
+  eq('findings follow the month asked for, not the clock', juneFindings.find((finding) => finding.key === 'cost_per_new_customer')?.detail.period, '2026-06');
+  eq(
+    'cohort months walk back as months, even from the 31st',
+    (await analytics.cohorts(d.db, d.venueId, 3, { at: '2026-03-31T12:00:00.000Z' })).map((cohort) => cohort.cohort),
+    ['2026-01', '2026-02', '2026-03'],
+  );
+  eq('…and end on the month asked for', (await analytics.cohorts(d.db, d.venueId, 2, { period: '2026-06', at: now() })).map((cohort) => cohort.cohort), ['2026-05', '2026-06']);
+
+  await d.db.run(
+    `INSERT INTO deal_events (id, deal_id, user_id, event_type, source, created_at) VALUES ($i, $d, $u, 'claim', 'gate', $t)`,
+    { i: newId('evt'), d: fixture.dealA, u: c[9], t: '2026-06-29T22:30:00.000Z' },
+  );
+  eq('a deal’s sparkline files a claim at 00:30 in Kraków under the café’s own day', await deals.claimSeries(d.db, fixture.dealA, 7, T, 'Europe/Warsaw'), [0, 0, 0, 0, 0, 0, 1]);
+
+  await throws('a split that leaves one pool short of what it already holds is refused', 'conflict', async () =>
+    await partners.setBudget(d.db, { venueId: d.venueId, actorId: d.ownerId, totalMinor: 100000, loyaltyBp: 0, at: T }),
+  );
+  eq(
+    '…while one that leaves both covered goes through',
+    (await partners.setBudget(d.db, { venueId: d.venueId, actorId: d.ownerId, totalMinor: 100000, loyaltyBp: 5000, at: T })).loyalty.base,
+    50000,
+  );
+
+  /* ── reminders ── */
+  await ledger.earn(d.db, { userId: c[5], points: 500, reason: 'adjustment', at: plusMinutes(T, -70) });
+  await vouchers.issue(d.db, { userId: c[5], venueId: d.venueId, tierId: fixture.tier5, at: plusMinutes(T, -60) });
+  await d.db.run(`INSERT INTO push_tokens (id, user_id, platform, token, created_at) VALUES ($i, $u, 'fcm', $k, $t)`, {
+    i: newId('ptk'),
+    u: c[5],
+    k: `token-${c[5]}`,
+    t: T,
+  });
+  const quiet = await dashboard.remindStatus(d.db, d.venueId, T);
+  eq('a reminder is for whoever holds something unused here', [quiet.rewardHolders, quiet.voucherHolders, quiet.audience], [1, 1, 2]);
+  eq('…and none has gone out yet', [quiet.lastSentAt, quiet.nextAllowedAt, quiet.lastResult], [null, null, null]);
+  const sent = await dashboard.sendReminder(d.db, { venueId: d.venueId, actorId: d.ownerId, at: T });
+  eq('an inbox copy each, and a push where one can land', sent, {
+    sentAt: T,
+    audience: 2,
+    inbox: 2,
+    queued: 1,
+    suppressed: 1,
+    nextAllowedAt: plusDays(T, 7),
+  });
+  eq(
+    'each copy names the reminder it belongs to',
+    (await d.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM notifications
+        WHERE kind = 'venue_reminder' AND source_kind = 'venue_reminder'
+          AND source_ref IN (SELECT entity_id FROM audit_log WHERE action = 'venue.remind' AND venue_id = $v)`,
+      { v: d.venueId },
+    ))?.n,
+    2,
+  );
+  const tooSoon = await refusal(async () => await dashboard.sendReminder(d.db, { venueId: d.venueId, actorId: d.ownerId, at: plusDays(T, 1) }));
+  eq('a second reminder inside the week is refused, saying when the next may go', [tooSoon?.code, tooSoon?.detail.nextAllowedAt], ['conflict', plusDays(T, 7)]);
+  await scanAs(d, c[5], 4000, plusDays(T, 2));
+  await scanAs(d, c[4], 4000, plusDays(T, 10));
+  const later = await dashboard.remindStatus(d.db, d.venueId, plusDays(T, 11));
+  eq('who came in within the week is counted, and nobody after it', later.lastResult, { sentAt: T, audience: 2, cameBack: 1, windowDays: 7 });
+  eq('…and the week is over', later.nextAllowedAt, null);
+}
+
+async function counterRules(): Promise<void> {
+  describe('§2.8 audiences · §2.11 the counter · push dispatch · §2.9 the listing · the authoring fixes');
+  const k = await world();
+  /* 12:00 on a Wednesday in Kraków, at a café in a city nobody else in the
+     imported data lives in — so every audience below is a number this section wrote. */
+  const K = '2026-08-12T10:00:00.000Z';
+  await k.db.run(`UPDATE venues SET city = 'Testbury' WHERE id = $v`, { v: k.venueId });
+  await entitlements.startSubscription(k.db, { subject: { venueId: k.venueId }, planCode: 'growth', source: 'manual', at: plusDays(K, -5) });
+  const t: string[] = [];
+  for (let i = 0; i < 11; i += 1) {
+    t.push(
+      await person(k, `t${i}`, K, {
+        city: 'Testbury',
+        language: i === 1 ? 'pl' : 'en',
+        username: i === 3 ? 'Tester_Three' : i === 10 ? 'tester_ten' : undefined,
+      }),
+    );
+  }
+  for (const who of [t[0], t[1], t[2]]) {
+    await k.db.run(`INSERT INTO push_tokens (id, user_id, platform, token, created_at) VALUES ($i, $u, 'fcm', $k, $t)`, {
+      i: newId('ptk'),
+      u: who,
+      k: `token-${who}`,
+      t: plusDays(K, -1),
+    });
+  }
+  const tierOf = async (pct: number) =>
+    (await k.db.get<{ id: string }>(`SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = $p`, { v: k.venueId, p: pct }))!.id;
+  const campaign = await partners.createCampaign(k.db, {
+    venueId: k.venueId,
+    actorId: k.ownerId,
+    name: 'Three visits',
+    visitsRequired: 3,
+    rewardLabel: 'A juice',
+    rewardCostMinor: 700,
+    at: plusDays(K, -2),
+  });
+
+  const nobody = await refusal(async () => await dashboard.sendReminder(k.db, { venueId: k.venueId, actorId: k.ownerId, at: K }));
+  eq('with nothing unused anywhere, there is nobody to remind', [nobody?.code, nobody?.status, nobody?.detail.reason], ['invalid_state', 400, 'no_audience']);
+
+  for (let i = 0; i < 10; i += 1) await scanAs(k, t[i], 4000, plusMinutes(K, i));
+
+  const audiences = await dashboard.audiences(k.db, k.venueId, plusMinutes(K, 60));
+  eq('the segments, in targeting’s own order', audiences.map((row) => row.segment), ['all', 'new', 'returning', 'lapsed', 'newcomer']);
+  const reach = Object.fromEntries(audiences.map((row) => [row.segment, row]));
+  eq('each is the people targeting would admit', [reach.all.reach.value, reach.returning.reach.value, reach.newcomer.reach.value], [11, 10, 11]);
+  eq('a segment of one is withheld, never rounded', [reach.new.reach.suppressed, reach.new.reach.value, reach.lapsed.reach.suppressed], [true, null, true]);
+  eq('…and so is how many regulars a push reaches, three being a description of three people', [reach.returning.notifiable.suppressed, reach.returning.notifiable.value], [true, null]);
+
+  /* ── the counter: looking up ── */
+  const A = plusMinutes(K, 120);
+  const byHandle = await dashboard.counterLookup(k.db, k.venueId, '  @TESTER_three ', A);
+  eq('a handle finds its customer, folded the way the handle index folds', [byHandle.kind, byHandle.customer.userId, byHandle.customer.handle], ['customer', t[3], '@Tester_Three']);
+  eq('…unnamed, having shared nothing with this venue, and not new here', [byHandle.customer.name, byHandle.customer.avatar, byHandle.customer.firstVisit], [null, null, false]);
+  eq('…with the card this sale will stamp', byHandle.customer.stamps.map((card) => [card.campaignId, card.done, card.need]), [[campaign.id, 1, 3]]);
+  eq('a handle typed without its @ is still the handle', (await dashboard.counterLookup(k.db, k.venueId, 'tester_three', A)).customer.userId, t[3]);
+  await rejects('an unknown handle is one not-found', async () => await dashboard.counterLookup(k.db, k.venueId, '@nobody_here', A), 'not_found');
+  await consent.grantSharing(k.db, { userId: t[3], venueId: k.venueId, at: A });
+  const named = await dashboard.counterLookup(k.db, k.venueId, '@tester_three', A);
+  eq('a customer who shared with this venue is named at its counter', [named.customer.name, named.customer.avatar], ['Person t3', 'avatar-t3']);
+  eq('somebody never in before is a first visit', (await dashboard.counterLookup(k.db, k.venueId, '@tester_ten', A)).customer.firstVisit, true);
+  await k.db.run(`UPDATE users SET username = 'banned_one', username_norm = 'banned_one', status = 'banned' WHERE id = $u`, { u: t[9] });
+  await rejects('a banned account is not found', async () => await dashboard.counterLookup(k.db, k.venueId, '@banned_one', A), 'not_found');
+
+  await ledger.earn(k.db, { userId: t[4], points: 1000, reason: 'adjustment', at: plusMinutes(K, 80) });
+  const voucher = await vouchers.issue(k.db, { userId: t[4], venueId: k.venueId, tierId: await tierOf(10), at: plusMinutes(K, 90) });
+  const asVoucher = await dashboard.counterLookup(k.db, k.venueId, voucher.code.toLowerCase(), A);
+  eq(
+    'a voucher code, in any case, is that voucher and whose it is',
+    asVoucher.kind === 'voucher' ? [asVoucher.voucher.id, asVoucher.voucher.discountPct, asVoucher.customer.userId] : null,
+    [voucher.id, 10, t[4]],
+  );
+  const rewardId = newId('rwd');
+  await k.db.run(
+    `INSERT INTO earned_rewards (id, user_id, venue_id, campaign_id, label, cost_minor, reserved_minor, status, code, earned_at, expires_at)
+     VALUES ($i, $u, $v, $c, 'A juice', 700, 700, 'available', 'K7M2QX', $e, $x)`,
+    { i: rewardId, u: t[5], v: k.venueId, c: campaign.id, e: K, x: plusDays(K, 30) },
+  );
+  const asReward = await dashboard.counterLookup(k.db, k.venueId, 'k7m2qx', A);
+  eq(
+    'a reward code that folds into a handle shape falls through to the reward',
+    asReward.kind === 'reward' ? [asReward.reward.id, asReward.reward.label, asReward.customer.userId] : null,
+    [rewardId, 'A juice', t[5]],
+  );
+  const elsewhere = newId('ven');
+  await k.db.run(
+    `INSERT INTO venues (id, owner_user_id, name, category, city, country_code, timezone, currency, status, verified_at, created_at, updated_at)
+     VALUES ($i, $o, 'Elsewhere', 'cafe', 'Testbury', 'PL', 'Europe/Warsaw', 'PLN', 'live', $t, $t, $t)`,
+    { i: elsewhere, o: k.customerId, t: K },
+  );
+  const elsewhereTier = newId('vtr');
+  await k.db.run(
+    `INSERT INTO voucher_tiers (id, venue_id, discount_pct, points_cost, max_discount_minor, active, created_at, updated_at)
+     VALUES ($i, $v, 10, 300, 2500, 1, $t, $t)`,
+    { i: elsewhereTier, v: elsewhere, t: K },
+  );
+  const plant = async (venueId: string, tierId: string, code: string, expires: Iso) =>
+    await k.db.run(
+      `INSERT INTO issued_vouchers (id, user_id, venue_id, tier_id, discount_pct, max_discount_minor, points_spent,
+                                    reserved_minor, code, status, issued_at, expires_at)
+       VALUES ($i, $u, $v, $t, 10, 2500, 300, 400, $c, 'active', $at, $e)`,
+      { i: newId('ivc'), u: t[6], v: venueId, t: tierId, c: code, at: K, e: expires },
+    );
+  await plant(elsewhere, elsewhereTier, 'PLZ-ELSE', plusDays(K, 10));
+  await plant(k.venueId, await tierOf(10), 'PLZ-GONE', plusMinutes(K, 30));
+  await rejects('another venue’s voucher is a not-found here, not a hint that it exists', async () => await dashboard.counterLookup(k.db, k.venueId, 'PLZ-ELSE', A), 'not_found');
+  await rejects('…and so is an expired one', async () => await dashboard.counterLookup(k.db, k.venueId, 'plz-gone', A), 'not_found');
+
+  /* ── the counter: selling ── */
+  const B = plusMinutes(K, 180);
+  const sale = await dashboard.counterRecord(k.db, { venueId: k.venueId, actorId: k.ownerId, code: '@tester_ten', amountMinor: 4000, at: B });
+  const scanned = await scan(k, 4000, B);
+  eq(
+    'a sale at the counter pays what a QR scan of the same bill pays',
+    [sale.receipt.pointsGranted, sale.receipt.stamped, sale.receipt.visitCounted],
+    [scanned.pointsGranted, scanned.stamped, scanned.visitCounted],
+  );
+  eq('…which on a first visit is the scan, the first visit and the new category', sale.receipt.pointsGranted, 5 + CONFIG.earn.firstVisitToVenue + CONFIG.earn.newCategory);
+  check('the counter’s receipt carries no balance and no next tier', !('balance' in sale.receipt) && !('nextTier' in sale.receipt));
+  eq('…and echoes the lookup it acted on', [sale.lookup.kind, sale.lookup.customer.firstVisit], ['customer', true]);
+  eq(
+    'it is a manual transaction confirmed by the caller',
+    await k.db.get(`SELECT trigger_type, confirmed_by, status FROM transactions WHERE id = $i`, { i: sale.receipt.transactionId }),
+    { trigger_type: 'manual', confirmed_by: k.ownerId, status: 'committed' },
+  );
+  eq(
+    '…and audited as a counter sale',
+    (await k.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log WHERE action = 'gate.counter' AND entity_id = $i`, { i: sale.receipt.transactionId }))?.n,
+    1,
+  );
+  const spentBefore = (await budget.budgetFor(k.db, k.venueId, B)).voucher.spent;
+  const redeemed = await dashboard.counterRecord(k.db, { venueId: k.venueId, actorId: k.ownerId, code: voucher.code, amountMinor: 12000, at: B });
+  eq('a voucher at the counter takes its discount off the bill', redeemed.receipt.discountMinor, 1200);
+  eq('…out of the voucher pool', (await budget.budgetFor(k.db, k.venueId, B)).voucher.spent, spentBefore + 1200);
+  eq('…and is spent', (await k.db.get<{ s: string }>(`SELECT status AS s FROM issued_vouchers WHERE id = $i`, { i: voucher.id }))?.s, 'redeemed');
+  const juice = await dashboard.counterRecord(k.db, { venueId: k.venueId, actorId: k.ownerId, code: 'K7M2QX', amountMinor: 3000, at: B });
+  eq('a reward at the counter is given at its exact cost', juice.receipt.discountMinor, 700);
+  eq('…and collected', (await k.db.get<{ s: string }>(`SELECT status AS s FROM earned_rewards WHERE id = $i`, { i: rewardId }))?.s, 'redeemed');
+
+  await rejects('an amount past the venue’s ceiling is refused at the counter as at the till', async () =>
+    await dashboard.counterRecord(k.db, { venueId: k.venueId, actorId: k.ownerId, code: '@tester_three', amountMinor: 5_000_000, at: B }),
+  'invalid_amount');
+  eq(
+    '…and what it opened is cancelled, so the customer is not locked out of the next scan',
+    await k.db.get(`SELECT status, cancel_reason FROM transactions WHERE user_id = $u AND venue_id = $v ORDER BY opened_at DESC, id DESC LIMIT 1`, { u: t[3], v: k.venueId }),
+    { status: 'cancelled', cancel_reason: 'counter_failed' },
+  );
+  /* A confirm that fails for a reason the gate did not foresee: the commit
+     itself is refused, by a trigger that exists for this one check. */
+  await k.db.exec(
+    `CREATE TEMP TRIGGER verify_refuse_commit BEFORE UPDATE OF status ON transactions
+       WHEN NEW.status = 'committed' BEGIN SELECT RAISE(ABORT, 'refused by the suite'); END`,
+  );
+  let confirmFailed = false;
+  try {
+    await dashboard.counterRecord(k.db, { venueId: k.venueId, actorId: k.ownerId, code: '@tester_three', amountMinor: 4000, at: plusMinutes(B, 1) });
+  } catch {
+    confirmFailed = true;
+  }
+  await k.db.exec(`DROP TRIGGER verify_refuse_commit`);
+  check('a confirm that fails is reported, not swallowed', confirmFailed);
+  eq(
+    '…and leaves no pending transaction behind it',
+    (await k.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM transactions WHERE user_id = $u AND venue_id = $v AND status = 'pending'`, { u: t[3], v: k.venueId }))?.n,
+    0,
+  );
+  await k.db.run(`UPDATE users SET username = 'the_owner', username_norm = 'the_owner' WHERE id = $u`, { u: k.ownerId });
+  await rejects('a venue cannot ring up a sale to its own owner', async () =>
+    await dashboard.counterRecord(k.db, { venueId: k.venueId, actorId: k.ownerId, code: '@the_owner', amountMinor: 4000, at: B }),
+  'forbidden');
+
+  /* ── a scheduled push, sent ── */
+  const P = plusMinutes(K, 240);
+  const dealNamed = async (title: string, extra: Partial<partners.DealDraft> = {}) =>
+    await partners.createDeal(k.db, {
+      actorId: k.ownerId,
+      draft: { venueId: k.venueId, discountText: 'Free juice', copy: { en: { title, description: 'With any lunch' } }, ...extra },
+      at: plusMinutes(P, -30),
+    });
+  const pushed = await dealNamed('Juice Wednesday');
+  await throws('a draft cannot carry a push — nobody could be sent to it', 'invalid_state', async () =>
+    await deals.schedulePush(k.db, { dealId: pushed.id, scheduledAt: P, quota: 4, at: plusMinutes(P, -20) }),
+  );
+  await partners.publishDeal(k.db, { dealId: pushed.id, actorId: k.ownerId, at: plusMinutes(P, -20) });
+  await throws('a push time that is not a time is refused, not a 500', 'validation_failed', async () =>
+    await deals.schedulePush(k.db, { dealId: pushed.id, scheduledAt: 'teatime', quota: 4, at: plusMinutes(P, -20) }),
+  );
+  const scheduled = await deals.schedulePush(k.db, { dealId: pushed.id, scheduledAt: P, quota: 4, at: plusMinutes(P, -20) });
+  const used = (await deals.pushQuota(k.db, k.venueId, 4, P)).used;
+  eq('nothing goes before its time', await deals.sendDuePushes(k.db, plusMinutes(P, -5)), { sent: 0, cancelled: 0, failed: 0 });
+  eq('a due push is sent', await deals.sendDuePushes(k.db, plusMinutes(P, 3)), { sent: 1, cancelled: 0, failed: 0 });
+  /* Ten active accounts in Testbury (one is banned); three hold a token. */
+  eq(
+    '…to everybody its targeting admits, and pushed to those a push can reach',
+    await k.db.get(`SELECT status, targeted, reachable, delivered FROM deal_pushes WHERE id = $i`, { i: scheduled.id }),
+    { status: 'sent', targeted: 10, reachable: 3, delivered: 0 },
+  );
+  eq('the quota spent when it was scheduled is not spent again', (await deals.pushQuota(k.db, k.venueId, 4, P)).used, used);
+  eq('a second run sends nothing twice', await deals.sendDuePushes(k.db, plusMinutes(P, 8)), { sent: 0, cancelled: 0, failed: 0 });
+  await push.drain(k.db);
+  eq('delivered is what the adapter sent', (await deals.pushFor(k.db, pushed.id))?.delivered, 3);
+  await deals.track(k.db, { dealId: pushed.id, userId: t[1], kind: 'open', pushId: scheduled.id, at: plusMinutes(P, 30) });
+  await scanAs(k, t[0], 4000, plusDays(K, 1));
+  await scanAs(k, t[3], 4000, plusMinutes(plusDays(K, 1), 10));
+  await scanAs(k, t[0], 4000, plusDays(K, 2));
+  await scanAs(k, t[1], 4000, plusDays(K, 8));
+  /* t0 was pushed and came in the next day (once, though twice); t3 only had
+     the inbox copy; t1 was pushed and came in after the week was out. */
+  eq('came in: pushed, then a counted visit inside the week — once per person', (await deals.pushFor(k.db, pushed.id))?.cameIn, 1);
+  eq('the month’s push funnel sums what its pushes did', (await deals.pushQuota(k.db, k.venueId, 4, P)).funnel, { sent: 3, delivered: 3, opened: 1, cameIn: 1 });
+
+  const paused = await dealNamed('Paused juice');
+  await partners.publishDeal(k.db, { dealId: paused.id, actorId: k.ownerId, at: plusMinutes(P, -20) });
+  const pausedPush = await deals.schedulePush(k.db, { dealId: paused.id, scheduledAt: plusMinutes(P, 10), quota: 4, at: plusMinutes(P, 5) });
+  await deals.setStatus(k.db, paused.id, 'paused', plusMinutes(P, 6));
+  const late = await dealNamed('Late juice');
+  await partners.publishDeal(k.db, { dealId: late.id, actorId: k.ownerId, at: plusMinutes(P, -20) });
+  const latePush = await deals.schedulePush(k.db, { dealId: late.id, scheduledAt: plusMinutes(P, 20), quota: 4, at: plusMinutes(P, 5) });
+  eq('a push whose deal was paused is cancelled rather than sent', await deals.sendDuePushes(k.db, plusMinutes(P, 15)), { sent: 0, cancelled: 1, failed: 0 });
+  eq('…and one more than an hour late is failed rather than sent', await deals.sendDuePushes(k.db, plusMinutes(P, 90)), { sent: 0, cancelled: 0, failed: 1 });
+  eq(
+    '…and neither told anybody anything',
+    (await k.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM notifications WHERE push_id IN ($a, $b)`, { a: pausedPush.id, b: latePush.id }))?.n,
+    0,
+  );
+  const polish = await dealNamed('Po polsku', { targetLanguages: ['pl'] });
+  eq('a push goes to the languages its deal targets and no further', await deals.audienceFor(k.db, polish.id, P), [t[1]]);
+
+  const reader = { userId: k.customerId, language: 'en', city: 'Warsaw', at: plusMinutes(P, 30) };
+  check("a venue's own deals are listed whatever city the reader lives in", (await deals.browse(k.db, reader, { venueId: k.venueId })).some((card) => card.id === pushed.id));
+  check('…while the city board still keeps to its city', !(await deals.browse(k.db, reader, {})).some((card) => card.id === pushed.id));
+
+  /* ── the listing ── */
+  const saved = await partners.updateVenue(k.db, {
+    venueId: k.venueId,
+    actorId: k.ownerId,
+    patch: {},
+    extras: {
+      description: { en: 'Fresh juice all day', PL: 'Świeże soki' },
+      links: [{ kind: 'website', value: 'https://juice.test' }, { kind: 'Instagram', value: '@juice' }, { kind: 'tiktok', value: '' }],
+      languages: ['PL', 'en', 'pl'],
+    },
+    at: P,
+  });
+  check('saving the listing still answers with the venue row', saved.id === k.venueId && !('description' in saved));
+  await partners.setHours(k.db, k.venueId, [{ weekday: 0, opensMin: 480, closesMin: 1320, closed: false }]);
+  const listed = await dashboard.listing(k.db, k.venueId);
+  eq('the listing reads back its description in each language', listed.description, { en: 'Fresh juice all day', pl: 'Świeże soki' });
+  eq('…its links in order, kinds folded, an empty one dropped', listed.links, [{ kind: 'website', value: 'https://juice.test' }, { kind: 'instagram', value: '@juice' }]);
+  eq('…its languages, once each', listed.languages, ['en', 'pl']);
+  eq('…its hours', listed.hours, [{ weekday: 0, opensMin: 480, closesMin: 1320, closed: false }]);
+  eq('…and where it stands', [listed.city, listed.timezone, listed.acceptsVouchers, listed.verification], ['Testbury', 'Europe/Warsaw', true, null]);
+  await partners.updateVenue(k.db, { venueId: k.venueId, actorId: k.ownerId, patch: {}, extras: { description: { pl: '' } }, at: P });
+  const trimmed = await dashboard.listing(k.db, k.venueId);
+  eq('an empty description removes that language and leaves the rest alone', [trimmed.description, trimmed.links.length, trimmed.languages], [{ en: 'Fresh juice all day' }, 2, ['en', 'pl']]);
+  const second = await partners.createVenue(k.db, {
+    ownerId: t[8],
+    draft: { name: 'Juice Two', category: 'cafe', city: 'Testbury' },
+    extras: { description: { en: 'The second one' }, languages: ['uk'] },
+    at: P,
+  });
+  const secondListing = await dashboard.listing(k.db, second.id);
+  eq('a new venue arrives with its description and languages', [secondListing.description, secondListing.languages], [{ en: 'The second one' }, ['uk']]);
+
+  await throws('a language that is not a two-letter code is refused', 'validation_failed', async () =>
+    await partners.updateVenue(k.db, { venueId: k.venueId, actorId: k.ownerId, patch: {}, extras: { languages: ['english'] }, at: P }),
+  );
+  await throws('two links of one kind are refused by name, not by the constraint', 'validation_failed', async () =>
+    await partners.setLinks(k.db, k.venueId, [{ kind: 'website', value: 'https://a.test' }, { kind: 'website', value: 'https://b.test' }], P),
+  );
+  await throws('a weekday given twice is refused', 'validation_failed', async () =>
+    await partners.setHours(k.db, k.venueId, [{ weekday: 1, opensMin: 480, closesMin: 1000 }, { weekday: 1, opensMin: 500, closesMin: 900 }]),
+  );
+  await throws('a name of spaces does not blank a venue', 'validation_failed', async () =>
+    await partners.updateVenue(k.db, { venueId: k.venueId, actorId: k.ownerId, patch: { name: '   ' }, at: P }),
+  );
+  await throws('a time zone the clock does not know is refused at the door', 'validation_failed', async () =>
+    await partners.createVenue(k.db, { ownerId: t[7], draft: { name: 'Nowhere', category: 'cafe', city: 'Testbury', timezone: 'Europe/Krakow' }, at: P }),
+  );
+  await throws('a verified venue cannot take itself offline by asking again', 'conflict', async () =>
+    await partners.submitVerification(k.db, { venueId: k.venueId, method: 'manual', at: P }),
+  );
+  const pending = await partners.submitVerification(k.db, { venueId: second.id, method: 'manual', at: P });
+  eq('a second request while one is pending returns that one', await partners.submitVerification(k.db, { venueId: second.id, method: 'manual', at: plusMinutes(P, 1) }), pending);
+  eq('…which the listing shows', (await dashboard.listing(k.db, second.id)).verification?.status, 'pending');
+
+  const lapsed = await partners.createDeal(k.db, { actorId: t[8], draft: { venueId: second.id, copy: { en: { title: 'Old', description: 'x' } } }, at: P });
+  await k.db.run(`UPDATE hot_deals SET status = 'expired', valid_to = $v WHERE id = $i`, { v: plusDays(P, -1), i: lapsed.id });
+  await throws('an expired deal comes back live only through the gates publishing has', 'not_verified', async () =>
+    await deals.extend(k.db, lapsed.id, '2026-09-30', P, { check: async () => await partners.assertPublishable(k.db, lapsed.id) }),
+  );
+  await throws('…and never to a date that is not one', 'validation_failed', async () => await deals.extend(k.db, pushed.id, 'banana', P));
+  eq('extending to a bare day runs to the end of that day', (await deals.extend(k.db, pushed.id, '2026-09-30', P)).valid_to, '2026-09-30T21:59:59.999Z');
+
+  for (const [code, rate, decimals] of [['PLN', 4.25, 2], ['UZS', 14000, 0]] as const) {
+    await k.db.run(
+      `INSERT INTO exchange_rates (code, base, rate, decimals, updated_at) VALUES ($c, 'EUR', $r, $d, $t)
+         ON CONFLICT (code) DO UPDATE SET rate = excluded.rate, decimals = excluded.decimals`,
+      { c: code, r: rate, d: decimals, t: P },
+    );
+  }
+  await k.db.run(`UPDATE venues SET currency = 'UZS' WHERE id = $v`, { v: k.venueId });
+  const inSoum = await analytics.costPerNewCustomer(k.db, k.venueId, { at: P });
+  eq('a złoty plan fee is counted in the venue’s own currency', [inSoum.breakdown.subscription, inSoum.excluded], [Math.round((29900 / 100 / 4.25) * 14000), []]);
+  await k.db.run(`UPDATE venues SET currency = 'XTS' WHERE id = $v`, { v: k.venueId });
+  const unrated = await analytics.costPerNewCustomer(k.db, k.venueId, { at: P });
+  eq('…and one with no rate is left out and named, never added in the wrong unit', [unrated.breakdown.subscription, unrated.excluded], [0, ['subscription']]);
+
+  await k.db.close();
+}
+
 async function run(): Promise<void> {
   const started = Date.now();
 
@@ -4196,6 +5218,12 @@ async function run(): Promise<void> {
   await dealRules();
   await consentRules();
   await analyticsRules();
+  await dashboardHelperRules();
+  const dashboardWorld = await dashboardFixture();
+  await dashboardReports(dashboardWorld);
+  await dashboardLevers(dashboardWorld);
+  await dashboardWorld.d.db.close();
+  await counterRules();
   await entitlementRules();
   await assistantRules();
   await socialRules();

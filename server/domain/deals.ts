@@ -25,7 +25,21 @@ import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
-import { daysBetween, local, localMonth, now, withinDailyWindow, type Iso } from './time.ts';
+import {
+  daysBetween,
+  local,
+  localDay,
+  localMidnight,
+  localMonth,
+  minutesBetween,
+  monthStart,
+  nextPeriod,
+  now,
+  shiftDay,
+  withinDailyWindow,
+  type Iso,
+} from './time.ts';
+import { notify } from './notifications.ts';
 
 export type DealStatus = 'draft' | 'scheduled' | 'live' | 'paused' | 'expired' | 'archived';
 export type Segment = 'new' | 'returning' | 'lapsed' | 'newcomer';
@@ -240,7 +254,12 @@ export async function browse(
       ORDER BY COALESCE(valid_to, '9999') ASC
       LIMIT $lim`,
     {
-      city: filter.city ?? viewer.city ?? null,
+      /* One venue's own deals are that venue's wherever the reader lives. The
+         city is the *board's* scope, and on the venue screen the venue is the
+         scope: a player whose profile says Warsaw opening a Kraków café got an
+         empty deal list for it, because the reader's city filtered out the one
+         city the venue is in. */
+      city: filter.venueId ? null : (filter.city ?? viewer.city ?? null),
       cat: filter.category ?? null,
       ven: filter.venueId ?? null,
       lim: filter.limit ?? 50,
@@ -275,6 +294,73 @@ export const getDeal = async (db: Db, id: string): Promise<Deal> => {
   if (!deal) throw new DomainError('not_found', 'deal not found');
   return deal;
 };
+
+/** A deal's clock: its venue's zone, or the product's home zone for a platform-wide deal. */
+const timezoneOf = async (db: Db, venueId: string | null): Promise<string> =>
+  (venueId
+    ? (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId }))
+        ?.timezone
+    : undefined) ?? 'Europe/Warsaw';
+
+const BARE_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Whether a string is a date the window can hold: a real calendar day, or an
+ * instant `Date` parses.
+ *
+ * Checked because every comparison against these columns is a string one, so
+ * nothing downstream refuses a bad value — it sorts. `"banana"` sorts after
+ * every ISO timestamp, and a deal ending on it is one no job ever expires. And
+ * `2026-02-30` is checked against the calendar rather than against `Date`,
+ * which quietly makes it the 2nd of March.
+ */
+function kindOfDate(value: string, field: string): 'day' | 'instant' {
+  const match = BARE_DAY.exec(value);
+  if (match) {
+    const [year, month, date] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const probe = new Date(Date.UTC(year, month - 1, date));
+    if (probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === date) {
+      return 'day';
+    }
+  } else if (Number.isFinite(Date.parse(value))) {
+    return 'instant';
+  }
+  throw new DomainError('validation_failed', `${field} is not a date`, { field });
+}
+
+/**
+ * The start of a deal's window, as it is stored.
+ *
+ * An instant is normalised; **a bare day is kept as the day.** The dashboard
+ * reads a stored start back into a date field by its first ten characters, and
+ * a venue-local midnight east of UTC begins with the *previous* date — so
+ * storing one would show the owner the day before and walk the start back a
+ * day on every save. A bare day compares as the start of that UTC day, which
+ * falls in the small hours of it for every venue east of UTC, before any of
+ * them opens.
+ */
+export function checkValidFrom(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return kindOfDate(value, 'validFrom') === 'day' ? value : new Date(value).toISOString();
+}
+
+/**
+ * The end of a deal's window, as it is stored.
+ *
+ * **A bare day means the whole of that day, in the venue's clock.** It used to
+ * be stored as sent, and every comparison against it is a string comparison:
+ * `2026-09-30` sorts *before* `2026-09-30T08:00:00.000Z`, so a deal "valid
+ * until the 30th" had ended before the 30th began. Every offer lost its last
+ * day, and a weekend deal was gone by Sunday breakfast. It is stored as the
+ * last millisecond of that venue-local day now — which also reads back as the
+ * same date by its first ten characters in every zone this product has a venue
+ * in, so the drawer's round trip is unchanged.
+ */
+export function checkValidTo(value: string | undefined, timezone: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (kindOfDate(value, 'validTo') === 'instant') return new Date(value).toISOString();
+  return new Date(Date.parse(localMidnight(shiftDay(value, 1), timezone)) - 1).toISOString();
+}
 
 /* ─────────────────────────────────────────────────────────────── the funnel ── */
 
@@ -352,30 +438,37 @@ export const funnel = async (db: Db, dealId: string) => {
  *     days that have rows, and a sparkline drawn straight off that silently
  *     closes the gaps — a deal claimed twice a week renders as a healthy line.
  *     The window is built first and the counts are filled into it.
- *   - **The bucket is a date, not a rolling 24 hours.** `substr(created_at, 1,
- *     10)` is the ISO day, which is what the labels under the chart say. It is
- *     UTC rather than venue-local, which is the same simplification
- *     `analytics.reach` makes and is worth knowing before this is used for
- *     anything finer than a shape.
+ *   - **The bucket is the venue's calendar day, ending on the request's own
+ *     clock.** It was the UTC date counted back from `Date.now()`, which filed
+ *     a Kraków café's late-evening claims under the next day's column for two
+ *     hours of every night, and ignored the `at` every other figure on the
+ *     screen is drawn against — so this sparkline could end on a different
+ *     "today" from the series chart above it.
  */
-export async function claimSeries(db: Db, dealId: string, days = 7): Promise<number[]> {
+export async function claimSeries(
+  db: Db,
+  dealId: string,
+  days = 7,
+  at: Iso = now(),
+  timezone = 'Europe/Warsaw',
+): Promise<number[]> {
   const span = Math.max(1, Math.min(days, 90));
-  const rows = await db.all<{ day: string; n: number }>(
-    `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n
-       FROM deal_events
+  const today = localDay(at, timezone);
+  const first = shiftDay(today, -(span - 1));
+  const rows = await db.all<{ created_at: string }>(
+    `SELECT created_at FROM deal_events
       WHERE deal_id = $d AND event_type = 'claim'
-        AND created_at >= $from
-      GROUP BY day`,
-    { d: dealId, from: new Date(Date.now() - span * 86_400_000).toISOString() },
+        AND created_at >= $from AND created_at < $to`,
+    { d: dealId, from: localMidnight(first, timezone), to: localMidnight(shiftDay(today, 1), timezone) },
   );
 
-  const counts = new Map(rows.map((row) => [row.day, row.n]));
-  const series: number[] = [];
-  for (let i = span - 1; i >= 0; i -= 1) {
-    const day = new Date(Date.now() - i * 86_400_000).toISOString().slice(0, 10);
-    series.push(counts.get(day) ?? 0);
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    if (!Number.isFinite(Date.parse(row.created_at))) continue;
+    const day = localDay(row.created_at, timezone);
+    counts.set(day, (counts.get(day) ?? 0) + 1);
   }
-  return series;
+  return Array.from({ length: span }, (_, index) => counts.get(shiftDay(first, index)) ?? 0);
 }
 
 /**
@@ -503,16 +596,45 @@ export async function setStatus(
   return await getDeal(db, dealId);
 }
 
-export async function extend(db: Db, dealId: string, validTo: Iso, at: Iso = now()): Promise<Deal> {
+/**
+ * Push a deal's end date out — and, for an expired deal, put it back live.
+ *
+ * **Reviving an expired deal is publishing, so it is gated like publishing.**
+ * The `CASE` below has always turned `expired` into `live`, and it did so with
+ * none of the checks `setStatus` runs on the way into a public state: a
+ * suspended venue could put a lapsed offer back on the board, and a venue on a
+ * one-deal plan could run two by letting one expire and extending it. The route
+ * passes the same guard `setStatus` takes. A deal whose live window is only
+ * being lengthened needs none, because nothing new is being shown to anybody.
+ *
+ * And the date is read as a date. It was compared as a string, so a value
+ * like `"banana"` sorted after every timestamp, counted as a later end, and
+ * left a deal no job would ever expire.
+ */
+export async function extend(
+  db: Db,
+  dealId: string,
+  validTo: string,
+  at: Iso = now(),
+  guard?: { check: (deal: Deal) => unknown },
+): Promise<Deal> {
   const deal = await getDeal(db, dealId);
-  if (deal.valid_to && validTo <= deal.valid_to) {
-    throw new DomainError('bad_request', 'extending means a later end date');
+  const end = checkValidTo(validTo, await timezoneOf(db, deal.venue_id))!;
+  if (end <= at) {
+    throw new DomainError('bad_request', 'extending means an end date that has not passed yet', {
+      field: 'validTo',
+    });
   }
+  if (deal.valid_to && Number.isFinite(Date.parse(deal.valid_to)) && Date.parse(end) <= Date.parse(deal.valid_to)) {
+    throw new DomainError('bad_request', 'extending means a later end date', { field: 'validTo' });
+  }
+  if (deal.status === 'expired' && guard) await guard.check(deal);
+
   await db.run(
     `UPDATE hot_deals SET valid_to = $v, status = CASE WHEN status = 'expired' THEN 'live' ELSE status END,
             updated_at = $t
       WHERE id = $i`,
-    { v: validTo, t: at, i: dealId },
+    { v: end, t: at, i: dealId },
   );
   return await getDeal(db, dealId);
 }
@@ -536,15 +658,38 @@ export async function schedulePush(
   const deal = await getDeal(db, input.dealId);
   if (!deal.venue_id) throw new DomainError('invalid_state', 'deal has no venue');
 
-  const timezone =
-    (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: deal.venue_id }))
-      ?.timezone ?? 'Europe/Warsaw';
-  const l = local(input.scheduledAt, timezone);
+  /* A time `Date` cannot read used to reach `Intl` and come back as a 500. */
+  if (!Number.isFinite(Date.parse(input.scheduledAt))) {
+    throw new DomainError('validation_failed', 'scheduledAt is not a date', { field: 'scheduledAt' });
+  }
+  const scheduledAt = new Date(input.scheduledAt).toISOString();
+
+  /*
+   * **The deal has to be one a customer can be sent to.** The note above has
+   * always promised "the deal having copy to send" and nothing checked it, and
+   * nothing checked the deal was published either — so a draft could carry a
+   * push that sends people to an offer that is not in the feed. The dashboard
+   * worked around it by only scheduling after a publish succeeded; a rule held
+   * by one client is not a rule.
+   */
+  if (deal.status !== 'live' && deal.status !== 'scheduled') {
+    throw new DomainError('invalid_state', 'publish the deal before scheduling its notification', {
+      status: deal.status,
+    });
+  }
+  if ((await completeness(db, deal.id)).filled.length === 0) {
+    throw new DomainError('validation_failed', 'a notification needs the deal written in at least one language', {
+      field: 'copy',
+    });
+  }
+
+  const timezone = await timezoneOf(db, deal.venue_id);
+  const l = local(scheduledAt, timezone);
   if (!withinDailyWindow(l.minutes, CONFIG.deals.quietFromMin, CONFIG.deals.quietToMin)) {
     throw new DomainError('quiet_hours', 'pushes are only delivered between 07:00 and 21:00 local');
   }
 
-  const period = localMonth(input.scheduledAt, timezone);
+  const period = localMonth(scheduledAt, timezone);
   const used =
     (await db.get<{ used: number }>(`SELECT used FROM push_quotas WHERE venue_id = $v AND period = $p`, {
       v: deal.venue_id,
@@ -567,7 +712,7 @@ export async function schedulePush(
     await db.run(
       `INSERT INTO deal_pushes (id, deal_id, venue_id, scheduled_at, status, created_at)
        VALUES ($i, $d, $v, $s, 'scheduled', $t)`,
-      { i: id, d: input.dealId, v: deal.venue_id, s: input.scheduledAt, t: at },
+      { i: id, d: input.dealId, v: deal.venue_id, s: scheduledAt, t: at },
     );
     await db.run(
       `INSERT INTO push_quotas (venue_id, period, used) VALUES ($v, $p, 1)
@@ -579,16 +724,42 @@ export async function schedulePush(
 }
 
 export const pushQuota = async (db: Db, venueId: string, quota: number, at: Iso = now()) => {
-  const timezone =
-    (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId }))
-      ?.timezone ?? 'Europe/Warsaw';
+  const timezone = await timezoneOf(db, venueId);
   const period = localMonth(at, timezone);
   const used =
     (await db.get<{ used: number }>(`SELECT used FROM push_quotas WHERE venue_id = $v AND period = $p`, {
       v: venueId,
       p: period,
     }))?.used ?? 0;
-  return { period, quota, used, remaining: Math.max(0, quota - used) };
+
+  /*
+   * What this month's notifications did, summed over the pushes that went out
+   * in it — in the venue's own month, like the quota beside it. `sent` is each
+   * push's `reachable` (the audience after the platform's frequency cap), not
+   * its `targeted`: the people it was actually sent to are the top of this
+   * funnel, and a target that was never sent to is a figure about nothing.
+   * All zeros until a push is sent, which is a true reading and not a missing one.
+   */
+  const funnel = await db.get<{ sent: number; delivered: number; opened: number; came_in: number }>(
+    `SELECT COALESCE(SUM(reachable), 0) AS sent, COALESCE(SUM(delivered), 0) AS delivered,
+            COALESCE(SUM(opened), 0) AS opened, COALESCE(SUM(came_in), 0) AS came_in
+       FROM deal_pushes
+      WHERE venue_id = $v AND status = 'sent' AND sent_at >= $start AND sent_at < $end`,
+    { v: venueId, start: monthStart(period, timezone), end: monthStart(nextPeriod(period), timezone) },
+  );
+
+  return {
+    period,
+    quota,
+    used,
+    remaining: Math.max(0, quota - used),
+    funnel: {
+      sent: funnel?.sent ?? 0,
+      delivered: funnel?.delivered ?? 0,
+      opened: funnel?.opened ?? 0,
+      cameIn: funnel?.came_in ?? 0,
+    },
+  };
 };
 
 /**
@@ -600,23 +771,156 @@ export const pushQuota = async (db: Db, venueId: string, quota: number, at: Iso 
  * with this venue and everything to do with the customer's inbox.
  */
 export async function audienceFor(db: Db, dealId: string, at: Iso = now()): Promise<string[]> {
-  const deal = await getDeal(db, dealId);
-  const candidates = await db.all<{ id: string }>(
-    `SELECT DISTINCT u.id FROM users u
-       LEFT JOIN venue_customers vc ON vc.user_id = u.id AND vc.venue_id = $v
+  return (await audienceOf(db, await getDeal(db, dealId), at)).map((person) => person.id);
+}
+
+/**
+ * The people a push about this deal is for: everybody in its city its
+ * *targeting* admits — the languages and the audience segments.
+ *
+ * **Not `claimableNow`, on purpose.** That predicate also asks whether the deal
+ * can be claimed at this hour on this weekday, and a push is sent *ahead* of the
+ * window it announces: "lunch deal from twelve" goes out at half past eleven, and
+ * a check against the hour would have sent it to nobody. Whether the deal is
+ * still running at all is the dispatcher's question, asked once per push rather
+ * than once per person.
+ *
+ * A loop, not `.filter(async …)`, and the difference was the whole function: an
+ * async predicate returns a promise, a promise is truthy, and `filter` keeps
+ * every element it is handed — so every active account in the city came back as
+ * the audience and none of the checks below ran. The type checker cannot see it;
+ * the return type was right.
+ */
+async function audienceOf(db: Db, deal: Deal, at: Iso): Promise<Array<{ id: string; language: string }>> {
+  const candidates = await db.all<{ id: string; language: string }>(
+    `SELECT u.id, u.language FROM users u
       WHERE u.status = 'active' AND u.deleted_at IS NULL
-        AND ($city IS NULL OR u.city = $city)`,
-    { v: deal.venue_id ?? '', city: deal.city ?? null },
+        AND ($city IS NULL OR u.city = $city)
+      ORDER BY u.id`,
+    { city: deal.city ?? null },
+  );
+  const languages = deal.target_languages ? deal.target_languages.split(',') : null;
+  const segments = deal.target_audience ? (deal.target_audience.split(',') as Segment[]) : null;
+
+  const out: Array<{ id: string; language: string }> = [];
+  for (const person of candidates) {
+    if (languages && !languages.includes(person.language)) continue;
+    /* Never send a deal nobody has written (§9.2). */
+    if (!(await copyFor(db, deal.id, person.language))) continue;
+    if (segments) {
+      const has = await segmentsFor(db, person.id, deal.venue_id, at);
+      if (!segments.some((segment) => has.includes(segment))) continue;
+    }
+    out.push(person);
+  }
+  return out;
+}
+
+/**
+ * Send the pushes whose time has come — the step that makes a scheduled push a
+ * sent one. Run by `jobs.runFrequent`.
+ *
+ * Nothing did this. `schedulePush` wrote a row and spent the quota, and the row
+ * stayed `scheduled` for ever: no customer was told, and `targeted`,
+ * `reachable`, `delivered` and `came_in` had no writer, so every push funnel on
+ * the dashboard read zero for a reason nothing on the screen could state.
+ *
+ * Per push, in one transaction:
+ *
+ *   * **Claimed first** (`scheduled → sending`, conditional), so two runners —
+ *     an overlapping job, a second process — cannot both send it.
+ *   * **Too late is failed, not sent** — see `CONFIG.deals.pushLateMinutes`.
+ *   * **A deal that can no longer be claimed is cancelled**: paused, archived,
+ *     ended or at its cap. A notification sending people to it is worse than
+ *     none.
+ *   * **Everybody else gets `notify`**, one person at a time, which is where
+ *     permission, preference, quiet hours in the venue's clock and the
+ *     platform-wide frequency cap are decided. `targeted` is the audience,
+ *     `reachable` is how many of them it could actually be pushed to. The inbox
+ *     copy lands for all of them either way.
+ *
+ * **The quota is not touched.** It was spent when the push was scheduled, which
+ * is the moment the partner decided; a push that ends up cancelled or late does
+ * not give the slot back, and sending does not take a second one.
+ *
+ * `delivered` is not written here: it is what the push adapter confirms, and
+ * `notifications.markSent` counts it. `came_in` is the gate's.
+ */
+export async function sendDuePushes(
+  db: Db,
+  at: Iso = now(),
+): Promise<{ sent: number; cancelled: number; failed: number }> {
+  const due = await db.all<{ id: string; deal_id: string; venue_id: string; scheduled_at: string }>(
+    `SELECT id, deal_id, venue_id, scheduled_at FROM deal_pushes
+      WHERE status = 'scheduled' AND scheduled_at <= $t
+      ORDER BY scheduled_at`,
+    { t: at },
   );
 
-  return candidates
-    .filter(async (row) => {
-      const language =
-        (await db.get<{ language: string }>(`SELECT language FROM users WHERE id = $u`, { u: row.id }))
-          ?.language ?? 'en';
-      /* Never send a language the deal lacks (§9.2). */
-      if (!(await copyFor(db, dealId, language))) return false;
-      return (await claimableNow(db, deal, { userId: row.id, language, at })).ok;
-    })
-    .map((row) => row.id);
+  const report = { sent: 0, cancelled: 0, failed: 0 };
+  for (const push of due) {
+    try {
+      const outcome = await db.tx(async (): Promise<'sent' | 'cancelled' | 'failed' | 'skipped'> => {
+        const claimed = await db.run(
+          `UPDATE deal_pushes SET status = 'sending' WHERE id = $i AND status = 'scheduled'`,
+          { i: push.id },
+        );
+        if (claimed.changes === 0) return 'skipped';
+
+        if (minutesBetween(push.scheduled_at, at) > CONFIG.deals.pushLateMinutes) {
+          await db.run(`UPDATE deal_pushes SET status = 'failed' WHERE id = $i`, { i: push.id });
+          return 'failed';
+        }
+
+        const deal = await getDeal(db, push.deal_id);
+        const ended =
+          deal.valid_to !== null && Number.isFinite(Date.parse(deal.valid_to)) && Date.parse(deal.valid_to) <= Date.parse(at);
+        const capped =
+          (deal.cap_claims !== null && deal.claimed_count >= deal.cap_claims) ||
+          (deal.cap_spend_minor !== null && deal.spend_minor >= deal.cap_spend_minor);
+        if ((deal.status !== 'live' && deal.status !== 'scheduled') || ended || capped) {
+          await db.run(`UPDATE deal_pushes SET status = 'cancelled' WHERE id = $i`, { i: push.id });
+          return 'cancelled';
+        }
+
+        const audience = await audienceOf(db, deal, at);
+        let reachable = 0;
+        for (const person of audience) {
+          const copy = await copyFor(db, deal.id, person.language);
+          if (!copy) continue;
+          const delivery = await notify(db, {
+            userId: person.id,
+            kind: 'deal_push',
+            title: copy.title,
+            body: copy.description || deal.discount_text || '',
+            language: copy.language,
+            push: true,
+            venueId: push.venue_id,
+            pushId: push.id,
+            sourceKind: 'hot_deal',
+            sourceRef: deal.id,
+            at,
+          });
+          if (delivery.delivery === 'queued') reachable += 1;
+        }
+
+        await db.run(
+          `UPDATE deal_pushes SET status = 'sent', sent_at = $t, targeted = $n, reachable = $r WHERE id = $i`,
+          { t: at, n: audience.length, r: reachable, i: push.id },
+        );
+        return 'sent';
+      });
+      if (outcome !== 'skipped') report[outcome] += 1;
+    } catch (error) {
+      /* One push that throws must not hold back the ones queued behind it. The
+         transaction rolled its claim back, so it is marked here, outside it —
+         left `scheduled`, it would be retried every run until it is too late. */
+      console.error(`[push ${push.id}]`, error);
+      await db.run(`UPDATE deal_pushes SET status = 'failed' WHERE id = $i AND status = 'scheduled'`, {
+        i: push.id,
+      });
+      report.failed += 1;
+    }
+  }
+  return report;
 }

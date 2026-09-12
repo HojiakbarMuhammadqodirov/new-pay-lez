@@ -24,7 +24,7 @@ import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { DomainError } from './errors.ts';
 import { hasSharingGrant } from './consent.ts';
-import { daysBetween, now, type Iso } from './time.ts';
+import { daysBetween, now, plusDays, type Iso } from './time.ts';
 
 export type CustomerStatus = 'new' | 'regular' | 'lapsed' | 'at_risk' | 'high_value';
 
@@ -42,6 +42,36 @@ export interface CustomerRow {
   /** Stamps toward this venue's campaigns, and vouchers held for this venue. */
   stamps: number;
   vouchersHeld: number;
+  /**
+   * The highest discount this customer has bought a voucher for *here*, in any
+   * state but cancelled. **Absent, not null, when they never have** — the key
+   * is left off rather than sent empty, so a client cannot read "no voucher"
+   * as a 0% tier.
+   */
+  tierPct?: number;
+  /**
+   * Their spend here over the last thirty days against the thirty before.
+   * Absent when both are zero: somebody who spent nothing twice has no
+   * direction, and "flat" would say they have a steady habit of nothing.
+   */
+  spendTrend?: 'up' | 'down' | 'flat';
+}
+
+/**
+ * Which way a customer's spend moved, by the rule the dashboard prints.
+ *
+ * Ten percent either side is "flat", because a café regular whose monthly
+ * spend moves from 212 to 219 zł has not changed anything a venue could act
+ * on, and an arrow on that row would claim they had.
+ */
+export function spendTrendOf(current: number, previous: number): 'up' | 'down' | 'flat' | undefined {
+  if (current === 0 && previous === 0) return undefined;
+  if (previous === 0) return 'up';
+  if (current === 0) return 'down';
+  const ratio = current / previous;
+  if (ratio > 1.1) return 'up';
+  if (ratio < 0.9) return 'down';
+  return 'flat';
 }
 
 export interface CustomerTable {
@@ -99,7 +129,14 @@ export async function customerTable(db: Db, venueId: string, query: TableQuery =
       v: venueId,
     }))?.n ?? 0;
 
-  const rows = await db.all<{
+  /*
+   * The grant is an `EXISTS` in the query rather than a `JOIN`, and it still
+   * decides in SQL which rows are read at all. A join produced one row per
+   * *grant*, so a customer holding two unrevoked grants for one venue (a
+   * double press racing `grantSharing`) was listed twice and counted twice in
+   * `shared`; a semi-join cannot multiply rows.
+   */
+  const everyone = await db.all<{
     user_id: string;
     name: string;
     avatar: string | null;
@@ -111,20 +148,15 @@ export async function customerTable(db: Db, venueId: string, query: TableQuery =
     `SELECT vc.user_id, u.display_name AS name, u.display_avatar AS avatar,
             vc.spend_minor, vc.visits, vc.first_seen_at, vc.last_seen_at
        FROM venue_customers vc
-       JOIN data_sharing_consents d
-         ON d.user_id = vc.user_id AND d.venue_id = vc.venue_id AND d.revoked_at IS NULL
        JOIN users u ON u.id = vc.user_id
       WHERE vc.venue_id = $v AND u.deleted_at IS NULL
+        AND EXISTS (SELECT 1 FROM data_sharing_consents d
+                     WHERE d.user_id = vc.user_id AND d.venue_id = vc.venue_id
+                       AND d.revoked_at IS NULL)
       ORDER BY
         CASE $sort WHEN 'visits' THEN vc.visits WHEN 'recent' THEN 0 ELSE vc.spend_minor END DESC,
-        vc.last_seen_at DESC
-      LIMIT $lim OFFSET $off`,
-    {
-      v: venueId,
-      sort: query.sort ?? 'spend',
-      lim: query.limit ?? 50,
-      off: query.offset ?? 0,
-    },
+        vc.last_seen_at DESC`,
+    { v: venueId, sort: query.sort ?? 'spend' },
   );
 
   const averageSpend =
@@ -133,20 +165,54 @@ export async function customerTable(db: Db, venueId: string, query: TableQuery =
       { v: venueId },
     ))?.avg ?? 0;
 
-  const mapped: CustomerRow[] = await Promise.all(rows.map(async (row) => {
+  /*
+   * **The status filter runs before the page is cut, not after.** It used to
+   * run on the fifty rows the query had already paged, so `status=lapsed` was
+   * "the lapsed customers among the top fifty spenders" — a page could come
+   * back empty with a hundred lapsed customers behind it, and the second page
+   * could hold ones the first should have. A status is derived here (it needs
+   * the venue's average spend and the clock), so the consented list is read
+   * whole, judged, filtered, and only then paged; the per-row lookups below
+   * run for the page alone.
+   */
+  const judged = everyone.map((row) => {
     const base = {
       spendMinor: row.spend_minor,
       visits: row.visits,
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
     };
-    return {
+    return { row, base, status: deriveStatus(base, averageSpend, at) };
+  });
+  const matching = query.status ? judged.filter((entry) => entry.status === query.status) : judged;
+  const offset = query.offset ?? 0;
+  const page = matching.slice(offset, offset + (query.limit ?? 50));
+
+  const recentStart = plusDays(at, -30);
+  const priorStart = plusDays(at, -60);
+  const rows: CustomerRow[] = [];
+  for (const { row, base, status } of page) {
+    const tier = await db.get<{ pct: number | null }>(
+      `SELECT MAX(discount_pct) AS pct FROM issued_vouchers
+        WHERE user_id = $u AND venue_id = $v AND status <> 'cancelled'`,
+      { u: row.user_id, v: venueId },
+    );
+    const spend = await db.get<{ current: number | null; previous: number | null }>(
+      `SELECT SUM(CASE WHEN created_at > $recent THEN amount_minor ELSE 0 END) AS current,
+              SUM(CASE WHEN created_at <= $recent THEN amount_minor ELSE 0 END) AS previous
+         FROM venue_visits
+        WHERE user_id = $u AND venue_id = $v AND created_at > $prior AND created_at <= $at`,
+      { u: row.user_id, v: venueId, recent: recentStart, prior: priorStart, at },
+    );
+    const trend = spendTrendOf(spend?.current ?? 0, spend?.previous ?? 0);
+
+    rows.push({
       userId: row.user_id,
       name: row.name || 'Customer',
       avatar: row.avatar,
       ...base,
       daysSince: Math.floor(daysBetween(row.last_seen_at, at)),
-      status: deriveStatus(base, averageSpend, at),
+      status,
       stamps:
         (await db.get<{ n: number | null }>(
           `SELECT SUM(s.stamps) AS n FROM stamp_cards s WHERE s.user_id = $u AND s.venue_id = $v`,
@@ -158,21 +224,26 @@ export async function customerTable(db: Db, venueId: string, query: TableQuery =
             WHERE user_id = $u AND venue_id = $v AND status = 'active'`,
           { u: row.user_id, v: venueId },
         ))?.n ?? 0,
-    };
-  }));
+      /* Spread so an unknown is a missing key, which is what the wire promises. */
+      ...(tier?.pct !== null && tier?.pct !== undefined ? { tierPct: tier.pct } : {}),
+      ...(trend ? { spendTrend: trend } : {}),
+    });
+  }
 
   const shared =
     (await db.get<{ n: number }>(
-      `SELECT COUNT(*) AS n FROM data_sharing_consents d
-        JOIN venue_customers vc ON vc.user_id = d.user_id AND vc.venue_id = d.venue_id
-       WHERE d.venue_id = $v AND d.revoked_at IS NULL`,
+      `SELECT COUNT(*) AS n FROM venue_customers vc
+        WHERE vc.venue_id = $v
+          AND EXISTS (SELECT 1 FROM data_sharing_consents d
+                       WHERE d.user_id = vc.user_id AND d.venue_id = vc.venue_id
+                         AND d.revoked_at IS NULL)`,
       { v: venueId },
     ))?.n ?? 0;
 
   return {
     totalCustomers: total,
     sharedCustomers: shared,
-    rows: query.status ? mapped.filter((row) => row.status === query.status) : mapped,
+    rows,
   };
 }
 

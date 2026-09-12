@@ -19,6 +19,43 @@ import { RANGE_DAYS, type RangeDays } from './partnerMetrics';
 export type DrawerKind = 'deal' | 'campaign';
 
 /**
+ * Values to open a *new* deal or campaign with.
+ *
+ * The assistant is the caller this exists for: it drafts an offer in
+ * conversation and hands the owner to the ordinary form to check and file it,
+ * rather than filing anything itself. So the shape is the form's, in the API's
+ * units — every field optional, because a draft can arrive with half of it
+ * decided.
+ *
+ * Money is **venue minor units** (`rewardCostMinor`, `minSpendMinor`), which is
+ * what the server takes and what the assistant reads; the drawer converts to
+ * the reader's currency for its wells, the same way it converts back on file.
+ * Weekdays are 0 = Monday and the two times are minutes past local midnight —
+ * `DealDraft`'s own conventions, so nothing is translated twice.
+ */
+export interface DrawerPrefill {
+  deal?: {
+    title?: string;
+    description?: string;
+    discountText?: string;
+    targetWeekdays?: number[];
+    targetFromMin?: number;
+    targetToMin?: number;
+    capClaims?: number;
+    validFrom?: string;
+    validTo?: string;
+  };
+  campaign?: {
+    name?: string;
+    visitsRequired?: number;
+    rewardLabel?: string;
+    rewardCostMinor?: number;
+    minSpendMinor?: number;
+    rewardValidDays?: number;
+  };
+}
+
+/**
  * What the drawer is open *on*.
  *
  * The panel started as create-only, so a bare `DrawerKind` said everything
@@ -27,14 +64,19 @@ export type DrawerKind = 'deal' | 'campaign';
  * the table, and the drawer lives on the frame: six places open it, and threading
  * a deal through six call sites is what the context exists to avoid.
  *
- * `id` rather than the whole row on purpose. The drawer re-reads the deal from
- * the list it is already subscribed to, so a row edited in one tab and reloaded
- * in another cannot leave the form filled with a copy that has drifted.
+ * `id` rather than the whole row on purpose. The drawer re-reads the deal or the
+ * campaign from the list it is already subscribed to, so a row edited in one tab
+ * and reloaded in another cannot leave the form filled with a copy that has
+ * drifted.
  */
 export interface DrawerTarget {
   kind: DrawerKind;
   /** The deal being edited, or `undefined` when the drawer is creating one. */
   dealId?: string;
+  /** The campaign being edited — the campaign form's edit mode. */
+  campaignId?: string;
+  /** Starting values for a new one. Ignored when editing: the row is the truth. */
+  prefill?: DrawerPrefill;
 }
 
 export interface DashboardShell {
@@ -43,8 +85,30 @@ export interface DashboardShell {
   go: (index: number) => void;
   /** Go by id, so a caller can say `'campaigns'` rather than count the rail. */
   goTo: (id: string) => void;
-  openDrawer: (kind: DrawerKind, dealId?: string) => void;
+  /**
+   * Open the create panel — on nothing, on a deal (`dealId`), with a draft
+   * (`prefill`), or on a campaign (`campaignId`, which is edit mode).
+   *
+   * Positional to match the contract the assistant was written against; the
+   * two ids are never both set, and a caller that passes one leaves the other
+   * `undefined`.
+   */
+  openDrawer: (
+    kind: DrawerKind,
+    dealId?: string,
+    prefill?: DrawerPrefill,
+    campaignId?: string,
+  ) => void;
   closeDrawer: () => void;
+  /**
+   * Re-read the screen that is showing.
+   *
+   * The drawer lives on the frame and files into lists the screens own, so a
+   * deal it just created is not in the table the owner is looking at until the
+   * table asks again. `useApi` holds no cache to invalidate, so this re-mounts
+   * the page, which is what fires every request on it.
+   */
+  refresh: () => void;
   /**
    * Raise the confirmation strip.
    *
@@ -77,6 +141,7 @@ export const DashboardContext = createContext<DashboardShell>({
   goTo: () => {},
   openDrawer: () => {},
   closeDrawer: () => {},
+  refresh: () => {},
   toast: () => {},
   range: RANGE_DAYS,
   setRange: () => {},

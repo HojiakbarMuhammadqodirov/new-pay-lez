@@ -4,7 +4,11 @@ import { PD_RANGES, RANGE_DAYS, dealFromApi } from './partnerMetrics';
 import type { RangeDays } from './partnerMetrics';
 import {
   exportCsv,
+  isNoSession,
+  markInboxRead,
   minorToEuro,
+  readyOr,
+  useInbox,
   usePartnerBudget,
   usePartnerCampaigns,
   usePartnerDeals,
@@ -13,17 +17,17 @@ import {
 } from './api/partner';
 import { ApiError, call } from './api/client';
 import { Icon } from './icons';
-import { useCopy, useMoney } from './i18n/context';
+import { useCopy, useLanguage, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
 import { DEMO_MODE } from './demoMode';
-import { DEMO_BUDGET } from './dashboardDemo';
+import { DEMO_BUDGET, DEMO_INBOX } from './dashboardDemo';
 import { BusinessForm } from './businessSetup';
 import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
 import { DashboardContext, useDashboard } from './dashboardShell';
-import type { DrawerKind, DrawerTarget } from './dashboardShell';
+import type { DrawerKind, DrawerPrefill, DrawerTarget } from './dashboardShell';
 import { LanguageMenu, ThemeToggle } from './Header';
 import { PATHS } from './router';
 import { useCountUp, useReveal } from './useReveal';
@@ -101,15 +105,10 @@ function Rail({
   const campaignsApi = usePartnerCampaigns(venueId);
 
   /* The rail's own budget read, which is not one of the seven `Screen`s and so
-     needs the demo fallback stated again — see `dashboardDemo.ts`. Same order:
-     a venue that has a budget draws its own, and this is reached only after the
-     real call failed and only in demo mode. */
-  const budget =
-    budgetApi.state.status === 'ready'
-      ? budgetApi.state.data
-      : DEMO_MODE
-        ? DEMO_BUDGET
-        : null;
+     needs the demo stand-in stated again. Same rule as everywhere: a venue that
+     has a budget draws its own, and the demo's is reached only when there was
+     no session to ask with, and only in demo mode. */
+  const budget = readyOr(budgetApi.state, DEMO_MODE ? DEMO_BUDGET : null);
   const toEuro = (minor: number) => minorToEuro(minor, budget?.currency ?? 'EUR');
   const spent = budget ? toEuro(budget.loyalty.spent + budget.voucher.spent) : null;
   const total = budget ? toEuro(budget.total) : null;
@@ -142,15 +141,15 @@ function Rail({
 
   return (
     <aside className="rail" data-collapsed={collapsed ? 'true' : undefined}>
-      {/* The mark, then the word. The site's chrome carries no tile beside the
-          wordmark — a 30px square of art next to six letters was the one place
-          the site and the app disagreed — but this frame is a match for the
-          reference export rather than a translation of it, and that file opens
-          its rail with the mark at 32px on 10px corners. It is decoration
-          beside a word that already names the destination, so it is hidden
-          from the accessibility tree rather than given a second label. */}
+      {/* The word, and nothing beside it.
+          This rail carried a 32px tile of the old square logo, copied from the
+          reference export — and it was the one piece of chrome on the whole
+          site that did. `CLAUDE.md` states the rule the other way round: the
+          brand *is* the word, there is no tile beside it, and the square files
+          in `public/logo/` are behind the `--logo` token precisely because no
+          chrome shows them. Dropping it settles the disagreement in favour of
+          the rule rather than the export. */}
       <a className="rail-brand" href={PATHS.landing}>
-        <span className="rail-mark" aria-hidden="true" />
         <span className="rail-word">paylez</span>
         <span className="rail-tag">{copy.dashboard.tag}</span>
       </a>
@@ -223,12 +222,13 @@ function Rail({
  * that. What it does not share is the trigger: this one is chrome in the
  * dashboard bar rather than a header control, so it keeps `.pd-range-btn`.
  *
- * It is the one control on this frame that still does not reach the server, and
- * the reason is a mismatch rather than a missing endpoint: every report here is
- * counted over a **calendar month**, and this picker offers a rolling day
- * count. Sending 30 as a month would quote one window under the other's label,
- * which is the exact confusion `dashboard.unmeasured.monthOnly` is written to
- * name. It re-keys the reveal and the count-up, and says so in that sentence.
+ * It moves every report that is counted in rolling days: the overview's four
+ * tiles, their period deltas and the visits chart (`GET …/series?days=`), and
+ * the scan log (`GET …/scans?days=`) — the picker's four windows are those
+ * endpoints' own. The reports counted over a **calendar month** (the headline,
+ * the cost panel, reach) do not move, and are labelled with their month rather
+ * than with this window: sending 30 as a month would quote one window under the
+ * other's label. It re-keys the page, so the reveal and the count-up run again.
  */
 function RangeMenu() {
   const copy = useCopy();
@@ -328,33 +328,270 @@ function TopBar({ screen }: { screen: number }) {
         */}
         <LanguageMenu />
         <ThemeToggle />
-        <button type="button" className="pd-icon" aria-label={copy.dashboard.notifications}>
-          <Icon name="bell" size={17} />
-          {/* Unread, and drawn as a mark rather than a count: there is nothing
-              behind it to count, and a badge reading "3" would be the one
-              invented number on the screen. */}
-          <i className="pd-dot" aria-hidden />
-        </button>
-        {/*
-          Avatar, first name, role — and nothing else. It was the full name on
-          one line, which ran out of the bar at anything narrower than a desktop
-          and left "Ali Akl" sitting under its own initial. A surname adds no
-          information here: there is one person signed in and the question the
-          pill answers is "as whom, and as what".
-        */}
-        {account?.type && (
-          <span className="pd-user">
-            <i aria-hidden>
-              <Face name={account.name} photo={account.profile.avatar} />
-            </i>
-            <span className="pd-who">
-              <b>{account.name.split(' ')[0]}</b>
-              <span>{copy.auth.roles[account.type]}</span>
-            </span>
-          </span>
-        )}
+        <NotificationsMenu />
+        <UserMenu />
       </div>
     </header>
+  );
+}
+
+/**
+ * The bell, and the inbox behind it.
+ *
+ * It used to draw a permanent unread dot over nothing — a mark with no inbox
+ * behind it, which is the picture-of-a-control this dashboard keeps deleting.
+ * It reads `GET /v1/notifications` now: the signed-in person's own inbox,
+ * filtered to the session's mode, so a partner session sees the partner half —
+ * the monthly summary and the notes the daily job writes about the venue.
+ *
+ * Three rules, and each is a thing the old dot got wrong:
+ *
+ * - **The dot means unread items exist**, and is drawn only then. A bell with a
+ *   dot and an empty menu is the lie the old one told every day.
+ * - **No session, no bell.** With nobody to ask there is nothing behind the
+ *   control, so it is not drawn — except under `?demo=1`, where it opens the
+ *   demo's inbox and says that is what it is.
+ * - **Marking read writes**, through `POST /v1/notifications/read`, and only for
+ *   items the server sent — the demo's are read-only, because a press that could
+ *   not reach anything must not look like one that did.
+ *
+ * A disclosure rather than a `role="menu"`: the panel holds items to read with a
+ * control beside some of them, which is a region, not a list of commands.
+ */
+function NotificationsMenu() {
+  const copy = useCopy().dashboard;
+  const { toast } = useDashboard();
+  const [language] = useLanguage();
+  const inboxApi = useInbox();
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      trigger.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const when = useMemo(
+    () => new Intl.DateTimeFormat(language, { day: 'numeric', month: 'short' }),
+    [language],
+  );
+
+  const live = inboxApi.state.status === 'ready' ? inboxApi.state.data : null;
+  const inbox = readyOr(inboxApi.state, DEMO_MODE ? DEMO_INBOX : null);
+  const noSession = inboxApi.state.status === 'error' && isNoSession(inboxApi.state.error);
+
+  if (noSession && !DEMO_MODE) return null;
+
+  const unread = inbox?.unread ?? 0;
+
+  const mark = async (ids: string[]) => {
+    if (live === null || ids.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await markInboxRead(ids);
+      inboxApi.reload();
+    } catch (cause) {
+      toast(
+        cause instanceof ApiError && cause.status === 0
+          ? copy.acts.offline
+          : fill(copy.acts.refused, {
+              why: cause instanceof Error ? cause.message : String(cause),
+            }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="pd-bell" ref={ref}>
+      <button
+        ref={trigger}
+        type="button"
+        className="pd-icon"
+        aria-expanded={open}
+        aria-controls="pd-inbox"
+        aria-label={
+          unread > 0
+            ? `${copy.notifications} · ${fill(copy.inbox.unread, { n: String(unread) })}`
+            : copy.notifications
+        }
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon name="bell" size={17} />
+        {unread > 0 && <i className="pd-dot" aria-hidden />}
+      </button>
+
+      {open && (
+        <div className="account-menu pd-inbox" id="pd-inbox" role="region" aria-label={copy.notifications}>
+          <div className="pd-inbox-head">
+            <b>{copy.notifications}</b>
+            {live !== null && unread > 0 && (
+              <button
+                type="button"
+                className="pd-inbox-all"
+                disabled={busy}
+                onClick={() =>
+                  void mark(live.items.filter((item) => item.read_at === null).map((item) => item.id))
+                }
+              >
+                {copy.inbox.markAll}
+              </button>
+            )}
+          </div>
+
+          {inbox === null ? (
+            <p className="pd-fine pd-inbox-note">
+              {inboxApi.state.status === 'loading' ? copy.unmeasured.asking : copy.inbox.failed}
+            </p>
+          ) : inbox.items.length === 0 ? (
+            <p className="pd-fine pd-inbox-note">{copy.inbox.empty}</p>
+          ) : (
+            <ul className="pd-inbox-list">
+              {inbox.items.map((item) => (
+                <li key={item.id} data-unread={item.read_at === null ? 'true' : undefined}>
+                  <div>
+                    <b>{item.title}</b>
+                    <p>{item.body}</p>
+                    <time dateTime={item.created_at}>{when.format(new Date(item.created_at))}</time>
+                  </div>
+                  {live !== null && item.read_at === null && (
+                    <button
+                      type="button"
+                      className="pd-inbox-read"
+                      disabled={busy}
+                      aria-label={`${copy.inbox.markRead}: ${item.title}`}
+                      onClick={() => void mark([item.id])}
+                    >
+                      <Icon name="check" size={13} strokeWidth={2.4} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {live === null && inbox !== null && (
+            <p className="pd-fine pd-inbox-note">{copy.inbox.sample}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Who is signed in — and, unlike before, something you can press.
+ *
+ * It was a `<span>`: an avatar, a first name and a role, styled exactly like the
+ * marketing header's account chip and doing nothing at all. That is the
+ * picture-of-a-control failure this repository names in `CLAUDE.md` — anything
+ * shaped like a control has to be one — and it was the more misleading for
+ * sitting beside four real controls in the same bar.
+ *
+ * So it is the same component the landing page has, with the same three
+ * destinations. "Back to paylez" moves in here from the header row: it is a way
+ * *off* this frame, which is what the rest of this menu is about, and in the
+ * header it sat beside Export and Create — the two controls an owner presses
+ * most — spending width on the one action nobody opens the dashboard to perform.
+ */
+function UserMenu() {
+  const copy = useCopy();
+  const { account, signOut } = useAuth();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      if (!ref.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setOpen(false);
+      /* Escape means "put me back". Closing unmounts whatever item had focus,
+         which drops it on `<body>` — the same restore `AccountChip` does. */
+      trigger.current?.focus();
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  if (!account?.type) return null;
+
+  return (
+    <div className="pd-usermenu" ref={ref}>
+      <button
+        ref={trigger}
+        type="button"
+        className="pd-user"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-label={copy.auth.accountMenu}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <i aria-hidden>
+          <Face name={account.name} photo={account.profile.avatar} />
+        </i>
+        <span className="pd-who">
+          <b>{account.name.split(' ')[0]}</b>
+          <span>{copy.auth.roles[account.type]}</span>
+        </span>
+        <Icon name="chevron" size={13} strokeWidth={2.2} className="lang-caret" />
+      </button>
+
+      {open && (
+        <div className="account-menu pd-user-menu" role="menu">
+          <a
+            className="account-item"
+            role="menuitem"
+            href={PATHS.profile}
+            onClick={() => setOpen(false)}
+          >
+            <Icon name="people" size={15} />
+            {copy.profile.title}
+          </a>
+          {/* No `onClick` close on this one: `#/landing` replaces this whole
+              frame, so the menu unmounts with the bar it hangs off — the same
+              reason `AccountChip`'s dashboard link does not close itself. */}
+          <a className="account-item" role="menuitem" href={PATHS.landing}>
+            <Icon name="home" size={15} />
+            {copy.dashboard.backToSite}
+          </a>
+          <button
+            type="button"
+            className="account-item"
+            onClick={() => {
+              setOpen(false);
+              signOut();
+            }}
+          >
+            <Icon name="send" size={15} />
+            {copy.auth.signOut}
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -583,7 +820,13 @@ export function DashboardPage() {
      the prototype opens on. It used to open on the profile because that was the
      only screen with anything on it. */
   const [screen, setScreen] = useState(0);
-  const [drawer, setDrawer] = useState<DrawerTarget | null>(null);
+  /* `seq` keys the drawer, so opening it on a second target while it is open
+     starts that form fresh rather than keeping the first one's typing. */
+  const [drawer, setDrawer] = useState<(DrawerTarget & { seq: number }) | null>(null);
+  const drawerSeq = useRef(0);
+  /* Bumped by a write the drawer made, which re-mounts the page so the screen
+     reads its lists again — see `refresh` on the shell. */
+  const [revision, setRevision] = useState(0);
   /* Opens on the month, which is what every figure was written against and what
      the copy's own "August" crumb still says. */
   const [range, setRange] = useState<RangeDays>(RANGE_DAYS);
@@ -599,8 +842,8 @@ export function DashboardPage() {
    * after the first mounts with no `data-shown` and sits at `opacity: 0`, and
    * its `[data-count]` figures never leave zero.
    */
-  useReveal(screen);
-  useCountUp(`${screen}:${range}`);
+  useReveal(`${screen}:${range}:${revision}`);
+  useCountUp(`${screen}:${range}:${revision}`);
 
   /* Memoised on the two things that actually move: without it every screen
      re-renders on each keystroke inside the drawer, because the context value
@@ -613,8 +856,17 @@ export function DashboardPage() {
         const index = DASH_SCREENS.findIndex((entry) => entry.id === id);
         if (index >= 0) setScreen(index);
       },
-      openDrawer: (kind: DrawerKind, dealId?: string) => setDrawer({ kind, dealId }),
+      openDrawer: (
+        kind: DrawerKind,
+        dealId?: string,
+        prefill?: DrawerPrefill,
+        campaignId?: string,
+      ) => {
+        drawerSeq.current += 1;
+        setDrawer({ kind, dealId, prefill, campaignId, seq: drawerSeq.current });
+      },
       closeDrawer: () => setDrawer(null),
+      refresh: () => setRevision((n) => n + 1),
       toast: (message: string) => setToastText(message),
       range,
       setRange,
@@ -646,11 +898,19 @@ export function DashboardPage() {
 
           {/* Keyed on the screen so the reveal observer rescans and the new panel
               fades in rather than appearing at `opacity: 0`. */}
-          <div className="pd-page" key={`${screen}:${range}`}>
+          <div className="pd-page" key={`${screen}:${range}:${revision}`}>
             <div className="pd-head" data-reveal>
+              {/* The name, without the sentence under it.
+                  Each screen's `lede` explained what the screen was — "What
+                  Paylez did for you, and what it cost" — which is a useful line
+                  the first time somebody opens the dashboard and dead weight
+                  every time after. The panels below say the same thing with
+                  figures in them. The `lede` strings stay in the five
+                  dictionaries rather than being deleted — removing a key means
+                  editing five files to change what one screen renders, and this
+                  is a presentation decision that may well be reversed. */}
               <div>
                 <h1>{copy.dashboard.screens[screen].name}</h1>
-                <p>{copy.dashboard.screens[screen].lede}</p>
               </div>
               <div className="pd-head-acts">
                 <HeadSecondary isProfile={id === 'profile'} onPreview={setPreview} />
@@ -658,7 +918,7 @@ export function DashboardPage() {
                   <button
                     type="button"
                     className="btn btn-solid"
-                    onClick={() => setDrawer({ kind: primary })}
+                    onClick={() => shell.openDrawer(primary)}
                   >
                     <Icon name="plus" size={15} strokeWidth={2} />
                     {primary === 'deal'
@@ -666,9 +926,10 @@ export function DashboardPage() {
                       : copy.dashboard.actions.newCampaign}
                   </button>
                 )}
-                <a className="btn btn-ghost pd-tosite" href={PATHS.landing}>
-                  {copy.dashboard.backToSite}
-                </a>
+                {/* "Back to paylez" was here and is in the user menu now — see
+                    `UserMenu`. It is a way off the frame, not a thing to do on
+                    it, and it was taking header width from the two controls
+                    that are. */}
               </div>
             </div>
 
@@ -680,7 +941,15 @@ export function DashboardPage() {
           </div>
         </div>
 
-        {drawer && <DashboardDrawer kind={drawer.kind} dealId={drawer.dealId} />}
+        {drawer && (
+          <DashboardDrawer
+            key={drawer.seq}
+            kind={drawer.kind}
+            dealId={drawer.dealId}
+            campaignId={drawer.campaignId}
+            prefill={drawer.prefill}
+          />
+        )}
         {preview && <ListingPreview venueId={preview} onClose={() => setPreview(null)} />}
         {toastText && <DashboardToast message={toastText} onDone={dismiss} />}
       </main>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { blankBusiness, type BusinessProfile } from './business';
 import { newPlayer, today, type PlayerState } from './player';
 import {
@@ -11,11 +11,22 @@ import {
   type ProfileResult,
   type UserProfile,
 } from './context';
-import { addUser, listUsers, patchUser, toAccount } from './directory';
+import { addUser, listUsers, patchUser, replaceUser, toAccount } from './directory';
 import { exchangeGoogleCredential, forgetGoogle } from './google';
+import {
+  awaitsServer,
+  foldServer,
+  profileRefusal,
+  profileWrite,
+  typeFromRoles,
+  type ServerAnswers,
+} from './mirror';
 import { ApiError, hasToken, setToken, signOut as apiSignOut } from '../api/client';
 import * as api from '../api/consumer';
+import { readOwnListing } from '../api/listing';
+import { saveMe } from '../api/profile';
 import { useLanguage } from '../i18n/context';
+import { routeOf } from '../router';
 import {
   WELCOME_POINTS,
   checkBirthDate,
@@ -36,6 +47,18 @@ import {
 import { DEMO_ACCOUNT, DEMO_MODE } from '../demoMode';
 
 const STORAGE_KEY = 'paylez-session';
+
+/**
+ * The longest a reload waits for the server before drawing the page anyway.
+ *
+ * The wait exists for a stale session (see `awaitsServer`), and it must never
+ * become a blank page: an unreachable server fails fast and ends it at once,
+ * but a network that neither answers nor refuses would hold it open for as long
+ * as the browser lets a request hang. Past this the mirror's page is drawn —
+ * the behaviour before the wait existed — and the server's answer is still
+ * folded in whenever it lands.
+ */
+const HOLD_CEILING_MS = 4000;
 
 /**
  * Narrowing guard for whatever came back out of storage.
@@ -88,11 +111,7 @@ function stored(): Account | null {
      * agree by construction — and where they do not, the row is the copy the
      * admin console reads and the copy signing out and back in would restore.
      * Rebuilding through it also means the backfills for an old shape live in
-     * exactly one place. There used to be a second copy here, guarding only
-     * this boundary, and the `player` field it was written for could still
-     * arrive missing through `signIn`; `directory.ts` says what that looked
-     * like. Two new fields have just landed, and neither of them needs a note
-     * in two files.
+     * exactly one place.
      */
     return toAccount(row);
   } catch {
@@ -102,47 +121,49 @@ function stored(): Account | null {
   }
 }
 
+/** Who a session belongs to, as each of the three sign-in routes reports it. */
+interface ServerSession {
+  roles?: string[];
+  user: { id: string; name: string; email: string | null };
+}
+
 /**
  * A server session, mirrored into this device's directory.
  *
  * The **server's id** is used, never a locally minted one, and that single
  * choice is what makes the local store a mirror rather than a second
- * directory: sign in on a laptop and a phone and both rows are the same row,
- * so nothing has to be reconciled later. It is the same thing the Google path
- * has always done, lifted out so all three paths do it identically.
+ * directory: sign in on a laptop and a phone and both rows are the same row.
+ * An account this browser opened while the backend was down carries a local id,
+ * and signing in to the server moves its row onto the server's id rather than
+ * leaving a session that points at nothing.
  *
- * Everything the server does not model — the account type, the venue's listing
- * — is carried over from an existing local row when there is one, and left
- * blank when there is not. That is the honest state for a person signing in on
- * a new device: the server knows who they are, and this browser does not yet
- * know what they have set up.
+ * This is only the *first half* of bringing an account home — the half the
+ * sign-in response can answer, which is who somebody is and the roles they
+ * hold. `askServer` below is the second half, and nothing publishes this
+ * account to the router until both have run.
+ *
+ * **An operator is an operator because the server says so**, and so is an
+ * owner: `typeFromRoles` reads `user_roles`, which nothing in this browser can
+ * write. `admin` is not a `ChoosableType`, so no sign-up form can offer it.
  */
 function adoptSession(
-  session: api.SignedIn,
+  session: ServerSession,
   type: ChoosableType | null,
+  provider: 'server' | 'google' = 'server',
 ): Account {
-  /*
-   * **An operator is an operator because the server says so.**
-   *
-   * `admin` is not a `ChoosableType` — the sign-up form cannot offer it, which
-   * is the type system enforcing that nobody grants themselves the console. It
-   * arrives here instead, off `roles` on the session, which is `user_roles` on
-   * the server and nothing this browser can write.
-   *
-   * That replaces a seeded row in `auth/users.ts` whose password was in the
-   * shipped bundle. It was safe while the console only read this device's own
-   * `localStorage`; it stopped being safe the moment two of its tabs started
-   * reading the live database, and it was always confusing — an operator had to
-   * sign in twice, with two different accounts, to see one screen.
-   */
-  const isAdmin = session.roles?.includes('admin') === true;
   const email = session.user.email ?? '';
-  const existing = listUsers().find(
-    (user) => user.id === session.user.id || sameEmail(user.email, email),
-  );
+  const rows = listUsers();
+  const existing =
+    rows.find((user) => user.id === session.user.id) ??
+    (email ? rows.find((user) => sameEmail(user.email, email)) : undefined);
 
   const record: UserRecord = existing
-    ? { ...existing, id: session.user.id, email, name: session.user.name.trim() || existing.name }
+    ? {
+        ...existing,
+        id: session.user.id,
+        email: email || existing.email,
+        name: session.user.name.trim() || existing.name,
+      }
     : {
         id: session.user.id,
         name: session.user.name.trim() || email.split('@')[0],
@@ -151,29 +172,61 @@ function adoptSession(
            server holds the credential. An empty string here would let the
            account be entered from the password form by leaving it blank —
            `findUser` compares `record.password === typed`. */
-        password: `server:${crypto.randomUUID()}`,
+        password: `${provider}:${crypto.randomUUID()}`,
         created: today(),
         type,
         business: null,
-        player: type === 'individual' ? newPlayer() : null,
+        player: null,
         profile: { ...EMPTY_PROFILE },
         onboardedAt: null,
       };
 
-  /* The server's word wins over anything this browser remembered: an account
-     that has been made an operator becomes one on its next sign-in, and one
-     that has had it taken away loses the console the same way. */
-  if (isAdmin) record.type = 'admin';
-  else if (type !== null && record.type === null) record.type = type;
-  if (record.type === 'individual' && !record.player) record.player = newPlayer();
+  const onboarded = record.onboardedAt === undefined ? record.created : record.onboardedAt;
+  record.type = typeFromRoles(session.roles ?? [], record.type ?? type, onboarded);
+  record.player = record.type === 'individual' ? (record.player ?? newPlayer()) : null;
 
-
-  if (existing) patchUser(record.id, record);
+  if (existing && existing.id === record.id) patchUser(record.id, record);
+  else if (existing) replaceUser(existing.id, record);
   else addUser(record);
 
   const next = toAccount(record);
   persist(next);
   return next;
+}
+
+/**
+ * Everything the server knows about this account that the mirror should hold.
+ *
+ * `GET /v1/me` first, because it decides what else is worth asking: a player's
+ * tank and streak come from `GET /v1/games/state`, and an owner's listing from
+ * the partner routes — asked in parallel, and each allowed to fail on its own
+ * without costing the answers that did arrive.
+ *
+ * **Never throws.** `null` means "the server did not answer about this account",
+ * and every caller has the mirror to fall back on. That includes a token that
+ * belongs to somebody else — a `me` whose id is not this account's — which is
+ * not folded into it: a stale token in a shared browser must not rename
+ * whoever is signed in now.
+ */
+async function askServer(base: Account): Promise<ServerAnswers | null> {
+  let me: api.Me;
+  try {
+    me = await api.me();
+  } catch {
+    return null;
+  }
+  if (me.user.id !== base.id) return null;
+
+  const type = typeFromRoles(me.roles, base.type, base.onboardedAt ?? me.user.onboardedAt);
+  const [games, listing] = await Promise.all([
+    type === 'individual' ? api.gamesState().catch(() => null) : Promise.resolve(null),
+    type === 'business' && me.venues.length > 0
+      ? readOwnListing(base.business?.venueId).then((read) =>
+          read.state === 'ready' ? read.source : null,
+        )
+      : Promise.resolve(null),
+  ]);
+  return { me, games, listing };
 }
 
 function persist(account: Account | null): void {
@@ -220,9 +273,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * your own venue's figures where the API answers. See `demoMode.ts` for why
    * this is a browser-only account rather than a row on the server.
    */
-  const [account, setAccount] = useState<Account | null>(
-    () => stored() ?? (DEMO_MODE ? DEMO_ACCOUNT : null),
-  );
+  /* The stored session, and whether the first page has to wait for the server
+     before it is drawn — read once and together, so both answers are about the
+     same account and the same address. */
+  const [boot] = useState(() => {
+    const held = stored() ?? (DEMO_MODE ? DEMO_ACCOUNT : null);
+    return {
+      held,
+      waits:
+        held !== null &&
+        held.id !== DEMO_ACCOUNT.id &&
+        hasToken() &&
+        awaitsServer(held, routeOf(window.location.hash)),
+    };
+  });
+  const [account, setAccount] = useState<Account | null>(boot.held);
+  /*
+   * True while a stale session waits for the server, and the site is not drawn
+   * at all for that moment. It cannot be a page drawn from the mirror with the
+   * route merely "not yet resolved": `Site` resolves during render and corrects
+   * the address bar in an effect, so any page drawn would already have routed on
+   * the missing fact and moved the hash before the answer could stop it.
+   */
+  const [settling, setSettling] = useState(boot.waits);
 
   /**
    * Which plan this account is on, as the **server** understands it.
@@ -238,59 +311,161 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    */
   const [plan, setPlan] = useState<AuthValue['plan']>(null);
   const [entitlements, setEntitlements] = useState<AuthValue['entitlements']>(null);
+  const [memberSince, setMemberSince] = useState<string | null>(null);
 
+  /* Read by callbacks that must not be rebuilt whenever either changes — a
+     language switch is not a reason to re-ask the server about an account, and
+     a round banked is not a reason to rebuild `refreshAccount`. */
+  const languageRef = useRef(language);
+  const accountRef = useRef(account);
   useEffect(() => {
-    if (!account || !hasToken()) {
-      setPlan(null);
-      setEntitlements(null);
+    languageRef.current = language;
+  }, [language]);
+  useEffect(() => {
+    accountRef.current = account;
+  }, [account]);
+
+  /**
+   * The account whose server answer is already folded in.
+   *
+   * A sign-in asks before it publishes the session, and publishing changes
+   * `account.id` — which is exactly what the load-time effect below watches.
+   * Without this the same four requests went out twice, a few milliseconds
+   * apart, every time anybody signed in.
+   */
+  const settled = useRef<string | null>(null);
+
+  /**
+   * Write a changed account to both stores.
+   *
+   * The session so this device stays signed in as them, and the directory row so
+   * the change survives signing out — and so the admin console is reading the
+   * same listing the owner is editing rather than a shipped copy of it. Called
+   * from inside the state updaters, which is where `persist` was already being
+   * called from; a merge is idempotent, so React invoking an updater twice in
+   * development costs nothing.
+   */
+  const commit = useCallback((next: Account) => {
+    persist(next);
+    patchUser(next.id, {
+      name: next.name,
+      email: next.email,
+      type: next.type,
+      business: next.business,
+      player: next.player,
+      /* Both of the new fields go through here, and both have to: the profile
+         because signing out and back in must restore a handle somebody chose,
+         and the stamp because a player who finished onboarding on Monday and
+         signs in again on Tuesday must not be walked through it a second time
+         — the welcome gift is once-only, and this row is the only record of
+         that anywhere on this device. */
+      profile: next.profile,
+      onboardedAt: next.onboardedAt,
+      /* Persisted for the same reason the stamp above is: it is the only
+         record on this device that the bonus has been paid. */
+      profileCompletedAt: next.profileCompletedAt,
+    });
+  }, []);
+
+  /** The session-level facts one `GET /v1/me` carries, or none of them. */
+  const adoptMe = useCallback((me: api.Me | null) => {
+    setPlan(me?.plan ?? null);
+    setEntitlements(me?.entitlements ?? null);
+    setMemberSince(me?.user.createdAt ?? null);
+  }, []);
+
+  /* Folded into the account as it is *now*, not as it was when the question
+     went out: a round banked while the answer was in flight is a newer fact
+     than anything the answer can know about. */
+  const fold = useCallback(
+    (answers: ServerAnswers) => {
+      setAccount((held) => {
+        if (!held || held.id !== answers.me.user.id) return held;
+        const next = foldServer(held, answers, languageRef.current);
+        commit(next);
+        return next;
+      });
+    },
+    [commit],
+  );
+
+  /*
+   * A stored session, brought up to date once per page load.
+   *
+   * The first render is the mirror, as it always was, so nothing waits on the
+   * network to draw. The server's answer is folded in when it lands — the
+   * profile somebody edited on their phone, the listing an operator approved,
+   * the plan badge.
+   *
+   * Keyed on the id alone. It used to be keyed on the whole account, which
+   * re-asked `GET /v1/me` after every banked round and every keystroke-free save;
+   * now that its answer *writes* the account, that key would be a loop.
+   */
+  useEffect(() => {
+    if (!account || account.id === DEMO_ACCOUNT.id || !hasToken()) {
+      settled.current = null;
+      adoptMe(null);
+      setSettling(false);
       return;
     }
+    if (settled.current === account.id) {
+      setSettling(false);
+      return;
+    }
+
     let live = true;
-    void api
-      .me()
-      .then((server) => {
-        if (live) {
-          setPlan(server.plan);
-          setEntitlements(server.entitlements);
-          /*
-           * The completion stamp is the server's record, not this device's.
-           *
-           * `users.profile_completed_at` is what the ledger entry was written
-           * against, and it cannot come in on the sign-in response --
-           * `SignedIn.user` carries an id, a name and an address and nothing
-           * else. It arrives here instead, on the `GET /v1/me` this effect
-           * already makes for the plan badge.
-           *
-           * Adopting it matters on a *second* device: without it a player who
-           * finished their profile on a phone signs in on a laptop with a null
-           * stamp, and the first save there adds fifty points the server will
-           * not credit again -- a number on screen that the next state sync
-           * silently takes back. Only ever set *forward*, from null to a date:
-           * a stamp this device has just written is not something a slower
-           * response is allowed to clear.
-           */
-          if (server.user.profileCompletedAt) {
-            setAccount((held) =>
-              held && held.profileCompletedAt === null
-                ? { ...held, profileCompletedAt: server.user.profileCompletedAt }
-                : held,
-            );
-          }
-        }
-      })
-      .catch(() => {
-        /* Silent: a badge that cannot be resolved is simply not shown. The
-           alternative — falling back to "Free" — states a fact we do not have,
-           and states it wrongly for exactly the people who paid. */
-        if (live) {
-          setPlan(null);
-          setEntitlements(null);
-        }
-      });
+    const base = account;
+    /* The wait ends on an answer, on a failure — a server that is not there
+       ends it as fast as it refuses the connection, and the mirror's page is
+       drawn exactly as it was before any of this — or at the ceiling. */
+    const ceiling = window.setTimeout(() => setSettling(false), HOLD_CEILING_MS);
+    void askServer(base).then((answers) => {
+      if (!live) return;
+      settled.current = base.id;
+      adoptMe(answers?.me ?? null);
+      /* One render, with the account already folded: the first route the site
+         resolves is the one the server's facts give. */
+      if (answers) fold(answers);
+      setSettling(false);
+    });
     return () => {
       live = false;
+      window.clearTimeout(ceiling);
     };
-  }, [account?.id, account]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account?.id]);
+
+  /**
+   * Publish a session that has just been opened — after asking the server.
+   *
+   * The ordering is the whole fix. Publishing the bare mirror first meant the
+   * router saw an owner with no listing (this browser had never seen one) and
+   * sent them to setup, where the form mounted blank; the listing arriving a
+   * moment later changed nothing, because nothing re-reads a mounted draft.
+   * Asking first costs the sign-in button a second or so and makes the first
+   * route anybody sees the right one.
+   */
+  const welcome = useCallback(
+    async (mirrored: Account): Promise<Account> => {
+      const answers = await askServer(mirrored);
+      const next = answers ? foldServer(mirrored, answers, languageRef.current) : mirrored;
+      settled.current = next.id;
+      adoptMe(answers?.me ?? null);
+      commit(next);
+      setAccount(next);
+      return next;
+    },
+    [adoptMe, commit],
+  );
+
+  const refreshAccount = useCallback(async () => {
+    const current = accountRef.current;
+    if (!current || current.id === DEMO_ACCOUNT.id || !hasToken()) return;
+    const answers = await askServer(current);
+    if (!answers) return;
+    adoptMe(answers.me);
+    fold(answers);
+  }, [adoptMe, fold]);
 
   /**
    * Sign in against the server, and fall back to the mirror only when there is
@@ -301,27 +476,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * sitting in this browser — a local row that has drifted must never be able
    * to shadow the row that is actually authoritative.
    *
-   * **The fallback is gated on `status === 0` and nothing else.** It used to be
-   * gated on the address matching a seeded account, which is gone; what it
-   * covers now is the one row this browser can hold that the server has never
-   * heard of — an account opened by `signUp` while the backend was unreachable.
-   * A server that answered and said no is authoritative and must not be
-   * second-guessed by a directory it did not write.
+   * **The fallback is gated on `status === 0` and nothing else.** What it covers
+   * is the one row this browser can hold that the server has never heard of —
+   * an account opened by `signUp` while the backend was unreachable. A server
+   * that answered and said no is authoritative and must not be second-guessed
+   * by a directory it did not write.
    *
-   * On success the local directory is written with the **server's id**, which
-   * is what makes the mirror a mirror rather than a second directory: the row
-   * that already agrees about who somebody is will not need reconciling.
+   * Only the sign-in request itself can fail the sign-in. Bringing the account
+   * home afterwards cannot: a `GET /v1/me` that fails leaves the mirror, and it
+   * must never be reported as a wrong password.
    */
   const signIn = useCallback(
     async (
       email: string,
       password: string,
     ): Promise<{ ok: true } | { ok: false; error: SignInError }> => {
+      let session: api.SignedIn;
       try {
-        const session = await api.signIn(email.trim(), password);
-        setToken(session.token);
-        setAccount(adoptSession(session, null));
-        return { ok: true };
+        session = await api.signIn(email.trim(), password);
       } catch (cause) {
         /* A server that is not there is not a wrong password, and saying so is
            the difference between "try again" and "check your details". */
@@ -339,8 +511,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         persist(next);
         return { ok: true };
       }
+
+      setToken(session.token);
+      await welcome(adoptSession(session, null));
+      return { ok: true };
     },
-    [],
+    [welcome],
   );
 
   /**
@@ -360,8 +536,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
          cast below carries that across a boundary TypeScript cannot see. */
       if (problem && problem !== 'taken') return { ok: false, error: problem };
 
+      let session: api.SignedIn;
       try {
-        const session = await api.signUp({
+        session = await api.signUp({
           email: draft.email.trim(),
           password: draft.password,
           name: draft.name.trim(),
@@ -370,19 +547,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            * **The one field that decides whether this account can ever own a
            * venue**, and the site did not send it.
            *
-           * `partner_owner` is granted at sign-up and nowhere else — there is no
-           * endpoint that promotes an account afterwards, deliberately, because
-           * a role that can be self-assigned is not a role. So a venue owner who
-           * signed up without this flag was filed as a consumer, could not
-           * create a venue, and every control on their dashboard that needed one
-           * told them the browser was not connected. It was; the account simply
-           * was not a partner.
+           * `partner_owner` is granted at sign-up and nowhere else a visitor can
+           * reach before signing in — a role that can be self-assigned later is
+           * not a role. So a venue owner who signed up without this flag was
+           * filed as a consumer, could not create a venue, and every control on
+           * their dashboard that needed one told them the browser was not
+           * connected. It was; the account simply was not a partner.
            */
           partner: draft.type === 'business',
         });
-        setToken(session.token);
-        setAccount(adoptSession(session, draft.type as ChoosableType));
-        return { ok: true };
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 0) {
           /*
@@ -422,8 +595,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const taken = cause instanceof ApiError && /conflict|exists|taken/i.test(cause.code);
         return { ok: false, error: taken ? 'taken' : 'email' };
       }
+
+      setToken(session.token);
+      await welcome(adoptSession(session, draft.type as ChoosableType));
+      return { ok: true };
     },
-    [language],
+    [language, welcome],
   );
 
   /**
@@ -432,75 +609,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * The server has already verified the token by the time the directory is
    * touched — `exchangeGoogleCredential` throws otherwise — so the address this
    * matches on is one Google confirmed the person controls. That is what makes
-   * matching by email safe here and unsafe anywhere else in this file.
+   * matching a local row by email safe here.
    *
-   * Two outcomes, and the second is the interesting one:
-   *
-   * - **An account with that address already exists**, so this is a returning
-   *   visitor who happens to have used the Google button. They get their row,
-   *   with their type, their venue and their points, exactly as the password
-   *   path would have given it to them.
-   * - **Nobody has that address**, so a row is created — with `type: null`.
-   *   That is not a shortcut: the individual-or-business question genuinely has
-   *   not been asked, because Google does not know the answer and the button
-   *   did not ask. `resolveRoute` already sends `type === null` to `ChooseType`,
-   *   which exists for precisely this state. Defaulting to `individual` instead
-   *   would be the "silently give a business owner the consumer site" failure
-   *   `context.ts` warns about, one screen earlier.
+   * It is the password path from there on: the server's id, the server's roles,
+   * and nothing published until the server has been asked what it knows. A
+   * brand-new address still arrives with `type: null` — Google does not know
+   * whether somebody is here to play or to list a venue, and the button did not
+   * ask — and `resolveRoute` sends that to `ChooseType`, which exists for
+   * precisely this state.
    */
   const signInWithGoogle = useCallback(
     async (credential: string, language: string): Promise<Account> => {
       const verified = await exchangeGoogleCredential(credential, language);
-      const email = verified.user.email ?? '';
-
-      const existing = listUsers().find((user) => sameEmail(user.email, email));
-      if (existing) {
-        const next = toAccount(existing);
-        setAccount(next);
-        persist(next);
-        return next;
-      }
-
-      const record: UserRecord = {
-        /* The *server's* id, not a locally minted one. The two directories are
-           going to be merged into one, and rows that already agree about who
-           somebody is are rows that will not need reconciling then. */
-        id: verified.user.id,
-        name: verified.user.name.trim() || email.split('@')[0],
-        email,
-        /*
-         * Unguessable, and never shown to anyone.
-         *
-         * `findUser` signs somebody in when `record.password === typed`, so an
-         * empty string here would mean this account could be entered from the
-         * password form by typing the address and leaving the password blank.
-         * A Google account has no password; this is how you say that in a store
-         * whose shape insists on one.
-         */
-        password: `google:${crypto.randomUUID()}`,
-        created: today(),
-        type: null,
-        business: null,
-        player: null,
-        /* Google hands over a name and an address and nothing else — no handle,
-           no city, no birthday. The profile is empty rather than half-guessed,
-           and `null` rather than absent for the onboarding stamp: this account
-           is genuinely new, which is exactly the case the two states exist to
-           tell apart. */
-        profile: { ...EMPTY_PROFILE },
-        onboardedAt: null,
-      };
-      addUser(record);
-
-      const next = toAccount(record);
-      setAccount(next);
-      persist(next);
-      return next;
+      return welcome(adoptSession(verified, null, 'google'));
     },
-    [],
+    [welcome],
   );
 
   const signOut = useCallback(() => {
+    settled.current = null;
     setAccount(null);
     persist(null);
     /* So the next person at this browser is asked which account to use rather
@@ -509,78 +636,55 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     apiSignOut();
   }, []);
 
-  /**
-   * Write a changed account to both stores.
-   *
-   * The session so this device stays signed in as them, and the directory row so
-   * the change survives signing out — and so the admin console is reading the
-   * same listing the owner is editing rather than a shipped copy of it. Called
-   * from inside the state updaters, which is where `persist` was already being
-   * called from; a merge is idempotent, so React invoking an updater twice in
-   * development costs nothing.
-   */
-  const commit = useCallback((next: Account) => {
-    persist(next);
-    patchUser(next.id, {
-      name: next.name,
-      type: next.type,
-      business: next.business,
-      player: next.player,
-      /* Both of the new fields go through here, and both have to: the profile
-         because signing out and back in must restore a handle somebody chose,
-         and the stamp because a player who finished onboarding on Monday and
-         signs in again on Tuesday must not be walked through it a second time
-         — the welcome gift is once-only, and this row is the only record of
-         that anywhere on this device. */
-      profile: next.profile,
-      onboardedAt: next.onboardedAt,
-      /* Persisted for the same reason the stamp above is: it is the only
-         record on this device that the bonus has been paid. */
-      profileCompletedAt: next.profileCompletedAt,
-    });
-  }, []);
-
-  const setType = useCallback((type: AccountType) => {
-    /*
-     * **Tell the server, too, when the answer is "business".**
-     *
-     * `partner_owner` is granted at sign-up from the form's own flag — but a
-     * Google visitor is signed in *before* this question is asked, so for them
-     * this is the only moment it can be granted. Without it they were a
-     * consumer on the server holding a business account in the browser, and
-     * every control on the dashboard reported there was nowhere to file
-     * anything. Which was true, and named none of the reasons.
-     *
-     * Fire-and-forget: it is idempotent, and a failure here is recoverable the
-     * next time they save a listing. What must not happen is this blocking the
-     * choice — the local account type is what the router reads, and holding the
-     * screen on a network call to set a role would be trading the whole flow
-     * for a permission the next screen re-establishes anyway.
-     */
-    if (type === 'business' && hasToken()) void api.becomePartner().catch(() => undefined);
-
-    setAccount((current) => {
-      if (!current) return current;
+  const setType = useCallback(
+    (type: AccountType) => {
       /*
-       * `business` stays `null` until the owner *saves* a listing, and that is
-       * load-bearing rather than lazy: "has a listing" is exactly what
-       * `resolveRoute` uses to decide whether setup has been done. Seeding a
-       * blank one here would make an owner who has never seen the form look
-       * finished, and drop them straight on the dashboard.
+       * **Tell the server, too, when the answer is "business".**
+       *
+       * `partner_owner` is granted at sign-up from the form's own flag — but a
+       * Google visitor is signed in *before* this question is asked, so for them
+       * this is the only moment it can be granted. Without it they were a
+       * consumer on the server holding a business account in the browser, and
+       * every control on the dashboard reported there was nowhere to file
+       * anything.
+       *
+       * Fire-and-forget: it is idempotent, and a failure here is recoverable the
+       * next time they save a listing. What must not happen is this blocking the
+       * choice — the local account type is what the router reads. Once the role
+       * is granted the account is asked about again, which is what finds a venue
+       * this address already owns.
        */
-      const next: Account = {
-        ...current,
-        type,
-        business: type === 'business' ? current.business : null,
-        /* The player state is the opposite case to the listing: it is created
-           the moment someone says they are here to play, because an empty
-           wallet is empty, and stays empty until they play. See `newPlayer`. */
-        player: type === 'individual' ? (current.player ?? newPlayer()) : null,
-      };
-      commit(next);
-      return next;
-    });
-  }, [commit]);
+      if (type === 'business' && hasToken()) {
+        void api
+          .becomePartner()
+          .then(() => refreshAccount())
+          .catch(() => undefined);
+      }
+
+      setAccount((current) => {
+        if (!current) return current;
+        /*
+         * `business` stays `null` until the owner *saves* a listing, and that is
+         * load-bearing rather than lazy: "has a listing" is exactly what
+         * `resolveRoute` uses to decide whether setup has been done. Seeding a
+         * blank one here would make an owner who has never seen the form look
+         * finished, and drop them straight on the dashboard.
+         */
+        const next: Account = {
+          ...current,
+          type,
+          business: type === 'business' ? current.business : null,
+          /* The player state is the opposite case to the listing: it is created
+             the moment someone says they are here to play, because an empty
+             wallet is empty, and stays empty until they play. See `newPlayer`. */
+          player: type === 'individual' ? (current.player ?? newPlayer()) : null,
+        };
+        commit(next);
+        return next;
+      });
+    },
+    [commit, refreshAccount],
+  );
 
   const setPlayer = useCallback(
     (next: PlayerState) => {
@@ -610,26 +714,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   /**
-   * Save the profile — validate first, write second.
+   * Save the profile — validate first, then let the server decide.
    *
-   * Everything is checked *before* `setAccount`, and that ordering is the whole
-   * of why this is not inside the updater: React may invoke an updater twice in
-   * development, and a rule with a side effect in it — spending one of two
-   * birthday corrections — would spend both. The updater below is a pure merge
-   * of a patch that has already been proved good.
+   * Everything this browser can check is checked *before* anything is written,
+   * and that ordering is why none of it is inside an updater: React may invoke
+   * an updater twice in development, and a rule with a side effect in it —
+   * spending one of two birthday corrections — would spend both.
    *
-   * The rules themselves are pure functions in `users.ts`, so `npm run verify`
-   * owns them; this is only the part that needs the directory and the session.
+   * Then `PATCH /v1/me`, and **its answer is what the account shows**. The
+   * server canonicalises the city, pays the bonus in the same transaction that
+   * completed the profile, and cannot clear a column — so an answer somebody
+   * emptied comes back as the value the server still holds, which is the truth
+   * the page should draw rather than the draft it was sent.
+   *
+   * Two things are left to the server that used to be decided here. Whether a
+   * handle is *taken* is a fact about its table, not about the accounts this
+   * browser happens to have seen; the local directory is only asked when there
+   * is no server to ask. And the save only falls back to this device when the
+   * server cannot be reached at all — a refusal is a refusal, and the result
+   * says which field it is about.
    */
   const saveProfile = useCallback(
-    (patch: ProfilePatch): ProfileResult => {
+    async (patch: ProfilePatch): Promise<ProfileResult> => {
       const current = account;
-      if (!current) return { ok: true };
+      if (!current) return { ok: true, where: 'device', completed: false };
       const was = current.profile;
+      /* The demonstration account has no row anywhere and no token of its own,
+         whatever else is sitting in this browser. */
+      const online = hasToken() && current.id !== DEMO_ACCOUNT.id;
 
       let username: string | undefined;
       if (patch.username !== undefined && patch.username.trim() !== was.username) {
-        const handle = checkUsername(listUsers(), patch.username, current.id);
+        const handle = checkUsername(online ? [] : listUsers(), patch.username, current.id);
         if (!handle.ok) return { ok: false, field: 'username', error: handle.error };
         username = handle.username;
       }
@@ -637,11 +753,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       /* `occupation` gets no check of its own, and that is the closed set
          paying for itself: it is a union of five literals plus `''`, so the
          only value that could arrive wrong is one the type system already
-         refuses. The free line it replaced needed a length rule. */
+         refuses. */
 
       const phone = patch.phone?.trim();
       if (phone !== undefined && phone !== '' && !isPhone(phone)) {
         return { ok: false, field: 'phone', error: 'shape' };
+      }
+
+      /* A city we do not know travels with a country, and the server takes a
+         country as its two-letter code and nothing else. Said here, in the
+         reader's language, rather than as a round trip to a 400. */
+      const country = patch.place?.countryCode.trim() ?? '';
+      if (patch.place?.city.trim() && country && !/^[A-Za-z]{2}$/.test(country)) {
+        return { ok: false, field: 'country', error: 'shape' };
       }
 
       /*
@@ -664,95 +788,101 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         birthDate = checked.date;
       }
 
-      setAccount((live) => {
-        if (!live) return live;
-        const profile: UserProfile = {
-          ...live.profile,
-          ...(username === undefined ? {} : { username }),
-          ...(patch.occupation === undefined ? {} : { occupation: patch.occupation }),
-          ...(phone === undefined ? {} : { phone }),
-          ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }),
-          ...(patch.place === undefined
-            ? {}
-            : { city: patch.place.city, countryCode: patch.place.countryCode }),
-          ...(birthDate === undefined
-            ? {}
-            : {
-                birthDate,
-                /* Spent here and nowhere else. `Math.max` rather than a bare
-                   subtraction so a row that arrived at 0 through some older
-                   shape cannot go negative and start reading as "minus one
-                   corrections left". */
-                birthDateChangesLeft: Math.max(0, live.profile.birthDateChangesLeft - 1),
-              }),
-        };
-        /*
-         * The profile bonus, claimed once and only on the way *into* complete.
-         *
-         * The server does this in `payForACompleteProfile`, guarded by
-         * `UPDATE ... WHERE profile_completed_at IS NULL` while it holds the
-         * write lock. This is the local half and it needs the same guard for
-         * the same reason: without the stamp, clearing a field and filling it
-         * back in would pay again, and the seven fields are all editable.
-         *
-         * The points are added optimistically. Where a token is in hand the
-         * server has already written the ledger entry inside the same
-         * `PATCH /v1/me` that saved these fields, and the next
-         * `/v1/games/state` reconciles this number against the balance it
-         * returns -- the same arrangement `finishOnboarding` settles for.
-         */
-        const earnsBonus =
-          live.profileCompletedAt === null &&
-          live.player !== null &&
-          isProfileComplete(profile, live.email);
-
-        const next: Account = {
-          ...live,
-          profile,
-          profileCompletedAt: earnsBonus
-            ? new Date().toISOString()
-            : live.profileCompletedAt,
-          player:
-            earnsBonus && live.player
-              ? { ...live.player, points: live.player.points + PROFILE_BONUS }
-              : live.player,
-        };
-        commit(next);
-        return next;
+      /* The patch, applied to a profile. Pure, and applied to whichever profile
+         is live when the write lands rather than to the one this render saw. */
+      const merge = (profile: UserProfile): UserProfile => ({
+        ...profile,
+        ...(username === undefined ? {} : { username }),
+        ...(patch.occupation === undefined ? {} : { occupation: patch.occupation }),
+        ...(phone === undefined ? {} : { phone }),
+        ...(patch.avatar === undefined ? {} : { avatar: patch.avatar }),
+        ...(patch.place === undefined
+          ? {}
+          : { city: patch.place.city, countryCode: patch.place.countryCode }),
+        ...(birthDate === undefined
+          ? {}
+          : {
+              birthDate,
+              /* Spent here and nowhere else. `Math.max` rather than a bare
+                 subtraction so a row that arrived at 0 through some older shape
+                 cannot go negative. */
+              birthDateChangesLeft: Math.max(0, profile.birthDateChangesLeft - 1),
+            }),
       });
 
-      return { ok: true };
+      /*
+       * The save this browser can make on its own: no server at all, or none
+       * that could be reached.
+       *
+       * The profile bonus is claimed once and only on the way *into* complete,
+       * guarded by the stamp for the reason the server guards it with
+       * `UPDATE … WHERE profile_completed_at IS NULL`: without it, clearing a
+       * field and filling it back in would pay again. The points are added
+       * optimistically, and the next answer from the server reconciles them.
+       */
+      const keepHere = (): ProfileResult => {
+        const completed =
+          current.profileCompletedAt === null &&
+          current.player !== null &&
+          isProfileComplete(merge(was), current.email);
+
+        setAccount((live) => {
+          if (!live) return live;
+          const profile = merge(live.profile);
+          const earnsBonus =
+            live.profileCompletedAt === null &&
+            live.player !== null &&
+            isProfileComplete(profile, live.email);
+          const next: Account = {
+            ...live,
+            profile,
+            profileCompletedAt: earnsBonus ? new Date().toISOString() : live.profileCompletedAt,
+            player:
+              earnsBonus && live.player
+                ? { ...live.player, points: live.player.points + PROFILE_BONUS }
+                : live.player,
+          };
+          commit(next);
+          return next;
+        });
+        return { ok: true, where: 'device', completed };
+      };
+
+      if (!online) return keepHere();
+
+      try {
+        const me = await saveMe(profileWrite(patch));
+        adoptMe(me);
+        setAccount((live) => {
+          if (!live || live.id !== me.user.id) return live;
+          /* Onto the *patched* profile, so an answer the server has never held
+             and the reader just emptied stays empty rather than coming back
+             from the profile as it was before the save. */
+          const next = foldServer(
+            { ...live, profile: merge(live.profile) },
+            { me, games: null, listing: null },
+            languageRef.current,
+          );
+          commit(next);
+          return next;
+        });
+        return {
+          ok: true,
+          where: 'server',
+          completed: current.profileCompletedAt === null && me.user.profileCompletedAt !== null,
+        };
+      } catch (cause) {
+        if (!(cause instanceof ApiError)) return { ok: false, field: null, error: 'refused' };
+        if (cause.status === 0) return keepHere();
+        /* The answer a refusal is about travels in `detail` — `respondError`
+           spreads it into the error body beside the code and the message. */
+        const field = typeof cause.detail.field === 'string' ? cause.detail.field : null;
+        return profileRefusal(cause.status, cause.code, field, cause.message);
+      }
     },
-    [account, commit],
+    [account, adoptMe, commit],
   );
 
-  /**
-   * Finish onboarding: stamp it, bank what the flow earned, pay the gift.
-   *
-   * ── which side of the wire this is ────────────────────────────────────────
-   * The server does this at `POST /v1/me/onboarded`
-   * (`accounts.completeOnboarding`): it claims the row with
-   * `UPDATE … WHERE onboarded_at IS NULL` so two simultaneous reports race for
-   * one row and exactly one pays, and the flag game's points arrive separately
-   * — earned by a provisional identity and repointed at the real account by
-   * `accounts.merge`, so they survive as *ledger entries* rather than as a
-   * number copied across.
-   *
-   * **This is the local half, and it is not that.** There is no provisional
-   * identity here because the site's sign-up creates the account before
-   * onboarding runs, so the round's points are simply banked onto the player
-   * state that already exists; and there is no write lock, because the only
-   * writer is this tab. What survives the translation is the property that
-   * matters: the stamp is the guard, so a second call pays nothing. When
-   * `auth/` moves to the server this function becomes one request.
-   *
-   * The round's points do **not** go through `awardPoints`. That function owns
-   * the streak, the 24-hour window and the per-game decay curve, and the
-   * onboarding round is none of those — it is a first-run demo with fixed
-   * per-round values, paid on the server as ledger entries against an identity
-   * that has never played. Running it through the streak would start a streak
-   * on a game that is not one of the seven.
-   */
   /**
    * Finish onboarding, and take the welcome bonus **from the server**.
    *
@@ -818,6 +948,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       account,
       plan,
       entitlements,
+      memberSince,
       signIn,
       signUp,
       signInWithGoogle,
@@ -827,11 +958,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPlayer,
       saveProfile,
       finishOnboarding,
+      refreshAccount,
     }),
     [
       account,
       plan,
       entitlements,
+      memberSince,
       signIn,
       signUp,
       signInWithGoogle,
@@ -841,8 +974,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPlayer,
       saveProfile,
       finishOnboarding,
+      refreshAccount,
     ],
   );
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={value}>{settling ? null : children}</AuthContext.Provider>
+  );
 }

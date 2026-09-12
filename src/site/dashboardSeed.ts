@@ -57,33 +57,13 @@ import { DEMO_MODE } from './demoMode';
 export const PD_SEED = DEMO_MODE;
 
 /*
- * The mock's series, verbatim: two sine components on a 38-visit base, with a
- * fifth-day bump, and redemptions riding a slower third wave under them.
- *
- * `n` is capped at 45 the way the mock caps it — the range picker offers 7, 14,
- * 30 and 90 days, and past 45 points a 1000-unit-wide chart stops resolving one
- * day from the next.
+ * `seedSeries` and `SEED_DELTAS` lived here — a sine-wave fortnight and three
+ * typed period deltas for the overview's tiles. Both are gone: the tiles read
+ * `GET …/series` now, their deltas are that response's `totals` against its
+ * `previous`, and the demo draws the same endpoint's shape from
+ * `dashboardDemo.ts`. A seeded delta beside a measured value was the one mix
+ * this file promised never to make.
  */
-export function seedSeries(days: number): { visits: number[]; redemptions: number[] } {
-  const n = Math.min(Math.max(days, 2), 45);
-  const visits: number[] = [];
-  const redemptions: number[] = [];
-  for (let i = 0; i < n; i += 1) {
-    const w = 1 + 0.3 * Math.sin(i / 2.4) + 0.14 * Math.sin(i / 6.1);
-    visits.push(Math.round(38 * w) + (i % 5 === 0 ? 4 : 0));
-    redemptions.push(Math.round(8 * w * (0.82 + 0.2 * Math.sin(i / 3.1)) * 0.719));
-  }
-  return { visits, redemptions };
-}
-
-/*
- * The period deltas the mock prints under each tile figure. Four entries, in
- * the order the tiles are drawn: visits, deals claimed, vouchers used, rewards
- * used. The fourth has none in the mock either — it is quoted "in August"
- * rather than against a previous period — so it is `null` here and the tile
- * draws no chip at all rather than a zero.
- */
-export const SEED_DELTAS: (number | null)[] = [12.4, 8.1, -3.6, null];
 
 /*
  * The repeat multiple behind "the one thing we can prove": members visit 2.4

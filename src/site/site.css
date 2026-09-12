@@ -2194,6 +2194,19 @@ button {
   color: var(--text-fnt);
 }
 
+/*
+ * Shown while this language's text is being fetched — see the note in
+ * `legal.tsx` about why the head above it is not inside the boundary. It is a
+ * muted line rather than a skeleton because the shape of what is coming is two
+ * screens of prose, and a grey rectangle that size is a bigger lie about the
+ * wait than a sentence is.
+ */
+.legal-loading {
+  margin: 2.5rem 0;
+  font-size: 0.875rem;
+  color: var(--text-mut);
+}
+
 .legal-toc {
   margin: 2.5rem 0;
   padding: 1.25rem 1.5rem;
@@ -10642,13 +10655,18 @@ button {
 }
 
 /* ════════════════════════════════════════════════════ the assistant ══
-   The one screen that talks.
+   The one screen that talks, and it talks to the server now.
 
-   Two panels at the top — what it knows, and where to start — then whichever
-   of the seven bodies the conversation has reached. The thread is `data-solid`
-   for the same reason the tables are: it carries the most continuous prose on
-   the dashboard, and prose over a moving wash is the reading the glass rule
-   exists to protect.
+   Two panels at the top — what it knows, which is the list every answer is
+   built from, and what needs attention — then the thread. The thread is
+   `data-solid` for the reason the tables are: it carries the most continuous
+   prose on the dashboard, and prose over a moving wash is the reading the
+   glass rule exists to protect.
+
+   The `pd-` names here are the ones the prototype's screen already had and
+   this one kept; nothing outside `dashboardAssistant.tsx` uses them except
+   `.pd-langs`, which the deals table borrows and which stays where it was.
+   Everything new is `pas-`.
    ═══════════════════════════════════════════════════════════════════════ */
 
 .pd-assist-top {
@@ -10667,64 +10685,111 @@ button {
   text-wrap: pretty;
 }
 
-.pd-knows ul {
+/* What it knows, set as a receipt — the label on the left, the figure on the
+   right, a hairline between rows — rather than as bullets, because these are
+   the figures every answer below is checked against. */
+.pas-facts {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  list-style: none;
-  padding: 0;
   margin: 0;
 }
 
-.pd-knows li {
-  position: relative;
-  padding-left: 0.9rem;
+.pas-facts > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.2rem 1rem;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.pas-facts > div:last-child {
+  border-bottom: none;
+}
+
+.pas-facts dt {
   font-size: 0.8rem;
-  line-height: 1.6;
   color: var(--text-mut);
 }
 
-.pd-knows li::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0.55rem;
-  width: 0.3rem;
-  height: 0.3rem;
-  border-radius: 50%;
-  background: var(--accent);
+.pas-facts dd {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
 }
 
-.pd-starts {
+/* What needs attention: `.pd-finding` rows, which carry their own top margin
+   and their own wrap, so the list adds neither. */
+.pas-attn {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
+.pas-attn .pd-finding > p {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ── where to start ── */
+
+.pas-starts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.pas-starts .console-label {
+  margin: 0.35rem 0 0;
+}
+
+/*
+ * The suggestions. Each is one press, so the whole card is the button — the
+ * Play grid's rule — and the glyph says what the press does: a spark drafts,
+ * a plus opens the form, an arrow goes to another screen.
+ */
 .pd-start-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
   gap: 0.5rem;
-  margin-top: 0.3rem;
 }
 
 .pd-start-list button {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-  text-align: left;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.2rem 0.6rem;
+  text-align: start;
   padding: 0.75rem 0.9rem;
   border-radius: 12px;
   border: 1px solid var(--border);
   background: var(--surface);
   font: inherit;
+  color: inherit;
   cursor: pointer;
   transition: border-color 180ms var(--ease), background 180ms var(--ease);
 }
 
-.pd-start-list button:hover {
+.pd-start-list button:hover:not(:disabled) {
   border-color: var(--accent-soft);
   background: var(--surface-2);
+}
+
+.pd-start-list button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.pd-start-list svg {
+  grid-row: span 2;
+  margin-top: 0.1rem;
+  color: var(--accent-lit);
 }
 
 .pd-start-list b {
@@ -10736,6 +10801,42 @@ button {
   font-size: 0.76rem;
   line-height: 1.5;
   color: var(--text-mut);
+}
+
+/* The questions it can answer: one row of pills. */
+.pd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pd-chips button {
+  padding: 0.55rem 0.95rem;
+  border-radius: 999px;
+  border: 1.5px solid var(--text);
+  background: none;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+/* The one control on the site that fills on *hover* rather than by being the
+   primary action, and it is the design's own: a chip outlined 1.5px in the ink
+   above, flipping to that ink filled with the mint label on it. The border is
+   already the face, so the flip costs no new colour and nothing moves. */
+.pd-chips button:hover:not(:disabled) {
+  background: var(--solid);
+  border-color: var(--solid);
+  color: var(--on-solid);
+}
+
+.pd-chips button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 /* ── the thread ── */
@@ -10757,17 +10858,24 @@ button {
   border-bottom: 1px solid var(--border);
 }
 
-.pd-thread-head .console-label {
+.pd-thread-head .pd-title {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
+  margin: 0;
 }
 
 .pd-live-dot {
-  width: 0.4rem;
-  height: 0.4rem;
+  flex: 0 0 auto;
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 50%;
   background: var(--accent);
+}
+
+.pas-reset {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.8rem;
 }
 
 .pd-msgs {
@@ -10776,6 +10884,12 @@ button {
   gap: 0.7rem;
   padding: clamp(1rem, 2.2vw, 1.4rem);
   min-height: 11rem;
+}
+
+/* Focused by script only (`tabIndex={-1}`), after a press that removed its own
+   control. A ring round the whole thread would read as a selection. */
+.pd-msgs:focus {
+  outline: none;
 }
 
 /*
@@ -10808,80 +10922,196 @@ button {
   font-weight: 600;
 }
 
-/* The buttons run along a row and the hint sits under them: one container, and
-   the hint takes the whole basis rather than needing a nested div. */
-.pd-chips {
+/* A turn is one row of the thread, and the bubble inside it keeps its own
+   side. A draft is not a bubble — it is the record it proposes — so it takes
+   the whole row (see `.pd-draft`). */
+.pas-turn {
+  display: flex;
+  flex-direction: column;
+}
+
+.pas-turn[data-from='you'] {
+  align-items: flex-end;
+}
+
+.pas-turn[data-from='it'] {
+  align-items: flex-start;
+}
+
+/* The budget the owner typed, under their own words. */
+.pas-note {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.pas-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.pas-answer > p {
+  margin: 0;
+}
+
+/* The receipt under an answer: every figure it read, value first, tabular —
+   read like checking a receipt, not like a second paragraph. */
+.pas-receipt {
   display: flex;
   flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pas-receipt li {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.pas-receipt b {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.15;
+  color: var(--accent-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.pas-receipt span {
+  font-size: 0.68rem;
+  letter-spacing: 0.02em;
+  color: var(--text-fnt);
+}
+
+/* The rows behind an answer. Text, and deliberately not shaped like anything
+   pressable: no hover, no lift, no chevron. */
+.pas-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin: 0;
+}
+
+.pas-rows > div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.15rem 0.9rem;
+  padding: 0.45rem 0.65rem;
+  border-left: 2px solid var(--accent-soft);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--surface);
+}
+
+.pas-rows dt {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pas-rows dd {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-mut);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one pressable thing in a reply, because the server pointed somewhere
+   real. The arrow travels on a transform; the gap stays put. */
+.pas-action {
+  display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-}
-
-.pd-chips .pd-fine {
-  flex: 1 0 100%;
-}
-
-.pd-chips button {
-  padding: 0.55rem 0.95rem;
-  border-radius: 999px;
-  border: 1.5px solid var(--text);
+  align-self: flex-start;
+  gap: 0.4rem;
+  padding: 0;
+  border: none;
   background: none;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 700;
-  color: var(--text);
+  color: var(--accent-ink);
   cursor: pointer;
-  transition: background 160ms var(--ease), color 160ms var(--ease);
 }
 
-/* The one control on the site that fills on *hover* rather than by being the
-   primary action, and it is the design's own: a chip outlined 1.5px in the ink
-   above, flipping to that ink filled with the mint label on it. The border is
-   already the face, so the flip costs no new colour and nothing moves. */
-.pd-chips button:hover {
-  background: var(--solid);
-  border-color: var(--solid);
-  color: var(--on-solid);
+.pas-action svg {
+  transition: transform 240ms var(--ease);
 }
 
-/* ── what it would set up ── */
+.pas-action:hover svg {
+  transform: translateX(3px);
+}
 
-.pd-ready {
+/* Thinking: three dots on one timeline a third apart, and `opacity` only, the
+   one property the compositor carries on its own. The first child is the
+   hidden sentence a screen reader hears, which is why the delays start at 3. */
+.pas-typing {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 2.75rem;
+}
+
+.pas-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.25;
+  animation: pas-think 1.25s var(--ease) infinite;
+}
+
+.pas-dot:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.pas-dot:nth-child(4) {
+  animation-delay: 0.28s;
+}
+
+@keyframes pas-think {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+/* A turn that did not get an answer. Weighted rather than coloured: the
+   palette has one accent, and an error cannot be red. */
+.pas-error {
   display: flex;
   flex-direction: column;
-  gap: 0.7rem;
-  padding: 0.9rem 1rem;
-  border-radius: 13px;
-  border: 1px solid var(--accent-soft);
-  background: rgba(var(--accent-rgb), 0.08);
+  align-items: flex-start;
+  gap: 0.5rem;
 }
 
-.pd-ready dl {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+.pas-error > p {
   margin: 0;
+  font-weight: 600;
 }
 
-.pd-ready dl > div {
-  display: grid;
-  grid-template-columns: minmax(6rem, 8rem) minmax(0, 1fr);
-  gap: 0.8rem;
-  align-items: baseline;
-  font-size: 0.8rem;
-}
-
-.pd-ready dt {
+.pas-error > .pas-detail {
+  font-size: 0.76rem;
+  font-weight: 400;
   color: var(--text-mut);
 }
 
-.pd-ready dd {
-  margin: 0;
-  font-weight: 700;
-}
-
-.pd-ready .btn {
-  align-self: flex-start;
+.pas-retry {
+  padding: 0.4rem 0.85rem;
+  font-size: 0.78rem;
 }
 
 /* ── the composer ── */
@@ -10895,8 +11125,31 @@ button {
   background: var(--surface-2);
 }
 
-/* The whole well is the label, so the empty space to the right of the caret
-   still focuses the field — the rule the Relocate converter had to learn. */
+/* Ask or draft, and — only while drafting — the budget beside it. */
+.pas-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.6rem 1rem;
+}
+
+.pas-budget {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.pas-budget .pd-well {
+  width: 9rem;
+  padding: 0.35rem 0.6rem;
+}
+
+/* The field and the send button share one well. The field takes every pixel
+   the button does not, so a press anywhere left of the button lands in it. */
 .pd-composer-well {
   display: flex;
   align-items: flex-end;
@@ -10905,7 +11158,6 @@ button {
   border-radius: 14px;
   border: 1.5px solid var(--border-2);
   background: var(--surface);
-  cursor: text;
 }
 
 .pd-composer-well:focus-within {
@@ -10926,6 +11178,7 @@ button {
   resize: none;
 }
 
+/* The well's border is the focus ring, one element out. */
 .pd-composer-well textarea:focus {
   outline: none;
 }
@@ -10949,20 +11202,23 @@ button {
   cursor: not-allowed;
 }
 
-/* ── the draft ────────────────────────────────────────────────────────────
+/* ── a draft ──────────────────────────────────────────────────────────────
  *
- * Bordered in `--text` rather than `--border`: it is the one panel on the
+ * Bordered in `--text` rather than `--border`: it is the one card on the
  * dashboard that is a *proposal* and not a report, and the heavier edge is what
- * says so before the stamp is read.
+ * says so before the stamp is read. It sits inside the thread, so it carries a
+ * sheet of its own rather than a second glass pane, and it takes the thread's
+ * whole width because a record squeezed into a bubble stops reading as one.
  */
 
 .pd-draft {
   display: flex;
   flex-direction: column;
-  padding: 0;
+  align-self: stretch;
   overflow: hidden;
-  border-width: 1.5px;
-  border-color: var(--text);
+  border: 1.5px solid var(--text);
+  border-radius: 14px;
+  background: var(--surface);
 }
 
 .pd-draft-head {
@@ -10989,47 +11245,10 @@ button {
   padding: clamp(1rem, 2.2vw, 1.4rem);
 }
 
-.pd-changed {
+.pas-why {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
-  padding: 0.85rem 1rem;
-  border-radius: 13px;
-  border: 1px solid var(--accent-soft);
-  background: rgba(var(--accent-rgb), 0.08);
-}
-
-.pd-changed > div {
-  display: grid;
-  grid-template-columns: minmax(5rem, 7rem) minmax(0, 1fr);
-  gap: 0.7rem;
-  align-items: baseline;
-  font-size: 0.8rem;
-}
-
-.pd-changed > div > span {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  min-width: 0;
-}
-
-.pd-changed del {
-  color: var(--text-fnt);
-}
-
-.pd-changed em {
-  display: flex;
-  align-items: baseline;
-  gap: 0.45rem;
-  font-style: normal;
-  font-weight: 700;
-}
-
-.pd-changed em svg {
-  flex: 0 0 auto;
-  color: var(--accent-lit);
-  transform: translateY(2px);
+  gap: 0.5rem;
 }
 
 .pd-reasons {
@@ -11059,10 +11278,10 @@ button {
   background: var(--accent);
 }
 
-/* ── a record it would create ──
+/* ── the record it proposes ──
    Field name on the left, value on the right, one per row. The point is that it
-   reads like the thing that would be written rather than like a paragraph
-   about it. */
+   reads like the thing the form will be filled with rather than like a
+   paragraph about it. */
 
 .pd-record {
   display: flex;
@@ -11080,13 +11299,14 @@ button {
   padding: 0.6rem 0.9rem;
   border-bottom: 1px solid var(--border);
   background: var(--surface-2);
+  font-size: 0.82rem;
 }
 
 .pd-record-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.3rem 1rem;
   flex-wrap: wrap;
   padding: 0.6rem 0.9rem;
   border-bottom: 1px solid var(--border);
@@ -11107,29 +11327,8 @@ button {
   font-weight: 700;
 }
 
-.pd-record-row > em {
-  flex: 0 0 auto;
-}
-
-.pd-record-row .pd-well {
-  flex: 0 0 auto;
-}
-
 .pd-record .pd-fine {
   padding: 0.55rem 0.9rem;
-}
-
-/* The two things a publish produced, each with a way into it. */
-.pd-record-item {
-  align-items: center;
-}
-
-.pd-record-item > div {
-  flex: 1 1 12rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  min-width: 0;
 }
 
 /* ── the five languages ── */
@@ -11140,120 +11339,65 @@ button {
   gap: 0.6rem;
 }
 
-.pd-lang-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  flex-wrap: wrap;
-}
-
-.pd-tag[data-quiet='true'] {
-  color: var(--text-mut);
-  background: var(--surface-2);
-}
-
-/* Written by a machine and not yet read by a person. Weighted, not coloured. */
-.pd-tag[data-warn='true'] {
-  border-color: var(--accent-soft);
-  background: rgba(var(--accent-rgb), 0.12);
-  color: var(--accent-ink);
-}
-
-/* ── revising, publishing, backing out ── */
-
-.pd-draft-foot {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: clamp(1rem, 2.2vw, 1.4rem);
-  border-top: 1px solid var(--border);
-  background: var(--surface-2);
-}
-
-.pd-revise {
-  display: flex;
-  gap: 0.7rem;
-  align-items: flex-start;
-  flex-wrap: wrap;
-}
-
-.pd-revise .field {
-  flex: 1 1 22rem;
-  min-width: 16rem;
-}
-
-.pd-draft-acts,
-.pd-answer-acts {
+/* The one press a draft offers, on its own rule: it is where the proposal
+   leaves this screen for the form. */
+.pd-draft-acts {
   display: flex;
   align-items: center;
   gap: 0.7rem;
   flex-wrap: wrap;
   padding: clamp(0.9rem, 2vw, 1.1rem) clamp(1rem, 2.2vw, 1.4rem);
-}
-
-/* "This is not what I need" sits at the far end, away from the button it is the
-   opposite of. */
-.pd-draft-acts .btn-ghost:last-child {
-  margin-left: auto;
-}
-
-.pd-answer-acts {
-  padding: 0;
-}
-
-.pd-answer-acts .pd-fine {
-  flex: 1 1 16rem;
-}
-
-.pd-exits {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  padding: clamp(1rem, 2.2vw, 1.4rem);
   border-top: 1px solid var(--border);
 }
 
-.pd-exit-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
-  gap: 0.7rem;
+/* Touch: every press on this screen reaches the size the rest of the site gives
+   a finger, without changing what it is drawn at on a desk. */
+@media (pointer: coarse) {
+  .pd-start-list button,
+  .pd-chips button,
+  .pd-thread .pd-seg button,
+  .pas-action,
+  .pas-retry,
+  .pas-reset {
+    min-height: var(--tap);
+  }
+
+  .pd-send {
+    width: var(--tap);
+    height: var(--tap);
+  }
 }
 
-.pd-exit-list > div {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  padding: 0.9rem 1rem;
-  border-radius: 13px;
-  border: 1px solid var(--border);
+@media (max-width: 40rem) {
+  .pd-msg {
+    max-width: 94%;
+  }
+
+  .pas-budget {
+    flex: 1 1 100%;
+  }
+
+  .pas-budget .pd-well {
+    width: 100%;
+    max-width: none;
+  }
 }
 
-.pd-exit-list b {
-  font-size: 0.85rem;
-}
+@media (prefers-reduced-motion: reduce) {
+  /* Stilled rather than dropped: the dots are the only thing saying a question
+     is in flight, so they stay visible when motion is not wanted. */
+  .pas-dot {
+    animation: none;
+    opacity: 0.6;
+  }
 
-.pd-exit-list p {
-  flex: 1;
-  font-size: 0.76rem;
-  line-height: 1.55;
-  color: var(--text-mut);
-}
+  .pas-action svg {
+    transition: none;
+  }
 
-.pd-exit-list .btn {
-  align-self: flex-start;
-}
-
-.pd-done {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  font-size: 1.1rem;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-}
-
-.pd-done svg {
-  color: var(--accent-lit);
+  .pas-action:hover svg {
+    transform: none;
+  }
 }
 
 /* ════════════════════════════════════════════════════ the create panel ══
@@ -15783,6 +15927,10 @@ button {
  */
 .wal-act {
   display: flex;
+  /* Wraps, because a deal now carries two actions — its terms and its venue —
+     and "Посмотреть место" beside "Как получить" does not fit a 17.5rem card on
+     one line. Each takes the whole row rather than both squeezing. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.6rem;
   margin-top: auto;
@@ -15792,7 +15940,7 @@ button {
 /* 44px — the app's `minHeight: 44` on the same button, and the target size a
    thumb needs. Full width, because it is the card's one control. */
 .wal-cta {
-  flex: 1;
+  flex: 1 1 8.5rem;
   justify-content: center;
   min-height: 2.75rem;
   padding: 0.5rem 0.85rem;
@@ -16065,6 +16213,741 @@ button {
   margin-top: 1.5rem;
   font-size: 0.78rem;
   color: var(--text-fnt);
+}
+
+/* ── the codes staff type ──────────────────────────────────────────────────
+ *
+ * A voucher code, a reward code and the player's `@username` are the three
+ * strings the dashboard's counter tool resolves, so they are drawn as one
+ * object (`CounterCode` in `venueSheet.tsx`): large, in the display face, a copy
+ * control beside them and the sentence saying what they are for under them.
+ *
+ * `user-select: all` because a long-press on a phone otherwise takes one
+ * character of `PLZ-K7QX` and a word of the card around it. `overflow-wrap:
+ * anywhere` because a twenty-character username in a 15rem card has nowhere
+ * else to go.
+ */
+.wal-code {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.wal-code-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.7rem;
+}
+
+.wal-code-value {
+  min-width: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.3rem, 1.1rem + 0.8vw, 1.6rem);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.08em;
+  line-height: 1.15;
+  color: var(--text);
+  user-select: all;
+  overflow-wrap: anywhere;
+}
+
+/* The handle is lower-case letters rather than a code in capitals, and the open
+   tracking that helps a code be read out one character at a time spreads a word
+   into loose letters. Larger, and tracked like a word. */
+.wal-code[data-size='hero'] .wal-code-value {
+  font-size: clamp(1.6rem, 1.2rem + 1.8vw, 2.3rem);
+  letter-spacing: -0.01em;
+}
+
+.wal-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: var(--tap);
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  color: var(--text-mut);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    border-color 200ms var(--ease),
+    color 200ms var(--ease);
+}
+
+.wal-copy svg {
+  color: var(--accent-lit);
+}
+
+.wal-copy:hover {
+  border-color: var(--accent-soft);
+  color: var(--text);
+}
+
+.wal-copy:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+.wal-code-hint {
+  font-size: 0.76rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-mut);
+}
+
+/* ── your counter code ──
+   Under the balance, because it is the other thing on this page a player reads
+   *at* the counter. Glass rather than the balance's lit wash: one filled object
+   at the top of a screen is a headline, and two are a banner. */
+.wal-counter {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 1.5rem;
+  padding: clamp(1rem, 2.6vw, 1.35rem);
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.wal-counter .wal-counter-title {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.3;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.wal-counter .wal-counter-note {
+  margin: 0;
+  max-width: 46ch;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.wal-counter .btn {
+  min-height: var(--tap);
+  margin-top: 0.2rem;
+}
+
+/* ── places near you ──
+   A venue is a row you press, not a card with a band: the band is what a thing
+   you *hold* gets, and these are places you might go. The whole row is the
+   button — the Play grid's rule — and the arrow is the only thing that moves. */
+.wal-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 19rem), 1fr));
+  gap: 0.75rem;
+}
+
+.wal-place {
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: border-color 240ms var(--ease);
+}
+
+.wal-place:hover {
+  border-color: var(--border-2);
+}
+
+.wal-place-hit {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.8rem;
+  width: 100%;
+  min-height: var(--tap);
+  padding: 0.85rem 1rem;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.wal-place-hit:active {
+  transform: scale(0.99);
+}
+
+.wal-place-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.wal-place-name {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.wal-place-meta {
+  font-size: 0.76rem;
+  line-height: 1.4;
+  color: var(--text-fnt);
+}
+
+.wal-place-foot {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem 0.7rem;
+}
+
+/* The venue's own band, verbatim and in its own currency — the `.gs-price` rule. */
+.wal-place-price {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.wal-place-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.wal-place-tag svg,
+.wal-place:hover .wal-place-go {
+  color: var(--accent-lit);
+}
+
+.wal-place-go {
+  flex: 0 0 auto;
+  color: var(--text-fnt);
+  transition:
+    transform 240ms var(--ease),
+    color 240ms var(--ease);
+}
+
+.wal-place:hover .wal-place-go {
+  transform: translateX(3px);
+}
+
+/* A reward's plate is its label — "Free flat white" — rather than a figure, so
+   it is set smaller and allowed two lines before it is cut. */
+.wal-fig.wal-fig-text {
+  display: -webkit-box;
+  font-size: clamp(1.1rem, 1rem + 0.5vw, 1.3rem);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ══════════════════════════════════════════════════════════ venue sheet ══
+   One venue, opened from the wallet (`venueSheet.tsx`). The shell is the
+   guide's — `.gs-scrim`, `.gs-panel`, `.gs-close`, `.gs-block` — because it is
+   the same component, and a second modal styled slightly differently is two
+   components that were meant to be one. Everything here is prefixed `vsh-` and
+   is what a venue has that a guide listing does not: a ladder, the player's
+   holdings there, and a consent switch.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Above the assistant's panel (61): a modal the dock can sit on top of is not
+   modal. Below the dashboard's sheet and toast, which never share a page with
+   this one. */
+.vsh-scrim {
+  z-index: 70;
+}
+
+.vsh-panel {
+  width: min(34rem, 100%);
+  max-height: min(88vh, 50rem);
+  overscroll-behavior: contain;
+}
+
+.vsh-head h3 {
+  overflow-wrap: anywhere;
+}
+
+.vsh-mark {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 2.6rem;
+  height: 2.6rem;
+  overflow: hidden;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.28);
+  background: rgba(var(--accent-rgb), 0.14);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--accent-ink);
+}
+
+.vsh-mark[data-size='lg'] {
+  width: 3.2rem;
+  height: 3.2rem;
+  font-size: 1.4rem;
+}
+
+.vsh-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.vsh-category {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+.vsh-pad {
+  margin-top: 1.2rem !important;
+}
+
+.vsh-about {
+  margin: 1rem 0 0;
+  font-size: 0.86rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+.vsh-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 1rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vsh-facts li {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+.vsh-facts svg {
+  flex: 0 0 auto;
+  margin-top: 0.15rem;
+  color: var(--accent-lit);
+}
+
+.vsh-price {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.vsh-lede,
+.vsh-note {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-fnt);
+  text-wrap: pretty;
+}
+
+.vsh-lede {
+  margin-bottom: 0.8rem;
+}
+
+.vsh-block .vsh-strong {
+  margin-bottom: 0.7rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.vsh-until {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+/* ── the ladder ── */
+
+.vsh-tiers,
+.vsh-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.vsh-tier {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.vsh-tier-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  flex: 1 1 12rem;
+  min-width: 0;
+}
+
+.vsh-tier-tx b {
+  font-size: 0.92rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Why a rung cannot be bought. Weighted rather than coloured: the palette has
+   one accent, so a refusal is louder by contrast, as in the field kit. */
+.vsh-tier-why {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.vsh-get {
+  flex: 0 0 auto;
+  justify-content: center;
+  min-height: var(--tap);
+  padding: 0.5rem 1rem;
+  font-size: 0.82rem;
+}
+
+.vsh-get:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.vsh-get[aria-disabled='true'] {
+  cursor: progress;
+}
+
+.vsh-block .vsh-failed {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.8rem;
+  flex: 1 1 100%;
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.vsh-retry {
+  min-height: var(--tap);
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+}
+
+/* The voucher just bought — the one moment in the sheet that is an event, so it
+   takes the accent hairline the wallet gives a full stamp card. */
+.vsh-got {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin-bottom: 0.8rem;
+  padding: 0.9rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.07);
+}
+
+.vsh-block .vsh-got-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.vsh-got-head svg {
+  color: var(--accent-lit);
+}
+
+.vsh-got-what {
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+/* ── the player's holdings here ── */
+
+.vsh-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.vsh-item[data-full='true'] {
+  border-color: var(--accent-soft);
+}
+
+.vsh-item-row {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.vsh-item-name {
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+
+.vsh-count {
+  flex: 0 0 auto;
+  font-size: 0.74rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-fnt);
+}
+
+/* The wallet's discs a size down: a line in a list, not the plate of a card. */
+.wal-slots.vsh-slots {
+  grid-template-columns: repeat(auto-fill, 1rem);
+  gap: 0.35rem;
+}
+
+.wal-slots.vsh-slots span {
+  width: 1rem;
+  height: 1rem;
+}
+
+.vsh-deal {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+/* The venue's own words for the offer — `-15%`, `2+1` — never translated. */
+.vsh-deal-fig {
+  flex: 0 0 auto;
+  min-width: 3.2rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  text-align: center;
+  color: var(--accent-ink);
+}
+
+.vsh-deal-tx {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+.vsh-deal-tx b {
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.vsh-list + .vsh-note {
+  margin-top: 0.7rem;
+}
+
+/* ── could not ask ── */
+
+.vsh-down {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.7rem;
+  margin-top: 1.2rem;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.vsh-down p {
+  margin: 0;
+}
+
+/* ── the consent switch ──
+   A real `role="switch"`, the whole row its target. The track is the one filled
+   mark in the block when it is on, because on or off is the entire reading and a
+   checkbox-sized tick is easy to miss on a phone. */
+.vsh-switch {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  width: 100%;
+  min-height: var(--tap);
+  margin-bottom: 0.5rem;
+  padding: 0.3rem 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+}
+
+.vsh-switch[aria-busy='true'] {
+  cursor: progress;
+}
+
+.vsh-switch-label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vsh-switch-track {
+  position: relative;
+  flex: 0 0 auto;
+  width: 2.9rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  transition:
+    background 180ms var(--ease),
+    border-color 180ms var(--ease);
+}
+
+.vsh-switch-thumb {
+  position: absolute;
+  top: 50%;
+  left: 0.2rem;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 999px;
+  background: var(--text-fnt);
+  transform: translateY(-50%);
+  transition:
+    transform 180ms var(--ease),
+    background 180ms var(--ease);
+}
+
+.vsh-switch[aria-checked='true'] .vsh-switch-track {
+  border-color: transparent;
+  background: var(--accent);
+}
+
+.vsh-switch[aria-checked='true'] .vsh-switch-thumb {
+  background: var(--on-accent);
+  transform: translate(1.2rem, -50%);
+}
+
+/* The ring goes on the track, which is the thing that reads as the control; a
+   ring round a full-width row of text reads as a selected paragraph. */
+.vsh-switch:focus-visible {
+  outline: none;
+}
+
+.vsh-switch:focus-visible .vsh-switch-track {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 2px;
+}
+
+/* On a phone the sheet rises from the bottom edge, where the thumb already is,
+   rather than floating mid-screen with a band of page above and below it. */
+@media (max-width: 560px) {
+  .vsh-scrim {
+    place-items: end stretch;
+    padding: 0;
+  }
+
+  .vsh-panel {
+    width: 100%;
+    max-height: 90dvh;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    padding-bottom: calc(1.35rem + env(safe-area-inset-bottom));
+  }
+
+  .vsh-get {
+    flex: 1 1 100%;
+  }
+}
+
+/* Movement only; the colour and border changes stay, as the site-wide guard
+   keeps them. Below every rule it guards, for the same reason that one is. */
+@media (hover: none) {
+  .wal-place:hover .wal-place-go {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vsh-scrim,
+  .vsh-panel {
+    animation: none;
+  }
+
+  .vsh-switch-track,
+  .vsh-switch-thumb,
+  .wal-copy,
+  .wal-place,
+  .wal-place-go {
+    transition: none;
+  }
+
+  .wal-place:hover .wal-place-go,
+  .wal-place-hit:active,
+  .wal-copy:active {
+    transform: none;
+  }
 }
 
 /* A heading the thread needs for its dialog label but nobody needs to see. */
@@ -22245,6 +23128,563 @@ button {
   }
 }
 
+/* ══ the profile and the listing, read before they are edited ══════════════
+   `#/profile` in view mode (`prof-`, the page's own prefix) and the dashboard's
+   Profile screen (`lst-`, grepped: nothing had it).
+
+   Both screens used to open as a form, and both now open on the record with one
+   Edit button that turns them into that form. So both need the three things the
+   field kit never had: a header card, a list of facts, and a soft "Not added
+   yet" for a fact that is missing. They are built from the same primitives the
+   form is — `.console` for a sheet, `--surface` for a well, `--border` for a
+   rule, the legend's small caps for a section title — so a record and the form
+   it turns into read as one object in two states rather than two designs.
+
+   Nothing here moves on its own, so there is nothing for reduced motion to
+   stop; the shared `.btn` lift is handled where `.btn` is.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.prof-view,
+.lst {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+/* The line that says where the last save went. Always in the DOM so it is
+   announced, and out of the layout while it has nothing to say. */
+.prof-flash,
+.lst-flash {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0 0 1.25rem;
+  padding: 0.7rem 0.9rem;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.3);
+  background: rgba(var(--accent-rgb), 0.08);
+  font-size: 0.875rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--accent-ink);
+}
+
+.lst-flash {
+  margin-bottom: 0;
+}
+
+.prof-flash:empty,
+.lst-flash:empty {
+  display: none;
+}
+
+.prof-flash svg,
+.lst-flash svg {
+  flex: none;
+  margin-top: 0.2rem;
+}
+
+/* Kept on this device only. Dashed and in ink rather than in the accent: it is
+   not good news, and the palette has no second colour to say so with — the same
+   answer `.field-error` gives. */
+.prof-flash[data-tone='device'],
+.lst-flash[data-tone='device'] {
+  border-style: dashed;
+  border-color: var(--border-2);
+  background: transparent;
+  color: var(--text);
+}
+
+/* A fact nobody has given: present, and quieter than a fact. */
+.prof-soft,
+.lst-soft {
+  font-weight: 500;
+  color: var(--text-fnt);
+}
+
+p.lst-soft {
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+/* ── the header card ──────────────────────────────────────────────────────
+ *
+ * Face (or mark), the words, and the one button — three tracks, with the
+ * player's figures and the listing's status sentence spanning underneath. The
+ * middle track is `minmax(0, 1fr)` so a long venue name wraps instead of
+ * pushing the button off the card.
+ */
+.prof-id,
+.lst-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1.25rem;
+  row-gap: 1.1rem;
+}
+
+.prof-avatar-xl {
+  --disc: 5.5rem;
+}
+
+.prof-id-text,
+.lst-title {
+  min-width: 0;
+}
+
+.prof-id-name,
+.lst-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 1.1rem + 1vw, 1.8rem);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.prof-id-handle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.45rem;
+  margin: 0.35rem 0 0;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/* `.plan-tag` carries a left margin for the header line it was drawn for; in a
+   wrapping row the gap already does that job, and a margin would indent the
+   chip when it wraps. */
+.prof-id-handle .plan-tag {
+  margin-left: 0;
+  font-size: 0.75rem;
+}
+
+.prof-id-since {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--text-fnt);
+}
+
+.prof-edit,
+.lst-edit {
+  align-self: start;
+}
+
+/* The mark: the avatar disc's ink, squared, because a logo is a shape rather
+   than a face. Contained, never cropped — see `.phone-cover`. */
+.lst-logo {
+  display: grid;
+  place-items: center;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgb(var(--ink-rgb));
+  color: rgb(var(--ink-on-rgb));
+  font-family: var(--font-display);
+  font-size: 1.9rem;
+  font-weight: 600;
+  line-height: 1;
+}
+
+.lst-logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.lst-kind {
+  margin: 0.3rem 0 0;
+  font-size: 0.9rem;
+  color: var(--text-mut);
+  overflow-wrap: anywhere;
+}
+
+/*
+ * Whether the listing is live. Filled accent for live and outlined for every
+ * other state, with the wait dashed: a state that depends on somebody else
+ * reads as unfinished by its line rather than by a second colour. The dot is
+ * filled only when live, so the difference survives without the hue at all.
+ */
+.lst-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.65rem;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+.lst-state::before {
+  content: '';
+  flex: none;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  border: 1.5px solid currentColor;
+}
+
+.lst-state[data-state='live'] {
+  border-color: transparent;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-ink);
+}
+
+.lst-state[data-state='live']::before {
+  background: currentColor;
+}
+
+.lst-state[data-state='review'] {
+  border-style: dashed;
+}
+
+.lst-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.lst-note q {
+  color: var(--text);
+}
+
+/* ── a player's figures ───────────────────────────────────────────────── */
+
+.prof-strip {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--border);
+}
+
+.prof-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+  padding: 0.8rem 0.95rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.prof-stat dt {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.prof-stat dd {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 1rem + 0.6vw, 1.45rem);
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--text);
+  /* The figures are re-read after a round; without this the tiles shuffle
+     width as the digits change. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the facts ────────────────────────────────────────────────────────── */
+
+.prof-view-grid,
+.lst-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 20rem);
+  gap: clamp(1.25rem, 3vw, 2.25rem);
+  align-items: start;
+}
+
+.lst-main,
+.lst-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+/* The same small caps as `.form-block legend`, so a section on the record and
+   the fieldset it becomes are titled with one mark. */
+.prof-panel-title,
+.lst-card-title {
+  margin: 0 0 0.85rem;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.prof-rows,
+.lst-rows {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.prof-row,
+.lst-row {
+  display: grid;
+  grid-template-columns: minmax(0, 9.5rem) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: baseline;
+  padding: 0.8rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.prof-row:first-child,
+.lst-row:first-child {
+  padding-top: 0.2rem;
+  border-top: 0;
+}
+
+.prof-row dt,
+.lst-row dt {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.prof-row dd,
+.lst-row dd {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.prof-gaps {
+  margin: 0.9rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.lst-about {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+
+.lst-link {
+  font-weight: 700;
+  color: var(--accent-ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.lst-link:hover {
+  text-decoration-thickness: 2px;
+}
+
+.lst-maps {
+  margin-top: 0.95rem;
+}
+
+.lst-langs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* The listing form's subcategory select, while the category above it holds a
+   word the list does not have: not a choice anybody can make yet. */
+.business-form select:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+/* ── who can see you ──────────────────────────────────────────────────── */
+
+.prof-share-lede {
+  max-width: 46rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.875rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.prof-share-empty {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-fnt);
+}
+
+.prof-share-notice {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.prof-share-notice:empty {
+  display: none;
+}
+
+.prof-share-notice[data-tone='failed'] {
+  color: var(--text);
+}
+
+.prof-share-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.prof-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  padding: 0.85rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.prof-share-row:first-child {
+  padding-top: 0.2rem;
+  border-top: 0;
+}
+
+.prof-share-who {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.prof-share-who b {
+  font-size: 0.9375rem;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.prof-share-who span {
+  font-size: 0.8rem;
+  color: var(--text-fnt);
+}
+
+.prof-share-ask {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 0.9rem;
+}
+
+.prof-share-ask > span {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.prof-share-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/* Row buttons are a size down from a page action: they sit beside a venue's
+   name, and a page-sized pill per row would be the loudest thing in the list. */
+.prof-share-row .btn {
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+}
+
+/* ── narrower ─────────────────────────────────────────────────────────── */
+
+@media (max-width: 62rem) {
+  .prof-view-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* The dashboard's content column is narrower than the page's at the same
+   viewport — the rail takes its share — so the listing stacks a step earlier. */
+@media (max-width: 1160px) {
+  .lst-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A phone: the button goes under the name rather than squeezing it, and each
+   fact puts its label above its value. */
+@media (max-width: 34rem) {
+  .prof-id,
+  .lst-head {
+    grid-template-columns: auto minmax(0, 1fr);
+    column-gap: 1rem;
+  }
+
+  .prof-edit,
+  .lst-edit {
+    grid-column: 1 / -1;
+  }
+
+  .prof-avatar-xl {
+    --disc: 4.25rem;
+  }
+
+  .lst-logo {
+    width: 3.75rem;
+    height: 3.75rem;
+    border-radius: 14px;
+    font-size: 1.5rem;
+  }
+
+  .prof-strip {
+    gap: 0.5rem;
+  }
+
+  .prof-stat {
+    padding: 0.65rem 0.7rem;
+  }
+
+  .prof-row,
+  .lst-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.15rem;
+  }
+}
+
+@media (pointer: coarse) {
+  .prof-edit,
+  .lst-edit,
+  .lst-maps,
+  .prof-share-row .btn {
+    min-height: var(--tap);
+  }
+}
+
 
 /* ════════════════════════════════════════════════════════════════════════
    Plans — the arcade layer.
@@ -24551,4 +25991,4634 @@ button {
   color: var(--text-fnt);
   font-variant-numeric: tabular-nums;
   cursor: help;
+}
+
+
+/* ═══════════════════════════════════ the partner frame, second pass ══
+ *
+ * Overrides for rules earlier in this file rather than edits in place, and the
+ * placement is load-bearing: these sit at equal specificity to the originals, so
+ * they only win by being below them. The phones block near line 17700 collapses
+ * the frame to one column at equal specificity too, which is why the rail width
+ * here is left alone — nothing below may restate `grid-template-columns` on
+ * `.pd-app` without also restating that collapse.
+ */
+
+.pd-app {
+  /* One height for every control in the bar, and one for every button in a page
+     header. They were set individually and drifted: the range picker sat at
+     ~30px, the icon buttons at 34px and the user pill at whatever its avatar
+     made it, three different baselines in a row 16px apart. A row of controls
+     reads as a row when the boxes agree, and as a mistake when they nearly
+     agree. */
+  --pd-ctl-h: 2.5rem;
+  --pd-btn-h: 2.75rem;
+}
+
+/* ── the rail's head ─────────────────────────────────────────────────────
+ *
+ * Its bottom rule and the bar's bottom rule are now the same line across the
+ * screen. They were 4rem and "whatever the padding made it", so the two borders
+ * missed each other by a few pixels — the kind of miss that reads as a blurred
+ * edge rather than as a misalignment, which is worse because there is nothing
+ * obvious to point at. Both are `min-height: 4rem` and both keep their border.
+ */
+.rail-brand {
+  min-height: 4rem;
+  padding: 0 1.15rem;
+  border-bottom-color: var(--border);
+}
+
+/* ── the bar ─────────────────────────────────────────────────────────────
+ *
+ * Every control here is now the same box: white (the panel, solid rather than
+ * the 3.5% tint it was), a hairline, and one height. The tint read as grey
+ * against the bar's own near-white, which is what "it shouldn't be gray" is
+ * about — and the label inside it was `--text-mut`, a third step down, so the
+ * whole control looked disabled.
+ */
+.pd-bar {
+  background: rgb(var(--panel-rgb));
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-theme='light'] .pd-bar {
+  background: rgb(var(--panel-rgb));
+}
+
+.pd-range-btn,
+.pd-bar .lang-trigger,
+.pd-bar .theme-toggle,
+.pd-icon,
+.pd-user {
+  height: var(--pd-ctl-h);
+  padding: 0 0.85rem;
+  border-radius: 10px;
+  border: 1px solid var(--border-2);
+  background: rgb(var(--panel-rgb));
+  /* The bar's text is the page's text. Every one of these was `--text-mut` or
+     `--text-fnt`, which is the colour this sheet uses for things that are *not*
+     the point — and a date range you are choosing is the point. */
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.pd-icon {
+  /* Square, so the width has to be pinned back after the shared padding above. */
+  width: var(--pd-ctl-h);
+  padding: 0;
+  color: var(--text);
+}
+
+.pd-range-btn:hover,
+.pd-bar .lang-trigger:hover,
+.pd-bar .theme-toggle:hover,
+.pd-icon:hover,
+.pd-user:hover {
+  border-color: var(--text-mut);
+  background: var(--surface);
+}
+
+/* The caret and the calendar are furniture beside a label, not the label. */
+.pd-range-btn .lang-caret,
+.pd-user .lang-caret {
+  color: var(--text-fnt);
+}
+
+.pd-crumb {
+  font-size: 0.9rem;
+}
+
+.pd-crumb b {
+  font-weight: 700;
+}
+
+/* ── the user pill ───────────────────────────────────────────────────────
+ *
+ * It is a `<button>` now (it was a `<span>` that looked exactly like one and did
+ * nothing), so it needs the reset every other control in this bar gets.
+ */
+.pd-usermenu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.pd-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-left: 0.35rem;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition:
+    background 200ms var(--ease),
+    border-color 200ms var(--ease);
+}
+
+.pd-user > i {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+/* The menu is the header's, borrowed whole — same items, same rules, and it
+   hangs off the right edge here because the pill is the last thing in the row. */
+.pd-user-menu {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 40;
+  min-width: 13rem;
+}
+
+/* ── the page ────────────────────────────────────────────────────────────
+ *
+ * Full width.
+ *
+ * `.pd-page` was `width: min(100%, 1400px)` with no `margin-inline: auto`, so on
+ * anything wider than 1400px the dashboard sat left-packed with a band of empty
+ * page down the right — not even a centred column, which would at least have
+ * read as a decision. A dashboard is a workspace; the cards inside it already
+ * have their own maximum useful widths.
+ */
+.pd-page {
+  width: 100%;
+  padding: 1.75rem clamp(1rem, 2vw, 2rem) 3.5rem;
+}
+
+.pd-head h1 {
+  font-size: clamp(1.9rem, 1.2rem + 2vw, 2.5rem);
+  letter-spacing: -0.03em;
+}
+
+/* Both header buttons on one height, and the solid one on the frame's own ink.
+   `.pd-app` is the one surface in this repo where a press is near-black rather
+   than the accent — `src/site/CLAUDE.md` sets out why — and the two buttons
+   above every screen are the clearest place that shows. */
+.pd-head-acts .btn {
+  height: var(--pd-btn-h);
+  padding: 0 1.15rem;
+  border-radius: 11px;
+  font-size: 0.9rem;
+}
+/* ══ the overview's visits/redemptions plot ═══════════════════════════════
+ *
+ * `dashboardChart.tsx`. Everything with letters in it is drawn *inside* the
+ * SVG here, which is the opposite of what `.pd-chart` above does and is the
+ * reason this is a second family rather than an extension of that one: that
+ * chart stretches its plot (`preserveAspectRatio: none`) and therefore cannot
+ * hold text, so its axis lives in a DOM column beside the box and lines up
+ * with the gridlines only by coincidence. This one measures its box and draws
+ * one SVG unit per CSS pixel, so a tick and its gridline share a y.
+ *
+ * Two consequences for anything edited below:
+ *
+ *   - SVG text takes `fill`, not `color`, and inherits neither. Every text
+ *     node here names its own.
+ *   - `font-size` on `.pa-chart-tick` is what `TICK_CHAR_W` in the component
+ *     estimates the value axis's width from. Changing one without the other
+ *     either floats the plot or clips a digit.
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+.pa-chart {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+/* ── the key ── */
+
+.pa-chart-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text-mut);
+}
+
+.pa-chart-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.pa-chart-key i {
+  width: 0.85rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* The key has to wear the mark it keys, so the second swatch is dashed exactly
+   the way the second line is. A key that does not match its own series is
+   worse than no key. */
+.pa-chart-key i[data-series='redeemed'] {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--text-mut) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+/* ── the plot ── */
+
+/*
+ * A chart states its own height: the SVG inside is 100% of it, and a
+ * percentage against an `auto` parent resolves to nothing.
+ *
+ * The two-point clamp rather than one with a floor — a clamp whose minimum
+ * wins below ~740px is not fluid, it is two fixed sizes — so a phone gets a
+ * plot proportioned to its screen instead of the tablet's.
+ */
+.pa-chart-plot {
+  position: relative;
+  height: clamp(16rem, 8rem + 26vw, 21.25rem);
+}
+
+.pa-chart-svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  /* The pointer reads this plot by sweeping across it, and the page still has
+     to scroll under that finger. Vertical pans go to the page, horizontal ones
+     to the chart. */
+  touch-action: pan-y;
+  outline: none;
+}
+
+/* The keyboard drives the same cursor the pointer does, so focus is marked on
+   the box rather than on a control inside it. */
+.pa-chart-svg:focus-visible {
+  outline: 2px solid var(--accent-ink);
+  outline-offset: 2px;
+  border-radius: 0.4rem;
+}
+
+.pa-chart-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+/* The baseline is a floor rather than a reading, and the series sit on it. */
+.pa-chart-grid[data-base='true'] {
+  stroke: rgba(var(--accent-rgb), 0.28);
+}
+
+.pa-chart-tick,
+.pa-chart-date {
+  fill: var(--text-fnt);
+  font-size: 11px;
+  font-weight: 600;
+  /* Tabular, because the axis is a column of numbers that has to read as a
+     column — and because the component's width estimate is per digit rather
+     than per glyph. */
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-chart-area {
+  fill: rgba(var(--accent-rgb), 0.12);
+  stroke: none;
+}
+
+/* A path with no `fill` declared paints black inside the curve it closes, and
+   `fill: none` is not the initial value. */
+.pa-chart-line {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+/*
+ * Both series share one scale on purpose — redemptions are a fraction of
+ * visits, and that ratio is the whole reason the two are in one box.
+ *
+ * The second line is dashed rather than differently coloured in *both* themes.
+ * On black there is no second colour to spend, and on paper `--accent-ink` is
+ * the same hue two stops down, which at 1.4px is a lighter version of the
+ * first line rather than a different one. The dash is the difference that
+ * survives both grounds and greyscale printing.
+ */
+.pa-chart-line[data-series='redeemed'] {
+  stroke: var(--text-mut);
+  stroke-width: 1.4;
+  stroke-dasharray: 4 3;
+}
+
+/* ── the cursor ── */
+
+.pa-chart-cursor {
+  /* It is drawn by the handler on the element under it; catching the pointer
+     would make the chart stop reading wherever it happened to be. */
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.pa-chart-cursor[data-on='true'] {
+  opacity: 1;
+}
+
+.pa-chart-cursor-line {
+  stroke: var(--text-fnt);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+.pa-chart-dot {
+  fill: var(--accent);
+  stroke: var(--bg-2);
+  stroke-width: 2;
+}
+
+.pa-chart-dot[data-series='redeemed'] {
+  fill: var(--text-mut);
+}
+
+/* The hovered figure written against the axis, over the tick it covers. A
+   filled pill rather than a tinted one: it has to hide the tick underneath,
+   and a translucent mark would print two numbers on top of each other. */
+.pa-chart-pill {
+  fill: var(--accent);
+}
+
+.pa-chart-pill-text {
+  fill: var(--on-accent);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the tooltip ── */
+
+/*
+ * Pinned to the top of the plot rather than following the pointer's y: at the
+ * top it can never cover the point it is describing, and it never has to
+ * decide which side of the line to sit on.
+ *
+ * `left` is written by the component, which measures the box and clamps it
+ * inside the plot — the width is five languages' worth of label and cannot be
+ * a constant. `max-width` is what guarantees the clamp has somewhere to put
+ * it: a tooltip wider than its own plot has no position that is inside.
+ */
+.pa-chart-tip {
+  position: absolute;
+  top: 0.4rem;
+  left: 0;
+  transform: translateX(-50%);
+  max-width: calc(100% - 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  background: var(--bg-2);
+  box-shadow: 0 10px 24px -12px var(--shadow);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+
+.pa-chart-tip[data-on='true'] {
+  opacity: 1;
+}
+
+.pa-chart-tip-day {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pa-chart-tip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-mut);
+}
+
+.pa-chart-tip-row i {
+  width: 0.7rem;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.pa-chart-tip-row i[data-series='redeemed'] {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--text-mut) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+.pa-chart-tip-row b {
+  /* The figure is what the reader came for, so it is pushed to its own edge
+     and both rows' numbers line up as a column. */
+  margin-left: auto;
+  padding-left: 0.6rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.pa-chart-empty {
+  margin: 0;
+  padding: 2rem 0;
+  text-align: center;
+  color: var(--text-mut);
+  font-size: 0.8rem;
+}
+
+/*
+ * The only motion in this component is the cursor and its tooltip appearing,
+ * and both are gone here rather than slowed: the series themselves never
+ * animate — a line that draws itself in cannot be read until it has finished —
+ * so there is nothing else for this block to turn off.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .pa-chart-cursor,
+  .pa-chart-tip {
+    transition: none;
+  }
+}
+
+
+/* ══════════════════════════════════ the overview, second pass ══
+ *
+ * Below every rule it overrides, which is how it wins at equal specificity.
+ * Everything here is a *weight and size* pass on markup that mostly already
+ * existed — the panels were all captioned with `.console-label`, the sheet's
+ * small-caps label, which is right over a figure and far too quiet for the line
+ * that opens a card.
+ */
+
+/* One title style for the panels, in the frame's own ink. `h2` rather than a
+   span because these are headings and always were; `.console-label` was doing
+   the job of one without being one. */
+.pd-app .pd-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--text);
+  text-transform: none;
+}
+
+/* The two panels the brief called out as too small and too heavy. Bigger, and
+   the weight comes off — at this size the type carries the emphasis on its own
+   and 800 reads as shouting. */
+.pd-app .pd-title-lg {
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+/* ── the hero ────────────────────────────────────────────────────────────── */
+
+/* The opening line, at the size of a title rather than of a caption. */
+.pd-kicker {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* The one figure in the sentence that is a finding rather than a total. */
+.pd-counted-n {
+  color: var(--accent-ink);
+  font-weight: 800;
+}
+
+/*
+ * Label and note on the left, figure hard right on the same row.
+ *
+ * The old rule stacked all three children, so the number sat at a different x
+ * in every block. A thin rule between rows because they are three facts rather
+ * than one list, and the eye needs somewhere to stop.
+ */
+.pd-support > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1.25rem;
+  padding: 0.95rem 0;
+}
+
+.pd-support > div + div {
+  border-top: 1px solid var(--border);
+}
+
+.pd-support-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.pd-support-name b {
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pd-support-name i {
+  font-style: normal;
+  font-size: 0.76rem;
+  color: var(--text-fnt);
+}
+
+.pd-support > div > b,
+.pd-support > div > .pd-withheld {
+  flex: 0 0 auto;
+  font-family: var(--font-display);
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── what it cost ────────────────────────────────────────────────────────── */
+
+/* The ledger on the left, what came back on the right. They were stacked, which
+   put the total and the figure it is weighed against a scroll apart — and the
+   sentence under them compares the two explicitly. */
+.pd-cost-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2.5rem;
+  align-items: start;
+}
+
+.pd-return {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.pd-return > span {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.pd-return > b {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 1.4rem + 1.5vw, 2.75rem);
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the four counts ─────────────────────────────────────────────────────── */
+
+/* Bigger and lighter. They were 0.72rem at 700 — a caption weight on a label
+   that names the figure under it, which is the one thing on the tile a reader
+   has to identify before they can use the number. */
+.pd-tile > span {
+  font-size: 0.92rem;
+  font-weight: 500;
+  color: var(--text-mut);
+}
+
+/* ── the proof ───────────────────────────────────────────────────────────── */
+
+/* The screen's one confident claim: set apart by size and colour rather than by
+   weight, so it does not read as a fourth card title. */
+.pd-proof-title {
+  font-size: 1.35rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--accent-ink);
+}
+
+/* ── the chart's head ────────────────────────────────────────────────────── */
+
+/* The legend sits on the right, its baseline on the note's line rather than on
+   the title's — which is what "in the same line as Every QR scan at the…"
+   asks for. */
+.pd-chart-head {
+  align-items: flex-end;
+}
+
+.pd-chart-key {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 1.1rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+.pd-chart-key span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+/* The swatches were being drawn with no colour at all, so the legend named two
+   series and distinguished neither. These are the two strokes the plot uses. */
+.pd-chart-key i {
+  width: 18px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.pd-chart-key span[data-series='redeemed'] i {
+  height: 0;
+  border-top: 3px dashed var(--text-mut);
+  background: none;
+}
+
+/* ── money you are holding ───────────────────────────────────────────────── */
+
+.pd-holding {
+  display: flex;
+  /* `flex-direction: row` stated rather than assumed: `.pd-panel` — which this
+     element also is — sets `column`, and a `display: flex` that does not also
+     name the direction inherits whatever the other class asked for. That is why
+     the button sat under the sentence instead of beside it. */
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+/*
+ * "Remind them" → "Reminded".
+ *
+ * Both labels are in the DOM at once, stacked in the same grid cell, so the
+ * button is as wide as the wider of the two in whichever language is loaded and
+ * nothing reflows under the cursor mid-press. The transition is therefore a
+ * cross-fade rather than a resize.
+ */
+.pd-remind {
+  flex: 0 0 auto;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  min-height: var(--pd-btn-h);
+  padding: 0 1.15rem;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-weight: 700;
+  transition:
+    background 260ms var(--ease),
+    color 260ms var(--ease),
+    border-color 260ms var(--ease),
+    transform 120ms var(--ease);
+}
+
+.pd-remind:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.pd-remind:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+}
+
+/* Both faces occupy the one cell. */
+.pd-remind-face {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  white-space: nowrap;
+  transition:
+    opacity 220ms var(--ease),
+    transform 260ms var(--ease);
+}
+
+/* Out: up and away. In: waiting below, then settling. The two move in the same
+   direction so it reads as one label being replaced rather than two crossing. */
+.pd-remind-face[data-done='true'] {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.pd-remind[data-sent='true'] {
+  background: rgb(var(--panel-rgb));
+  border-color: var(--border-2);
+  color: var(--accent-ink);
+  /* Disabled, but not faded: it is a statement of fact now, not a dead control,
+     and `.btn:disabled` in this sheet drops the opacity. */
+  opacity: 1;
+  cursor: default;
+}
+
+.pd-remind[data-sent='true'] .pd-remind-face {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.pd-remind[data-sent='true'] .pd-remind-face[data-done='true'] {
+  opacity: 1;
+  transform: none;
+}
+
+/* The tick draws itself in. A stroke can be *drawn*; a filled shape can only
+   appear, which is what an icon does — the same argument the battery's
+   lightning makes on the Play screen. */
+.pd-remind[data-sent='true'] .pd-remind-face[data-done='true'] svg {
+  stroke-dasharray: 24;
+  stroke-dashoffset: 24;
+  animation: pd-tick 420ms var(--ease) 140ms forwards;
+}
+
+@keyframes pd-tick {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pd-remind,
+  .pd-remind-face {
+    transition: none;
+  }
+
+  .pd-remind[data-sent='true'] .pd-remind-face[data-done='true'] svg {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
+/* ── what we noticed ─────────────────────────────────────────────────────── */
+
+/* No bullet, and the heading at panel size. A green dot before a heading is a
+   status light, and nothing in this panel has a status. */
+.pd-notices > .pd-notice-head > i {
+  display: none;
+}
+
+.pd-notice-title {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--text);
+}
+
+.pd-notice {
+  align-items: flex-start;
+  gap: 1.75rem;
+  padding: 1.15rem 0 1.15rem 1.15rem;
+  border-left: 3px solid var(--accent);
+}
+
+.pd-notice + .pd-notice {
+  margin-top: 0.9rem;
+}
+
+/* The finding itself: bigger than the body, and not bold — it is a sentence to
+   read, not a heading to scan past. */
+.pd-notice-lead {
+  margin-bottom: 0.4rem;
+  font-size: 1.15rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.pd-notice-acts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.6rem;
+}
+
+.pd-notice-acts .btn {
+  height: var(--pd-btn-h);
+  padding: 0 1.1rem;
+  border-radius: 11px;
+  white-space: nowrap;
+}
+
+/* ── running right now ───────────────────────────────────────────────────── */
+
+.pd-row-acts {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.45rem;
+}
+
+.pd-row-acts .btn {
+  height: 2.25rem;
+  padding: 0 0.9rem;
+  border-radius: 9px;
+  font-size: 0.82rem;
+}
+
+/*
+ * The one red on this dashboard.
+ *
+ * The palette has a single accent and the standing consequence — written into
+ * `dashboard.acts.endSure` — is that a destructive control asks in words rather
+ * than in colour. That holds when it is the *only* control on the row. Here it
+ * is one of three, and the thing a hand needs to know before it moves is which
+ * of the three not to hit. The hue is scoped to this selector, and the word
+ * "Delete" carries the same information for anyone who cannot separate the two.
+ */
+.pd-danger {
+  --danger: #d9483b;
+  border-color: rgba(217, 72, 59, 0.35);
+  color: var(--danger);
+}
+
+.pd-danger:hover:not(:disabled) {
+  border-color: var(--danger);
+  background: rgba(217, 72, 59, 0.09);
+  color: var(--danger);
+}
+
+/* ── who saw you ─────────────────────────────────────────────────────────── */
+
+/* The line that claims the figures under it are live, at body weight — the
+   sheet's faintest text is the wrong register for a claim. */
+.pd-reach-live {
+  margin-bottom: 1.1rem;
+  font-size: 0.92rem;
+  color: var(--text);
+}
+
+/* Four columns now: claims joined the three. */
+.pd-reach-figures {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pd-reach-figures b {
+  font-size: 2.15rem;
+}
+
+.pd-reach-figures span {
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+/* Impressions and clicks per row, so a surface seen a lot and opened rarely is
+   not the same row as one seen rarely and opened often. */
+.pd-reach-rows > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 6rem 6rem;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+.pd-reach-rows > div > b {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-reach-rowhead > b {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+/* The surfaces are a breakdown *of* the two rows above them, so they are
+   indented and quieter — a sub-list rather than four more peers. */
+.pd-reach-rows > div[data-sub='true'] > span {
+  padding-left: 1rem;
+  color: var(--text-fnt);
+}
+
+.pd-reach-rows > div[data-sub='true'] > b {
+  font-weight: 600;
+  color: var(--text-mut);
+}
+
+/* ── narrow ──────────────────────────────────────────────────────────────── */
+
+@media (max-width: 64rem) {
+  .pd-cost-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.75rem;
+  }
+
+  .pd-reach-figures {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pd-chart-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pd-holding,
+  .pd-notice {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pd-notice-acts,
+  .pd-row-acts {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 40rem) {
+  .pd-reach-figures {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .pd-reach-rows > div {
+    grid-template-columns: minmax(0, 1fr) 4rem 4rem;
+    gap: 0.5rem;
+  }
+
+  .pd-run-row {
+    flex-wrap: wrap;
+  }
+}
+
+
+/* ═══════════════════════════════════ the overview: spacing pass ══
+ *
+ * Measured rather than eyeballed — every number below is a discrepancy read off
+ * `getBoundingClientRect()` at 1920px, not a taste change.
+ */
+
+.pd-app {
+  /* The two gaps this screen uses, named so they are a decision rather than
+     three numbers that happened. Tighter *within* a group than *between*
+     groups is the hierarchy; 22 and 14 were already the values, they just had
+     nothing saying they were related. */
+  --pd-gap: 1.375rem;
+  --pd-gap-sm: 0.875rem;
+}
+
+/*
+ * ── one content edge for all nine panels ────────────────────────────────
+ *
+ * Seven panels put their title and their body at x=297: the panel's own 24px
+ * padding, and nothing else. Two — "What we noticed" and "Running right now" —
+ * put theirs at 319, because their heads and rows carry a *second* 22.4px of
+ * horizontal padding on top of the panel's. That is left over from when those
+ * two had no padding of their own and the rows supplied it.
+ *
+ * The result is a 22px step in the left edge of the page, twice, in the middle
+ * of a column of otherwise flush cards. The inner padding goes; the panel's
+ * stays.
+ */
+.pd-notices > .pd-notice-head,
+.pd-running > .pd-panel-head {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.pd-run-row {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+/* The accent bar now starts on the panel's content edge, in line with the
+   heading above it, and the row's text hangs 21px inside it. That gutter is the
+   bar's and is meant to be there — what was wrong was the heading being indented
+   to *almost* meet the text, and missing it by a pixel. */
+.pd-notice {
+  padding-left: 1.15rem;
+  padding-right: 0;
+}
+
+/*
+ * The pill is centred in whatever width its column ends up.
+ *
+ * The column is shared across the six rows by the `subgrid` block at the foot of
+ * this file — read that note for why a `min-width` floor cannot do this job.
+ * Centring is what stops the shorter of the two labels sitting off-centre once
+ * the column has been sized by the longer one.
+ */
+.pd-kind {
+  text-align: center;
+}
+
+/*
+ * ── the hero's padding is symmetric ─────────────────────────────────────
+ *
+ * It was `32px 34px` with an 18px radius, against `24px` and 16px on every
+ * other panel. The 2px between the vertical and horizontal was a `clamp()`
+ * artefact rather than a decision — nothing wants 34.
+ *
+ * It keeps the larger padding, which *is* a decision: it is the lead card, it
+ * is the only one on a dark ground, and it carries an 80px figure. The radius
+ * joins the rest, because a 2px difference between adjacent cards is not a
+ * distinction anybody reads — it just stops the column looking cut from one
+ * sheet.
+ */
+.pd-hero {
+  padding: 2rem;
+  border-radius: 16px;
+  gap: 2rem;
+}
+
+/* The stack and the tile row, off the two names above. */
+.pd-stack {
+  gap: var(--pd-gap);
+}
+
+.pd-tiles {
+  gap: var(--pd-gap-sm);
+}
+
+@media (max-width: 64rem) {
+  /* The hero loses the extra step when it is no longer a two-column slab —
+     at this width it is the same shape as everything else and should have the
+     same air. */
+  .pd-hero {
+    padding: 1.5rem;
+    gap: 1.25rem;
+  }
+}
+
+
+/*
+ * The run rows share one set of columns.
+ *
+ * A `min-width` floor on the pill was the first attempt and it cannot work: the
+ * two labels are "Hot deal" and "Campaign" in English but "Горячее предложение"
+ * and "Программа" in Russian, so any floor fitted to one language is either
+ * below both (no effect, which is what 9ch did) or miles above one of them.
+ *
+ * `subgrid` is the fix that is actually about the problem — the six rows are one
+ * table and should share column widths, which is a thing only the container can
+ * know. Behind `@supports` because the fallback matters: without it the rows
+ * stay the flex rows they are today, which merely jog by 7px. Failing back to
+ * "slightly misaligned" is fine; failing back to "six rows dumped into four
+ * columns" would not be.
+ *
+ * The row keeps its vertical padding and loses its horizontal padding entirely —
+ * padding on a subgrid item offsets the tracks it inherits, so any left padding
+ * here would put this row's columns out of step with its neighbours', which is
+ * the bug being fixed.
+ */
+@supports (grid-template-columns: subgrid) {
+  .pd-running {
+    display: grid;
+    grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+    column-gap: 1.1rem;
+    row-gap: 0;
+    align-items: center;
+  }
+
+  /* The head and the empty-state sentence are not rows and span the lot. */
+  .pd-running > .pd-panel-head,
+  .pd-running > .pd-fine {
+    grid-column: 1 / -1;
+  }
+
+  .pd-run-row {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: center;
+    column-gap: 1.1rem;
+  }
+}
+
+
+/*
+ * ── the hero's three stats sit inside their own box ──────────────────────
+ *
+ * `.pd-support` carries a background and a 10px radius — it is a panel — and it
+ * had `padding: 0`. So the label started exactly on its left edge and the figure
+ * ended exactly on its right edge, both touching the rounded corner they sit
+ * against. Measured: the panel spans 1261.9→1840 and the text ran 1261.9→1840.
+ *
+ * The padding goes on the container rather than on the rows, so the hairlines
+ * between the rows inset with it. A full-bleed rule under padded text reads as
+ * the row having been cut off rather than as a divider.
+ */
+.pd-support {
+  padding: 0.4rem 1.15rem;
+}
+
+/*
+ * ── the bar's two menus are read in ink, not in the accent ───────────────
+ *
+ * Both listboxes drew every option in `--accent-ink` — the selected one solid
+ * and the rest at 72% of it — so a menu of four dates and a menu of five
+ * languages were entirely green. The accent is for *marks*; a list of things to
+ * read is text, and text on this frame is near-black.
+ *
+ * Selection then needs a signal that is not colour, so it takes the tint as a
+ * **background** and the weight, which is the same pair `.rail-link[data-on]`
+ * uses one column over. Scoped to `.pd-bar` so the marketing header's own
+ * language menu — which sits on a different ground and is not part of this
+ * change — is untouched.
+ */
+.pd-bar .lang-option {
+  color: var(--text);
+}
+
+.pd-bar .lang-option:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.pd-bar .lang-option[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--text);
+  font-weight: 700;
+}
+
+
+/*
+ * ── the hero's three stats carry no box and no rules ─────────────────────
+ *
+ * They sat in a tinted panel with a 10px radius, and I had added a hairline
+ * between each row. Both are gone.
+ *
+ * The box was the reason the text touched an edge at all: with `padding: 0` on
+ * a filled panel, the label started on the left corner and the figure ended on
+ * the right one. Padding it fixed the touching and made the panel *more*
+ * visible, which was the wrong half of the problem to solve — the three stats
+ * are already inside the hero card, and a second card inside the first one is a
+ * border nobody asked for.
+ *
+ * With no fill there is no edge to touch: the labels start on the hero's own
+ * content column and the figures end on it, 32px inside the card either side.
+ * The rows are told apart by the space between them, which is what the spacing
+ * is for once the lines are not doing it.
+ */
+.pd-support {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
+
+.pd-support > div {
+  padding: 1.05rem 0;
+}
+
+.pd-support > div + div {
+  border-top: 0;
+}
+
+/*
+ * And the fill is on the *rows*, which is where the box was actually coming
+ * from: `.pd-support > div` at line 8421 paints each row `--bg-2`, so three
+ * stacked rows with no gap read as one panel with an edge. Clearing the
+ * container's background alone left it exactly as it was.
+ */
+.pd-support > div {
+  background: none;
+  padding: 1.05rem 0;
+}
+
+
+/*
+ * ── the expanded deal: two funnels on one line ───────────────────────────
+ *
+ * `.pd-detail` was a wrapping flex row holding one funnel section and the
+ * targeting card. It now holds *two* funnel sections — what happened to the
+ * deal, and what the notification did — and they have to sit side by side,
+ * because the second is the part of the first that Paylez caused and the
+ * comparison is the point.
+ *
+ * Flex rather than an `auto-fit` grid, and the difference is not academic:
+ * `repeat(auto-fit, minmax(24rem, 1fr))` builds as many tracks as *fit*, which
+ * at 1519px is three — so the two sections took the first two and left a third
+ * of the row empty. Flex items with a `flex-basis` share whatever line they are
+ * on between however many of them there are, which is the actual rule here: two
+ * sections halve the row, one section takes all of it.
+ *
+ * The 24rem basis is what keeps three cards of a figure, a bar and a line of
+ * grey text legible in a column; under it the second section wraps to its own
+ * row rather than squeezing.
+ */
+.pd-detail {
+  display: flex;
+  /* Stated, not inherited. An earlier `.pd-detail` rule sets `column` and the
+     one after it re-declares `display: flex` without touching the direction —
+     so anything later that only says `display: flex` silently gets a column.
+     That is the second time this exact shape has caught a panel on this
+     screen; `.pd-holding` was the first. */
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px;
+}
+
+.pd-detail-main {
+  flex: 1 1 24rem;
+  min-width: 0;
+}
+
+/* The targeting card takes the full width under them rather than competing for
+   a column: it is not a funnel and should not read as a third one. */
+.pd-detail-who {
+  flex: 1 1 100%;
+  align-self: stretch;
+}
+
+/*
+ * The two section headings.
+ *
+ * They were `.console-label` — the sheet's 0.6rem small-caps caption, which is
+ * right over a single figure and too quiet to head a block of three. Bigger,
+ * and *not* bold: at this size the weight would make them compete with the
+ * figures underneath, which are the thing being read.
+ */
+.pd-detail-head {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+/*
+ * The three cards are equal thirds, and their notes wrap.
+ *
+ * Two faults compounding, and the second was invisible until the first section
+ * gained a neighbour. The grey notes carried `white-space: nowrap`, so each
+ * card's minimum width was its longest sentence — and `repeat(3, 1fr)` is
+ * `minmax(auto, 1fr)`, whose `auto` floor is exactly that minimum. So the
+ * tracks could not shrink: measured at 194/230/296px in one section and
+ * 284/237/272 in the other, with the last card running 73px past its own
+ * container and being clipped by the table.
+ *
+ * `minmax(0, 1fr)` lets a track go narrower than its content, and letting the
+ * note wrap is what it should do with the space instead. A one-line description
+ * that decides a column's width is a caption setting the layout.
+ */
+.pd-detail-steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pd-detail-steps .pd-fine {
+  white-space: normal;
+}
+/* ═══════════════════════════════════════════════════ partner · vouchers ══
+   `src/site/dashboardVouchers.tsx` — the dashboard's Vouchers screen.
+
+   Namespaced `vch-` and not `pv-`. `pv-` is the L-Earn **game previews** and
+   the marketing voucher card — sixty-odd rules, `.pv-card`, `.pv-board`,
+   `.pv-col`, `.pv-img`, `.pv-back`, `.pv-bird` — and reusing it here would be
+   the fourth class-name collision this dashboard has shipped. Grep before you
+   name a class; this sheet has no scoping.
+
+   Two things this block does not do. It names **no colour**: every value is a
+   token or an alpha of `--accent-rgb`, so the whole screen inverts with the
+   theme and again inside the ink slab without a rule per child. And it sets no
+   size the content can already state — the slab's inversion comes from
+   `[data-ink='on']` in the third palette block, not from a white written here.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ── the dark slab ──────────────────────────────────────────────────────────
+   Dark in both themes, which is what `data-ink='on'` means. Everything below
+   reads the tokens that block re-points, so there is no `#fff` in this file. */
+
+.vch-slab {
+  position: relative;
+  gap: 1.1rem;
+  padding: clamp(1.1rem, 2.6vw, 1.7rem);
+}
+
+.vch-slab-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.6rem;
+  flex-wrap: wrap;
+}
+
+.vch-slab-copy {
+  flex: 1 1 22rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.vch-slab-copy h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.vch-slab-copy p {
+  /* A two-line measure, which is what the reference sets it at. Wider and the
+     paragraph runs under the total and reads as one column, not two. */
+  max-width: 34rem;
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+.vch-total {
+  flex: 0 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.45rem;
+}
+
+/* The pool is the headline figure and stays that size once it is typeable. A
+   definite width rather than a percentage: the well is `inline-flex` inside a
+   content-sized column, so a percentage on the input would resolve against a
+   box that same input is sizing. */
+.vch-total .pd-well {
+  max-width: none;
+  width: 13rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.vch-total .pd-well input {
+  font-family: var(--font-display);
+  font-size: clamp(1.4rem, 3.2vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  text-align: right;
+}
+
+.vch-split {
+  font-size: 0.85rem;
+  line-height: 1.55;
+  color: var(--text-mut);
+}
+
+/* ── the pool bar ───────────────────────────────────────────────────────────
+   One bar in three parts, because the three are one quantity split up. The
+   third part is the track showing through: `available` is what the other two
+   leave, so drawing it as its own element would let rounding put a seam in a
+   bar whose whole claim is that it exhausts. */
+
+.vch-bar {
+  display: flex;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.vch-bar > i {
+  display: block;
+  height: 100%;
+  min-width: 0;
+}
+
+/* Gone, and the only part with a gradient — the money that has actually left
+   the till is the one slice with no ambiguity about it. */
+.vch-bar > i[data-part='spent'] {
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.62), var(--accent));
+}
+
+/* Committed but not gone, so it is the accent *hatched* rather than filled: the
+   one part of the bar that can still come back. Same drawing `.pd-stacked`
+   uses for the same state, so the two screens agree about what hatching means. */
+.vch-bar > i[data-part='held'] {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.55) 0 3px,
+    rgba(var(--accent-rgb), 0.16) 3px 6px
+  );
+}
+
+/* ── the three columns under it ── */
+
+.vch-cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.1rem 1.6rem;
+}
+
+.vch-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.vch-col-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.vch-col-head em {
+  font-style: normal;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.vch-col > b {
+  font-family: var(--font-display);
+  font-size: clamp(1.15rem, 2.4vw, 1.45rem);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: var(--text);
+}
+
+.vch-col > p {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-fnt);
+}
+
+/* The swatch is the bar's own fill at 10px, so a reader matches the colour
+   rather than the label. Three alphas of one accent for the mix legend, and the
+   pool's own three parts for the columns. */
+.vch-swatch {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.vch-swatch[data-part='spent'] {
+  background: var(--accent);
+}
+
+.vch-swatch[data-part='held'] {
+  background: repeating-linear-gradient(
+    135deg,
+    rgba(var(--accent-rgb), 0.55) 0 3px,
+    rgba(var(--accent-rgb), 0.16) 3px 6px
+  );
+}
+
+.vch-swatch[data-part='free'] {
+  background: var(--surface-2);
+  box-shadow: 0 0 0 1px var(--border) inset;
+}
+
+.vch-swatch[data-step='0'] {
+  background: rgba(var(--accent-rgb), 0.3);
+}
+
+.vch-swatch[data-step='1'] {
+  background: rgba(var(--accent-rgb), 0.62);
+}
+
+.vch-swatch[data-step='2'] {
+  background: var(--accent);
+}
+
+/* ── the forecast ───────────────────────────────────────────────────────────
+   A step up from the slab rather than a second panel on it: `--surface` inside
+   the ink scope is the ground lifted a few percent, which is the inset the
+   reference draws. The mint is the accent the scope re-points, so this rule
+   names no colour of its own. */
+
+.vch-callout {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.45;
+  color: var(--accent-ink);
+}
+
+.vch-callout svg {
+  flex: 0 0 auto;
+}
+
+/* ── the footer ── */
+
+.vch-foot {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem 1.6rem;
+  margin-top: 0.3rem;
+  padding-top: 1.3rem;
+  border-top: 1px solid var(--border);
+}
+
+.vch-foot-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.vch-foot-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.vch-foot-figure {
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.vch-foot-col > p {
+  font-size: 0.78rem;
+  line-height: 1.5;
+  color: var(--text-fnt);
+}
+
+/* ── a figure the server does not report ────────────────────────────────────
+   Faint and un-bolded, which is the one thing it must not look like: a real
+   figure. `cursor: help` for the `title` it carries — the same treatment
+   `.pd-withheld` gets, for a different reason (nobody counted this, rather than
+   too few people to report it). */
+
+.vch-missing {
+  align-self: flex-start;
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  font-weight: 400;
+  color: var(--text-fnt);
+  cursor: help;
+}
+
+/* A write in flight. A hairline across the top of the panel being saved and
+   nothing else — a spinner over a panel of figures hides the figures, and the
+   thing the owner wants to see is the number they just typed. */
+.vch-saving {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: vch-sweep 900ms linear infinite;
+  pointer-events: none;
+}
+
+@keyframes vch-sweep {
+  from {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.35;
+  }
+}
+
+/* ── the low-budget alert ───────────────────────────────────────────────────
+   It cannot go amber — the palette has one accent — so it is the accent at
+   panel alpha with a solid left edge. Louder by contrast rather than by hue,
+   which is the answer the forms block gives for a field in error. */
+
+.vch-alert {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.32);
+  border-left-width: 3px;
+  background: rgba(var(--accent-rgb), 0.08);
+  color: var(--accent-ink);
+}
+
+.vch-alert > div {
+  flex: 1 1 18rem;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.vch-alert b {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.vch-alert p {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+/* ── who reaches each tier ── */
+
+.vch-ladder {
+  gap: 0.9rem;
+}
+
+/* A table is the one thing on this screen that cannot reflow, so it scrolls in
+   its own port rather than widening the page — the body must never scroll
+   horizontally (root `CLAUDE.md`). */
+.vch-scroll {
+  overflow-x: auto;
+}
+
+.vch-table {
+  width: 100%;
+  min-width: 40rem;
+  border-collapse: collapse;
+}
+
+.vch-table th {
+  padding: 0 0.6rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: left;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.vch-table td {
+  padding: 0.85rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+  vertical-align: middle;
+  color: var(--text-mut);
+}
+
+.vch-table th:first-child,
+.vch-table td:first-child {
+  padding-left: 0;
+}
+
+.vch-table th:last-child,
+.vch-table td:last-child {
+  padding-right: 0;
+}
+
+.vch-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.vch-table td b {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Cost so far is a figure the owner reads across from the mix panel below, so
+   it is quiet rather than bold — it is the column being *explained* there. */
+.vch-cost {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-fnt);
+}
+
+.vch-tier {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.vch-tier-note {
+  flex: 1 1 12rem;
+  min-width: 0;
+  font-size: 0.78rem;
+  line-height: 1.45;
+  color: var(--text-fnt);
+}
+
+/* Three grades of one accent, never three hues. The deepest rung is the fill
+   itself, so its label takes `--on-accent` the way every other solid mark on
+   this site does; the two lighter ones are the accent at alpha under `--text`,
+   which keeps its contrast in both themes because `--text` flips with them. */
+.vch-pill {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.7rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.vch-pill[data-step='0'] {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+.vch-pill[data-step='1'] {
+  background: rgba(var(--accent-rgb), 0.34);
+}
+
+.vch-pill[data-step='2'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.vch-points .pd-well {
+  max-width: 9.5rem;
+}
+
+/* ── where the money went, and what came back ── */
+
+.vch-pair {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr;
+  gap: 1.1rem;
+  align-items: start;
+}
+
+.vch-side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+}
+
+.vch-mix {
+  gap: 0.9rem;
+}
+
+.vch-mix-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+/* `.console-label` carries its own bottom margin for the panels it was written
+   for; here it is one half of a flex row and the margin puts the two baselines
+   out of line. */
+.vch-mix-head .console-label {
+  margin-bottom: 0;
+}
+
+.vch-mix-head b {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.vch-mixbar {
+  display: flex;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.vch-mixbar > i {
+  display: block;
+  height: 100%;
+  min-width: 0;
+}
+
+.vch-mixbar > i[data-step='0'] {
+  background: rgba(var(--accent-rgb), 0.3);
+}
+
+.vch-mixbar > i[data-step='1'] {
+  background: rgba(var(--accent-rgb), 0.62);
+}
+
+.vch-mixbar > i[data-step='2'] {
+  background: var(--accent);
+}
+
+.vch-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Four columns and only two of them are elastic: the swatch is fixed, the
+   label takes what it needs, and the two figures are right-aligned against each
+   other so a reader can run down the percentages without their eye moving. */
+.vch-legend li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto auto;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.vch-legend em {
+  font-style: normal;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.vch-legend span {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-fnt);
+}
+
+.vch-legend b {
+  min-width: 3rem;
+  text-align: right;
+  font-size: 0.88rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.vch-returned {
+  gap: 0.45rem;
+}
+
+.vch-returned .console-label {
+  margin-bottom: 0;
+}
+
+.vch-returned .vch-missing {
+  font-size: clamp(1.5rem, 3.4vw, 2rem);
+}
+
+/* ── the suggestion ─────────────────────────────────────────────────────────
+   Not a `.pd-glass` panel: it is a note *about* the panel above it, and giving
+   it the same sheet would make it a third report rather than an aside. The
+   accent at panel alpha is what the reference spends here, and it is the same
+   wash `.vch-alert` uses one screen height up — they are the same kind of
+   thing, one urgent and one not. */
+
+.vch-suggest {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--r);
+  border: 1px solid rgba(var(--accent-rgb), 0.26);
+  background: rgba(var(--accent-rgb), 0.09);
+}
+
+.vch-suggest-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+.vch-suggest p {
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ── reduced motion ─────────────────────────────────────────────────────────
+   The saving hairline is the only animation here, and it is a status rather
+   than a decoration — so it is frozen at full strength rather than removed,
+   which keeps the mark that says a write is in flight. */
+
+@media (prefers-reduced-motion: reduce) {
+  .vch-saving {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* ── narrow ─────────────────────────────────────────────────────────────────
+   Measured rather than guessed: 820px is the step the rest of this sheet takes
+   a page to one column at, and both grids below are the same three-then-one
+   shape. The middle step exists because three money columns at 600px are
+   three columns of two words each. */
+
+@media (max-width: 980px) {
+  .vch-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 820px) {
+  .vch-slab-top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .vch-total {
+    align-items: stretch;
+  }
+
+  .vch-total .pd-well {
+    width: 100%;
+  }
+
+  .vch-total .pd-well input {
+    text-align: left;
+  }
+
+  .vch-cols,
+  .vch-foot {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .vch-cols,
+  .vch-foot {
+    grid-template-columns: 1fr;
+  }
+
+  /* The tier cell stacks: a pill and a sentence side by side at 360px leaves
+     the sentence four characters wide. */
+  .vch-tier {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.4rem;
+  }
+}
+/* ═══════════════════════════════════════════ the customers screen ══
+ *
+ * `dashboardCustomers.tsx`, in two panels: the ink slab that says what a new
+ * customer cost, and the roster of the people who share their profile with the
+ * venue.
+ *
+ * Everything this block defines is prefixed `pc-` (partner customers). The
+ * three classes it *reuses* are reused because they are literally the same
+ * component and not because the name was handy — `.pd-stack` is the screen's
+ * column, `.pd-glass` is the dashboard's sheet, and `.pd-withheld` is what
+ * `Figure` puts on an em dash. `.dash-*` crushing the dashboard's user pill to
+ * 26px is what this rule is for.
+ *
+ * No colour is named below except one, and that one is the warm red on the
+ * roster — see the note above `.pc-roster`. Everything else is a token, which
+ * is what lets the ink slab invert wholesale: `[data-ink='paper']` re-points
+ * `--text`, `--accent-ink`, `--bg-2` and `--border` *inside* the panel, so
+ * these rules never learn that the panel is dark.
+ */
+
+/* ── what a new customer costs ──────────────────────────────────────────── */
+
+.pc-cost {
+  display: flex;
+  gap: 30px;
+  flex-wrap: wrap;
+  padding: 26px 28px;
+}
+
+.pc-cost-main {
+  flex: 1 1 24rem;
+  min-width: 18rem;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The eyebrow. `--accent-ink` rather than a mint: on paper the panel is ink and
+   the scope has already pointed that token at the mint, and in dark it is the
+   accent anyway. It is the one mark on the slab that is not white at some
+   alpha, which is what makes the thing read as a statement rather than as a
+   dark card with a caption. */
+.pc-kicker {
+  display: block;
+  margin-bottom: 0.85rem;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+/* The same metrics in the quiet voice, for the column head over the bars. The
+   design puts one of these in the accent and one in grey: the first names what
+   the panel is about, the second labels a chart inside it. */
+.pc-eyebrow {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+/* The one figure the whole panel is built around, with its unit beside it
+   rather than under it — "17.15 zł each, in August" is one reading. */
+.pc-headline {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 0 0 0.9rem;
+}
+
+.pc-headline b {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 5.2vw, 3.25rem);
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* `:not()` so a withheld figure keeps `.pd-withheld`'s un-bolding. The em dash
+   takes the size — it stands where the figure stands — and not the weight,
+   because looking like a real figure is the one thing it must not do. */
+.pc-headline b:not(.pd-withheld) {
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pc-headline > span {
+  font-size: 0.95rem;
+  color: var(--text-mut);
+}
+
+/* The arithmetic in words. Larger than the fine print and not faint: it is the
+   sentence the figure came out of, not a footnote to it. */
+.pc-cost-line {
+  margin: 0 0 1.25rem;
+  max-width: 46ch;
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+/*
+ * The four addends.
+ *
+ * `auto-fit` with an 8.5rem floor rather than four fixed columns: at the slab's
+ * narrow end four boxes of tabular currency do not fit a phone, and two rows of
+ * two is the right answer there — the four are a set, not a sequence, so
+ * wrapping them costs nothing.
+ */
+.pc-boxes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+  gap: 10px;
+}
+
+/* One step off the panel's own ground. `--bg-2` is re-pointed by the ink scope
+   to a 6% lift on the ink, so the tiles are inset in both themes without this
+   rule knowing which one is running. */
+.pc-boxes > div {
+  padding: 13px 15px;
+  border-radius: var(--r-sm);
+  background: var(--bg-2);
+}
+
+.pc-boxes span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-fnt);
+}
+
+.pc-boxes b {
+  font-size: 15px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+/* `margin-top: auto` so the action sits on the bottom edge of the column
+   whatever height the sentence above it takes — the slab's two columns are
+   different lengths and a button floating mid-panel reads as unfinished. */
+.pc-cost-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 1.25rem;
+}
+
+/*
+ * A press inside the ink.
+ *
+ * The accent, not the fill: `--solid` inside this scope *is* the mint, so a
+ * `.btn-solid` here would be a mint pill — right for a page's primary action
+ * and far too loud for the second thing on a panel whose whole job is one
+ * number. A quiet well with an accent label is the reference design's own
+ * answer and it reads as secondary in both themes.
+ */
+.pc-act {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--tap);
+  padding: 0.7rem 1.15rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  font-family: var(--font-body);
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  white-space: nowrap;
+  transition:
+    background 240ms var(--ease),
+    border-color 240ms var(--ease),
+    transform 240ms var(--ease);
+}
+
+.pc-act:hover {
+  background: var(--surface-2);
+  border-color: var(--accent-ink);
+  transform: translateY(-2px);
+}
+
+/* A hover implies a press and a press has to exist: down and smaller at 40ms,
+   because that is what a physical button does. */
+.pc-act:active {
+  transform: translateY(1px) scale(0.985);
+  transition-duration: 40ms;
+}
+
+/* The arrow travels on a transform while the gap stays put — animating `gap`
+   relayouts the flex line every frame for the picture the compositor gives
+   free. */
+.pc-act svg {
+  transition: transform 240ms var(--ease);
+}
+
+.pc-act:hover svg {
+  transform: translateX(3px);
+}
+
+/* ── the last three months ──────────────────────────────────────────────── */
+
+.pc-trend {
+  flex: 0 1 16.5rem;
+  min-width: 13rem;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/*
+ * Three bars on a shared floor.
+ *
+ * `align-items: flex-end` is what makes them stand on it, and the row states a
+ * definite height because the bars inside are percentages — a percentage height
+ * against an `auto` parent resolves to nothing, which is the rule every chart
+ * in this sheet has to obey.
+ */
+.pc-trend-cols {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  height: 7.5rem;
+}
+
+.pc-trend-cols > span {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  min-width: 0;
+  height: 100%;
+}
+
+.pc-trend-cols b {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Same `:not()` as the headline: a withheld month keeps `.pd-withheld`'s faint,
+   un-bolded reading, because the whole point of it is that it is not a figure —
+   and at this size, with a bar missing under it, that is the only thing telling
+   the two apart. */
+.pc-trend-cols b:not(.pd-withheld) {
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.pc-trend-cols i {
+  display: block;
+  width: 100%;
+  max-width: 2.4rem;
+  border-radius: 8px 8px 0 0;
+  background: var(--surface-2);
+}
+
+/* The month being reported is the filled one; the two behind it are the
+   context. One accent, spent on the column the headline is about. */
+.pc-trend-cols > span[data-on='true'] i {
+  background: var(--accent);
+}
+
+.pc-trend-cols > span[data-on='true'] b:not(.pd-withheld) {
+  color: var(--text);
+}
+
+.pc-trend-cols em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-fnt);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* Fine print, on either panel. One rule, because "the average café pays…" and
+   "someone can turn sharing off…" are the same voice. */
+.pc-note {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-fnt);
+  text-wrap: pretty;
+}
+
+/* ── the roster ─────────────────────────────────────────────────────────── */
+
+/*
+ * The one red in this file, and why it is not a token.
+ *
+ * The palette has a single accent and no second hue, and the standing
+ * consequence is that a warning says so in words. That holds where the words
+ * are the only thing on the row. Here there are sixteen rows of them, and the
+ * finding — these two are going — has to survive being scanned rather than
+ * read. `.pd-danger` one screen over makes exactly this argument for exactly
+ * this hex, so it is that hex and not a second opinion about red.
+ *
+ * Scoped to this panel as one custom property, spent on two elements — the
+ * "N days ago" cell and the status pill, both only when the *server* has
+ * decided the customer is going. Nothing else in this file may reach for it,
+ * and the word in the pill carries the same information for anyone who cannot
+ * separate the two colours.
+ */
+.pc-roster {
+  --pc-risk: #d9483b;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pc-roster-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.pc-roster-head > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: 0;
+  flex: 1 1 18rem;
+}
+
+.pc-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 800;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--text);
+}
+
+.pc-intro {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-mut);
+  text-wrap: pretty;
+}
+
+/* How many of them you can see by name, marked with the thing that made it
+   possible. A shield rather than an eye: the fact is a consent, not a view. */
+.pc-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex: 0 0 auto;
+  padding: 0.4rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+/* ── the filter strip ── */
+
+.pc-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+/*
+ * Outline until it is the one showing, then the page's own press.
+ *
+ * `--solid` / `--on-solid` rather than the accent: on paper the dashboard's
+ * press is near-black (the one screen that keeps it), and a chip strip that
+ * went mint here would be the only control on the page disagreeing with every
+ * other button around it.
+ */
+.pc-filter {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.35rem;
+  padding: 0 0.85rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-mut);
+  white-space: nowrap;
+  transition:
+    background 200ms var(--ease),
+    border-color 200ms var(--ease),
+    color 200ms var(--ease);
+}
+
+.pc-filter:hover {
+  border-color: var(--accent-ink);
+  color: var(--text);
+}
+
+.pc-filter[data-on='true'] {
+  border-color: transparent;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-weight: 700;
+}
+
+/* The count inside the chip. It is the reason the strip is worth a row:
+   "Regulars 11" says something before anything has been pressed. */
+.pc-filter i {
+  font-style: normal;
+  font-size: 0.74rem;
+  font-weight: 700;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A control smaller than `--tap` grows its *target* rather than its box, so the
+   drawn size stays the designed one. Sixteen chips at 37px is a designed row;
+   sixteen chips at 44px is a different design. */
+.pc-filter::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 auto;
+  height: var(--tap);
+  transform: translateY(-50%);
+}
+
+/* ── the table ── */
+
+/* The rows are wider than a phone and the *page* must never scroll sideways, so
+   the axis is cut on the element that actually overflows. */
+.pc-scroll {
+  overflow-x: auto;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem;
+}
+
+.pc-table {
+  width: 100%;
+  min-width: 34rem;
+  border-collapse: collapse;
+}
+
+.pc-table th {
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+  white-space: nowrap;
+  text-align: left;
+}
+
+.pc-table th[data-align='right'],
+.pc-table td[data-align='right'] {
+  text-align: right;
+}
+
+.pc-table th:first-child,
+.pc-table td:first-child {
+  padding-left: 0;
+}
+
+.pc-table th:last-child,
+.pc-table td:last-child {
+  padding-right: 0;
+}
+
+.pc-table td {
+  padding: 12px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  vertical-align: middle;
+}
+
+.pc-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* The columns that are context rather than findings. */
+.pc-table td[data-quiet='true'] {
+  color: var(--text-mut);
+  font-size: 13px;
+}
+
+/* The long absence. Same hue as the pill at the end of the row and for the same
+   reason: it is the one cell the eye should land on. */
+.pc-table td[data-risk='true'] {
+  color: var(--pc-risk);
+  font-weight: 600;
+}
+
+/* The sort control. It inherits the header's type so it does not read as a
+   button dropped into a caption — what marks it is the arrow and the hover. */
+.pc-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  transition: color 200ms var(--ease);
+}
+
+.pc-sort:hover {
+  color: var(--accent-ink);
+}
+
+/* One glyph, turned. `chevron` points down, which is already "descending"; the
+   other direction is the same mark upside down, so ascending cannot be
+   mistaken for a different control. */
+.pc-sort[data-dir='asc'] svg {
+  transform: rotate(180deg);
+}
+
+.pc-sort svg {
+  transition: transform 200ms var(--ease);
+}
+
+/* ── a person ── */
+
+.pc-person {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+/*
+ * The initials disc.
+ *
+ * Outlined by default and filled for the customers the server called
+ * `high_value`: sixteen filled discs down the left edge of a table is the
+ * loudest thing on the screen, and the column they belong to is a list of
+ * names. Filling the handful that are worth the most is the one distinction
+ * that earns the weight.
+ */
+.pc-person > i {
+  flex: 0 0 2.15rem;
+  width: 2.15rem;
+  height: 2.15rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(var(--tint-rgb), 0.14);
+  color: var(--text-mut);
+  font-style: normal;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.pc-person > i[data-top='true'] {
+  background: var(--solid);
+  color: var(--accent);
+}
+
+.pc-person > span {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.pc-person b {
+  font-size: 13.5px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The rung under the name, and its label beside it rather than under it — the
+   bar alone says "some of the way" and the words say how far. */
+.pc-tier {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.pc-tier > em {
+  display: block;
+  flex: 0 0 5.5rem;
+  max-width: 5.5rem;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.pc-tier > em > em {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+}
+
+.pc-tier > span {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+/* ── spend, and which way it went ── */
+
+.pc-spend {
+  display: inline-flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.pc-spend b {
+  font-weight: 700;
+}
+
+/* The direction, in the accent both ways. Up and down are a *shape* here, not
+   two colours — a green-and-red pair is the second and third hue this palette
+   does not have, and the triangle already points. */
+.pc-spend i {
+  font-style: normal;
+  font-size: 0.62rem;
+  color: var(--accent-ink);
+}
+
+.pc-spend i[data-trend='flat'] {
+  color: var(--text-fnt);
+}
+
+/* ── the status pill ── */
+
+.pc-pill {
+  display: inline-block;
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Three readings, and only one of them is a prompt to do something. Regular and
+   new are statements, so they differ by weight and ground rather than by hue. */
+.pc-pill[data-person='regular'] {
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent-ink);
+}
+
+.pc-pill[data-person='lapsed'] {
+  background: color-mix(in srgb, var(--pc-risk) 13%, transparent);
+  color: var(--pc-risk);
+  font-weight: 700;
+}
+
+.pc-pill[data-person='new'] {
+  background: var(--surface);
+  color: var(--text-mut);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* ── narrow ────────────────────────────────────────────────────────────────
+ *
+ * The slab's two columns stack, and the roster drops its middle columns before
+ * it drops a name or a status: who they are and whether they are going are the
+ * two readings the table exists for, and the visit count is context.
+ */
+
+@media (max-width: 60rem) {
+  .pc-trend {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 48rem) {
+  .pc-cost {
+    padding: clamp(1.15rem, 4.4vw, 1.75rem);
+    gap: 1.4rem;
+  }
+
+  .pc-trend-cols {
+    height: 6rem;
+  }
+
+  .pc-table {
+    min-width: 0;
+  }
+
+  /* Visits and Last seen, third and fourth of five. */
+  .pc-table th:nth-child(3),
+  .pc-table td:nth-child(3),
+  .pc-table th:nth-child(4),
+  .pc-table td:nth-child(4) {
+    display: none;
+  }
+
+  .pc-tier > em {
+    flex-basis: 4rem;
+  }
+}
+
+/*
+ * Movement is what goes on a device that cannot hover; the colour and border
+ * changes stay. On a row you have just tapped, "this is the one you touched" is
+ * useful rather than stuck. Written once against the list, which is why it has
+ * to sit below every rule it guards.
+ */
+@media (hover: none) {
+  .pc-act:hover,
+  .pc-filter:hover {
+    transform: none;
+  }
+
+  .pc-act:hover svg,
+  .pc-sort svg {
+    transform: none;
+  }
+
+  /* …except the one transform that is a state rather than a flourish: the
+     ascending arrow has to stay turned over. */
+  .pc-sort[data-dir='asc'] svg {
+    transform: rotate(180deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-act,
+  .pc-act svg,
+  .pc-filter,
+  .pc-sort,
+  .pc-sort svg {
+    transition: none;
+  }
+
+  .pc-act:hover,
+  .pc-act:active {
+    transform: none;
+  }
+
+  .pc-act:hover svg {
+    transform: none;
+  }
+}
+/* ═══════════════════════════════════ the partner dashboard: loyalty ══
+ *
+ * `src/site/dashboardLoyalty.tsx` — the campaigns screen, rebuilt against
+ * `b2b/uploads/loyalty1-3.png`.
+ *
+ * Namespaced `pl-` (partner loyalty) throughout, and the prefix was checked
+ * against the whole sheet before it was chosen. This dashboard has already
+ * shipped three class-name collisions — `.dash-*` crushing a user pill to 26px,
+ * `.pd-bar` turning every budget pool into an empty 64px box, `.pd-filters`
+ * with no rule at all stacking five statuses down the right-hand edge — and all
+ * three were a name that already meant something else. Grep before you name one.
+ *
+ * Two things here are deliberately *not* `pl-`. `.pd-remind` / `.pd-remind-face`
+ * are the overview's reminder button, reused because this is the same component
+ * rather than a lookalike; and `.pd-withheld` is the sheet's one opinion about
+ * what an unreadable figure looks like.
+ *
+ * ── colour ───────────────────────────────────────────────────────────────
+ *
+ * Everything is a token. There are exactly two hues in this block, both scoped
+ * to the one selector that needs them, and each is argued for where it is
+ * defined: the gap figure's red and a paused campaign's amber. Neither may be
+ * reached for anywhere else in this sheet.
+ */
+
+/* ── the panels ──────────────────────────────────────────────────────────── */
+
+.pl-panel {
+  gap: 1.1rem;
+}
+
+/* Copy on the left, figures on the right, and the copy is the thing that
+   wraps: `1 1 22rem` lets the head fold to two rows on a narrow frame without
+   the three figures ever splitting across lines from each other. */
+.pl-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.pl-head-copy {
+  flex: 1 1 22rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.pl-lede {
+  max-width: 42rem;
+  font-size: 0.88rem;
+  line-height: 1.6;
+  color: var(--text-mut);
+}
+
+/* ── earned · used · never used ──────────────────────────────────────────── */
+
+.pl-totals {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+}
+
+.pl-total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0 1.4rem;
+  border-left: 1px solid var(--border);
+}
+
+/* The first has nothing to its left to be separated from. */
+.pl-total:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.pl-total:last-child {
+  padding-right: 0;
+}
+
+.pl-total span {
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.pl-total b {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text);
+}
+
+/*
+ * The one red on this screen.
+ *
+ * Same argument `.pd-danger` makes one panel over, pointed at a figure rather
+ * than at a button: the palette has a single accent, and the standing
+ * consequence is that emphasis is carried by weight and wording. That works
+ * when the thing being emphasised is *different in kind* from its neighbours.
+ * Here it is not — earned, used and never-used are three counts of the same
+ * unit, drawn identically, and the third is the only one that is a finding.
+ * Weight alone cannot say "this one is the problem" next to two numbers already
+ * at 800.
+ *
+ * It is the same value `.pd-danger` already defines, restated because a custom
+ * property does not escape the selector that declares it. Scoped to this one
+ * element, and the label above it says "never used" in words, so the hue is not
+ * the only signal. Nothing else in this sheet may reach for it.
+ */
+.pl-total[data-gap='true'] b {
+  --pl-gap: #d9483b;
+  color: var(--pl-gap);
+}
+
+/* ── the reminder strip ──────────────────────────────────────────────────── */
+
+.pl-remind {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.pl-remind-btn {
+  flex: 0 0 auto;
+}
+
+/* The sentence takes the slack, so the two controls stay at their own widths
+   and the strip folds by wrapping the text rather than by squeezing a button
+   until its label breaks. */
+.pl-remind-note {
+  flex: 1 1 14rem;
+  min-width: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.pl-setup {
+  flex: 0 0 auto;
+}
+
+/* ── setting the loyalty share ───────────────────────────────────────────── */
+
+/*
+ * The field sits in the panel head, opposite the title, and its note hangs
+ * under it right-aligned — which is the mock's arrangement and is also what
+ * stops a 40-character sentence stretching the head's right-hand column wider
+ * than the well it is describing. `max-width` is the well's own width plus the
+ * button beside it; past that the note wraps rather than pushing the copy.
+ */
+.pl-set {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.4rem;
+  max-width: 20rem;
+}
+
+.pl-set-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pl-set-note {
+  text-align: right;
+}
+
+/* ── the pool, as one bar in three parts ─────────────────────────────────── */
+
+/*
+ * A partition, not three bars.
+ *
+ * Spent, set aside and available exhaust the pool, so they are three lengths of
+ * one line: the track *is* "available", and the two fills sit on it in order.
+ * Three separate bars each measured against the same total is the drawing that
+ * lets an owner read the same money twice — which is the failure
+ * `partnerMetrics.ts` states at the top of the file.
+ */
+.pl-split {
+  display: flex;
+  overflow: hidden;
+  height: 12px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.pl-split i {
+  display: block;
+  height: 100%;
+  min-width: 0;
+}
+
+.pl-split i[data-part='spent'] {
+  background: linear-gradient(90deg, var(--accent), var(--accent-ink));
+}
+
+/*
+ * Set aside is hatched rather than a second flat colour.
+ *
+ * It is not spent and it is not available, and the palette has no third hue to
+ * say so with — so the difference is *texture*, which is the same answer the
+ * wallet's bands and the plan cards give when a design hands you a colour per
+ * item (root `CLAUDE.md`). Hatching also reads as "held" in the one place
+ * everybody has already seen it: a chart's shaded forecast band.
+ */
+.pl-split i[data-part='aside'] {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--accent-rgb), 0.62) 0 4px,
+      rgba(var(--accent-rgb), 0.16) 4px 8px
+    );
+}
+
+.pl-legend {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1.4rem;
+}
+
+.pl-pool {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.pl-pool-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pl-pool b {
+  font-family: var(--font-display);
+  font-size: 1.45rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.pl-swatch {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.pl-swatch[data-part='spent'] {
+  background: linear-gradient(135deg, var(--accent), var(--accent-ink));
+}
+
+/* The same hatching as the bar, at the scale a 11px square can hold — 3px
+   rather than 4, or the square shows one stripe and reads as a solid. */
+.pl-swatch[data-part='aside'] {
+  background:
+    repeating-linear-gradient(
+      45deg,
+      rgba(var(--accent-rgb), 0.62) 0 3px,
+      rgba(var(--accent-rgb), 0.16) 3px 6px
+    );
+}
+
+/* ── when it runs out ────────────────────────────────────────────────────── */
+
+.pl-forecast {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+.pl-callout {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: var(--r-sm);
+  border: 1px solid rgba(var(--accent-rgb), 0.22);
+  background: rgba(var(--accent-rgb), 0.08);
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.pl-callout svg {
+  flex: 0 0 auto;
+  color: var(--accent-lit);
+}
+
+/* ── the grid of campaigns ───────────────────────────────────────────────── */
+
+.pl-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--pd-gap, 1.375rem);
+  align-items: start;
+}
+
+.pl-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 20px;
+}
+
+.pl-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.pl-card-name {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.25;
+  color: var(--text);
+  min-width: 0;
+}
+
+.pl-pill {
+  flex: 0 0 auto;
+  padding: 0.22rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+  white-space: nowrap;
+}
+
+/* ── what the campaign is ────────────────────────────────────────────────── */
+
+.pl-rule {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.pl-cost {
+  padding: 0.15rem 0.5rem;
+  border-radius: 7px;
+  background: var(--surface-2);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+/* ── earned / used ───────────────────────────────────────────────────────── */
+
+.pl-counts {
+  display: flex;
+  align-items: baseline;
+  gap: 1.4rem;
+}
+
+.pl-count {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+/* Small caps for the label because the figure beside it is 1.6rem: at that
+   ratio a lower-case label reads as a caption under the number rather than as
+   its name, and the two have to be read together. */
+.pl-count span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+}
+
+.pl-count b {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--text);
+}
+
+.pl-bar {
+  overflow: hidden;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+}
+
+.pl-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--accent-ink));
+}
+
+.pl-chips {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.pl-chip {
+  padding: 0.3rem 0.65rem;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.pl-rate {
+  font-size: 0.8rem;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+
+/* ── cost so far / set aside ─────────────────────────────────────────────── */
+
+.pl-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.9rem;
+}
+
+.pl-col {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding-left: 0.9rem;
+  border-left: 1px solid var(--border);
+  min-width: 0;
+}
+
+.pl-col:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.pl-col span {
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.pl-col b {
+  font-size: 1.02rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.pl-rules {
+  margin-top: -0.15rem;
+}
+
+/* ── the footer ──────────────────────────────────────────────────────────── */
+
+.pl-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+}
+
+.pl-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  font-size: 0.8rem;
+  color: var(--text-mut);
+}
+
+/* The rule between "Priority 1" and the date. An element rather than a `|`
+   glyph: a pipe is a character that gets read aloud, and it sits on the
+   baseline instead of centred on the line it divides. */
+.pl-meta i {
+  width: 1px;
+  height: 0.9em;
+  background: var(--border-2);
+}
+
+.pl-acts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ══════════════════════════════════════════════════ a paused campaign ══
+ *
+ * The one amber in this sheet, and the case for it.
+ *
+ * A paused campaign is not a *worse* campaign — it is one in a different mode,
+ * with money still committed to rewards its members already earned. The pill
+ * says "Paused" and the box under it says what that means for the money, so the
+ * words are doing their job. What the words cannot do is make the card
+ * recognisable at a glance in a grid of four: the accent already means "live
+ * and running" on every other card, and drawing a stopped campaign in the same
+ * mint says the opposite of the truth. Removing the accent instead — drawing it
+ * grey — reads as "disabled", which is what a card nobody may press looks like,
+ * and every control on this one still works.
+ *
+ * So: one hue, scoped to this one selector, declared as a single custom
+ * property and derived from there — exactly the shape `.pd-danger` uses for its
+ * red. It has two values because paper and black need different lightnesses of
+ * the same warm yellow to stay legible; that is the `--accent` / `--accent-ink`
+ * arrangement, not a second colour. **Nothing outside this block may name it.**
+ */
+.pl-card[data-live='false'] {
+  --pl-amber-rgb: 226, 170, 90;
+  border-color: rgba(var(--pl-amber-rgb), 0.34);
+  background:
+    linear-gradient(rgba(var(--pl-amber-rgb), 0.05), rgba(var(--pl-amber-rgb), 0.05)),
+    rgba(var(--panel-rgb), var(--pd-glass, 0.5));
+}
+
+/* On paper the same yellow at the same lightness is a highlighter pen: it has
+   to come down to where it reads as ink on white. */
+:root[data-theme='light'] .pl-card[data-live='false'] {
+  --pl-amber-rgb: 168, 118, 34;
+}
+
+/* The hairline `.pd-glass::after` draws along the top edge is the accent, and on
+   an amber card it is the one mint mark left. */
+.pl-card[data-live='false']::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(var(--pl-amber-rgb), 0.38),
+    transparent
+  );
+}
+
+.pl-card[data-live='false'] .pl-pill {
+  background: rgba(var(--pl-amber-rgb), 0.18);
+  color: rgb(var(--pl-amber-rgb));
+}
+
+.pl-card[data-live='false'] .pl-bar i {
+  background: rgb(var(--pl-amber-rgb));
+}
+
+.pl-card[data-live='false'] .pl-chip {
+  background: rgba(var(--pl-amber-rgb), 0.14);
+  color: rgb(var(--pl-amber-rgb));
+}
+
+/* What the pause means for the money that is still committed. */
+.pl-paused {
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--r-sm);
+  background: rgba(var(--pl-amber-rgb), 0.12);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ══════════════════════════════════════════════════════════ responsive ══
+ *
+ * Last in the block, because every rule here overrides one above it at the same
+ * specificity and a media query above its own base rule does nothing.
+ */
+
+/* Three cards need about 19rem each before the figures start colliding with
+   their labels. Below that it is two, and the pool's three columns go with
+   them — a 1fr column holding "Money held for rewards customers have earned but
+   have not used yet" is four words per line. */
+@media (max-width: 70rem) {
+  .pl-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 60rem) {
+  .pl-legend {
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+}
+
+@media (max-width: 46rem) {
+  .pl-grid,
+  .pl-legend {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The three figures stop being a row of columns and become a row of pairs:
+     the vertical rules were separating things that no longer sit side by side,
+     and 1.4rem of padding inside a 320px card is most of the card. */
+  .pl-totals {
+    flex-wrap: wrap;
+    gap: 1.1rem;
+  }
+
+  .pl-total {
+    padding: 0;
+    border-left: 0;
+  }
+
+  .pl-total b {
+    font-size: 1.5rem;
+  }
+
+  /* Once the head is one column there is no right-hand edge to hang off, and a
+     right-aligned note under a left-aligned title reads as a different panel. */
+  .pl-set {
+    align-items: stretch;
+    max-width: none;
+    width: 100%;
+  }
+
+  .pl-set-note {
+    text-align: left;
+  }
+
+  /* The strip's two controls take the full row rather than sharing one: at this
+     width they are each about half a line wide, which is a pair of buttons that
+     look like one broken control. `.btn` centres its own label, so a stretched
+     one is still a button rather than a left-packed pill. */
+  .pl-remind-btn,
+  .pl-setup {
+    flex: 1 1 100%;
+  }
+}
+
+/*
+ * The trend bars' month labels stop being clipped.
+ *
+ * Each column is a flex column whose middle child — the bar — takes a
+ * percentage height. The label and the figure either side of it were left
+ * shrinkable, so the flex algorithm took the space back out of *them*: the
+ * `<em>` computed to 11.1px against its own 17.6px line-height, and with
+ * `overflow: hidden` on it the descenders of "June" and "July" were cut off.
+ * Measured — the three labels came out 11.1, 12.8 and 14px tall for one
+ * line-height, which is the tell that something is shrinking them unevenly.
+ *
+ * Only the bar should flex. The two labels are content and keep their size.
+ */
+.pc-trend-cols > span > b,
+.pc-trend-cols > span > em {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+
+/* ══════════════════════════════════════ scan activity: the till log ══
+ *
+ * A table of receipts. Eight columns, twelve rows a page, and the only two
+ * things it has to get right are that the figures line up down their columns and
+ * that a row reads as one scan rather than as eight cells.
+ */
+
+.ps-panel {
+  display: flex;
+  /* Stated, not inherited: `.pd-panel` sets `column` and a bare `display: flex`
+     later in this sheet silently keeps it. That has caught two panels on this
+     dashboard already. */
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.ps-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+/* One of three and always one — the same control the bar's currency toggle is. */
+.ps-seg {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.ps-seg button {
+  padding: 0.4rem 0.9rem;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-mut);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+.ps-seg button[data-on='true'] {
+  background: var(--solid);
+  color: var(--on-solid);
+}
+
+.ps-count {
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+/*
+ * The table scrolls inside its own port rather than widening the page.
+ *
+ * Eight columns of receipts do not fit a phone and will not be made to. The
+ * root `CLAUDE.md` is explicit that wide content scrolls in its own
+ * `overflow-x: auto` container and the page body never scrolls sideways.
+ */
+.ps-scroll {
+  overflow-x: auto;
+  margin: 0 -0.25rem;
+  padding: 0 0.25rem;
+}
+
+.ps-table {
+  width: 100%;
+  min-width: 60rem;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.ps-table th {
+  padding: 0 0.75rem 0.7rem;
+  text-align: left;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+  white-space: nowrap;
+  border-bottom: 1px solid var(--border);
+}
+
+.ps-table td {
+  padding: 0.85rem 0.75rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border);
+}
+
+.ps-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+/* Spent and Points read as quantities and sit right; everything else is a
+   label and sits left. */
+.ps-table th[data-col='3'],
+.ps-table td[data-col='3'],
+.ps-table th[data-col='4'],
+.ps-table td[data-col='4'] {
+  text-align: right;
+}
+
+/* When: the date carries the weight, the time is the detail under it. */
+.ps-table td[data-col='0'] b {
+  display: block;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-table td[data-col='0'] i,
+.ps-site i,
+.ps-money i {
+  display: block;
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-who {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* A pale disc, not a filled one: on this screen every row is a named customer,
+   so a filled mark would be on all of them and mark nothing. */
+.ps-who > i {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-style: normal;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+/* First visit is the finding; coming back is the ordinary case, so only the
+   first takes the accent. */
+.ps-first {
+  display: inline-block;
+  padding: 0.22rem 0.6rem;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-size: 0.78rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ps-first[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-ink);
+}
+
+.ps-money b {
+  display: block;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-points {
+  display: inline-block;
+  min-width: 2.75rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent-ink);
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The receipt is a code to read back to a customer, so it is spaced like one. */
+.ps-receipt {
+  display: inline-block;
+  padding: 0.22rem 0.55rem;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.ps-site b {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ps-site svg {
+  flex: 0 0 auto;
+  color: var(--text-fnt);
+}
+
+.ps-progress {
+  display: block;
+  min-width: 12rem;
+}
+
+.ps-progress > i {
+  display: block;
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+.ps-progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ps-progress-row b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-progress-row em {
+  font-style: normal;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+/* A finished card is the one state on this row worth marking — it is a reward
+   the customer can take at the counter right now. */
+.ps-progress-row em[data-ready='true'] {
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+
+/* `<s>` and `<u>` carry no meaning here and are reset: they are the track and
+   the fill, chosen over two more `<span>`s because the row already has six. */
+.ps-progress s {
+  display: block;
+  margin-top: 0.3rem;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.ps-progress u {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  text-decoration: none;
+}
+
+/* A scan that counted toward nothing. An em dash rather than an empty bar —
+   a track at 0% says the card exists and is empty, which is a different fact. */
+.ps-none {
+  color: var(--text-fnt);
+  font-weight: 400;
+}
+
+.ps-foot {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.25rem;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.ps-pager {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.ps-pager .btn {
+  height: 2.25rem;
+  padding: 0 0.9rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+}
+
+@media (max-width: 48rem) {
+  .ps-head,
+  .ps-foot {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .ps-pager {
+    justify-content: flex-end;
+  }
+}
+
+/* ── the log's three quieter readings ───────────────────────────────────── */
+
+.ps-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.25rem 0;
+}
+
+/* A customer who did not share a name: a note in place of a name, so it takes
+   no disc and none of a name's weight. */
+.ps-who[data-anon='true'] {
+  font-weight: 500;
+  color: var(--text-mut);
+  cursor: help;
+}
+
+/* A scan that did not count is its own reading rather than "again", outlined
+   rather than filled — the drawing `.pc-pill[data-person='new']` uses for a
+   statement with nothing to act on. */
+.ps-first[data-off='true'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--border-2);
+  color: var(--text-fnt);
+  cursor: help;
+}
+
+.ps-table tr[data-uncounted='true'] td,
+.ps-table tr[data-uncounted='true'] .ps-money b {
+  color: var(--text-mut);
+}
+
+.ps-points[data-zero='true'] {
+  background: var(--surface-2);
+  color: var(--text-fnt);
+}
+
+/* What a redemption took off the bill, under the figure it came off. */
+.ps-money .ps-discount {
+  color: var(--text-mut);
+  font-weight: 600;
+}
+
+/* "Today at the counter" labels the tiles under it, so it sits nearer them
+   than the counter above: the stack's 22px is mostly taken back underneath. */
+.pd-stack > .ps-today {
+  margin: 0.375rem 0 -0.775rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* ══════════════════════════════════ scan activity: the counter tool ══
+ *
+ * The one panel on this dashboard somebody uses standing up with a customer
+ * waiting. Three things decide its shape: the code field and its button are one
+ * row of one height, so Enter and the press are the same act; the preview is
+ * the answer to "is this the right person", so the handle is the largest thing
+ * in it; and a refusal is a sentence in `--text` at 700 — the `══ forms ══`
+ * answer for a field in error, because one accent means it cannot be red.
+ */
+
+.ps-counter {
+  --ps-counter-gap: 1rem;
+  gap: var(--ps-counter-gap);
+}
+
+.ps-counter-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ps-counter-head .pd-fine {
+  max-width: 62ch;
+}
+
+/* The field takes the row and the button keeps its width, so a long placeholder
+   wraps the row rather than squeezing the press. */
+.ps-counter-find {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.ps-counter-code {
+  flex: 1 1 18rem;
+}
+
+.ps-counter-code input {
+  height: var(--pd-btn-h);
+  padding-block: 0;
+  letter-spacing: 0.02em;
+}
+
+.ps-counter-find .btn,
+.ps-counter-acts .btn {
+  flex: 0 0 auto;
+  height: var(--pd-btn-h);
+}
+
+/* It arrives rather than appears, by opacity and four pixels — the till is not
+   the place for a flourish. */
+.ps-counter-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  animation: ps-counter-in 220ms var(--ease);
+}
+
+@keyframes ps-counter-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+.ps-counter-who {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+/* The log's pale disc, one size up. */
+.ps-counter-who > i {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--text-mut);
+  font-style: normal;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.ps-counter-who > span:not(.ps-first) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  flex: 1 1 10rem;
+  min-width: 0;
+}
+
+.ps-counter-who b {
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ps-counter-who em {
+  font-style: normal;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+  overflow-wrap: anywhere;
+}
+
+/* "Not shared" is a note about the name rather than a name. */
+.ps-counter-who em[data-quiet='true'] {
+  color: var(--text-fnt);
+}
+
+/* The voucher or reward the code belongs to. The code sits opposite its terms
+   and is spaced like the log's receipt column, because it is read back aloud. */
+.ps-counter-offer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 1rem;
+  row-gap: 0.2rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+}
+
+.ps-counter-offer .console-label {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+
+.ps-counter-offer b {
+  grid-column: 1;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.ps-counter-offer em {
+  grid-column: 1;
+  font-style: normal;
+  font-size: 0.8rem;
+  color: var(--text-mut);
+}
+
+.ps-counter-offer code {
+  grid-column: 2;
+  grid-row: 2 / span 2;
+  padding: 0.3rem 0.6rem;
+  border-radius: 7px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+/* A stamp card as one line: the campaign, how far along, and the bar under
+   both. The customer panel's cards are the same fact and share the drawing. */
+.ps-counter-stamps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+  gap: 0.7rem 1.25rem;
+}
+
+.ps-counter-stamps > p {
+  grid-column: 1 / -1;
+}
+
+.ps-counter-stamps > div,
+.pc-detail-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 0.75rem;
+  row-gap: 0.35rem;
+}
+
+.ps-counter-stamps > div > span,
+.pc-detail-card > span {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.ps-counter-stamps > div > b,
+.pc-detail-card > b {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* `<s>` and `<u>` are the track and the fill, reset — the log's construction. */
+.ps-counter-stamps s,
+.pc-detail-card s {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  text-decoration: none;
+  overflow: hidden;
+}
+
+.ps-counter-stamps u,
+.pc-detail-card u {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  text-decoration: none;
+}
+
+/* The bill, under a rule: everything above it is what the server found, and
+   this is the one thing the person at the till adds. */
+.ps-counter-bill {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--border);
+}
+
+.ps-counter-bill .pd-well {
+  max-width: 18rem;
+  min-height: var(--pd-btn-h);
+  padding: 0.35rem 0.9rem;
+  border-radius: var(--r-sm);
+}
+
+/* The figure is checked against the till's own screen, so it is set at reading
+   size — and over 1rem, which also stops iOS zooming the page on focus. */
+.ps-counter-bill .pd-well input {
+  font-size: 1.15rem;
+}
+
+.ps-counter-bill .pd-well > span {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+/* `.field input` reaches into the well — the well is a `.field` child — and
+   would tint and outline the bare input inside a well that shows its own focus. */
+.ps-counter-bill .pd-well input:focus-visible {
+  outline: none;
+  background: none;
+}
+
+.ps-counter-acts {
+  display: flex;
+  flex-direction: row;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+/* The live region stays mounted — a region inserted along with its message is
+   one a screen reader may not announce — so while empty it hands back the gap
+   the panel spent on it. */
+.ps-counter-live {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.ps-counter-live:empty {
+  margin-top: calc(-1 * var(--ps-counter-gap));
+}
+
+.ps-counter-live .field-error {
+  margin: 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 12px;
+  border: 1px solid var(--border-2);
+  background: var(--surface-2);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+/* What the press did, one fact a line, the way a till receipt reads. The accent
+   ground is the panel's one success state. */
+.ps-counter-receipt {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  border: 1px solid var(--accent-soft);
+  background: rgba(var(--accent-rgb), 0.08);
+  animation: ps-counter-in 220ms var(--ease);
+}
+
+.ps-counter-receipt .console-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.ps-counter-receipt ul {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ps-counter-receipt li {
+  font-size: 0.88rem;
+  line-height: 1.5;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.ps-counter-receipt li b {
+  font-weight: 700;
+}
+
+@media (max-width: 30rem) {
+  .ps-counter-offer {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ps-counter-offer code {
+    grid-column: 1;
+    grid-row: auto;
+    justify-self: start;
+    margin-top: 0.35rem;
+  }
+}
+
+/* ══════════════════════════════════════════ the bell and its inbox ══
+ *
+ * The header's menu sheet (`.account-menu`), wide enough to read a
+ * notification's sentence without breaking every third word. Unread is the
+ * bell's own dot, repeated on the row it stands for.
+ */
+
+.pd-bell {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.pd-inbox {
+  top: calc(100% + 0.5rem);
+  z-index: 40;
+  width: min(23rem, calc(100vw - 2rem));
+  max-height: min(30rem, 70vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.4rem;
+}
+
+.pd-inbox-head {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.35rem 0.4rem 0.55rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-inbox-head b {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* A text press: the menu already has rows, and a second button shape in it
+   would compete with them. */
+.pd-inbox-all {
+  position: relative;
+  padding: 0.3rem 0.5rem;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: var(--accent-ink);
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pd-inbox-all:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.pd-inbox-note {
+  margin: 0;
+  padding: 0.6rem 0.55rem 0.4rem;
+}
+
+.pd-inbox-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pd-inbox-list li {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.7rem 0.55rem;
+}
+
+.pd-inbox-list li + li {
+  border-top: 1px solid var(--border);
+}
+
+.pd-inbox-list li > div {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pd-inbox-list b {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.pd-inbox-list li[data-unread='true'] b {
+  font-weight: 800;
+}
+
+.pd-inbox-list li[data-unread='true'] b::before {
+  content: '';
+  display: inline-block;
+  width: 0.4rem;
+  height: 0.4rem;
+  margin-right: 0.45rem;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0.12em;
+}
+
+.pd-inbox-list p {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+  overflow-wrap: anywhere;
+}
+
+.pd-inbox-list time {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-fnt);
+}
+
+.pd-inbox-read {
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-2);
+  background: none;
+  color: var(--text-mut);
+  cursor: pointer;
+  transition:
+    color 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+
+.pd-inbox-read:hover:not(:disabled) {
+  border-color: var(--accent-soft);
+  color: var(--accent-ink);
+}
+
+/* Both presses in the menu are under `--tap`, so they grow their targets rather
+   than their boxes — `.pc-filter`'s construction. */
+@media (pointer: coarse) {
+  .pd-inbox-all::before,
+  .pd-inbox-read::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: max(100%, var(--tap));
+    height: var(--tap);
+    transform: translate(-50%, -50%);
+  }
+}
+
+/* On a phone the bell is not the last thing in the bar, so a menu hung off its
+   right edge runs off the left of the screen. It hangs off the bar instead:
+   `.pd-bar` is sticky, which makes it the containing block once the bell stops
+   being one, and `.pd-actions` between them is not positioned. */
+@media (max-width: 36rem) {
+  .pd-bell {
+    position: static;
+  }
+
+  .pd-inbox {
+    left: 0.75rem;
+    right: 0.75rem;
+    width: auto;
+  }
+}
+
+/* ══════════════════════════════════ the dashboard's smaller additions ══ */
+
+/* Overview: under the holding sentence, the reminder's own history. */
+.pd-holding .pd-remind-note {
+  margin-top: 0.25rem;
+}
+
+/* Deals: the venue's notification funnel is `DealFunnel` outside a deal.
+   `.pd-detail-main` is a row item there with a 24rem basis, and in this column
+   panel that basis would be a 24rem height. */
+.pd-venue-notify .pd-detail-main {
+  flex: 0 0 auto;
+}
+
+/* The drawer's audience, sized: two figures a reader compares, set as figures
+   rather than as a sentence with numbers in it. */
+.pd-audience > span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pd-audience b {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pd-audience .pd-withheld {
+  font-weight: 400;
+  color: var(--text-fnt);
+}
+
+/* Vouchers: a rung taken off sale is a word beside its pill, and the pill loses
+   its grade — a rung nobody can buy is not the deepest discount on offer. */
+.vch-retired {
+  flex: 0 0 auto;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--border-2);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  white-space: nowrap;
+  cursor: help;
+}
+
+.vch-table tr[data-retired='true'] .vch-pill {
+  background: var(--surface-2);
+  color: var(--text-mut);
+}
+
+.vch-table .vch-points-fact {
+  color: var(--text-mut);
+  font-weight: 600;
+}
+
+.vch-given {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.vch-given i {
+  font-style: normal;
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+/* Loyalty: the one finding in the gap panel's head that is somebody to act on
+   today, so it is a chip rather than one more line of the lede. */
+.pl-near {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  gap: 0.4rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.pl-near svg {
+  flex: 0 0 auto;
+}
+
+/* The sentence and its notes share the strip's slack between the two buttons.
+   `.pl-remind-note` carries a 14rem basis for a row, and in this column it would
+   be a 14rem height, so it is reset. */
+.pl-remind-copy {
+  flex: 1 1 14rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.pl-remind-copy > .pl-remind-note {
+  flex: 0 0 auto;
+}
+
+/* ══════════════════════════════════ customers: the two new statuses ══ */
+
+/* The most valuable take the fill — the distinction the initials disc already
+   draws, said again where the eye lands at the end of the row. */
+.pc-pill[data-person='high_value'] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+
+/* At risk is the warning before lapsed: the same scoped warm hue, outlined
+   rather than filled, because they have not gone yet. */
+.pc-pill[data-person='at_risk'] {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc-risk) 55%, transparent);
+  color: var(--pc-risk);
+  font-weight: 700;
+}
+
+/* ── a row that opens ── */
+
+/* A `<tr>` cannot be a button, so the cursor, the hover and the focus ring say
+   it; the open row shares a ground with its panel so the two read as one. */
+.pc-row {
+  cursor: pointer;
+}
+
+.pc-row > td {
+  transition: background 160ms var(--ease);
+}
+
+.pc-row:hover > td,
+.pc-row[data-open='true'] > td,
+.pc-detail-row > td {
+  background: var(--surface);
+}
+
+.pc-row:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: -2px;
+}
+
+.pc-row[data-open='true'] > td {
+  border-bottom-color: transparent;
+}
+
+.pc-detail-row > td {
+  padding: 0;
+  cursor: default;
+}
+
+/* Indented to the name's text, past the disc, so the panel reads as belonging
+   to the person above it. */
+.pc-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  padding: 0.35rem 0.75rem 1.15rem 3.2rem;
+  animation: pc-detail-in 220ms var(--ease);
+}
+
+@keyframes pc-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+
+.pc-detail-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 0.75rem 1.25rem;
+}
+
+.pc-detail-figures > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.pc-detail-figures span {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.pc-detail-figures b {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.pc-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem 1.75rem;
+}
+
+.pc-detail-grid > section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.pc-detail-grid .console-label {
+  margin-bottom: 0;
+  font-weight: 700;
+}
+
+/* A chart states its own height (root `CLAUDE.md`). Each column is the count,
+   a track and the month; the bar is a percentage of the track, which is what
+   is left of the 6rem once the two labels have theirs. */
+.pc-detail-months {
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0.5rem;
+  height: 6rem;
+}
+
+.pc-detail-months > span {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.pc-detail-months b {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--text-mut);
+}
+
+.pc-detail-months s {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  width: 100%;
+  text-decoration: none;
+}
+
+.pc-detail-months i {
+  display: block;
+  width: min(100%, 1.5rem);
+  border-radius: 5px 5px 2px 2px;
+  background: var(--accent);
+}
+
+.pc-detail-months em {
+  font-style: normal;
+  font-size: 0.68rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+.pc-detail-events {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pc-detail-events li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.6rem;
+}
+
+.pc-detail-events b {
+  padding: 0.12rem 0.45rem;
+  border-radius: 6px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent-ink);
+  font-size: 0.72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.pc-detail-events span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
+.pc-detail-events em {
+  font-style: normal;
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+  white-space: nowrap;
+}
+
+@media (max-width: 60rem) {
+  .pc-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 48rem) {
+  .pc-detail {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ps-counter-card,
+  .ps-counter-receipt,
+  .pc-detail {
+    animation: none;
+  }
+
+  .pc-row > td,
+  .pd-inbox-read {
+    transition: none;
+  }
 }

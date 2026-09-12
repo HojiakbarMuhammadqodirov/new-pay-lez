@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import {
   LANGUAGE_ORDER,
   LANGUAGES,
@@ -37,7 +44,16 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const [language, setLanguageState] = useState<LanguageCode>(initialLanguage);
 
   const setLanguage = useCallback((next: LanguageCode) => {
-    setLanguageState(next);
+    /*
+     * A transition, because one thing on this site fetches its text per language
+     * rather than holding it in the bundle: the two legal documents. Marked
+     * urgent, switching language on one of them unmounts the text and shows the
+     * loading line until the new chunk lands; marked as a transition, React
+     * holds the document the reader is looking at until it has the next one.
+     * Every other screen reads `copy` synchronously and cannot tell the
+     * difference.
+     */
+    startTransition(() => setLanguageState(next));
     try {
       window.localStorage.setItem(STORAGE_KEY, next);
     } catch {

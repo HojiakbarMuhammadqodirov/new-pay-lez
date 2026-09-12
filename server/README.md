@@ -35,7 +35,7 @@ score by identical rules and differ only in which questions they draw.
 ```bash
 npm run server         # migrate, import if empty, serve on :8787
 npm run server:import  # re-import the export and exit
-npm run verify:api     # the test suite — 650 checks, no browser, no network
+npm run verify:api     # the test suite — 925 checks, no browser, no network
 npm run openapi        # regenerate openapi.json from the route table
 ```
 
@@ -44,7 +44,7 @@ npm run openapi        # regenerate openapi.json from the route table
 - **`API.md`** — the flows a spec file cannot express: the gate's four steps,
   idempotency, offline queueing, the games protocol, what counts as a claim, and
   the money/time/language conventions. Read this first.
-- **`openapi.json`** — 123 paths, 133 operations, generated from `allRoutes` so
+- **`openapi.json`** — 139 paths, 153 operations, generated from `allRoutes` so
   it cannot drift. Point a generator at it rather than hand-writing a client.
 - **`FLUTTER-BRIEF.md`** — the standing instruction for the mobile app, written
   to be handed over whole.
@@ -151,6 +151,8 @@ domain/              the rules. React-free, HTTP-free, testable on their own
        notifications.ts §9 inbox, frequency caps, quiet hours
        assistant.ts  §10  grounded retrieval, consumer and partner
        analytics.ts  §12/B9 the estimated-sales pipeline and the findings
+       dashboard.ts  B9   the dashboard's day series, till log, insights,
+                          reminders, audiences, listing and the counter tool
        profiles.ts   B9a  consent-gated identified customers
        entitlements.ts §12a/B7/D plans, subscriptions, entitlements
        consent.ts    §1.3/1.4 consent records, GDPR export and erasure
@@ -616,7 +618,7 @@ The React site in `src/` still runs on `localStorage` (`src/site/auth/`), which
 its own `users.ts` says must be replaced by a server. The API shapes were chosen
 to match it — `GET /v1/me`, `GET /v1/wallet`, `GET /v1/games/state` return the
 fields `PlayerState` and `BusinessProfile` already use — so the swap is a client
-module, not a redesign. `GET /v1` lists all 142 endpoints.
+module, not a redesign. `GET /v1` lists all 153 endpoints.
 
 
 ### The admin account

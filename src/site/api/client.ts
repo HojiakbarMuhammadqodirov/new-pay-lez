@@ -64,18 +64,30 @@ export const hasToken = (): boolean => readToken() !== null;
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /**
+   * Everything else the refusal carried, beside its code and message.
+   *
+   * `respondError` on the server spreads a `DomainError`'s detail into the error
+   * body — the points a voucher needs and the points somebody has, the ceiling an
+   * amount went over, the moment a reminder may be sent again. Dropping it here
+   * left every screen able to say *that* it was refused and none able to say by
+   * how much, which is the half of a refusal a person can act on. Empty rather
+   * than optional, so a caller reads `error.detail.required` without a guard.
+   */
+  readonly detail: Record<string, unknown>;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, detail: Record<string, unknown> = {}) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.detail = detail;
   }
 }
 
-/** The one shape the server refuses in — `{ error: { code, message } }`. */
+/** The one shape the server refuses in — `{ error: { code, message, ...detail } }`. */
 interface ErrorBody {
-  error?: { code?: string; message?: string };
+  error?: { code?: unknown; message?: unknown; [detail: string]: unknown };
 }
 
 export interface CallOptions {
@@ -121,19 +133,46 @@ export async function call<T>(path: string, options: CallOptions = {}): Promise<
   }
 
   const text = await response.text();
-  const parsed: unknown = text ? JSON.parse(text) : null;
+  /*
+   * Not every answer is ours. While the backend restarts, the proxy in front of
+   * it answers 502 or 504 with an HTML page, and `JSON.parse` on that threw a
+   * `SyntaxError` straight past every caller's `ApiError` branch — so a deploy
+   * read as "something broke" on screens that know how to say "the server is
+   * not there right now". An unparseable body is kept as `undefined` and decided
+   * below by the status it came with.
+   */
+  let parsed: unknown = null;
+  let readable = true;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      readable = false;
+    }
+  }
 
   if (!response.ok) {
-    const body = parsed as ErrorBody;
+    const error = readable ? (parsed as ErrorBody | null)?.error : undefined;
     /* A token the server no longer honours is dropped here rather than left to
        fail every subsequent call — the console's "connect" panel is the correct
        next screen, and it only appears when there is no token. */
     if (response.status === 401) setToken(null);
+    /* Annotated, because destructuring `code` out of a bare `{}` fallback is a
+       property TypeScript cannot find on `{}`. */
+    const { code, message, ...detail }: NonNullable<ErrorBody['error']> = error ?? {};
     throw new ApiError(
       response.status,
-      body?.error?.code ?? 'unknown',
-      body?.error?.message ?? response.statusText,
+      typeof code === 'string' ? code : 'unknown',
+      typeof message === 'string' ? message : response.statusText,
+      detail,
     );
+  }
+
+  if (!readable) {
+    /* A 2xx that is not JSON is not this API answering — a captive portal, a
+       misrouted proxy — and handing it to a caller typed for our shapes would
+       fail later and somewhere less obvious. */
+    throw new ApiError(response.status, 'bad_response', 'the response was not JSON');
   }
 
   return parsed as T;

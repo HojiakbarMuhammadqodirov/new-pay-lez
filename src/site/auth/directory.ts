@@ -121,6 +121,20 @@ export function patchUser(id: string, patch: Partial<UserRecord>): void {
 }
 
 /**
+ * Put one row where another was, under a different id.
+ *
+ * The one case is an account this browser opened while the backend was down —
+ * a locally minted `u_…` id — whose owner then signs in to the server with the
+ * same address. From then on the row has to be keyed by the *server's* id, and
+ * `patchUser` cannot move a row: handed the new id it matched nothing and wrote
+ * nothing, while the session was stored under the new id, so the next page load
+ * dropped that session as a pointer at nobody.
+ */
+export function replaceUser(oldId: string, user: UserRecord): void {
+  writeAll([...listUsers().filter((row) => row.id !== oldId && row.id !== user.id), user]);
+}
+
+/**
  * The session's view of a row: everything except the secret and the join date.
  *
  * **Every backfill for an old shape lives here, and here only.** It used to be

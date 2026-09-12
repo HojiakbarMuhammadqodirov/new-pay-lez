@@ -715,6 +715,108 @@ export const en = {
        page once, which is why the tabs above them have no heading of their own. */
     giftsTitle: 'Gift cards',
     giftsLede: 'Paid for by Paylez. A fixed amount, spent like money at the place named on the card.',
+
+    /* ── the counter code ──
+       What staff type into the dashboard's counter tool to record a visit: the
+       username. An account without one has no code, and the card says where to
+       get one rather than drawing an empty box. */
+    counter: {
+      title: 'Your counter code',
+      lede: 'Staff type this at the till to record your visit.',
+      none: 'You have not chosen a username yet — it is the code staff type at the till. Pick one on your profile.',
+      setUp: 'Choose a username',
+    },
+
+    /* The copy control beside every code staff type in. `copyLabel` is the
+       button's accessible name, so a screen reader hears which code. */
+    code: {
+      show: 'Show this code at the counter',
+      copy: 'Copy',
+      copied: 'Copied',
+      copyLabel: 'Copy {code}',
+    },
+
+    /* On a deal, a stamp card, a voucher and a reward: opens the venue. */
+    see: 'See the place',
+
+    /* ── places ──
+       `{city}` is the city on the account, as the server stores it — the list
+       is matched on that exact spelling. */
+    places: {
+      title: 'Places near you',
+      lede: 'Venues in {city} on Paylez. Open one to see what your points get you there.',
+      noCity: 'Add your city to your profile and the places in it will show up here.',
+      setCity: 'Add your city',
+      none: 'No venues in {city} have joined yet. They appear here once they sign up and are verified.',
+      vouchers: 'Takes vouchers',
+    },
+
+    /* ── rewards ──
+       Earned by filling a stamp card rather than bought with points, which is
+       why they are a list of their own and not more vouchers. */
+    rewards: {
+      title: 'Rewards',
+      lede: 'Earned by filling a stamp card. Show the code and the venue hands it over.',
+      none: 'No rewards yet. A full stamp card earns one.',
+    },
+
+    /* ── one venue, opened ── */
+    sheet: {
+      close: 'Close',
+      loading: 'Asking the server…',
+      unreachable: 'We could not reach the server, so we cannot show this place right now.',
+      refused: 'The server answered but would not show this place.',
+      gone: 'This place is no longer listed.',
+      retry: 'Try again',
+
+      /* "Today" is the venue's today, read on the clock `venue.timezone` names.
+         `hoursOn` / `closedOn` are for a server that does not say which clock
+         that is: the day is named instead (`{day}`, the weekday's name), which
+         stays true wherever the reader is. */
+      hoursToday: 'Today: {from}–{to}',
+      closedToday: 'Closed today',
+      hoursOn: '{day}: {from}–{to}',
+      closedOn: '{day}: closed',
+
+      ladder: 'Vouchers here',
+      ladderLede: 'Spend points on a discount at this place. Staff take it off the bill.',
+      /* `{cap}` is the most the discount can take off, in the reader's currency. */
+      tier: '{pct}% off, up to {cap}',
+      get: 'Get for {points} points',
+      getting: 'Getting it…',
+      /* A shortfall, not a price — the button beside it already says the price. */
+      short: '{n} more points',
+      notIssued: 'Not being issued right now',
+      noVouchers: 'This place is not taking vouchers at the moment.',
+      got: 'Your voucher is ready',
+
+      /* Keyed by what went wrong, never by the server's English message. Only
+         `unreachable` is a genuine "we do not know"; every other one charged
+         nothing, and says so. */
+      failed: {
+        /* `{n}` is the shortfall the refusal itself reported; `insufficient`
+           is for one that did not say. */
+        insufficientBy: 'You need {n} more points for that one, so nothing was charged.',
+        insufficient: 'You do not have enough points for that one, so nothing was charged.',
+        exhausted: 'This place has just stopped issuing that voucher. Nothing was charged.',
+        closed: 'This place is not taking vouchers right now. Nothing was charged.',
+        gone: 'That voucher is no longer offered here. Nothing was charged.',
+        signedOut: 'Your session has ended. Sign in again to get a voucher.',
+        unreachable: 'We could not reach the server, so we do not know whether that went through. Trying again will not charge you twice.',
+        other: 'That did not go through, and nothing was charged.',
+      },
+
+      stamps: 'Your stamp cards here',
+      rewards: 'Your rewards here',
+      deals: 'Live deals here',
+
+      share: 'Share my profile with {venue}',
+      /* The whole disclosure, and deliberately concrete: exactly what the
+         venue's customer and scan screens read with the switch on, and exactly
+         what they never read. */
+      shareWhat: 'With this on, {venue} sees your name and photo, and your visits and spending there — never your points, and nothing about other places. You can turn it off at any time.',
+      shareFailed: 'That did not save. Try again in a moment.',
+    },
   },
 
   /* ────────────────────────────────────────────────────────────── games ── */
@@ -1229,6 +1331,52 @@ export const en = {
     save: 'Save and continue',
     saved: 'Saved.',
     saveProfile: 'Save changes',
+
+    /* The dashboard's Profile screen, which opens on the listing as it stands
+       and edits it behind one button. */
+    view: {
+      edit: 'Edit',
+      cancel: 'Cancel',
+      saving: 'Saving…',
+      saved: 'Your listing is saved.',
+      savedDevice:
+        'Saved on this device only — we could not reach the server. Save again once you are back online.',
+      /* `{why}` is the server's own sentence, untranslated: it names which rule
+         refused, and a dictionary sentence general enough to cover every rule
+         would name none. */
+      refused: 'The server did not accept this: {why}',
+      notAdded: 'Not added yet',
+      about: 'About',
+      where: 'Where to find you',
+      reach: 'How customers reach you',
+      openMaps: 'Open in Google Maps',
+      /* Keyed by `ListingState` in `api/listing.ts`. */
+      status: {
+        live: 'Live in the app',
+        review: 'Waiting for review',
+        draft: 'Draft',
+        rejected: 'Not approved',
+        suspended: 'Suspended',
+        archived: 'Archived',
+      },
+      statusNote: {
+        live: 'Customers can find you in the Paylez app.',
+        review: 'We are checking your venue. Your offers can go live once it is approved.',
+        draft: 'Not in the app yet. Save your listing to send it for review.',
+        rejected: 'Your listing was not approved. Get in touch and we will tell you what to change.',
+        suspended: 'Your listing is hidden from customers. Get in touch with us to find out why.',
+        archived: 'Your listing is no longer shown to customers.',
+      },
+      statusChecking: 'Checking whether your listing is live…',
+      statusUnknown: 'We could not reach the server to check whether your listing is live.',
+      statusLocal:
+        'This listing is only on this device so far — it reaches the app once it is saved while you are connected.',
+      /* The finished meter, for a listing that is not live: "your listing is
+         live in the app" would be a claim about a venue still being reviewed. */
+      readyDone: 'Everything required is filled in.',
+      /* A logo the server holds at an address this site does not load. */
+      logoKept: 'Your current logo is kept. Choose a file to replace it.',
+    },
   },
 
   /* ────────────────────────────────────────────────────────── dashboard ── */
@@ -1316,6 +1464,11 @@ export const en = {
       resume: 'Resume',
       extend: 'Extend',
       end: 'End it',
+      /* Not drawn today. Nothing on the dashboard removes a row: a deal is
+         archived and a campaign ended, and both keep their history — so the
+         overview's red button says "End it", which is what happens. This word
+         waits for the day an endpoint deletes something. */
+      delete: 'Delete',
       /* One accent means a button cannot be red, so the one change that cannot
          be undone asks its question in words instead. */
       endSure: 'Sure?',
@@ -1413,7 +1566,7 @@ export const en = {
     unmeasured: {
       /** Why every figure on the screen is missing, in the normal case. */
       noSession:
-        'This device is not signed in to the Paylez API, so none of these figures can be read. The site’s own sign-in does not yet create an API session — until it does, only the operator console can connect.',
+        'This device is not signed in to the Paylez API, so none of these figures can be read. Sign out and sign in again with your venue’s account to connect it.',
       /** The other reason: there is a session, and the server did not answer. */
       serverSilent:
         'The server did not answer, so nothing here can be shown. This is not a zero — we could not ask.',
@@ -1441,9 +1594,8 @@ export const en = {
       /** The assistant, which will not compose around a figure it cannot read. */
       assistant:
         'I read your quiet hours, your budgets and what works at venues like yours before I suggest anything — and this device is not signed in to the Paylez API, so I cannot read any of it. I will not guess at a number and put your name on it.',
-      /** The create drawer: the server sizes an audience per published deal. */
-      audience:
-        'How many people this would reach is not something we can tell you yet — the server sizes an audience per published deal, and this one is still a draft.',
+      /** The create drawer: the audience sizes could not be read. */
+      audience: 'How many people this reaches cannot be read right now — the server did not answer.',
       /** The create drawer: how much of the notification quota is left. */
       quota:
         'How many notifications this plan has left cannot be read — this device is not signed in to the Paylez API.',
@@ -1532,6 +1684,28 @@ export const en = {
       reachSplit: 'Where they came from',
       reachListing: 'Your listing',
       reachDeals: 'Your live offers',
+      /* Claims is a column now rather than the last clause of a sentence under
+         the table — it is the one figure in the funnel that is an *outcome*,
+         and it was in the smallest text on the panel. */
+      reachClaims: 'Claims',
+      reachClaimsNote: 'times somebody claimed one of your offers',
+      /*
+       * The surfaces a venue is seen on. `ReachReport.sources` has carried
+       * these since the report shipped and nothing rendered them.
+       *
+       * Keyed by the server's own strings rather than index-aligned, because
+       * which surfaces exist is a server decision and a new one must not
+       * silently caption itself with the previous one's name. An unknown key
+       * falls back to itself.
+       */
+      reachSources: {
+        feed: 'In the app feed',
+        search: 'From a search',
+        map: 'From the map',
+        direct: 'Opened directly',
+        share: 'Shared by a customer',
+        unknown: 'Somewhere else',
+      },
       reachFunnel: '{seen} saw you · {clicks} opened it · {claims} claimed something',
       reachEmpty: 'Nothing has been seen yet. Publishing an offer is what puts you in the app feed.',
       reachLive: 'Live figures, counted from your listing and your offers.',
@@ -1558,6 +1732,13 @@ export const en = {
       tiles: ['Visits', 'Deals claimed', 'Vouchers used', 'Rewards used'],
       since: 'vs previous period',
       inMonth: 'in {month}',
+      /* The two deltas that are not percentages. A count that went from nothing
+         to something has no percentage change, and one that was nothing both
+         times has no direction — each says so rather than printing "+100%" or
+         "0%". */
+      deltaNew: 'New',
+      sinceNone: 'none the period before',
+      quietBoth: 'none this period or the one before',
 
       proofTitle: 'The one thing we can prove',
       /* One hole, and it is a *multiple* rather than a rate.
@@ -1587,26 +1768,53 @@ export const en = {
         'Every one of them is a customer who qualified and has not come back yet. If they expire, the money returns to your budget.',
 
       noticed: 'What we noticed',
-      insights: [
-        {
-          text: 'Visits are up 12% but voucher use is down 4%. People are coming in — the rewards are not pulling them back.',
-          detail:
-            'Only {reached} customers reached the {pct}% tier this month because it needs {points} points. At {lower} points, {more} more of your regulars would have qualified.',
-          action: 'Change the 10% tier',
-        },
-        {
-          text: 'Your free-item deals get 2.4× more claims than your percentage discounts.',
-          detail:
-            '“Free filter with any bake” was claimed {itemClaims} times from {itemSeen} views. “Morning flat white” at {pctBadge} off was claimed {pctClaims} times from {pctSeen} views.',
-          action: 'Look at your deals',
-        },
-        {
-          text: '{n} loyalty rewards are earned and sitting unused, holding {amount}.',
-          detail:
-            'Those customers qualified and did not come back. A reminder usually brings about a third of them in within a week.',
-          action: 'Remind them',
-        },
-      ],
+      /* Offered beside every finding. The insight rows argue for one specific
+         next step; this is the way to ask about the rest of it. */
+      askAssistant: 'Ask the assistant',
+      /* What "Remind them" becomes once it has been pressed. A past-tense
+         word rather than a second instruction, because the button is now a
+         statement of what happened rather than a thing to do. */
+      reminded: 'Reminded',
+      /*
+       * "What we noticed", as `GET …/insights` measures it.
+       *
+       * Keyed rather than index-aligned, because each finding is absent on its
+       * own: the trend, the tier and the two offers can each be null, and a row
+       * is drawn only when its finding exists. **Every number is a hole.** This
+       * block carried "12%", "4%" and "2.4×" as literals, and two offer names
+       * from the prototype, which put a month nobody measured under the owner's
+       * own venue.
+       *
+       * The trend is a sentence picked by direction, never one sentence with a
+       * direction hole: "up" and "down" do not take the same grammar in every
+       * language, and a single template would sooner or later state a rise over
+       * a fall. `pulling` is the one interpretation, drawn only when it is true —
+       * visits up and voucher use down.
+       */
+      insights: {
+        visitsUp: 'Visits are up {pct}% on the same days last month.',
+        visitsDown: 'Visits are down {pct}% on the same days last month.',
+        visitsFlat: 'Visits are level with the same days last month.',
+        vouchersUp: 'Voucher use is up {pct}%.',
+        vouchersDown: 'Voucher use is down {pct}%.',
+        vouchersFlat: 'Voucher use has not moved.',
+        pulling: 'People are coming in — the rewards are not pulling them back.',
+        tierText: 'Your {pct}% tier is out of reach for most of your recent customers.',
+        tierDetail:
+          'Only {reached} of the {eligible} customers who came in over the last 30 days hold the {points} points it needs. At {lower} points, {more} more of them would qualify.',
+        tierAction: 'Change the {pct}% tier',
+        itemText:
+          'Your best offer that is not a percentage off gets {multiple}× the claims per view of your best percentage discount.',
+        percentText:
+          'Your best percentage discount gets {multiple}× the claims per view of your best other offer.',
+        sameText:
+          'Your best percentage discount and your best other offer are claimed at about the same rate.',
+        itemDetail:
+          '“{itemTitle}” ({itemBadge}) was claimed {itemClaims} times from {itemSeen} views. “{pctTitle}” ({pctBadge}) was claimed {pctClaims} times from {pctSeen} views.',
+        itemAction: 'Look at your deals',
+        unusedText: '{n} loyalty rewards are earned and sitting unused, holding {amount}.',
+        unusedDetail: 'Those customers qualified and have not come back for them yet.',
+      },
 
       runningTitle: 'Running right now',
       runningNote: 'Everything customers can see or earn in your venue today',
@@ -1707,11 +1915,15 @@ export const en = {
       /* Index-aligned with `PD_AUDIENCES`, and only the drawer reads them: the
          table shows an audience by name, the form has to say what the name
          means before an owner picks one. */
+      /* Written against the rules the server targets with (`deals.segmentsFor`),
+         which the notes here used to contradict: a newcomer is a Paylez account
+         younger than six months, not somebody who arrived in Poland, and lapsed
+         is sixty days away rather than thirty. */
       audienceNotes: [
-        'Anyone using the Paylez app near you.',
-        'People who arrived in Poland in the last 60 days.',
-        'Came to you before, but not in the last 30 days.',
-        'App users nearby who have never visited you.',
+        'Anyone who opens the Paylez app near you.',
+        'People who joined Paylez in the last six months.',
+        'Came to you before, but not in the last 60 days.',
+        'People who have never been in to you.',
         'People whose app language is Russian.',
       ],
 
@@ -1733,6 +1945,10 @@ export const en = {
       dropNone: 'This deal has not started yet, so there is nothing to measure.',
 
       notifyTitle: 'What the notification did',
+      /* The same funnel for the whole venue, under the table. */
+      notifyVenueTitle: 'What your notifications did this month',
+      notifyVenueSent: 'From {n} notifications sent this month.',
+      notifyVenueNone: 'No notification has gone out this month, so there is nothing to measure yet.',
       notifySteps: ['Notified', 'Opened', 'Came in'],
       notifyStepNotes: [
         'people with notifications switched on',
@@ -1821,7 +2037,15 @@ export const en = {
       remindNote: 'They earned a reward and have not come back for it.',
       remindResult: 'Last time, {back} of {of} came in within a week.',
       remindSetup: 'Set this up for me',
+      /* The reminder's own endings. The week between two is the server's rule,
+         and the date in `remindNext` is the server's too. */
+      remindNext: 'The next reminder can go out on {date}.',
+      remindSent: 'Reminder sent to {n} customers — {queued} by notification, the rest in their Paylez inbox.',
+      remindTooSoon: 'A reminder already went out this week. The next one can go on {date}.',
+      remindNobody: 'Nobody is holding an unused reward or voucher right now, so there is nobody to remind.',
       near: '{n} regulars are one visit away from their next reward.',
+      /* The venue's own cooldown, read off the venue row — a clause on the card. */
+      cooldown: 'Scans count once every {n} hours',
       rebalance:
         'Your loyalty budget is forecast to run out on {date}. Vouchers have {amount} unused — move some across?',
       rebalanceAction: 'Move budget across',
@@ -1872,6 +2096,11 @@ export const en = {
         'Tiers do not hold money. Points decide who gets there, so raising a number sends less of the budget that way.',
       columns: ['Tier', 'Points needed', 'Given out', 'Used', 'Cost so far'],
       tier: '{n}% off',
+      /* Vouchers given out at a rung and not yet spent or expired. */
+      stillOut: '{n} still out',
+      /* A rung the owner switched off that still has vouchers out this month.
+         Its points are shown as a fact: saving them would switch it back on. */
+      retired: 'Retired',
       /* The line under the ladder. Deliberately not a restatement of the row
          above it: the unit cost and the share of the pool are the two things a
          row has no space for, and they are what tie this panel to "where the
@@ -1922,15 +2151,43 @@ export const en = {
         '{n} of your {total} customers turned on profile sharing, so you can see these ones by name. Everyone else stays in the grouped figures below.',
       rosterCount: '{n} sharing',
       rosterColumns: ['Customer', 'Spent', 'Visits', 'Last seen', 'Status'],
-      rosterFilters: ['Everyone', 'Regulars', 'Lapsed', 'New'],
+      /* Index-aligned with the five statuses below, after "Everyone". Every row
+         falls under exactly one, so the counts add up to the first chip. */
+      rosterFilters: ['Everyone', 'Regulars', 'High value', 'At risk', 'Lapsed', 'New'],
       withdrew:
         'Someone can turn sharing off at any time. When they do, they drop off this list and their history stops being visible to you.',
-      statuses: { regular: 'Regular', lapsed: 'Lapsed', new: 'New' },
+      /* The server's five words. `at_risk` is a valuable customer who has not
+         been in for a month; `lapsed` is anybody else away for two. */
+      statuses: {
+        regular: 'Regular',
+        high_value: 'High value',
+        at_risk: 'At risk',
+        lapsed: 'Lapsed',
+        new: 'New',
+      },
       today: 'Today',
       daysAgo: '{n} days ago',
       dayAgo: '1 day ago',
       stamps: '{done} of {of} stamps',
       tierProgress: '{n}% tier',
+
+      /* The panel a roster row opens — one person, behind the same consent. */
+      detail: {
+        open: 'Show {name}',
+        close: 'Close',
+        spent: 'Spent here',
+        visits: 'Visits',
+        firstSeen: 'First visit',
+        lastSeen: 'Last visit',
+        language: 'App language',
+        months: 'Visits by month',
+        cards: 'Stamp cards',
+        card: '{done} of {need} stamps',
+        offers: 'Offers they opened or claimed',
+        events: { open: 'Opened', claim: 'Claimed', click: 'Opened' },
+        none: 'Nothing yet.',
+        gone: 'This customer is not sharing with you any more, so there is nothing to show.',
+      },
 
       whenTitle: 'When they come in',
       whenLede: 'Every QR scan at the counter, in an average week. Darker means busier.',
@@ -2027,10 +2284,23 @@ export const en = {
       first: 'First visit',
       again: 'Came back',
       today: 'Today',
-      noCampaign: 'No campaign running',
+      /* Either nothing is running or the bill was under the campaign's floor —
+         the row cannot tell which, so it names neither. */
+      noCampaign: 'Toward no campaign',
       progress: '{done}/{need} scans',
       toGo: '{n} to go',
-      ready: 'reward ready',
+      ready: 'reward earned',
+      /* Most scans are by people who have not shared their name with the venue.
+         A word, and no initials: two letters are a hint at a name somebody
+         chose not to give. */
+      anonymous: 'Customer — not shared',
+      anonymousNote: 'This customer has not shared their name with your venue.',
+      notCounted: 'Not counted',
+      notCountedNote: 'Under the minimum bill, too soon after their last scan, or already counted that day.',
+      discount: '{amount} off',
+      emptyWindow: 'No scans in this window yet.',
+      emptySegment: 'No scans match this filter.',
+      todayTitle: 'Today at the counter',
       count: '{n} scans',
       showing: 'Showing {n} of {total}',
       /* The pager. Honest now that `PD_SCANS` builds all forty-eight rather
@@ -2040,6 +2310,62 @@ export const en = {
       prev: 'Previous',
       next: 'Next',
       coords: 'Counter',
+
+      /*
+       * Recording a visit from the dashboard.
+       *
+       * Staff type what the customer shows them — an @username, or the code on
+       * a voucher or reward — and the bill from the till. Every refusal is its
+       * own sentence, because each has a different fix at the counter, and
+       * "something went wrong" in front of a queue is worse than no tool at all.
+       */
+      counter: {
+        title: 'Record at the counter',
+        lede: 'Type the customer’s @username or the code on their voucher or reward, then the bill total from the till.',
+        codeLabel: 'Customer or code',
+        codePlaceholder: '@username, voucher or reward code',
+        lookup: 'Look up',
+        looking: 'Looking…',
+        clear: 'Start again',
+        noHandle: 'No username',
+        notShared: 'Name not shared with you',
+        firstVisit: 'First visit here',
+        returning: 'Has been in before',
+        stamps: '{done} of {need} stamps',
+        noCampaigns: 'No campaign is running, so no stamps are counted.',
+        voucherTitle: 'Voucher',
+        voucher: '{pct}% off, at most {cap}',
+        rewardTitle: 'Reward',
+        rewardWorth: 'costs you {amount}',
+        expires: 'Expires {date}',
+        billLabel: 'Bill total',
+        billNote: 'In {currency}, exactly as the till printed it — not converted.',
+        billCeiling: 'At most {amount} for one bill.',
+        confirm: 'Record the visit',
+        recording: 'Recording…',
+        receiptTitle: 'Recorded',
+        receiptBill: 'Bill {amount}',
+        points: '{n} points for the customer',
+        noPoints: 'No points for this visit',
+        discount: '{amount} taken off the bill',
+        stamped: 'A stamp went on their card.',
+        rewardEarned: 'They earned {label} — code {code}.',
+        notCounted:
+          'This visit did not count toward points or stamps: the bill was under your minimum, the customer scanned too recently, or they were already counted today.',
+        notFound: 'Nothing matches that here. Check the spelling, or ask the customer to show the code again.',
+        pending:
+          'This customer already has a scan waiting to be confirmed here. It clears itself if nobody confirms it — try again in a few minutes.',
+        tooHigh: 'That is more than one bill can be here — at most {amount}. Check the amount.',
+        badAmount: 'Enter the bill total from the till.',
+        budget:
+          'Your discount budget cannot cover this voucher right now. Record the visit with the customer’s @username instead, or raise the budget on Vouchers.',
+        expired: 'That code has expired.',
+        used: 'That code has already been used.',
+        notLive: 'Your venue is not live yet, so visits cannot be recorded.',
+        notStaff: 'This account is not staff at this venue, so it cannot record visits here.',
+        needsVenue:
+          'Recording a visit needs your venue signed in to the Paylez API. This device is not, so nothing can be recorded here.',
+      },
     },
 
     /*
@@ -2070,11 +2396,15 @@ export const en = {
       /* The panel's heading when it was opened on an existing deal. One
          panel does both jobs and the heading is what says which. */
       editDeal: 'Edit this hot deal',
+      editCampaign: 'Edit this campaign',
       close: 'Close',
       cancel: 'Cancel',
       later: 'Save and finish later',
       deal: {
         kicker: 'New hot deal',
+        /* The kicker over the edit form — "New" over an existing deal is the
+           same mistake the heading would be. */
+        editKicker: 'Hot deal',
         title: 'Create a hot deal',
         sub: 'A time-bound offer in the app feed. Nothing is charged until somebody claims one.',
         publish: 'Publish the deal',
@@ -2101,6 +2431,12 @@ export const en = {
         noDays: 'no days yet',
         audienceTitle: 'Who sees it',
         audienceEstimate: 'About {n} people match this, and {notifiable} of them can be notified.',
+        /* The two figures under the picker, read off `GET …/audiences`. Labels
+           rather than one sentence, because either figure can be withheld and
+           "About — people" is not a sentence. */
+        reachLabel: 'match this audience today',
+        notifiableLabel: 'can be notified',
+        reachLanguage: 'The server does not size an audience by app language, so this one has no count.',
         notifyTitle: 'Notify people',
         notifySwitch: 'Send a notification for this deal',
         notifyQuota: '{n} of {total} left this month.',
@@ -2111,7 +2447,9 @@ export const en = {
         notifyWhen: 'When it goes out',
         notifySuggested: 'Your audience opens the app most around {at}.',
         useSuggested: 'Use {at}',
-        quietNote: 'Nothing goes out between 21:00 and 08:00, whatever you set.',
+        /* The server's window, which is 07:00–21:00 venue-local. This said
+           21:00 to 08:00 for a while and refused nothing it described. */
+        quietNote: 'Nothing goes out before 07:00 or after 21:00 at your venue, whatever you set.',
         notifyWho: 'Who gets it',
         notifyReach: '{n} of {total} have notifications switched on.',
         notifyWhoNote: 'Change it in “Who sees it” above',
@@ -2161,6 +2499,7 @@ export const en = {
       },
       campaign: {
         kicker: 'New loyalty campaign',
+        editKicker: 'Loyalty campaign',
         title: 'Create a loyalty campaign',
         sub: 'A reward your regulars earn by coming back. It is held from your loyalty budget the moment somebody qualifies.',
         publish: 'Start the campaign',
@@ -2186,15 +2525,21 @@ export const en = {
         project: 'customers',
         projection: 'If {n} customers finish it, that is {amount} out of your loyalty budget.',
         priorityTitle: 'When two campaigns match the same visit',
+        /* The server's rule: the higher number wins, and a tie goes to the
+           shorter card (`campaigns.ts`). This said "lower wins" for a while,
+           which told every owner to set up their most important campaign to
+           lose. */
         priorityLede:
-          'A customer can qualify for more than one campaign at the same visit. Only one reward is given: the one with the lower priority number.',
-        priorityHelp: 'Priority {n} of 5. Lower wins.',
+          'A customer can qualify for more than one campaign at the same visit. Only one reward is given: the one with the higher priority number.',
+        priorityHelp: 'Priority {n} of 5. Higher wins.',
         rulesTitle: 'The small rules',
         expiry: 'Reward expires after',
         days: 'days',
         expiryNote: 'After that the reward is gone and the money returns to your budget.',
         minSpend: 'Minimum spend per visit',
-        minSpendNote: 'Smaller visits do not count. One scan per customer per day.',
+        /* The cooldown is the venue's rule and is not this form's to quote — it
+           said "one scan per customer per day" whatever the venue had set. */
+        minSpendNote: 'Smaller visits do not count toward this campaign.',
         summaryTitle: 'Your campaign in one line',
         summary: '{visits} visits, then {reward}. Costs you {amount} every time somebody finishes it.',
         summaryNote:
@@ -2203,6 +2548,11 @@ export const en = {
         /* One ending, because a campaign has one button: the server inserts
            it active, so there is no draft to fall back to. */
         started: 'Running. It counts from the next visit.',
+        /* Edit mode: one button, one ending. */
+        save: 'Save changes',
+        saved: 'Saved. Rewards already earned keep what they cost; the change applies from the next visit.',
+        minSpendVenue:
+          'This campaign uses your venue’s own minimum until you type a figure here.',
         costError: 'Say what one reward costs you — the money is held from your loyalty budget the moment somebody qualifies.',
       },
       valid: 'Fix the {n} thing above before publishing.',
@@ -2212,298 +2562,223 @@ export const en = {
     /*
      * The assistant.
      *
-     * The one screen that talks, and the largest single thing in the prototype:
-     * a conversation, a draft it can defend, the deal text in five languages,
-     * three named ways out of it, and four endings the conversation can reach
-     * that are not a draft at all — an answer, a review, a hand-over to the
-     * form, and a plain "I cannot do that".
+     * Every sentence the screen says, and none of its figures: those arrive
+     * through `fill()` holes from the server's own responses — the context's
+     * facts, the report an answer was built from, a draft's configuration. A
+     * number typed into a string here is the bug that arrangement exists to
+     * prevent.
      *
-     * **It reads numbers, it does not invent them.** Every figure below arrives
-     * through a hole filled from `partnerMetrics.ts`, which is what lets the
-     * composer note promise exactly that. A number typed into a sentence here is
-     * the bug this arrangement exists to prevent.
+     * The keys under `facts`, `statuses`, `suggestions` and `kinds` are the
+     * server's own identifiers (`server/domain/assistant.ts`), so a key the
+     * server adds later falls back to the server's English, never to the key.
      *
-     * **And nothing it drafts is live.** There is no server behind any of it, so
-     * publishing shows what would happen and says so; the same rule the rest of
-     * the dashboard follows with `notWired`.
+     * A count that can be small sits after a colon rather than before its
+     * noun. Polish, Russian and Ukrainian decline the noun after a number three
+     * ways, and a sentence that reads right for 5 visits reads wrong for 2 and
+     * for 1 — the translations follow the same shape for that reason.
      */
     assistant: {
-      knowTitle: 'What I know about your venue',
-      intro:
-        'Tell me what you want to happen in your venue. I will set it up, show you what it costs, and leave it to you to publish. Nothing goes live until you press the button.',
-      knows: [
-        'Your quietest hours are {days}, {from} to {to} — about {pct}% below your weekly average.',
-        '{pct}% of your customers use the app in Russian, but none of your live deals is written in Russian.',
-        'Across {n} cafés in your city, free-item deals get about {x}× the claims of percentage discounts.',
-        'You have {vouchers} unspent in vouchers and {loyalty} in loyalty this month.',
-      ],
+      /* What it knows, and what needs attention. */
+      knowTitle: 'What I know about {venue}',
+      knowEmpty:
+        'Nothing is measured here yet. I learn as customers scan at your counter — until then, this is everything I can see.',
+      knowNote: 'Every figure I quote comes from your venue’s own records. I will not make one up.',
+      facts: {
+        visits: 'Visits this month',
+        customers: 'Customers this month',
+        newCustomers: 'New customers this month',
+        budgetAvailable: 'Budget still available',
+        budgetUnspent: 'Budget not spent yet',
+        spend: 'Spent this month',
+        listing: 'Your listing',
+        quietest: 'Quietest open hour',
+        topLanguage: 'Language most customers use',
+      },
+      statuses: {
+        draft: 'Draft — not in the app yet',
+        pending_review: 'Waiting for review',
+        live: 'Live in the app',
+        suspended: 'Suspended',
+        archived: 'Archived',
+      },
+      receipt: 'The figures this answer read',
 
-      optionsTitle: 'What you can do',
-      optionsIntro: 'Focused starts, based on what I am seeing in your numbers. Tap one to talk it through.',
-      options: [
-        {
-          name: 'Fill my quiet hours',
-          desc: '{days}, {from} to {to} — about {pct}% below average.',
-          seed: 'Fill my quiet Tuesday afternoons',
-        },
-        {
-          name: 'Bring back customers who stopped coming',
-          desc: '{n} regulars, last seen over 30 days ago.',
-          seed: 'Get back the {n} regulars who stopped coming',
-        },
-        {
-          name: 'Review everything I am running',
-          desc: 'Three things worth changing this week.',
-          seed: 'Review everything I am running and tell me what to fix',
-        },
-        {
-          name: 'Why did voucher use drop?',
-          desc: 'Down 4% this month — I can show you where.',
-          seed: 'Why did voucher use drop this month?',
-        },
-      ],
+      attentionTitle: 'Needs your attention',
+      attentionNone: 'Nothing needs your attention right now.',
+      attentionFailed: 'I could not read what needs your attention.',
+      review: {
+        dealStuck:
+          '“{title}” has been seen {n} times and nobody has claimed it. The offer or the hours are wrong.',
+        dealStuckPlain:
+          'One of your live deals is being seen and nobody is claiming it. The offer or the hours are wrong.',
+        toLoyalty: 'Your loyalty pool is nearly empty while the voucher pool has {amount} to spare.',
+        toVoucher: 'Your voucher pool is nearly empty while the loyalty pool has {amount} to spare.',
+        poolsPlain: 'One of your budget pools is nearly empty while the other has room to spare.',
+        noCampaign:
+          'You have no stamp card running. It is the cheapest thing here that buys a second visit.',
+      },
+      actions: {
+        editDeal: 'Edit the deal',
+        moveBudget: 'Move budget',
+        startCampaign: 'Start a stamp card',
+        dealThen: 'Create a deal for that hour',
+      },
 
+      /* Where to start: the server's suggestions, by their keys. */
+      startTitle: 'Where to start',
+      suggestions: {
+        first_deal: {
+          label: 'Run your first deal',
+          detail: 'A time-bound offer anyone can claim. I draft it; you check it in the form.',
+        },
+        stamp_card: {
+          label: 'Start a stamp card',
+          detail: 'A number of visits and one fixed reward. You decide what the reward costs you.',
+        },
+        points_discount: {
+          label: 'Set up a points discount',
+          detail: 'Three tiers customers spend their points on, inside one monthly budget.',
+        },
+        quiet_hours: {
+          label: 'Tell me when you are quiet',
+          detail:
+            'I learn it as customers visit, but you know it today — set the days and hours in the deal form.',
+        },
+        fill_quiet_hour: {
+          label: 'Fill your quietest hour',
+          detail: 'A deal aimed at your quietest open hour: {when}.',
+        },
+        rebalance: {
+          label: 'Move budget between your pools',
+          detail: 'One pool is nearly empty while the other has room to spare.',
+        },
+        translate: {
+          label: 'Reach customers in their language',
+          detail: 'Some of your customers read the app in a language other than your top one.',
+        },
+      },
+      quietPlain: 'A deal aimed at the hour you are quietest.',
+      askTitle: 'Questions I can answer',
+      questions: {
+        quiet: 'When is my venue quietest?',
+        cost: 'What did each new customer cost me?',
+        month: 'How is this month going?',
+      },
+
+      /* The conversation. */
       convTitle: 'Talk to your assistant',
       reset: 'Start over',
       opening:
-        'Tell me what you want to happen in your venue — in your own words, in any of the five languages Paylez speaks. I will ask a couple of short questions, show you what it will cost, and leave it to you to publish.',
-      chipsHint: 'Tap one, or type your answer below.',
-      send: 'Send',
+        'Ask me about your visits, your quietest hours or what you spend. Or switch to Draft, tell me what you want to happen, and I will set it up for you to check in the form.',
+      modeLabel: 'What to do with your message',
+      modes: { ask: 'Ask', draft: 'Draft' },
+      fieldLabel: { ask: 'Your question', draft: 'What you want to happen' },
       placeholders: {
-        idle: 'Tell me what you want to happen in your venue',
-        reward: 'A free coffee, or a percentage off — or say it your way',
-        budget: 'Around {a}, {b} or {c}?',
-        duration: '2, 4 or 8 weeks?',
-        notify: 'Yes or no?',
-        ready: 'Change something before I show the draft?',
+        ask: 'When is my venue quietest?',
+        draft: 'For example: more regulars coming back',
       },
+      budgetLabel: 'Budget, optional',
+      budgetShown: 'Budget: {amount}',
+      send: 'Send',
       composerNote:
-        'I read all five languages Paylez speaks. Every figure I use comes from your own numbers or from venues like yours — I will not make one up.',
+        'I answer from your venue’s own numbers, and I never publish anything — a draft opens in the form, and only you can publish it.',
+      thinking: 'Your assistant is reading your figures…',
 
-      /* What it says when it has understood which of the three goals you mean. */
-      goalOpen: {
-        quiet:
-          'Your quietest stretch is {days}, {from} to {to} — about {pct}% below your weekly average. I would run a short deal then. What should people get?',
-        lapsed:
-          '{n} of your regulars have not been in for over 30 days. A deal aimed at them can pull some back. What should they get?',
-        new: 'New visitors mostly come from one clear, simple offer they see in the feed. What should first-time people get?',
-      },
-      /* The four questions, each answered by a chip or by typing. */
-      askBudget: {
-        item:
-          'A free filter coffee, good. Free-item deals get about {x}× the claims of a percentage off at venues like yours, and each one costs you a fixed {amount}. How much do you want to put toward it this month?',
-        percent:
-          '20% off it is. That moves with the size of each bill, so I will add a stop once it has cost enough. How much do you want to put toward it this month?',
-      },
-      askDuration:
-        '{amount}. Hot deals do not come out of your loyalty or voucher pools, so this is money off your margin. For how long should it run?',
-      askNotify:
-        '{n} weeks. You have {left} of your {total} notifications left this month — want me to send one when it starts? Without it, most people only see the deal if they open the app.',
-      ready:
-        'Here is what I would set up{notify}. Nothing is live yet — it goes out only when you press publish. Take a look at the draft.',
-      readyNotify: ', with a notification when it starts',
-      retry: {
-        reward: 'I did not quite catch that — a free filter coffee, or a percentage off the bill?',
-        budget: 'Roughly how much for the month — {a}, {b} or {c}?',
-        duration: 'For how long — 2, 4 or 8 weeks?',
-        notify: 'Should I send a notification when it starts — yes, or no?',
-        other: 'You can change any of that on the draft. Want to see it?',
-      },
-      chips: {
-        item: 'A free filter coffee',
-        percent: '20% off the bill',
-        weeks: '{n} weeks',
-        yes: 'Yes, send one',
-        no: 'No, just list it',
+      /* An answer, written from the report the server read. */
+      answers: {
+        empty:
+          'I have nothing measured for this venue yet — I learn as customers visit. Here is what you can start today.',
+        quiet: 'Your quietest open hour is {when}. Visits in that hour this month: {n}.',
+        quietNone: 'There are not enough visits yet to find a quiet hour.',
+        busiest: 'Busiest open hour',
+        busiestVisits: 'Visits in that hour this month',
+        counted: 'Visits counted this month',
+        cost: 'This month you spent {spend}, which is {each} for each new customer. New customers this month: {n}.',
+        costWithheld:
+          'Too few new customers this month to report a cost per customer without identifying them.',
+        parts: {
+          subscription: 'Subscription',
+          loyalty: 'Loyalty rewards',
+          vouchers: 'Voucher discounts',
+          deals: 'Deal discounts',
+        },
+        overview: 'This month so far — visits: {visits}, customers: {customers}.',
+        overviewWithheld:
+          'This month so far — visits: {visits}. How many customers made them is withheld: there are too few to report without identifying anyone.',
+        newCustomers: 'New customers',
+        returning: 'Returning customers',
+        sales: 'Sales',
+        averageCheck: 'Average bill',
       },
 
-      readyTitle: 'What I would set up',
-      readyRows: ['The goal', 'What people get', 'Days and hours', 'Budget', 'Runs for', 'Notification'],
-      showDraft: 'Show me the draft',
-
-      /* The draft. */
+      /* A draft. */
       draftTag: 'Draft',
-      draftNote: 'Nothing here is live. It goes out only when you publish it.',
-      changedTitle: 'What I changed',
-      changedNote: 'Nothing else moved. Every other field is the same as before.',
-      sentence: {
-        item: 'A free filter coffee with any bake, {days} {from} to {to}, for the next {weeks} weeks.',
-        percent: '20% off the bill, {days} {from} to {to}, for the next {weeks} weeks.',
+      draftNote: 'Nothing here is live. It opens in the form, and only you can publish it.',
+      goal: 'You asked for: “{goal}”',
+      kinds: { hot_deal: 'Hot deal', campaign: 'Loyalty campaign', voucher_tiers: 'Voucher tiers' },
+      fields: {
+        offer: 'Offer',
+        when: 'When it runs',
+        daysHours: '{days}, {hours}',
+        everyDay: 'Every day, {hours}',
+        whenever: 'Whenever it is live',
+        capClaims: 'Claims before it stops',
+        name: 'Name',
+        visits: 'Visits for a reward',
+        reward: 'Reward',
+        rewardCost: 'Each reward costs you',
+        minSpend: 'Minimum bill',
+        validDays: 'Days a reward stays valid',
       },
-      whyTitle: 'Why I chose this',
-      reasons: {
-        quietDays:
-          'I chose {days}, {from} to {to}, because those are your quietest hours — about {pct}% below your weekly average.',
-        movedDays:
-          'You asked for {days}, so I moved it. Your quietest hours are still {quiet}, {from} to {to}, if you want to go back.',
-        item:
-          'I chose a free item because free-item deals get about {x}× the claims of percentage discounts across {n} venues in your city, and the cost is a fixed {amount} each time.',
-        percent:
-          'You asked for a percentage discount, so I set 20%. The cost moves with the size of each bill, so I added a stopping condition.',
-        budget: 'I set the budget at {amount} because that is what you told me you can spend this month.',
-        budgetTight:
-          'I set the budget at {amount} because that is what is left before hot deals start eating into your margin this month.',
-      },
-      dealTag: 'Hot deal',
-      dealNew: 'New — this will be created',
-      dealFields: ['What it is', 'Days and hours', 'Runs', 'Who sees it'],
-      dealValues: {
-        item: 'Free item — a filter coffee with any bake',
-        percent: 'Percentage off — 20% off the bill',
-      },
-      stopAfter: 'Stops after',
-      claims: 'claims',
-      fieldNote:
-        'Days, hours, dates and audience are set the way I explained above. Change any of them in the full form.',
-      notifyTag: 'Notification',
-      notifyAttached: 'Attached to the deal above',
-      goesOut: 'Goes out',
-      notifyFields: ['Reaches', 'Uses'],
-      notifyReach: '{n} people with notifications switched on',
-      notifyUses: '1 of your {n} remaining notifications this month',
+      english:
+        'The offer and reward wording is the assistant’s English. Rewrite it in the form before you publish.',
       costTitle: 'What it will cost',
-      costLine: {
-        item: 'If {n} people claim this, it costs you about {amount}. That is an estimate, based on a fixed {each} per claim.',
-        percent:
-          'If {n} people claim this, it costs you about {amount}. That is an estimate, based on your average spend of {avg} per visit.',
+      cost: {
+        campaign:
+          'Estimate for this many rewards earned: {n}. That would set {amount} aside from your loyalty pool, at {each} each. Nothing is reserved until somebody earns one.',
+        budget:
+          'Budget named: {amount}. The draft does not cap spending by itself — set a money limit in the form if the deal should stop there.',
+        deal: 'No budget named. A hot deal comes off your margin, and the claim limit above is what stops it.',
+        none: 'The cost depends on what you set in the form.',
       },
-      costNote:
-        'Hot deals have no budget pool of their own, so this comes straight off your margin. The stopping condition above is what limits it.',
-      budgetWarn:
-        'You asked for {asked}. You have {room} of room this month, so I made a smaller version rather than refusing — {n} claims instead of {wanted}.',
-      readTitle: 'What customers will read',
-      readWarn: 'Written by me — check before publishing',
-      titleIn: 'Title in {lang}',
-      bodyIn: 'Description in {lang}',
-      termsTitle: 'Rules for using it',
-      termsTag: 'Standard terms',
-      terms: 'One claim per visit. Not valid with other deals. The venue may end the offer early.',
-      reviseTitle: 'Change something? Tell me what',
-      revisePlaceholder: 'Make it Thursday instead, and I do not want students getting it.',
-      reviseAction: 'Change the draft',
-      reviseNote:
-        'I change only what you name, and show you what moved. The rest of the draft stays as it is.',
-      publish: 'Publish it',
-      notRight: 'This is not what I need',
-      exitsIntro:
-        'Three ways out. None of them is worse than the others — pick whichever suits how wrong it is.',
-      exits: [
-        {
-          title: 'Tell me what is wrong',
-          note: 'I change this draft. Everything you have already approved stays.',
-          label: 'Write it below',
-        },
-        {
-          title: 'Open it in the normal form',
-          note: 'You take over. Everything I got right is already filled in.',
-          label: 'Take over',
-        },
-        {
-          title: 'Start over',
-          note: 'Throws away this draft and the text in five languages.',
-          label: 'Throw it away',
-        },
-      ],
-      /* What a revision recognises, and what it writes in the change list. */
-      revisions: {
-        days: 'Days',
-        hours: 'Hours',
-        audience: 'Who sees it',
-        thursday: 'Thursday',
-        friday: 'Friday',
-        morning: '07:00–10:00',
-        noStudents: 'Everyone except students — about {n} people',
+      whyTitle: 'Why I suggest this',
+      reasons: {
+        campaign: 'A visit-based campaign is what buys repeat custom; a percentage off is a voucher.',
+        campaignCost:
+          'Each reward costs you {each}, which is what your loyalty pool holds for every reward earned.',
+        quietHour: 'Your quietest open hour is {when}.',
+        narrow: 'The window is narrow on purpose: a discount that runs all week is a price cut.',
+        startingPoint:
+          'Nothing is measured for this venue yet, so this draft is a starting point rather than a finding.',
+        hourUnmeasured:
+          'With no visits yet every hour is equally quiet, so the hour in this draft is only the first one you are open. Set your own in the form.',
+        unmatched:
+          'I could not tie this goal to anything I measure, so this is a plain starting point. Change anything in the form.',
+      },
+      openForm: 'Open in the form',
+      openVouchers: 'Open vouchers',
+
+      /* When there is nothing to talk about yet. */
+      states: {
+        title: 'Your assistant reads your venue',
+        body: 'It answers from this venue’s own visits, budget and quiet hours, and drafts deals and stamp cards for you to check in the form.',
+        noVenue:
+          'This account has no venue on the server yet, so there is nothing for me to read. Finish your business profile first.',
+        failed: 'The server could not read your venue: {why}',
+        retry: 'Try again',
+        lockedTitle: 'Your plan does not include the assistant',
+        lockedBody:
+          'The assistant reads this venue’s own visits, budget and quiet hours and drafts deals and stamp cards for you. Everything else on this dashboard works without it.',
+        lockedAction: 'Ask us about plans',
+        lockedSubject: 'The assistant for {venue}',
+        turnLocked: 'This venue’s plan does not include the assistant, so I cannot answer.',
+        turnOffline: 'I could not reach the server, so there is no answer yet.',
+        turnFailed: 'The server could not answer that.',
       },
 
-      publishedTitle: 'Two things are ready',
-      publishedOne: 'One thing is ready',
-      publishedDeal: '{days}, {from}–{to} · stops after {n} claims',
-      publishedNotify: 'Goes out at {at}',
-      publishedNotifyNote: 'To {n} people',
-      watch:
-        'Check back in two days. If fewer than 10 people have claimed it by then, the hours are probably right and the offer is not strong enough.',
-      again: 'Set up something else',
-
-      reviewTitle: 'What I would change this week',
-      reviewIntro: 'Three things are worth changing this week. I have left everything else alone.',
-      review: [
-        {
-          text: 'Your {pct}% voucher tier needs {points} points. Only {reached} customers reached it this month. At {lower} points, {more} more of your regulars would have qualified.',
-          label: 'Change the tier',
-        },
-        {
-          text: '“{name}” is paused but still holding {amount}. {n} rewards were earned and never used, and they stay valid until they expire.',
-          label: 'Open the campaign',
-        },
-        {
-          text: '“{name}” ran for {weeks} weeks at 5% off and got {claims} claims — about a third of what your 15% deals average. Small discounts rarely move people.',
-          label: 'Look at your deals',
-        },
-      ],
-
-      asked: 'You asked: “{q}”',
-      answerLine:
-        'Voucher use is down {down}%, from {from} to {to}. The drop is all in the {pct}% tier — {now} customers reached it this month against {before} last month, because the points threshold went up to {points}.',
-      answerNote:
-        'Visits are up 12% over the same period, so people are coming in. Fewer of them are reaching a tier worth using.',
-      answerLabel: 'Open the tiers',
-      answerMore:
-        'Where the money went, tier by tier, is on the Vouchers page. I have not rebuilt it here.',
-      askElse: 'Ask something else',
-
-      handedTitle: 'It is yours now',
-      handedNote:
-        'I filled in what I was confident about. Check the two at the bottom — I guessed those.',
-      handedFields: [
-        'Days and hours',
-        'What people get',
-        'Runs for',
-        'Stops after',
-        'Who sees it',
-        'Text in five languages',
-      ],
-      handedWeeks: '{n} weeks',
-      handedCopy: 'Written by me — check before publishing',
-      filledIn: 'Filled in',
-      checkThis: 'Check this',
-      openForm: 'Open the form',
-      backToDraft: 'Go back to the draft',
-
-      cantLine: 'I cannot target people by how much they usually spend. Paylez does not track that yet.',
-      cantAlt:
-        'I can target people who have visited you before — {n} of them have been in at least twice. Want that instead?',
-      cantYes: 'Yes, use that instead',
-      cantNo: 'Ask for something else',
-      cantElsewhere:
-        'If you want to see what people spend, the average per visit is on the Customers page.',
-      cantOpen: 'Open Customers',
-
-      missedTitle: 'I did not understand that one',
-      missedBody:
-        'I got as far as: a deal on {days} afternoons. I could not work out the offer or the budget, and I would rather hand it over than keep asking.',
-      loopNote:
-        'That is twice now. I am not going to keep guessing — the form will be quicker, and I have put in the days and hours I did understand.',
-      missedAction: 'Open the normal form',
-      tryAgain: 'Try again',
-
-      /* The three days it can be moved to, and the days it starts on. Written
-         out rather than assembled from weekday names: "Tuesday and Wednesday"
-         is one phrase in English and joins differently in the other four. */
+      /* Nothing on the screen reads this any more. It stays because
+         `scripts/verify-geo.ts` still counts it. */
       dayChoices: ['Tuesday and Wednesday', 'Thursday', 'Friday'],
-      goals: [
-        'Fill my quiet hours',
-        'Bring back customers who stopped coming',
-        'Get more first-time visitors',
-        'Review everything I am running',
-      ],
-      notifyYes: 'Yes, when it starts',
-      notifyNo: 'No, listed only',
-      weeksValue: '{n} weeks',
-      /* Nothing behind it can actually publish, and the screen says so rather
-         than pretending. */
-      published: 'Nothing was published — there is no server behind this build.',
-      draftUpdated: 'Draft updated. Everything else is unchanged.',
-      handedOver: 'Opened the form with everything carried across.',
     },
 
     collapse: 'Collapse menu',
@@ -2521,6 +2796,15 @@ export const en = {
     ranges: ['Last 7 days', 'Last 14 days', 'Last 30 days', 'Last quarter'],
     rangeMenu: 'Reporting window',
     notifications: 'Notifications',
+    /* The bell's menu. The items themselves are the server's own words. */
+    inbox: {
+      unread: '{n} unread',
+      empty: 'Nothing here yet. Your monthly summary and notes about your venue arrive here.',
+      markAll: 'Mark all as read',
+      markRead: 'Mark as read',
+      sample: 'Sample notifications — this device is not signed in to the Paylez API.',
+      failed: 'Your notifications could not be read — the server did not answer.',
+    },
   },
 
   hero: {
@@ -3519,8 +3803,14 @@ export const en = {
    */
   legal: {
     contents: 'Contents',
-    english:
-      'This document is published in English. The English text is the authoritative version.',
+    /*
+     * The one language where this line is not about a translation: an English
+     * reader is holding the text that binds, and saying "where this differs from
+     * the English" to somebody reading the English is nonsense. Every other
+     * dictionary points at this version; this one says it is that version.
+     */
+    english: 'This is the authoritative English version of this document.',
+    loading: 'Fetching the document…',
     privacyVersion: 'Version 1.1 · Effective 28 August 2026 · GDPR compliant',
     termsVersion: 'Version 1.0 · Effective 24 April 2025',
   },
@@ -3558,7 +3848,7 @@ export const en = {
 
     photo: 'Photo',
     photoChoose: 'Choose a photo',
-    photoHelp: 'Square works best. It is shrunk to a thumbnail and kept on this device.',
+    photoHelp: 'Square works best. It is shrunk to a thumbnail before it is saved.',
     photoRemove: 'Remove photo',
 
     username: 'Username',
@@ -3615,16 +3905,19 @@ export const en = {
       'The list of cities comes from the Paylez backend, and it is not answering. You can still write your city and country yourself; the suggestions come back when it does.',
     cityRetry: 'Try again',
     country: 'Country',
-    countryPlaceholder: 'Poland',
+    /* A code, and the help lines say so: the two-letter code is the only shape
+       `PATCH /v1/me` accepts, and inviting "Poland" invited a refusal. */
+    countryPlaceholder: 'PL',
     /* Why it is being asked at all, because it is not asked of anybody else.
        A country is a *fact* about a city we know, and a question only about one
        we do not. */
-    countryHelp: 'Asked only because your city is not on our list. The name or the two-letter code.',
+    countryHelp:
+      'Asked only because your city is not on our list. The two-letter country code, like PL or DE.',
     /* The same field, for the case where the list never arrived. The sentence
        above would be a claim we cannot make — we have not checked the city
        against anything, so "not on our list" is not what happened. */
     countryUnchecked:
-      'Asked because we cannot reach the list of cities to look yours up. The name or the two-letter code.',
+      'Asked because we cannot reach the list of cities to look yours up. The two-letter country code, like PL or DE.',
     countryNeeded: 'A city we do not know needs the country with it.',
     /* Keyed by ISO code rather than an array, because a suggestion carries its
        country as a code and the card in the rail reads it back the same way. A
@@ -3685,6 +3978,45 @@ export const en = {
       phone: 'Phone',
       birthDate: 'Birthday',
     },
+
+    /* ── the record, before anybody edits it ─────────────────────────────── */
+    edit: 'Edit',
+    cancel: 'Cancel',
+    saving: 'Saving…',
+    savedServer: 'Your profile is saved.',
+    /* The server could not be reached, so the answers are in this browser and
+       nowhere else — the one thing the reader has to be told. */
+    savedDevice:
+      'Saved on this device only — we could not reach the server. Save again once you are back online and it will be sent.',
+    saveFailed: 'We could not save your profile. Try again in a minute.',
+    sessionExpired: 'Your sign-in has expired. Sign in again, then save.',
+    cityShape: 'That does not look like a city.',
+    countryShape: 'Use the two-letter country code, like PL or DE.',
+    notAdded: 'Not added yet',
+    /* `{date}` is a month and a year, written in the reader's language. */
+    memberSince: 'Member since {date}',
+    aboutTitle: 'About you',
+    stripPoints: 'Points',
+    stripStreak: 'Day streak',
+    stripEnergy: 'Energy',
+    stripEnergyValue: '{n} of {max}',
+    /* `{fields}` is names from `fieldNames`, joined with commas. */
+    gapsView: 'Still blank: {fields}.',
+    sharingTitle: 'Sharing with venues',
+    sharingLede:
+      'These venues can see who you are — your name and photo — when you pay there. Stopping takes effect straight away.',
+    sharingNone: 'You are not sharing your details with any venue.',
+    /* `{date}` is a day, written in the reader's language. */
+    sharingSince: 'Since {date}',
+    sharingStop: 'Stop sharing',
+    sharingAsk: 'Stop sharing with {venue}?',
+    sharingYes: 'Stop',
+    sharingKeep: 'Keep sharing',
+    sharingStopped: 'You stopped sharing with {venue}.',
+    sharingLoading: 'Checking which venues can see you…',
+    sharingOffline: 'We could not reach the server to check this.',
+    sharingRetry: 'Try again',
+    sharingFailed: 'That did not go through. Try again.',
   },
 
   /* ───────────────────────────────────────────────────────── onboarding ── */

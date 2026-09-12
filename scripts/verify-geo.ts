@@ -149,6 +149,7 @@ import {
   polyline,
 } from '../src/site/partnerMetrics';
 import { LANGUAGE_ORDER, LANGUAGES } from '../src/site/i18n/context';
+import { LOADERS as LEGAL } from '../src/site/legal/load';
 import {
   dayLabel,
   inRange,
@@ -163,6 +164,33 @@ import {
   initialOf,
 } from '../src/site/adminMetrics';
 import { Vector3 } from 'three';
+/* Accounts and listings coming home from the server — see the section of the
+   same name near the end. */
+import type { GamesState, Me } from '../src/site/api/consumer';
+import {
+  businessFromSource,
+  categoryOf,
+  countryOf,
+  listingState,
+  listingWrite,
+  pickDescription,
+  sourceFromRow,
+  subcategoryIndex,
+  subcategoryWord,
+  webAddress,
+  type ListingSource,
+} from '../src/site/api/listing';
+import {
+  awaitsServer,
+  foldServer,
+  playerFromGames,
+  profileFromServer,
+  profileRefusal,
+  profileWrite,
+  typeFromRoles,
+} from '../src/site/auth/mirror';
+import { isPicture } from '../src/site/auth/picture';
+import type { BusinessProfile } from '../src/site/auth/business';
 
 let failures = 0;
 
@@ -788,7 +816,9 @@ console.log('\naccess control');
    */
   check('an individual lands on the landing page', resolveRoute('signin', person) === 'landing');
   check('a new owner lands on setup', resolveRoute('signin', ownerNew) === 'business-setup');
-  check('a set-up owner lands on the landing page', resolveRoute('signin', ownerSet) === 'landing');
+  /* The dashboard, not the landing page: an owner signing in has come to run the
+     venue, the same way an operator lands on the console. */
+  check('a set-up owner lands on their dashboard', resolveRoute('signin', ownerSet) === 'dashboard');
 
   /* ── the profile, and the hold at onboarding ─────────────────────────── */
 
@@ -1096,6 +1126,55 @@ console.log('\nrouting — section anchors');
   for (const [prefix, route] of ANCHOR_ROUTES) {
     check(`the ${prefix} prefix names a real route`, PATHS[route] !== undefined);
     check(`…and is specific enough`, prefix.length >= 3 && prefix.endsWith('-'));
+  }
+}
+
+console.log('\nlegal — five languages, one set of anchors');
+{
+  /*
+   * `LegalText` catches a *missing field* on a translation and says nothing at
+   * all about the ids inside the two arrays, which is where the damage would
+   * be: the contents list is what a reader clicks, `ANCHOR_ROUTES` is what keeps
+   * that click on the page, and a reader who switches language mid-document
+   * keeps their place only because every language agrees about them. One
+   * mistyped id in one translation is a dead link in one language — invisible in
+   * a type check, invisible in English, and invisible to anybody who does not
+   * read that language.
+   *
+   * Walked over `LANGUAGE_ORDER` rather than over a list written here, so a
+   * sixth language is checked the moment it is added rather than the moment
+   * somebody remembers this file.
+   */
+  const loaded = await Promise.all(
+    LANGUAGE_ORDER.map(async (code) => [code, (await LEGAL[code]()).default] as const),
+  );
+  check('every language has a legal module', loaded.length === LANGUAGE_ORDER.length);
+
+  const idsOf = (rows: Array<[string, string]>) => rows.map(([id]) => id).join(' ');
+  const [, english] = loaded.find(([code]) => code === 'en')!;
+  const privacyIds = idsOf(english.privacyContents);
+  const termsIds = idsOf(english.termsContents);
+
+  for (const [code, text] of loaded) {
+    check(`${code} lists the same privacy sections, in order`,
+      idsOf(text.privacyContents) === privacyIds);
+    check(`${code} lists the same terms sections, in order`,
+      idsOf(text.termsContents) === termsIds);
+    /* A label is what the reader actually clicks. An id with an empty one is a
+       row in the contents that cannot be seen or hit. */
+    check(`…and every ${code} label says something`,
+      [...text.privacyContents, ...text.termsContents].every(([, label]) => label.trim() !== ''));
+  }
+
+  /*
+   * The other half of the same rule, and the one the prefix table exists for:
+   * every anchor either document offers has to resolve back to its own page.
+   * An id that misses `ANCHOR_ROUTES` resolves to `landing`, which drops a
+   * reader onto marketing copy from the middle of a clause.
+   */
+  for (const [id] of [...english.privacyContents, ...english.termsContents]) {
+    const expected = id.startsWith('privacy-') ? 'privacy' : 'terms';
+    check(`#${id} stays on ${expected}`, routeOf(`#${id}`) === expected);
   }
 }
 
@@ -3796,6 +3875,322 @@ console.log('\nthe plan table says what the product does');
        can actually be seen. */
     check(`…and every plan is named`, sub.plans.length === SUB_PLANS.length);
   }
+}
+
+/* ═══════════════════════════════════════ accounts and listings come home ══ */
+
+/*
+ * A listing as the partner routes answer it, shared by the two sections below:
+ * a café waiting for review, with a description in two languages, a link kind
+ * the form has no field for, and a spoken language its chips do not offer —
+ * the three cases the mapping in `api/listing.ts` exists to get right.
+ */
+const LISTING_FIXTURE: ListingSource = {
+  id: 'ven_fixture',
+  name: 'Café Bratysławska',
+  category: 'cafe',
+  subcategory: 'Specialty coffee',
+  city: 'Krakow',
+  countryCode: 'PL',
+  address: 'Bratysławska 6',
+  priceRange: '18–45 zł',
+  phone: '+48 512 340 118',
+  email: 'hello@bratyslawska.pl',
+  imageUrl: 'data:image/jpeg;base64,xyz',
+  status: 'pending_review',
+  verifiedAt: null,
+  verification: { status: 'pending', submittedAt: '2026-09-01T10:00:00Z', note: null },
+  description: { en: 'A small neighbourhood café.', pl: 'Mała kawiarnia na Kleparzu.' },
+  links: [
+    { kind: 'website', value: 'https://bratyslawska.pl' },
+    { kind: 'google_maps', value: 'https://maps.google.com/?q=bratyslawska' },
+    { kind: 'tiktok', value: 'https://tiktok.com/@bratyslawska' },
+  ],
+  languages: ['pl', 'en', 'de'],
+};
+
+console.log('\nhydration — what the server says an account is');
+{
+  /*
+   * The bug this section exists for: a sign-in wrote the server's id and name
+   * into the mirror and nothing else, so an owner on a second device was asked
+   * "individual or business?" again, a returning player was walked through
+   * onboarding again, and the profile page was empty while the server held it.
+   */
+  check('an operator is an operator whatever this browser thought',
+    typeFromRoles(['consumer', 'admin'], 'individual', null) === 'admin');
+  check('an owner is an owner on a device that never heard of them',
+    typeFromRoles(['consumer', 'partner_owner'], null, null) === 'business');
+  check('a consumer role keeps the answer this browser had',
+    typeFromRoles(['consumer'], 'individual', null) === 'individual');
+  check('…including "business", chosen before the role landed',
+    typeFromRoles(['consumer'], 'business', null) === 'business');
+  check('an account nobody typed that finished onboarding is a player',
+    typeFromRoles(['consumer'], null, '2026-05-01T10:00:00Z') === 'individual');
+  check('one that has answered nothing anywhere stays undecided',
+    typeFromRoles(['consumer'], null, null) === null);
+  check('a local admin the server no longer vouches for is not kept',
+    typeFromRoles(['consumer'], 'admin', null) === null);
+
+  const me = (
+    user: Partial<Me['user']> = {},
+    roles: string[] = ['consumer'],
+    venues: Me['venues'] = [],
+  ): Me => ({
+    user: {
+      id: 'u_server', email: 'kasia@example.com', name: 'Kasia', username: null, language: 'en',
+      city: null, countryCode: null, avatar: null, phone: null, occupation: null, birthDate: null,
+      birthDateChangesLeft: 2, profileCompletedAt: null, onboardedAt: null, trustTier: 0,
+      leaderboardOptIn: false, referralCode: 'KASIA1', createdAt: '2026-03-01T09:00:00Z',
+      ...user,
+    },
+    roles,
+    mode: 'consumer',
+    points: 140,
+    plan: { code: 'free', name: 'Free', audience: 'consumer' },
+    entitlements: { daily_energy: '4', energy_regen_minutes: '120' },
+    venues,
+  });
+
+  /* What a sign-in leaves on a device that has never seen this account. */
+  const blank: Account = {
+    id: 'u_server', name: 'Kasia', email: 'kasia@example.com', type: null, business: null,
+    player: null, profile: EMPTY_PROFILE, onboardedAt: null, profileCompletedAt: null,
+  };
+  const answers = (server: Me, listing: ListingSource | null = null) =>
+    ({ me: server, games: null, listing });
+
+  const player = foldServer(blank, answers(me({
+    username: 'kasia', city: 'Krakow', countryCode: 'PL', phone: '+48 600 000 000',
+    occupation: 'student', birthDate: '1998-03-14', birthDateChangesLeft: 1,
+    onboardedAt: '2026-03-02T10:00:00Z', profileCompletedAt: '2026-03-03T10:00:00Z',
+  })), 'en');
+  check('a returning player comes home as a player', player.type === 'individual');
+  check('…and is not walked through onboarding again', resolveRoute('landing', player) === 'landing');
+  check('…with the profile the server holds',
+    player.profile.username === 'kasia' && player.profile.city === 'Krakow'
+      && player.profile.countryCode === 'PL' && player.profile.occupation === 'student'
+      && player.profile.birthDate === '1998-03-14');
+  check('…the birthday correction the server has counted', player.profile.birthDateChangesLeft === 1);
+  check('…the completion stamp, so the bonus is not offered twice',
+    player.profileCompletedAt === '2026-03-03T10:00:00Z');
+  check('…and the ledger balance', player.player?.points === 140);
+
+  const edited: Account = {
+    ...blank, type: 'individual', onboardedAt: '2026-03-02',
+    profile: { ...EMPTY_PROFILE, phone: '+48 511 111 111' },
+  };
+  check('an answer the server was never given keeps the one saved here',
+    profileFromServer(me().user, edited.profile).phone === '+48 511 111 111');
+  check('…and an answer it has wins',
+    profileFromServer(me({ phone: '+48 600 000 000' }).user, edited.profile).phone === '+48 600 000 000');
+  check('a status outside the five is not adopted',
+    profileFromServer(me({ occupation: 'headline' }).user, EMPTY_PROFILE).occupation === '');
+  check('a city and its country move as a pair', (() => {
+    const place = profileFromServer(
+      me({ city: 'Berlin', countryCode: 'DE' }).user,
+      { ...EMPTY_PROFILE, city: 'Krakow', countryCode: 'PL' },
+    );
+    return place.city === 'Berlin' && place.countryCode === 'DE';
+  })());
+  check('a completion stamp this browser holds is not cleared',
+    foldServer({ ...edited, profileCompletedAt: '2026-04-01' }, answers(me()), 'en')
+      .profileCompletedAt === '2026-04-01');
+  check('…nor a finished welcome flow', foldServer(edited, answers(me()), 'en').onboardedAt === '2026-03-02');
+
+  const owner = foldServer(blank, answers(
+    me({}, ['consumer', 'partner_owner'], [
+      { id: 'ven_fixture', name: 'Café Bratysławska', city: 'Krakow', status: 'pending_review' },
+    ]),
+    LISTING_FIXTURE,
+  ), 'en');
+  check('an owner on a new device comes home as an owner', owner.type === 'business' && owner.player === null);
+  check('…with the listing the server holds',
+    owner.business?.name === 'Café Bratysławska' && owner.business?.venueId === 'ven_fixture');
+  check('…so signing in lands on the dashboard, not on setup', resolveRoute('signin', owner) === 'dashboard');
+  check('…and the dashboard keeps them', resolveRoute('dashboard', owner) === 'dashboard');
+  const unlisted = foldServer(blank, answers(me({}, ['consumer', 'partner_owner'])), 'en');
+  check('an owner with nothing on the server still goes to setup',
+    resolveRoute('signin', unlisted) === 'business-setup');
+
+  let unstable = '';
+  for (const account of [player, owner, unlisted, foldServer(blank, answers(me()), 'en')]) {
+    for (const route of Object.keys(PATHS) as Route[]) {
+      const once = resolveRoute(route, account);
+      if (resolveRoute(once, account) !== once) unstable = `${account.type}: ${route} → ${once}`;
+    }
+  }
+  check('every account the server hands back resolves to a fixed point', unstable === '', unstable || 'no loops');
+
+  /* The reload hold: which stored sessions wait for the server before a page is
+     drawn, so that a fact this browser never saw cannot route anybody. */
+  const unseenPlayer: Account = { ...blank, type: 'individual' };
+  const unseenListing: Account = { ...blank, type: 'business' };
+  check('a player whose finished onboarding this browser never saw waits before any page is drawn',
+    awaitsServer(unseenPlayer, 'profile') && awaitsServer(unseenPlayer, 'landing'));
+  check('…including a reload on the welcome flow itself', awaitsServer(unseenPlayer, 'onboarding'));
+  check('an owner whose listing this browser never saw waits before being sent to setup',
+    awaitsServer(unseenListing, 'dashboard') && awaitsServer(unseenListing, 'business-setup'));
+  check('…but not on a page where nothing would move', !awaitsServer(unseenListing, 'landing'));
+  check('an account whose type is unknown here waits', awaitsServer(blank, 'landing') && awaitsServer(blank, 'signin'));
+  check('an account holding every routing fact never waits',
+    !awaitsServer(player, 'profile') && !awaitsServer(owner, 'dashboard') && !awaitsServer(unlisted, 'landing'));
+  check('nobody signed in never waits', !awaitsServer(null, 'dashboard'));
+
+  /* The tank, converted from "this many, the next at" to the mirror's anchor. */
+  const nextAt = '2026-09-11T13:10:00.000Z';
+  const games: GamesState = {
+    energy: { energy: 2, max: 4, nextAt }, streak: 7, longestStreak: 9, freezes: 1,
+    answered: 50, correct: 41, points: 640, lastPlayed: '2026-09-11', dailyWord: null,
+  };
+  const mirrored = playerFromGames(freshPlayer(), games, 120);
+  const tank = energyOf(mirrored, new Date('2026-09-11T12:00:00Z'), { max: 4, regenMinutes: 120 });
+  check('the mirrored tank reads the count the server gave', tank.count === 2, `${tank.count}`);
+  check('…and the same wait', tank.nextAt === Date.parse(nextAt));
+  check('…and every other figure is the server’s',
+    mirrored.points === 640 && mirrored.streak === 7 && mirrored.freezes === 1
+      && mirrored.answered === 50 && mirrored.lastPlayed === '2026-09-11');
+  const topped = playerFromGames(freshPlayer(), { ...games, energy: { energy: 4, max: 4, nextAt: null } }, 120);
+  check('a full tank is stored with no clock running',
+    topped.energyAt === null && energyOf(topped, new Date()).count === MAX_ENERGY);
+
+  const body = profileWrite({
+    username: ' kasia ', occupation: '', phone: '', birthDate: '1998-03-14',
+    avatar: 'https://base44.app/api/face.png', place: { city: 'Nowhere', countryCode: 'pl' },
+  });
+  check('a save leaves blank answers out', !('phone' in body) && !('occupation' in body));
+  check('…trims what it sends', body.username === 'kasia' && body.birthDate === '1998-03-14');
+  check('…sends a country as its code', body.city === 'Nowhere' && body.countryCode === 'PL');
+  check('…and never a picture this site did not make',
+    !('avatar' in body) && profileWrite({ avatar: 'data:image/jpeg;base64,x' }).avatar === 'data:image/jpeg;base64,x');
+  check('only a data URL is a picture this site draws',
+    isPicture('data:image/png;base64,x') && !isPicture('https://base44.app/a.png') && !isPicture(''));
+
+  const refused = (status: number, code: string, field: string | null, message: string) => {
+    const result = profileRefusal(status, code, field, message);
+    return result.ok ? 'ok' : `${result.field}:${result.error}`;
+  };
+  check('a handle somebody holds is taken',
+    refused(409, 'conflict', 'username', 'that username is taken') === 'username:taken');
+  check('a reserved handle is reserved',
+    refused(400, 'validation_failed', 'username', 'that username is reserved') === 'username:reserved');
+  check('a short handle is its length',
+    refused(400, 'validation_failed', 'username', 'a username is 3 to 20 characters') === 'username:length');
+  check('the birthday limit is spent',
+    refused(409, 'conflict', 'birthDate', 'a birthday can be corrected once — contact support to have it changed again')
+      === 'birthDate:spent');
+  check('a birthday not in the past is in the future',
+    refused(400, 'validation_failed', 'birthDate', 'a birthday is in the past') === 'birthDate:future');
+  check('a phone refusal is its shape',
+    refused(400, 'validation_failed', 'phone', 'that does not look like a phone number') === 'phone:shape');
+  check('an unknown city with no country asks for the country',
+    refused(400, 'validation_failed', 'countryCode', 'we do not know that city — pick the country it is in')
+      === 'country:needed');
+  check('a country that is not a code says so',
+    refused(400, 'validation_failed', 'countryCode', 'a country is a two-letter code, like PL') === 'country:shape');
+  check('an expired sign-in is its own answer', refused(401, 'unauthenticated', null, 'sign in first') === 'null:session');
+  check('anything else refuses the save as a whole',
+    refused(500, 'internal', null, 'something went wrong') === 'null:refused');
+}
+
+console.log('\nthe listing, both ways');
+{
+  const read = businessFromSource(LISTING_FIXTURE, 'pl', null);
+  check('a listing reads onto the form',
+    read.name === 'Café Bratysławska' && read.street === 'Bratysławska 6' && read.price === '18–45 zł'
+      && read.logo === LISTING_FIXTURE.imageUrl && read.country === 'pl' && read.city === 'Krakow');
+  check('…its category and subcategory by their words',
+    read.category === 'cafe' && read.subcategory === 0 && read.unmapped === undefined);
+  check('…its description in the reader’s language',
+    read.description === 'Mała kawiarnia na Kleparzu.' && read.descriptionLanguage === 'pl');
+  check('…its links by kind',
+    read.website === 'https://bratyslawska.pl'
+      && read.maps === 'https://maps.google.com/?q=bratyslawska' && read.instagram === '');
+  check('…the languages its chips offer', read.spoken.join(',') === 'pl,en');
+  check('…and a finished one reads back as publishable', isBusinessReady(read));
+  check('an English reader gets English',
+    businessFromSource(LISTING_FIXTURE, 'en', null).description === 'A small neighbourhood café.');
+  check('a reader in a language with no text falls back to English',
+    pickDescription(LISTING_FIXTURE.description, 'uk')?.language === 'en');
+  check('…and with no English, to the first language there is',
+    pickDescription({ pl: 'Tekst' }, 'uz')?.language === 'pl');
+
+  const unchanged = listingWrite(read, LISTING_FIXTURE, 'pl');
+  check('an unchanged description is not sent again', unchanged.description === undefined);
+  check('a link the form cannot show goes back as it came',
+    (unchanged.links ?? []).some((link) => link.kind === 'tiktok'));
+  check('…beside the ones it can',
+    (unchanged.links ?? []).find((link) => link.kind === 'google_maps')?.value
+      === 'https://maps.google.com/?q=bratyslawska');
+  check('a language the chips do not offer is kept',
+    (unchanged.languages ?? []).includes('de') && (unchanged.languages ?? []).includes('pl'));
+  check('a subcategory is written as its English label', unchanged.subcategory === 'Specialty coffee');
+  check('…and every label reads back to its own index',
+    BUSINESS_CATEGORIES.every(({ id, subs }) =>
+      Array.from({ length: subs }, (_, index) => subcategoryIndex(id, subcategoryWord(id, index)) === index)
+        .every(Boolean)));
+  check('…including a Polish one written by another client', subcategoryIndex('cafe', 'Kawa specialty') === 0);
+  check('every language names as many subcategories as the form offers',
+    LANGUAGE_ORDER.every((code) =>
+      BUSINESS_CATEGORIES.every(({ subs }, at) => LANGUAGES[code].listing.subcategories[at]?.length === subs)));
+
+  const rewritten = listingWrite({ ...read, description: 'Nowy opis.' }, LISTING_FIXTURE, 'en');
+  check('an edited description goes back to the language it came from',
+    rewritten.description?.pl === 'Nowy opis.' && !('en' in (rewritten.description ?? {})));
+  check('emptying it deletes that language',
+    listingWrite({ ...read, description: '' }, LISTING_FIXTURE, 'pl').description?.pl === '');
+
+  /* An imported venue, read off its row while the listing endpoint does not
+     answer: words from another category system, a logo on somebody else's
+     host, and none of the three sets. */
+  const row = sourceFromRow({
+    id: 'ven_legacy', name: 'Chayxana', category: 'places', subcategory: 'halal_food', city: 'Krakow',
+    country_code: 'DE', address: null, price_range: '30-70 PLN', phone: null, email: null,
+    image_url: 'https://base44.app/api/chayxana.png', status: 'live', verified_at: '2026-01-01T00:00:00Z',
+  });
+  const held: BusinessProfile = {
+    ...blankBusiness(), venueId: 'ven_legacy', description: 'Kept here.',
+    website: 'https://kept.example', spoken: ['uz'],
+  };
+  const halves = businessFromSource(row, 'en', held);
+  check('a venue row keeps what it cannot know',
+    halves.description === 'Kept here.' && halves.website === 'https://kept.example' && halves.spoken.join(',') === 'uz');
+  check('words the form has no list entry for are carried',
+    halves.unmapped?.category === 'places' && halves.unmapped?.subcategory === 'halal_food'
+      && halves.unmapped?.country === 'DE');
+  check('…without anything throwing on them',
+    categoryOf('places') === null && categoryOf(undefined) === null && countryOf('DE') === null);
+  const legacyWrite = listingWrite(halves, row, 'en');
+  check('…and a save leaves those fields alone',
+    !('category' in legacyWrite) && !('subcategory' in legacyWrite) && !('countryCode' in legacyWrite));
+  check('a kept external logo is not sent back',
+    !('imageUrl' in legacyWrite) && halves.logo === 'https://base44.app/api/chayxana.png');
+  check('a set that was never read is never replaced',
+    legacyWrite.links === undefined && legacyWrite.languages === undefined);
+  check('a held listing for another venue is not blended in',
+    businessFromSource(row, 'en', { ...held, venueId: 'ven_other' }).description === '');
+
+  const created = listingWrite(
+    { ...blankBusiness(), name: 'Choyxona', city: 'Tashkent', country: 'uz', description: 'Salom', website: 'choyxona.uz' },
+    null,
+    'uz',
+  );
+  check('a new venue sends its whole listing',
+    created.description?.uz === 'Salom' && created.links?.[0]?.kind === 'website'
+      && created.timezone === 'Asia/Tashkent' && created.countryCode === 'UZ');
+
+  check('live is live', listingState({ status: 'live', verification: null }) === 'live');
+  check('pending review is waiting', listingState({ status: 'pending_review', verification: null }) === 'review');
+  check('a refusal is said, not called a draft',
+    listingState({
+      status: 'draft',
+      verification: { status: 'rejected', submittedAt: '2026-09-01T10:00:00Z', note: 'No photo.' },
+    }) === 'rejected');
+  check('an untouched venue is a draft', listingState({ status: 'draft', verification: null }) === 'draft');
+
+  check('a web address is followed', webAddress('https://cafe.pl/menu') === 'https://cafe.pl/menu');
+  check('…a bare domain gets a scheme', webAddress('cafe.pl') === 'https://cafe.pl');
+  check('…and a script never reaches an href', webAddress('javascript:alert(1)') === null);
 }
 
 console.log(

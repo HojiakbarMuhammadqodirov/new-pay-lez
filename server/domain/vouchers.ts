@@ -102,6 +102,79 @@ export async function ladder(db: Db, venueId: string, at: Iso = now()) {
 }
 
 /**
+ * The ladder as its **owner** reads it: every rung `ladder` shows, what each
+ * one actually did against this month's budget, and any rung that has been
+ * switched off while vouchers bought on it are still out.
+ *
+ * **Never on a public route.** `ladder` feeds `GET /v1/venues/:id`, which
+ * anybody can open, and how many vouchers a venue gave out and what they cost
+ * it is that venue's own trading. So the counts live in a second function
+ * rather than as extra keys on the first: a key added to a shared shape is a
+ * key every reader of that shape receives.
+ *
+ * Counted over vouchers issued against the **current** budget, because the
+ * figure it sits beside is that budget's pool. `redeem` debits the budget a
+ * voucher was issued against and writes the same amount to the voucher, so
+ * Σ `spentMinor` over the rungs is the pool's `voucher.spent` — `verify.ts`
+ * holds it to that.
+ *
+ * A retired rung is listed only while it has vouchers against this budget,
+ * with `available: false` and nothing left to fund: it cannot be bought, but
+ * the money it moved is part of the month, and leaving it off would make the
+ * rungs disagree with the pool they are printed under.
+ */
+export async function partnerLadder(db: Db, venueId: string, at: Iso = now()) {
+  const venue = await getVenue(db, venueId);
+  const view = await budget.budgetFor(db, venueId, at);
+  const counts = await db.all<{ tier_id: string; issued: number; redeemed: number; live: number; spent: number }>(
+    `SELECT tier_id,
+            SUM(CASE WHEN status <> 'cancelled' THEN 1 ELSE 0 END) AS issued,
+            SUM(CASE WHEN status = 'redeemed' THEN 1 ELSE 0 END) AS redeemed,
+            SUM(CASE WHEN status = 'active' AND expires_at > $at THEN 1 ELSE 0 END) AS live,
+            SUM(CASE WHEN status = 'redeemed' THEN spent_minor ELSE 0 END) AS spent
+       FROM issued_vouchers WHERE budget_id = $b
+      GROUP BY tier_id`,
+    { b: view.id, at },
+  );
+  const byTier = new Map(counts.map((row) => [row.tier_id, row]));
+  const takeUp = (tierId: string) => {
+    const row = byTier.get(tierId);
+    return {
+      issuedCount: row?.issued ?? 0,
+      redeemedCount: row?.redeemed ?? 0,
+      activeCount: row?.live ?? 0,
+      spentMinor: row?.spent ?? 0,
+    };
+  };
+
+  const rungs = (await ladder(db, venueId, at)).map((rung) => ({ ...rung, ...takeUp(rung.id), active: true }));
+
+  const retired = await db.all<Tier>(
+    `SELECT * FROM voucher_tiers WHERE venue_id = $v AND active = 0 ORDER BY discount_pct`,
+    { v: venueId },
+  );
+  if (retired.length > 0) {
+    const check = await averageCheck(db, venue, at);
+    for (const tier of retired) {
+      const counted = takeUp(tier.id);
+      if (counted.issuedCount === 0) continue;
+      rungs.push({
+        id: tier.id,
+        discountPct: tier.discount_pct,
+        pointsCost: tier.points_cost,
+        maxDiscountMinor: tier.max_discount_minor,
+        estimateMinor: estimateCost(check.minor, tier.discount_pct, tier.max_discount_minor),
+        estimatedRemaining: 0,
+        available: false,
+        ...counted,
+        active: false,
+      });
+    }
+  }
+  return rungs.sort((a, b) => a.discountPct - b.discountPct);
+}
+
+/**
  * Convert points into a voucher (§4.3, phase one).
  *
  * Order matters and is not arbitrary: reserve the money *first*, then spend the

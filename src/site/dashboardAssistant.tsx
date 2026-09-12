@@ -1,1290 +1,1537 @@
-import { useMemo, useRef, useState } from 'react';
-import { Icon } from './icons';
-import { useCopy, useCurrency, useLanguage, useMoney } from './i18n/context';
-import { LANGUAGES, LANGUAGE_ORDER } from './i18n/context';
-import type { LanguageCode } from './i18n/context';
-import { fill, group } from './i18n/currency';
 import {
-  AVG_SPEND,
-  PD_ASSIST,
-  PD_ASSIST_COPY,
-  PD_AUDIENCES,
-  PD_CAMPAIGNS,
-  PD_CUSTOMERS,
-  PD_CAMPAIGN_MODEL,
-  PD_DEALS,
-  PD_NOTIFY_QUOTA,
-  PD_TIERS,
-  PD_VOUCHER_MODEL,
-} from './partnerMetrics';
-import type { AssistReward } from './partnerMetrics';
-import { useDashboard } from './dashboardShell';
+  useCallback,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
+import { DASH_SCREENS, SALES_EMAIL } from './content';
+import { Icon, type IconName } from './icons';
+import {
+  useCopy,
+  useCurrency,
+  useLanguage,
+  useMoney,
+  type LanguageCode,
+} from './i18n/context';
+import { fill } from './i18n/currency';
+import type { ApiError } from './api/client';
+import type { ApiResult } from './api/useApi';
+import {
+  euroToMinor,
+  isNoSession,
+  minorToEuro,
+  usePartnerBudget,
+  usePartnerDeals,
+  usePartnerVenue,
+  type BudgetBody,
+  type DealResponse,
+  type Metric,
+  type PartnerVenue,
+} from './api/partner';
+import {
+  ASK_QUESTIONS,
+  DRAFT_GOALS,
+  askAssistant,
+  campaignProposal,
+  dealProposal,
+  destinationOf,
+  draftWithAssistant,
+  isPlanLocked,
+  isUnreachable,
+  readAnswer,
+  slotOf,
+  useAssistantContext,
+  useAssistantReview,
+  type AssistantFact,
+  type AssistantSuggestion,
+  type DealProposal,
+  type Destination,
+  type PartnerAnswer,
+  type PartnerDraft,
+  type ReviewItem,
+  type VenueContextBody,
+} from './api/partnerAssistant';
+import { useNum } from './dashboardFormat';
+import { useDashboard, type DrawerPrefill } from './dashboardShell';
 
 /**
- * The assistant — the largest screen in the prototype, and the only one that
- * talks back.
+ * The assistant — the one dashboard screen that talks back, and now the one
+ * that talks to the server.
  *
- * `b2b/Paylez Partner Dashboard v2.dc.html` gives it a conversation, a draft it
- * can defend line by line, the deal text in every language the product ships,
- * three named ways out, and four endings that are not a draft at all: an answer
- * to a question, a review of everything running, a hand-over to the normal form,
- * and a plain "I cannot do that, here is what I can do instead". All of that is
- * here, because the screen is the argument: an assistant that only ever
- * succeeds is a demo, and the endings are what make it a design.
+ * It was the prototype's conversation rebuilt: keyword matching in five
+ * languages, a draft that defended itself line by line, and every figure in
+ * every sentence filled from `PD_ASSIST` in `partnerMetrics.ts`. Once the seeds
+ * were purged those figures were zeros, so the screen refused to open — and
+ * rightly for good, because that conversation quoted things the server does not
+ * measure at all (a peer comparison, a free-item multiple, a Russian-speaking
+ * share). Wiring it was never a fetch. It was this rewrite.
  *
- * Three things about it are load-bearing.
+ * What it is now is `api/partnerAssistant.ts`, drawn honestly:
  *
- * - **It reads numbers; it does not invent them.** Every figure in every
- *   sentence arrives through a `fill()` hole from `partnerMetrics.ts` — the
- *   quiet hours, the peer comparison, the notification quota, both budget pools,
- *   the tier that moved. That is exactly what the composer note promises the
- *   owner, and a number typed into a dictionary string would break the promise
- *   silently.
- * - **Nothing it drafts is live, and the screen never opens.** `PD_ASSIST.measured`
- *   is false until a venue's own context has been fetched, and nothing fetches
- *   it — so the whole conversation below is unreachable and the panel says why.
- *   That is deliberate rather than pending: the sentences here quote a quiet
- *   window, a peer comparison, a free-item multiple and a Russian-speaking
- *   share, and `GET /v1/partner/venues/:id/assistant/context` answers a
- *   *different* set of facts. Wiring it is a rewrite of the conversation, not a
- *   fetch, and drafting around the holes in the meantime is exactly the failure
- *   the "it reads numbers, it does not invent them" rule above exists to stop.
- *   Every other screen on this dashboard now writes to the server; this one is
- *   the exception and is honest about being one.
- * - **The language tabs are the product's five, not the reader's one.** The
- *   whole point of that panel is that an owner reading in Polish sees what a
- *   Russian-speaking customer will read, so `PD_ASSIST_COPY` is a fixed table
- *   rather than dictionary copy. See its comment for why.
+ * - **What it knows** is `GET …/assistant/context`'s facts and nothing else —
+ *   the same list every answer is built from, so that panel is the receipt for
+ *   the whole screen. A new venue gets the server's own empty signal and the
+ *   starting points it offers, never a benchmark nobody measured.
+ * - **What needs attention** is `GET …/assistant/review`. Every row's link is
+ *   translated into a place on this frame (`destinationOf`), because the
+ *   server's `#/dashboard/deals/:id` is not a route this site has.
+ * - **The thread** asks or drafts, one request at a time. The thinking turn
+ *   goes where the answer will land, the facts are drawn under the answer as its
+ *   receipt, and the one pressable thing in a reply is the place the server
+ *   pointed at. A refusal is not an error: "not on this plan" has no retry;
+ *   "the server is not there" and "it broke" do.
+ * - **A draft is handed to the form, never published.** The server says
+ *   `requiresApproval: true` and has no publish. "Open in the form" is
+ *   `openDrawer` with the draft as its prefill, and the owner files it there.
  *
- * The parsing is deliberately shallow — keyword matching per stage, the
- * prototype's own — because it has to be: there is no model behind it, and a
- * screen that pretends otherwise is worse than one that hands you the form. The
- * `missed` ending exists for exactly the case where the matching fails twice.
+ * ## The sentences are written here, from the server's figures
+ *
+ * The partner composer answers in English, writes money into its prose as raw
+ * minor units and prints a withheld metric as `null` — see the header of
+ * `api/partnerAssistant.ts`. So for every shape it recognises, this screen says
+ * the same thing from the same structured result, in the reader's language and
+ * currency; a shape it does not recognise is quoted verbatim and marked as
+ * English. **Every figure still arrives through a `fill()` hole, and every hole
+ * is filled from the response.** Nothing here computes a number the server did
+ * not send, beyond dividing two that it did.
  */
 
-/* ─────────────────────────────────────────────────────────────── the flow ── */
-
-type Step = 'start' | 'draft' | 'published' | 'review' | 'answer' | 'handed' | 'cant' | 'missed';
-type Stage = 'idle' | 'reward' | 'budget' | 'duration' | 'notify' | 'ready';
-type Goal = 'quiet' | 'lapsed' | 'new' | 'review';
-
-interface Message {
-  who: 'you' | 'it';
-  text: string;
-}
-
-interface Draft {
-  step: Step;
-  stage: Stage;
-  goal: Goal;
-  reward: AssistReward;
-  /** Euros, one of `PD_ASSIST.budgets`. */
-  budget: number;
-  weeks: number;
-  notify: boolean;
-  /** Index into `copy.assistant.dayChoices`. */
-  dayChoice: number;
-  hourFrom: string;
-  hourTo: string;
-  /** Set once a revision narrows the audience. */
-  noStudents: boolean;
-  /** What the last revision moved, for the change list on the draft. */
-  changes: Array<{ field: string; from: string; to: string }>;
-  /** Claims the deal stops after; `null` means "whatever the budget buys". */
-  stopAfter: number | null;
-  sendAt: string;
-  messages: Message[];
-  /** How many times a revision has failed to parse. Two ends the loop. */
-  attempts: number;
-  exits: boolean;
-}
-
-const FRESH: Draft = {
-  step: 'start',
-  stage: 'idle',
-  goal: 'quiet',
-  reward: 'item',
-  budget: PD_ASSIST.budgets[1],
-  weeks: 4,
-  notify: true,
-  dayChoice: 0,
-  hourFrom: PD_ASSIST.quietFrom,
-  hourTo: PD_ASSIST.quietTo,
-  noStudents: false,
-  changes: [],
-  stopAfter: null,
-  sendAt: PD_ASSIST.sendAt,
-  messages: [],
-  attempts: 0,
-  exits: false,
-};
-
-/* ───────────────────────────────────────────────────────────── the parser ── */
+/* ────────────────────────────────────────────────────────────────── voice ── */
 
 /*
- * Five languages of keywords, which is the whole of the "understanding".
- *
- * Written out per stage rather than as one intent classifier because that is
- * what it honestly is — and because a stage knows what it is asking, so
- * "coffee" only has to mean a free item while the question on the table is what
- * people get. Each list carries the site's five languages; the prototype's
- * Turkish and Azerbaijani are dropped, since a draft cannot promise a
- * translation the product does not ship.
+ * The locale each dictionary is read in, for the handful of words `Intl` knows
+ * better than a dictionary does — weekday names, language names and how a list
+ * of days joins. Digit grouping is not among them: counts and money go through
+ * `useNum` and `useMoney`, whose grouping belongs to the language (root
+ * `CLAUDE.md`), so a figure here breaks its thousands like every other figure
+ * on the dashboard.
  */
-const RE = {
-  cant: /spend|how much they|średnio|wydaj|тратят|скольк|витрача/i,
-  review: /review|everything|what.*fix|przegl|wszystk|обзор|всё|огляд/i,
-  voucher: /voucher|why.*drop|why.*down|\bbon\b|ваучер|знижк|скидк/i,
-  lapsed: /back|stopped|lapsed|regular|wróc|stał|верн|давно|поверн/i,
-  new: /first.?time|new customer|new people|nowy|nowi|нов/i,
-  item: /coffee|free item|free |\bitem\b|kawa|бесплат|filter|подар|безкошт|bepul|qahva/i,
-  percent: /percent|%|off the bill|\boff\b|discount|zniżk|скид|знижк|chegirma/i,
-  no: /\bno\b|nope|\bnie\b|нет|\bні\b|just list|don.t|do not|yo['’]q/i,
-  yes: /\byes\b|yeah|sure|send|\btak\b|\bда\b|\bтак\b|\bha\b|ha,/i,
-  fortnight: /fortnight|two week|2 week|dwa tyg|две недел|два тижн|ikki hafta/i,
-  month: /month|miesiąc|месяц|місяц|oy\b/i,
-  weeks: /(\d+)\s*(week|tyg|недел|тижн|hafta)/i,
-  thursday: /thursday|czwart|четверг|четвер|payshanba/i,
-  friday: /friday|piątek|пятниц|п'?ятниц|juma/i,
-  student: /student|студент|talaba/i,
-  morning: /morning|rano|poranek|утр|ранк|ertalab/i,
+const LOCALES: Record<LanguageCode, string> = {
+  en: 'en-GB',
+  pl: 'pl-PL',
+  uz: 'uz-Latn-UZ',
+  ru: 'ru-RU',
+  uk: 'uk-UA',
 };
 
-/** Snaps a typed number to whichever of the three budgets it is nearest. */
-function nearestBudget(text: string, options: readonly number[], rate: number): number | null {
-  const match = text.replace(/\s/g, '').match(/(\d{2,7})/);
-  if (!match) return null;
-  /* The owner types their own currency, so the comparison happens there and the
-     answer comes back in euros — the same conversion every money control on
-     this dashboard does, in the one place a number arrives by keyboard. */
-  const typed = Number(match[1]);
-  let best = options[0];
-  let closest = Infinity;
-  for (const option of options) {
-    const distance = Math.abs(option * rate - typed);
-    if (distance < closest) {
-      closest = distance;
-      best = option;
-    }
-  }
-  return best;
+type Copy = ReturnType<typeof useCopy>['dashboard']['assistant'];
+
+/** Everything a sentence on this screen needs to turn a server figure into words. */
+interface Voice {
+  count: (value: number) => string;
+  /** Minor units of the *venue's* currency, out in the reader's. */
+  amount: (minor: number, round?: 'exact' | 'unit') => string;
+  /** A metric, or null when it was withheld — never a zero standing in. */
+  metric: (metric: Metric | null, as?: 'count' | 'amount' | 'unit') => string | null;
+  when: (weekday: number, hour: number) => string;
+  days: (weekdays: number[]) => string;
+  window: (fromMin: number, toMin: number) => string;
+  language: (code: string) => string | null;
+  capital: (text: string) => string;
 }
 
-function parseWeeks(text: string): number | null {
-  if (RE.fortnight.test(text)) return 2;
-  if (RE.month.test(text)) return 4;
-  const match = text.match(RE.weeks);
-  if (!match) return null;
-  const typed = Number(match[1]);
-  return PD_ASSIST.weeks.reduce((best, option) =>
-    Math.abs(option - typed) < Math.abs(best - typed) ? option : best,
+function useVoice(currency: string): Voice {
+  const [language] = useLanguage();
+  const money = useMoney();
+  const num = useNum();
+
+  const intl = useMemo(() => {
+    const locale = LOCALES[language];
+    let names: Intl.DisplayNames | null = null;
+    try {
+      names = new Intl.DisplayNames([locale], { type: 'language' });
+    } catch {
+      names = null;
+    }
+    return {
+      locale,
+      weekday: new Intl.DateTimeFormat(locale, { weekday: 'long', timeZone: 'UTC' }),
+      list: new Intl.ListFormat(locale, { style: 'long', type: 'conjunction' }),
+      names,
+    };
+  }, [language]);
+
+  const clock = (minutes: number) => {
+    const at = Math.max(0, Math.min(24 * 60, Math.round(minutes)));
+    return `${String(Math.floor(at / 60)).padStart(2, '0')}:${String(at % 60).padStart(2, '0')}`;
+  };
+  /* 1 January 2024 was a Monday, so day `n` of that week is weekday `n` in the
+     server's count — and formatting it in UTC keeps the device's own zone out
+     of a weekday that is already venue-local. */
+  const day = (weekday: number) => intl.weekday.format(new Date(Date.UTC(2024, 0, 1 + weekday)));
+  const amount = (minor: number, round: 'exact' | 'unit' = 'exact') =>
+    money(minorToEuro(minor, currency), round);
+
+  return {
+    count: num,
+    amount,
+    metric: (metric, as = 'count') => {
+      if (metric === null || metric.value === null) return null;
+      return as === 'count' ? num(metric.value) : amount(metric.value, as === 'unit' ? 'unit' : 'exact');
+    },
+    when: (weekday, hour) => `${day(weekday)} ${clock(hour * 60)}`,
+    days: (weekdays) =>
+      intl.list.format([...new Set(weekdays)].sort((a, b) => a - b).map(day)),
+    window: (from, to) => `${clock(from)}–${clock(to)}`,
+    language: (code) => {
+      try {
+        const name = intl.names?.of(code);
+        if (!name || name.toLowerCase() === code.toLowerCase()) return null;
+        return name.charAt(0).toLocaleUpperCase(intl.locale) + name.slice(1);
+      } catch {
+        return null;
+      }
+    },
+    capital: (text) => text.charAt(0).toLocaleUpperCase(intl.locale) + text.slice(1),
+  };
+}
+
+/* ────────────────────────────────────────────────────────────────── lines ── */
+
+/** A label and a value, which is what every list on this screen is made of. */
+interface Line {
+  key: string;
+  label: string;
+  /** `null` is "not reported": an em dash, never a 0. */
+  value: string | null;
+  /** The min-cohort floor held it back, and the dash says so on hover. */
+  withheld: boolean;
+  /** The server's own English, quoted because nothing here could translate it. */
+  quoted: boolean;
+}
+
+const lineOf = (key: string, label: string, value: string | null, withheld = false): Line => ({
+  key,
+  label,
+  value,
+  withheld,
+  quoted: false,
+});
+
+function Shown({ line }: { line: Line }) {
+  const dashboard = useCopy().dashboard;
+  if (line.value !== null) return <>{line.value}</>;
+  return (
+    <span
+      className="pd-withheld"
+      title={line.withheld ? dashboard.unmeasured.withheld : undefined}
+    >
+      —
+    </span>
   );
 }
 
-/** A deal's run length in whole weeks, or 0 when its window is open-ended. */
-const weeksOf = (deal: { from: string | null; to: string | null }): number =>
-  deal.from && deal.to
-    ? Math.max(
-        1,
-        Math.round(
-          (new Date(deal.to).getTime() - new Date(deal.from).getTime()) / 604_800_000,
-        ),
-      )
-    : 0;
+/**
+ * The server's facts, in the reader's words.
+ *
+ * By `kind`, which is the stable half of a fact; `label` is English and is only
+ * shown for a kind this screen has never heard of. The budget is labelled by
+ * which of the two the server sent — money not yet spent on an empty venue,
+ * money still available on one that trades — because they are different sums
+ * under one kind.
+ */
+function factLines(facts: AssistantFact[], empty: boolean, copy: Copy, voice: Voice): Line[] {
+  const statuses = copy.statuses as Record<string, string | undefined>;
 
-/* ─────────────────────────────────────────────────────────────── the screen ── */
+  return facts.map((fact, index) => {
+    const key = `${fact.kind}-${fact.id ?? index}`;
+    const number =
+      typeof fact.value === 'number' && Number.isFinite(fact.value) ? fact.value : null;
+    const text = typeof fact.value === 'string' ? fact.value : null;
 
-export function Assistant() {
-  const dashboard = useCopy().dashboard;
-  const copy = dashboard.assistant;
-  const money = useMoney();
-  const currency = useCurrency();
-  const [language] = useLanguage();
-  const { goTo, openDrawer, toast } = useDashboard();
-
-  const [draft, setDraft] = useState<Draft>(FRESH);
-  const [typed, setTyped] = useState('');
-  const [revision, setRevision] = useState('');
-  const [langOpen, setLangOpen] = useState<LanguageCode>(language);
-  /* Edits to the deal text live outside the draft: a revision rewrites the
-     draft and must not silently throw away words the owner typed into a
-     translation. */
-  const [edits, setEdits] = useState<
-    Partial<Record<AssistReward, Partial<Record<LanguageCode, { title?: string; body?: string }>>>>
-  >({});
-  const [terms, setTerms] = useState(copy.terms);
-  const thread = useRef<HTMLDivElement>(null);
-
-  const num = (value: number) => group(value, currency);
-  const patch = (next: Partial<Draft>) => setDraft((current) => ({ ...current, ...next }));
-
-  /* ── the figures every sentence is filled from ── */
-
-  const vouchers = PD_VOUCHER_MODEL;
-  const campaigns = PD_CAMPAIGN_MODEL;
-  const days = copy.dayChoices[draft.dayChoice];
-  const tight = draft.budget > PD_ASSIST.hotRoom;
-  const budget = tight ? Math.min(draft.budget, PD_ASSIST.hotRoom) : draft.budget;
-  /* What one claim costs: a fixed price for a free item, a fifth of the average
-     bill for a percentage off. The whole cost panel hangs off this one line. */
-  const unit = draft.reward === 'item' ? PD_ASSIST.itemCost : AVG_SPEND * 0.2;
-  const claims = draft.stopAfter ?? Math.max(1, Math.round(budget / unit));
-  const cost = claims * unit;
-  const audience = PD_AUDIENCES[PD_ASSIST.audience];
-  const sample = PD_ASSIST_COPY[draft.reward];
-  const edited = edits[draft.reward] ?? {};
-
-  const say = (them: string, you?: string) =>
-    setDraft((current) => ({
-      ...current,
-      messages: [
-        ...current.messages,
-        ...(you ? ([{ who: 'you', text: you }] as Message[]) : []),
-        { who: 'it', text: them },
-      ],
-    }));
-
-  /* ── the four replies ── */
-
-  const askBudget = (reward: AssistReward) =>
-    fill(copy.askBudget[reward], {
-      x: String(PD_ASSIST.itemMultiple),
-      amount: money(PD_ASSIST.itemCost, 'unit'),
-    });
-
-  const askDuration = (amount: number) =>
-    fill(copy.askDuration, { amount: money(amount, 'exact') });
-
-  const askNotify = (weeks: number) =>
-    fill(copy.askNotify, {
-      n: String(weeks),
-      left: String(PD_NOTIFY_QUOTA.left),
-      total: String(PD_NOTIFY_QUOTA.total),
-    });
-
-  const readyLine = (on: boolean) =>
-    fill(copy.ready, { notify: on ? copy.readyNotify : '' });
-
-  const goalOpen = (goal: Goal) =>
-    goal === 'lapsed'
-      ? fill(copy.goalOpen.lapsed, { n: String(PD_CUSTOMERS.lapsed) })
-      : goal === 'new'
-        ? copy.goalOpen.new
-        : fill(copy.goalOpen.quiet, {
-            days: copy.dayChoices[0],
-            from: PD_ASSIST.quietFrom,
-            to: PD_ASSIST.quietTo,
-            pct: String(PD_ASSIST.quietBelow),
-          });
-
-  /** Opens the thread on one of the four starts the right-hand column offers. */
-  const start = (index: number) => {
-    const seeds: Goal[] = ['quiet', 'lapsed', 'review', 'quiet'];
-    const goal = seeds[index];
-    const seed = fill(copy.options[index].seed, { n: String(PD_CUSTOMERS.lapsed) });
-
-    if (index === 2) {
-      setDraft({ ...FRESH, step: 'review', goal: 'review', messages: [{ who: 'you', text: seed }] });
-      return;
-    }
-    if (index === 3) {
-      setDraft({ ...FRESH, step: 'answer', messages: [{ who: 'you', text: seed }] });
-      return;
-    }
-    setDraft({
-      ...FRESH,
-      goal,
-      stage: 'reward',
-      messages: [
-        { who: 'you', text: seed },
-        { who: 'it', text: goalOpen(goal) },
-      ],
-    });
-  };
-
-  /** A chip answer: the stage's value is known, so no parsing is needed. */
-  const chip = (value: string | number | boolean, label: string) => {
-    if (draft.stage === 'reward') {
-      const reward = value as AssistReward;
-      patch({ reward, stage: 'budget' });
-      say(askBudget(reward), label);
-    } else if (draft.stage === 'budget') {
-      patch({ budget: value as number, stage: 'duration' });
-      say(askDuration(value as number), label);
-    } else if (draft.stage === 'duration') {
-      patch({ weeks: value as number, stage: 'notify' });
-      say(askNotify(value as number), label);
-    } else if (draft.stage === 'notify') {
-      patch({ notify: value as boolean, stage: 'ready' });
-      say(readyLine(value as boolean), label);
-    }
-  };
-
-  /** A typed answer, read against whichever question is on the table. */
-  const send = () => {
-    const text = typed.trim();
-    if (!text) return;
-    setTyped('');
-
-    if (draft.stage === 'idle') {
-      if (RE.cant.test(text)) {
-        setDraft((c) => ({ ...c, step: 'cant', messages: [...c.messages, { who: 'you', text }] }));
-        return;
-      }
-      if (RE.review.test(text)) {
-        setDraft((c) => ({
-          ...c,
-          step: 'review',
-          goal: 'review',
-          messages: [...c.messages, { who: 'you', text }],
-        }));
-        return;
-      }
-      if (RE.voucher.test(text)) {
-        setDraft((c) => ({ ...c, step: 'answer', messages: [...c.messages, { who: 'you', text }] }));
-        return;
-      }
-      const goal: Goal = RE.lapsed.test(text) ? 'lapsed' : RE.new.test(text) ? 'new' : 'quiet';
-      /* Anything it *did* understand in the opening sentence is kept, so a
-         person who says "400 zł for a month" is not asked both again. */
-      const budgetSaid = nearestBudget(text, PD_ASSIST.budgets, currency.rate);
-      const weeksSaid = parseWeeks(text);
-      const rewardSaid = RE.item.test(text) ? 'item' : RE.percent.test(text) ? 'percent' : null;
-      setDraft((c) => ({
-        ...c,
-        goal,
-        stage: 'reward',
-        ...(budgetSaid ? { budget: budgetSaid } : {}),
-        ...(weeksSaid ? { weeks: weeksSaid } : {}),
-        ...(rewardSaid ? { reward: rewardSaid } : {}),
-        messages: [...c.messages, { who: 'you', text }, { who: 'it', text: goalOpen(goal) }],
-      }));
-      return;
-    }
-
-    if (draft.stage === 'reward') {
-      const reward: AssistReward | null = RE.item.test(text)
-        ? 'item'
-        : RE.percent.test(text)
-          ? 'percent'
-          : null;
-      if (reward) {
-        patch({ reward, stage: 'budget' });
-        say(askBudget(reward), text);
-      } else {
-        say(copy.retry.reward, text);
-      }
-      return;
-    }
-
-    if (draft.stage === 'budget') {
-      const value = nearestBudget(text, PD_ASSIST.budgets, currency.rate);
-      if (value != null) {
-        patch({ budget: value, stage: 'duration' });
-        say(askDuration(value), text);
-      } else {
-        say(
-          fill(copy.retry.budget, {
-            a: money(PD_ASSIST.budgets[0], 'exact'),
-            b: money(PD_ASSIST.budgets[1], 'exact'),
-            c: money(PD_ASSIST.budgets[2], 'exact'),
-          }),
-          text,
+    switch (fact.kind) {
+      case 'visits':
+        return lineOf(key, copy.facts.visits, number === null ? null : voice.count(number));
+      case 'customers':
+        /* A customer count is a finding about people, so null here is the
+           min-cohort floor rather than a missing field. */
+        return lineOf(
+          key,
+          copy.facts.customers,
+          number === null ? null : voice.count(number),
+          number === null,
+        );
+      case 'new_customers':
+        return lineOf(key, copy.facts.newCustomers, number === null ? null : voice.count(number));
+      case 'budget':
+        return lineOf(
+          key,
+          empty ? copy.facts.budgetUnspent : copy.facts.budgetAvailable,
+          number === null ? null : voice.amount(number),
+        );
+      case 'spend':
+        return lineOf(key, copy.facts.spend, number === null ? null : voice.amount(number));
+      case 'status':
+        return lineOf(key, copy.facts.listing, text === null ? null : (statuses[text] ?? null));
+      case 'quiet_window': {
+        const slot = slotOf(fact.value);
+        return lineOf(
+          key,
+          copy.facts.quietest,
+          slot ? voice.capital(voice.when(slot.weekday, slot.hour)) : null,
         );
       }
-      return;
+      case 'language_mix':
+        return lineOf(key, copy.facts.topLanguage, text === null ? null : voice.language(text));
+      default:
+        return {
+          key,
+          label: fact.label,
+          value: number !== null ? voice.count(number) : text,
+          withheld: false,
+          quoted: true,
+        };
     }
+  });
+}
 
-    if (draft.stage === 'duration') {
-      const value = parseWeeks(text);
-      if (value != null) {
-        patch({ weeks: value, stage: 'notify' });
-        say(askNotify(value), text);
-      } else {
-        say(copy.retry.duration, text);
+/* ───────────────────────────────────────────────────────── where things go ── */
+
+/**
+ * What pressing a suggestion does, by its key.
+ *
+ * Three become drafts, because a draft is what the server can build for them.
+ * The other four go straight to the place that does the job: the voucher ladder
+ * lives on Vouchers and the two pools are split on the loyalty screen; "tell me
+ * when you are quiet" is the deal form's days and hours, because there is no
+ * endpoint that records quiet hours and asking the draft endpoint would aim a
+ * deal at an hour picked from zero visits; and reaching another language is the
+ * deal copy, which is on Hot deals. A key this screen does not know is asked as
+ * a question, which the server always answers from the venue's own figures.
+ */
+type Move = { kind: 'draft'; goal: string } | { kind: 'go'; to: Destination } | { kind: 'ask' };
+
+const SUGGESTION_MOVES: Record<string, Move> = {
+  first_deal: { kind: 'draft', goal: DRAFT_GOALS.first_deal },
+  stamp_card: { kind: 'draft', goal: DRAFT_GOALS.stamp_card },
+  fill_quiet_hour: { kind: 'draft', goal: DRAFT_GOALS.fill_quiet_hour },
+  points_discount: { kind: 'go', to: { kind: 'screen', screen: 'vouchers' } },
+  quiet_hours: { kind: 'go', to: { kind: 'drawer', drawer: 'deal' } },
+  rebalance: { kind: 'go', to: { kind: 'screen', screen: 'campaigns' } },
+  translate: { kind: 'go', to: { kind: 'screen', screen: 'deals' } },
+};
+
+const moveOf = (key: string): Move =>
+  Object.hasOwn(SUGGESTION_MOVES, key) ? SUGGESTION_MOVES[key] : { kind: 'ask' };
+
+function iconOf(move: Move): IconName {
+  if (move.kind === 'draft') return 'spark';
+  if (move.kind === 'ask') return 'send';
+  return move.to.kind === 'drawer' ? 'plus' : 'arrow';
+}
+
+/** A destination's label and the press that reaches it, in one place. */
+function useDestinations() {
+  const dashboard = useCopy().dashboard;
+  const { goTo, openDrawer } = useDashboard();
+
+  return {
+    label: (to: Destination): string | null => {
+      if (to.kind === 'screen') {
+        const index = DASH_SCREENS.findIndex((entry) => entry.id === to.screen);
+        return index >= 0 ? dashboard.screens[index].name : null;
       }
-      return;
-    }
+      if (to.drawer === 'campaign') return dashboard.actions.newCampaign;
+      return to.dealId ? dashboard.assistant.actions.editDeal : dashboard.actions.newDeal;
+    },
+    go: (to: Destination, prefill?: DrawerPrefill) => {
+      if (to.kind === 'screen') goTo(to.screen);
+      else openDrawer(to.drawer, to.dealId, prefill);
+    },
+  };
+}
 
-    if (draft.stage === 'notify') {
-      const value = RE.no.test(text) ? false : RE.yes.test(text) ? true : null;
-      if (value != null) {
-        patch({ notify: value, stage: 'ready' });
-        say(readyLine(value), text);
-      } else {
-        say(copy.retry.notify, text);
-      }
-      return;
-    }
+/** A suggestion in the reader's language — or the server's English for a key nobody translated. */
+function suggestionWords(
+  suggestion: AssistantSuggestion,
+  copy: Copy,
+  voice: Voice,
+  quiet: { weekday: number; hour: number } | null,
+): { label: string; detail: string; quoted: boolean } {
+  if (suggestion.key === 'fill_quiet_hour') {
+    return {
+      label: copy.suggestions.fill_quiet_hour.label,
+      /* The hour comes from the context's own `quiet_window` fact. The server's
+         detail also names how many came in that hour, and that count is only
+         in its English prose — so it is left out rather than parsed out. */
+      detail: quiet
+        ? fill(copy.suggestions.fill_quiet_hour.detail, {
+            when: voice.when(quiet.weekday, quiet.hour),
+          })
+        : copy.quietPlain,
+      quoted: false,
+    };
+  }
+  const known = (copy.suggestions as Record<string, { label: string; detail: string } | undefined>)[
+    suggestion.key
+  ];
+  return known && Object.hasOwn(copy.suggestions, suggestion.key)
+    ? { label: known.label, detail: known.detail, quoted: false }
+    : { label: suggestion.label, detail: suggestion.detail, quoted: true };
+}
 
-    say(copy.retry.other, text);
+/* ─────────────────────────────────────────────────────────────── the turns ── */
+
+type DraftRequest = {
+  mode: 'draft';
+  goal: string;
+  budgetMinor?: number;
+  /** What the thread shows as the owner's words. */
+  shown: string;
+  /** The budget as they typed it, under their words. */
+  note?: string;
+};
+
+type Request = { mode: 'ask'; text: string; shown: string } | DraftRequest;
+
+/**
+ * One entry in the thread — a union rather than a row with optional fields, for
+ * the dock's reason: the states are different things to draw, and the compiler
+ * should be what notices one that is not handled.
+ */
+type Turn =
+  | { id: number; from: 'you'; text: string; note?: string }
+  | { id: number; from: 'it'; state: 'thinking' }
+  | { id: number; from: 'it'; state: 'answer'; answer: PartnerAnswer }
+  | { id: number; from: 'it'; state: 'draft'; draft: PartnerDraft; asked: DraftRequest }
+  | {
+      id: number;
+      from: 'it';
+      state: 'error';
+      kind: 'locked' | 'offline' | 'failed';
+      detail: string | null;
+      /** What a retry re-sends, and the owner's turn it replaces. */
+      request: Request;
+      pair: number;
+    };
+
+type ErrorTurn = Extract<Turn, { state: 'error' }>;
+
+/**
+ * An answer, written from the report it was built from.
+ *
+ * `readAnswer` says which report that was; this says it in words. Rows are text
+ * and deliberately not pressable — the one pressable thing is the place the
+ * server pointed at, translated to this frame, and a link that translates to
+ * nowhere is not drawn.
+ */
+function AnswerTurn({
+  answer,
+  context,
+  voice,
+  onStart,
+}: {
+  answer: PartnerAnswer;
+  context: VenueContextBody;
+  voice: Voice;
+  onStart: (suggestion: AssistantSuggestion) => void;
+}) {
+  const copy = useCopy().dashboard.assistant;
+  const destinations = useDestinations();
+  const reading = readAnswer(answer);
+  const quiet = slotOf(context.facts.find((fact) => fact.kind === 'quiet_window')?.value);
+
+  const pointed = answer.action ? destinationOf(answer.action.href) : null;
+  const pointAt = (label?: string, prefill?: DrawerPrefill) => {
+    if (!pointed) return null;
+    const text = label ?? destinations.label(pointed);
+    return text ? { label: text, run: () => destinations.go(pointed, prefill) } : null;
   };
 
-  /**
-   * A revision: change only what was named, and show what moved.
-   *
-   * Two failures in a row stop it asking. That is the whole reason `missed`
-   * exists as a step — a matcher this shallow *will* fail, and a screen that
-   * keeps saying "sorry, try again" is worse than one that opens the form with
-   * what it did understand already filled in.
-   */
-  const revise = () => {
-    const text = revision.trim();
-    if (!text) return;
-    const changes: Draft['changes'] = [];
-    const next: Partial<Draft> = {};
+  let sentence = answer.text;
+  let quoted = false;
+  let rows: Line[] = [];
+  let action: { label: string; run: () => void } | null = null;
 
-    if (RE.thursday.test(text)) {
-      changes.push({ field: copy.revisions.days, from: days, to: copy.revisions.thursday });
-      next.dayChoice = 1;
-    } else if (RE.friday.test(text)) {
-      changes.push({ field: copy.revisions.days, from: days, to: copy.revisions.friday });
-      next.dayChoice = 2;
-    }
-    if (RE.morning.test(text)) {
-      const [from, to] = copy.revisions.morning.split('–');
-      changes.push({
-        field: copy.revisions.hours,
-        from: `${draft.hourFrom}–${draft.hourTo}`,
-        to: copy.revisions.morning,
+  switch (reading.shape) {
+    case 'starts': {
+      sentence = copy.answers.empty;
+      rows = reading.suggestions.map((suggestion, index) => {
+        const words = suggestionWords(suggestion, copy, voice, quiet);
+        return {
+          key: `${suggestion.key}-${index}`,
+          label: words.label,
+          value: words.detail,
+          withheld: false,
+          quoted: words.quoted,
+        };
       });
-      next.hourFrom = from;
-      next.hourTo = to;
+      /* The server's link here is `#/dashboard` with the first suggestion's
+         label on it — a pointer at the list above rather than at a place. So
+         the press does what that suggestion does. */
+      const first = reading.suggestions[0];
+      if (first) {
+        action = {
+          label: suggestionWords(first, copy, voice, quiet).label,
+          run: () => onStart(first),
+        };
+      }
+      break;
     }
-    if (RE.student.test(text)) {
-      changes.push({
-        field: copy.revisions.audience,
-        from: dashboard.deals.audiences[PD_ASSIST.audience],
-        to: fill(copy.revisions.noStudents, { n: num(audience.reach - PD_ASSIST.students) }),
-      });
-      next.noStudents = true;
+    case 'quiet': {
+      const slot = reading.quietest;
+      sentence = slot
+        ? fill(copy.answers.quiet, {
+            when: voice.when(slot.weekday, slot.hour),
+            n: voice.count(slot.visits),
+          })
+        : copy.answers.quietNone;
+      if (reading.busiest) {
+        rows.push(
+          lineOf(
+            'busiest',
+            copy.answers.busiest,
+            voice.capital(voice.when(reading.busiest.weekday, reading.busiest.hour)),
+          ),
+          lineOf('busiest-visits', copy.answers.busiestVisits, voice.count(reading.busiest.visits)),
+        );
+      }
+      rows.push(lineOf('counted', copy.answers.counted, voice.count(reading.total)));
+      /* "Run a deal then" opens the form aimed at the hour that was measured —
+         one clock hour, because that is the unit the heat map counts in. */
+      action = pointAt(
+        slot && pointed?.kind === 'drawer' ? copy.actions.dealThen : undefined,
+        slot
+          ? {
+              deal: {
+                targetWeekdays: [slot.weekday],
+                targetFromMin: slot.hour * 60,
+                targetToMin: Math.min((slot.hour + 1) * 60, 23 * 60 + 59),
+              },
+            }
+          : undefined,
+      );
+      break;
     }
-
-    setRevision('');
-    if (!changes.length) {
-      patch({ step: 'missed', attempts: draft.attempts + 1 });
-      return;
+    case 'cost': {
+      const each = reading.each;
+      sentence =
+        each.value === null
+          ? copy.answers.costWithheld
+          : fill(copy.answers.cost, {
+              spend: voice.amount(reading.spendMinor),
+              n: voice.count(reading.newCustomers),
+              each: voice.amount(each.value, 'unit'),
+            });
+      if (reading.breakdown) {
+        const parts = reading.breakdown;
+        rows = [
+          lineOf('subscription', copy.answers.parts.subscription, voice.amount(parts.subscription)),
+          lineOf('loyalty', copy.answers.parts.loyalty, voice.amount(parts.loyalty)),
+          lineOf('vouchers', copy.answers.parts.vouchers, voice.amount(parts.vouchers)),
+          lineOf('deals', copy.answers.parts.deals, voice.amount(parts.deals)),
+        ];
+      }
+      action = pointAt();
+      break;
     }
-    patch({ ...next, changes, exits: false });
-    toast(copy.draftUpdated);
-  };
-
-  /* ── the pieces of the draft ── */
-
-  const reasons = [
-    draft.dayChoice === 0
-      ? fill(copy.reasons.quietDays, {
-          days,
-          from: draft.hourFrom,
-          to: draft.hourTo,
-          pct: String(PD_ASSIST.quietBelow),
-        })
-      : fill(copy.reasons.movedDays, {
-          days,
-          quiet: copy.dayChoices[0],
-          from: PD_ASSIST.quietFrom,
-          to: PD_ASSIST.quietTo,
-        }),
-    draft.reward === 'item'
-      ? fill(copy.reasons.item, {
-          x: String(PD_ASSIST.itemMultiple),
-          n: String(PD_ASSIST.peers),
-          amount: money(PD_ASSIST.itemCost, 'unit'),
-        })
-      : copy.reasons.percent,
-    fill(tight ? copy.reasons.budgetTight : copy.reasons.budget, {
-      amount: money(budget, 'exact'),
-    }),
-  ];
-
-  const readyRows = [
-    copy.goals[draft.goal === 'lapsed' ? 1 : draft.goal === 'new' ? 2 : 0],
-    copy.dealValues[draft.reward],
-    `${days}, ${draft.hourFrom}–${draft.hourTo}`,
-    money(budget, 'exact'),
-    fill(copy.weeksValue, { n: String(draft.weeks) }),
-    draft.notify ? copy.notifyYes : copy.notifyNo,
-  ];
-
-  const dealValues = [
-    copy.dealValues[draft.reward],
-    `${days}, ${draft.hourFrom}–${draft.hourTo}`,
-    fill(copy.weeksValue, { n: String(draft.weeks) }),
-    draft.noStudents
-      ? fill(copy.revisions.noStudents, { n: num(audience.reach - PD_ASSIST.students) })
-      : dashboard.deals.audiences[PD_ASSIST.audience],
-  ];
-
-  const chips = useMemo(() => {
-    if (draft.stage === 'reward') {
-      return [
-        { label: copy.chips.item, value: 'item' as const },
-        { label: copy.chips.percent, value: 'percent' as const },
+    case 'overview': {
+      const visits = voice.metric(reading.visits) ?? '—';
+      sentence =
+        reading.customers.value === null
+          ? fill(copy.answers.overviewWithheld, { visits })
+          : fill(copy.answers.overview, { visits, customers: voice.count(reading.customers.value) });
+      const withheld = (metric: Metric | null) => metric?.suppressed === true;
+      rows = [
+        lineOf(
+          'new',
+          copy.answers.newCustomers,
+          voice.metric(reading.newCustomers),
+          withheld(reading.newCustomers),
+        ),
+        lineOf(
+          'returning',
+          copy.answers.returning,
+          voice.metric(reading.returningCustomers),
+          withheld(reading.returningCustomers),
+        ),
+        lineOf('sales', copy.answers.sales, voice.metric(reading.salesMinor, 'amount'), withheld(reading.salesMinor)),
+        lineOf(
+          'average',
+          copy.answers.averageCheck,
+          voice.metric(reading.averageCheckMinor, 'unit'),
+          withheld(reading.averageCheckMinor),
+        ),
       ];
+      action = pointAt();
+      break;
     }
-    if (draft.stage === 'budget') {
-      return PD_ASSIST.budgets.map((amount) => ({
-        label: money(amount, 'exact'),
-        value: amount,
-      }));
-    }
-    if (draft.stage === 'duration') {
-      return PD_ASSIST.weeks.map((weeks) => ({
-        label: fill(copy.chips.weeks, { n: String(weeks) }),
-        value: weeks,
-      }));
-    }
-    if (draft.stage === 'notify') {
-      return [
-        { label: copy.chips.yes, value: true },
-        { label: copy.chips.no, value: false },
-      ];
-    }
-    return [];
-  }, [draft.stage, copy, money]);
-
-  const placeholder =
-    draft.stage === 'idle'
-      ? copy.placeholders.idle
-      : draft.stage === 'ready'
-        ? copy.placeholders.ready
-        : draft.stage === 'budget'
-          ? fill(copy.placeholders.budget, {
-              a: money(PD_ASSIST.budgets[0], 'exact'),
-              b: money(PD_ASSIST.budgets[1], 'exact'),
-              c: money(PD_ASSIST.budgets[2], 'exact'),
-            })
-          : copy.placeholders[draft.stage];
-
-  /*
-   * With nothing measured, it has nothing to say — and says that.
-   *
-   * The rule for this screen (root `CLAUDE.md`) is that **every figure in every
-   * sentence arrives through a `fill()` hole from `partnerMetrics.ts`**, which
-   * is what stops it inventing one. The seeds behind those holes are gone, so
-   * the corollary now bites: an assistant that fills a hole with 0 or a blank
-   * because it cannot know is exactly the failure that rule exists to prevent.
-   * `PD_ASSIST.measured` is false until a venue's own context has been fetched
-   * from `GET /v1/partner/venues/:id/assistant/context`, and until then this
-   * refuses to draft rather than drafting around holes.
-   *
-   * It sits after every hook, so the hook order is unchanged.
-   */
-  if (!PD_ASSIST.measured) {
-    const empty = dashboard.empty[5];
-    return (
-      <div className="pd-stack pd-assist">
-        <div className="pd-glass pd-panel pd-empty" data-reveal>
-          <h3>{empty.title}</h3>
-          <p className="pd-fine">{empty.body}</p>
-          <p className="pd-fine">{dashboard.unmeasured.assistant}</p>
-        </div>
-      </div>
-    );
+    default:
+      quoted = true;
+      action = pointAt();
   }
 
-  /* ── screens the conversation can end on ── */
-
-  const winter = PD_CAMPAIGNS.findIndex((campaign) => !campaign.live);
-  const lunch = PD_DEALS.findIndex((deal) => deal.state === 'expired');
-  const tier = PD_TIERS[1];
-  /* Redemptions this month, across every tier — the same sum the Vouchers page
-     shows, so the answer below explains a number the owner can go and find. */
-  const redeemedNow = PD_TIERS.reduce((total, row) => total + row.redeemed, 0);
+  const receipt = factLines(answer.facts, answer.empty, copy, voice);
 
   return (
-    <div className="pd-stack pd-assist">
-      {/* Two panels side by side: what it knows, and where to start. The left is
-          the argument for trusting it at all, so it comes first and it is the
-          dark one. */}
-      <div className="pd-two pd-assist-top">
-        <div className="pd-glass pd-hero pd-knows" data-ink="paper" data-reveal>
-          <span className="console-label">{copy.knowTitle}</span>
-          <p className="pd-lede">{copy.intro}</p>
-          <ul>
-            <li>
-              {fill(copy.knows[0], {
-                days: copy.dayChoices[0],
-                from: PD_ASSIST.quietFrom,
-                to: PD_ASSIST.quietTo,
-                pct: String(PD_ASSIST.quietBelow),
-              })}
-            </li>
-            <li>{fill(copy.knows[1], { pct: String(PD_ASSIST.russianShare) })}</li>
-            <li>
-              {fill(copy.knows[2], {
-                n: String(PD_ASSIST.peers),
-                x: String(PD_ASSIST.itemMultiple),
-              })}
-            </li>
-            <li>
-              {fill(copy.knows[3], {
-                vouchers: money(Math.max(0, vouchers.available), 'exact'),
-                loyalty: money(Math.max(0, campaigns.available), 'exact'),
-              })}
-            </li>
-          </ul>
-        </div>
+    <div className="pd-msg pas-answer" data-who="it">
+      <p lang={quoted ? 'en' : undefined}>{sentence}</p>
 
-        <div className="pd-glass pd-panel pd-starts" data-reveal>
-          <span className="console-label">{copy.optionsTitle}</span>
-          <p className="pd-fine">{copy.optionsIntro}</p>
-          <div className="pd-start-list">
-            {copy.options.map((option, index) => (
-              <button key={option.name} type="button" onClick={() => start(index)}>
-                <b>{option.name}</b>
-                <span>
-                  {fill(option.desc, {
-                    days: copy.dayChoices[0],
-                    from: PD_ASSIST.quietFrom,
-                    to: PD_ASSIST.quietTo,
-                    pct: String(PD_ASSIST.quietBelow),
-                    n: String(PD_CUSTOMERS.lapsed),
-                  })}
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {draft.step === 'start' && (
-        <div className="pd-glass pd-thread" data-solid="true" data-reveal>
-          <div className="pd-thread-head">
-            <span className="console-label">
-              <i className="pd-live-dot" aria-hidden />
-              {copy.convTitle}
-            </span>
-            {draft.messages.length > 0 && (
-              <button type="button" className="btn btn-ghost" onClick={() => setDraft(FRESH)}>
-                {copy.reset}
-              </button>
-            )}
-          </div>
-
-          <div className="pd-msgs" ref={thread}>
-            <p className="pd-msg" data-who="it">
-              {copy.opening}
-            </p>
-            {draft.messages.map((message, index) => (
-              <p className="pd-msg" data-who={message.who} key={`${index}-${message.text}`}>
-                {message.text}
-              </p>
-            ))}
-
-            {chips.length > 0 && (
-              <div className="pd-chips">
-                {chips.map((option) => (
-                  <button
-                    key={option.label}
-                    type="button"
-                    onClick={() => chip(option.value, option.label)}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-                <span className="pd-fine">{copy.chipsHint}</span>
-              </div>
-            )}
-
-            {draft.stage === 'ready' && (
-              <div className="pd-ready">
-                <span className="console-label">{copy.readyTitle}</span>
-                <dl>
-                  {copy.readyRows.map((label, index) => (
-                    <div key={label}>
-                      <dt>{label}</dt>
-                      <dd>{readyRows[index]}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <button
-                  type="button"
-                  className="btn btn-solid"
-                  onClick={() => patch({ step: 'draft' })}
-                >
-                  {copy.showDraft}
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* The composer. Enter sends, shift-enter breaks the line — the one
-              keyboard convention a chat box may not get wrong. */}
-          <div className="pd-composer">
-            <label className="pd-composer-well">
-              <span className="visually-hidden">{placeholder}</span>
-              <textarea
-                rows={1}
-                value={typed}
-                placeholder={placeholder}
-                onChange={(event) => setTyped(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault();
-                    send();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className="pd-send"
-                disabled={!typed.trim()}
-                aria-label={copy.send}
-                onClick={send}
-              >
-                <Icon name="arrow" size={17} strokeWidth={2.1} />
-              </button>
-            </label>
-            <p className="pd-fine">{copy.composerNote}</p>
-          </div>
-        </div>
-      )}
-
-      {draft.step === 'draft' && (
-        <div className="pd-glass pd-draft" data-solid="true" data-reveal>
-          <div className="pd-draft-head">
-            <span className="pd-tag">{copy.draftTag}</span>
-            <span>{copy.draftNote}</span>
-          </div>
-
-          <div className="pd-draft-body">
-            {draft.changes.length > 0 && (
-              <div className="pd-changed">
-                <span className="console-label">{copy.changedTitle}</span>
-                {draft.changes.map((change) => (
-                  <div key={change.field}>
-                    <b>{change.field}</b>
-                    <span>
-                      <del>{change.from}</del>
-                      <em>
-                        <Icon name="arrow" size={14} strokeWidth={2.2} />
-                        {change.to}
-                      </em>
-                    </span>
-                  </div>
-                ))}
-                <p className="pd-fine">{copy.changedNote}</p>
-              </div>
-            )}
-
-            <p className="pd-proof">
-              {fill(copy.sentence[draft.reward], {
-                days,
-                from: draft.hourFrom,
-                to: draft.hourTo,
-                weeks: String(draft.weeks),
-              })}
-            </p>
-
-            <span className="console-label">{copy.whyTitle}</span>
-            <ul className="pd-reasons">
-              {reasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-
-            {/* The two objects it would create, each written as the record it
-                would become rather than as prose. */}
-            <div className="pd-record">
-              <div className="pd-record-head">
-                <span className="pd-tag" data-quiet="true">
-                  {copy.dealTag}
-                </span>
-                <span className="pd-fine">{copy.dealNew}</span>
-              </div>
-              {copy.dealFields.map((label, index) => (
-                <div className="pd-record-row" key={label}>
-                  <span>{label}</span>
-                  <b>{dealValues[index]}</b>
-                </div>
-              ))}
-              <div className="pd-record-row">
-                <span>{copy.stopAfter}</span>
-                <label className="pd-well">
-                  <span className="visually-hidden">{copy.stopAfter}</span>
-                  <input
-                    type="number"
-                    value={claims}
-                    onChange={(event) =>
-                      patch({ stopAfter: Math.max(1, Number(event.target.value) || 1) })
-                    }
-                  />
-                  <span>{copy.claims}</span>
-                </label>
-              </div>
-              <p className="pd-fine">{copy.fieldNote}</p>
-            </div>
-
-            {draft.notify && (
-              <div className="pd-record">
-                <div className="pd-record-head">
-                  <span className="pd-tag" data-quiet="true">
-                    {copy.notifyTag}
-                  </span>
-                  <span className="pd-fine">{copy.notifyAttached}</span>
-                </div>
-                <div className="pd-record-row">
-                  <span>{copy.goesOut}</span>
-                  <label className="pd-well">
-                    <span className="visually-hidden">{copy.goesOut}</span>
-                    <input
-                      type="time"
-                      value={draft.sendAt}
-                      onChange={(event) => patch({ sendAt: event.target.value })}
-                    />
-                  </label>
-                </div>
-                <div className="pd-record-row">
-                  <span>{copy.notifyFields[0]}</span>
-                  <b>{fill(copy.notifyReach, { n: num(audience.notifiable) })}</b>
-                </div>
-                <div className="pd-record-row">
-                  <span>{copy.notifyFields[1]}</span>
-                  <b>{fill(copy.notifyUses, { n: String(PD_NOTIFY_QUOTA.left) })}</b>
-                </div>
-              </div>
-            )}
-
-            <div className="pd-brief">
-              <span className="console-label">{copy.costTitle}</span>
+      {receipt.length > 0 && (
+        <ul className="pas-receipt" aria-label={copy.receipt}>
+          {receipt.map((line) => (
+            <li key={line.key}>
               <b>
-                {fill(copy.costLine[draft.reward], {
-                  n: num(claims),
-                  amount: money(cost, 'exact'),
-                  each: money(PD_ASSIST.itemCost, 'unit'),
-                  avg: money(AVG_SPEND, 'unit'),
-                })}
+                <Shown line={line} />
               </b>
-              <p>{copy.costNote}</p>
-            </div>
-
-            {tight && (
-              <p className="pd-brief pd-brief-warn">
-                <Icon name="warn" size={16} />
-                {fill(copy.budgetWarn, {
-                  asked: money(draft.budget, 'exact'),
-                  room: money(PD_ASSIST.hotRoom, 'exact'),
-                  n: num(claims),
-                  wanted: num(Math.round(draft.budget / unit)),
-                })}
-              </p>
-            )}
-
-            {/* The five languages, as tabs. This is the panel the whole screen
-                is arguing for: an owner who reads in one language can see, and
-                edit, what a customer reading in another will be shown. */}
-            <div className="pd-langs">
-              <div className="pd-lang-head">
-                <span className="console-label">{copy.readTitle}</span>
-                <span className="pd-tag" data-warn="true">
-                  {copy.readWarn}
-                </span>
-              </div>
-              <div className="pd-seg">
-                {LANGUAGE_ORDER.map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    title={LANGUAGES[code].label}
-                    data-on={langOpen === code ? 'true' : undefined}
-                    onClick={() => setLangOpen(code)}
-                  >
-                    {LANGUAGES[code].short}
-                  </button>
-                ))}
-              </div>
-              <label className="field">
-                <span className="field-label">
-                  {fill(copy.titleIn, { lang: LANGUAGES[langOpen].label })}
-                </span>
-                <input
-                  value={edited[langOpen]?.title ?? sample[langOpen].title}
-                  onChange={(event) =>
-                    setEdits((current) => ({
-                      ...current,
-                      [draft.reward]: {
-                        ...current[draft.reward],
-                        [langOpen]: {
-                          ...current[draft.reward]?.[langOpen],
-                          title: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-              <label className="field">
-                <span className="field-label">
-                  {fill(copy.bodyIn, { lang: LANGUAGES[langOpen].label })}
-                </span>
-                <textarea
-                  rows={2}
-                  value={edited[langOpen]?.body ?? sample[langOpen].body}
-                  onChange={(event) =>
-                    setEdits((current) => ({
-                      ...current,
-                      [draft.reward]: {
-                        ...current[draft.reward],
-                        [langOpen]: {
-                          ...current[draft.reward]?.[langOpen],
-                          body: event.target.value,
-                        },
-                      },
-                    }))
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="pd-langs">
-              <div className="pd-lang-head">
-                <span className="console-label">{copy.termsTitle}</span>
-                <span className="pd-tag" data-quiet="true">
-                  {copy.termsTag}
-                </span>
-              </div>
-              <label className="field">
-                <span className="visually-hidden">{copy.termsTitle}</span>
-                <textarea
-                  rows={2}
-                  value={terms}
-                  onChange={(event) => setTerms(event.target.value)}
-                />
-              </label>
-            </div>
-          </div>
-
-          <div className="pd-draft-foot">
-            <span className="console-label">{copy.reviseTitle}</span>
-            <div className="pd-revise">
-              <label className="field">
-                <span className="visually-hidden">{copy.reviseTitle}</span>
-                <textarea
-                  rows={2}
-                  value={revision}
-                  placeholder={copy.revisePlaceholder}
-                  onChange={(event) => setRevision(event.target.value)}
-                />
-              </label>
-              <button
-                type="button"
-                className="btn btn-solid"
-                disabled={!revision.trim()}
-                onClick={revise}
-              >
-                {copy.reviseAction}
-              </button>
-            </div>
-            <p className="pd-fine">{copy.reviseNote}</p>
-          </div>
-
-          <div className="pd-draft-acts">
-            <button
-              type="button"
-              className="btn btn-solid"
-              onClick={() => {
-                patch({ step: 'published' });
-                toast(copy.published);
-              }}
-            >
-              {copy.publish}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost"
-              onClick={() => patch({ exits: !draft.exits })}
-            >
-              {copy.notRight}
-            </button>
-          </div>
-
-          {draft.exits && (
-            <div className="pd-exits">
-              <p className="pd-fine">{copy.exitsIntro}</p>
-              <div className="pd-exit-list">
-                {copy.exits.map((exit, index) => (
-                  <div key={exit.title}>
-                    <b>{exit.title}</b>
-                    <p>{exit.note}</p>
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => {
-                        if (index === 0) patch({ exits: false });
-                        else if (index === 1) patch({ step: 'handed', exits: false });
-                        else setDraft(FRESH);
-                      }}
-                    >
-                      {exit.label}
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+              <span lang={line.quoted ? 'en' : undefined}>{line.label}</span>
+            </li>
+          ))}
+        </ul>
       )}
 
-      {draft.step === 'published' && (
-        <div className="pd-glass pd-panel" data-reveal>
-          <h2 className="pd-done">
-            <Icon name="check" size={20} strokeWidth={2.4} />
-            {draft.notify ? copy.publishedTitle : copy.publishedOne}
-          </h2>
-          <div className="pd-record">
-            <div className="pd-record-row pd-record-item">
-              <span className="pd-tag" data-quiet="true">
-                {copy.dealTag}
-              </span>
-              <div>
-                <b>{edited[language]?.title ?? sample[language].title}</b>
-                <span className="pd-fine">
-                  {fill(copy.publishedDeal, {
-                    days,
-                    from: draft.hourFrom,
-                    to: draft.hourTo,
-                    n: num(claims),
-                  })}
-                </span>
-              </div>
-              <button type="button" className="btn btn-ghost" onClick={() => goTo('deals')}>
-                {dashboard.words.open}
-              </button>
-            </div>
-            {draft.notify && (
-              <div className="pd-record-row pd-record-item">
-                <span className="pd-tag" data-quiet="true">
-                  {copy.notifyTag}
-                </span>
-                <div>
-                  <b>{fill(copy.publishedNotify, { at: draft.sendAt })}</b>
-                  <span className="pd-fine">
-                    {fill(copy.publishedNotifyNote, { n: num(audience.notifiable) })}
-                  </span>
-                </div>
-                <button type="button" className="btn btn-ghost" onClick={() => goTo('deals')}>
-                  {dashboard.words.open}
-                </button>
-              </div>
-            )}
-          </div>
-          <p className="pd-fine">{copy.watch}</p>
-          <button type="button" className="btn btn-ghost" onClick={() => setDraft(FRESH)}>
-            {copy.again}
-          </button>
-        </div>
-      )}
-
-      {draft.step === 'review' && (
-        <div className="pd-glass pd-notices" data-reveal>
-          <div className="pd-panel-head">
-            <div>
-              <span className="console-label">{copy.reviewTitle}</span>
-              <p className="pd-fine">{copy.reviewIntro}</p>
-            </div>
-            <button type="button" className="btn btn-ghost" onClick={() => setDraft(FRESH)}>
-              {copy.reset}
-            </button>
-          </div>
-          {[
-            {
-              text: fill(copy.review[0].text, {
-                pct: String(tier.pct),
-                points: num(tier.points),
-                reached: num(tier.issued),
-                lower: num(PD_ASSIST.tierLower),
-                more: num(PD_ASSIST.tierLowerReached),
-              }),
-              label: copy.review[0].label,
-              go: () => goTo('vouchers'),
-            },
-            {
-              text: fill(copy.review[1].text, {
-                name: dashboard.campaigns.rows[winter],
-                amount: money(PD_CAMPAIGN_MODEL.list[winter].aside, 'exact'),
-                n: String(PD_CAMPAIGN_MODEL.list[winter].gap),
-              }),
-              label: copy.review[1].label,
-              go: () => goTo('campaigns'),
-            },
-            {
-              text: fill(copy.review[2].text, {
-                name: dashboard.deals.rows[lunch],
-                /* How long it ran, from the deal's own window. `PartnerDeal`
-                   carried a `weeks` seed and no longer does — the server sends
-                   `valid_from` / `valid_to`, and a run length is the two
-                   subtracted rather than a third figure to keep in step. */
-                weeks: String(weeksOf(PD_DEALS[lunch])),
-                claims: num(PD_DEALS[lunch].claimed),
-              }),
-              label: copy.review[2].label,
-              go: () => goTo('deals'),
-            },
-          ].map((item) => (
-            <div className="pd-notice" key={item.label}>
-              <p>{item.text}</p>
-              <div className="pd-notice-acts">
-                <button type="button" className="btn btn-solid" onClick={item.go}>
-                  {item.label}
-                </button>
-              </div>
+      {rows.length > 0 && (
+        <dl className="pas-rows">
+          {rows.map((line) => (
+            <div key={line.key}>
+              <dt lang={line.quoted ? 'en' : undefined}>{line.label}</dt>
+              <dd lang={line.quoted ? 'en' : undefined}>
+                <Shown line={line} />
+              </dd>
             </div>
           ))}
-        </div>
+        </dl>
       )}
 
-      {draft.step === 'answer' && (
-        <div className="pd-glass pd-panel" data-reveal>
-          <p className="pd-fine">
-            {fill(copy.asked, { q: fill(copy.options[3].seed, { n: '' }).trim() })}
-          </p>
-          <p className="pd-proof">
-            {fill(copy.answerLine, {
-              /* This month's redemptions are the tier table's own sum and the
-                 drop is the difference — only last month is a seed. The three
-                 used to be written into the sentence in all five languages,
-                 which put the assistant one seed edit away from explaining a
-                 fall that the Vouchers page did not show. */
-              down: String(Math.round((1 - redeemedNow / PD_ASSIST.redeemedBefore) * 100)),
-              from: num(PD_ASSIST.redeemedBefore),
-              to: num(redeemedNow),
-              pct: String(tier.pct),
-              now: num(tier.issued),
-              before: num(PD_ASSIST.twiceBefore),
-              points: num(tier.points),
-            })}
-          </p>
-          <p className="pd-fine">{copy.answerNote}</p>
-          <div className="pd-answer-acts">
-            <button type="button" className="btn btn-solid" onClick={() => goTo('vouchers')}>
-              {copy.answerLabel}
-            </button>
-            <span className="pd-fine">{copy.answerMore}</span>
-            <button type="button" className="btn btn-ghost" onClick={() => setDraft(FRESH)}>
-              {copy.askElse}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {draft.step === 'handed' && (
-        <div className="pd-glass pd-panel" data-reveal>
-          <span className="console-label">{copy.handedTitle}</span>
-          <p className="pd-fine">{copy.handedNote}</p>
-          <div className="pd-record">
-            {copy.handedFields.map((label, index) => {
-              const values = [
-                `${days}, ${draft.hourFrom}–${draft.hourTo}`,
-                copy.dealValues[draft.reward],
-                fill(copy.handedWeeks, { n: String(draft.weeks) }),
-                `${num(claims)} ${copy.claims}`,
-                dealValues[3],
-                copy.handedCopy,
-              ];
-              /* The last two are guesses and are marked as guesses. That
-                 distinction is the point of the panel — a hand-over that does
-                 not say which fields it was unsure about hands over nothing. */
-              const sure = index < 4;
-              return (
-                <div className="pd-record-row" key={label}>
-                  <span>{label}</span>
-                  <b>{values[index]}</b>
-                  <em className="pd-tag" data-warn={sure ? undefined : 'true'} data-quiet={sure ? 'true' : undefined}>
-                    {sure ? copy.filledIn : copy.checkThis}
-                  </em>
-                </div>
-              );
-            })}
-          </div>
-          <div className="pd-draft-acts">
-            <button
-              type="button"
-              className="btn btn-solid"
-              onClick={() => {
-                openDrawer('deal');
-                toast(copy.handedOver);
-              }}
-            >
-              {copy.openForm}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => patch({ step: 'draft' })}>
-              {copy.backToDraft}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {draft.step === 'cant' && (
-        <div className="pd-glass pd-panel" data-reveal>
-          <p className="pd-proof">{copy.cantLine}</p>
-          <p className="pd-lede">
-            {/* Counted out of the cohort table rather than invented: every
-                cohort's returners are people who came a second time, which is
-                exactly what the sentence claims. */}
-            {fill(copy.cantAlt, {
-              n: num(PD_CUSTOMERS.cohorts.reduce((sum, month) => sum + month.back, 0)),
-            })}
-          </p>
-          <div className="pd-draft-acts">
-            <button
-              type="button"
-              className="btn btn-solid"
-              onClick={() =>
-                setDraft({
-                  ...FRESH,
-                  goal: 'lapsed',
-                  stage: 'reward',
-                  messages: [
-                    { who: 'you', text: copy.options[1].name },
-                    { who: 'it', text: goalOpen('lapsed') },
-                  ],
-                })
-              }
-            >
-              {copy.cantYes}
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={() => setDraft(FRESH)}>
-              {copy.cantNo}
-            </button>
-          </div>
-          <div className="pd-brief">
-            <span>{copy.cantElsewhere}</span>
-            <button type="button" className="btn btn-ghost" onClick={() => goTo('customers')}>
-              {copy.cantOpen}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {draft.step === 'missed' && (
-        <div className="pd-glass pd-panel" data-reveal>
-          <span className="console-label">{copy.missedTitle}</span>
-          <p className="pd-lede">{fill(copy.missedBody, { days })}</p>
-          {draft.attempts >= 2 && <p className="pd-brief">{copy.loopNote}</p>}
-          <div className="pd-draft-acts">
-            <button
-              type="button"
-              className="btn btn-solid"
-              onClick={() => {
-                openDrawer('deal');
-                toast(copy.handedOver);
-              }}
-            >
-              {copy.missedAction}
-            </button>
-            {draft.attempts < 2 && (
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => patch({ step: 'draft' })}
-              >
-                {copy.tryAgain}
-              </button>
-            )}
-          </div>
-        </div>
+      {action && (
+        <button type="button" className="pas-action" onClick={action.run}>
+          {action.label}
+          <Icon name="arrow" size={14} strokeWidth={2.4} />
+        </button>
       )}
     </div>
   );
+}
+
+/**
+ * A draft, as the record it would become — and the one press that takes it to
+ * the form.
+ *
+ * The words inside a draft (the offer's badge, a campaign's name and reward)
+ * are the assistant's English and are shown as written, because they are what
+ * the form will be filled with and the owner rewrites them there. The reasons
+ * are this screen's, written from the shape of the draft: the server's own lines
+ * put a reward's cost in raw minor units, and claim a plain starting deal was
+ * "built from this venue's own visits" when nothing in it was.
+ */
+function DraftTurn({
+  draft,
+  asked,
+  empty,
+  voice,
+}: {
+  draft: PartnerDraft;
+  asked: DraftRequest;
+  empty: boolean;
+  voice: Voice;
+}) {
+  const copy = useCopy().dashboard.assistant;
+  const [language] = useLanguage();
+  const { goTo, openDrawer } = useDashboard();
+
+  const kinds = copy.kinds as Record<string, string | undefined>;
+  const kind = kinds[draft.kind] ?? null;
+  const rows: Line[] = [];
+  let english = false;
+  let reasons: { lines: string[]; quoted: boolean } = { lines: draft.reasoning, quoted: true };
+  let cost = copy.cost.none;
+  let open: { label: string; run: () => void } | null = null;
+
+  const whenOf = (deal: DealProposal) => {
+    const days = deal.targetWeekdays ? voice.days(deal.targetWeekdays) : null;
+    const hours =
+      deal.targetFromMin !== undefined && deal.targetToMin !== undefined
+        ? voice.window(deal.targetFromMin, deal.targetToMin)
+        : null;
+    const words =
+      days && hours
+        ? fill(copy.fields.daysHours, { days, hours })
+        : (days ?? (hours ? fill(copy.fields.everyDay, { hours }) : copy.fields.whenever));
+    return voice.capital(words);
+  };
+
+  if (draft.kind === 'hot_deal') {
+    const deal = dealProposal(draft.config);
+    if (deal.discountText) {
+      rows.push({ ...lineOf('offer', copy.fields.offer, deal.discountText), quoted: true });
+      english = true;
+    }
+    rows.push(lineOf('when', copy.fields.when, whenOf(deal)));
+    if (deal.capClaims !== undefined) {
+      rows.push(lineOf('cap', copy.fields.capClaims, voice.count(deal.capClaims)));
+    }
+
+    /* A budget sent with the goal comes back as the preview and nowhere else:
+       the draft carries no spending cap, so the sentence says to set one
+       rather than implying the deal will stop at it. */
+    cost =
+      asked.budgetMinor !== undefined && draft.costPreviewMinor > 0
+        ? fill(copy.cost.budget, { amount: voice.amount(draft.costPreviewMinor) })
+        : copy.cost.deal;
+
+    const aimed =
+      deal.targetWeekdays?.length === 1 && deal.targetFromMin !== undefined
+        ? { weekday: deal.targetWeekdays[0], hour: Math.floor(deal.targetFromMin / 60) }
+        : null;
+    reasons = {
+      quoted: false,
+      lines: aimed
+        ? empty
+          ? /* With no visits every open hour ties at zero and the heat map
+               returns the first one — which is not a finding, and saying it is
+               the quietest would be the assistant inventing one. */
+            [copy.reasons.startingPoint, copy.reasons.hourUnmeasured]
+          : [fill(copy.reasons.quietHour, { when: voice.when(aimed.weekday, aimed.hour) }), copy.reasons.narrow]
+        : [empty ? copy.reasons.startingPoint : copy.reasons.unmatched],
+    };
+
+    open = { label: copy.openForm, run: () => openDrawer('deal', undefined, { deal }) };
+  } else if (draft.kind === 'campaign') {
+    const campaign = campaignProposal(draft.config);
+    if (campaign.name) {
+      rows.push({ ...lineOf('name', copy.fields.name, campaign.name), quoted: true });
+      english = true;
+    }
+    if (campaign.visitsRequired !== undefined) {
+      rows.push(lineOf('visits', copy.fields.visits, voice.count(campaign.visitsRequired)));
+    }
+    if (campaign.rewardLabel) {
+      rows.push({ ...lineOf('reward', copy.fields.reward, campaign.rewardLabel), quoted: true });
+      english = true;
+    }
+    if (campaign.rewardCostMinor !== undefined) {
+      rows.push(
+        lineOf('reward-cost', copy.fields.rewardCost, voice.amount(campaign.rewardCostMinor, 'unit')),
+      );
+    }
+    if (campaign.minSpendMinor !== undefined) {
+      rows.push(lineOf('min-spend', copy.fields.minSpend, voice.amount(campaign.minSpendMinor, 'unit')));
+    }
+    if (campaign.rewardValidDays !== undefined) {
+      rows.push(lineOf('valid', copy.fields.validDays, voice.count(campaign.rewardValidDays)));
+    }
+
+    /* The preview is a number of rewards' worth of the reward's cost, and the
+       number is the one division on this screen: both figures are the
+       server's, and the sentence names the count so the total is checkable. */
+    if (campaign.rewardCostMinor && draft.costPreviewMinor > 0) {
+      cost = fill(copy.cost.campaign, {
+        n: voice.count(Math.round(draft.costPreviewMinor / campaign.rewardCostMinor)),
+        amount: voice.amount(draft.costPreviewMinor),
+        each: voice.amount(campaign.rewardCostMinor, 'unit'),
+      });
+    }
+
+    reasons = {
+      quoted: false,
+      lines: [
+        copy.reasons.campaign,
+        ...(campaign.rewardCostMinor !== undefined
+          ? [fill(copy.reasons.campaignCost, { each: voice.amount(campaign.rewardCostMinor, 'unit') })]
+          : []),
+      ],
+    };
+
+    open = { label: copy.openForm, run: () => openDrawer('campaign', undefined, { campaign }) };
+  } else if (draft.kind === 'voucher_tiers') {
+    /* The ladder has its own editor and the drawer has no body for it. */
+    open = { label: copy.openVouchers, run: () => goTo('vouchers') };
+  }
+
+  return (
+    <article className="pd-draft" aria-label={kind ? `${copy.draftTag}: ${kind}` : copy.draftTag}>
+      <div className="pd-draft-head">
+        <span className="pd-tag">{copy.draftTag}</span>
+        <span>{copy.draftNote}</span>
+      </div>
+
+      <div className="pd-draft-body">
+        <p className="pd-fine">{fill(copy.goal, { goal: asked.shown })}</p>
+
+        <div className="pd-record">
+          {kind && (
+            <div className="pd-record-head">
+              <b>{kind}</b>
+            </div>
+          )}
+          {rows.map((line) => (
+            <div className="pd-record-row" key={line.key}>
+              <span>{line.label}</span>
+              <b lang={line.quoted ? 'en' : undefined}>
+                <Shown line={line} />
+              </b>
+            </div>
+          ))}
+          {english && language !== 'en' && <p className="pd-fine">{copy.english}</p>}
+        </div>
+
+        <div className="pd-brief">
+          <span className="console-label">{copy.costTitle}</span>
+          <p>{cost}</p>
+        </div>
+
+        {reasons.lines.length > 0 && (
+          <div className="pas-why">
+            <span className="console-label">{copy.whyTitle}</span>
+            <ul className="pd-reasons" lang={reasons.quoted ? 'en' : undefined}>
+              {reasons.lines.map((reason) => (
+                <li key={reason}>{reason}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+
+      {open && (
+        <div className="pd-draft-acts">
+          <button type="button" className="btn btn-solid" onClick={open.run}>
+            {open.label}
+          </button>
+        </div>
+      )}
+    </article>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── the top panels ── */
+
+function Knows({ context, voice }: { context: VenueContextBody; voice: Voice }) {
+  const copy = useCopy().dashboard.assistant;
+  const titleId = useId();
+  const lines = factLines(context.facts, context.empty, copy, voice);
+
+  return (
+    /* `data-ink='paper'`: the dashboard's black slab in light, glass in dark —
+       the same treatment the overview's headline takes. */
+    <section
+      className="pd-glass pd-panel pd-knows"
+      data-ink="paper"
+      data-reveal
+      aria-labelledby={titleId}
+    >
+      <h2 className="pd-title" id={titleId}>
+        {fill(copy.knowTitle, { venue: context.name })}
+      </h2>
+      {context.empty && <p className="pd-lede">{copy.knowEmpty}</p>}
+      {lines.length > 0 && (
+        <dl className="pas-facts">
+          {lines.map((line) => (
+            <div key={line.key}>
+              <dt lang={line.quoted ? 'en' : undefined}>{line.label}</dt>
+              <dd>
+                <Shown line={line} />
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <p className="pd-fine">{copy.knowNote}</p>
+    </section>
+  );
+}
+
+/**
+ * One review row in the reader's words.
+ *
+ * The server's sentences carry one figure each and no name, so two rows read a
+ * second report to say which deal and how much — the deals list for the deal
+ * whose id is in the link, the budget for the pool with room. Both are the
+ * screens' own endpoints and neither is required: while they load, or if they
+ * fail, the row says the same thing without the figure.
+ */
+function reviewWords(
+  item: ReviewItem,
+  copy: Copy,
+  voice: Voice,
+  deals: DealResponse[] | null,
+  budget: BudgetBody | null,
+): { text: string; quoted: boolean } {
+  switch (item.key) {
+    case 'deal_not_converting': {
+      const target = destinationOf(item.action.href);
+      const dealId = target?.kind === 'drawer' ? target.dealId : undefined;
+      const deal = dealId ? deals?.find((row) => row.id === dealId) : undefined;
+      const title = deal?.copy?.title?.trim() || deal?.discount_text?.trim();
+      return {
+        text:
+          deal && title
+            ? fill(copy.review.dealStuck, { title, n: voice.count(deal.seen_count) })
+            : copy.review.dealStuckPlain,
+        quoted: false,
+      };
+    }
+    case 'rebalance': {
+      const hint = budget?.rebalanceHint;
+      if (!budget || !hint) return { text: copy.review.poolsPlain, quoted: false };
+      return {
+        text: fill(hint.to === 'loyalty' ? copy.review.toLoyalty : copy.review.toVoucher, {
+          amount: voice.amount(budget[hint.from].available),
+        }),
+        quoted: false,
+      };
+    }
+    case 'no_campaign':
+      return { text: copy.review.noCampaign, quoted: false };
+    default:
+      return { text: item.text, quoted: true };
+  }
+}
+
+function Attention({
+  review,
+  venue,
+  voice,
+}: {
+  review: ApiResult<ReviewItem[]>;
+  venue: PartnerVenue;
+  voice: Voice;
+}) {
+  const dashboard = useCopy().dashboard;
+  const copy = dashboard.assistant;
+  const destinations = useDestinations();
+  const titleId = useId();
+
+  const items = review.state.status === 'ready' ? review.state.data : [];
+  const dealsApi = usePartnerDeals(
+    items.some((item) => item.key === 'deal_not_converting') ? venue.id : null,
+  );
+  const budgetApi = usePartnerBudget(items.some((item) => item.key === 'rebalance') ? venue.id : null);
+  const deals = dealsApi.state.status === 'ready' ? dealsApi.state.data : null;
+  const budget = budgetApi.state.status === 'ready' ? budgetApi.state.data : null;
+
+  let body: ReactNode;
+  if (review.state.status === 'loading') {
+    body = <p className="pd-fine">{dashboard.unmeasured.asking}</p>;
+  } else if (review.state.status === 'error') {
+    body = isPlanLocked(review.state.error) ? (
+      <p className="pd-fine">{dashboard.unmeasured.planLocked}</p>
+    ) : (
+      <div className="pd-finding">
+        <p className="pd-fine">{copy.attentionFailed}</p>
+        <button type="button" className="btn btn-ghost" onClick={review.reload}>
+          {copy.states.retry}
+        </button>
+      </div>
+    );
+  } else if (items.length === 0) {
+    body = <p className="pd-fine">{copy.attentionNone}</p>;
+  } else {
+    body = (
+      <ul className="pas-attn">
+        {items.map((item, index) => {
+          const words = reviewWords(item, copy, voice, deals, budget);
+          /* "Start a stamp card" opens the form that starts one; the server's
+             link points at the campaigns list, which is one press short of it. */
+          const to: Destination | null =
+            item.key === 'no_campaign'
+              ? { kind: 'drawer', drawer: 'campaign' }
+              : destinationOf(item.action.href);
+          const label = !to
+            ? null
+            : item.key === 'deal_not_converting'
+              ? copy.actions.editDeal
+              : item.key === 'rebalance'
+                ? copy.actions.moveBudget
+                : item.key === 'no_campaign'
+                  ? copy.actions.startCampaign
+                  : destinations.label(to);
+          return (
+            <li className="pd-finding" key={`${item.key}-${index}`}>
+              <p lang={words.quoted ? 'en' : undefined}>{words.text}</p>
+              {to && label && (
+                <button type="button" className="btn btn-ghost" onClick={() => destinations.go(to)}>
+                  {label}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  return (
+    <section className="pd-glass pd-panel pas-attention" data-reveal aria-labelledby={titleId}>
+      <h2 className="pd-title" id={titleId}>
+        {copy.attentionTitle}
+      </h2>
+      {body}
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── the conversation ── */
+
+function Conversation({
+  venue,
+  context,
+  review,
+}: {
+  venue: PartnerVenue;
+  context: VenueContextBody;
+  review: ApiResult<ReviewItem[]>;
+}) {
+  const copy = useCopy().dashboard.assistant;
+  const reader = useCurrency();
+  const money = useMoney();
+  const voice = useVoice(venue.currency);
+  const destinations = useDestinations();
+
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [mode, setMode] = useState<'ask' | 'draft'>('ask');
+  const [typed, setTyped] = useState('');
+  const [budget, setBudget] = useState('');
+
+  const nextId = useRef(0);
+  /* The request in flight, if any. A ref rather than state because nothing
+     renders from it — `busy` is the rendered half — and because it is what the
+     "one question at a time" guard has to read synchronously. */
+  const abortRef = useRef<AbortController | null>(null);
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
+  const lastRef = useRef<HTMLDivElement>(null);
+  const titleId = useId();
+  const fieldId = useId();
+  const budgetId = useId();
+
+  const quiet = useMemo(
+    () => slotOf(context.facts.find((fact) => fact.kind === 'quiet_window')?.value),
+    [context.facts],
+  );
+
+  /* A question in flight when the screen goes is a question nobody is waiting
+     for — the rail moved, or the range re-keyed the page. */
+  useEffect(() => () => abortRef.current?.abort(), []);
+
+  /* The newest turn in view. `nearest` is the right alignment for both sizes of
+     turn: a short one lands at the bottom edge, and a draft taller than the
+     window lands with its top showing rather than its last line. */
+  useEffect(() => {
+    if (turns.length > 0) lastRef.current?.scrollIntoView({ block: 'nearest' });
+  }, [turns]);
+
+  const send = useCallback(
+    async (request: Request) => {
+      /* One at a time. The send button is disabled while one is out; this is
+         the same rule for the presses that are not that button. */
+      if (abortRef.current) return;
+
+      const you = nextId.current;
+      const it = you + 1;
+      nextId.current += 2;
+
+      setTurns((current) => [
+        ...current,
+        {
+          id: you,
+          from: 'you',
+          text: request.shown,
+          note: request.mode === 'draft' ? request.note : undefined,
+        },
+        { id: it, from: 'it', state: 'thinking' },
+      ]);
+      setBusy(true);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      /* The answer replaces the dots in place, so it arrives where they were. */
+      const settle = (turn: Turn) =>
+        setTurns((current) => current.map((row) => (row.id === it ? turn : row)));
+
+      try {
+        if (request.mode === 'ask') {
+          const answer = await askAssistant({
+            venueId: venue.id,
+            text: request.text,
+            signal: controller.signal,
+          });
+          settle({ id: it, from: 'it', state: 'answer', answer });
+        } else {
+          const draft = await draftWithAssistant({
+            venueId: venue.id,
+            goal: request.goal,
+            budgetMinor: request.budgetMinor,
+            signal: controller.signal,
+          });
+          settle({ id: it, from: 'it', state: 'draft', draft, asked: request });
+        }
+      } catch (error) {
+        /* An abandoned exchange leaves nothing behind — the dock's rule. The
+           only thing that could settle those dots is the reply that was
+           cancelled, and a thread is a record of what was actually said. */
+        if (controller.signal.aborted) {
+          setTurns((current) => current.filter((row) => row.id !== you && row.id !== it));
+          return;
+        }
+        settle({
+          id: it,
+          from: 'it',
+          state: 'error',
+          kind: isPlanLocked(error) ? 'locked' : isUnreachable(error) ? 'offline' : 'failed',
+          detail: error instanceof Error && error.message ? error.message : null,
+          request,
+          pair: you,
+        });
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+        if (!controller.signal.aborted) setBusy(false);
+      }
+    },
+    [venue.id],
+  );
+
+  /* Focus goes to the thread rather than the field after a press that removes
+     the control it came from: the suggestions vanish with the first turn, and
+     putting the caret in the composer would raise a phone's keyboard over the
+     answer being waited for. */
+  const keepFocus = () => logRef.current?.focus({ preventScroll: true });
+
+  const start = (suggestion: AssistantSuggestion) => {
+    const move = moveOf(suggestion.key);
+    if (move.kind === 'go') {
+      destinations.go(move.to);
+      return;
+    }
+    const shown = suggestionWords(suggestion, copy, voice, quiet).label;
+    void send(
+      move.kind === 'draft'
+        ? { mode: 'draft', goal: move.goal, shown }
+        : { mode: 'ask', text: suggestion.label, shown },
+    );
+    keepFocus();
+  };
+
+  const askQuestion = (which: keyof typeof ASK_QUESTIONS) => {
+    void send({ mode: 'ask', text: ASK_QUESTIONS[which], shown: copy.questions[which] });
+    keepFocus();
+  };
+
+  const reset = () => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    setBusy(false);
+    setTurns([]);
+    keepFocus();
+  };
+
+  /* Retry drops the failed exchange and sends it again, rather than stacking a
+     second copy of the question under the first. By id, not by position: a
+     later exchange may have landed since this one failed. */
+  const retry = (turn: ErrorTurn) => {
+    if (abortRef.current) return;
+    setTurns((current) => current.filter((row) => row.id !== turn.pair && row.id !== turn.id));
+    void send(turn.request);
+  };
+
+  const submit = () => {
+    const text = typed.trim().slice(0, mode === 'draft' ? 400 : 500);
+    if (!text || busy) return;
+
+    if (mode === 'ask') {
+      void send({ mode: 'ask', text, shown: text });
+    } else {
+      /* The well holds the reader's currency, like every money input on this
+         dashboard; it crosses to euros through the reader's rate and on to the
+         venue's minor units at the point it is sent. */
+      const amount = Number(budget.replace(/\s/g, '').replace(',', '.'));
+      const minor =
+        budget.trim() !== '' && Number.isFinite(amount) && amount > 0
+          ? euroToMinor(amount / reader.rate, venue.currency)
+          : 0;
+      void send(
+        minor > 0
+          ? {
+              mode: 'draft',
+              goal: text,
+              shown: text,
+              budgetMinor: minor,
+              note: fill(copy.budgetShown, { amount: money(amount / reader.rate, 'exact') }),
+            }
+          : { mode: 'draft', goal: text, shown: text },
+      );
+      setBudget('');
+    }
+
+    setTyped('');
+    if (fieldRef.current) fieldRef.current.style.height = 'auto';
+  };
+
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    /* Enter sends and Shift+Enter breaks the line — and neither fires while an
+       input method is still composing a word. */
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+      event.preventDefault();
+      submit();
+    }
+  };
+
+  const renderTurn = (turn: Turn) => {
+    if (turn.from === 'you') {
+      return (
+        <p className="pd-msg" data-who="you">
+          {turn.text}
+          {turn.note && <small className="pas-note">{turn.note}</small>}
+        </p>
+      );
+    }
+
+    switch (turn.state) {
+      case 'thinking':
+        return (
+          <p className="pd-msg pas-typing" data-who="it">
+            <span className="visually-hidden">{copy.thinking}</span>
+            <span className="pas-dot" aria-hidden />
+            <span className="pas-dot" aria-hidden />
+            <span className="pas-dot" aria-hidden />
+          </p>
+        );
+      case 'answer':
+        return <AnswerTurn answer={turn.answer} context={context} voice={voice} onStart={start} />;
+      case 'draft':
+        return <DraftTurn draft={turn.draft} asked={turn.asked} empty={context.empty} voice={voice} />;
+      case 'error':
+        return (
+          <div className="pd-msg pas-error" data-who="it">
+            <p>
+              {turn.kind === 'locked'
+                ? copy.states.turnLocked
+                : turn.kind === 'offline'
+                  ? copy.states.turnOffline
+                  : copy.states.turnFailed}
+            </p>
+            {/* The server's own words, verbatim and untranslated — they name
+                which rule refused, and a sentence general enough to cover every
+                refusal would name none. */}
+            {turn.kind === 'failed' && turn.detail && (
+              <p className="pas-detail" lang="en">
+                {turn.detail}
+              </p>
+            )}
+            {/* No retry on `locked`: it would spend a request to be told the
+                same thing, which is a button that exists to fail. */}
+            {turn.kind !== 'locked' && (
+              <button
+                type="button"
+                className="btn btn-ghost pas-retry"
+                disabled={busy}
+                onClick={() => retry(turn)}
+              >
+                {copy.states.retry}
+              </button>
+            )}
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="pd-stack pd-assist">
+      <div className="pd-two pd-assist-top">
+        <Knows context={context} voice={voice} />
+        <Attention review={review} venue={venue} voice={voice} />
+      </div>
+
+      <section
+        className="pd-glass pd-thread"
+        data-solid="true"
+        data-reveal
+        aria-labelledby={titleId}
+      >
+        <div className="pd-thread-head">
+          <h2 className="pd-title" id={titleId}>
+            <i className="pd-live-dot" aria-hidden />
+            {copy.convTitle}
+          </h2>
+          {turns.length > 0 && (
+            <button type="button" className="btn btn-ghost pas-reset" onClick={reset}>
+              {copy.reset}
+            </button>
+          )}
+        </div>
+
+        {/* A log: new turns are announced as they arrive, and nothing already
+            said is read again. Focusable by script only, so a press that removes
+            its own control can leave focus somewhere that makes sense. */}
+        <div
+          className="pd-msgs"
+          ref={logRef}
+          role="log"
+          aria-live="polite"
+          aria-labelledby={titleId}
+          tabIndex={-1}
+        >
+          <p className="pd-msg" data-who="it">
+            {copy.opening}
+          </p>
+
+          {turns.length === 0 && (
+            <div className="pas-starts">
+              {context.suggestions.length > 0 && (
+                <>
+                  <span className="console-label">{copy.startTitle}</span>
+                  <div className="pd-start-list">
+                    {context.suggestions.map((suggestion) => {
+                      const words = suggestionWords(suggestion, copy, voice, quiet);
+                      return (
+                        <button
+                          key={suggestion.key}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => start(suggestion)}
+                        >
+                          <Icon name={iconOf(moveOf(suggestion.key))} size={16} />
+                          <b lang={words.quoted ? 'en' : undefined}>{words.label}</b>
+                          <span lang={words.quoted ? 'en' : undefined}>{words.detail}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* Questions the server routes to a report. Not offered on an empty
+                  venue, where every question has the same honest answer. */}
+              {!context.empty && (
+                <>
+                  <span className="console-label">{copy.askTitle}</span>
+                  <div className="pd-chips">
+                    {(Object.keys(ASK_QUESTIONS) as Array<keyof typeof ASK_QUESTIONS>).map(
+                      (which) => (
+                        <button
+                          key={which}
+                          type="button"
+                          disabled={busy}
+                          onClick={() => askQuestion(which)}
+                        >
+                          {copy.questions[which]}
+                        </button>
+                      ),
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {turns.map((turn, index) => (
+            <div
+              key={turn.id}
+              className="pas-turn"
+              data-from={turn.from}
+              ref={index === turns.length - 1 ? lastRef : undefined}
+            >
+              {renderTurn(turn)}
+            </div>
+          ))}
+        </div>
+
+        <div className="pd-composer">
+          <div className="pas-controls">
+            <div className="pd-seg" role="group" aria-label={copy.modeLabel}>
+              {(['ask', 'draft'] as const).map((which) => (
+                <button
+                  key={which}
+                  type="button"
+                  aria-pressed={mode === which}
+                  data-on={mode === which ? 'true' : undefined}
+                  onClick={() => setMode(which)}
+                >
+                  {copy.modes[which]}
+                </button>
+              ))}
+            </div>
+
+            {mode === 'draft' && (
+              <label className="pas-budget" htmlFor={budgetId}>
+                <span>{copy.budgetLabel}</span>
+                <span className="pd-well">
+                  {reader.before && <span aria-hidden>{reader.symbol}</span>}
+                  <input
+                    id={budgetId}
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={budget}
+                    onChange={(event) => setBudget(event.target.value.replace(/[^\d.,\s]/g, ''))}
+                  />
+                  {!reader.before && <span aria-hidden>{reader.symbol}</span>}
+                </span>
+              </label>
+            )}
+          </div>
+
+          <label className="visually-hidden" htmlFor={fieldId}>
+            {copy.fieldLabel[mode]}
+          </label>
+          <div className="pd-composer-well">
+            <textarea
+              id={fieldId}
+              ref={fieldRef}
+              rows={1}
+              value={typed}
+              /* The server's own ceilings: 500 for a question, 400 for a goal. */
+              maxLength={mode === 'draft' ? 400 : 500}
+              placeholder={copy.placeholders[mode]}
+              onChange={(event) => {
+                setTyped(event.target.value);
+                /* Grow to fit, and shrink back: collapse to auto first, then
+                   read the height the content needs. The sheet caps it. */
+                const node = event.target;
+                node.style.height = 'auto';
+                node.style.height = `${node.scrollHeight}px`;
+              }}
+              onKeyDown={onKeyDown}
+            />
+            <button
+              type="button"
+              className="pd-send"
+              disabled={busy || !typed.trim()}
+              aria-label={copy.send}
+              onClick={submit}
+            >
+              <Icon name="send" size={17} strokeWidth={2} />
+            </button>
+          </div>
+          <p className="pd-fine">{copy.composerNote}</p>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+/* ────────────────────────────────────────────────────────────── the states ── */
+
+/** In flight. One line, and never a zero standing in for an answer. */
+function Asking() {
+  const dashboard = useCopy().dashboard;
+  return (
+    <div className="pd-glass pd-panel pd-empty" data-reveal>
+      <p className="pd-fine">{dashboard.unmeasured.asking}</p>
+    </div>
+  );
+}
+
+/**
+ * Nothing to read, and the reason — the dashboard's empty-panel convention.
+ *
+ * Three reasons with three different next steps: no partner session on this
+ * device (retrying changes nothing, so there is no button), no venue on this
+ * account, and a server that did not answer or refused. Only the last is worth
+ * a retry.
+ */
+function Unavailable({
+  error,
+  noVenue = false,
+  onRetry,
+}: {
+  error?: ApiError;
+  noVenue?: boolean;
+  onRetry?: () => void;
+}) {
+  const dashboard = useCopy().dashboard;
+  const states = dashboard.assistant.states;
+
+  const reason = noVenue
+    ? states.noVenue
+    : !error
+      ? null
+      : isNoSession(error)
+        ? dashboard.unmeasured.noSession
+        : isUnreachable(error)
+          ? dashboard.unmeasured.serverSilent
+          : fill(states.failed, { why: error.message });
+  const retry = !noVenue && error !== undefined && !isNoSession(error) ? onRetry : undefined;
+
+  return (
+    <div className="pd-glass pd-panel pd-empty" data-reveal>
+      <h3>{states.title}</h3>
+      <p className="pd-fine">{states.body}</p>
+      {reason && <p className="pd-fine">{reason}</p>}
+      {retry && (
+        <button type="button" className="btn btn-ghost" onClick={retry}>
+          {states.retry}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The plan does not carry the assistant.
+ *
+ * Not an error and not a retry: the answer will be the same until the plan
+ * changes. The press is a letter to the people who can change it, because no
+ * screen on this site sells a partner plan — the pricing section on `#/business`
+ * describes tiers under different names and does not mention the assistant, so
+ * sending an owner there to find it would be sending them somewhere that does
+ * not answer the question.
+ */
+function PlanLocked({ venue }: { venue: PartnerVenue }) {
+  const states = useCopy().dashboard.assistant.states;
+  const subject = fill(states.lockedSubject, { venue: venue.name });
+
+  return (
+    <div className="pd-glass pd-panel pd-empty" data-reveal>
+      <span className="pd-empty-ico" aria-hidden>
+        <Icon name="lock" size={22} />
+      </span>
+      <h3>{states.lockedTitle}</h3>
+      <p className="pd-fine">{states.lockedBody}</p>
+      <a
+        className="btn btn-ghost"
+        href={`mailto:${SALES_EMAIL}?subject=${encodeURIComponent(subject)}`}
+      >
+        {states.lockedAction}
+      </a>
+    </div>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────────── the screen ── */
+
+export function Assistant() {
+  const venueApi = usePartnerVenue();
+  const venue = venueApi.state.status === 'ready' ? venueApi.state.data : null;
+  const contextApi = useAssistantContext(venue?.id ?? null);
+  const reviewApi = useAssistantReview(venue?.id ?? null);
+
+  let body: ReactNode;
+  if (venueApi.state.status === 'loading') {
+    body = <Asking />;
+  } else if (venueApi.state.status === 'error') {
+    body = <Unavailable error={venueApi.state.error} onRetry={venueApi.reload} />;
+  } else if (venue === null) {
+    body = <Unavailable noVenue />;
+  } else if (contextApi.state.status === 'loading') {
+    body = <Asking />;
+  } else if (contextApi.state.status === 'error') {
+    body = isPlanLocked(contextApi.state.error) ? (
+      <PlanLocked venue={venue} />
+    ) : (
+      <Unavailable
+        error={contextApi.state.error}
+        onRetry={() => {
+          contextApi.reload();
+          reviewApi.reload();
+        }}
+      />
+    );
+  } else {
+    /* Keyed on the venue so a different venue starts a different thread. */
+    return (
+      <Conversation
+        key={venue.id}
+        venue={venue}
+        context={contextApi.state.data}
+        review={reviewApi}
+      />
+    );
+  }
+
+  return <div className="pd-stack pd-assist">{body}</div>;
 }

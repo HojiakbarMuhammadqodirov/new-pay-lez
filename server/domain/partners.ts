@@ -44,12 +44,197 @@ export interface VenueDraft {
   imageUrl?: string;
 }
 
+/**
+ * The parts of a listing that are not columns on `venues`: the description in
+ * each language, the links, and the languages spoken there (B2).
+ *
+ * Taken by the create and the update, not only by their own routes, because the
+ * listing form is one form and saves once — a venue saved by three requests is a
+ * venue two-thirds saved the first time one of them fails. Typed `unknown`
+ * because they arrive as JSON and are checked here, where the rule lives, rather
+ * than trusted from the route.
+ */
+export interface ListingExtras {
+  description?: unknown;
+  links?: unknown;
+  languages?: unknown;
+}
+
+interface CheckedExtras {
+  /** An empty `value` removes that language. */
+  description?: Array<{ language: string; value: string }>;
+  links?: Array<{ kind: string; value: string }>;
+  languages?: string[];
+}
+
+const LANGUAGE_CODE = /^[a-z]{2}$/;
+const LINK_KIND = /^[a-z][a-z0-9_]{0,31}$/;
+
+const invalid = (message: string, detail: Record<string, unknown>): never => {
+  throw new DomainError('validation_failed', message, detail);
+};
+
+/** Whether `Intl` knows a zone — the only check that matters, since every venue-local rule reads the zone through it. */
+const isTimeZone = (zone: string): boolean => {
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Where a new venue is, checked before it is written.
+ *
+ * **A zone `Intl` does not know is refused at the door**, because it is not a
+ * bad value on one field: every venue-local rule in the product formats through
+ * `Intl`, which throws on a zone it does not recognise, so a venue created as
+ * `Europe/Krakow` would 500 its overview, its budget and every scan at its
+ * counter for as long as it existed. Currency and country are checked for shape
+ * and upper-cased, because the minor-unit table and every report compare them
+ * literally.
+ */
+function checkPlace(draft: { timezone?: string; currency?: string; countryCode?: string }) {
+  const timezone = draft.timezone ?? 'Europe/Warsaw';
+  if (!isTimeZone(timezone)) invalid('timezone is not a time zone', { field: 'timezone' });
+  const currency = (draft.currency ?? 'PLN').toUpperCase();
+  if (!/^[A-Z]{3}$/.test(currency)) invalid('currency is a three-letter code', { field: 'currency' });
+  const countryCode = (draft.countryCode ?? 'PL').toUpperCase();
+  if (!/^[A-Z]{2}$/.test(countryCode)) invalid('countryCode is a two-letter code', { field: 'countryCode' });
+  return { timezone, currency, countryCode };
+}
+
+/**
+ * B2's links, as a set: one of each kind, each with somewhere to go.
+ *
+ * The same rules for `PUT …/links` and for links saved with the listing,
+ * because both write the same rows. `venue_links` is `UNIQUE (venue_id, kind)`,
+ * so two Instagram links used to reach the insert and come back as a 500 with a
+ * constraint name in the log; they are a 400 naming the kind now. A row with no
+ * value is how the form clears one, and is skipped rather than refused.
+ */
+export function checkLinks(
+  links: ReadonlyArray<{ kind?: unknown; value?: unknown }>,
+): Array<{ kind: string; value: string }> {
+  if (links.length > 20) invalid('a venue has at most 20 links', { field: 'links', max: 20 });
+  const seen = new Set<string>();
+  const out: Array<{ kind: string; value: string }> = [];
+  for (const link of links) {
+    const value = typeof link.value === 'string' ? link.value.trim() : '';
+    if (!value) continue;
+    const kind = typeof link.kind === 'string' ? link.kind.trim().toLowerCase() : '';
+    if (!LINK_KIND.test(kind)) {
+      invalid('a link needs a kind, such as website or instagram', { field: 'links', kind: link.kind ?? null });
+    }
+    if (value.length > 500) invalid('a link is at most 500 characters', { field: 'links', kind, max: 500 });
+    if (seen.has(kind)) invalid('a venue has one link of each kind', { field: 'links', kind });
+    seen.add(kind);
+    out.push({ kind, value });
+  }
+  return out;
+}
+
+/** The listing extras, checked whole before anything is written. */
+export function checkExtras(extras: ListingExtras): CheckedExtras {
+  const out: CheckedExtras = {};
+
+  if (extras.description !== undefined) {
+    const map = extras.description;
+    if (map === null || typeof map !== 'object' || Array.isArray(map)) {
+      invalid('description is a map of language to text', { field: 'description' });
+    }
+    const entries = Object.entries(map as Record<string, unknown>);
+    if (entries.length > 20) invalid('a description has at most 20 languages', { field: 'description', max: 20 });
+    out.description = entries.map(([key, value]) => {
+      const language = key.trim().toLowerCase();
+      if (!LANGUAGE_CODE.test(language)) {
+        invalid('description is keyed by two-letter language codes', { field: 'description', language: key });
+      }
+      if (typeof value !== 'string') invalid('a description is text', { field: 'description', language });
+      const text = (value as string).trim();
+      if (text.length > 2000) {
+        invalid('a description is at most 2000 characters', { field: 'description', language, max: 2000 });
+      }
+      return { language, value: text };
+    });
+  }
+
+  if (extras.links !== undefined) {
+    if (!Array.isArray(extras.links)) invalid('links must be a list', { field: 'links' });
+    out.links = checkLinks(
+      (extras.links as unknown[]).map(
+        (item) => (item !== null && typeof item === 'object' ? item : {}) as { kind?: unknown; value?: unknown },
+      ),
+    );
+  }
+
+  if (extras.languages !== undefined) {
+    if (!Array.isArray(extras.languages)) invalid('languages must be a list', { field: 'languages' });
+    const codes = new Set<string>();
+    for (const item of extras.languages as unknown[]) {
+      const code = typeof item === 'string' ? item.trim().toLowerCase() : '';
+      if (!LANGUAGE_CODE.test(code)) invalid('languages are two-letter codes', { field: 'languages', language: item ?? null });
+      codes.add(code);
+    }
+    if (codes.size > 30) invalid('a venue lists at most 30 languages', { field: 'languages', max: 30 });
+    out.languages = [...codes].sort();
+  }
+
+  return out;
+}
+
+/**
+ * Write what `checkExtras` passed. Each part replaces only itself: a save that
+ * carries no `links` leaves the links alone, and a description sent in one
+ * language leaves the other languages alone — `''` is how one is removed.
+ */
+async function writeExtras(db: Db, venueId: string, extras: CheckedExtras, at: Iso): Promise<void> {
+  for (const entry of extras.description ?? []) {
+    if (entry.value === '') {
+      await db.run(
+        `DELETE FROM translations
+          WHERE entity = 'venue' AND entity_id = $v AND field = 'description' AND language = $l`,
+        { v: venueId, l: entry.language },
+      );
+      continue;
+    }
+    await db.run(
+      `INSERT INTO translations (entity, entity_id, field, language, value, ai_generated, updated_at)
+       VALUES ('venue', $v, 'description', $l, $val, 0, $t)
+         ON CONFLICT (entity, entity_id, field, language)
+         DO UPDATE SET value = excluded.value, ai_generated = excluded.ai_generated,
+                       updated_at = excluded.updated_at`,
+      { v: venueId, l: entry.language, val: entry.value, t: at },
+    );
+  }
+  if (extras.links) await setLinks(db, venueId, extras.links, at);
+  if (extras.languages) {
+    await db.run(`DELETE FROM venue_languages WHERE venue_id = $v`, { v: venueId });
+    for (const language of extras.languages) {
+      await db.run(`INSERT INTO venue_languages (venue_id, language) VALUES ($v, $l)`, {
+        v: venueId,
+        l: language,
+      });
+    }
+  }
+}
+
+/** What the audit entry says about the extras: which ones moved, not a copy of the prose. */
+const extrasSummary = (extras: CheckedExtras) => ({
+  description: extras.description?.map((entry) => entry.language),
+  links: extras.links?.map((link) => link.kind),
+  languages: extras.languages,
+});
+
 export async function createVenue(
   db: Db,
-  input: { ownerId: string; draft: VenueDraft; at?: Iso },
+  input: { ownerId: string; draft: VenueDraft; extras?: ListingExtras; at?: Iso },
 ): Promise<Venue> {
   const at = input.at ?? now();
   const ent = await entitlements.entitlementsFor(db, { userId: input.ownerId });
+  const place = checkPlace(input.draft);
+  const extras = checkExtras(input.extras ?? {});
 
   return db.tx(async () => {
     const owned =
@@ -81,12 +266,12 @@ export async function createVenue(
         ca: input.draft.category,
         sc: input.draft.subcategory ?? null,
         ci: input.draft.city,
-        cc: input.draft.countryCode ?? 'PL',
+        cc: place.countryCode,
         ad: input.draft.address ?? null,
         la: input.draft.lat ?? null,
         ln: input.draft.lng ?? null,
-        tz: input.draft.timezone ?? 'Europe/Warsaw',
-        cu: input.draft.currency ?? 'PLN',
+        tz: place.timezone,
+        cu: place.currency,
         pr: input.draft.priceRange ?? null,
         im: input.draft.imageUrl ?? null,
         ph: input.draft.phone ?? null,
@@ -121,13 +306,14 @@ export async function createVenue(
        VALUES ($i, 'venue', $v, $v, 'new venue', 'pending', $t)`,
       { i: newId('mod'), v: id, t: at },
     );
+    await writeExtras(db, id, extras, at);
     await audit.record(db, {
       actorId: input.ownerId,
       action: 'venue.create',
       entity: 'venue',
       entityId: id,
       venueId: id,
-      after: input.draft,
+      after: { ...input.draft, ...extrasSummary(extras) },
       at,
     });
 
@@ -148,6 +334,14 @@ export async function updateVenue(
       pointsPerScan?: number;
       scanCooldownHours?: number;
     };
+    extras?: ListingExtras;
+    /**
+     * Listing details to take back (§2.13). The patch can only set — its write
+     * `COALESCE`s, so a phone number or a photo, once given, could be replaced and
+     * never removed. The name, category and city are not here: a venue without
+     * them is not a listing anybody can be shown.
+     */
+    clear?: ReadonlyArray<'subcategory' | 'address' | 'priceRange' | 'phone' | 'email' | 'imageUrl'>;
     at?: Iso;
   },
 ): Promise<Venue> {
@@ -155,54 +349,87 @@ export async function updateVenue(
   const before = await getVenue(db, input.venueId);
   const p = input.patch;
 
-  await db.run(
-    `UPDATE venues SET
-        name = COALESCE($n, name), category = COALESCE($ca, category),
-        subcategory = COALESCE($sc, subcategory), city = COALESCE($ci, city),
-        address = COALESCE($ad, address), lat = COALESCE($la, lat), lng = COALESCE($ln, lng),
-        timezone = COALESCE($tz, timezone), currency = COALESCE($cu, currency),
-        price_range = COALESCE($pr, price_range), image_url = COALESCE($im, image_url),
-        phone = COALESCE($ph, phone), email = COALESCE($em, email),
-        amount_entry = COALESCE($ae, amount_entry),
-        min_spend_minor = COALESCE($ms, min_spend_minor),
-        max_amount_minor = COALESCE($mx, max_amount_minor),
-        points_per_scan = COALESCE($pps, points_per_scan),
-        scan_cooldown_hours = COALESCE($sch, scan_cooldown_hours),
-        updated_at = $t
-      WHERE id = $v`,
-    {
-      n: p.name ?? null,
-      ca: p.category ?? null,
-      sc: p.subcategory ?? null,
-      ci: p.city ?? null,
-      ad: p.address ?? null,
-      la: p.lat ?? null,
-      ln: p.lng ?? null,
-      tz: p.timezone ?? null,
-      cu: p.currency ?? null,
-      pr: p.priceRange ?? null,
-      im: p.imageUrl ?? null,
-      ph: p.phone ?? null,
-      em: p.email ?? null,
-      ae: p.amountEntry ?? null,
-      ms: p.minSpendMinor ?? null,
-      mx: p.maxAmountMinor ?? null,
-      pps: p.pointsPerScan ?? null,
-      sch: p.scanCooldownHours ?? null,
-      t: at,
-      v: input.venueId,
-    },
-  );
+  /*
+   * **A name can be changed, not removed.** `COALESCE` keeps a field the patch
+   * did not send, and an empty string is not an absent one — so a name of
+   * spaces, which `optStr` trims to `''`, was written straight over the real
+   * name and left a venue called nothing on every card in the app. Both writers
+   * of this row, the owner's form and the operator's console, come through here.
+   */
+  const name = p.name === undefined ? undefined : p.name.trim();
+  if (name !== undefined && !name) invalid('a venue needs a name', { field: 'name' });
+  if (name !== undefined && name.length > 120) invalid('name is too long', { field: 'name', max: 120 });
+  if (p.timezone !== undefined && !isTimeZone(p.timezone)) {
+    invalid('timezone is not a time zone', { field: 'timezone' });
+  }
+  const currency = p.currency?.toUpperCase();
+  if (currency !== undefined && !/^[A-Z]{3}$/.test(currency)) {
+    invalid('currency is a three-letter code', { field: 'currency' });
+  }
+  const extras = checkExtras(input.extras ?? {});
+  const clears = new Set(input.clear ?? []);
 
-  await audit.record(db, {
-    actorId: input.actorId,
-    action: 'venue.update',
-    entity: 'venue',
-    entityId: input.venueId,
-    venueId: input.venueId,
-    before,
-    after: p,
-    at,
+  await db.tx(async () => {
+    await db.run(
+      `UPDATE venues SET
+          name = COALESCE($n, name), category = COALESCE($ca, category),
+          subcategory = CASE WHEN $xsc = 1 THEN NULL ELSE COALESCE($sc, subcategory) END,
+          city = COALESCE($ci, city),
+          address = CASE WHEN $xad = 1 THEN NULL ELSE COALESCE($ad, address) END,
+          lat = COALESCE($la, lat), lng = COALESCE($ln, lng),
+          timezone = COALESCE($tz, timezone), currency = COALESCE($cu, currency),
+          price_range = CASE WHEN $xpr = 1 THEN NULL ELSE COALESCE($pr, price_range) END,
+          image_url = CASE WHEN $xim = 1 THEN NULL ELSE COALESCE($im, image_url) END,
+          phone = CASE WHEN $xph = 1 THEN NULL ELSE COALESCE($ph, phone) END,
+          email = CASE WHEN $xem = 1 THEN NULL ELSE COALESCE($em, email) END,
+          amount_entry = COALESCE($ae, amount_entry),
+          min_spend_minor = COALESCE($ms, min_spend_minor),
+          max_amount_minor = COALESCE($mx, max_amount_minor),
+          points_per_scan = COALESCE($pps, points_per_scan),
+          scan_cooldown_hours = COALESCE($sch, scan_cooldown_hours),
+          updated_at = $t
+        WHERE id = $v`,
+      {
+        n: name ?? null,
+        ca: p.category ?? null,
+        sc: p.subcategory ?? null,
+        ci: p.city ?? null,
+        ad: p.address ?? null,
+        la: p.lat ?? null,
+        ln: p.lng ?? null,
+        tz: p.timezone ?? null,
+        cu: currency ?? null,
+        pr: p.priceRange ?? null,
+        im: p.imageUrl ?? null,
+        ph: p.phone ?? null,
+        em: p.email ?? null,
+        ae: p.amountEntry ?? null,
+        ms: p.minSpendMinor ?? null,
+        mx: p.maxAmountMinor ?? null,
+        pps: p.pointsPerScan ?? null,
+        sch: p.scanCooldownHours ?? null,
+        xsc: clears.has('subcategory') ? 1 : 0,
+        xad: clears.has('address') ? 1 : 0,
+        xpr: clears.has('priceRange') ? 1 : 0,
+        xim: clears.has('imageUrl') ? 1 : 0,
+        xph: clears.has('phone') ? 1 : 0,
+        xem: clears.has('email') ? 1 : 0,
+        t: at,
+        v: input.venueId,
+      },
+    );
+    await writeExtras(db, input.venueId, extras, at);
+
+    await audit.record(db, {
+      actorId: input.actorId,
+      action: 'venue.update',
+      entity: 'venue',
+      entityId: input.venueId,
+      venueId: input.venueId,
+      before,
+      after: { ...p, ...extrasSummary(extras), cleared: clears.size > 0 ? [...clears] : undefined },
+      at,
+    });
   });
   /* Changes propagate immediately (B2) — there is no publish step for a profile
      edit, because the consumer app reads the venue row directly. */
@@ -219,18 +446,18 @@ export async function updateVenue(
 export async function setLinks(
   db: Db,
   venueId: string,
-  links: Array<{ kind: string; value: string }>,
+  links: ReadonlyArray<{ kind?: unknown; value?: unknown }>,
   at: Iso = now(),
 ): Promise<void> {
+  const checked = checkLinks(links);
   await db.tx(async () => {
     await db.run(`DELETE FROM venue_links WHERE venue_id = $v`, { v: venueId });
-    for (const [index, link] of links.entries()) {
-      if (!link.value.trim()) continue;
+    for (const [index, link] of checked.entries()) {
       await db.run(
         `INSERT INTO venue_links (id, venue_id, kind, value, position) VALUES ($i, $v, $k, $val, $p)`,
-        { i: newId('lnk'), v: venueId, k: link.kind, val: link.value.trim(), p: index },
+        { i: newId('lnk'), v: venueId, k: link.kind, val: link.value, p: index },
       );
-    };
+    }
     await db.run(`UPDATE venues SET updated_at = $t WHERE id = $v`, { t: at, v: venueId });
   });
 }
@@ -246,6 +473,29 @@ export async function setHours(
   venueId: string,
   hours: Array<{ weekday: number; opensMin: number | null; closesMin: number | null; closed?: boolean }>,
 ): Promise<void> {
+  /*
+   * One row per weekday, and minutes that are minutes. Both used to reach the
+   * insert unchecked: a repeated weekday broke the primary key and a `NaN` broke
+   * the weekday's CHECK, and each came back as a 500 rather than as the form's
+   * mistake. And a time outside the day is not a late opening — `isOpen` and the
+   * heat map compare these against minutes past local midnight.
+   */
+  const seen = new Set<number>();
+  for (const row of hours) {
+    if (!Number.isInteger(row.weekday) || row.weekday < 0 || row.weekday > 6 || seen.has(row.weekday)) {
+      invalid('hours are one row per weekday, 0 (Monday) to 6', { field: 'hours', weekday: row.weekday });
+    }
+    seen.add(row.weekday);
+    for (const minutes of [row.opensMin, row.closesMin]) {
+      if (minutes !== null && (!Number.isInteger(minutes) || minutes < 0 || minutes > 1440)) {
+        invalid('opening times are minutes past local midnight, 0 to 1440', {
+          field: 'hours',
+          weekday: row.weekday,
+        });
+      }
+    }
+  }
+
   await db.tx(async () => {
     await db.run(`DELETE FROM venue_hours WHERE venue_id = $v`, { v: venueId });
     for (const row of hours) {
@@ -270,6 +520,35 @@ export async function submitVerification(
   input: { venueId: string; method: 'email_domain' | 'business_details' | 'manual'; taxId?: string; legalName?: string; at?: Iso },
 ): Promise<string> {
   const at = input.at ?? now();
+
+  /*
+   * **Only a venue that is not yet verified can ask to be.** This wrote the
+   * venue back to `pending_review` whatever it was, so a live venue that
+   * re-submitted — a second press, a form that submits on every save — took
+   * itself off the product: `requireVerified` refuses to publish and the gate
+   * refuses to scan anywhere that is not `live`, until an operator approved it a
+   * second time. A suspended venue could overwrite its own suspension the same
+   * way, which is an operator's decision undone by the owner it was about.
+   *
+   * A second submission while one is already pending returns that one rather
+   * than stacking a queue of identical records.
+   */
+  const venue = await getVenue(db, input.venueId);
+  if (venue.status === 'live' && venue.verified_at) {
+    throw new DomainError('conflict', 'this venue is already verified', { status: venue.status });
+  }
+  if (venue.status === 'suspended' || venue.status === 'archived') {
+    throw new DomainError('invalid_state', 'a suspended venue is restored by an operator, not re-verified', {
+      status: venue.status,
+    });
+  }
+  const pending = await db.get<{ id: string }>(
+    `SELECT id FROM verification_records
+      WHERE venue_id = $v AND status = 'pending' ORDER BY submitted_at DESC LIMIT 1`,
+    { v: venue.id },
+  );
+  if (pending) return pending.id;
+
   const id = newId('ver');
   await db.tx(async () => {
     await db.run(
@@ -353,8 +632,23 @@ export async function setVoucherTiers(
   const at = input.at ?? now();
   await db.tx(async () => {
     for (const tier of input.tiers) {
-      if (tier.pointsCost <= 0 || tier.maxDiscountMinor <= 0) {
+      /* Whole numbers in range, refused by name. A percentage of 0 or 150 used
+         to reach the table's CHECK and come back as a 500, and a points cost of
+         12.5 was stored — a price nobody can pay in a currency with no halves. */
+      if (!Number.isInteger(tier.discountPct) || tier.discountPct < 1 || tier.discountPct > 100) {
+        throw new DomainError('validation_failed', 'a tier is a whole percentage from 1 to 100', {
+          field: 'discountPct',
+          discountPct: tier.discountPct,
+        });
+      }
+      if (
+        !Number.isInteger(tier.pointsCost) ||
+        !Number.isInteger(tier.maxDiscountMinor) ||
+        tier.pointsCost <= 0 ||
+        tier.maxDiscountMinor <= 0
+      ) {
         throw new DomainError('validation_failed', 'a tier needs a points cost and a cap', {
+          field: tier.pointsCost > 0 && Number.isInteger(tier.pointsCost) ? 'maxDiscountMinor' : 'pointsCost',
           discountPct: tier.discountPct,
         });
       }
@@ -411,30 +705,59 @@ export async function setBudget(
   }
 
   const view = await budget.budgetFor(db, input.venueId, at);
-  /* Refuse to shrink a budget below what is already committed: the reserves
-     represent vouchers customers are holding, and a pool that cannot honour them
-     is a promise already broken. */
+  const row = (await db.get<{ total_minor: number; loyalty_bp: number }>(
+    `SELECT total_minor, loyalty_bp FROM budgets WHERE id = $b`,
+    { b: view.id },
+  ))!;
   const committed = view.loyalty.spent + view.loyalty.reserved + view.voucher.spent + view.voucher.reserved;
-  if (input.totalMinor < committed) {
-    throw new DomainError('conflict', 'that is below what is already spent or reserved', {
-      committed,
-    });
+
+  /*
+   * **Each pool has to cover its own commitments — not just the two together.**
+   * Refuse to shrink a budget below what is already committed: the reserves are
+   * vouchers and rewards customers are holding, and a pool that cannot honour
+   * them is a promise already broken. The check used to be on the total alone,
+   * so a new *split* could move one pool's base below what it had spent and
+   * reserved while the sum still cleared: 60/40 → 10/90 on a loyalty pool holding
+   * a month of earned rewards left that pool's `available` negative, which is the
+   * state this module exists to make impossible.
+   *
+   * A pool's base is its share of the total plus the top-ups and rebalances
+   * already moved into it, and those do not change with the total — so the new
+   * base is the new share plus the same adjustment.
+   */
+  const shareOf = (total: number, loyaltyBp: number) => {
+    const loyalty = Math.floor((total * loyaltyBp) / 10_000);
+    return { loyalty, voucher: total - loyalty };
+  };
+  const was = shareOf(row.total_minor, row.loyalty_bp);
+  const next = shareOf(input.totalMinor, input.loyaltyBp ?? row.loyalty_bp);
+  for (const pool of [view.loyalty, view.voucher]) {
+    const base = next[pool.allocation] + (pool.base - was[pool.allocation]);
+    if (base < pool.spent + pool.reserved) {
+      throw new DomainError('conflict', `that leaves the ${pool.allocation} pool below what it has already spent or reserved`, {
+        allocation: pool.allocation,
+        committed,
+        poolCommitted: pool.spent + pool.reserved,
+      });
+    }
   }
 
-  await db.run(
-    `UPDATE budgets SET total_minor = $t, loyalty_bp = COALESCE($l, loyalty_bp), updated_at = $at
-      WHERE venue_id = $v AND period = $p`,
-    { t: input.totalMinor, l: input.loyaltyBp ?? null, at, v: input.venueId, p: period },
-  );
-  await audit.record(db, {
-    actorId: input.actorId,
-    action: 'budget.update',
-    entity: 'budget',
-    entityId: view.id,
-    venueId: input.venueId,
-    before: { total: view.total },
-    after: { total: input.totalMinor, loyaltyBp: input.loyaltyBp },
-    at,
+  await db.tx(async () => {
+    await db.run(
+      `UPDATE budgets SET total_minor = $t, loyalty_bp = COALESCE($l, loyalty_bp), updated_at = $at
+        WHERE venue_id = $v AND period = $p`,
+      { t: input.totalMinor, l: input.loyaltyBp ?? null, at, v: input.venueId, p: period },
+    );
+    await audit.record(db, {
+      actorId: input.actorId,
+      action: 'budget.update',
+      entity: 'budget',
+      entityId: view.id,
+      venueId: input.venueId,
+      before: { total: view.total, loyaltyBp: row.loyalty_bp },
+      after: { total: input.totalMinor, loyaltyBp: input.loyaltyBp },
+      at,
+    });
   });
   return await budget.budgetFor(db, input.venueId, at);
 }
@@ -506,6 +829,147 @@ export async function createCampaign(
   return (await db.get<campaigns.Campaign>(`SELECT * FROM campaigns WHERE id = $i`, { i: id }))!;
 }
 
+export interface CampaignPatch {
+  name?: string;
+  rewardLabel?: string;
+  rewardCostMinor?: number;
+  visitsRequired?: number;
+  /** `null` clears the override, and the venue's own minimum applies again. */
+  minSpendMinor?: number | null;
+  rewardValidDays?: number;
+  priority?: number;
+  recurring?: boolean;
+}
+
+/**
+ * B5. Change a campaign that already exists.
+ *
+ * The campaign is validated **as it will be after the edit**, not the patch on
+ * its own: a reward cost of zero is refused whether it arrives beside a new name
+ * or by itself, because the rule is about the campaign rather than about which
+ * field was touched — and it is `validateCampaign`, the one `createCampaign`
+ * runs, so the two doors hold the same rule.
+ *
+ * **Rewards already earned are not repriced.** Each `earned_rewards` row carries
+ * the cost and the reserve written when it was earned, and nothing here goes
+ * looking for them: a customer holding a free coffee reserved at 12 zł keeps a
+ * reward the pool reserved 12 zł for, whatever the next one is set to cost.
+ * Cards in progress keep their stamps, and are measured against the new number
+ * of visits from their next visit on.
+ */
+export async function updateCampaign(
+  db: Db,
+  input: { campaignId: string; actorId: string; patch: CampaignPatch; at?: Iso },
+): Promise<campaigns.CampaignRow> {
+  const at = input.at ?? now();
+  const before = await db.get<campaigns.Campaign>(`SELECT * FROM campaigns WHERE id = $i`, {
+    i: input.campaignId,
+  });
+  if (!before) throw new DomainError('not_found', 'campaign not found');
+  const p = input.patch;
+
+  const next = {
+    name: p.name?.trim() ?? before.name,
+    rewardLabel: p.rewardLabel?.trim() ?? before.reward_label,
+    rewardCostMinor: p.rewardCostMinor ?? before.reward_cost_minor,
+    visitsRequired: p.visitsRequired ?? before.visits_required,
+    minSpendMinor: p.minSpendMinor === undefined ? before.min_spend_minor : p.minSpendMinor,
+    rewardValidDays: p.rewardValidDays ?? before.reward_valid_days,
+    priority: p.priority ?? before.priority,
+    recurring: p.recurring === undefined ? before.recurring === 1 : p.recurring,
+  };
+  if (!next.name) invalid('a campaign needs a name', { field: 'name' });
+  campaigns.validateCampaign(next);
+
+  if (Object.values(p).some((value) => value !== undefined)) {
+    await db.tx(async () => {
+      await db.run(
+        `UPDATE campaigns SET name = $n, reward_label = $rl, reward_cost_minor = $rc,
+                visits_required = $vr, min_spend_minor = $ms, reward_valid_days = $rd,
+                priority = $pr, recurring = $re, updated_at = $t
+          WHERE id = $i`,
+        {
+          n: next.name,
+          rl: next.rewardLabel,
+          rc: next.rewardCostMinor,
+          vr: next.visitsRequired,
+          ms: next.minSpendMinor,
+          rd: next.rewardValidDays,
+          pr: next.priority,
+          re: next.recurring ? 1 : 0,
+          t: at,
+          i: before.id,
+        },
+      );
+      await audit.record(db, {
+        actorId: input.actorId,
+        action: 'campaign.update',
+        entity: 'campaign',
+        entityId: before.id,
+        venueId: before.venue_id,
+        before: {
+          name: before.name,
+          rewardLabel: before.reward_label,
+          rewardCostMinor: before.reward_cost_minor,
+          visitsRequired: before.visits_required,
+          minSpendMinor: before.min_spend_minor,
+          rewardValidDays: before.reward_valid_days,
+          priority: before.priority,
+          recurring: before.recurring === 1,
+        },
+        after: p,
+        at,
+      });
+    });
+  }
+
+  return (await campaigns.campaignRows(db, before.venue_id, before.id))[0];
+}
+
+/**
+ * Pause, end or resume a campaign.
+ *
+ * **Resuming counts against the plan, the way starting one does.** Only
+ * `createCampaign` read `active_campaigns`, so a venue on a one-campaign plan
+ * could run as many as it liked: pause the first, create the second, resume the
+ * first. It is the deal lifecycle's second door (see `deals.setStatus`) on the
+ * campaign side. Pausing and ending are never gated — stopping something must
+ * not need an entitlement.
+ */
+export async function setCampaignStatus(
+  db: Db,
+  input: { campaignId: string; status: 'active' | 'paused' | 'ended'; actorId: string; at?: Iso },
+): Promise<void> {
+  const at = input.at ?? now();
+  const campaign = await db.get<{ venue_id: string; status: string }>(
+    `SELECT venue_id, status FROM campaigns WHERE id = $i`,
+    { i: input.campaignId },
+  );
+  if (!campaign) throw new DomainError('not_found', 'campaign not found');
+
+  if (input.status === 'active' && campaign.status !== 'active') {
+    const ent = await entitlements.entitlementsFor(db, { venueId: campaign.venue_id });
+    const running =
+      (await db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active' AND id <> $c`,
+        { v: campaign.venue_id, c: input.campaignId },
+      ))?.n ?? 0;
+    entitlements.requireCapacity(ent, 'active_campaigns', running, 1);
+  }
+
+  await db.tx(async () => {
+    await campaigns.setStatus(db, input.campaignId, input.status, at);
+    await audit.record(db, {
+      actorId: input.actorId,
+      action: `campaign.${input.status}`,
+      entity: 'campaign',
+      entityId: input.campaignId,
+      venueId: campaign.venue_id,
+      at,
+    });
+  });
+}
+
 /* ═══════════════════════════════════════════════════════ B3 hot deals ══ */
 
 export interface DealDraft {
@@ -534,6 +998,13 @@ export async function createDeal(
 ): Promise<deals.Deal> {
   const at = input.at ?? now();
   const venue = await getVenue(db, input.draft.venueId);
+  /* Read as dates, and a bare end day made the whole of that day — see
+     `deals.checkValidTo` for the last day every offer used to lose. */
+  const validFrom = deals.checkValidFrom(input.draft.validFrom);
+  const validTo = deals.checkValidTo(input.draft.validTo, venue.timezone);
+  if (validFrom && validTo && Date.parse(validTo) <= Date.parse(validFrom)) {
+    invalid('a deal has to end after it starts', { field: 'validTo' });
+  }
   const id = newId('del');
 
   await db.tx(async () => {
@@ -555,8 +1026,8 @@ export async function createDeal(
         dt: input.draft.discountText ?? null,
         pc: input.draft.promoCode ?? null,
         im: input.draft.imageUrl ?? null,
-        vf: input.draft.validFrom ?? null,
-        vt: input.draft.validTo ?? null,
+        vf: validFrom ?? null,
+        vt: validTo ?? null,
         tw: input.draft.targetWeekdays?.join(',') ?? null,
         tf: input.draft.targetFromMin ?? null,
         tt: input.draft.targetToMin ?? null,
@@ -612,6 +1083,9 @@ export async function updateDeal(
   const at = input.at ?? now();
   const before = await deals.getDeal(db, input.dealId);
   const p = input.patch;
+  const timezone = before.venue_id ? (await getVenue(db, before.venue_id)).timezone : 'Europe/Warsaw';
+  const validFrom = deals.checkValidFrom(p.validFrom);
+  const validTo = deals.checkValidTo(p.validTo, timezone);
 
   await db.tx(async () => {
     await db.run(
@@ -633,8 +1107,8 @@ export async function updateDeal(
         pc: p.promoCode ?? null,
         im: p.imageUrl ?? null,
         ca: p.category ?? null,
-        vf: p.validFrom ?? null,
-        vt: p.validTo ?? null,
+        vf: validFrom ?? null,
+        vt: validTo ?? null,
         tw: p.targetWeekdays?.join(',') ?? null,
         tf: p.targetFromMin ?? null,
         tt: p.targetToMin ?? null,
@@ -708,7 +1182,8 @@ export async function publishDeal(
 }
 
 /** What the dashboard lists, with each deal's funnel and translation state. */
-export async function dealsFor(db: Db, venueId: string, language = 'en') {
+export async function dealsFor(db: Db, venueId: string, language = 'en', at: Iso = now()) {
+  const venue = await getVenue(db, venueId);
   return await Promise.all((await db
     .all<deals.Deal>(`SELECT * FROM hot_deals WHERE venue_id = $v ORDER BY created_at DESC`, {
       v: venueId,
@@ -730,7 +1205,7 @@ export async function dealsFor(db: Db, venueId: string, language = 'en') {
          events and `deal_pushes` — rather than anything new being recorded, and
          both are per-deal, which is why they are joined here rather than in
          `analytics`, whose figures are all venue-wide. */
-      series: await deals.claimSeries(db, deal.id, 7),
+      series: await deals.claimSeries(db, deal.id, 7, at, venue.timezone),
       push: await deals.pushFor(db, deal.id),
     })));
 }

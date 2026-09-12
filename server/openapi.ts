@@ -294,6 +294,10 @@ const SCHEMAS: Record<string, Schema> = {
           'budget, and a subscriber does not get to overrule it. `points_multiplier` is a ' +
           'game-round rule and is never applied to a scan.',
       ),
+      timezone: str(
+        'On venue detail: the IANA zone the venue’s deal hours, opening hours and budget month are in. ' +
+          'Format a deal’s `12:00–14:00` in this zone, not the device’s.',
+      ),
     },
   },
 
@@ -872,7 +876,12 @@ const DOCS: Record<string, Doc> = {
       'the price of one board per place rather than one per spelling: read `city` back off ' +
       'the response rather than assuming what was sent was stored.\n\n' +
       'Filling in all seven answers (photo, username, status, city, email, phone, ' +
-      'birthday) pays `profileComplete` once and stamps `profileCompletedAt`.',
+      'birthday) pays `profileComplete` once and stamps `profileCompletedAt`.\n\n' +
+      '**An explicit `null` takes an answer back**: `avatar`, `phone` and `occupation` are cleared, and ' +
+      '`city: null` clears the city and its country together (a `countryCode` sent beside it is a 400). ' +
+      '`name`, `username`, `birthDate` and `language` cannot be cleared — `null` is a 400 naming the field. ' +
+      'An absent key or an empty string still leaves a field alone, and clearing never takes back a ' +
+      'completion bonus already paid.',
     tags: ['me'],
     body: {
       name: str(),
@@ -1167,6 +1176,9 @@ const DOCS: Record<string, Doc> = {
   },
   'GET /v1/venues/{id}/pending': {
     summary: 'The confirmation queue at this venue',
+    description:
+      'Only transactions still inside the 15-minute limit — one past it is refused at confirm, so it is not ' +
+      'listed. A customer whose earlier scan timed out is not blocked from scanning again.',
     tags: ['gate', 'partner'],
     response: arrayOf(ref('Transaction')),
   },
@@ -1362,8 +1374,255 @@ const DOCS: Record<string, Doc> = {
   'GET /v1/partner/venues': { summary: 'Venues this account owns', tags: ['partner'], response: arrayOf({ type: 'object' }) },
   'GET /v1/partner/venues/{id}/today': {
     summary: 'Today: customers, sales, what needs confirming',
+    description:
+      '**Today is the venue’s own calendar day**, read off `venue_visits.local_day`. It used to be counted ' +
+      'from UTC midnight, which is 01:00–02:00 in Kraków. `period` is that day as `YYYY-MM-DD` — it was, ' +
+      'wrongly, the month — and `timezone` names the clock. `pendingConfirmations` leaves out pending scans ' +
+      'past the gate’s 15-minute limit, which can no longer be confirmed.',
+    tags: ['partner'],
+    response: {
+      type: 'object',
+      properties: {
+        period: str('The venue-local day, `YYYY-MM-DD`.'),
+        timezone: str(),
+        customers: ref('Metric'),
+        visits: ref('Metric'),
+        salesMinor: ref('Metric'),
+        pendingConfirmations: int(),
+      },
+    },
+  },
+  'GET /v1/partner/venues/{id}/series': {
+    summary: 'The day-by-day series, and the same span before it',
+    description:
+      '`days` **venue-local** calendar days ending today, zero-filled: `series` always has exactly `days` rows, ' +
+      'oldest first. `totals` covers the window and `previous` the same number of days before it. `customers` ' +
+      'is distinct over the span, not the sum of the days. `newCustomers` is **null below the minimum cohort** — ' +
+      'the floor `overview.newCustomers` takes, so the series cannot hand back a figure the overview withholds.',
+    tags: ['partner'],
+    query: [{ name: 'days', description: '`7`, `14`, `30` (default) or `90`. Anything else is a 400 naming `days`.' }],
+    response: {
+      type: 'object',
+      properties: {
+        days: int(),
+        from: str('First local day of the window.'),
+        to: str('Last local day — today.'),
+        timezone: str(),
+        currency: str(),
+        series: arrayOf({
+          type: 'object',
+          properties: {
+            day: str('`YYYY-MM-DD`, venue-local.'),
+            visits: int(),
+            customers: int(),
+            salesMinor: minor('Sales that day'),
+            claims: int(),
+            vouchersRedeemed: int(),
+            rewardsRedeemed: int(),
+          },
+        }),
+        totals: { type: 'object', description: 'visits, customers, newCustomers (nullable), salesMinor, claims, vouchersRedeemed, rewardsRedeemed.' },
+        previous: { type: 'object', description: 'The same totals for the span before.' },
+      },
+    },
+    errors: [[400, '`validation_failed` naming `days`.']],
+  },
+  'GET /v1/partner/venues/{id}/insights': {
+    summary: 'What we noticed: three findings, each null when it does not apply',
+    description:
+      '`trend` — month to date against the same elapsed span of last month, null when either previous figure ' +
+      'is 0. `tierReach` — how many recent customers (visited in 30 days) hold enough points for a tier, and a ' +
+      'lower cost in 50-point steps that would qualify more; balances are only ever counted, and the finding is ' +
+      'null below the minimum cohort. `itemVsPercent` — free-item deals against percentage deals by claims per ' +
+      'impression, among deals seen 20 times or more. `unusedRewards` — rewards earned here and not collected.',
+    tags: ['partner'],
+    response: {
+      type: 'object',
+      properties: {
+        period: str('`YYYY-MM`, venue-local.'),
+        trend: { type: 'object', nullable: true, properties: { visitsPct: int(), vouchersPct: int() } },
+        tierReach: {
+          type: 'object',
+          nullable: true,
+          properties: { tierId: str(), pct: int(), points: int(), eligible: int(), reached: int(), lower: int(), more: int() },
+        },
+        itemVsPercent: { type: 'object', nullable: true, description: '`{ item, percent, multiple }`; each side `{ dealId, title, badge, claims, seen }`.' },
+        unusedRewards: { type: 'object', nullable: true, properties: { n: int(), amountMinor: minor('What they still hold in the loyalty pool') } },
+      },
+    },
+  },
+  'GET /v1/partner/venues/{id}/remind': {
+    summary: 'Who a reminder would reach, and what the last one did',
+    description:
+      'Holders of an unused reward or voucher here, still good today. `nextAllowedAt` is set while the weekly ' +
+      'limit applies. `lastResult.cameBack` counts recipients with a counted visit here within 7 days of it.',
+    tags: ['partner'],
+    response: {
+      type: 'object',
+      properties: {
+        rewardHolders: int(),
+        voucherHolders: int(),
+        audience: int('Distinct people across both.'),
+        lastSentAt: { type: 'string', nullable: true },
+        nextAllowedAt: { type: 'string', nullable: true },
+        lastResult: { type: 'object', nullable: true, properties: { sentAt: str(), audience: int(), cameBack: int(), windowDays: int() } },
+      },
+    },
+  },
+  'POST /v1/partner/venues/{id}/remind': {
+    summary: 'Remind everybody holding something unused here',
+    description:
+      'One inbox copy per person, pushed where the platform’s rules allow — permission, preference, quiet hours ' +
+      'in the venue’s clock, the frequency cap across every venue. `inbox` is everybody, `queued` will also be ' +
+      'pushed, `suppressed` is inbox only. **Once a week per venue**; the audit row is the record. Notifications ' +
+      'carry `kind: "venue_reminder"`. Send an `Idempotency-Key`.',
+    tags: ['partner'],
+    response: {
+      type: 'object',
+      properties: { sentAt: str(), audience: int(), inbox: int(), queued: int(), suppressed: int(), nextAllowedAt: str() },
+    },
+    errors: [
+      [409, '`conflict` — a reminder went out in the last 7 days; `nextAllowedAt` says when the next may.'],
+      [400, '`invalid_state` with `reason: "no_audience"` — nobody holds anything to be reminded of.'],
+    ],
+  },
+  'GET /v1/partner/venues/{id}/scans': {
+    summary: 'The till log',
+    description:
+      'Committed transactions confirmed inside the window, newest first. **`who` and `avatar` are null unless ' +
+      'the customer shares their profile with this venue** — decided in the query, never filtered afterwards. ' +
+      '`first` is the transaction that made the customer’s first visit here; `counted` is whether it was a visit ' +
+      'at all. `progress` is the stamp card the visit went on, reconstructed, or null. Counts are before paging.',
+    tags: ['partner'],
+    query: [
+      { name: 'days', description: '`7`, `14`, `30` (default) or `90`.' },
+      { name: 'segment', description: '`all` (default), `first` or `again`.' },
+      { name: 'limit', description: '1–100, default 50.', schema: int() },
+      { name: 'offset', description: 'Default 0.', schema: int() },
+    ],
+    response: {
+      type: 'object',
+      properties: {
+        days: int(),
+        segment: str(),
+        total: int(),
+        firstCount: int(),
+        againCount: int(),
+        currency: str(),
+        timezone: str(),
+        rows: arrayOf({
+          type: 'object',
+          properties: {
+            id: str(),
+            at: str(),
+            who: { type: 'string', nullable: true },
+            avatar: { type: 'string', nullable: true },
+            first: bool(),
+            counted: bool(),
+            intent: { type: 'string', enum: ['earn', 'voucher_redeem', 'reward_redeem'] },
+            spentMinor: minor('The bill'),
+            discountMinor: minor('The discount given'),
+            points: int(),
+            receipt: str('`#` and four readable characters, stable per transaction.'),
+            site: { type: 'object' },
+            progress: { type: 'object', nullable: true, properties: { campaignId: str(), campaign: str(), done: int(), need: int(), rewardEarned: bool() } },
+          },
+        }),
+      },
+    },
+    errors: [[400, '`validation_failed` naming `days`, `segment`, `limit` or `offset`.']],
+  },
+  'GET /v1/partner/venues/{id}/audiences': {
+    summary: 'How many people each targeting segment is, and how many a push reaches',
+    description:
+      'The segments as deal targeting reads them: `new` (accounts in the venue’s city with no visit here), ' +
+      '`returning` / `lapsed` (this venue’s customers, split at 60 days), `newcomer` (accounts in the city ' +
+      'younger than 180 days) and `all`. Both figures are about people and take the minimum-cohort floor.',
+    tags: ['partner'],
+    response: arrayOf({
+      type: 'object',
+      properties: {
+        segment: { type: 'string', enum: ['all', 'new', 'returning', 'lapsed', 'newcomer'] },
+        reach: ref('Metric'),
+        notifiable: ref('Metric'),
+      },
+    }),
+  },
+  'GET /v1/partner/venues/{id}/listing': {
+    summary: 'The whole listing, as the profile form edits it',
+    description:
+      'The venue row in camelCase plus what it does not carry: `description` by language, `links` in order, ' +
+      '`languages`, `hours`, and the latest `verification` record (or null).',
     tags: ['partner'],
     response: { type: 'object' },
+  },
+  'POST /v1/partner/venues/{id}/counter/lookup': {
+    summary: 'The counter tool: who a handle or a code belongs to',
+    description:
+      'A leading `@` is a handle. Otherwise a handle-shaped string is tried as a handle first and then as a ' +
+      'code; a voucher (`PLZ-…`) or reward code is matched **at this venue only**, and only while it can still ' +
+      'be spent. Every miss — unknown, another venue’s, used, expired, a banned or erased account — is one 404. ' +
+      '`name` and `avatar` are null unless the customer shares with this venue. Writes nothing.',
+    tags: ['partner'],
+    body: { code: str('`@handle`, a voucher code or a reward code. Case does not matter.') },
+    required: ['code'],
+    response: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['customer', 'voucher', 'reward'] },
+        customer: {
+          type: 'object',
+          properties: {
+            userId: str(),
+            handle: { type: 'string', nullable: true },
+            name: { type: 'string', nullable: true },
+            avatar: { type: 'string', nullable: true },
+            firstVisit: bool(),
+            stamps: arrayOf({ type: 'object', properties: { campaignId: str(), campaign: str(), done: int(), need: int() } }),
+          },
+        },
+        voucher: { type: 'object', description: 'On `kind: "voucher"`: `{ id, code, discountPct, maxDiscountMinor, expiresAt }`.' },
+        reward: { type: 'object', description: 'On `kind: "reward"`: `{ id, code, label, costMinor, expiresAt }`.' },
+      },
+    },
+    errors: [[404, '`not_found` — the one answer for every miss.']],
+  },
+  'POST /v1/partner/venues/{id}/counter': {
+    summary: 'The counter tool: record a sale for a customer at the till',
+    description:
+      'Resolves the code as the lookup does, then runs the gate’s own steps with the caller as cashier — so it ' +
+      'pays exactly what a QR scan of the same bill pays, and is refused for the same reasons. A failure after ' +
+      'the transaction opened cancels it. The receipt never carries the customer’s balance or next tier. Staff ' +
+      'cannot record a sale to themselves or to the venue’s owner. Audited as `gate.counter`. Send an ' +
+      '`Idempotency-Key` per press.',
+    tags: ['partner'],
+    body: { code: str(), amountMinor: minor('The bill, in the venue’s currency') },
+    required: ['code', 'amountMinor'],
+    response: {
+      type: 'object',
+      properties: {
+        lookup: { type: 'object', description: 'The lookup the sale acted on, as `…/counter/lookup` returns it.' },
+        receipt: {
+          type: 'object',
+          properties: {
+            transactionId: str(),
+            amountMinor: minor('The bill'),
+            currency: str(),
+            pointsGranted: int(),
+            discountMinor: minor('The discount applied'),
+            stamped: bool(),
+            visitCounted: bool('False under the minimum bill, inside the cooldown, or a second visit that day.'),
+            rewardEarned: { type: 'object', nullable: true, properties: { label: str(), code: str() } },
+          },
+        },
+      },
+    },
+    errors: [
+      [404, '`not_found` — no customer, voucher or reward here matches the code.'],
+      [409, '`conflict` — the customer already has a transaction open here; or a gate refusal (`expired`, `already_used`, `budget_exhausted`).'],
+      [400, '`invalid_amount` — zero, or above the venue’s ceiling.'],
+      [403, '`forbidden` — a sale to the caller’s own account or the owner’s.'],
+    ],
   },
   'GET /v1/partner/venues/{id}/overview': {
     summary: 'The period’s findings, the budget, and the cohort floors',
@@ -1382,6 +1641,12 @@ const DOCS: Record<string, Doc> = {
   },
   'GET /v1/partner/venues/{id}/budget': {
     summary: 'The two pools, the tier ladder, and the rebalance hint',
+    description:
+      'The same body `GET …/overview` returns as `budget`. On this partner body only, each rung of `tiers` also ' +
+      'carries its take-up against the current budget — `issuedCount`, `redeemedCount`, `activeCount`, ' +
+      '`spentMinor` — and `active`; a rung switched off while its vouchers are still out is listed with ' +
+      '`active: false, available: false`. Σ `spentMinor` equals `voucher.spent`. The public venue page’s ladder ' +
+      'carries none of this.',
     tags: ['partner'],
     response: ref('Budget'),
   },
@@ -1401,12 +1666,138 @@ const DOCS: Record<string, Doc> = {
   },
   'POST /v1/partner/deals/{id}/extend': {
     summary: 'Urgent lever: push a deal’s end date out',
+    description:
+      'A bare `YYYY-MM-DD` means **the whole of that day in the venue’s clock** and is stored as its last ' +
+      'millisecond; an instant is stored as sent. The date must be later than the current end and not already ' +
+      'past. Extending an **expired** deal puts it back live, so it passes the same gates as publishing.',
     tags: ['partner'],
-    body: { validTo: iso('The new end of the window') },
+    body: { validTo: iso('The new end of the window, or a bare day') },
     required: ['validTo'],
     response: { type: 'object' },
+    errors: [
+      [400, '`validation_failed` (not a date) or `bad_request` (not later, or already past).'],
+      [403, '`not_verified` or `entitlement_required` when reviving an expired deal.'],
+    ],
   },
-  'GET /v1/partner/venues/{id}/campaigns': { summary: 'Stamp campaigns and how they are doing', tags: ['partner'], response: arrayOf({ type: 'object' }) },
+  'GET /v1/partner/venues/{id}/campaigns': {
+    summary: 'Stamp campaigns and how they are doing',
+    description:
+      'Every column of the campaign plus `members`, `earned`, `redeemed`, and — additive — `near` (cards one ' +
+      'stamp from paying out, active campaigns only), `available` and `expired` rewards, and `reserved_minor`, ' +
+      'what the uncollected rewards still hold in the loyalty pool.',
+    tags: ['partner'],
+    response: arrayOf({ type: 'object' }),
+  },
+  'PATCH /v1/partner/campaigns/{id}': {
+    summary: 'Edit a campaign',
+    description:
+      'Every field optional; the campaign is validated as it will be after the edit. Rewards already earned ' +
+      'keep the cost they were reserved at. `minSpendMinor: null` clears the override. Answers with the row as ' +
+      '`GET …/campaigns` lists it. Audited as `campaign.update`.',
+    tags: ['partner'],
+    body: {
+      name: str(),
+      rewardLabel: str(),
+      rewardCostMinor: minor('What the reward costs the venue, at least 1'),
+      visitsRequired: int('1–50.'),
+      minSpendMinor: { type: 'integer', nullable: true, description: 'At least 0; `null` clears the override.' },
+      rewardValidDays: int('1–365.'),
+      priority: int('0–100.'),
+      recurring: bool(),
+    },
+    response: { type: 'object' },
+    errors: [[400, '`validation_failed` naming the field.']],
+  },
+  'POST /v1/partner/campaigns/{id}/status': {
+    summary: 'Pause, end or resume a campaign',
+    description:
+      'Pausing keeps every earned reward valid and reserved. **Resuming counts against `active_campaigns`**, ' +
+      'exactly as creating one does — a venue could otherwise hold any number by pausing and resuming.',
+    tags: ['partner'],
+    body: { status: { type: 'string', enum: ['active', 'paused', 'ended'] } },
+    required: ['status'],
+    response: { type: 'object', properties: { status: str() } },
+    errors: [[403, '`entitlement_required` — resuming would exceed the plan’s `active_campaigns`.']],
+  },
+  'GET /v1/partner/venues/{id}/push-quota': {
+    summary: 'This month’s push allowance, and what the sent pushes did',
+    description:
+      '`funnel` (additive) sums this month’s sent pushes: `sent` is who each was actually pushed to (after the ' +
+      'platform’s frequency cap), `delivered` what the push provider confirmed, `opened` opens carrying the push ' +
+      'id, `cameIn` recipients who then made a counted visit within a week — each once.',
+    tags: ['partner'],
+    response: {
+      type: 'object',
+      properties: {
+        period: str(),
+        quota: int(),
+        used: int(),
+        remaining: int(),
+        funnel: { type: 'object', properties: { sent: int(), delivered: int(), opened: int(), cameIn: int() } },
+      },
+    },
+  },
+  'GET /v1/partner/venues/{id}/customers': {
+    summary: 'Customers who share their profile with this venue',
+    description:
+      'Rows gain two optional keys, **absent rather than null** when unknown: `tierPct`, the highest discount ' +
+      'this customer bought a voucher for here, and `spendTrend` (`up` / `down` / `flat`), their last 30 days of ' +
+      'spend here against the 30 before. The `status` filter now applies before paging, and an unknown `sort` or ' +
+      '`status` is a 400.',
+    tags: ['partner'],
+    query: [
+      { name: 'sort', description: '`spend` (default), `visits` or `recent`.' },
+      { name: 'status', description: '`new`, `regular`, `lapsed`, `at_risk` or `high_value`.' },
+      { name: 'limit', description: 'Default 50.', schema: int() },
+      { name: 'offset', description: 'Default 0.', schema: int() },
+    ],
+    response: { type: 'object' },
+    errors: [[403, '`entitlement_required` — `identified_profiles`.'], [400, '`validation_failed` naming `sort` or `status`.']],
+  },
+  'POST /v1/partner/venues': {
+    summary: 'List a venue',
+    description:
+      'Also takes the listing’s non-column parts in the same request — `description` (language → text), `links` ' +
+      '(`[{kind, value}]`, one per kind) and `languages` (two-letter codes). `timezone` must be one the clock ' +
+      'library knows; `currency` and `countryCode` are upper-cased. Answers with the venue row.',
+    tags: ['partner'],
+    body: {
+      name: str(),
+      category: str(),
+      city: str(),
+      timezone: str('An IANA zone, e.g. `Europe/Warsaw`.'),
+      currency: str('ISO 4217.'),
+      description: { type: 'object', additionalProperties: str() },
+      links: arrayOf({ type: 'object', properties: { kind: str(), value: str() } }),
+      languages: arrayOf(str()),
+    },
+    required: ['name', 'category', 'city'],
+    response: { type: 'object' },
+    errors: [[400, '`validation_failed` naming the field — `timezone`, `currency`, `links`, `languages`, `description`.']],
+  },
+  'PATCH /v1/partner/venues/{id}': {
+    summary: 'Edit the listing',
+    description:
+      'Every field optional. `description` upserts per language (`""` removes one), `links` and `languages` ' +
+      'replace their sets. **An explicit `null` clears** `subcategory`, `address`, `priceRange`, `phone`, ' +
+      '`email` and `imageUrl`; `name`, `category` and `city` cannot be cleared (400). An absent key leaves the ' +
+      'field alone. Answers with the venue row; `GET …/listing` reads the whole listing back.',
+    tags: ['partner'],
+    body: {
+      name: str(),
+      subcategory: { type: 'string', nullable: true },
+      address: { type: 'string', nullable: true },
+      priceRange: { type: 'string', nullable: true },
+      phone: { type: 'string', nullable: true },
+      email: { type: 'string', nullable: true },
+      imageUrl: { type: 'string', nullable: true },
+      description: { type: 'object', additionalProperties: str() },
+      links: arrayOf({ type: 'object', properties: { kind: str(), value: str() } }),
+      languages: arrayOf(str()),
+    },
+    response: { type: 'object' },
+    errors: [[400, '`validation_failed` naming the field — including a `null` sent for `name`, `category` or `city`.']],
+  },
   'GET /v1/partner/venues/{id}/deals': { summary: 'This venue’s deals, with funnel and translation state', tags: ['partner'], response: arrayOf({ type: 'object' }) },
 
   /* ── content ── */

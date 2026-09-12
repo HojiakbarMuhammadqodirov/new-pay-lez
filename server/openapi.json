@@ -3,7 +3,7 @@
   "info": {
     "title": "Paylez API",
     "version": "1.0.0",
-    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n74 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
+    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n89 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
     "contact": {
       "name": "Paylez backend",
       "url": "https://pay-lez.com"
@@ -433,6 +433,10 @@
           "pointsPerScan": {
             "type": "integer",
             "description": "What a qualifying scan pays here. When it is positive it **overrides** the reader’s plan `scan_points` — a venue that typed a rate meant it, out of its own budget, and a subscriber does not get to overrule it. `points_multiplier` is a game-round rule and is never applied to a scan."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "On venue detail: the IANA zone the venue’s deal hours, opening hours and budget month are in. Format a deal’s `12:00–14:00` in this zone, not the device’s."
           }
         }
       },
@@ -1768,7 +1772,7 @@
       },
       "patch": {
         "summary": "Update the profile",
-        "description": "Every field is optional and none of them gates anything — an account that answers none of them is a complete account, it just has not been paid for finishing one. **Nothing here is verified**; there is no code sent to the number.\n\nFour fields have rules worth knowing before the form is drawn.\n\n`username` is unique platform-wide (3–20 of `a-z 0-9 _`, single underscores between runs, some names reserved) and a clash is a `409` naming the field.\n\n`birthDate` is accepted twice — the answer and one correction — after which a *different* day is a `409` naming support; resending the day already stored costs nothing, so a client may safely PATCH its whole profile on every save. `birthDateChangesLeft` on `GET /v1/me` says how many writes remain.\n\n`occupation` is the field the UI labels **\"Status\"** and is one of five values; anything else is a `400` whose `allowed` carries the whole set. It replaced the free-text `headline`, which no longer exists in either direction.\n\n`city` is **canonicalised, not restricted.** A city that matches `GET /v1/cities` is stored with that list’s own spelling and country, and a `countryCode` sent with it is ignored — which is what keeps `Kraków`, `Krakow` and `krakow` on one weekly board and stops a client writing `Krakow, US`. A city that does not match is accepted with a `countryCode` beside it and is stored folded and title-cased, so diacritics, hyphens and apostrophes do not survive (`Saint-Étienne` → `Saint Etienne`). That is the price of one board per place rather than one per spelling: read `city` back off the response rather than assuming what was sent was stored.\n\nFilling in all seven answers (photo, username, status, city, email, phone, birthday) pays `profileComplete` once and stamps `profileCompletedAt`.\n\n**Access:** Any signed-in account.",
+        "description": "Every field is optional and none of them gates anything — an account that answers none of them is a complete account, it just has not been paid for finishing one. **Nothing here is verified**; there is no code sent to the number.\n\nFour fields have rules worth knowing before the form is drawn.\n\n`username` is unique platform-wide (3–20 of `a-z 0-9 _`, single underscores between runs, some names reserved) and a clash is a `409` naming the field.\n\n`birthDate` is accepted twice — the answer and one correction — after which a *different* day is a `409` naming support; resending the day already stored costs nothing, so a client may safely PATCH its whole profile on every save. `birthDateChangesLeft` on `GET /v1/me` says how many writes remain.\n\n`occupation` is the field the UI labels **\"Status\"** and is one of five values; anything else is a `400` whose `allowed` carries the whole set. It replaced the free-text `headline`, which no longer exists in either direction.\n\n`city` is **canonicalised, not restricted.** A city that matches `GET /v1/cities` is stored with that list’s own spelling and country, and a `countryCode` sent with it is ignored — which is what keeps `Kraków`, `Krakow` and `krakow` on one weekly board and stops a client writing `Krakow, US`. A city that does not match is accepted with a `countryCode` beside it and is stored folded and title-cased, so diacritics, hyphens and apostrophes do not survive (`Saint-Étienne` → `Saint Etienne`). That is the price of one board per place rather than one per spelling: read `city` back off the response rather than assuming what was sent was stored.\n\nFilling in all seven answers (photo, username, status, city, email, phone, birthday) pays `profileComplete` once and stamps `profileCompletedAt`.\n\n**An explicit `null` takes an answer back**: `avatar`, `phone` and `occupation` are cleared, and `city: null` clears the city and its country together (a `countryCode` sent beside it is a 400). `name`, `username`, `birthDate` and `language` cannot be cleared — `null` is a 400 naming the field. An absent key or an empty string still leaves a field alone, and clearing never takes back a completion bonus already paid.\n\n**Access:** Any signed-in account.",
         "operationId": "patchMe",
         "tags": [
           "me"
@@ -4694,7 +4698,7 @@
     "/v1/venues/{id}/pending": {
       "get": {
         "summary": "The confirmation queue at this venue",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Only transactions still inside the 15-minute limit — one past it is refused at confirm, so it is not listed. A customer whose earlier scan timed out is not blocked from scanning again.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getVenuesByIdPending",
         "tags": [
           "gate",
@@ -4878,20 +4882,97 @@
         }
       },
       "post": {
-        "summary": "POST /v1/partner/venues",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "summary": "List a venue",
+        "description": "Also takes the listing’s non-column parts in the same request — `description` (language → text), `links` (`[{kind, value}]`, one per kind) and `languages` (two-letter codes). `timezone` must be one the clock library knows; `currency` and `countryCode` are upper-cased. Answers with the venue row.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "postPartnerVenues",
         "tags": [
           "partner"
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "category": {
+                    "type": "string"
+                  },
+                  "city": {
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "type": "string",
+                    "description": "An IANA zone, e.g. `Europe/Warsaw`."
+                  },
+                  "currency": {
+                    "type": "string",
+                    "description": "ISO 4217."
+                  },
+                  "description": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "links": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "languages": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "category",
+                  "city"
+                ]
+              }
+            }
+          }
+        },
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming the field — `timezone`, `currency`, `links`, `languages`, `description`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
@@ -4918,8 +4999,8 @@
     },
     "/v1/partner/venues/{id}": {
       "patch": {
-        "summary": "PATCH /v1/partner/venues/:id",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "summary": "Edit the listing",
+        "description": "Every field optional. `description` upserts per language (`\"\"` removes one), `links` and `languages` replace their sets. **An explicit `null` clears** `subcategory`, `address`, `priceRange`, `phone`, `email` and `imageUrl`; `name`, `category` and `city` cannot be cleared (400). An absent key leaves the field alone. Answers with the venue row; `GET …/listing` reads the whole listing back.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "patchPartnerVenuesById",
         "tags": [
           "partner"
@@ -4934,14 +5015,96 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "subcategory": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "address": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "priceRange": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "phone": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "email": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "imageUrl": {
+                    "type": "string",
+                    "nullable": true
+                  },
+                  "description": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "links": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string"
+                        },
+                        "value": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "languages": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming the field — including a `null` sent for `name`, `category` or `city`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
@@ -5119,7 +5282,7 @@
     "/v1/partner/venues/{id}/budget": {
       "get": {
         "summary": "The two pools, the tier ladder, and the rebalance hint",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "The same body `GET …/overview` returns as `budget`. On this partner body only, each rung of `tiers` also carries its take-up against the current budget — `issuedCount`, `redeemedCount`, `activeCount`, `spentMinor` — and `active`; a rung switched off while its vouchers are still out is listed with `active: false, available: false`. Σ `spentMinor` equals `voucher.spent`. The public venue page’s ladder carries none of this.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getPartnerVenuesByIdBudget",
         "tags": [
           "partner"
@@ -5421,7 +5584,7 @@
     "/v1/partner/venues/{id}/campaigns": {
       "get": {
         "summary": "Stamp campaigns and how they are doing",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Every column of the campaign plus `members`, `earned`, `redeemed`, and — additive — `near` (cards one stamp from paying out, active campaigns only), `available` and `expired` rewards, and `reserved_minor`, what the uncollected rewards still hold in the loyalty pool.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getPartnerVenuesByIdCampaigns",
         "tags": [
           "partner"
@@ -5528,8 +5691,8 @@
     },
     "/v1/partner/campaigns/{id}/status": {
       "post": {
-        "summary": "POST /v1/partner/campaigns/:id/status",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "summary": "Pause, end or resume a campaign",
+        "description": "Pausing keeps every earned reward valid and reserved. **Resuming counts against `active_campaigns`**, exactly as creating one does — a venue could otherwise hold any number by pausing and resuming.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "postPartnerCampaignsByIdStatus",
         "tags": [
           "partner"
@@ -5544,14 +5707,169 @@
             }
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "active",
+                      "paused",
+                      "ended"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ]
+              }
+            }
+          }
+        },
         "security": [
           {
             "bearerAuth": []
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`entitlement_required` — resuming would exceed the plan’s `active_campaigns`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/campaigns/{id}": {
+      "patch": {
+        "summary": "Edit a campaign",
+        "description": "Every field optional; the campaign is validated as it will be after the edit. Rewards already earned keep the cost they were reserved at. `minSpendMinor: null` clears the override. Answers with the row as `GET …/campaigns` lists it. Audited as `campaign.update`.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "patchPartnerCampaignsById",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "rewardLabel": {
+                    "type": "string"
+                  },
+                  "rewardCostMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "What the reward costs the venue, at least 1 **in minor units** (grosze). 14200 is 142,00 zł."
+                  },
+                  "visitsRequired": {
+                    "type": "integer",
+                    "description": "1–50."
+                  },
+                  "minSpendMinor": {
+                    "type": "integer",
+                    "nullable": true,
+                    "description": "At least 0; `null` clears the override."
+                  },
+                  "rewardValidDays": {
+                    "type": "integer",
+                    "description": "1–365."
+                  },
+                  "priority": {
+                    "type": "integer",
+                    "description": "0–100."
+                  },
+                  "recurring": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming the field.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
@@ -5867,7 +6185,7 @@
     "/v1/partner/deals/{id}/extend": {
       "post": {
         "summary": "Urgent lever: push a deal’s end date out",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "A bare `YYYY-MM-DD` means **the whole of that day in the venue’s clock** and is stored as its last millisecond; an instant is stored as sent. The date must be later than the current end and not already past. Extending an **expired** deal puts it back live, so it passes the same gates as publishing.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "postPartnerDealsByIdExtend",
         "tags": [
           "partner"
@@ -5892,7 +6210,7 @@
                   "validTo": {
                     "type": "string",
                     "format": "date-time",
-                    "description": "The new end of the window"
+                    "description": "The new end of the window, or a bare day"
                   }
                 },
                 "required": [
@@ -5918,8 +6236,28 @@
               }
             }
           },
+          "400": {
+            "description": "`validation_failed` (not a date) or `bad_request` (not later, or already past).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`not_verified` or `entitlement_required` when reviving an expired deal.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5993,8 +6331,8 @@
     },
     "/v1/partner/venues/{id}/push-quota": {
       "get": {
-        "summary": "GET /v1/partner/venues/:id/push-quota",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "summary": "This month’s push allowance, and what the sent pushes did",
+        "description": "`funnel` (additive) sums this month’s sent pushes: `sent` is who each was actually pushed to (after the platform’s frequency cap), `delivered` what the push provider confirmed, `opened` opens carrying the push id, `cameIn` recipients who then made a counted visit within a week — each once.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getPartnerVenuesByIdPushQuota",
         "tags": [
           "partner"
@@ -6015,8 +6353,46 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "period": {
+                      "type": "string"
+                    },
+                    "quota": {
+                      "type": "integer"
+                    },
+                    "used": {
+                      "type": "integer"
+                    },
+                    "remaining": {
+                      "type": "integer"
+                    },
+                    "funnel": {
+                      "type": "object",
+                      "properties": {
+                        "sent": {
+                          "type": "integer"
+                        },
+                        "delivered": {
+                          "type": "integer"
+                        },
+                        "opened": {
+                          "type": "integer"
+                        },
+                        "cameIn": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
@@ -6110,7 +6486,7 @@
     "/v1/partner/venues/{id}/today": {
       "get": {
         "summary": "Today: customers, sales, what needs confirming",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "**Today is the venue’s own calendar day**, read off `venue_visits.local_day`. It used to be counted from UTC midnight, which is 01:00–02:00 in Kraków. `period` is that day as `YYYY-MM-DD` — it was, wrongly, the month — and `timezone` names the clock. `pendingConfirmations` leaves out pending scans past the gate’s 15-minute limit, which can no longer be confirmed.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getPartnerVenuesByIdToday",
         "tags": [
           "partner"
@@ -6136,7 +6512,28 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "period": {
+                      "type": "string",
+                      "description": "The venue-local day, `YYYY-MM-DD`."
+                    },
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "customers": {
+                      "$ref": "#/components/schemas/Metric"
+                    },
+                    "visits": {
+                      "$ref": "#/components/schemas/Metric"
+                    },
+                    "salesMinor": {
+                      "$ref": "#/components/schemas/Metric"
+                    },
+                    "pendingConfirmations": {
+                      "type": "integer"
+                    }
+                  }
                 }
               }
             }
@@ -6332,8 +6729,8 @@
     },
     "/v1/partner/venues/{id}/customers": {
       "get": {
-        "summary": "GET /v1/partner/venues/:id/customers",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "summary": "Customers who share their profile with this venue",
+        "description": "Rows gain two optional keys, **absent rather than null** when unknown: `tierPct`, the highest discount this customer bought a voucher for here, and `spendTrend` (`up` / `down` / `flat`), their last 30 days of spend here against the 30 before. The `status` filter now applies before paging, and an unknown `sort` or `status` is a 400.\n\n**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "getPartnerVenuesByIdCustomers",
         "tags": [
           "partner"
@@ -6346,6 +6743,42 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "description": "`spend` (default), `visits` or `recent`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "`new`, `regular`, `lapsed`, `at_risk` or `high_value`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Default 50.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Default 0.",
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "security": [
@@ -6354,11 +6787,38 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming `sort` or `status`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`entitlement_required` — `identified_profiles`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -6475,6 +6935,1125 @@
           },
           "401": {
             "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/series": {
+      "get": {
+        "summary": "The day-by-day series, and the same span before it",
+        "description": "`days` **venue-local** calendar days ending today, zero-filled: `series` always has exactly `days` rows, oldest first. `totals` covers the window and `previous` the same number of days before it. `customers` is distinct over the span, not the sum of the days. `newCustomers` is **null below the minimum cohort** — the floor `overview.newCustomers` takes, so the series cannot hand back a figure the overview withholds.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdSeries",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "`7`, `14`, `30` (default) or `90`. Anything else is a 400 naming `days`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer"
+                    },
+                    "from": {
+                      "type": "string",
+                      "description": "First local day of the window."
+                    },
+                    "to": {
+                      "type": "string",
+                      "description": "Last local day — today."
+                    },
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "series": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "day": {
+                            "type": "string",
+                            "description": "`YYYY-MM-DD`, venue-local."
+                          },
+                          "visits": {
+                            "type": "integer"
+                          },
+                          "customers": {
+                            "type": "integer"
+                          },
+                          "salesMinor": {
+                            "type": "integer",
+                            "format": "int64",
+                            "description": "Sales that day **in minor units** (grosze). 14200 is 142,00 zł."
+                          },
+                          "claims": {
+                            "type": "integer"
+                          },
+                          "vouchersRedeemed": {
+                            "type": "integer"
+                          },
+                          "rewardsRedeemed": {
+                            "type": "integer"
+                          }
+                        }
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "description": "visits, customers, newCustomers (nullable), salesMinor, claims, vouchersRedeemed, rewardsRedeemed."
+                    },
+                    "previous": {
+                      "type": "object",
+                      "description": "The same totals for the span before."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming `days`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/insights": {
+      "get": {
+        "summary": "What we noticed: three findings, each null when it does not apply",
+        "description": "`trend` — month to date against the same elapsed span of last month, null when either previous figure is 0. `tierReach` — how many recent customers (visited in 30 days) hold enough points for a tier, and a lower cost in 50-point steps that would qualify more; balances are only ever counted, and the finding is null below the minimum cohort. `itemVsPercent` — free-item deals against percentage deals by claims per impression, among deals seen 20 times or more. `unusedRewards` — rewards earned here and not collected.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdInsights",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "period": {
+                      "type": "string",
+                      "description": "`YYYY-MM`, venue-local."
+                    },
+                    "trend": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "visitsPct": {
+                          "type": "integer"
+                        },
+                        "vouchersPct": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "tierReach": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "tierId": {
+                          "type": "string"
+                        },
+                        "pct": {
+                          "type": "integer"
+                        },
+                        "points": {
+                          "type": "integer"
+                        },
+                        "eligible": {
+                          "type": "integer"
+                        },
+                        "reached": {
+                          "type": "integer"
+                        },
+                        "lower": {
+                          "type": "integer"
+                        },
+                        "more": {
+                          "type": "integer"
+                        }
+                      }
+                    },
+                    "itemVsPercent": {
+                      "type": "object",
+                      "nullable": true,
+                      "description": "`{ item, percent, multiple }`; each side `{ dealId, title, badge, claims, seen }`."
+                    },
+                    "unusedRewards": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "n": {
+                          "type": "integer"
+                        },
+                        "amountMinor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "What they still hold in the loyalty pool **in minor units** (grosze). 14200 is 142,00 zł."
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/remind": {
+      "get": {
+        "summary": "Who a reminder would reach, and what the last one did",
+        "description": "Holders of an unused reward or voucher here, still good today. `nextAllowedAt` is set while the weekly limit applies. `lastResult.cameBack` counts recipients with a counted visit here within 7 days of it.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdRemind",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "rewardHolders": {
+                      "type": "integer"
+                    },
+                    "voucherHolders": {
+                      "type": "integer"
+                    },
+                    "audience": {
+                      "type": "integer",
+                      "description": "Distinct people across both."
+                    },
+                    "lastSentAt": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "nextAllowedAt": {
+                      "type": "string",
+                      "nullable": true
+                    },
+                    "lastResult": {
+                      "type": "object",
+                      "nullable": true,
+                      "properties": {
+                        "sentAt": {
+                          "type": "string"
+                        },
+                        "audience": {
+                          "type": "integer"
+                        },
+                        "cameBack": {
+                          "type": "integer"
+                        },
+                        "windowDays": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Remind everybody holding something unused here",
+        "description": "One inbox copy per person, pushed where the platform’s rules allow — permission, preference, quiet hours in the venue’s clock, the frequency cap across every venue. `inbox` is everybody, `queued` will also be pushed, `suppressed` is inbox only. **Once a week per venue**; the audit row is the record. Notifications carry `kind: \"venue_reminder\"`. Send an `Idempotency-Key`.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "postPartnerVenuesByIdRemind",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sentAt": {
+                      "type": "string"
+                    },
+                    "audience": {
+                      "type": "integer"
+                    },
+                    "inbox": {
+                      "type": "integer"
+                    },
+                    "queued": {
+                      "type": "integer"
+                    },
+                    "suppressed": {
+                      "type": "integer"
+                    },
+                    "nextAllowedAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_state` with `reason: \"no_audience\"` — nobody holds anything to be reminded of.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — a reminder went out in the last 7 days; `nextAllowedAt` says when the next may.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/scans": {
+      "get": {
+        "summary": "The till log",
+        "description": "Committed transactions confirmed inside the window, newest first. **`who` and `avatar` are null unless the customer shares their profile with this venue** — decided in the query, never filtered afterwards. `first` is the transaction that made the customer’s first visit here; `counted` is whether it was a visit at all. `progress` is the stamp card the visit went on, reconstructed, or null. Counts are before paging.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdScans",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "description": "`7`, `14`, `30` (default) or `90`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "segment",
+            "in": "query",
+            "required": false,
+            "description": "`all` (default), `first` or `again`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "1–100, default 50.",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "description": "Default 0.",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "days": {
+                      "type": "integer"
+                    },
+                    "segment": {
+                      "type": "string"
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "firstCount": {
+                      "type": "integer"
+                    },
+                    "againCount": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "timezone": {
+                      "type": "string"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "at": {
+                            "type": "string"
+                          },
+                          "who": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "avatar": {
+                            "type": "string",
+                            "nullable": true
+                          },
+                          "first": {
+                            "type": "boolean"
+                          },
+                          "counted": {
+                            "type": "boolean"
+                          },
+                          "intent": {
+                            "type": "string",
+                            "enum": [
+                              "earn",
+                              "voucher_redeem",
+                              "reward_redeem"
+                            ]
+                          },
+                          "spentMinor": {
+                            "type": "integer",
+                            "format": "int64",
+                            "description": "The bill **in minor units** (grosze). 14200 is 142,00 zł."
+                          },
+                          "discountMinor": {
+                            "type": "integer",
+                            "format": "int64",
+                            "description": "The discount given **in minor units** (grosze). 14200 is 142,00 zł."
+                          },
+                          "points": {
+                            "type": "integer"
+                          },
+                          "receipt": {
+                            "type": "string",
+                            "description": "`#` and four readable characters, stable per transaction."
+                          },
+                          "site": {
+                            "type": "object"
+                          },
+                          "progress": {
+                            "type": "object",
+                            "nullable": true,
+                            "properties": {
+                              "campaignId": {
+                                "type": "string"
+                              },
+                              "campaign": {
+                                "type": "string"
+                              },
+                              "done": {
+                                "type": "integer"
+                              },
+                              "need": {
+                                "type": "integer"
+                              },
+                              "rewardEarned": {
+                                "type": "boolean"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` naming `days`, `segment`, `limit` or `offset`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/audiences": {
+      "get": {
+        "summary": "How many people each targeting segment is, and how many a push reaches",
+        "description": "The segments as deal targeting reads them: `new` (accounts in the venue’s city with no visit here), `returning` / `lapsed` (this venue’s customers, split at 60 days), `newcomer` (accounts in the city younger than 180 days) and `all`. Both figures are about people and take the minimum-cohort floor.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdAudiences",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "segment": {
+                        "type": "string",
+                        "enum": [
+                          "all",
+                          "new",
+                          "returning",
+                          "lapsed",
+                          "newcomer"
+                        ]
+                      },
+                      "reach": {
+                        "$ref": "#/components/schemas/Metric"
+                      },
+                      "notifiable": {
+                        "$ref": "#/components/schemas/Metric"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/listing": {
+      "get": {
+        "summary": "The whole listing, as the profile form edits it",
+        "description": "The venue row in camelCase plus what it does not carry: `description` by language, `links` in order, `languages`, `hours`, and the latest `verification` record (or null).\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdListing",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/counter/lookup": {
+      "post": {
+        "summary": "The counter tool: who a handle or a code belongs to",
+        "description": "A leading `@` is a handle. Otherwise a handle-shaped string is tried as a handle first and then as a code; a voucher (`PLZ-…`) or reward code is matched **at this venue only**, and only while it can still be spent. Every miss — unknown, another venue’s, used, expired, a banned or erased account — is one 404. `name` and `avatar` are null unless the customer shares with this venue. Writes nothing.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "postPartnerVenuesByIdCounterLookup",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "`@handle`, a voucher code or a reward code. Case does not matter."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": [
+                        "customer",
+                        "voucher",
+                        "reward"
+                      ]
+                    },
+                    "customer": {
+                      "type": "object",
+                      "properties": {
+                        "userId": {
+                          "type": "string"
+                        },
+                        "handle": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "name": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "avatar": {
+                          "type": "string",
+                          "nullable": true
+                        },
+                        "firstVisit": {
+                          "type": "boolean"
+                        },
+                        "stamps": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "campaignId": {
+                                "type": "string"
+                              },
+                              "campaign": {
+                                "type": "string"
+                              },
+                              "done": {
+                                "type": "integer"
+                              },
+                              "need": {
+                                "type": "integer"
+                              }
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "voucher": {
+                      "type": "object",
+                      "description": "On `kind: \"voucher\"`: `{ id, code, discountPct, maxDiscountMinor, expiresAt }`."
+                    },
+                    "reward": {
+                      "type": "object",
+                      "description": "On `kind: \"reward\"`: `{ id, code, label, costMinor, expiresAt }`."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — the one answer for every miss.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/counter": {
+      "post": {
+        "summary": "The counter tool: record a sale for a customer at the till",
+        "description": "Resolves the code as the lookup does, then runs the gate’s own steps with the caller as cashier — so it pays exactly what a QR scan of the same bill pays, and is refused for the same reasons. A failure after the transaction opened cancels it. The receipt never carries the customer’s balance or next tier. Staff cannot record a sale to themselves or to the venue’s owner. Audited as `gate.counter`. Send an `Idempotency-Key` per press.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "postPartnerVenuesByIdCounter",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  },
+                  "amountMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "The bill, in the venue’s currency **in minor units** (grosze). 14200 is 142,00 zł."
+                  }
+                },
+                "required": [
+                  "code",
+                  "amountMinor"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "lookup": {
+                      "type": "object",
+                      "description": "The lookup the sale acted on, as `…/counter/lookup` returns it."
+                    },
+                    "receipt": {
+                      "type": "object",
+                      "properties": {
+                        "transactionId": {
+                          "type": "string"
+                        },
+                        "amountMinor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "The bill **in minor units** (grosze). 14200 is 142,00 zł."
+                        },
+                        "currency": {
+                          "type": "string"
+                        },
+                        "pointsGranted": {
+                          "type": "integer"
+                        },
+                        "discountMinor": {
+                          "type": "integer",
+                          "format": "int64",
+                          "description": "The discount applied **in minor units** (grosze). 14200 is 142,00 zł."
+                        },
+                        "stamped": {
+                          "type": "boolean"
+                        },
+                        "visitCounted": {
+                          "type": "boolean",
+                          "description": "False under the minimum bill, inside the cooldown, or a second visit that day."
+                        },
+                        "rewardEarned": {
+                          "type": "object",
+                          "nullable": true,
+                          "properties": {
+                            "label": {
+                              "type": "string"
+                            },
+                            "code": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_amount` — zero, or above the venue’s ceiling.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden` — a sale to the caller’s own account or the owner’s.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no customer, voucher or reward here matches the code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the customer already has a transaction open here; or a gate refusal (`expired`, `already_used`, `budget_exhausted`).",
             "content": {
               "application/json": {
                 "schema": {

@@ -300,6 +300,25 @@ export const authRoutes: Route[] = [
       if (ctx.body.leaderboardOptIn !== undefined) {
         await social.setLeaderboardOptIn(ctx.db, user.id, bool(ctx.body, 'leaderboardOptIn'));
       }
+      /*
+       * An explicit JSON `null` takes an answer back (§2.13); an absent key and an
+       * empty string still leave it alone, so a client that resends its whole
+       * profile keeps the behaviour it shipped with. `optStr` reads `null` as
+       * absent, so the nulls are read here, before it runs.
+       *
+       * Four fields cannot be taken back and say so rather than ignoring the null:
+       * an account always has a name and a language, a handle is what other people
+       * were given, and a birthday is corrected, not withdrawn.
+       */
+      for (const field of ['name', 'username', 'birthDate', 'language'] as const) {
+        if (ctx.body[field] === null) {
+          throw new DomainError('validation_failed', `${field} can be changed but not removed`, { field });
+        }
+      }
+      if (ctx.body.city === null && ctx.body.countryCode !== undefined && ctx.body.countryCode !== null) {
+        throw new DomainError('validation_failed', 'clearing the city clears its country too', { field: 'countryCode' });
+      }
+      const clear = (['avatar', 'phone', 'occupation', 'city'] as const).filter((field) => ctx.body[field] === null);
       const updated = await accounts.updateProfile(
         ctx.db,
         user.id,
@@ -332,6 +351,7 @@ export const authRoutes: Route[] = [
              what lets a client PATCH its whole profile on every save without
              spending somebody's one correction on a value it did not change. */
           birthDate: optStr(ctx.body, 'birthDate'),
+          clear,
         },
         ctx.at,
       );

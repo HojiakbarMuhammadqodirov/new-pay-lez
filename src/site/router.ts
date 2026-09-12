@@ -313,8 +313,17 @@ export function resolveRoute(route: Route, account: Account | null): Route {
 
   /*
    * Signing in when you already are. Where that lands is the *whole* of the
-   * post-sign-in routing, on purpose: an owner who has not described their
-   * venue yet goes to setup, everyone else goes home.
+   * post-sign-in routing, on purpose: an owner goes to their own screen — setup
+   * if the venue has not been described yet, the dashboard if it has — and
+   * everyone else goes home.
+   *
+   * The dashboard, and not the landing page, for an owner whose listing
+   * exists: that is the operator's console one kind of account over, and a
+   * venue owner signing in has come to run the venue, not to be sold it. It is
+   * also the case sign-in used to get wrong on a second device, where the
+   * listing was not yet known and the owner was dropped on setup — now that the
+   * listing is brought home before the session is published, "has a listing" is
+   * true here whenever it is true on the server.
    *
    * Doing it here rather than calling `navigate` from the sign-in form is what
    * keeps it correct. A handler that sets the account and navigates in the same
@@ -324,9 +333,8 @@ export function resolveRoute(route: Route, account: Account | null): Route {
    * flight. Deriving the destination instead means there is only ever one.
    */
   if (route === 'signin') {
-    return account.type === 'business' && account.business === null
-      ? 'business-setup'
-      : 'landing';
+    if (account.type !== 'business') return 'landing';
+    return account.business === null ? 'business-setup' : 'dashboard';
   }
 
   /* Everyone past the clause above has finished it, or was never asked to. */

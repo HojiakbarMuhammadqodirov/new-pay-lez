@@ -37,6 +37,8 @@ export interface Fact {
   id?: string;
   label: string;
   value?: number | string | null;
+  /** On a money fact: the currency `value` is in, as minor units. Absent on a count. */
+  currency?: string;
   action?: { label: string; href: string };
 }
 
@@ -73,6 +75,34 @@ export async function startConversation(
     },
   );
   return id;
+}
+
+/**
+ * The partner conversation a request names, checked against who is asking and
+ * about which venue.
+ *
+ * The partner routes took any `sessionId` they were handed, so a partner could
+ * write questions and drafts into somebody else's conversation — and the only way
+ * to open one was the consumer route, whose sessions count against the owner's
+ * *consumer* question allowance. A named session has to be this caller's, on the
+ * partner side, about the venue in the path.
+ *
+ * One answer for "no such conversation" and for "not yours", as the consumer
+ * route's `conversationFor` gives: a refusal that only fires on real ids tells
+ * the caller which ids are real.
+ */
+export async function partnerConversation(
+  db: Db,
+  input: { sessionId: string; userId: string; venueId: string },
+): Promise<string> {
+  const session = await db.get<{ user_id: string; side: string; venue_id: string | null }>(
+    `SELECT user_id, side, venue_id FROM assistant_sessions WHERE id = $s`,
+    { s: input.sessionId },
+  );
+  if (!session || session.user_id !== input.userId || session.side !== 'partner' || session.venue_id !== input.venueId) {
+    throw new DomainError('not_found', 'conversation not found');
+  }
+  return input.sessionId;
 }
 
 async function appendMessage(
@@ -351,7 +381,12 @@ export async function venueContext(db: Db, venueId: string, at: Iso = now()): Pr
       name: venue.name,
       empty: true,
       facts: [
-        { kind: 'budget', label: 'unspent budget', value: view.total - view.loyalty.spent - view.voucher.spent },
+        {
+          kind: 'budget',
+          label: 'unspent budget',
+          value: view.total - view.loyalty.spent - view.voucher.spent,
+          currency: venue.currency,
+        },
         { kind: 'status', label: 'listing', value: venue.status },
       ],
       suggestions: [
@@ -386,13 +421,17 @@ export async function venueContext(db: Db, venueId: string, at: Iso = now()): Pr
       kind: 'budget',
       label: 'available budget',
       value: view.loyalty.available + view.voucher.available,
+      currency: venue.currency,
     },
   ];
-  if (map.quietest) {
+  /* `heatmap` names a quietest open hour even over no visits at all — every
+     hour ties at nothing — so it is only a finding when something was counted. */
+  const quiet = map.total > 0 ? map.quietest : null;
+  if (quiet) {
     facts.push({
       kind: 'quiet_window',
       label: 'quietest hour',
-      value: `${map.quietest.weekday}:${map.quietest.hour}`,
+      value: `${quiet.weekday}:${quiet.hour}`,
     });
   }
   if (!mix.suppressed && mix.rows.length) {
@@ -400,11 +439,11 @@ export async function venueContext(db: Db, venueId: string, at: Iso = now()): Pr
   }
 
   const suggestions: Array<{ key: string; label: string; detail: string }> = [];
-  if (map.quietest) {
+  if (quiet) {
     suggestions.push({
       key: 'fill_quiet_hour',
       label: 'Fill your quietest hour',
-      detail: `A deal targeted at ${dayName(map.quietest.weekday)} ${map.quietest.hour}:00, when ${map.quietest.visits} customers came.`,
+      detail: `A deal targeted at ${dayName(quiet.weekday)} ${quiet.hour}:00, when ${quiet.visits} customers came.`,
     });
   }
   const hint = budget.rebalanceHint(view);

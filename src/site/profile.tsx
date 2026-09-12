@@ -14,15 +14,21 @@ import { Icon } from './icons';
 import {
   lookupCity,
   matchCities,
+  stopSharing,
   useCities,
+  useConsents,
   type City,
   type CityList,
+  type SharingGrant,
 } from './api/profile';
-import { useAuth, type UserProfile } from './auth/context';
+import { hasToken } from './api/client';
+import { useAuth, type ProfileResult, type UserProfile } from './auth/context';
 import { AVATAR_PX, toSquareDataUrl } from './imageFile';
 import { Face } from './auth/Avatar';
-import { useCopy } from './i18n/context';
+import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
+import { ENERGY_REGEN_MINUTES, MAX_ENERGY, energyOf, type PlayerState } from './auth/player';
+import { isPicture } from './auth/picture';
 import {
   BIRTH_DATE_WRITES,
   OCCUPATIONS,
@@ -30,7 +36,6 @@ import {
   USERNAME_MIN,
   isOccupation,
   PROFILE_BONUS,
-  isProfileComplete,
   type ProfileField,
   profileGaps,
   profilePercent,
@@ -38,57 +43,53 @@ import {
 } from './auth/users';
 
 /**
- * `#/profile` — the seven things a person tells us about themselves.
+ * `#/profile` — the seven things a person tells us about themselves, **shown
+ * first and edited second**.
  *
  * Photo, username, status, city, email, phone, birthday. It is the same set the
- * server's `updateProfile` writes, and it has to be: this page is the
- * prototype's front end onto rules that already exist somewhere else, and a
- * form that accepted what the server refuses would be a form that works until
- * the day the two halves are wired together.
+ * server's `updateProfile` writes, and the server is now where it is kept: a
+ * save is `PATCH /v1/me`, the page draws what the server answered, and a venue
+ * this person pays at sees the same name and photo they see here.
+ *
+ * ── a page, not a form ───────────────────────────────────────────────────
+ *
+ * It opened as a form, which is the wrong first answer to "what does my account
+ * look like": seven wells with a caret in the first one reads as a task, and
+ * the part somebody actually opened the page to check — what other people see —
+ * sat in a card in the margin. So it opens on the record: a card with the face,
+ * the name, the handle and the plan; the answers as rows, with "Not added yet"
+ * rather than blank space where one is missing; the meter; and which venues
+ * can see who this is. **One** control changes any of it — Edit — and it turns
+ * the page into the form, with Save and Cancel, and back.
  *
  * Three of the seven have rules that are not "is it a string", and all three
- * are explained on the page rather than discovered by being refused:
+ * are explained on the form rather than discovered by being refused:
  *
- * - **The username is unique.** Checked against the whole directory, and a
- *   clash comes back naming the field, the way a 409 does.
- * - **The city is suggested, not dictated.** `GET /v1/cities` feeds a combobox
- *   that offers matches as you type, because a leaderboard groups on this
- *   string with a literal `=`. But 114 names is a list somebody is not on, so
- *   an unknown city is accepted **with a country beside it** — which is the
- *   rule `PATCH /v1/me` enforces, and the one state this form refuses to submit
- *   is the third one: a city nobody can place.
+ * - **The username is unique.** The server's table decides, and a clash comes
+ *   back naming the field.
+ * - **The city is suggested, not dictated.** `GET /v1/cities` feeds a combobox,
+ *   because a leaderboard groups on this string with a literal `=`. An unknown
+ *   city is accepted **with its country's two-letter code beside it** — the
+ *   rule `PATCH /v1/me` enforces — and the one state the form refuses to submit
+ *   is a city nobody can place.
  * - **The birthday may be set and then corrected once.** The count is shown
- *   before it is spent, and when it runs out the field is replaced by the date
- *   and a sentence, because a control that cannot work is worse than no
- *   control.
+ *   before it is spent, and when it runs out the field becomes the date and a
+ *   sentence, because a control that cannot work is worse than no control.
  *
- * And the thing the page says out loud: **nothing here is verified.** No code
- * is sent to the number, no link is clicked in the address. The address is what
- * signs the account in, which is authentication and a different question — and
- * a form that implies a confirmation exists is a form that has promised
- * something nobody built.
+ * And the thing the page says out loud: **nothing here is verified.** No code is
+ * sent to the number and no link is clicked in the address.
  *
- * The draft is local state and commits on submit, the way the listing form's
- * does: the card in the rail moves on every keystroke, and persisting that
- * would be a `JSON.stringify` of the whole account per character typed.
+ * ── what replaced the line about you ─────────────────────────────────────
  *
- * ── what replaced the line about you ──────────────────────────────────────
- *
- * There was a 140-character free line here. It is gone, and `occupation` — one
- * of five values, labelled **Status** — is in its place. The argument is not
- * that nobody wrote one; it is that nothing could *read* one. A venue choosing
- * who to send an offer to can act on "students, on a Tuesday"; it cannot act on
- * a sentence about filter coffee, and neither can the city leaderboard, the
- * cohort floor or any other number on this platform. Five values can be
- * counted. Prose is decoration that costs a column.
+ * There was a 140-character free line here. `occupation` — one of five values,
+ * labelled **Status** — is in its place, because nothing could *read* a line: a
+ * venue choosing who to send an offer to can act on "students, on a Tuesday",
+ * and it cannot act on a sentence about filter coffee.
  */
 
 /*
- * The two bounds the form's sentences quote, as strings.
- *
- * Written once here rather than at each `fill()` because a rule stated in a
- * help line and refused by a validator has to quote the same number, and
- * `String(USERNAME_MIN)` typed four times is four places for that to drift.
+ * The two bounds the form's sentences quote, as strings — written once so a
+ * rule stated in a help line and refused by a validator quote the same number.
  */
 const MIN = String(USERNAME_MIN);
 const MAX = String(USERNAME_MAX);
@@ -98,24 +99,18 @@ type ProfileCopy = ReturnType<typeof useCopy>['profile'];
 
 /* ──────────────────────────────────────────────────────────────── photo ── */
 
-/**
- * A picked file as a small square data URL.
- *
- * The work is in `imageFile.ts`, because the venue logo needs exactly the same
- * thing and a second copy of a canvas crop is a second place for the quality
- * and the size to drift apart.
- */
+/** A picked file as a small square data URL. The work is in `imageFile.ts`. */
 const toAvatar = (file: File): Promise<string | null> => toSquareDataUrl(file, AVATAR_PX);
 
 /* ─────────────────────────────────────────────────────────────── the kit ── */
 
 /**
- * One row of the field kit — the same shape `businessSetup.tsx` uses, and for
- * the same reason it is a component there: a `<label>` wraps its one control
- * without needing an id at both ends, and `wraps={false}` renders a `<div>` for
- * the rows whose child is *itself* a label (the file picker), is a button, or
- * is not a control at all. Nesting `<label>` is invalid, and browsers agree on
- * what it costs: the outer one's implicit control resolves to the inner input.
+ * One row of the field kit — the same shape `businessSetup.tsx` uses. A
+ * `<label>` wraps its one control without needing an id at both ends, and
+ * `wraps={false}` renders a `<div>` for the rows whose child is *itself* a label
+ * (the file picker), is a button, or is not a control at all. Nesting `<label>`
+ * is invalid, and browsers agree on what it costs: the outer one's implicit
+ * control resolves to the inner input.
  */
 function Field({
   label,
@@ -129,17 +124,13 @@ function Field({
   label: string;
   /**
    * The id to put on the caption, for a `wraps={false}` row whose child *is* a
-   * control.
-   *
-   * A wrapping `<label>` names its control implicitly and needs none of this.
-   * A `<div>` names nothing — so the two rows here that hold a control the
-   * label cannot wrap (the status button, the city combobox) point at this id
-   * with `aria-labelledby`, or they announce as "Student, collapsed" with no
-   * word saying what Student is an answer to.
+   * control — the status button and the city combobox point at it with
+   * `aria-labelledby`, or they announce as "Student, collapsed" with no word
+   * saying what Student is an answer to.
    */
   labelId?: string;
-  /** Which of the seven this row is, so the reward card can jump to it. */
-  field?: ProfileField;
+  /** Which answer this row is, so the meter and a refusal can jump to it. */
+  field?: ProfileField | 'country';
   help?: ReactNode;
   error?: string;
   wraps?: boolean;
@@ -166,13 +157,9 @@ function Field({
 /* ─────────────────────────────────────────────────────── the menu, twice ── */
 
 /**
- * Close on an outside press, and on Escape.
- *
- * Lifted out because both menus below need exactly this and `LanguageMenu` in
- * `Header.tsx` already writes it a third time. `restore` is what the header's
- * version calls the same argument: closing unmounts whatever holds focus, which
- * drops it on `<body>` and restarts the next Tab at the top of the document —
- * so Escape puts focus back, and an outside press does not, because there the
+ * Close on an outside press, and on Escape. `restore` is what the header's
+ * version calls the same argument: closing unmounts whatever holds focus, so
+ * Escape puts focus back, and an outside press does not, because there the
  * visitor has just aimed at some other control.
  */
 function useDismiss(
@@ -206,16 +193,11 @@ function useDismiss(
  * Status — the five-value menu.
  *
  * The header's language picker with a different trigger: `.lang-menu` owning
- * `role="option"` children directly, no `<li>` in between (see the note on
- * `LanguageMenu`). What is not the header's is the trigger, which has to look
- * like the field kit's `<select>` well because it stands in a row with two real
- * fields — `.prof-select` is that well on a button, and `site.css` says why it
- * could not simply be a `<select>`.
- *
- * The options are real buttons and therefore focusable, which is the header's
- * pattern and is right for a menu: the reader tabs into it, and Escape hands
- * focus back to the trigger. The city field below is the *other* pattern for
- * the opposite reason — see there.
+ * `role="option"` children directly. The trigger looks like the field kit's
+ * `<select>` well because it stands in a row with real fields — `.prof-select`
+ * is that well on a button, and `site.css` says why it could not simply be a
+ * `<select>`. The options are real buttons and therefore focusable, which is
+ * right for a menu: the reader tabs into it, and Escape hands focus back.
  */
 function StatusMenu({
   copy,
@@ -251,9 +233,7 @@ function StatusMenu({
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
         /* The caption, then the button's own text: "Status, Student". An
-           `aria-label` would have *replaced* the value with the caption, which
-           is the one thing a reader of this control needs to hear — so the
-           button names itself second, which is what the pattern is for. */
+           `aria-label` would have *replaced* the value with the caption. */
         aria-labelledby={`${labelId} ${selfId}`}
         onClick={() => setOpen((was) => !was)}
       >
@@ -296,34 +276,16 @@ type CityPick = { kind: 'city'; city: City } | { kind: 'other' };
 /**
  * City — the same menu, driven by an `<input>` instead of a button.
  *
- * A real combobox and not a button that opens a list, because the thing being
- * chosen from is 114 entries long: the only way to get to Zielona Gora in a
- * menu is to scroll past sixty cities, and the only way to get there in one
- * gesture is to type "zie". So the trigger is the text field itself, which is
- * also what makes the field honest when the backend is down — there is nothing
- * to disable, and the reader can still write where they live.
- *
- * ── the keyboard, which is the whole of why this is not four lines ────────
- *
- * The options here are **not focusable**, which is the opposite of the status
- * menu above and is forced: focus has to stay in the input, because the reader
- * is still typing. So the list is navigated with `aria-activedescendant` — a
- * *virtual* cursor that names the current row without moving the real one —
- * and every key is handled here:
+ * A real combobox, because the thing being chosen from is 114 entries long and
+ * the only way to get to Zielona Gora in one gesture is to type "zie". The
+ * options are **not focusable** — focus has to stay in the input while the
+ * reader types — so the list is walked with `aria-activedescendant`:
  *
  *   ↓ / ↑    open the list, then walk it, wrapping at both ends.
  *   Enter    take the pointed-at row; `preventDefault` so a submit does not
  *            fire on the same keystroke that chose a city.
  *   Escape   close and keep what was typed. Handled by `useDismiss`.
- *   Tab      **not touched.** A menu that swallows Tab is a trap, and this one
- *            has no reason to: the typed text is already the answer, so leaving
- *            commits nothing the reader has not seen.
- *
- * `role="option"` on a `<div>` rather than a `<button>` for the same reason:
- * a button in the tab order would put eight stops between this field and the
- * next one. They are still pressable — a pointer down on one picks it, and
- * `onMouseDown`'s `preventDefault` is what stops the input losing focus (and
- * the menu unmounting) before the click lands.
+ *   Tab      **not touched.** A menu that swallows Tab is a trap.
  */
 function CityCombo({
   copy,
@@ -344,9 +306,6 @@ function CityCombo({
   invalid: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  /* Where the virtual cursor is. The suggestions come first and the "not on the
-     list" row is the last index, which is what `rows` below encodes so the two
-     cannot get out of step. */
   const [at, setAt] = useState(0);
   const input = useRef<HTMLInputElement>(null);
   const listId = useId();
@@ -358,17 +317,15 @@ function CityCombo({
   }, []);
   const ref = useDismiss(open, close);
 
-  /* Suggestions, plus the way out. `other` is always offered — including when
-     the query matches perfectly, because "Berlin" is a real city in a country
-     the list does not have Berlin in only if somebody says so. */
+  /* Suggestions, plus the way out — always offered, because "Berlin" is a city
+     in a country the list lacks only if somebody says so. */
   const rows: CityPick[] = useMemo(() => {
     const cities = list ? matchCities(list, value) : [];
     return [...cities.map((city): CityPick => ({ kind: 'city', city })), { kind: 'other' }];
   }, [list, value]);
 
   /* Typing moves the cursor back to the top: the row that was pointed at
-     belonged to the previous query, and leaving it where it was is how a
-     combobox picks the wrong city on Enter. */
+     belonged to the previous query. */
   const show = (next: boolean) => {
     setOpen(next);
     if (next) setAt(0);
@@ -394,12 +351,11 @@ function CityCombo({
       return;
     }
     if (event.key === 'Enter' && open) {
-      /* Only when the list is open *and* pointing somewhere. A closed combobox
-         is a text field, and Enter in a text field submits the form. */
+      /* Only when the list is open. A closed combobox is a text field, and
+         Enter in a text field submits the form. */
       event.preventDefault();
       take(at);
     }
-    /* Tab deliberately falls through. See the block comment. */
   };
 
   return (
@@ -412,8 +368,6 @@ function CityCombo({
         spellCheck={false}
         placeholder={copy.cityPlaceholder}
         value={value}
-        /* The row is a `<div>`, so nothing names this input implicitly — see
-           the note on `Field`'s `labelId`. */
         aria-labelledby={labelId}
         aria-expanded={open}
         aria-controls={open ? listId : undefined}
@@ -477,6 +431,472 @@ function CityCombo({
 
 /* ───────────────────────────────────────────────────────────────── page ── */
 
+/** Where the last save put the answers — the one thing the view has to say. */
+type Flash = 'server' | 'device';
+
+export function ProfilePage() {
+  const { account } = useAuth();
+  const copy = useCopy().profile;
+  const [editing, setEditing] = useState(false);
+  const [flash, setFlash] = useState<Flash | null>(null);
+  /* The celebration. Opened by the save that finishes the profile and closed by
+     the reader — never re-opened, because the stamp is set from then on. */
+  const [won, setWon] = useState(false);
+  const editButton = useRef<HTMLButtonElement>(null);
+  const returning = useRef(false);
+
+  /*
+   * Focus follows the mode, both ways. The editor puts it in the first field
+   * when it opens; leaving the editor unmounts whatever held it, which would
+   * drop it on `<body>` and restart the next Tab at the top of the document —
+   * so it goes back to the button that opened the editor, which is also the
+   * button a second edit starts from.
+   */
+  useEffect(() => {
+    if (editing || !returning.current) return;
+    returning.current = false;
+    editButton.current?.focus();
+  }, [editing]);
+
+  if (!account) return null;
+
+  const leave = (next: Flash | null) => {
+    returning.current = true;
+    setFlash(next);
+    setEditing(false);
+  };
+
+  return (
+    <main>
+      <section className="section prof" id="profile-top">
+        <div className="wrap">
+          <div className="section-head left" data-reveal>
+            <span className="eyebrow">{copy.eyebrow}</span>
+            {/* `h1`, not `h2`: this is a route of its own. */}
+            <h1>{copy.title}</h1>
+            <p>{copy.lede}</p>
+          </div>
+
+          {/* A live region that is always there, so the confirmation is
+              announced: a region mounted together with its text is one many
+              screen readers never read. Empty collapses it. */}
+          <p className="prof-flash" data-tone={flash ?? undefined} role="status">
+            {flash === 'server' ? (
+              <>
+                <Icon name="check" size={15} strokeWidth={3} />
+                <span>{copy.savedServer}</span>
+              </>
+            ) : flash === 'device' ? (
+              <>
+                <Icon name="warn" size={15} />
+                <span>{copy.savedDevice}</span>
+              </>
+            ) : null}
+          </p>
+
+          {editing ? (
+            <ProfileEditor
+              onCancel={() => leave(null)}
+              onSaved={(result) => {
+                if (result.completed) setWon(true);
+                leave(result.where);
+              }}
+            />
+          ) : (
+            <ProfileView
+              editButton={editButton}
+              onEdit={() => {
+                setFlash(null);
+                setWon(false);
+                setEditing(true);
+              }}
+            />
+          )}
+
+          {/*
+            The moment it lands, over the page rather than in a rail: on a phone
+            the rail is below the form, and the one moment worth noticing would
+            happen off-screen. Dismissed by the reader, never by a timer, and
+            `role="status"` because it is good news beside the thing that caused
+            it, not an error interrupting a task.
+          */}
+          {won && (
+            <div className="console prof-won" role="status">
+              <span className="prof-won-mark" aria-hidden>
+                <Icon name="trophy" size={22} strokeWidth={2.2} />
+              </span>
+              <b>{copy.wonTitle}</b>
+              <p>{fill(copy.wonBody, { points: String(PROFILE_BONUS) })}</p>
+              <button type="button" className="btn btn-solid" onClick={() => setWon(false)}>
+                {copy.wonClose}
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── view mode ── */
+
+/**
+ * The record, as it stands.
+ *
+ * Everything here is the *saved* profile — the view answers "what do other
+ * people see", and nobody sees a draft. A missing answer is a soft "Not added
+ * yet" rather than an empty cell, because a blank beside "Phone" reads as a
+ * rendering fault and a sentence reads as a fact.
+ */
+function ProfileView({
+  editButton,
+  onEdit,
+}: {
+  editButton: RefObject<HTMLButtonElement | null>;
+  onEdit: () => void;
+}) {
+  const { account, plan, memberSince } = useAuth();
+  const copy = useCopy().profile;
+  const [language] = useLanguage();
+  const nameId = useId();
+  const aboutId = useId();
+
+  if (!account) return null;
+  const profile = account.profile;
+  const gaps = profileGaps(profile, account.email);
+  const percent = profilePercent(profile, account.email);
+  /* The stamp, not the gaps: the bonus is paid once and the seven stay
+     editable, so a profile can be complete-and-paid or incomplete-but-paid. */
+  const paid = account.profileCompletedAt !== null;
+  const role = isOccupation(profile.occupation) ? profile.occupation : null;
+
+  const rows: Array<{ key: string; label: string; value: string }> = [
+    { key: 'status', label: copy.status, value: role ? copy.occupations[role] : '' },
+    {
+      key: 'city',
+      label: copy.city,
+      value: profile.city
+        ? [profile.city, profile.countryCode && countryName(copy, profile.countryCode)]
+            .filter(Boolean)
+            .join(', ')
+        : '',
+    },
+    { key: 'email', label: copy.email, value: account.email },
+    { key: 'phone', label: copy.phone, value: profile.phone },
+    {
+      key: 'birthday',
+      label: copy.birthday,
+      value: profile.birthDate ? formatDay(language, profile.birthDate) : '',
+    },
+  ];
+
+  return (
+    <div className="prof-view">
+      <section className="console prof-id" aria-labelledby={nameId}>
+        <span className="prof-avatar prof-avatar-xl" aria-hidden>
+          <Face name={account.name} photo={profile.avatar} />
+        </span>
+
+        <div className="prof-id-text">
+          <h2 className="prof-id-name" id={nameId}>
+            {account.name}
+          </h2>
+          <p className="prof-id-handle">
+            {profile.username ? (
+              `@${profile.username}`
+            ) : (
+              <span className="prof-soft">{copy.cardNoName}</span>
+            )}
+            {/* The same chip as the header pill — this is the page somebody
+                opens to find out about their own account. Absent while the
+                plan is unknown, never a guessed "Free". */}
+            {plan && <em className="plan-tag">{plan.name}</em>}
+          </p>
+          {memberSince && (
+            <p className="prof-id-since">
+              {fill(copy.memberSince, { date: formatMonth(language, memberSince) })}
+            </p>
+          )}
+        </div>
+
+        {/* The one control on this page that changes the profile. */}
+        <button ref={editButton} type="button" className="btn btn-solid prof-edit" onClick={onEdit}>
+          <Icon name="pencil" size={15} strokeWidth={2} />
+          {copy.edit}
+        </button>
+
+        {account.player && <PlayerStrip player={account.player} />}
+      </section>
+
+      <div className="prof-view-grid">
+        <section className="console prof-panel" aria-labelledby={aboutId}>
+          <h2 className="prof-panel-title" id={aboutId}>
+            {copy.aboutTitle}
+          </h2>
+          <dl className="prof-rows">
+            {rows.map((row) => (
+              <div className="prof-row" key={row.key}>
+                <dt>{row.label}</dt>
+                <dd>{row.value || <span className="prof-soft">{copy.notAdded}</span>}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        {/*
+          The meter, and the prize still leads it: a reward nobody notices
+          changes nobody's behaviour. What is missing is listed as words here
+          rather than as buttons — there is no field on this screen to jump to,
+          and a chip that looks pressable and is not is the picture-of-a-control
+          mistake. Edit is where they are.
+        */}
+        <aside className="console prof-meter" data-paid={paid ? 'true' : undefined}>
+          <span className="console-label">{copy.meterTitle}</span>
+          <div className="prof-prize">
+            <span className="prof-prize-mark" aria-hidden>
+              <Icon name={paid ? 'check' : 'gift'} size={20} strokeWidth={2.4} />
+            </span>
+            <div>
+              <b className="prof-prize-pts">+{PROFILE_BONUS}</b>
+              <span className="prof-prize-say">
+                {fill(paid ? copy.meterRewardPaid : copy.meterReward, {
+                  points: String(PROFILE_BONUS),
+                })}
+              </span>
+            </div>
+          </div>
+          <b className="prof-pct">{fill(copy.meterProgress, { pct: String(percent) })}</b>
+          <div className="prof-bar">
+            <i style={{ width: `${percent}%` }} />
+          </div>
+          {gaps.length > 0 ? (
+            <p className="prof-gaps">
+              {fill(copy.gapsView, {
+                fields: gaps.map((field) => copy.fieldNames[field]).join(', '),
+              })}
+            </p>
+          ) : (
+            <p className="prof-done">
+              <Icon name="check" size={15} strokeWidth={3} />
+              {copy.meterDone}
+            </p>
+          )}
+        </aside>
+      </div>
+
+      {/* Only where there is a server to ask. An account this browser opened
+          offline has no consents anywhere, and a panel whose every request
+          fails would be a panel with nothing honest behind it. */}
+      {hasToken() && <SharingPanel />}
+    </div>
+  );
+}
+
+/**
+ * Points, streak and energy — for a player, and read off the mirror the
+ * server's own answers keep.
+ *
+ * The figures are `GET /v1/games/state`'s and the ledger's, folded into the
+ * account when it signed in and after every round. While a server-backed
+ * account has not heard from the server this session, they are an em dash:
+ * a mirror on a device that has never been told is a row of zeros, and a zero
+ * nobody measured is the one figure this site does not print.
+ */
+function PlayerStrip({ player }: { player: PlayerState }) {
+  const { plan, entitlements } = useAuth();
+  const copy = useCopy().profile;
+  const [language] = useLanguage();
+  const told = !hasToken() || plan !== null;
+
+  const limits = {
+    max: Number(entitlements?.daily_energy) || MAX_ENERGY,
+    regenMinutes: Number(entitlements?.energy_regen_minutes) || ENERGY_REGEN_MINUTES,
+  };
+  const tank = energyOf(player, new Date(), limits);
+  const number = new Intl.NumberFormat(language);
+
+  const stats = [
+    { key: 'points', label: copy.stripPoints, value: number.format(player.points) },
+    { key: 'streak', label: copy.stripStreak, value: number.format(player.streak) },
+    {
+      key: 'energy',
+      label: copy.stripEnergy,
+      value: fill(copy.stripEnergyValue, { n: String(tank.count), max: String(limits.max) }),
+    },
+  ];
+
+  return (
+    <dl className="prof-strip">
+      {stats.map((stat) => (
+        <div className="prof-stat" key={stat.key}>
+          <dt>{stat.label}</dt>
+          <dd>{told ? stat.value : '—'}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
+ * Which venues can see who this person is, and a way to stop each one.
+ *
+ * `data_sharing_consents` is the switch every identified-customer figure on a
+ * partner's dashboard passes through — the name and the photo in a venue's
+ * customer list and till log exist only while a row here does. It is the one
+ * part of the player↔venue relationship a player controls, so it lives on the
+ * page about them, and stopping one takes effect on the server at once.
+ *
+ * Stopping asks once, in words naming the venue, because it is not undone from
+ * this screen: sharing is granted at the venue, not here.
+ */
+function SharingPanel() {
+  const copy = useCopy().profile;
+  const [language] = useLanguage();
+  const consents = useConsents();
+  const titleId = useId();
+  const [asking, setAsking] = useState<string | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  /* Hidden locally rather than re-fetched: a reload flips the whole list back
+     to "checking…" for a row the server has already confirmed gone. */
+  const [removed, setRemoved] = useState<ReadonlySet<string>>(() => new Set());
+  const [notice, setNotice] = useState<{ tone: 'done' | 'failed'; text: string } | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const restoreTo = useRef<string | null>(null);
+
+  /* A removed row takes its buttons with it, so focus goes to the sentence
+     that says what happened rather than to `<body>`. */
+  useEffect(() => {
+    if (notice) noticeRef.current?.focus();
+  }, [notice]);
+
+  /* "Keep sharing" unmounts itself, so focus goes back to the row's own
+     "Stop sharing", which is where the reader was. */
+  useEffect(() => {
+    const id = restoreTo.current;
+    if (asking !== null || id === null) return;
+    restoreTo.current = null;
+    document.querySelector<HTMLButtonElement>(`[data-stop="${CSS.escape(id)}"]`)?.focus();
+  }, [asking]);
+
+  const stop = async (grant: SharingGrant) => {
+    setBusy(grant.venue_id);
+    try {
+      await stopSharing(grant.venue_id);
+      setRemoved((was) => new Set(was).add(grant.venue_id));
+      setNotice({ tone: 'done', text: fill(copy.sharingStopped, { venue: grant.name }) });
+    } catch {
+      setNotice({ tone: 'failed', text: copy.sharingFailed });
+    } finally {
+      setBusy(null);
+      setAsking(null);
+    }
+  };
+
+  const state = consents.state;
+  const grants =
+    state.status === 'ready'
+      ? state.data.dataSharing.filter((grant) => !removed.has(grant.venue_id))
+      : [];
+
+  return (
+    <section className="console prof-share" aria-labelledby={titleId}>
+      <h2 className="prof-panel-title" id={titleId}>
+        {copy.sharingTitle}
+      </h2>
+      <p className="prof-share-lede">{copy.sharingLede}</p>
+
+      <p
+        className="prof-share-notice"
+        data-tone={notice?.tone}
+        role="status"
+        tabIndex={-1}
+        ref={noticeRef}
+      >
+        {notice?.text}
+      </p>
+
+      {/* Three states and a fourth, and a failed request is not the empty
+          list: "we could not ask" and "you share with nobody" are different
+          answers to a privacy question. */}
+      {state.status === 'loading' ? (
+        <p className="prof-share-empty">{copy.sharingLoading}</p>
+      ) : state.status === 'error' ? (
+        <p className="prof-note">
+          <Icon name="warn" size={15} />
+          <span>
+            {copy.sharingOffline}{' '}
+            <button type="button" className="link-btn" onClick={consents.reload}>
+              {copy.sharingRetry}
+            </button>
+          </span>
+        </p>
+      ) : grants.length === 0 ? (
+        <p className="prof-share-empty">{copy.sharingNone}</p>
+      ) : (
+        <ul className="prof-share-list">
+          {grants.map((grant) => (
+            <li className="prof-share-row" key={grant.venue_id}>
+              <div className="prof-share-who">
+                <b>{grant.name}</b>
+                <span>
+                  {fill(copy.sharingSince, {
+                    date: formatDay(language, grant.granted_at.slice(0, 10)),
+                  })}
+                </span>
+              </div>
+              {asking === grant.venue_id ? (
+                <div
+                  className="prof-share-ask"
+                  role="group"
+                  aria-label={fill(copy.sharingAsk, { venue: grant.name })}
+                >
+                  <span>{fill(copy.sharingAsk, { venue: grant.name })}</span>
+                  <div className="prof-share-acts">
+                    <button
+                      type="button"
+                      className="btn btn-solid"
+                      autoFocus
+                      disabled={busy === grant.venue_id}
+                      onClick={() => void stop(grant)}
+                    >
+                      {copy.sharingYes}
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      disabled={busy === grant.venue_id}
+                      onClick={() => {
+                        restoreTo.current = grant.venue_id;
+                        setAsking(null);
+                      }}
+                    >
+                      {copy.sharingKeep}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  data-stop={grant.venue_id}
+                  onClick={() => {
+                    setNotice(null);
+                    setAsking(grant.venue_id);
+                  }}
+                >
+                  {copy.sharingStop}
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── edit mode ── */
+
 interface Draft {
   username: string;
   occupation: Occupation | '';
@@ -485,11 +905,9 @@ interface Draft {
   /**
    * Whether the reader has said their city is not on the list.
    *
-   * Not derivable from the other two, which is why it is stored. "City typed,
-   * country blank" is *also* what a half-finished search looks like, and the
-   * difference between the two is the whole point of the explicit choice: one
-   * is somebody who has not finished picking, the other is somebody who has
-   * finished and is telling us the list is short.
+   * Not derivable from the other two. "City typed, country blank" is *also*
+   * what a half-finished search looks like, and the difference between the two
+   * is the whole point of the explicit choice.
    */
   otherPlace: boolean;
   phone: string;
@@ -497,58 +915,55 @@ interface Draft {
   avatar: string;
 }
 
-export function ProfilePage() {
-  const { account, plan, saveProfile } = useAuth();
+const draftFrom = (stored: UserProfile | undefined): Draft => ({
+  username: stored?.username ?? '',
+  /* Guarded: a row written by an older build carries the free `headline` and no
+     `occupation`, and an unrecognised value has no label to draw. */
+  occupation: isOccupation(stored?.occupation ?? '') ? (stored?.occupation ?? '') : '',
+  city: stored?.city ?? '',
+  countryCode: stored?.countryCode ?? '',
+  /* A stored place is assumed to be off the list until the list arrives and
+     says otherwise — showing a stored country as a *fact* the page cannot yet
+     derive is the one thing this pair of fields must never do. */
+  otherPlace: Boolean(stored?.city) && Boolean(stored?.countryCode),
+  phone: stored?.phone ?? '',
+  birthDate: stored?.birthDate ?? '',
+  avatar: stored?.avatar ?? '',
+});
+
+/**
+ * The form, opened by Edit.
+ *
+ * The draft is built from the saved profile when the editor opens and thrown
+ * away when it closes, which is all Cancel has to do. It commits on Save, and
+ * Save is a request: the button says so while it is out, and the page only
+ * returns to the record once the server has answered — so the record it
+ * returns to is the one the server holds.
+ */
+function ProfileEditor({
+  onCancel,
+  onSaved,
+}: {
+  onCancel: () => void;
+  onSaved: (result: Extract<ProfileResult, { ok: true }>) => void;
+}) {
+  const { account, saveProfile } = useAuth();
   const copy = useCopy().profile;
+  const [language] = useLanguage();
   const cities = useCities();
-  /* The two captions that have to be referenced rather than wrapped. See the
-     note on `Field`'s `labelId`. */
   const statusLabelId = useId();
   const cityLabelId = useId();
-  const [draft, setDraft] = useState<Draft>(() => {
-    const stored = account?.profile;
-    return {
-      username: stored?.username ?? '',
-      /* Guarded rather than read straight through: a row written by the build
-         before this one carries the free `headline` and no `occupation` at all,
-         and an unrecognised value has no label to draw. */
-      occupation: isOccupation(stored?.occupation ?? '') ? (stored?.occupation ?? '') : '',
-      city: stored?.city ?? '',
-      countryCode: stored?.countryCode ?? '',
-      /* A stored place is assumed to be off the list until the list arrives and
-         says otherwise — see the effect below. Assuming the opposite would show
-         a stored country as a *fact* it cannot derive, which is the one thing
-         this pair of fields must never do. */
-      otherPlace: Boolean(stored?.city) && Boolean(stored?.countryCode),
-      phone: stored?.phone ?? '',
-      birthDate: stored?.birthDate ?? '',
-      avatar: stored?.avatar ?? '',
-    };
-  });
+  const [draft, setDraft] = useState<Draft>(() => draftFrom(account?.profile));
   const [error, setError] = useState<{ field: string; message: string } | null>(null);
-  const [saved, setSaved] = useState(false);
-  /* The celebration. Opened by the save that finishes the profile and closed
-     by the reader -- never re-opened, because `paidBonus` is true from then on. */
-  const [won, setWon] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const usernameRef = useRef<HTMLInputElement>(null);
 
-  /* The confirmation is a fact about the last save, so it has to stop being
-     true the moment the form stops matching what was saved. A timer would say
-     "Saved" over a field the reader is in the middle of changing. */
-  const clear = () => {
-    setSaved(false);
-    setError(null);
-  };
-
-  /*
-   * The picker's `<input type="file">` is uncontrolled, so choosing the same
-   * file twice fires no second `change`. Cleared after every read, which is
-   * what makes "remove, then pick the same photo again" work.
-   */
+  /* The picker's `<input type="file">` is uncontrolled, so choosing the same
+     file twice fires no second `change`; cleared after every read. */
   const fileRef = useRef<HTMLInputElement>(null);
 
-  /* Not `useState`, because it must not survive this component: the flag says
-     "a photo is being decoded right now", and a decode that was in flight when
-     the page unmounted has no answer to give. */
+  /* Whether this editor is still mounted — a decode or a save that was in
+     flight when the reader pressed Cancel has nowhere to report to. */
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -557,18 +972,18 @@ export function ProfilePage() {
     };
   }, []);
 
+  /* Edit puts the reader in the first field, which is the one somebody who
+     pressed Edit is most often there to change. */
+  useEffect(() => {
+    usernameRef.current?.focus();
+  }, []);
+
   const list = cities.state.status === 'ready' ? cities.state.data : null;
 
   /*
    * When the list lands, a stored city that turns out to *be* on it stops being
-   * an "other".
-   *
-   * The draft is built before the request answers, so it has to guess — and it
-   * guesses "other", because that is the reading that shows the country as a
-   * field the reader can correct rather than as a derived fact the page cannot
-   * actually derive yet. This is the correction, and it only ever runs one way:
-   * a city the list knows is never an other, and one it does not know is never
-   * anything else.
+   * an "other". Only ever one way: a city the list knows is never an other, and
+   * one it does not know is never anything else.
    */
   useEffect(() => {
     if (!list) return;
@@ -583,21 +998,14 @@ export function ProfilePage() {
 
   if (!account) return null;
   const profile = account.profile;
+  /* Whether a save reaches the server. `PATCH /v1/me` cannot clear a column,
+     so the photo's Remove is only offered where removing is something the
+     save can actually do. */
+  const serverBacked = hasToken();
+
   /*
-   * The meter reads the **draft**, so it moves as the form is filled.
-   *
-   * It read the saved profile before, which meant the bar only ever jumped on
-   * save -- typing a username changed nothing, and the card sat at 14% while
-   * somebody filled six fields in front of it. A progress meter that does not
-   * move while you make progress is telling you about a different moment than
-   * the one you are in.
-   *
-   * It falls as well as rises, because it is the draft: clearing a field takes
-   * the bar back down. That is the honest reading -- the form is what will be
-   * saved, and the chips under it are the fields that will still be blank.
-   *
-   * The card *above* it stays on the saved profile deliberately: it answers
-   * "what do other people see", and nobody sees a draft.
+   * The meter reads the **draft**, so it moves as the form is filled — and
+   * falls when a field is cleared, because the form is what will be saved.
    */
   const draftProfile: UserProfile = {
     ...profile,
@@ -611,72 +1019,43 @@ export function ProfilePage() {
   };
   const gaps = profileGaps(draftProfile, account.email);
   const percent = profilePercent(draftProfile, account.email);
-  /* The stamp, not the gaps: the bonus is paid once and the seven fields stay
-     editable, so a profile can be complete-and-paid, complete-and-not-yet-paid
-     (the moment between the save and the commit) or incomplete-but-paid
-     (somebody cleared a field afterwards). Only the stamp answers all three. */
   const paidBonus = account.profileCompletedAt !== null;
 
+  const clear = () => setError(null);
+
   /**
-   * Take the reader to a field they have not answered.
-   *
-   * `Field` stamps each row with `data-field`, so this finds the row by the
-   * same name `profileGaps` returns and there is no second mapping to keep in
-   * step. Scroll first, then focus: focusing alone jumps the page with no
-   * sense of travel, and on a phone the rail is *below* the form, so the
-   * chip is asking to go back up.
-   *
-   * The focus target is whatever control the row holds -- an input for five of
-   * them, a button for the status, the combobox input for the city. Querying
-   * for all three rather than naming one keeps this working when a row changes
-   * shape, which the birthday row already does once it is spent.
+   * Take the reader to a field. Scroll first, then focus: focusing alone jumps
+   * the page with no sense of travel, and on a phone the rail is *below* the
+   * form. `data-field` is put on each row by `Field`, so the names cannot drift.
    */
-  const goToField = (field: ProfileField) => {
+  const goToField = (field: string) => {
     const row = document.querySelector<HTMLElement>(`[data-field="${field}"]`);
     if (!row) return;
-    row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    row.scrollIntoView({ block: 'center', behavior: reduced ? 'auto' : 'smooth' });
     const control = row.querySelector<HTMLElement>('input, select, textarea, button');
     /* After the scroll, not during: focusing mid-scroll cancels it in Safari. */
-    window.setTimeout(() => control?.focus({ preventScroll: true }), 320);
+    window.setTimeout(() => control?.focus({ preventScroll: true }), reduced ? 0 : 320);
   };
 
-  const onSubmit = (event: FormEvent) => {
+  const onSubmit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
 
     /*
      * The one rule this page enforces on its own, because it is a rule about a
-     * *pair* and the patch cannot carry half of one.
-     *
-     * A city off the served list arrives with its country and needs nothing. A
-     * city the reader wrote is accepted by `PATCH /v1/me` provided a country
-     * comes with it. What is left over is a city with neither — somebody who
-     * typed three letters and tabbed away — and sending that would be sending a
-     * place nobody can find. Refused here, naming the field that fixes it.
+     * *pair* and the patch cannot carry half of one: a city with neither a
+     * suggestion behind it nor a country beside it is a place nobody can find.
      */
     if (draft.city && !draft.countryCode) {
-      setSaved(false);
-      setError({
-        field: draft.otherPlace ? 'country' : 'city',
-        message: draft.otherPlace ? copy.countryNeeded : copy.cityNeeded,
-      });
+      const field = draft.otherPlace ? 'country' : 'city';
+      setError({ field, message: draft.otherPlace ? copy.countryNeeded : copy.cityNeeded });
+      goToField(field);
       return;
     }
 
-    /* The seven as this submit leaves them, in the shape `profileGaps` reads.
-       Built from the draft rather than from `profile` because the celebration
-       below has to judge the save that is happening, not the one before it. */
-    const justSaved = {
-      ...profile,
-      username: draft.username,
-      occupation: draft.occupation,
-      phone: draft.phone,
-      birthDate: draft.birthDate,
-      avatar: draft.avatar,
-      city: draft.city,
-      countryCode: draft.countryCode,
-    };
-
-    const result = saveProfile({
+    setBusy(true);
+    const result = await saveProfile({
       username: draft.username,
       occupation: draft.occupation,
       phone: draft.phone,
@@ -685,42 +1064,16 @@ export function ProfilePage() {
       /* The pair or neither — see `ProfilePatch`. */
       place: draft.city ? { city: draft.city, countryCode: draft.countryCode } : undefined,
     });
+    if (!alive.current) return;
+    setBusy(false);
 
     if (result.ok) {
-      setError(null);
-      setSaved(true);
-      /*
-       * The one moment worth celebrating, decided *before* the save lands.
-       *
-       * `paidBonus` is read from the render that is on screen now, so it still
-       * says what was true a moment ago -- which is exactly the question:
-       * was this the save that finished it? Reading it after `saveProfile`
-       * would always say yes and the panel would open on every later edit.
-       *
-       * The draft is what was just submitted, so completeness is judged on it
-       * rather than on `profile`, which React has not re-rendered from yet.
-       */
-      if (!paidBonus && isProfileComplete(justSaved, account.email)) setWon(true);
+      onSaved(result);
       return;
     }
-
-    setSaved(false);
-    if (result.field === 'username') {
-      setError({
-        field: 'username',
-        message: fill(copy.usernameErrors[result.error], { min: MIN, max: MAX }),
-      });
-    } else if (result.field === 'phone') {
-      setError({ field: 'phone', message: copy.phoneShape });
-    } else {
-      setError({
-        field: 'birthDate',
-        message:
-          result.error === 'spent'
-            ? copy.birthdayNoWrites
-            : copy.birthdayErrors[result.error],
-      });
-    }
+    const refusal = refusalMessage(copy, result);
+    setError(refusal);
+    if (refusal.field !== 'form') goToField(refusal.field);
   };
 
   const pickPhoto = async (file: File | undefined) => {
@@ -733,13 +1086,9 @@ export function ProfilePage() {
   };
 
   /*
-   * Typing in the city field.
-   *
-   * The country follows the *text*, not the last thing chosen: writing over
-   * "Krakow" has to drop `PL` on the same keystroke, or the form quietly holds
-   * a country that belongs to a city no longer in the box. An exact match
-   * re-derives it — which is what makes typing a full city name and never
-   * opening the menu work exactly like picking one.
+   * Typing in the city field. The country follows the *text*: writing over
+   * "Krakow" drops `PL` on the same keystroke, and an exact match re-derives it
+   * — so typing a full city name works exactly like picking one.
    */
   const typeCity = (text: string) => {
     const known = list ? lookupCity(list, text) : undefined;
@@ -761,9 +1110,8 @@ export function ProfilePage() {
             countryCode: pick.city.country,
             otherPlace: false,
           }
-        : /* "Not on the list" keeps whatever was typed and opens the country
-             field — it is a statement about the list, not an erasure of the
-             answer somebody has already half-written. */
+        : /* "Not on the list" keeps what was typed and opens the country
+             field — a statement about the list, not an erasure of the answer. */
           { ...current, otherPlace: true, countryCode: '' },
     );
     clear();
@@ -772,8 +1120,7 @@ export function ProfilePage() {
   /*
    * The birthday's two states, and the reason this is a branch rather than a
    * `disabled` attribute: a greyed-out date input still *looks* like the answer
-   * to "can I change this?" being maybe. When both writes are spent the control
-   * is gone and the date is a fact, with the sentence that says why.
+   * to "can I change this?" being maybe.
    */
   const writesLeft = profile.birthDateChangesLeft;
   const birthdayHelp =
@@ -783,428 +1130,357 @@ export function ProfilePage() {
         ? copy.birthdayOneLeft
         : copy.birthdaySpent;
 
-  const savedRole = isOccupation(profile.occupation) ? profile.occupation : null;
-
   return (
-    <main>
-      <section className="section prof" id="profile-top">
-        <div className="wrap">
-          <div className="section-head left" data-reveal>
-            <span className="eyebrow">{copy.eyebrow}</span>
-            {/* `h1`, not `h2`: this is a route of its own, and a document whose
-                outline starts at level two reads as a section of something
-                else. The type comes from `.section-head`, so the level is free
-                to be correct. */}
-            <h1>{copy.title}</h1>
-            <p>{copy.lede}</p>
-          </div>
+    <div className="prof-grid">
+      <form className="prof-form" onSubmit={(event) => void onSubmit(event)} noValidate>
+        <fieldset className="form-block">
+          <legend>{copy.whoLegend}</legend>
 
-          <div className="prof-grid">
-            <form className="prof-form" onSubmit={onSubmit} noValidate>
-              <fieldset className="form-block" data-reveal>
-                <legend>{copy.whoLegend}</legend>
-
-                {/* The face and the name on a leaderboard row, side by side,
-                    because they are one answer rather than two. */}
-                <div className="prof-identity">
-                  {/* `wraps={false}`: the child is a `<label>` of its own. */}
-                  <Field label={copy.photo} help={copy.photoHelp} wraps={false}>
-                    <div className="prof-photo">
-                      <span className="prof-avatar prof-avatar-lg" aria-hidden>
-                        <Face name={account.name} photo={draft.avatar} />
-                      </span>
-                      <label className="file-pick">
-                        <input
-                          ref={fileRef}
-                          type="file"
-                          accept="image/*"
-                          onChange={(event) => void pickPhoto(event.target.files?.[0])}
-                        />
-                        <Icon name="people" size={15} />
-                        <span>{copy.photoChoose}</span>
-                      </label>
-                      {draft.avatar && (
-                        <button
-                          type="button"
-                          className="link-btn"
-                          onClick={() => {
-                            setDraft((current) => ({ ...current, avatar: '' }));
-                            clear();
-                          }}
-                        >
-                          {copy.photoRemove}
-                        </button>
-                      )}
-                    </div>
-                  </Field>
-
-                  <Field
-                    label={copy.username}
-                    field="username"
-                    help={fill(copy.usernameHelp, { min: MIN, max: MAX })}
-                    error={error?.field === 'username' ? error.message : undefined}
-                  >
-                    <input
-                      type="text"
-                      autoComplete="username"
-                      inputMode="text"
-                      spellCheck={false}
-                      maxLength={USERNAME_MAX}
-                      placeholder={copy.usernamePlaceholder}
-                      value={draft.username}
-                      onChange={(event) => {
-                        setDraft((current) => ({ ...current, username: event.target.value }));
-                        clear();
-                      }}
-                      aria-invalid={error?.field === 'username' ? true : undefined}
-                    />
-                  </Field>
-                </div>
-
-                {/*
-                  Status and birthday, on one line.
-                  Both are single facts about a person rather than places to
-                  write in, and the birthday came up here from "where we can
-                  find you" — a date of birth is not a way to reach somebody,
-                  and it was in that block only because the block had room.
-                */}
-                <div className="field-row">
-                  {/* `wraps={false}`: the control is a button, and a `<label>`
-                      wrapped round one activates it on every click of the
-                      label — which is a menu that opens when its own caption
-                      is read. */}
-                  <Field
-                    label={copy.status}
-                    field="occupation"
-                    labelId={statusLabelId}
-                    help={copy.statusHelp}
-                    wraps={false}
-                  >
-                    <StatusMenu
-                      copy={copy}
-                      labelId={statusLabelId}
-                      value={draft.occupation}
-                      onPick={(next) => {
-                        setDraft((current) => ({ ...current, occupation: next }));
-                        clear();
-                      }}
-                    />
-                  </Field>
-
-                  {writesLeft > 0 ? (
-                    <Field
-                      label={copy.birthday}
-                      field="birthDate"
-                      help={birthdayHelp}
-                      error={error?.field === 'birthDate' ? error.message : undefined}
-                    >
-                      <input
-                        type="date"
-                        autoComplete="bday"
-                        value={draft.birthDate}
-                        onChange={(event) => {
-                          setDraft((current) => ({ ...current, birthDate: event.target.value }));
-                          clear();
-                        }}
-                        aria-invalid={error?.field === 'birthDate' ? true : undefined}
-                      />
-                    </Field>
-                  ) : (
-                    <Field label={copy.birthday} help={birthdayHelp} wraps={false} field="birthDate">
-                      <p className="prof-fact">{profile.birthDate || '—'}</p>
-                    </Field>
-                  )}
-                </div>
-              </fieldset>
-
-              <fieldset className="form-block" data-reveal>
-                <legend>{copy.whereLegend}</legend>
-
-                <div className="field-row">
-                  {/* `wraps={false}`: the combobox owns its own wrapper, and a
-                      `<label>` round the pair would put the caret in the input
-                      on a click meant for an option. */}
-                  <Field
-                    label={copy.city}
-                    field="city"
-                    labelId={cityLabelId}
-                    help={cityHelp(copy, cities.state.status, list, draft)}
-                    error={error?.field === 'city' ? error.message : undefined}
-                    wraps={false}
-                  >
-                    <CityCombo
-                      copy={copy}
-                      labelId={cityLabelId}
-                      list={list}
-                      value={draft.city}
-                      onType={typeCity}
-                      onPick={pickCity}
-                      invalid={error?.field === 'city'}
-                    />
-                  </Field>
-
-                  {/*
-                    A fact, or a field, and never both.
-                    The country follows from a city we know and is not asked
-                    for — the server derives it in `resolveCity` for exactly
-                    this reason. It becomes a question only when the city is one
-                    we do not have, because then there is nothing to derive it
-                    from and the write needs it.
-                  */}
-                  {draft.otherPlace ? (
-                    <Field
-                      label={copy.country}
-                      /* Two reasons this field is here, and they are not the
-                         same claim: the city is not on the list, or there is no
-                         list to look it up in. Saying the first while the panel
-                         underneath says the second is the page contradicting
-                         itself in two paragraphs. */
-                      help={list ? copy.countryHelp : copy.countryUnchecked}
-                      error={error?.field === 'country' ? error.message : undefined}
-                    >
-                      <input
-                        type="text"
-                        autoComplete="country-name"
-                        placeholder={copy.countryPlaceholder}
-                        value={draft.countryCode}
-                        onChange={(event) => {
-                          setDraft((current) => ({
-                            ...current,
-                            countryCode: normaliseCountry(event.target.value),
-                          }));
-                          clear();
-                        }}
-                        aria-invalid={error?.field === 'country' ? true : undefined}
-                      />
-                    </Field>
-                  ) : (
-                    <Field label={copy.country} wraps={false}>
-                      <p className="prof-fact">
-                        {draft.countryCode ? countryName(copy, draft.countryCode) : '—'}
-                      </p>
-                    </Field>
-                  )}
-                </div>
-
-                {cities.state.status === 'error' && (
-                  <p className="prof-note" role="status">
-                    <Icon name="warn" size={15} />
-                    <span>
-                      {copy.cityOffline}{' '}
-                      <button type="button" className="link-btn" onClick={cities.reload}>
-                        {copy.cityRetry}
-                      </button>
-                    </span>
-                  </p>
-                )}
-
-                <Field
-                  label={copy.phone}
-                  field="phone"
-                  help={copy.phoneHelp}
-                  error={error?.field === 'phone' ? error.message : undefined}
-                >
+          {/* The face and the name on a leaderboard row, side by side, because
+              they are one answer rather than two. */}
+          <div className="prof-identity">
+            {/* `wraps={false}`: the child is a `<label>` of its own. */}
+            <Field label={copy.photo} help={copy.photoHelp} wraps={false} field="avatar">
+              <div className="prof-photo">
+                <span className="prof-avatar prof-avatar-lg" aria-hidden>
+                  <Face name={account.name} photo={draft.avatar} />
+                </span>
+                <label className="file-pick">
                   <input
-                    type="tel"
-                    autoComplete="tel"
-                    placeholder={copy.phonePlaceholder}
-                    value={draft.phone}
-                    onChange={(event) => {
-                      setDraft((current) => ({ ...current, phone: event.target.value }));
-                      clear();
-                    }}
-                    aria-invalid={error?.field === 'phone' ? true : undefined}
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={(event) => void pickPhoto(event.target.files?.[0])}
                   />
-                </Field>
-
-                {/* The address is not on this form, and the sentence under it
-                    says which of the two reasons that is: it is the credential,
-                    not a detail. */}
-                <Field label={copy.email} help={copy.emailHelp} wraps={false}>
-                  <p className="prof-fact">{account.email}</p>
-                </Field>
-              </fieldset>
-
-              <div className="form-actions">
-                <button type="submit" className="btn btn-solid btn-lg">
-                  {copy.save}
-                </button>
-                {saved && (
-                  <span className="form-saved" role="status">
-                    <Icon name="check" size={15} strokeWidth={3} />
-                    {copy.saved}
-                  </span>
-                )}
-              </div>
-            </form>
-
-            <aside className="prof-rail">
-              {/* The card is the *saved* profile, not the draft: it answers
-                  "what do other people see", and a draft nobody has saved is
-                  not seen by anybody. */}
-              <div className="console prof-card" data-reveal>
-                <span className="console-label">{copy.cardTitle}</span>
-                <div className="prof-card-who">
-                  <span className="prof-avatar" aria-hidden>
-                    <Face name={account.name} photo={profile.avatar} />
-                  </span>
-                  <div>
-                    <b>{account.name}</b>
-                    <span className="prof-handle">
-                      {profile.username ? `@${profile.username}` : copy.cardNoName}
-                      {/* The same chip as the header pill. This is the page
-                          somebody opens to find out about their own account,
-                          so it is the second place the plan has to be. */}
-                      {plan && <em className="plan-tag">{plan.name}</em>}
-                    </span>
-                  </div>
-                </div>
-                <p className="prof-card-role">
-                  <Icon name="briefcase" size={14} />
-                  {savedRole ? copy.occupations[savedRole] : copy.cardNoRole}
-                </p>
-                <p className="prof-card-where">
-                  <Icon name="pin" size={14} />
-                  {profile.city
-                    ? `${profile.city}, ${countryName(copy, profile.countryCode)}`
-                    : copy.cardNowhere}
-                </p>
-              </div>
-
-              {/*
-                The prize, and it leads the card rather than trailing it.
-
-                This was a quiet line under the meter and that was the wrong
-                call: a reward nobody notices changes nobody's behaviour, and
-                the whole point of the number is to be the reason somebody
-                fills the form. So the figure is the largest thing on the card
-                and the meter reports underneath it -- the offer first, the
-                progress second.
-
-                Still one accent on one ground. What makes it loud is size and
-                a filled face, not a second hue.
-              */}
-              <div
-                className="console prof-meter"
-                data-reveal
-                data-paid={paidBonus ? 'true' : undefined}
-              >
-                <span className="console-label">{copy.meterTitle}</span>
-
-                <div className="prof-prize">
-                  <span className="prof-prize-mark" aria-hidden>
-                    <Icon name={paidBonus ? 'check' : 'gift'} size={20} strokeWidth={2.4} />
-                  </span>
-                  <div>
-                    {/* The figure, not the sentence, is the hook. `+50` reads
-                        before anything around it is parsed. */}
-                    <b className="prof-prize-pts">+{PROFILE_BONUS}</b>
-                    <span className="prof-prize-say">
-                      {fill(paidBonus ? copy.meterRewardPaid : copy.meterReward, {
-                        points: String(PROFILE_BONUS),
-                      })}
-                    </span>
-                  </div>
-                </div>
-
-                <b className="prof-pct">{fill(copy.meterProgress, { pct: String(percent) })}</b>
-                <div className="prof-bar">
-                  <i style={{ width: `${percent}%` }} />
-                </div>
-                {gaps.length > 0 ? (
-                  <>
-                    <span className="prof-still">{copy.meterStill}</span>
-                    {/*
-                      Buttons, not list items -- this is the interactive half.
-
-                      A reader who is told "Photo, City, Birthday" still has to
-                      go and find those three in a form of seven. Each chip
-                      takes them straight to its field and focuses it, so the
-                      card is a route through the work rather than a report on
-                      it. `data-field` is put on the row by `Field`, which is
-                      why the mapping cannot drift from the form.
-                    */}
-                    <ul className="prof-list">
-                      {gaps.map((field) => (
-                        <li key={field}>
-                          <button type="button" onClick={() => goToField(field)}>
-                            {copy.fieldNames[field]}
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                ) : (
-                  <p className="prof-done">
-                    <Icon name="check" size={15} strokeWidth={3} />
-                    {copy.meterDone}
-                  </p>
-                )}
-              </div>
-
-              {/*
-                The moment it lands.
-
-                A panel in the rail rather than a `window.alert`, and rather
-                than a toast that slides away: an alert is the browser's chrome
-                over the page, untranslatable and unstyleable, and a reward
-                that vanishes on a timer is one somebody can miss entirely.
-                This sits under the meter it completes, says what was earned,
-                and is dismissed by the reader.
-
-                `role="status"` rather than `alert`: this is good news arriving
-                beside the thing that caused it, not an error interrupting a
-                task, so it is announced politely rather than cutting in.
-              */}
-              {won && (
-                <div className="console prof-won" role="status">
-                  <span className="prof-won-mark" aria-hidden>
-                    <Icon name="trophy" size={22} strokeWidth={2.2} />
-                  </span>
-                  <b>{copy.wonTitle}</b>
-                  <p>{fill(copy.wonBody, { points: String(PROFILE_BONUS) })}</p>
+                  <Icon name="people" size={15} />
+                  <span>{copy.photoChoose}</span>
+                </label>
+                {!serverBacked && isPicture(draft.avatar) && (
                   <button
                     type="button"
-                    className="btn btn-solid"
-                    onClick={() => setWon(false)}
+                    className="link-btn"
+                    onClick={() => {
+                      setDraft((current) => ({ ...current, avatar: '' }));
+                      clear();
+                    }}
                   >
-                    {copy.wonClose}
+                    {copy.photoRemove}
                   </button>
-                </div>
-              )}
-            </aside>
+                )}
+              </div>
+            </Field>
+
+            <Field
+              label={copy.username}
+              field="username"
+              help={fill(copy.usernameHelp, { min: MIN, max: MAX })}
+              error={error?.field === 'username' ? error.message : undefined}
+            >
+              <input
+                ref={usernameRef}
+                type="text"
+                autoComplete="username"
+                inputMode="text"
+                spellCheck={false}
+                maxLength={USERNAME_MAX}
+                placeholder={copy.usernamePlaceholder}
+                value={draft.username}
+                onChange={(event) => {
+                  setDraft((current) => ({ ...current, username: event.target.value }));
+                  clear();
+                }}
+                aria-invalid={error?.field === 'username' ? true : undefined}
+              />
+            </Field>
           </div>
+
+          {/* Status and birthday, on one line: both are single facts about a
+              person rather than places to write in. */}
+          <div className="field-row">
+            {/* `wraps={false}`: the control is a button, and a `<label>` round
+                one activates it on every click of its caption. */}
+            <Field
+              label={copy.status}
+              field="occupation"
+              labelId={statusLabelId}
+              help={copy.statusHelp}
+              wraps={false}
+            >
+              <StatusMenu
+                copy={copy}
+                labelId={statusLabelId}
+                value={draft.occupation}
+                onPick={(next) => {
+                  setDraft((current) => ({ ...current, occupation: next }));
+                  clear();
+                }}
+              />
+            </Field>
+
+            {writesLeft > 0 ? (
+              <Field
+                label={copy.birthday}
+                field="birthDate"
+                help={birthdayHelp}
+                error={error?.field === 'birthDate' ? error.message : undefined}
+              >
+                <input
+                  type="date"
+                  autoComplete="bday"
+                  value={draft.birthDate}
+                  onChange={(event) => {
+                    setDraft((current) => ({ ...current, birthDate: event.target.value }));
+                    clear();
+                  }}
+                  aria-invalid={error?.field === 'birthDate' ? true : undefined}
+                />
+              </Field>
+            ) : (
+              <Field label={copy.birthday} help={birthdayHelp} wraps={false} field="birthDate">
+                <p className="prof-fact">
+                  {profile.birthDate ? formatDay(language, profile.birthDate) : '—'}
+                </p>
+              </Field>
+            )}
+          </div>
+        </fieldset>
+
+        <fieldset className="form-block">
+          <legend>{copy.whereLegend}</legend>
+
+          <div className="field-row">
+            {/* `wraps={false}`: the combobox owns its own wrapper. */}
+            <Field
+              label={copy.city}
+              field="city"
+              labelId={cityLabelId}
+              help={cityHelp(copy, cities.state.status, list, draft)}
+              error={error?.field === 'city' ? error.message : undefined}
+              wraps={false}
+            >
+              <CityCombo
+                copy={copy}
+                labelId={cityLabelId}
+                list={list}
+                value={draft.city}
+                onType={typeCity}
+                onPick={pickCity}
+                invalid={error?.field === 'city'}
+              />
+            </Field>
+
+            {/* A fact, or a field, and never both: the country follows from a
+                city we know, and is a question only about one we do not. */}
+            {draft.otherPlace ? (
+              <Field
+                label={copy.country}
+                field="country"
+                help={list ? copy.countryHelp : copy.countryUnchecked}
+                error={error?.field === 'country' ? error.message : undefined}
+              >
+                <input
+                  type="text"
+                  autoComplete="country"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  maxLength={2}
+                  placeholder={copy.countryPlaceholder}
+                  value={draft.countryCode}
+                  onChange={(event) => {
+                    setDraft((current) => ({
+                      ...current,
+                      countryCode: normaliseCountry(event.target.value),
+                    }));
+                    clear();
+                  }}
+                  aria-invalid={error?.field === 'country' ? true : undefined}
+                />
+              </Field>
+            ) : (
+              <Field label={copy.country} wraps={false}>
+                <p className="prof-fact">
+                  {draft.countryCode ? countryName(copy, draft.countryCode) : '—'}
+                </p>
+              </Field>
+            )}
+          </div>
+
+          {cities.state.status === 'error' && (
+            <p className="prof-note" role="status">
+              <Icon name="warn" size={15} />
+              <span>
+                {copy.cityOffline}{' '}
+                <button type="button" className="link-btn" onClick={cities.reload}>
+                  {copy.cityRetry}
+                </button>
+              </span>
+            </p>
+          )}
+
+          <Field
+            label={copy.phone}
+            field="phone"
+            help={copy.phoneHelp}
+            error={error?.field === 'phone' ? error.message : undefined}
+          >
+            <input
+              type="tel"
+              autoComplete="tel"
+              placeholder={copy.phonePlaceholder}
+              value={draft.phone}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, phone: event.target.value }));
+                clear();
+              }}
+              aria-invalid={error?.field === 'phone' ? true : undefined}
+            />
+          </Field>
+
+          {/* The address is not on this form: it is the credential, not a
+              detail, and the sentence under it says so. */}
+          <Field label={copy.email} help={copy.emailHelp} wraps={false}>
+            <p className="prof-fact">{account.email}</p>
+          </Field>
+        </fieldset>
+
+        <div className="form-actions">
+          <button type="submit" className="btn btn-solid btn-lg" disabled={busy}>
+            {busy ? copy.saving : copy.save}
+          </button>
+          <button type="button" className="btn btn-ghost btn-lg" onClick={onCancel}>
+            {copy.cancel}
+          </button>
+          {error?.field === 'form' && (
+            <span className="field-error" role="alert">
+              {error.message}
+            </span>
+          )}
         </div>
-      </section>
-    </main>
+      </form>
+
+      <aside className="prof-rail">
+        <div className="console prof-meter" data-paid={paidBonus ? 'true' : undefined}>
+          <span className="console-label">{copy.meterTitle}</span>
+
+          <div className="prof-prize">
+            <span className="prof-prize-mark" aria-hidden>
+              <Icon name={paidBonus ? 'check' : 'gift'} size={20} strokeWidth={2.4} />
+            </span>
+            <div>
+              <b className="prof-prize-pts">+{PROFILE_BONUS}</b>
+              <span className="prof-prize-say">
+                {fill(paidBonus ? copy.meterRewardPaid : copy.meterReward, {
+                  points: String(PROFILE_BONUS),
+                })}
+              </span>
+            </div>
+          </div>
+
+          <b className="prof-pct">{fill(copy.meterProgress, { pct: String(percent) })}</b>
+          <div className="prof-bar">
+            <i style={{ width: `${percent}%` }} />
+          </div>
+          {gaps.length > 0 ? (
+            <>
+              <span className="prof-still">{copy.meterStill}</span>
+              {/* Buttons, not list items: each takes the reader straight to the
+                  field and focuses it, so the card is a route through the work
+                  rather than a report on it. */}
+              <ul className="prof-list">
+                {gaps.map((field) => (
+                  <li key={field}>
+                    <button type="button" onClick={() => goToField(field)}>
+                      {copy.fieldNames[field]}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="prof-done">
+              <Icon name="check" size={15} strokeWidth={3} />
+              {copy.meterDone}
+            </p>
+          )}
+        </div>
+      </aside>
+    </div>
   );
 }
 
 /* ────────────────────────────────────────────────────────────── helpers ── */
 
 /**
- * The country a code names, or whatever was written when it is not a code.
- *
- * The fallback is not a gap. A country typed by hand is a country, and the only
- * way to render it as a *name* would be to ship a two-hundred-row table beside
- * the city list this field exists because somebody was missing from.
+ * A refusal, as a sentence under the field it is about — or under the buttons,
+ * for the two refusals about the save as a whole.
+ */
+function refusalMessage(
+  copy: ProfileCopy,
+  result: Extract<ProfileResult, { ok: false }>,
+): { field: string; message: string } {
+  switch (result.field) {
+    case 'username':
+      return {
+        field: 'username',
+        message: fill(copy.usernameErrors[result.error], { min: MIN, max: MAX }),
+      };
+    case 'phone':
+      return { field: 'phone', message: copy.phoneShape };
+    case 'birthDate':
+      return {
+        field: 'birthDate',
+        message:
+          result.error === 'spent' ? copy.birthdayNoWrites : copy.birthdayErrors[result.error],
+      };
+    case 'city':
+      return { field: 'city', message: copy.cityShape };
+    case 'country':
+      return {
+        field: 'country',
+        message: result.error === 'needed' ? copy.countryNeeded : copy.countryShape,
+      };
+    default:
+      return {
+        field: 'form',
+        message: result.error === 'session' ? copy.sessionExpired : copy.saveFailed,
+      };
+  }
+}
+
+/**
+ * The country a code names, or the code itself when the dictionary has no name
+ * for it — a country typed by hand is a country, and the only way to render it
+ * as a name would be shipping a two-hundred-row table.
  */
 function countryName(copy: ProfileCopy, code: string): string {
   return copy.countries[code as keyof ProfileCopy['countries']] ?? code;
 }
 
-/**
- * A hand-written country, tidied just enough to match the served ones.
- *
- * Exactly two letters is an ISO code and is upper-cased, so somebody who writes
- * "pl" ends up with the same `PL` a suggestion would have stored — and the card
- * in the rail prints "Poland" for both. Anything longer is a name and is left
- * as it was written; guessing at capitalisation across five languages is how
- * "côte d'ivoire" becomes something nobody typed.
- */
+/** A hand-written country, as the two-letter code the server takes. */
 function normaliseCountry(value: string): string {
-  const text = value.trimStart();
-  return /^[A-Za-z]{2}$/.test(text.trim()) ? text.trim().toUpperCase() : text;
+  return value.replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase();
+}
+
+/**
+ * A `YYYY-MM-DD` day in the reader's language — "14 March 1998" — read in UTC so
+ * the day printed is the day stored, whatever timezone the laptop is in.
+ */
+function formatDay(language: string, day: string): string {
+  const [y, m, d] = day.split('-').map(Number);
+  if (!y || !m || !d) return day;
+  return new Intl.DateTimeFormat(language, {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(y, m - 1, d)));
+}
+
+/** An instant as a month and a year — "March 2026". */
+function formatMonth(language: string, instant: string): string {
+  const at = new Date(instant);
+  if (Number.isNaN(at.getTime())) return instant.slice(0, 7);
+  return new Intl.DateTimeFormat(language, { month: 'long', year: 'numeric' }).format(at);
 }
 
 /** Which sentence sits under the city field, given what the request is doing. */
@@ -1215,17 +1491,12 @@ function cityHelp(
   draft: Draft,
 ): string {
   if (status === 'loading') return copy.cityLoading;
-  /* Not "no cities". A failed request is a state, not an empty list — the
-     paragraph beside the field carries the whole explanation, and this line
-     only has to stop claiming the suggestions work. */
+  /* Not "no cities". A failed request is a state, not an empty list. */
   if (status === 'error' || !list) return copy.cityDown;
-  /* Already off the list, and told us so: the sentence about picking from a
-     list is no longer the instruction. */
   if (draft.otherPlace) return copy.cityOtherHelp;
   /* Typed something the list has never heard of. Said *here*, under the field,
      rather than as an error on submit — the way out is one row down in a menu
-     that is already open, and a form that waits until Save to mention it makes
-     somebody type the name twice. */
+     that is already open. */
   if (draft.city && !lookupCity(list, draft.city)) return copy.cityNoMatch;
   return fill(copy.cityHelp, { n: String(list.cities.length) });
 }

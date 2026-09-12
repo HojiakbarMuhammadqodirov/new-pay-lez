@@ -22,7 +22,17 @@ import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { median } from './money.ts';
 import { minCohort, minVenues } from './settings.ts';
-import { localMonth, monthStart, nextPeriod, now, plusDays, prevPeriod, type Iso } from './time.ts';
+import {
+  localDay,
+  localMonth,
+  monthStart,
+  nextPeriod,
+  now,
+  plusDays,
+  plusMinutes,
+  prevPeriod,
+  type Iso,
+} from './time.ts';
 import { getVenue } from './venues.ts';
 
 /** What kind of number this is, so the client can label it (§12). */
@@ -40,8 +50,13 @@ const counted = (value: number): Metric => ({ value, kind: 'counted', suppressed
 const estimated = (value: number): Metric => ({ value, kind: 'estimated', suppressed: false });
 const attributed = (value: number): Metric => ({ value, kind: 'attributed', suppressed: false });
 
-/** Suppress when the cohort is too small — see the note at the top. */
-async function guarded(db: Db, value: number, cohort: number, kind: Kind = 'counted'): Promise<Metric> {
+/**
+ * Suppress when the cohort is too small — see the note at the top.
+ *
+ * Exported so `dashboard.ts` applies the one floor rather than a copy of it: a
+ * second implementation is a second threshold the day somebody edits one.
+ */
+export async function guarded(db: Db, value: number, cohort: number, kind: Kind = 'counted'): Promise<Metric> {
   const floor = await minCohort(db);
   if (cohort < floor) return { value: null, kind, suppressed: true, cohort };
   return { value, kind, suppressed: false, cohort };
@@ -428,10 +443,25 @@ export async function cohorts(db: Db, venueId: string, months = 6, window: Windo
   const venue = await getVenue(db, venueId);
   const out: Array<{ cohort: string; size: number; returned: Metric }> = [];
 
-  for (let back = months - 1; back >= 0; back -= 1) {
-    const date = new Date(at);
-    date.setUTCMonth(date.getUTCMonth() - back);
-    const period = localMonth(date.toISOString(), venue.timezone);
+  /*
+   * The months are walked back as *periods*, ending on the window's own period.
+   *
+   * They were walked back as dates, with `setUTCMonth(month − n)` on the
+   * instant — which on the 29th, 30th or 31st overflows into the month it
+   * started from: 31 March minus one month is "31 February", which is 3 March,
+   * so the list repeated March and never reached February. Every report run at
+   * the end of a month dropped a cohort and doubled another. And a `period` the
+   * caller asked for was ignored in favour of the clock, so a past month's
+   * report showed this month's cohorts.
+   */
+  const periods: string[] = [];
+  let step = window.period ?? localMonth(at, venue.timezone);
+  for (let count = 0; count < months; count += 1) {
+    periods.unshift(step);
+    step = prevPeriod(step);
+  }
+
+  for (const period of periods) {
     const from = monthStart(period, venue.timezone);
     const to = monthStart(nextPeriod(period), venue.timezone);
 
@@ -531,6 +561,29 @@ export async function languageMix(db: Db, venueId: string, window: Window = {}) 
 }
 
 /**
+ * A minor-unit amount in another currency, through the one rate sheet.
+ *
+ * `exchange_rates` holds every currency as units per one euro with its own
+ * minor-unit count, so a cross rate is `to.rate / from.rate` — the same
+ * arithmetic `GET /v1/fx` and the site's `i18n/fx.ts` use, so three places
+ * cannot quote three different złoty. Null when either side has no rate: what
+ * an unconvertible figure means is the caller's decision, and it is never "the
+ * same number in a different currency".
+ */
+async function convertMinor(db: Db, minor: number, from: string, to: string): Promise<number | null> {
+  if (from === to || minor === 0) return minor;
+  const rows = await db.all<{ code: string; rate: number; decimals: number }>(
+    `SELECT code, rate, decimals FROM exchange_rates WHERE code IN ($from, $to)`,
+    { from, to },
+  );
+  const source = rows.find((row) => row.code === from);
+  const target = rows.find((row) => row.code === to);
+  if (!source || !target || !(source.rate > 0) || !(target.rate > 0)) return null;
+  const euros = minor / 10 ** source.decimals / source.rate;
+  return Math.round(euros * target.rate * 10 ** target.decimals);
+}
+
+/**
  * B9 cost per new customer.
  *
  * "Total partner spend in period (subscription fee + loyalty rewards given +
@@ -542,13 +595,25 @@ export async function languageMix(db: Db, venueId: string, window: Window = {}) 
 export async function costPerNewCustomer(db: Db, venueId: string, window: Window = {}) {
   const { from, to, period } = await rangeFor(db, venueId, window);
 
-  const subscription =
-    (await db.get<{ price: number }>(
-      `SELECT p.price_minor AS price FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-        WHERE s.venue_id = $v AND s.status IN ('active', 'trialing', 'grace')
-        ORDER BY p.rank DESC LIMIT 1`,
-      { v: venueId },
-    ))?.price ?? 0;
+  /*
+   * **The fee is in the plan's currency, and everything else here is in the
+   * venue's.** Partner plans are priced in złoty; the pools, the discounts and
+   * the transactions are in whatever the venue trades in. They were added
+   * together as numbers, so a Tashkent venue on Growth counted its 299 zł fee as
+   * 29 900 soum — about two euros — and its cost per new customer came out a
+   * rounding error. The fee is converted through the rate sheet now, and when a
+   * rate is missing it is left out and **named** in `excluded` rather than
+   * added in the wrong unit.
+   */
+  const plan = await db.get<{ price: number; currency: string }>(
+    `SELECT p.price_minor AS price, p.currency FROM subscriptions s JOIN plans p ON p.id = s.plan_id
+      WHERE s.venue_id = $v AND s.status IN ('active', 'trialing', 'grace')
+      ORDER BY p.rank DESC LIMIT 1`,
+    { v: venueId },
+  );
+  const venue = await getVenue(db, venueId);
+  const fee = plan ? await convertMinor(db, plan.price, plan.currency, venue.currency) : 0;
+  const subscription = fee ?? 0;
 
   const loyalty =
     (await db.get<{ total: number | null }>(
@@ -586,6 +651,9 @@ export async function costPerNewCustomer(db: Db, venueId: string, window: Window
     period,
     spendMinor: spend,
     breakdown: { subscription, loyalty, vouchers, deals },
+    /* The sources that could not be counted in the venue's currency. Empty in
+       every ordinary case; `['subscription']` when the fee had no rate. */
+    excluded: fee === null ? ['subscription'] : [],
     newCustomers,
     /* Guarded on the *customer* count for the same reason as everything else:
        "we spent 300 zł to win 2 customers" is a fact about two people. */
@@ -810,11 +878,21 @@ async function funnelRate(db: Db, venueId: string): Promise<number | null> {
   return (row.claimed ?? 0) / row.opened;
 }
 
-export const benchmarksFor = async (db: Db, city: string, category: string, at: Iso = now()) =>
+/* `period` when the report names one, so a past month's analytics is compared
+   with that month's benchmarks rather than this month's. The fallback stays on
+   the Warsaw clock because that is the clock `computeBenchmarks` files them
+   under — a reader on a different clock would ask for a period nobody wrote. */
+export const benchmarksFor = async (
+  db: Db,
+  city: string,
+  category: string,
+  at: Iso = now(),
+  period?: string,
+) =>
   await db.all<{ metric: string; value: number; venue_count: number }>(
     `SELECT metric, value, venue_count FROM benchmarks
       WHERE city = $c AND category = $cat AND period = $p`,
-    { c: city, cat: category, p: localMonth(at, 'Europe/Warsaw') },
+    { c: city, cat: category, p: period ?? localMonth(at, 'Europe/Warsaw') },
   );
 
 /* ═════════════════════════════════════════════════ the monthly summary (B9) ══ */
@@ -830,10 +908,15 @@ export async function findings(db: Db, venueId: string, window: Window = {}) {
   const at = window.at ?? now();
   const out: Array<{ key: string; weight: number; detail: Record<string, unknown> }> = [];
 
-  const view = await overview(db, venueId, { at });
-  const map = await heatmap(db, venueId, { at });
-  const cost = await costPerNewCustomer(db, venueId, { at });
-  const retention = await cohorts(db, venueId, 3, { at });
+  /* The window's period, not just its clock. Each of these was handed `{ at }`
+     alone, so `GET …/overview?period=2026-07` printed July's overview beside
+     *this* month's findings — the one panel on the screen that ignored the
+     month picker above it. */
+  const scoped: Window = { period: window.period, at };
+  const view = await overview(db, venueId, scoped);
+  const map = await heatmap(db, venueId, scoped);
+  const cost = await costPerNewCustomer(db, venueId, scoped);
+  const retention = await cohorts(db, venueId, 3, scoped);
 
   if (map.quietest && map.total > 0) {
     out.push({
@@ -872,26 +955,42 @@ export async function exportCsv(db: Db, venueId: string, window: Window = {}): P
   return [`# venue ${venueId} · ${period}`, header, ...body].join('\n');
 }
 
-/** The mobile companion's "today" screen (§11.1). */
+/**
+ * The mobile companion's "today" screen (§11.1).
+ *
+ * **Today is the venue's day.** It was counted from UTC midnight — 01:00 or
+ * 02:00 in Kraków — so for the first hours of every morning the screen still
+ * showed the small hours as today's trade and none of the late evening, and
+ * with no upper bound a report asked about a past instant counted everything
+ * after it too. And `period` was a *month*: the variable was called `day` and
+ * assigned `localMonth`. It reads `venue_visits.local_day` now, which the gate
+ * wrote in the venue's clock at the moment of each visit, and `period` is that
+ * day, `YYYY-MM-DD`.
+ *
+ * `pendingConfirmations` leaves out what can no longer be confirmed. A pending
+ * transaction past the gate's time limit is refused at confirm and is only
+ * waiting for the sweep; counting it asks an owner to deal with something that
+ * is already gone.
+ */
 export async function today(db: Db, venueId: string, at: Iso = now()) {
   const venue = await getVenue(db, venueId);
-  const day = localMonth(at, venue.timezone);
-  const since = new Date(at);
-  since.setUTCHours(0, 0, 0, 0);
+  const day = localDay(at, venue.timezone);
 
   const rows = await db.all<{ user_id: string; amount_minor: number }>(
-    `SELECT user_id, amount_minor FROM venue_visits WHERE venue_id = $v AND created_at >= $s`,
-    { v: venueId, s: since.toISOString() },
+    `SELECT user_id, amount_minor FROM venue_visits WHERE venue_id = $v AND local_day = $d`,
+    { v: venueId, d: day },
   );
   return {
     period: day,
+    timezone: venue.timezone,
     customers: counted(new Set(rows.map((row) => row.user_id)).size),
     visits: counted(rows.length),
     salesMinor: counted(rows.reduce((sum, row) => sum + row.amount_minor, 0)),
     pendingConfirmations:
       (await db.get<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM transactions WHERE venue_id = $v AND status = 'pending'`,
-        { v: venueId },
+        `SELECT COUNT(*) AS n FROM transactions
+          WHERE venue_id = $v AND status = 'pending' AND opened_at >= $cutoff`,
+        { v: venueId, cutoff: plusMinutes(at, -CONFIG.gate.pendingTtlMinutes) },
       ))?.n ?? 0,
   };
 }

@@ -8,6 +8,7 @@
  */
 
 import { useState } from 'react';
+import type { Ref } from 'react';
 
 /**
  * A number well with its unit welded to the right of the digits.
@@ -25,6 +26,10 @@ import { useState } from 'react';
  * nothing has been asked for yet. Blur drops the draft, and the well falls back
  * to whatever the parent made of it — rounding included, which is why the draft
  * has to survive the keystrokes in the first place.
+ *
+ * `value` may be `null`, which is an empty well rather than a zero: the bill at
+ * the counter starts with nothing in it, and a 0 there would be a bill the
+ * server refuses with a sentence the person at the till did not cause.
  */
 export function NumberWell({
   value,
@@ -34,14 +39,28 @@ export function NumberWell({
   wide,
   step,
   min,
+  inputRef,
+  onEnter,
+  disabled,
+  describedBy,
 }: {
-  value: number;
+  value: number | null;
   onChange: (next: number) => void;
   unit: string;
   label: string;
   wide?: boolean;
   step?: number;
   min?: number;
+  /** For a flow that moves the caret here itself — the counter's bill after a lookup. */
+  inputRef?: Ref<HTMLInputElement>;
+  /**
+   * Enter, as "do the next thing". Handed the value exactly as typed, because
+   * the parent's copy is a render behind the keystroke that fired this.
+   */
+  onEnter?: (typed: number | null) => void;
+  disabled?: boolean;
+  /** The id of the sentence that explains the field, for `aria-describedby`. */
+  describedBy?: string;
 }) {
   /* `null` is "not being typed into" — not `''`, which is a real draft and the
      whole state this exists to hold. */
@@ -54,11 +73,15 @@ export function NumberWell({
        tappable (root `CLAUDE.md`). */
     <label className="pd-well" data-wide={wide ? 'true' : undefined}>
       <input
+        ref={inputRef}
         type="number"
-        value={draft ?? (Number.isFinite(value) ? String(value) : '')}
+        inputMode="decimal"
+        value={draft ?? (value !== null && Number.isFinite(value) ? String(value) : '')}
         aria-label={label}
+        aria-describedby={describedBy}
         step={step}
         min={min}
+        disabled={disabled}
         onChange={(event) => {
           const typed = event.target.value;
           setDraft(typed);
@@ -68,6 +91,13 @@ export function NumberWell({
              further. */
           const next = Number(typed);
           if (typed.trim() !== '' && Number.isFinite(next)) onChange(next);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' || !onEnter) return;
+          event.preventDefault();
+          const typed = event.currentTarget.value;
+          const next = Number(typed);
+          onEnter(typed.trim() !== '' && Number.isFinite(next) ? next : null);
         }}
         onBlur={() => setDraft(null)}
       />

@@ -209,7 +209,26 @@ export const pending = async (db: Db, limit = 200) =>
 
 export async function markSent(db: Db, ids: string[], failed: string[] = []): Promise<void> {
   await db.tx(async () => {
+    const pushes = new Set<string>();
+    for (const id of [...ids, ...failed]) {
+      const row = await db.get<{ push_id: string | null }>(`SELECT push_id FROM notifications WHERE id = $i`, {
+        i: id,
+      });
+      if (row?.push_id) pushes.add(row.push_id);
+    }
     for (const id of ids) await db.run(`UPDATE notifications SET delivery = 'sent' WHERE id = $i`, { i: id });
     for (const id of failed) await db.run(`UPDATE notifications SET delivery = 'failed' WHERE id = $i`, { i: id });
+
+    /* A partner push's `delivered` is what the adapter has confirmed sending,
+       recounted from the rows rather than incremented, so a batch retried after
+       a crash cannot count one delivery twice. */
+    for (const push of pushes) {
+      await db.run(
+        `UPDATE deal_pushes
+            SET delivered = (SELECT COUNT(*) FROM notifications n WHERE n.push_id = $p AND n.delivery = 'sent')
+          WHERE id = $p`,
+        { p: push },
+      );
+    }
   });
 }

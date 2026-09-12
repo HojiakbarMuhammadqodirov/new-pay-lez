@@ -21,7 +21,7 @@ export type IdPrefix =
   | 'gev' | 'ref' | 'ntf' | 'ptk' | 'pln' | 'sub' | 'inv' | 'bev'
   | 'aud' | 'frd' | 'mod' | 'bmk' | 'ast' | 'msg' | 'gsv' | 'art'
   | 'nws' | 'cpr' | 'rec' | 'fbk' | 'sev' | 'qzi' | 'wrd'
-  | 'wbs' | 'wbe' | 'ath';
+  | 'wbs' | 'wbe' | 'ath' | 'rmd';
 
 export const newId = (prefix: IdPrefix): string => `${prefix}_${randomBytes(10).toString('hex')}`;
 

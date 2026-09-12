@@ -19,16 +19,15 @@
  * them something true and useful. The two must never look the same, and a
  * `?? 0` anywhere below would collapse them.
  *
- * ── most of the time there is no session, and that is the honest answer ───
+ * ── no session is a state too ──────────────────────────────────────────────
  *
- * The site's own auth is still `localStorage` (`src/site/auth/users.ts` says so
- * at the top). A venue owner signed in on `#/signin` has no API token, so
- * `usePartnerVenueId` resolves to `null` and every hook below reports
- * `no-partner-session` rather than firing a request that would 401. That is not
- * a failure mode to paper over with seeds — it is the true state of the
- * product, and the screens say so in words. The wiring is already the right
- * shape for the day `auth/` moves to the server; nothing here changes then
- * except that the token exists.
+ * Signing in goes through the server now, so a venue owner normally holds an
+ * API token and every hook below fires. A device without one — a browser that
+ * signed in before that change, or the `?demo=1` browser, which never gets a
+ * token by design — resolves `usePartnerVenueId` to `null`, and every hook
+ * reports `no-partner-session` rather than firing a request that would 401.
+ * That is not a failure mode to paper over with seeds; the screens say so in
+ * words, and only demo mode swaps in `dashboardDemo.ts`.
  *
  * ── money arrives in minor units of the *venue's* currency ────────────────
  *
@@ -76,6 +75,27 @@ export function minorToEuro(minor: number, currency: string): number {
 export function euroToMinor(euro: number, currency: string): number {
   const fx = FX[currency as FxCode] ?? FX.EUR;
   return Math.round(euro * fx.rate * 10 ** fx.decimals);
+}
+
+/**
+ * Minor units of the venue's currency as that currency's own major units, with
+ * no euro in between — and its inverse.
+ *
+ * Exactly one control on this dashboard needs it: the bill at the counter. Every
+ * other money field holds the reader's currency, because it is a figure being
+ * *read*. A bill is a figure being *copied* off a till receipt, and a receipt is
+ * printed in złoty whatever language the person at the till reads the dashboard
+ * in — converting it would ask them to do exchange-rate arithmetic at a queue.
+ * `decimals` comes off the rate table, so a soum bill has no fraction to type.
+ */
+export function minorToMajor(minor: number, currency: string): number {
+  const fx = FX[currency as FxCode] ?? FX.EUR;
+  return minor / 10 ** fx.decimals;
+}
+
+export function majorToMinor(major: number, currency: string): number {
+  const fx = FX[currency as FxCode] ?? FX.EUR;
+  return Math.round(major * 10 ** fx.decimals);
 }
 
 /* ═══════════════════════════════════════════════════ the server's shapes ══ */
@@ -137,6 +157,32 @@ export interface BudgetBody {
     estimateMinor: number;
     estimatedRemaining: number;
     available: boolean;
+    /*
+     * Take-up, counted over `issued_vouchers` in the **current** budget and
+     * sent on the partner budget body only (never on the public ladder a
+     * customer reads).
+     *
+     * Still optional, and that is about deployments rather than about the
+     * server: a site built against this shape can meet an API that predates
+     * it, and there each of these is absent rather than zero. Every reader
+     * branches on `undefined` and draws the em dash — "nobody has counted this"
+     * and "the count is zero" are different findings, and a `?? 0` here would
+     * print "0 issued" over a venue that has issued hundreds.
+     */
+    /** How many vouchers were given out at this tier, in any status but cancelled. */
+    issuedCount?: number;
+    /** How many of those were spent. */
+    redeemedCount?: number;
+    /** Given out, not yet spent and not yet expired — the ones still in somebody's wallet. */
+    activeCount?: number;
+    /** What the spent ones cost the venue, in minor units of the venue's currency. */
+    spentMinor?: number;
+    /**
+     * `voucher_tiers.active`. A retired rung still appears while vouchers issued
+     * at it this month exist, and it must not be edited back to life by saving
+     * its points — `PUT …/tiers` would re-activate it.
+     */
+    active?: boolean;
   }>;
   averageCheck: { minor: number; currency: string };
   /**
@@ -298,7 +344,18 @@ export interface DealResponse {
   } | null;
 }
 
-/** A row of `GET /v1/partner/venues/:id/campaigns` — `campaigns.*` plus counts. */
+/**
+ * A row of `GET /v1/partner/venues/:id/campaigns` — `campaigns.*` plus counts.
+ *
+ * The five in the middle were **already on the wire** and only missing from this
+ * declaration: the route is `SELECT c.*`, so every column of `campaigns` has
+ * been arriving in every response since the endpoint existed. Nothing had
+ * written them down, and *a missing field on an interface is invisible in a way
+ * a missing column is not* — the Campaigns screen could not show a minimum bill
+ * or a reward expiry it was being handed, because as far as the compiler was
+ * concerned neither had been sent. Same failure the guide cards had, one
+ * directory over.
+ */
 export interface CampaignResponse {
   id: string;
   name: string;
@@ -306,10 +363,41 @@ export interface CampaignResponse {
   reward_label: string;
   reward_cost_minor: number;
   priority: number;
+  /**
+   * 0 or 1 — whether the card starts again once it is filled, which is what
+   * makes a stamp card a habit rather than a one-off. `INTEGER` on both
+   * engines, so it arrives as a number and not a boolean.
+   */
+  recurring: number;
+  /**
+   * Overrides `venues.min_spend_minor` for this campaign, in minor units of the
+   * venue's currency. **Null is "no override", not "no minimum"** — the venue's
+   * own floor still applies at the gate, and a screen that reads this as zero is
+   * describing a rule the counter does not follow.
+   */
+  min_spend_minor: number | null;
+  /** How long an earned reward stays collectable. The column defaults to 60. */
+  reward_valid_days: number;
   status: 'draft' | 'active' | 'paused' | 'ended';
+  created_at: string;
+  updated_at: string;
   members: number;
   earned: number;
   redeemed: number;
+  /*
+   * Four counts the list gained so the Loyalty screen can stop deriving them.
+   * Optional for the same deployment reason as the ladder's take-up: absent
+   * against an older API, and the screen then falls back to what it could say
+   * before rather than printing a zero it never received.
+   */
+  /** Members whose card on this (active) campaign is exactly one stamp short. */
+  near?: number;
+  /** Rewards earned and still collectable. */
+  available?: number;
+  /** Rewards earned and left to expire. */
+  expired?: number;
+  /** What the collectable ones hold out of the loyalty pool, in venue minor units. */
+  reserved_minor?: number;
 }
 
 export interface CustomerRowResponse {
@@ -321,9 +409,49 @@ export interface CustomerRowResponse {
   firstSeenAt: string;
   lastSeenAt: string;
   daysSince: number;
+  /**
+   * `profiles.deriveStatus`' own word: `new`, `regular`, `lapsed`, `at_risk` or
+   * `high_value`. Typed as a string rather than that union so a sixth word the
+   * server grows later still renders — the roster folds anything it does not
+   * know into "regular" rather than failing to compile or printing a raw id.
+   */
   status: string;
   stamps: number;
   vouchersHeld: number;
+  /*
+   * Two display facts that are **absent rather than null when unknown**, which
+   * is the server's rule and the reason they are optional. Neither may acquire
+   * a default: a confident "5%" under somebody's name, or an arrow claiming
+   * their spend fell, is a finding about a *person* that nothing counted.
+   */
+  /** The deepest voucher discount this customer holds or held here. Absent when none. */
+  tierPct?: number;
+  /** Their spend over the last 30 days against the 30 before. Absent when both are zero. */
+  spendTrend?: 'up' | 'down' | 'flat';
+}
+
+/**
+ * `GET …/customers/:userId` — one person, behind the same sharing consent the
+ * roster is. A 404 here is also what a revoked consent looks like: telling an
+ * owner "that customer exists but stopped sharing" is a disclosure about a
+ * specific person, so the server does not, and neither does the panel.
+ */
+export interface CustomerDetailResponse {
+  userId: string;
+  name: string;
+  avatar: string | null;
+  /** The app language — the only demographic signal Paylez collects. */
+  language: string;
+  lifetimeValueMinor: number;
+  visits: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  status: string;
+  /** Visits and spend per venue-local month, oldest first. */
+  trend: Array<{ month: string; visits: number; spend: number }>;
+  visitPattern: Array<{ local_weekday: number; local_hour: number; n: number }>;
+  deals: Array<{ deal_id: string; event_type: string; created_at: string }>;
+  stamps: Array<{ campaign_id: string; name: string; stamps: number; required: number }>;
 }
 
 export interface CustomersResponse {
@@ -345,6 +473,176 @@ export interface PushQuotaResponse {
   quota: number;
   used: number;
   remaining: number;
+  /**
+   * What this venue's notifications did this month, summed over the pushes that
+   * actually went out. Optional against an older API, where the Deals screen
+   * says it cannot show the funnel rather than drawing three noughts.
+   */
+  funnel?: { sent: number; delivered: number; opened: number; cameIn: number };
+}
+
+/* ═════════════════════════════════════════════════ the dashboard's new reads ══ */
+
+/** The windows `…/series` and `…/scans` accept, which are the range picker's four. */
+export type SeriesDays = 7 | 14 | 30 | 90;
+
+export interface SeriesDay {
+  /** `YYYY-MM-DD`, venue-local. */
+  day: string;
+  visits: number;
+  customers: number;
+  salesMinor: number;
+  claims: number;
+  vouchersRedeemed: number;
+  rewardsRedeemed: number;
+}
+
+export interface SeriesTotals {
+  visits: number;
+  /** Distinct over the whole window — not the sum of the days. */
+  customers: number;
+  newCustomers: number;
+  salesMinor: number;
+  claims: number;
+  vouchersRedeemed: number;
+  rewardsRedeemed: number;
+}
+
+/**
+ * `GET …/series?days=` — the N venue-local days ending today, zero-filled, and
+ * the N days before them as one set of totals.
+ *
+ * `previous` is what makes a period delta honest: it is the same arithmetic
+ * over the same length of window, rather than a month compared with a fortnight.
+ */
+export interface SeriesResponse {
+  days: SeriesDays;
+  from: string;
+  to: string;
+  timezone: string;
+  currency: string;
+  series: SeriesDay[];
+  totals: SeriesTotals;
+  previous: SeriesTotals;
+}
+
+/**
+ * `GET …/insights` — "What we noticed", as measured findings.
+ *
+ * Every member is `null` when it does not apply or cannot be stated honestly,
+ * and the panel draws only the ones that are not. That is the difference from
+ * the version before, which filled one sentence's holes from a demo constant
+ * whether or not anything had been measured.
+ */
+export interface InsightsResponse {
+  period: string;
+  trend: null | { visitsPct: number; vouchersPct: number };
+  tierReach: null | {
+    tierId: string;
+    pct: number;
+    points: number;
+    eligible: number;
+    reached: number;
+    lower: number;
+    more: number;
+  };
+  itemVsPercent: null | {
+    item: InsightDeal;
+    percent: InsightDeal;
+    multiple: number;
+  };
+  unusedRewards: null | { n: number; amountMinor: number };
+}
+
+export interface InsightDeal {
+  dealId: string;
+  title: string;
+  badge: string;
+  claims: number;
+  seen: number;
+}
+
+/**
+ * `GET …/remind` — who a reminder would reach, and whether one may go.
+ *
+ * The rate limit lives on the server (one a week, recorded as an audit row), so
+ * the button's "Reminded" state is read from here rather than remembered by the
+ * page: a reload, a second tab and a second device all agree.
+ */
+export interface RemindStatus {
+  rewardHolders: number;
+  voucherHolders: number;
+  audience: number;
+  lastSentAt: string | null;
+  nextAllowedAt: string | null;
+  lastResult: null | { sentAt: string; audience: number; cameBack: number; windowDays: number };
+}
+
+export interface RemindSent {
+  sentAt: string;
+  audience: number;
+  inbox: number;
+  queued: number;
+  suppressed: number;
+  nextAllowedAt: string;
+}
+
+export type ScanSegment = 'all' | 'first' | 'again';
+
+/** One committed transaction at the counter, as `GET …/scans` returns it. */
+export interface ScanRowResponse {
+  id: string;
+  at: string;
+  /** Only with an unrevoked sharing consent for this venue. Otherwise null. */
+  who: string | null;
+  avatar: string | null;
+  first: boolean;
+  /** False when the scan was under the minimum bill, inside the cooldown, or a second that day. */
+  counted: boolean;
+  intent: 'earn' | 'voucher_redeem' | 'reward_redeem';
+  spentMinor: number;
+  discountMinor: number;
+  points: number;
+  receipt: string;
+  site: { venueId: string; name: string; address: string | null; lat: number | null; lng: number | null };
+  progress: null | {
+    campaignId: string;
+    campaign: string;
+    done: number;
+    need: number;
+    rewardEarned: boolean;
+  };
+}
+
+export interface ScansResponse {
+  days: number;
+  segment: ScanSegment;
+  total: number;
+  firstCount: number;
+  againCount: number;
+  currency: string;
+  timezone: string;
+  rows: ScanRowResponse[];
+}
+
+export interface ScansQuery {
+  days: SeriesDays;
+  segment: ScanSegment;
+  limit: number;
+  offset: number;
+}
+
+/** The audiences a deal can be aimed at: `deals.Segment` plus everyone. */
+export type AudienceSegment = 'all' | 'new' | 'returning' | 'lapsed' | 'newcomer';
+
+/**
+ * `GET …/audiences`. Both figures are about people, so both take the min-cohort
+ * floor — a suppressed one is `value: null` and is drawn as the withheld dash.
+ */
+export interface AudienceRow {
+  segment: AudienceSegment;
+  reach: Metric;
+  notifiable: Metric;
 }
 
 /* ═══════════════════════════════════════════════════════════ the session ══ */
@@ -366,6 +664,26 @@ export const NO_SESSION = 'no-partner-session';
 export const noSession = (why: string): ApiError => new ApiError(0, NO_SESSION, why);
 
 export const isNoSession = (error: ApiError): boolean => error.code === NO_SESSION;
+
+/**
+ * The answer when there is one; a stand-in only when there was nobody to ask.
+ *
+ * Every demo fallback on the dashboard goes through here, and the condition is
+ * narrower than "the call failed" on purpose. The demo flag lives in this
+ * browser's storage until somebody sends `?demo=0`, so a venue owner who once
+ * looked at the demo and then signed in to their real venue is still in demo
+ * mode — and a 500 on one of *their* reports must be the honest "the server did
+ * not answer", not a demonstration café's figures under their own name. Only
+ * `no-partner-session` means there was no real venue to be wrong about.
+ *
+ * Callers pass `DEMO_MODE ? DEMO_X : null`, so this module knows nothing about
+ * the demo switch.
+ */
+export function readyOr<T>(state: ApiState<T>, standIn: T | null): T | null {
+  if (state.status === 'ready') return state.data;
+  if (state.status === 'error' && standIn !== null && isNoSession(state.error)) return standIn;
+  return null;
+}
 
 /**
  * `GET /v1/partner/venues`, which is `SELECT *` on the venue row.
@@ -392,6 +710,20 @@ export interface PartnerVenue {
   timezone: string;
   status: string;
   verified_at: string | null;
+  /*
+   * Three gate rules that belong to the venue rather than to any campaign, all
+   * columns of the same `SELECT *`. Optional because the demo venue and an
+   * older response may not carry them, and each reader says nothing rather
+   * than quoting a default it did not read — the campaign cards printed "24
+   * hours" from a constant for a while, which was true only of venues that had
+   * never moved it.
+   */
+  /** Hours before the same customer's next scan counts. */
+  scan_cooldown_hours?: number;
+  /** The venue's own minimum bill, in venue minor units. */
+  min_spend_minor?: number;
+  /** The most one bill may be, in venue minor units — the gate's fat-finger ceiling. */
+  max_amount_minor?: number;
 }
 
 /**
@@ -532,6 +864,34 @@ export const usePartnerToday = (venueId: string | null) =>
 
 export const usePartnerPushQuota = (venueId: string | null) =>
   useVenueApi<PushQuotaResponse>(venueId, '/push-quota');
+
+/* A rolling window of days, which *is* the range picker's unit — unlike the
+   calendar-month reports above, these two may be keyed on it directly. */
+export const usePartnerSeries = (venueId: string | null, days: SeriesDays) =>
+  useVenueApi<SeriesResponse>(venueId, `/series?days=${days}`);
+
+export const usePartnerScans = (venueId: string | null, query: ScansQuery) =>
+  useVenueApi<ScansResponse>(
+    venueId,
+    `/scans?days=${query.days}&segment=${query.segment}&limit=${query.limit}&offset=${query.offset}`,
+  );
+
+export const usePartnerInsights = (venueId: string | null) =>
+  useVenueApi<InsightsResponse>(venueId, '/insights');
+
+export const usePartnerRemind = (venueId: string | null) =>
+  useVenueApi<RemindStatus>(venueId, '/remind');
+
+export const usePartnerAudiences = (venueId: string | null) =>
+  useVenueApi<AudienceRow[]>(venueId, '/audiences');
+
+/* Keyed on the person as well as the venue: with nobody chosen there is no
+   request to make, and `null` for the venue is how `useVenueApi` spells that. */
+export const usePartnerCustomer = (venueId: string | null, userId: string | null) =>
+  useVenueApi<CustomerDetailResponse>(
+    userId === null ? null : venueId,
+    `/customers/${encodeURIComponent(userId ?? '')}`,
+  );
 
 /* ═════════════════════════════════════════════════ chaining the two calls ══ */
 
@@ -886,6 +1246,35 @@ export const setCampaignStatus = (
     body: { status },
   });
 
+/**
+ * Change a campaign that is already running.
+ *
+ * A partial, like the deal PATCH: an absent field is left alone. The one value
+ * that is not "absent or a value" is `minSpendMinor: null`, which clears the
+ * campaign's own floor so the venue's applies again — a different rule from a
+ * floor of zero, and the reason the field is `number | null` here.
+ *
+ * Rewards somebody has already earned keep the cost they were reserved at. That
+ * is the server's rule and the drawer says so, because lowering a reward's cost
+ * does not hand money back out of the pool.
+ */
+export interface CampaignPatch {
+  name?: string;
+  rewardLabel?: string;
+  rewardCostMinor?: number;
+  visitsRequired?: number;
+  minSpendMinor?: number | null;
+  rewardValidDays?: number;
+  priority?: number;
+  recurring?: boolean;
+}
+
+export const updateCampaign = (campaignId: string, patch: CampaignPatch) =>
+  call<CampaignResponse>(`/v1/partner/campaigns/${encodeURIComponent(campaignId)}`, {
+    method: 'PATCH',
+    body: patch,
+  });
+
 /* ════════════════════════════════════════════ what points buy, and the pool ══ */
 
 /** One rung of the ladder, as `PUT /v1/partner/venues/:id/tiers` takes it. */
@@ -1074,3 +1463,156 @@ export const cancelScan = (transactionId: string, reason: string) =>
     `/v1/gate/transactions/${encodeURIComponent(transactionId)}/cancel`,
     { method: 'POST', body: { reason } },
   );
+
+/* ═════════════════════════════════════════════════════════════ reminders ══ */
+
+/**
+ * Send the week's reminder to everybody holding an unused reward or voucher.
+ *
+ * One notification per person on the server, through the same frequency cap and
+ * quiet hours every other push obeys — which is why the answer splits the
+ * audience into `queued` (a push goes out) and `suppressed` (inbox only), and
+ * the strip reports both rather than claiming every phone buzzed.
+ *
+ * A key per press: the route is idempotent, and a double press on a slow
+ * connection must not become a refusal that says a reminder already went out.
+ * A refusal inside the week carries `detail.nextAllowedAt`, which `ApiError`
+ * keeps, so the strip can say when rather than only that.
+ */
+export const sendReminder = (venueId: string) =>
+  call<RemindSent>(`/v1/partner/venues/${encodeURIComponent(venueId)}/remind`, {
+    method: 'POST',
+    idempotencyKey: crypto.randomUUID(),
+  });
+
+/* ═══════════════════════════════════════════════════════ the counter tool ══ */
+
+/** Somebody at the till, as far as this venue is allowed to see them. */
+export interface CounterCustomer {
+  userId: string;
+  /** `@username`, when the account has one. */
+  handle: string | null;
+  /** Only with an unrevoked sharing consent for this venue. */
+  name: string | null;
+  avatar: string | null;
+  /** No visit recorded here yet. */
+  firstVisit: boolean;
+  /** This venue's active campaigns, 0 done where the card has not started. */
+  stamps: Array<{ campaignId: string; campaign: string; done: number; need: number }>;
+}
+
+export type CounterLookup =
+  | { kind: 'customer'; customer: CounterCustomer }
+  | {
+      kind: 'voucher';
+      customer: CounterCustomer;
+      voucher: { id: string; code: string; discountPct: number; maxDiscountMinor: number; expiresAt: string };
+    }
+  | {
+      kind: 'reward';
+      customer: CounterCustomer;
+      reward: { id: string; code: string; label: string; costMinor: number; expiresAt: string };
+    };
+
+export interface CounterReceipt {
+  transactionId: string;
+  amountMinor: number;
+  currency: string;
+  pointsGranted: number;
+  discountMinor: number;
+  stamped: boolean;
+  /** False: under the minimum bill, inside the cooldown, or already counted today. */
+  visitCounted: boolean;
+  rewardEarned: { label: string; code: string } | null;
+}
+
+export interface CounterResult {
+  lookup: CounterLookup;
+  receipt: CounterReceipt;
+}
+
+/**
+ * Who a code at the till belongs to. Read-only: nothing is opened, so a wrong
+ * code costs nothing and cannot lock a customer out behind a pending row.
+ *
+ * Every unusable code is one 404 — unknown, another venue's, used, expired —
+ * because "that code exists somewhere else" is a disclosure. The screen says
+ * one sentence for all of them for the same reason.
+ */
+export const counterLookup = (venueId: string, code: string) =>
+  call<CounterLookup>(
+    `/v1/partner/venues/${encodeURIComponent(venueId)}/counter/lookup`,
+    { method: 'POST', body: { code } },
+  );
+
+/**
+ * Record a visit: open, amount and confirm as one press on the server.
+ *
+ * This moves value — points, a stamp, a discount off the budget — so the key is
+ * the caller's, generated once per Confirm press. A retry after a dropped
+ * response then returns the stored receipt instead of granting twice. A bill over
+ * the ceiling is refused with `detail.ceiling`, which the screen quotes.
+ */
+export const counterRecord = (
+  venueId: string,
+  code: string,
+  amountMinor: number,
+  idempotencyKey: string,
+) =>
+  call<CounterResult>(`/v1/partner/venues/${encodeURIComponent(venueId)}/counter`, {
+    method: 'POST',
+    body: { code, amountMinor },
+    idempotencyKey,
+  });
+
+/* ════════════════════════════════════════════════════════════════ the bell ══ */
+
+/**
+ * One row of `GET /v1/notifications`.
+ *
+ * The route is the signed-in person's own inbox, filtered to the session's
+ * mode, so a partner session reads the partner half: the monthly summary and
+ * the notes the daily job writes about the venue. The title and body are the
+ * server's words, in the language it wrote them in.
+ */
+export interface InboxItem {
+  id: string;
+  kind: string;
+  mode: string;
+  title: string;
+  body: string;
+  action_url: string | null;
+  read_at: string | null;
+  created_at: string;
+  delivery: string;
+}
+
+export interface InboxResponse {
+  unread: number;
+  items: InboxItem[];
+}
+
+/**
+ * The bell's read. Not venue-scoped, so it is not `useVenueApi` — but it needs
+ * the same "nobody to ask on behalf of" state, because a bell that sat at
+ * `loading` for ever would be a picture of a control.
+ */
+export function useInbox(): ApiResult<InboxResponse> {
+  const result = useApi<InboxResponse>(hasToken() ? '/v1/notifications?limit=20' : null);
+
+  const anonymous = useMemo<ApiResult<InboxResponse>>(
+    () => ({
+      state: {
+        status: 'error',
+        error: noSession('This device has no session on the API.'),
+      },
+      reload: () => undefined,
+    }),
+    [],
+  );
+
+  return hasToken() ? result : anonymous;
+}
+
+export const markInboxRead = (ids: string[]) =>
+  call<{ read: number }>('/v1/notifications/read', { method: 'POST', body: { ids } });

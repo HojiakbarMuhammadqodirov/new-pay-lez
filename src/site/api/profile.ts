@@ -1,42 +1,36 @@
 /**
- * The one thing the profile form cannot answer on its own: **which cities.**
+ * The profile's half of the API: which cities, where somebody plays, the seven
+ * answers themselves, and which venues may see who they are.
  *
- * Everything else on `#/profile` is decided locally, because the site's own
- * accounts are still `localStorage` (`auth/users.ts` says so at the top). The
- * city is not, and the reason is a rule rather than a preference: the set is
- * 114 entries across three countries, it folds accents and resolves local
- * spellings onto one canonical ASCII name, and the city leaderboard groups on
- * that name with a literal `=`. A second copy of it in this bundle would be a
- * list that changes on the server and does not change here.
+ * The profile used to be decided locally and only the city list was asked for.
+ * That made the page a form onto a record nobody else could read — a venue never
+ * saw the name or the photo, and a second device never saw the edit. The
+ * answers are the server's now (`saveMe`), and this browser keeps a mirror of
+ * them (`auth/mirror.ts`).
  *
- * So the field asks. `GET /v1/cities` is public — it has to be, because sign-up
- * takes a city and a form cannot be asked for a token to render its own
- * options — and it serves the same constant `accounts.resolveCity` checks
- * against.
+ * ── the city list ─────────────────────────────────────────────────────────
  *
- * ── a suggestion source, not a whitelist ─────────────────────────────────
+ * The set is 114 entries across three countries, it folds accents and resolves
+ * local spellings onto one canonical ASCII name, and the city leaderboard groups
+ * on that name with a literal `=`. A second copy of it in this bundle would be a
+ * list that changes on the server and does not change here. So the field asks.
+ * `GET /v1/cities` is public — sign-up takes a city, and a form cannot be asked
+ * for a token to render its own options — and it serves the same constant
+ * `accounts.resolveCity` checks against.
  *
- * This used to feed a `<select>`, on the argument that free text does not make
- * a messy leaderboard but *several* boards, one per spelling. That argument is
- * still true and is why the suggestions exist at all — but it was being used to
- * justify something else, which is refusing a city the list has never heard of.
- * 114 names is a good list and a short one; somebody lives in the 115th, and
- * for them a closed picker is not a tidy board, it is a form that cannot be
- * finished.
+ * It is a suggestion source, not a whitelist. 114 names is a good list and a
+ * short one; somebody lives in the 115th, and for them a closed picker is a form
+ * that cannot be finished. `PATCH /v1/me` draws the line where it can be drawn
+ * honestly: an unknown city is accepted **provided a country comes with it**.
  *
- * So the field suggests as you type and takes what it is given. `PATCH /v1/me`
- * draws the line in the one place it can be drawn honestly: an unknown city is
- * accepted **provided a country comes with it**, because the pair is what makes
- * a place, and a city nobody can place is the only genuinely useless answer.
- *
- * **A failed request is a state, not an empty list.** Same rule as the console's
- * fourth tab: `useApi` hands back `loading | ready | error` as a union so
- * "the backend is not answering" and "the answer is nothing" cannot be
- * confused. What has changed is the cost of the failure — with a text field
- * there is nothing to disable, so the form says the suggestions are down and
- * lets the reader write the place themselves.
+ * **A failed request is a state, not an empty list.** `useApi` hands back
+ * `loading | ready | error` as a union so "the backend is not answering" and
+ * "the answer is nothing" cannot be confused; with a text field there is nothing
+ * to disable, so the form says the suggestions are down and lets the reader
+ * write the place themselves.
  */
 import { call } from './client';
+import type { Me } from './consumer';
 import { useApi, type ApiResult } from './useApi';
 
 /** The three countries Paylez covers, in the order the server lists them. */
@@ -151,3 +145,59 @@ export const savePlace = (place: {
   method: 'PATCH',
   body: place,
 });
+
+/* ════════════════════════════════════════════════════ the seven answers ══ */
+
+/** What `PATCH /v1/me` is sent from the profile form. Built by `profileWrite`. */
+export interface ProfileWrite {
+  username?: string;
+  occupation?: string;
+  phone?: string;
+  birthDate?: string;
+  avatar?: string;
+  city?: string;
+  countryCode?: string;
+}
+
+/**
+ * Save the profile, and get the whole account back.
+ *
+ * The answer is the same body `GET /v1/me` returns, written from the row the
+ * update produced — so a city arrives canonicalised, a completed profile
+ * arrives stamped, and the balance already includes the bonus the same
+ * transaction paid. A refusal names the answer it is about in
+ * `ApiError.detail.field` — the server spreads it into every validation error
+ * so a form with seven inputs knows which one to put the sentence under.
+ */
+export const saveMe = (body: ProfileWrite) => call<Me>('/v1/me', { method: 'PATCH', body });
+
+/* ═══════════════════════════════════════════════ who can see who you are ══ */
+
+/**
+ * One venue this person has agreed may see them as themselves.
+ *
+ * Snake case because that is the server's shape (`consent.sharingWith`),
+ * transcribed rather than adapted, as `api/consumer.ts` does.
+ */
+export interface SharingGrant {
+  venue_id: string;
+  name: string;
+  granted_at: string;
+}
+
+export interface Consents {
+  account: Array<{ kind: string; granted: boolean }>;
+  /** §1.4 on the server: a separate list from the account consents, on purpose. */
+  dataSharing: SharingGrant[];
+}
+
+export const useConsents = (): ApiResult<Consents> => useApi<Consents>('/v1/me/consents');
+
+/**
+ * Withdraw one venue's view of this person. Takes effect at once on the server:
+ * every identified-customer query passes through `hasSharingGrant`.
+ */
+export const stopSharing = (venueId: string) =>
+  call<{ revoked: boolean }>(`/v1/me/sharing/${encodeURIComponent(venueId)}`, {
+    method: 'DELETE',
+  });

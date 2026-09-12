@@ -247,6 +247,27 @@ export const CONFIG = {
      *  targeted by six venues in a week is a user who turns push off. */
     userPushPerDay: 2,
     userPushPerWeek: 6,
+    /**
+     * §9.2. How late a scheduled push may still go out, in minutes.
+     *
+     * The dispatch job runs every few minutes, so a push normally leaves within
+     * one run of its time. Past this it is marked `failed` instead of sent: a
+     * lunch offer announced at five in the afternoon — because the server was
+     * down at noon — sends people to something that has already happened, and
+     * a push is the one message a customer cannot un-read.
+     */
+    pushLateMinutes: 60,
+    /**
+     * §9.2. How long after a push a recipient's counted visit is credited to it
+     * (`deal_pushes.came_in`), in days.
+     *
+     * A week, because a push invites a visit soon — "this weekend", "before the
+     * offer ends" — and a week covers every such invitation; past it, a regular's
+     * ordinary next visit would be credited to a notification that had nothing
+     * to do with it, and the one figure that says whether pushes work would say
+     * they always do. Credited once per recipient per push.
+     */
+    pushCameInDays: 7,
   },
 
   /* ──────────────────────────────────────────────────── §7 the games ── */

@@ -104,12 +104,12 @@ export interface UserProfile {
    */
   city: string;
   /**
-   * The country the city is in.
+   * The country the city is in, as an ISO-3166 alpha-2 code.
    *
-   * An ISO-3166 alpha-2 code when the city came off the served list, where it is
-   * derived and never asked for. Whatever was typed when it did not — the write
-   * needs *a country*, not a code, and pretending otherwise would mean shipping
-   * a 200-entry country table to serve the one person the city list missed.
+   * Derived and never asked for when the city came off the served list. Asked
+   * for when it did not — and asked for *as a code*, because that is the one
+   * shape `PATCH /v1/me` accepts, and a form that invited "Poland" would be a
+   * form that invited a refusal.
    */
   countryCode: string;
   phone: string;
@@ -121,12 +121,13 @@ export interface UserProfile {
    * The photo, as a small square data URL — or `''`.
    *
    * A data URL and not a filename, which is the *opposite* of what the business
-   * listing does with its logo, and the difference is the size. That field
-   * stores `logo` as a name because there is nowhere to upload to and a
-   * full-size image in `localStorage` would eat an origin's 5 MB; this one is
+   * listing once did with its logo, and the difference is the size: this one is
    * downscaled to `AVATAR_PX` square before it is ever stored, which is a few
    * kilobytes. A profile photo nobody can see is not a profile photo, and the
    * quota argument is answered by the downscale rather than ignored.
+   *
+   * It may also hold whatever the server holds, which is not always a data URL;
+   * `Face` draws only the pictures this site made (see `picture.ts`).
    */
   avatar: string;
 }
@@ -187,17 +188,23 @@ export interface AuthValue {
    */
   entitlements: Record<string, string> | null;
   /**
-   * Sign in against the **server**, falling back to the seeded demo accounts.
+   * When the server opened this account (ISO), or `null` when unknown — the same
+   * three `null`s as `plan`. Session state for the same reason: it arrives on the
+   * one `GET /v1/me` the provider already makes, and the local directory's own
+   * join date is the day this *browser* first saw the account, which is a
+   * different and much less interesting fact.
+   */
+  memberSince: string | null;
+  /**
+   * Sign in against the **server**, and bring what it knows about the account
+   * home before anybody is shown a page.
    *
-   * Async now, where it used to read a row out of this device's directory
-   * synchronously, and that change is the whole migration in one signature: an
-   * account is a row on the server, and this browser holds a mirror of it.
-   *
-   * The fallback is narrow and deliberate. The three seeded accounts printed on
-   * this form exist only in `localStorage` — they are demo data, and putting
-   * them on the server would be putting fake people in the same table as real
-   * ones, which is the thing being cleaned up. So a seed signs in locally with
-   * no server session, and everybody else signs in properly or not at all.
+   * The session is not published until `GET /v1/me` (and, for an owner, the
+   * listing) has answered, and that ordering is the point: publishing the bare
+   * mirror first let `resolveRoute` send a returning owner to the setup form on
+   * the strength of a browser that simply had not heard of their venue yet.
+   * A server that cannot be asked leaves the mirror as it was, which is the
+   * behaviour before any of this existed.
    */
   signIn: (
     email: string,
@@ -215,11 +222,8 @@ export interface AuthValue {
   /**
    * Sign in with a Google credential.
    *
-   * Async where the other two are synchronous, and that is the shape of the
-   * difference: the password paths read a row out of this device's directory,
-   * while this one asks the *server* to verify a token before anybody is signed
-   * in. It is the only identity on this site that something other than the
-   * browser has vouched for.
+   * The server verifies the token before anybody is signed in, and the account
+   * it answers with is brought home exactly as the password path does it.
    *
    * Resolves to the local account, or rejects — callers show the message.
    */
@@ -239,14 +243,15 @@ export interface AuthValue {
    */
   setPlayer: (next: PlayerState) => void;
   /**
-   * Merge a patch into the profile, or refuse it naming the field.
+   * Save the profile — to the server, or refuse it naming the field.
    *
-   * Refusals name a field for the same reason the server's do: a form with
-   * seven inputs and one error message has to know which input to put it
-   * under. Uniqueness is checked here rather than in the page because it is a
-   * fact about the *directory*, and a page cannot see one.
+   * Async because the server is the record: the rules that can answer instantly
+   * run first and in the reader's language, then `PATCH /v1/me` decides, and its
+   * answer is what the account shows afterwards. Only a server that cannot be
+   * reached falls back to this device, and the result says so (`where`), so the
+   * page can tell the reader the truth about where their answers are.
    */
-  saveProfile: (patch: ProfilePatch) => ProfileResult;
+  saveProfile: (patch: ProfilePatch) => Promise<ProfileResult>;
   /**
    * Onboarding is finished — stamp it, bank what the flow earned, and pay the
    * welcome gift.
@@ -257,6 +262,15 @@ export interface AuthValue {
    * the first; see `AuthProvider` for which side of the wire this one is.
    */
   finishOnboarding: (earned: number) => Promise<void>;
+  /**
+   * Ask the server about this account again and fold the answer in.
+   *
+   * For the moments a screen has just written something the mirror did not see
+   * being written — the welcome flow's city, a role granted in the background.
+   * Resolves once folded; never rejects, because a refresh that could not reach
+   * the server leaves the account exactly as it was.
+   */
+  refreshAccount: () => Promise<void>;
 }
 
 /**
@@ -290,12 +304,24 @@ export interface ProfilePatch
   place?: { city: string; countryCode: string };
 }
 
-/** Which field a refusal is about, and what is wrong with it. */
+/**
+ * How a save ended.
+ *
+ * A success says **where** the answers now are — `server`, or `device` when the
+ * server could not be reached and this browser kept them — and whether this was
+ * the save that completed the profile, which is the one moment the page
+ * celebrates. A refusal names the field it is about, the way the server's do,
+ * because a form with seven inputs and one message has to know which input to
+ * put it under; `null` is a refusal about the save as a whole.
+ */
 export type ProfileResult =
-  | { ok: true }
+  | { ok: true; where: 'server' | 'device'; completed: boolean }
   | { ok: false; field: 'username'; error: UsernameError }
   | { ok: false; field: 'birthDate'; error: BirthDateError | 'spent' }
-  | { ok: false; field: 'phone'; error: 'shape' };
+  | { ok: false; field: 'phone'; error: 'shape' }
+  | { ok: false; field: 'city'; error: 'shape' }
+  | { ok: false; field: 'country'; error: 'needed' | 'shape' }
+  | { ok: false; field: null; error: 'session' | 'refused' };
 
 export const AuthContext = createContext<AuthValue | null>(null);
 

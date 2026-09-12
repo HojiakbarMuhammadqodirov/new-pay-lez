@@ -721,3 +721,95 @@ person leaves, the accounting stays. The password reset drops every session the
 account has open, and the new password is deliberately **not** written to the
 audit entry.
 
+---
+
+## 13. The partner dashboard, the counter, and taking an answer back
+
+Everything under `/v1/partner/venues/{id}/…` resolves the venue from the path and
+refuses a caller who is not staff there. The shapes are in `openapi.json`; what
+follows is what a shape cannot say.
+
+### Days are the venue's
+
+`GET …/series` and `GET …/scans` take `days` — `7`, `14`, `30` (default) or `90`,
+and anything else is a 400 naming `days`, because a window the screen did not
+offer drawn under a label it did is a quiet lie. A window is that many
+**venue-local calendar days ending today**, cut at the venue's midnight, and the
+series is **zero-filled**: exactly `days` rows, never a gap. `GET …/today` is the
+venue's own day too, and its `period` is that day.
+
+A report month (`?period=` on `/overview`, `/analytics`, `/reach`, `/export`) is
+`YYYY-MM` or a 400 — it used to reach the date arithmetic and come back as a 500.
+
+### A figure about people takes the floor
+
+`series.totals.newCustomers` is **null** below the minimum cohort, like
+`overview.newCustomers`; visits, customers and sales never are. Every figure in
+`GET …/audiences` is a `Metric` and floored. `GET …/insights` returns each finding
+or `null`, and `tierReach` is null below the floor — balances are only ever
+counted, never returned.
+
+### Identity is a grant
+
+In the till log (`GET …/scans`) and at the counter, `who`/`name` and `avatar` are
+null unless that customer shares their profile with this venue. It is decided in
+the query that reads them, so a revoked grant takes effect on the next request.
+
+### The counter
+
+`POST …/counter/lookup { code }` resolves what a cashier types:
+
+- `@handle` — a customer, folded the way handles are (`@KasiaPL` is `kasiapl`);
+- a voucher code or a reward code — **at this venue only**, and only while it can
+  still be spent. A handle-shaped string with no `@` is tried as a handle first
+  and then as a code, because reward codes are handle-shaped once lower-cased.
+
+Every miss — unknown, another venue's code, used, expired, a banned or erased
+account — is the **same 404**. Never tell a till that a code exists somewhere else.
+
+`POST …/counter { code, amountMinor }` records the sale through the gate's own
+steps with the caller as cashier, so it pays exactly what a QR scan of that bill
+pays and is refused for the same reasons (`409` for an open transaction,
+`400 invalid_amount`, `budget_exhausted`…). A failure after the transaction was
+opened cancels it, so the customer is not locked out. The receipt never carries
+the customer's balance. Staff cannot ring up themselves or the owner (403). Send an
+`Idempotency-Key` per press: a retry returns the same sale.
+
+### Reminders and pushes
+
+`POST …/remind` notifies everybody holding an unused reward or voucher at the
+venue, **once a week** (409 with `nextAllowedAt` inside it; `400 invalid_state`
+with `reason: "no_audience"` when there is nobody). `GET …/remind` reports who
+came back within seven days.
+
+A scheduled deal push is **sent** by a job that runs every few minutes: to the
+people its targeting admits, pushed where permission, quiet hours in the venue's
+clock and the platform-wide frequency cap allow. A push whose deal was paused,
+archived, ended or capped by then is `cancelled`; one more than an hour late is
+`failed`. The quota was spent when it was scheduled and is not spent again.
+`came_in` counts recipients who were actually pushed and then made a counted visit
+within a week — each person once. Opens count when the app sends the push id back
+on the deal's `open` event.
+
+### Deal dates
+
+A `validTo` sent as a bare `YYYY-MM-DD` means **the whole of that day** in the
+venue's clock and is stored as its last millisecond; a bare day used to sort
+before that day's own morning, so every offer lost its last day. `validFrom`
+bare days are kept as sent. Anything that is not a date is a 400. Extending an
+expired deal revives it, so it passes the publish gates.
+
+### Taking an answer back
+
+`PATCH /v1/me` and `PATCH /v1/partner/venues/{id}` read an explicit JSON **`null`
+as "clear this"**, and an absent key or an empty string as "leave it" — so a
+client that resends its whole form keeps working.
+
+| | clearable with `null` | `null` refused (400 naming the field) |
+|---|---|---|
+| `PATCH /v1/me` | `avatar`, `phone`, `occupation`, `city` (with its country) | `name`, `username`, `birthDate`, `language` |
+| `PATCH /v1/partner/venues/{id}` | `subcategory`, `address`, `priceRange`, `phone`, `email`, `imageUrl` | `name`, `category`, `city` |
+
+`city: null` with a `countryCode` beside it is a 400. Clearing never takes back a
+profile-completion bonus that was paid.
+
