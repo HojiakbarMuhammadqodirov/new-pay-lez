@@ -435,7 +435,11 @@ the whole of the difference.
 **The brand is the word, and the word is `900 21px/1 Onest`.** That is the app's
 own declaration, carried over exactly: `--font-brand` / `--brand-size` in
 `site.css`, and `.brand` is the class every one of them uses — header, footer,
-dashboard rail, admin console, and the intro. There is **no tile beside it**.
+dashboard rail and admin console. The intro is the one surface that does not,
+and cannot: it draws the word into a canvas, where a custom property is
+invisible, so `FACE` in `PaylezIntro.tsx` restates the same family and fallbacks
+the way `THEMES` restates the palette. Those two are the only copies.
+There is **no tile beside it**.
 The square logo files are still in `public/logo/` behind the `--logo` token, but
 no chrome shows them: the product has never put a mark next to the name, and a
 30px square of art beside six letters was the one place the site and the app
@@ -486,7 +490,8 @@ canvas and a mint headline for a button to belong to. The note on `--solid` in
 `src/site/CLAUDE.md` carries the contrast this costs and why it is taken.
 
 **Constants live in config files, not inline.** Every tunable for the globe is
-in `GlobeHero/config.ts`; the intro's timings are in `PaylezIntro/config.ts`;
+in `GlobeHero/config.ts`; the intro's whole sequence is in
+`PaylezIntro/config.ts`;
 the node web's density, link radius and alphas are in `site/network/config.ts`;
 the candle tape's scroll speed, band, wick spread, tick size and venue density are in
 `site/market/config.ts`. If you find yourself typing a magic number into a component, it probably
@@ -1482,6 +1487,81 @@ bundled, the flag font copied into `public/`), geometry comes from the
   page's promise in the one grammar nobody has to be taught, which is *more*
   use to a visitor who has not signed up than to a player who has. The arcade
   trail went with the split.
+- **The cold-open is the app icon opening into the name.** `public/logo/logo-dark.jpg`
+  is a lowercase **p** in the accent on near-black — the mark on a phone's home
+  screen, and also exactly the first letter of the wordmark. So `PaylezIntro` is
+  a dark engraved surface with one light crossing it: the light finds the p, the
+  p holds for a beat, then it travels into its place in the lockup and shrinks to
+  type size while the light carries on and uncovers `aylez` behind it. Three
+  seconds, canvas 2D — not WebGL, because this renders *over* the landing page
+  and the landing page already spends the document's one WebGL context on the
+  globe.
+
+  **This is not the tile coming back.** There is still no mark *beside* the
+  wordmark; the header, the footer and the dashboard rail have never had one, and
+  the first version of this screen opened on a square tile next to the name and
+  was introducing a lockup the product does not use. The distinction is that this
+  mark is never beside the name — it **is** the name's first letter, from the
+  same face at the same weight, and it ends up sitting *in* the word. The final
+  frame is the wordmark and nothing else.
+
+  Six versions preceded it and two are worth naming so nobody builds them again.
+  **Three seconds of particles gathering into the word** was the most work of the
+  lot and the worst result: a particle field assembling into type is a *tech
+  demo*, and a tech demo in front of a payments product reads as a studio showing
+  off rather than as a brand arriving. **Six letters rising out of focus** is the
+  other — a list of events rather than a gesture.
+
+  Seven rules travel with it:
+
+  - **Nothing is loading, so nothing may claim to measure a load.** The bundle
+    finished before the first frame. The hairline under the word is an underline
+    arriving with the name, not a meter. The one thing that *does* deplete is the
+    rule under the Skip, and that is honest precisely because it measures this
+    sequence's own length — a real number `config.ts` owns.
+  - **A skippable sequence is one you can actually skip.** The Skip used to
+    appear with the hairline, two thirds of the way through a 1.9-second screen,
+    which left about a second to notice a control in the corner, move to it and
+    press it. It arrives at 400ms now and is pressable for ~2.5s, and
+    `npm run verify` holds that floor.
+  - **`markHome` is measured, not guessed.** It is the p at the *word's* size and
+    the word's own origin — which, because p is the first glyph, is exactly where
+    `fillText('paylez')` puts its p. The travelling mark therefore lands on the
+    word's own first letter to the pixel, and the hand-off is a crossfade with
+    nothing to reconcile.
+  - **The word is a high-water mark, and that is what makes the pointer safe.**
+    The light is a blend of the scripted path and the cursor, so a hand sweeping
+    right and then left would *un-write* the wordmark. Tracking the furthest the
+    light has ever reached means a lit letter stays lit, and with nothing left to
+    protect the pointer can have the light from the first frame.
+  - **The site is uncovered *while* the screen is leaving.** `onComplete` fires
+    at `exit.delay`, not at the end. This ground is `--bg`, the *page's* ground,
+    so an overlay fading off a page still hidden behind `data-intro='running'`
+    fades onto a rectangle of the colour it just removed.
+  - **The engraving stops where the brand is.** Everything is composited
+    additively on black, so nothing occludes anything — a lattice drawn over the
+    letters read as graph paper laid on the brand rather than as the surface it
+    is cut into. The ticks fade toward the ink box rather than clipping at it.
+  - **The light's reach has a ceiling in pixels.** Its radius is a fraction of
+    the viewport diagonal, which is the right look and the wrong cost curve: the
+    pool is alpha-composited every frame, so its price is the *square* of the
+    radius, and uncapped at 1920×1080 on a 2× display it measured 18ms a frame
+    against `StubDrift`'s 7ms. See `light.maxRadius` and `lattice.maxSpan`.
+
+  Two construction traps, both of which cost a debugging session:
+
+  - **`onComplete` is read through a ref.** The caller passes an inline arrow, so
+    it is a new function on every render of the page shell — and the shell
+    re-renders during the intro for ordinary reasons. Depending on it put
+    `reveal` and `finish` in the draw effect's dependency array, which tore the
+    effect down and ran it again *mid-sequence*: the clock back to -1, the light
+    back to the left edge, the reveal back to nothing. The symptom was a screen
+    that never got as far as the wordmark.
+  - **`document.fonts.load` is wrapped in `try`.** It is specified to reject on a
+    font it cannot parse, but engines have thrown synchronously — and a throw
+    escapes the promise executor and rejects the promise the whole sequence hangs
+    off, which is a permanently black page rather than a worse-looking intro.
+
 - **A reused globe still needs its scroll anchor.** `scrollTransition` is off only
   for sign-in, which is one screenful with nothing under it. Any other page that
   takes the globe has content below the fold, and a globe held in the hero pose
@@ -1492,7 +1572,13 @@ bundled, the flag font copied into `public/`), geometry comes from the
   `resolveLayout` sizes the globe by moving the camera, not by scaling the mesh
   or the canvas — that is what keeps arc altitude, ribbon width and border
   offset in world units across both poses. So `.site__globe` and `.site__web`
-  get `position`, `inset`, `z-index` and `pointer-events`, and **nothing else**.
+  get `position`, `inset`, `z-index` and `pointer-events` — plus `width` and
+  `height` at 100%, which is not a size *opinion* but a size *fix*: a `<canvas>`
+  is a replaced element, and an absolutely positioned replaced element with
+  `width: auto` takes its **intrinsic** size (the backing store) rather than
+  filling its offsets, so `inset: 0` alone gives a 2× display a CSS box twice
+  the viewport and draws the whole picture at double scale off the bottom-right
+  corner. Nothing else.
 
   Three rules that pinned the canvas instead shipped here and between them they
   are the whole of "the globe is standing at the edge":

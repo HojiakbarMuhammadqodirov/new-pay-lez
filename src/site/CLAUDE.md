@@ -64,10 +64,13 @@ Two more tokens exist because one value cannot do both jobs on paper:
 - **`--logo`** — the only theme-conditional token that is not a colour, and the
   brand mark as a `url()`. `public/logo/logo-dark.jpg` is mint on black,
   `logo-light.png` the inverse cut; both are square and carry their own ground,
-  so `.brand-mark` and `.pz-mark` show the whole tile rather than laying a glyph
+  so a surface showing one would show the whole tile rather than laying a glyph
   on `--accent`. Declared as a token so only the matched theme's file is fetched.
-  `THEMES[…].logo` mirrors it for `PaylezIntro`, which lives under `components/`
-  and takes a `markImage` prop rather than reading the site's stylesheet.
+  **Nothing renders it.** The product has never put a mark beside the name, and
+  the two places that used to — the header's `.brand-mark` and the intro's
+  `.pz-mark` — are both gone; `THEMES[….].logo` mirrors the token for a
+  canvas-side surface that might ever want it and is likewise read by nothing.
+  Delete the field only together with the token.
 
 **There is a third palette block, and it is the ink.** `--ink-rgb` (`4, 32, 31`)
 and `--ink-on-rgb` (`88, 233, 212`) are declared in `:root` and never redeclared,
