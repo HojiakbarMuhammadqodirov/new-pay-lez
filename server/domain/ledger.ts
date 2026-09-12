@@ -182,8 +182,14 @@ export async function earn(db: Db, input: EarnInput): Promise<{ entry: LedgerEnt
 
   if (points > 0) {
     await db.run(
-      `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount)
-       VALUES ($i, $u, $e, $x, $a)`,
+      /* `seq` is this user's next insertion number — the tiebreak `spend` runs
+         on when several lots share a millisecond. Computed in the statement so
+         it cannot race a concurrent earn: both are inside `tx()`, and a
+         read-then-write in JavaScript would let two of them read the same MAX.
+         `COALESCE` covers the user's first lot. */
+      `INSERT INTO points_lots (ledger_id, user_id, earned_at, expires_at, amount, seq)
+       VALUES ($i, $u, $e, $x, $a,
+               (SELECT COALESCE(MAX(l.seq), 0) + 1 FROM points_lots l WHERE l.user_id = $u))`,
       /* The entry's `expires_at` is NULL — nothing expires any more — and the
          lot's column is NOT NULL, so "never" is written there as the sentinel
          instead. The lot has to exist whatever its date: a spend consumes lots,
@@ -248,7 +254,7 @@ export async function spend(
   const lots = await db.all<{ ledger_id: string; amount: number; consumed: number }>(
     `SELECT ledger_id, amount, consumed FROM points_lots
       WHERE user_id = $u AND expired = 0 AND consumed < amount
-      ORDER BY earned_at ASC, ledger_id ASC`,
+      ORDER BY earned_at ASC, seq ASC`,
     { u: input.userId },
   );
 
@@ -357,7 +363,7 @@ export async function reverse(db: Db, ledgerId: string, note: string, at: Iso = 
            reason — see the note there. */
         `SELECT ledger_id, amount, consumed FROM points_lots
           WHERE user_id = $u AND expired = 0 AND consumed < amount
-          ORDER BY earned_at ASC, ledger_id ASC`,
+          ORDER BY earned_at ASC, seq ASC`,
         { u: original.user_id },
       );
       for (const lot of lots) {

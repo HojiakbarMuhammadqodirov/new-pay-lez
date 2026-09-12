@@ -755,6 +755,10 @@ export async function migrate(db: Db): Promise<void> {
   await addColumn(db, 'users', 'profile_completed_at', 'TEXT');
   await addColumn(db, 'users', 'username', 'TEXT');
   await addColumn(db, 'users', 'username_norm', 'TEXT');
+  /* FIFO's tiebreak — see the column's note in `schema.sql`. `DEFAULT 0` is the
+     backfill: every existing lot is older than anything written from here on,
+     and their order among themselves was never recorded to begin with. */
+  await addColumn(db, 'points_lots', 'seq', 'INTEGER NOT NULL DEFAULT 0');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an

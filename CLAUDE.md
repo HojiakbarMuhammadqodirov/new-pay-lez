@@ -1384,10 +1384,20 @@ bundled, the flag font copied into `public/`), geometry comes from the
   it passes on constructs Postgres does not have*. The engine cannot be the thing
   that finds these. `sqliteOnlySql` in `server/verify.ts` therefore reads the
   source instead — comments stripped, one banned token, the offending file named
-  — and it is the pattern to extend if a ninth turns up. The fix itself takes a
-  cost that is written down where it lives: the tiebreak is `ledger_id`, which is
-  deterministic and identical on both engines but **arbitrary** rather than
-  insertion-ordered, and that is only safe while nothing expires.
+  — and it is the pattern to extend if a ninth turns up.
+
+  **The tiebreak is `points_lots.seq`, and the two cheaper answers were both
+  wrong.** `rowid` is SQLite's. `ledger_id` is portable and deterministic and was
+  tried next — and it is *random*, so FIFO became a coin flip between lots
+  sharing a millisecond, which `gate.confirm` produces every time it pays a scan,
+  a spend bonus and a venue bonus in one transaction. It survived three green
+  runs before a fourth caught it, which is what a 50/50 test looks like. `seq` is
+  assigned by `ledger.earn` as `MAX(seq) + 1` for that user, **inside the insert**
+  so two concurrent earns cannot read the same maximum, and rows predating the
+  column carry 0 — correct, because they are older than anything writable now and
+  their order among themselves was never recorded. Not a sequence type, because
+  `pg-schema.mjs` deliberately keeps `schema.sql` to what both engines take
+  verbatim.
 
 - **Postgres is stricter than SQLite in seven other places, and six of them fail
   loudly.** All are handled and commented where they live; the list is here so a

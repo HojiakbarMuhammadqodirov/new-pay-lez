@@ -353,7 +353,7 @@ async function ledgerRules(): Promise<void> {
      `rowid` in both, which is SQLite-only and threw on Postgres; the two must
      not drift, or this asserts an order the real query does not produce. */
   const lots = await db.all<{ amount: number; consumed: number }>(
-    `SELECT amount, consumed FROM points_lots WHERE user_id = $u ORDER BY earned_at, ledger_id`,
+    `SELECT amount, consumed FROM points_lots WHERE user_id = $u ORDER BY earned_at, seq`,
     { u: customerId },
   );
   eq('the oldest lot is consumed first', lots.map((l) => [l.amount, l.consumed]), [

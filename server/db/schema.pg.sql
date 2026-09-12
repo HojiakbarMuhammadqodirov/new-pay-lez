@@ -409,7 +409,22 @@ CREATE TABLE IF NOT EXISTS points_lots (
   expires_at TEXT NOT NULL,
   amount     INTEGER NOT NULL,
   consumed   INTEGER NOT NULL DEFAULT 0,
-  expired    INTEGER NOT NULL DEFAULT 0
+  expired    INTEGER NOT NULL DEFAULT 0,
+  -- Insertion order within one user, and the tiebreak FIFO actually runs on.
+  --
+  -- `earned_at` is millisecond ISO and one transaction writes several lots at
+  -- once: `gate.confirm` can pay a scan, a spend bonus and a venue bonus in the
+  -- same millisecond, so "oldest first" is undecided between them on the
+  -- timestamp alone. This was `rowid` — which is SQLite's and threw `42703` on
+  -- Postgres — and then `ledger_id`, which is random and made the order a coin
+  -- flip. Assigned by `ledger.earn` as MAX(seq)+1 for that user rather than by a
+  -- sequence type, because `pg-schema.mjs` keeps this file to types both engines
+  -- take verbatim and forbids AUTOINCREMENT.
+  --
+  -- Rows written before the column existed carry 0, which is correct: they are
+  -- older than anything that can be written now, and their order among
+  -- themselves was never recorded and cannot be recovered.
+  seq        INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_lots_open ON points_lots (user_id, expires_at, expired);
 
