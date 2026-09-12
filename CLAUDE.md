@@ -1371,7 +1371,25 @@ bundled, the flag font copied into `public/`), geometry comes from the
 
 ## Things that will bite
 
-- **Postgres is stricter than SQLite in seven places, and six of them fail
+- **`rowid` does not exist on Postgres, and this suite cannot catch that.** The
+  eighth trap and the worst so far, because it was silent here and fatal there:
+  `ledger.spend` ordered its FIFO lots by `rowid`, `verify.ts` asserted the same
+  order, all 925 checks were green — and on the live database every spend threw
+  `42703 column "rowid" does not exist`. A voucher could not be bought, a gift
+  card could not be bought, a tier could not be spent on. It stood from the
+  Supabase migration until a demo seed run against production hit it.
+
+  **The reason it hid is structural, not careless.** `verify:api` runs on
+  `:memory:` SQLite (see "keeping the SQLite driver" above), so *every check in
+  it passes on constructs Postgres does not have*. The engine cannot be the thing
+  that finds these. `sqliteOnlySql` in `server/verify.ts` therefore reads the
+  source instead — comments stripped, one banned token, the offending file named
+  — and it is the pattern to extend if a ninth turns up. The fix itself takes a
+  cost that is written down where it lives: the tiebreak is `ledger_id`, which is
+  deterministic and identical on both engines but **arbitrary** rather than
+  insertion-ordered, and that is only safe while nothing expires.
+
+- **Postgres is stricter than SQLite in seven other places, and six of them fail
   loudly.** All are handled and commented where they live; the list is here so a
   new query does not walk into one. `pg` returns **bigint and numeric as
   strings**, so `SUM(delta)` would have made the ledger disagree with itself on

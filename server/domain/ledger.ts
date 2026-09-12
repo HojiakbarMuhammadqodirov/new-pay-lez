@@ -223,15 +223,32 @@ export async function spend(
   }
 
   let remaining = input.points;
-  /* Oldest first, and `rowid` is the tiebreak rather than the id: two entries
-     written in the same millisecond have the same `earned_at`, and the ids are
-     random, so ordering by id would consume them in an arbitrary order — which
-     is not FIFO and quietly changes which batch expires when. `rowid` is
-     insertion order, which is what "oldest" means when the clock cannot tell. */
+  /*
+   * Oldest first, tie broken by `ledger_id`.
+   *
+   * This used to tie-break on `rowid`, on the argument that two entries written
+   * in the same millisecond share an `earned_at` and the ids are random, so
+   * `rowid` — insertion order — is what "oldest" means when the clock cannot
+   * tell. The argument is sound and the column is **SQLite-only**: on Postgres
+   * this threw `42703 column "rowid" does not exist`, which took down every
+   * spend there is — a voucher, a gift card, a tier — while `verify:api` stayed
+   * green, because it runs on `:memory:` SQLite where the column is real. See
+   * the eighth entry under "Postgres is stricter than SQLite" in `CLAUDE.md`.
+   *
+   * `ledger_id` is arbitrary among ties rather than insertion-ordered, and that
+   * is the cost, taken deliberately: it is **deterministic and identical on both
+   * engines**, which is what `reconcile` and the FIFO check actually need, and
+   * nothing expires today (`expiry` is a reason no job writes), so which of two
+   * same-millisecond batches is consumed first is not observable. If points
+   * expiry is ever turned on, this needs a real monotonic column — `schema.sql`
+   * has none, and `pg-schema.mjs` forbids `AUTOINCREMENT` on purpose, so that is
+   * a migration rather than a one-line change. `verify.ts` orders the same way;
+   * the two must not drift.
+   */
   const lots = await db.all<{ ledger_id: string; amount: number; consumed: number }>(
     `SELECT ledger_id, amount, consumed FROM points_lots
       WHERE user_id = $u AND expired = 0 AND consumed < amount
-      ORDER BY earned_at ASC, rowid ASC`,
+      ORDER BY earned_at ASC, ledger_id ASC`,
     { u: input.userId },
   );
 
@@ -336,9 +353,11 @@ export async function reverse(db: Db, ledgerId: string, note: string, at: Iso = 
     }
     if (remaining > 0) {
       const lots = await db.all<{ ledger_id: string; amount: number; consumed: number }>(
+        /* Same ordering as `spend`, and SQLite-only `rowid` for the same
+           reason — see the note there. */
         `SELECT ledger_id, amount, consumed FROM points_lots
           WHERE user_id = $u AND expired = 0 AND consumed < amount
-          ORDER BY earned_at ASC, rowid ASC`,
+          ORDER BY earned_at ASC, ledger_id ASC`,
         { u: original.user_id },
       );
       for (const lot of lots) {

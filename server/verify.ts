@@ -17,7 +17,7 @@
    line that matters, which is the count at the bottom. */
 process.env.PAYLEZ_QUIET = '1';
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDb } from './db/db.ts';
@@ -349,10 +349,11 @@ async function ledgerRules(): Promise<void> {
   eq('spending moves the balance', await ledger.balance(db, customerId), 30);
 
   /* FIFO: the 100-point lot is fully consumed and the 50 is partly. */
-  /* Ordered by `rowid`, for the same reason `spend` is: two lots opened in the
-     same millisecond tie on `earned_at`, and the ids are random. */
+  /* Ordered exactly as `spend` orders — `earned_at`, then `ledger_id`. It was
+     `rowid` in both, which is SQLite-only and threw on Postgres; the two must
+     not drift, or this asserts an order the real query does not produce. */
   const lots = await db.all<{ amount: number; consumed: number }>(
-    `SELECT amount, consumed FROM points_lots WHERE user_id = $u ORDER BY earned_at, rowid`,
+    `SELECT amount, consumed FROM points_lots WHERE user_id = $u ORDER BY earned_at, ledger_id`,
     { u: customerId },
   );
   eq('the oldest lot is consumed first', lots.map((l) => [l.amount, l.consumed]), [
@@ -4292,6 +4293,54 @@ async function importRules(): Promise<void> {
  * the retired `ven_demo_` prefix, and no gift-card stock either, because the
  * shelf was written by `seedPlatform` in the same spirit and went the same way.
  */
+/**
+ * SQLite-only SQL, caught by reading the source rather than by running it.
+ *
+ * This suite runs on `:memory:` SQLite, so **every check in it passes on
+ * constructs Postgres does not have** — and production is Postgres. `rowid` is
+ * the one that got through: `ledger.spend` ordered by it, `verify` asserted the
+ * same order, all 925 checks were green, and on the live database every spend
+ * threw `42703 column "rowid" does not exist`. A voucher could not be bought.
+ *
+ * The engine cannot be the thing that finds these, so the source is. This is a
+ * grep with the comments stripped first — the note in `ledger.ts` explains the
+ * history and says the word, and a guard that its own explanation trips is a
+ * guard somebody deletes.
+ *
+ * Keep it narrow. It is not a SQL parser and must not become one: one banned
+ * token, named, with the reason attached.
+ */
+function sqliteOnlySql(): void {
+  describe('SQL that only SQLite would accept');
+
+  const here = fileURLToPath(new URL('.', import.meta.url));
+
+  /* Strip block and line comments, then look for the token. A bare `rowid`
+     inside a string is what matters; the prose around it is not. */
+  const stripped = (source: string): string =>
+    source.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/\/\/.*$/gm, ' ');
+
+  const roots = ['domain', 'http', 'db', 'jobs.ts', 'main.ts'];
+  const files: string[] = [];
+  const walk = (entry: string): void => {
+    const full = join(here, entry);
+    if (!existsSync(full)) return;
+    if (statSync(full).isDirectory()) {
+      for (const child of readdirSync(full)) walk(join(entry, child));
+      return;
+    }
+    if (full.endsWith('.ts')) files.push(entry);
+  };
+  for (const root of roots) walk(root);
+
+  check('the server has source to scan', files.length > 20, { files: files.length });
+
+  const offenders = files.filter((file) =>
+    /\browid\b/i.test(stripped(readFileSync(join(here, file), 'utf8'))),
+  );
+  check('no query orders or filters by `rowid` — Postgres has no such column', offenders.length === 0, offenders);
+}
+
 async function bootOrdering(): Promise<void> {
   describe('boot: import, and nothing invented');
 
@@ -5207,6 +5256,7 @@ async function run(): Promise<void> {
   await countryRules();
   await reimportRules();
   await importRules();
+  sqliteOnlySql();
   await bootOrdering();
   await ledgerRules();
   await budgetRules();
