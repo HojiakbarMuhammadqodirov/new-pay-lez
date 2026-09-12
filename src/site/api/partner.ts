@@ -944,9 +944,17 @@ export interface DealDraft {
   validTo: string;
   /** 0 = Monday, matching `LocalTime.weekday`. An empty list means every day. */
   targetWeekdays: number[];
-  /** Minutes past local midnight. */
-  targetFromMin: number;
-  targetToMin: number;
+  /**
+   * Minutes past local midnight, and **optional together**: absent is a deal
+   * with no daily window, which is what every deal has unless its owner narrows
+   * one. The server stores absent as NULL and `claimableNow` then skips the
+   * clock comparison entirely — the same shape `targetWeekdays: []` already has
+   * for "every day". They were required, so the drawer had to send *something*
+   * and sent its own placeholder hours, which silently made every deal a
+   * two-hour deal.
+   */
+  targetFromMin?: number;
+  targetToMin?: number;
   targetLanguages: string[];
   targetAudience: string[];
   capClaims?: number;

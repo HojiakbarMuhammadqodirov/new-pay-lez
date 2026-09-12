@@ -208,15 +208,29 @@ function DealBody({
   const [badge, setBadge] = useState(prefill?.discountText ?? '20%');
   const [from, setFrom] = useState(() => prefill?.validFrom?.slice(0, 10) ?? localDay(0));
   const [to, setTo] = useState(() => prefill?.validTo?.slice(0, 10) ?? localDay(28));
-  /* Monday-first, matching `copy.dashboard.customers.days`. */
+  /*
+   * Monday-first, matching `copy.dashboard.customers.days`.
+   *
+   * **Every day, all day, unless the owner narrows it.** These three defaulted to
+   * Tuesday and Wednesday, 14:00–16:00 — mock values that read as an example in
+   * the drawer and behaved as a rule once filed. `asDraft` sends the window
+   * whatever it holds, so a deal created without touching this block was live for
+   * about four hours a week, and `claimableNow` hid it the rest of the time with
+   * `wrong_time`. From the owner's side that is a deal they published, the
+   * console lists as live, and no customer can see: the one failure this panel
+   * must not have, because nothing on the screen says why.
+   *
+   * A restriction nobody chose is not targeting, it is a bug with a UI in front
+   * of it. Narrowing stays one press away and is still sent exactly as typed.
+   */
   const [days, setDays] = useState<boolean[]>(() =>
-    prefill?.targetWeekdays ? flagsOf(prefill.targetWeekdays) : [false, true, true, false, false, false, false],
+    prefill?.targetWeekdays ? flagsOf(prefill.targetWeekdays) : [true, true, true, true, true, true, true],
   );
   const [hourFrom, setHourFrom] = useState(() =>
-    prefill?.targetFromMin !== undefined ? clockOf(prefill.targetFromMin) : '14:00',
+    prefill?.targetFromMin !== undefined ? clockOf(prefill.targetFromMin) : '00:00',
   );
   const [hourTo, setHourTo] = useState(() =>
-    prefill?.targetToMin !== undefined ? clockOf(prefill.targetToMin) : '16:00',
+    prefill?.targetToMin !== undefined ? clockOf(prefill.targetToMin) : '23:59',
   );
   const [audience, setAudience] = useState(0);
   const [notify, setNotify] = useState(false);
@@ -307,6 +321,11 @@ function DealBody({
    * cap goes from the reader's currency through the euro to the venue's minor
    * units.
    */
+  /* The whole day, however it was reached — the default, or an owner who set
+     both ends wide by hand. 1439 is 23:59, the last minute a `<input type=time>`
+     offers. */
+  const fullDay = minutesOf(hourFrom) === 0 && minutesOf(hourTo) >= 1439;
+
   const asDraft = (): DealDraft => ({
     copy: { [language]: { title: title.trim(), description: desc.trim() } },
     discountText: badge.trim(),
@@ -314,8 +333,16 @@ function DealBody({
     validFrom: from,
     validTo: to,
     targetWeekdays: days.every(Boolean) ? [] : days.flatMap((on, index) => (on ? [index] : [])),
-    targetFromMin: minutesOf(hourFrom),
-    targetToMin: minutesOf(hourTo),
+    /* A window covering the whole day is *no* window, sent as absent rather than
+       as 00:00–23:59. The two are the same intention and not the same row: a
+       stored window makes `claimableNow` compare the venue's local clock on
+       every read, so a deal meant to run all day would still go dark for the
+       last minute of it — and would read as deliberate targeting to anybody
+       looking at the record later. Same rule the weekdays above already follow,
+       where all seven is sent as none. */
+    ...(fullDay
+      ? {}
+      : { targetFromMin: minutesOf(hourFrom), targetToMin: minutesOf(hourTo) }),
     targetLanguages: segment === null ? ['ru'] : [],
     targetAudience: segment !== null && segment !== 'all' ? [segment] : [],
     ...(stop === 1 ? { capClaims: stopClaims } : {}),

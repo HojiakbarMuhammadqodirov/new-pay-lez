@@ -118,6 +118,29 @@ export interface Board {
  * that counted scan earnings would rank whoever spends the most money, which is
  * a different competition and not one to advertise.
  */
+/*
+ * **Every selected column that is not aggregated is named in the GROUP BY.**
+ *
+ * SQLite allows a bare `u.display_name` beside a `SUM()` and picks an arbitrary
+ * row for it. Postgres refuses: `42803: column "u.display_name" must appear in
+ * the GROUP BY clause or be used in an aggregate function`. All three
+ * leaderboards — global, city and country — answered 500 on the live database
+ * for as long as it has been Postgres, while every check here stayed green,
+ * because `verify:api` runs on SQLite where the loose form is legal. It is the
+ * same shape as the `rowid` bug and the same reason it hid.
+ *
+ * Grouping by the user's id alone looks like it should be enough — the join is
+ * on the primary key, so the three columns are functionally dependent on it —
+ * but Postgres only recognises that when the grouped column *is* that table's
+ * key, and this groups by `l.user_id`, which belongs to the ledger rather than
+ * to `users`. Naming them is the portable form and costs nothing: all three are
+ * constant within a user.
+ *
+ * The comment lives out here rather than inside the query on purpose. It wants
+ * to quote the error, the error contains backticks, and a backtick inside a
+ * template literal ends the string — the same trap the shaders carry a warning
+ * about in the root `CLAUDE.md`.
+ */
 async function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?: string } = {}) {
   return await db.all<{ user_id: string; points: number; name: string; avatar: string | null; opted: number }>(
     `SELECT l.user_id, SUM(l.delta) AS points, u.display_name AS name,
@@ -127,7 +150,7 @@ async function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?
         AND u.status = 'active' AND u.deleted_at IS NULL
         AND ($city IS NULL OR u.city = $city)
         AND ($country IS NULL OR u.country_code = $country)
-      GROUP BY l.user_id
+      GROUP BY l.user_id, u.display_name, u.display_avatar, u.leaderboard_opt_in
       ORDER BY points DESC`,
     { s: since, city: where.city ?? null, country: where.country ?? null },
   );
