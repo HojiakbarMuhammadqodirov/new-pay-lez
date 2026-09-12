@@ -611,7 +611,16 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     const consumed = Math.round(num(row, 'budget_consumed') * 100);
     if (consumed > 0) {
       await db.run(
-        `INSERT INTO budget_movements
+        /* `OR REPLACE`, like the budget above it and for the same reason: the id
+           is derived, so a re-import writes this row a second time. A plain
+           INSERT here made the whole importer single-use — the first re-import
+           since the database was filled died on
+           `duplicate key value violates unique constraint "budget_movements_pkey"`,
+           and because `boot` can run the import, that was a server that would
+           not start rather than a script that would not finish. The comment
+           above the budget says "every `INSERT OR REPLACE` below is the same";
+           this one was not, which is the only reason it was hard to see. */
+        `INSERT OR REPLACE INTO budget_movements
            (id, budget_id, allocation, kind, amount_minor, source_kind, note, created_at)
          VALUES ($i, $b, 'voucher', 'debit', $a, 'legacy_import', 'imported budget_consumed', $t)`,
         { i: `mov_legacy_${budgetId}`, b: budgetId, a: consumed, t: at },

@@ -28,7 +28,16 @@ import { PgDb } from './pg.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
-/** Every table, in the order `schema.sql` creates them — which is FK order. */
+/**
+ * Every table, in the order `schema.sql` creates them.
+ *
+ * That order is *approximately* dependency order and was assumed to be exactly
+ * it — the comment here used to say "which is FK order". It is not a property
+ * anything enforces, and it broke the first time a table gained a reference
+ * pointing at one declared later: the copy failed with `FOREIGN KEY constraint
+ * failed` and the nightly backup stopped producing a file. See `main` for why
+ * the fix is to stop depending on the order rather than to sort the schema.
+ */
 function tableOrder(): string[] {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
   return [...sql.matchAll(/CREATE TABLE IF NOT EXISTS\s+([a-z_]+)/g)].map((m) => m[1]);
@@ -63,6 +72,30 @@ async function main(): Promise<void> {
   let total = 0;
   const counts: Record<string, number> = {};
 
+  /*
+   * **Constraints off for the copy, and this is not a shortcut.**
+   *
+   * What is being written is a whole database that Postgres already holds and
+   * already enforces — every reference in it is satisfied *there*, or it could
+   * not have been written there. Re-checking each row as it lands here means the
+   * copy only succeeds if table-declaration order happens to be dependency
+   * order, which is a property of how somebody typed `schema.sql` rather than
+   * anything the schema states. It was true until a table gained a reference to
+   * one declared below it, and then the nightly backup produced nothing at all —
+   * a disaster-recovery file that stops existing silently is the worst failure
+   * in this file.
+   *
+   * Outside `tx()` deliberately: `PRAGMA foreign_keys` is a **no-op inside a
+   * transaction** in SQLite, so setting it in there would look right, change
+   * nothing, and fail exactly as before. Same construction `db.ts` uses around
+   * its table rebuilds.
+   *
+   * The integrity check is not skipped, it is moved: `foreign_key_check` below
+   * runs over the finished file, which tests the same property against the
+   * whole copy instead of against the order it happened to arrive in.
+   */
+  await sqlite.exec('PRAGMA foreign_keys = OFF');
+
   await sqlite.tx(async () => {
     for (const table of tables) {
       const rows = await pg.all<Record<string, unknown>>(`SELECT * FROM "${table}"`);
@@ -94,6 +127,28 @@ async function main(): Promise<void> {
       total += rows.length;
     }
   });
+
+  await sqlite.exec('PRAGMA foreign_keys = ON');
+
+  /*
+   * Every reference in the finished file, checked at once.
+   *
+   * This is what the per-row enforcement above was buying, without the ordering
+   * requirement: `foreign_key_check` walks the whole database and returns a row
+   * per violation. A backup that quietly held a dangling reference would restore
+   * into a server that throws the first time it read one, which is the worst
+   * moment to discover it.
+   */
+  const broken = await sqlite.all<{ table: string; rowid: number; parent: string }>(
+    'PRAGMA foreign_key_check',
+  );
+  if (broken.length) {
+    console.error(`BROKEN REFERENCES in the copy: ${broken.length}`);
+    for (const row of broken.slice(0, 10)) {
+      console.error(`  ${JSON.stringify(row)}`);
+    }
+    process.exit(1);
+  }
 
   /* Verify by re-reading both sides. A count kept while inserting proves the
      loop ran, not that the rows landed. */
