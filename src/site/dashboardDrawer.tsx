@@ -28,6 +28,7 @@ import {
   type DealDraft,
 } from './api/partner';
 import { ApiError } from './api/client';
+import { DEAL_KINDS } from './content';
 import { FX } from './i18n/fx';
 import { NumberWell } from './dashboardControls';
 import { DEMO_AUDIENCES, DEMO_CAMPAIGNS, DEMO_QUOTA, DEMO_VENUE } from './dashboardDemo';
@@ -119,13 +120,6 @@ function filingFailure(cause: unknown, copy: ReturnType<typeof useCopy>['dashboa
 
 /* ─────────────────────────────────────────────────────────────── the deal ── */
 
-/**
- * The category a deal is filed under, index-aligned with `copy.deal.kinds`.
- *
- * English identifiers rather than the reader's labels, so a Polish owner and an
- * English one filing the same kind of offer file it under one name.
- */
-const DEAL_KINDS = ['percentage', 'free_item', 'money_off', 'extra_stamp'] as const;
 
 /**
  * The audience picker's five options as the server's segments, index-aligned

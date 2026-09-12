@@ -96,6 +96,7 @@ import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, speedAt, stepBir
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
 import {
   BUSINESS_CATEGORIES,
+  DEAL_KINDS,
   GAMES,
   LEARN_STATS,
   PREVIEW,
@@ -1567,9 +1568,18 @@ console.log('\nthe wallet reads the server');
    * The board's chips used to be five categories written in `content.ts`
    * (Coffee, Food, Bakery, Services, Beauty) and a deal's category on the
    * server is the *venue's* taxonomy — `cafe`, `restaurant`, `hotels`. The two
-   * never matched, so every chip would have been empty. `categoryLabel` maps
-   * what it can and prints the raw id for what it cannot, which is visibly a
-   * raw id rather than a plausible wrong word.
+   * never matched, so every chip would have been empty.
+   *
+   * **Two taxonomies reach `categoryLabel`.** The dashboard's drawer files a
+   * deal by *offer kind* into the same column — `percentage`, `free_item` — so
+   * both arrive here. The checks below used to assert that an id with no word
+   * "prints itself", and that is what put the string `free_item` on a chip in
+   * front of a customer. An operator reading a raw id knows what a row is; a
+   * customer does not, and reads it as a typo.
+   *
+   * So the property is no longer "prints itself". It is that nothing reaches a
+   * screen with an underscore in it, and that a kind gets its real word when the
+   * caller has the words.
    */
   const names = en.listing.categories;
   check(
@@ -1583,10 +1593,38 @@ console.log('\nthe wallet reads the server');
     BUSINESS_CATEGORIES.every((row, i) => categoryLabel(row.id, names) === names[i]),
   );
   /* `hotels` and `bakery` are on the server and are not in this site's listing
-     form. Neither may render as `undefined` under a venue's name. */
-  for (const id of ['hotels', 'bakery', 'something_new']) {
-    check(`an unknown category prints itself (${id})`, categoryLabel(id, names) === id);
+     form. Neither may render as `undefined` under a venue's name, and neither
+     may arrive looking like a column name. */
+  for (const [id, expected] of [
+    ['hotels', 'Hotels'],
+    ['bakery', 'Bakery'],
+    ['something_new', 'Something new'],
+  ] as const) {
+    check(`an unknown category is readable (${id})`, categoryLabel(id, names) === expected,
+      categoryLabel(id, names));
   }
+  check(
+    'nothing reaches a screen with an underscore in it',
+    [...BUSINESS_CATEGORIES.map((r) => r.id), ...DEAL_KINDS, 'hotels', 'a_b_c'].every(
+      (id) => !categoryLabel(id, names).includes('_'),
+    ),
+  );
+
+  /* The offer kinds the drawer files a deal under. Given the drawer's own words
+     they translate; given none they are still words. */
+  const kinds = en.dashboard.drawer.deal.kinds;
+  check('the kinds and their words are the same length', kinds.length === DEAL_KINDS.length,
+    `${kinds.length} words, ${DEAL_KINDS.length} ids`);
+  check(
+    'an offer kind takes the drawer’s word for it',
+    DEAL_KINDS.every((id, i) => categoryLabel(id, names, kinds) === kinds[i]),
+    categoryLabel('free_item', names, kinds),
+  );
+  check(
+    '…and is still readable without them',
+    categoryLabel('free_item', names) === 'Free item',
+    categoryLabel('free_item', names),
+  );
 
   /* The tile letter. A venue with a blank name is a row the server will accept
      and a `''` in a circle is a hole in the layout. */

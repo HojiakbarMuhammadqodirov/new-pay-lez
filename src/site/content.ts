@@ -899,6 +899,22 @@ export const ADMIN_CARD_ICONS: IconName[] = [
  * too — `copy.listing.subcategories[i]` is the array for category `i`, and this
  * number is what the two are checked against.
  */
+/**
+ * The kinds of offer a deal can be, index-aligned with
+ * `copy.dashboard.drawer.deal.kinds`.
+ *
+ * English identifiers rather than the reader's labels, so a Polish owner and an
+ * English one filing the same kind of offer file it under one name.
+ *
+ * Here rather than in `dashboardDrawer.tsx`, where it was, because it is not the
+ * drawer's private vocabulary: the drawer writes these into a deal's `category`
+ * and the **wallet** reads them back out, so a customer's screen has to be able
+ * to name them. One list, two readers — the alternative was the drawer's copy
+ * and a second hardcoded copy wherever a label was needed, which is how
+ * `free_item` ended up rendered at a customer.
+ */
+export const DEAL_KINDS = ['percentage', 'free_item', 'money_off', 'extra_stamp'] as const;
+
 export const BUSINESS_CATEGORIES: Array<{
   id: BusinessCategory;
   subs: number;

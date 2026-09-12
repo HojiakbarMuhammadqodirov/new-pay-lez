@@ -33,7 +33,7 @@
  * React-free and pure, like `auth/business.ts` and `auth/player.ts`, so
  * `npm run verify` can hold it to its invariants outside a browser.
  */
-import { BUSINESS_CATEGORIES } from './content';
+import { BUSINESS_CATEGORIES, DEAL_KINDS } from './content';
 import type { SpokenLanguage } from './auth/business';
 
 export interface ServiceMetrics {
@@ -194,20 +194,57 @@ export interface AdminVenueRow {
 }
 
 /**
+ * An id as a word, the way a person would write it.
+ *
+ * The last resort, and it exists because the previous last resort was the id
+ * itself: a customer reading the wallet saw the chip `free_item` over a deal.
+ * The old note called that "the honest rendering — visibly a raw id rather than
+ * a plausible wrong word", and that argument holds for the **console**, where
+ * the reader is an operator who knows what a row is. It does not hold on a
+ * customer's screen, where nobody has ever seen a database and the id is simply
+ * a typo with an underscore in it.
+ *
+ * Title case with the underscores taken out is not a translation and does not
+ * pretend to be one. It is the same string, made readable.
+ */
+const humanise = (id: string): string => {
+  const words = id.replace(/[_-]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+};
+
+/**
  * The word for a category, in the reader's language where there is one.
  *
- * The server's taxonomy is wider than the listing form's — it has `hotels` and
- * `bakery`, which `BUSINESS_CATEGORIES` does not — so an id with no dictionary
- * entry falls back to the id itself rather than to `undefined` under a venue's
- * name. That is the honest rendering: it is what the row says, untranslated,
- * and it is visibly a raw id rather than a plausible wrong word.
+ * **Two taxonomies reach this function**, which is the thing to know before
+ * changing it. A deal's `category` is usually the venue's — `cafe`,
+ * `restaurant`, `hotels` — because `createDeal` defaults it to the venue's own.
+ * But the dashboard's drawer files a deal by *offer kind* instead
+ * (`percentage`, `free_item`, `money_off`, `extra_stamp`), so both vocabularies
+ * live in that one column and both arrive here. Looking up only the first
+ * printed the second raw.
  *
- * `names` is `copy.listing.categories`, passed in rather than imported, because
- * this module is React-free and the dictionary is a hook away.
+ * The server's taxonomy is also wider than the listing form's — it has `hotels`
+ * and `bakery`, which `BUSINESS_CATEGORIES` does not — so an id in neither list
+ * is humanised rather than shown as-is.
+ *
+ * `names` is `copy.listing.categories` and `kinds` is
+ * `copy.dashboard.drawer.deal.kinds`, both passed in rather than imported,
+ * because this module is React-free and the dictionary is a hook away. `kinds`
+ * is optional: a caller that has no reason to hold dashboard copy still gets a
+ * readable word, just an untranslated one.
  */
-export function categoryLabel(id: string, names: readonly string[]): string {
+export function categoryLabel(
+  id: string,
+  names: readonly string[],
+  kinds?: readonly string[],
+): string {
   const index = BUSINESS_CATEGORIES.findIndex((row) => row.id === id);
-  return index >= 0 ? (names[index] ?? id) : id;
+  if (index >= 0) return names[index] ?? humanise(id);
+
+  const kind = DEAL_KINDS.indexOf(id as (typeof DEAL_KINDS)[number]);
+  if (kind >= 0) return kinds?.[kind] ?? humanise(id);
+
+  return humanise(id);
 }
 
 /** The tile letter: a venue's own initial, or `?` for a name that has none. */

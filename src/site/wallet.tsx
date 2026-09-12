@@ -646,7 +646,12 @@ function DealCard({
   onToggle: () => void;
   onPlace: OpenPlace;
 }) {
-  const copy = useCopy().wallet;
+  /* The whole dictionary rather than just the wallet's slice, because a deal's
+     category can be an *offer kind* the dashboard's drawer filed it under —
+     `free_item`, `percentage` — and the words for those live with the drawer.
+     Without them a customer read the raw id off the card. See `categoryLabel`. */
+  const dictionary = useCopy();
+  const copy = dictionary.wallet;
   const deals = copy.deals;
   /* Seen, reported to the venue that is paying for this offer. The id is the
      server's own now, so `api/reach.ts`'s gate lets it through — it used to
@@ -657,7 +662,9 @@ function DealCard({
   const short = Math.max(0, deal.pointsRequired - balance);
   const until = on(deal.validTo, locale);
   const where = [
-    deal.category ? categoryLabel(deal.category, categories) : '',
+    deal.category
+      ? categoryLabel(deal.category, categories, dictionary.dashboard.drawer.deal.kinds)
+      : '',
     deal.city ?? '',
   ].filter(Boolean);
   const venueId = deal.venueId;
@@ -751,11 +758,18 @@ function CategoryStrip({
   selected: string | null;
   onPick: (next: string | null) => void;
 }) {
-  const copy = useCopy().wallet.deals;
+  const dictionary = useCopy();
+  const copy = dictionary.wallet.deals;
 
+  /* Same two taxonomies as the card below — the chips are built from whatever
+     the fetched deals carry, so an offer kind reaches this list exactly as often
+     as a venue category does. */
   const chips: Array<{ key: string | null; text: string }> = [
     { key: null, text: copy.all },
-    ...ids.map((id) => ({ key: id, text: categoryLabel(id, names) })),
+    ...ids.map((id) => ({
+      key: id,
+      text: categoryLabel(id, names, dictionary.dashboard.drawer.deal.kinds),
+    })),
   ];
 
   return (
