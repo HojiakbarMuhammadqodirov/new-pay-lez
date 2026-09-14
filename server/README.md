@@ -44,7 +44,7 @@ npm run openapi        # regenerate openapi.json from the route table
 - **`API.md`** — the flows a spec file cannot express: the gate's four steps,
   idempotency, offline queueing, the games protocol, what counts as a claim, and
   the money/time/language conventions. Read this first.
-- **`openapi.json`** — 139 paths, 153 operations, generated from `allRoutes` so
+- **`openapi.json`** — 141 paths, 155 operations, generated from `allRoutes` so
   it cannot drift. Point a generator at it rather than hand-writing a client.
 - **`FLUTTER-BRIEF.md`** — the standing instruction for the mobile app, written
   to be handed over whole.
@@ -141,6 +141,7 @@ db/    schema.sql    every entity in §14 and Part E
 
 domain/              the rules. React-free, HTTP-free, testable on their own
        ledger.ts     §2   append-only points, FIFO lots. Nothing expires
+       checkin.ts    §2b  the daily check-in, and the month by where it came from
        gate.ts       §3   the universal amount-capture gate
        budget.ts     §4-5 the pools: spent / reserved / available
        vouchers.ts   §4   tiers, reserve-debit-release, gift cards

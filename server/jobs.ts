@@ -22,6 +22,7 @@ import type { Db } from './db/db.ts';
 import * as analytics from './domain/analytics.ts';
 import * as deals from './domain/deals.ts';
 import * as campaigns from './domain/campaigns.ts';
+import * as checkin from './domain/checkin.ts';
 import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
 import * as ledger from './domain/ledger.ts';
@@ -60,9 +61,13 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
   detail.vouchers = await vouchers.expireVouchers(db, at);
   detail.rewards = await campaigns.expireRewards(db, at);
   detail.subscriptions = await entitlements.runRenewals(db, at);
+  /* Before the drain, so a reminder written this hour goes out on this hour's
+     push rather than waiting for the next one — the window it is sent in is
+     only an hour or two wide once quiet hours have had their say. */
+  detail.streakReminders = await checkin.remind(db, at);
   detail.push = await push.drain(db);
 
-  return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'push'], detail };
+  return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'check-ins', 'push'], detail };
 }
 
 /**

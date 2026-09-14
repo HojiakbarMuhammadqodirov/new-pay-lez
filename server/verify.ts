@@ -33,6 +33,7 @@ import * as analytics from './domain/analytics.ts';
 import * as assistant from './domain/assistant.ts';
 import * as budget from './domain/budget.ts';
 import * as campaigns from './domain/campaigns.ts';
+import * as checkin from './domain/checkin.ts';
 import * as consent from './domain/consent.ts';
 import * as dashboard from './domain/dashboard.ts';
 import * as deals from './domain/deals.ts';
@@ -775,6 +776,234 @@ async function campaignRules(): Promise<void> {
   );
 
   await w.db.close();
+}
+
+/**
+ * §2b turning up — the daily check-in and the calendar it draws.
+ *
+ * What is worth checking here is *not* that five points arrive. It is that a day
+ * cannot be claimed twice, that the seventh day of a streak is the seventh day
+ * and not the seventh call, that a milestone pays once in a lifetime rather than
+ * once per streak, and that the calendar's legend adds up to its own total. Each
+ * of those is a faucet or a lie if it is wrong, and none of them shows on a
+ * screen until somebody has been using the app for a week.
+ */
+async function checkInRules(): Promise<void> {
+  describe('§2b the daily check-in');
+  const w = await world();
+  const { db, customerId } = w;
+
+  /* A fixed March rather than `now()`: the cycle and the milestones are counted
+     in days, and a suite that started on the 30th would roll into a second month
+     halfway through and test the month boundary by accident. */
+  const day = (n: number) => `2026-03-${String(n).padStart(2, '0')}T09:00:00.000Z`;
+
+  const first = await checkin.checkIn(db, { userId: customerId, at: day(1) });
+  eq('the first check-in pays the base day', first.points, CONFIG.earn.dailyCheckIn);
+  eq('…and says it granted', first.granted, true);
+  eq('…and starts the streak at one', first.streak, 1);
+  eq('…and moves the balance', first.balance, CONFIG.earn.dailyCheckIn);
+  eq('…and names the day it claimed', first.day, '2026-03-01');
+  eq('…and when that day ends', first.dayTurnsAt, '2026-03-02T00:00:00.000Z');
+
+  const again = await checkin.checkIn(db, { userId: customerId, at: day(1) });
+  eq('a second claim the same day grants nothing', again.granted, false);
+  eq('…pays nothing', again.total, 0);
+  eq('…leaves the streak alone', again.streak, 1);
+  eq('…and leaves the balance alone', again.balance, CONFIG.earn.dailyCheckIn);
+
+  /* Six more days — the rest of the cycle, and the seven-day milestone. */
+  let expected = CONFIG.earn.dailyCheckIn;
+  for (let n = 2; n <= 7; n += 1) {
+    const claim = await checkin.checkIn(db, { userId: customerId, at: day(n) });
+    eq(`day ${n} pays its rung`, claim.points, checkin.dayValue(n));
+    eq(`day ${n} counts`, claim.streak, n);
+    expected += claim.total;
+  }
+  eq('the seventh day pays the milestone with it', expected, CONFIG.earn.dailyCheckIn * 13 + 50);
+  eq('…and the balance agrees', await ledger.balance(db, customerId), expected);
+  eq('the ledger reconciles', await ledger.reconcile(db, customerId), 0);
+
+  const milestoneRows = await db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM points_ledger WHERE user_id = $u AND reason = 'streak_milestone'`,
+    { u: customerId },
+  );
+  eq('the milestone is its own entry, not points folded in', milestoneRows?.n, 1);
+
+  /* The eighth day starts the shape again rather than running off the end. */
+  const eighth = await checkin.checkIn(db, { userId: customerId, at: day(8) });
+  eq('the eighth day pays what the first did', eighth.points, checkin.dayValue(1));
+  eq('…and the streak keeps counting', eighth.streak, 8);
+  eq('…and it is rung one again', eighth.cycleDay, 1);
+
+  /* A missed day. The 9th is skipped; the 10th starts over. */
+  const restart = await checkin.checkIn(db, { userId: customerId, at: day(10) });
+  eq('a missed day restarts the streak', restart.streak, 1);
+  eq('…at the base rung', restart.points, CONFIG.earn.dailyCheckIn);
+
+  const beforeRebuild = await ledger.balance(db, customerId);
+  for (let n = 11; n <= 16; n += 1) await checkin.checkIn(db, { userId: customerId, at: day(n) });
+  const rebuilt = await checkin.calendar(db, { userId: customerId, at: day(16) });
+  eq('the streak climbs back to seven', rebuilt.streak, 7);
+  eq(
+    'a rebuilt streak does not pay the milestone twice',
+    (await ledger.balance(db, customerId)) - beforeRebuild,
+    CONFIG.earn.dailyCheckIn * 12,
+  );
+  eq('…and the milestone reads as paid', rebuilt.milestones.find((m) => m.day === 7)?.paid, true);
+  eq('…and the longest run is remembered', rebuilt.longestStreak, 8);
+  eq('…and the next one to aim at is the thirty', rebuilt.nextMilestone?.day, 30);
+  eq('…which is twenty-three days off', rebuilt.nextMilestone?.daysAway, 23);
+
+  /* The calendar. Claimed today, so nothing is on offer and nothing is at risk. */
+  eq('today is the day the server is on', rebuilt.today, '2026-03-16');
+  eq('a claimed day is not claimable', rebuilt.claimable, false);
+  eq('…and is not at risk either', rebuilt.atRisk, false);
+  eq('the month is the one today falls in', rebuilt.month, '2026-03');
+  eq('every check-in is a day on the grid', rebuilt.days.filter((d) => d.checkedIn).length, 15);
+  eq(
+    'the month total is the sum of its legend',
+    rebuilt.monthTotal,
+    rebuilt.monthSources.reduce((total, source) => total + source.points, 0),
+  );
+  eq(
+    '…and of its days',
+    rebuilt.monthTotal,
+    rebuilt.days.reduce((total, d) => total + d.points, 0),
+  );
+  eq('…and of the ledger', rebuilt.monthTotal, await ledger.balance(db, customerId));
+  eq(
+    'the check-ins are their own row in the legend',
+    rebuilt.monthSources.find((s) => s.kind === 'check_in')?.label,
+    'Daily check-in',
+  );
+  eq(
+    '…and the streak bonus is another',
+    rebuilt.monthSources.find((s) => s.kind === 'streak')?.points,
+    50,
+  );
+
+  /* The day after: the streak is alive and today is unclaimed, and that pair is
+     the only state a "you are about to lose it" reminder is honest about. */
+  const tomorrow = await checkin.calendar(db, { userId: customerId, at: day(17) });
+  eq('an unclaimed day is claimable', tomorrow.claimable, true);
+  eq('…and a live streak with it is at risk', tomorrow.atRisk, true);
+  eq('…the streak still stands on yesterday', tomorrow.streak, 7);
+  eq('…today is the eighth rung, which is the first', tomorrow.cycleDay, 1);
+  eq('…worth the base day', tomorrow.todayPoints, CONFIG.earn.dailyCheckIn);
+
+  /* Two days after: yesterday went unclaimed, so the streak is gone rather than
+     merely at risk. */
+  const lapsed = await checkin.calendar(db, { userId: customerId, at: day(18) });
+  eq('a missed day ends the streak', lapsed.streak, 0);
+  eq('…so there is nothing at risk', lapsed.atRisk, false);
+  eq('…and today would be day one', lapsed.todayPoints, CONFIG.earn.dailyCheckIn);
+
+  /* A month with nothing in it is an empty grid, not a failure. */
+  const quiet = await checkin.calendar(db, { userId: customerId, month: '2026-01', at: day(18) });
+  eq('a month with no earning has no days', quiet.days.length, 0);
+  eq('…and a zero total', quiet.monthTotal, 0);
+  eq('…but still says what today is', quiet.today, '2026-03-18');
+
+  await rejects(
+    'a month that is not a month is refused',
+    async () => await checkin.calendar(db, { userId: customerId, month: '2026-13', at: day(18) }),
+    'validation_failed',
+  );
+  await rejects(
+    '…and so is a day dressed as one',
+    async () => await checkin.calendar(db, { userId: customerId, month: '2026-03-01', at: day(18) }),
+    'validation_failed',
+  );
+
+  /* The legend buckets every reason, including ones it has never been taught: a
+     total that does not equal the sum of its own legend is worse than a legend
+     with a vague row in it. */
+  await ledger.earn(db, { userId: customerId, points: 40, reason: 'game_win', at: day(16) });
+  await ledger.earn(db, { userId: customerId, points: 20, reason: 'scan_earn', at: day(16) });
+  await ledger.earn(db, { userId: customerId, points: 25, reason: 'review', at: day(16) });
+  const mixed = await checkin.calendar(db, { userId: customerId, at: day(16) });
+  eq(
+    'a scan and the review after it are one bucket',
+    mixed.monthSources.find((s) => s.kind === 'visits')?.points,
+    45,
+  );
+  eq('games are their own', mixed.monthSources.find((s) => s.kind === 'games')?.points, 40);
+  eq(
+    'the legend still adds up',
+    mixed.monthTotal,
+    mixed.monthSources.reduce((total, source) => total + source.points, 0),
+  );
+  const sixteenth = mixed.days.find((d) => d.day === '2026-03-16');
+  eq('a day carries its own split', sixteenth?.sources.length, 3);
+  eq('…ordered biggest first', sixteenth?.sources[0]?.kind, 'visits');
+  eq('…and totals to the day', sixteenth?.points, 45 + 40 + checkin.dayValue(7));
+
+  /* A spend is a real row and belongs in the history screen — not in a legend
+     that answers "where did points come from". */
+  await ledger.spend(db, { userId: customerId, points: 100, reason: 'voucher_redeem', at: day(16) });
+  const afterSpend = await checkin.calendar(db, { userId: customerId, at: day(16) });
+  eq('spending does not appear in the legend', afterSpend.monthTotal, mixed.monthTotal);
+
+  eq('the ladder is the cycle', afterSpend.ladder.length, CONFIG.earn.checkInCycle.length);
+  eq(
+    '…with the milestone drawn on the rung it lands on',
+    afterSpend.ladder.find((rung) => rung.day === 7)?.milestone,
+    50,
+  );
+
+  /* ── the streak reminder ──────────────────────────────────────────────── */
+
+  /* Day 16 was claimed and day 17 was not, so on the 17th this account is
+     exactly the population: a live streak with the day it is owed running out. */
+  const reminders = async () =>
+    await db.all<{ title: string; body: string; delivery: string; suppress_reason: string | null }>(
+      `SELECT title, body, delivery, suppress_reason FROM notifications
+        WHERE user_id = $u AND kind = 'streak' ORDER BY created_at`,
+      { u: customerId },
+    );
+
+  const early = await checkin.remind(db, '2026-03-17T09:00:00.000Z');
+  eq('nothing is sent while the day still has hours in it', early.due, 0);
+  eq('…and nothing is written', (await reminders()).length, 0);
+
+  const late = await checkin.remind(db, '2026-03-17T19:00:00.000Z');
+  eq('a live streak with the day running out is reminded', late.due, 1);
+  eq('…once', late.sent, 1);
+
+  const written = await reminders();
+  eq('…with one row on the inbox', written.length, 1);
+  eq('…naming the streak and the hours left', written[0]?.title, 'Your 7-day streak ends in 5 hours');
+  eq(
+    '…and what today is actually worth',
+    written[0]?.body,
+    `Check in to keep it. Today is worth ${checkin.dayValue(8)} points.`,
+  );
+  /* No push token on this account, so the push is refused and the row still
+     lands — and says which of the four reasons refused it. A reminder that
+     vanished because a permission was never granted is a reminder nobody can
+     explain the absence of. */
+  eq('…written even when it cannot be pushed', written[0]?.delivery, 'suppressed');
+  eq('…recording why', written[0]?.suppress_reason, 'no_permission');
+
+  /* The job runs hourly and the window is hours wide. Running it again inside
+     the same day must not buzz anybody twice. */
+  const rerun = await checkin.remind(db, '2026-03-17T21:00:00.000Z');
+  eq('a second run the same day finds nobody', rerun.due, 0);
+  eq('…and writes nothing', (await reminders()).length, 1);
+
+  /* Somebody who has already checked in is not reminded of anything. Day 16 was
+     claimed, so on the 16th there is nothing to say. */
+  const claimed = await checkin.remind(db, '2026-03-16T19:00:00.000Z');
+  eq('a day already claimed is not reminded', claimed.due, 0);
+
+  /* And neither is a streak that has already gone: on the 18th, the 17th went
+     unclaimed, so there is no run to save and the sentence would be a
+     bereavement notice. */
+  const gone = await checkin.remind(db, '2026-03-18T19:00:00.000Z');
+  eq('a streak that already broke is not reminded', gone.due, 0);
+
+  await db.close();
 }
 
 async function gameRules(): Promise<void> {
@@ -2712,6 +2941,73 @@ async function httpSurface(): Promise<void> {
   eq('…and reporting it twice pays nothing', onboardAgain.body.points, 0);
   eq('…leaving the balance where it was', (await call('GET', '/v1/me', { token })).body.points,
     CONFIG.earn.onboarding);
+
+  /*
+   * Turning up.
+   *
+   * On an account of its own, deliberately. Every balance assertion in this
+   * function is an absolute figure on `token`'s account, so a check-in paid into
+   * it would move a number four hundred lines away and the failure would read as
+   * a broken gift card. A fixture that has to be read end to end before a line
+   * can be added to it is a fixture nobody adds lines to.
+   */
+  const dailySignup = await call('POST', '/v1/auth/signup', {
+    body: { email: 'daily@verify.test', password: 'hunter22', name: 'Daily' },
+  });
+  const dailyToken = dailySignup.body.token as string;
+
+  /* The claim takes no body, so the only things that can vary between two calls
+     are who is asking and what day it is — and the server owns both. */
+  const claim = await call('POST', '/v1/daily/check-in', { token: dailyToken, key: 'k-checkin-1' });
+  eq('the daily check-in pays', claim.status, 200);
+  eq('…the base day, on the first day', claim.body.points, CONFIG.earn.dailyCheckIn);
+  eq('…and says it granted', claim.body.granted, true);
+  eq('…and starts a streak', claim.body.streak, 1);
+  eq('…and says when the day turns', typeof claim.body.dayTurnsAt, 'string');
+
+  /* Same key, same body: the stored response comes back rather than a second
+     run. That is the `Idempotency-Key` guard, and it is a different guard from
+     the day key below — this one never reaches the domain at all. */
+  const replay = await call('POST', '/v1/daily/check-in', { token: dailyToken, key: 'k-checkin-1' });
+  eq('a retried request is replayed, not re-run', replay.body.points, CONFIG.earn.dailyCheckIn);
+  eq('…including the flag that says it granted', replay.body.granted, true);
+
+  /* A *fresh* key on the same day is a second claim rather than a retry, and
+     that is the one the day key has to catch. */
+  const second = await call('POST', '/v1/daily/check-in', { token: dailyToken, key: 'k-checkin-2' });
+  eq('a second claim the same day grants nothing', second.body.granted, false);
+  eq('…and pays nothing', second.body.total, 0);
+  eq(
+    '…leaving the balance where the first claim left it',
+    (await call('GET', '/v1/me', { token: dailyToken })).body.points,
+    CONFIG.earn.dailyCheckIn,
+  );
+
+  const daily = await call('GET', '/v1/daily', { token: dailyToken });
+  eq('the calendar answers', daily.status, 200);
+  eq('…with today claimed', daily.body.claimedToday, true);
+  eq('…so nothing is on offer', daily.body.claimable, false);
+  eq('…and nothing at risk', daily.body.atRisk, false);
+  eq(
+    '…and the month adds up to the legend under it',
+    daily.body.monthTotal,
+    (daily.body.monthSources as Array<{ points: number }>).reduce((t, s) => t + s.points, 0),
+  );
+  eq(
+    '…where the check-in is its own row',
+    (daily.body.monthSources as Array<{ kind: string; points: number }>).find(
+      (s) => s.kind === 'check_in',
+    )?.points,
+    CONFIG.earn.dailyCheckIn,
+  );
+  eq('…and today is on the grid', (daily.body.days as Array<{ checkedIn: boolean }>).length, 1);
+
+  const badMonth = await call('GET', '/v1/daily?month=nonsense', { token: dailyToken });
+  eq('a month that is not one is a 400', badMonth.status, 400);
+  eq('…naming the field', badMonth.body.error.field, 'month');
+
+  eq('the calendar needs a session', (await call('GET', '/v1/daily')).status, 401);
+  eq('…and so does the claim', (await call('POST', '/v1/daily/check-in')).status, 401);
 
   /*
    * A birthday may be set and then corrected once; the third different date is
@@ -5301,6 +5597,7 @@ async function run(): Promise<void> {
   await gateRules();
   await voucherRules();
   await campaignRules();
+  await checkInRules();
   await gameRules();
   await scoringRules();
   await dealRules();

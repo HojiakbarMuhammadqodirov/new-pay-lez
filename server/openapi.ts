@@ -584,6 +584,119 @@ const SCHEMAS: Record<string, Schema> = {
     },
   },
 
+  EarnSource: {
+    type: 'object',
+    description:
+      'One row of the "where did this come from" legend. Fewer kinds than there are ledger ' +
+      'reasons, on purpose: a scan, the venue bonus that rode in with it and the review left ' +
+      'afterwards are one thing to the person who earned them. **Render `label`** — a client ' +
+      'with its own table of names is a client that prints a raw reason the day the server ' +
+      'grows one it has never heard of.',
+    properties: {
+      kind: {
+        type: 'string',
+        enum: ['check_in', 'streak', 'games', 'visits', 'stamps', 'invites', 'bonus'],
+        description: 'Stable, for picking a colour. Never for picking a word.',
+      },
+      label: str('The words to print.'),
+      points: int('Earned. Spends are not in this legend at all.'),
+    },
+  },
+
+  CalendarDay: {
+    type: 'object',
+    description:
+      'A day with something to say. Days with nothing are **left out**, not sent as zeroes: ' +
+      'the client knows `today`, so a day that is absent is "nothing happened" before it and ' +
+      '"not yet" after it, and those are not the same cell.',
+    properties: {
+      day: str('`YYYY-MM-DD`.'),
+      checkedIn: bool('Whether the check-in was claimed on this day.'),
+      points: int('Everything earned that day, from every source.'),
+      sources: arrayOf(ref('EarnSource')),
+    },
+  },
+
+  StreakMilestone: {
+    type: 'object',
+    description:
+      'A one-off bonus for reaching a streak length. **Paid once in a lifetime, not once per ' +
+      'streak** — a run that breaks at ninety and climbs back to seven does not pay the ' +
+      'seven-day bonus again.',
+    properties: {
+      day: int('The streak length that pays it.'),
+      points: int(),
+      paid: bool('Whether this account has ever been paid it.'),
+    },
+  },
+
+  DailyCalendar: {
+    type: 'object',
+    description:
+      'Everything the daily-rewards screen draws. One response rather than three, because the ' +
+      'streak, the seven-day run-up, the month grid and the legend under it are four answers ' +
+      'to one question, and a screen that fetched them separately could draw a calendar beside ' +
+      'a streak read a second earlier.',
+    properties: {
+      today: str('The server’s day, `YYYY-MM-DD`. **Do not compute this locally.**'),
+      dayTurnsAt: iso(
+        'When `today` becomes tomorrow. Count down to this rather than to a local midnight: a ' +
+          'client that picks its own boundary is a client that disagrees with the server about ' +
+          'whether a streak is still alive.',
+      ),
+      claimable: bool('Whether today’s check-in is still there to take.'),
+      claimedToday: bool(),
+      todayPoints: int('What today’s check-in paid, or would pay.'),
+      todayBonus: int('The milestone landing with it, or 0.'),
+      streak: int('Consecutive days checked in, ending today **or yesterday**.'),
+      longestStreak: int(),
+      atRisk: bool(
+        'A live streak with today unclaimed — the only state a "you are about to lose it" ' +
+          'reminder is honest about.',
+      ),
+      cycleDay: int('Which rung of the seven-day cycle today is, 1–7.'),
+      ladder: arrayOf({
+        type: 'object',
+        properties: { day: int(), points: int(), milestone: int('0 where none lands on this rung.') },
+      }),
+      milestones: arrayOf(ref('StreakMilestone')),
+      nextMilestone: {
+        type: 'object',
+        nullable: true,
+        description: 'The next unpaid one, or null when all of them are paid.',
+        properties: { day: int(), points: int(), daysAway: int() },
+      },
+      month: str('`YYYY-MM` — the month `days` belongs to.'),
+      monthTotal: int('Everything earned in it. Equal to the sum of `monthSources`, and of `days`.'),
+      monthSources: arrayOf(ref('EarnSource')),
+      days: arrayOf(ref('CalendarDay')),
+    },
+  },
+
+  DailyCheckIn: {
+    type: 'object',
+    description: 'What one check-in did. Safe to send twice; see the endpoint.',
+    properties: {
+      granted: bool('True only for the call that actually claimed the day.'),
+      day: str('`YYYY-MM-DD`.'),
+      dayTurnsAt: iso('When it stops being today.'),
+      points: int('What the check-in paid. `0` on a repeat.'),
+      bonus: int('The milestone that landed with it. `0` when none did.'),
+      total: int('`points + bonus` — what the balance moved by.'),
+      milestone: {
+        type: 'object',
+        nullable: true,
+        description: 'The milestone this call paid, for a screen that wants to celebrate it.',
+        properties: { day: int(), points: int() },
+      },
+      streak: int(),
+      longestStreak: int(),
+      cycleDay: int(),
+      tomorrowPoints: int('What tomorrow pays if tomorrow is claimed. The reason to come back.'),
+      balance: int('The balance after, as the server computed it.'),
+    },
+  },
+
   GamesState: {
     type: 'object',
     description: 'The truth about this player. Anything the client tracks is a display.',
@@ -1184,6 +1297,52 @@ const DOCS: Record<string, Doc> = {
   },
 
   /* ── games ── */
+  'GET /v1/daily': {
+    summary: 'The daily check-in, the streak, and where this month’s points came from',
+    description:
+      'The whole daily-rewards screen in one read.\n\n' +
+      'Two things on it are the server’s and must not be recomputed. `today` is the day a ' +
+      'check-in is keyed on — the same slice every daily allowance in this API resets on — and ' +
+      '`dayTurnsAt` is when it ends. A client that derives either from the device clock will ' +
+      'tell somebody in Tashkent their streak broke while the server still thinks it is alive.\n\n' +
+      '`days` and `monthSources` are **earnings, from every source**, not a list of check-ins: ' +
+      'the question the screen answers is "where is this balance from", and the five points ' +
+      'somebody tapped for are one row of that answer. Spends are not here at all — a ' +
+      'redemption is a real entry and belongs in `GET /v1/wallet/history`.\n\n' +
+      'The streak counted here is **days opened**, and it is not the one on ' +
+      '`GET /v1/games/state`, which counts days *played*. Two rules about two behaviours; name ' +
+      'them differently on screen or neither number means anything.',
+    tags: ['daily'],
+    query: [
+      {
+        name: 'month',
+        description: '`YYYY-MM`. Defaults to the month `today` falls in. Anything else is a 400.',
+        schema: str(),
+      },
+    ],
+    response: ref('DailyCalendar'),
+    errors: [[400, 'validation_failed — `month` is not `YYYY-MM`']],
+  },
+  'POST /v1/daily/check-in': {
+    summary: 'Take today’s check-in',
+    description:
+      '**No body.** The server knows who is asking and what day it is, and a claim that let the ' +
+      'client name either is a claim the client can aim.\n\n' +
+      'Pays `CONFIG.earn.dailyCheckIn` through a seven-day shape — three days at the base rate, ' +
+      'three at double, the seventh at quadruple — restarting at rung one on the eighth ' +
+      'consecutive day and at rung one again after a missed day. A streak milestone (7, 30, 100) ' +
+      'arrives as **its own ledger entry**, so a balance that jumped by 70 has two rows ' +
+      'explaining it rather than one that cannot be checked.\n\n' +
+      '**Safe to send twice, and two different guards make it so.** A second *claim* the same ' +
+      'day — a tab left open overnight, a second device — answers `granted: false` with the ' +
+      'day’s real figures rather than failing, because "already done" is a success from the ' +
+      'caller’s side. A retried *request* carrying the same `Idempotency-Key` is replayed from ' +
+      'store and never reaches the domain, which is what hands a phone that lost the first ' +
+      'reply the original body rather than a second, truthful-but-different one. Send the key.\n\n' +
+      'There is no way to claim a day that has gone.',
+    tags: ['daily'],
+    response: ref('DailyCheckIn'),
+  },
   'GET /v1/games/state': {
     summary: 'Energy, streak, freezes, accuracy, today’s shared word',
     description:
@@ -2027,7 +2186,8 @@ export function buildSpec(): Schema {
       { name: 'catalogue', description: 'Venues and their detail.' },
       { name: 'deals', description: 'Hot deals and the Seen → Opened → Claimed funnel.' },
       { name: 'wallet', description: 'Points, vouchers, rewards, gift cards.' },
-      { name: 'gate', description: 'The amount-capture gate. The only place value is granted.' },
+      { name: 'gate', description: 'The amount-capture gate. The only place a venue’s value is granted.' },
+      { name: 'daily', description: 'Turning up — the check-in, the streak, and the month’s earnings by source.' },
       { name: 'games', description: 'Server-scored rounds. The client never holds an answer.' },
       { name: 'social', description: 'Referrals and leaderboards.' },
       { name: 'notifications', description: 'Inbox and push registration.' },

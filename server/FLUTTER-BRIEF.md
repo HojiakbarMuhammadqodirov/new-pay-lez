@@ -495,6 +495,79 @@ Two rendering rules that matter (`API.md` §9):
 
 ---
 
+## 9. Turning up — the daily check-in and the calendar
+
+A second earning surface, and the first that pays for nothing but opening the
+app. Two endpoints, and it needed no migration: `check_in` and `streak_milestone`
+have been legal `points_ledger.reason` values since the table was written, and a
+check-in **is** its ledger entry. There is no check-in table and no streak
+column, which is why none of the figures below can drift from the balance.
+
+**The screen is one read.** `GET /v1/daily` returns the streak, the seven-day
+run-up, the month's grid and the legend under it together, because they are four
+answers to one question — *should I open this tomorrow* — and fetching them
+separately means drawing a calendar beside a streak read a second earlier.
+
+**Two fields are the server's and must not be recomputed.** `today` is the day a
+check-in is keyed on, and `dayTurnsAt` is when it ends. Count down to
+`dayTurnsAt`; a client that works out its own midnight will tell somebody their
+streak broke while the server still thinks it is alive. That field is also the
+answer to the app's standing "streak expiry" gap, at least for this screen.
+
+**`days` and `monthSources` are earnings, not check-ins.** The question the
+screen answers is *where is this balance from*, and the five points somebody
+tapped for are one row of that answer. Every positive ledger entry in the month
+is bucketed into one of seven kinds — `check_in`, `streak`, `games`, `visits`,
+`stamps`, `invites`, `bonus` — each carrying its own `label`. **Print the
+`label`.** A client with its own table of names is a client that prints a raw
+reason the day the server grows one it has not heard of; `kind` is stable and is
+for picking a colour, not a word.
+
+Spends are not in that legend. A redemption is a real entry and belongs in
+`GET /v1/wallet/history`; a legend that answers "where did points come from" and
+then subtracts a voucher is answering two questions at once and totalling neither.
+
+**The ladder.** A day pays `dailyCheckIn` times a rung of `[1, 1, 1, 2, 2, 2, 4]`
+— 5, 5, 5, 10, 10, 10, 20 at today's figures, 65 for a perfect week and about 280
+a month. The eighth consecutive day is rung one again; a missed day restarts at
+rung one. The whole ladder is on the response, so no client needs the shape.
+
+**Milestones pay once in a lifetime**, not once per streak: 7 → 50, 30 → 250,
+100 → 1000, each as its own ledger entry beside the check-in, so a balance that
+jumped by 70 has two rows explaining it rather than one nobody can check. A
+streak that breaks at ninety and climbs back to seven does not pay the seven-day
+bonus again, and `milestones[]` says which have been paid.
+
+**Claiming is safe to send twice, and two different guards make it so.** A second
+*claim* the same day — a tab left open overnight, a second device — answers
+`granted: false` with the day's real figures rather than failing, because
+"already done" is a success from the caller's side. A retried *request* carrying
+the same `Idempotency-Key` is replayed from store and never reaches the domain,
+which is what hands a phone that lost the first reply the original body rather
+than a second, truthful-but-different one. **Send the key.** There is no way to
+claim a day that has gone.
+
+**There is a streak reminder, and it is an inbox row like any other.** An hourly
+job writes one notification per account per day, `kind: 'streak'`, once the
+server's day has `CONFIG.earn.checkInRemindHoursLeft` (6) or fewer hours left and
+only for accounts with a **live streak and an unclaimed day** — somebody who
+never checked in is not missing anything, and somebody whose streak broke last
+week would be getting a bereavement notice. Title: *"Your 7-day streak ends in 5
+hours"*. Body: *"Check in to keep it. Today is worth 5 points."*, with the real
+figure.
+
+It carries `actionUrl: '#/daily'`. Resolve that against your own destinations —
+the whitelist, not the string — and send it to the daily-rewards screen. The row
+is written **even when the push is suppressed** (no permission, preference off,
+quiet hours, frequency cap), because somebody opening the app tomorrow should
+still see what they missed; `suppress_reason` says which of the four it was.
+
+**This streak is not the games streak.** The one here counts days *opened*; the
+one on `GET /v1/games/state` counts days *played*, moves only when a round is
+banked, and is the one with the freezes. They are two rules about two behaviours
+and they will disagree. Name them differently on screen — "check-in streak" and
+"play streak" — or neither number means anything to the person reading it.
+
 ## Definition of done, overall
 
 - No reward, discount, streak, energy count or balance is computed on the device.
@@ -1037,6 +1110,8 @@ will hide the next column silently. Render the JSON, or hand over the file.
 | --- | --- | --- |
 | `GET /v1/cities` | public | `{ countries: ["PL","DE","UZ"], cities: [{ name, country }] }` — 114 entries, and now a suggestion source rather than a whitelist (§6) |
 | `POST /v1/me/onboarded` | user | `{ granted, onboardedAt, points, balance }` |
+| `GET /v1/daily?month=YYYY-MM` | user | The whole daily-rewards screen: `{ today, dayTurnsAt, claimable, claimedToday, todayPoints, todayBonus, streak, longestStreak, atRisk, cycleDay, ladder[], milestones[], nextMilestone, month, monthTotal, monthSources[], days[] }`. See §9 |
+| `POST /v1/daily/check-in` | user, idempotent | `{ granted, day, dayTurnsAt, points, bonus, total, milestone, streak, longestStreak, cycleDay, tomorrowPoints, balance }` |
 
 ### 11. New refusals on endpoints that used to always succeed
 

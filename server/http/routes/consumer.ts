@@ -2,13 +2,17 @@
  * The consumer app's endpoints: the catalogue, the wallet, the games, the
  * social bits, the inbox and the assistant.
  *
- * Everything here is a read or a request; nothing here grants anything. The one
- * place value is created is the gate (`routes/gate.ts`), and the one place it is
- * converted is `POST /v1/vouchers`, which spends points against a tier — both of
- * which run through the domain layer's own transactions.
+ * Almost everything here is a read or a request. Three of them are not, and each
+ * says so on its own route: `POST /v1/vouchers` spends points against a tier,
+ * `POST /v1/games/sessions/:id/finish` banks a round, and
+ * `POST /v1/daily/check-in` pays for turning up. The gate (`routes/gate.ts`) is
+ * still the only place a *venue's* value is created; these three are the ones a
+ * customer creates alone, and all four run through the domain layer's own
+ * transactions rather than writing a row from a handler.
  */
 import * as assistant from '../../domain/assistant.ts';
 import * as campaigns from '../../domain/campaigns.ts';
+import * as checkin from '../../domain/checkin.ts';
 import * as deals from '../../domain/deals.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as games from '../../domain/games.ts';
@@ -327,6 +331,48 @@ export const consumerRoutes: Route[] = [
         at: ctx.at,
       });
     },
+  },
+
+  /* ══════════════════════════════════════════════════════════ turning up ══ */
+  {
+    /**
+     * The daily-rewards screen, in one response.
+     *
+     * One call rather than three, because the streak, the seven-day run-up, the
+     * month's grid and the legend under it are four answers to one question, and
+     * a screen that fetched them separately could draw a calendar beside a
+     * streak read a second earlier. `month` defaults to the one `today` falls
+     * in; an older one is a read of history and costs the same query.
+     */
+    method: 'GET',
+    pattern: '/v1/daily',
+    auth: 'user',
+    handler: async (ctx) =>
+      await checkin.calendar(ctx.db, {
+        userId: actor(ctx).user.id,
+        month: qStr(ctx, 'month'),
+        at: ctx.at,
+      }),
+  },
+  {
+    /**
+     * Take today's check-in.
+     *
+     * Declared idempotent although the day key already makes a repeat free, because
+     * the two guards answer different questions. The day key stops a second
+     * *claim* — a tab left open overnight, a second device — and answers it
+     * `granted: false`. `Idempotency-Key` stops a retried *request* from being
+     * run twice at all, which is what hands a phone that never saw the first
+     * reply the original body rather than a second, truthful-but-different one.
+     *
+     * No body. The server knows who is asking and what day it is, and a claim
+     * that let the client name either is a claim the client can aim.
+     */
+    method: 'POST',
+    pattern: '/v1/daily/check-in',
+    auth: 'user',
+    idempotent: true,
+    handler: async (ctx) => await checkin.checkIn(ctx.db, { userId: actor(ctx).user.id, at: ctx.at }),
   },
 
   /* ═══════════════════════════════════════════════════════════════ games ══ */

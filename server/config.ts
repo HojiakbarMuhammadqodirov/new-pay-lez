@@ -114,9 +114,63 @@ export const CONFIG = {
     dealShared: 25,
     dealSharedPerDay: 3,
 
-    /** Turning up. */
+    /*
+     * Turning up.
+     *
+     * The base day, and the one number to move if opening the app is worth more
+     * or less than it is. Everything else about the check-in is a *shape* over
+     * this figure rather than a second table of amounts, so the economy has one
+     * dial and not eight.
+     */
     dailyCheckIn: 5,
-    /** Streak day → points. Paid once, when the streak first reaches it. */
+    /*
+     * The seven-day cycle, as multiples of `dailyCheckIn`.
+     *
+     * Day 1 is the first day of a streak, day 7 the seventh, and an eighth
+     * consecutive day starts the shape again — `((streak - 1) % 7)`. The run-up
+     * is what makes a calendar worth opening: a flat five every day is a number
+     * nobody plans a week around, and the seventh being worth four ordinary days
+     * is the whole reason the sixth gets claimed.
+     *
+     * Multiples rather than points so the two facts stay separate: this array is
+     * the *shape* of a week and `dailyCheckIn` is what a day is worth. Changing
+     * what turning up pays is one edit; changing how a week builds is the other,
+     * and neither silently does the other's job.
+     *
+     * Thirteen base days a week — 65 points, about 280 a month on a streak that
+     * never breaks. That is deliberately under a voucher tier (300 at the lowest
+     * rung): a month of opening the app gets somebody *nearly* to the thing they
+     * want, and the last stretch is a visit. A check-in that buys a voucher on
+     * its own is a loyalty scheme that stopped needing the venue.
+     */
+    checkInCycle: [1, 1, 1, 2, 2, 2, 4] as readonly number[],
+    /*
+     * How near the end of a day a live streak is reminded, in hours left.
+     *
+     * Not a payment, and it sits here anyway: somebody tuning what turning up is
+     * worth is the same person deciding when to ask for it, and a reminder
+     * filed under notifications is one they would never find.
+     *
+     * Six is chosen against the *product's* clock rather than the server's. The
+     * day is the UTC slice, so six hours left is 18:00 UTC — 19:00 or 20:00 in
+     * Warsaw, an evening. Quiet hours (`deals.quietFromMin`/`quietToMin`) close
+     * the window at 21:00 local, so the push lands in that hour or two and not
+     * at one in the morning; the inbox row is written either way, because
+     * somebody who opens the app tomorrow should still see what they missed.
+     *
+     * A larger number does not send more reminders — it sends the same one
+     * earlier, when the day still has plenty left in it and the message is a
+     * nag rather than a prompt.
+     */
+    checkInRemindHoursLeft: 6,
+    /**
+     * Streak day → points. Paid once, when the streak first reaches it.
+     *
+     * Once *ever*, not once per streak: `source_ref` is `streak:7`, so a streak
+     * that breaks at ninety and rebuilds does not pay the seven-day bonus again.
+     * A milestone is for the first time somebody did the thing, and a lapse is
+     * not a way to buy another one.
+     */
     streakMilestones: { 7: 50, 30: 250, 100: 1000 } as Record<number, number>,
     /** Coming back after a lapse, once a month. Worth having rather than
         token: the round it accompanies is the one that restarts the habit. */
