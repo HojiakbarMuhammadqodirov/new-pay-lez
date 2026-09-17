@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DASH_SCREENS } from './content';
+import { PlanSheet } from './dashboardPlan';
 import { PD_RANGES, RANGE_DAYS, dealFromApi } from './partnerMetrics';
 import type { RangeDays } from './partnerMetrics';
 import {
@@ -28,7 +29,7 @@ import { DashboardScreen } from './dashboardScreens';
 import { DashboardDrawer, DashboardToast } from './dashboardDrawer';
 import { DashboardContext, useDashboard } from './dashboardShell';
 import type { DrawerKind, DrawerPrefill, DrawerTarget } from './dashboardShell';
-import { LanguageMenu, ThemeToggle } from './Header';
+import { CurrencyMenu, LanguageMenu, ThemeToggle } from './Header';
 import { PATHS } from './router';
 import { useCountUp, useReveal } from './useReveal';
 
@@ -77,14 +78,19 @@ function Rail({
   onGo,
   collapsed,
   onToggle,
+  onOpenPlan,
 }: {
   screen: number;
   onGo: (index: number) => void;
   collapsed: boolean;
   onToggle: () => void;
+  onOpenPlan: () => void;
 }) {
   const copy = useCopy();
   const money = useMoney();
+  /* The venue's plan, from the session rather than from a fetch of its own —
+     see the note on the plan card below. */
+  const { plan } = useAuth();
 
   /*
    * The plan card reads the same pool the Campaigns and Vouchers screens do —
@@ -179,9 +185,25 @@ function Rail({
       </nav>
 
       <div className="rail-foot">
-        <div className="plan-card">
+        {/*
+          * A button, and it names the plan the venue is actually on.
+          *
+          * Two things were wrong with the box this replaces and they compound.
+          * It was a `<div>`, so the one piece of chrome that names the plan was
+          * not pressable and the panel behind it did not exist. And the name
+          * was `copy.dashboard.plan.name` — the dictionary string "Growth plan",
+          * identical for a venue on Starter and one on Chain, which is the one
+          * thing on this rail that had never asked what the plan was.
+          *
+          * `plan` comes off the auth context, which fills it from one
+          * `GET /v1/me` when the session changes, so this costs no request. It
+          * is **`null` while unknown**, and the dictionary's own word for that
+          * is shown rather than a guess — falling back to the free tier would
+          * label a paying customer free every time a request failed.
+          */}
+        <button type="button" className="plan-card" onClick={onOpenPlan}>
           <div className="plan-head">
-            <b>{copy.dashboard.plan.name}</b>
+            <b>{plan?.name ?? copy.dashboard.plan.unknown}</b>
             <span className="plan-state">{copy.dashboard.plan.state}</span>
           </div>
           <p>{copy.dashboard.plan.caption}</p>
@@ -201,7 +223,12 @@ function Rail({
                   total: money(total, 'exact'),
                 })}
           </span>
-        </div>
+          {/* What the press does, said on the control rather than guessed at. */}
+          <span className="plan-open">
+            {copy.dashboard.plan.open}
+            <Icon name="chevron" size={13} strokeWidth={2.2} />
+          </span>
+        </button>
 
         <button type="button" className="rail-collapse" onClick={onToggle}>
           <Icon name="chevron" size={16} strokeWidth={2.2} />
@@ -326,6 +353,10 @@ function TopBar({ screen }: { screen: number }) {
           `data-theme` cross-fade and the same `paylez-language` key; they just
           need their own mount here.
         */}
+        {/* Two settings, two controls — the dashboard prices a budget and a
+            cost per customer, so the currency belongs here as much as the
+            language does. */}
+        <CurrencyMenu />
         <LanguageMenu />
         <ThemeToggle />
         <NotificationsMenu />
@@ -830,11 +861,19 @@ export function DashboardPage() {
   /* Opens on the month, which is what every figure was written against and what
      the copy's own "August" crumb still says. */
   const [range, setRange] = useState<RangeDays>(RANGE_DAYS);
+  /* The same read the rail makes. `useApi` keys on the path, so this is the one
+     request answering both rather than a second one. */
+  const planVenue = usePartnerVenueId();
+  const planVenueId = planVenue.state.status === 'ready' ? planVenue.state.data : null;
   const [toastText, setToastText] = useState<string | null>(null);
   /* The venue whose public listing is being previewed, or null. On the frame
      rather than on the head for the same reason the create drawer is: an
      overlay inside a [data-reveal] element is contained by its transform. */
   const [preview, setPreview] = useState<string | null>(null);
+  /* The plan panel, on the frame rather than in the rail for the same reason
+     the create drawer is: an overlay inside a `[data-reveal]` element is
+     contained by that element's transform. */
+  const [planOpen, setPlanOpen] = useState(false);
 
   /*
    * A second rescan, keyed on the screen. `Site` keys its own on the route, and
@@ -891,6 +930,7 @@ export function DashboardPage() {
           onGo={setScreen}
           collapsed={collapsed}
           onToggle={() => setCollapsed((on) => !on)}
+          onOpenPlan={() => setPlanOpen(true)}
         />
 
         <div className="pd-main">
@@ -951,6 +991,7 @@ export function DashboardPage() {
           />
         )}
         {preview && <ListingPreview venueId={preview} onClose={() => setPreview(null)} />}
+        {planOpen && <PlanSheet venueId={planVenueId} onClose={() => setPlanOpen(false)} />}
         {toastText && <DashboardToast message={toastText} onDone={dismiss} />}
       </main>
     </DashboardContext.Provider>

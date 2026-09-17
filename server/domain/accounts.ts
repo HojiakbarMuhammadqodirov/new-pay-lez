@@ -79,6 +79,10 @@ export interface User {
   points_cache: number;
   leaderboard_opt_in: number;
   referral_code: string | null;
+  /** When the address was proved, or null. See `domain/verification.ts`. */
+  email_verified_at: string | null;
+  /** Shares with the venues this account visits, unless switched off (§1.4). */
+  venue_sharing_default: number;
   trust_tier: number;
   status: string;
   created_at: string;
@@ -240,6 +244,21 @@ export interface SignUpInput {
   referralCode?: string;
   /** A guest identity to fold in, if the visitor played before signing up. */
   provisionalId?: string;
+  /**
+   * That the terms and the privacy policy were actually agreed to.
+   *
+   * **Required, and refused when absent.** It used to be neither: sign-up wrote
+   * two `consent_records` rows unconditionally, on the argument that creating
+   * the account *is* the moment consent is recorded — which is true about the
+   * moment and false about the consent. Nobody had been asked. A row saying
+   * somebody agreed to a document on a day they were never shown it is worse
+   * than no row, because it is the row that would be produced as evidence.
+   *
+   * Optional in the *type* so the field can be absent on the wire and refused
+   * with a message, rather than being a 400 from `bool()` that says
+   * "acceptTerms is required" and nothing about what it is for.
+   */
+  acceptTerms?: boolean;
   /* No `deviceFingerprint`. The device belongs to the *session*, and the session
      is minted by `createSession` one call later — a field here would be one this
      function reads nowhere, which is the same silent drop the country used to
@@ -258,6 +277,18 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     throw new DomainError('validation_failed', 'password is too short', { field: 'password' });
   }
   const name = checkName(input.name);
+  /*
+   * §1.3. Refused before the address is even checked for collisions, because
+   * this is the one refusal that is about the *request* rather than about the
+   * account: an unagreed sign-up should not tell somebody whether an address is
+   * taken either.
+   */
+  if (input.acceptTerms !== true) {
+    throw new DomainError('validation_failed', 'the terms have to be accepted', {
+      field: 'acceptTerms',
+      policyVersion: CONFIG.privacy.policyVersion,
+    });
+  }
   if (await db.get(`SELECT 1 FROM users WHERE email_norm = $e`, { e: email })) {
     throw new DomainError('conflict', 'that address already has an account', { field: 'email' });
   }
@@ -294,7 +325,19 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     await grantRole(db, id, 'consumer', at);
     if (input.partner) await grantRole(db, id, 'partner_owner', at);
 
-    /* §1.3: consent is recorded at account creation with the policy version. */
+    /*
+     * §1.3: consent is recorded at account creation with the policy version.
+     *
+     * Reached only past the guard above, which is the whole change: these two
+     * rows are now evidence that somebody was asked and said yes, rather than a
+     * side effect of an account existing. `policy_version` and `recorded_at`
+     * come from `consent.record`, so the *which document* and the *when* are on
+     * the row rather than inferred from the account's creation date.
+     *
+     * Both kinds, because the form asks about both in one sentence and a
+     * checkbox that covered one of two documents would be the same dishonesty
+     * one step smaller.
+     */
     await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
     await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
 
@@ -372,11 +415,19 @@ export async function linkGoogleAccount(
     }
     /* Link, but leave `auth_provider` alone when the account already has a
        password: it can now be entered either way, and rewriting it to 'google'
-       would claim the password no longer works when it does. */
+       would claim the password no longer works when it does.
+
+       **And the address is proved by this.** `crypto/google.ts` refuses an
+       identity whose `email_verified` claim is false, so arriving here is
+       evidence that this person controls the address — which is exactly what a
+       code sent to it would have established. `COALESCE` rather than a
+       straight set, so an account that proved it with a code keeps the moment
+       it actually did. */
     await db.run(
       `UPDATE users
           SET provider_ref = $s,
               auth_provider = CASE WHEN password_hash IS NULL THEN 'google' ELSE auth_provider END,
+              email_verified_at = COALESCE(email_verified_at, $t),
               updated_at = $t
         WHERE id = $i`,
       { s: input.sub, t: at, i: byEmail.id },
@@ -387,9 +438,15 @@ export async function linkGoogleAccount(
   const id = newId('usr');
   await db.tx(async () => {
     await db.run(
+      /* `email_verified_at` is stamped on the way in, and it is not an
+         exception to the rule that every address is proved — it is the rule
+         already satisfied. `crypto/google.ts` throws on an identity whose
+         `email_verified` claim is false, so this row cannot exist unless
+         Google has asserted the address. Sending a code to it would be asking
+         somebody to prove something we have cryptographic evidence of. */
       `INSERT INTO users (id, email, email_norm, display_name, password_hash, auth_provider,
-                          provider_ref, language, status, created_at, updated_at)
-       VALUES ($i, $e, $n, $d, NULL, 'google', $s, $l, 'active', $t, $t)`,
+                          provider_ref, language, status, email_verified_at, created_at, updated_at)
+       VALUES ($i, $e, $n, $d, NULL, 'google', $s, $l, 'active', $t, $t, $t)`,
       {
         i: id,
         e: input.email.trim(),

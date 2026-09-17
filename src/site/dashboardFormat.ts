@@ -14,7 +14,7 @@
  * exports, not where the binding came from.
  */
 import { useMemo } from 'react';
-import { useCopy, useCurrency, useLanguage } from './i18n/context';
+import { useCopy, useCurrency, useGroupSeparator, useLanguage } from './i18n/context';
 import { group as groupDigits } from './i18n/currency';
 import { FX, formatFx, type FxCode } from './i18n/fx';
 
@@ -26,13 +26,23 @@ import { FX, formatFx, type FxCode } from './i18n/fx';
  * `CLAUDE.md`), so a count and a price on the same row have to break their
  * thousands identically or the screen looks like two products.
  *
+ * **The separator is passed explicitly, and it has to be.** This read
+ * `groupDigits(value, currency)` and relied on `CURRENCIES` being keyed by
+ * language, so the currency's own separator *happened* to be the reader's. Once
+ * the currency became a setting of its own that coincidence broke: a Polish
+ * reader who chose pounds got counts grouped with commas beside prices grouped
+ * with a narrow no-break space — two number formats on one row, which is the
+ * exact thing the paragraph above says this function exists to prevent.
+ * `useGroupSeparator` is the reader's answer and `useMoney` already passes it.
+ *
  * Deliberately not `Intl.NumberFormat` — `currency.ts` gives the reason: it
  * would also impose the locale's own currency placement, and placement here is
  * a property of the currency being written rather than of the reader.
  */
 export function useNum() {
   const currency = useCurrency();
-  return (value: number) => groupDigits(value, currency);
+  const separator = useGroupSeparator();
+  return (value: number) => groupDigits(value, currency, 0, separator);
 }
 
 /**
@@ -64,13 +74,20 @@ export function useMonthName() {
  * reader's, which is the rule the rate table states: grouping belongs to the
  * person reading, the symbol to the money.
  *
+ * That last sentence was **true by accident and stopped being true**, the same
+ * way `useNum` above did. It read `reader.group` off the chosen *currency*,
+ * which was the reader's separator only while `CURRENCIES` was keyed by
+ * language; once the currency became a setting of its own, a Polish reader who
+ * chose pounds got a Warsaw till's złoty written with commas. The reader's
+ * answer has its own hook.
+ *
  * Minor units in, so nothing here re-rounds through the euro.
  */
 export function useVenueMoney() {
-  const reader = useCurrency();
+  const separator = useGroupSeparator();
   return (minor: number, code: string) => {
     const fx = FX[code as FxCode] ?? FX.EUR;
-    const amount = formatFx(minor / 10 ** fx.decimals, fx, reader.group);
+    const amount = formatFx(minor / 10 ** fx.decimals, fx, separator);
     return fx.before ? `${fx.symbol}${amount}` : `${amount} ${fx.symbol}`;
   };
 }

@@ -19,7 +19,10 @@ import * as games from '../../domain/games.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as notifications from '../../domain/notifications.ts';
 import * as social from '../../domain/social.ts';
+import * as tasks from '../../domain/tasks.ts';
+import * as verification from '../../domain/verification.ts';
 import * as vouchers from '../../domain/vouchers.ts';
+import { CONFIG } from '../../config.ts';
 import { getVenue, trackListing } from '../../domain/venues.ts';
 import { linksOf } from '../../domain/partners.ts';
 import { DomainError } from '../../domain/errors.ts';
@@ -172,7 +175,11 @@ export const consumerRoutes: Route[] = [
                AND field = 'description' AND language IN ($l, 'en') ORDER BY language = $l DESC LIMIT 1`,
             { v: venue.id, l: ctx.language },
           ))?.value ?? null,
-        tiers: await vouchers.ladder(ctx.db, venue.id, ctx.at),
+        /* The viewer is passed so a rung this account has taken its personal
+           limit of closes, rather than looking live and refusing on the press.
+           `undefined` signed out, which applies the total cap alone — see
+           `vouchers.ladder`. */
+        tiers: await vouchers.ladder(ctx.db, venue.id, ctx.at, userId),
         deals: await deals.browse(ctx.db, viewerOf(ctx), { venueId: venue.id }),
         stampCards: userId ? await campaigns.progressFor(ctx.db, userId, venue.id) : [],
         rewards: userId ? await campaigns.availableRewards(ctx.db, userId, venue.id) : [],
@@ -298,13 +305,19 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/vouchers',
     auth: 'user',
     idempotent: true,
-    handler: async (ctx) =>
-      await vouchers.issue(ctx.db, {
+    handler: async (ctx) => {
+      /* Value leaving the platform, so it is behind a proved address. The gate
+         is at the route rather than in `vouchers.issue`, because that function
+         is also how the till, the demo seed and the fixtures issue one and none
+         of those is a client with an inbox. */
+      await verification.assertVerified(ctx.db, actor(ctx).user.id);
+      return await vouchers.issue(ctx.db, {
         userId: actor(ctx).user.id,
         venueId: str(ctx.body, 'venueId'),
         tierId: str(ctx.body, 'tierId'),
         at: ctx.at,
-      }),
+      });
+    },
   },
   {
     method: 'GET',
@@ -321,8 +334,14 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/gift-cards',
     auth: 'user',
     idempotent: true,
+    /* The one press on the wallet that moves value. Bounded because a loop
+       against a shelf with stock on it is a loop that empties it. */
+    limit: { perHour: CONFIG.limits.giftCardPerHour, by: 'account' },
     handler: async (ctx) => {
       const { user } = actor(ctx);
+      /* Same rule as the voucher ladder above: points leaving as a card with a
+         face value on it. */
+      await verification.assertVerified(ctx.db, user.id);
       const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
       return await vouchers.redeemGiftCard(ctx.db, {
         userId: user.id,
@@ -356,6 +375,29 @@ export const consumerRoutes: Route[] = [
   },
   {
     /**
+     * The daily-task prompts, with this account's progress on each.
+     *
+     * A read of its own rather than a field on `GET /v1/games/state`, because
+     * the two answer different questions and one of them is expensive: the
+     * state is the tank, the streak and the balance — four cheap reads a screen
+     * needs before it can draw anything — and this walks a month of check-ins,
+     * the day's finished rounds, the profile stamp and the referral table. A
+     * panel of nudges must not be on the critical path of the Play screen.
+     *
+     * Every task carries its own `done`, and the point of that is stated in
+     * `domain/tasks.ts`: each of these grants is once-only and guarded, so a
+     * panel that went on offering fifty points for a finished profile would be
+     * advertising a reward the server is going to refuse.
+     */
+    method: 'GET',
+    pattern: '/v1/daily/tasks',
+    auth: 'user',
+    handler: async (ctx) => ({
+      tasks: await tasks.tasksFor(ctx.db, actor(ctx).user.id, ctx.at),
+    }),
+  },
+  {
+    /**
      * Take today's check-in.
      *
      * Declared idempotent although the day key already makes a repeat free, because
@@ -372,7 +414,17 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/daily/check-in',
     auth: 'user',
     idempotent: true,
-    handler: async (ctx) => await checkin.checkIn(ctx.db, { userId: actor(ctx).user.id, at: ctx.at }),
+    /* The day key already makes a repeat free; this bounds the *requests*
+       rather than the grants, which is the cost the day key does not cover. */
+    limit: { perHour: CONFIG.limits.checkInPerHour, by: 'account' },
+    handler: async (ctx) => {
+      /* It grants points. Refused rather than granted-as-nothing, unlike a game
+         round: a round has a reason to be played anyway (it is the product) and
+         a check-in is *only* the grant, so a silent zero would be a button that
+         does nothing. */
+      await verification.assertVerified(ctx.db, actor(ctx).user.id);
+      return await checkin.checkIn(ctx.db, { userId: actor(ctx).user.id, at: ctx.at });
+    },
   },
 
   /* ═══════════════════════════════════════════════════════════════ games ══ */
@@ -399,6 +451,10 @@ export const consumerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/games/sessions',
     auth: 'user',
+    /* Above what energy allows on any plan, because energy bounds the rounds
+       that *pay* and this bounds the ones that do not: a practice round costs
+       nothing, which is exactly why it needs a ceiling of its own. */
+    limit: { perHour: CONFIG.limits.gameStartPerHour, by: 'account' },
     handler: async (ctx) =>
       await games.startSession(ctx.db, {
         userId: actor(ctx).user.id,
@@ -437,6 +493,11 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/games/sessions/:id/finish',
     auth: 'user',
     idempotent: true,
+    /* The one endpoint on this file that writes to the ledger unprompted by a
+       venue. Matched to the start limit: a finish with no start before it
+       cannot exist, so a lower number here would only ever refuse a round
+       somebody was allowed to begin. */
+    limit: { perHour: CONFIG.limits.gameFinishPerHour, by: 'account' },
     handler: async (ctx) =>
       await games.finish(ctx.db, {
         sessionId: ctx.params.id,

@@ -64,7 +64,55 @@ export async function seedPlatform(db: Db, at: Iso = now()): Promise<void> {
      * `wallet.tsx` and `games.tsx` both render the empty shelf as itself.
      */
     await seedWords(db);
+    await seedDailyTasks(db, at);
   });
+}
+
+/**
+ * The daily-task inventory.
+ *
+ * **Product configuration, not anybody's data**, which is the line the
+ * "nothing is seeded" rule in `README.md` draws: the plan ladder, the category
+ * defaults and the word bank are written on every boot because they are the
+ * product's own shape, while a venue, a deal or a gift card is a fact about a
+ * business and is only ever written through the partner API. Four prompts on the
+ * Play screen are the former — a fresh box with no tasks in it has an empty
+ * panel where the nudges go, and there is nothing true for that emptiness to
+ * mean.
+ *
+ * It carries neither the copy nor the amounts, and `daily_tasks` in
+ * `schema.sql` says why at length. The short of it: a translated sentence in a
+ * database is one that is missing in Ukrainian with nothing to report it, and a
+ * points value in a database is one that can disagree with what the ledger
+ * pays.
+ *
+ * `DO UPDATE` on the two columns an operator does not own, and **not** on
+ * `active`: turning a prompt off is an operator decision on a live box, and a
+ * restart that switched it back on would make the control useless. That is the
+ * same shape `seedPlans` uses for the same reason.
+ */
+const DAILY_TASKS: ReadonlyArray<{ key: string; copyKey: string; reward: string; order: number }> = [
+  /* First because it is the one that resets every day and the only one a player
+     can lose by not doing — the streak is behind it. */
+  { key: 'check_in', copyKey: 'checkIn', reward: 'check_in', order: 1 },
+  { key: 'play_round', copyKey: 'playRound', reward: 'play_round', order: 2 },
+  { key: 'profile', copyKey: 'profile', reward: 'profile', order: 3 },
+  { key: 'invite', copyKey: 'invite', reward: 'invite', order: 4 },
+];
+
+async function seedDailyTasks(db: Db, at: Iso): Promise<void> {
+  for (const task of DAILY_TASKS) {
+    await db.run(
+      `INSERT INTO daily_tasks (key, copy_key, reward, sort_order, active, updated_at)
+       VALUES ($k, $c, $r, $o, 1, $t)
+         ON CONFLICT (key) DO UPDATE SET
+           copy_key = excluded.copy_key,
+           reward = excluded.reward,
+           sort_order = excluded.sort_order,
+           updated_at = excluded.updated_at`,
+      { k: task.key, c: task.copyKey, r: task.reward, o: task.order, t: at },
+    );
+  }
 }
 
 interface PlanSeed {
@@ -599,23 +647,51 @@ const WORDS: Array<[string, string, string]> = [
   ['en', 'registration', 'putting your address on record'],
 ];
 
+/**
+ * The thirty-word placeholder, and it is explicitly a **floor** now.
+ *
+ * ## What this is for
+ *
+ * A checkout with no `updates/` still has to be able to play Word Builder, so
+ * these thirty words exist. They are not the bank: `db/import.ts` reads the
+ * real lists — 136 words per language, with their own authored tiers and hints
+ * — out of `updates/paylez-words-*.json`, which is where the front end has
+ * always read them from.
+ *
+ * ## Two things changed here and both were bugs
+ *
+ * **The words are stored upper-case.** They were lower-case, the export is
+ * upper-case, and `buildWords` upper-cases on read — so the column's case was
+ * presentational and the two writers disagreed about it. Which meant `rent` and
+ * `RENT` were two rows for one word, and whichever existed decided the tier and
+ * the hint. Now the id is keyed on the folded word and the word is stored
+ * folded up, so a word is one row whoever wrote it.
+ *
+ * **`DO NOTHING`, not `DO UPDATE`.** This is a seed: it puts a word there if
+ * nothing better has. `DO UPDATE` ran on every boot and would now overwrite the
+ * export's authored tier with the guess below for the thirty words they share —
+ * which is the wrong direction, because the tier is what a word *pays* and the
+ * export is the thing that decided it. The cost is that editing a hint here
+ * does not propagate to a database that already has one; that is the correct
+ * trade for a placeholder.
+ *
+ * The tier below is still a guess from the word's length — 3–4 easy, 5–7
+ * medium, 8+ hard, the bands `updates/paylez-words-*.json` is authored against.
+ * It is only ever used for a word the export does not carry.
+ */
 async function seedWords(db: Db): Promise<void> {
   for (const [language, word, hint] of WORDS) {
-    /*
-     * 3–4 easy, 5–7 medium, 8+ hard — the same bands
-     * `updates/paylez-words-*.json` is authored against, and they have to stay
-     * the same bands: the tier decides both the ramp within a round and the
-     * per-word bonus, so a word that is medium on the site and hard on the
-     * phone pays differently for the same answer.
-     *
-     * Medium used to stop at 6, which put every seven-letter word in with the
-     * nine-letter ones and made the hard rung mostly not hard.
-     */
     const tier = word.length <= 4 ? 1 : word.length <= 7 ? 2 : 3;
     await db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, $l, $w, $t, $h)
-         ON CONFLICT (language, word) DO UPDATE SET tier = excluded.tier, hint = excluded.hint`,
-      { i: `wrd_${language}_${word}`, l: language, w: word, t: tier, h: hint },
+         ON CONFLICT (id) DO NOTHING`,
+      {
+        i: `wrd_${language}_${word.toLowerCase()}`,
+        l: language,
+        w: word.toUpperCase(),
+        t: tier,
+        h: hint,
+      },
     );
   }
 }

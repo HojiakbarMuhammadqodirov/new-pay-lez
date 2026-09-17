@@ -29,6 +29,7 @@ export const pl: Dictionary = {
   signIn: 'Zaloguj się',
   assistant: 'Otwórz asystenta AI',
   languageMenu: 'Zmień język',
+  currencyMenu: 'Waluta',
   theme: {
     label: 'Motyw',
     toLight: 'Przełącz na jasny motyw',
@@ -42,6 +43,23 @@ export const pl: Dictionary = {
     email: 'Adres e-mail',
     emailPlaceholder: 'ty@email.com',
     password: 'Hasło',
+    showPassword: 'Pokaż hasło',
+    hidePassword: 'Ukryj hasło',
+    verify: {
+      kicker: 'Potwierdź e-mail',
+      playLede: 'Rundy nie będą punktować, dopóki nie potwierdzisz adresu, którym się zarejestrowałeś —',
+      walletLede: 'Punkty będziesz mógł wydać po potwierdzeniu adresu, którym się zarejestrowałeś —',
+      codeLabel: 'Sześciocyfrowy kod, który wysłaliśmy',
+      codePlaceholder: '000000',
+      confirm: 'Potwierdź',
+      working: 'Sprawdzamy…',
+      resend: 'Wyślij ponownie',
+      onItsWay: 'W drodze. Wygaśnie po kilku minutach.',
+      tooSoon: 'Jeden właśnie poszedł — odczekaj chwilę, zanim poprosisz znowu.',
+      wrongWithTries: 'Ten kod jest nieprawidłowy. Zostało {n} prób.',
+      offline: 'Nie udało się połączyć z serwerem. Spróbuj za chwilę.',
+      failed: 'Nie udało się. Spróbuj za chwilę.',
+    },
     passwordPlaceholder: 'Twoje hasło',
     submit: 'Zaloguj się',
     errors: {
@@ -61,6 +79,11 @@ export const pl: Dictionary = {
     typeQuestion: 'Kim jesteś?',
     typeNote: 'Na razie wybierasz tylko raz, więc wybierz to, co pasuje.',
     signUpSubmit: 'Załóż konto',
+    agreeLead: 'Akceptuję',
+    agreeTerms: 'Regulamin',
+    agreeAnd: 'oraz',
+    agreePrivacy: 'Politykę prywatności',
+    agreeTail: '.',
     orDivider: 'lub',
     googleContinue: 'Kontynuuj z Google',
     googleWorking: 'Logowanie…',
@@ -69,6 +92,7 @@ export const pl: Dictionary = {
     googleRefused:
       'Nie udało się zalogować przez Google. Spróbuj ponownie.',
     signUpErrors: {
+      terms: 'Zaakceptuj Regulamin i Politykę prywatności.',
       name: 'Podaj swoje imię i nazwisko.',
       email: 'To nie wygląda na adres e-mail.',
       taken: 'Konto z tym adresem już istnieje. Zaloguj się.',
@@ -117,7 +141,52 @@ export const pl: Dictionary = {
       'Karty w magazynie',
       'Konta',
     ],
-    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości'],
+    tabs: ['Usługi', 'Oferty', 'Ludzie', 'Witryna', 'Wiadomości', 'Plany'],
+
+    tiers: {
+      assignTitle: 'Przypisz konto do planu',
+      assignLede:
+        'Nadaj lub zdejmij plan ręcznie, teraz albo od wybranego dnia. Każda zmiana zostawia wpis w audycie z Twoim nazwiskiem.',
+      subjectKind: 'Lokal albo osoba',
+      aVenue: 'Lokal',
+      aPerson: 'Osoba',
+      venueId: 'Id lokalu',
+      userId: 'Id konta',
+      idHelp: 'Skopiuj je z zakładki Usługi albo Osoby.',
+      plan: 'Plan',
+      pickPlan: 'Wybierz plan…',
+      from: 'Wchodzi w życie',
+      fromNow: 'Dziś — obowiązuje od chwili naciśnięcia.',
+      fromLater: 'Zaplanowane. Nic się nie zmieni, dopóki nie zacznie się ten dzień.',
+      note: 'Dlaczego',
+      notePlaceholder: 'Rozmowa z właścicielem',
+      noteHelp: 'Zapisane we wpisie audytu. To jedyna rzecz, której wiersz nie powie sam.',
+      assign: 'Przypisz plan',
+      schedule: 'Zaplanuj',
+      working: 'Pracuję…',
+      didAssign: 'Na planie {plan} od teraz.',
+      didSchedule: 'Na planie {plan} od {from}.',
+      propagation:
+        'Serwer od razu odpowiada nowym planem — między nim a bramkami nie ma żadnego cache. Przeglądarka, którą ta osoba ma już otwartą, dogoni to przy następnym wczytaniu strony albo powrocie do karty.',
+      liveTitle: 'Kto ma jaki plan',
+      liveLede: 'Każdy plan obowiązujący teraz, niezależnie od tego, kto go nadał.',
+      loading: 'Czytam subskrypcje…',
+      noneLive: {
+        title: 'Nikt nie ma płatnego planu',
+        body: 'Każde konto jest na darmowym planie swojej drabinki — tam wszyscy zaczynają. Plan kupiony w kasie też się tu pojawi, nie tylko nadany ręcznie.',
+      },
+      scheduledTitle: 'Zmiany z datą',
+      scheduledLede: 'Jeszcze nie obowiązują. Każda wchodzi w życie z początkiem swojego dnia.',
+      columns: ['Konto', 'Plan', 'Nadane przez', 'Od', 'Do'],
+      act: 'Usuń',
+      drop: 'Usuń',
+      sources: {
+        manual: 'Ręcznie',
+        stripe: 'Stripe',
+        apple: 'App Store',
+        google: 'Play',
+      },
+    },
 
     services: {
       title: 'Usługi biznesowe',
@@ -666,9 +735,23 @@ export const pl: Dictionary = {
     pointsHave: 'masz już dość na zniżkę',
 
     statsToggle: 'Twoje statystyki',
+
+    /* ── dzisiejsza lista ── Zobacz `en.ts` po uzasadnienie. */
+    tasks: {
+      title: 'Dzisiejsza lista',
+      allDone: 'Wszystko z dzisiejszej listy jest zrobione. Graj dalej po punkty.',
+      loading: 'Pobieramy dzisiejszą listę…',
+      offline: 'Dzisiejsza lista jest teraz niedostępna.',
+      exact: '{points} pkt',
+      upTo: 'do {points} pkt',
+      checkIn: 'Wejdź dziś do Paylez i odbierz obecność — {reward}',
+      playRound: 'Zagraj dziś jedną rundę — {reward}',
+      profile: 'Uzupełnij profil — {reward}',
+      invite: 'Zaproś znajomego — {reward}, gdy odwiedzi lokal',
+    },
     accuracy: 'Skuteczność',
 
-    featured: 'Dzisiejsza gra · podtrzymuje serię',
+    featured: 'Gra dnia · podtrzymuje serię',
 
     /* Keyed by country code, not a template: the country's case changes with
        the sentence around it, so each name is written whole. */
@@ -681,8 +764,8 @@ export const pl: Dictionary = {
     streakAhead: 'jeszcze przed nami',
 
     names: [
-      'Znajdź parę',
       'Lot Squawka',
+      'Znajdź parę',
       'Zgadnij flagę',
       'Kraj i stolica',
       'Gry na rozum',
@@ -751,7 +834,7 @@ export const pl: Dictionary = {
     boardTitle: 'Ranking',
     boardTabs: ['Poprawne odpowiedzi', 'Zdobyte punkty'],
     boardTop: 'Top 10',
-      boardScopes: ['Moje miasto', 'Mój kraj', 'Wszyscy'],
+      boardScopes: ['Mój kraj', 'Wszyscy'],
       boardLoading: 'Wczytujemy ranking…',
       boardOffline: 'Nie możemy teraz pobrać rankingu. To nie znaczy, że nikt nie gra — po prostu nie możemy zapytać.',
       boardHidden: 'Jesteś na {rank} miejscu w tym tygodniu. Nie jesteś na liście, bo tego nie włączyłeś — możesz to zrobić w profilu.',
@@ -959,6 +1042,7 @@ export const pl: Dictionary = {
       { name: 'Gorące okazje', lede: 'Czasowe oferty pokazywane w kanale aplikacji Paylez.' },
       { name: 'Kampanie lojalnościowe', lede: 'Powtarzalne nagrody, na które zapracowują stali klienci.' },
       { name: 'Vouchery', lede: 'Jak punkty zamieniają się w rabaty i ile Cię to kosztuje.' },
+      { name: 'Wydane vouchery', lede: 'Każdy voucher w rękach Twoich klientów i co się z nim stało.' },
       { name: 'Klienci', lede: 'Kto przychodzi, kiedy przychodzi i czy wraca.' },
       {
         name: 'Asystent',
@@ -989,6 +1073,11 @@ export const pl: Dictionary = {
         action: 'Ustaw budżet',
       },
       {
+        title: 'Nikt jeszcze nie wziął vouchera',
+        body: 'Voucher pojawia się tutaj w chwili, gdy klient wyda punkty na jednym z Twoich progów. Ustaw budżet rabatowy i drabinka się otworzy; wszystko dalej trafia tu z kodem, okresem ważności i statusem.',
+        action: 'Ustaw budżet',
+      },
+      {
         title: 'Postaw kod QR przy kasie',
         body: 'Nic na tej stronie nie może się wypełnić, dopóki klienci nie zaczną skanować. Wydrukuj kod, postaw go obok kasy i poproś obsługę, by wskazywała go razem z rachunkiem. Pierwsze liczby pojawią się tego samego dnia.',
         action: 'Pobierz swój kod QR',
@@ -1004,6 +1093,61 @@ export const pl: Dictionary = {
         action: 'Pobierz swój kod QR',
       },
     ],
+
+    register: {
+      totals: {
+        issued: 'Wzięte vouchery',
+        active: 'Jeszcze niewykorzystane',
+        redeemed: 'Wykorzystane u Ciebie',
+        expired: 'Przepadły niewykorzystane',
+        lapsing: '{n} przepada w ciągu tygodnia — to ostatni moment, w którym przypomnienie jeszcze do nich dotrze.',
+      },
+      caps: {
+        kicker: 'Limity',
+        title: 'Ile każdego wydasz',
+        lede: 'Budżet rabatowy ogranicza, ile vouchery mogą Cię kosztować. To ogranicza, ile ich jest — hamulec na tydzień otwarcia, na małą kuchnię albo po prostu na to, żeby jedna osoba nie zabrała całej oferty.',
+        rung: '{pct}% taniej',
+        taken: 'wzięte {n} z {total}',
+        takenNoCap: 'wzięte: {n}, brak limitu',
+        total: 'Łącznie',
+        perUser: 'Na klienta',
+        unit: 'voucherów',
+        noLimit: 'Bez limitu',
+        remove: 'Usuń limit',
+        noLimitNote: 'Puste pole znaczy brak limitu. Voucher, który przepadł niewykorzystany, nadal liczy się jako wzięty — inaczej limit da się obejść, po prostu czekając.',
+        retired: 'Wycofany',
+        save: 'Zapisz limity',
+        saving: 'Zapisywanie…',
+        saved: 'Limity zapisane.',
+      },
+      list: {
+        kicker: 'Rejestr',
+        title: 'Każdy voucher w rękach klientów',
+        search: 'Szukaj kodu lub nazwy',
+        count: 'Widzisz {n} z {total}',
+        empty: 'Nikt jeszcze nie wziął vouchera. Pojawi się tutaj w chwili, gdy klient wyda punkty na progu powyżej — z kodem, oboma końcami okresu ważności i tym, co się z nim stało.',
+        emptyFiltered: 'Nic nie pasuje. Wyczyść wyszukiwanie albo wybierz inny status.',
+      },
+      table: {
+        code: 'Kod',
+        rung: 'Rabat',
+        holder: 'W rękach',
+        issued: 'Wzięty',
+        expires: 'Ważny do',
+        status: 'Status',
+        redeemed: 'Wykorzystany',
+        withheld: 'Ukryte — ten klient nie zgodził się udostępnić profilu Twojemu lokalowi.',
+        notRedeemed: 'jeszcze nie',
+      },
+      status: {
+        all: 'Wszystkie',
+        active: 'Niewykorzystane',
+        redeemed: 'Wykorzystane',
+        expired: 'Przepadłe',
+        cancelled: 'Anulowane',
+      },
+    },
+
     acts: {
       column: 'Działania',
 
@@ -2129,8 +2273,50 @@ export const pl: Dictionary = {
     plan: {
       name: 'Plan Growth',
       state: 'Aktywny',
+      unknown: 'Twój plan',
+      open: 'Zobacz plany',
       caption: 'Budżety na lojalność i vouchery w tym miesiącu. Gorące okazje nie wchodzą w to.',
       usage: '{used} z {total}',
+    },
+
+    planPanel: {
+      kicker: 'Twoja subskrypcja',
+      title: 'Twój plan i trzy poziomy',
+      lede: 'Na czym jesteś, ile z tego wykorzystujesz i co zawierają pozostałe.',
+      mineKicker: 'Obowiązuje teraz',
+      noSubscription: 'Poziom darmowy',
+      freeNote:
+        'Jesteś na poziomie darmowym, od którego zaczyna każdy lokal. Nic nie wygasa i nic nie jest należne.',
+      usage: '{used} z {total}',
+      renews: 'Odnawia się {date}.',
+      until: 'Zmienia się {date}.',
+      notIncluded: 'Nie zawiera',
+      compareKicker: 'Porównanie',
+      compareTitle: 'Co zawiera każdy poziom',
+      whatYouGet: 'Co otrzymujesz',
+      yours: 'Twój',
+      freePrice: 'Bezpłatnie',
+      perMonth: '{amount} miesięcznie',
+      howToMove:
+        'Zmianę poziomu ustalamy z nami, a nie z tego ekranu — dzięki temu wdrożenie jest wycenione według tego, co faktycznie prowadzisz. Napisz na',
+      sources: {
+        manual: 'Nadane przez Paylez',
+        stripe: 'Opłacone kartą',
+        apple: 'Opłacone w App Store',
+        google: 'Opłacone w Google Play',
+      },
+      rows: [
+        'Jednocześnie aktywnych gorących okazji',
+        'Działających kampanii lojalnościowych',
+        'Powiadomień push na miesiąc',
+        'Miejsc w zespole',
+        'Lokali na koncie',
+        'Zaawansowana analityka',
+        'Klienci z imienia',
+        'Asystent',
+        'Porównania z Twoim miastem',
+        'Eksport CSV',
+      ],
     },
 
     ranges: ['Ostatnie 7 dni', 'Ostatnie 14 dni', 'Ostatnie 30 dni', 'Ostatni kwartał'],
@@ -2925,6 +3111,10 @@ export const pl: Dictionary = {
       send: 'Kwota',
       gets: 'To daje',
       rate: 'Kurs',
+      /* ── wiek kursów, trzy stany. Uzasadnienie w `en.ts`. */
+      updated: 'Kursy zaktualizowane {when}',
+      stale: 'Te kursy nie odświeżyły się od {when}',
+      builtIn: 'Pokazujemy wbudowaną tabelę kursów',
       swap: 'Zamień waluty miejscami',
       result: '{from} = {to}',
       enter: 'Wpisz kwotę do przeliczenia.',
@@ -3071,6 +3261,16 @@ export const pl: Dictionary = {
     termsVersion: 'Wersja 1.0 · Obowiązuje od 24 kwietnia 2025',
   },
   profile: {
+    sharing: {
+      title: 'Udostępniaj mój profil lokalom, w których bywam',
+      help: 'Lokal, w którym rzeczywiście byłeś, widzi Twoje imię, zdjęcie i ile tam wydałeś — nigdy salda i nigdy lokal, w którym nie byłeś. Wyłączenie zatrzymuje nowe lokale; te, które już widzą, wyłączasz na ich własnej karcie.',
+      failed: 'Nie udało się zapisać. Spróbuj za chwilę.',
+    },
+    board: {
+      title: 'Pokazuj mnie w tygodniowym rankingu',
+      help: 'Twoja nazwa, awatar i punkty z tygodnia. Po wyłączeniu nadal widzisz ranking i swoje miejsce — tylko inni nie widzą tam Ciebie.',
+      failed: 'Nie udało się zapisać. Spróbuj za chwilę.',
+    },
     eyebrow: 'Twoje konto',
     title: 'Twój profil',
     lede: 'To widzą inni gracze i stąd wiemy, gdzie jesteś. Nic z tego nie jest z niczym weryfikowane — nie wysyłamy kodu na telefon ani linku do kliknięcia na skrzynkę.',
@@ -3250,6 +3450,7 @@ export const pl: Dictionary = {
       'Punkty biorą się z grania i z pojawiania się w lokalach w Twoim mieście. Nie tracą ważności — czekają na Ciebie.',
     payGo: 'Zacznij grać',
     payProfile: 'Najpierw uzupełnij profil',
+    payProfileWorth: 'Uzupełnienie profilu to kolejne {points} punktów.',
 
     introTitle: 'Zdobądź pierwsze punkty',
     introLede: 'Odpowiedz na {n} pytań o flagi i zdobądź nawet {points} punktów. Pomiń te, których nie znasz — pominięte pytanie po prostu nic nie daje.',

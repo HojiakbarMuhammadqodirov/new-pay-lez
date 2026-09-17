@@ -11,6 +11,7 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Db } from '../db/db.ts';
 import type { Role, Session, User } from '../domain/accounts.ts';
+import type { Limit } from '../domain/limits.ts';
 import type { Iso } from '../domain/time.ts';
 
 export interface Actor {
@@ -62,6 +63,15 @@ export interface Route {
    * inferred from the method — most POSTs here are not money.
    */
   idempotent?: boolean;
+  /**
+   * How often one caller may reach this endpoint — see `domain/limits.ts`.
+   *
+   * Declared here rather than checked in the handler for the same reason `auth`
+   * is: a limit a handler remembers is a limit the next handler forgets. Absent
+   * means unbounded, which is correct for a read; every public *write* and
+   * everything that can move the ledger carries one.
+   */
+  limit?: Limit;
   /** For the audit trail and rate limiting, a stable name. */
   name?: string;
 }

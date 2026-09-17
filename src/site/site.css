@@ -1197,16 +1197,111 @@ button {
   gap: 3rem;
 }
 
+/*
+ * The hero's measure — and a **size container**, which is what lets the
+ * headline size itself against the column it is actually in.
+ *
+ * `container-type: inline-size` is here for one reason: `.hero h1` caps its
+ * font size against the available width, and the available width is this
+ * element's, not the viewport's. Expressed against the viewport it was wrong at
+ * exactly one width — 1024px, where `.hero-grid` is still two columns and this
+ * one is about 448px while `min(34rem, 100vw - 4rem)` reads 544px. Every
+ * headline on the site wrapped there and nowhere else, which is the shape of
+ * bug a breakpoint sweep finds and a spot check does not.
+ *
+ * Safe on this element specifically: the column is `minmax(0, 1fr)`, so its
+ * inline size comes from the grid rather than from its contents, which is the
+ * one precondition size containment has. Nothing inside it is absolutely
+ * positioned against an ancestor further out, so the containing block this
+ * introduces changes nothing.
+ */
 .hero-copy {
   max-width: 34rem;
+  container-type: inline-size;
 }
 
+/*
+ * The hero headline — and the cap that keeps each sentence on one line.
+ *
+ * `.ln` is a block per sentence, so the *sentences* never share a line. What
+ * was not true is the other half: a sentence too long for the measure wrapped
+ * inside its own block, and the copy read
+ *
+ *     A hundred
+ *     questions.
+ *
+ * It wraps at **both** ends of the range, which is why a breakpoint was never
+ * going to fix it. Measured in headless Chrome across five languages:
+ *
+ *     360px   en "A hundred questions."   2 lines   (296px box, 32px type)
+ *     1440px  en "A hundred questions."   2 lines   (544px box, 70px type)
+ *     1440px  pl "Jeden przewodnik."      2 lines
+ *     1440px  uz "Bitta yo‘riqnoma."      2 lines
+ *     1440px  ru "Один путеводитель."     2 lines
+ *
+ * The wide end is the one that surprises: `.hero-copy` caps the measure at
+ * 34rem while the clamp goes on growing the type to 4.4rem, so the *widest*
+ * screens are where the longest sentence stops fitting.
+ *
+ * So the size is capped against the **measure and the copy** rather than
+ * against the viewport:
+ *
+ *     the measure   `100cqi` — the width of `.hero-copy` itself, which is a
+ *                   **size container** for this purpose. Against the viewport
+ *                   instead (`min(34rem, 100vw - 4rem)`, kept as the fallback)
+ *                   it is wrong at exactly one width: 1024px, where
+ *                   `.hero-grid` is still two columns and the copy is about
+ *                   448px while that expression reads 544. Every headline on
+ *                   the site wrapped there and nowhere else.
+ *     the copy      `--ln-chars`, the character count of this hero's longest
+ *                   sentence, **written by the component from the strings it is
+ *                   about to render**. Not a constant here: it is a different
+ *                   number in each of five languages and on each of six heroes,
+ *                   and a constant would be wrong somewhere by construction.
+ *     the face      `--ln-advance`, em per character. **Measured, not
+ *                   estimated**, and measured as the quantity that actually
+ *                   binds: for each of the six heroes in each of the five
+ *                   languages, `max(width of a line in em) / longest line in
+ *                   characters`. That is not the same as the average advance —
+ *                   a short line can be wide per character and still fit, and
+ *                   what has to hold is that *every* line fits at a size set
+ *                   from the longest one. Across all 30 combinations the
+ *                   requirement is 0.5375 (`#/business`, English, "Own your
+ *                   customers."), so 0.545 is that with a percent and a half of
+ *                   margin. Erring high is the safe direction: it sets the type
+ *                   a shade smaller than it strictly needs to be, where erring
+ *                   low wraps the line this rule exists to protect.
+ *
+ * `min()` with the clamp, so this only ever *shrinks*: every hero whose copy
+ * already fits is untouched, and the rule is inert above the width where the
+ * longest sentence needs it.
+ *
+ * **There is no `white-space: nowrap` here, deliberately.** It would guarantee
+ * one line and guarantee a horizontal scrollbar the first time the estimate was
+ * a pixel out — and this stylesheet's own rule is that the page body must never
+ * scroll sideways. Wrapping is the graceful failure; overflowing is not.
+ */
 .hero h1 {
-  font-size: clamp(2.5rem, 5.4vw, 4.4rem);
+  --ln-chars: 20;
+  --ln-advance: 0.545;
+  /* The column's own inline size — see the size container on `.hero-copy`.
+     `min()` with the viewport gutters is kept as the fallback for an engine
+     with no container queries: it is right everywhere except the two-column
+     1024px case, which is better than being right nowhere. */
+  --ln-measure: min(34rem, 100vw - 4rem);
+  --ln-measure: 100cqi;
+  font-size: min(
+    clamp(2.5rem, 5.4vw, 4.4rem),
+    calc(var(--ln-measure) / (var(--ln-chars) * var(--ln-advance)))
+  );
 }
 
 .hero h1 .ln {
   display: block;
+  /* A sentence is one line or it is wrapped; it is never *broken*. Without
+     this a long word in the middle of one would hyphenate or split, which is a
+     worse failure than the wrap the cap above is preventing. */
+  overflow-wrap: normal;
 }
 
 .hero-lede {
@@ -1276,19 +1371,132 @@ button {
  * flex — the buttons and the stats — centred too, because a centred paragraph
  * over a left-packed button row is worse than either.
  */
+/*
+ * One column — and **no `justify-items: center`**, which is what collapsed
+ * this hero to nothing.
+ *
+ * `.hero-copy` is `container-type: inline-size`, and the note on that rule
+ * says it is safe "because the column is `minmax(0, 1fr)`, so its inline size
+ * comes from the grid rather than from its contents". That is true of a
+ * *stretched* item and of no other kind. `justify-items: center` replaces the
+ * stretch with shrink-to-fit, which asks the item to size itself from its
+ * contents — and inline-size containment is precisely the promise that its
+ * contents will not be consulted. The two together resolve to zero.
+ *
+ * Measured in headless Chrome at 1440 before this: `.hero-copy` 0px wide, the
+ * `<h1>` 0px wide at `font-size: 0px` — the cap divides the measure, and a
+ * measure of zero caps the type at zero — and the lede 0px wide and 799px tall,
+ * one character per line. The headline was not small on this page. It was not
+ * being drawn.
+ *
+ * So the centring moves off the grid and onto the box: the item keeps the
+ * column's width (containment satisfied), `max-width` narrows it to the
+ * display measure, and `margin-inline: auto` puts it in the middle. Same
+ * picture, and the one arrangement that does not ask a size container what its
+ * contents are.
+ */
 .hero-mid .hero-grid {
   grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
 }
 
+/*
+ * The display measure, which is **not** the prose measure.
+ *
+ * `.hero-copy` caps at 34rem — about 65 characters, which is what a lede wants
+ * and what the two-column heroes are stuck with anyway, because the globe holds
+ * the other half of the viewport. This hero shares the viewport with nothing.
+ *
+ * That cap is also what `--ln-measure` reads, so it was setting the headline
+ * twice over: at 34rem the one-sentence-one-line rule sized "A hundred
+ * questions." at about 50px against a 70px clamp, and the only hero on the site
+ * with a whole screen to itself carried the smallest headline on it. 46rem
+ * lifts the cap to about 67px. The sentence still never wraps — that rule is
+ * untouched — it just stops paying a third of its size for the privilege.
+ *
+ * The prose underneath keeps 34rem, below. A display line may be wider than a
+ * paragraph; a paragraph may not.
+ */
 .hero-mid .hero-copy {
   text-align: center;
+  /*
+   * `width` and `max-width` together, and the explicit `width` is the
+   * load-bearing half.
+   *
+   * Auto inline margins on a grid item **absorb the free space themselves**,
+   * which turns off the stretch the item would otherwise get — and an item that
+   * is not stretched is sized from its contents, which is the one question a
+   * size container refuses to answer. Centring this box with margins alone
+   * reproduces the collapse the grid rule above describes, exactly.
+   *
+   * `width: 100%` resolves against the grid area instead, so the used width is
+   * decided before the contents are consulted; `max-width` then narrows it to
+   * the display measure and the auto margins have leftover space to centre it
+   * in. Measured at 1440: 736px wide, 232px of gutter either side, headline at
+   * 70.4px.
+   */
+  width: 100%;
+  max-width: 46rem;
+  margin-inline: auto;
+}
+
+/*
+ * …and the prose inside it is re-capped, centred in the wider column.
+ *
+ * Without this, widening the column above widens the lede and the trust line
+ * with it, which is the one thing 34rem was protecting. `margin-inline: auto`
+ * rather than `align-items`, because `.hero-copy` is a block: a narrower child
+ * in it starts at the left edge of a centred column, which reads as a mistake
+ * precisely because everything else on the row is centred.
+ */
+.hero-mid .hero-lede,
+.hero-mid .business-trust {
+  max-width: 34rem;
+  margin-inline: auto;
 }
 
 .hero-mid .hero-cta,
-.hero-mid .hero-meta,
-.hero-mid .learn-back {
+.hero-mid .hero-meta {
   justify-content: center;
+}
+
+/*
+ * …but **not** the way back, which sits in the corner and is a button.
+ *
+ * Two things were wrong with it and both came of it being a line in the hero's
+ * stack rather than chrome over the top of one.
+ *
+ * **Where.** `hero-mid` centres the stack, so a link inside `.hero-copy` is
+ * left-aligned to a 46rem column centred in the page: about 350px in from the
+ * edge of a 1440 screen. That is the left edge of the *copy* and the middle of
+ * the *page*, which is the one place a way out should not be. It is a direct
+ * child of `.hero-grid` now, so `justify-self` measures it against the wrap,
+ * and `start` is the page's own gutter — the same edge the header's own
+ * wordmark sits on.
+ *
+ * **How loud.** `.learn-back` is `--text-mut` at 0.82rem, the quietest text on
+ * the sheet, spent on the one control that leaves the page. It carries
+ * `.btn-ghost` now — `--text` on `--surface` inside a real border, the same
+ * component the hero's own secondary CTA uses — and this rule restates the
+ * colour, because `.learn-back` sits a thousand lines below `.btn-ghost` and
+ * would otherwise win it back on equal specificity.
+ *
+ * Compact rather than `.btn`'s full size: it is a way out, not one of the two
+ * things the hero is asking for, and at 0.9375rem in a 1.35rem pill it competed
+ * with them.
+ */
+.hero-mid .learn-back {
+  justify-self: start;
+  margin-bottom: 2.25rem;
+  padding: 0.55rem 1.05rem;
+  font-size: 0.875rem;
+  color: var(--text);
+  text-align: left;
+}
+
+/* The lift is `.btn-ghost`'s and the gap travel is `.learn-back`'s — both are
+   wanted. The colour has to be restated for the specificity reason above. */
+.hero-mid .learn-back:hover {
+  color: var(--accent-ink);
 }
 
 /* ────────────────────────────────────────────────────────────── proof ── */
@@ -2498,6 +2706,27 @@ button {
   transform: none;
 }
 
+/*
+ * "Back to paylez" — the way off a product page, top-left.
+ *
+ * **Two things about it were wrong and both were measured rather than guessed**
+ * (headless Chrome, five languages, 320–1440px):
+ *
+ * - **It was `--text-fnt`**, which is white at 0.4 alpha in dark and the ink at
+ *   0.62 in light. Over a flat panel that is a legible hint; over these pages it
+ *   is not, because every one of them has a **live canvas** behind it — the
+ *   candle tape, the city rising, the node web — and 40% white over a moving
+ *   ground with lit shapes in it is a control that disappears and reappears. It
+ *   is `--text-mut` now: the same ramp, one step up, which clears AA against
+ *   `--bg` in both themes. A faint colour is right for provenance and wrong for
+ *   the only control on the page that leaves it.
+ * - **It was centred on two of the six pages.** `.hero-mid` centres the hero's
+ *   whole stack, and this rode along with the buttons and the stat row — so on
+ *   Relocate and Contact the way back sat in the middle of the screen at
+ *   `left: 663px` on a 1440 viewport. It is chrome *above* the hero rather than
+ *   part of it, so it takes the row and stays at the start of it whatever the
+ *   hero does; see the override further down.
+ */
 .learn-back {
   display: inline-flex;
   align-items: center;
@@ -2505,7 +2734,7 @@ button {
   margin-bottom: 1.6rem;
   font-size: 0.82rem;
   font-weight: 700;
-  color: var(--text-fnt);
+  color: var(--text-mut);
   transition: color 240ms var(--ease), gap 240ms var(--ease);
 }
 
@@ -5736,17 +5965,28 @@ button {
   gap: 0.5rem;
 }
 
+/*
+ * A country, as a chip.
+ *
+ * The tracking used to be 0.06em and the chip used to hold an ISO code, which
+ * is the same styling decision twice: two capitals are a *label*, and a label
+ * wants to be spaced out and shouted. These carry the country's name in the
+ * reader's own language now (`countryNamer`, straight off `Intl.DisplayNames`),
+ * and a name is a word — read, not parsed. So the tracking comes back to
+ * near-normal and the weight down one step, which is what stops fourteen of
+ * them in a row reading as a row of badges.
+ */
 .flag-chip {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.9rem;
+  padding: 0.5rem 0.95rem;
   border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   color: var(--text-mut);
 }
 
@@ -7519,14 +7759,78 @@ button {
   right: clamp(1rem, 2.5vw, 2rem);
 }
 
+/*
+ * The rail's plan box, which is a **button** now (item 24) and was a div.
+ *
+ * `text-align: left` and `width: 100%` are the two declarations a button needs
+ * that a div did not: a `<button>` centres its text and shrink-wraps, and this
+ * one holds a left-aligned block of copy across the rail. `font: inherit` for
+ * the same family of reason — a button otherwise takes the UA's own face and
+ * size, which is the one thing on this rail that would not be Onest.
+ */
 .plan-card {
   display: flex;
   flex-direction: column;
   gap: 0.4rem;
+  width: 100%;
   padding: 0.85rem;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: var(--surface);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.plan-card:hover {
+  border-color: rgba(var(--accent-rgb), 0.45);
+  background: var(--surface-2);
+}
+
+/* A press is instant and goes down, which is what `.btn:active` does and for
+   the same reason stated there. */
+.plan-card:active {
+  transform: translateY(1px);
+  transition-duration: 40ms;
+}
+
+/* What the press does, and it is the row that makes the box read as pressable
+   at a glance rather than only on hover. */
+.plan-open {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+}
+
+.plan-open svg {
+  transform: rotate(-90deg);
+  transition: transform 0.18s ease;
+}
+
+.plan-card:hover .plan-open svg {
+  transform: rotate(-90deg) translateY(-2px);
+}
+
+/* Movement only, per the sheet's own rule: the colour and border changes stay,
+   because "this is the one you touched" is useful on a device with no hover. */
+@media (hover: none) {
+  .plan-card:hover .plan-open svg {
+    transform: rotate(-90deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-card:hover .plan-open svg {
+    transform: rotate(-90deg);
+  }
 }
 
 .plan-head {
@@ -9353,25 +9657,44 @@ button {
   white-space: nowrap;
 }
 
-.pd-limit i {
-  display: block;
-  width: 4.5rem;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  overflow: hidden;
-}
-
-.pd-limit b {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: var(--accent);
-}
+/* The track and its fill are defined once, in the `.pd-limit` block further
+   down beside `.pd-state-pill` — which is where the rest of the claim-limit
+   component lives, including the `.pd-fine` under it and the `.pd-table-deals`
+   override. This copy stood here as well, and every one of its declarations
+   was already overridden by that later block at the same specificity: a
+   4.5rem/4px track nothing has ever drawn, and a second fill rule under a
+   different element name (`b` rather than `em`), which is how one component
+   came to have two spellings a new caller had to guess between. */
 
 .pd-drawer-row td {
   padding: 0;
   background: var(--surface);
+}
+
+/*
+ * The opened row, in light (item 25) — the other half of the Hot Deals restyle.
+ *
+ * Pressing a row drops `.pd-detail` out of it, and on paper the panel had no
+ * edge of its own: `--surface` measures **1.01:1** against the white card
+ * behind it, so an opened deal's funnel and terms sat in the table's own flow
+ * with nothing saying where the row ended and the panel began. In dark the
+ * step is visible because the card is near-black and the wash is lighter; this
+ * is the case where the same token does two different amounts of work.
+ *
+ * Two rules and a step, not a box: the panel is *inset into* the table rather
+ * than floating over it, so it takes a rule at each end (the same
+ * now-3:1 hairline the rows are ruled with) and the second surface step. A
+ * border on all four sides would read as a card that had been dropped into a
+ * table, which is the thing it is not.
+ *
+ * **Light only.** Dark's own step already separates the two and changing it
+ * would be a change to the theme nobody reported.
+ */
+:root[data-theme='light'] .pd-drawer-row td {
+  background: var(--surface-2);
+  box-shadow:
+    inset 0 1px 0 var(--border),
+    inset 0 -1px 0 var(--border);
 }
 
 /* ── campaign cards ── */
@@ -11735,7 +12058,8 @@ button {
 
 /* ── the notification switch ── */
 
-.pd-switch-row {
+.pd-switch-row,
+.prof-switch-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -11747,28 +12071,40 @@ button {
   background: var(--surface-2);
 }
 
-.pd-switch-row > div {
+.pd-switch-row > div,
+.prof-switch-row > div {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
   min-width: 0;
 }
 
-.pd-switch-row b {
+.pd-switch-row b,
+.prof-switch-row b {
   font-size: 0.82rem;
 }
 
 /* A real checkbox under a drawn track: the label association, the keyboard and
    the focus ring all come free, which a `role="switch"` button has to
-   re-implement. */
-.pd-switch {
+   re-implement.
+   
+   **Two call sites, one kit.** `.prof-switch` is the profile's leaderboard
+   opt-out and is added to each selector here rather than being a second copy of
+   a drawn track — a switch is the same component wherever it is, which is the
+   condition this stylesheet's namespacing rule states for reusing a class. It is
+   *not* named `pd-` there, because that prefix means the partner dashboard and a
+   profile page borrowing the name would be the `.dash-*` collision again one
+   step subtler. */
+.pd-switch,
+.prof-switch {
   position: relative;
   flex: 0 0 auto;
   display: inline-flex;
   cursor: pointer;
 }
 
-.pd-switch input {
+.pd-switch input,
+.prof-switch input {
   position: absolute;
   inset: 0;
   opacity: 0;
@@ -11776,7 +12112,8 @@ button {
   cursor: pointer;
 }
 
-.pd-switch i {
+.pd-switch i,
+.prof-switch i {
   display: block;
   width: 2.6rem;
   height: 1.5rem;
@@ -11785,7 +12122,8 @@ button {
   transition: background 180ms var(--ease);
 }
 
-.pd-switch i::after {
+.pd-switch i::after,
+.prof-switch i::after {
   content: '';
   position: absolute;
   top: 0.2rem;
@@ -11797,20 +12135,24 @@ button {
   transition: transform 180ms var(--ease);
 }
 
-.pd-switch input:checked + i {
+.pd-switch input:checked + i,
+.prof-switch input:checked + i {
   background: var(--accent);
 }
 
-.pd-switch input:checked + i::after {
+.pd-switch input:checked + i::after,
+.prof-switch input:checked + i::after {
   transform: translateX(1.1rem);
 }
 
-.pd-switch input:focus-visible + i {
+.pd-switch input:focus-visible + i,
+.prof-switch input:focus-visible + i {
   outline: 2px solid var(--accent-lit);
   outline-offset: 2px;
 }
 
-.pd-switch input:disabled + i {
+.pd-switch input:disabled + i,
+.prof-switch input:disabled + i {
   opacity: 0.5;
   cursor: not-allowed;
 }
@@ -13218,9 +13560,13 @@ button {
   gap: 1rem;
 }
 
-/* The poster takes the row. It is `GAMES[0]` and it is the only card that is
-   ever wide — "today's game" is a position in the catalogue, not a size a card
-   can earn. */
+/* The poster takes the row, and it is the only card that is ever wide — being
+   the daily game is a *position* in the catalogue, not a size a card can earn.
+   It is no longer `GAMES[0]`: the poster is whichever game the day lands on
+   (`dailyGame` in `games/rules.ts`) and it is rendered as its own element above
+   the grid, with the same game also appearing as an ordinary tile below. So
+   this rule needs no `:first-child` and never did — `grid-column: 1 / -1` is
+   correct wherever in the grid the element sits. */
 .play-card-lead {
   grid-column: 1 / -1;
 }
@@ -22730,8 +23076,22 @@ button {
  * Rewritten as `clamp(min, REM + VW, max)`, fitted through the existing desktop
  * values so 1440 is unchanged and only phone/tablet move.
  */
+/*
+ * The two-point clamp from the responsive pass — see the note at the top of
+ * this block for why a clamp with a floor is not fluid.
+ *
+ * It **restates the cap** rather than only the clamp, and it has to: this rule
+ * sits 21,000 lines below the one it is refining, so it wins, and a
+ * `font-size` here without the `min()` would silently undo the one-sentence-one-line
+ * rule for every hero on the site. The two numbers inside it are read from the
+ * custom properties declared up there, so there is one measured advance and one
+ * measured measure however many times the clamp is retuned.
+ */
 .hero h1 {
-  font-size: clamp(2rem, 1.2rem + 3.56vw, 4.4rem);
+  font-size: min(
+    clamp(2rem, 1.2rem + 3.56vw, 4.4rem),
+    calc(var(--ln-measure) / (var(--ln-chars) * var(--ln-advance)))
+  );
 }
 
 .section-head h2 {
@@ -24511,16 +24871,65 @@ p.lst-soft {
   --bg-2: #eef1f0;
   --panel-rgb: 255, 255, 255;
 
-  /* Neutral hairlines, not tinted ones. The mock rules its cards in `#E6E9E8`,
-     a grey with no green in it, and the tint the site uses instead is visible
-     at card size as a faint wash round every panel. */
-  --border: #e6e9e8;
-  --border-2: #d5dbd9;
+  /*
+   * Neutral hairlines, not tinted ones. The mock rules its cards in `#E6E9E8`,
+   * a grey with no green in it, and the tint the site uses instead is visible
+   * at card size as a faint wash round every panel.
+   *
+   * ── and they are darker than the mock's, on purpose (item 25) ──
+   *
+   * `#e6e9e8` measures **1.08:1** against a `.pd-deals` panel and 1.22:1
+   * against a white card. That is not a faint line, it is an absent one: the
+   * Hot Deals table rules its rows with `1px solid var(--border)` and at that
+   * ratio eight rows of figures ran together into one block. Measured in
+   * Chrome rather than judged by eye, which is how the numbers in this comment
+   * were got.
+   *
+   * `#828e89` is **3.00:1** against the darkest of the three grounds a
+   * light hairline lands on (`--surface-2`), 3.23:1 on `--surface` and 3.67:1
+   * on a white card — the WCAG AA non-text bar (1.4.11), which is the
+   * right bar because a dense table's rules are "parts of graphics required to
+   * understand the content" and because `--border` is also what outlines a text
+   * input. It is the *least dark* value on the mock's own grey ramp that clears
+   * it, so the line is legible and nothing beyond the ratio was spent.
+   *
+   * `--border-2` keeps its step above (3.98:1): it is the stronger of the pair
+   * and is what a field and a segmented control are drawn with, so it has to
+   * stay distinguishable from the plain hairline rather than collapsing onto
+   * it.
+   *
+   * This departs from `b2b/Paylez Partner Dashboard v2.dc.html`, and that is
+   * the intended direction: where the prototype and the live site disagree the
+   * live site wins on palette, and a value that fails a contrast bar is not a
+   * palette decision the mock gets to keep. **Light only** — the dark
+   * dashboard's own hairlines are `rgba(255,255,255,0.09)` on near-black and
+   * are untouched.
+   */
+  --border: #808786;
+  --border-2: #6d7a74;
 
   --accent-rgb: 11, 127, 99;
   --accent: rgb(var(--accent-rgb));
   --accent-lit: var(--accent);
-  --accent-ink: var(--accent);
+  /*
+   * **The ink step is its own value again (item 25).**
+   *
+   * This block collapsed all three steps onto the mock's one green, and
+   * `src/site/CLAUDE.md` states at length why the site's own light theme does
+   * not: paper sets a different bar for a fill, an icon stroke and small text,
+   * and `--accent-ink` is "small accented text, and nothing else". Collapsed,
+   * every accented label on this screen was drawn at the *fill's* contrast —
+   * `#0b7f63` measures 4.96:1 on a white card but **4.37:1** on a `--surface`
+   * wash and **4.06:1** on `--surface-2`, and the labels it draws are 10.5px at
+   * 700: a deal's "Free", a status "Live", the sort arrow. All under the 4.5
+   * bar, all measured in Chrome.
+   *
+   * `#0a775d` is the same hue one step down and clears it on all three grounds
+   * (5.51 / 4.85 / 4.51). The *fill* is untouched, because a fill is a 3:1
+   * question and because the mock's green is the identity of this screen — what
+   * changed is that small text stopped borrowing the fill's number.
+   */
+  --accent-ink: #0a775d;
   --accent-soft: rgba(var(--accent-rgb), 0.72);
   --on-accent: #ffffff;
 
@@ -24542,9 +24951,29 @@ p.lst-soft {
   --surface: #eef1f0;
   --surface-2: #e6e9e8;
 
+  /*
+   * The text ramp, and the lower two steps are darker than the mock's
+   * (item 25).
+   *
+   * Against a `.pd-deals` panel the mock's own values measure **4.14:1** and
+   * **2.26:1** — both under the AA bar of 4.5 for text this size, and the
+   * second one badly. `--text-fnt` is not decoration here: it is the colour of
+   * every `data-quiet` cell in the Hot Deals table, so the *figures* an owner
+   * reads a report for were the least legible thing on the screen.
+   *
+   * `#4f5b56` is 5.80:1 and `#5f6b66` is 4.54:1 against the *darkest* of the
+   * three grounds (`--surface-2`), and 6.67 and 5.55 against a white card. Sized
+   * against that worst ground rather than against the panel, which is what the
+   * first pass did and is why the check in `verify-geo.ts` caught it 0.03 short. The faint step sits deliberately close to
+   * the bar rather than past it: the three steps have to stay *three* steps, and
+   * a `--text-fnt` pulled all the way down reads as `--text-mut` and the ramp
+   * stops saying anything.
+   *
+   * Light only; dark's `rgba(242,246,244, …)` pair is untouched.
+   */
   --text: #0b1512;
-  --text-mut: #6b7772;
-  --text-fnt: #9aa5a0;
+  --text-mut: #4f5b56;
+  --text-fnt: #5f6b66;
 
   /* The press stays the ink — which is what the section at the top of this file
      already argued for this one screen, and which the mock does on every
@@ -25256,7 +25685,14 @@ p.lst-soft {
   white-space: nowrap;
 }
 
-.pd-state-pill[data-state='live'] {
+/* An issued voucher's four statuses are the same component saying the same kind
+   of thing — where a thing is in its life — so they join the deal states here
+   rather than growing a second pill that looks like this one. The mapping is by
+   *meaning*, not by name: a voucher nobody has spent is live, a spent one is
+   finished and reads like a paused row, and a lapsed or cancelled one is over.
+   No new colour: all four are the tokens these rules already use. */
+.pd-state-pill[data-state='live'],
+.pd-state-pill[data-state='active'] {
   background: rgba(var(--tint-rgb), 0.22);
   color: var(--accent-ink);
 }
@@ -25267,17 +25703,144 @@ p.lst-soft {
   box-shadow: inset 0 0 0 1px var(--border);
 }
 
-.pd-state-pill[data-state='paused'] {
+.pd-state-pill[data-state='paused'],
+.pd-state-pill[data-state='redeemed'] {
   background: none;
   color: var(--text-mut);
   box-shadow: inset 0 0 0 1px var(--border-2);
 }
 
+/*
+ * The finished states: a wash, and the **muted** step rather than the faint one.
+ *
+ * `--text-fnt` is sized against a card and a panel (item 25), and this pill
+ * puts it on `--bg-2` — a third, darker ground — where it measured 4.47:1 at
+ * 11.5px/700. Three hundredths under the bar, which is still under it.
+ *
+ * Fixed here and not by darkening the token, because the token is the whole
+ * ramp: `--text-fnt` pulled down far enough to clear a wash lands on top of
+ * `--text-mut`, and the light theme's three text steps stop being three. A chip
+ * with a ground of its own is its own contrast context — which is the same
+ * argument `--accent-ink` exists for one block up.
+ */
 .pd-state-pill[data-state='expired'],
+.pd-state-pill[data-state='cancelled'],
 .pd-state-pill[data-state='archived'],
 .pd-state-pill[data-state='draft'] {
   background: var(--bg-2);
   color: var(--text-fnt);
+}
+
+/* **Light only**, and that is the half of item 25 that is a constraint rather
+   than a fix: dark's own faint step is `rgba(242,246,244,0.44)` on near-black
+   and measures well past the bar, so there is nothing to correct there and
+   correcting it anyway would be a change to a theme nobody reported. */
+:root[data-theme='light'] .pd-state-pill[data-state='expired'],
+:root[data-theme='light'] .pd-state-pill[data-state='cancelled'],
+:root[data-theme='light'] .pd-state-pill[data-state='archived'],
+:root[data-theme='light'] .pd-state-pill[data-state='draft'] {
+  color: var(--text-mut);
+}
+
+/* ══ the plan panel (item 24) ══ */
+
+/*
+ * Capacity against use, one row each.
+ *
+ * A definite two-column grid rather than a flex row with `space-between`: the
+ * four labels are different lengths in five languages, and a flex row lets each
+ * figure sit wherever its own label ends — four numbers a reader has to hunt
+ * for down a ragged edge. `minmax(0, 1fr)` on the label so a long one wraps
+ * rather than pushing the figure out of the box, which is the `repeat(3, 1fr)`
+ * trap this dashboard has already paid for once.
+ */
+.pd-plan-use {
+  display: grid;
+  gap: 0.45rem 0.9rem;
+  margin: 0.7rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pd-plan-use li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 0.6rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.pd-plan-use li:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.pd-plan-use span {
+  font-size: 0.78rem;
+  color: var(--text-mut);
+}
+
+.pd-plan-use b {
+  font-size: 0.86rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/*
+ * The comparison, and the highlighted column.
+ *
+ * `data-on` marks the **middle** column in both the head and the body, and the
+ * mark is a tint rather than a second colour — the palette has one accent, and
+ * a "recommended" ribbon in a different hue is exactly the fourth-colour
+ * temptation `CLAUDE.md` names. The head cell carries the plan's name, its
+ * price and a tag, so it is a column rather than a row of three things.
+ */
+.pd-plan-table th {
+  vertical-align: bottom;
+}
+
+.pd-plan-table th b {
+  display: block;
+  font-size: 0.86rem;
+}
+
+.pd-plan-table th em {
+  display: block;
+  margin-top: 0.15rem;
+  font-style: normal;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--text-fnt);
+}
+
+.pd-plan-table [data-on='true'] {
+  background: rgba(var(--tint-rgb), 0.07);
+}
+
+/* The rule down each side of the highlighted column, so it reads as one column
+   rather than as a stack of tinted cells. */
+.pd-plan-table th[data-on='true'] {
+  box-shadow:
+    inset 1px 0 0 rgba(var(--accent-rgb), 0.28),
+    inset -1px 0 0 rgba(var(--accent-rgb), 0.28),
+    inset 0 1px 0 rgba(var(--accent-rgb), 0.28);
+}
+
+.pd-plan-table td[data-on='true'] {
+  box-shadow:
+    inset 1px 0 0 rgba(var(--accent-rgb), 0.28),
+    inset -1px 0 0 rgba(var(--accent-rgb), 0.28);
+}
+
+.pd-plan-table tbody tr:last-child td[data-on='true'] {
+  box-shadow:
+    inset 1px 0 0 rgba(var(--accent-rgb), 0.28),
+    inset -1px 0 0 rgba(var(--accent-rgb), 0.28),
+    inset 0 -1px 0 rgba(var(--accent-rgb), 0.28);
+}
+
+.pd-plan-table svg {
+  color: var(--accent-ink);
 }
 
 /* ── the claim limit ── */
@@ -30645,4 +31208,684 @@ p.lst-soft {
   .pd-inbox-read {
     transition: none;
   }
+}
+
+/* ══════════════════════════════════════════════════════ today's list ══
+ *
+ * The rotating daily-task prompt above the streak row (`TaskList` in
+ * `games.tsx`). It replaced an empty box.
+ *
+ * **The type is fluid and the box is not measured.** These prompts are whole
+ * sentences in five languages and they are not the same length in any two of
+ * them — the Ukrainian check-in line runs about half again the English one, and
+ * the Uzbek invite line longer still. A panel with a fixed height clips the
+ * longest; a panel with a fixed font size either sets the longest too small to
+ * read on a phone or the shortest too large for the row. So the size is a
+ * two-point `clamp` (the form the responsive note in `CLAUDE.md` names: a clamp
+ * with a floor stops being fluid, and this one keeps moving all the way down to
+ * 320px) and the height is whatever the sentence needs.
+ *
+ * `min-height` is set to two lines rather than one, and that is the one measured
+ * number here: without it the panel changes height every fifteen seconds as the
+ * prompt rotates between a short line and a long one, and a box that resizes on
+ * a timer drags the whole page under the cursor. Two lines is what the longest
+ * of these needs at phone width, so the panel is still on every rung.
+ */
+.play-tasks {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: clamp(1rem, 2.6vw, 1.35rem) clamp(1.1rem, 3vw, 1.6rem);
+  margin-bottom: 1.1rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Matched to `.play-energy-kicker` and `.play-run-kicker` rather than given its
+   own treatment: this is the third panel in the same column and a heading that
+   looked different would read as a different kind of thing. */
+.play-tasks-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.play-tasks-kicker i {
+  display: inline-flex;
+  color: var(--accent-lit);
+}
+
+/*
+ * The prompt.
+ *
+ * `min-height: 2lh` is two lines of *this* element's own line box, so it tracks
+ * the clamp above rather than being a pixel figure that stops matching the type
+ * the first time the clamp is retuned. Browsers without `lh` fall back to the
+ * `em` line before it.
+ */
+.play-tasks-line {
+  position: relative;
+  margin: 0;
+  min-height: 2.9em;
+  min-height: 2lh;
+  font-size: clamp(0.94rem, 0.82rem + 0.55vw, 1.12rem);
+  line-height: 1.45;
+  font-weight: 600;
+  color: var(--text);
+  /* No `white-space: nowrap`, no `text-overflow: ellipsis` and no line clamp:
+     the whole content of this panel is one sentence, and half of a nudge is not
+     a nudge. It wraps, and the box grows. */
+  overflow-wrap: anywhere;
+}
+
+/*
+ * The transition between prompts.
+ *
+ * On the `<span>` rather than the `<p>`, because the animation is *arrival*:
+ * the span is keyed on the task, so React replaces the element and the keyframe
+ * runs once per prompt. Animating the paragraph would animate it once, on
+ * mount, and never again — text content cannot be transitioned.
+ *
+ * A rise and a fade rather than a slide across: the panel is a column of
+ * sentences over a live backdrop and horizontal movement in a box this wide
+ * reads as a carousel somebody can swipe, which this is not.
+ */
+.play-tasks-line > span {
+  display: block;
+  animation: task-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes task-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.4rem);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* One pip per open task. A count and a rotation indicator in the same three
+   pixels — and deliberately not a control: there is nothing behind a prompt to
+   open, and a dot that invites a press and answers nothing is the
+   picture-of-a-control failure this stylesheet has already shipped twice. */
+.play-tasks-pips {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.play-tasks-pips i {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.22);
+  transition: background 200ms ease, transform 200ms ease;
+}
+
+.play-tasks-pips i[data-on] {
+  background: var(--accent);
+  transform: scale(1.25);
+}
+
+/* The rise is the only motion here and it is the only thing dropped: the fade
+   stays, because without it a prompt replaces another with no indication that
+   anything changed, which on a timer reads as a rendering fault. */
+@media (prefers-reduced-motion: reduce) {
+  .play-tasks-line > span {
+    animation: none;
+  }
+
+  .play-tasks-pips i {
+    transition: none;
+  }
+}
+
+/* ══════════════════════════════════════════════ a logo, where there is one ══
+ *
+ * The directory's cards drew the name's initial and nothing else — see
+ * `GuideMark` in `relocate.tsx` for why, and for what changed. The image comes
+ * from `/v1/media/service/:id` now, which is our own origin, so it is an
+ * ordinary `<img>`.
+ *
+ * **This is where the "one sizing convention" actually lives.** There is no
+ * image library on the server, so nothing is cropped or resized on the way in —
+ * a source logo is whatever shape and resolution its host sent. The fixed
+ * square box is the convention: every mark in the directory is the same size
+ * and the same shape whatever arrived.
+ *
+ * `contain` rather than `cover` inside it, and the difference is the whole
+ * point of drawing a logo at all. Most of these are **wordmarks** — wider than
+ * they are tall — and `cover` fills a 2.35rem square by cropping the width
+ * away, so a name gets rendered as two letters of itself at an arbitrary
+ * offset. That is not a smaller logo, it is a different picture, and it is
+ * worse than the initial it replaced, which at least was the first letter on
+ * purpose. `contain` letterboxes instead: the box stays identical on every
+ * card, and what is inside it is the whole mark.
+ *
+ * The box is `.gs-mark`'s own, so a card does not change height or width when
+ * an image loads — or fails to. That matters more than it looks: a 404 from
+ * that path is normal (a dead source host, a refused media type) and the
+ * fallback is the initial, so the two states have to occupy the same space or a
+ * page of cards reflows as each one resolves.
+ */
+.gs-mark-img {
+  /* No letter to centre and no tint behind the image: a translucent accent
+     under a logo with its own ground shows as a rim on one and nothing on the
+     next. The border stays, because it is what keeps a white logo on a white
+     card from having no edge at all.
+
+     The padding is what `contain` needs to read as a mark rather than as a
+     sticker: a logo run to all four edges of a 37px box has no air around it
+     and collides with the border on whichever axis it fills. */
+  padding: 0.2rem;
+  overflow: hidden;
+  background: var(--bg-2);
+}
+
+.gs-mark-img img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  /* `block` rather than the inline default, which would leave a few pixels of
+     baseline gap under the image inside a box drawn to the pixel. */
+  display: block;
+}
+
+/* ══════════════════════════════════════════════ how old the rates are ══
+ *
+ * One line under the converter, and the reason it exists is that the card
+ * quotes a **market** rate: the one thing a reader cannot see about a market
+ * rate is when it was taken, and these numbers came from a table compiled into
+ * the page and refreshed whenever somebody edited a TypeScript file.
+ *
+ * Faint and small, because it is provenance rather than a finding — the same
+ * treatment `.pd-withheld` takes for a suppressed figure, and for the same
+ * reason: it must not read like part of the answer.
+ */
+.fx-age {
+  margin: 0.75rem auto 0;
+  text-align: center;
+  font-size: 0.78rem;
+  color: var(--text-fnt);
+}
+
+/*
+ * Stale is louder, and it is **weight rather than colour**.
+ *
+ * The palette has one accent, so a warning cannot be amber here — that is the
+ * rule the field kit states for a field in error and the console restates for a
+ * refusal. 700 in `--text` is louder by contrast than by hue, and it is the
+ * whole difference between "taken on Monday" and "nothing has refreshed this
+ * since Monday".
+ */
+.fx-age[data-state='stale'] {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* ══════════════════════════════════════════════ the password toggle ══
+ *
+ * The eye inside a password field — `PasswordInput.tsx`, used by all four of
+ * them (sign-in, sign-up, the operator's reset, the console's panel).
+ *
+ * `.pw-field` is a wrapper the field kit did not have, and it is deliberately
+ * the *only* new box: everything about how the input looks still comes from
+ * `.field input` above, because this is one control of the kit rather than a
+ * second kit. That is why the wrapper is `display: block` with the input at
+ * `width: 100%` — a flex row here would take the input out of the kit's own
+ * sizing and the field would stop matching the email box above it.
+ */
+.pw-field {
+  position: relative;
+  display: block;
+  min-width: 0;
+}
+
+/*
+ * The right-hand padding the button needs.
+ *
+ * On the **input**, not on the wrapper, so the caret and the text stop short of
+ * the eye rather than running under it — which is what a wrapper with padding
+ * would have done, since the input would still be full width inside it.
+ *
+ * `--tap` wide plus the field's own padding: the button is a real target at the
+ * token size (`CLAUDE.md`'s rule — a control smaller than `--tap` grows its
+ * target, it does not shrink), so the text has to clear all of it.
+ */
+.pw-field input {
+  padding-right: calc(var(--tap) + 0.35rem);
+}
+
+/*
+ * The button.
+ *
+ * Absolutely positioned rather than in flow, because the input is the kit's and
+ * must keep its own width. `inset-block: 0` rather than a centring transform,
+ * so the target is the **full height of the field** — a 17px icon is not a
+ * target, and this is the one control on a sign-in form that a thumb reaches
+ * for by feel.
+ */
+.pw-eye {
+  position: absolute;
+  inset-block: 0;
+  right: 0;
+  display: grid;
+  place-items: center;
+  width: var(--tap);
+  border: 0;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--text-mut);
+  border-radius: var(--r-sm);
+  transition: color 180ms var(--ease);
+}
+
+/* Lit when it is on, so the *state* is visible and not only announced — the
+   icon changes too, and a reader who is not looking at the icon has the
+   `aria-pressed` and the label. Three signals for one bit, which is right for
+   the bit that decides whether a password is on screen. */
+.pw-eye:hover,
+.pw-eye[aria-pressed='true'] {
+  color: var(--accent-lit);
+}
+
+/* The kit's own focus ring, inset so it sits inside the field's border rather
+   than drawing a second rectangle over it. */
+.pw-eye:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: -3px;
+}
+
+/* A press is down and smaller at 40ms — the rule `.btn:active` states, applied
+   here because this is not a `.btn` and would otherwise be the one control on
+   the form with a hover and no press. */
+.pw-eye:active {
+  transform: scale(0.92);
+  transition-duration: 40ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pw-eye {
+    transition: none;
+  }
+
+  .pw-eye:active {
+    transform: none;
+  }
+}
+
+/* ══════════════════════════════════════════════ confirm your email ══
+ *
+ * The panel on the Play screen and the wallet (`VerifyEmail.tsx`). It is a
+ * *panel* rather than a gate because an unverified account is not locked out —
+ * it can read, play and browse, and what it cannot do is earn, redeem or appear
+ * on the board. So this looks like the other panels on those screens rather
+ * than like a barrier: same glass, same kicker, same field kit.
+ *
+ * It is **not** coloured. The palette has one accent, and this is the fourth
+ * place that rule has had to be restated — the field kit's error weight, the
+ * console's refusal strip, the stale-rate line — and the answer is the same
+ * every time: weight and position carry the urgency, not hue. A panel sitting
+ * directly under the points balance, saying the points will not move, does not
+ * need to be amber to be read.
+ */
+.vfy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: clamp(1rem, 2.6vw, 1.4rem) clamp(1.1rem, 3vw, 1.6rem);
+  margin-bottom: 1.1rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.vfy-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.vfy-kicker i {
+  display: inline-flex;
+  color: var(--accent-lit);
+}
+
+/* The address is bolded inside the sentence rather than put on a line of its
+   own: what somebody needs to check is that it is *their* address, and a
+   sentence they read anyway is where they will check it. */
+.vfy-line {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.vfy-line b {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/*
+ * The code and the two actions, on one row where there is room.
+ *
+ * `flex-end` rather than `center`, so the buttons sit on the field's baseline
+ * rather than floating beside its label — the field is two rows tall (a label
+ * and a well) and centring would put the press half a line above the well it
+ * belongs to.
+ */
+.vfy-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+/*
+ * Six digits wide, and no wider.
+ *
+ * A full-width well for a six-character code reads as a field that wants a
+ * sentence. `ch` is exact here for the same reason it is on the converter's
+ * amount: the well is `tabular-nums`, so every digit is one `ch` by
+ * definition.
+ */
+.vfy-code {
+  flex: 0 0 auto;
+  width: min(11rem, 100%);
+}
+
+.vfy-code input {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.22em;
+}
+
+.vfy-acts {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
+/* ══════════════════════════════════════ what the profile is worth ══
+ *
+ * One line above the welcome gate's two buttons (`onboarding.tsx`).
+ *
+ * **Above, not under**, which is the same decision `.prof-prize` makes on the
+ * profile page itself and for the same stated reason: a reward nobody notices
+ * changes nobody's behaviour. A figure under a button is read after the press
+ * has already been decided.
+ *
+ * Accented rather than weighted, which is the one place on this screen that is
+ * the right way round — this is *good news beside an offer*, not a warning, and
+ * the palette's one accent is exactly what marks an offer.
+ */
+.onb-prize {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin: 0 0 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+.onb-prize svg {
+  flex: 0 0 auto;
+  color: var(--accent-lit);
+}
+
+/* On a phone the two buttons stack, so the line sits over a column rather than
+   over a row — centred with them, because `.onb-actions` is centred there and a
+   left-packed label over centred buttons reads as a caption for something
+   else. */
+@media (max-width: 560px) {
+  .onb-prize {
+    display: flex;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
+/* ══════════════════════════════════════════ the sign-up agreement ══
+ *
+ * The Terms & Conditions checkbox on the sign-up form (`signin.tsx`).
+ *
+ * A **real `<input type="checkbox">` inside a `<label>`**, which is the same
+ * choice `.pd-switch` makes one screen over and for the same reason: the label
+ * association, the keyboard and the focus ring all come free, and a
+ * `role="checkbox"` button has to re-implement three of them. The box is not
+ * restyled at all — the native control is the one thing on this form that
+ * every platform already draws as itself, and a hand-drawn tick here would be
+ * the picture-of-a-control rule applied to the one control that must not be
+ * mistaken for decoration.
+ *
+ * `align-items: flex-start`, because the sentence wraps to two or three lines
+ * in four of the five languages and a centred box would float against the
+ * middle of the paragraph. `accent-color` is the whole of the theming: one
+ * property, the palette's own accent, and the native control keeps its own
+ * contrast handling in both themes.
+ */
+.field-agree {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-mut);
+}
+
+.field-agree input {
+  flex: 0 0 auto;
+  /* 1.05em rather than a rem, so it scales with the sentence it belongs to —
+     and `margin-top` optically centres it on the first line's cap height
+     rather than on its line box, which is what makes it look aligned. */
+  width: 1.05em;
+  height: 1.05em;
+  margin: 0.2em 0 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* The two documents. Underlined rather than only coloured: this is body copy
+   with links inside it, and colour alone in a paragraph is the one place a link
+   genuinely needs a second signal. */
+.field-agree a {
+  color: var(--accent-ink);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.field-agree a:hover {
+  color: var(--accent-lit);
+}
+
+/* The target is the whole sentence, which on a phone is three lines and a
+   comfortable place to tap — so the box itself does not need to grow to
+   `--tap`, unlike a control with nothing beside it. */
+@media (pointer: coarse) {
+  .field-agree {
+    padding-block: 0.25rem;
+  }
+}
+
+/* ═══════════════════════════════ the dashboard: text that did not fit ══
+ *
+ * Three measured overflows, found by sweeping every route in five languages at
+ * 360/768/1024/1440 in headless Chrome. All three are on the partner dashboard
+ * and all three had the same shape: a flexible box shrank past its contents and
+ * the **reading** was what got cut, rather than the decoration beside it.
+ *
+ * Numbers first, because that is the rule this block is really applying:
+ * `--glass` is set by the worst frame and the backdrops are damped on phones
+ * for the same reason — **text wins**. A tile whose figure is clipped is a tile
+ * that has lost the one thing it is for.
+ */
+
+/*
+ * ── 1. the KPI figure, cut off by its own sparkline ──
+ *
+ * Measured at 360px: the tile is 157px, `.pd-tile-body` is 123px, the sparkline
+ * is `flex: 0 0 auto` at **76px and does not shrink**, and the figure's column
+ * is left 34px for a number that needs 63px. So "1,148" rendered as "1,1".
+ *
+ * Two changes, and the second is the one that makes the first unnecessary at
+ * widths nobody has measured:
+ *
+ *   * the sparkline **shrinks before the figure does**, and
+ *   * the figure's column keeps its content's own minimum, so it cannot be
+ *     squeezed below the number at all.
+ *
+ * `min-width: min-content` rather than `max-content` on the column: the delta
+ * under the figure ("+12% vs last period") is prose and should still wrap, and
+ * a number has no break opportunity so its min-content *is* its full width.
+ * That is exactly the asymmetry wanted here.
+ */
+.pd-tile-body > div {
+  min-width: min-content;
+}
+
+.pd-tile-body > svg {
+  /* Was `0 0 auto`. A trend line is worth less than the figure it is a trend
+     in, so it is the thing that gives way. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+/*
+ * ── 2. the funnel's column heads, in a 64px column ──
+ *
+ * `.pd-reach-rows > div` is `minmax(0, 1fr) 6rem 6rem`, and at 360px the two
+ * figure columns are squeezed to 64px. "Impressions" is 119px, "Ko‘rsatishlar"
+ * 101px, "Wyświetlenia" 96px — and they are single words, so `white-space:
+ * normal` gives them nowhere to break and they ran over the column beside them.
+ *
+ * `anywhere` rather than `break-word`, and only on the **heads**: a broken
+ * uppercase label over a column of figures is legible and a label lying across
+ * the next column's numbers is not. The figures themselves are never broken —
+ * they are `tabular-nums` and a number split across two lines is unreadable.
+ */
+.pd-reach-rowhead > b {
+  overflow-wrap: anywhere;
+}
+
+/*
+ * ── 3. the campaign name, collapsed to nothing ──
+ *
+ * The worst of the three, and not a clip: `.pd-run-name` is `flex: 1 1 14rem`
+ * with `min-width: 0` beside a `.pd-run-stat` that is `flex: 0 0 auto` with a
+ * `min-width: 6rem`. At 360px the row cannot hold both, the stat refuses to
+ * give, and the name was measured at **0px wide** — the deal's title was not
+ * clipped, it was gone.
+ *
+ * The row already wraps, so the fix is to let the name take a line of its own
+ * rather than fight for part of one — and to do that **without a breakpoint**,
+ * because the width at which it stops fitting depends on the language and on
+ * how many action buttons the row carries. A media query fixed 360px and left
+ * 768px broken in Uzbek.
+ *
+ * `min-width: 14rem` is the whole fix — the same number as the flex basis,
+ * because they are the same statement: "this is how much room a deal's name
+ * needs before it is worth reading". The item can no longer shrink below it, so
+ * when the row cannot hold every child at its floor, `flex-wrap` moves the name
+ * to a line of its own and it gets the full width. Above that width nothing
+ * changes. No breakpoint, which matters here: the width at which it stops
+ * fitting depends on the language and on how many action buttons the row is
+ * carrying, and a media query fixed 360px while leaving 768px broken in Uzbek.
+ *
+ * **`min(100%, 14rem)` does not work and is the trap worth writing down.** It
+ * was the first attempt, it computes (`getComputedStyle` reports
+ * `min(100%, 224px)`), and the item still rendered at **22px** — measured. A
+ * percentage `min-width` on a flex item resolves against a containing block
+ * that is itself being sized by the flex algorithm, so it is treated as
+ * indefinite and the floor quietly disappears. The plain length is respected;
+ * the clever one is not. Same class of trap as `field-sizing: content` and
+ * `repeat(3, 1fr)` elsewhere in this sheet: the expression is valid, the
+ * browser accepts it, and the effect is nothing.
+ */
+.pd-run-name {
+  min-width: 14rem;
+}
+
+/* ══════════════════ "Running right now" stops pushing the page sideways ══
+ *
+ * Measured: at 768px in Russian the dashboard scrolled horizontally by 30px.
+ * `documentElement.scrollWidth` 798 against an `innerWidth` of 768, on one
+ * screen, at one width, in one language — which is exactly the shape of bug a
+ * breakpoint sweep finds and a look at the page does not.
+ *
+ * The cause is three `max-content` tracks in the subgrid above:
+ *
+ *     max-content   minmax(0, 1fr)   max-content   max-content
+ *     the pill      the name         the figures   the buttons
+ *
+ * `max-content` is a floor as well as a preference — a track sized that way
+ * will not shrink — so in Russian the pill ("Горячее предложение") took 155px,
+ * the figures 140 and the buttons 337. Their sum plus the gaps is 685 against a
+ * 662 container, so the grid overflowed *and* squeezed the only flexible track,
+ * the deal's name, to **0px**. The name was not clipped; it was gone, and the
+ * page grew sideways to make room for buttons.
+ *
+ * Two changes, and they are the two halves of one statement — the name is the
+ * reading and the chrome around it is not:
+ *
+ *   * every `max-content` track becomes `minmax(0, max-content)`, which keeps
+ *     the preference and drops the floor, so the chrome gives way first;
+ *   * the name track gets a real floor, so it can never be squeezed to nothing.
+ *
+ * `8rem` is the floor rather than the `14rem` its flex cousin takes, because a
+ * grid row cannot wrap: the four columns are one line by construction, so the
+ * floor has to be a width three other columns can still be fitted around
+ * rather than the width the name would like. 128px is about eighteen
+ * characters, which is enough to recognise a deal you wrote.
+ *
+ * And the buttons have to be able to take the narrower track, which they could
+ * not: `.pd-row-acts` was `white-space: nowrap` on a flex row with no wrap, so
+ * the track's content minimum was the full 337px whatever the track said.
+ */
+@supports (grid-template-columns: subgrid) {
+  .pd-running {
+    grid-template-columns:
+      minmax(0, max-content)
+      minmax(8rem, 1fr)
+      minmax(0, max-content)
+      minmax(0, max-content);
+  }
+}
+
+/* The pill wraps rather than setting the floor of its own column. Two lines of
+   a 0.62rem uppercase label is legible; a label that decides how wide the page
+   is is not. */
+.pd-kind {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+/* The buttons wrap onto a second line before the row overflows. `nowrap` here
+   was doing nothing a button needs — each label is one word — and everything a
+   grid track should not have to carry. */
+.pd-row-acts {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  white-space: normal;
 }

@@ -7,16 +7,30 @@
  * rest of that file needs a session for every call, and mixing the two would
  * hide which is which.
  *
- * Three scopes, and they exist because one is never the right answer at two
- * different sizes. `global` always has somebody in it, which is what a product
- * with a handful of players needs; `city` and `country` get more interesting as
- * it grows. A scope that cannot be answered — a city board for somebody who
- * never gave a city — falls back to global on the server and says so in
- * `scope`, so the client can label what it actually got rather than guess.
+ * **Two scopes on this site, and the server still serves three.** That is not
+ * drift, it is the one case where the two are meant to differ.
+ *
+ * `global` always has somebody in it, which is what a product with a handful of
+ * players needs, and `country` gets more interesting as it grows. The **city**
+ * board is gone from here: at this size it is a table of one — a city board is
+ * only a board once a city has players in it, and until then it renders as a
+ * claim about other people rather than as a ranking. Three tabs where two of
+ * them answer "just you" is two tabs too many.
+ *
+ * It is **not** removed from the server, and that is deliberate rather than
+ * unfinished. `/v1/leaderboard/city` is called by the Flutter app, which has a
+ * city screen of its own, and breaking a shipped client to tidy a list here is
+ * not a trade worth making — the same argument `domain/social.ts` makes for
+ * keeping the path at all. So `SCOPES` below is *this client's* menu, and the
+ * server's `SCOPES` is the set of answers it can give.
+ *
+ * A scope that cannot be answered — a country board for somebody who never gave
+ * a city — falls back to global on the server and says so in `scope`, so the
+ * client can label what it actually got rather than guess.
  */
 import { call } from './client';
 
-export const SCOPES = ['city', 'country', 'global'] as const;
+export const SCOPES = ['country', 'global'] as const;
 export type Scope = (typeof SCOPES)[number];
 
 export interface BoardRow {

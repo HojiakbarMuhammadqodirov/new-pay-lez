@@ -28,6 +28,7 @@ import * as fraud from './fraud.ts';
 import * as ledger from './ledger.ts';
 import * as notifications from './notifications.ts';
 import * as vouchers from './vouchers.ts';
+import * as consent from './consent.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
 import { plausibleAmount } from './money.ts';
@@ -697,6 +698,28 @@ async function recordVisit(
            spend_minor = venue_customers.spend_minor + excluded.spend_minor`,
     { v: input.venue.id, u: input.userId, t: input.at, a: input.amountMinor },
   );
+
+  /*
+   * §1.4's grant, from the account's standing answer.
+   *
+   * **Here, and nowhere earlier**, because this is the moment a relationship
+   * with this venue actually exists: a confirmed scan, at the till, with the
+   * customer in front of the staff. Writing it at sign-up would hand every
+   * venue in the catalogue a customer who has never been there.
+   *
+   * `grantSharingByDefault` does nothing when the account has switched the
+   * default off, and nothing when there is already a row for the pair —
+   * **including a revoked one**, so a player who withdrew is not re-granted on
+   * their next visit. The gate `domain/profiles.ts` joins on is unchanged; what
+   * changed is that it now has rows in it for people who never went looking for
+   * a switch.
+   */
+  await consent.grantSharingByDefault(db, {
+    userId: input.userId,
+    venueId: input.venue.id,
+    at: input.at,
+  });
+
   return true;
 }
 

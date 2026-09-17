@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ADMIN_TABS, BUSINESS_CATEGORIES } from './content';
+import { AdminTiers } from './adminTiers';
 import { ServiceAnalytics } from './adminAnalytics';
 import { AdminPeople } from './adminPeople';
 import { AdminMessages } from './adminMessages';
@@ -8,8 +9,8 @@ import { AdminWebsite } from './adminWebsite';
 import { categoryLabel, initialOf, type AdminVenueRow } from './adminMetrics';
 import { ThemeToggle } from './Header';
 import { Icon } from './icons';
-import { useCopy, useLanguage } from './i18n/context';
-import { CURRENCIES, fill } from './i18n/currency';
+import { useCopy, useGroupSeparator, useLanguage } from './i18n/context';
+import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
 import { useApi, type ApiResult } from './api/useApi';
@@ -131,12 +132,18 @@ import { useCountUp, useReveal } from './useReveal';
  * the exact lie the rest of this file is written against.
  */
 function Kpi({ label, value }: { label: string; value: number | null }) {
+  /* The reader's own thousands separator rather than a space for everybody —
+     grouping belongs to the person reading rather than to the figure (`fx.ts`),
+     and a plain space lets a number break across two lines between its digits,
+     which is what `Currency.group` says the narrow no-break space prevents. */
+  const separator = useGroupSeparator();
+
   return (
     <div className="adm-kpi" data-reveal>
       {value === null ? (
         <b>—</b>
       ) : (
-        <b data-count={value} data-group=" ">
+        <b data-count={value} data-group={separator}>
           0
         </b>
       )}
@@ -589,6 +596,10 @@ export function AdminPage() {
   /* The console's write half, in every language it presses in. */
   const act = copy.manage;
   const [language] = useLanguage();
+  /* The *reader's* separator. A gift card's face value is in the card's own
+     currency — a Polish card is 50 zl to an operator in London — and the digits
+     are still grouped the reader's way. See GROUP_FOR_LANGUAGE. */
+  const separator = useGroupSeparator();
 
   const { account, signOut } = useAuth();
 
@@ -884,7 +895,7 @@ export function AdminPage() {
                                the reader's: it is a thing on a shelf, and a
                                Polish card is 50 zł to an operator in London. The
                                separator is still the reader's — see `faceValue`. */
-                            faceValue(card, CURRENCIES[language].group),
+                            faceValue(card, separator),
                             fill(copy.deals.cost, { n: String(card.points_cost) }),
                           ]}
                           side={fill(copy.deals.stock, { n: String(card.stock) })}
@@ -1006,6 +1017,17 @@ export function AdminPage() {
                 <AdminWebsite />
               ) : tab === 4 ? (
                 <AdminMessages />
+              ) : tab === 5 ? (
+                /* Item 23. The tab reads its own plan list from
+                   `/v1/admin/config` rather than being handed one: this shell
+                   does not fetch that route, and threading a request through it
+                   for one tab would make every other tab pay for it. `Down` *is*
+                   handed over, because it is this file's panel and the tab has
+                   no business importing another screen's internals. */
+                <AdminTiers
+                  write={write}
+                  down={(result) => <Down result={result as ApiResult<unknown>} />}
+                />
               ) : (
                 /* **People is the server's.** It read `auth/directory.ts`
                    before — the accounts in *this browser* — which for an

@@ -24,6 +24,7 @@ import type { Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import { DomainError } from '../domain/errors.ts';
 import { resolveSession, rolesOf } from '../domain/accounts.ts';
+import * as limits from '../domain/limits.ts';
 import { now } from '../domain/time.ts';
 import { Router, type Actor, type Ctx, type Route } from './router.ts';
 
@@ -34,12 +35,27 @@ export interface ServerOptions {
   routes: Route[];
   secret?: string;
   origins?: readonly string[];
+  /**
+   * Whether the `limit` on a route is enforced. On everywhere but the suite.
+   *
+   * `verify.ts` drives the whole HTTP surface from one process, so every call
+   * it makes arrives on one "connection" — and it signs up rather more than
+   * five accounts. Raising the limit to accommodate a test would be tuning a
+   * security control to a caller it was not written about; turning it off for
+   * that harness and then checking it *deliberately*, in a section of its own,
+   * tests the thing rather than tripping over it.
+   *
+   * Defaulting to `true` is the load-bearing half: a deployment gets the limits
+   * without naming them, and only something that explicitly asks goes without.
+   */
+  limits?: boolean;
 }
 
 export function createApi(options: ServerOptions) {
   const router = new Router().add(options.routes);
   const secret = options.secret ?? CONFIG.server.secret;
   const origins = options.origins ?? CONFIG.server.origins;
+  const limited = options.limits ?? true;
 
   const handle = async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const started = Date.now();
@@ -103,7 +119,42 @@ export function createApi(options: ServerOptions) {
         secret,
       };
 
+      /*
+       * **The rate limit, between authentication and the handler.**
+       *
+       * After authentication because an `'account'` limit needs to know who is
+       * asking; before idempotency because a retried request with a stored
+       * response is not a new call and must not cost an attempt — a phone on a
+       * flaky connection retrying one scan is the case the idempotency key
+       * exists for and would be the first thing a limiter punished.
+       */
+      if (found.route.limit && limited) {
+        await limits.enforce(ctx.db, {
+          endpoint: `${found.route.method} ${found.route.pattern}`,
+          key:
+            found.route.limit.by === 'account' && actor
+              ? actor.user.id
+              : limits.connectionKey(secret, ctx.at.slice(0, 10), ctx.ip, String(req.headers['user-agent'] ?? '')),
+          limit: found.route.limit,
+          at: ctx.at,
+        });
+      }
+
       const result = await runIdempotent(ctx, found.route, () => found.route.handler(ctx));
+      /*
+       * **A handler that has already answered is finished.**
+       *
+       * Everything on this server returns JSON and is serialised below, with
+       * one exception that cannot be: `GET /v1/media/:entity/:id` writes image
+       * bytes with their own `Content-Type`. It ends the response itself, and
+       * without this line the 204 underneath would then throw
+       * `ERR_HTTP_HEADERS_SENT` *after* a correct reply had already gone out —
+       * a 500 in the log for a request the client received perfectly.
+       *
+       * Checked rather than declared on the route, because it is a fact about
+       * what the handler did and not a promise about what it might do.
+       */
+      if (res.writableEnded) return;
       /* A handler that returns nothing has done its work and has nothing to say
          — 204, not `null`, so a client can tell the two apart. */
       if (result === undefined) res.writeHead(204).end();

@@ -183,6 +183,29 @@ export interface BudgetBody {
      * its points — `PUT …/tiers` would re-activate it.
      */
     active?: boolean;
+    /**
+     * The two **count** caps, and `null` is a value: "no limit".
+     *
+     * Three states, not two, and they must not be collapsed. `undefined` is an
+     * API that predates the columns — the em-dash case every other optional
+     * field here describes. `null` is a rung nobody has capped, which is the
+     * state almost every rung is in and is what "no limit" on the screen means.
+     * A number is a cap. `?? 0` over either of the first two would print a cap
+     * of zero over an offer that is running.
+     */
+    redeemLimit?: number | null;
+    perUserLimit?: number | null;
+    /**
+     * How many have ever been issued on this rung, which is what a cap is
+     * measured against.
+     *
+     * Not the same figure as `issuedCount` beside it, and the difference is the
+     * reason both are sent: that one is **this month's**, because it is printed
+     * under this month's pool, and a cap is not a monthly allowance. Reading
+     * "18 of 20" off a monthly count would show 20 left on a rung that had
+     * finished.
+     */
+    issuedTotal?: number;
   }>;
   averageCheck: { minor: number; currency: string };
   /**
@@ -1283,6 +1306,60 @@ export const updateCampaign = (campaignId: string, patch: CampaignPatch) =>
     body: patch,
   });
 
+/* ═════════════════════════════════════════════════════ the voucher register ══ */
+
+/** One issued voucher, as the partner's own register lists it. */
+export interface PartnerVoucher {
+  id: string;
+  code: string;
+  discountPct: number;
+  pointsSpent: number;
+  reservedMinor: number;
+  spentMinor: number;
+  status: 'active' | 'redeemed' | 'expired' | 'cancelled';
+  issuedAt: string;
+  expiresAt: string;
+  redeemedAt: string | null;
+  /**
+   * Who holds it, or `null` — and `null` is **"we are not telling you"**, not
+   * "an anonymous customer".
+   *
+   * It is the §1.4 sharing grant, which the customer gives on the venue's own
+   * sheet and can withdraw afterwards. The row is drawn with the withheld
+   * treatment rather than with a placeholder name, for the same reason
+   * `.pd-withheld` exists: the one thing a suppressed figure must not look like
+   * is a real one.
+   */
+  holder: string | null;
+}
+
+/** The register's own totals, over the venue's whole life. */
+export interface VoucherTotals {
+  issued: number;
+  active: number;
+  redeemed: number;
+  expired: number;
+  /** Live now and gone within the week — the only figure here anybody can act on. */
+  lapsing: number;
+}
+
+export interface VoucherRegister {
+  /** The ladder, carrying each rung's caps and its lifetime count. */
+  tiers: BudgetBody['tiers'];
+  totals: VoucherTotals;
+  vouchers: PartnerVoucher[];
+}
+
+/**
+ * The register — one call, because it is one screen.
+ *
+ * Three reads composed on the server rather than three hooks here, and that is
+ * the lesson this repo already paid for: a rung reading "18 of 20" beside a
+ * list fetched a second later is two answers to one question.
+ */
+export const usePartnerVouchers = (venueId: string | null) =>
+  useVenueApi<VoucherRegister>(venueId, '/vouchers');
+
 /* ════════════════════════════════════════════ what points buy, and the pool ══ */
 
 /** One rung of the ladder, as `PUT /v1/partner/venues/:id/tiers` takes it. */
@@ -1291,6 +1368,15 @@ export interface TierDraft {
   pointsCost: number;
   /** Minor units of the venue's currency: the most one voucher may take off. */
   maxDiscountMinor: number;
+  /**
+   * The count caps. **Leaving one out and sending `null` are different
+   * edits** — absent keeps whatever is set and null removes the cap — because
+   * the route upserts the whole rung, so a field that folded the two together
+   * would clear somebody's cap every time they edited a price. The ladder
+   * editor on the Vouchers screen sends neither and therefore changes neither.
+   */
+  redeemLimit?: number | null;
+  perUserLimit?: number | null;
   active?: boolean;
 }
 

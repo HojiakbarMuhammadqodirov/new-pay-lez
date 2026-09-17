@@ -97,9 +97,74 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
   const present = new Set(banked.map((row) => row.bank));
   const missing = [...QUIZZES].filter((bank) => !present.has(bank));
 
-  if (options.reimport || venues === 0 || missing.length > 0) {
+  /*
+   * **A bank that is present and wrong, which is the other half of the same
+   * argument.**
+   *
+   * The gate above asks "is anything the code can ask for *missing*", because
+   * "is this the first boot" was true exactly once and left a bank added later
+   * un-imported forever. A row that is present but *incomplete* is the same
+   * shape of problem one level down: `pickDistractors` walked its candidate
+   * pool with a fixed stride and came back short wherever that stride shared a
+   * factor with the pool size, so 14 of the 196 flags and 14 of the 196
+   * capitals were written with one distractor and asked as a two-button coin
+   * flip. The generator is fixed and **a fixed generator does not rewrite rows
+   * it wrote before**: the import is deterministic on a stable id, so
+   * re-running it repairs them in place, and nothing was re-running it.
+   *
+   * Counted rather than sampled, and reported, because the count is the finding
+   * — a handful means this defect and a bankful means a bad export.
+   *
+   * The comparison is on the JSON text because counting a JSON array's length
+   * in SQL is not portable across both engines. `distractors` for a complete
+   * row is `["…","…","…"]`: three quoted strings and two commas. Two commas is
+   * therefore the floor, and a string containing a comma can only push the
+   * count up — so this over-counts complete rows and never under-counts them,
+   * which is the safe direction for something that triggers a re-import.
+   */
+  const short = (await db.all<{ bank: string; n: number }>(
+    `SELECT bank, COUNT(*) AS n FROM quiz_items
+      WHERE LENGTH(distractors) - LENGTH(REPLACE(distractors, ',', '')) < $commas
+      GROUP BY bank`,
+    { commas: CONFIG.games.quizOptions - 2 },
+  )).filter((row) => row.n > 0);
+
+  /*
+   * **A word bank smaller than a round plus its no-repeat window.**
+   *
+   * The third of the same shape as the two gates above, and the one that was
+   * reported as "the Word Builder database looks empty". It was not empty: it
+   * held the thirty-word placeholder `seedWords` writes, while the real 136-word
+   * lists sat unread in `updates/`. A round is `wordsPerRound` words and
+   * `buildWords` excludes the last `recentWindow` a player has seen, so a bank
+   * under that sum runs out **per player, permanently** — a game that worked
+   * and then stopped.
+   *
+   * So the threshold is the arithmetic rather than a number: anything at or
+   * under `recentWindow + wordsPerRound` in a language the product ships is a
+   * bank that cannot sustain play, and the import is what fills it.
+   */
+  const starved = await db.all<{ language: string; n: number }>(
+    `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language
+      HAVING COUNT(*) <= $floor`,
+    { floor: CONFIG.games.recentWindow + CONFIG.games.wordsPerRound },
+  );
+
+  if (options.reimport || venues === 0 || missing.length > 0 || short.length > 0 || starved.length > 0) {
+    if (!options.quiet && starved.length > 0) {
+      console.log(
+        're-importing: word bank too small to sustain a round in ' +
+          starved.map((row) => `${row.language} (${row.n})`).join(', '),
+      );
+    }
     if (!options.quiet && missing.length > 0 && venues > 0) {
       console.log(`re-importing: empty question bank(s) ${missing.join(', ')}`);
+    }
+    if (!options.quiet && short.length > 0) {
+      console.log(
+        're-importing: question(s) with too few options in ' +
+          short.map((row) => `${row.bank} (${row.n})`).join(', '),
+      );
     }
     const summary = await db.tx(async () =>
       await importLegacy(db, options.legacyDir ?? 'new-data', options.gamesDir ?? 'updates'),

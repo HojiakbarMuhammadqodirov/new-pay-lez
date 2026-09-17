@@ -6,11 +6,11 @@
  * Postgres. Generated from `schema.sql` so a primary key cannot change without
  * this changing with it.
  *
- * 0 of 82 tables have no primary key and are absent: an upsert
+ * 0 of 85 tables have no primary key and are absent: an upsert
  * naming one throws rather than guessing a unique index to overwrite on.
  *
- * **6 upsert targets carry a second unique constraint** and are marked inline
- * below: guidance_categories, guidance_subcategories, referrals, venue_links, budgets, voucher_tiers.
+ * **7 upsert targets carry a second unique constraint** and are marked inline
+ * below: guidance_categories, guidance_subcategories, referrals, venue_links, budgets, voucher_tiers, word_bank.
  * SQLite replaces on *any* unique constraint; `ON CONFLICT` handles the one it
  * is given. A row colliding on the secondary key with a different primary key
  * now raises a unique violation rather than silently replacing — the safer
@@ -79,6 +79,9 @@ export const CONFLICT_TARGETS: Record<string, readonly string[] | undefined> = {
   moderation_queue: ['id'],
   platform_config: ['key'],
   category_defaults: ['category'],
+  email_verifications: ['id'], // also UNIQUE (user_id)
+  media_assets: ['id'], // also UNIQUE (entity, entity_id)
+  daily_tasks: ['key'],
   benchmarks: ['id'], // also UNIQUE (period, city, category, metric)
   assistant_sessions: ['id'],
   assistant_messages: ['id'], // also UNIQUE (session_id, seq)

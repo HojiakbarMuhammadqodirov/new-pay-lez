@@ -81,6 +81,26 @@ export interface GuideService {
   venueId: string | null;
   acceptsVouchers: boolean;
   links: Array<{ kind: string; value: string }>;
+  /**
+   * The place's logo, as a path on **our own origin**, or null.
+   *
+   * This interface used to have no image field at all, on the stated ground
+   * that `guidance_services.image_url` is an external address and nothing in
+   * `src/` makes a third-party runtime request. Both halves of that were right
+   * and the conclusion was the bug: every card in the directory drew the name's
+   * initial, and the logos the old database holds were invisible.
+   *
+   * The server resolves it now (`media.logoPath`): what arrives here is either
+   * `/v1/media/service/<id>`, which this API fetches once and serves itself, or
+   * a `data:` URL, or null. **It is never a third-party URL** — that is a
+   * property of the server's answer rather than something to be checked here,
+   * which is why there is no `isPicture` guard on this field.
+   *
+   * A 404 from that path is expected and normal — a dead source host, a refused
+   * media type — so whatever draws it needs a fallback rather than a loading
+   * state. `Logo` in `relocate.tsx` is that.
+   */
+  logo: string | null;
 }
 
 /**

@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "assets": "node scripts/copy-flag-font.mjs",
+    "sitemap": "vite-node scripts/build-sitemap.ts",
     "banks": "node scripts/build-question-banks.mjs",
     "dev": "npm run assets && vite",
-    "build": "npm run assets && tsc -b && vite build",
+    "build": "npm run assets && npm run sitemap && tsc -b && vite build",
     "lint": "oxlint",
     "verify": "vite-node scripts/verify-geo.ts",
     "preview": "vite preview",

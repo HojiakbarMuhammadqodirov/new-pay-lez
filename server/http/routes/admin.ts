@@ -70,12 +70,14 @@
  * it is not ceremony: it is the client proving it knows which row it is about to
  * destroy, which is the failure a mis-wired list would produce.
  */
+import * as media from '../../domain/media.ts';
 import * as accounts from '../../domain/accounts.ts';
 import * as analytics from '../../domain/analytics.ts';
 import * as audit from '../../domain/audit.ts';
 import * as consent from '../../domain/consent.ts';
 import * as contact from '../../domain/contact.ts';
 import * as deals from '../../domain/deals.ts';
+import * as entitlements from '../../domain/entitlements.ts';
 import * as fraud from '../../domain/fraud.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as partners from '../../domain/partners.ts';
@@ -648,6 +650,143 @@ export const adminRoutes: Route[] = [
     },
   },
   {
+    /*
+     * **Who is on what, and what is about to change** — item 23's read half.
+     *
+     * One route rather than a column on the People and Services lists, because
+     * a tier has two halves that have to be read together: the plan in force
+     * and the one dated forward. A list that showed only the first would have
+     * an operator schedule the same change twice; one that merged them would
+     * say a venue is on Pro when it is on Free until Tuesday.
+     *
+     * Both audiences in one answer, keyed by subject, because the console's
+     * assignment control is the same control on both tabs.
+     */
+    method: 'GET',
+    pattern: '/v1/admin/subscriptions',
+    auth: 'admin',
+    handler: async (ctx) => {
+      const rows = await ctx.db.all<{
+        id: string;
+        user_id: string | null;
+        venue_id: string | null;
+        plan_id: string;
+        plan_code: string;
+        plan_name: string;
+        audience: string;
+        status: string;
+        source: string;
+        started_at: string;
+        cancel_at: string | null;
+        renews_at: string | null;
+        subject_name: string | null;
+      }>(
+        `SELECT s.id, s.user_id, s.venue_id, s.plan_id, p.code AS plan_code, p.name AS plan_name,
+                p.audience, s.status, s.source, s.started_at, s.cancel_at, s.renews_at,
+                COALESCE(v.name, u.display_name) AS subject_name
+           FROM subscriptions s
+           JOIN plans p ON p.id = s.plan_id
+           LEFT JOIN venues v ON v.id = s.venue_id
+           LEFT JOIN users u ON u.id = s.user_id
+          WHERE s.status IN ('trialing', 'active', 'grace')
+            AND (s.cancel_at IS NULL OR s.cancel_at > $at)
+          ORDER BY s.started_at DESC
+          LIMIT $l`,
+        { at: ctx.at, l: qInt(ctx, 'limit', 300) },
+      );
+
+      /* Split on the same comparison `activeSubscription` makes, so the console
+         cannot disagree with the gate about which of the two is in force. */
+      return {
+        live: rows.filter((row) => row.started_at <= ctx.at),
+        scheduled: rows.filter((row) => row.started_at > ctx.at),
+      };
+    },
+  },
+  {
+    /*
+     * Assign a tier, with a date — item 23's write half.
+     *
+     * Exactly one of `userId` / `venueId`, because the audience is derived from
+     * the subject rather than taken from the body: `plans` is keyed
+     * `(audience, code)`, and a venue put on a consumer plan is a venue that
+     * looks subscribed and behaves free. Sending both is refused rather than
+     * resolved by precedence — a precedence rule here is a silent answer to a
+     * question the caller got wrong.
+     *
+     * `effectiveFrom` is optional and absent means now, which is what a webhook
+     * does. The audit row, the supersession and the hand-over are all
+     * `assignPlan`'s; this route validates and names the refusals.
+     */
+    method: 'POST',
+    pattern: '/v1/admin/subscriptions',
+    auth: 'admin',
+    handler: async (ctx) => {
+      const userId = optStr(ctx.body, 'userId');
+      const venueId = optStr(ctx.body, 'venueId');
+      if ((userId === undefined) === (venueId === undefined)) {
+        throw new DomainError('validation_failed', 'name exactly one of userId and venueId', {
+          field: userId === undefined ? 'userId' : 'venueId',
+        });
+      }
+
+      const result = await entitlements.assignPlan(ctx.db, {
+        subject: userId !== undefined ? { userId } : { venueId: venueId as string },
+        planCode: str(ctx.body, 'planCode', { max: 40 }),
+        /*
+         * Validated by the house date checker rather than passed through.
+         *
+         * `deals.checkValidFrom` is the one this product already uses for a
+         * window's opening edge, and it does the two things needed here: it
+         * refuses a date the calendar does not have (`banana`, `2026-02-30`) by
+         * name instead of storing it, and it **keeps a bare day as a bare day**.
+         * That second half is deliberate and is the trap a sibling commit paid
+         * for: `2026-10-01` sorts before `2026-10-01T08:00:00Z`, so a tier
+         * dated to the first goes live at the first's own midnight. Normalising
+         * it to an instant would start it at whatever time of day the operator
+         * happened to press the button.
+         */
+        effectiveFrom: deals.checkValidFrom(optStr(ctx.body, 'effectiveFrom')),
+        actorId: actor(ctx).user.id,
+        note: optStr(ctx.body, 'note'),
+        at: ctx.at,
+      });
+
+      /*
+       * The plan as it will be *read*, not as it was written.
+       *
+       * `planFor` is what every other screen and every gate asks, so answering
+       * with it is the propagation being demonstrated rather than asserted: a
+       * change dated forward comes back with today's plan and `scheduled: true`,
+       * and one dated now comes back with the new plan. A route that echoed the
+       * row it inserted would report the new tier in both cases and be wrong in
+       * one of them.
+       */
+      const subject = userId !== undefined ? { userId } : { venueId: venueId as string };
+      return {
+        scheduled: result.scheduled,
+        effectiveFrom: result.effectiveFrom,
+        subscription: result.subscription,
+        plan: await entitlements.planFor(ctx.db, subject, ctx.at),
+        entitlements: await entitlements.entitlementsFor(ctx.db, subject, ctx.at),
+      };
+    },
+  },
+  {
+    /* Drop a change before it lands. Only a dated one — see `cancelScheduled`
+       for why "undo what I scheduled" and "take this account off its tier" stay
+       two operations. */
+    method: 'DELETE',
+    pattern: '/v1/admin/subscriptions/:id',
+    auth: 'admin',
+    handler: async (ctx) =>
+      await entitlements.cancelScheduled(ctx.db, {
+        subscriptionId: ctx.params.id,
+        actorId: actor(ctx).user.id,
+        at: ctx.at,
+      }),
+  },
+  {
     method: 'PUT',
     pattern: '/v1/admin/plans/:id/entitlements',
     auth: 'admin',
@@ -865,6 +1004,53 @@ export const adminRoutes: Route[] = [
   },
   {
     /**
+     * Ask again for a logo.
+     *
+     * The escape hatch from `domain/media.ts`'s no-retry rule, and the reason
+     * that rule can be as strict as it is. A logo whose host was down the first
+     * time a card was opened is recorded as `failed` and is **not** re-fetched
+     * on the next page view — the alternative is an outbound connection per card
+     * per visitor, forever, for a picture that already has a fallback. So
+     * "try again" has to be somebody pressing something, and this is it.
+     *
+     * An operator action rather than a partner one, even for a venue's own
+     * logo: the thing being retried is a fetch from a third-party host by this
+     * server, and the reason to want it is an operator looking at a directory
+     * with gaps in it. An owner who wants their logo shown uploads one, which is
+     * a `data:` URL and never touches this path.
+     *
+     * **It edits nothing anybody reports from** — the C7 line. It re-reads a
+     * source the row already names and caches the bytes; it cannot change the
+     * source, a balance, a visit or a funnel figure. Audited anyway, because it
+     * makes an outbound request on the platform's behalf and `audit_log` is where
+     * "who caused this server to call out" is answerable.
+     *
+     * The outcome is returned verbatim — `ok`, `refused`, `failed` or `none` —
+     * because they are four different facts and three of them are somebody
+     * else's problem to fix.
+     */
+    method: 'POST',
+    pattern: '/v1/admin/media/:entity/:id/refresh',
+    auth: 'admin',
+    handler: async (ctx) => {
+      if (!media.isEntity(ctx.params.entity)) {
+        throw new DomainError('not_found', 'no such media kind');
+      }
+      const outcome = await media.refresh(ctx.db, ctx.params.entity, ctx.params.id, ctx.at);
+      await audit.record(ctx.db, {
+        actorId: actor(ctx).user.id,
+        actorRole: 'admin',
+        action: 'media.refresh',
+        entity: ctx.params.entity,
+        entityId: ctx.params.id,
+        after: { outcome },
+        at: ctx.at,
+      });
+      return { entity: ctx.params.entity, id: ctx.params.id, outcome };
+    },
+  },
+  {
+    /**
      * Take a gift card off the shelf.
      *
      * Two outcomes, and which one happens is decided by the database rather than
@@ -1070,6 +1256,12 @@ export const adminRoutes: Route[] = [
                    AND entity_id IN (SELECT id FROM campaigns WHERE venue_id = $v))`,
           { v: venue.id },
         );
+        /* And its logo, for exactly the same reason: `media_assets` is keyed by
+           `(entity, entity_id)` with no foreign key — one table serving venues
+           and guidance services cannot have one — so no cascade reaches it
+           either, and a venue deleted without this leaves image bytes under an
+           id nothing points at. */
+        await media.forget(ctx.db, 'venue', venue.id);
         await ctx.db.run(`DELETE FROM venues WHERE id = $v`, { v: venue.id });
       });
       return { id: venue.id, deleted: true, offersDeleted: offers };

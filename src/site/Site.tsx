@@ -78,7 +78,7 @@ function SiteContent() {
   const heroCopyDepth = useHeroCopyDepth();
   const requested = useRoute();
   const [language] = useLanguage();
-  const { account } = useAuth();
+  const { account, pendingRoute, clearPendingRoute } = useAuth();
   const isPlayer = useIsPlayer();
 
   /*
@@ -93,8 +93,33 @@ function SiteContent() {
      and *replace* rather than push, because the hash we are correcting away
      from resolves here again and Back would bounce straight off it. */
   useEffect(() => {
+    /*
+     * **A one-shot destination wins, once.**
+     *
+     * `resolveRoute` is pure in `(route, account)` and has to stay that way —
+     * `npm run verify` walks the whole matrix checking every resolution is a
+     * fixed point. So it cannot know that *this* person, having just finished
+     * the welcome gate, asked to go to their profile rather than to the landing
+     * page everybody else gets.
+     *
+     * `pendingRoute` carries that, set in the same commit as the session change
+     * (see `finishOnboarding`), and is consumed here — in the one effect on
+     * this site that is allowed to navigate. Which is what keeps the rule
+     * `router.ts` states intact rather than worked around: nothing else sets a
+     * hash beside a session change.
+     *
+     * Cleared **before** navigating, so a destination cannot be honoured twice
+     * — and resolved through the guard on the way out, so a one-shot cannot ask
+     * for a page this account may not see.
+     */
+    if (pendingRoute) {
+      const allowed = resolveRoute(pendingRoute, account);
+      clearPendingRoute();
+      navigate(allowed, true);
+      return;
+    }
     if (route !== requested) navigate(route, true);
-  }, [route, requested]);
+  }, [route, requested, pendingRoute, account, clearPendingRoute]);
 
   /*
    * The traffic beacon. Started once, and told about the *resolved* route rather

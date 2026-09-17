@@ -1,7 +1,15 @@
 /**
  * The scheduled work.
  *
- * Five of the specs' rules only exist if something runs on a clock: unredeemed
+ * Five of the specs' rules only exist if something runs on a clock, and one
+ * rule that neither spec asked for: the exchange rates, which came from a
+ * one-off import and a hand-typed table and therefore refreshed **never** until
+ * `runTwiceDaily` below. That is also the only job here that makes an outbound
+ * request, which is why it has a cadence of its own rather than a line in the
+ * daily one — its failures are routine rather than a bug, and worth seeing
+ * separately.
+ *
+ * The five: unredeemed
  * vouchers and rewards release their reserves (§4.3, §5.3), deals go live and
  * expire on their window (B3), pending transactions time out (§3.1),
  * subscriptions renew and lapse (D3), and the weekly leaderboard is snapshotted
@@ -27,8 +35,10 @@ import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
 import * as ledger from './domain/ledger.ts';
 import * as notifications from './domain/notifications.ts';
+import * as rates from './domain/rates.ts';
 import * as social from './domain/social.ts';
 import * as traffic from './domain/traffic.ts';
+import * as verification from './domain/verification.ts';
 import * as vouchers from './domain/vouchers.ts';
 import { refreshAverageCheck } from './domain/venues.ts';
 import * as push from './ports/push.ts';
@@ -83,6 +93,11 @@ export async function runDaily(db: Db, at: Iso = now()): Promise<JobReport> {
   /* Retention is a job rather than a query filter: rows nobody deletes are rows
      that eventually have to be explained to a regulator. */
   detail.trafficPruned = await traffic.prune(db, at);
+  /* Spent and expired verification codes. An expired code is already refused,
+     so this is about the table rather than about correctness — but the rows
+     carry an address, and rows nobody deletes are rows that eventually have to
+     be explained to a regulator. Same argument as the line above it. */
+  detail.codesPruned = await verification.prune(db, at);
 
   /* §4.5: recompute the median check, and tell the partner when the source flips
      from the category default to their own tills — the estimate they read every
@@ -124,7 +139,34 @@ export async function runDaily(db: Db, at: Iso = now()): Promise<JobReport> {
   }
   detail.reconciledDrift = drifted;
 
-  return { at, ran: ['traffic', 'average_check', 'reconcile'], detail };
+  return { at, ran: ['traffic', 'codes', 'average_check', 'reconcile'], detail };
+}
+
+/**
+ * Runs twice a day. The exchange rates, and nothing else.
+ *
+ * Its own cadence rather than a line in `runDaily`, because "at least twice a
+ * day" is the requirement and a daily job cannot meet it — and because this is
+ * the only job here that makes an **outbound request**. Everything else on this
+ * clock works from rows in our own database; this one reads somebody else's
+ * document, which means it is the one job whose failure is routine rather than
+ * a bug, and it is worth being able to see that on its own line.
+ *
+ * Idempotent like the rest: it upserts on the currency code and works from what
+ * the sheet says right now, so a missed run is caught by the next one and a
+ * double run writes the same numbers twice.
+ *
+ * **A failure here changes nothing.** `rates.sync` writes no rate unless it has
+ * a full answer, so the previous ones stay and go on being served — see the
+ * last-known-good rule in `domain/rates.ts`. That is what makes it safe for
+ * this job to depend on a third party at all.
+ */
+export async function runTwiceDaily(db: Db, at: Iso = now()): Promise<JobReport> {
+  const detail: Record<string, unknown> = {};
+
+  detail.rates = await rates.sync(db, at);
+
+  return { at, ran: ['rates'], detail };
 }
 
 /** Runs weekly, on Monday. The leaderboard snapshot and the benchmarks. */
@@ -179,6 +221,12 @@ export function startScheduler(db: Db): () => void {
   const timers = [
     setInterval(async () => void await runFrequent(db), 5 * 60_000),
     setInterval(async () => void await runHourly(db), 60 * 60_000),
+    /* Twelve hours, which is the "at least twice a day" the rate sync has to
+       meet. `setInterval` rather than a wall-clock schedule because every job
+       here works from what is due *now* rather than from a cursor, so which
+       twelve hours it lands in does not matter and a restart simply resets the
+       phase. */
+    setInterval(async () => void await runTwiceDaily(db), 12 * 60 * 60_000),
     setInterval(async () => void await runDaily(db), 24 * 60 * 60_000),
     setInterval(async () => void await runWeekly(db), 7 * 24 * 60 * 60_000),
   ];

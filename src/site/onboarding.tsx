@@ -6,7 +6,8 @@ import { matchCities, savePlace, useCities, type City } from './api/profile';
 import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound } from './api/consumer';
 import { GAMES } from './content';
-import { WELCOME_POINTS } from './auth/users';
+import { PROFILE_BONUS, WELCOME_POINTS } from './auth/users';
+
 import { LANGUAGES, LANGUAGE_ORDER, useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
 import { flagGlyph } from './games/banks';
@@ -52,6 +53,23 @@ import '../components/GlobeHero/ui/flagFont.css';
  * until the bank is exhausted. Inventing five hard-coded flags — which is what
  * the phone does, because it has no bank — would have been a second source of
  * questions to keep in step.
+ *
+ * **Is the set the same for everybody? No — it is the same for one account.**
+ * Worth writing down because both halves have been assumed at different times.
+ * The pool is `EASY_FLAGS` below, forty codes chosen because a uniform draw
+ * from 196 opened real accounts with Sao Tome and Principe against Benin. Out
+ * of that pool the five are chosen **per account, deterministically**:
+ * `buildQuiz` on the server seeds its shuffle on the user id (and the local
+ * fallback draws through this browser's own bag), so the same account re-opening
+ * the gate is asked the same five flags in the same order, and two accounts are
+ * asked different ones.
+ *
+ * Both properties are load-bearing in opposite directions. Deterministic per
+ * account, because this flow is in-memory and a refresh restarts it — with a
+ * fresh random draw a reload silently changed the questions, so a new player's
+ * first five flags were not a fixed thing at all. Different between accounts,
+ * because a pool of forty and a round of five asked identically of everybody is
+ * a round whose answers are shareable and a gate that means nothing.
  *
  * The flow is in-memory and a refresh restarts it. That is the honest answer
  * rather than a gap: the points are not banked until the last screen, so a
@@ -918,7 +936,17 @@ function GameReel({ label }: { label: string }) {
   );
 }
 
-function PayoffStep({ earned, onFinish }: { earned: number; onFinish: () => void }) {
+function PayoffStep({
+  earned,
+  onFinish,
+  onProfile,
+}: {
+  earned: number;
+  /** End the gate and land wherever the guard says — the landing page. */
+  onFinish: () => void;
+  /** End the gate and land on the profile. Both finish it; see the buttons. */
+  onProfile: () => void;
+}) {
   const dict = useCopy();
   const copy = dict.onboarding;
   const total = earned + WELCOME_POINTS;
@@ -1062,22 +1090,51 @@ function PayoffStep({ earned, onFinish }: { earned: number; onFinish: () => void
           </a>
         </div>
 
+        {/*
+          What finishing the profile is worth, above the two buttons rather
+          than as a line under them.
+
+          Same rule the profile page itself states with `.prof-prize`: a reward
+          nobody notices changes nobody's behaviour, so the figure goes *above*
+          the control it is about. `PROFILE_BONUS` is `CONFIG.points.profileComplete`
+          on the server, so the number on this screen and the number the ledger
+          writes are one value — a promise of fifty paid as twenty-five is the
+          one thing this line must not be able to do.
+        */}
+        <p className="onb-prize">
+          <Icon name="spark" size={15} strokeWidth={2} />
+          {fill(copy.payProfileWorth, { points: String(PROFILE_BONUS) })}
+        </p>
+
         <div className="onb-actions">
           {/*
-          This button ends onboarding and nothing else. It must **not**
-          navigate: `finishOnboarding` changes the session, and a handler that
-          also sets the hash would have the guard run once against the new
-          account and the old route. `resolveRoute` already answers `landing`
-          for `onboarding` once the stamp is set, and the correcting effect in
-          `Site` follows it — see the note in `router.ts`.
-        */}
+            Two buttons, and **both of them finish onboarding** — which is the
+            whole of what was wrong here.
+
+            There were two before as well, and the second was an `<a
+            href="#/profile">` that could not work: `resolveRoute` holds an
+            account with no `onboardedAt` at `#/welcome` **from every route**,
+            so the hash changed and the guard put it straight back. It was the
+            documented navigation trap in `router.ts`, wearing a button.
+
+            Making it a plain link *and* allowing `#/profile` through the guard
+            would have been worse: the welcome gift is paid by
+            `finishOnboarding`, so a visitor who left this screen without it
+            would lose the round's points and still be held here from every
+            other route.
+
+            So the second one ends the gate too and asks to land on the profile,
+            through the one-shot in `finishOnboarding` — the mechanism that
+            exists precisely because a `navigate` beside a session change is the
+            race this comment started with.
+          */}
           <button type="button" className="btn btn-solid btn-lg" onClick={onFinish}>
             {copy.payGo}
             <Icon name="arrow" size={16} />
           </button>
-          <a className="btn btn-ghost" href="#/profile">
+          <button type="button" className="btn btn-ghost btn-lg" onClick={onProfile}>
             {copy.payProfile}
-          </a>
+          </button>
         </div>
       </div>
     </>
@@ -1096,6 +1153,13 @@ export function OnboardingPage() {
   const [earned, setEarned] = useState(0);
 
   const finish = useCallback(() => void finishOnboarding(earned), [finishOnboarding, earned]);
+  /* The same call with a destination on it. Not `finish()` followed by a
+     `navigate`, which is the race `router.ts` warns about — see the one-shot in
+     `finishOnboarding` and the effect in `Site` that consumes it. */
+  const finishToProfile = useCallback(
+    () => void finishOnboarding(earned, 'profile'),
+    [finishOnboarding, earned],
+  );
 
   if (!account) return null;
 
@@ -1134,7 +1198,7 @@ export function OnboardingPage() {
             }}
           />
         ) : (
-          <PayoffStep earned={earned} onFinish={finish} />
+          <PayoffStep earned={earned} onFinish={finish} onProfile={finishToProfile} />
         )}
       </div>
     </main>

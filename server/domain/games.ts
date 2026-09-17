@@ -43,7 +43,8 @@ import * as entitlements from './entitlements.ts';
 import * as ledger from './ledger.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
-import { iso, now, type Iso } from './time.ts';
+import * as verification from './verification.ts';
+import { iso, now, secondsBetween, type Iso } from './time.ts';
 
 /**
  * Derived from the tuple in `db/db.ts` rather than written out again here.
@@ -194,7 +195,11 @@ export interface Energy {
  * bucketed by day, and a regen clock needs an instant.
  */
 export async function energyFor(db: Db, userId: string, at: Iso = now()): Promise<Energy> {
-  const ent = await entitlements.entitlementsFor(db, { userId });
+  /* `at` and not `now()`: this function already takes the instant the tank is
+     being read at, and the tank's *size* is a plan entitlement — so reading the
+     plan at a different instant than the tank would give a player Premium's
+     eight blocks against a free plan's regen clock, or the reverse. */
+  const ent = await entitlements.entitlementsFor(db, { userId }, at);
   /* Both fall back to the free tier's own figure, so a deployment that has not
      seeded the keys yet plays like the free plan rather than like Premium. */
   const max = entitlements.entNumber(ent, 'daily_energy', CONFIG.points.dailyEnergy);
@@ -314,6 +319,17 @@ export interface Round {
    * wrong the first time the field is added to something else.
    */
   paid: boolean;
+  /**
+   * *Why* it banked nothing, when it did.
+   *
+   * `null` on a paid round. Additive, so a client that shipped against `paid`
+   * alone keeps working — but the two reasons have different remedies and a
+   * screen showing "practice" for both is a screen a player cannot act on:
+   * `no_energy` comes back on a clock and needs nothing from them,
+   * `unverified` needs a code out of their inbox and will never resolve on its
+   * own. See `domain/verification.ts`.
+   */
+  unpaidReason: 'no_energy' | 'unverified' | null;
 }
 
 /**
@@ -404,12 +420,19 @@ export async function startSession(
       },
     );
 
+    /* Said at the *start* as well as at the end, and that is the point of
+       carrying the reason: a player who has not proved their address should
+       find out before playing five questions, not on the result card. */
+    const proved = await verification.verified(db, input.userId);
+
     return {
       sessionId: id,
       gameType: input.gameType,
       content: built.content,
       energyLeft: energy.energy,
-      paid: energy.energy > 0,
+      paid: energy.energy > 0 && proved,
+      unpaidReason:
+        energy.energy > 0 ? (proved ? null : 'unverified') : 'no_energy',
     };
   });
 }
@@ -444,6 +467,16 @@ async function buildRound(
  * reinstall, a second device — still cannot be fed the same five questions all
  * evening.
  */
+/**
+ * How many rows a quiz draw asks for, as a multiple of the round's length.
+ *
+ * `LIMIT` is applied in SQL before anything in TypeScript can reject a row, so
+ * a draw of exactly five that then discards an incomplete one leaves a round of
+ * four. Four times over-draw covers every bank here: the worst case is the 196
+ * capitals, of which 14 were short.
+ */
+const OVERDRAW = 4;
+
 async function buildQuiz(
   db: Db,
   gameType: GameType,
@@ -468,17 +501,111 @@ async function buildQuiz(
   }
   const poolClause = easy ? ` AND q.prompt IN ('${easy.join("','")}')` : '';
 
-  const pick = (lang: string, window: number) =>
-    db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
-      `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
-        WHERE q.bank = $b AND q.language = $l${poolClause}
-          AND q.id NOT IN (
-            SELECT item_key FROM game_recent_items
-             WHERE user_id = $u AND game_type = $g
-             ORDER BY served_at DESC LIMIT $w)
-        ORDER BY RANDOM() LIMIT $n`,
-      { b: gameType, l: lang, u: userId, g: gameType, w: window, n: count },
-    );
+  /*
+   * **Complete questions only.**
+   *
+   * A `quiz_items` row carries its distractors as a JSON array, and a row with
+   * fewer than `quizOptions - 1` of them renders as a question with two or
+   * three buttons — a coin flip presented as a quiz, paying the same point as a
+   * four-option question and conspicuous to the player in a way no log line
+   * noticed. `pickDistractors` in `db/import.ts` produced exactly that for
+   * every small continent group (Oceania's 14 countries did it to 14 flags and
+   * 14 capitals) and has been fixed; **a fix to the generator does not reach
+   * rows already written**, and boot only re-imports a bank that is *empty*, so
+   * a database filled by an older build still holds them. `main.ts` now treats
+   * a short row as a reason to re-import, and this is the guard for the window
+   * before that has happened — and for whatever the next data defect is.
+   *
+   * It is a *filter* rather than an assertion: a short row is not asked and the
+   * draw takes a complete one instead. Refusing the round would turn fourteen
+   * bad rows into a dead game, which is worse than the bug.
+   *
+   * The filter is in TypeScript and the draw therefore asks for **more rows
+   * than it needs** — `LIMIT` in SQL is applied before anything here can reject
+   * a row, so filtering a draw of exactly five leaves a round of three.
+   * Counting a JSON array's length in SQL is not expressible portably across
+   * both engines (SQLite has no `json_array_length` guaranteed and no regexp),
+   * and over-drawing costs one extra index scan on a table of a few hundred
+   * rows.
+   */
+  const complete = (
+    rows: Array<{ id: string; prompt: string; answer: string; distractors: string }>,
+  ) =>
+    rows.filter((row) => {
+      try {
+        const parsed = JSON.parse(row.distractors) as unknown;
+        if (!Array.isArray(parsed) || parsed.length < CONFIG.games.quizOptions - 1) return false;
+        /*
+         * And no two options the same word, which is a *second* upstream defect
+         * with the same symptom. The exports are translated per language and two
+         * different English distractors can land on one translation — the
+         * Russian general bank asks for the name of a group of crows and offers
+         * `Стая`, `Стая`, `Убийство`, `Группа`. Four buttons, three answers, and
+         * one of the presses arbitrarily wrong.
+         *
+         * The answer is included in the comparison, because a distractor equal
+         * to the *answer* is the worst version of it: two buttons are right and
+         * only one of them scores.
+         */
+        const options = [row.answer, ...(parsed as unknown[]).map(String)];
+        return new Set(options).size === options.length;
+      } catch {
+        /* A row whose distractors are not JSON is a row nothing can render. */
+        return false;
+      }
+    });
+
+  const pick = async (lang: string, window: number) =>
+    complete(
+      await db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
+        `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
+          WHERE q.bank = $b AND q.language = $l${poolClause}
+            AND q.id NOT IN (
+              SELECT item_key FROM game_recent_items
+               WHERE user_id = $u AND game_type = $g
+               ORDER BY served_at DESC LIMIT $w)
+          ORDER BY RANDOM() LIMIT $n`,
+        { b: gameType, l: lang, u: userId, g: gameType, w: window, n: count * OVERDRAW },
+      ),
+    ).slice(0, count);
+
+  /**
+   * The same draw, deterministic per account, for the welcome round.
+   *
+   * `ORDER BY RANDOM()` is right for the game on the Play screen and wrong for
+   * the gate: `onboarding.tsx` says a refresh restarts the flow, and with a
+   * random draw a refresh also silently *changed the questions* — so a new
+   * account's first five flags were not a fixed thing at all, and somebody who
+   * reloaded mid-round was asked about somewhere else. Seeding the shuffle on
+   * the user id makes the welcome round reproducible: the same account is asked
+   * the same five flags in the same order however often it re-opens the gate,
+   * and a dispute about one can be reconstructed.
+   *
+   * Still **different between accounts**, which is the property to keep — the
+   * pool is forty codes and a round is five, and giving every new account the
+   * identical five would make the answers shareable and the gate pointless.
+   *
+   * The whole eligible pool is fetched and cut here rather than ordered in SQL,
+   * because a seeded shuffle is not portably expressible and the pool is at
+   * most forty rows. No over-draw is needed for the same reason: this reads all
+   * of them and filters before it cuts.
+   */
+  const pickWelcome = async (lang: string, window: number) =>
+    shuffle(
+      complete(
+        await db.all<{ id: string; prompt: string; answer: string; distractors: string }>(
+          `SELECT q.id, q.prompt, q.answer, q.distractors FROM quiz_items q
+            WHERE q.bank = $b AND q.language = $l${poolClause}
+              AND q.id NOT IN (
+                SELECT item_key FROM game_recent_items
+                 WHERE user_id = $u AND game_type = $g
+                 ORDER BY served_at DESC LIMIT $w)
+            ORDER BY q.id`,
+          { b: gameType, l: lang, u: userId, g: gameType, w: window },
+        ),
+      ),
+      userId,
+    ).slice(0, count);
 
   /*
    * Two fallbacks, in the order they stop being the player's fault.
@@ -489,8 +616,13 @@ async function buildQuiz(
    * therefore asked for a bank that exists, in a language that bank has no rows
    * in, and got a 404 that looked exactly like the game being broken. A
    * translation gap is not an absent game, and the question in English is
-   * strictly better than no round — so English is tried before giving up, and
-   * only for a bank that is genuinely empty in the reader's own language.
+   * strictly better than no round — so a fallback is tried before giving up,
+   * and only for a bank that is genuinely empty in the reader's own language.
+   *
+   * The chain is **selected → ru → en**, in that order and not straight to
+   * English: most of this product's Ukrainian readers read Russian, and none of
+   * the Russian bank is harder for them than the English one. English is the
+   * last resort because it is the one language every bank is complete in.
    *
    * **The recent window.** A small bank plus the no-repeat window is an
    * arithmetic dead end: `recentWindow` rows are excluded per player per game,
@@ -503,10 +635,31 @@ async function buildQuiz(
    * Both are tried in the reader's language first, so a player only ever loses
    * their language to a gap and never to their own history.
    */
-  let rows = await pick(language, CONFIG.games.recentWindow);
-  if (rows.length === 0) rows = await pick(language, 0);
-  if (rows.length === 0 && language !== 'en') rows = await pick('en', CONFIG.games.recentWindow);
-  if (rows.length === 0 && language !== 'en') rows = await pick('en', 0);
+  const draw = easy ? pickWelcome : pick;
+
+  let rows = await draw(language, CONFIG.games.recentWindow);
+  if (rows.length === 0) rows = await draw(language, 0);
+  /*
+   * **Russian before English**, and the order is the whole point.
+   *
+   * The coverage is not square: the capitals and flags exports carry four of
+   * the five languages (`QUIZ_LANGS` has no `uk`) and the general export
+   * carries no Ukrainian columns at all, so a Ukrainian reader asks for a bank
+   * that exists in a language it has no rows in. Falling straight to English
+   * was better than a 404 and worse than it needed to be — most of this
+   * product's Ukrainian readers read Russian, and none of the Russian bank is
+   * harder for them than the English one.
+   *
+   * Tried only when it is not already the language asked for, which is what
+   * keeps this from being a wasted query for the four languages that have
+   * rows. English stays the last resort, because it is the one every bank is
+   * complete in.
+   */
+  for (const fallback of ['ru', 'en'] as const) {
+    if (rows.length > 0 || language === fallback) continue;
+    rows = await draw(fallback, CONFIG.games.recentWindow);
+    if (rows.length === 0) rows = await draw(fallback, 0);
+  }
 
   if (rows.length === 0) {
     throw new DomainError('not_found', `no questions in the ${gameType} bank for ${language}`);
@@ -729,7 +882,8 @@ async function requireHint(db: Db, userId: string, sessionId: string, seq: numbe
      seeded `word_hints_per_day` behaves like the free plan rather than like
      Premium — the same argument as `streak_freezes` below. */
   entitlements.requireCapacity(
-    await entitlements.entitlementsFor(db, { userId }),
+    /* The same clock the day above is counted in. */
+    await entitlements.entitlementsFor(db, { userId }, at),
     'word_hints_per_day',
     used,
     3,
@@ -1008,6 +1162,16 @@ export interface Finish {
    * at.
    */
   paid: boolean;
+  /**
+   * *Why* it banked nothing, when it did. `null` on a paid round.
+   *
+   * The same union `Round.unpaidReason` carries and for the same reason:
+   * `no_energy` comes back on a clock and needs nothing from the player,
+   * `unverified` needs a code out of their inbox and will never resolve on its
+   * own. A result card that renders both as "practice" is one a player cannot
+   * act on.
+   */
+  unpaidReason: 'no_energy' | 'unverified' | null;
   /** §7.4's reward connection, computed from the real balance. */
   nearest: { venueId: string; venueName: string; discountPct: number; pointsNeeded: number } | null;
 }
@@ -1059,10 +1223,32 @@ export async function finish(
     if (session.user_id !== input.userId) throw new DomainError('forbidden', 'not your session');
     if (session.state !== 'active') throw new DomainError('invalid_state', 'session already finished');
 
-    /* Paid or practice — the tank as it was when this round opened. See the
-       note above the function for why it is asked about `started_at` and not
-       about now. */
-    const paid = (await energyFor(db, input.userId, session.started_at)).energy > 0;
+    /*
+     * Paid or practice, and there are **two** reasons a round can be unpaid.
+     *
+     * The tank, as it was when this round opened — see the note above the
+     * function for why it is asked about `started_at` and not about now.
+     *
+     * And the address. An account that has not proved its email banks nothing
+     * (`domain/verification.ts` for the full list of what that gates and what
+     * it deliberately does not). The round is still *played*, which is the same
+     * decision practice made: taking the game away teaches nobody anything
+     * about an email, and a player who cannot see what the product does has no
+     * reason to prove an address for it.
+     *
+     * The two are reported apart on `unpaidReason`, because "you are out of
+     * energy" and "confirm your email" have different remedies and a screen
+     * that renders both as "practice" is a screen a player cannot act on.
+     * Energy is checked first: it is the ordinary case, and an unverified
+     * player with an empty tank is being told about the one that comes back on
+     * its own.
+     */
+    const hasEnergy = (await energyFor(db, input.userId, session.started_at)).energy > 0;
+    const proved = await verification.verified(db, input.userId);
+    const paid = hasEnergy && proved;
+    const unpaidReason: 'no_energy' | 'unverified' | null = hasEnergy
+      ? (proved ? null : 'unverified')
+      : 'no_energy';
 
     /* `created_at` is selected because Memory Match is scored on it. It is the
        server's stamp, written when the event arrived — the client has no clock
@@ -1111,9 +1297,26 @@ export async function finish(
           ? scoreWords(events, secret.words as string[], (secret.tiers as number[] | undefined) ?? [])
           : secret.kind === 'deck'
             ? scoreDeck(events, CONFIG.games.memoryPairs)
-            : scoreFlight(input.clientReport ?? {});
+            : scoreFlight(input.clientReport ?? {}, secondsBetween(session.started_at, at));
 
-    const ent = await entitlements.entitlementsFor(db, { userId: input.userId });
+    /*
+     * The plan **as it was when the round was played**, not as it is when the
+     * server happens to read this.
+     *
+     * `entitlementsFor` defaults its clock to `now()`, and that default was
+     * invisible for as long as `activeSubscription` ignored dates: every
+     * subscription was live from the moment it existed, whatever `started_at`
+     * said. Once a subscription got a window (item 23), the default became a
+     * second clock — the round has its own instant, and the two disagree for
+     * any round not being scored at this exact moment.
+     *
+     * `at` is the honest one, and it is the same rule this file already states
+     * for energy: the answer is taken from the state at the round's own time,
+     * so it cannot change under a round that is being played. A tier granted an
+     * hour after somebody finished does not retroactively multiply what they
+     * banked, and one that lapsed an hour after does not un-multiply it.
+     */
+    const ent = await entitlements.entitlementsFor(db, { userId: input.userId }, at);
     const multiplier = entitlements.entNumber(ent, 'points_multiplier', 1);
 
     /* The raw score goes to the ledger untouched, and the plan multiplier is
@@ -1214,6 +1417,7 @@ export async function finish(
       energyLeft: energy.energy,
       balance,
       paid,
+      unpaidReason,
       nearest: await nearestReward(db, input.userId, balance),
     };
   });
@@ -1527,8 +1731,32 @@ function scoreDeck(
  * 3.5 and banks 3 on the free plan and 4 on Pro, which is the multiplier doing
  * its job rather than two roundings cancelling it out.
  */
-function scoreFlight(report: Record<string, unknown>): Scored {
-  const cleared = Math.max(0, Math.floor(Number(report.cleared) || 0));
+function scoreFlight(report: Record<string, unknown>, elapsed: number): Scored {
+  const claimed = Math.max(0, Math.floor(Number(report.cleared) || 0));
+  /*
+   * **The second bound, and it is the server's own clock.**
+   *
+   * The ceiling above bounds what a run can be *worth*; it says nothing about
+   * whether the run could have happened. A client posting 10,000 gaps one
+   * second after starting the session banked the ceiling, honestly earned by
+   * nobody, and looked in the ledger exactly like a very good player.
+   *
+   * Columns arrive on a **timer**, not on a distance — `interval` in
+   * `src/site/flight/config.ts` is 1.75 seconds and the difficulty ramp
+   * deliberately does not change it (it spreads the columns further apart in
+   * world units instead, which is what keeps `maxStep` honest). So the number
+   * of gaps a real run can have crossed is bounded by its own duration, and
+   * that duration is measured here from `started_at` to now — two stamps this
+   * server wrote.
+   *
+   * `flightGapAllowance` is the slack, and it is deliberately generous: the
+   * columns already on screen when a run begins were not waited for, clocks
+   * drift, and a request takes time to arrive. Being lenient is the right
+   * direction for a bound whose purpose is to refuse the impossible rather than
+   * to referee the plausible.
+   */
+  const possible = Math.floor(elapsed / CONFIG.games.flightSecondsPerGap) + CONFIG.games.flightGapAllowance;
+  const cleared = Math.min(claimed, Math.max(0, possible));
   const target = CONFIG.games.flightTarget;
   return {
     score: Math.min(cleared * CONFIG.games.flightPerGap, CONFIG.games.flightMaxPoints),

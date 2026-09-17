@@ -47,6 +47,7 @@ import { Icon, type IconName } from './icons';
 import { useCopy } from './i18n/context';
 import { MIN_PASSWORD } from './auth/users';
 import { fill } from './i18n/currency';
+import { PasswordInput } from './PasswordInput';
 
 /**
  * What the last write did, or why it did not.
@@ -271,8 +272,7 @@ export function SetPassword({
     >
       <label className="field">
         <span className="field-label">{copy.newPassword}</span>
-        <input
-          type="password"
+        <PasswordInput
           value={value}
           autoComplete="new-password"
           autoFocus

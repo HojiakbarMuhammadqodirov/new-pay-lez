@@ -223,4 +223,85 @@ export const removeUser = (id: string, confirm: string) =>
  * 400 — and the two have to fold the same way or the screen and the server
  * disagree about a trailing space.
  */
+/* ═══════════════════════════════════════════════════ subscription tiers ══ */
+
+/**
+ * One subscription, as `GET /v1/admin/subscriptions` returns it.
+ *
+ * Exactly one of `user_id` / `venue_id` is set, which is how the row knows its
+ * own audience — and why the console never has to be told: a plan is offered to
+ * whichever of the two the row names.
+ */
+export interface AdminSubscription {
+  id: string;
+  user_id: string | null;
+  venue_id: string | null;
+  plan_id: string;
+  plan_code: string;
+  plan_name: string;
+  audience: 'consumer' | 'partner';
+  status: string;
+  source: string;
+  started_at: string;
+  /** When it stops, set by a dated change that supersedes it. `null` is open. */
+  cancel_at: string | null;
+  renews_at: string | null;
+  /**
+   * The venue's name or the person's display name, or `null`.
+   *
+   * `null` here is an account the join could not name — a provisional identity
+   * with no display name — and it is drawn as the id rather than as a blank,
+   * because an operator about to change somebody's tier has to be able to tell
+   * which row they are on.
+   */
+  subject_name: string | null;
+}
+
+/**
+ * The two halves, split by the server on the same comparison the gate makes.
+ *
+ * Read together and never merged: a list showing only `live` would have the
+ * same change scheduled twice, and one that merged them would say a venue is on
+ * Growth when it is on Starter until Tuesday.
+ */
+export interface AdminSubscriptions {
+  live: AdminSubscription[];
+  scheduled: AdminSubscription[];
+}
+
+export const ADMIN_SUBSCRIPTIONS_PATH = '/v1/admin/subscriptions?limit=300';
+
+/**
+ * Put an account or a venue on a tier, optionally from a date.
+ *
+ * `effectiveFrom` is a **bare day** (`YYYY-MM-DD`) and is meant to stay one: the
+ * server keeps it as typed, so a tier dated to the first goes live at the
+ * first's own midnight rather than at whatever time of day the button was
+ * pressed. Sending an instant works and starts it at that instant.
+ *
+ * Exactly one of `userId` / `venueId`; the server refuses both and neither by
+ * name rather than resolving it by precedence.
+ */
+export const assignPlan = (input: {
+  userId?: string;
+  venueId?: string;
+  planCode: string;
+  effectiveFrom?: string;
+  note?: string;
+}) =>
+  call<{
+    scheduled: boolean;
+    effectiveFrom: string;
+    subscription: AdminSubscription;
+    /** The plan as it will be **read**, which for a dated change is still today's. */
+    plan: { id: string; code: string; name: string; rank: number };
+    entitlements: Record<string, string>;
+  }>('/v1/admin/subscriptions', { method: 'POST', body: input });
+
+/** Drop a dated change before it lands. Refused once it is in force. */
+export const cancelScheduledPlan = (id: string) =>
+  call<{ cancelled: boolean }>(`/v1/admin/subscriptions/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+
 export const foldConfirm = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');

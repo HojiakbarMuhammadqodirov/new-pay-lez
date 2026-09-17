@@ -1,10 +1,21 @@
 /**
- * Money, per language.
+ * Money.
  *
- * The site is one product sold into several places, and the language switch is
- * the only thing a visitor tells us about where they are — so it is what picks
- * the currency. English is the UK pitch and prices in pounds; Polish in złoty;
- * Uzbek, Russian and Ukrainian in their own.
+ * The site is one product sold into several places, and the language switch used
+ * to be the only thing a visitor told us about where they were — so it picked
+ * the currency: English priced in pounds, Polish in złoty, and so on.
+ *
+ * **They are two settings now**, and the reason is that they were never the
+ * same question. Somebody reading the site in Russian may be paid in złoty;
+ * somebody reading in English may be in Tashkent. Tying them meant a visitor
+ * who wanted prices in their own money had to read the site in a language they
+ * may not speak, and one who wanted the site in their own language had to
+ * accept prices in somebody else's.
+ *
+ * So the language still supplies the **default** currency — it remains the best
+ * single guess, and a first visit should not have to choose twice — and from
+ * there the two move independently. `CURRENCY_FOR_LANGUAGE` is that guess;
+ * `CURRENCIES` is keyed by the currency itself.
  *
  * **Every amount in `content.ts` and in the dictionaries is euros.** That is the
  * base unit and nothing else may be written anywhere: a page with a hardcoded
@@ -54,12 +65,74 @@ export interface Currency {
   decimals: number;
 }
 
-export const CURRENCIES: Record<LanguageCode, Currency> = {
-  en: { symbol: FX.GBP.symbol, before: true, group: ',', rate: FX.GBP.rate, step: 5, decimals: FX.GBP.decimals },
-  pl: { symbol: FX.PLN.symbol, before: false, group: ' ', rate: FX.PLN.rate, step: 10, decimals: FX.PLN.decimals },
-  uz: { symbol: FX.UZS.symbol, before: false, group: ' ', rate: FX.UZS.rate, step: 10000, decimals: FX.UZS.decimals },
-  ru: { symbol: FX.RUB.symbol, before: false, group: ' ', rate: FX.RUB.rate, step: 100, decimals: FX.RUB.decimals },
-  uk: { symbol: FX.UAH.symbol, before: false, group: ' ', rate: FX.UAH.rate, step: 50, decimals: FX.UAH.decimals },
+/**
+ * The currencies the site prices itself in, keyed by ISO code.
+ *
+ * Five, and **deliberately not the nineteen** `fx.ts` carries. Those are the
+ * Relocate converter's — anything somebody might want to convert — and these
+ * are the ones this product *quotes a price in*, which needs a `step` (what a
+ * price tag rounds to) and a grouping decision per currency. Adding a sixth is
+ * one row here plus a name in all five dictionaries, and the type makes the
+ * second half a build error.
+ *
+ * Keyed by currency rather than by language, which is the change: the two are
+ * separate settings now, and a table indexed by `LanguageCode` cannot express
+ * "reading in Russian, paying in zloty".
+ */
+export const CURRENCIES = {
+  GBP: { symbol: FX.GBP.symbol, before: true, group: ',', rate: FX.GBP.rate, step: 5, decimals: FX.GBP.decimals },
+  PLN: { symbol: FX.PLN.symbol, before: false, group: ' ', rate: FX.PLN.rate, step: 10, decimals: FX.PLN.decimals },
+  UZS: { symbol: FX.UZS.symbol, before: false, group: ' ', rate: FX.UZS.rate, step: 10000, decimals: FX.UZS.decimals },
+  RUB: { symbol: FX.RUB.symbol, before: false, group: ' ', rate: FX.RUB.rate, step: 100, decimals: FX.RUB.decimals },
+  UAH: { symbol: FX.UAH.symbol, before: false, group: ' ', rate: FX.UAH.rate, step: 50, decimals: FX.UAH.decimals },
+} as const satisfies Record<string, Currency>;
+
+/** The codes the switcher offers, in the order it offers them. */
+export const CURRENCY_ORDER = ['GBP', 'PLN', 'UZS', 'RUB', 'UAH'] as const;
+
+export type CurrencyCode = (typeof CURRENCY_ORDER)[number];
+
+export const isCurrencyCode = (value: string): value is CurrencyCode =>
+  (CURRENCY_ORDER as readonly string[]).includes(value);
+
+/**
+ * The currency a language defaults to.
+ *
+ * Still the best single guess about where somebody is — it is the one thing a
+ * visitor tells us before they have told us anything — and it is now only a
+ * *default*. Once the currency has been chosen it is chosen, and switching the
+ * language does not move it: that is the whole of what separating them means.
+ */
+export const CURRENCY_FOR_LANGUAGE: Record<LanguageCode, CurrencyCode> = {
+  en: 'GBP',
+  pl: 'PLN',
+  uz: 'UZS',
+  ru: 'RUB',
+  uk: 'UAH',
+};
+
+/**
+ * The thousands separator, **by language** - not by currency.
+ *
+ * fx.ts has always stated this rule - digit grouping is a property of the
+ * *reader*, not of the currency being written: a Pole reading a dollar amount
+ * groups it with spaces, and an English reader reads the same dollars with
+ * commas. Four screens quote it in their own comments. It was true by
+ * **accident**: CURRENCIES was keyed by language, so CURRENCIES[language].group
+ * happened to be the reader's separator.
+ *
+ * Separating the two settings breaks that coincidence - a Polish reader may now
+ * be looking at pounds - so the rule needs a table of its own, and this is it.
+ * A narrow no-break space where the locale wants one, written as an escape
+ * rather than as an invisible character, for the reason Currency.group gives: a
+ * plain space lets a price wrap between the number and its symbol.
+ */
+export const GROUP_FOR_LANGUAGE: Record<LanguageCode, string> = {
+  en: ',',
+  pl: ' ',
+  uz: ' ',
+  ru: ' ',
+  uk: ' ',
 };
 
 /**
@@ -102,14 +175,22 @@ export function convert(eur: number, currency: Currency, round: MoneyRound): num
 
 /** Digit grouping. `Intl` is not used: it would also impose the locale's own
  *  currency placement, and the placement here is a property of the pitch. */
-export function group(value: number, currency: Currency, decimals = 0): string {
+export function group(
+  value: number,
+  currency: Currency,
+  decimals = 0,
+  /* Overrides the currency's own. The hooks always pass one: grouping belongs
+     to the reader's language and the symbol to the currency, which are two
+     separate settings now. The default keeps every non-hook caller working. */
+  separator = currency.group,
+): string {
   const sign = value < 0 ? '-' : '';
   const fixed = Math.abs(value).toFixed(decimals);
   const [whole, fraction] = fixed.split('.');
   const digits = whole;
   let out = '';
   for (let i = 0; i < digits.length; i++) {
-    if (i > 0 && (digits.length - i) % 3 === 0) out += currency.group;
+    if (i > 0 && (digits.length - i) % 3 === 0) out += separator;
     out += digits[i];
   }
   return sign + out + (fraction ? `.${fraction}` : '');
@@ -120,11 +201,13 @@ export function money(
   eur: number,
   currency: Currency,
   round: MoneyRound = 'price',
+  separator = currency.group,
 ): string {
   const amount = group(
     convert(eur, currency, round),
     currency,
     round === 'unit' ? currency.decimals : 0,
+    separator,
   );
   // No-break space on the trailing form: "1 299 zł" must never break between
   // the number and its unit, and the leading form has no space at all.
@@ -142,12 +225,13 @@ export function moneyParts(
   eur: number,
   currency: Currency,
   round: MoneyRound = 'price',
+  separator = currency.group,
 ): { value: number; prefix: string; suffix: string; group: string } {
   return {
     value: convert(eur, currency, round),
     prefix: currency.before ? currency.symbol : '',
     suffix: currency.before ? '' : ` ${currency.symbol}`,
-    group: currency.group,
+    group: separator,
   };
 }
 

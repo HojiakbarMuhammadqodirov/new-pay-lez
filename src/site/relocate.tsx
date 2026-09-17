@@ -16,9 +16,10 @@ import {
   type GuideService,
 } from './api/guide';
 import { useApi } from './api/useApi';
+import { useRates } from './api/fx';
 import { Icon } from './icons';
-import { useCopy, useLanguage } from './i18n/context';
-import { CURRENCIES, fill } from './i18n/currency';
+import { useCopy, useGroupSeparator, useLanguage } from './i18n/context';
+import { fill } from './i18n/currency';
 import {
   FX,
   FX_FOR_LANGUAGE,
@@ -28,6 +29,7 @@ import {
   type FxCode,
 } from './i18n/fx';
 import { PATHS } from './router';
+import { lineCap } from './heroLines';
 import {
   addPair,
   hasPair,
@@ -274,7 +276,7 @@ function ExchangeCard() {
   /* Digit grouping belongs to the reader, not to the currency being written —
      see the note in `fx.ts`. This is the only thing the card wants from the
      language's own currency. */
-  const separator = CURRENCIES[language].group;
+  const separator = useGroupSeparator();
 
   const home = FX_FOR_LANGUAGE[language];
 
@@ -317,7 +319,22 @@ function ExchangeCard() {
   const saved = hasPair(pinned, [from, to]);
 
   /** One unit of the left-hand currency in the right-hand one. */
-  const rate = FX[to].rate / FX[from].rate;
+  /*
+   * The cross rate, from the live table where there is one.
+   *
+   * `rateOf` is per **code** and both sides are units per one euro, so this
+   * division is exact for every one of the 342 ordered pairs — the
+   * single-anchor rule `fx.ts` states. Overlaying a *pair* would break it: two
+   * pairs derived from different snapshots do not agree with each other.
+   *
+   * `useRates` falls back to the built-in figure per code, so this line draws a
+   * rate on the first paint, with no session, and when the server is
+   * unreachable. What it must not do is render a spinner — a converter that
+   * cannot show a number until a request lands is worse than one showing last
+   * month's rate and saying so, which is what `.fx-age` below does.
+   */
+  const rates = useRates();
+  const rate = rates.rateOf(to) / rates.rateOf(from);
 
   const amount = Number(typed.replace(',', '.'));
   const valid = typed.trim() !== '' && Number.isFinite(amount) && amount >= 0;
@@ -614,17 +631,33 @@ function RelocateHero() {
   return (
     <section className="hero hero-mid" id="relocate-top">
       <div className="wrap hero-grid">
-        <div className="hero-copy">
-          <a className="learn-back" href={PATHS.landing} data-reveal>
-            <Icon name="arrow" size={15} strokeWidth={2.2} />
-            {copy.relocate.back}
-          </a>
+        {/*
+          The way back, and it is a **grid child rather than a line in the
+          stack**.
 
+          Inside `.hero-copy` it was left-aligned to that column — which on a
+          centred 46rem measure is about 350px in from the edge of a 1440
+          screen, so "top left" was true of the copy and false of the page. Out
+          here it takes `justify-self: start` against the wrap, which is the
+          page's own gutter and is where a way out belongs.
+
+          And it is the button kit rather than a text link: `.btn-ghost` is
+          `--text` on `--surface` inside a real border, where `.learn-back`
+          alone is `--text-mut` — the faintest thing on the sheet, on the one
+          control that leaves the page. `.learn-back` stays on it for the
+          mirrored arrow and the travel on hover.
+        */}
+        <a className="btn btn-ghost learn-back" href={PATHS.landing} data-reveal>
+          <Icon name="arrow" size={15} strokeWidth={2.2} />
+          {copy.relocate.back}
+        </a>
+
+        <div className="hero-copy">
           <span className="eyebrow learn-eyebrow" data-reveal>
             {copy.relocate.hero.eyebrow}
           </span>
 
-          <h1 data-reveal>
+          <h1 data-reveal style={lineCap(copy.relocate.hero.lines)}>
             {copy.relocate.hero.lines.map((line, i) => (
               <span className="ln" key={line}>
                 {i === copy.relocate.hero.lines.length - 1 ? (
@@ -697,6 +730,58 @@ function RelocateHero() {
  * seeded state does not re-seed itself — without the key, switching to Ukrainian
  * would leave a card converting pounds.
  */
+/**
+ * When the rates were last synced, in one line under the card.
+ *
+ * Its own component rather than a line inside `ExchangeCard` because the card
+ * is keyed on the language and remounts when it changes — which would re-issue
+ * this request for no reason — and because what it says is about the *table*
+ * rather than about the pair being converted.
+ *
+ * It renders **nothing** while the request is in flight. A converter that says
+ * "checking how old its numbers are" is drawing attention to the one thing
+ * nobody asked about; the answer is worth a line and the wait is not.
+ */
+function RatesAge() {
+  const text = useCopy().relocate.rates;
+  const [language] = useLanguage();
+  const rates = useRates();
+
+  const when = useMemo(() => {
+    if (!rates.updatedAt) return null;
+    const parsed = Date.parse(rates.updatedAt);
+    if (!Number.isFinite(parsed)) return null;
+    try {
+      /* The reader's own locale, from the platform. Five dictionaries carrying
+         a date format each is the thing `Intl` exists to make unnecessary —
+         the same side `untilNextEnergy` and the streak row's weekday names
+         take. */
+      return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(parsed);
+    } catch {
+      return rates.updatedAt.slice(0, 10);
+    }
+  }, [rates.updatedAt, language]);
+
+  if (!rates.live) {
+    /* No server, or a server with no rates in it. The built-in table is on
+       screen and saying so is the honest version of a missing timestamp —
+       "last updated: never" would read as a fault rather than as a state. */
+    return (
+      <p className="fx-age" data-reveal>
+        {text.builtIn}
+      </p>
+    );
+  }
+
+  if (when === null) return null;
+
+  return (
+    <p className="fx-age" data-state={rates.stale ? 'stale' : undefined} data-reveal>
+      {fill(rates.stale ? text.stale : text.updated, { when })}
+    </p>
+  );
+}
+
 function RelocateRates() {
   const copy = useCopy();
   const [language] = useLanguage();
@@ -713,6 +798,23 @@ function RelocateRates() {
         <div className="fx-stage" data-reveal>
           <ExchangeCard key={language} />
         </div>
+
+        {/*
+          How old the numbers are.
+
+          This card quotes a market rate and the one thing a reader cannot see
+          about a market rate is **when it was taken**. The rates used to be a
+          table compiled into the bundle, refreshed whenever somebody edited a
+          TypeScript file, and the card said nothing at all about it — which
+          reads as "this is current" and was not.
+
+          Three states, because there are three: synced (say when), synced and
+          old (say when, and that nothing has refreshed it), and not synced at
+          all (say that the built-in table is what is on screen). The third is
+          the ordinary state with no server, and it is the one a
+          "last updated: never" would render as a fault.
+        */}
+        <RatesAge />
 
         <ul className="fx-points" data-reveal>
           {copy.relocate.rates.bullets.map((bullet) => (
@@ -1005,20 +1107,54 @@ function RelocateGuide() {
 /* ─────────────────────────────────────────────────────── one place, listed ── */
 
 /**
- * The initial, on the accent, in place of a photograph.
+ * The place's logo, or its initial.
  *
- * `guidance_services.image_url` exists and is an external URL, and nothing in
- * `src/` makes a third-party runtime request — the whole front end is built
- * that way, fonts and map geometry included. So the mark is the same one the
- * wallet's gift cards use for a brand: the first letter, which is a real piece
- * of the row rather than a grey rectangle standing in for one.
+ * ## Why there was no image here, and what changed
  *
- * `codePointAt` rather than `[0]`, because a name beginning with an emoji or
- * any astral character would otherwise be cut in half and render as a
- * replacement glyph.
+ * `guidance_services.image_url` is an external address — every one of them an
+ * `https://base44.app/…` — and nothing in `src/` makes a third-party runtime
+ * request; the whole front end is built that way, fonts and map geometry
+ * included. So this drew the first letter of the name, which is a real piece of
+ * the row rather than a grey rectangle standing in for one, and the logos the
+ * old database holds were invisible. That is the whole of "the service logos do
+ * not display".
+ *
+ * The rule has not been relaxed. The **server** fetches the image now and
+ * serves it from `/v1/media/service/:id` (`domain/media.ts`), so `place.logo`
+ * is a path on our own origin and the request this `<img>` makes is
+ * first-party. What the browser never gets is a URL pointing at somebody
+ * else's host.
+ *
+ * ## The fallback is not a placeholder, it is the old mark
+ *
+ * A dead source host, a refused media type, a source that was a PDF — all of
+ * them are a 404 from that path, and all of them are **normal**. So the initial
+ * is still what a card shows whenever there is no image to show, and `onError`
+ * is what makes that true for the case the server could not know about in
+ * advance: an image that 404s or fails to decode *after* the page has committed
+ * to drawing one. Without it, a broken source renders the browser's own
+ * broken-image glyph, which is the one outcome worse than no logo.
+ *
+ * `useState` keyed on the src rather than a ref, because the element is reused
+ * across rows as the list filters: a failure remembered past the row it
+ * happened on would hide a perfectly good logo on the next one.
+ *
+ * `codePointAt`-style spreading rather than `[0]`, because a name beginning
+ * with an emoji or any astral character would otherwise be cut in half and
+ * render as a replacement glyph.
  */
-function GuideMark({ name }: { name: string }) {
+function GuideMark({ name, logo }: { name: string; logo?: string | null }) {
+  const [failed, setFailed] = useState<string | null>(null);
   const first = [...name.trim()][0] ?? '?';
+  const src = logo && logo !== failed ? logo : null;
+
+  if (src) {
+    return (
+      <span className="gs-mark gs-mark-img">
+        <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(src)} />
+      </span>
+    );
+  }
   return (
     <span className="gs-mark" aria-hidden="true">
       {first.toLocaleUpperCase()}
@@ -1072,7 +1208,7 @@ function GuideCard({ place, onOpen }: { place: GuideService; onOpen: () => void 
   return (
     <div className="gs-card">
       <button type="button" className="gs-hit" onClick={onOpen}>
-        <GuideMark name={place.name} />
+        <GuideMark name={place.name} logo={place.logo} />
         <span className="gs-tx">
           <b className="gs-name">{place.name}</b>
           <span className="gs-meta">
@@ -1120,7 +1256,9 @@ function GuideCard({ place, onOpen }: { place: GuideService; onOpen: () => void 
  * **Translate** control: the server already returns this copy in the reader's
  * language with English filling any hole (`copyOf` in `routes/guidance.ts`), so
  * the button would either do nothing or claim a second translation nothing
- * performs. And there is no photograph — see `GuideMark`.
+ * performs. And the photograph is the place's **logo**, drawn from our own
+ * origin and falling back to the initial — see `GuideMark`, which carries the
+ * whole reason there was no image here for so long.
  *
  * It is modal, unlike the assistant dock, and for the opposite reason. The dock
  * is a thing you consult *while* reading the page; this is the page's own row,
@@ -1173,7 +1311,7 @@ function GuideDetail({ place, onClose }: { place: GuideService; onClose: () => v
         </button>
 
         <div className="gs-panel-head">
-          <GuideMark name={place.name} />
+          <GuideMark name={place.name} logo={place.logo} />
           <div>
             <h3 id={titleId}>{place.name}</h3>
             <div className="gs-meta">
@@ -1299,8 +1437,28 @@ function GuideLinks({ place }: { place: GuideService }) {
  * paragraph. The font is the self-hosted Twemoji subset (`public/fonts/`), so
  * they render the same on a machine that has no flag emoji of its own.
  */
+/**
+ * Where the guide is written, as a strip of chips.
+ *
+ * The chips held the **ISO code** — "PL", "DE", "UZ" — beside the flag, and
+ * fourteen of those is a row of luggage tags: a reader who does not already
+ * know the two letters is being asked to decode the one thing this section
+ * exists to say. `countryNamer` is already in this file for the guide's own
+ * picker and it is `Intl.DisplayNames`, so the name arrives translated for all
+ * five languages without a dictionary entry per country — which is the only
+ * reason this is a one-line change rather than seventy strings.
+ *
+ * The flag stays. It is the faster read of the two and it is the thing the eye
+ * finds; the name is what makes it legible to somebody who is not sure whether
+ * that one was Austria or Australia.
+ *
+ * Memoised on the language because `Intl.DisplayNames` builds a table, and this
+ * component re-renders on every reveal scan the page does.
+ */
 function RelocateCountries() {
   const copy = useCopy();
+  const [language] = useLanguage();
+  const nameOf = useMemo(() => countryNamer(language), [language]);
 
   return (
     <section className="section" id="relocate-countries">
@@ -1315,7 +1473,7 @@ function RelocateCountries() {
           {RELOCATE_COUNTRIES.map((country) => (
             <span className="flag-chip" key={country.code}>
               <i>{country.flag}</i>
-              {country.code}
+              {nameOf(country.code)}
             </span>
           ))}
         </div>

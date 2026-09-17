@@ -422,6 +422,27 @@ export async function migrate(db: PgDb): Promise<void> {
   const sql = readFileSync(join(here, 'schema.pg.sql'), 'utf8');
   await db.exec(sql);
 
+  /*
+   * **The lockdown, and it runs on a Postgres boot rather than by hand.**
+   *
+   * A Supabase project publishes its anon key and serves PostgREST over the
+   * `public` schema, so a table with RLS off and the default grants in place is
+   * readable by anybody holding a URL nothing in this repository uses. That is
+   * the one exposure this architecture has that the `auth:` field on a route
+   * cannot close, because it is not reached through a route.
+   *
+   * Applied here, after the schema, for the same reason the schema is applied
+   * here: a table created on this boot must not be open until somebody
+   * remembers to run a script. `rls.pg.sql` is generated from the same source
+   * as `schema.pg.sql` (`npm run pg:schema`), so a new table arrives with its
+   * `ENABLE ROW LEVEL SECURITY` already written.
+   *
+   * It is *only* on the Postgres path. SQLite is a file with no roles, no
+   * network listener and no PostgREST in front of it; the equivalent control
+   * there is the file's own permissions.
+   */
+  await db.exec(readFileSync(join(here, 'rls.pg.sql'), 'utf8'));
+
   /* Postgres has `ADD COLUMN IF NOT EXISTS`, so the `PRAGMA table_info` dance
      `db.ts` needs is one statement here. They are no-ops on a database created
      from the schema above and matter only for one created by an older build. */
@@ -437,6 +458,20 @@ export async function migrate(db: PgDb): Promise<void> {
   await add('users', 'onboarded_at', 'TEXT');
   await add('users', 'profile_completed_at', 'TEXT');
   await add('users', 'username', 'TEXT');
+  /* Proved-address stamp. Nullable because "not proved" is the state every
+     existing account is in — and has to be: a migration that stamped them all
+     verified would be asserting something nobody checked, and one that locked
+     them all out would take the points off accounts that have been earning for
+     months. See the column's own note in `schema.sql`. */
+  await add('users', 'email_verified_at', 'TEXT');
+  /* The standing answer to "share my profile with venues I visit".
+     `DEFAULT 1` reaches existing rows as well as new ones — which is the
+     migration, and it is the whole of it: `ALTER TABLE … ADD COLUMN` with a
+     default backfills, so there is no separate rewrite to guard. Safe to be
+     on for an account that predates it, because nothing is shared until that
+     account visits a venue and `gate.confirm` writes the grant — and a venue
+     it has never visited learns nothing either way. */
+  await add('users', 'venue_sharing_default', 'INTEGER NOT NULL DEFAULT 1');
   await add('users', 'username_norm', 'TEXT');
   /* FIFO's tiebreak. **This list and the one in `db.ts` are one list written
      twice** — `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already
@@ -444,10 +479,60 @@ export async function migrate(db: PgDb): Promise<void> {
      never an existing one. Adding `seq` to `db.ts` alone shipped an `INSERT`
      naming a column production did not have, which is every earn there is. */
   await add('points_lots', 'seq', 'INTEGER NOT NULL DEFAULT 0');
+  /* A voucher rung's two count caps and the counter they are enforced through
+     — `issued_count` is what makes a cap atomic, because a cap checked by
+     counting rows cannot be race-safe here: two transactions both count
+     N < cap under READ COMMITTED and both insert. See the column's own note in
+     `schema.sql`. Written in both lists for the reason the line above gives. */
+  await add('voucher_tiers', 'redeem_limit', 'INTEGER');
+  await add('voucher_tiers', 'per_user_limit', 'INTEGER');
+  await add('voucher_tiers', 'issued_count', 'INTEGER NOT NULL DEFAULT 0');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',
   );
+
+  /*
+   * **The one migration a Postgres database here does have to replay.**
+   *
+   * The note above says a Postgres database is born at the current version, so
+   * the four CHECK rebuilds have nothing to do — there is no v1 Postgres file
+   * anywhere to upgrade. That stopped being true of *every* migration the day
+   * production moved here: a live Supabase database is at version 5, and 5 → 6
+   * rewrites existing rows rather than altering a constraint.
+   *
+   * Guarded on the stored version exactly as the SQLite copy is, and for the
+   * same load-bearing reason: run twice and it re-opts-in everybody who opted
+   * out after the first run. See `optInToTheBoard` in `db.ts` for what it costs
+   * and why the alternatives are worse.
+   */
+  const stored = await db.get<{ value: string }>(
+    `SELECT value FROM schema_meta WHERE key = 'version'`,
+  );
+  if (Number(stored?.value ?? 0) < 6) {
+    await db.run(`UPDATE users SET leaderboard_opt_in = 1 WHERE leaderboard_opt_in = 0`);
+  }
+
+  /*
+   * **And the second one, for the same reason: 6 → 7 rewrites rows.**
+   *
+   * `ADD COLUMN ... NOT NULL DEFAULT 0` above backfills every existing voucher
+   * rung with zero, and that column is the gate a redemption cap is enforced
+   * through — so a rung that has already issued four hundred vouchers would
+   * read as having issued none, and the first cap an owner set would be four
+   * hundred too generous. Counted from the rows instead.
+   *
+   * Guarded, and idempotent even if the guard were wrong: this assigns a count
+   * rather than incrementing one, so running it twice writes the same number.
+   * The guard is there so it does not cost a table scan on every boot.
+   */
+  if (Number(stored?.value ?? 0) < 7) {
+    await db.run(
+      `UPDATE voucher_tiers SET issued_count =
+         (SELECT COUNT(*) FROM issued_vouchers i
+           WHERE i.tier_id = voucher_tiers.id AND i.status <> 'cancelled')`,
+    );
+  }
 
   await db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)
@@ -457,7 +542,7 @@ export async function migrate(db: PgDb): Promise<void> {
 }
 
 /** Mirrors `SCHEMA_VERSION` in `db.ts`; the two schemas are one schema. */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 
 export async function openDb(connectionString: string): Promise<Db> {
   const db = new PgDb(connectionString);

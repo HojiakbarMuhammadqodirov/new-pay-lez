@@ -24,6 +24,7 @@ export const uz: Dictionary = {
   signIn: 'Kirish',
   assistant: 'AI yordamchini ochish',
   languageMenu: "Tilni o‘zgartirish",
+  currencyMenu: 'Valyuta',
   theme: {
     label: 'Ko‘rinish',
     toLight: "Yorug‘ rejimga o‘tish",
@@ -37,6 +38,23 @@ export const uz: Dictionary = {
     email: 'Elektron pochta manzili',
     emailPlaceholder: 'siz@email.com',
     password: 'Parol',
+    showPassword: 'Parolni ko‘rsatish',
+    hidePassword: 'Parolni yashirish',
+    verify: {
+      kicker: 'Elektron pochtani tasdiqlang',
+      playLede: 'Ro‘yxatdan o‘tgan manzilingizni tasdiqlamaguningizcha raundlar ball bermaydi —',
+      walletLede: 'Ro‘yxatdan o‘tgan manzilingizni tasdiqlaganingizdan keyin ballarni sarflay olasiz —',
+      codeLabel: 'Biz yuborgan olti xonali kod',
+      codePlaceholder: '000000',
+      confirm: 'Tasdiqlash',
+      working: 'Tekshirilmoqda…',
+      resend: 'Qayta yuborish',
+      onItsWay: 'Yuborildi. U bir necha daqiqada eskiradi.',
+      tooSoon: 'Hozir bittasi yuborildi — qayta so‘rashdan oldin bir oz kuting.',
+      wrongWithTries: 'Bu kod to‘g‘ri emas. Yana {n} urinish qoldi.',
+      offline: 'Serverga ulanolmadik. Birozdan keyin qayta urinib ko‘ring.',
+      failed: 'Bajarilmadi. Birozdan keyin qayta urinib ko‘ring.',
+    },
     passwordPlaceholder: 'Parolingiz',
     submit: 'Kirish',
     errors: {
@@ -56,6 +74,11 @@ export const uz: Dictionary = {
     typeQuestion: 'Siz kimsiz?',
     typeNote: 'Hozircha faqat bir marta tanlanadi, shuning uchun mos kelganini tanlang.',
     signUpSubmit: 'Hisob yaratish',
+    agreeLead: 'Men',
+    agreeTerms: 'Foydalanish shartlari',
+    agreeAnd: 'va',
+    agreePrivacy: 'Maxfiylik siyosati',
+    agreeTail: ' bilan tanishdim va roziman.',
     orDivider: 'yoki',
     googleContinue: 'Google bilan davom etish',
     googleWorking: 'Kirilmoqda…',
@@ -64,6 +87,7 @@ export const uz: Dictionary = {
     googleRefused:
       'Google orqali kirib bo‘lmadi. Qayta urinib ko‘ring.',
     signUpErrors: {
+      terms: 'Foydalanish shartlari va Maxfiylik siyosatini qabul qiling.',
       name: 'Ismingizni yozing.',
       email: 'Bu elektron pochta manziliga o‘xshamaydi.',
       taken: 'Bu manzil bilan hisob allaqachon bor. Kirib ko‘ring.',
@@ -112,7 +136,52 @@ export const uz: Dictionary = {
       'Zaxiradagi kartalar',
       'Hisoblar',
     ],
-    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar'],
+    tabs: ['Xizmatlar', 'Takliflar', 'Odamlar', 'Sayt', 'Xabarlar', 'Tariflar'],
+
+    tiers: {
+      assignTitle: 'Hisobni tarifga qo‘yish',
+      assignLede:
+        'Rejani qo‘lda bering yoki olib tashlang — hoziroq yoki belgilangan kundan. Har bir o‘zgarish sizning ismingiz bilan audit yozuvini qoldiradi.',
+      subjectKind: 'Joy yoki odam',
+      aVenue: 'Joy',
+      aPerson: 'Odam',
+      venueId: 'Joy id',
+      userId: 'Hisob id',
+      idHelp: 'Uni Xizmatlar yoki Odamlar bo‘limidan ko‘chirib oling.',
+      plan: 'Reja',
+      pickPlan: 'Rejani tanlang…',
+      from: 'Kuchga kiradi',
+      fromNow: 'Bugun — bosgan zahoti amal qiladi.',
+      fromLater: 'Rejalashtirilgan. O‘sha kun boshlanmaguncha hech nima o‘zgarmaydi.',
+      note: 'Nima uchun',
+      notePlaceholder: 'Egasi bilan suhbat',
+      noteHelp: 'Audit yozuvida saqlanadi. Bu qatorning o‘zi aytolmaydigan yagona narsa.',
+      assign: 'Rejani berish',
+      schedule: 'Rejalashtirish',
+      working: 'Bajarilmoqda…',
+      didAssign: 'Hozirdan {plan} rejasida.',
+      didSchedule: '{from} dan {plan} rejasida.',
+      propagation:
+        'Server darhol yangi reja bilan javob beradi — u bilan darvozalar orasida hech qanday kesh yo‘q. Bu odam allaqachon ochib qo‘ygan brauzer keyingi sahifa yuklanganda yoki varaqqa qaytganda yangilanadi.',
+      liveTitle: 'Kim qaysi rejada',
+      liveLede: 'Hozir amal qilayotgan har bir reja, kim bergani muhim emas.',
+      loading: 'Obunalar o‘qilmoqda…',
+      noneLive: {
+        title: 'Hech kim pulli tarifda emas',
+        body: 'Har bir hisob o‘z narvonining bepul rejasida — hammasi shundan boshlanadi. Kassada sotib olingan reja ham shu yerda ko‘rinadi, faqat qo‘lda berilganlari emas.',
+      },
+      scheduledTitle: 'Sanasi belgilangan o‘zgarishlar',
+      scheduledLede: 'Hali amal qilmaydi. Har biri o‘z kuni boshlanganda kuchga kiradi.',
+      columns: ['Hisob', 'Reja', 'Kim bergan', 'Dan', 'Gacha'],
+      act: 'Bekor',
+      drop: 'Bekor qilish',
+      sources: {
+        manual: 'Qo‘lda',
+        stripe: 'Stripe',
+        apple: 'App Store',
+        google: 'Play',
+      },
+    },
 
     services: {
       title: 'Biznes xizmatlari',
@@ -661,9 +730,23 @@ export const uz: Dictionary = {
     pointsHave: 'chegirma uchun allaqachon yetarli',
 
     statsToggle: 'Statistikangiz',
+
+    /* ── bugungi ro‘yxat ── Sababi `en.ts` da. */
+    tasks: {
+      title: 'Bugungi ro‘yxat',
+      allDone: 'Bugungi ro‘yxatdagi hammasi bajarildi. Ball uchun o‘ynashda davom eting.',
+      loading: 'Bugungi ro‘yxat olinmoqda…',
+      offline: 'Bugungi ro‘yxat hozir mavjud emas.',
+      exact: '{points} ball',
+      upTo: '{points} ballgacha',
+      checkIn: 'Bugun Paylez’ga kiring va belgilanishni oling — {reward}',
+      playRound: 'Bugun bitta raund o‘ynang — {reward}',
+      profile: 'Profilingizni to‘ldiring — {reward}',
+      invite: 'Do‘stingizni taklif qiling — u joyga borganida {reward}',
+    },
     accuracy: 'Aniqlik',
 
-    featured: 'Bugungi o‘yin · ketma-ketlikni saqlaydi',
+    featured: 'Kunlik o‘yin · ketma-ketlikni saqlaydi',
 
     /* Keyed by country code, not a template: the country's case changes with
        the sentence around it, so each name is written whole. */
@@ -676,8 +759,8 @@ export const uz: Dictionary = {
     streakAhead: 'hali oldinda',
 
     names: [
-      'Juftini top',
       'Squawk parvozi',
+      'Juftini top',
       'Bayroqni top',
       'Davlat va poytaxt',
       'Aql o‘yinlari',
@@ -746,7 +829,7 @@ export const uz: Dictionary = {
     boardTitle: 'Reyting',
     boardTabs: ['To‘g‘ri javoblar', 'Yig‘ilgan ballar'],
     boardTop: 'Top 10',
-      boardScopes: ['Mening shahrim', 'Mening davlatim', 'Hamma'],
+      boardScopes: ['Mening davlatim', 'Hamma'],
       boardLoading: 'Reyting yuklanmoqda…',
       boardOffline: 'Hozir reytingni ololmayapmiz. Hech kim o‘ynamayapti degani emas — shunchaki so‘rab bo‘lmayapti.',
       boardHidden: 'Bu hafta {rank}-o‘rindasiz. Ro‘yxatda yo‘qsiz, chunki buni yoqmagansiz — profilda yoqishingiz mumkin.',
@@ -954,6 +1037,7 @@ export const uz: Dictionary = {
       { name: 'Qaynoq takliflar', lede: 'Paylez ilovasi lentasida ko‘rsatiladigan muddatli takliflar.' },
       { name: 'Sodiqlik kampaniyalari', lede: 'Doimiy mijozlar qaytib kelib yig‘adigan takrorlanuvchi mukofotlar.' },
       { name: 'Vaucherlar', lede: 'Ballar chegirmaga qanday aylanadi va bu sizga qanchaga tushadi.' },
+      { name: 'Berilgan vaucherlar', lede: 'Mijozlaringiz qo‘lidagi har bir vaucher va unga nima bo‘lgani.' },
       { name: 'Mijozlar', lede: 'Kim keladi, qachon keladi va qaytadimi.' },
       {
         name: 'Yordamchi',
@@ -984,6 +1068,11 @@ export const uz: Dictionary = {
         action: 'Byudjet belgilash',
       },
       {
+        title: 'Hali hech kim vaucher olmagan',
+        body: 'Mijoz yuqoridagi pog‘onalardan biriga ball sarflashi bilan vaucher shu yerda paydo bo‘ladi. Chegirma budjetini belgilang va narvon ochiladi; undan keyingi hammasi kodi, muddati va holati bilan shu yerga tushadi.',
+        action: 'Budjet belgilash',
+      },
+      {
         title: 'QR kodni kassaga qo‘ying',
         body: 'Mijozlar skanerlay boshlamaguncha bu sahifada hech narsa to‘lmaydi. Kodni chop eting, kassa yoniga qo‘ying va xodimlardan hisob bilan birga unga ishora qilishni so‘rang. Birinchi raqamlar o‘sha kuniyoq paydo bo‘ladi.',
         action: 'QR kodni olish',
@@ -999,6 +1088,61 @@ export const uz: Dictionary = {
         action: 'QR kodni olish',
       },
     ],
+
+    register: {
+      totals: {
+        issued: 'Olingan vaucherlar',
+        active: 'Hali ishlatilmagan',
+        redeemed: 'Kassangizda ishlatilgan',
+        expired: 'Ishlatilmay muddati o‘tgan',
+        lapsing: '{n} dona bir hafta ichida muddati o‘tadi — eslatma ularga yetib boradigan oxirgi payt.',
+      },
+      caps: {
+        kicker: 'Cheklovlar',
+        title: 'Har biridan qanchasini berasiz',
+        lede: 'Chegirma budjeti vaucherlar sizga qanchaga tushishini cheklaydi. Bular esa ularning sonini cheklaydi — ochilish haftasi, kichik oshxona yoki bir kishi butun taklifni olib ketmasligi uchun tormoz.',
+        rung: '{pct}% chegirma',
+        taken: '{total} dan {n} olingan',
+        takenNoCap: '{n} olingan, cheklov yo‘q',
+        total: 'Jami',
+        perUser: 'Har bir mijozga',
+        unit: 'vaucher',
+        noLimit: 'Cheklov yo‘q',
+        remove: 'Cheklovni olib tashlash',
+        noLimitNote: 'Maydonni bo‘sh qoldirsangiz cheklov bo‘lmaydi. Ishlatilmay muddati o‘tgan vaucher ham olingan hisoblanadi — aks holda cheklovni shunchaki kutib chetlab o‘tish mumkin.',
+        retired: 'To‘xtatilgan',
+        save: 'Cheklovlarni saqlash',
+        saving: 'Saqlanmoqda…',
+        saved: 'Cheklovlar saqlandi.',
+      },
+      list: {
+        kicker: 'Ro‘yxat',
+        title: 'Mijozlar qo‘lidagi har bir vaucher',
+        search: 'Kod yoki ism bo‘yicha qidirish',
+        count: '{total} dan {n} ko‘rsatilmoqda',
+        empty: 'Hali hech kim vaucher olmagan. Mijoz yuqoridagi pog‘onaga ball sarflashi bilan u shu yerda paydo bo‘ladi — kodi, muddatining ikki chegarasi va unga nima bo‘lgani bilan.',
+        emptyFiltered: 'Mos keladigani yo‘q. Qidiruvni tozalang yoki boshqa holatni tanlang.',
+      },
+      table: {
+        code: 'Kod',
+        rung: 'Chegirma',
+        holder: 'Kimda',
+        issued: 'Olingan',
+        expires: 'Amal qiladi',
+        status: 'Holati',
+        redeemed: 'Ishlatilgan',
+        withheld: 'Yashirilgan — bu mijoz profilini joyingizga ko‘rsatishga rozilik bermagan.',
+        notRedeemed: 'hali yo‘q',
+      },
+      status: {
+        all: 'Hammasi',
+        active: 'Ishlatilmagan',
+        redeemed: 'Ishlatilgan',
+        expired: 'Muddati o‘tgan',
+        cancelled: 'Bekor qilingan',
+      },
+    },
+
     acts: {
       column: 'Amallar',
 
@@ -2128,8 +2272,50 @@ export const uz: Dictionary = {
     plan: {
       name: 'Growth rejasi',
       state: 'Faol',
+      unknown: 'Rejangiz',
+      open: 'Rejalarni ko‘rish',
       caption: 'Shu oydagi sodiqlik va vaucher byudjetlari. Qaynoq takliflar bunga kirmaydi.',
       usage: '{total} dan {used}',
+    },
+
+    planPanel: {
+      kicker: 'Obunangiz',
+      title: 'Rejangiz va uchta daraja',
+      lede: 'Qaysi rejadasiz, undan qanchasini ishlatyapsiz va boshqalari nimani o‘z ichiga oladi.',
+      mineKicker: 'Hozir amal qilmoqda',
+      noSubscription: 'Bepul daraja',
+      freeNote:
+        'Siz bepul darajadasiz — har bir joy shundan boshlaydi. Hech narsaning muddati tugamaydi va hech narsa qarz emas.',
+      usage: '{total} dan {used}',
+      renews: '{date} da yangilanadi.',
+      until: '{date} da o‘zgaradi.',
+      notIncluded: 'Kirmaydi',
+      compareKicker: 'Taqqoslash',
+      compareTitle: 'Har bir daraja nimani o‘z ichiga oladi',
+      whatYouGet: 'Nima olasiz',
+      yours: 'Sizdagi',
+      freePrice: 'Bepul',
+      perMonth: 'oyiga {amount}',
+      howToMove:
+        'Darajani o‘zgartirish bu ekrandan emas, biz bilan kelishiladi — shunda joriy etish siz haqiqatda olib borayotgan ishga qarab baholanadi. Yozing:',
+      sources: {
+        manual: 'Paylez tomonidan berilgan',
+        stripe: 'Karta bilan to‘langan',
+        apple: 'App Store orqali to‘langan',
+        google: 'Google Play orqali to‘langan',
+      },
+      rows: [
+        'Bir vaqtda faol qaynoq takliflar',
+        'Ishlab turgan sodiqlik kampaniyalari',
+        'Oyiga push xabarnomalar',
+        'Jamoa o‘rinlari',
+        'Hisobdagi joylar',
+        'Chuqur tahlil',
+        'Ismi bilan mijozlar',
+        'Yordamchi',
+        'Shahringiz bilan taqqoslash',
+        'CSV eksporti',
+      ],
     },
 
     ranges: ['Oxirgi 7 kun', 'Oxirgi 14 kun', 'Oxirgi 30 kun', 'Oxirgi chorak'],
@@ -2928,6 +3114,10 @@ export const uz: Dictionary = {
       send: 'Summa',
       gets: 'Bu shuncha',
       rate: 'Kurs',
+      /* ── kurslarning yoshi, uch holat. Sababi `en.ts` da. */
+      updated: 'Kurslar {when} da yangilandi',
+      stale: 'Bu kurslar {when} dan buyon yangilanmagan',
+      builtIn: 'Ichki kurs jadvali ko‘rsatilmoqda',
       swap: 'Valyutalarni almashtirish',
       result: '{from} = {to}',
       enter: 'Hisoblash uchun summa kiriting.',
@@ -2938,7 +3128,7 @@ export const uz: Dictionary = {
       unpin: '{pair} juftligini olib tashlash',
       pick: 'Valyuta',
       search: '19 ta valyuta ichidan qidiring',
-      noMatch: '"{query}" bo\'yicha hech narsa topilmadi.',
+      noMatch: '“{query}” bo‘yicha hech narsa topilmadi.',
       names: {
         EUR: 'Yevro',
         USD: 'AQSH dollari',
@@ -2946,8 +3136,8 @@ export const uz: Dictionary = {
         PLN: 'Polsha zlotiysi',
         UAH: 'Ukraina grivnasi',
         RUB: 'Rossiya rubli',
-        UZS: "O'zbekiston so'mi",
-        KZT: "Qozog'iston tengesi",
+        UZS: 'O‘zbekiston so‘mi',
+        KZT: 'Qozog‘iston tengesi',
         TRY: 'Turkiya lirasi',
         CZK: 'Chexiya kronasi',
         CHF: 'Shveytsariya franki',
@@ -2957,7 +3147,7 @@ export const uz: Dictionary = {
         AMD: 'Armaniston drami',
         AZN: 'Ozarbayjon manati',
         TMT: 'Turkmaniston manati',
-        KGS: "Qirg'iziston somi",
+        KGS: 'Qirg‘iziston somi',
         TJS: 'Tojikiston somoniysi',
       },
       bullets: [
@@ -3074,6 +3264,16 @@ export const uz: Dictionary = {
     termsVersion: 'Versiya 1.0 · 2025-yil 24-apreldan kuchga kiradi',
   },
   profile: {
+    sharing: {
+      title: 'Profilim borgan joylarga ko‘rinsin',
+      help: 'Haqiqatan borgan joy ismingizni, rasmingizni va u yerda qancha sarflaganingizni ko‘radi — balansingizni hech qachon, bormagan joy esa hech narsani. O‘chirsangiz, yangi joylar ko‘rmaydi; allaqachon ko‘rayotganlarini o‘z kartasida o‘chirasiz.',
+      failed: 'Saqlanmadi. Birozdan keyin qayta urinib ko‘ring.',
+    },
+    board: {
+      title: 'Haftalik reytingda ko‘rsatilsin',
+      help: 'Ismingiz, avataringiz va haftalik ballaringiz. O‘chirsangiz, reyting va o‘z o‘rningizni ko‘rishda davom etasiz — faqat boshqalar sizni ko‘rmaydi.',
+      failed: 'Saqlanmadi. Birozdan keyin qayta urinib ko‘ring.',
+    },
     eyebrow: 'Hisobingiz',
     title: 'Profilingiz',
     lede: 'Buni boshqa o‘yinchilar ko‘radi va biz sizning qayerdaligingizni shundan bilamiz. Bularning hech biri hech narsa bilan tekshirilmaydi — telefoningizga kod yubormaymiz, pochtangizga bosiladigan havola ham kelmaydi.',
@@ -3253,6 +3453,7 @@ export const uz: Dictionary = {
       'Ballar o‘yindan va shahringizdagi joylarga borishdan yig‘iladi. Ularning muddati tugamaydi — ular sizni kutib turadi.',
     payGo: 'O‘ynashni boshlash',
     payProfile: 'Avval profilingizni to‘ldiring',
+    payProfileWorth: 'Profilni to‘ldirish yana {points} ball beradi.',
 
     introTitle: 'Birinchi ballaringizni yuting',
     introLede: 'Bayroqlar haqidagi {n} ta savolga javob bering va {points} ballgacha oling. Bilmaganingizni o‘tkazib yuboring — o‘tkazib yuborilgan savol shunchaki ball bermaydi.',

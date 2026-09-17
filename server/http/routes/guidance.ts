@@ -14,6 +14,8 @@
  */
 import { CONFIG } from '../../config.ts';
 import * as contact from '../../domain/contact.ts';
+import * as media from '../../domain/media.ts';
+import * as rates from '../../domain/rates.ts';
 import * as traffic from '../../domain/traffic.ts';
 import { list, optStr, str, qInt, qStr } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
@@ -112,6 +114,27 @@ export const guidanceRoutes: Route[] = [
         ...row,
         subcategories: JSON.parse(row.subcategories || '[]') as string[],
         acceptsVouchers: row.accepts_vouchers === 1,
+        /*
+         * **The logo, as a path on our own origin — never as `image_url`.**
+         *
+         * `image_url` is what the old database held and every one of them is an
+         * `https://base44.app/…` address. Sending it would ask the browser for
+         * a third-party request, which the front end's standing rule forbids
+         * (root `CLAUDE.md`) — so for years it was selected, ignored, and kept
+         * off the client's own interface, and every card in the directory drew
+         * the name's initial. That is the whole of "the service logos do not
+         * display".
+         *
+         * `media.logoPath` returns `/v1/media/service/:id`, which this server
+         * fetches once and serves itself. The browser's request is first-party,
+         * the source host learns nothing about who is reading, and a dead source
+         * is a 404 the card already has a fallback for.
+         *
+         * `image_url` stays on the row (it is `...row`) because it is what
+         * `refresh` re-reads, and the client is expected to ignore it — the
+         * interface in `api/guide.ts` does not declare it.
+         */
+        logo: media.logoPath('service', row.id, row.image_url),
         /* A listing that is also a Paylez venue links through to the venue, which
            is where the tiers, stamp cards and deals live. The directory entry is
            the same place at an earlier stage of its relationship with us. */
@@ -119,6 +142,49 @@ export const guidanceRoutes: Route[] = [
         description: copy.get(row.id)?.description ?? null,
         links: links.filter((link) => link.service_id === row.id).map(({ kind, value }) => ({ kind, value })),
       }));
+    },
+  },
+  {
+    /**
+     * A logo or photograph, from our own origin.
+     *
+     * The one route on this server that does not answer JSON: it writes image
+     * bytes with their own `Content-Type` and ends the response itself, which
+     * `http/server.ts` allows for by checking `res.writableEnded`.
+     *
+     * `auth: 'none'` because the directory it serves is readable with no
+     * account at all — that is the Relocate page's whole pitch — and because an
+     * `<img src>` cannot carry a bearer token. Nothing here is private: every
+     * source URL was already public on somebody else's CDN, and the id is the
+     * same id the listing itself is returned under.
+     *
+     * A missing, refused or unreachable image is a **404**, deliberately
+     * undistinguished: the client's answer to all three is identical (draw the
+     * initial), and a status code that told them apart would invite a client to
+     * handle them differently when there is nothing different to do.
+     *
+     * `Cache-Control` is long because the URL is keyed on the *row*: an owner
+     * who replaces a logo changes the source, `assetFor` sees it moved and
+     * re-fetches, and a client holding a cached copy is out of date about a
+     * logo for a week. That is the right thing to be a week out of date about.
+     */
+    method: 'GET',
+    pattern: '/v1/media/:entity/:id',
+    auth: 'none',
+    handler: async (ctx) => {
+      const asset = await media.assetFor(ctx.db, ctx.params.entity, ctx.params.id, ctx.at);
+      ctx.res.writeHead(200, {
+        'content-type': asset.mime,
+        'content-length': asset.body.byteLength,
+        'cache-control': `public, max-age=${CONFIG.media.cacheSeconds}, immutable`,
+        /* The bytes came from a host that is not ours. `nosniff` stops a
+           browser second-guessing the type we validated, and the CSP is belt
+           and braces for the same reason `svg+xml` is refused upstream: if
+           something scriptable ever does get through, it executes nothing. */
+        'x-content-type-options': 'nosniff',
+        'content-security-policy': "default-src 'none'; sandbox",
+      });
+      ctx.res.end(asset.body);
     },
   },
   {
@@ -211,7 +277,42 @@ export const guidanceRoutes: Route[] = [
           ? { from, to, amount, result: (amount * rateOf(to)!) / rateOf(from)! }
           : null;
 
-      return { base, updatedAt: rows[0]?.updated_at ?? null, rates: rows, converted };
+      /*
+       * **Three timestamps, and they are three findings.**
+       *
+       * `updatedAt` was `rows[0].updated_at` — the alphabetically first
+       * currency's — which is only the answer while every row is written by the
+       * same sync. A currency the sheet stops carrying keeps its old stamp
+       * (`rates.sync` leaves it alone rather than zeroing it), so the *newest*
+       * stamp is what "the rates were last written" means and `MAX` is how to
+       * ask for it.
+       *
+       * `attemptedAt` is the other half and the reason this is not one field:
+       * rates written on Monday with an attempt this morning means the sheet has
+       * not changed, and rates written on Monday with the last attempt on Monday
+       * means the **sync has stopped**. A screen showing only the first cannot
+       * tell a reader which of those it is looking at, and the second is the one
+       * worth knowing about.
+       *
+       * `stale` is the server's own judgement on that pair, in one boolean,
+       * because the threshold is a server-side decision (`CONFIG.rates.staleHours`)
+       * and a client comparing dates would be a second copy of it.
+       */
+      const sync = await rates.lastSync(ctx.db);
+      const attempted = sync.attemptedAt ?? sync.ratesUpdatedAt;
+      const stale =
+        attempted === null ||
+        Date.parse(ctx.at) - Date.parse(attempted) > CONFIG.rates.staleHours * 3_600_000;
+
+      return {
+        base,
+        updatedAt: sync.ratesUpdatedAt,
+        attemptedAt: sync.attemptedAt,
+        attemptStatus: sync.attemptStatus,
+        stale,
+        rates: rows,
+        converted,
+      };
     },
   },
   {

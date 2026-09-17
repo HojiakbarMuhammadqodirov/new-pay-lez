@@ -20,7 +20,7 @@ process.env.PAYLEZ_QUIET = '1';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { openDb } from './db/db.ts';
+import { migrate, openDb } from './db/db.ts';
 import { importLegacy } from './db/import.ts';
 import { boot } from './main.ts';
 import { csvParts, parseCsv } from './db/csv.ts';
@@ -41,9 +41,13 @@ import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
 import * as games from './domain/games.ts';
 import * as ledger from './domain/ledger.ts';
+import * as media from './domain/media.ts';
+import * as rates from './domain/rates.ts';
 import * as partners from './domain/partners.ts';
 import * as profiles from './domain/profiles.ts';
 import * as social from './domain/social.ts';
+import * as tasks from './domain/tasks.ts';
+import * as verification from './domain/verification.ts';
 import * as traffic from './domain/traffic.ts';
 import * as vouchers from './domain/vouchers.ts';
 import * as jobs from './jobs.ts';
@@ -201,10 +205,17 @@ async function world(): Promise<World> {
       [ownerId, 'owner@verify.test', 'Owner'],
       [customerId, 'customer@verify.test', 'Customer'],
     ]) {
+      /* `email_verified_at` is stamped, and that is a statement about what
+         these fixtures *are* rather than a convenience: they stand in for real
+         customers who signed up and confirmed a code, and every rule about
+         earning, redeeming and the board is written for that person. The
+         unverified case has a section of its own (`verificationRules`) so it is
+         tested deliberately instead of being the accidental default of every
+         other check in this file. */
       await db.run(
         `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, city,
-                            status, created_at, updated_at)
-         VALUES ($i, $e, $e, $n, 'email', 'en', 'Krakow', 'active', $t, $t)`,
+                            status, email_verified_at, created_at, updated_at)
+         VALUES ($i, $e, $e, $n, 'email', 'en', 'Krakow', 'active', $t, $t, $t)`,
         { i: id, e: email, n: name, t: at },
       );
       await db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'consumer', $t)`, {
@@ -665,6 +676,363 @@ async function voucherRules(): Promise<void> {
   await w2.db.close();
 }
 
+/**
+ * The redemption caps (item 21) — the count limits and the races they have to
+ * survive.
+ *
+ * Its own section rather than more lines in `voucherRules`, because that one is
+ * about §4's *money* and this is about a count, which §4 deliberately does not
+ * enforce on. Both are true at once: the pool stops the venue overspending and
+ * the cap stops one offer being stripped.
+ */
+async function voucherCaps(): Promise<void> {
+  describe('§4 vouchers — the redemption caps');
+  const w = await world();
+  const at = now();
+
+  const tierId = async (pct: number) =>
+    (await w.db.get<{ id: string }>(
+      `SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = $p`,
+      { v: w.venueId, p: pct },
+    ))!.id;
+  const rung = async (pct: number) =>
+    (await w.db.get<{ redeem_limit: number | null; per_user_limit: number | null; issued_count: number }>(
+      `SELECT redeem_limit, per_user_limit, issued_count FROM voucher_tiers
+        WHERE venue_id = $v AND discount_pct = $p`,
+      { v: w.venueId, p: pct },
+    ))!;
+
+  /* A rung with no cap set. NULL rather than a number, because inventing one
+     would close an offer somebody is running — and it is the state every rung
+     that predates the columns is in. */
+  const fresh = await rung(10);
+  eq('a rung is uncapped until somebody caps it', fresh.redeem_limit, null);
+  eq('…on both counts', fresh.per_user_limit, null);
+  eq('and has issued nothing', fresh.issued_count, 0);
+
+  /* ── the total cap ── */
+  await partners.setVoucherTiers(w.db, {
+    venueId: w.venueId,
+    actorId: w.ownerId,
+    tiers: [{ discountPct: 10, pointsCost: 100, maxDiscountMinor: 2500, redeemLimit: 2 }],
+    at,
+  });
+  eq('a cap is stored', (await rung(10)).redeem_limit, 2);
+
+  const ten = await tierId(10);
+  await ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
+  await vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: ten, at });
+  eq('issuing takes a slot', (await rung(10)).issued_count, 1);
+  await vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: ten, at });
+  eq('…and the second one', (await rung(10)).issued_count, 2);
+
+  await throws('the third is refused', 'conflict', () =>
+    vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: ten, at }),
+  );
+  /* The refusal must leave the rung exactly where it was: the increment happens
+     before the check that throws, so this is the rollback being real rather
+     than assumed. Off by one here would hand the cap away a voucher at a time. */
+  eq('a refused issue leaves the count alone', (await rung(10)).issued_count, 2);
+  eq('and the points are not taken', await ledger.balance(w.db, w.customerId), 800);
+
+  /* **The race.** Two issues started before either finished. This is the check
+     the counting implementation passes on SQLite and fails on Postgres, so what
+     it really pins is the *shape* — that the guard is inside the write. If
+     `claimSlot` ever goes back to SELECT-then-INSERT this still passes here and
+     the comment above it is the only thing left saying why it must not. */
+  const both = await Promise.allSettled([
+    vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: ten, at }),
+    vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: ten, at }),
+  ]);
+  eq(
+    'two at once past a finished cap both fail',
+    both.filter((one) => one.status === 'fulfilled').length,
+    0,
+  );
+  eq('and the count has not moved', (await rung(10)).issued_count, 2);
+
+  /* ── the per-user cap ── */
+  const w2 = await world();
+  const at2 = now();
+  await partners.setVoucherTiers(w2.db, {
+    venueId: w2.venueId,
+    actorId: w2.ownerId,
+    tiers: [{ discountPct: 5, pointsCost: 50, maxDiscountMinor: 2500, perUserLimit: 1 }],
+    at: at2,
+  });
+  const five = (await w2.db.get<{ id: string }>(
+    `SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = 5`,
+    { v: w2.venueId },
+  ))!.id;
+  await ledger.earn(w2.db, { userId: w2.customerId, points: 1000, reason: 'adjustment', at: at2 });
+  const mine = await vouchers.issue(w2.db, {
+    userId: w2.customerId,
+    venueId: w2.venueId,
+    tierId: five,
+    at: at2,
+  });
+  await throws('one account cannot take two past its own limit', 'conflict', () =>
+    vouchers.issue(w2.db, { userId: w2.customerId, venueId: w2.venueId, tierId: five, at: at2 }),
+  );
+  /* And the refusal did not eat a slot off the *total*, which would let one
+     greedy account close a rung for everybody else. */
+  eq(
+    'a personal refusal does not spend the rung',
+    (await w2.db.get<{ n: number }>(`SELECT issued_count AS n FROM voucher_tiers WHERE id = $i`, {
+      i: five,
+    }))!.n,
+    1,
+  );
+
+  /* An expired voucher has still been taken. A per-user cap that counted only
+     live vouchers would be a cap on *holding*, which anybody can cycle past by
+     waiting a fortnight. */
+  await vouchers.expireVouchers(w2.db, plusDays(at2, CONFIG.vouchers.validityDays + 1));
+  eq(
+    'the voucher lapsed',
+    (await w2.db.get<{ status: string }>(`SELECT status FROM issued_vouchers WHERE id = $i`, {
+      i: mine.id,
+    }))!.status,
+    'expired',
+  );
+  await throws('and it still counts against the personal cap', 'conflict', () =>
+    vouchers.issue(w2.db, {
+      userId: w2.customerId,
+      venueId: w2.venueId,
+      tierId: five,
+      at: plusDays(at2, CONFIG.vouchers.validityDays + 1),
+    }),
+  );
+
+  /* ── the cap is visible before the press ── */
+  const closed = await vouchers.ladder(w.db, w.venueId, at, w.customerId);
+  check(
+    'a finished rung is not offered',
+    closed.find((one) => one.discountPct === 10)?.available === false,
+  );
+  /* 5 rather than 15: the ladder's bottom rung is the one §4.4 keeps open
+     however empty the pool gets, so this isolates the cap from the money. */
+  check(
+    '…while a rung with no cap still is',
+    closed.find((one) => one.discountPct === 5)?.available === true,
+  );
+  /* And nothing about the cap leaks onto the public body. How many a venue has
+     handed out is its own trading; what a customer needs is whether the button
+     works. */
+  check(
+    'the public ladder says nothing about the numbers',
+    Object.keys(closed[0]).every((key) => !/limit|issuedTotal/i.test(key)),
+    Object.keys(closed[0]).join(', '),
+  );
+  /* The owner does get the figures, and both counts, because they answer
+     different questions — see `partnerLadder`. */
+  const owner = (await vouchers.partnerLadder(w.db, w.venueId, at)).find(
+    (one) => one.discountPct === 10,
+  )!;
+  eq('the owner reads the cap', owner.redeemLimit, 2);
+  eq('…and the lifetime count it is measured against', owner.issuedTotal, 2);
+
+  /* ── the counter and the rows agree ── */
+  const counted = await w.db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM issued_vouchers WHERE tier_id = $t AND status <> 'cancelled'`,
+    { t: ten },
+  );
+  eq('the guard counter reconciles against the rows it guards', (await rung(10)).issued_count, counted!.n);
+
+  /* ── the register ── */
+  const register = await vouchers.partnerVouchers(w.db, w.venueId);
+  eq('the register lists what was taken', register.length, 2);
+  check('newest first', register[0].issuedAt >= register[1].issuedAt);
+  check('with both ends of the window', register.every((one) => one.issuedAt < one.expiresAt));
+  check(
+    'and no name without the §1.4 grant',
+    register.every((one) => one.holder === null),
+  );
+  eq(
+    'filtering by status narrows it',
+    (await vouchers.partnerVouchers(w.db, w.venueId, { status: 'redeemed' })).length,
+    0,
+  );
+  const totals = await vouchers.partnerVoucherTotals(w.db, w.venueId, at);
+  eq('the totals are counted over the whole life, not the page', totals.issued, 2);
+  eq('…and say how many are live', totals.active, 2);
+  eq('…and how many lapse this week', totals.lapsing, 0);
+
+  await w.db.close();
+  await w2.db.close();
+}
+
+/**
+ * Item 23: an operator assigns a tier, and the date on it means something.
+ *
+ * The whole mechanism is two filters on `activeSubscription` and two columns on
+ * the row, which means the things worth checking are *dates* rather than
+ * statuses: that a change dated forward is not live, that it becomes live on
+ * the day without anything running, that the plan it replaces stops on exactly
+ * that instant rather than earlier or never, and that the entitlements a gate
+ * reads move with it.
+ */
+async function tierAssignment(): Promise<void> {
+  describe('§D item 23 — an operator assigns a tier');
+  const w = await world();
+  const at = '2026-06-01T10:00:00.000Z';
+  const subject = { venueId: w.venueId };
+
+  /* The floor. Every audience has a free plan and `planFor` falls back to it,
+     so "no subscription" is a plan rather than an absence. */
+  const free = await entitlements.planFor(w.db, subject, at);
+  eq('a venue with no subscription reads the starter plan', free.rank, 0);
+
+  /* ── now ── */
+  const immediate = await entitlements.assignPlan(w.db, {
+    subject,
+    planCode: 'growth',
+    actorId: w.ownerId,
+    note: 'a call with the owner',
+    at,
+  });
+  check('an undated assignment is not scheduled', immediate.scheduled === false);
+  eq('and it is in force at once', (await entitlements.planFor(w.db, subject, at)).code, 'growth');
+  eq('its source says who did it', immediate.subscription.source, 'manual');
+  /* The one line most likely to be tidied into a bug: a granted tier with a
+     renewal date is a tier `runRenewals` takes away in a month. */
+  eq('a granted tier has no renewal date', immediate.subscription.renews_at, null);
+  await entitlements.runRenewals(w.db, plusDays(at, 60));
+  eq(
+    '…so two months of renewal sweeps leave it alone',
+    (await entitlements.planFor(w.db, subject, plusDays(at, 60))).code,
+    'growth',
+  );
+
+  /* And the entitlements a gate reads moved with it, which is the propagation
+     the item asks for: no cache, no job, the next read is gated by the new
+     plan. */
+  const proEnt = await entitlements.entitlementsFor(w.db, subject, at);
+  const freeEnt = await entitlements.entitlementsFor(w.db, subject, '2026-05-01T10:00:00.000Z');
+  check(
+    'the entitlements move with the plan',
+    JSON.stringify(proEnt) !== JSON.stringify(freeEnt),
+    Object.keys(proEnt).join(', '),
+  );
+
+  /* ── dated forward ── */
+  const day = '2026-07-01';
+  const later = await entitlements.assignPlan(w.db, {
+    subject,
+    planCode: 'starter',
+    effectiveFrom: day,
+    actorId: w.ownerId,
+    at,
+  });
+  check('a dated assignment says it is scheduled', later.scheduled === true);
+  eq('…and it is not in force today', (await entitlements.planFor(w.db, subject, at)).code, 'growth');
+  eq(
+    '…nor the instant before it opens',
+    (await entitlements.planFor(w.db, subject, '2026-06-30T23:59:59.999Z')).code,
+    'growth',
+  );
+  /* The hand-over, at the bare day's own midnight. A downgrade is the case that
+     catches a wrong implementation: `ORDER BY p.rank DESC` would keep serving
+     Pro forever if the old row were merely left running. */
+  eq(
+    '…and on the day it is',
+    (await entitlements.planFor(w.db, subject, '2026-07-01T00:00:00.000Z')).code,
+    'starter',
+  );
+  eq(
+    '…which is a downgrade, so the higher rank really stopped',
+    (await entitlements.planFor(w.db, subject, '2026-07-15T10:00:00.000Z')).code,
+    'starter',
+  );
+
+  /* It is visible while pending, or the same change gets scheduled twice. */
+  const queued = await entitlements.pendingSubscription(w.db, subject, at);
+  eq('a scheduled change can be read back', queued?.id, later.subscription.id);
+  check('…and is not what `activeSubscription` answers',
+    (await entitlements.activeSubscription(w.db, subject, at))?.id !== queued?.id);
+
+  /* ── a second date replaces the first ── */
+  const moved = await entitlements.assignPlan(w.db, {
+    subject,
+    planCode: 'starter',
+    effectiveFrom: '2026-08-01',
+    actorId: w.ownerId,
+    at,
+  });
+  eq(
+    'a corrected date replaces the pending change rather than queueing',
+    (await entitlements.pendingSubscription(w.db, subject, at))?.id,
+    moved.subscription.id,
+  );
+  eq(
+    '…so the first date no longer does anything',
+    (await entitlements.planFor(w.db, subject, '2026-07-15T10:00:00.000Z')).code,
+    'growth',
+  );
+
+  /* ── dropping a dated change puts the open end back ── */
+  await entitlements.cancelScheduled(w.db, { subscriptionId: moved.subscription.id, actorId: w.ownerId, at });
+  eq(
+    'unscheduling leaves the live plan running',
+    (await entitlements.planFor(w.db, subject, '2026-09-01T10:00:00.000Z')).code,
+    'growth',
+  );
+  check('…and nothing is pending', (await entitlements.pendingSubscription(w.db, subject, at)) === undefined);
+  /* The one it must refuse: undoing something already in force is a downgrade,
+     which is a different decision and a different audit row. */
+  await throws('a change already in force cannot be unscheduled', 'invalid_state', () =>
+    entitlements.cancelScheduled(w.db, {
+      subscriptionId: immediate.subscription.id,
+      actorId: w.ownerId,
+      at,
+    }),
+  );
+
+  /* ── what it refuses ── */
+  /* `premium` is a real plan code — on the **consumer** ladder. The audience is
+     derived from the subject, so asking for it on a venue is a 404 rather than
+     a venue quietly holding consumer entitlements no partner screen reads. */
+  await throws('a plan from the other audience is refused', 'not_found', () =>
+    entitlements.assignPlan(w.db, { subject, planCode: 'premium', actorId: w.ownerId, at }),
+  );
+  await throws('…and so is a plan that does not exist', 'not_found', () =>
+    entitlements.assignPlan(w.db, { subject, planCode: 'platinum', actorId: w.ownerId, at }),
+  );
+
+  /* ── the audit trail ── */
+  /* Read straight off `audit_log`, the way every other section here does:
+     `audit.recent` is the console's own shape and this is about the row. */
+  const rows = await w.db.all<{ action: string; actor_id: string | null; after: string | null }>(
+    `SELECT action, actor_id, after FROM audit_log ORDER BY created_at DESC LIMIT 50`,
+  );
+  const assigns = rows.filter((row) => row.action === 'subscription.assign');
+  check('every assignment left an audit row', assigns.length >= 3, String(assigns.length));
+  /*
+   * Found by what it says, not by where it sits.
+   *
+   * All three assignments here were made at one instant, so `ORDER BY
+   * created_at` cannot separate them — which is this repo's own FIFO tiebreak
+   * lesson (`points_lots.seq`) turning up in a test rather than in a query. A
+   * check that indexed into the list passed or failed on the database's whim.
+   */
+  const decoded = assigns.map((row) => ({
+    row,
+    after: JSON.parse(row.after ?? '{}') as Record<string, unknown>,
+  }));
+  const grant = decoded.find((one) => one.after.planCode === 'growth');
+  check('and the plan it moved to', grant !== undefined, assigns.length + ' assigns');
+  eq('with an actor on it', grant?.row.actor_id, w.ownerId);
+  const after = grant?.after ?? {};
+  check('…the date it takes effect', typeof after.effectiveFrom === 'string');
+  check('…and the operator\'s reason, which nothing else records', after.note === 'a call with the owner');
+  check(
+    'an unschedule is audited too',
+    rows.some((row) => row.action === 'subscription.unschedule'),
+  );
+
+  await w.db.close();
+}
+
 async function campaignRules(): Promise<void> {
   describe('§5 campaigns and stamp cards');
   const w = await world();
@@ -1078,6 +1446,103 @@ async function gameRules(): Promise<void> {
   eq('a win spends energy like any other round', finished.energyLeft,
     CONFIG.points.dailyEnergy - 1);
   eq('the balance moved by the score', await ledger.balance(w.db, w.customerId), finished.score);
+
+  /*
+   * ── a question with too few answers is never asked ──
+   *
+   * Two upstream defects with one symptom, and the symptom is a *question*
+   * rather than an error: a row with one distractor renders two buttons, and a
+   * row whose translated distractors collide renders four buttons with three
+   * answers on them. Both pay the point a four-way question pays.
+   *
+   * `pickDistractors` in `db/import.ts` wrote the first kind for every small
+   * continent group (Oceania's 14 countries did it to 14 flags and 14
+   * capitals). It is fixed — and **a fixed generator does not rewrite rows it
+   * already wrote**, so `buildQuiz` filters as well, and `main.ts` re-imports
+   * when it finds one.
+   *
+   * Checked on a bank of its own, in a language no export carries, so the draw
+   * is exhaustive rather than lucky: five good rows and two poisoned ones means
+   * a correct draw can only be the five.
+   */
+  const poison = async (id: string, distractors: unknown, answer = 'Right') =>
+    await w.db.run(
+      `INSERT INTO quiz_items (id, bank, language, prompt, answer, distractors, meta)
+       VALUES ($i, 'brain', 'xx', $p, $a, $d, '{}')`,
+      { i: id, p: `q-${id}`, a: answer, d: JSON.stringify(distractors) },
+    );
+
+  for (let i = 0; i < CONFIG.games.quizQuestions; i += 1) {
+    await poison(`good${i}`, ['Wrong A', 'Wrong B', 'Wrong C']);
+  }
+  await poison('tooFew', ['Only One']);
+  /* A distractor equal to the answer is the worst of the two: two buttons are
+     right and only one of them scores. */
+  await poison('duplicate', ['Wrong A', 'Wrong B', 'Right']);
+
+  const guarded = await games.startSession(w.db, {
+    userId: w.ownerId,
+    gameType: 'brain',
+    language: 'xx',
+    at,
+  });
+  const asked = (guarded.content as { questions: Array<{ prompt: string; options: string[] }> })
+    .questions;
+  eq('the round is still five questions', asked.length, CONFIG.games.quizQuestions);
+  check(
+    'every one of them offers the full set of options',
+    asked.every((question) => question.options.length === CONFIG.games.quizOptions),
+    asked.map((question) => question.options.length),
+  );
+  check(
+    'a row with one distractor is never asked',
+    !asked.some((question) => question.prompt === 'q-tooFew'),
+  );
+  check(
+    '…and nor is one whose options are not distinct',
+    !asked.some((question) => question.prompt === 'q-duplicate'),
+  );
+  check(
+    'no question repeats an option',
+    asked.every((question) => new Set(question.options).size === question.options.length),
+  );
+
+  /*
+   * ── the welcome round is the same five flags every time it is opened ──
+   *
+   * `ORDER BY RANDOM()` is right for the game on the Play screen and wrong for
+   * the gate: `onboarding.tsx` says a refresh restarts the flow, and with a
+   * random draw a refresh silently changed the *questions* too — so a new
+   * account's first five flags were not a fixed thing at all. Seeded on the
+   * user id, so it is reproducible per account and still different between
+   * accounts, which is the property that keeps the answers unshareable.
+   *
+   * The recent-items window is cleared between draws because being asked the
+   * same five twice is exactly what is under test, and the window exists to
+   * stop that happening in the game.
+   */
+  const welcomeFlags = async (userId: string): Promise<string[]> => {
+    await w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u`, { u: userId });
+    const opened = await games.startSession(w.db, {
+      userId,
+      gameType: 'flags',
+      language: 'en',
+      welcome: true,
+      practice: true,
+      at,
+    });
+    return (opened.content as { questions: Array<{ prompt: string }> }).questions.map(
+      (question) => question.prompt,
+    );
+  };
+
+  const firstRun = await welcomeFlags(w.customerId);
+  eq('the welcome round asks five flags', firstRun.length, CONFIG.games.quizQuestions);
+  eq('…the same five when the gate is re-opened', await welcomeFlags(w.customerId), firstRun);
+  check(
+    '…and a different five for a different account',
+    JSON.stringify(await welcomeFlags(w.ownerId)) !== JSON.stringify(firstRun),
+  );
 
   await throws('a finished session cannot be finished again', 'invalid_state', async () =>
     await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at }),
@@ -2082,14 +2547,26 @@ async function scoringRules(): Promise<void> {
 
   /* ── the flight ── */
 
-  const flight = async (cleared: number) => {
+  /**
+   * Fly a round.
+   *
+   * `seconds` is how long the session was open, and it matters because the
+   * flight is the one game with no answer key: `scoreFlight` bounds a claimed
+   * gap count by the *server's* own clock, one gap per
+   * `CONFIG.games.flightSecondsPerGap`. So a round has to be given a plausible
+   * duration or every honest claim below is clamped — the default is exactly
+   * the time the claim needs, which is what these checks are about, and the
+   * implausible case is asked for explicitly at the end.
+   */
+  const flight = async (cleared: number, seconds?: number) => {
     const at = nextAt();
     const opened = await games.startSession(w.db, { userId: w.customerId, gameType: 'flight', at });
+    const took = seconds ?? cleared * CONFIG.games.flightSecondsPerGap;
     return await games.finish(w.db, {
       sessionId: opened.sessionId,
       userId: w.customerId,
       clientReport: { cleared },
-      at,
+      at: new Date(Date.parse(at) + took * 1000).toISOString(),
     });
   };
 
@@ -2101,6 +2578,30 @@ async function scoringRules(): Promise<void> {
   eq('seven gaps is three and a half, which floors to three rather than four', (await flight(7)).score, 3);
   eq('forty gaps reach the ceiling', (await flight(40)).score, CONFIG.games.flightMaxPoints);
   eq('and a thousand bank the same twenty', (await flight(1000)).score, CONFIG.games.flightMaxPoints);
+
+  /*
+   * **A run that could not have happened does not pay for itself.**
+   *
+   * The ceiling above bounds what a run is *worth* and says nothing about
+   * whether it was flown. A thousand gaps claimed one second after the session
+   * opened used to bank the full twenty and sit in the ledger looking exactly
+   * like a very good player. Columns arrive on a timer, so the honest gap count
+   * is bounded by the round's own duration — measured here from two stamps the
+   * server wrote.
+   *
+   * The allowance is what the second number tests: it is slack for the columns
+   * already on screen when a run begins, so a *short* honest run is not
+   * clamped, and it is generous on purpose.
+   */
+  /* Floored, because the round is floored once at the end like every other:
+     three gaps at half a point is 1.5 and banks 1 on the free plan. */
+  const allowed = Math.floor(CONFIG.games.flightGapAllowance * CONFIG.games.flightPerGap);
+  eq(
+    'a thousand gaps in one second is bounded by the clock, not by the ceiling',
+    (await flight(1000, 1)).score,
+    allowed,
+  );
+  eq('…and the allowance keeps a genuinely short run whole', (await flight(CONFIG.games.flightGapAllowance, 0)).score, allowed);
 
   /*
    * **The floor is at the end of the round, after the plan multiplier — and it
@@ -2214,6 +2715,24 @@ async function consentRules(): Promise<void> {
   const w = await world();
   const at = now();
 
+  /*
+   * **The default is off for this account, deliberately.**
+   *
+   * `users.venue_sharing_default` is 1 for everybody, and `gate.confirm` turns
+   * that into a §1.4 grant at the moment a visit is confirmed — which is the
+   * point of the column and is tested on its own in `sharingDefaultRules`.
+   *
+   * What *this* section is about is the gate itself: that an identified
+   * customer is invisible without a grant, appears with one, and disappears the
+   * instant it is withdrawn. Those three are the rules the whole
+   * identified-customer surface rests on, and they have to be checked on an
+   * account with **no** grant — so this one opts out before it visits. Leaving
+   * the default on here would have replaced a test of the gate with a test of
+   * the default, which is how a rule stops being checked without anybody
+   * deleting a check.
+   */
+  await consent.setSharingDefault(w.db, w.customerId, false);
+
   await scan(w, 6000, at);
 
   const table = await profiles.customerTable(w.db, w.venueId, { at });
@@ -2265,6 +2784,110 @@ async function consentRules(): Promise<void> {
   );
 
   await w.db.close();
+}
+
+/**
+ * Sharing a profile with a venue you actually visited — the default.
+ *
+ * §1.4's grant used to be written only when a player found the switch on a
+ * venue's sheet and pressed it, so a venue's identified half was empty of
+ * everybody who had never gone looking: the dashboard read "nobody comes here
+ * twice" when it meant "nobody pressed a button".
+ * `users.venue_sharing_default` is the account's standing answer and is on.
+ *
+ * Four properties, and three of them are what keep this from being "the consent
+ * gate was removed":
+ *
+ *  1. The grant appears **on a confirmed visit** and not before — not at
+ *     sign-up, which would hand every venue in the catalogue a customer who has
+ *     never been there.
+ *  2. It is still **per venue**.
+ *  3. **A withdrawal is never undone.** A player who revoked is not re-granted
+ *     on their next visit, which is the clause that makes a default safe: a
+ *     default may decide what happens before somebody has an opinion and must
+ *     never overrule the opinion once they have one.
+ *  4. **Off means nothing is written** — no row at all, so the venue's queries
+ *     behave exactly as they did before any of this existed.
+ */
+async function sharingDefaultRules(): Promise<void> {
+  describe('§1.4 the sharing default: on, per venue, and never over a refusal');
+
+  const w = await world();
+  const at = now();
+
+  eq('an account shares with the venues it visits by default',
+    (await accounts.getUser(w.db, w.customerId)).venue_sharing_default, 1);
+
+  /* Nothing yet: the default is an answer about venues somebody visits, and
+     this account has not visited one. */
+  eq('…but nothing is shared before a visit',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM data_sharing_consents WHERE user_id = $u`,
+      { u: w.customerId },
+    ))?.n,
+    0);
+
+  await scan(w, 4200, at);
+
+  const table = await profiles.customerTable(w.db, w.venueId, { at });
+  eq('a confirmed visit is what writes the grant', table.rows.length, 1);
+  eq('…and the venue can say how many shared', [table.totalCustomers, table.sharedCustomers], [1, 1]);
+
+  /* The row is a **row**, with the audit fields the table exists for. A
+     default that wrote something un-auditable would have traded away the point
+     of `data_sharing_consents`. */
+  const row = await w.db.get<{ granted_at: string; policy_version: string; revoked_at: string | null }>(
+    `SELECT granted_at, policy_version, revoked_at FROM data_sharing_consents
+      WHERE user_id = $u AND venue_id = $v`,
+    { u: w.customerId, v: w.venueId },
+  );
+  check('the implied grant is as auditable as a pressed one',
+    row?.granted_at === at && row.policy_version.length > 0 && row.revoked_at === null,
+    JSON.stringify(row));
+
+  /* ── and a refusal stands ── */
+  await consent.revokeSharing(w.db, w.customerId, w.venueId, at);
+  eq('withdrawing drops them', (await profiles.customerTable(w.db, w.venueId, { at })).rows.length, 0);
+
+  await scan(w, 3300, plusMinutes(at, 1500));
+  eq('…and the next visit does not re-grant it',
+    (await profiles.customerTable(w.db, w.venueId, { at: plusMinutes(at, 1500) })).rows.length, 0);
+  eq('…with exactly one row, still revoked',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM data_sharing_consents
+        WHERE user_id = $u AND venue_id = $v AND revoked_at IS NOT NULL`,
+      { u: w.customerId, v: w.venueId },
+    ))?.n,
+    1);
+
+  /* ── off means nothing at all ── */
+  const w2 = await world();
+  await consent.setSharingDefault(w2.db, w2.customerId, false);
+  await scan(w2, 5000, at);
+  eq('an account that switched it off shares nothing',
+    (await w2.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM data_sharing_consents WHERE user_id = $u`,
+      { u: w2.customerId },
+    ))?.n,
+    0);
+  eq('…and is counted without being named',
+    [(await profiles.customerTable(w2.db, w2.venueId, { at })).totalCustomers,
+     (await profiles.customerTable(w2.db, w2.venueId, { at })).rows.length],
+    [1, 0]);
+
+  /* Switching the default off does **not** revoke what stands. The grants are
+     about venues somebody has been to; declining future ones is a different
+     decision from withdrawing the ones they made. */
+  await consent.setSharingDefault(w2.db, w2.customerId, true);
+  await scan(w2, 5100, plusMinutes(at, 1500));
+  eq('turning it back on grants on the next visit',
+    (await profiles.customerTable(w2.db, w2.venueId, { at: plusMinutes(at, 1500) })).rows.length, 1);
+  await consent.setSharingDefault(w2.db, w2.customerId, false);
+  eq('…and turning it off again leaves that grant standing',
+    (await profiles.customerTable(w2.db, w2.venueId, { at: plusMinutes(at, 1500) })).rows.length, 1);
+
+  await w.db.close();
+  await w2.db.close();
 }
 
 async function analyticsRules(): Promise<void> {
@@ -2629,8 +3252,15 @@ async function socialRules(): Promise<void> {
     'completed',
   );
 
-  /* §8.2: not opted in means not listed, but still ranked and still shown. */
+  /* §8.2: opted **out** means not listed, but still ranked and still shown.
+     The opt-out has to be asked for now — the column defaults to on, so the
+     fixture is listed like everybody else and the rule under test is what
+     happens when somebody switches it off. */
   await ledger.earn(w.db, { userId: w.customerId, points: 40, reason: 'game_win', at });
+  const byDefault = await social.board(w.db, { userId: w.customerId, scope: 'city', city: 'Krakow', at });
+  check('on by default, so you are listed', !byDefault.hidden && byDefault.rows.some((row) => row.isYou));
+
+  await social.setLeaderboardOptIn(w.db, w.customerId, false);
   const board = await social.board(w.db, { userId: w.customerId, scope: 'city', city: 'Krakow', at });
   check('you see yourself', board.you !== null);
   check('…and know you are hidden', board.hidden);
@@ -2795,11 +3425,13 @@ async function trafficRules(): Promise<void> {
     email: 'throttle@verify.test',
     password: 'correct horse',
     name: 'Throttle',
+    acceptTerms: true,
   });
   await accounts.signUp(w.db, {
     email: 'bystander@verify.test',
     password: 'correct horse',
     name: 'Bystander',
+    acceptTerms: true,
   });
   for (let attempt = 0; attempt < CONFIG.auth.signInPerHour; attempt += 1) {
     await rejects(
@@ -2878,7 +3510,10 @@ function routerRules(): void {
 async function httpSurface(): Promise<void> {
   describe('the HTTP surface, end to end');
   const w = await world();
-  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET });
+  /* Limits off for the surface tour, and checked on purpose in `rateLimits`
+     below: every call here arrives on one connection and the tour signs up
+     more accounts than `CONFIG.limits.signUpPerHour` allows one to. */
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
   const server = await api.listen(0, '127.0.0.1');
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
@@ -3940,6 +4575,7 @@ async function accountRules(): Promise<void> {
       password: 'testing-1234',
       name: 'Later Owner',
       at,
+      acceptTerms: true,
     });
 
     check('a plain sign-up is not a partner',
@@ -3980,6 +4616,7 @@ async function accountRules(): Promise<void> {
     name: 'Merged',
     provisionalId: guest.id,
     at,
+    acceptTerms: true,
   });
   eq(
     'the points survive the merge',
@@ -4026,7 +4663,8 @@ async function accountRules(): Promise<void> {
  *   * **A constant** — `display_name` is set to 'Deleted account', which is not
  *     personal data, it is the absence of it rendered.
  *   * **NOT NULL columns carrying no identity** — `auth_provider`, `language`,
- *     `points_cache`, `leaderboard_opt_in` (zeroed), `trust_tier`,
+ *     `points_cache`, `leaderboard_opt_in` and `venue_sharing_default` (both
+ *     zeroed), `trust_tier`,
  *     `created_at`, `updated_at`, `birth_date_changes`. None of them can be
  *     nulled without a schema change and none of them names anybody. The
  *     weakest is `birth_date_changes`: a bare count that discloses only that a
@@ -4045,6 +4683,11 @@ const ERASURE_KEEPS = new Set([
   'profile_completed_at',
   'points_cache',
   'leaderboard_opt_in',
+  /* Zeroed, like the opt-in above it, and for the same reason: `NOT NULL`, so
+     erasure writes the *off* value rather than removing it. An erased row that
+     went on saying "yes, share me with venues I visit" would be a preference
+     held on behalf of somebody who asked to be forgotten. */
+  'venue_sharing_default',
   'trust_tier',
   'status',
   'created_at',
@@ -4062,6 +4705,7 @@ async function profileRules(): Promise<void> {
     password: 'hunter22',
     name: 'Profile',
     at,
+    acceptTerms: true,
   });
 
   /* ── the status ──
@@ -4172,6 +4816,7 @@ async function profileRules(): Promise<void> {
         name: 'Orphan',
         countryCode: 'DE',
         at,
+        acceptTerms: true,
       }),
     'validation_failed',
   );
@@ -4201,6 +4846,7 @@ async function profileRules(): Promise<void> {
     city: 'Kryvyï  Rih',
     countryCode: 'UA',
     at,
+    acceptTerms: true,
   });
   eq('sign-up canonicalises too, or it is the hole in the rule', second.city, 'Kryvyi Rih');
   eq(
@@ -4255,6 +4901,7 @@ async function profileRules(): Promise<void> {
     password: 'hunter22',
     name: 'Doomed',
     at,
+    acceptTerms: true,
   });
   await accounts.updateProfile(
     db,
@@ -4269,9 +4916,15 @@ async function profileRules(): Promise<void> {
     },
     at,
   );
-  /* Set directly because the only route to it is a verified Google token, and
-     what is being checked is the erasure rather than the sign-in. */
-  await db.run(`UPDATE users SET provider_ref = 'google-sub-12345' WHERE id = $u`, { u: doomed.id });
+  /* Both set directly, and for the same reason: the only route to `provider_ref`
+     is a verified Google token and the only route to `email_verified_at` is a
+     code out of an inbox, and what is being checked here is the *erasure*
+     rather than either of those flows. `verificationRules` exercises the code
+     path on its own. */
+  await db.run(
+    `UPDATE users SET provider_ref = 'google-sub-12345', email_verified_at = $t WHERE id = $u`,
+    { t: at, u: doomed.id },
+  );
 
   const columns = (await db
     .all<{ name: string }>(`PRAGMA table_info(users)`))
@@ -4637,6 +5290,53 @@ function sqliteOnlySql(): void {
   check('no query orders or filters by `rowid` — Postgres has no such column', offenders.length === 0, offenders);
 
   /*
+   * **A refusal's detail may not carry a key called `code`.**
+   *
+   * `server.ts` serialises one as `{ code: error.code, message, ...error.detail }`,
+   * so a detail key of that name overwrites the error code with whatever it
+   * holds. A 404 answered `{"code": "premium", "message": "no partner plan
+   * called premium"}` — the message was right, the code was the plan's, and a
+   * client branching on `error.code` to tell "not found" from "rate limited"
+   * had no way to. It type-checks perfectly and is invisible from this suite's
+   * own `throws`, which compares the *thrown* error rather than the serialised
+   * one — so the check has to read the source, like the one above it.
+   *
+   * Same shape as `rowid`: comments stripped, one banned token, the offending
+   * file named. `message` would be the other collision and is checked with it;
+   * `status` is not, because `DomainError` does not spread it.
+   */
+  const detailKeys = files.filter((file) => {
+    const source = stripped(readFileSync(join(here, file), 'utf8'));
+    /*
+     * Read by line rather than by matching the third argument.
+     *
+     * The obvious regex — the first `{…}` after `new DomainError(` — is
+     * defeated by the message, which is nearly always a template literal:
+     * `${audience}` is a brace pair, so the match lands on *that* and the
+     * detail object is never examined. It passed on the very bug it was written
+     * for. Counting braces from the call instead is exact enough here, because
+     * every one of these constructors is called inline over a handful of lines.
+     */
+    const lines = source.split('\n');
+    return lines.some((line, index) => {
+      if (!/new DomainError\(/.test(line)) return false;
+      /* The call's own line, plus the lines until its arguments close. Six is
+         past the longest of these in the tree and stops a runaway scan from
+         blaming a key in the next function. */
+      for (let i = index; i < Math.min(lines.length, index + 7); i += 1) {
+        if (/^\s*(code|message)\s*:/.test(lines[i]) && i > index) return true;
+        if (i > index && /^\s*\}\);/.test(lines[i])) return false;
+      }
+      return false;
+    });
+  });
+  check(
+    'no refusal detail shadows `code` or `message` — the serialiser spreads it over both',
+    detailKeys.length === 0,
+    detailKeys,
+  );
+
+  /*
    * The two post-release column lists are one list written twice.
    *
    * `CREATE TABLE IF NOT EXISTS` is a no-op on a database that already has the
@@ -4673,6 +5373,812 @@ function sqliteOnlySql(): void {
   const missingOnSqlite = [...postgres].filter((c) => !sqlite.has(c));
   check('every column `db.ts` adds, `pg.ts` adds too', missingOnPg.length === 0, missingOnPg);
   check('…and the other way round', missingOnSqlite.length === 0, missingOnSqlite);
+}
+
+/**
+ * The Postgres lockdown covers the whole schema.
+ *
+ * `rls.pg.sql` is generated from `schema.sql` by `npm run pg:schema` and
+ * applied by `migrate()` in `db/pg.ts`, so a table added to the schema arrives
+ * with its `ENABLE ROW LEVEL SECURITY` already written. What this checks is
+ * that the committed file is *current* — the same thing the generated
+ * `schema.pg.sql` needs and for a sharper reason: a table missing from there
+ * fails on its first query, and a table missing from here fails silently, by
+ * being readable through a Supabase project's published anon key.
+ *
+ * Read from the source rather than from a database, because the engine this
+ * suite runs on has no roles and no RLS to inspect. Same argument as
+ * `sqliteOnlySql` above.
+ */
+function postgresLockdown(): void {
+  describe('the Postgres lockdown');
+
+  const here = fileURLToPath(new URL('.', import.meta.url));
+  const schema = readFileSync(join(here, 'db', 'schema.sql'), 'utf8');
+  const rls = readFileSync(join(here, 'db', 'rls.pg.sql'), 'utf8');
+
+  const tables = [...schema.matchAll(/CREATE TABLE IF NOT EXISTS\s+([a-z_]+)/g)].map((m) => m[1]);
+  const secured = new Set(
+    [...rls.matchAll(/ALTER TABLE\s+([a-z_]+)\s+ENABLE ROW LEVEL SECURITY/g)].map((m) => m[1]),
+  );
+
+  check('the schema has tables to secure', tables.length > 50, { tables: tables.length });
+  const open = tables.filter((t) => !secured.has(t));
+  check('every table has row-level security enabled — run `npm run pg:schema`', open.length === 0, open);
+  const stale = [...secured].filter((t) => !tables.includes(t));
+  check('…and nothing is secured that no longer exists', stale.length === 0, stale);
+
+  /* Both halves of the lockdown, because either one alone would do and a
+     regeneration that dropped one would still pass the table count above. */
+  for (const role of ['anon', 'authenticated']) {
+    check(
+      `\`${role}\` is revoked from the public schema`,
+      rls.includes(`REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${role};`) &&
+        rls.includes(`ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM ${role};`),
+    );
+  }
+
+  /* The guard that stops the lockdown locking the server out of its own
+     database. Without it a deployment connecting as a non-owning role enables
+     RLS on 82 tables and then answers 500 to every request, from inside the
+     process that just did it. */
+  check(
+    'it refuses to run as a role that neither owns the tables nor bypasses RLS',
+    /RAISE EXCEPTION 'paylez: refusing to enable row-level security/.test(rls),
+  );
+}
+
+/**
+ * The rate limits, checked deliberately.
+ *
+ * `httpSurface` runs with `limits: false` — every call it makes arrives on one
+ * connection and the tour signs up more accounts than sign-up allows one to —
+ * so the limiter needs a section that turns it on and points it at one
+ * endpoint. Three properties, and the third is the one worth having:
+ *
+ *  1. it refuses past the ceiling, with `rate_limited` rather than a 500;
+ *  2. it bounds the *caller* and not the endpoint, so one connection hitting a
+ *     wall cannot lock everybody else out;
+ *  3. a request that **fails validation still costs an attempt**, because
+ *     otherwise the cheapest way past a limiter on sign-up is to send a body
+ *     that cannot succeed.
+ */
+async function rateLimits(): Promise<void> {
+  describe('rate limits');
+
+  const db = await openDb(':memory:');
+  const api = createApi({ db, routes: allRoutes, secret: SECRET });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+
+  const signUp = async (email: string, agent: string, body?: Record<string, unknown>) => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/auth/signup`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'user-agent': agent },
+      /* `acceptTerms` because sign-up refuses without it — §1.3, and the
+         reason is in `signUp`: a consent row written for somebody who was
+         never asked is the row that would be produced as evidence. */
+      body: JSON.stringify(
+        body ?? { email, password: 'correct horse', name: 'Rate Limit', acceptTerms: true },
+      ),
+    });
+    return { status: response.status, body: (await response.json()) as Record<string, any> };
+  };
+
+  const ceiling = CONFIG.limits.signUpPerHour;
+  const statuses: number[] = [];
+  for (let i = 0; i < ceiling; i += 1) {
+    statuses.push((await signUp(`limit${i}@verify.test`, 'suite/one')).status);
+  }
+  check('every call up to the ceiling is served', statuses.every((s) => s === 200), statuses);
+
+  const over = await signUp('limitover@verify.test', 'suite/one');
+  eq('the one past it is refused 429 `rate_limited`', [over.status, over.body.error?.code], [429, 'rate_limited']);
+
+  /* A different agent is a different connection key, so it starts at zero.
+     This is the property that stops one office locking out a city. */
+  const other = await signUp('limitother@verify.test', 'suite/two');
+  eq('another connection is unaffected', other.status, 200);
+
+  /* And the validation bypass. A body with no name is a 400 from `str`, and it
+     has to be counted anyway or the limiter is free to walk past. */
+  const invalid = await signUp('', 'suite/three', {
+    email: 'x@verify.test',
+    password: 'correct horse',
+    acceptTerms: true,
+  });
+  eq('a refused body is still a 400', invalid.status, 400);
+  const counted = await db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM auth_attempts WHERE subject LIKE 'POST /v1/auth/signup|%'`,
+  );
+  eq('…and it still cost an attempt', counted?.n, ceiling + 2);
+
+  server.close();
+  await db.close();
+}
+
+/**
+ * Today's list — the prompts the Play screen rotates through.
+ *
+ * Two properties, and both are about *lying to a player*:
+ *
+ *  1. **Every figure is the one the ledger will pay.** `daily_tasks` carries no
+ *     amount on purpose — a stored 50 is right the day it is typed and wrong the
+ *     day `CONFIG.earn.profileComplete` moves, silently and in the direction
+ *     that matters (a promise of fifty paid as twenty-five). So the resolved
+ *     points are compared against the config the grant itself reads.
+ *  2. **A finished task stops being advertised.** Every one of these grants is
+ *     once-only and guarded by an `UPDATE … WHERE … IS NULL`, so a panel still
+ *     offering a reward for a finished profile is advertising a refusal.
+ */
+async function dailyTaskRules(): Promise<void> {
+  describe("today's list");
+
+  const w = await world();
+  const at = now();
+
+  const seeded = await w.db.all<{ key: string; reward: string; active: number }>(
+    `SELECT key, reward, active FROM daily_tasks ORDER BY sort_order`,
+  );
+  check('boot seeds the task inventory', seeded.length >= 4, seeded.map((row) => row.key));
+  check('…all of it active', seeded.every((row) => row.active === 1));
+
+  const byKey = async (userId: string) =>
+    Object.fromEntries((await tasks.tasksFor(w.db, userId, at)).map((task) => [task.key, task]));
+
+  const before = await byKey(w.customerId);
+
+  eq('the profile task quotes what the profile bonus pays', before.profile?.points,
+    CONFIG.earn.profileComplete);
+  eq('…and the invite task what an invite pays', before.invite?.points, CONFIG.earn.inviteeJoin);
+  /* Today's check-in is the rung of the cycle the player is standing on, not a
+     constant — which is the whole reason the amount is not a column. Day one of
+     a streak with no milestone on it. */
+  eq('…and the check-in what *today* pays', before.check_in?.points,
+    checkin.dayValue(1) + (CONFIG.earn.streakMilestones[1] ?? 0));
+  check('the exact rewards say so', [before.profile, before.invite, before.check_in]
+    .every((task) => task?.exact === true));
+  /* A round pays what the round scored, so its figure is a ceiling and the
+     client renders "up to". Promising the ceiling is a promise a player can
+     fail to be given. */
+  eq('a game round is a ceiling, not a promise', before.play_round?.exact, false);
+  check('…and the ceiling is the best a round can do', (before.play_round?.points ?? 0) ===
+    CONFIG.games.quizQuestions * CONFIG.games.quizPerCorrect +
+      CONFIG.games.quizPerfectBonus +
+      CONFIG.games.quizSpeedBands[0].points,
+    before.play_round?.points);
+
+  check('nothing is done on a fresh account',
+    Object.values(before).every((task) => task.done === false),
+    Object.entries(before).filter(([, task]) => task.done).map(([key]) => key));
+
+  /* And now each one, done. The columns written are the ones the grants
+     themselves guard on, not a flag of this feature's own — a second source of
+     truth for "has this been paid" is how the two end up disagreeing. */
+  await w.db.run(`UPDATE users SET profile_completed_at = $t WHERE id = $u`,
+    { t: at, u: w.customerId });
+  await checkin.checkIn(w.db, { userId: w.customerId, at });
+  await w.db.run(
+    `INSERT INTO referrals (id, referrer_id, referred_id, code, status, created_at, completed_at)
+     VALUES ($i, $u, NULL, 'PY1111', 'completed', $t, $t)`,
+    { i: newId('ref'), u: w.customerId, t: at },
+  );
+
+  const after = await byKey(w.customerId);
+  check('a finished profile stops being advertised', after.profile?.done === true);
+  check('…a taken check-in too', after.check_in?.done === true);
+  check('…and a completed referral', after.invite?.done === true);
+  /* A referral that has *joined* and not yet visited is not completed: §8.1
+     pays on the invitee's first confirmed scan precisely so the task cannot be
+     finished with a throwaway address. */
+  await w.db.run(
+    `INSERT INTO referrals (id, referrer_id, referred_id, code, status, created_at)
+     VALUES ($i, $u, NULL, 'PY2222', 'pending', $t)`,
+    { i: newId('ref'), u: w.ownerId, t: at },
+  );
+  eq('a pending referral leaves the task on offer',
+    (await byKey(w.ownerId)).invite?.done, false);
+
+  /* A row naming a rule nothing prices has no figure, and a task with no figure
+     is left out rather than sent as a zero — "0 points" is a thing the panel
+     would render. */
+  await w.db.run(
+    `INSERT INTO daily_tasks (key, copy_key, reward, sort_order, active, updated_at)
+     VALUES ('mystery', 'mystery', 'not_a_rule', 9, 1, $t)`,
+    { t: at },
+  );
+  check('a task with no pricing rule is not shown',
+    !(await tasks.tasksFor(w.db, w.customerId, at)).some((task) => task.key === 'mystery'));
+
+  /* And `active = 0` is why this is a table rather than a constant: turning a
+     prompt off is an operator decision on a live box. */
+  await w.db.run(`UPDATE daily_tasks SET active = 0 WHERE key = 'invite'`);
+  check('a deactivated task is not shown',
+    !(await tasks.tasksFor(w.db, w.customerId, at)).some((task) => task.key === 'invite'));
+
+  await w.db.close();
+}
+
+/**
+ * Logos — the image proxy, and the two things it must refuse.
+ *
+ * `domain/media.ts` exists because the front end makes no third-party runtime
+ * requests and every logo the old database holds is an external address, so the
+ * fetch happens here and the browser asks *us*. Which makes this file an
+ * outbound HTTP client inside the process that holds the ledger, and the checks
+ * that matter are the refusals rather than the happy path:
+ *
+ *  - **A `data:` URL is not proxied.** The browser can already draw one, and
+ *    round-tripping it would be a request to re-serve bytes the response
+ *    already contained. This is the common case — the listing form writes
+ *    `data:` URLs — so getting it wrong would mean fetching every owner's own
+ *    upload through this path.
+ *  - **Nothing but `http(s)` is a source.** A `file:` URL or a bare path would
+ *    make an image proxy an arbitrary-read primitive against the box the server
+ *    runs on, which is the one way this feature stops being a broken picture
+ *    and becomes a hole.
+ *
+ * No check here performs a real fetch. The suite runs offline (`README.md`, on
+ * why the SQLite driver is kept) and a test that reached somebody's CDN would
+ * fail on an aeroplane and pass in CI, which is the least useful shape a check
+ * can have. What is tested is the decision — which URLs are candidates at all,
+ * and what the client is handed.
+ */
+async function mediaRules(): Promise<void> {
+  describe('logos — what may be proxied, and what may not');
+
+  const w = await world();
+
+  /* `logoPath` is the promise the server makes to the browser: a path on our
+     own origin, or a `data:` URL, or nothing. **Never a third-party URL** —
+     that is the property the whole feature turns on. */
+  eq('an external address becomes a path on our own origin',
+    media.logoPath('service', 'gsv_1', 'https://base44.app/logo.png'),
+    '/v1/media/service/gsv_1');
+  eq('…and a data URL is passed through, not proxied',
+    media.logoPath('venue', 'ven_1', 'data:image/png;base64,AAA'),
+    'data:image/png;base64,AAA');
+  eq('nothing stored is nothing sent', media.logoPath('venue', 'ven_1', null), null);
+  eq('…and so is blank', media.logoPath('venue', 'ven_1', '   '), null);
+  /* The hole this closes. A `file:` source would be an arbitrary read of the
+     server's own disk, served to anybody with the URL. */
+  eq('a file: URL is not a logo', media.logoPath('venue', 'ven_1', 'file:///etc/passwd'), null);
+  eq('…nor is a bare path', media.logoPath('venue', 'ven_1', '/etc/passwd'), null);
+  /* The id goes in a URL, so it is encoded. Every id here is `prefix_hex` and
+     could not need it — which is exactly why it would go unnoticed. */
+  eq('the id is encoded', media.logoPath('service', 'a/b', 'https://x/y.png'), '/v1/media/service/a%2Fb');
+
+  check('only the kinds with a source column are servable',
+    media.isEntity('service') && media.isEntity('venue') && !media.isEntity('users'));
+
+  /* An SVG is not on the allow-list, and it is the one absence worth pinning:
+     served from our own origin it is a document with script available to it,
+     which is a different kind of thing from a picture. */
+  check('svg is not an image this server will serve',
+    !(media.ALLOWED as readonly string[]).includes('image/svg+xml'),
+    media.ALLOWED.join(', '));
+
+  /* A row with nothing to serve is a 404 rather than an empty 200 — the client
+     draws its initial on any failure, and an empty image is the one thing that
+     would render as a broken glyph instead. */
+  await w.db.run(
+    `INSERT INTO guidance_services (id, name, country_code, category_key, active, position, created_at, updated_at)
+     VALUES ('gsv_verify_none', 'No Logo', 'PL', 'food', 1, 0, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+  );
+  await throws('a listing with no image is a 404', 'not_found', async () =>
+    await media.assetFor(w.db, 'service', 'gsv_verify_none'),
+  );
+  await w.db.run(
+    `UPDATE guidance_services SET image_url = 'data:image/png;base64,AAA' WHERE id = 'gsv_verify_none'`,
+  );
+  await throws('…and so is one whose image the browser already has', 'not_found', async () =>
+    await media.assetFor(w.db, 'service', 'gsv_verify_none'),
+  );
+  await throws('an unknown kind is a 404, not a 500', 'not_found', async () =>
+    await media.assetFor(w.db, 'passwords', 'x'),
+  );
+
+  /* `forget` is the hand sweep. `media_assets` has no foreign key — that is
+     what lets one table serve venues and services — so nothing cascades into
+     it, exactly as `translations` has to be swept by hand. */
+  await w.db.run(
+    `INSERT INTO media_assets (id, entity, entity_id, source_url, mime, bytes, size_bytes, status, fetched_at)
+     VALUES ('med_venue_sweep', 'venue', 'ven_sweep', 'https://x/y.png', 'image/png', 'AAA', 2, 'ok', '2026-01-01T00:00:00.000Z')`,
+  );
+  await media.forget(w.db, 'venue', 'ven_sweep');
+  eq('a deleted row takes its logo with it',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM media_assets WHERE entity_id = 'ven_sweep'`))?.n,
+    0);
+
+  await w.db.close();
+}
+
+/**
+ * The exchange-rate sync.
+ *
+ * No check here performs the fetch. The suite runs offline — that is the whole
+ * reason the SQLite driver is kept — and a test that read a Google Sheet would
+ * fail on an aeroplane and pass in CI, which is the least useful shape a check
+ * can have. What is tested is everything around the fetch, and that is where
+ * the bugs are:
+ *
+ *  - **`lastSync` tells two facts apart.** Rates written on Monday with a sync
+ *    attempted this morning means the sheet has not changed; rates written on
+ *    Monday with nothing attempted since means the sync has stopped. A screen
+ *    given one timestamp cannot say which, and the second is the one worth
+ *    knowing.
+ *  - **The currency list is the product's, not the sheet's.** A currency
+ *    arriving in the sheet before this product has a symbol, a flag and a
+ *    decimal convention for it would reach a price tag as an unlabelled number.
+ *  - **`MAX(updated_at)`, not the first row's.** A currency the sheet stops
+ *    carrying keeps its old stamp, so the alphabetically-first row's timestamp
+ *    is only the answer while every row was written together.
+ */
+async function rateRules(): Promise<void> {
+  describe('the exchange-rate sync');
+
+  const db = await openDb(':memory:');
+
+  /* Nothing synced yet: two nulls and no status. A screen reading this draws
+     its built-in table and says so, which is a state rather than a fault. */
+  const fresh = await rates.lastSync(db);
+  eq('a database with no rates has no timestamps',
+    [fresh.ratesUpdatedAt, fresh.attemptedAt, fresh.attemptStatus], [null, null, null]);
+
+  const write = async (code: string, rate: number, at: string) =>
+    await db.run(
+      `INSERT INTO exchange_rates (code, base, rate, decimals, updated_at)
+       VALUES ($c, 'EUR', $r, 2, $t)
+         ON CONFLICT (code) DO UPDATE SET rate = excluded.rate, updated_at = excluded.updated_at`,
+      { c: code, r: rate, t: at },
+    );
+
+  await write('AMD', 418.6, '2026-01-01T00:00:00.000Z');
+  await write('PLN', 4.341, '2026-03-01T00:00:00.000Z');
+  eq('the newest stamp is the one reported',
+    (await rates.lastSync(db)).ratesUpdatedAt, '2026-03-01T00:00:00.000Z');
+
+  await db.run(
+    `INSERT INTO platform_config (key, value, updated_at)
+     VALUES ('rates_last_attempt', $v, $t)`,
+    { v: JSON.stringify({ status: 'failed', detail: 'http 503' }), t: '2026-03-09T00:00:00.000Z' },
+  );
+  const after = await rates.lastSync(db);
+  eq('a failed attempt is reported beside the rates it did not replace',
+    [after.ratesUpdatedAt, after.attemptedAt, after.attemptStatus],
+    ['2026-03-01T00:00:00.000Z', '2026-03-09T00:00:00.000Z', 'failed']);
+  /* And the rates are untouched, which is the last-known-good rule: a fetch
+     that fails writes no rate, no zero and no null. */
+  eq('…and the rates themselves did not move',
+    (await db.get<{ rate: number }>(`SELECT rate FROM exchange_rates WHERE code = 'PLN'`))?.rate,
+    4.341);
+
+  /* The anchor has to be quotable, because every cross rate divides by it. */
+  check('the anchor is one of the quoted currencies', rates.QUOTED.EUR === 2);
+  /* Zero decimals where a fractional unit carries no information a reader could
+     act on — 13 583 soum to the euro. Not a property of the rate, which is why
+     it is here and not in the sheet. */
+  eq('the soum is written without decimals', rates.QUOTED.UZS, 0);
+  eq('…and the dram too', rates.QUOTED.AMD, 0);
+  check('nineteen currencies are quoted', Object.keys(rates.QUOTED).length === 19,
+    Object.keys(rates.QUOTED).length);
+
+  await db.close();
+}
+
+/**
+ * Proving an address, and what an unproved one costs.
+ *
+ * The suite's own fixtures are stamped verified, deliberately — they stand in
+ * for customers who signed up and confirmed a code, and every other rule here
+ * is written for that person. So the *unverified* case gets a section of its
+ * own rather than being the accidental default of every check in the file.
+ *
+ * Nothing here sends mail. `ports/email.ts`'s local adapter logs the code and
+ * returns it on `Issued.code`, which is the whole reason that field exists: a
+ * flow nobody can complete offline is a flow nobody will test.
+ */
+async function verificationRules(): Promise<void> {
+  describe('proving an email address');
+
+  /* `world()` rather than a bare `:memory:`, because one of the checks below
+     plays a real round and a round needs a question bank — which arrives
+     through the import rather than through `seedPlatform`. The fixtures it
+     creates are verified; every account here is made fresh by `signUp` and is
+     therefore not. */
+  const w = await world();
+  const db = w.db;
+  const at = '2026-04-01T09:00:00.000Z';
+
+  const alice = await accounts.signUp(db, {
+    email: 'alice@verify.test',
+    password: 'correct horse',
+    name: 'Alice',
+    at,
+    acceptTerms: true,
+  });
+
+  /* A fresh account is unverified. Not a boolean on the row — a stamp — so
+     "when" is answerable and `null` is the state that gates. */
+  eq('a new account has not proved its address', alice.email_verified_at, null);
+  eq('…so the guard says no', await verification.verified(db, alice.id), false);
+  await throws('…and refuses with `not_verified`', 'not_verified', async () =>
+    await verification.assertVerified(db, alice.id),
+  );
+
+  /* An account with **no address** is not held to a rule about an address. A
+     provisional identity (1.1) plays before anybody signs up, and gating it
+     would make the play-first account unable to play. */
+  const guest = await accounts.provisional(db, 'device-verify-1', at);
+  eq('an account with no address has nothing to prove', await verification.verified(db, guest.id), true);
+
+  /* ── the code ── */
+  const first = await verification.issue(db, { userId: alice.id, at });
+  check('a code is sent', first.sent && typeof first.code === 'string' && first.code.length === 6, first.code);
+  eq('…and it expires when the config says', first.expiresAt, plusMinutes(at, CONFIG.auth.codeMinutes));
+
+  /* The cooldown, and it is not an error: asking again too soon is what an
+     honest person does when a message is slow, so it comes back `sent: false`
+     with a time on it. */
+  const tooSoon = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 0.5) });
+  eq('a resend inside the cooldown is refused rather than sent', tooSoon.sent, false);
+  eq('…and says when', tooSoon.nextSendAt, plusMinutes(at, CONFIG.auth.codeCooldownSeconds / 60));
+  eq('…and does not spend a send', tooSoon.sends, 1);
+
+  /* A wrong code costs an attempt and says how many are left. */
+  await throws('a wrong code is refused', 'validation_failed', async () =>
+    await verification.confirm(db, { userId: alice.id, code: '000000', at }),
+  );
+
+  /* Five wrong answers kills **this code**, whoever is asking and however
+     slowly — which is what makes six digits safe when a per-hour rate limit
+     would give a script all day. */
+  for (let i = 1; i < CONFIG.auth.codeAttempts; i += 1) {
+    await throws(`…attempt ${i + 1} too`, 'validation_failed', async () =>
+      await verification.confirm(db, { userId: alice.id, code: '000001', at }),
+    );
+  }
+  await throws('past the cap the code is dead, not merely wrong', 'cap_reached', async () =>
+    await verification.confirm(db, { userId: alice.id, code: first.code!, at }),
+  );
+
+  /* …including the right one, which is the point: the cap is on the code and
+     not on the guess. A new one is the only way forward. */
+  const second = await verification.issue(db, {
+    userId: alice.id,
+    at: plusMinutes(at, 5),
+    force: true,
+  });
+  check('a fresh code is sent', second.sent);
+  await throws('an expired code is refused, and says so', 'expired', async () =>
+    await verification.confirm(db, {
+      userId: alice.id,
+      code: second.code!,
+      at: plusMinutes(at, 5 + CONFIG.auth.codeMinutes + 1),
+    }),
+  );
+
+  const third = await verification.issue(db, {
+    userId: alice.id,
+    at: plusMinutes(at, 60),
+    force: true,
+  });
+  /* Whitespace and dashes are stripped: a code pasted out of an email arrives
+     with them, and refusing the right code for a space is the most annoying
+     possible failure. */
+  const confirmed = await verification.confirm(db, {
+    userId: alice.id,
+    code: ` ${third.code!.slice(0, 3)}-${third.code!.slice(3)} `,
+    at: plusMinutes(at, 61),
+  });
+  eq('the right code proves it', [confirmed.verified, confirmed.granted], [true, true]);
+  eq('…and the guard now says yes', await verification.verified(db, alice.id), true);
+  /* Idempotent, the same shape `completeOnboarding` uses: a retry and a second
+     device both get `granted: false` rather than an error. */
+  eq('a second confirm is not a second grant',
+    (await verification.confirm(db, { userId: alice.id, code: '999999', at: plusMinutes(at, 62) })).granted,
+    false);
+  await throws('…and a code cannot be asked for again', 'conflict', async () =>
+    await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 120) }),
+  );
+  /* The code row is gone — it has done its one job, and a table of spent
+     credentials has no reader. */
+  eq('the code is spent, not kept',
+    (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM email_verifications WHERE user_id = $u`, { u: alice.id }))?.n,
+    0);
+
+  /* ── the send ceiling ── */
+  const bob = await accounts.signUp(db, {
+    email: 'bob@verify.test',
+    password: 'correct horse',
+    name: 'Bob',
+    at,
+    acceptTerms: true,
+  });
+  for (let i = 0; i < CONFIG.auth.codeSendsPerAddress; i += 1) {
+    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, i * 5), force: true });
+  }
+  await throws('the send ceiling bounds using resend as a way to post mail', 'quota_exceeded', async () =>
+    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, 1000) }),
+  );
+
+  /* ── what it gates ── */
+  const carol = await accounts.signUp(db, {
+    email: 'carol@verify.test',
+    password: 'correct horse',
+    name: 'Carol',
+    at,
+    acceptTerms: true,
+  });
+
+  /* A round is **played** and banks nothing, which is the same shape practice
+     already had — and the reason is the same: taking the game away teaches
+     nobody anything about an email. */
+  const round = await games.startSession(db, {
+    userId: carol.id,
+    gameType: 'flags',
+    language: 'en',
+    at,
+  });
+  eq('an unverified round says up front that it will not pay',
+    [round.paid, round.unpaidReason], [false, 'unverified']);
+  const done = await games.finish(db, { sessionId: round.sessionId, userId: carol.id, at });
+  eq('…and it banks nothing', [done.paid, done.unpaidReason, done.score], [false, 'unverified', 0]);
+  eq('…so the balance has not moved', await ledger.balance(db, carol.id), 0);
+  /* And the tank is untouched, because an unpaid round writes `life_spent = 0`
+     — the same column `energyFor` filters on for a practice round. */
+  eq('…and no energy was taken', done.energyLeft, CONFIG.points.dailyEnergy);
+
+  /* The board. An unproved address does not appear on a public list of names. */
+  await db.run(
+    `INSERT INTO points_ledger (id, user_id, delta, reason, status, created_at)
+     VALUES ('led_unverified', $u, 500, 'game_win', 'committed', $t)`,
+    { u: carol.id, t: at },
+  );
+  await db.run(`UPDATE users SET leaderboard_opt_in = 1 WHERE id = $u`, { u: carol.id });
+  const board = await social.board(db, { scope: 'global', at: plusMinutes(at, 60) });
+  check('an unverified account is not listed on the board',
+    !board.rows.some((row) => row.userId === carol.id),
+    board.rows.map((row) => row.name).join(', '));
+  /* And once proved, it is — with the points it already had. Nothing is
+     retro-actively taken away; the gate is about being *listed*. */
+  await db.run(`UPDATE users SET email_verified_at = $t WHERE id = $u`, { t: at, u: carol.id });
+  const after = await social.board(db, { scope: 'global', at: plusMinutes(at, 60) });
+  check('…and is once it has proved the address',
+    after.rows.some((row) => row.userId === carol.id));
+
+  await db.close();
+}
+
+/**
+ * The board's default, and the migration that reaches the rows that predate it.
+ *
+ * Both halves, because either alone leaves the rule half-applied: the column
+ * default decides what a *new* account gets and the migration decides what an
+ * existing one gets, and a product where the answer depends on when you signed
+ * up is the least explicable rule there is.
+ *
+ * The third check is the one that matters most and is the easiest to lose: the
+ * migration is **guarded on the stored version so it runs once**. Run twice and
+ * it re-opts-in everybody who opted out after the first run, which turns a
+ * stated one-off cost into a switch that does not stay switched.
+ */
+async function boardDefaultRules(): Promise<void> {
+  describe('the board: on by default, and off if you say so');
+
+  const db = await openDb(':memory:');
+  const at = '2026-04-02T10:00:00.000Z';
+
+  const fresh = await accounts.signUp(db, {
+    email: 'listed@verify.test',
+    password: 'correct horse',
+    name: 'Listed',
+    at,
+    acceptTerms: true,
+  });
+  eq('a new account is on the board', fresh.leaderboard_opt_in, 1);
+
+  /* And the switch still works, in both directions. The opt-out is the whole
+     reason turning the default on is safe rather than a privacy change. */
+  await social.setLeaderboardOptIn(db, fresh.id, false);
+  eq('…and can be turned off', (await accounts.getUser(db, fresh.id)).leaderboard_opt_in, 0);
+  await social.setLeaderboardOptIn(db, fresh.id, true);
+  eq('…and back on', (await accounts.getUser(db, fresh.id)).leaderboard_opt_in, 1);
+
+  /*
+   * The migration, simulated: a row as an older build left it, and a stored
+   * version to match. `migrate` is then run again — which is what a deploy
+   * does — and has to flip it.
+   */
+  await db.run(
+    `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language,
+                        status, leaderboard_opt_in, created_at, updated_at)
+     VALUES ('usr_legacy_board', 'legacy@verify.test', 'legacy@verify.test', 'Legacy',
+             'email', 'en', 'active', 0, $t, $t)`,
+    { t: at },
+  );
+  await db.run(`UPDATE schema_meta SET value = '5' WHERE key = 'version'`);
+  await migrate(db);
+  eq('the migration puts an existing account on the board',
+    (await accounts.getUser(db, 'usr_legacy_board')).leaderboard_opt_in, 1);
+
+  /*
+   * And once. Somebody opts out *after* the migration; a second deploy must not
+   * undo that. The version stamp is what makes it once, so this is really a
+   * check that the guard reads the stamp rather than the rows.
+   */
+  await social.setLeaderboardOptIn(db, 'usr_legacy_board', false);
+  await migrate(db);
+  eq('…and does not undo an opt-out on the next deploy',
+    (await accounts.getUser(db, 'usr_legacy_board')).leaderboard_opt_in, 0);
+
+  await db.close();
+}
+
+/**
+ * A round in the language the reader picked.
+ *
+ * "The games are in English when I chose Russian" had **two** causes and only
+ * one of them is on this side. The client never told the server which language
+ * was chosen, so `users.language` stayed whatever sign-up wrote and the header
+ * lost to it on every request — `AuthProvider` patches it now.
+ *
+ * What is checked here is the other half: given the right language, the draw
+ * serves it, and where a bank genuinely has no rows in it the fallback goes
+ * **selected → ru → en** rather than straight to English. Most of this
+ * product's Ukrainian readers read Russian, and none of the Russian bank is
+ * harder for them than the English one.
+ */
+async function quizLanguageRules(): Promise<void> {
+  describe('a round in the language that was chosen');
+
+  const w = await world();
+  const at = now();
+
+  const promptsIn = async (language: string, gameType: games.GameType = 'capitals') => {
+    /* The no-repeat window is per player per game, and these draws are about
+       *language* rather than history — so each one gets a fresh account. */
+    const id = newId('usr');
+    await w.db.run(
+      `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language,
+                          status, email_verified_at, created_at, updated_at)
+       VALUES ($i, $e, $e, 'Reader', 'email', $l, 'active', $t, $t, $t)`,
+      { i: id, e: `${language}-${gameType}@verify.test`, l: language, t: at },
+    );
+    const round = await games.startSession(w.db, { userId: id, gameType, language, at });
+    return (round.content as { questions: Array<{ prompt: string; options: string[] }> }).questions;
+  };
+
+  /*
+   * The capitals bank prompts with the **country's own name in that language**,
+   * so the script is the tell: a Russian round asks about `Польша` and an
+   * English one about `Poland`. Checked as a script rather than against a
+   * specific country, because which five countries a draw lands on is random.
+   */
+  const cyrillic = /[\u0400-\u04FF]/;
+  const ru = await promptsIn('ru');
+  check('a Russian reader gets Russian questions',
+    ru.every((q) => cyrillic.test(q.prompt)), ru.map((q) => q.prompt).join(', '));
+  check('…and Russian answers', ru.every((q) => q.options.some((o) => cyrillic.test(o))));
+
+  const en = await promptsIn('en');
+  check('an English reader gets English questions',
+    en.every((q) => !cyrillic.test(q.prompt)), en.map((q) => q.prompt).join(', '));
+
+  const uz = await promptsIn('uz');
+  check('an Uzbek reader gets Uzbek questions — not English',
+    uz.every((q) => !cyrillic.test(q.prompt)) &&
+      JSON.stringify(uz.map((q) => q.prompt).sort()) !== JSON.stringify(en.map((q) => q.prompt).sort()),
+    uz.map((q) => q.prompt).join(', '));
+
+  /*
+   * Ukrainian: the capitals export carries no `uk` rows at all, so this is the
+   * fallback under test. It must land on **Russian** — Cyrillic, and not the
+   * English set.
+   */
+  const bankedUk = await w.db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM quiz_items WHERE bank = 'capitals' AND language = 'uk'`,
+  );
+  eq('the capitals bank has no Ukrainian rows to serve', bankedUk?.n, 0);
+  const uk = await promptsIn('uk');
+  check('…so a Ukrainian reader gets Russian rather than English',
+    uk.every((q) => cyrillic.test(q.prompt)), uk.map((q) => q.prompt).join(', '));
+
+  /*
+   * And English is still the last resort. A language nothing is imported in —
+   * `languageOf` admits `tr` and `az`, which no bank carries — has to produce a
+   * round rather than a 404, because a translation gap is not an absent game.
+   */
+  const tr = await promptsIn('tr');
+  check('a language no bank carries still gets a round', tr.length === CONFIG.games.quizQuestions);
+
+  await w.db.close();
+}
+
+/**
+ * The Word Builder bank — "the database looks empty".
+ *
+ * It was neither empty nor blocked. It held **thirty** words: twenty Polish and
+ * ten English, hand-typed into `WORDS` in `domain/settings.ts` as a
+ * placeholder, while the real lists sat unread in `updates/` — 136 words each,
+ * with their own tiers and hints, which the *front end* has been building from
+ * all along.
+ *
+ * Which is exactly why it looked empty. A round is `wordsPerRound` words,
+ * `buildWords` excludes the last `recentWindow` a player has seen, and ten
+ * minus forty is nothing — so the second round any one account opened came back
+ * short, permanently, for that account.
+ *
+ * Three things are checked and the third is the one that stops this recurring:
+ * the bank is big enough to sustain play, the **tier comes from the export**
+ * rather than from the word's length, and a bank that has been starved is a
+ * reason for boot to re-import.
+ */
+async function wordBankRules(): Promise<void> {
+  describe('the Word Builder bank');
+
+  const w = await world();
+  const at = now();
+  const floor = CONFIG.games.recentWindow + CONFIG.games.wordsPerRound;
+
+  const counts = await w.db.all<{ language: string; n: number }>(
+    `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language ORDER BY language`,
+  );
+  check('the bank has both lists', counts.length >= 2, JSON.stringify(counts));
+  for (const row of counts) {
+    check(`${row.language} has enough words to sustain a round`, row.n > floor,
+      `${row.n} words against a floor of ${floor}`);
+  }
+
+  /*
+   * **The tier is the export's, not the word's length.**
+   *
+   * `seedWords` derives it as 3–4 / 5–7 / 8+ characters, which is a reasonable
+   * guess and is not what the file says: the export tiers `COFFEE` (six
+   * letters) as 2 and `KAWA` (four) as 1 deliberately. The tier is what a word
+   * *pays*, so a guess that disagrees with the authored value pays the wrong
+   * amount for the right answer.
+   */
+  const coffee = await w.db.get<{ tier: number; hint: string | null }>(
+    `SELECT tier, hint FROM word_bank WHERE language = 'en' AND word = 'COFFEE'`,
+  );
+  eq('a word carries the tier the export gave it', coffee?.tier, 2);
+  check('…and its hint', (coffee?.hint ?? '').length > 0, coffee?.hint ?? '(none)');
+
+  /* Every tier is represented in both lists, because the round is a ramp —
+     `WORD_RAMP` asks for two tier-1, two tier-2 and one tier-3, and a list
+     missing a rung makes the ramp quietly shorter. */
+  for (const language of ['en', 'pl']) {
+    const tiers = await w.db.all<{ tier: number; n: number }>(
+      `SELECT tier, COUNT(*) AS n FROM word_bank WHERE language = $l GROUP BY tier ORDER BY tier`,
+      { l: language },
+    );
+    eq(`${language} carries all three tiers`, tiers.map((row) => row.tier), [1, 2, 3]);
+  }
+
+  /*
+   * And the round plays **more than twice**, which is the symptom that was
+   * reported. Ten rounds is fifty words drawn against the window, which the old
+   * thirty-word bank could not have served past the second.
+   */
+  for (let i = 0; i < 10; i += 1) {
+    const round = await games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'word_builder',
+      language: 'en',
+      practice: true,
+      at: plusMinutes(at, i),
+    });
+    const words = (round.content as { words: Array<{ length: number }> }).words;
+    if (words.length !== CONFIG.games.wordsPerRound) {
+      check(`round ${i + 1} is a full round`, false, `${words.length} words`);
+      break;
+    }
+    if (i === 9) check('ten rounds in a row are all full rounds', true, '10 rounds');
+  }
+
+  await w.db.close();
 }
 
 async function bootOrdering(): Promise<void> {
@@ -4742,10 +6248,28 @@ async function person(
   extra: { city?: string; language?: string; username?: string } = {},
 ): Promise<string> {
   const id = newId('usr');
+  /*
+   * **`venue_sharing_default` is 0 for everybody this helper makes**, and that
+   * is a decision about what the dashboard sections are testing rather than a
+   * convenience.
+   *
+   * The column defaults to 1 and `gate.confirm` turns that into a §1.4 grant on
+   * a confirmed visit — which is the feature, and it is tested on its own in
+   * `sharingDefaultRules`. Every section below this helper is about the *gate*:
+   * that a customer is counted without being named, that granting names them,
+   * that withdrawing un-names them, and that a suppressed cohort stays
+   * suppressed. Leaving the default on would have granted all twelve of them
+   * automatically and quietly replaced every one of those checks with a check
+   * that the default works — which is how a rule stops being tested without
+   * anybody deleting a test.
+   *
+   * The sections that want a grant ask for one explicitly, as they always did.
+   */
   await w.db.run(
     `INSERT INTO users (id, email, email_norm, display_name, username, username_norm, auth_provider,
-                        language, city, display_avatar, status, created_at, updated_at)
-     VALUES ($i, $e, $e, $n, $un, $unn, 'email', $l, $c, $av, 'active', $t, $t)`,
+                        language, city, display_avatar, status, venue_sharing_default,
+                        created_at, updated_at)
+     VALUES ($i, $e, $e, $n, $un, $unn, 'email', $l, $c, $av, 'active', 0, $t, $t)`,
     {
       i: id,
       e: `${id}@verify.test`,
@@ -5591,17 +7115,29 @@ async function run(): Promise<void> {
   await reimportRules();
   await importRules();
   sqliteOnlySql();
+  postgresLockdown();
+  await rateLimits();
+  await verificationRules();
+  await boardDefaultRules();
   await bootOrdering();
   await ledgerRules();
   await budgetRules();
   await gateRules();
   await voucherRules();
+  await voucherCaps();
+  await tierAssignment();
   await campaignRules();
   await checkInRules();
   await gameRules();
+  await dailyTaskRules();
+  await quizLanguageRules();
+  await wordBankRules();
+  await mediaRules();
+  await rateRules();
   await scoringRules();
   await dealRules();
   await consentRules();
+  await sharingDefaultRules();
   await analyticsRules();
   await dashboardHelperRules();
   const dashboardWorld = await dashboardFixture();

@@ -1,0 +1,11 @@
+# GENERATED FILE — do not edit. See `scripts/build-sitemap.ts`.
+#
+# No per-route Disallow: this site is hash-routed, robots.txt matches paths, and
+# every private screen is a fragment of "/". A rule naming one would match
+# nothing; a rule naming "/" would de-list the product. Access control is
+# `resolveRoute` and the API's own `auth:` field, not this file.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://new.pay-lez.com/sitemap.xml

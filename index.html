@@ -34,6 +34,35 @@
     />
     <title>Paylez — Play &amp; Earn</title>
     <!--
+      The canonical URL, and the one thing worth knowing about it: **this site
+      is hash-routed**, so every page of it is a fragment of this one document.
+      A crawler strips the fragment before fetching, which means there is
+      exactly one canonical URL to state and stating it here is correct rather
+      than lazy — `#/business` and `#/vouchers` really are the same resource as
+      far as anything outside the browser is concerned.
+
+      The day the routes become real paths (see `scripts/build-sitemap.ts` for
+      what that would take and why the sitemap cannot substitute for it), this
+      tag has to become per-page or it starts telling Google that nine pages are
+      one. It is a single line today because today there is a single page.
+
+      Kept absolute and hard-coded rather than built from `location`: a
+      canonical resolved by the page it appears on can only ever agree with
+      itself, which is the one thing it is not for.
+    -->
+    <link rel="canonical" href="https://new.pay-lez.com/" />
+    <!--
+      What a search result says under the title. Written here rather than in
+      `i18n/` for the reason the title is: this is the document's own metadata,
+      read before any JavaScript runs and therefore before a language has been
+      chosen. English because that is the fallback every dictionary falls back
+      to.
+    -->
+    <meta
+      name="description"
+      content="Paylez turns everyday spending into points. Play quick games to earn, spend at cafés, salons and shops near you, and find your way around a new country."
+    />
+    <!--
       Resolve the theme before the first paint. React sets the same attribute
       from ThemeProvider, but it only runs after the document has already been
       painted once — without this, a light-theme visitor sees a black flash.

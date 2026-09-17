@@ -48,6 +48,7 @@ import { useReach } from './api/reach';
 import { ApiError } from './api/client';
 import type { ApiState } from './api/useApi';
 import { useMonthName, useNum } from './dashboardFormat';
+import { IssuedVouchers } from './dashboardVoucherList';
 import { Vouchers as VouchersScreen } from './dashboardVouchers';
 import { Customers as CustomersScreen } from './dashboardCustomers';
 import { Campaigns as CampaignsScreen } from './dashboardLoyalty';
@@ -214,10 +215,14 @@ function useAction(reload: () => void) {
 /**
  * The screens whose empty state has something to press, and what it opens.
  *
- * Three of the seven, and the button is **absent** on the other four. Where the
+ * Three of the eight, and the button is **absent** on the other five. Where the
  * next step is not a press — the Customers and Scan screens fill in when a QR
  * code goes on a counter, which is a thing that happens in a café — the panel
  * says what to do and offers nothing to click, which is the true shape of it.
+ *
+ * The register is one of the five, and for a third reason: what would fill it
+ * is a customer buying a voucher, and the press that makes that possible is on
+ * the ladder screen before it rather than in a drawer.
  */
 const EMPTY_ACTION: Record<number, 'deal' | 'campaign'> = {
   0: 'deal',
@@ -2151,7 +2156,7 @@ function Scans() {
   }, [reloadToday]);
 
   return (
-    <Screen state={state} index={6} demo={DEMO_TODAY}>
+    <Screen state={state} index={7} demo={DEMO_TODAY}>
       {(today) => (
         <div className="pd-stack">
           <Counter venue={liveVenue} demoVenue={liveVenue === null ? venue : null} onRecorded={recorded} />
@@ -2196,7 +2201,27 @@ function Scans() {
 
 /* ───────────────────────────────────────────────────────────────── index ── */
 
-const SCREENS = [Overview, Deals, CampaignsScreen, VouchersScreen, CustomersScreen, Assistant, Scans];
+/*
+ * Index-aligned with `DASH_SCREENS` in `content.ts`, minus the profile — which
+ * `DashboardPage` renders itself, because it is a form rather than a report.
+ *
+ * `IssuedVouchers` sits where the rail puts it, immediately after the ladder it
+ * is the other half of. A screen inserted here has to be inserted in
+ * `DASH_SCREENS` and in `copy.dashboard.screens` and `copy.dashboard.empty` at
+ * the same index, and any hard-coded read of `empty[n]` past it has to move —
+ * `npm run verify` pins the two array lengths against each other, which catches
+ * the first of those and not the last.
+ */
+const SCREENS = [
+  Overview,
+  Deals,
+  CampaignsScreen,
+  VouchersScreen,
+  IssuedVouchers,
+  CustomersScreen,
+  Assistant,
+  Scans,
+];
 
 /**
  * The screen the rail is pointing at.

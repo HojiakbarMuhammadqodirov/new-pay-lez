@@ -17,7 +17,14 @@ import {
 } from './content';
 import { GLASS_MESH } from './glassMesh';
 import { Icon } from './icons';
-import { LANGUAGE_ORDER, LANGUAGES, useCopy, useLanguage } from './i18n/context';
+import {
+  LANGUAGE_ORDER,
+  LANGUAGES,
+  useCopy,
+  useCurrencyCode,
+  useLanguage,
+} from './i18n/context';
+import { CURRENCIES, CURRENCY_ORDER } from './i18n/currency';
 import { PATHS, type Route } from './router';
 import { useTheme } from './theme/context';
 import { useAuth } from './auth/context';
@@ -114,26 +121,27 @@ function NavItem({
  * most time on was the one screen with no way to change language — the same gap
  * `ThemeToggle` was exported to close.
  */
-export function LanguageMenu() {
-  const copy = useCopy();
-  const [language, setLanguage] = useLanguage();
+/**
+ * A listbox that closes on an outside click and on Escape, and hands focus back.
+ *
+ * Extracted because there are **two** of these menus now — the language and the
+ * currency — and the part that makes them usable is the part nobody writes
+ * twice correctly. Closing unmounts the element holding focus, which drops it
+ * on `<body>`, so the next Tab restarts at the top of the document rather than
+ * carrying on from the header. `AssistantDock` solves this and says so; these
+ * menus did not until the language one was given the same treatment, and a
+ * second hand-rolled copy would have been a second menu without it.
+ *
+ * `restore` is false on the outside-click path: there the visitor has aimed at
+ * some *other* control, and pulling focus back to the trigger would take it off
+ * whatever they just clicked.
+ */
+function useMenu() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const listId = useId();
 
-  /**
-   * Close, and put focus back where it came from.
-   *
-   * Closing unmounts the element that currently holds focus, which drops it on
-   * `<body>` — so the next Tab restarts at the top of the document rather than
-   * carrying on from the header. `AssistantDock` already solves this and says
-   * so; the two menus up here never got the same treatment.
-   *
-   * `restore` is false on the outside-click path, because there the visitor has
-   * just aimed at some *other* control and pulling focus back to the trigger
-   * would take it off whatever they clicked.
-   */
   const close = useCallback((restore: boolean) => {
     setOpen(false);
     if (restore) trigger.current?.focus();
@@ -156,6 +164,14 @@ export function LanguageMenu() {
       document.removeEventListener('keydown', onKey);
     };
   }, [open, close]);
+
+  return { open, setOpen, close, ref, trigger, listId };
+}
+
+export function LanguageMenu() {
+  const copy = useCopy();
+  const [language, setLanguage] = useLanguage();
+  const { open, setOpen, close, ref, trigger, listId } = useMenu();
 
   return (
     <div className="lang" ref={ref}>
@@ -202,6 +218,89 @@ export function LanguageMenu() {
             >
               <span className="lang-code">{LANGUAGES[code].short}</span>
               {LANGUAGES[code].label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Currency switcher — **a separate setting from the language**.
+ *
+ * ## Why it exists
+ *
+ * The language used to pick the currency: `CURRENCIES[language]`, so English
+ * priced in pounds and Polish in złoty. They were never the same question. A
+ * Russian speaker in Kraków is paid in złoty; an English speaker may be in
+ * Tashkent. Tying them meant a visitor who wanted prices in their own money had
+ * to read the site in a language they may not speak — and the other way round.
+ *
+ * The language still supplies the **default** (`CURRENCY_FOR_LANGUAGE`),
+ * because it is the one thing a visitor tells us before they tell us anything
+ * else and a first visit should not have to choose twice. Once the currency has
+ * been chosen it stops following: switching language leaves it alone, which is
+ * the whole point.
+ *
+ * ## Two things it deliberately shares and one it does not
+ *
+ * It reuses `.lang-*` wholesale, because it **is** the same component with
+ * different content — the namespacing rule in `CLAUDE.md` allows exactly that
+ * and forbids only sharing a name by accident. And it reuses
+ * `copy.relocate.rates.names`, which is already the currency's name in the
+ * reader's language, keyed by ISO code: five new strings in five dictionaries
+ * would have been ten copies of a word this site already has.
+ *
+ * What it does not share is the *set*. `CURRENCY_ORDER` is the five this
+ * product prices itself in, not the nineteen `fx.ts` carries for the Relocate
+ * converter — a price tag needs a rounding step and a grouping decision per
+ * currency, and offering a currency with neither would put an unrounded
+ * conversion on a price.
+ */
+export function CurrencyMenu() {
+  const copy = useCopy();
+  const [currency, setCurrency] = useCurrencyCode();
+  const { open, setOpen, close, ref, trigger, listId } = useMenu();
+  const names = copy.relocate.rates.names;
+
+  return (
+    <div className="lang" ref={ref}>
+      <button
+        ref={trigger}
+        type="button"
+        className="lang-trigger"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-controls={open ? listId : undefined}
+        aria-label={copy.currencyMenu}
+        onClick={() => setOpen((value) => !value)}
+      >
+        {/* The symbol and the code, because neither is enough on its own: two
+            of these five share a symbol family and the code is what somebody
+            scanning for "PLN" is looking for. */}
+        <span aria-hidden>{CURRENCIES[currency].symbol}</span>{' '}
+        <span className="sep">·</span> <b>{currency}</b>
+        <Icon name="chevron" size={13} strokeWidth={2.2} className="lang-caret" />
+      </button>
+
+      {open && (
+        <div className="lang-menu" id={listId} role="listbox" aria-label={copy.currencyMenu}>
+          {CURRENCY_ORDER.map((code) => (
+            <button
+              key={code}
+              type="button"
+              role="option"
+              aria-selected={code === currency}
+              className="lang-option"
+              data-on={code === currency ? 'true' : undefined}
+              onClick={() => {
+                setCurrency(code);
+                close(true);
+              }}
+            >
+              <span className="lang-code">{code}</span>
+              {names[code]}
             </button>
           ))}
         </div>
@@ -463,6 +562,10 @@ export function Header({ route }: { route: Route }) {
 
         <div className="header-actions">
           <ThemeToggle />
+          {/* Two menus, because they are two settings: what the page is written
+              in and what its prices are in. They used to be one control doing
+              both — see CurrencyMenu. */}
+          <CurrencyMenu />
           <LanguageMenu />
           {account?.type ? (
             <AccountChip />
@@ -528,6 +631,7 @@ export function Header({ route }: { route: Route }) {
                 sheet rather than inline in the header. */}
             <div className="nav-sheet-controls">
               <ThemeToggle />
+              <CurrencyMenu />
               <LanguageMenu />
             </div>
           </nav>

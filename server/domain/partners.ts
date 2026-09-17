@@ -625,7 +625,21 @@ export async function setVoucherTiers(
   input: {
     venueId: string;
     actorId: string;
-    tiers: Array<{ discountPct: number; pointsCost: number; maxDiscountMinor: number; active?: boolean }>;
+    tiers: Array<{
+      discountPct: number;
+      pointsCost: number;
+      maxDiscountMinor: number;
+      /**
+       * The two count caps. **`undefined` and `null` mean different things** —
+       * absent is "leave whatever is set alone" and null is "remove the cap" —
+       * because this function upserts the whole row, so a field that folded the
+       * two together would silently clear a cap every time somebody edited a
+       * rung's price. The route refuses anything else by name (`capOf`).
+       */
+      redeemLimit?: number | null;
+      perUserLimit?: number | null;
+      active?: boolean;
+    }>;
     at?: Iso;
   },
 ): Promise<void> {
@@ -652,6 +666,20 @@ export async function setVoucherTiers(
           discountPct: tier.discountPct,
         });
       }
+      /*
+       * The caps, written only when they were sent.
+       *
+       * `COALESCE($sent, …)` would be the compact way and it cannot express
+       * this: the sentinel for "not sent" and the value for "no cap" are both
+       * NULL over the wire, so one statement cannot tell them apart. Two
+       * statements can — the upsert leaves the columns alone, and a second
+       * UPDATE writes whichever of the two the body actually carried. A rung
+       * arriving without them therefore keeps the cap it has, which is what
+       * every existing caller of this function sends.
+       *
+       * `issued_count` is never touched here. It is `claimSlot`'s column, and
+       * an edit that reset it would hand the rung its whole cap back.
+       */
       await db.run(
         `INSERT INTO voucher_tiers
            (id, venue_id, discount_pct, points_cost, max_discount_minor, active, created_at, updated_at)
@@ -670,6 +698,20 @@ export async function setVoucherTiers(
           t: at,
         },
       );
+      if (tier.redeemLimit !== undefined) {
+        await db.run(
+          `UPDATE voucher_tiers SET redeem_limit = $l, updated_at = $t
+            WHERE venue_id = $v AND discount_pct = $p`,
+          { l: tier.redeemLimit, t: at, v: input.venueId, p: tier.discountPct },
+        );
+      }
+      if (tier.perUserLimit !== undefined) {
+        await db.run(
+          `UPDATE voucher_tiers SET per_user_limit = $l, updated_at = $t
+            WHERE venue_id = $v AND discount_pct = $p`,
+          { l: tier.perUserLimit, t: at, v: input.venueId, p: tier.discountPct },
+        );
+      }
     }
     await audit.record(db, {
       actorId: input.actorId,

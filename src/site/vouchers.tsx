@@ -1,13 +1,14 @@
 import { useState } from 'react';
 import { VOUCHER_RULE_ICONS, VOUCHER_STEP_ICONS } from './content';
 import { Icon } from './icons';
-import { useCopy, useLanguage, useMoneyParts } from './i18n/context';
-import { CURRENCIES, fill } from './i18n/currency';
+import { useCopy, useGroupSeparator, useMoneyParts } from './i18n/context';
+import { fill } from './i18n/currency';
 import { initialOf } from './adminMetrics';
 import { useApi } from './api/useApi';
 import { cheapestCost, faceValue, GIFT_CARDS_PATH, type GiftCardStock } from './api/wallet';
 import { PATHS } from './router';
 import { useCountUp } from './useReveal';
+import { lineCap } from './heroLines';
 
 /**
  * Vouchers — the fifth page.
@@ -170,7 +171,7 @@ function VouchersHero({ shelf }: { shelf: GiftCardStock[] | null }) {
             {copy.vouchers.hero.eyebrow}
           </span>
 
-          <h1 data-reveal>
+          <h1 data-reveal style={lineCap(copy.vouchers.hero.lines)}>
             {copy.vouchers.hero.lines.map((line, i) => (
               <span className="ln" key={line}>
                 {i === copy.vouchers.hero.lines.length - 1 ? (
@@ -313,7 +314,10 @@ function VouchersCatalogue({
   onRetry: () => void;
 }) {
   const copy = useCopy();
-  const [language] = useLanguage();
+  /* The *reader's* separator, not the card's currency — a Polish card is 50 zl
+     to an operator in London and the digits are still grouped their way. See
+     GROUP_FOR_LANGUAGE. */
+  const separator = useGroupSeparator();
   const catalogue = copy.vouchers.catalogue;
 
   return (
@@ -359,7 +363,7 @@ function VouchersCatalogue({
                     it is the one money rule on this site that runs the other
                     way. */}
                 <span className="gift-where">
-                  {faceValue(card, CURRENCIES[language].group)} · {catalogue.everywhere}
+                  {faceValue(card, separator)} · {catalogue.everywhere}
                 </span>
 
                 <span className="gift-cost">

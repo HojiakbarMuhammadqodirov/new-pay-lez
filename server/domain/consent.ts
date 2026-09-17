@@ -87,6 +87,94 @@ export async function grantSharing(
 }
 
 /**
+ * The grant a visit implies, when the account's standing answer is yes.
+ *
+ * ## Why this exists
+ *
+ * §1.4's grant is per (person, venue) and it used to be written only when a
+ * player found the switch on that venue's sheet and pressed it. Which meant a
+ * venue's identified half was empty of everybody who had never gone looking, so
+ * the dashboard's customer list read "nobody comes here twice" when it meant
+ * "nobody pressed a button". `users.venue_sharing_default` is the account's
+ * standing answer to that question, on by default, and this is where it turns
+ * into a row.
+ *
+ * ## The four rules, and each of them is the difference between this and
+ * removing the consent gate
+ *
+ * - **The gate is unchanged.** `domain/profiles.ts` still joins
+ *   `data_sharing_consents` in SQL, so nothing reads a customer row without a
+ *   grant. What moved is when the grant is written, not whether one is needed.
+ * - **Only at a real relationship.** Called from `gate.confirm` — a confirmed
+ *   scan, at the till, in person. Not at sign-up, which would hand every venue
+ *   in the catalogue a customer who has never been there.
+ * - **A "no" is never asked twice.** The lookup is for *any* row for the pair,
+ *   revoked or not, so a player who withdrew is not re-granted on their next
+ *   visit. That is the one clause that makes the default safe: a default may
+ *   decide what happens before somebody has an opinion, and must never
+ *   overrule the opinion once they have one.
+ * - **Off means nothing is written.** Not a revoked row, not a row with a flag
+ *   — nothing, so the venue's queries find no grant and behave exactly as they
+ *   did before any of this existed.
+ *
+ * Returns whether a row was created, which is what the caller records.
+ */
+export async function grantSharingByDefault(
+  db: Db,
+  input: { userId: string; venueId: string; at?: Iso },
+): Promise<boolean> {
+  const at = input.at ?? now();
+
+  const user = await db.get<{ venue_sharing_default: number }>(
+    `SELECT venue_sharing_default FROM users WHERE id = $u`,
+    { u: input.userId },
+  );
+  if (!user || user.venue_sharing_default !== 1) return false;
+
+  /*
+   * **Any row, revoked or not.** `grantSharing` looks for an un-revoked one —
+   * correct for a deliberate press, which should re-grant after a withdrawal —
+   * and wrong here: this is a default, and a default that reinstated a consent
+   * somebody withdrew would be the worst version of this feature.
+   */
+  const seen = await db.get<{ id: string }>(
+    `SELECT id FROM data_sharing_consents WHERE user_id = $u AND venue_id = $v`,
+    { u: input.userId, v: input.venueId },
+  );
+  if (seen) return false;
+
+  await db.run(
+    `INSERT INTO data_sharing_consents
+       (id, user_id, venue_id, scope, granted_at, policy_version)
+     VALUES ($i, $u, $v, 'venue_profile', $t, $p)`,
+    {
+      i: newId('dsc'),
+      u: input.userId,
+      v: input.venueId,
+      t: at,
+      p: CONFIG.privacy.policyVersion,
+    },
+  );
+  return true;
+}
+
+/**
+ * The account's standing answer to "share my profile with venues I visit".
+ *
+ * Switching it **off does not revoke anything**, and that asymmetry is
+ * deliberate: the grants that exist are about specific venues somebody has been
+ * to, and withdrawing them wholesale is a different decision from declining
+ * future ones. The venue sheet's own switch is how one is withdrawn, and
+ * `GET /v1/me/consents` lists every one that stands.
+ */
+export async function setSharingDefault(db: Db, userId: string, on: boolean): Promise<void> {
+  await db.run(`UPDATE users SET venue_sharing_default = $o WHERE id = $u`, {
+    o: on ? 1 : 0,
+    u: userId,
+  });
+}
+
+/**
  * Withdraw. New identified data stops flowing to that venue immediately.
  *
  * "Immediately" is enforced by the read path — every identified endpoint joins
@@ -255,6 +343,31 @@ export const USER_COLUMNS: readonly UserColumn[] = [
   /* `NOT NULL`, and erasure turns it off rather than keeping a preference on
      behalf of somebody who is no longer on any board. */
   { column: 'leaderboard_opt_in', erase: { write: 'value', value: 0 }, disclose: SHOW },
+  /* When the address was proved.
+     
+     **Cleared**, not kept, and it is worth saying why it is not accounting like
+     the two guards above it. Those stop a bonus being paid twice and mean
+     nothing on their own; this is a *statement about a person* — that somebody
+     controlled a particular address at a particular moment — and the address it
+     is a statement about is `NULL`ed two lines up. A stamp saying "this
+     account's email was confirmed on the 4th" on a row with no email is a fact
+     about nobody, which is exactly what an erasure is for.
+     
+     Disclosed as well, because "when did you decide you had proved who I am"
+     is one of the more reasonable things to ask an access request for. */
+  { column: 'email_verified_at', erase: NULLED, disclose: SHOW },
+  /* The standing answer to "share my profile with venues I visit".
+     
+     **`KEPT` would be wrong and `NULLED` cannot be**, because the column is
+     `NOT NULL` — so erasure writes the *off* value explicitly. An erased row
+     that went on saying "yes, share me" would be a preference held on behalf of
+     somebody who has asked to be forgotten, which is the same mistake
+     `leaderboard_opt_in` two lines down makes the same fix for.
+     
+     It does not revoke the grants that exist: `eraseUser` handles
+     `data_sharing_consents` in its own right, and a preference is not a
+     substitute for the rows it was a preference about. */
+  { column: 'venue_sharing_default', erase: { write: 'value', value: 0 }, disclose: SHOW },
   { column: 'display_avatar', erase: NULLED, disclose: SHOW },
   { column: 'referral_code', erase: NULLED, disclose: SHOW },
   { column: 'trust_tier', erase: KEPT, disclose: SHOW },
