@@ -24924,12 +24924,35 @@ p.lst-soft {
    * 700: a deal's "Free", a status "Live", the sort arrow. All under the 4.5
    * bar, all measured in Chrome.
    *
-   * `#0a775d` is the same hue one step down and clears it on all three grounds
-   * (5.51 / 4.85 / 4.51). The *fill* is untouched, because a fill is a 3:1
-   * question and because the mock's green is the identity of this screen — what
-   * changed is that small text stopped borrowing the fill's number.
+   * `#0a775d` was the same hue one step down and cleared those three (5.51 /
+   * 4.85 / 4.51). The *fill* is untouched, because a fill is a 3:1 question and
+   * because the mock's green is the identity of this screen — what changed is
+   * that small text stopped borrowing the fill's number.
+   *
+   * ── and there is a fourth ground, which is why this is `#08654f` ──
+   *
+   * Three grounds was the wrong count. An accent chip —
+   * `background: rgba(var(--accent-rgb), 0.14)` on `.ps-points` and
+   * `.ps-first[data-on='true']`, the two marks on Scan activity — composites the
+   * accent *into* whatever is behind it, so the ink lands on a ground tinted
+   * toward the ink itself. Over `--surface-2` that is `rgb(199, 218, 213)`, and
+   * `#0a775d` measures **3.79:1** on it: the one place on the light dashboard
+   * still under the bar after the three flat grounds were fixed, and it is the
+   * points figure on a till receipt.
+   *
+   * Lightening the chip cannot fix it and the arithmetic says so plainly. At
+   * alpha 0.05 — a tint too faint to read as a chip at all — the ink still only
+   * reaches 4.24:1, because the flat `--surface-2` under it was itself only
+   * giving 4.51 and any accent laid over it can only take that down. So the
+   * chip keeps its 0.14 and the ink moves.
+   *
+   * `#08654f` is the next step down the same ramp: **4.84:1** on the worst chip
+   * ground and 5.76:1 on the worst flat one, with the hue and the fill both
+   * unchanged. The cost is that every small accented word on this screen is a
+   * shade deeper, which is the same trade the step above already took and is
+   * the direction paper wants.
    */
-  --accent-ink: #0a775d;
+  --accent-ink: #08654f;
   --accent-soft: rgba(var(--accent-rgb), 0.72);
   --on-accent: #ffffff;
 
@@ -27427,6 +27450,44 @@ p.lst-soft {
   color: var(--danger);
 }
 
+/*
+ * The two sanctioned hues clear AA on paper (item 25), and **light only**.
+ *
+ * `CLAUDE.md` licenses exactly two colours outside the palette on this screen --
+ * a warm red for a figure that fell and an amber for a paused campaign -- and
+ * that licence is about the *palette*, not about contrast. Measured on the light
+ * dashboard, `#d9483b` is 4.25:1 on a white card, **3.74:1** on `--surface` and
+ * **3.48:1** on `--surface-2`, and the amber was worse at 3.26:1. Every one of
+ * them is a word or a figure rather than a decoration, so 4.5:1 is the bar.
+ *
+ * `#b53326` is the least dark step of the same hue that clears all three
+ * (4.96:1 at worst). It is the same move the amber already made one block below
+ * -- `CLAUDE.md` says so in its own words, that a highlighter yellow is
+ * illegible on paper and has to come down to where it reads as ink -- applied to
+ * the red, which had been left at the value dark mode uses.
+ *
+ * **Dark keeps the original**, and that is the whole reason these are scoped
+ * rather than edited in place: on near-black the same red is already past 7:1
+ * and taking it darker would move it toward the ground instead of away from it.
+ * Contrast is directional, so a value fixed for one theme is broken for the
+ * other. Item 25's second half is that dark stays untouched.
+ *
+ * The hue is still not the only signal anywhere it appears -- a pill says
+ * "Paused", a button says "Delete", a cell says "never used" -- which is the
+ * condition those exceptions were granted under and is unchanged.
+ */
+:root[data-theme='light'] .pd-danger {
+  --danger: #b53326;
+}
+
+:root[data-theme='light'] .pc-roster {
+  --pc-risk: #b53326;
+}
+
+:root[data-theme='light'] .pl-total[data-gap='true'] b {
+  --pl-gap: #b53326;
+}
+
 .pd-danger:hover:not(:disabled) {
   border-color: var(--danger);
   background: rgba(217, 72, 59, 0.09);
@@ -29850,9 +29911,27 @@ p.lst-soft {
 }
 
 /* On paper the same yellow at the same lightness is a highlighter pen: it has
-   to come down to where it reads as ink on white. */
+   to come down to where it reads as ink on white.
+
+   It had not come down far enough, which is the item 25 correction: `168, 118,
+   34` measures 3.98:1 on a white card and **3.26:1** on `--surface-2`, and what
+   it draws is a pill, a chip and a note rather than a decoration.
+
+   `112, 76, 16` rather than the `138, 95, 24` that clears the *flat* grounds,
+   because this token is its own ground twice over and that is easy to miss: a
+   paused card washes itself in the amber at 0.05, and the pill and chip on it
+   take `rgba(var(--pl-amber-rgb), 0.18)` and `0.14` with `color:
+   rgb(var(--pl-amber-rgb))` on top. So the ink lands on a surface tinted toward
+   the ink, and `138, 95, 24` measures **3.47:1** there while passing every flat
+   ground -- the same fourth-ground mistake the accent chip made, on a different
+   token. Lightening the chips cannot fix it either: at 0.06 alpha, faint enough
+   that the card stops reading as paused, the ink still only reaches 4.03:1.
+   `112, 76, 16` is 4.53:1 against its own chip and 7.69:1 on a white card.
+
+   See the longer note on the warm red above for why both are scoped to light
+   rather than edited in place. */
 :root[data-theme='light'] .pl-card[data-live='false'] {
-  --pl-amber-rgb: 168, 118, 34;
+  --pl-amber-rgb: 112, 76, 16;
 }
 
 /* The hairline `.pd-glass::after` draws along the top edge is the accent, and on

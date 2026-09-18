@@ -863,6 +863,86 @@ async function voucherCaps(): Promise<void> {
 }
 
 /**
+ * The gift-card shelf cannot oversell.
+ *
+ * Found while fixing the voucher caps and it is the same defect on a table that
+ * item did not name: `redeemGiftCard` read `stock`, decided on it, and then ran
+ * a bare `stock = stock - 1`. READ COMMITTED lets two buyers of the last card
+ * both pass, which leaves the shelf at **-1** with two cards issued against one
+ * unit -- and a gift card is a promise made in points, so the one that cannot be
+ * honoured costs somebody the month they spent earning it.
+ *
+ * The numbers here are deliberately absolute rather than relative. A check that
+ * asserted "one fewer than before" would pass on a shelf that went to -1, which
+ * is the whole failure.
+ */
+async function giftCardStock(): Promise<void> {
+  describe('§2.2 gift cards -- the shelf cannot oversell');
+  const w = await world();
+  const at = now();
+
+  const left = async () =>
+    (await w.db.get<{ stock: number }>(`SELECT stock FROM gift_card_stock WHERE id = 'gcs_race'`))!
+      .stock;
+
+  /* One unit, so the cap and the race are the same test. */
+  await w.db.run(
+    `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
+     VALUES ('gcs_race', 'Race Brand', 'R', 500, 'EUR', 10, 1, 0, 1)
+     ON CONFLICT (id) DO NOTHING`,
+  );
+  await ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
+
+  eq('the shelf starts with one', await left(), 1);
+  const first = await vouchers.redeemGiftCard(w.db, {
+    userId: w.customerId,
+    stockId: 'gcs_race',
+    at,
+  });
+  eq('buying it issues a card', typeof first.code, 'string');
+  eq('and takes the unit', await left(), 0);
+
+  await throws('an empty shelf refuses', 'conflict', () =>
+    vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: 'gcs_race', at }),
+  );
+  /* The refusal must not go below zero. This is the assertion the old code
+     failed: it decremented unconditionally, so a refusal that happened to get
+     past the read left the shelf owing a card. */
+  eq('and does not go negative', await left(), 0);
+  eq('and takes no points', await ledger.balance(w.db, w.customerId), 990);
+
+  /*
+   * **The race.** Four buyers for one unit, all started before any finished.
+   *
+   * Like the voucher check above, what this really pins on SQLite is the
+   * *shape* -- that the guard lives inside the write. The arithmetic is what
+   * would survive a move to Postgres: exactly one card, and a shelf at zero
+   * rather than at -3.
+   */
+  await w.db.run(`UPDATE gift_card_stock SET stock = 1 WHERE id = 'gcs_race'`);
+  const rush = await Promise.allSettled(
+    [0, 1, 2, 3].map(() =>
+      vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: 'gcs_race', at }),
+    ),
+  );
+  eq(
+    'four buyers for one unit yield one card',
+    rush.filter((one) => one.status === 'fulfilled').length,
+    1,
+  );
+  eq('and the shelf lands on zero, never below it', await left(), 0);
+  /* And the ledger agrees with the shelf. One card issued is one price paid --
+     the check that would catch a claim succeeding while its spend rolled back. */
+  const issued = await w.db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM gift_cards WHERE stock_id = 'gcs_race'`,
+  );
+  eq('two cards exist for the two units sold', Number(issued!.n), 2);
+  eq('and the points taken are the two prices', await ledger.balance(w.db, w.customerId), 980);
+
+  await w.db.close();
+}
+
+/**
  * Item 23: an operator assigns a tier, and the date on it means something.
  *
  * The whole mechanism is two filters on `activeSubscription` and two columns on
@@ -7125,6 +7205,7 @@ async function run(): Promise<void> {
   await gateRules();
   await voucherRules();
   await voucherCaps();
+  await giftCardStock();
   await tierAssignment();
   await campaignRules();
   await checkInRules();

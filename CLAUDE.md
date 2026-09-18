@@ -1110,8 +1110,18 @@ card saying something false, and worse than saying nothing because a player
 cannot tell until they are five words in. There is no Russian or Uzbek word list
 in `games/data/`: those are hand-delivered exports
 (`updates/paylez-words-*.json`) and inventing one would be inventing vocabulary
-to teach somebody. Adding it is one file and one row — drop `words.ru.json` in,
-widen `WordList`, add `UZ: 'ru'` — and the card comes back on by itself.
+to teach somebody. Adding it is one file and three lines — drop
+**`updates/paylez-words-ru.json`** in, add `ru` to the loop at the foot of
+`scripts/build-question-banks.mjs`, run `npm run banks`, widen `WordList`, add
+`UZ: 'ru'` — and the card comes back on by itself. **The file to hand over is the
+one in `updates/`**, not `words.ru.json`: that is the *generated* name under
+`src/site/games/data/` and both halves of this repo said so, which is an
+hour of looking in the wrong directory for whoever reads it next. Its shape is
+the English export's — `{ "language": "RU", "words": [{ word, hint, tier }] }`,
+tier by length (1 = 3–4 letters, 2 = 5–7, 3 = 8+) — and 136 entries is what
+`en` carries, which is about the floor: a round is five words and `buildWords`
+has no language fallback, so a short list empties for a regular player and stays
+empty.
 
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that

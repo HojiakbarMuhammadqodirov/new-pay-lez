@@ -72,6 +72,7 @@ import { useApi } from './api/useApi';
 import type { Write } from './adminWrite';
 import { Icon } from './icons';
 import { useCopy, useLanguage } from './i18n/context';
+import { day } from './adminFormat';
 import { fill } from './i18n/currency';
 
 /** One plan, as `/v1/admin/config` lists them. */
@@ -84,20 +85,6 @@ export interface TierPlan {
   rank: number;
 }
 
-/**
- * A date, short, in the reader's own locale — the console's one format.
- *
- * The fourth copy of these four options, beside `admin.tsx`, `adminPeople.tsx`
- * and `adminWebsite.tsx`. A shared `adminFormat.ts` is where all four belong
- * and is a move across four files this pass did not make; what matters here is
- * that the format is the same one, not that the function is.
- */
-const day = (iso: string | null, locale: string) =>
-  iso
-    ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: '2-digit' }).format(
-        new Date(iso),
-      )
-    : '—';
 
 /** Today as `YYYY-MM-DD`, in the operator's own clock rather than in UTC. */
 function today(): string {

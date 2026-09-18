@@ -723,12 +723,39 @@ export async function redeemGiftCard(
       priority_only: number;
     }>(`SELECT * FROM gift_card_stock WHERE id = $i`, { i: input.stockId });
     if (!stock || !stock.active) throw new DomainError('not_found', 'gift card not available');
+    /* Not the gate -- see the claim below. This is the cheap refusal for the
+       ordinary case, somebody opening a card that is already sold out, and it
+       answers without taking a row lock. */
     if (stock.stock <= 0) throw new DomainError('conflict', 'out of stock');
     if (stock.priority_only && !input.entitled) {
       throw new DomainError('entitlement_required', 'priority stock is a paid-tier perk', {
         entitlement: 'gift_card_priority',
       });
     }
+
+    /*
+     * Claim the unit before the points move, by the same construction the
+     * voucher caps use one file over: a conditional UPDATE with a row-count
+     * guard, never a SELECT that decides and an UPDATE that trusts it.
+     *
+     * The read above cannot be the gate. READ COMMITTED lets two buyers of the
+     * last card both see `stock: 1` and both pass, and `stock = stock - 1` then
+     * leaves the shelf at **-1** with two cards issued against one unit -- and a
+     * gift card is a promise made in points, which people spend a month
+     * earning, so the one that cannot be honoured is somebody's month. Putting
+     * `stock > 0` in the WHERE makes the decrement itself the decision, and the
+     * row lock it takes is what serialises the pair.
+     *
+     * It claims *before* `ledger.spend` rather than after, which holds that lock
+     * for the length of the spend. That cost is the correct one: two people
+     * buying the last card genuinely have to queue, and a gate that runs after
+     * the money has moved is a gate relying on the rollback to undo it.
+     */
+    const claimed = await db.run(
+      `UPDATE gift_card_stock SET stock = stock - 1 WHERE id = $i AND stock > 0`,
+      { i: stock.id },
+    );
+    if (claimed.changes !== 1) throw new DomainError('conflict', 'out of stock');
 
     await ledger.spend(db, {
       userId: input.userId,
@@ -741,7 +768,6 @@ export async function redeemGiftCard(
 
     const id = newId('gcd');
     const code = voucherCode();
-    await db.run(`UPDATE gift_card_stock SET stock = stock - 1 WHERE id = $i`, { i: stock.id });
     await db.run(
       `INSERT INTO gift_cards (id, user_id, stock_id, points_spent, code, status, issued_at, expires_at)
        VALUES ($i, $u, $s, $p, $c, 'active', $at, $e)`,

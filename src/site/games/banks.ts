@@ -276,9 +276,17 @@ export const quizBankFor = (countryCode: string | undefined): LocalBank =>
  * list in `data/` — those are hand-delivered exports (`updates/paylez-words-*.json`)
  * and inventing one here would be inventing vocabulary to teach somebody.
  *
- * **Adding the missing list is one file and one row.** Drop
- * `data/words.ru.json` in, widen `WordList`, and add `UZ: 'ru'` to
- * `WORD_LIST_FOR_COUNTRY`. The card comes back on by itself.
+ * **Adding the missing list is one file and three lines.** Drop
+ * `updates/paylez-words-ru.json` in — the hand-delivered export, *not*
+ * `data/words.ru.json`, which is what `npm run banks` generates from it and is
+ * the name this comment gave for a while — then add `ru` to the loop at the foot
+ * of `scripts/build-question-banks.mjs`, run the generator, widen `WordList`, and
+ * add `UZ: 'ru'` to `WORD_LIST_FOR_COUNTRY`. The card comes back on by itself.
+ *
+ * The shape is the English export's: `{ language, words: [{ word, hint, tier }] }`,
+ * tier by length. `en` carries 136 and that is near the floor — a round is five
+ * words and `buildWords` has no language fallback, so a short list empties for a
+ * regular player and stays empty.
  */
 export function wordListFor(countryCode: string | undefined): WordList | null {
   const code = (countryCode ?? '').trim().toUpperCase();

@@ -230,7 +230,25 @@ function Rail({
           </span>
         </button>
 
-        <button type="button" className="rail-collapse" onClick={onToggle}>
+        {/*
+          The `title` is what names this button once the rail is collapsed, and it
+          is the same affordance every `.rail-link` above already carries.
+
+          `.rail[data-collapsed='true'] .rail-collapse span` is `display: none`,
+          which does not merely hide the words -- it removes them from the
+          accessibility tree, so the one control that puts the labels *back* was
+          announced as an unnamed "button" to anybody who could not see the
+          chevron. The links were fine; this was the gap.
+
+          `title` rather than `aria-label` so it serves a mouse as well: at
+          4.6rem there is nothing on screen to say which way the chevron goes.
+        */}
+        <button
+          type="button"
+          className="rail-collapse"
+          title={collapsed ? copy.dashboard.expand : copy.dashboard.collapse}
+          onClick={onToggle}
+        >
           <Icon name="chevron" size={16} strokeWidth={2.2} />
           <span>{collapsed ? copy.dashboard.expand : copy.dashboard.collapse}</span>
         </button>

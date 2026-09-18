@@ -82,6 +82,7 @@ import { useWrite } from './adminWrite';
 import { Icon } from './icons';
 import { PATHS } from './router';
 import { useCopy, useLanguage } from './i18n/context';
+import { day } from './adminFormat';
 import { fill } from './i18n/currency';
 
 
@@ -136,13 +137,6 @@ interface Pending {
   submitted_at: string;
 }
 
-/** A date, short, in the reader's own locale. The operator's day, not the row's. */
-const day = (iso: string | null, locale: string) =>
-  iso
-    ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: '2-digit' }).format(
-        new Date(iso),
-      )
-    : '—';
 
 /**
  * One thing a row has asked to have destroyed. The console's own `Doomed`, kept
