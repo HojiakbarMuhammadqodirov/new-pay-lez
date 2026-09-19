@@ -10,6 +10,7 @@
  * function rather than as an effect somewhere — see `resolveRoute`.
  */
 import { createContext, useContext } from 'react';
+import type { Route } from '../router';
 import type { BusinessProfile } from './business';
 import type { PlayerState } from './player';
 import type {
@@ -196,6 +197,72 @@ export interface AuthValue {
    */
   memberSince: string | null;
   /**
+   * When this account proved its email address — `null` when it has not, and
+   * `null` when we do not know yet.
+   *
+   * Session state for the same reason `plan` is: it arrives on the one
+   * `GET /v1/me` the provider already makes, and three screens read it. And
+   * `null` covering both "not proved" and "not asked yet" is the safe
+   * direction here, unlike `plan`: the worst a screen does with it is offer
+   * somebody a verification panel they do not need, where the alternative —
+   * assuming verified while a request is in flight — would let a screen promise
+   * points the server is about to refuse.
+   */
+  emailVerifiedAt: string | null;
+  /**
+   * Whether this account is listed on the weekly board — `null` when unknown.
+   *
+   * On by default now (the column's own default, and a one-off migration for
+   * the rows that predate it), which is what makes having the switch on this
+   * client matter: a default nobody can turn off is not a default, it is a
+   * rule. The server and the phone have always had the opt-out; the web did
+   * not, and turning the default on without it would have been a privacy
+   * change rather than a product one.
+   *
+   * `null` rather than `false` while unknown, for the reason `plan` states: a
+   * switch drawn off for somebody who is actually on it is a switch that lies
+   * about them until the request lands.
+   */
+  leaderboardOptIn: boolean | null;
+  /**
+   * §1.4's standing answer: share my profile with the venues I visit.
+   *
+   * `null` while unknown, for the reason the two fields either side of it are:
+   * a privacy switch drawn *off* for somebody who is actually on it, or on for
+   * somebody who is off, is a switch that lies about them until the request
+   * lands. Disabled-and-unknown is the honest third state.
+   */
+  venueSharingDefault: boolean | null;
+  /**
+   * Where to go once the session change that is in flight has landed — a
+   * **one-shot**, read and cleared by `Site`.
+   *
+   * ## Why this exists rather than a `navigate()` in a handler
+   *
+   * `router.ts` states the rule and the reason: **never call `navigate` from a
+   * handler that also changes the session.** The hash is set synchronously,
+   * React re-renders before `hashchange` fires, and the guard then runs once
+   * against the *new* account and the *old* route and replaces the hash over
+   * the top of you. Its remedy is "derive the destination in `resolveRoute`
+   * instead".
+   *
+   * That works when the destination is a function of the account, and the
+   * welcome screen's second button is the case where it is not: finishing
+   * onboarding resolves to `landing` for everybody, and this one person wants
+   * the profile. `resolveRoute` cannot know that — it is pure in
+   * `(route, account)` and must stay that way, because `npm run verify` walks
+   * the whole matrix checking every resolution is a fixed point.
+   *
+   * So the intent is carried *beside* the session change rather than raced
+   * against it: `finishOnboarding('profile')` sets the stamp and this field in
+   * one commit, and `Site`'s correcting effect prefers it over the guard's
+   * answer for exactly one navigation. Which keeps the whole mechanism in the
+   * one place that is allowed to navigate.
+   */
+  pendingRoute: Route | null;
+  /** Consumed by `Site` the moment it has navigated. */
+  clearPendingRoute: () => void;
+  /**
    * Sign in against the **server**, and bring what it knows about the account
    * home before anybody is shown a page.
    *
@@ -261,7 +328,16 @@ export interface AuthValue {
    * `POST /v1/me/onboarded`, which answers `granted: false` on every call after
    * the first; see `AuthProvider` for which side of the wire this one is.
    */
-  finishOnboarding: (earned: number) => Promise<void>;
+  /**
+   * End the welcome gate, bank the round, and optionally say where to go next.
+   *
+   * `goTo` is the one-shot `pendingRoute` above, and it is a parameter here
+   * rather than a second call because the two have to land in one commit: a
+   * `navigate` beside this call is the exact race `router.ts` warns about, and
+   * a `setPendingRoute` after it would be a second render with the guard
+   * already run.
+   */
+  finishOnboarding: (earned: number, goTo?: Route) => Promise<void>;
   /**
    * Ask the server about this account again and fold the answer in.
    *

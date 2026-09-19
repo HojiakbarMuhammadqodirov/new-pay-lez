@@ -61,6 +61,16 @@ export interface SignUpDraft {
   language: string;
   city?: string;
   countryCode?: string;
+  /**
+   * That the terms and the privacy policy were agreed to.
+   *
+   * **Required, not optional**, and that is the point: the server refuses a
+   * sign-up without it (§1.3), and a field a client could forget is a field a
+   * client will. It used to be neither sent nor asked — two `consent_records`
+   * rows were written unconditionally at account creation, which recorded a
+   * consent nobody had given.
+   */
+  acceptTerms: boolean;
 }
 
 export const signUp = (draft: SignUpDraft) =>
@@ -105,6 +115,27 @@ export interface Me {
     birthDateChangesLeft: number;
     profileCompletedAt: string | null;
     onboardedAt: string | null;
+    /**
+     * When the address was proved, or `null`.
+     *
+     * A stamp rather than a boolean, matching the two above it. `null` is what
+     * gates earning, redeeming and the board — see `domain/verification.ts` on
+     * the server for the full list and for the three things it deliberately
+     * does not gate (signing in, a scan at a till, and anything an existing
+     * account already has).
+     */
+    emailVerifiedAt: string | null;
+    /**
+     * §1.4's standing answer: share my profile with the venues I visit.
+     *
+     * On by default. It is **not** the per-venue grant — that is
+     * `GET /v1/me/consents`'s `dataSharing` list, one row per venue, and it is
+     * what every identified-customer query on the server joins against. This is
+     * the answer that decides whether a grant is written when a visit is
+     * confirmed, so that a venue's customer list is not empty of everybody who
+     * never went looking for a switch.
+     */
+    venueSharingDefault: boolean;
     trustTier: number;
     leaderboardOptIn: boolean;
     referralCode: string;
@@ -119,6 +150,90 @@ export interface Me {
 }
 
 export const me = () => call<Me>('/v1/me');
+
+/* ══════════════════════════════════════════════ proving the address ══ */
+
+export interface CodeSent {
+  /** False when the cooldown refused — not an error; see `nextSendAt`. */
+  sent: boolean;
+  nextSendAt: string;
+  expiresAt: string;
+  sends: number;
+  /**
+   * The code itself, and **only** on a server whose email adapter is local.
+   *
+   * It is here so a local checkout can finish a sign-up: the local adapter
+   * logs the message and delivers nowhere, and a flow nobody can complete is a
+   * flow nobody will test. A deployment that is really sending mail never
+   * populates it — a code in a response is a code an attacker can read without
+   * having the address, which defeats the whole mechanism — so the screen must
+   * treat it as an absent field rather than as the way to get the code.
+   */
+  code?: string;
+}
+
+/**
+ * Send, or resend, the sign-up code.
+ *
+ * Needs a session, which exists from the moment sign-up returns: the account
+ * asking for its own code is authenticated, so there is no address to
+ * enumerate here.
+ */
+export const sendCode = () => call<CodeSent>('/v1/auth/verify/send', { method: 'POST' });
+
+/* ══════════════════════════════════════════════ being on the board ══ */
+
+/**
+ * Show me, or do not.
+ *
+ * Its own call rather than a field on the profile form's patch, and that is an
+ * interaction decision rather than a plumbing one: a visibility switch applies
+ * when you flip it. "Hide me from the board" followed by a Save button is a
+ * switch that has not done anything yet, which is the worst possible state for
+ * the one control on this page that is about other people seeing you.
+ *
+ * It is `PATCH /v1/me` all the same — the server reads `leaderboardOptIn`
+ * there and writes it before the profile, so one endpoint owns the row.
+ */
+export const setLeaderboardOptIn = (on: boolean) =>
+  call<Me>('/v1/me', { method: 'PATCH', body: { leaderboardOptIn: on } });
+
+/**
+ * Tell the server which language was chosen.
+ *
+ * **This is what makes the switcher the choice.** `languageOf` on the server
+ * reads `users.language` first and the request header only as a fallback, which
+ * is the right order — §15 says content follows the language a person *chose*
+ * rather than the one their machine is set to — and this client never told it
+ * about the choice. So `users.language` stayed whatever sign-up wrote, and the
+ * quiz banks, the assistant and the guide were all asked for that one however
+ * many times somebody moved the switcher.
+ *
+ * Its own call rather than part of the profile form, for the same reason the
+ * board's switch is: it applies when you flip it, and there is nothing to save.
+ */
+export const patchLanguage = (language: string) =>
+  call<Me>('/v1/me', { method: 'PATCH', body: { language } });
+
+/**
+ * §1.4's standing answer.
+ *
+ * Switching it off declines *future* grants and withdraws none of the ones that
+ * stand — those are per venue and come off on the venue's own sheet. Same
+ * shape as the board's switch, and the same reason it is its own call: a
+ * privacy preference applies when you flip it.
+ */
+export const setVenueSharingDefault = (on: boolean) =>
+  call<Me>('/v1/me', { method: 'PATCH', body: { venueSharingDefault: on } });
+
+export interface CodeConfirmed {
+  verified: boolean;
+  /** True only for the call that actually proved it. A retry is `false`. */
+  granted: boolean;
+}
+
+export const confirmCode = (code: string) =>
+  call<CodeConfirmed>('/v1/auth/verify', { method: 'POST', body: { code } });
 
 /* ═════════════════════════════════════════════════════════════ the tank ══ */
 

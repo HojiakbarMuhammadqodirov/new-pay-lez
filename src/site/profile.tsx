@@ -29,6 +29,7 @@ import { useCopy, useLanguage } from './i18n/context';
 import { fill } from './i18n/currency';
 import { ENERGY_REGEN_MINUTES, MAX_ENERGY, energyOf, type PlayerState } from './auth/player';
 import { isPicture } from './auth/picture';
+import { setLeaderboardOptIn, setVenueSharingDefault } from './api/consumer';
 import {
   BIRTH_DATE_WRITES,
   OCCUPATIONS,
@@ -514,6 +515,14 @@ export function ProfilePage() {
           )}
 
           {/*
+            The board's opt-out, under both halves of the page rather than
+            inside the form — see `BoardVisibility` for why a visibility switch
+            applies on the flip rather than on a Save.
+          */}
+          <BoardVisibility />
+          <VenueSharing />
+
+          {/*
             The moment it lands, over the page rather than in a rail: on a phone
             the rail is below the form, and the one moment worth noticing would
             happen off-screen. Dismissed by the reader, never by a timer, and
@@ -535,6 +544,147 @@ export function ProfilePage() {
         </div>
       </section>
     </main>
+  );
+}
+
+/* ──────────────────────────────────────────────────── on the board ── */
+
+/**
+ * "Show me on the weekly board" — the opt-out.
+ *
+ * ## Why it is here and why it is not in the form
+ *
+ * The board's opt-in is **on by default** now, and the server is where that is
+ * decided (the column's own default, plus a one-off migration for the rows that
+ * predate it). A default nobody can turn off is not a default, it is a rule —
+ * and the phone and the API have always had this switch while this client did
+ * not, so turning the default on without adding it here would have been a
+ * privacy change dressed as a product one.
+ *
+ * It is **not** part of the profile form, and that is an interaction decision:
+ * a visibility switch applies when you flip it. "Hide me" followed by a Save
+ * button is a switch that has not done anything yet, which is the worst state
+ * for the one control on this page that is about other people seeing you.
+ *
+ * ## The three states it has to draw
+ *
+ * `leaderboardOptIn` is `null` until `GET /v1/me` answers, and a switch drawn
+ * *off* in the meantime is a switch that lies about somebody — so it is
+ * disabled and unknown rather than guessed. That is the same rule `plan` states
+ * for the header badge: falling back to a default would label somebody wrongly
+ * every time a request was slow.
+ *
+ * A failure puts it back. The switch shows the server's answer and nothing
+ * else, so a flip that did not land has to be visibly undone rather than left
+ * looking applied — which is the whole reason this reads `leaderboardOptIn`
+ * from the session after the call instead of holding its own copy.
+ */
+function BoardVisibility() {
+  const copy = useCopy().profile.board;
+  const { leaderboardOptIn, refreshAccount } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const known = leaderboardOptIn !== null;
+
+  return (
+    <div className="prof-switch-row" data-reveal>
+      <div>
+        <b>{copy.title}</b>
+        <span className="field-help">{copy.help}</span>
+        {failed && (
+          <span className="field-error" role="alert">
+            {copy.failed}
+          </span>
+        )}
+      </div>
+      <label className="prof-switch">
+        <input
+          type="checkbox"
+          checked={leaderboardOptIn === true}
+          disabled={busy || !known}
+          onChange={(event) => {
+            const next = event.target.checked;
+            setBusy(true);
+            setFailed(false);
+            setLeaderboardOptIn(next)
+              /* The session is re-read rather than patched locally: one source
+                 of truth, so the board's own screen and this switch cannot
+                 disagree about what the server was told. */
+              .then(() => refreshAccount())
+              .catch(() => setFailed(true))
+              .finally(() => setBusy(false));
+          }}
+        />
+        <i aria-hidden />
+        <span className="visually-hidden">{copy.title}</span>
+      </label>
+    </div>
+  );
+}
+
+/**
+ * "Share my profile with the venues I visit" — §1.4's standing answer.
+ *
+ * ## What it does and, more importantly, what it is not
+ *
+ * §1.4's consent is **per venue**: one row per (person, venue), and every
+ * identified-customer query on the server joins against it in SQL. That gate is
+ * unchanged, and this switch does not bypass it.
+ *
+ * What it decides is *when a grant is written*. It used to require the player
+ * to find a switch on a venue's own sheet and press it, so a venue's customer
+ * list was empty of everybody who had never gone looking — the dashboard read
+ * "nobody comes here twice" when it meant "nobody pressed a button". On, a
+ * grant is written when a visit is **confirmed at the till**; off, none is.
+ *
+ * ## Switching it off does not withdraw anything
+ *
+ * And the help line says so, because it is the one thing about this control
+ * that is not obvious and the one thing somebody could get wrong in the
+ * direction that matters. The grants that stand are about venues somebody has
+ * actually been to; declining future ones is a different decision from
+ * withdrawing the ones they made. Each of those comes off on that venue's own
+ * sheet, where it is next to the thing it is about.
+ */
+function VenueSharing() {
+  const copy = useCopy().profile.sharing;
+  const { venueSharingDefault, refreshAccount } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  const known = venueSharingDefault !== null;
+
+  return (
+    <div className="prof-switch-row" data-reveal>
+      <div>
+        <b>{copy.title}</b>
+        <span className="field-help">{copy.help}</span>
+        {failed && (
+          <span className="field-error" role="alert">
+            {copy.failed}
+          </span>
+        )}
+      </div>
+      <label className="prof-switch">
+        <input
+          type="checkbox"
+          checked={venueSharingDefault === true}
+          disabled={busy || !known}
+          onChange={(event) => {
+            const next = event.target.checked;
+            setBusy(true);
+            setFailed(false);
+            setVenueSharingDefault(next)
+              .then(() => refreshAccount())
+              .catch(() => setFailed(true))
+              .finally(() => setBusy(false));
+          }}
+        />
+        <i aria-hidden />
+        <span className="visually-hidden">{copy.title}</span>
+      </label>
+    </div>
   );
 }
 

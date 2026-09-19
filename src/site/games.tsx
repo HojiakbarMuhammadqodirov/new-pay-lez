@@ -12,6 +12,7 @@ import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
 import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './api/wallet';
+import { DAILY_TASKS_PATH, openTasks, type DailyTasks } from './api/tasks';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -41,7 +42,7 @@ import {
 } from './games/banks';
 import { MemoryMatch } from './games/MemoryMatch';
 import { GamePreview } from './games/preview';
-import { gameName, rulesFor } from './games/rules';
+import { dailyGameIndex, gameName, rulesFor } from './games/rules';
 import {
   buildCapitalRound,
   buildFlagRound,
@@ -52,6 +53,7 @@ import { WordBuilder, type ServerWord } from './games/WordBuilder';
 import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
+import { VerifyEmail } from './VerifyEmail';
 import '../components/GlobeHero/ui/flagFont.css';
 
 /**
@@ -118,7 +120,30 @@ type Game = (typeof GAMES)[number];
  * should: "today's game" changing under somebody who came back for the card
  * they saw yesterday is the same failure as a grid that reshuffles itself.
  */
-const FEATURED = 0;
+/**
+ * The games this player can actually see, and the poster above them.
+ *
+ * Two changes live in this pair and both were a `FEATURED = 0` before:
+ *
+ * - **The poster rotates.** It is the game the *day* lands on
+ *   (`dailyGame` in `games/rules.ts`) — deterministic, with no user id in it, so
+ *   every player opening this screen on the same day sees the same one and
+ *   "today's game" is a thing two people can talk about.
+ * - **The grid lists everything, the poster included.** It used to skip the
+ *   featured row, so one of the seven games was reachable only from the poster
+ *   — and the day the poster started rotating that would have meant a different
+ *   game vanishing from the grid every morning.
+ *
+ * `visibleGames` is the second half of the region rule: the local Word Builder
+ * is not a card everybody has. `wordListFor` returns `null` for a country the
+ * product knows about and has no word list for — Uzbekistan — because that
+ * card's whole promise is "practise the language of the place you moved to",
+ * and handing somebody in Tashkent the Polish list is the card saying something
+ * false. The poster's pool excludes that row for the same reason from the other
+ * side: a poster cannot point at a card that is not on the screen.
+ */
+const visibleGames = (list: WordList | null) =>
+  GAMES.filter((game) => game.id !== 'wordLocal' || list !== null);
 
 /*
  * There was a `TIERS` ladder here — the distinct points prices on the catalogue
@@ -461,6 +486,155 @@ function BatteryLightning() {
  * hand-written initials are thirty-five chances to be wrong in a language
  * nobody on the team reads.
  */
+/* ═══════════════════════════════════════════════════ today's list ══ */
+
+/**
+ * How long one task prompt holds the panel.
+ *
+ * Fifteen seconds is long enough to read a sentence twice and short enough that
+ * a player who glanced away sees a different one when they look back, which is
+ * the whole reason the panel rotates rather than listing four lines: four
+ * nudges stacked up are a wall of small print, and one at a time is a sentence.
+ *
+ * It is paused while the tab is hidden — a rotation nobody is watching is not a
+ * rotation, and coming back to the panel mid-fade is worse than coming back to
+ * where it was left.
+ */
+const TASK_ROTATE_MS = 15_000;
+
+/**
+ * ── today's list ──
+ *
+ * One prompt at a time, out of the tasks this account has **not** already
+ * finished, rotating every `TASK_ROTATE_MS`.
+ *
+ * Four rules, and each of them was a way this panel could have lied:
+ *
+ * - **Every figure is the server's.** `points` is resolved from the rule that
+ *   actually pays it (`domain/tasks.ts`), which matters most for the check-in:
+ *   it is worth a different amount on each rung of the seven-day cycle, so a
+ *   hard-coded "5 points" would be wrong on four days out of seven and wrong in
+ *   the direction that under-sells the streak.
+ * - **`exact: false` says "up to".** A game round pays what the round scored.
+ *   Promising the ceiling is a promise a player can fail to be given.
+ * - **Done means gone.** Every one of these grants is once-only and guarded on
+ *   the server, so a panel still offering fifty points for a profile finished
+ *   last month is advertising a refusal.
+ * - **Three empty states, not one.** "The list is done" is a good day, "we are
+ *   loading" is a moment, and "the server did not answer" is neither — and a
+ *   panel that renders the third as the first congratulates somebody for a
+ *   failed request. `useApi`'s union is what keeps them apart; `openTasks`
+ *   returns `null` for the two that are not an answer.
+ *
+ * The text is sized by `clamp` in `site.css` rather than by a breakpoint, and
+ * the box has no fixed height: the prompts are sentences of different lengths in
+ * five languages — the Ukrainian check-in line is half again the English one —
+ * and a box measured against the shortest of them clips the longest. See the
+ * `══ today's list ══` block there.
+ */
+function TaskList() {
+  const copy = useCopy().games;
+  const tasks = copy.tasks;
+  const { state } = useApi<DailyTasks>(hasToken() ? DAILY_TASKS_PATH : null);
+  const open = openTasks(state);
+  const [at, setAt] = useState(0);
+
+  /*
+   * The rotation.
+   *
+   * Keyed on how many tasks there are rather than on the array, so a reload
+   * that returns the same list does not restart the timer mid-sentence. The
+   * index is taken modulo the length at *read* time as well, because a task
+   * completed between two reads shortens the list under an index that was valid
+   * when it was set.
+   */
+  const count = open?.length ?? 0;
+  useEffect(() => {
+    if (count < 2) return;
+    const tick = () => setAt((i) => i + 1);
+    /* Paused while the tab is hidden: a rotation nobody is watching wastes the
+       prompts, and a player returning to the panel should be where they left
+       it rather than four sentences along. */
+    let timer = window.setInterval(tick, TASK_ROTATE_MS);
+    const visibility = () => {
+      window.clearInterval(timer);
+      if (!document.hidden) timer = window.setInterval(tick, TASK_ROTATE_MS);
+    };
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [count]);
+
+  const task = count > 0 && open ? open[at % count] : null;
+
+  /*
+   * The sentence.
+   *
+   * `{reward}` is one hole rather than two half sentences, because a price and
+   * the words around it do not sit in the same order in five languages — the
+   * repo's own money rule, applied to points. The prompt is looked up by the
+   * server's `copyKey`, and a key the dictionary does not carry renders
+   * *nothing* rather than the key itself: a lookup that falls through to its own
+   * id is the failure the dashboard's findings panel already shipped once.
+   */
+  const line = useMemo(() => {
+    if (!task) return null;
+    const prompts = tasks as unknown as Record<string, string | undefined>;
+    const prompt = prompts[task.copyKey];
+    if (typeof prompt !== 'string') return null;
+    return fill(prompt, {
+      reward: fill(task.exact ? tasks.exact : tasks.upTo, { points: String(task.points) }),
+    });
+  }, [task, tasks]);
+
+  return (
+    <section className="play-tasks" data-reveal>
+      <span className="play-tasks-kicker">
+        <i>
+          <Icon name="check" size={13} strokeWidth={2} />
+        </i>
+        {tasks.title}
+      </span>
+
+      {/*
+        The prompt, keyed on the task so a change is a change of element —
+        which is what lets the CSS animate it in. Animating a text node's
+        content cannot be done; replacing the node can.
+
+        `aria-live="polite"` because the panel changes on a timer with no
+        interaction behind it: a screen reader that is told is told once every
+        fifteen seconds, and one that is not never learns the panel exists.
+      */}
+      <p className="play-tasks-line" aria-live="polite">
+        {line !== null ? (
+          <span key={task?.key ?? at}>{line}</span>
+        ) : state.status === 'loading' ? (
+          <span>{tasks.loading}</span>
+        ) : state.status === 'error' ? (
+          <span>{tasks.offline}</span>
+        ) : (
+          <span>{tasks.allDone}</span>
+        )}
+      </p>
+
+      {/* One pip per open task, so the panel says how many there are without
+          listing them — and so a player can see that it is rotating rather
+          than flickering. Not pressable: there is nothing on the other end of
+          a prompt to open, and a dot that looks like a control and is not is
+          the picture-of-a-control rule. */}
+      {count > 1 && (
+        <div className="play-tasks-pips" aria-hidden>
+          {Array.from({ length: count }, (_, i) => (
+            <i key={i} data-on={i === at % count ? 'true' : undefined} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function StreakRow({ player }: { player: PlayerState }) {
   const copy = useCopy().games;
   const [language] = useLanguage();
@@ -1030,12 +1204,18 @@ function Board() {
    * across everybody, and needs no session: a visitor deciding whether to sign
    * up should be able to see that people are playing.
    *
-   * The scopes are three because one is never the right answer at two different
-   * sizes. `global` always has somebody in it, which is what a product with a
-   * handful of players needs; city and country get more interesting as it
-   * grows. The server says which scope actually answered — asking for a city
-   * board with no city set falls back to global rather than to an empty table,
-   * because an empty table reads as a claim about other people.
+   * **Two scopes, and the server still answers three.** `global` always has
+   * somebody in it, which is what a product with a handful of players needs,
+   * and `country` gets more interesting as it grows. The **city** board is gone
+   * from this screen: at this size it is a table of one, and an empty table
+   * reads as a claim about other people rather than as a ranking. The endpoint
+   * stays — the Flutter app has a city screen and breaking a shipped client to
+   * tidy two tabs is not a trade worth making — so `SCOPES` in `api/board.ts`
+   * is this client's menu rather than the server's capability.
+   *
+   * The server still says which scope actually answered: asking for a country
+   * board with nothing to filter on falls back to global rather than to an
+   * empty table, for the same reason.
    *
    * `you` comes back even when the player is not listed, which is the opt-out
    * case: everybody counts toward the ranking and only the opted-in are shown,
@@ -1047,7 +1227,10 @@ function Board() {
 
   return (
     <div className="play-board">
-      {/* City, country, global — the three the server serves. */}
+      {/* Country and everyone. Two rather than the server's three — see the
+          note above `ready` for why the city board is not offered here and why
+          the endpoint behind it stays. Index-aligned with `copy.boardScopes`,
+          so removing one meant removing it from five dictionaries too. */}
       <div className="play-tabs" role="tablist">
         {SCOPES.map((option, index) => (
           <button
@@ -1209,8 +1392,28 @@ export function GamesApp() {
    * the market this site is a guide to. It never falls back to English: English
    * already has a card, and two cards dealing one list under two names is worse
    * than offering a newcomer the language of the queue in front of them.
+   *
+   * **It can also be `null`**, and that is the region rule: a country the
+   * product has localised for and has no word list for gets no local Word
+   * Builder card at all, rather than the wrong one. Uzbekistan is that case
+   * today. Everything downstream branches on it — the card is filtered out of
+   * the catalogue, the poster's pool never contained it, and the preview and
+   * the round below both need a concrete list, so they take the English one
+   * where there is nothing local to deal.
    */
   const localList = wordListFor(account?.profile?.countryCode);
+
+  /*
+   * The cards this player sees, and which of them the day has promoted.
+   *
+   * `today` is the player's own day (`auth/player.ts`), and `dailyGame` is a
+   * pure function of it — so the rotation turns over at their midnight and two
+   * players in the same day see the same poster. Memoised on the day rather
+   * than computed per render because it is read twice and because a poster that
+   * changed identity mid-render would remount the card.
+   */
+  const cards = useMemo(() => visibleGames(localList), [localList]);
+  const dailyIndex = useMemo(() => dailyGameIndex(todayLocal()), []);
 
   /*
    * Which country's local-knowledge quiz this player gets.
@@ -1935,6 +2138,30 @@ export function GamesApp() {
             player rather than about the balance, and it was a three-character
             number in a row of three three-character numbers.
           */}
+          {/*
+            ── confirm your email ──
+
+            Above the day's list and below the two gauges, which is where the
+            gate actually bites: the balance panel says what the points are
+            worth and the battery says how many rounds are left, and this says
+            that neither of them is going to move until the address is proved.
+            It renders **nothing** for an account that has proved one, or that
+            has no address to prove — see `VerifyEmail.tsx`.
+          */}
+          <VerifyEmail where="play" />
+
+          {/*
+            ── today's list ──
+
+            Above the streak rather than below it, because the two are one
+            reading in sequence: the list says what is worth doing today and the
+            week says what doing it has been worth. It sits under the two
+            panels that decide whether anything is *possible* — the balance and
+            the tank — because a nudge to play a round is noise to somebody
+            whose tank is empty and who has not been told so yet.
+          */}
+          <TaskList />
+
           <StreakRow player={player} />
 
           {/*
@@ -2074,7 +2301,11 @@ export function GamesApp() {
           ) : playing && game && game.kind === 'word' ? (
             <WordBuilder
               words={game.questions}
-              list={game.id === 'wordLocal' ? localList : 'en'}
+              /* `localList` is null only for a country whose local card is not
+                 drawn, so this branch cannot be reached with one — the `?? 'en'`
+                 is the type system's tax on that being true rather than a
+                 fallback anybody should see. */
+              list={game.id === 'wordLocal' ? localList ?? 'en' : 'en'}
               session={session ?? undefined}
               serverWords={(content as { words?: ServerWord[] } | null)?.words}
               onDone={finishScored}
@@ -2140,34 +2371,59 @@ export function GamesApp() {
                   {startError}
                 </p>
               )}
-              {GAMES.map((entry, index) => {
-                const featured = index === FEATURED;
+              {/*
+                The daily game, as the poster — and then again in the grid
+                below, which is the point. It is a *promotion* of a card rather
+                than a card the grid is missing: a rotating poster that also
+                removed a game from the catalogue would make a different game
+                unreachable every morning, and a player looking for the one they
+                played yesterday would find it gone.
+
+                `dailyIndex` can only be -1 if the pool and `GAMES` disagree,
+                which `npm run verify` rules out; the guard is here because a
+                crash on the Play screen is a black page (see `ErrorBoundary`)
+                and a missing poster is not.
+              */}
+              {dailyIndex >= 0 && (
+                <PlayCard
+                  key={`daily-${GAMES[dailyIndex].id}`}
+                  entry={GAMES[dailyIndex]}
+                  index={0}
+                  name={gameName(dailyIndex, games, localList ?? 'en', localCountry)}
+                  list={localList ?? 'en'}
+                  country={localCountry}
+                  rules={rulesFor(GAMES[dailyIndex], games)}
+                  featured
+                  badge={games.featured}
+                  label={loading ? games.loading : energy <= 0 ? games.practice : games.start}
+                  disabled={loading}
+                  onStart={() => start(GAMES[dailyIndex].id)}
+                />
+              )}
+
+              {cards.map((entry) => {
+                /* The index in `GAMES`, not in `cards`: `gameName` and
+                   `copy.games.names` are index-aligned with the table, so a
+                   filtered list's own position would rename every card after
+                   the one that was removed. That is exactly the bug the
+                   region rule would have introduced. */
+                const index = GAMES.indexOf(entry);
                 return (
                   <PlayCard
                     key={entry.id}
                     entry={entry}
                     index={index}
-                    name={gameName(index, games, localList, localCountry)}
-                    list={localList}
+                    name={gameName(index, games, localList ?? 'en', localCountry)}
+                    list={localList ?? 'en'}
                     country={localCountry}
                     rules={rulesFor(entry, games)}
-                    featured={featured}
-                    badge={featured ? games.featured : undefined}
                     /* An empty tank changes the *label*, not the press. The
                        card that said "Out of energy" and refused to be pressed
                        was explaining itself in the one place with no room to —
                        the gauge two panels up says the state, the countdown and
                        what practice means — so all this has to say is what
                        happens next. */
-                    label={
-                      loading
-                        ? games.loading
-                        : energy <= 0
-                          ? games.practice
-                          : featured
-                            ? games.start
-                            : games.play
-                    }
+                    label={loading ? games.loading : energy <= 0 ? games.practice : games.play}
                     disabled={loading}
                     onStart={() => start(entry.id)}
                   />

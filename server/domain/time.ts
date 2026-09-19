@@ -45,6 +45,16 @@ export function plusMonths(at: Iso, months: number): Iso {
 export const minutesBetween = (from: Iso, to: Iso): number =>
   (new Date(to).getTime() - new Date(from).getTime()) / 60_000;
 
+/**
+ * Seconds, for the one rule measured in them: how long a game round ran.
+ *
+ * Its own function rather than `minutesBetween × 60` at the call site, because
+ * the multiplication is exactly the sort of thing that gets written the wrong
+ * way round once.
+ */
+export const secondsBetween = (from: Iso, to: Iso): number =>
+  (new Date(to).getTime() - new Date(from).getTime()) / 1000;
+
 export const daysBetween = (from: Iso, to: Iso): number => minutesBetween(from, to) / 1440;
 
 export const isBefore = (a: Iso, b: Iso): boolean => new Date(a).getTime() < new Date(b).getTime();

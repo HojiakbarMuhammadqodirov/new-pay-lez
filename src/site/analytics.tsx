@@ -9,6 +9,7 @@ import { useAuth } from './auth/context';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { PATHS } from './router';
+import { lineCap } from './heroLines';
 
 /**
  * Partner Analytics — the third page.
@@ -74,7 +75,7 @@ function AnalyticsHero() {
             {copy.analytics.hero.eyebrow}
           </span>
 
-          <h1 data-reveal>
+          <h1 data-reveal style={lineCap(copy.analytics.hero.lines)}>
             {copy.analytics.hero.lines.map((line, i) => (
               <span className="ln" key={line}>
                 {i === 1 ? <span className="accent-text">{line}</span> : line}

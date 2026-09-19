@@ -83,14 +83,15 @@ export function parseCsv(text: string): string[][] {
   return rows;
 }
 
-/** Read a CSV file as objects keyed by its header row. */
-export function readCsv(path: string): CsvRow[] {
-  let text: string;
-  try {
-    text = readFileSync(path, 'utf8');
-  } catch {
-    return [];
-  }
+/**
+ * CSV **text** as objects keyed by its header row.
+ *
+ * Split out of `readCsv` below because not every CSV this server reads is a
+ * file any more: `domain/rates.ts` fetches the exchange-rate sheet over HTTP and
+ * needs exactly this, and a second copy of the header-mapping loop is the sort
+ * of duplicate that stays correct until one of the two learns about a BOM.
+ */
+export function rowsOf(text: string): CsvRow[] {
   const rows = parseCsv(text);
   if (rows.length === 0) return [];
   const header = rows[0].map((h) => h.trim());
@@ -101,6 +102,17 @@ export function readCsv(path: string): CsvRow[] {
     });
     return out;
   });
+}
+
+/** Read a CSV file as objects keyed by its header row. */
+export function readCsv(path: string): CsvRow[] {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch {
+    return [];
+  }
+  return rowsOf(text);
 }
 
 /**

@@ -558,6 +558,10 @@ async function setup(s: State, t0: number): Promise<void> {
     city: 'Krakow',
     partner: true,
     at: iso(t0),
+    /* The demo's own accounts agree, like any other sign-up: `signUp` refuses
+       without it, and a seed that bypassed the guard would be the one place in
+       the product where a consent row is written for nobody. */
+    acceptTerms: true,
   });
   s.ownerId = owner.id;
 
@@ -688,6 +692,10 @@ async function signup(s: State, c: Customer): Promise<void> {
     language: c.language,
     city: 'Krakow',
     at: iso(c.signupAt),
+    /* The demo's own accounts agree, like any other sign-up: `signUp` refuses
+       without it, and a seed that bypassed the guard would be the one place in
+       the product where a consent row is written for nobody. */
+    acceptTerms: true,
   });
   c.userId = user.id;
   await accounts.completeOnboarding(s.db, user.id, iso(c.signupAt + 4 * MINUTE_MS));

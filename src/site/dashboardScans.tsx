@@ -188,7 +188,7 @@ export function ScanLog({
       ) : shownTotal === 0 ? (
         <div className="ps-empty">
           <p className="pd-fine">{segment === 'all' ? copy.emptyWindow : copy.emptySegment}</p>
-          {segment === 'all' && <p className="pd-fine">{dashboard.empty[6].body}</p>}
+          {segment === 'all' && <p className="pd-fine">{dashboard.empty[7].body}</p>}
         </div>
       ) : (
         <>

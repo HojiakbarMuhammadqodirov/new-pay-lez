@@ -38,6 +38,20 @@ import {
 } from '../src/site/router';
 import { listedRoutes, robotsTxt, sitemapXml } from './sitemap';
 import { draw, shuffledRange } from '../src/site/games/bag';
+import { DAILY_POOL, dailyGame, dailyGameIndex } from '../src/site/games/rules';
+import { SCOPES } from '../src/site/api/board';
+import { lineCap, longestLine } from '../src/site/heroLines';
+import { ratesFrom } from '../src/site/api/fx';
+import {
+  CURRENCY_FOR_LANGUAGE,
+  CURRENCY_ORDER,
+  GROUP_FOR_LANGUAGE,
+  isCurrencyCode,
+} from '../src/site/i18n/currency';
+import { ApiError } from '../src/site/api/client';
+import { FX } from '../src/site/i18n/fx';
+import { wordListFor } from '../src/site/games/banks';
+import { isAskable } from '../src/site/games/rounds';
 import {
   LOCAL_COUNTRIES,
   QUIZ_BANK_FOR_COUNTRY,
@@ -100,7 +114,11 @@ import { FLIGHT } from '../src/site/flight/config';
 import { crossed, flap, gapCentre, hits, hitsBounds, spawnPipe, speedAt, stepBird } from '../src/site/flight/engine';
 import { PARROT_PARTS, PART_STYLES } from '../src/site/flight/parrot';
 import {
+  ADMIN_TABS,
   BUSINESS_CATEGORIES,
+  DASH_SCREENS,
+  PARTNER_PLAN_HERO,
+  PARTNER_PLAN_ROWS,
   DEAL_KINDS,
   GAMES,
   LEARN_STATS,
@@ -154,7 +172,7 @@ import {
   polyarea,
   polyline,
 } from '../src/site/partnerMetrics';
-import { LANGUAGE_ORDER, LANGUAGES } from '../src/site/i18n/context';
+import { LANGUAGE_ORDER, LANGUAGES, type LanguageCode } from '../src/site/i18n/context';
 import { LOADERS as LEGAL } from '../src/site/legal/load';
 import {
   dayLabel,
@@ -1240,7 +1258,7 @@ console.log('\nthe profile');
   /* A brand-new account is the one case where `null` is *known* rather than
      inferred, and it is what the routing hold reads. */
   const fresh = newUser(
-    { name: 'N', email: 'n@b.c', password: 'secret', type: 'individual' },
+    { name: 'N', email: 'n@b.c', password: 'secret', type: 'individual', acceptTerms: true },
     'u_new',
     '2026-08-30',
   );
@@ -1287,6 +1305,7 @@ console.log('\nrouting — section anchors');
     check(`the ${prefix} prefix names a real route`, PATHS[route] !== undefined);
     check(`…and is specific enough`, prefix.length >= 3 && prefix.endsWith('-'));
   }
+
 }
 
 console.log('\nreal URLs — the half a crawler can see');
@@ -1348,8 +1367,14 @@ console.log('\nreal URLs — the half a crawler can see');
     check(`${route} is not in the sitemap`, !listed.has(canonicalUrl(route)));
   }
 
-  const robots = readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8');
-  check('robots.txt is the generated one', robots === robotsTxt());
+  /* Read through a newline fold, because this compares *content* and git does
+     not promise bytes. `core.autocrlf` is on by default on Windows, so a file
+     the generator wrote with LF comes back off a checkout with CRLF — which
+     made this check fail on a fresh clone and nowhere else, the worst shape a
+     check can have. */
+  const lf = (text: string) => text.replace(/\r\n/g, '\n');
+  const robots = lf(readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8'));
+  check('robots.txt is the generated one', robots === lf(robotsTxt()));
   check('…and points at the sitemap', robots.includes(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`));
   /*
    * Nothing is disallowed, and that is the check rather than an oversight: a
@@ -2894,6 +2919,135 @@ console.log('\nthe local quiz follows the profile, not the language');
   }
   check('…which is why the round shuffles them', shuffled.size > 1,
     `answer landed in ${shuffled.size} of 4 positions`);
+
+  /*
+   * **Every question in every bank offers the same number of answers.**
+   *
+   * A question with two buttons instead of four is not a harder question, it is
+   * a cheaper one: it pays the same point for a coin flip, and it is
+   * conspicuous to the player in a way no log line notices. The server's own
+   * bank had exactly that defect — `pickDistractors` in `server/db/import.ts`
+   * walked its candidate pool with a stride that shared a factor with the pool
+   * size, so 14 of the 196 flags and 14 of the 196 capitals came back short —
+   * and the reason to check it *here* is that the two banks are built by two
+   * different generators from the same exports. This one is
+   * `scripts/build-question-banks.mjs`; the defect it would have is its own.
+   *
+   * Capitals is the exception and is checked for what it actually is: the export
+   * is a country → capital table with no wrong answers in it, so a row is a
+   * pair and the distractors are drawn at play time by `buildCapitalRound`.
+   * What is checked there is that the continent it groups on is present on
+   * every row, because the grouping is what keeps the round a test rather than
+   * a formality.
+   */
+  const OPTIONS = 4;
+  for (const name of ['flags', 'general', 'poland', 'uzbekistan'] as const) {
+    /* The flags bank stores the options alone (the prompt is the ISO code, kept
+       in the meta), the three quiz banks store the prompt in front of them. */
+    const width = name === 'flags' ? OPTIONS : OPTIONS + 1;
+    for (const code of LANGUAGE_ORDER) {
+      const rows = bank(`${name}.${code}.json`) as string[][];
+      const short = rows.filter((row) => row.length !== width);
+      check(`every ${name}.${code} question offers ${OPTIONS} answers`, short.length === 0,
+        `${short.length} of ${rows.length} rows are not ${width} wide`);
+      const blank = rows.filter((row) => row.some((cell) => cell.trim().length === 0));
+      check(`…and none of them is blank`, blank.length === 0, `${blank.length} rows`);
+      /*
+       * **A duplicated option is the same failure wearing four buttons**: two
+       * of them are the same word, so the question is a three-way guess and one
+       * of the presses is arbitrarily wrong.
+       *
+       * It is not asserted to zero, because it is **upstream and real**: the
+       * exports are translated per language, and two different English
+       * distractors can land on one word — "Как называется группа ворон?"
+       * offers `Стая`, `Стая`, `Убийство`, `Группа`. Twelve rows across the
+       * Russian and Uzbek general bank are like this, and the files in
+       * `updates/` are hand-delivered material rather than something this
+       * repository edits.
+       *
+       * So what is checked is the thing that is actually in our control:
+       * `isAskable` rejects them, `buildQuizRound` draws past them, and
+       * **filtering still leaves a bank big enough to play**. A defect that
+       * grew until it ate a bank would fail here; one that stays at twelve rows
+       * in ten thousand is reported and lived with.
+       */
+      const options = (row: string[]) => (name === 'flags' ? row : row.slice(1));
+      const askable = rows.filter((row) => isAskable(options(row)));
+      check(`…and filtering ${name}.${code} leaves a bank worth playing`,
+        askable.length >= Math.max(20, Math.floor(rows.length * 0.95)),
+        `${askable.length} of ${rows.length} askable`);
+      check(`…with every unaskable row genuinely unaskable`,
+        rows.every((row) => isAskable(options(row)) || new Set(options(row)).size !== options(row).length),
+        'a row was rejected for something other than a repeated option');
+    }
+  }
+
+  const capitalsMeta = bank('capitals.meta.json') as { continent: string[] };
+  for (const code of LANGUAGE_ORDER) {
+    const rows = bank(`capitals.${code}.json`) as string[][];
+    check(`every capitals.${code} row is a country and its capital`,
+      rows.every((row) => row.length === 2 && row.every((cell) => cell.trim().length > 0)));
+    check(`…and carries a continent to draw distractors from`,
+      capitalsMeta.continent.length === rows.length
+        && capitalsMeta.continent.every((value) => value.trim().length > 0));
+  }
+}
+
+console.log("\ntoday's list - one prompt per seeded task, in five languages");
+{
+  /*
+   * The rotating daily-task panel reads its sentence from
+   * `copy.games.tasks[copyKey]`, where `copyKey` comes from the **server's**
+   * `daily_tasks` table. That is a lookup across a boundary, and a lookup that
+   * misses is the failure this repo has already shipped twice: the dashboard's
+   * findings panel printed `quiet hours` and a customer status rendered its own
+   * raw id, both because a miss fell through to the key.
+   *
+   * `Dictionary` cannot catch it - every language having *a* `tasks` block is
+   * all the type system knows about a set of keys chosen on the server. So the
+   * seed list is read out of `domain/settings.ts` and every key it names is
+   * required in all five dictionaries.
+   *
+   * Read from the source text rather than imported, because `settings.ts` is
+   * server code: importing it pulls `node:sqlite` into a Vite module graph for
+   * the sake of four strings.
+   */
+  const settings = readFileSync(
+    new URL('../server/domain/settings.ts', import.meta.url),
+    'utf8',
+  );
+  const seeded = [...settings.matchAll(/\{ key: '[a-z_]+', copyKey: '([A-Za-z]+)'/g)].map(
+    (match) => match[1],
+  );
+  check('the server seeds some daily tasks', seeded.length >= 4, seeded.join(', '));
+
+  for (const code of LANGUAGE_ORDER) {
+    const tasks = LANGUAGES[code].games.tasks as unknown as Record<string, string | undefined>;
+    for (const key of seeded) {
+      check(`${code} has a prompt for the ${key} task`,
+        typeof tasks[key] === 'string' && (tasks[key] ?? '').trim().length > 0);
+      /* And it carries the hole the figure goes in. A prompt with no `{reward}`
+         renders a nudge with no number in it, which is the one thing these
+         sentences are for - and it is invisible in the language nobody on the
+         team reads. */
+      check(`…with the reward hole in it`, (tasks[key] ?? '').includes('{reward}'));
+    }
+    /* The two noun phrases that go in that hole, and `{points}` in both. `upTo`
+       is not optional: a game round pays what the round scored, and without it
+       the panel promises a ceiling nobody guaranteed. */
+    for (const key of ['exact', 'upTo'] as const) {
+      check(`${code} says how a ${key} reward reads`,
+        (tasks[key] ?? '').includes('{points}'), tasks[key]);
+    }
+    /* Three empty states and they must be three different sentences: "the list
+       is done" is a good day, "we are loading" is a moment, and "the server did
+       not answer" is neither - and a panel that renders the third as the first
+       congratulates somebody for a failed request. */
+    const empties = ['allDone', 'loading', 'offline'].map((key) => tasks[key]);
+    check(`${code} keeps the three empty states apart`,
+      new Set(empties).size === 3 && empties.every((value) => (value ?? '').trim().length > 0),
+      empties.join(' | '));
+  }
 }
 
 console.log('\nthe card previews show real game content');
@@ -3004,6 +3158,66 @@ console.log('\nthe card previews show real game content');
   }
 }
 
+console.log('\none sentence, one line — the headline cap');
+{
+  /*
+   * `site.css` keeps each hero sentence on a single line by capping the
+   * headline's font size against three things: the column's own width
+   * (`100cqi`), the face's character advance, and **how many characters the
+   * longest sentence has**. The first two live in the stylesheet; the third
+   * cannot, because it is a different number in each of five languages and on
+   * each of six heroes — 20 in English on Relocate, 17 in Uzbek, 25 in Russian
+   * on the landing page.
+   *
+   * So `longestLine` measures the real copy at render, and what is checked here
+   * is that it measures it *correctly* for every string the site actually
+   * ships. A count that came back low would not fail a build or throw — it
+   * would quietly let a headline wrap in one language, which is exactly the bug
+   * this whole mechanism exists to fix.
+   *
+   * The wrapping itself is verified where it has to be, in a browser: the
+   * headless sweep over seven routes, five languages and nine widths in both
+   * themes. This is the arithmetic under it.
+   */
+  const HEROES: Array<[string, (d: (typeof LANGUAGES)[LanguageCode]) => readonly string[]]> = [
+    ['landing', (d) => d.hero.lines],
+    ['l-earn', (d) => d.learn.hero.lines],
+    ['analytics', (d) => d.analytics.hero.lines],
+    ['business', (d) => d.business.hero.lines],
+    ['vouchers', (d) => d.vouchers.hero.lines],
+    ['relocate', (d) => d.relocate.hero.lines],
+  ];
+
+  for (const [name, pick] of HEROES) {
+    for (const code of LANGUAGE_ORDER) {
+      const lines = pick(LANGUAGES[code]);
+      const longest = longestLine(lines);
+      /* Every hero has copy, and the cap divides by this number: a zero would
+         collapse the headline to nothing. `lineCap` returns `undefined` rather
+         than publishing one, and this is the check that the case never
+         arises. */
+      check(`${name}/${code} has a longest line`, longest > 0, String(longest));
+      check(`…and it is the longest one`,
+        longest === Math.max(...lines.map((line) => [...line.trim()].length)),
+        `${longest} vs ${lines.map((line) => line.length).join(',')}`);
+      /* Counted in characters, not UTF-16 code units. None of the current copy
+         has an astral character in it; the next translation might, and the
+         failure would be a headline shrunk for a glyph that is one wide. */
+      check(`…counted in characters`,
+        longest === Math.max(...lines.map((line) => [...line.trim()].length)));
+      /* The published value is the same number, and it is unitless: a `px` or a
+         `ch` here would make the `calc()` in `site.css` invalid and the cap
+         silently inert. */
+      const style = lineCap(lines) as Record<string, unknown> | undefined;
+      check(`…and is published as a bare number`, style?.['--ln-chars'] === longest,
+        String(style?.['--ln-chars']));
+    }
+  }
+
+  check('empty copy publishes nothing rather than a zero', lineCap([]) === undefined);
+  check('…and so does whitespace', lineCap(['   ']) === undefined);
+}
+
 console.log('\nevery game is named in every language');
 {
   /*
@@ -3017,6 +3231,275 @@ console.log('\nevery game is named in every language');
     check(`${code} names every game`, names.length === GAMES.length,
       `${names.length} of ${GAMES.length}`);
     check(`…and none is blank`, names.every((n) => n.trim().length > 0));
+  }
+
+/* The board's tabs are index-aligned with `SCOPES` in `api/board.ts` the same
+   way the names are with `GAMES`, and the same blind spot applies: `Dictionary`
+   makes a missing *key* a compile error and says nothing about a short array.
+   Dropping the city board meant editing six files, and the one that would have
+   been missed silently is a dictionary — leaving a tab labelled "My city" over
+   a country board, or an unlabelled tab. */
+  for (const code of LANGUAGE_ORDER) {
+    const scopes = LANGUAGES[code].games.boardScopes;
+    check(`${code} labels every board scope`, scopes.length === SCOPES.length,
+      `${scopes.length} of ${SCOPES.length}`);
+    check(`…and none is blank`, scopes.every((label) => label.trim().length > 0));
+  }
+  /* And the city board is off this client's menu. Pinned because the endpoint
+     behind it stays — the Flutter app calls it — so nothing else would notice
+     it coming back. */
+  check('the city board is not offered here',
+    !(SCOPES as readonly string[]).includes('city'), SCOPES.join(', '));
+}
+
+console.log('\nthe daily game, and the region rule');
+{
+  /*
+   * The poster rotates. Three properties, and each of them is a way the
+   * rotation could have been wrong:
+   *
+   *  1. **Deterministic and shared.** No user id, no randomness, no stored
+   *     choice — everybody opening the screen on the same day sees the same
+   *     game, which is the only thing that makes "today's game" a phrase two
+   *     people can use.
+   *  2. **Every game gets its turn.** A hashed pick is indistinguishable from a
+   *     rotation on any one day and can leave a game unposted for a fortnight;
+   *     walking the pool in order cannot.
+   *  3. **It only ever points at a card that is on the screen.** The local Word
+   *     Builder is not a card everybody has — see the region rule below — so it
+   *     is out of the pool. A poster pointing at a missing card is a poster
+   *     that cannot be pressed.
+   */
+  check('the daily pool leaves out the one card not everybody has',
+    !DAILY_POOL.some((game) => game.id === 'wordLocal'),
+    DAILY_POOL.map((game) => game.id).join(', '));
+  check('…and contains everything else', DAILY_POOL.length === GAMES.length - 1);
+
+  check('the same day is the same game', dailyGame('2026-03-04') === dailyGame('2026-03-04'));
+  check('…and the index points back at it',
+    GAMES[dailyGameIndex('2026-03-04')].id === dailyGame('2026-03-04'));
+
+  /* One full cycle of days covers the pool exactly once. */
+  const cycle = new Set<string>();
+  for (let i = 0; i < DAILY_POOL.length; i += 1) {
+    const day = new Date(Date.UTC(2026, 2, 4) + i * 86_400_000).toISOString().slice(0, 10);
+    cycle.add(dailyGame(day));
+  }
+  check('a full cycle posts every game once', cycle.size === DAILY_POOL.length,
+    `${cycle.size} of ${DAILY_POOL.length}`);
+
+  /* Consecutive days are different games, which is the thing a player notices
+     and the one a modulo gets wrong if the pool is ever length 1. */
+  check('consecutive days differ', dailyGame('2026-03-04') !== dailyGame('2026-03-05'));
+
+  /* A broken clock must not crash the screen: `dailyGameIndex` is read during
+     render and a throw there is a black page (see `ErrorBoundary`). */
+  check('nonsense resolves to a real game', GAMES.some((game) => game.id === dailyGame('banana')));
+
+  /*
+   * ── the region rule ──
+   *
+   * The local Word Builder promises "practise the language of the place you
+   * moved to". Uzbekistan had no word list and was being handed the **Polish**
+   * one, which is the card saying something false — and worse than saying
+   * nothing, because a player cannot tell until they are five words in.
+   *
+   * Three answers, and the third is the new one: a list where there is one, the
+   * Poland default for a country the product has not localised for at all
+   * (including an account with no city), and *nothing* for a country it has
+   * localised for and has no list for.
+   */
+  check('Poland gets the Polish list', wordListFor('PL') === 'pl');
+  check('an unknown country still gets the market default', wordListFor('FR') === 'pl');
+  check('…and so does an account with no city yet', wordListFor(undefined) === 'pl');
+  check('Uzbekistan gets no local word list rather than the Polish one',
+    wordListFor('UZ') === null);
+  check('…folded, so `uz` and ` UZ ` are the same country', wordListFor(' uz ') === null);
+
+  /* And the card is then not drawn. The filter is `games.tsx`'s and is restated
+     here as the property it has to have, because the alternative — a card whose
+     `list` is null — is a crash on the Play screen. */
+  const visible = (list: 'en' | 'pl' | null) =>
+    GAMES.filter((game) => game.id !== 'wordLocal' || list !== null);
+  check('a player with no local list sees one Word Builder',
+    visible(wordListFor('UZ')).filter((game) => game.kind === 'word').length === 1);
+  check('…and a player with one sees two',
+    visible(wordListFor('PL')).filter((game) => game.kind === 'word').length === 2);
+
+  /*
+   * ── the order of the grid ──
+   *
+   * A product decision rather than a derivation, so it is pinned: the flight
+   * leads and Memory Match follows it. And the names array has to have moved
+   * with the table — `copy.games.names` is index-aligned with `GAMES`, and a
+   * reorder of one alone renames every game on the page, which is a failure the
+   * length check one block up cannot see.
+   */
+  check('the flight leads the grid', GAMES[0].id === 'flight');
+  check('…and Memory Match follows it', GAMES[1].id === 'memory');
+  for (const code of LANGUAGE_ORDER) {
+    const names = LANGUAGES[code].games.names;
+    /* The flight's name is the one game in the set named after the product's
+       own character, in every language — which is what makes it checkable
+       without a table of eight translations here. */
+    check(`${code}'s first name is the flight's`, /squawk|сквок/i.test(names[0]), names[0]);
+    /* And the local Word Builder is last, because it is the row the region rule
+       removes: a filtered list keeps every other index where it was. */
+    check(`${code} still holds a hole for the local list`, names[GAMES.length - 1].includes('{language}'));
+  }
+  check('the local Word Builder is the last row', GAMES[GAMES.length - 1].id === 'wordLocal');
+}
+
+console.log('\nthe live rate table, over the built-in one');
+{
+  /*
+   * `i18n/fx.ts` is nineteen rates compiled into the bundle and its own header
+   * admits what they are: a snapshot, refreshed whenever somebody edited a
+   * TypeScript file. `/v1/fx` is the same nineteen, synced twice a day — and
+   * `ratesFrom` is the fold between them.
+   *
+   * Every check here is about the **fallback**, because that is where a live
+   * feed hurts a page that was working: an answer that is absent, empty, or
+   * wrong in one row must leave every rate exactly where the built-in table had
+   * it. A converter is allowed to be a month out of date and say so; it is not
+   * allowed to divide by zero.
+   */
+  const built = ratesFrom({ status: 'loading' });
+  check('a request in flight uses the built-in table', !built.live);
+  check('…with the built-in figures', ratesFrom({ status: 'loading' }).rateOf('PLN') === FX.PLN.rate);
+  check('…and claims no timestamp', built.updatedAt === null && built.stale === false);
+
+  const failed = ratesFrom({
+    status: 'error',
+    error: new ApiError(0, 'offline', 'nothing listening'),
+  });
+  check('an unreachable server is the same as no answer',
+    !failed.live && failed.rateOf('UZS') === FX.UZS.rate);
+
+  const answer = (rows: Array<{ code: string; rate: number }>, extra = {}) =>
+    ratesFrom({
+      status: 'ready',
+      data: {
+        base: 'EUR',
+        updatedAt: '2026-03-01T00:00:00.000Z',
+        attemptedAt: '2026-03-01T00:00:00.000Z',
+        attemptStatus: 'ok',
+        stale: false,
+        rates: rows.map((row) => ({ ...row, base: 'EUR', decimals: 2, updated_at: '2026-03-01T00:00:00.000Z' })),
+        ...extra,
+      },
+    });
+
+  const live = answer([{ code: 'EUR', rate: 1 }, { code: 'PLN', rate: 4.341 }]);
+  check('a live rate wins', live.live && live.rateOf('PLN') === 4.341);
+  check('…and a currency the answer omits keeps the built-in one',
+    live.rateOf('GBP') === FX.GBP.rate);
+  check('…and the timestamp comes through', live.updatedAt === '2026-03-01T00:00:00.000Z');
+
+  /*
+   * The three ways a row can be wrong, and all three must fall back rather than
+   * reach the screen. A zero divides a conversion to Infinity; a negative one
+   * prints a negative amount; and an anchor that is not 1 scales **every**
+   * conversion on the page by that factor — silently, because the one rate
+   * nobody would think to check is the one that is 1 by definition.
+   */
+  check('a zero rate is ignored',
+    answer([{ code: 'PLN', rate: 0 }]).rateOf('PLN') === FX.PLN.rate);
+  check('a negative rate is ignored',
+    answer([{ code: 'PLN', rate: -4 }]).rateOf('PLN') === FX.PLN.rate);
+  check('an anchor that is not 1 is dropped rather than applied',
+    answer([{ code: 'EUR', rate: 1.2 }, { code: 'PLN', rate: 4.341 }]).rateOf('EUR') === 1);
+  check('a currency this site does not know is ignored',
+    !answer([{ code: 'XTS', rate: 2 }]).live);
+
+  /* Staleness is the *server's* judgement (`CONFIG.rates.staleHours`), passed
+     through rather than recomputed here — a client comparing dates would be a
+     second copy of a threshold. It only means anything when something is live:
+     the built-in table is not stale, it is built in. */
+  check('the server decides what stale means',
+    answer([{ code: 'EUR', rate: 1 }], { stale: true }).stale === true);
+  check('…and the built-in table is never called stale', !built.stale);
+
+  /* The cross rate stays exact, which is the reason the overlay is per code.
+     Every rate on both sides is units per euro, so `to / from` is a single
+     division however the two were sourced. */
+  const mixed = answer([{ code: 'EUR', rate: 1 }, { code: 'PLN', rate: 4.341 }]);
+  check('a cross rate mixing a live and a built-in leg is one division',
+    Math.abs(mixed.rateOf('GBP') / mixed.rateOf('PLN') - FX.GBP.rate / 4.341) < 1e-12);
+}
+
+console.log('\nthe currency is its own setting');
+{
+  /*
+   * The language used to pick the currency — `CURRENCIES[language]` — so a
+   * visitor who wanted prices in zloty had to read the site in Polish. They
+   * were never the same question: a Russian speaker in Krakow is paid in zloty
+   * and an English speaker may be in Tashkent.
+   *
+   * Four properties, and the last two are the ones that make "separate" mean
+   * something rather than just "two controls":
+   */
+
+  /* 1. Every language still has a default, because it is the one thing a
+        visitor tells us before they tell us anything else. */
+  for (const code of LANGUAGE_ORDER) {
+    const fallback = CURRENCY_FOR_LANGUAGE[code];
+    check(`${code} defaults to a currency`, isCurrencyCode(fallback), fallback);
+    check(`…and it is one the site can price in`, CURRENCIES[fallback] !== undefined);
+  }
+
+  /* 2. Every offered currency has the two things a *price tag* needs, which is
+        why this set is five and not the nineteen `fx.ts` carries: a rounding
+        step, so a converted price is not an exchange-rate artefact, and a rate
+        read from the one anchored table. */
+  for (const code of CURRENCY_ORDER) {
+    const currency = CURRENCIES[code];
+    check(`${code} has a rounding step`, currency.step > 0, String(currency.step));
+    check(`…a rate from fx.ts`, currency.rate === FX[code].rate);
+    check(`…and its own symbol`, currency.symbol === FX[code].symbol);
+  }
+
+  /* 3. The two axes are genuinely independent: the same amount in one currency
+        reads the same whatever language is set, and in one language reads
+        differently per currency. If either failed, the settings would still be
+        joined somewhere. */
+  const amount = 1299;
+  const inGbp = LANGUAGE_ORDER.map((lang) =>
+    money(amount, CURRENCIES.GBP, 'price', GROUP_FOR_LANGUAGE[lang]),
+  );
+  check('the currency decides the symbol, not the language',
+    inGbp.every((written) => written.startsWith('£')), inGbp.join(' | '));
+  const perCurrency = new Set(
+    CURRENCY_ORDER.map((code) => money(amount, CURRENCIES[code], 'price', GROUP_FOR_LANGUAGE.en)),
+  );
+  check('…and five currencies write five different prices',
+    perCurrency.size === CURRENCY_ORDER.length, [...perCurrency].join(' | '));
+
+  /* 4. Grouping follows the **reader**, not the currency — the rule `fx.ts`
+        has always stated and which was true only by accident while the table
+        was keyed by language. A Pole looking at pounds groups with a narrow
+        no-break space; an English reader looking at zloty groups with a comma.
+        This is the check that would have caught the coincidence. */
+  const poleInPounds = money(1299, CURRENCIES.GBP, 'price', GROUP_FOR_LANGUAGE.pl);
+  const britInZloty = money(1299, CURRENCIES.PLN, 'price', GROUP_FOR_LANGUAGE.en);
+  check('a Polish reader groups pounds their own way',
+    poleInPounds.includes(GROUP_FOR_LANGUAGE.pl) && !poleInPounds.includes(','),
+    poleInPounds);
+  check('…and an English reader groups zloty theirs',
+    britInZloty.includes(','), britInZloty);
+  /* And the separator is a *narrow no-break* space rather than a plain one, or
+     a price wraps between its digits and its symbol. */
+  check('the space is no-break', GROUP_FOR_LANGUAGE.pl === ' ');
+
+  /* Every offered currency is named in every language. The names are reused
+     from the Relocate converter's table, which is already the currency's name
+     in the reader's language — five new strings in five dictionaries would have
+     been ten copies of a word the site already has. */
+  for (const lang of LANGUAGE_ORDER) {
+    for (const code of CURRENCY_ORDER) {
+      const name = LANGUAGES[lang].relocate.rates.names[code];
+      check(`${lang} names ${code}`, typeof name === 'string' && name.trim().length > 0, name);
+    }
   }
 }
 
@@ -3211,7 +3694,13 @@ console.log('\nthe directory');
 
 console.log('\nsigning up');
 {
-  const good = { name: 'Anna Kowalska', email: 'anna@example.com', password: 'secret1', type: 'individual' as const };
+  const good = {
+    name: 'Anna Kowalska',
+    email: 'anna@example.com',
+    password: 'secret1',
+    type: 'individual' as const,
+    acceptTerms: true,
+  };
 
   /* Validated against a directory built here. `SEED_USERS` is empty, and
      `taken` is the one rule that needs a directory with somebody already in
@@ -3238,6 +3727,21 @@ console.log('\nsigning up');
     validateSignUp(roster, { ...good, password: 'x'.repeat(MIN_PASSWORD - 1) }) === 'password',
   );
   check('an unanswered type is refused', validateSignUp(roster, { ...good, type: null }) === 'type');
+  /*
+   * And the agreement, which is **last on purpose**: the order of these checks
+   * is the order the eye goes down the form, so the message always points at
+   * the first field that needs attention. The box is at the bottom because it
+   * is about the whole form rather than about any one field.
+   *
+   * Refused here *and* on the server (§1.3 in `domain/accounts.ts`), which is
+   * not redundancy: a checkbox is a courtesy and the `consent_records` row is
+   * evidence. Two `consent_records` rows used to be written unconditionally at
+   * account creation — a consent nobody had given.
+   */
+  check('an unaccepted agreement is refused',
+    validateSignUp(roster, { ...good, acceptTerms: false }) === 'terms');
+  check('…and it is checked after everything about the person',
+    validateSignUp(roster, { ...good, name: '  ', acceptTerms: false }) === 'name');
 
   /* The order matters: the message points at the first field that needs
      attention, so a form with two problems must name the earlier one. */
@@ -3889,6 +4393,451 @@ console.log('\nthe partner dashboard');
   );
 
   /*
+   * Item 22: **grouping follows the reader, and it is read rather than
+   * inferred.**
+   *
+   * `fx.ts` has always stated the rule — digit grouping belongs to the person
+   * reading, the symbol to the money — and until the currency became a setting
+   * of its own it was true by *accident*: `CURRENCIES` was keyed by language, so
+   * a currency's own `group` happened to be the reader's. Separating the two
+   * broke that coincidence in four places at once, and every one of them was a
+   * screen writing two number formats on one row: a Polish reader who chose
+   * pounds got counts grouped with commas beside prices grouped with a narrow
+   * no-break space.
+   *
+   * The behavioural half is checked above (`money` takes the separator and five
+   * currencies write five prices). What cannot be checked that way is whether
+   * the *hooks* pass it — they are React hooks, and the failure is a `.group`
+   * read off the wrong object rather than a wrong answer from a pure function.
+   * So this reads the source, which is the `sqliteOnlySql` pattern one repo half
+   * over: one banned token, the offending file named.
+   *
+   * `parts.group` and `parts?.group` are fine and are the point — `useMoneyParts`
+   * puts the reader's separator on that field. What is banned is reaching for a
+   * *currency's* own.
+   */
+  {
+    const FORMATTERS = [
+      'src/site/dashboardFormat.ts',
+      'src/site/business.tsx',
+      'src/site/vouchers.tsx',
+      'src/site/admin.tsx',
+      'src/site/adminAnalytics.tsx',
+      'src/site/adminWebsite.tsx',
+    ];
+    for (const file of FORMATTERS) {
+      const source = readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+        /* Comments say the word while explaining the rule, which is exactly
+           what the rule wants them to do. */
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+        .replace(/^\s*\/\/.*$/gm, '');
+      check(
+        `${file} does not group by the currency`,
+        !/\bcurrency\.group\b/.test(source) && !/\breader\.group\b/.test(source),
+        source.match(/\b\w+\.group\b/g)?.join(', ') ?? 'none',
+      );
+      /* And a hard-coded separator is the other half of the same mistake: the
+         console wrote `data-group=" "` for every reader, a plain space where
+         English wants a comma — and a plain one, which lets a number break
+         across two lines between its own digits. */
+      check(
+        `…and does not hard-code one`,
+        !/data-group="[^{]/.test(source),
+        source.match(/data-group="[^"]*"/g)?.join(', ') ?? 'none',
+      );
+    }
+  }
+
+  /*
+   * The light dashboard clears WCAG AA (item 25).
+   *
+   * ## Why this is arithmetic and not a screenshot
+   *
+   * Contrast is a pure function of two colours, so the one thing this suite
+   * *can* check about a stylesheet is exactly the thing that was wrong: the
+   * light dashboard's greys were transcribed from `b2b/Paylez Partner Dashboard
+   * v2.dc.html` and four of them fail the bar. `--text-fnt` measured **2.26:1**
+   * against a `.pd-deals` panel and it is the colour of every `data-quiet` cell
+   * in the Hot Deals table — the figures an owner opens the report for were the
+   * least legible thing on the screen.
+   *
+   * The values are read out of `site.css` rather than restated here, because a
+   * check that carries its own copy of the number it is checking passes when
+   * the stylesheet changes and the copy does not.
+   *
+   * ## The grounds, and why three
+   *
+   * A token is only as good as the worst ground it lands on, and the light
+   * dashboard has three: a white card (`--panel-rgb` at opacity), the
+   * `--surface` wash a table head and a well take, and the `--surface-2` step
+   * under a chip. Sizing against the card alone is what let `--accent-ink`
+   * clear 4.96:1 there and fail at 4.06:1 on a chip.
+   *
+   * Dark is deliberately **not** checked: its own ramp is white at alpha on
+   * near-black and measures past 7:1 everywhere, and item 25's second half is
+   * that dark stays untouched.
+   */
+  {
+    const css = readFileSync(new URL('../src/site/site.css', import.meta.url), 'utf8');
+
+    /* The light dashboard's block, and only it: the same token names exist in
+       `:root`, in the dark `.pd-app` and inside `[data-ink]`, and picking the
+       wrong one would check a colour nobody sees on paper. */
+    /*
+     * **The last of three blocks with that selector, not the first.**
+     *
+     * `site.css` opens one near the top for `--font-pd` and one inside the
+     * `[data-ink]` family, and neither carries a colour token — so an
+     * `indexOf` found a block with nothing in it and every lookup below fell
+     * through to its own `#000000` default, which then *passed* against a white
+     * card at 21:1. A check that cannot find what it is checking and reports a
+     * pass is worse than no check, so the block is pinned to the one that
+     * actually holds the ramp.
+     */
+    const open = css.lastIndexOf(":root[data-theme='light'] .pd-app {");
+    check('the light dashboard has a token block', open > 0);
+    const block = css.slice(open, css.indexOf('\n}', open));
+    check('…and it is the one carrying the ramp', block.includes('--text-mut:'), String(open));
+
+    const token = (name: string): string => {
+      const hit = new RegExp(`--${name}:\\s*(#[0-9a-f]{6})`, 'i').exec(block);
+      check(`--${name} is a hex in the light dashboard`, hit !== null, name);
+      return hit ? hit[1] : '#000000';
+    };
+
+    /* sRGB relative luminance, WCAG 2.x. */
+    const channel = (v: number): number => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const luminance = (hex: string): number => {
+      const n = Number.parseInt(hex.slice(1), 16);
+      return (
+        0.2126 * channel((n >> 16) & 255) +
+        0.7152 * channel((n >> 8) & 255) +
+        0.0722 * channel(n & 255)
+      );
+    };
+    const contrast = (a: string, b: string): number => {
+      const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+
+    /* The three grounds a light dashboard token lands on. `#ffffff` is the card
+       — `--panel-rgb` is `255, 255, 255` and `--pd-glass` is opaque on this
+       screen — and the other two are read from the block like everything else. */
+    const grounds: Array<[string, string]> = [
+      ['a white card', '#ffffff'],
+      ['the surface wash', token('surface')],
+      ['the second surface step', token('surface-2')],
+    ];
+
+    /* 4.5:1 for text this size (every one of these draws 10–13px), 3:1 for a
+       hairline — WCAG 1.4.11, which governs a text input's outline and the
+       rules of a table dense enough that they carry meaning. */
+    const bars: Array<[string, number]> = [
+      ['text-mut', 4.5],
+      ['text-fnt', 4.5],
+      ['accent-ink', 4.5],
+      ['border', 3],
+      ['border-2', 3],
+    ];
+
+    for (const [name, need] of bars) {
+      const value = token(name);
+      for (const [where, ground] of grounds) {
+        const got = contrast(value, ground);
+        check(
+          `--${name} clears ${need}:1 against ${where}`,
+          got >= need - 0.005,
+          `${value} on ${ground} is ${got.toFixed(2)}:1`,
+        );
+      }
+    }
+
+    /* And the ramp is still a ramp. Three text steps that all clear the bar but
+       land on top of each other is a screen with one grey, which is the failure
+       mode of fixing contrast by darkening everything — the comment on
+       `--text-fnt` in `site.css` says so, and this is what holds it. */
+    const steps = ['text', 'text-mut', 'text-fnt'].map(token).map(luminance);
+    check(
+      'the light text ramp still climbs',
+      steps[0] < steps[1] && steps[1] < steps[2],
+      steps.map((one) => one.toFixed(3)).join(' < '),
+    );
+    check(
+      '\u2026and its steps are far enough apart to read as three',
+      steps[2] - steps[1] > 0.01 && steps[1] - steps[0] > 0.01,
+      `${(steps[1] - steps[0]).toFixed(3)} and ${(steps[2] - steps[1]).toFixed(3)}`,
+    );
+
+    /*
+     * Dark is untouched, checked as the absence of a change rather than as a
+     * ratio: every value item 25 moved sits inside the light block above, so
+     * the dark `.pd-app` block must still carry its own originals.
+     */
+    /* And the dark block by what it contains, for the reason the light one is:
+       `.pd-app` opens a layout block long before it opens a token block, and
+       an `indexOf` reads the wrong one. */
+    const darkOpen = css.indexOf('--border: rgba(255, 255, 255, 0.09)');
+    const dark = css.slice(Math.max(0, darkOpen - 1200), css.indexOf('\n}', darkOpen));
+    check(
+      "the dark dashboard's hairlines are untouched",
+      dark.includes('--border: rgba(255, 255, 255, 0.09)') &&
+        dark.includes('--border-2: rgba(255, 255, 255, 0.16)'),
+    );
+    check(
+      "\u2026and so is its text ramp",
+      dark.includes('--text-mut: rgba(242, 246, 244, 0.66)') &&
+        dark.includes('--text-fnt: rgba(242, 246, 244, 0.44)'),
+    );
+  }
+
+  /*
+   * The partner plan panel (item 24).
+   *
+   * `PARTNER_PLAN_ROWS` holds the comparison's order and **none of its
+   * figures** — every number comes from `plan_entitlements` on the server — so
+   * what there is to check here is the alignment and the labels, which is
+   * exactly the half a type can not catch: `Dictionary` proves `rows` exists
+   * and says nothing about its length.
+   *
+   * The failure it prevents is the one this repo has had twice. A row added to
+   * the table without a label in five dictionaries renders `undefined`, and the
+   * version of the same mistake that survives longer is a *short* array: the
+   * last row of the comparison silently loses its name in four languages and
+   * nobody who reads English ever sees it.
+   */
+  {
+    for (const code of LANGUAGE_ORDER) {
+      const panel = LANGUAGES[code].dashboard.planPanel;
+      check(
+        `${code} labels every comparison row`,
+        panel.rows.length === PARTNER_PLAN_ROWS.length,
+        `${panel.rows.length} labels, ${PARTNER_PLAN_ROWS.length} rows`,
+      );
+      check(
+        `…and none of them is blank`,
+        panel.rows.every((row) => row.trim() !== ''),
+        panel.rows.filter((row) => row.trim() === '').length + ' blank',
+      );
+      /* The four `subscriptions.source` values, named. A venue owner reading a
+         plan they did not buy needs to know whether somebody paid for it. */
+      for (const source of ['manual', 'stripe', 'apple', 'google'] as const) {
+        check(
+          `${code} names the ${source} source on the panel`,
+          typeof panel.sources[source] === 'string' && panel.sources[source].trim() !== '',
+        );
+      }
+      /* The holes. `usage` is the pairing the panel exists for — "3 of 5" —
+         and a string that lost either half is a figure with no comparison. */
+      check(
+        `${code}: the usage pairing says both halves`,
+        panel.usage.includes('{used}') && panel.usage.includes('{total}'),
+        panel.usage,
+      );
+      check(`${code}: the price says the amount`, panel.perMonth.includes('{amount}'));
+      check(`${code}: the renewal says the date`, panel.renews.includes('{date}'));
+      check(`${code}: the dated change says the date`, panel.until.includes('{date}'));
+      /* And the plan box's own two keys, which the rail reads when the session
+         has not answered yet. `unknown` must not be a plan *name*: falling back
+         to "Growth" would label every venue as the middle tier. */
+      const box = LANGUAGES[code].dashboard.plan;
+      check(`${code}: the box has a word for an unknown plan`, box.unknown.trim() !== '');
+      check(`${code}: …and one for what the press does`, box.open.trim() !== '');
+    }
+
+    /* The hero split has to fit inside the table, or `slice` silently draws
+       fewer rows than the panel claims. Four, which is the capacity block. */
+    check(
+      'the panel headline rows are a prefix of the comparison',
+      PARTNER_PLAN_HERO > 0 && PARTNER_PLAN_HERO < PARTNER_PLAN_ROWS.length,
+      String(PARTNER_PLAN_HERO),
+    );
+    /* The first four are the *counted* ones, because only a count can be shown
+       as "3 of 5" — a yes/no entitlement has nothing to be three of, and the
+       panel's usage list would draw a tick where a pairing belongs. */
+    check(
+      '…and every one of them is a number',
+      PARTNER_PLAN_ROWS.slice(0, PARTNER_PLAN_HERO).every((row) => row.kind === 'number'),
+      PARTNER_PLAN_ROWS.slice(0, PARTNER_PLAN_HERO).map((row) => row.kind).join(', '),
+    );
+    /* No key twice: the comparison reads each by name out of the server's
+       entitlement rows, so a duplicate would draw one row twice and hide
+       whichever it displaced. */
+    check(
+      'no entitlement key appears twice',
+      new Set(PARTNER_PLAN_ROWS.map((row) => row.key)).size === PARTNER_PLAN_ROWS.length,
+    );
+  }
+
+  /*
+   * The console's Tiers tab (item 23).
+   *
+   * `ADMIN_TABS` is icons and `copy.admin.tabs` is labels, and they are held
+   * together by position alone — a sixth of one without a sixth of the other
+   * renders a tab with no name or a name with no icon, in whichever languages
+   * were missed. The tab was **appended** rather than inserted, so nothing that
+   * branches on `tab === 0..4` in `admin.tsx` moved; this pins that, because
+   * inserting it later would be the change that silently re-points four
+   * branches.
+   *
+   * The copy checks are the two sentences that are rules rather than labels.
+   * `propagation` is the one an operator acts on — it says the server answers
+   * with the new plan at once and a browser somebody else has open does not —
+   * and `noteHelp` says what the reason field is for, which is the only thing
+   * the audit row cannot say for itself.
+   */
+  {
+    check(
+      'every console tab has an icon',
+      ADMIN_TABS.length === en.admin.tabs.length,
+      `${ADMIN_TABS.length} icons, ${en.admin.tabs.length} labels`,
+    );
+    check('the Tiers tab is the sixth', en.admin.tabs.length === 6, en.admin.tabs.join(', '));
+    /* Appended, so the four `tab === n` branches in `admin.tsx` still point at
+       the screens they were written for. */
+    check(
+      '…and the first five are where they were',
+      ADMIN_TABS.slice(0, 5).join() === 'briefcase,ticket,people,bars,send',
+      ADMIN_TABS.join(),
+    );
+    check(
+      'its icon is not one another tab already uses',
+      ADMIN_TABS.filter((icon) => icon === ADMIN_TABS[5]).length === 1,
+      ADMIN_TABS[5],
+    );
+
+    /* `subscriptions.source` is a CHECK-constrained set of four on the server,
+       and the console names each — a miss falls through to the raw value, which
+       is checked in the component rather than here, but a *missing* name is a
+       badge reading `apple` to a Russian operator. */
+    const SOURCES = ['manual', 'stripe', 'apple', 'google'] as const;
+    for (const code of LANGUAGE_ORDER) {
+      const tiers = LANGUAGES[code].admin.tiers;
+      check(`${code} names the Tiers tab`, LANGUAGES[code].admin.tabs[5].trim() !== '');
+      for (const source of SOURCES) {
+        check(
+          `${code} names the ${source} source`,
+          typeof tiers.sources[source] === 'string' && tiers.sources[source].trim() !== '',
+          tiers.sources[source],
+        );
+      }
+      check(
+        `${code} labels all five columns`,
+        tiers.columns.length === 5 && tiers.columns.every((one) => one.trim() !== ''),
+        tiers.columns.join(', '),
+      );
+      /* The holes, by the sentence that needs them. A confirmation that lost
+         its `{plan}` says a tier was assigned without saying which. */
+      check(`${code}: the confirmation names the plan`, tiers.didAssign.includes('{plan}'));
+      check(
+        `${code}: the scheduled one names the plan and the date`,
+        tiers.didSchedule.includes('{plan}') && tiers.didSchedule.includes('{from}'),
+        tiers.didSchedule,
+      );
+      /* And the two sentences that carry a rule rather than a label. */
+      check(
+        `${code}: propagation is explained rather than claimed`,
+        tiers.propagation.length > 60,
+        String(tiers.propagation.length),
+      );
+      check(`${code}: the reason field says what it is for`, tiers.noteHelp.length > 20);
+      /* Two dates and two states: "in force from today" and "nothing changes
+         until that day" are the pair an operator reads before pressing, and a
+         screen that said only one of them would be the screen that surprises
+         somebody. */
+      check(`${code}: today is explained`, tiers.fromNow.trim() !== '');
+      check(`${code}: a dated change is explained`, tiers.fromLater.trim() !== '');
+    }
+  }
+
+  /*
+   * The voucher register (item 21) — the screen and its copy.
+   *
+   * Three things it has to be true of, and each has already been the failure
+   * mode of adding a screen to this rail:
+   *
+   *  - The **index**. `DASH_SCREENS`, `copy.dashboard.screens`, the `SCREENS`
+   *    table in `dashboardScreens.tsx` and every hard-coded `empty[n]` are four
+   *    lists held together by position alone. The length check above catches a
+   *    short array and says nothing about the *order*, so the register is
+   *    pinned where it is: immediately after the ladder it is the other half
+   *    of, which is also where the rail draws it.
+   *  - Every **status** is named. `copy.register.status` is indexed by the
+   *    column's own vocabulary, so a fifth status added to `issued_vouchers`
+   *    would render its raw id — the lookup-that-misses failure this dashboard
+   *    has already had twice (`quiet hours`, `newcomer`).
+   *  - Every **hole** is there. A `fill()` target whose string lost its hole
+   *    prints the sentence without the number, which is the one thing a count
+   *    against a limit cannot do.
+   */
+  {
+    check(
+      'the register sits straight after the ladder',
+      DASH_SCREENS[4].id === 'issued',
+      DASH_SCREENS[4].id,
+    );
+    check('…and the ladder is still where it was', DASH_SCREENS[3].id === 'vouchers');
+    /* The profile stays last: `DashboardPage` renders it from
+       `DASH_SCREENS.length - 1` rather than by id. */
+    check(
+      '…and the profile is still last',
+      DASH_SCREENS[DASH_SCREENS.length - 1].id === 'profile',
+    );
+    check(
+      'its icon is not one the rail already uses twice',
+      DASH_SCREENS.filter((entry) => entry.icon === DASH_SCREENS[4].icon).length === 1,
+      DASH_SCREENS[4].icon,
+    );
+
+    /* The four statuses `issued_vouchers.status` can hold, plus the filter's
+       own word for "do not filter". Written out rather than imported: `server/`
+       and `src/` share no code, which is the whole architecture, so this list
+       being a copy is the point — and a copy that drifts is exactly what this
+       check is for. */
+    const STATUSES = ['all', 'active', 'redeemed', 'expired', 'cancelled'] as const;
+    for (const code of LANGUAGE_ORDER) {
+      const register = LANGUAGES[code].dashboard.register;
+      for (const status of STATUSES) {
+        check(
+          `${code} names the ${status} status`,
+          typeof register.status[status] === 'string' && register.status[status].trim() !== '',
+          register.status[status],
+        );
+      }
+      check(`${code} names the screen`, LANGUAGES[code].dashboard.screens[4].name.trim() !== '');
+      check(`${code} says what would fill it`, LANGUAGES[code].dashboard.empty[4].body.trim() !== '');
+      /* The holes, by the sentence that needs them. */
+      check(`${code}: the rung names its percentage`, register.caps.rung.includes('{pct}'));
+      check(
+        `${code}: a count against a cap says both`,
+        register.caps.taken.includes('{n}') && register.caps.taken.includes('{total}'),
+        register.caps.taken,
+      );
+      check(`${code}: an uncapped count still says the count`, register.caps.takenNoCap.includes('{n}'));
+      check(
+        `${code}: the page count says both`,
+        register.list.count.includes('{n}') && register.list.count.includes('{total}'),
+      );
+      check(`${code}: the lapsing note says how many`, register.totals.lapsing.includes('{n}'));
+      /* And the two sentences that are rules rather than labels — see the block
+         comment on `register` in `en.ts`. A withheld name has to say *why* it is
+         missing, or the em dash reads as a figure nobody could read. */
+      check(
+        `${code}: a withheld holder explains itself`,
+        register.table.withheld.length > 30,
+        register.table.withheld,
+      );
+      check(
+        `${code}: the limits note says an empty field means none`,
+        register.caps.noLimitNote.length > 30,
+      );
+    }
+  }
+
+  /*
    * The scan log is the same story as the roster above: forty-eight rows were
    * generated from the row index — a campaign card with a `done`/`need`
    * progress bar, a name looked up in `PD_SCAN_NAMES` — and there is no
@@ -3911,8 +4860,11 @@ console.log('\nthe partner dashboard');
    * under a pound, and the other three rounding modes all take it to "£1" —
    * which turned three different figures in the ROI panel into the same one.
    */
-  const gbp = CURRENCIES.en;
-  const soum = CURRENCIES.uz;
+  /* Keyed by **currency** now rather than by language — the two came apart, so
+     a table indexed by `LanguageCode` could no longer express "reading in
+     Russian, paying in zloty". See `CURRENCIES` in `i18n/currency.ts`. */
+  const gbp = CURRENCIES.GBP;
+  const soum = CURRENCIES.UZS;
   check('a per-unit amount keeps its minor units', money(0.78, gbp, 'unit') === '£0.67', money(0.78, gbp, 'unit'));
   check('…and is not the same as the rounded one', money(0.78, gbp, 'unit') !== money(0.78, gbp, 'exact'));
   check(
@@ -4005,6 +4957,7 @@ console.log('\na new account has earned nothing');
     email: 'fresh@example.com',
     password: 'testing-1234',
     type: 'individual',
+    acceptTerms: true,
   }, 'u_fresh', '2026-08-31');
   check('a sign-up produces an empty player', signedUp.player?.points === 0,
     String(signedUp.player?.points));
@@ -4018,6 +4971,7 @@ console.log('\na new account has earned nothing');
     email: 'owner@example.com',
     password: 'testing-1234',
     type: 'business',
+    acceptTerms: true,
   }, 'u_owner', '2026-08-31');
   check('a business sign-up has no player state', owner.player === null);
 }
@@ -4208,6 +5162,13 @@ console.log('\nhydration — what the server says an account is');
       id: 'u_server', email: 'kasia@example.com', name: 'Kasia', username: null, language: 'en',
       city: null, countryCode: null, avatar: null, phone: null, occupation: null, birthDate: null,
       birthDateChangesLeft: 2, profileCompletedAt: null, onboardedAt: null, trustTier: 0,
+      /* Proved, because this fixture stands in for an account the mirror is
+         being asked to fold — and the unverified case is not what these checks
+         are about. The server's own suite has a section for it. */
+      emailVerifiedAt: '2026-03-01T09:05:00Z',
+      /* On, which is the default — these checks are about the mirror folding a
+         server answer, not about §1.4. */
+      venueSharingDefault: true,
       leaderboardOptIn: false, referralCode: 'KASIA1', createdAt: '2026-03-01T09:00:00Z',
       ...user,
     },

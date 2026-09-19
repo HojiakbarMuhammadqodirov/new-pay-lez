@@ -76,6 +76,13 @@ const when = (iso: string, locale: string) =>
     month: 'short',
     hour: '2-digit',
     minute: '2-digit',
+    /* Pinned, because without it `Intl` picks the clock from the *locale* and
+       `en` means half past four in the afternoon is `04:05 PM` — while the
+       dashboard's till log, which pins `h23`, writes the same instant `16:05`.
+       One operator, two screens, two clocks. Measured rather than assumed: the
+       other four languages are 24-hour either way, so English was the only
+       reader who ever saw the difference, which is how it survived. */
+    hourCycle: 'h23',
   }).format(new Date(iso));
 
 export function AdminMessages() {

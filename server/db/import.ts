@@ -32,6 +32,7 @@
  */
 import { join } from 'node:path';
 import type { Db } from './db.ts';
+import { readFileSync } from 'node:fs';
 import { bool, json, num, opt, readCsv, readCsvParts, str, ts, type CsvRow } from './csv.ts';
 import { CONFIG } from '../config.ts';
 import { assertComplete, codeFor, flagOf } from './countries.ts';
@@ -951,6 +952,91 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
   await importGeneralQuiz(db, general, bump);
   await importLetterQuiz(db, poland, 'poland', bump);
   await importLetterQuiz(db, uzbekistan, 'uzbekistan', bump);
+
+  /*
+   * ── the Word Builder bank ──
+   *
+   * **"The Word Builder database looks empty."** It was not empty and it was
+   * not blocked; it held **thirty** words — twenty Polish and ten English,
+   * hand-typed into `WORDS` in `domain/settings.ts` as a placeholder — while
+   * the real lists sat unread in this very directory: 136 words each in
+   * `paylez-words-en.json` and `paylez-words-pl.json`, with their own tiers and
+   * hints.
+   *
+   * Which is why "empty" is exactly what it looked like from the English side.
+   * A round is five words, `buildWords` excludes the last
+   * `CONFIG.games.recentWindow` a player has seen, and ten words minus a
+   * window is nothing — so the second round a player opened came back with
+   * fewer words than a round needs, permanently, for that account. The front
+   * end has been reading the real files all along
+   * (`scripts/build-question-banks.mjs` writes `words.en.json` with all 136),
+   * so the two halves of this repository disagreed about how many words the
+   * game has.
+   *
+   * **The tier comes from the export**, not from the word's length.
+   * `seedWords` derives it as 3–4 / 5–7 / 8+ characters, which is a reasonable
+   * guess and is not what the file says: the export tiers `COFFEE` as 2 and
+   * `KAWA` as 1 deliberately, and the tier is what a word *pays*. A guess that
+   * disagrees with the authored value pays the wrong amount for the right
+   * answer.
+   *
+   * `seedWords` stays as the fallback for a checkout with no `updates/`, and
+   * this runs after it — `INSERT OR REPLACE` on a derived id, so the export
+   * wins where the two overlap and the placeholder survives where it does not.
+   */
+  const wordLists: Array<[string, string]> = [
+    ['en', 'paylez-words-en.json'],
+    ['pl', 'paylez-words-pl.json'],
+  ];
+  let wordsFound = 0;
+  for (const [language, name] of wordLists) {
+    let rows: Array<{ word?: unknown; hint?: unknown; tier?: unknown }> = [];
+    try {
+      const raw = readFileSync(join(banksDir, name), 'utf8');
+      const parsed = JSON.parse(raw) as unknown;
+      /* The export is a bare array today. Accepting a `{ words: [...] }`
+         wrapper as well costs one line and is the shape a hand-delivered file
+         most plausibly arrives in next. */
+      rows = Array.isArray(parsed)
+        ? (parsed as typeof rows)
+        : ((parsed as { words?: typeof rows }).words ?? []);
+    } catch {
+      /* Absent or unparsable. Reported below rather than thrown: the
+         placeholder in `seedWords` is still there, so the game plays — badly,
+         and the note is what says so. */
+      rows = [];
+    }
+
+    for (const row of rows) {
+      const word = String(row.word ?? '').trim();
+      if (!word) continue;
+      /* Clamped rather than trusted. `tier` decides what the word pays and
+         indexes `CONFIG.games.wordTiers`; a 0 or a 9 out of a hand-edited file
+         would be an undefined payout rather than a wrong one. */
+      const tier = Math.min(3, Math.max(1, Math.round(Number(row.tier) || 0))) || 2;
+      await db.run(
+        `INSERT OR REPLACE INTO word_bank (id, language, word, tier, hint)
+         VALUES ($i, $l, $w, $t, $h)`,
+        {
+          i: `wrd_${language}_${word.toLowerCase()}`,
+          l: language,
+          w: word,
+          t: tier,
+          h: String(row.hint ?? '').trim() || null,
+        },
+      );
+      bump('word_bank');
+      wordsFound += 1;
+    }
+  }
+  if (wordsFound === 0) {
+    notes.push(
+      `word bank: no words found in ${banksDir}/paylez-words-*.json — the Word ` +
+        'Builder is running on the thirty-word placeholder in domain/settings.ts, ' +
+        'which is fewer words than the no-repeat window, so a second round for ' +
+        'any one player comes back short',
+    );
+  }
 
   /* ────────────────────────────── 9. the remittance tables, archived as-is ── */
 

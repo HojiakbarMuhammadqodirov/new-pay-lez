@@ -261,7 +261,7 @@ const keys = primaryKeys(source);
 const tables = Object.keys(keys);
 const keyed = tables.filter((t) => keys[t]);
 
-if (tables.length !== 82) throw new Error(`expected 82 tables, parsed ${tables.length}`);
+if (tables.length !== 85) throw new Error(`expected 85 tables, parsed ${tables.length}`);
 
 /* Every table an `INSERT OR REPLACE|IGNORE` actually targets must have a key,
    or the translation in `pg.ts` throws at runtime — which is correct behaviour
@@ -351,3 +351,117 @@ ${body}
 );
 
 console.log(`conflicts.ts written: ${keyed.length} of ${tables.length} tables keyed`);
+
+/* ───────────────────────────────────────────────── the Postgres lockdown ── */
+
+/**
+ * `server/db/rls.pg.sql` — row-level security on every table, and no grant to
+ * Supabase's two public roles.
+ *
+ * **Why this file exists at all, when nothing in `src/` speaks to Postgres.**
+ * The front end talks to `server/`, which holds the only connection string, so
+ * the access control that matters is `http/router.ts`'s `auth:` field. That is
+ * true of *this* repository and says nothing about the project the database
+ * lives in. A Supabase project serves PostgREST over the `public` schema on an
+ * **anon key that is published by design** — it is in the project's API
+ * settings and in every client Supabase's own quickstart writes — and the
+ * default grants to `anon` and `authenticated` are what make that endpoint
+ * answer. A table with no RLS behind it is therefore readable by anybody who
+ * has the URL, whether or not a single line of our code ever asks it to be.
+ *
+ * So the lockdown is two independent halves, and either one alone would do:
+ *
+ *   1. **No grants.** `anon` and `authenticated` lose every privilege on the
+ *      schema, its tables, sequences and functions, and the default privileges
+ *      that would hand them one on the next table created.
+ *   2. **RLS enabled, with no policies.** A table with RLS on and zero policies
+ *      denies every row to every role that is not the owner and does not
+ *      carry `BYPASSRLS`. Belt and braces on purpose: a `GRANT` restored by
+ *      hand in the dashboard — which is one click — re-opens half one and
+ *      reaches nothing.
+ *
+ * Generated rather than hand-kept for the same reason `schema.pg.sql` is: a
+ * table added to `schema.sql` without a line here is a table that is open, and
+ * that is precisely the kind of omission nobody notices. It is the whole table
+ * list or nothing.
+ *
+ * **The server is unaffected, and the guard at the top is what proves it.**
+ * `PgDb` connects as the role that created these tables, and an owner bypasses
+ * RLS. A deployment whose connection string is some *other* role would be
+ * locked out of its own database by half 2 — so the file refuses to run in that
+ * case and says which role it was and what to do, rather than enabling RLS and
+ * leaving the server answering 500 to everything.
+ */
+const RLS = join(root, 'server/db/rls.pg.sql');
+
+const guarded = (role, statements) =>
+  `DO $$\nBEGIN\n  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${role}') THEN\n` +
+  statements.map((s) => `    ${s}\n`).join('') +
+  `  END IF;\nEND $$;`;
+
+/* Supabase's two request roles. `service_role` is deliberately *not* here: it
+   is the key a trusted backend uses and it carries BYPASSRLS, so revoking from
+   it would neither help (the key is a secret, not a published one) nor hold
+   (the bypass is a role attribute, not a grant). What protects it is that it
+   never leaves the server — see `.env.example` on the `VITE_` rule. */
+const PUBLIC_ROLES = ['anon', 'authenticated'];
+
+const rlsBody =
+  PUBLIC_ROLES.map((role) =>
+    guarded(role, [
+      `REVOKE ALL ON ALL TABLES IN SCHEMA public FROM ${role};`,
+      `REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM ${role};`,
+      `REVOKE ALL ON ALL FUNCTIONS IN SCHEMA public FROM ${role};`,
+      `REVOKE ALL ON SCHEMA public FROM ${role};`,
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM ${role};`,
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON SEQUENCES FROM ${role};`,
+      `ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON FUNCTIONS FROM ${role};`,
+    ]),
+  ).join('\n\n') +
+  '\n\n' +
+  `-- ══════════════════════════════════════════════════ row-level security ══
+--
+-- ${tables.length} tables, every one of them. RLS with no policy is a closed door: the
+-- owner and any role with BYPASSRLS read normally, everybody else — which is
+-- what a published anon key authenticates as — reads nothing.
+--
+-- The guard first. Enabling RLS as a role that neither owns these tables nor
+-- bypasses it locks *this server* out of its own database, which is a worse
+-- outcome than an open PostgREST endpoint and is not recoverable from inside
+-- the process that just did it. So it refuses, loudly, naming the role.
+DO $$
+DECLARE
+  bypasses boolean;
+  owns     boolean;
+BEGIN
+  SELECT rolbypassrls INTO bypasses FROM pg_roles WHERE rolname = current_user;
+  SELECT COALESCE(bool_and(tableowner = current_user), true) INTO owns
+    FROM pg_tables WHERE schemaname = 'public';
+  IF NOT COALESCE(bypasses, false) AND NOT owns THEN
+    RAISE EXCEPTION 'paylez: refusing to enable row-level security as %, which neither owns the public tables nor has BYPASSRLS. Connect as the owning role (Supabase: postgres) or grant it, then restart.', current_user;
+  END IF;
+END $$;
+
+` +
+  tables.map((t) => `ALTER TABLE ${t} ENABLE ROW LEVEL SECURITY;`).join('\n') +
+  '\n';
+
+writeFileSync(
+  RLS,
+  `-- ─────────────────────────────────────────────────────────────────────────────
+-- GENERATED FILE — do not edit.
+--
+-- Produced from \`server/db/schema.sql\` by \`npm run pg:schema\`, and applied by
+-- \`migrate()\` in \`server/db/pg.ts\` on every boot. Idempotent: every statement
+-- here is safe to run against a database it has already run against.
+--
+-- What it does and why is documented in \`scripts/pg-schema.mjs\`. The short
+-- version: a Supabase project publishes its anon key and serves PostgREST over
+-- the \`public\` schema, so a table with no RLS is readable by anybody holding a
+-- URL this repo never uses. This closes that, twice.
+-- ─────────────────────────────────────────────────────────────────────────────
+
+${rlsBody}`,
+);
+
+console.log(`rls.pg.sql written: ${tables.length} tables secured, ${PUBLIC_ROLES.length} public roles revoked`);

@@ -13,6 +13,7 @@ import * as consent from '../../domain/consent.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as social from '../../domain/social.ts';
+import * as verification from '../../domain/verification.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { actor, bool, oneOf, optStr, str } from '../input.ts';
 import { CONFIG } from '../../config.ts';
@@ -73,6 +74,20 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
          precisely so a client that guesses wrong costs nothing. */
       onboardedAt: user.onboarded_at,
       trustTier: user.trust_tier,
+      /*
+       * When the address was proved, or null.
+       *
+       * A **stamp rather than a boolean**, matching `profileCompletedAt` and
+       * `onboardedAt` one field up: the moment is the fact, and a client that
+       * wants a boolean has one. Null is the state that gates earning,
+       * redeeming and the board — see `domain/verification.ts` for the full
+       * list and for the three things it deliberately does not gate.
+       */
+      emailVerifiedAt: user.email_verified_at,
+      /* §1.4's standing answer, as a boolean because it is one. The column is
+         an integer for the same reason `leaderboard_opt_in` is — SQLite has no
+         boolean — and a client should not have to know that. */
+      venueSharingDefault: user.venue_sharing_default === 1,
       leaderboardOptIn: user.leaderboard_opt_in === 1,
       referralCode: user.referral_code,
       createdAt: user.created_at,
@@ -91,11 +106,27 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
   };
 }
 
+/**
+ * Issue a code, in the reader's language.
+ *
+ * A function rather than three copies of one call, because it is reached from
+ * three places — sign-up, the resend route, and a client whose first code
+ * expired — and the `language` argument is the part that would be forgotten in
+ * one of them. `ctx.language` is the account's own setting first and the header
+ * second (see `languageOf`), which is the right order for a message somebody
+ * reads in a mail client rather than in this browser.
+ */
+const sendCode = async (ctx: Ctx, userId: string) =>
+  await verification.issue(ctx.db, { userId, language: ctx.language, at: ctx.at });
+
 export const authRoutes: Route[] = [
   {
     method: 'POST',
     pattern: '/v1/auth/signup',
     auth: 'none',
+    /* Per connection, because the thing being bounded is minting accounts and
+       the address is a field a script fills in. See `CONFIG.limits`. */
+    limit: { perHour: CONFIG.limits.signUpPerHour, by: 'connection' },
     handler: async (ctx) => {
       const user = await accounts.signUp(ctx.db, {
         email: str(ctx.body, 'email'),
@@ -116,6 +147,13 @@ export const authRoutes: Route[] = [
         city: optStr(ctx.body, 'city'),
         countryCode: optStr(ctx.body, 'countryCode'),
         partner: bool(ctx.body, 'partner'),
+        /* Read with `ctx.body.acceptTerms === true` rather than through
+           `bool()`, for the reason `practice` on the games route is: every
+           truthiness test in JavaScript reads the *string* "false" as true, and
+           this is a field a client might send from a form serialiser. A strict
+           comparison is the only reading where an unchecked box cannot arrive
+           as consent. */
+        acceptTerms: ctx.body.acceptTerms === true,
         referralCode: optStr(ctx.body, 'referralCode'),
         provisionalId: optStr(ctx.body, 'provisionalId'),
         at: ctx.at,
@@ -128,7 +166,33 @@ export const authRoutes: Route[] = [
         at: ctx.at,
       });
       ctx.res.setHeader('set-cookie', cookieFor(session.token, 30));
-      return { token: session.token, user: { id: user.id, name: user.display_name, email: user.email } };
+
+      /*
+       * The first code, sent here rather than left for the client to ask for.
+       *
+       * A client that had to remember to call `/v1/auth/verify/send` after
+       * every sign-up is a client that forgets once and leaves an account
+       * unable to earn with nothing on screen explaining why. It is the same
+       * argument the session is issued here for: the account exists, so
+       * everything the account needs to exist *with* happens in one request.
+       *
+       * **A failure does not fail the sign-up.** The account is real, the
+       * session is real, and the address is provable at any time from the
+       * verification screen — losing all of that because a mail transport was
+       * down would be trading something that works for something that does
+       * not. `verification` comes back describing what happened, including
+       * `sent: false`, so the client can say so.
+       */
+      const verification = await sendCode(ctx, user.id).catch((error: unknown) => {
+        console.warn(`sign-up code not sent: ${(error as Error).message}`);
+        return null;
+      });
+
+      return {
+        token: session.token,
+        user: { id: user.id, name: user.display_name, email: user.email },
+        verification,
+      };
     },
   },
   {
@@ -170,6 +234,11 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/auth/google',
     auth: 'none',
+    /* Higher than sign-up: this is a sign-*in* for most callers, and a family
+       or an office behind one address signs in far more often than it
+       registers. It still bounds a loop hunting for a forged token that
+       verifies. */
+    limit: { perHour: CONFIG.limits.googleSignInPerHour, by: 'connection' },
     handler: async (ctx) => {
       const clientId = CONFIG.auth.googleClientId;
       if (!clientId) {
@@ -254,6 +323,54 @@ export const authRoutes: Route[] = [
     },
   },
   {
+    /**
+     * Send (or resend) the sign-up code.
+     *
+     * `auth: 'user'` — the session exists from the moment sign-up returns, so
+     * the account asking for its own code is authenticated. That is what makes
+     * this safe to leave un-throttled by address: the caller is already known,
+     * so there is no address to enumerate and no stranger to post mail on
+     * behalf of.
+     *
+     * Three brakes still, and they answer different things:
+     * `CONFIG.auth.codeCooldownSeconds` bounds the button,
+     * `codeSendsPerAddress` bounds the total, and the route's own `limit`
+     * bounds the requests. The first is not an error — a cooldown refusal comes
+     * back `sent: false` with `nextSendAt`, because asking again too soon is
+     * what an honest person does when a message is slow.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/verify/send',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.sendCodePerHour, by: 'account' },
+    handler: async (ctx) => await sendCode(ctx, actor(ctx).user.id),
+  },
+  {
+    /**
+     * Confirm the code.
+     *
+     * Rate-limited per account on top of the per-code attempt cap, and the two
+     * are not redundant: the cap kills **one code** after five wrong answers,
+     * and this bounds how fast somebody can burn through codes by alternating
+     * guesses with resends.
+     *
+     * Not idempotent in the `Idempotency-Key` sense, and it does not need to
+     * be: `confirm` is idempotent by construction — a second confirm of an
+     * account that is already verified is `granted: false` rather than an
+     * error, the same shape `POST /v1/me/onboarded` uses.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/verify',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.verifyEmailPerHour, by: 'account' },
+    handler: async (ctx) =>
+      await verification.confirm(ctx.db, {
+        userId: actor(ctx).user.id,
+        code: str(ctx.body, 'code'),
+        at: ctx.at,
+      }),
+  },
+  {
     method: 'POST',
     pattern: '/v1/auth/signout',
     auth: 'user',
@@ -268,6 +385,9 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/auth/guest',
     auth: 'none',
+    /* A provisional account is an account, and this one needs no password at
+       all — so it is the cheapest row on the server to create in a loop. */
+    limit: { perHour: CONFIG.limits.guestPerHour, by: 'connection' },
     handler: async (ctx) => {
       const user = await accounts.provisional(ctx.db, str(ctx.body, 'device'), ctx.at);
       const session = await accounts.createSession(ctx.db, {
@@ -318,6 +438,23 @@ export const authRoutes: Route[] = [
          one whose returned row is rendered — and it has to have seen both. */
       if (ctx.body.leaderboardOptIn !== undefined) {
         await social.setLeaderboardOptIn(ctx.db, user.id, bool(ctx.body, 'leaderboardOptIn'));
+      }
+      /*
+       * §1.4's standing answer — "share my profile with venues I visit".
+       *
+       * Beside the board's opt-in for the same reason: both are preferences
+       * rather than profile *fields*, both are read by a switch that applies on
+       * the flip, and both are written before the profile below so the row
+       * `me()` renders has seen them.
+       *
+       * Switching it **off does not revoke anything**. The grants that stand
+       * are about specific venues somebody has been to, and declining future
+       * ones is a different decision from withdrawing the ones they made —
+       * `DELETE /v1/me/sharing/:venueId` is that, one venue at a time, and
+       * `GET /v1/me/consents` lists them.
+       */
+      if (ctx.body.venueSharingDefault !== undefined) {
+        await consent.setSharingDefault(ctx.db, user.id, bool(ctx.body, 'venueSharingDefault'));
       }
       /*
        * An explicit JSON `null` takes an answer back (§2.13); an absent key and an
@@ -397,12 +534,22 @@ export const authRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/me/onboarded',
     auth: 'user',
-    handler: async (ctx) => await accounts.completeOnboarding(ctx.db, actor(ctx).user.id, ctx.at),
+    handler: async (ctx) => {
+      /* It grants points, so it is behind the address — the gate is at the
+         route rather than in `completeOnboarding` because the domain function
+         is also how a fixture and the demo seed finish onboarding, and neither
+         of those is a client with an inbox. */
+      await verification.assertVerified(ctx.db, actor(ctx).user.id);
+      return await accounts.completeOnboarding(ctx.db, actor(ctx).user.id, ctx.at);
+    },
   },
   {
     method: 'POST',
     pattern: '/v1/me/password',
     auth: 'user',
+    /* This route takes the *current* password, so an unbounded one is a
+       password oracle for whoever holds a stolen session token. */
+    limit: { perHour: CONFIG.limits.passwordChangePerHour, by: 'account' },
     handler: async (ctx) => {
       await accounts.changePassword(
         ctx.db,

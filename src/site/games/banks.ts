@@ -249,9 +249,44 @@ export function quizCountryFor(countryCode: string | undefined): LocalCountry {
 export const quizBankFor = (countryCode: string | undefined): LocalBank =>
   QUIZ_BANK_FOR_COUNTRY[quizCountryFor(countryCode)];
 
-/** The local list for a profile's country, folded the way `fxForCountry` folds. */
-export function wordListFor(countryCode: string | undefined): WordList {
-  return WORD_LIST_FOR_COUNTRY[(countryCode ?? '').trim().toUpperCase()] ?? 'pl';
+/**
+ * The local list for a profile's country, or **null** when there is not one.
+ *
+ * Three answers, not two, and the third is the one that was wrong:
+ *
+ * - A country with a row in the table gets that list.
+ * - A country we have **not localised for at all** — including an account with
+ *   no city yet — gets `'pl'`. That is a real answer rather than a shrug: this
+ *   site is a guide to having moved to Poland and Polish is the one local list
+ *   it ships, so somebody who has not told us where they are is offered the
+ *   market's language.
+ * - A country the product **does** know about and has no word list for gets
+ *   `null`, and the local Word Builder card is not drawn for them at all.
+ *
+ * That third case is Uzbekistan, and it was being handed the Polish list. The
+ * card's whole promise is "practise the language of the place you have moved
+ * to", so offering Polish to somebody in Tashkent is not a fallback, it is the
+ * card saying something false — and worse than saying nothing, because a player
+ * has no way to tell it is wrong until they are five words in.
+ *
+ * `LOCAL_COUNTRIES` is what "the product knows about this country" means, and
+ * it is the right list rather than a convenient one: a country is in it because
+ * a local-knowledge quiz bank was written for it, which is the same act of
+ * localising this card would be part of. There is no Russian or Uzbek word
+ * list in `data/` — those are hand-delivered exports (`updates/paylez-words-*.json`)
+ * and inventing one here would be inventing vocabulary to teach somebody.
+ *
+ * **Adding the missing list is one file and one row.** Drop
+ * `data/words.ru.json` in, widen `WordList`, and add `UZ: 'ru'` to
+ * `WORD_LIST_FOR_COUNTRY`. The card comes back on by itself.
+ */
+export function wordListFor(countryCode: string | undefined): WordList | null {
+  const code = (countryCode ?? '').trim().toUpperCase();
+  const listed = WORD_LIST_FOR_COUNTRY[code];
+  if (listed) return listed;
+  /* Known to the product and un-listed: no card, rather than the wrong one. */
+  if ((LOCAL_COUNTRIES as readonly string[]).includes(code)) return null;
+  return 'pl';
 }
 
 export const loadWords = (list: WordList) =>

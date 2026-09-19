@@ -27,6 +27,17 @@ import {
  * same question twice in an evening and miss most of the bank forever.
  */
 
+/**
+ * How many buttons a quiz question has.
+ *
+ * Named because it is a *floor* as well as a target: a question drawn with
+ * fewer options than this is a coin flip paying what a four-way question pays,
+ * and `buildCapitalRound` tops its distractors up rather than shipping one.
+ * Mirrors `CONFIG.games.quizOptions` on the server, which filters its own bank
+ * on the same number.
+ */
+const OPTIONS = 4;
+
 export interface Question {
   /** The prompt, already assembled. */
   prompt: string;
@@ -51,6 +62,45 @@ function scramble(options: string[], answer: number): Pick<Question, 'options' |
 
 /* ─────────────────────────────────────────────────────────────── the quizzes ── */
 
+/**
+ * Whether a question can honestly be asked: four options, none of them blank,
+ * and no two of them the same word.
+ *
+ * The last clause is the one that earns this a function. The hand-delivered
+ * exports in `updates/` are translated per language, and **two different
+ * English distractors can translate to one word**: "Как называется группа
+ * ворон?" offers `Стая`, `Стая`, `Убийство`, `Группа`, so two of the four
+ * buttons say the same thing and one of them is arbitrarily wrong. Twelve rows
+ * across the Russian and Uzbek general bank are like this.
+ *
+ * It cannot be fixed in the generator, because the banks are **index-aligned**
+ * across the five languages and the meta: `bag.ts` keys its no-repeat bag on
+ * the pool size and an index means the same question in every language, so
+ * dropping a row in Russian alone would silently re-point every index after it.
+ * It is therefore a draw-time filter, in the reader's language only — the same
+ * shape the server states for a row missing a translation.
+ *
+ * Exported because `npm run verify` applies it to the real files: what matters
+ * is not that the defect is absent (it is upstream) but that filtering it
+ * still leaves a bank big enough to play.
+ */
+export const isAskable = (options: readonly string[]): boolean =>
+  options.length === OPTIONS &&
+  options.every((option) => option.trim().length > 0) &&
+  new Set(options).size === options.length;
+
+/**
+ * How many rows a quiz draw takes from the bag before filtering.
+ *
+ * The filter above rejects a handful of rows per bank, and a draw of exactly
+ * five that then rejects one is a round of four. Drawing twice over covers it —
+ * the worst bank has 8 unusable rows in 2102 — and a draw taken from the bag and
+ * not used is still *drawn*, which is the one cost: those questions are marked
+ * seen without being asked. That is the right trade at this ratio and would not
+ * be at a much worse one.
+ */
+const OVERDRAW = 2;
+
 export async function buildQuizRound(
   bank: 'general' | LocalBank,
   language: LanguageCode,
@@ -58,10 +108,13 @@ export async function buildQuizRound(
 ): Promise<Question[]> {
   const { rows, answers } = await loadQuiz(bank, language);
 
-  return drawFrom(bank, rows.length, count).map((index) => {
-    const row = rows[index];
-    return { prompt: row[0], ...scramble(row.slice(1), answers[index]) };
-  });
+  return drawFrom(bank, rows.length, count * OVERDRAW)
+    .filter((index) => isAskable(rows[index].slice(1)))
+    .slice(0, count)
+    .map((index) => {
+      const row = rows[index];
+      return { prompt: row[0], ...scramble(row.slice(1), answers[index]) };
+    });
 }
 
 /* ────────────────────────────────────────────────────────────────── flags ── */
@@ -109,24 +162,32 @@ export async function buildFlagRound(
   const pool = wanted
     ? codes.map((code, i) => (wanted.has(code.toUpperCase()) ? i : -1)).filter((i) => i >= 0)
     : null;
+  /* Unaskable rows dropped here too — see `isAskable`. The flags bank has none
+     today; it is the same export pipeline as the quiz banks that do, and a
+     guard that only covers the bank which happens to be broken is a guard that
+     is absent the next time. */
   if (pool && pool.length >= count) {
-    return drawFrom(`flags:easy`, pool.length, count).map((slot) => {
-      const index = pool[slot];
-      return {
+    return drawFrom(`flags:easy`, pool.length, count * OVERDRAW)
+      .map((slot) => pool[slot])
+      .filter((index) => isAskable(rows[index]))
+      .slice(0, count)
+      .map((index) => ({
         prompt,
         glyph: flagOf(codes[index]),
         ...scramble(rows[index], answers[index]),
-      };
-    });
+      }));
   }
 
-  return drawFrom('flags', rows.length, count).map((index) => ({
-    prompt,
-    /* Built from the ISO code rather than fetched: two characters the
-       self-hosted flag font already draws. See `flagOf`. */
-    glyph: flagOf(codes[index]),
-    ...scramble(rows[index], answers[index]),
-  }));
+  return drawFrom('flags', rows.length, count * OVERDRAW)
+    .filter((index) => isAskable(rows[index]))
+    .slice(0, count)
+    .map((index) => ({
+      prompt,
+      /* Built from the ISO code rather than fetched: two characters the
+         self-hosted flag font already draws. See `flagOf`. */
+      glyph: flagOf(codes[index]),
+      ...scramble(rows[index], answers[index]),
+    }));
 }
 
 /* ─────────────────────────────────────────────────────────────── capitals ── */
@@ -161,17 +222,33 @@ export async function buildCapitalRound(
   return drawFrom('capitals', rows.length, count).map((index) => {
     const [country, capital] = rows[index];
     const neighbours = byContinent.get(continents[index]) ?? [];
-    const pool = neighbours.length >= 4 ? neighbours : rows.map((_, i) => i);
 
-    /* Distinct *capitals*, not distinct rows: two countries sharing a capital
-       name would otherwise put the same word on two buttons, one right and one
-       wrong. */
+    /*
+     * Distinct *capitals*, not distinct rows: two countries sharing a capital
+     * name would otherwise put the same word on two buttons, one right and one
+     * wrong.
+     *
+     * **Two passes, and the second one is the guard.** The continent group used
+     * to be accepted on `neighbours.length >= 4`, which counts *rows* — so a
+     * four-country continent where two share a capital yielded two wrong
+     * answers and a three-button question. A question with fewer options than
+     * the rest is not a harder question, it is a cheaper one: it pays the same
+     * point for a coin flip, and the same defect on the server's own bank (see
+     * `pickDistractors` in `server/db/import.ts`) is what made fourteen flags
+     * and fourteen capitals a two-way guess. So the near pool is *tried* and
+     * the whole table tops it up, which keeps same-continent distractors
+     * wherever they exist and never ships a short question.
+     */
     const wrong: string[] = [];
-    for (const pick of shuffledRange(pool.length)) {
-      const other = rows[pool[pick]][1];
-      if (other !== capital && !wrong.includes(other)) wrong.push(other);
-      if (wrong.length === 3) break;
-    }
+    const take = (pool: number[]): void => {
+      for (const pick of shuffledRange(pool.length)) {
+        const other = rows[pool[pick]][1];
+        if (other !== capital && !wrong.includes(other)) wrong.push(other);
+        if (wrong.length === OPTIONS - 1) return;
+      }
+    };
+    take(neighbours);
+    if (wrong.length < OPTIONS - 1) take(rows.map((_, i) => i));
 
     return { prompt: prompt(country), ...scramble([capital, ...wrong], 0) };
   });

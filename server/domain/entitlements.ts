@@ -30,6 +30,7 @@
  * apply it, and to `gate.ts`, which should not.
  */
 import type { Db } from '../db/db.ts';
+import * as audit from './audit.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
 import { now, plusDays, plusMonths, type Iso } from './time.ts';
@@ -49,6 +50,8 @@ export interface Plan {
   interval: string;
   trial_days: number;
   rank: number;
+  /** `plans.active`. A retired plan stays readable and stops being assignable. */
+  active: number;
 }
 
 export interface Subscription {
@@ -175,21 +178,74 @@ export const freePlan = async (db: Db, audience: Audience): Promise<Plan> => {
  * gets the better of the two while the reconciliation job sorts it out. The
  * alternative — refusing to answer — would take perks away from somebody who
  * paid twice.
+ *
+ * ## The row has a window now, and that is what an effective date *is*
+ *
+ * Two filters joined the status test, and together they are the whole mechanism
+ * behind a dated tier change — no scheduled job, no pending table, nothing to
+ * run at midnight:
+ *
+ * - **`started_at <= at`.** A row dated forward is not live yet. Without this a
+ *   future-dated assignment took effect the moment it was written, which is the
+ *   opposite of what a date on it means.
+ * - **`cancel_at IS NULL OR cancel_at > at`.** A row can be told when to stop
+ *   without being ended today. `assignPlan` uses it to retire the *current*
+ *   subscription exactly when the new one begins, so a dated change is a
+ *   hand-over rather than a gap: ending the old row immediately would strip a
+ *   venue's plan for the fortnight before the new one started, and leaving it
+ *   running would let `ORDER BY p.rank DESC` keep serving the old tier forever
+ *   whenever the change was a *downgrade*.
+ *
+ * Both are no-ops for every row that predates them — nothing has ever written
+ * `cancel_at`, and every `started_at` is in the past — which is why this could
+ * be a filter rather than a migration.
+ *
+ * `at` is a parameter because the caller's clock is the one that matters: the
+ * job sweeping renewals, a test walking a subscription through a year, and a
+ * request being served are three different instants.
  */
-export async function activeSubscription(db: Db, subject: Subject): Promise<Subscription | undefined> {
+export async function activeSubscription(
+  db: Db,
+  subject: Subject,
+  at: Iso = now(),
+): Promise<Subscription | undefined> {
   const clause = 'userId' in subject ? 'user_id = $s' : 'venue_id = $s';
   const value = 'userId' in subject ? subject.userId : subject.venueId;
   return await db.get<Subscription>(
     `SELECT s.* FROM subscriptions s JOIN plans p ON p.id = s.plan_id
       WHERE ${clause} AND s.status IN ('trialing', 'active', 'grace')
+        AND s.started_at <= $at
+        AND (s.cancel_at IS NULL OR s.cancel_at > $at)
       ORDER BY p.rank DESC, s.started_at DESC LIMIT 1`,
-    { s: value },
+    { s: value, at },
   );
 }
 
-export async function planFor(db: Db, subject: Subject): Promise<Plan> {
+/**
+ * A change an operator has dated forward, or nothing.
+ *
+ * The counterpart of `activeSubscription`: the row whose window has not opened
+ * yet. It exists because a console that can schedule a change and cannot show
+ * one already scheduled is a console where the same change gets made twice.
+ */
+export async function pendingSubscription(
+  db: Db,
+  subject: Subject,
+  at: Iso = now(),
+): Promise<Subscription | undefined> {
+  const clause = 'userId' in subject ? 'user_id = $s' : 'venue_id = $s';
+  const value = 'userId' in subject ? subject.userId : subject.venueId;
+  return await db.get<Subscription>(
+    `SELECT s.* FROM subscriptions s
+      WHERE ${clause} AND s.status IN ('trialing', 'active', 'grace') AND s.started_at > $at
+      ORDER BY s.started_at LIMIT 1`,
+    { s: value, at },
+  );
+}
+
+export async function planFor(db: Db, subject: Subject, at: Iso = now()): Promise<Plan> {
   const audience: Audience = 'userId' in subject ? 'consumer' : 'partner';
-  const subscription = await activeSubscription(db, subject);
+  const subscription = await activeSubscription(db, subject, at);
   if (!subscription) return await freePlan(db, audience);
   return (
     (await db.get<Plan>(`SELECT * FROM plans WHERE id = $p`, { p: subscription.plan_id })) ??
@@ -199,9 +255,21 @@ export async function planFor(db: Db, subject: Subject): Promise<Plan> {
 
 export type Entitlements = Record<string, string>;
 
-/** Every entitlement the account currently has, keyed. */
-export async function entitlementsFor(db: Db, subject: Subject): Promise<Entitlements> {
-  const plan = await planFor(db, subject);
+/**
+ * Every entitlement the account currently has, keyed.
+ *
+ * Read from the database on every call, and that is what makes an operator's
+ * tier change **propagate immediately**: there is no cache to invalidate, no
+ * copy on the session row, and no nightly job between the write and the answer.
+ * The next request this account makes is gated by the new plan. Adding a cache
+ * here would be the change that quietly makes item 23's promise untrue.
+ */
+export async function entitlementsFor(
+  db: Db,
+  subject: Subject,
+  at: Iso = now(),
+): Promise<Entitlements> {
+  const plan = await planFor(db, subject, at);
   const rows = await db.all<{ key: string; value: string }>(
     `SELECT key, value FROM plan_entitlements WHERE plan_id = $p`,
     { p: plan.id },
@@ -333,6 +401,249 @@ export async function startSubscription(
       },
     );
     return (await db.get<Subscription>(`SELECT * FROM subscriptions WHERE id = $i`, { i: id }))!;
+  });
+}
+
+/**
+ * Put an account on a tier, because an operator said so — item 23.
+ *
+ * ## Why this is not `startSubscription` with `source: 'manual'`
+ *
+ * It nearly is, and the difference is the whole item. `startSubscription`
+ * cancels the existing subscription **now** and starts the new one **now**;
+ * that is right for a webhook, where the money has already moved and the
+ * instant is not a choice. An operator's change has a *date* — "put them on Pro
+ * from the first" — and applying it early is either a tier given away for free
+ * or one taken away early, depending on the direction.
+ *
+ * So this is the dated version, and the date is expressed entirely in the two
+ * columns `activeSubscription` now filters on:
+ *
+ * - **Now or in the past** → the old row ends, the new row starts, exactly as a
+ *   webhook would do it. A backdate is allowed and is deliberately *not* a
+ *   rewrite of history: the row starts at the date given, so the account is
+ *   entitled from then, and nothing retroactively re-grants anything that was
+ *   refused in between. There is no mechanism here for undoing a refusal, and
+ *   pretending otherwise would be the more dangerous kind of wrong.
+ * - **In the future** → the new row is written with `started_at` at the date,
+ *   and the *current* row is given `cancel_at` at the same instant. Neither is
+ *   live until then; on the day, the hand-over is atomic because it is the same
+ *   two timestamps being compared by one query. Nothing runs at midnight.
+ *
+ * ## Free is a plan, so "remove the tier" is assigning one
+ *
+ * There is no "unassign". Every audience has a free plan (`freePlan`, the
+ * lowest rank), `planFor` falls back to it, and assigning it explicitly is how
+ * an operator takes somebody off a paid tier. That keeps one code path and one
+ * audit row for every change, where a separate removal would be a second way to
+ * reach the same state with different bookkeeping.
+ *
+ * ## What it refuses
+ *
+ * A plan from the **wrong audience**, which is the mistake this endpoint makes
+ * easy: `plans` holds both, keyed `(audience, code)`, and putting a venue on a
+ * consumer plan would give it a set of entitlements no partner screen reads —
+ * a venue that looks subscribed and behaves free. The audience is derived from
+ * the *subject* rather than taken from the caller, so it cannot be got wrong
+ * from the outside at all.
+ *
+ * ## The audit row is written here and not by the route
+ *
+ * Every change of a tier is one, whoever asked — see Part E. It carries the
+ * plan either side rather than only the new one, because "moved to Pro" does
+ * not say whether that was a sale or a downgrade, and the operator's own note
+ * rides with it: the reason a tier was granted by hand is the thing nobody can
+ * reconstruct later.
+ */
+export async function assignPlan(
+  db: Db,
+  input: {
+    subject: Subject;
+    planCode: string;
+    /** When it takes effect. Defaults to now, which is the webhook's behaviour. */
+    effectiveFrom?: Iso;
+    actorId: string;
+    /** Why, in the operator's own words. Kept on the audit row. */
+    note?: string;
+    at?: Iso;
+  },
+): Promise<{ subscription: Subscription; effectiveFrom: Iso; scheduled: boolean }> {
+  const at = input.at ?? now();
+  const from = input.effectiveFrom ?? at;
+  const audience: Audience = 'userId' in input.subject ? 'consumer' : 'partner';
+
+  const plan = await db.get<Plan>(`SELECT * FROM plans WHERE audience = $a AND code = $c`, {
+    a: audience,
+    c: input.planCode,
+  });
+  if (!plan) {
+    /* `planCode` and **not** `code`: the HTTP layer serialises a refusal as
+       `{ code, message, ...detail }`, so a detail key called `code` overwrites
+       the error code with the plan's — this answered `"code": "premium"` where
+       a client branching on it needed `not_found`. Measured against a running
+       server, which is the only place the collision is visible. */
+    throw new DomainError('not_found', `no ${audience} plan called ${input.planCode}`, {
+      audience,
+      planCode: input.planCode,
+    });
+  }
+  if (!plan.active) {
+    /* A retired plan still has subscribers and still has to be readable; what
+       it must not be is *assignable*, or an operator can put somebody on a tier
+       the product has stopped selling and nobody will notice until it is
+       deleted. */
+    throw new DomainError('invalid_state', 'that plan is no longer offered', {
+      planCode: plan.code,
+    });
+  }
+
+  return db.tx(async () => {
+    const before = await activeSubscription(db, input.subject, at);
+    const scheduled = from > at;
+
+    /*
+     * A second dated change replaces the first rather than queueing behind it.
+     * An operator correcting a date they mistyped should not leave two pending
+     * rows, and `pendingSubscription` answers with the earliest — so the
+     * mistake would be the one that took effect.
+     */
+    const queued = await pendingSubscription(db, input.subject, at);
+    if (queued) {
+      await db.run(
+        `UPDATE subscriptions SET status = 'cancelled', ended_at = $t, updated_at = $t WHERE id = $i`,
+        { t: at, i: queued.id },
+      );
+    }
+
+    if (before) {
+      if (scheduled) {
+        /* Told when to stop, not stopped. See `activeSubscription`. */
+        await db.run(`UPDATE subscriptions SET cancel_at = $f, updated_at = $t WHERE id = $i`, {
+          f: from,
+          t: at,
+          i: before.id,
+        });
+      } else {
+        await db.run(
+          `UPDATE subscriptions SET status = 'cancelled', ended_at = $t, updated_at = $t WHERE id = $i`,
+          { t: at, i: before.id },
+        );
+      }
+    }
+
+    const id = newId('sub');
+    await db.run(
+      `INSERT INTO subscriptions
+         (id, user_id, venue_id, plan_id, status, source, external_ref, started_at,
+          renews_at, created_at, updated_at)
+       VALUES ($i, $u, $v, $p, 'active', 'manual', NULL, $from, $r, $at, $at)`,
+      {
+        i: id,
+        u: 'userId' in input.subject ? input.subject.userId : null,
+        v: 'venueId' in input.subject ? input.subject.venueId : null,
+        p: plan.id,
+        from,
+        /*
+         * **No renewal date on a granted tier**, and this is the one line most
+         * likely to be "tidied" into a bug. `runRenewals` sweeps anything whose
+         * `renews_at` has passed into `grace` and then `expired` — so giving an
+         * operator's grant thirty days would quietly take it away in a month,
+         * and the operator would have no way to tell that from a card failing.
+         * A tier granted by hand is withdrawn by hand.
+         */
+        r: null,
+        at,
+      },
+    );
+
+    await audit.record(db, {
+      actorId: input.actorId,
+      actorRole: 'admin',
+      action: 'subscription.assign',
+      entity: 'subscription',
+      entityId: id,
+      venueId: 'venueId' in input.subject ? input.subject.venueId : undefined,
+      before: before ? { planId: before.plan_id, subscriptionId: before.id } : null,
+      after: {
+        planId: plan.id,
+        planCode: plan.code,
+        audience,
+        effectiveFrom: from,
+        scheduled,
+        note: input.note ?? null,
+      },
+      at,
+    });
+
+    return {
+      subscription: (await db.get<Subscription>(`SELECT * FROM subscriptions WHERE id = $i`, {
+        i: id,
+      }))!,
+      effectiveFrom: from,
+      scheduled,
+    };
+  });
+}
+
+/**
+ * Drop a dated change before it lands.
+ *
+ * Only a row whose window has not opened: cancelling one that is already live
+ * is a *downgrade*, which is another `assignPlan` with the free plan and an
+ * audit row saying so. Refusing it here keeps "undo the thing I scheduled" and
+ * "take this account off its tier" as two different operations, because they
+ * are two different decisions and only one of them changes what somebody has
+ * today.
+ */
+export async function cancelScheduled(
+  db: Db,
+  input: { subscriptionId: string; actorId: string; at?: Iso },
+): Promise<{ cancelled: boolean }> {
+  const at = input.at ?? now();
+  return db.tx(async () => {
+    const row = await db.get<Subscription>(`SELECT * FROM subscriptions WHERE id = $i`, {
+      i: input.subscriptionId,
+    });
+    if (!row) throw new DomainError('not_found', 'no such subscription');
+    if (row.started_at <= at) {
+      throw new DomainError('invalid_state', 'that change has already taken effect', {
+        startedAt: row.started_at,
+        remedy: 'assign a plan instead',
+      });
+    }
+
+    await db.run(
+      `UPDATE subscriptions SET status = 'cancelled', ended_at = $t, updated_at = $t WHERE id = $i`,
+      { t: at, i: row.id },
+    );
+    /* And the row it was going to replace gets its open end back, or the
+       account would stop being entitled on a date nothing now arrives on. */
+    const subject: Subject = row.user_id
+      ? { userId: row.user_id }
+      : { venueId: row.venue_id as string };
+    const clause = row.user_id ? 'user_id = $s' : 'venue_id = $s';
+    await db.run(
+      `UPDATE subscriptions SET cancel_at = NULL, updated_at = $t
+        WHERE ${clause} AND cancel_at = $f AND status IN ('trialing', 'active', 'grace')`,
+      { s: row.user_id ?? row.venue_id, f: row.started_at, t: at },
+    );
+
+    await audit.record(db, {
+      actorId: input.actorId,
+      actorRole: 'admin',
+      action: 'subscription.unschedule',
+      entity: 'subscription',
+      entityId: row.id,
+      venueId: row.venue_id ?? undefined,
+      before: { planId: row.plan_id, startedAt: row.started_at },
+      at,
+    });
+
+    /* Read back rather than assumed: the reinstated row is what every screen
+       will now answer with, and a caller that trusted this without looking
+       would report a plan the database disagrees with. */
+    void (await activeSubscription(db, subject, at));
+    return { cancelled: true };
   });
 }
 

@@ -106,6 +106,11 @@ export const en = {
   signIn: 'Sign in',
   assistant: 'Open the AI assistant',
   languageMenu: 'Change language',
+  /* The currency switcher's label. A separate control from the language now —
+     see `CurrencyMenu` — so it needs a name of its own: "Language" over a list
+     of currencies was the one place this separation could still read as one
+     setting. */
+  currencyMenu: 'Currency',
   theme: {
     label: 'Theme',
     toLight: 'Switch to light theme',
@@ -122,6 +127,52 @@ export const en = {
     email: 'Email address',
     emailPlaceholder: 'you@email.com',
     password: 'Password',
+    /*
+     * The password toggle's two labels — see `PasswordInput.tsx`.
+     *
+     * Two strings rather than one plus a state, because a button whose label
+     * does not change is a button a screen reader announces identically in
+     * both states. `aria-pressed` carries the state as well; the pair is
+     * unambiguous under every reader, where either alone is not under some.
+     *
+     * They live under `auth` rather than beside each form because there are
+     * four password fields in this site — two here, one in the operator's
+     * reset, one in the console's sign-in — and four copies of "Show
+     * password" is four things to translate and three to forget.
+     */
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
+    /*
+     * ── confirming the address ──
+     *
+     * The panel on the Play screen and the wallet — `VerifyEmail.tsx`, which
+     * carries the reasoning for why it is a panel rather than a gate.
+     *
+     * Two ledes rather than one, and that is the decision worth keeping: a
+     * round that banks nothing and a purchase that will be refused are
+     * different facts, and one sentence covering both is vague about each.
+     *
+     * `tooSoon` is **not** an error copy: a resend inside the cooldown comes
+     * back `sent: false`, because asking again when a message is slow is what
+     * an honest person does.
+     */
+    verify: {
+      kicker: 'Confirm your email',
+      playLede: 'Rounds will not pay until you confirm the address you signed up with —',
+      walletLede: 'You can spend points once you confirm the address you signed up with —',
+      codeLabel: 'The six-digit code we sent you',
+      codePlaceholder: '000000',
+      confirm: 'Confirm',
+      working: 'Checking…',
+      resend: 'Send it again',
+      onItsWay: 'On its way. It expires in a few minutes.',
+      tooSoon: 'One has just gone out — give it a moment before asking again.',
+      /* How many tries are left, because the server kills the code after five
+         and somebody on their fourth ought to know. */
+      wrongWithTries: 'That code is not right. {n} more tries before it expires.',
+      offline: 'We could not reach the server. Try again in a moment.',
+      failed: 'That did not work. Try again in a moment.',
+    },
     passwordPlaceholder: 'Your password',
     submit: 'Sign in',
     /* The credentials are in the bundle either way — see `auth/users.ts`. One
@@ -148,6 +199,23 @@ export const en = {
     typeQuestion: 'Which are you?',
     typeNote: 'You can only pick once for now, so pick the one that fits.',
     signUpSubmit: 'Create account',
+    /*
+     * ── the sign-up agreement ──
+     *
+     * One sentence in four pieces, because the two document names are links
+     * inside it and a link cannot be a `{hole}` in a translated string. The
+     * pieces are in reading order — lead, "Terms", "and", "Privacy", tail — so a
+     * language that puts the connective elsewhere reorders its own `agreeAnd`
+     * and `agreeTail` rather than needing the component changed.
+     *
+     * `agreeTail` is allowed to be empty: English ends the sentence on the
+     * second link and Polish does not.
+     */
+    agreeLead: 'I agree to the',
+    agreeTerms: 'Terms & Conditions',
+    agreeAnd: 'and the',
+    agreePrivacy: 'Privacy Policy',
+    agreeTail: '.',
     orDivider: 'or',
     googleContinue: 'Continue with Google',
     googleWorking: 'Signing you in…',
@@ -156,6 +224,7 @@ export const en = {
     googleRefused:
       'That Google sign-in could not be completed. Please try again.',
     signUpErrors: {
+      terms: 'Please accept the Terms & Conditions and the Privacy Policy.',
       name: 'Tell us your name.',
       email: 'That does not look like an email address.',
       taken: 'There is already an account with that email address. Sign in instead.',
@@ -214,7 +283,66 @@ export const en = {
       'Accounts',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
-    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages'],
+    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages', 'Tiers'],
+
+    /*
+     * The Tiers tab — `adminTiers.tsx`, item 23.
+     *
+     * Two sentences here are rules rather than labels and should not be
+     * shortened into nothing. `propagation` says what the press does and does
+     * not reach, because "immediate" is true of the server and not of a browser
+     * somebody else has open. And `noteHelp` says what the note is for: the
+     * reason a tier was granted by hand is the one thing nobody can reconstruct
+     * afterwards from the row.
+     *
+     * `sources` is keyed by `subscriptions.source`, and a miss falls through to
+     * the raw value rather than to a blank — the lookup-that-misses failure
+     * this console has already had twice.
+     */
+    tiers: {
+      assignTitle: 'Put an account on a tier',
+      assignLede:
+        'Grant or remove a plan by hand, now or from a date. Every change leaves an audit row with your name on it.',
+      subjectKind: 'A venue or a person',
+      aVenue: 'A venue',
+      aPerson: 'A person',
+      venueId: 'Venue id',
+      userId: 'Account id',
+      idHelp: 'Copy it from the Services or People tab.',
+      plan: 'Plan',
+      pickPlan: 'Choose a plan…',
+      from: 'Takes effect',
+      fromNow: 'Today — in force the moment you press it.',
+      fromLater: 'Scheduled. Nothing changes until that day begins.',
+      note: 'Why',
+      notePlaceholder: 'A call with the owner',
+      noteHelp: 'Kept on the audit row. It is the one thing the row cannot say for itself.',
+      assign: 'Assign the plan',
+      schedule: 'Schedule it',
+      working: 'Working…',
+      didAssign: 'On {plan} from now.',
+      didSchedule: 'On {plan} from {from}.',
+      propagation:
+        'The server answers with the new plan at once — there is nothing cached between it and the gates. A browser the subject already has open catches up when they next load a page or return to the tab.',
+      liveTitle: 'Who is on what',
+      liveLede: 'Every plan in force right now, whoever granted it.',
+      loading: 'Reading the subscriptions…',
+      noneLive: {
+        title: 'Nobody is on a paid tier',
+        body: 'Every account is on the free plan of its own ladder, which is where they all start. A plan bought through checkout appears here too, not only the ones granted by hand.',
+      },
+      scheduledTitle: 'Dated changes',
+      scheduledLede: 'Not in force yet. Each takes effect when its day begins.',
+      columns: ['Account', 'Plan', 'Granted by', 'From', 'Until'],
+      act: 'Drop',
+      drop: 'Drop it',
+      sources: {
+        manual: 'By hand',
+        stripe: 'Stripe',
+        apple: 'App Store',
+        google: 'Play',
+      },
+    },
 
     services: {
       title: 'Business services',
@@ -681,7 +809,7 @@ export const en = {
        "nothing available" because the backend is down has told somebody the
        product is empty, which is the one thing this page must never do. */
     down: {
-      unreachable: 'We could not reach the server, so this is not "nothing" — it is "we could not ask". Try again in a moment.',
+      unreachable: 'We could not reach the server, so this is not “nothing” — it is “we could not ask”. Try again in a moment.',
       refused: 'The server answered but refused the request. Signing in again usually fixes it.',
       retry: 'Try again',
     },
@@ -936,14 +1064,57 @@ export const en = {
        headline of the panel above. What is left here is the history — the
        readings that are worth having and are worth nobody's first glance. */
     statsToggle: 'Your stats',
+    /*
+     * ── today's tasks ──
+     *
+     * The rotating prompts above the game cards. The panel used to be an empty
+     * box; what makes it worth having is not that it is full but that every
+     * line in it is **true for the account reading it** — the server prices
+     * each task from the rule that actually pays it and says whether this
+     * player has already had it, so nothing here advertises a bonus that is
+     * going to be refused. See `domain/tasks.ts`.
+     *
+     * The figure travels as `{reward}`, one hole rather than two half
+     * sentences: a price and the words around it do not sit in the same order
+     * in five languages, and `exact` / `upTo` are the two noun phrases that go
+     * in it. `upTo` exists because a game round pays what the round scored —
+     * "earn 8 points" is a promise about a round somebody might lose, and "up
+     * to 8 points" is the truth.
+     */
+    tasks: {
+      title: 'Today’s list',
+      /* Not a congratulation and not an error — see `openTasks`. An empty list
+         means the day is done, which is worth saying in its own words. */
+      allDone: 'Everything on today’s list is done. Play on for the points.',
+      loading: 'Getting today’s list…',
+      /* The server did not answer. Deliberately not "nothing to do": the panel
+         must not turn a failed request into a congratulation. */
+      offline: 'Today’s list is not available right now.',
+      exact: '{points} points',
+      upTo: 'up to {points} points',
+      checkIn: 'Open Paylez today and take your check-in — {reward}',
+      playRound: 'Play one round today — {reward}',
+      profile: 'Finish your profile — {reward}',
+      invite: 'Invite a friend — {reward} once they visit a venue',
+    },
+
     accuracy: 'Accuracy',
 
     /*
-     * The badge on the featured game. It says what the card is *for* — any
-     * round keeps the streak, but this is the one the screen puts first, so it
-     * is the one that has to say so out loud.
+     * The badge on the daily card, and it names a *slot* rather than describing
+     * a position.
+     *
+     * It read "Today's game" while the poster was simply `GAMES[0]` — the first
+     * row of the table, the same game every day, described as though it were
+     * today's. The poster rotates now (`dailyGame` in `games/rules.ts`), the
+     * same game for every player on a given day, so "Daily game" is a claim
+     * with something behind it.
+     *
+     * The streak clause stays because it is the thing the badge cannot draw:
+     * any round keeps a streak, and a player who reads "daily game" reasonably
+     * assumes this is the one that has to be played to keep one.
      */
-    featured: 'Today’s game · keeps your streak',
+    featured: 'Daily game · keeps your streak',
 
     /*
      * ── the streak row ──
@@ -997,8 +1168,8 @@ export const en = {
      * unaffected.
      */
     names: [
-      'Memory Match',
       'Squawk’s Flight',
+      'Memory Match',
       'Guess the Flag',
       'Country & Capital',
       'Brain Games',
@@ -1181,7 +1352,7 @@ export const en = {
     boardTabs: ['Correct answers', 'Points earned'],
     boardTop: 'Top 10',
       /* The three scopes, index-aligned with `SCOPES` in `api/board.ts`. */
-      boardScopes: ['My city', 'My country', 'Everyone'],
+      boardScopes: ['My country', 'Everyone'],
       boardLoading: 'Reading the board…',
       boardOffline: 'We cannot reach the board right now. It is not that nobody is playing — we just cannot ask.',
       boardHidden: 'You are {rank} this week. You are not listed because you have not turned that on — you can, in your profile.',
@@ -1461,6 +1632,7 @@ export const en = {
       { name: 'Hot deals', lede: 'Time-bound offers shown in the Paylez app feed.' },
       { name: 'Loyalty campaigns', lede: 'Recurring rewards your regulars earn by coming back.' },
       { name: 'Vouchers', lede: 'How points turn into discounts, and what that costs you.' },
+      { name: 'Issued vouchers', lede: 'Every voucher your customers hold, and what happened to it.' },
       { name: 'Customers', lede: 'Who comes in, when they come, and whether they come back.' },
       {
         name: 'Assistant',
@@ -1493,6 +1665,11 @@ export const en = {
         action: 'Set a budget',
       },
       {
+        title: 'No vouchers have been taken yet',
+        body: 'A voucher lands here the moment a customer spends points on one of your rungs. Set a discount budget and the ladder opens; everything after that appears with its code, its window and its status.',
+        action: 'Set a budget',
+      },
+      {
         title: 'Put your QR code on the counter',
         body: 'Nothing on this page can fill in until customers start scanning. Print your code, stand it next to the till, and ask staff to point at it with the bill. The first numbers show up the same day.',
         action: 'Get your QR code',
@@ -1508,6 +1685,76 @@ export const en = {
         action: 'Get your QR code',
       },
     ],
+
+    /*
+     * The voucher register — `dashboardVoucherList.tsx`.
+     *
+     * Its own block rather than more keys under `vouchers`, which belongs to
+     * the ladder screen: that one is about what is on offer and this is about
+     * what was taken, and a shared block would make one screen's rename an
+     * edit to the other's copy.
+     *
+     * Two things here are load-bearing sentences rather than labels.
+     * `caps.noLimitNote` says that a lapsed voucher still counts against a
+     * limit, because that is the rule somebody will otherwise discover by
+     * trying to walk past it. And `table.withheld` says *why* a name is
+     * missing — the customer has not agreed — because "—" on its own reads as
+     * a figure we failed to read.
+     */
+    register: {
+      totals: {
+        issued: 'Vouchers taken',
+        active: 'Still unused',
+        redeemed: 'Spent at your till',
+        expired: 'Lapsed unused',
+        lapsing: '{n} lapse within the week — the last point a reminder can still reach them.',
+      },
+      caps: {
+        kicker: 'Limits',
+        title: 'How many of each you will give out',
+        lede: 'Your discount budget caps what vouchers can cost you. These cap how many there are — the brake for a launch week, a small kitchen, or simply keeping one offer from being taken by one person.',
+        rung: '{pct}% off',
+        taken: '{n} of {total} taken',
+        takenNoCap: '{n} taken, no limit set',
+        total: 'Total',
+        perUser: 'Per customer',
+        unit: 'vouchers',
+        noLimit: 'No limit',
+        remove: 'Remove the limit',
+        noLimitNote: 'Leave a field empty for no limit. A voucher that lapsed unused still counts as taken — otherwise the limit is one anybody can walk past by waiting.',
+        retired: 'Retired',
+        save: 'Save limits',
+        saving: 'Saving…',
+        saved: 'Limits saved.',
+      },
+      list: {
+        kicker: 'Register',
+        title: 'Every voucher your customers hold',
+        search: 'Search a code or a name',
+        count: 'Showing {n} of {total}',
+        empty: 'No voucher has been taken yet. One appears here the moment a customer spends points on a rung above — with its code, both ends of its window, and what happened to it.',
+        emptyFiltered: 'No voucher matches that. Clear the search or pick another status.',
+      },
+      table: {
+        code: 'Code',
+        rung: 'Discount',
+        holder: 'Held by',
+        issued: 'Taken',
+        expires: 'Good until',
+        status: 'Status',
+        redeemed: 'Spent',
+        withheld: 'Withheld — this customer has not agreed to share their profile with your venue.',
+        notRedeemed: 'not yet',
+      },
+      status: {
+        all: 'All',
+        active: 'Unused',
+        redeemed: 'Spent',
+        expired: 'Lapsed',
+        cancelled: 'Cancelled',
+      },
+    },
+
     /*
      * Every control that reaches the server, and every ending a press can have.
      *
@@ -2859,9 +3106,66 @@ export const en = {
     plan: {
       name: 'Growth plan',
       state: 'Active',
+      unknown: 'Your plan',
+      open: 'See plans',
       caption: 'Loyalty and voucher budgets this month. Hot deals are not in here.',
       /* Both halves are money in the reader's currency. */
       usage: '{used} of {total}',
+    },
+
+    /*
+     * The plan panel — `dashboardPlan.tsx`, item 24.
+     *
+     * `rows` is index-aligned with `PARTNER_PLAN_ROWS` in `content.ts`, which
+     * holds the *order* of the comparison and none of its figures: every number
+     * comes from `plan_entitlements` on the server. A row added there needs a
+     * label here in all five languages, and the missing ones are build errors
+     * rather than raw entitlement keys on somebody's screen.
+     *
+     * `howToMove` is a sentence and not a button on purpose — see the file's
+     * own header. `SubscribeButton` is built for the consumer ladder and
+     * pointing it at a partner plan code would open a checkout for a different
+     * plan than the one on the card.
+     */
+    planPanel: {
+      kicker: 'Your subscription',
+      title: 'Your plan, and the three tiers',
+      lede: 'What you are on, what you are using of it, and what the others include.',
+      mineKicker: 'In force now',
+      noSubscription: 'Free tier',
+      freeNote:
+        'You are on the free tier, which every venue starts on. Nothing expires and nothing is owed.',
+      usage: '{used} of {total}',
+      renews: 'Renews {date}.',
+      until: 'Changes on {date}.',
+      notIncluded: 'Not included',
+      compareKicker: 'Compare',
+      compareTitle: 'What each tier includes',
+      whatYouGet: 'What you get',
+      yours: 'Yours',
+      freePrice: 'Free',
+      perMonth: '{amount} a month',
+      howToMove:
+        'Moving between tiers is arranged with us rather than from this screen, so a rollout is priced against what you actually run. Write to',
+      sources: {
+        manual: 'Granted by Paylez',
+        stripe: 'Paid by card',
+        apple: 'Paid via the App Store',
+        google: 'Paid via Google Play',
+      },
+      /* Index-aligned with `PARTNER_PLAN_ROWS`. */
+      rows: [
+        'Live hot deals at once',
+        'Loyalty campaigns running',
+        'Push notifications a month',
+        'Team seats',
+        'Venues on the account',
+        'Deep analytics',
+        'Named customers',
+        'The assistant',
+        'Benchmarks against your city',
+        'CSV export',
+      ],
     },
 
     ranges: ['Last 7 days', 'Last 14 days', 'Last 30 days', 'Last quarter'],
@@ -2935,7 +3239,7 @@ export const en = {
   value: {
     eyebrow: 'Play & Earn',
     title: 'Your points are real money.',
-    lede: "No gimmicks. Play to earn points, then cash them in for gift cards and discounts you'll actually use.",
+    lede: 'No gimmicks. Play to earn points, then cash them in for gift cards and discounts you’ll actually use.',
     /*
      * A picture of a voucher, and every word on it is copy.
      *
@@ -2987,7 +3291,7 @@ export const en = {
       },
       {
         quote:
-          "The customers are ours, not a delivery app's. We can reach the ones who have not been in for a month, and they come back.",
+          'The customers are ours, not a delivery app’s. We can reach the ones who have not been in for a month, and they come back.',
         name: 'Zielony Market',
         meta: 'Grocery · Wrocław',
       },
@@ -3675,6 +3979,21 @@ export const en = {
       send: 'Amount',
       gets: 'Converts to',
       rate: 'Rate',
+      /*
+       * How old the rates are, in three states.
+       *
+       * The card quotes a market rate, and the one thing a reader cannot see
+       * about a market rate is when it was taken. `updated` is the ordinary
+       * answer; `stale` is the same fact with the finding attached, because
+       * rates written on Monday with a sync attempted this morning means the
+       * sheet has not changed, and rates written on Monday with nothing since
+       * means the sync has stopped; `builtIn` is the honest version of a
+       * missing timestamp — the table compiled into the page is what is on
+       * screen, which is a state rather than a fault.
+       */
+      updated: 'Rates updated {when}',
+      stale: 'These rates have not refreshed since {when}',
+      builtIn: 'Showing the built-in rate table',
       swap: 'Swap the two currencies',
       result: '{from} = {to}',
       enter: 'Type an amount to convert.',
@@ -3910,6 +4229,33 @@ export const en = {
    * called, and they are allowed to differ.
    */
   profile: {
+    /*
+     * ── §1.4's standing answer ──
+     *
+     * The help line's second sentence is the load-bearing one: switching this
+     * off declines *future* grants and withdraws none of the ones that stand.
+     * That is the single thing about this control somebody could get wrong in
+     * the direction that matters, so it is said rather than implied.
+     */
+    sharing: {
+      title: 'Share my profile with the venues I visit',
+      help: 'A venue you have actually been to can see your name, your photo and what you have spent there — never your balance, and never a venue you have not visited. Turning this off stops new venues seeing you; the ones that already can are switched off on their own card.',
+      failed: 'That did not save. Try again in a moment.',
+    },
+    /*
+     * ── the board's opt-out ──
+     *
+     * On by default, so this is the way *off* rather than the way on — see
+     * `BoardVisibility` and the column's own note in `schema.sql`. The help
+     * line says what staying on actually shows other people, because "show me
+     * on the leaderboard" does not say whether that means a name, a rank or a
+     * total, and somebody deciding needs to know which.
+     */
+    board: {
+      title: 'Show me on the weekly board',
+      help: 'Your display name, your avatar and your weekly points. Turn it off and you still see the board and your own rank — other people just do not see you on it.',
+      failed: 'That did not save. Try again in a moment.',
+    },
     eyebrow: 'Your account',
     title: 'Your profile',
     lede: 'This is what other players see, and where we know you are. None of it is checked against anything — there is no code sent to your phone and no link to click in your inbox.',
@@ -4147,6 +4493,11 @@ export const en = {
       'Points come from playing and from turning up at the venues in your city. They do not expire — they wait for you.',
     payGo: 'Start playing',
     payProfile: 'Finish your profile first',
+    /* What finishing the profile is worth, above the two buttons rather than
+       under them — a reward nobody notices changes nobody's behaviour. `{points}`
+       is `PROFILE_BONUS`, which is the server's own `CONFIG.points.profileComplete`,
+       so the promise and the payout are one number. */
+    payProfileWorth: 'Finishing your profile is worth another {points} points.',
     /* The way out of the round. Quiet on purpose -- the alternative, not the offer. */
     /* The offer, shown before the first flag. `{n}` is the question count and
        `{points}` the round's total -- both summed from `ROUND_POINTS`, so the

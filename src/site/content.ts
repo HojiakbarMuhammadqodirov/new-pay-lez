@@ -671,11 +671,51 @@ export const GAMES: Array<{
   perCorrect: number;
 }> = [
   /*
-   * Memory Match, and it leads the table because it leads the screen — the
-   * first row is the featured card (`FEATURED` in `games.tsx`), and this is the
-   * one round on the page with no clock, no fail state and nothing to read
-   * before you start it. A catalogue's first card is the one somebody who has
-   * never played opens, and a quiz with a six-second timer is the wrong door.
+   * **The order of this array is the order of the grid**, and since the poster
+   * started rotating that is the whole of what it decides. `GAMES[0]` was the
+   * full-width featured card as well; it is not, and the two facts came apart
+   * deliberately — see `dailyGame` in `games/rules.ts`.
+   *
+   * The flight leads and Memory Match follows it, which is a product decision
+   * rather than a derivation: they are the two rounds with nothing to read
+   * before you start, and the arcade one is the one a stranger recognises.
+   *
+   * Reordering here means reordering `copy.games.names` in all five
+   * dictionaries with it — that array is index-aligned with this one and
+   * `npm run verify` cannot tell a rename from a reorder.
+   */
+  /*
+   * The arcade round, and the only one that is played rather than answered.
+   * `questions` is gaps to clear, `perCorrect` is points per gap,
+   * one crash ends it, and `seconds` is unused —
+   * the round lasts as long as you do.
+   *
+   * Five gaps to bank, matching the quizzes' five questions. Unlike a quiz the
+   * run does not stop there — every gap past five pays another **half** point,
+   * which is what lets the scroll speed climb without the payout running away
+   * with it — but the payout does stop:
+   * `MAX_FLIGHT_POINTS` in `auth/player.ts` caps a flight at 20, which is twice
+   * a clean quiz and the same order as everything else in the set. At two a gap
+   * with no ceiling at all, which is what this row said before, one lucky run
+   * out-earned four days of the rest of the page — a jackpot rather than a
+   * bound. Skill is still paid for past the bank line; it stops being paid at
+   * twenty.
+   */
+  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 0.5 },
+  /*
+   * Memory Match — second, behind the flight, and no longer the featured card.
+   *
+   * **The poster is not `GAMES[0]` any more.** It is whichever game the day
+   * lands on (`dailyGame` in `games/rules.ts`), and the grid below it lists
+   * *every* game including that one — so this table is the grid's order and
+   * nothing else. It used to be both, which is why the row that led it was
+   * chosen for being the right first card for somebody who had never played:
+   * no clock, no fail state, nothing to read before starting.
+   *
+   * That argument has not gone away, it has moved. The daily poster is the
+   * first card anybody sees now, and it is a different game every day, so the
+   * grid's own first row is no longer carrying the burden of being the front
+   * door.
    *
    * `questions` is pairs on the board, and both of the other two are zero and
    * mean it: there is no countdown and there is no fail state.
@@ -698,24 +738,6 @@ export const GAMES: Array<{
    * page for the least asked of anybody.
    */
   { id: 'memory', kind: 'memory', icon: 'cards', questions: 6, seconds: 0, perCorrect: 6 },
-  /*
-   * The arcade round, and the only one that is played rather than answered.
-   * `questions` is gaps to clear, `perCorrect` is points per gap,
-   * one crash ends it, and `seconds` is unused —
-   * the round lasts as long as you do.
-   *
-   * Five gaps to bank, matching the quizzes' five questions. Unlike a quiz the
-   * run does not stop there — every gap past five pays another **half** point,
-   * which is what lets the scroll speed climb without the payout running away
-   * with it — but the payout does stop:
-   * `MAX_FLIGHT_POINTS` in `auth/player.ts` caps a flight at 20, which is twice
-   * a clean quiz and the same order as everything else in the set. At two a gap
-   * with no ceiling at all, which is what this row said before, one lucky run
-   * out-earned four days of the rest of the page — a jackpot rather than a
-   * bound. Skill is still paid for past the bank line; it stops being paid at
-   * twenty.
-   */
-  { id: 'flight', kind: 'flight', icon: 'bird', questions: 5, seconds: 0, perCorrect: 0.5 },
   { id: 'flag', kind: 'flag', icon: 'flag', questions: 5, seconds: 6, perCorrect: 1 },
   { id: 'capital', kind: 'capital', icon: 'map', questions: 5, seconds: 6, perCorrect: 1 },
   { id: 'brain', kind: 'text', icon: 'book', questions: 5, seconds: 12, perCorrect: 1 },
@@ -870,7 +892,10 @@ export const ACCOUNT_TYPES: Array<{
  */
 
 /** The console's own tabs, and the analytics view's. Icons are structure. */
-export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'people', 'bars', 'send'];
+/* Index-aligned with `copy.admin.tabs`. `crown` for the Tiers tab — a plan is
+   the one thing on this console that is a *grade* rather than a kind of thing,
+   and every other icon here names a kind. */
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'people', 'bars', 'send', 'crown'];
 export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
 
 /** The nine Dashboard cards, in the original's order. */
@@ -999,6 +1024,17 @@ export const DASH_SCREENS: Array<{
   { id: 'deals', icon: 'ticket', group: 'grow' },
   { id: 'campaigns', icon: 'trophy', group: 'grow' },
   { id: 'vouchers', icon: 'gift', group: 'grow' },
+  /* The register, beside the ladder it is the other half of. `vouchers` is what
+     is on *offer* — the rungs, their prices, the pool behind them — and this is
+     what was *taken*: every voucher that exists, its status, its window and its
+     redemption. They were one screen's worth of questions with only the first
+     half answered, and an owner who had just set a redemption cap had nowhere
+     to see it being used up.
+
+     `card` rather than another `gift`: a rung is a gift on offer and an issued
+     voucher is a card in somebody's wallet, which is also what the wallet
+     screen calls it. `ticket` belongs to hot deals. */
+  { id: 'issued', icon: 'card', group: 'grow' },
   { id: 'customers', icon: 'people', group: 'grow' },
   { id: 'assistant', icon: 'spark', group: 'grow' },
   { id: 'scans', icon: 'qr', group: 'workspace' },
@@ -1285,6 +1321,67 @@ export const BUSINESS_TIERS: Array<{ price: number | null; featured?: boolean }>
   { price: 149, featured: true },
   { price: null },
 ];
+
+/**
+ * The partner plan comparison (item 24), index-aligned with
+ * `copy.dashboard.planPanel.rows`.
+ *
+ * ## Keys, not values
+ *
+ * This table holds the **order and the shape** of the rows and none of the
+ * figures: every number comes from `plan_entitlements` on the server, fetched
+ * per plan by `GET /v1/plans?audience=partner`. That is the opposite of
+ * `SUB_ROWS` one screen over, which mirrors the seeded consumer figures here in
+ * `content.ts` — and the difference is which side of the paywall the reader is
+ * on. A visitor reading the marketing page is being *sold* a plan and the page
+ * has to price it with no session; a venue owner reading this panel is being
+ * told what they have, and a figure typed here would be a second opinion about
+ * their own account.
+ *
+ * ## Why a fixed list rather than whatever the server sends
+ *
+ * A key the server sends that is not on this list is **not drawn**, and a key
+ * on this list the server does not send reads as "not included". Both are
+ * deliberate, and the alternative is the failure this repo has already had
+ * twice: a lookup that misses falling through to its own key, so a screen
+ * prints `identified_profiles` at somebody. Adding an entitlement to the server
+ * is therefore one row here and one label in five dictionaries — which is the
+ * same cost as adding a service or a feature anywhere else in this file, and
+ * the five failures are build errors rather than raw ids on a screen.
+ *
+ * ## The order
+ *
+ * Capacity first — the four numbers a plan is actually chosen by, and the ones
+ * `requireCapacity` refuses against — then the capabilities, which are yes or
+ * no. Within the capabilities, the ones an owner notices on the first afternoon
+ * come before the ones they notice in a month.
+ */
+export const PARTNER_PLAN_ROWS: Array<{
+  key: string;
+  /** How the value is written: a count, or a thing you either have or do not. */
+  kind: 'number' | 'flag';
+}> = [
+  { key: 'live_deals', kind: 'number' },
+  { key: 'active_campaigns', kind: 'number' },
+  { key: 'push_quota', kind: 'number' },
+  { key: 'team_seats', kind: 'number' },
+  { key: 'venues', kind: 'number' },
+  { key: 'deep_analytics', kind: 'flag' },
+  { key: 'identified_profiles', kind: 'flag' },
+  { key: 'assistant', kind: 'flag' },
+  { key: 'benchmarks', kind: 'flag' },
+  { key: 'export_csv', kind: 'flag' },
+];
+
+/**
+ * How many of the rows above are the panel's headline figures.
+ *
+ * The same split `SUB_HERO` makes on the consumer card and for the same
+ * reason: the first few are the difference an owner feels immediately and the
+ * rest is a list they read once. Four, because that is the capacity block — the
+ * numbers a plan is chosen by.
+ */
+export const PARTNER_PLAN_HERO = 4;
 
 /** Index-aligned with `copy.business.operators.items`. */
 export const BUSINESS_OPERATOR_INITIALS = ['SS', 'HC', 'PY', 'NB'];

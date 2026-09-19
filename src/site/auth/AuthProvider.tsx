@@ -26,7 +26,7 @@ import * as api from '../api/consumer';
 import { readOwnListing } from '../api/listing';
 import { saveMe } from '../api/profile';
 import { useLanguage } from '../i18n/context';
-import { currentRoute } from '../router';
+import { currentRoute, type Route } from '../router';
 import {
   WELCOME_POINTS,
   checkBirthDate,
@@ -312,6 +312,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [plan, setPlan] = useState<AuthValue['plan']>(null);
   const [entitlements, setEntitlements] = useState<AuthValue['entitlements']>(null);
   const [memberSince, setMemberSince] = useState<string | null>(null);
+  const [emailVerifiedAt, setEmailVerifiedAt] = useState<string | null>(null);
+  const [leaderboardOptIn, setLeaderboardOptIn] = useState<boolean | null>(null);
+  const [venueSharingDefault, setVenueSharingDefault] = useState<boolean | null>(null);
+  /** The language the *server* has on this account, as of the last `GET /v1/me`. */
+  const [serverLanguage, setServerLanguage] = useState<string | null>(null);
+  /** A one-shot destination for the next navigation. See `pendingRoute`. */
+  const [pendingRoute, setPendingRoute] = useState<Route | null>(null);
+  const clearPendingRoute = useCallback(() => setPendingRoute(null), []);
 
   /* Read by callbacks that must not be rebuilt whenever either changes — a
      language switch is not a reason to re-ask the server about an account, and
@@ -324,6 +332,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     accountRef.current = account;
   }, [account]);
+
 
   /**
    * The account whose server answer is already folded in.
@@ -372,7 +381,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPlan(me?.plan ?? null);
     setEntitlements(me?.entitlements ?? null);
     setMemberSince(me?.user.createdAt ?? null);
+    setEmailVerifiedAt(me?.user.emailVerifiedAt ?? null);
+    setLeaderboardOptIn(me?.user.leaderboardOptIn ?? null);
+    setVenueSharingDefault(me?.user.venueSharingDefault ?? null);
+    setServerLanguage(me?.user.language ?? null);
   }, []);
+
+  /*
+   * ── the switcher *is* the choice ──
+   *
+   * **This is the fix for "the games are in English when I picked Russian".**
+   *
+   * `languageOf` on the server reads the account's stored `users.language`
+   * first and the request header only as a fallback, and that order is right:
+   * §15 says content follows the language a person *chose*, not the one their
+   * machine happens to be set to. What was missing is that this client never
+   * told the server about the choice. `users.language` was whatever sign-up
+   * wrote — English for anybody who arrived before picking — and the header in
+   * `startRound` therefore lost to it on every request.
+   *
+   * So the quiz banks, which are imported per language and complete in four of
+   * them, were being asked for the wrong language and falling back to English.
+   * The same was true of every other thing the server renders in words: the
+   * assistant's answers, the guide's copy, the deal titles.
+   *
+   * Three things keep this from becoming a loop or a nuisance:
+   *
+   * - It runs **only when the two disagree**, and `serverLanguage` is set from
+   *   the answer, so the patch that fixes the disagreement ends it.
+   * - It runs **only for a signed-in account with a token**. A visitor reading
+   *   in Polish has nothing to store it on, and the header already carries
+   *   their choice to every public route.
+   * - A **failure is silent**. This is a preference, not the thing somebody
+   *   came to do: a server that cannot be reached leaves the switcher working
+   *   locally, which is exactly what it did before any of this existed.
+   */
+  useEffect(() => {
+    if (!hasToken() || serverLanguage === null || serverLanguage === language) return;
+    let alive = true;
+    api
+      .patchLanguage(language)
+      .then((me) => {
+        if (alive) adoptMe(me);
+      })
+      .catch(() => {
+        /* Silent on purpose — see above. */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [language, serverLanguage, adoptMe]);
 
   /* Folded into the account as it is *now*, not as it was when the question
      went out: a round banked while the answer was in flight is a newer fact
@@ -467,6 +525,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     fold(answers);
   }, [adoptMe, fold]);
 
+  /*
+   * **Re-ask when the tab comes back** — item 23's client half.
+   *
+   * `plan` and `entitlements` are session state, filled by one `GET /v1/me`
+   * when the session changes, which is right and is deliberately not a
+   * per-screen fetch. What it means is that anything an *operator* changes
+   * about this account lands on the server at once and reaches this browser
+   * never: a venue granted Growth over a phone call keeps reading Starter until
+   * somebody reloads, and nothing on the screen suggests reloading.
+   *
+   * The visibility change is the cheapest honest signal there is. It is not a
+   * poll — nothing fires on a timer, and a tab left open in the background
+   * costs no requests at all — and it fires exactly when somebody has come back
+   * to the page, which is the moment a stale badge is about to be read. The
+   * `focus` half catches the case the visibility event does not: moving between
+   * two windows on a desktop without ever hiding either.
+   *
+   * `refreshAccount` guards itself on there being an account and a token, so
+   * this is inert for a visitor. It is a *refresh* rather than a re-sign-in —
+   * a failed request leaves the mirror exactly as it was, which is why it is
+   * safe to fire on an event nobody asked for.
+   */
+  useEffect(() => {
+    const again = () => {
+      if (document.visibilityState === 'hidden') return;
+      void refreshAccount();
+    };
+    document.addEventListener('visibilitychange', again);
+    window.addEventListener('focus', again);
+    return () => {
+      document.removeEventListener('visibilitychange', again);
+      window.removeEventListener('focus', again);
+    };
+  }, [refreshAccount]);
+
   /**
    * Sign in against the server, and fall back to the mirror only when there is
    * no server to ask.
@@ -555,7 +648,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            * connected. It was; the account simply was not a partner.
            */
           partner: draft.type === 'business',
-        });
+          /* Passed through rather than asserted here: the form asked, the
+             server refuses without it (§1.3), and a client that filled this
+             in on somebody's behalf would be writing the consent row this
+             whole change exists to stop being written unasked. */
+          acceptTerms: draft.acceptTerms,
+        })
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 0) {
           /*
@@ -903,7 +1001,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * and for the same reason.
    */
   const finishOnboarding = useCallback(
-    async (earned: number) => {
+    async (earned: number, goTo?: Route) => {
+      /*
+       * Where to go next, set **before** the stamp rather than after it.
+       *
+       * Both land in the same commit that way, which is the whole point: a
+       * `navigate` beside this call, or a second `setPendingRoute` after it, is
+       * the race `router.ts` warns about — the guard runs against the new
+       * account and the old route and replaces the hash over the top. `Site`
+       * reads this in the one effect that is allowed to navigate.
+       */
+      if (goTo) setPendingRoute(goTo);
       const stamp = (balance: number | null) =>
         setAccount((live) => {
           if (!live) return live;
@@ -949,6 +1057,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plan,
       entitlements,
       memberSince,
+      emailVerifiedAt,
+      leaderboardOptIn,
+      venueSharingDefault,
+      pendingRoute,
+      clearPendingRoute,
       signIn,
       signUp,
       signInWithGoogle,
@@ -965,6 +1078,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plan,
       entitlements,
       memberSince,
+      emailVerifiedAt,
+      leaderboardOptIn,
+      venueSharingDefault,
+      pendingRoute,
+      clearPendingRoute,
       signIn,
       signUp,
       signInWithGoogle,

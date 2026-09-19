@@ -658,12 +658,37 @@ language is its own chunk.** `legal.tsx` is the shell; the text is
   it. The check walks `LANGUAGE_ORDER` and the real `LOADERS` table rather than a
   list of its own.
 
-**The language picks the currency, and every amount is written in euros.** The
-switcher is the only thing a visitor tells us about where they are, so English
-prices the site in pounds, Polish in złoty, and so on. Amounts live as euros in
-`content.ts` (and in the euro figures behind the dictionaries) and are converted
-on the way out by `useMoney` / `useMoneyParts`; a currency symbol typed into a
-component or a dictionary is the bug this arrangement exists to prevent. Copy
+**The currency is its own setting, the language supplies its default, and every
+amount is written in euros.** The language used to *be* the currency —
+`CURRENCIES[language]`, so English priced the site in pounds and Polish in
+złoty — and they were never the same question: a Russian speaker in Kraków is
+paid in złoty and an English speaker may be in Tashkent, so a visitor who wanted
+prices in their own money had to read the site in a language they may not speak.
+There are two menus in the header now (`LanguageMenu` and `CurrencyMenu`, one
+`useMenu` between them) and two `localStorage` keys, `paylez-language` and
+`paylez-currency`. `CURRENCY_FOR_LANGUAGE` is still the **default**, because the
+language is the one thing a visitor tells us before they tell us anything else
+and a first visit should not have to choose twice; once the currency has been
+chosen it stops following. Amounts live as euros in `content.ts` (and in the
+euro figures behind the dictionaries) and are converted on the way out by
+`useMoney` / `useMoneyParts`; a currency symbol typed into a component or a
+dictionary is the bug this arrangement exists to prevent.
+
+**And separating them broke a rule that had been true by accident, in five
+places.** `fx.ts` has always said digit grouping belongs to the *reader* and the
+symbol to the money — and while `CURRENCIES` was keyed by language, a currency's
+own `group` simply *was* the reader's separator. It is not any more, so the rule
+needs a table of its own: **`GROUP_FOR_LANGUAGE`, read through
+`useGroupSeparator()`, and nothing may group by `currency.group` again.** Every
+site that did was a screen writing two number formats on one row — a Polish
+reader who chose pounds got counts separated with commas beside prices separated
+with a narrow no-break space. `useNum`, `useVenueMoney`, the Business page's
+tile row and the console's five figure sites were all fixed together, and
+`npm run verify` now reads those files' source and bans the token, because the
+mistake is a `.group` off the wrong object rather than a wrong answer from a
+pure function. A **hard-coded** separator is the other half of it: the console
+wrote `data-group=" "` for everybody, a plain space where English wants a comma,
+and a plain one lets a number break across two lines between its own digits. Copy
 that quotes a figure carries a `{amount}` hole and is finished with `fill()` —
 not two half-sentences, because the words either side of a price do not sit in
 the same order in every language. Prices snap to a step the currency actually
@@ -1115,18 +1140,58 @@ longer among them** — `redeem`, `markUsed`, `stampVisit`, `claimDeal` and
 `openDeals` all left that file when the holdings became the server's, and what
 they used to write to `localStorage` was fiction.
 
-**The order of `GAMES` is the layout of the Play screen.** `GAMES[0]` is the
-full-width poster L-Earn opens with and everything after it fills the grid two
-to a row, so moving a row moves a card and there is no second ordering to keep
-in step. Nothing sorts the list at render and nothing is per-player: a grid that
-reshuffled itself by what you had played would move the card you were reaching
-for. **Every card is a `<button>`**, which is what lets a hover take the
-description and the Play label away — there is nothing left to aim at, because
-the card is the target. That is also why **Word Builder is two rows rather than
-one row with a picker**: `word` always deals English and `wordLocal` deals the
-language of the city on the profile (`wordListFor` in `games/banks.ts`), and
-practising English and practising the language you have moved to are the two
-things this product is for rather than one game played two ways.
+**The order of `GAMES` is the order of the Play screen's grid, and no longer
+the poster.** Those two used to be one fact — `GAMES[0]` was the full-width
+featured card — and they came apart deliberately:
+
+- **The poster is the daily game and it rotates.** `dailyGame(day)` in
+  `games/rules.ts` walks `DAILY_POOL` once per day: deterministic, with **no
+  user id in it**, so every player opening the screen on the same day sees the
+  same game and "today's game" is a phrase two people can use. A rotation rather
+  than a hash, because a hashed pick looks identical on any one day and can
+  leave a game unposted for a fortnight.
+- **The grid lists every game, the poster's included.** It used to skip the
+  featured row, which was harmless while the poster never moved and would have
+  meant a different game vanishing from the catalogue every morning once it did.
+  A player looking for the card they played yesterday finds it where it was.
+- **`DAILY_POOL` excludes `wordLocal`**, and that exclusion is the load-bearing
+  part: the local Word Builder is not a card everybody has (see the region rule
+  below), and a poster pointing at a card that is not on the screen cannot be
+  pressed. The local *quiz* is not excluded — every player sees that card, they
+  are just asked about different countries. What varies there is the bank behind
+  one card; what varies here is whether the card exists.
+
+The grid's own order is a product decision rather than a derivation: **the
+flight leads and Memory Match follows it**, the two rounds with nothing to read
+before you start. Reordering `GAMES` means reordering `copy.games.names` in all
+five dictionaries with it — that array is index-aligned with the table, and
+`npm run verify` pins both the order and the alignment because a length check
+cannot tell a rename from a reorder.
+
+Nothing sorts the list at render and nothing is per-player *except* that one
+region rule: a grid that reshuffled itself by what you had played would move the
+card you were reaching for. **Every card is a `<button>`**, which is what lets a
+hover take the description and the Play label away — there is nothing left to
+aim at, because the card is the target. That is also why **Word Builder is two
+rows rather than one row with a picker**: `word` always deals English and
+`wordLocal` deals the language of the city on the profile (`wordListFor` in
+`games/banks.ts`), and practising English and practising the language you have
+moved to are the two things this product is for rather than one game played two
+ways.
+
+**And `wordListFor` has three answers, not two.** A country with a list gets it;
+a country the product has **not** localised for at all — including an account
+with no city yet — gets Polish, which is a real answer because this site is a
+guide to having moved to Poland; and a country it **has** localised for and has
+no word list for gets `null`, and the card is not drawn. That third case is
+Uzbekistan, which was being handed the Polish list — the card's whole promise is
+"practise the language of the place you moved to", so Polish in Tashkent is the
+card saying something false, and worse than saying nothing because a player
+cannot tell until they are five words in. There is no Russian or Uzbek word list
+in `games/data/`: those are hand-delivered exports
+(`updates/paylez-words-*.json`) and inventing one would be inventing vocabulary
+to teach somebody. Adding it is one file and one row — drop `words.ru.json` in,
+widen `WordList`, add `UZ: 'ru'` — and the card comes back on by itself.
 
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that
@@ -1592,6 +1657,7 @@ bundled, the flag font copied into `public/`), geometry comes from the
   | `dashboardScreens.tsx` | the index, Deals, Assistant, Scans' frame | `pd-` |
   | `dashboardLoyalty.tsx` | Loyalty campaigns | `pl-` |
   | `dashboardVouchers.tsx` | Vouchers | `vch-` |
+  | `dashboardVoucherList.tsx` | Issued vouchers | `pd-` (reused) |
   | `dashboardCustomers.tsx` | Customers | `pc-` |
   | `dashboardScans.tsx` | the till log on Scan activity | `ps-` |
   | `dashboardChart.tsx` | the overview's line chart | `pa-chart*` |
@@ -1600,7 +1666,22 @@ bundled, the flag font copied into `public/`), geometry comes from the
   Three things about that table are load-bearing. **`vch-` is not `pv-`**, which
   is the L-Earn game previews and already has 68 rules — the fourth collision
   this dashboard has nearly shipped, caught by grepping before naming, which is
-  the rule. **`dashboardFormat.ts` exists for one hook**: exporting `useNum` from
+  the rule. **The register claims no prefix of its own**, which is the other
+  half of the same rule read the other way: every panel on it is a `.pd-panel`
+  with a `.pd-table`, a `.pd-seg`, a `.pd-well` and a `.pd-limit` in it — the
+  same components doing the same jobs — so a fifth namespace would have been a
+  second set of names for one set of things. The one thing it added to
+  `site.css` is three `data-state` values on `.pd-state-pill`, beside the deal
+  states already there, because a voucher's status is the same component saying
+  the same kind of thing.
+
+  **And a screen inserted into that rail is four index-aligned lists, not one.**
+  The register went in at 4 — beside the ladder it is the other half of — which
+  moved `DASH_SCREENS`, `copy.dashboard.screens`, `copy.dashboard.empty` and the
+  `SCREENS` table in `dashboardScreens.tsx` together, plus every hard-coded
+  `empty[n]` and every `<Screen index={n}>` past it. `npm run verify` pins the
+  two array *lengths* against each other, which catches a short array and says
+  nothing about the order — so it now pins the register's own position as well. **`dashboardFormat.ts` exists for one hook**: exporting `useNum` from
   a module that also exports components breaks React fast refresh
   (`react(only-export-components)`), the same split `theme/` and `i18n/` make.
   And `Screen`, `Figure` and `useNum` are the only shared vocabulary — everything
@@ -1904,9 +1985,26 @@ bundled, the flag font copied into `public/`), geometry comes from the
   hook) and `adminControls.tsx` (the kit). Nothing in the kit carries
   `data-reveal`: a panel that opens on a press arrives after the reveal scan.
 
-- **All five console tabs ask the server, and there is no second sign-in.**
-  Services, Offers, People, Website and Messages (`ADMIN_TABS` in `content.ts`)
-  are five reads of `/v1/admin/*` through `api/`. This bullet used to say the
+- **All six console tabs ask the server, and there is no second sign-in.**
+  Services, Offers, People, Website, Messages and **Tiers** (`ADMIN_TABS` in
+  `content.ts`) are six reads of `/v1/admin/*` through `api/`.
+
+  **Tiers is the newest and is the one tab that grants something.** The console
+  could already edit what a plan *includes* and could not put anybody **on**
+  one, so a tier arranged over a phone call was done in Stripe or in the
+  database — with no audit row saying who granted it and why, and no way to
+  date it. `adminTiers.tsx` is that, and three of its decisions are the ones to
+  keep: it shows **live and scheduled separately** and never merges them,
+  because one is what the gate answers with now and the other is what it will
+  answer with later; it has **no "remove"**, because free is a plan and
+  assigning it keeps one code path and one audit row; and it says in words what
+  "immediate" covers — the server answers with the new plan at once, and a
+  browser the subject already has open catches up on its next load or when its
+  tab regains focus (`AuthProvider` re-asks on `visibilitychange`, which is not
+  a poll). It claims no namespace of its own: every panel on it is the console's
+  own `.adm-edit-*` form kit and `.adm-table`, and `.adm-tier*` was already
+  taken by the voucher ladder on the analytics screen — which is grep-before-
+  naming turning something up for the fifth time. This bullet used to say the
   *fourth* was the only one — three were derived from `auth/directory.ts`, the
   accounts in this browser, which for an operator meant a list of seeds — and
   every one of them has moved. The panel that used to ask for an operations

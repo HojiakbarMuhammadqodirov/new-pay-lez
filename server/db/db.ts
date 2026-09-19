@@ -321,8 +321,11 @@ export const GAME_TYPES = [
  * beside it. Another drop.
  * 4 → 5 admitted the Uzbekistan quiz to `game_sessions.game_type`. A CHECK
  * again, and so a rebuild again.
+ * 5 → 6 turned the leaderboard opt-in on by default, and flipped the rows that
+ * already existed. A rewrite of existing rows, and one that **must not repeat**
+ * — see `optInToTheBoard`.
  */
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 7;
 
 const schemaVersion = async (db: Db): Promise<number> => {
   const row = await db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
@@ -724,6 +727,69 @@ async function assertGameTypes(db: Db): Promise<void> {
   }
 }
 
+/**
+ * 5 → 6: everybody is on the board unless they said otherwise.
+ *
+ * `leaderboard_opt_in` defaulted to 0, so the board listed only the handful of
+ * accounts that had gone looking for the switch — which made the one screen
+ * whose job is to show that other people are playing show that they are not.
+ * The column's default is 1 now, and this is the half that reaches the rows
+ * that already exist.
+ *
+ * **The cost is real and is not recoverable, so it is stated rather than
+ * buried.** A row at 0 is either an account that never touched the switch — the
+ * overwhelming majority, because 0 was the default nobody chose — or one that
+ * turned it *off* by hand, and nothing on this row distinguishes them: the
+ * opt-out was never recorded as a decision, only as a value. So this flips both,
+ * and somebody who had deliberately hidden themselves is visible again until
+ * they switch it off a second time.
+ *
+ * Two alternatives were available and both are worse. Leaving existing rows at
+ * 0 makes the default a fact about *when you signed up*, which is the least
+ * explicable rule a product can have. Reading `consent_records` for an opt-out
+ * would be inventing evidence: the board is not one of the four consent kinds
+ * and never has been.
+ *
+ * **Guarded on the stored version so it runs exactly once.** That is the
+ * load-bearing part: run twice, and it re-opts-in every person who opted out
+ * after the first run — which would turn a one-off cost into a switch that does
+ * not stay switched.
+ */
+async function optInToTheBoard(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 6) return;
+  await db.run(`UPDATE users SET leaderboard_opt_in = 1 WHERE leaderboard_opt_in = 0`);
+}
+
+/**
+ * Version 7: the voucher rungs learn their own counts.
+ *
+ * `redeem_limit` and `per_user_limit` arrive NULL, which is "no cap" and is the
+ * honest state for every rung that predates them -- nobody set one, and
+ * inventing a number would close an offer somebody is running.
+ *
+ * `issued_count` cannot arrive at its default. `ALTER TABLE ... ADD COLUMN
+ * INTEGER NOT NULL DEFAULT 0` backfills every existing rung with **zero**, and
+ * this column is the gate a cap is enforced through: a rung that has already
+ * given out four hundred vouchers would read as having given out none, so the
+ * first cap an owner set would be four hundred vouchers too generous. So it is
+ * counted from the rows that are actually there.
+ *
+ * Reversible, and the reverse is the two `ALTER TABLE ... DROP COLUMN`s plus a
+ * version stamp back to 6: nothing else reads these columns, no row is deleted
+ * and no existing column is rewritten. `<>` rather than `!=` because that is
+ * what the rest of this schema writes, and `status <> 'cancelled'` is
+ * `partnerLadder`'s own definition of "issued" -- the two must agree or the
+ * reconciliation check in `verify.ts` fails, which is the point of having it.
+ */
+async function countTheRungs(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 7) return;
+  await db.run(
+    `UPDATE voucher_tiers SET issued_count =
+       (SELECT COUNT(*) FROM issued_vouchers i
+         WHERE i.tier_id = voucher_tiers.id AND i.status <> 'cancelled')`,
+  );
+}
+
 /** Applied once, on an empty file. The schema is idempotent (`IF NOT EXISTS`). */
 export async function migrate(db: Db): Promise<void> {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
@@ -754,11 +820,34 @@ export async function migrate(db: Db): Promise<void> {
      `UPDATE … WHERE profile_completed_at IS NULL` the way `onboarded_at` is. */
   await addColumn(db, 'users', 'profile_completed_at', 'TEXT');
   await addColumn(db, 'users', 'username', 'TEXT');
+  /* Proved-address stamp. Nullable because "not proved" is the state every
+     existing account is in — and has to be: a migration that stamped them all
+     verified would be asserting something nobody checked, and one that locked
+     them all out would take the points off accounts that have been earning for
+     months. See the column's own note in `schema.sql`. */
+  await addColumn(db, 'users', 'email_verified_at', 'TEXT');
+  /* The standing answer to "share my profile with venues I visit".
+     `DEFAULT 1` reaches existing rows as well as new ones — which is the
+     migration, and it is the whole of it: `ALTER TABLE … ADD COLUMN` with a
+     default backfills, so there is no separate rewrite to guard. Safe to be
+     on for an account that predates it, because nothing is shared until that
+     account visits a venue and `gate.confirm` writes the grant — and a venue
+     it has never visited learns nothing either way. */
+  await addColumn(db, 'users', 'venue_sharing_default', 'INTEGER NOT NULL DEFAULT 1');
   await addColumn(db, 'users', 'username_norm', 'TEXT');
   /* FIFO's tiebreak — see the column's note in `schema.sql`. `DEFAULT 0` is the
      backfill: every existing lot is older than anything written from here on,
      and their order among themselves was never recorded to begin with. */
   await addColumn(db, 'points_lots', 'seq', 'INTEGER NOT NULL DEFAULT 0');
+  /* A voucher rung's two count caps and the counter they are enforced through.
+     NULL on both caps is "no cap", which is every rung that predates them; the
+     counter's `DEFAULT 0` is *wrong* for an existing rung and is corrected by
+     `countTheRungs` below — see its note for why a zero here would make the
+     first cap anybody sets too generous by however many vouchers that rung had
+     already issued. */
+  await addColumn(db, 'voucher_tiers', 'redeem_limit', 'INTEGER');
+  await addColumn(db, 'voucher_tiers', 'per_user_limit', 'INTEGER');
+  await addColumn(db, 'voucher_tiers', 'issued_count', 'INTEGER NOT NULL DEFAULT 0');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an
@@ -783,6 +872,10 @@ export async function migrate(db: Db): Promise<void> {
   await retireTheHeadline(db);
   await widenGameTypes(db);
   await assertGameTypes(db);
+  /* Must run **before** the version stamp below, like every other migration
+     here, and its own guard reads that stamp. */
+  await optInToTheBoard(db);
+  await countTheRungs(db);
 
   await db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)

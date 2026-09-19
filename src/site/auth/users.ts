@@ -109,7 +109,7 @@ export const SEED_USERS: UserRecord[] = [];
  * this union existed without for exactly as long as it took to hit it.
  */
 export type SignInError = 'email' | 'password' | 'offline';
-export type SignUpError = 'name' | 'email' | 'taken' | 'password' | 'type';
+export type SignUpError = 'name' | 'email' | 'taken' | 'password' | 'type' | 'terms';
 
 /** Short enough to type, long enough not to be a typo. */
 export const MIN_PASSWORD = 6;
@@ -148,6 +148,16 @@ export interface SignUpDraft {
   email: string;
   password: string;
   type: ChoosableType | null;
+  /**
+   * The terms and the privacy policy, agreed to.
+   *
+   * Part of the *draft* rather than a separate argument, so `validateSignUp`
+   * can refuse it in the same pass as the name and the address and the form can
+   * point at it the same way. It is the only field here the server also
+   * enforces independently — see `signUp` in `domain/accounts.ts` — because a
+   * client-side checkbox is a courtesy and the consent row is evidence.
+   */
+  acceptTerms: boolean;
 }
 
 /**
@@ -167,6 +177,21 @@ export function validateSignUp(
   if (emailTaken(users, draft.email)) return 'taken';
   if (draft.password.length < MIN_PASSWORD) return 'password';
   if (draft.type === null) return 'type';
+  /*
+   * **Last, and that is where the form reads.**
+   *
+   * The order here is the order the eye goes down the form, so the message
+   * always points at the first field that needs attention. The agreement is at
+   * the bottom, under the account-type question, because it is about the whole
+   * thing rather than about any one field — and pointing at it while the name
+   * is still blank would be pointing past what somebody is actually doing.
+   *
+   * The server refuses it independently (`signUp` in `domain/accounts.ts`), and
+   * that is not redundancy: a checkbox is a courtesy and the `consent_records`
+   * row is evidence. This check exists so the refusal happens *before* a
+   * request, where it can point at a control.
+   */
+  if (!draft.acceptTerms) return 'terms';
   return null;
 }
 

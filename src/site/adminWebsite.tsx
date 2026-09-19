@@ -30,8 +30,10 @@ import { useState } from 'react';
 import { ApiError, hasToken, signIn, signOut } from './api/client';
 import { useApi } from './api/useApi';
 import { Icon } from './icons';
-import { useCopy } from './i18n/context';
+import { useCopy, useCurrency, useGroupSeparator, useLanguage } from './i18n/context';
+import { group } from './i18n/currency';
 import { fill } from './i18n/currency';
+import { PasswordInput } from './PasswordInput';
 
 /* ─────────────────────────────────────────────────────────────── shapes ── */
 
@@ -213,9 +215,8 @@ export function Connect({ onDone, copy }: { onDone: () => void; copy: WebsiteCop
         </label>
         <label className="field-row">
           <span className="field-label">{copy.connect.password}</span>
-          <input
+          <PasswordInput
             className="field"
-            type="password"
             autoComplete="current-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
@@ -235,7 +236,28 @@ export function Connect({ onDone, copy }: { onDone: () => void; copy: WebsiteCop
 
 export type WebsiteCopy = ReturnType<typeof useCopy>['admin']['website'];
 
+/**
+ * A date, short, in the reader's own locale.
+ *
+ * The third copy of this, beside `admin.tsx` and `adminPeople.tsx`, and it is
+ * the same four options in the same order on purpose: the console has one date
+ * format and this tab was printing a raw ISO string instead of it. A shared
+ * `adminFormat.ts` — the counterpart of `dashboardFormat.ts` — is the right
+ * home for all three and is a move across three files this pass did not make;
+ * what it fixes here is the *format*, not the duplication.
+ */
+const day = (iso: string | null, locale: string) =>
+  iso
+    ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: '2-digit' }).format(
+        new Date(iso),
+      )
+    : '—';
+
 export function AdminWebsite() {
+  /* The reader's separator — see `Kpi` in `admin.tsx`. */
+  const separator = useGroupSeparator();
+  const currency = useCurrency();
+  const [language] = useLanguage();
   const copy = useCopy().admin.website;
   const [connected, setConnected] = useState(hasToken);
 
@@ -309,7 +331,7 @@ export function AdminWebsite() {
             [copy.kpis[5]!, report.accounts.returning],
           ].map(([label, value]) => (
             <div className="adm-kpi" key={label as string}>
-              <b data-count={value} data-group=" ">
+              <b data-count={value} data-group={separator}>
                 0
               </b>
               <span>{label as string}</span>
@@ -418,9 +440,15 @@ export function AdminWebsite() {
                     <td>{user.display_name}</td>
                     <td>{user.city ?? '—'}</td>
                     <td>{user.roles ?? 'consumer'}</td>
-                    <td>{user.points}</td>
-                    <td>{user.scans}</td>
-                    <td>{user.created_at.slice(0, 10)}</td>
+                    {/* Grouped and formatted the way the rest of the console
+                        writes a figure and a date. These three cells were the
+                        one place on this screen that did neither: `1240` beside
+                        a KPI tile reading `1 240`, and `2026-09-16` beside three
+                        other tabs that write `16 Sep 26`. A raw column value is
+                        what an operator reads when nobody decided. */}
+                    <td>{group(user.points, currency, 0, separator)}</td>
+                    <td>{group(user.scans, currency, 0, separator)}</td>
+                    <td>{day(user.created_at, language)}</td>
                   </tr>
                 ))}
               </tbody>

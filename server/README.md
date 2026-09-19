@@ -129,7 +129,8 @@ one. A staging box that inherits a production env file does not start spending.
 ```
 config.ts            every tunable, with the constraint that set it
 main.ts              boot: migrate, seed, import, serve
-jobs.ts              the five scheduled rules (releases, lifecycle, renewals, …)
+jobs.ts              the six scheduled rules (releases, lifecycle, renewals,
+                     the twice-daily rate sync, …)
 verify.ts            the test suite
 
 db/    schema.sql    every entity in §14 and Part E
@@ -144,7 +145,7 @@ domain/              the rules. React-free, HTTP-free, testable on their own
        checkin.ts    §2b  the daily check-in, and the month by where it came from
        gate.ts       §3   the universal amount-capture gate
        budget.ts     §4-5 the pools: spent / reserved / available
-       vouchers.ts   §4   tiers, reserve-debit-release, gift cards
+       vouchers.ts   §4   tiers, reserve-debit-release, count caps, gift cards
        campaigns.ts  §5   stamp cards, exact-cost rewards, one per visit
        deals.ts      §6   targeting, funnel, lifecycle, pushes
        games.ts      §7   server-owned answers and scoring
@@ -196,6 +197,36 @@ counter rule. It needs a master key, not a vendor.
    after every operation, because a bar that does not add up lets an owner commit
    the same złoty twice. (§4.2)
 
+   **And a rung can be capped by *count* as well as by money, which §4 does not
+   ask for and needed asking for.** The money cap bounds the spend and says
+   nothing about the number: a rung with an unlucky average check can issue
+   thousands of vouchers inside a budget, and one account could hold every one
+   of them. `voucher_tiers.redeem_limit` and `per_user_limit` are those two
+   brakes, `NULL` on both meaning no cap, and the thing an owner wants them for
+   is usually not money at all — kitchen capacity, a launch week, fairness.
+
+   **The enforcement is a conditional UPDATE, and nothing here may go back to a
+   COUNT.** `claimSlot` writes
+   `SET issued_count = issued_count + 1 WHERE issued_count < redeem_limit` and
+   reads its own row count. Counting rows and then inserting cannot be made
+   race-safe at READ COMMITTED — two transactions both count `N < cap` and both
+   insert — and raising the isolation level would turn the second into a
+   serialisation failure somebody has to retry. The UPDATE takes the rung's row
+   lock, so the loser re-evaluates its own `WHERE` against the committed row and
+   changes nothing. That lock is also what makes the **per-user** cap safe with
+   no counter of its own: by the time the `COUNT` for that account runs, every
+   other issue of the rung is committed or waiting.
+
+   Three consequences, all checked: `issued_count` is the **gate and never a
+   reported figure** (every count the dashboard prints comes from
+   `issued_vouchers`, and `verify.ts` reconciles the two); an **expired voucher
+   still counts**, because the cap is on how many were handed out rather than on
+   how many are in a wallet, and a cap that freed a slot on expiry is one
+   anybody can walk past by waiting; and the same
+   guard-inside-the-write shape now covers **`redeem` and `expireVouchers`**,
+   both of which read a row and then acted on it — two tills confirming one code
+   at the same instant used to release and debit the pool twice.
+
 3. **Nothing of value exists before the commit.** One gate, four steps, in one
    database transaction. No provisional points, no half-stamped card, no
    "pending" discount. (§3.1, §3.5)
@@ -217,6 +248,26 @@ counter rule. It needs a master key, not a vendor.
    difference is a key in `plan_entitlements`, which is config. A lapse
    restricts; it never claws back points or deletes data. (§12a, B7, D)
 
+   **And a subscription has a *window* now, which is the whole of how an
+   operator's dated tier change works.** `activeSubscription` filters on
+   `started_at <= at` and `cancel_at IS NULL OR cancel_at > at`, so
+   `assignPlan` expresses "put them on Growth from the first" as two timestamps
+   rather than as a scheduled job: the new row starts at the date, the row it
+   replaces is stamped to stop at the same instant, and the hand-over happens
+   because one query compares two dates. Nothing runs at midnight. Both filters
+   are no-ops for every row that predates them — nothing had ever written
+   `cancel_at`, and every `started_at` is in the past — which is why this is a
+   filter and not a migration.
+
+   Three things travel with it. A granted tier carries **no `renews_at`**, or
+   `runRenewals` would take it away in a month and an operator could not tell
+   that from a card failing. **Free is a plan**, so removing a tier is assigning
+   the lowest-ranked one — one code path, one audit row. And the clock is now a
+   *parameter* of `planFor` / `entitlementsFor`, because the default of `now()`
+   became a second clock the moment the window existed: `games.finish` scores a
+   round by the plan that was in force **when it was played**, which is the same
+   rule this server already states for the energy tank.
+
 8. **Everything that authors or moves value is audited**, through the single
    `audit.record`. (Part E)
 
@@ -232,6 +283,74 @@ counter rule. It needs a master key, not a vendor.
    prevent. Signed-in visits carry a `user_id`, because that person has an
    account already — anonymous traffic is *counted*, identified traffic is
    *attributed*, and nothing joins the two.
+
+## The two controls that are about the database rather than the rules
+
+Everything above is access control at the route: `auth:` on a `Route`, checked
+before the handler runs. Two things are not reachable that way and both are
+answered where they live.
+
+**A Supabase project publishes its anon key, and RLS is what closes the door
+that opens.** Nothing in `src/` speaks Postgres — the browser talks to this
+server and this server holds the only connection string — so the obvious
+reading is that row-level security has nothing to do here. That is true of
+*this repository* and says nothing about the project the database sits in. A
+Supabase project serves PostgREST over the `public` schema, authenticated by a
+key that is in the project's own API settings and in every client its quickstart
+writes, and the default grants to `anon` and `authenticated` are what make that
+endpoint answer. A table with RLS off is therefore readable by anybody holding a
+URL no line of our code uses.
+
+`db/rls.pg.sql` closes it twice, and either half alone would do: every privilege
+revoked from both roles (including the *default* privileges that would hand one
+to the next table created), and `ENABLE ROW LEVEL SECURITY` on all 82 tables
+with no policy behind it, which denies every row to every role that is not the
+owner. It is **generated** by `npm run pg:schema` from the same `schema.sql` the
+rest is, because a table added without a line there is a table that is open, and
+that is exactly the omission nobody notices; `verify:api` fails while the
+committed file and the schema disagree. `migrate()` in `db/pg.ts` applies it on
+every Postgres boot, so a table created on this boot is not open until somebody
+remembers a script.
+
+It refuses rather than half-applying. Enabling RLS as a role that neither owns
+these tables nor carries `BYPASSRLS` locks *this server* out of its own
+database, from inside the process that just did it — so the file raises an
+exception naming the role and the fix. There is no SQLite equivalent and none is
+wanted: a file has no roles, no listener and no PostgREST in front of it, and
+the control there is the file's own permissions.
+
+**One rate limiter, declared on the route.** `throttleSignIn` has always bounded
+password guesses, keyed on the address typed. Every other public write had
+nothing: sign-up could be looped to mint accounts, `POST /v1/games/sessions` to
+open practice rounds (which cost no energy, which is exactly why they need a
+ceiling of their own), and `POST /v1/me/password` was a password oracle for
+whoever held a stolen session. `limit` on `Route` and `domain/limits.ts` are the
+answer — the same shape `auth` and `idempotent` take, for the stated reason that
+a policy on the route definition is one a new endpoint cannot be added without.
+The numbers are `CONFIG.limits`; the key is the account, or the **rotating daily
+hash** `domain/traffic.ts` computes, so an unauthenticated limiter cannot
+recognise the same connection tomorrow and nothing durable about anybody is
+stored to make it work.
+
+Three details are load-bearing. It runs **after** authentication and **before**
+idempotency, so a retried request with a stored response costs no attempt — a
+phone on a flaky connection retrying one scan is what the idempotency key is
+for and would otherwise be the first thing punished. A request that **fails
+validation still costs an attempt**, or the cheapest way past a limiter is a
+body that cannot succeed. And `createApi({ limits: false })` exists for
+`verify.ts`'s surface tour alone, which arrives on one connection and signs up
+rather more than five accounts; the limiter is then checked deliberately in
+`rateLimits` rather than tuned to accommodate a caller it was not written about.
+
+**And the flight's score is bounded by the server's clock.** It is the one game
+with no answer key — `flightMaxPoints` bounds what a run can be *worth* and says
+nothing about whether it happened, so a thousand gaps claimed a second after the
+session opened banked the ceiling and read in the ledger like a very good
+player. Columns arrive on a timer in the client, so the honest gap count is
+bounded by the round's own duration, measured from `started_at` to now — two
+stamps this server wrote. `CONFIG.games.flightSecondsPerGap` is that timer and
+`flightGapAllowance` is deliberately generous slack: the bound exists to refuse
+the impossible, not to referee the plausible.
 
 ## The economy: energy is the single limiter on a day
 

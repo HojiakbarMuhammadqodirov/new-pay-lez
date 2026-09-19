@@ -1814,6 +1814,86 @@
         }
       }
     },
+    "/v1/auth/verify/send": {
+      "post": {
+        "summary": "POST /v1/auth/verify/send",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postAuthVerifySend",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/verify": {
+      "post": {
+        "summary": "POST /v1/auth/verify",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postAuthVerify",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/auth/signout": {
       "post": {
         "summary": "Revoke this session",
@@ -3367,6 +3447,46 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/daily/tasks": {
+      "get": {
+        "summary": "GET /v1/daily/tasks",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "getDailyTasks",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "401": {
             "description": "Not signed in",
@@ -5850,6 +5970,56 @@
         "summary": "POST /v1/partner/venues/:id/budget/rebalance",
         "description": "**Access:** An account with the partner_owner, manager or admin role.",
         "operationId": "postPartnerVenuesByIdBudgetRebalance",
+        "tags": [
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{id}/vouchers": {
+      "get": {
+        "summary": "GET /v1/partner/venues/:id/vouchers",
+        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "operationId": "getPartnerVenuesByIdVouchers",
         "tags": [
           "partner"
         ],
@@ -9737,6 +9907,134 @@
         }
       }
     },
+    "/v1/admin/subscriptions": {
+      "get": {
+        "summary": "GET /v1/admin/subscriptions",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminSubscriptions",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /v1/admin/subscriptions",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminSubscriptions",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/subscriptions/{id}": {
+      "delete": {
+        "summary": "DELETE /v1/admin/subscriptions/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "deleteAdminSubscriptionsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/plans/{id}/entitlements": {
       "put": {
         "summary": "PUT /v1/admin/plans/:id/entitlements",
@@ -9934,6 +10232,64 @@
           "admin"
         ],
         "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/media/{entity}/{id}/refresh": {
+      "post": {
+        "summary": "POST /v1/admin/media/:entity/:id/refresh",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminMediaByEntityByIdRefresh",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
           {
             "name": "id",
             "in": "path",
@@ -10765,6 +11121,49 @@
                 }
               }
             }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/media/{entity}/{id}": {
+      "get": {
+        "summary": "GET /v1/media/:entity/:id",
+        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "getMediaByEntityById",
+        "tags": [
+          "other"
+        ],
+        "parameters": [
+          {
+            "name": "entity",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "default": {
             "description": "Error",

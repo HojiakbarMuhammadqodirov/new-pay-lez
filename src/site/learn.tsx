@@ -7,6 +7,7 @@ import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { PATHS } from './router';
 import { usePalette } from './theme/context';
+import { lineCap } from './heroLines';
 
 /**
  * L-Earn — the second page.
@@ -43,7 +44,7 @@ function LearnHero() {
             {copy.learn.hero.eyebrow}
           </span>
 
-          <h1 data-reveal>
+          <h1 data-reveal style={lineCap(copy.learn.hero.lines)}>
             {copy.learn.hero.lines.map((line, i) => (
               <span className="ln" key={line}>
                 {i === 1 ? <span className="accent-text">{line}</span> : line}

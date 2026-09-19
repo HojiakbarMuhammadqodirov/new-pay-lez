@@ -97,7 +97,7 @@ export function Customers() {
   const currency = venue?.currency ?? 'EUR';
 
   return (
-    <Screen state={state} index={4} demo={DEMO_ANALYTICS}>
+    <Screen state={state} index={5} demo={DEMO_ANALYTICS}>
       {(data) => {
         const toEuro = (minor: number) => minorToEuro(minor, currency);
         const cost = data.costPerNewCustomer;

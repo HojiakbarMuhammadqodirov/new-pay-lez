@@ -70,6 +70,7 @@ import type {
   SeriesResponse,
   SeriesTotals,
   TodayResponse,
+  VoucherRegister,
 } from './api/partner';
 import type { ReachReport } from './api/reach';
 
@@ -117,6 +118,9 @@ const monthKey = (date: Date, offset = 0): string => {
   const at = new Date(date.getFullYear(), date.getMonth() + offset, 1, 12);
   return `${at.getFullYear()}-${`${at.getMonth() + 1}`.padStart(2, '0')}`;
 };
+
+/** An ISO instant `back` days before today, or ahead of it when negative. */
+const isoAt = (back: number): string => dayAt(back).toISOString();
 
 const TODAY = dayAt(0);
 const THIS_MONTH = monthKey(TODAY);
@@ -443,6 +447,192 @@ const BUDGET: BudgetBody = {
   averageCheck: { minor: OVERVIEW.averageCheckMinor.value ?? 36_50, currency: CURRENCY },
   rebalanceHint: { from: 'voucher', to: 'loyalty', suggested: 200_00 },
   tolerance: null,
+};
+
+/*
+ * The voucher register, and it is **the same venue as `BUDGET` above**.
+ *
+ * That is the only thing making this file worth having rather than a handful of
+ * plausible numbers per screen: the register's totals are the ladder's take-up,
+ * re-counted. `issuedTotal` on each rung is its lifetime count, which is larger
+ * than the `issuedCount` beside it because that one is this month's — the whole
+ * distinction a cap needs, and the reason both are sent.
+ *
+ * Three rungs, and each is a different state of a cap on purpose, because that
+ * is what the screen has to draw differently:
+ *
+ *  - **5%** is capped at 400 with 312 taken — a bar three-quarters along, which
+ *    is the reading `.pd-limit` exists for.
+ *  - **10%** has no total cap at all (`null`) and a per-customer one, so it
+ *    draws the count without a bar. A `?? 0` anywhere on that path would print
+ *    "312 of 0".
+ *  - **15%** is retired and read-only, and its cap is shown rather than
+ *    editable — the one rung state the screen must not offer to edit, because
+ *    saving it would put the rung back on sale.
+ *
+ * The rows are the last few of that venue's month. Two are unused, one was
+ * spent, one lapsed — the four statuses minus `cancelled`, which nothing on the
+ * server writes, so a demo that showed one would be demonstrating a state the
+ * product cannot reach. One holder is `null`, which is the §1.4 grant withheld
+ * and is drawn as withheld rather than as "anonymous".
+ */
+const REGISTER_TIERS: BudgetBody['tiers'] = BUDGET.tiers.map((tier) =>
+  tier.discountPct === 5
+    ? { ...tier, redeemLimit: 400, perUserLimit: 2, issuedTotal: 312 }
+    : tier.discountPct === 10
+      ? { ...tier, redeemLimit: null, perUserLimit: 1, issuedTotal: 96 }
+      : { ...tier, redeemLimit: 60, perUserLimit: null, issuedTotal: 58 },
+);
+
+/*
+ * The plan panel's two reads (item 24), for a browser with no partner session.
+ *
+ * `DEMO_VENUE_PLAN` is the same venue as `BUDGET` above and is on **Growth**,
+ * which is the tier the demo's five live deals and three campaigns actually fit
+ * inside — a demo on Starter would draw "5 of 1" and read as a bug rather than
+ * as a screen. `DEMO_PARTNER_PLANS` mirrors the three seeds in
+ * `server/domain/settings.ts` row for row, because the comparison's whole
+ * claim is that it is showing the server's own entitlements.
+ */
+export const DEMO_PARTNER_PLANS = [
+  {
+    id: 'pln_starter',
+    code: 'starter',
+    name: 'Starter',
+    price_minor: 0,
+    currency: 'PLN',
+    interval: 'month',
+    rank: 0,
+    entitlements: [
+      { key: 'live_deals', value: '1' },
+      { key: 'active_campaigns', value: '1' },
+      { key: 'push_quota', value: '2' },
+      { key: 'team_seats', value: '1' },
+      { key: 'venues', value: '1' },
+      { key: 'deep_analytics', value: 'false' },
+      { key: 'identified_profiles', value: 'false' },
+      { key: 'assistant', value: 'false' },
+      { key: 'benchmarks', value: 'false' },
+      { key: 'export_csv', value: 'false' },
+    ],
+  },
+  {
+    id: 'pln_growth',
+    code: 'growth',
+    name: 'Growth',
+    price_minor: 29900,
+    currency: 'PLN',
+    interval: 'month',
+    rank: 1,
+    entitlements: [
+      { key: 'live_deals', value: '5' },
+      { key: 'active_campaigns', value: '3' },
+      { key: 'push_quota', value: '4' },
+      { key: 'team_seats', value: '5' },
+      { key: 'venues', value: '3' },
+      { key: 'deep_analytics', value: 'true' },
+      { key: 'identified_profiles', value: 'true' },
+      { key: 'assistant', value: 'true' },
+      { key: 'benchmarks', value: 'true' },
+      { key: 'export_csv', value: 'true' },
+    ],
+  },
+  {
+    id: 'pln_chain',
+    code: 'chain',
+    name: 'Chain',
+    price_minor: 79900,
+    currency: 'PLN',
+    interval: 'month',
+    rank: 2,
+    entitlements: [
+      { key: 'live_deals', value: '20' },
+      { key: 'active_campaigns', value: '10' },
+      { key: 'push_quota', value: '8' },
+      { key: 'team_seats', value: '25' },
+      { key: 'venues', value: '25' },
+      { key: 'deep_analytics', value: 'true' },
+      { key: 'identified_profiles', value: 'true' },
+      { key: 'assistant', value: 'true' },
+      { key: 'benchmarks', value: 'true' },
+      { key: 'export_csv', value: 'true' },
+    ],
+  },
+];
+
+export const DEMO_VENUE_PLAN = {
+  subscription: {
+    id: 'sub_demo',
+    status: 'active',
+    source: 'stripe',
+    started_at: isoAt(96),
+    renews_at: isoAt(-14),
+    cancel_at: null,
+  },
+  plan: { id: 'pln_growth', code: 'growth', name: 'Growth', rank: 1 },
+  entitlements: Object.fromEntries(
+    DEMO_PARTNER_PLANS[1].entitlements.map((row) => [row.key, row.value]),
+  ),
+};
+
+export const DEMO_REGISTER: VoucherRegister = {
+  tiers: REGISTER_TIERS,
+  totals: { issued: 466, active: 15, redeemed: 401, expired: 50, lapsing: 4 },
+  vouchers: [
+    {
+      id: 'ivc_demo_1',
+      code: 'PZ-4K7Q-M2',
+      discountPct: 10,
+      pointsSpent: 500,
+      reservedMinor: 13_60,
+      spentMinor: 0,
+      status: 'active',
+      issuedAt: isoAt(2),
+      expiresAt: isoAt(-28),
+      redeemedAt: null,
+      holder: 'Marta K.',
+    },
+    {
+      id: 'ivc_demo_2',
+      code: 'PZ-9XB3-71',
+      discountPct: 5,
+      pointsSpent: 300,
+      reservedMinor: 6_80,
+      spentMinor: 0,
+      status: 'active',
+      issuedAt: isoAt(5),
+      expiresAt: isoAt(-3),
+      redeemedAt: null,
+      /* The grant withheld — "we are not telling you", not "anonymous". */
+      holder: null,
+    },
+    {
+      id: 'ivc_demo_3',
+      code: 'PZ-2PDR-58',
+      discountPct: 5,
+      pointsSpent: 300,
+      reservedMinor: 6_80,
+      spentMinor: 5_00,
+      status: 'redeemed',
+      issuedAt: isoAt(9),
+      expiresAt: isoAt(-21),
+      redeemedAt: isoAt(6),
+      holder: 'Tomasz W.',
+    },
+    {
+      id: 'ivc_demo_4',
+      code: 'PZ-6MJ1-04',
+      discountPct: 15,
+      pointsSpent: 800,
+      reservedMinor: 20_40,
+      spentMinor: 0,
+      status: 'expired',
+      issuedAt: isoAt(41),
+      expiresAt: isoAt(11),
+      redeemedAt: null,
+      holder: 'Anna L.',
+    },
+  ],
 };
 
 export const DEMO_OVERVIEW: OverviewResponse = {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { ADMIN_CARD_ICONS, ADMIN_VIEW_TABS, SPOKEN_LANGUAGES } from './content';
 import { Icon } from './icons';
-import { useCopy, useMoney } from './i18n/context';
+import { useCopy, useGroupSeparator, useMoney } from './i18n/context';
 import { fill } from './i18n/currency';
 import {
   categoryLabel,
@@ -179,6 +179,8 @@ function download(name: string, csv: string): void {
 /* ─────────────────────────────────────────────────────────── dashboard ── */
 
 function Dashboard({ m }: { m: ServiceMetrics }) {
+  /* The reader's separator — see `Kpi` in `admin.tsx`. */
+  const separator = useGroupSeparator();
   const copy = useCopy().admin.analytics;
 
   /*
@@ -226,7 +228,7 @@ function Dashboard({ m }: { m: ServiceMetrics }) {
               </i>
             </div>
             {card.source ? (
-              <b data-count={card.value} data-suffix={card.percent ? '%' : ''} data-group=" ">
+              <b data-count={card.value} data-suffix={card.percent ? '%' : ''} data-group={separator}>
                 0
               </b>
             ) : (
@@ -257,6 +259,8 @@ function Dashboard({ m }: { m: ServiceMetrics }) {
 /* ─────────────────────────────────────────────────────────── hot deals ── */
 
 function HotDeals() {
+  /* The reader's separator — see `Kpi` in `admin.tsx`. */
+  const separator = useGroupSeparator();
   const copy = useCopy().admin.analytics;
   const money = useMoney();
   const rows = useMemo(() => redemptionsFor(), []);
@@ -313,7 +317,7 @@ function HotDeals() {
       <div className="adm-kpis">
         {copy.hot.counts.map((label, index) => (
           <div className="adm-kpi" key={label} data-reveal>
-            <b data-count={counts[index]} data-group=" ">0</b>
+            <b data-count={counts[index]} data-group={separator}>0</b>
             <span>{label}</span>
           </div>
         ))}
@@ -808,6 +812,8 @@ export function ServiceAnalytics({
   const dictionary = useCopy();
   const copy = dictionary.admin;
   const [tab, setTab] = useState(0);
+  /* The reader's separator — see `Kpi` in `admin.tsx`. */
+  const separator = useGroupSeparator();
   /*
    * The venue's month, from the one source an operator has.
    *
@@ -884,7 +890,7 @@ export function ServiceAnalytics({
               {index === 1 || !m.measured ? (
                 <b title={copy.analytics.unmeasured.noSource}>—</b>
               ) : (
-                <b data-count={totals[index]} data-group=" ">
+                <b data-count={totals[index]} data-group={separator}>
                   0
                 </b>
               )}

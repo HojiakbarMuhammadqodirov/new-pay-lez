@@ -352,6 +352,24 @@ export const CONFIG = {
      * is a clean sweep, and it is the one the two bonuses below are paid on.
      */
     quizQuestions: 5,
+    /**
+     * How many buttons a quiz question has, and therefore how many distractors
+     * a row in `quiz_items` must carry.
+     *
+     * A number rather than an assumption, because the assumption was wrong on
+     * real data and the symptom was a *question* rather than an error: a row
+     * with one distractor renders two buttons, which is a coin flip presented
+     * as a quiz — worth the same point as a question with four options, and
+     * conspicuous to a player in a way no log line noticed. Oceania's 14
+     * countries did it to 14 flags and 14 capitals (see `pickDistractors` in
+     * `db/import.ts` for the arithmetic that caused it).
+     *
+     * `buildQuiz` filters on it, so a short row that survives in a database
+     * imported by an older build is never *asked*, and `main.ts` re-runs the
+     * import when it finds one — the fix to the generator does not reach rows
+     * already written.
+     */
+    quizOptions: 4,
     quizPerCorrect: 1,
     /**
      * All five right.
@@ -481,6 +499,29 @@ export const CONFIG = {
     flightPerGap: 0.5,
     flightTarget: 5,
     flightMaxPoints: 20,
+    /*
+     * The plausibility bound on a claimed run, in seconds per gap.
+     *
+     * The flight is the one game with no answer key — a physics loop the server
+     * did not run — so `flightMaxPoints` was the whole defence and it bounds
+     * only what a run is *worth*. A claim of a thousand gaps one second after
+     * the session opened banked the ceiling and was indistinguishable in the
+     * ledger from a very good player.
+     *
+     * Columns arrive on a **timer** in the client (`interval` in
+     * `src/site/flight/config.ts`), and the difficulty ramp deliberately leaves
+     * that timer alone — it spreads the columns further apart in world units
+     * instead. So this number is that one, and the gap count a run can honestly
+     * have is bounded by how long the session was open. Change one and the
+     * other has to move with it: a client that spawned faster than this would
+     * have honest runs clamped.
+     *
+     * The allowance is slack, and generously so. Columns already on screen when
+     * a run starts were not waited for, and the bound exists to refuse the
+     * impossible rather than to referee the plausible.
+     */
+    flightSecondsPerGap: 1.75,
+    flightGapAllowance: 3,
 
     /** Streak freezes: earned one per this many days. The count held is a
      *  plan entitlement (`streak_freezes`); Premium never breaks a streak. */
@@ -566,6 +607,125 @@ export const CONFIG = {
     perHour: 5,
   },
 
+  /* ─────────────────────────────────────────────────── exchange rates ── */
+
+  /**
+   * Where the rates come from, and how often.
+   *
+   * ## The URL
+   *
+   * The sheet handed over for the converter, read as **CSV over plain HTTP**
+   * (`gviz/tq?tqx=out:csv`, which every link-shared Google Sheet serves). No
+   * Google API, no key, no OAuth, no client library and **no quota**: this is a
+   * GET for a document Google already publishes, not an API call.
+   *
+   * The sheet id is the whole configuration, and it is *not* a secret — the
+   * document is readable by link — so it lives here rather than in
+   * `/etc/paylez/paylez.env`. Overridable by environment for the obvious reason:
+   * a staging box pointed at a copy of the sheet must not be one edit away from
+   * moving production's prices.
+   *
+   * ## The cadence
+   *
+   * Twice a day, in `runTwiceDaily` (`jobs.ts`). That is the requirement and it
+   * is also about as often as this sheet is worth reading: nothing here settles
+   * a payment, and the figures it feeds are a price tag and a converter.
+   *
+   * The scheduler is the *existing* one — this process is long-running and
+   * already runs four jobs, so the marginal cost of a fifth is two HTTP GETs a
+   * day. A serverless function on a cron would be a second deployment target, a
+   * second place secrets live and a second thing to notice has stopped, for the
+   * same two requests. `domain/rates.ts` carries that comparison in full.
+   */
+  rates: {
+    sheetId: process.env.PAYLEZ_RATES_SHEET ?? '1ieUf8ZMiVPY6pXVKVpQVS_L1mIN6hUkmCWUdGzSA5Eg',
+    get sheetUrl(): string {
+      return `https://docs.google.com/spreadsheets/d/${this.sheetId}/gviz/tq?tqx=out:csv`;
+    },
+    /**
+     * How long to wait for it.
+     *
+     * Ten seconds, which is long for this server and right for this caller: it
+     * is a background job with nobody waiting on it, and the alternative to
+     * waiting is another twelve hours of stale rates. Compare
+     * `media.timeoutMs` (4s), which is inside a request somebody is watching.
+     */
+    timeoutMs: 10_000,
+    /**
+     * How stale a rate may get before a screen says so, in hours.
+     *
+     * Thirty-six, which is three missed syncs at a twelve-hour cadence. Two
+     * would flag a single hiccup and a week would let the sync stop silently —
+     * and this number's whole job is to be the line between "the sheet has not
+     * changed" and "nothing has read the sheet".
+     */
+    staleHours: 36,
+  },
+
+  /* ──────────────────────────────────────────── logos and photographs ── */
+
+  /**
+   * The image proxy in `domain/media.ts` — what it will accept from somebody
+   * else's host, and how long it will wait for it.
+   *
+   * `maxBytes` is a *logo*, and 256 kB is a generous one: the whole reason a
+   * cap exists is that the thing at the other end is not ours, and a host
+   * advertising 40 kB and sending 400 MB is the failure being bounded. Refused
+   * rather than truncated — half an image is a corrupt image, and a corrupt
+   * image cached for a year is worse than no image at all.
+   *
+   * `timeoutMs` is short because a hung fetch holds a request on *this* server
+   * for the sake of a picture the client already has a fallback for. The same
+   * argument `PAYLEZ_LLM_TIMEOUT_MS` makes, at a tenth the stakes.
+   */
+  media: {
+    maxBytes: 256 * 1024,
+    timeoutMs: 4000,
+    /**
+     * How long a browser may keep one.
+     *
+     * A week, and it is safe to be this long because the URL is keyed on the
+     * *row* rather than on the bytes: an owner who replaces a logo changes
+     * `venues.logo`, `assetFor` notices the source moved and re-fetches, and
+     * the response a cached client is holding is the only thing that goes on
+     * being stale. A logo is the right thing to be a week out of date about.
+     */
+    cacheSeconds: 604_800,
+  },
+
+  /* ──────────────────────────────────────────────────── rate limits ── */
+
+  /**
+   * Requests per rolling hour per caller, by endpoint — enforced by the `limit`
+   * field on `Route` and `domain/limits.ts`.
+   *
+   * Every number here is a bound against a **script**, not against a person, so
+   * each is set well above what a determined honest caller does and well below
+   * what a loop does in a second. The two that are not obvious:
+   *
+   * - `signUpPerHour` is 5 per *connection*, not per address: the thing being
+   *   bounded is minting accounts, and an address is a field the script fills
+   *   in. Five is a household sharing a router, three of whom mistype something
+   *   and start again.
+   * - `gameStartPerHour` is above what energy allows on any plan (Premium's
+   *   burst is 58 rounds), because energy already bounds the rounds that *pay*
+   *   and this bounds the rounds that do not — a practice round costs nothing,
+   *   which is exactly why it needs a ceiling of its own. 200 is six hours of
+   *   continuous play at the fastest a quiz can honestly be finished.
+   */
+  limits: {
+    signUpPerHour: 5,
+    googleSignInPerHour: 20,
+    guestPerHour: 10,
+    passwordChangePerHour: 10,
+    verifyEmailPerHour: 30,
+    sendCodePerHour: 10,
+    gameStartPerHour: 200,
+    gameFinishPerHour: 200,
+    checkInPerHour: 10,
+    giftCardPerHour: 30,
+  },
+
   /* ─────────────────────────────────────────────────────── sessions ── */
   auth: {
     sessionDays: 30,
@@ -574,6 +734,36 @@ export const CONFIG = {
     minPasswordLength: 6,
     /** Sign-in attempts per address per window, then a cool-off. */
     signInPerHour: 20,
+
+    /*
+     * ── proving an address ──
+     *
+     * The four numbers behind the sign-up code (`domain/verification.ts`). Each
+     * bounds a different thing, and the second is the one doing the real work.
+     *
+     * `codeMinutes` is ten: long enough to switch to a mail app, find the
+     * message and come back, short enough that a code left in an inbox is not a
+     * standing key to the account.
+     *
+     * `codeAttempts` is **what makes six digits safe**. A million
+     * possibilities is nothing to a script and a per-hour rate limit gives it
+     * all day; five wrong answers per *code* is a one-in-two-hundred-thousand
+     * chance per code, whoever is asking and however slowly.
+     *
+     * `codeCooldownSeconds` bounds the resend button. Ninety seconds, because
+     * the honest reason to press it is that the first one has not arrived —
+     * and somebody who has already waited a minute for a message has spent
+     * most of their patience.
+     *
+     * `codeSendsPerAddress` bounds using the resend button as a way to post
+     * mail to somebody else's address. Ten, and it does **not** reset: an
+     * account that has burned ten codes has a problem an eleventh will not fix,
+     * and support can clear the row.
+     */
+    codeMinutes: 10,
+    codeAttempts: 5,
+    codeCooldownSeconds: 90,
+    codeSendsPerAddress: 10,
     /**
      * The Google OAuth client id, and the audience every ID token must name.
      *

@@ -148,11 +148,86 @@ CREATE TABLE IF NOT EXISTS users (
   profile_completed_at TEXT,
   -- §2.1: derived from the ledger, cached for read speed, reconciled nightly.
   points_cache  INTEGER NOT NULL DEFAULT 0,
-  -- §8.2: the city weekly board lists only opted-in users. Everyone still sees
-  -- the board and their own rank; enforcement is at the query layer.
-  leaderboard_opt_in INTEGER NOT NULL DEFAULT 0,
+  -- §8.2: the weekly board lists only opted-in users. Everyone still sees the
+  -- board and their own rank; enforcement is at the query layer.
+  --
+  -- **Default 1 — on.** It was 0, which made the board a thing somebody had to
+  -- go and find a switch for, and the effect was a leaderboard with almost
+  -- nobody on it: the one screen in the product whose whole job is to show that
+  -- other people are playing, showing that they are not. A ranking is the
+  -- ordinary shape of a game and being left off it is the exception, so the
+  -- default is the ordinary case and the switch is still there in the profile.
+  --
+  -- The **opt-out is unchanged and is still enforced in SQL**, which is what
+  -- makes flipping this safe rather than a privacy change: a player who turns it
+  -- off is not listed, and `you` still comes back on the board body so they keep
+  -- their real rank rather than a flattering one computed over whoever agreed to
+  -- be seen. What changed is which answer somebody gets without deciding.
+  --
+  -- Existing rows are migrated once, by `optInToTheBoard` in `db.ts` — see that
+  -- function for the cost, which is real: a row at 0 cannot be told apart from
+  -- one somebody switched off by hand.
+  leaderboard_opt_in INTEGER NOT NULL DEFAULT 1,
   display_avatar TEXT,
   referral_code TEXT UNIQUE,
+  -- Whether this account shares its profile with a venue it actually visits,
+  -- without being asked each time. **Default 1 — on.**
+  --
+  -- ## What this is and, more importantly, what it is not
+  --
+  -- §1.4's grant is `data_sharing_consents`, one row per (person, venue), and
+  -- it is what every identified-customer query joins on. **That gate is
+  -- unchanged.** `domain/profiles.ts` still reads a customer row only through
+  -- an un-revoked grant, in SQL, so the rule "there is no code path that reads
+  -- a customer row without one" is still literally true.
+  --
+  -- What changed is **when the row is written**. It used to require the player
+  -- to find a switch on a venue's sheet and press it, which meant a venue's
+  -- customer list was empty of everybody who had simply never gone looking —
+  -- so the dashboard's whole identified half read as "nobody comes here twice"
+  -- when it meant "nobody pressed a button". This column is the account's
+  -- standing answer, and `gate.confirm` writes the grant from it at the moment
+  -- a relationship with that venue actually begins: a confirmed scan, at the
+  -- till, in person.
+  --
+  -- Three properties are load-bearing:
+  --
+  --   * **A grant is still a row**, with its `granted_at`, its `policy_version`
+  --     and its `revoked_at`. Auditability was the point of the table and is
+  --     not traded away — an operator can still say when a venue was allowed to
+  --     see somebody and when it stopped.
+  --   * **It is still per venue.** Turning this on does not hand every venue a
+  --     customer list; it hands one to the venues somebody has been to.
+  --   * **Revocation still wins.** `revokeSharing` stamps the row, and this
+  --     column does not re-grant it — see `gate.confirm`, which looks for *any*
+  --     row for the pair rather than an un-revoked one, precisely so a "no"
+  --     said once is not asked again on the next visit.
+  --
+  -- Switched off, nothing is written and nothing is shared. The switch is on
+  -- the profile, and the per-venue switch on the venue sheet stays where it is.
+  venue_sharing_default INTEGER NOT NULL DEFAULT 1,
+  -- When the address was proved. NULL means it has not been.
+  --
+  -- **This is the one thing on this row that *is* verified**, and it reverses a
+  -- rule this schema used to state plainly: "Nothing here is verified", written
+  -- when `phone_verified` was dropped. That argument still holds for a phone
+  -- number — nothing gates on one and a reward for clicking a link pays for a
+  -- formality — and does not hold for the address, because the address **is the
+  -- credential**. It is what sign-in looks up and what a password reset goes to,
+  -- so an unproved one is an account somebody may not own, with points in it.
+  --
+  -- What it gates is listed in `domain/verification.ts` and is deliberately
+  -- short: earning, redeeming, and being listed on the board. It does not gate
+  -- *signing in* — locking somebody out of an account they just made because a
+  -- code went to spam is worse than the risk — and it does not gate a scan at a
+  -- venue's till, because a venue has verified the person by standing in front
+  -- of them and should not be refused for our sake.
+  --
+  -- Set at sign-up only by confirming a code. A **Google** account is stamped
+  -- immediately: `crypto/google.ts` already refuses an identity whose
+  -- `email_verified` claim is false, so the address arrives proved and asking
+  -- again would be a step that proves nothing.
+  email_verified_at TEXT,
   -- §13 trust tiers: new accounts get low caps and staff confirmation on
   -- everything; a history of confirmed transactions earns headroom.
   trust_tier    INTEGER NOT NULL DEFAULT 0,
@@ -562,6 +637,35 @@ CREATE TABLE IF NOT EXISTS voucher_tiers (
   discount_pct   INTEGER NOT NULL CHECK (discount_pct BETWEEN 1 AND 100),
   points_cost    INTEGER NOT NULL,
   max_discount_minor INTEGER NOT NULL,
+  -- How many of this rung may ever be handed out, and how many one person may
+  -- take. NULL is "no cap" on both, which is what every rung that predates
+  -- these columns carries -- the money cap in section 4 was the only brake
+  -- there was, and it bounds the *spend* rather than the *count*: a rung with
+  -- an unlucky average check can issue thousands of vouchers inside a budget,
+  -- and one account could hold every one of them.
+  --
+  -- A count cap and the money cap answer different questions and both are
+  -- wanted. The pool stops the venue overspending; these stop one offer being
+  -- stripped, which is a thing an owner wants to bound for reasons that are
+  -- not about money at all -- kitchen capacity, a launch week, fairness.
+  redeem_limit   INTEGER,
+  per_user_limit INTEGER,
+  -- The guard, and the reason it is a column rather than a COUNT.
+  --
+  -- A cap checked by counting rows cannot be made race-safe on Postgres: two
+  -- transactions both count N < cap under READ COMMITTED and both insert. What
+  -- is atomic is a conditional UPDATE -- `SET issued_count = issued_count + 1
+  -- WHERE issued_count < redeem_limit` -- which takes the row lock and
+  -- re-evaluates its own predicate, so exactly one of the two sees the row
+  -- change. `gift_card_stock.stock` is the same shape one table down: a finite
+  -- number of things to give out, held as a number.
+  --
+  -- It is the **gate**, never a reported figure. Every count the dashboard
+  -- prints still comes from `issued_vouchers` (see `partnerLadder`), and
+  -- `verify.ts` reconciles the two so they cannot drift in silence. Counts
+  -- every voucher ever issued on the rung, so a voucher that expired unused
+  -- has still been handed out and still spent its slot.
+  issued_count   INTEGER NOT NULL DEFAULT 0,
   active         INTEGER NOT NULL DEFAULT 1,
   created_at     TEXT NOT NULL,
   updated_at     TEXT NOT NULL,
@@ -1126,6 +1230,140 @@ CREATE TABLE IF NOT EXISTS category_defaults (
   category        TEXT PRIMARY KEY,
   avg_check_minor INTEGER NOT NULL,
   currency        TEXT NOT NULL DEFAULT 'PLN'
+);
+
+-- One-time codes sent to an address to prove somebody has it.
+--
+-- ## Why the code is hashed
+--
+-- It is a credential with a short life, and a table of live codes beside a
+-- table of addresses is a table that lets whoever reads the database sign up as
+-- anybody. Hashed with the server secret (`crypto/tokens.ts`'s HMAC, not
+-- scrypt): the value is six digits with a ten-minute life and a five-attempt
+-- cap, so the thing that makes it unguessable is the cap rather than the cost
+-- of a hash — and a per-code scrypt at sign-up would be 100ms of CPU for no
+-- security this does not already have.
+--
+-- ## Why `attempts` is a column and not a rate limit
+--
+-- Six digits is a million possibilities and a rate limiter bounds *requests per
+-- hour*, which a patient script has all day for. The cap is per **code**: five
+-- wrong answers and that code is dead, whoever is asking and however slowly. A
+-- new one has to be sent, which is what `sent_at` and the cooldown bound.
+--
+-- ## One live code per user
+--
+-- `UNIQUE (user_id)` and the row is replaced on every send. Two live codes
+-- doubles the chance of a blind guess for no benefit — and it is what makes
+-- "the code I was just sent" unambiguous, which is what somebody reading two
+-- emails actually needs.
+CREATE TABLE IF NOT EXISTS email_verifications (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  -- The address the code was sent to, folded. Kept because an account may
+  -- change its address between the send and the confirm, and a code proves the
+  -- address it was sent to rather than whatever the row says now.
+  email_norm TEXT NOT NULL,
+  code_hash  TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  attempts   INTEGER NOT NULL DEFAULT 0,
+  sent_at    TEXT NOT NULL,
+  -- How many codes have gone to this account. Kept rather than counted from
+  -- rows, because the rows are replaced: it is what bounds somebody using the
+  -- resend button as a way to send mail to an address that is not theirs.
+  sends      INTEGER NOT NULL DEFAULT 1,
+  UNIQUE (user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_verifications ON email_verifications (email_norm, sent_at);
+
+-- Logos and photographs, fetched once and served from our own origin.
+--
+-- ## Why this table exists at all
+--
+-- The front end's standing rule is that it makes **no third-party runtime
+-- requests** (root `CLAUDE.md`), and the Base44 import brought every venue and
+-- guidance-service image over as an `https://base44.app/…` address. So
+-- `auth/picture.ts` refused to draw them and every card in the product showed
+-- the name's initial instead — correct, and the reason "the service logos do
+-- not display".
+--
+-- The rule is about the **browser**, not about the product: this server already
+-- talks to Stripe and to Anthropic. So the image is fetched *here*, once,
+-- stored, and served from `/v1/media/…` — a first-party request, with no
+-- third-party host learning who is reading the page and no dependency on that
+-- host still being up.
+--
+-- ## What "one consistent format" means here, and what it does not
+--
+-- Three things are normalised and they are the three that can be, with no image
+-- library in a codebase whose dependency budget is one package:
+--
+--   * **The media type** is one of a short allow-list, stored explicitly, and
+--     served back verbatim. `image/svg+xml` is refused — an SVG served from our
+--     own origin is a script execution vector, which is a different thing from
+--     a picture.
+--   * **The size** is capped in bytes (`CONFIG.media.maxBytes`), refused rather
+--     than truncated.
+--   * **The storage** is one shape for every logo in the product: base64 in
+--     `bytes`, the type beside it. `TEXT` rather than a blob because
+--     `schema.sql` is deliberately what both SQLite and Postgres take verbatim.
+--
+-- **Re-encoding and resizing are not done and cannot be** without adding an
+-- image library. The *presentation* convention — square, cropped, one size — is
+-- CSS (`object-fit: cover` on a fixed box), which is where it is actually
+-- visible. `status` records the outcome so a failure is a fact rather than a
+-- retry loop: `ok`, `refused` (wrong type, too big) or `failed` (unreachable).
+--
+-- Keyed by `(entity, entity_id)` like `translations`, and for the same reason:
+-- one table serves venues, guidance services and gift-card brands, so it can
+-- have no foreign key to any of them. `domain/media.ts` sweeps it when the row
+-- it describes is deleted.
+CREATE TABLE IF NOT EXISTS media_assets (
+  id          TEXT PRIMARY KEY,
+  entity      TEXT NOT NULL,
+  entity_id   TEXT NOT NULL,
+  source_url  TEXT NOT NULL,
+  mime        TEXT,
+  bytes       TEXT,
+  size_bytes  INTEGER NOT NULL DEFAULT 0,
+  status      TEXT NOT NULL DEFAULT 'ok' CHECK (status IN ('ok', 'refused', 'failed')),
+  detail      TEXT,
+  fetched_at  TEXT NOT NULL,
+  UNIQUE (entity, entity_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_media_entity ON media_assets (entity, entity_id);
+
+-- The daily-task prompts the Play screen rotates through.
+--
+-- **This table is the inventory, not the copy and not the amounts.** Three
+-- columns and none of them is a sentence or a number of points, which is the
+-- whole design:
+--
+--   * `copy_key` names an entry in `copy.games.tasks` — the five dictionaries
+--     in `src/site/i18n/` are where user-visible strings live, and a translated
+--     string in a database is a string that is missing in Ukrainian with nothing
+--     to report it. So the table decides *which* prompt and the dictionary holds
+--     the words, in all five, where a missing one is a build error.
+--   * `reward` names the earning rule that prices it (`domain/tasks.ts` resolves
+--     it), rather than carrying a figure. A points value stored here is a value
+--     that can disagree with what the ledger actually writes — which is the one
+--     thing a screen advertising a reward must not do. A task promising 50 and a
+--     bonus paying 25 is worse than no task at all.
+--
+-- `active` is why it is a table rather than a constant: turning a prompt off is
+-- an operator decision on a live box, and `sort_order` is the rotation's order.
+-- Written by `seedPlatform` as product configuration, which is the same standing
+-- the plan ladder and the word bank have — see the "nothing is seeded" rule in
+-- `README.md` for what that does and does not permit.
+CREATE TABLE IF NOT EXISTS daily_tasks (
+  key        TEXT PRIMARY KEY,
+  copy_key   TEXT NOT NULL,
+  reward     TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  active     INTEGER NOT NULL DEFAULT 1,
+  updated_at TEXT NOT NULL
 );
 
 -- B9 category benchmarks: the cross-venue aggregation job's output, written only

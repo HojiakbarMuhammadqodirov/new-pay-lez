@@ -29,6 +29,7 @@ import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
 import { useSpotlight } from './pointer';
 import { usePalette } from './theme/context';
+import { lineCap } from './heroLines';
 
 /* ────────────────────────────────────────────────────────────────── hero ── */
 
@@ -53,7 +54,7 @@ export function Hero() {
     <section className="hero" id="hero">
       <div className="wrap hero-grid">
         <div className="hero-copy" ref={copyRef}>
-          <h1 data-reveal>
+          <h1 data-reveal style={lineCap(copy.hero.lines)}>
             {copy.hero.lines.map((line, i) => (
               <span className="ln" key={line}>
                 {i === 1 ? <span className="accent-text">{line}</span> : line}

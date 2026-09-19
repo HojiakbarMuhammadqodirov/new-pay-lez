@@ -6,6 +6,7 @@ import { fill } from './i18n/currency';
 import { PATHS } from './router';
 import { useAuth } from './auth/context';
 import { GoogleButton } from './auth/GoogleButton';
+import { PasswordInput } from './PasswordInput';
 import {
   MIN_PASSWORD,
   type ChoosableType,
@@ -121,8 +122,7 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
 
       <label className="field">
         <span className="field-label">{copy.auth.password}</span>
-        <input
-          type="password"
+        <PasswordInput
           autoComplete="current-password"
           placeholder={copy.auth.passwordPlaceholder}
           value={password}
@@ -130,7 +130,7 @@ function Credentials({ onSwap }: { onSwap: () => void }) {
             setPassword(event.target.value);
             setError(null);
           }}
-          aria-invalid={error === 'password' || error === 'empty' ? true : undefined}
+          invalid={error === 'password' || error === 'empty' ? true : undefined}
         />
       </label>
 
@@ -222,6 +222,10 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [type, setType] = useState<ChoosableType | null>(null);
+  /* Not pre-checked, and there is no stored preference for it either: an
+     agreement remembered from a previous sign-up is an agreement nobody gave
+     this time. See the checkbox below. */
+  const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState<SignUpError | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -231,7 +235,7 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
     setBusy(true);
     const normalizedEmail = normalizeEmail(email);
 
-    void signUp({ name, email: normalizedEmail, password, type })
+    void signUp({ name, email: normalizedEmail, password, type, acceptTerms })
       .then((result) => {
         /* Nothing to navigate to here either: an owner resolves to setup and an
            individual to the landing page, both from the account this just
@@ -285,8 +289,7 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
 
         <label className="field">
           <span className="field-label">{copy.auth.password}</span>
-          <input
-            type="password"
+          <PasswordInput
             autoComplete="new-password"
             placeholder={fill(copy.auth.newPasswordPlaceholder, {
               n: String(MIN_PASSWORD),
@@ -296,7 +299,7 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
               setPassword(event.target.value);
               setError(null);
             }}
-            aria-invalid={invalid('password')}
+            invalid={invalid('password')}
           />
         </label>
       </div>
@@ -314,6 +317,49 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
         <span className="field-help">{copy.auth.typeNote}</span>
       </div>
 
+      {/*
+        ── the agreement ──
+
+        A real checkbox, **not pre-checked**, with the two documents linked out
+        of the sentence rather than named beside it.
+
+        Three things about it are the whole point:
+
+        - It is not pre-checked, and the server refuses a sign-up without it
+          (§1.3 in `domain/accounts.ts`). Two `consent_records` rows used to be
+          written unconditionally at account creation — a consent nobody had
+          given, and the row that would be produced as evidence.
+        - The submit is **disabled until it is checked**, so the refusal happens
+          where it can point at a control rather than as a message after a
+          request.
+        - The links open in a new tab. A visitor who has filled in a form and
+          taps "Terms" should come back to a filled-in form; navigating away
+          inside a hash-routed SPA would lose everything they typed, and this is
+          the one link on the page it is reasonable to press mid-form.
+      */}
+      <label className="field-agree">
+        <input
+          type="checkbox"
+          checked={acceptTerms}
+          onChange={(event) => {
+            setAcceptTerms(event.target.checked);
+            setError(null);
+          }}
+          aria-invalid={error === 'terms' ? true : undefined}
+        />
+        <span>
+          {fill(copy.auth.agreeLead, {})}{' '}
+          <a href={PATHS.terms} target="_blank" rel="noreferrer">
+            {copy.auth.agreeTerms}
+          </a>{' '}
+          {copy.auth.agreeAnd}{' '}
+          <a href={PATHS.privacy} target="_blank" rel="noreferrer">
+            {copy.auth.agreePrivacy}
+          </a>
+          {copy.auth.agreeTail}
+        </span>
+      </label>
+
       {/* One hole, and only the length message has it — `fill` leaves any
           template without it untouched, so every message goes through the same
           call rather than the component knowing which one needs it. */}
@@ -323,7 +369,15 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
         </p>
       )}
 
-      <button type="submit" className="btn btn-solid btn-lg auth-submit">
+      {/* Disabled until the box is ticked. A submit that can be pressed and
+          then refused is a round trip to say something the form already knew —
+          and `.btn:disabled` clears the lift and the glow, so it does not
+          invite the press either. */}
+      <button
+        type="submit"
+        className="btn btn-solid btn-lg auth-submit"
+        disabled={!acceptTerms}
+      >
         {copy.auth.signUpSubmit}
       </button>
 

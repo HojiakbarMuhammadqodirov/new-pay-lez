@@ -137,6 +137,11 @@ const PATHS = {
 
   download: <><path d="M12 3v12" /><path d="m7 11 5 5 5-5" /><path d="M4 20h16" /></>,
   eye: <><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12Z" /><circle cx="12" cy="12" r="3" /></>,
+  /* The same eye, struck through — the *other state* of the password toggle
+     rather than a second icon. Drawn as the lid closing over the pupil plus one
+     stroke, so the two glyphs share a silhouette and the button reads as one
+     control changing rather than as two controls swapping places. */
+  eyeOff: <><path d="M4 8.4C2.8 9.8 2 12 2 12s3.6 6.5 10 6.5c1.3 0 2.5-.2 3.6-.6" /><path d="M9.9 5.7A11.6 11.6 0 0 1 12 5.5c6.4 0 10 6.5 10 6.5s-1 1.8-2.7 3.5" /><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2" /><path d="M3 3l18 18" /></>,
   clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   /* A window of days, not a time of day — which is what the clock above means,
      and why the range picker could not simply borrow it. */

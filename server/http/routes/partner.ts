@@ -28,6 +28,33 @@ import { DomainError } from '../../domain/errors.ts';
 import { actor, bool, int, list, oneOf, optInt, optStr, qChoice, qInt, qRange, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
+/** The four `issued_vouchers` statuses, plus the word for "do not filter". */
+const VOUCHER_STATUS = ['all', 'active', 'redeemed', 'expired', 'cancelled'] as const;
+
+const statusFilter = (
+  choice: (typeof VOUCHER_STATUS)[number],
+): 'active' | 'redeemed' | 'expired' | 'cancelled' | undefined =>
+  choice === 'all' ? undefined : choice;
+
+/**
+ * A voucher rung's count cap: a whole number of at least one, or `null`.
+ *
+ * `null` has to survive as a value — it is how a partner *removes* a cap — so
+ * this cannot be `optInt`, which folds null into absent. Zero is refused rather
+ * than accepted as "none": a cap of zero is a rung that cannot be bought, and
+ * the control for that is `active: false`, which says so on the screen.
+ */
+function capOf(raw: unknown, field: string): number | null {
+  if (raw === null) return null;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new DomainError('validation_failed', `${field} is a whole number of at least 1, or null`, {
+      field,
+    });
+  }
+  return value;
+}
+
 /** The venue in the path, with the caller's access to it already checked. */
 async function mine(ctx: Ctx, param = 'id') {
   const venueId = ctx.params[param];
@@ -330,6 +357,36 @@ export const partnerRoutes: Route[] = [
     },
   },
   {
+    /*
+     * The partner's voucher register — the list, its totals and the ladder the
+     * caps live on, in one call.
+     *
+     * Composed here rather than as three routes because they are one screen and
+     * every figure on it has to agree: a rung reading "18 of 20" beside a list
+     * fetched a second later would be two answers to one question. Same reason
+     * `budgetBody` exists one file over.
+     */
+    method: 'GET',
+    pattern: '/v1/partner/venues/:id/vouchers',
+    auth: 'partner',
+    handler: async (ctx) => {
+      const venue = await mine(ctx);
+      return {
+        tiers: await vouchers.partnerLadder(ctx.db, venue.id, ctx.at),
+        totals: await vouchers.partnerVoucherTotals(ctx.db, venue.id, ctx.at),
+        vouchers: await vouchers.partnerVouchers(ctx.db, venue.id, {
+          tierId: qStr(ctx, 'tier'),
+          /* `all` is a member of the set rather than an absent parameter,
+             because `qChoice` refuses anything it does not know — which is what
+             turns `?status=redemed` into a named 400 instead of a silent
+             unfiltered list. */
+          status: statusFilter(qChoice(ctx, 'status', VOUCHER_STATUS, 'all')),
+          limit: qInt(ctx, 'limit', 200),
+        }),
+      };
+    },
+  },
+  {
     method: 'PUT',
     pattern: '/v1/partner/venues/:id/tiers',
     auth: 'partner',
@@ -344,6 +401,18 @@ export const partnerRoutes: Route[] = [
             discountPct: Number(tier.discountPct),
             pointsCost: Number(tier.pointsCost),
             maxDiscountMinor: Number(tier.maxDiscountMinor),
+            /*
+             * The two count caps. `null` is a **value** here — "no limit" — and
+             * `undefined` is "leave whatever is set alone", which is why they
+             * are read off the raw body rather than through `optInt`: that
+             * helper folds null into absent, and this is the one field where
+             * the difference is the whole meaning. A partner clearing a cap and
+             * a partner editing a rung's price without touching its cap are
+             * different edits, and `setVoucherTiers` upserts the whole row.
+             */
+            redeemLimit: tier.redeemLimit === undefined ? undefined : capOf(tier.redeemLimit, 'redeemLimit'),
+            perUserLimit:
+              tier.perUserLimit === undefined ? undefined : capOf(tier.perUserLimit, 'perUserLimit'),
             active: tier.active !== false,
           };
         }),

@@ -16,8 +16,15 @@ import {
 } from './content';
 import { Icon } from './icons';
 import { fill, group } from './i18n/currency';
-import { useCopy, useCurrency, useMoney, useMoneyParts } from './i18n/context';
+import {
+  useCopy,
+  useCurrency,
+  useGroupSeparator,
+  useMoney,
+  useMoneyParts,
+} from './i18n/context';
 import { PATHS } from './router';
+import { lineCap } from './heroLines';
 
 /**
  * Business — the fourth page, and the only one that sells to a business.
@@ -133,7 +140,7 @@ function DashHeadline() {
 function DashTiles({ compact }: { compact?: boolean }) {
   const copy = useCopy();
   const moneyParts = useMoneyParts();
-  const currency = useCurrency();
+  const separator = useGroupSeparator();
   const mock = copy.business.dashboard.mock;
 
   return (
@@ -148,12 +155,21 @@ function DashTiles({ compact }: { compact?: boolean }) {
             </span>
             {/* Grouped whether or not it is money: four figures in a row, one
                 of them a price, and only that one separated would read as two
-                number formats on one screen. */}
+                number formats on one screen.
+
+                And grouped with the **reader's** separator rather than the
+                chosen currency's, which is the same thing until the two come
+                apart: this read `currency.group`, correct only while
+                `CURRENCIES` was keyed by language. A Polish reader who chose
+                pounds got the price here separated one way and the three
+                figures beside it the other — which is precisely the two-formats
+                reading the sentence above exists to prevent. `parts.group` is
+                already the reader's, because `useMoneyParts` passes it. */}
             <b
               data-count={parts ? parts.value : tile.value}
               data-prefix={parts?.prefix}
               data-suffix={parts ? parts.suffix : tile.suffix}
-              data-group={currency.group}
+              data-group={separator}
             >
               0
             </b>
@@ -470,7 +486,7 @@ function BusinessHero() {
 
           {/* The accent falls on the last line, which is the claim — the two
               before it are the setup. */}
-          <h1 data-reveal>
+          <h1 data-reveal style={lineCap(copy.business.hero.lines)}>
             {copy.business.hero.lines.map((line, i) => (
               <span className="ln" key={line}>
                 {i === copy.business.hero.lines.length - 1 ? (
