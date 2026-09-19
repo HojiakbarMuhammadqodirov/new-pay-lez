@@ -6,6 +6,7 @@
   "scripts": {
     "assets": "node scripts/copy-flag-font.mjs",
     "banks": "node scripts/build-question-banks.mjs",
+    "sitemap": "vite-node scripts/build-sitemap.ts",
     "dev": "npm run assets && vite",
     "build": "npm run assets && tsc -b && vite build",
     "lint": "oxlint",

@@ -35,13 +35,13 @@ a whole:
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 942 checks: it
+There is no test runner. `npm run verify` is the test suite — 1,069 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
-framing across five aspect ratios, and the rotation accumulator over an hour of
-simulated frames.
-**Run it after touching anything under `geo/`, `config.ts`, or the rotation and
-layout hooks.** Run `npm run build` for a type check (`tsc -b` is part of it).
+framing across five aspect ratios, the rotation accumulator over an hour of
+simulated frames, and the two URL tables against the committed sitemap.
+**Run it after touching anything under `geo/`, `config.ts`, the rotation and
+layout hooks, or `router.ts`.** Run `npm run build` for a type check (`tsc -b` is part of it).
 
 `npm run assets` copies the Twemoji flag font out of `node_modules` into
 `public/fonts/`. `dev` and `build` both run it, so it rarely needs invoking
@@ -53,6 +53,17 @@ are a hand-delivered export rather than a dependency, the output is committed,
 and a build that silently rebuilt 3 MB of game data from files that may not be
 present would fail on a fresh clone for no reason. Run it when a new export
 lands, and commit what it writes.
+
+`npm run sitemap` regenerates `public/sitemap.xml` and `public/robots.txt` from
+`URL_PATHS` in `router.ts`. Run it after adding, removing or renaming a route
+and commit what it writes — the same arrangement `npm run openapi` has with the
+API's route table, and `npm run verify` compares the committed sitemap's URL set
+against the route table so forgetting is a failing check rather than a page
+missing from Google. It is not part of `build` for the reason `banks` is not:
+the output is a fact about the code rather than a dependency of it. Only the URL
+set is checked, not the file — `<lastmod>` is the date of the last commit
+touching each page's own module, read out of git, so it moves on its own and a
+check that failed on that would be one nobody could keep green.
 
 `npm run server` starts the backend, and `npm run verify:api` is *its* test
 suite — a second one, because it checks a different kind of thing (see
@@ -875,6 +886,75 @@ Three things follow from that, and all three are easy to undo by accident:
 - **`account.business === null` means "has not been through setup".** Do not
   seed a blank listing when the account type is chosen, or a brand-new owner
   looks finished and lands on the dashboard.
+
+**Every route has two forms: a hash to link with and a path to be at.**
+`PATHS` is the link form and nothing about it changed — every `<a href="#/x">`
+on the site still sets a hash. `URL_PATHS` is the address form, and it exists
+because a hash is invisible to a search engine: Google strips everything from
+`#` onwards before it fetches anything, so the fifteen routes were one indexable
+page and a sitemap of `#/…` URLs would have been fifteen entries for the
+homepage. `readRoute` reads a path on the way in, `normalizeAddress` writes one
+into the bar on the way out, and nginx's SPA fallback — already there so a
+refresh worked — answers them with no server change.
+
+Six things about it are load-bearing, and four were bugs first:
+
+- **Precedence is hash, then anchor, then path**, and each step is a fix for the
+  one below it. A route hash wins **outright, unrecognised ones included**,
+  because `ErrorBoundary`'s way out of a crashed screen is a literal
+  `href="#/"` and falling through to the path would answer `dashboard` on the
+  dashboard — the one button off a broken page pointing at the broken page. A
+  section anchor comes next, because `ANCHOR_ROUTES` is how `#learn-games`
+  followed from the landing page reaches L-Earn, and reading the path first
+  answers `landing` for it and breaks every cross-page section link on the site.
+- **`normalizeAddress` must strip exactly what `readRoute` claims.** It removes
+  anything shaped like a route hash and keeps a section anchor, which is a place
+  on the page and belongs in a URL somebody copies. Stripping only the *listed*
+  hashes left `#/` in the bar as `/#/` — the right page under what looks like a
+  typo.
+- **`#top` is a route, not an anchor.** It is `PATHS.landing`, so it is in
+  `ROUTE_HASHES`; without that entry "Home" pressed from L-Earn leaves
+  `/l-earn#top` and the path goes on answering `learn`.
+- **`useRoute` listens for `popstate` as well as `hashchange`.** Two normalised
+  entries differ in their *path*, so traversing between them never touches the
+  fragment and `hashchange` never fires — Back and Forward changed the URL and
+  not the page. `ErrorBoundary` needs the same pair for the same reason.
+- **`search` survives normalisation.** `?demo=1` is read on every render of the
+  dashboard, and dropping it turns the flag off one navigation after it was set.
+- **One cosmetic cost, taken knowingly.** Pressing the nav link for the page you
+  are already on now pushes an entry that is immediately replaced with the path
+  it already had, so one press of Back appears to do nothing. Undoing it means
+  every `<a>` setting a path and cancelling its own default, which is the
+  history router `router.ts` still declines.
+
+**The head is per route, and the copy is in the dictionaries.** `head.ts` sets
+the title, description, canonical, robots and Open Graph tags from `copy.seo`,
+and `<html lang>` from the dictionary's own `code`. Four rules travel with it:
+
+- **A title is a whole sentence, never a page name plus a suffix.** The brand
+  does not sit on the same side of the words in every language, which is the
+  same reason `fill()` exists rather than two half-strings.
+- **`index.html` carries a static default set and `head.ts` overwrites it.** Not
+  a duplicate: Google renders JavaScript and sees the route's tags, while every
+  unfurler — Slack, Facebook, X — reads the HTML as served and runs nothing, so
+  without the static pair a link to any page pastes as a bare URL. Keep the two
+  in sync the way the pre-paint theme script is kept in sync with
+  `ThemeProvider`.
+- **The private routes are `noindex` and are *not* disallowed in `robots.txt`.**
+  A crawler forbidden to fetch a page never reads the `noindex` on it, so the
+  URL stays listable and the one instruction that would remove it is the one the
+  block prevented it from seeing. `robots.txt` would also be publishing the
+  console's address in a file written for everybody.
+- **No `hreflang`.** It needs one URL per language and there is one URL per
+  *page*, with the language chosen in the header and remembered per browser. The
+  fix is a language segment in the path, not a tag pointing all five at the same
+  address.
+
+`SITE_ORIGIN` is `https://www.pay-lez.com`, and which host that is was a
+finding rather than a preference: the apex still resolves to the retired Base44
+deployment and answers **402**, and `new.pay-lez.com` serves the identical build
+from the same nginx root. Two hosts with one site on them is duplicate content,
+and the canonical tag is what says which to keep.
 
 **A section anchor carries its own page.** A hash that does not start with `#/`
 used to mean "the landing page", full stop — so *every in-page link on every

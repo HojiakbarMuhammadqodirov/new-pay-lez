@@ -12,6 +12,54 @@ export const pl: Dictionary = {
   short: 'PL',
   region: 'PL',
 
+  seo: {
+    site: 'Paylez — Graj i zarabiaj',
+    description:
+      'Graj w szybkie gry, zbieraj punkty i wymieniaj je na prawdziwe vouchery w sklepach w Twoim mieście.',
+    pages: {
+      landing: {
+        title: 'Paylez — Graj i zarabiaj. Ekskluzywne oferty w Twoim mieście.',
+        description:
+          'Odkrywaj, graj i zgarniaj nagrody. Kilka szybkich pytań dziennie, punkty za każdą rundę i vouchery w sklepach partnerskich w Twoim mieście.',
+      },
+      learn: {
+        title: 'L-Earn: graj w quizy, zdobywaj prawdziwe vouchery — Paylez',
+        description:
+          'Kilka szybkich pytań dziennie. Osiem gier, punkty za każdą rundę i vouchery w sklepach, z których i tak korzystasz. Za darmo, bez danych karty.',
+      },
+      business: {
+        title: 'Paylez dla firm: zamień każdą wizytę w nawyk',
+        description:
+          'Lojalność, vouchery, marketing i raporty na jednym rekordzie klienta, a Twoja oferta siedzi w grze otwieranej każdego ranka. Płacisz dopiero za realizację.',
+      },
+      vouchers: {
+        title: 'Vouchery: wydaj punkty na coś prawdziwego — Paylez',
+        description:
+          'Każdy zdobyty voucher trafia do jednego portfela: karty podarunkowe i rabaty w sklepach, z których i tak korzystasz, realizowane kodem QR przy kasie.',
+      },
+      relocate: {
+        title: 'Relocate: przewodnik po życiu w nowym kraju — Paylez',
+        description:
+          'Gdzie założyć konto, jak działa kaucja, która przychodnia przyjmie Twoje ubezpieczenie i ile naprawdę są warte Twoje pieniądze. Dziewięć tematów, czternaście krajów.',
+      },
+      contact: {
+        title: 'Kontakt — Paylez',
+        description:
+          'Pytania o punkty, wizytówkę lokalu albo współpracę? Napisz, który ekran i co się stało, a my wrócimy z odpowiedzią.',
+      },
+      privacy: {
+        title: 'Polityka prywatności — Paylez',
+        description:
+          'Jak Paylez zbiera, wykorzystuje i chroni Twoje dane osobowe, jakie masz do nich prawa zgodnie z RODO i jak z nich skorzystać.',
+      },
+      terms: {
+        title: 'Regulamin — Paylez',
+        description:
+          'Warunki korzystania z Paylez: Twoje konto, Twoje punkty, vouchery i sposób ich realizacji oraz zasady dla lokali partnerskich.',
+      },
+    },
+  },
+
   nav: {
     home: 'Start',
     learn: 'L-Earn',

@@ -28,10 +28,15 @@ import {
 import {
   ANCHOR_ROUTES,
   PATHS,
+  SITE_ORIGIN,
+  URL_PATHS,
+  canonicalUrl,
+  pathRoute,
   resolveRoute,
   routeOf,
   type Route,
 } from '../src/site/router';
+import { listedRoutes, robotsTxt, sitemapXml } from './sitemap';
 import { draw, shuffledRange } from '../src/site/games/bag';
 import {
   LOCAL_COUNTRIES,
@@ -1282,6 +1287,76 @@ console.log('\nrouting — section anchors');
     check(`the ${prefix} prefix names a real route`, PATHS[route] !== undefined);
     check(`…and is specific enough`, prefix.length >= 3 && prefix.endsWith('-'));
   }
+}
+
+console.log('\nreal URLs — the half a crawler can see');
+{
+  /*
+   * `URL_PATHS` is the address form of the same fifteen routes, and three
+   * things about it have to hold or a page is reachable under two URLs, under
+   * none, or under somebody else's.
+   */
+  const paths = Object.entries(URL_PATHS) as Array<[Route, string]>;
+
+  for (const [route, path] of paths) {
+    check(`${route} has a rooted path`, path.startsWith('/'));
+    check(`…with no hash in it`, !path.includes('#'));
+    /* No trailing slash except the root itself, or the canonical URL and the
+       one a visitor types differ by a character and Google keeps both. */
+    check(`…and no trailing slash`, path === '/' || !path.endsWith('/'));
+    check(`…that reads back as ${route}`, pathRoute(path) === route);
+    check(`…and tolerates the slash somebody types`, pathRoute(`${path}/`) === route);
+  }
+
+  /* Injective. `PATH_ROUTES` is built by inverting this table, so two routes
+     sharing a path would lose one of them in silence. */
+  check(
+    'no two routes share a path',
+    new Set(paths.map(([, path]) => path)).size === paths.length,
+  );
+
+  /* Every route in `PATHS` is in `URL_PATHS`, since `normalizeAddress` indexes
+     the latter with whatever the former produced. */
+  for (const route of Object.keys(PATHS) as Route[]) {
+    check(`${route} has both forms`, URL_PATHS[route] !== undefined);
+  }
+
+  check('a path nobody has is nobody', pathRoute('/nothing-here') === null);
+  check('the origin has no trailing slash', !SITE_ORIGIN.endsWith('/'));
+  check('a canonical URL is absolute', canonicalUrl('business') === `${SITE_ORIGIN}/business`);
+  check('…and the landing page is the bare origin', canonicalUrl('landing') === `${SITE_ORIGIN}/`);
+
+  /*
+   * The committed `public/sitemap.xml` against the route table it is generated
+   * from. Compared on the **URL set** and not on the file, because `<lastmod>`
+   * moves whenever a page's module is committed and a check that failed on that
+   * would be a check nobody could keep green. What this catches is the thing
+   * that actually goes wrong: a route added and never listed, or a path renamed
+   * under a sitemap still pointing at the old one — neither of which shows up
+   * anywhere until Search Console reports a 404 weeks later.
+   */
+  const onDisk = readFileSync(new URL('../public/sitemap.xml', import.meta.url), 'utf8');
+  const listed = new Set([...onDisk.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]));
+  const expected = new Set(listedRoutes().map((route) => canonicalUrl(route)));
+
+  check('the sitemap lists every public route', [...expected].every((url) => listed.has(url)));
+  check('…and nothing that is not one', [...listed].every((url) => expected.has(url)));
+  check('…and is the file `npm run sitemap` writes', sitemapXml().includes('<urlset'));
+
+  /* The private routes are the ones a crawler must not be *sent* to. */
+  for (const route of ['admin', 'dashboard', 'signin', 'profile'] as Route[]) {
+    check(`${route} is not in the sitemap`, !listed.has(canonicalUrl(route)));
+  }
+
+  const robots = readFileSync(new URL('../public/robots.txt', import.meta.url), 'utf8');
+  check('robots.txt is the generated one', robots === robotsTxt());
+  check('…and points at the sitemap', robots.includes(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`));
+  /*
+   * Nothing is disallowed, and that is the check rather than an oversight: a
+   * blocked page is never fetched, so the `noindex` on it is never read and the
+   * URL stays listable. See the note on `robotsTxt`.
+   */
+  check('…and blocks nothing it wants de-indexed', !/^Disallow: \S/m.test(robots));
 }
 
 console.log('\nlegal — five languages, one set of anchors');

@@ -14,6 +14,74 @@ export const en = {
   region: 'GB',
 
   /*
+   * ───────────────────────────────────────────────────────────────── seo ──
+   *
+   * The document head, which is the one piece of copy written for somebody who
+   * never opens the page. `head.ts` sets it per route; `URL_PATHS` in
+   * `router.ts` is why there is more than one of them to set.
+   *
+   * **Each title is a whole sentence, not a page name plus a suffix.** The
+   * temptation is `${page} — Paylez` assembled in code, and it is the same
+   * mistake `fill()` exists to prevent one rule over: the brand does not sit on
+   * the same side of the words in every language, and two half-strings cannot
+   * be reordered by whoever is translating them. Keep them under about sixty
+   * characters and the descriptions under about a hundred and sixty, because
+   * that is where a search result stops showing them — the text is not wrong
+   * past that, it is invisible.
+   *
+   * `site` and `description` are the fallback pair, and they are what the seven
+   * private screens get. Those carry `noindex`, so this is a browser tab title
+   * rather than a search result.
+   */
+  seo: {
+    site: 'Paylez — Play & Earn',
+    description:
+      'Play quick games, earn points, and spend them on real vouchers at shops in your city.',
+    pages: {
+      landing: {
+        title: 'Paylez — Play & Earn. Exclusive deals in your city.',
+        description:
+          'Discover, play and get rewarded. Answer a few quick questions a day, earn points, and spend them on real vouchers at partner shops in your city.',
+      },
+      learn: {
+        title: 'L-Earn: play quiz games, earn real vouchers — Paylez',
+        description:
+          'A few quick questions a day. Eight games, points for every round, and vouchers at shops you already use. Free to play, no card details needed.',
+      },
+      business: {
+        title: 'Paylez for business: turn every visit into a habit',
+        description:
+          'Loyalty, vouchers, marketing and reporting on one customer record, with your offer inside a game thousands open every morning. You pay only on redemption.',
+      },
+      vouchers: {
+        title: 'Vouchers: spend your points on something real — Paylez',
+        description:
+          'Every voucher you earn lands in one wallet: gift cards and discounts at shops you already use, held until you want them and spent with a QR code at the till.',
+      },
+      relocate: {
+        title: 'Relocate: the living guide to a new country — Paylez',
+        description:
+          'Where to open an account, how the rent deposit works, which clinic takes your insurance, what your money is worth back home. Nine subjects, fourteen countries.',
+      },
+      contact: {
+        title: 'Contact Paylez',
+        description:
+          'Questions about your points, a venue listing or a partnership? Tell us which screen and what happened, and we will come back to you.',
+      },
+      privacy: {
+        title: 'Privacy Policy — Paylez',
+        description:
+          'How Paylez collects, uses and protects your personal data, the rights you have over it under the GDPR, and how to exercise them.',
+      },
+      terms: {
+        title: 'Terms of Service — Paylez',
+        description:
+          'The terms you agree to when you use Paylez: your account, your points, vouchers and how they are redeemed, and the rules for partner venues.',
+      },
+    },
+  },
+
+  /*
    * Keyed, not indexed. A business owner sees these in a different order and
    * without Relocate (see `NAV_ORDER_BUSINESS` in `content.ts`), and an array
    * cannot survive being reordered — the first swap would caption Business

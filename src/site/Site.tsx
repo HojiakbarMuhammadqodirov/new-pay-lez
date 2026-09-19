@@ -16,6 +16,7 @@ import { DashboardPage } from './dashboard';
 import { CityRise } from './city/CityRise';
 import { LevelRun } from './level/LevelRun';
 import { Header } from './Header';
+import { useHead } from './head';
 import { useLanguage } from './i18n/context';
 import { LanguageProvider } from './i18n/LanguageProvider';
 import { startTraffic, trackView } from './api/traffic';
@@ -95,6 +96,12 @@ function SiteContent() {
   useEffect(() => {
     if (route !== requested) navigate(route, true);
   }, [route, requested]);
+
+  /* The title, the description and the canonical URL, for the reader who never
+     opens the page. The *resolved* route for the same reason the beacon below
+     takes it: a visitor bounced off `/dashboard` is looking at the sign-in form,
+     and a dashboard title left in the tab describes a page nobody is on. */
+  useHead(route);
 
   /*
    * The traffic beacon. Started once, and told about the *resolved* route rather

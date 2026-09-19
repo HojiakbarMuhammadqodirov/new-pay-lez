@@ -11,6 +11,17 @@ import { DEMO_MODE } from './demoMode';
  * all. Ten routes have not changed that; the day one of them needs a real URL
  * for sharing or SEO is the day this is worth replacing, and not before.
  *
+ * **That day came, and the answer was smaller than replacing it.** A sitemap
+ * for Search Console is worth nothing while every page shares one URL — Google
+ * strips everything from `#` onwards before it fetches anything, so eight
+ * entries are one page in the index. What that needed was a real *address*, not
+ * a real *router*: `URL_PATHS` below gives each route a path, `readRoute` reads
+ * one on the way in, and `normalizeAddress` writes one into the bar on the way
+ * out. The hash stays the link form and every `<a href="#/x">` on the site is
+ * untouched, so none of the reasons above stopped being true — nginx's SPA
+ * fallback was already answering unknown paths with `index.html` for refreshes,
+ * which is the whole of the "server rewrite" this was avoiding.
+ *
  * Routes are the hashes that start with `#/`. Everything else — `#value`,
  * `#guide`, `#top` — is a section anchor on the landing page, which means the
  * header's existing links keep working from any page: following `#value`
@@ -76,6 +87,103 @@ export const PATHS: Record<Route, string> = {
  * it is a flat name that happens to read like one, and the day something here
  * needs a real segment or a parameter is the day the note above applies.
  */
+
+/**
+ * The host every canonical URL is written against.
+ *
+ * `www.pay-lez.com` rather than the apex, which still resolves to the retired
+ * Base44 deployment and answers **402**, and rather than `new.pay-lez.com`,
+ * which serves the identical build from the same nginx root — two hosts with
+ * one site on them is duplicate content, and the `<link rel="canonical">` this
+ * feeds tells a crawler which of the two to keep. A constant rather than a
+ * `VITE_` variable on purpose: an origin absent from the file Vite actually
+ * reads is an empty string baked into the bundle, and a canonical tag pointing
+ * at `/business` with no host is a worse failure than a wrong host, because it
+ * is silent. It changes when the domain does, which is roughly never.
+ */
+export const SITE_ORIGIN = 'https://www.pay-lez.com';
+
+/**
+ * The same fifteen routes as real URLs, which is what a crawler can index.
+ *
+ * The note at the top of this file said the day a route needed a real URL for
+ * sharing or SEO was the day the hash router was worth replacing. This is a
+ * third answer, and it is smaller than replacing it: the hash stays the *link*
+ * form — every `<a href="#/x">` on the site is untouched — and the path is the
+ * *address* form, written into the bar by `normalizeAddress` after every
+ * navigation and read back by `readRoute` on entry. A hash is invisible to
+ * Google, which strips everything from `#` onwards before it fetches anything;
+ * eight pages sharing one URL are one page in the index however many entries a
+ * sitemap lists.
+ *
+ * It costs nothing on the server because nginx already answers any unknown
+ * path with `index.html` — the SPA fallback that was there for refreshes.
+ *
+ * All fifteen, not just the eight public ones: the bar is normalised on every
+ * route, so `/dashboard` has to survive a refresh like the rest. Which of them
+ * a crawler is *told* about is a separate decision and lives in
+ * `scripts/build-sitemap.ts`, where the answer is an exhaustive map that a new
+ * route fails to compile against until somebody classifies it.
+ */
+export const URL_PATHS: Record<Route, string> = {
+  landing: '/',
+  learn: '/l-earn',
+  analytics: '/analytics',
+  business: '/business',
+  vouchers: '/vouchers',
+  relocate: '/relocate',
+  contact: '/contact',
+  privacy: '/privacy',
+  terms: '/terms',
+  signin: '/sign-in',
+  profile: '/profile',
+  onboarding: '/welcome',
+  'business-setup': '/business/setup',
+  dashboard: '/dashboard',
+  admin: '/admin',
+};
+
+/** `URL_PATHS` read the other way. Two routes sharing a path would lose one of
+    them silently here, so `npm run verify` checks the table is injective. */
+const PATH_ROUTES: Record<string, Route> = Object.fromEntries(
+  (Object.entries(URL_PATHS) as Array<[Route, string]>).map(([route, path]) => [path, route]),
+);
+
+/**
+ * Every hash `PATHS` can produce — including `#top`, which is a section anchor
+ * by spelling and the landing *route* by use.
+ *
+ * That distinction is the whole of it: `normalizeAddress` strips a route hash
+ * out of the bar and keeps a section anchor, and without this entry "Home"
+ * pressed from L-Earn would leave `/l-earn#top` in the bar and `readRoute`
+ * would go on reading the path and answering `learn`.
+ */
+const ROUTE_HASHES: Record<string, Route> = { ...ROUTES, '#top': 'landing' };
+
+/** The route a real path names, or `null` for anything not in the table. A
+    trailing slash is tolerated because a person typing a URL adds one. */
+export function pathRoute(pathname: string): Route | null {
+  const trimmed =
+    pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  return PATH_ROUTES[trimmed] ?? null;
+}
+
+/** The page a bare section anchor belongs to, or `null` if no prefix claims it.
+    `routeOf` answers the same question with `landing` as its fallback; this one
+    has to be able to say "no", so the pathname gets a turn before that. */
+function anchorRoute(hash: string): Route | null {
+  if (!hash.startsWith('#') || hash.startsWith('#/')) return null;
+  const id = hash.slice(1);
+  for (const [prefix, route] of ANCHOR_ROUTES) {
+    if (id.startsWith(prefix)) return route;
+  }
+  return null;
+}
+
+/** The absolute URL a crawler should be told to keep for a route. */
+export function canonicalUrl(route: Route): string {
+  return `${SITE_ORIGIN}${URL_PATHS[route]}`;
+}
 
 /**
  * Which page a bare section anchor belongs to.
@@ -151,8 +259,79 @@ export function routeOf(hash: string): Route {
   return 'landing';
 }
 
+/**
+ * The route the address bar names, in the order the three forms outrank one
+ * another — and the order is the whole of it:
+ *
+ * 1. **A route hash wins.** It is what every link on the site sets, and it is
+ *    always the most recent thing to have happened.
+ * 2. **Then a section anchor**, because `ANCHOR_ROUTES` is how `#learn-games`
+ *    followed from the landing page reaches L-Earn. Reading the path first
+ *    would answer `landing` for it and break every cross-page section link on
+ *    the site — the exact bug that table was written to end.
+ * 3. **Then the real path**, which is how a crawler, a shared link or a refresh
+ *    arrives, since none of those carries a hash at all.
+ */
 function readRoute(): Route {
-  return routeOf(window.location.hash);
+  const { hash, pathname } = window.location;
+  /*
+   * A route hash wins **outright, an unrecognised one included** — the path
+   * never gets a turn once one is present, which is `routeOf`'s old behaviour
+   * kept rather than a new rule. `ErrorBoundary`'s way out of a crashed screen
+   * is a literal `href="#/"`, deliberately a plain anchor because the router is
+   * in the tree that just threw; `#/` is in no table, and letting it fall
+   * through to the path would answer `dashboard` on the dashboard and leave the
+   * one button out of a broken page pointing at the broken page.
+   */
+  if (hash.startsWith('#/')) return ROUTES[hash] ?? 'landing';
+  return ROUTE_HASHES[hash] ?? anchorRoute(hash) ?? pathRoute(pathname) ?? 'landing';
+}
+
+/** The same answer for the handful of callers outside the hook — `AuthProvider`
+    reads it once at boot to decide whether the first page has to wait for the
+    server. It used to call `routeOf(location.hash)` directly, which now reads
+    `landing` for every visitor who arrived on a real path. */
+export function currentRoute(): Route {
+  return readRoute();
+}
+
+/**
+ * Put the route's real URL in the address bar.
+ *
+ * `replaceState` rather than a navigation, for the opposite of the reason
+ * `navigate` gives below: this must *not* fire `hashchange`, because the
+ * handler that calls it is the `hashchange` handler and a navigation here would
+ * be a loop.
+ *
+ * A route hash is removed and a section anchor is kept, which is the
+ * distinction `ROUTE_HASHES` exists to draw: `#/l-earn` is the link form of a
+ * page that now has a URL of its own, while `#features` is a place on that page
+ * and still belongs in a URL somebody copies.
+ *
+ * `search` survives both — `?demo=1` is read out of it on every render of the
+ * dashboard, and dropping it here would turn the demo flag off one navigation
+ * after it was switched on.
+ *
+ * **One cosmetic cost, written down rather than hidden.** Pressing the nav link
+ * for the page you are already on used to be a no-op — the URL was identical,
+ * so the browser did nothing at all. Now the bar says `/vouchers` and the link
+ * says `#/vouchers`, so the browser pushes an entry and this replaces it with
+ * the path it already had: two identical entries, and one press of Back that
+ * appears to do nothing. Undoing it means making every `<a>` on the site set a
+ * path and cancel its own default, which is the history router the note at the
+ * top of this file declined — a click that lands on the page it is already on
+ * is not worth it.
+ */
+export function normalizeAddress(route: Route): void {
+  const { pathname, search, hash } = window.location;
+  /* The same test `readRoute` applies, and it has to be: anything shaped like a
+     route hash is one, recognised or not. Stripping only the entries in the
+     table left `ErrorBoundary`'s `#/` sitting in the bar as `/#/` — the right
+     page under a URL that looks like a typo. */
+  const keep = hash.startsWith('#/') || ROUTE_HASHES[hash] !== undefined ? '' : hash;
+  const next = `${URL_PATHS[route]}${search}${keep}`;
+  if (`${pathname}${search}${hash}` === next) return;
+  window.history.replaceState(null, '', next);
 }
 
 /**
@@ -163,6 +342,13 @@ function readRoute(): Route {
  * are consequences rather than clicks: landing after a successful sign-in,
  * being sent to setup because the listing is not finished, being bounced off a
  * page this account cannot see.
+ *
+ * Both halves still move the *hash*, and they still work now that the bar holds
+ * a real path, because a hash set on whatever path is current is a same-document
+ * change: it fires `hashchange`, `useRoute` reads the route out of it — a route
+ * hash outranks the path, which is the first clause of `readRoute` — and
+ * `normalizeAddress` then takes the hash back out and writes the new path over
+ * the old one. Setting the path here directly would be a page load.
  */
 export function navigate(route: Route, replace = false): void {
   if (!replace) {
@@ -400,11 +586,18 @@ export function useRoute(): Route {
       setRoute(next);
 
       /*
+       * Read before normalising, not after: `normalizeAddress` takes the route
+       * hash back out of the bar, so asking `window.location` for it below
+       * would find an empty string and skip the scroll to the top.
+       */
+      const { hash } = window.location;
+      normalizeAddress(next);
+
+      /*
        * A section anchor is left to the browser, which has already scrolled to
        * it — but only if that section exists, and coming *from* the other page
        * it does not yet. So re-run it after the render that mounts it.
        */
-      const { hash } = window.location;
       if (hash.startsWith('#/') || hash === '' || hash === '#top') {
         /*
          * Explicitly instant. `html` carries `scroll-behavior: smooth` for the
@@ -421,9 +614,32 @@ export function useRoute(): Route {
       });
     };
 
+    /*
+     * `popstate` as well as `hashchange`, and it is `normalizeAddress` that
+     * makes it necessary rather than a belt-and-braces addition.
+     *
+     * Two history entries that have both been normalised differ in their
+     * *path* and not in their fragment — `/l-earn` and `/business` — so the
+     * traversal between them is a same-document one that fires `popstate`
+     * only. Listening for `hashchange` alone left Back and Forward changing
+     * the URL and not the page, which on a hash-routed site is the primary
+     * control. Where both fire, the handler runs twice and the second is a
+     * no-op: `setRoute` to the value it already holds is a React bail-out and
+     * `normalizeAddress` compares before it writes.
+     */
     window.addEventListener('hashchange', onHashChange);
-    return () => window.removeEventListener('hashchange', onHashChange);
+    window.addEventListener('popstate', onHashChange);
+    return () => {
+      window.removeEventListener('hashchange', onHashChange);
+      window.removeEventListener('popstate', onHashChange);
+    };
   }, []);
+
+  /* The first load fires neither event, so the entry URL — `/business`, or
+     `/#/business` out of somebody's bookmarks — is normalised here instead. */
+  useEffect(() => {
+    normalizeAddress(route);
+  }, [route]);
 
   return route;
 }

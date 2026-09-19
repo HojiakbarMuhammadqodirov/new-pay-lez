@@ -26,7 +26,7 @@ import * as api from '../api/consumer';
 import { readOwnListing } from '../api/listing';
 import { saveMe } from '../api/profile';
 import { useLanguage } from '../i18n/context';
-import { routeOf } from '../router';
+import { currentRoute } from '../router';
 import {
   WELCOME_POINTS,
   checkBirthDate,
@@ -284,7 +284,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         held !== null &&
         held.id !== DEMO_ACCOUNT.id &&
         hasToken() &&
-        awaitsServer(held, routeOf(window.location.hash)),
+        awaitsServer(held, currentRoute()),
     };
   });
   const [account, setAccount] = useState<Account | null>(boot.held);

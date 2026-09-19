@@ -7,6 +7,54 @@ export const uz: Dictionary = {
   short: 'UZ',
   region: 'UZ',
 
+  seo: {
+    site: "Paylez — O‘yna va yutib ol",
+    description:
+      "Tezkor o‘yinlar o‘ynang, ball yig‘ing va ularni shahringizdagi do‘konlarda haqiqiy vaucherlarga sarflang.",
+    pages: {
+      landing: {
+        title: "Paylez — O‘yna va yutib ol. Shahringizdagi eksklyuziv takliflar.",
+        description:
+          "Kashf eting, o‘ynang va mukofot oling. Kuniga bir nechta tezkor savol, har raund uchun ball va hamkor do‘konlardagi vaucherlar.",
+      },
+      learn: {
+        title: "L-Earn: viktorina o‘ynang, haqiqiy vaucher yutib oling — Paylez",
+        description:
+          "Kuniga bir nechta tezkor savol. Sakkizta o‘yin, har raund uchun ball va siz allaqachon boradigan do‘konlarda vaucherlar. Bepul, karta ma’lumotisiz.",
+      },
+      business: {
+        title: "Biznes uchun Paylez: har tashrifni odatga aylantiring",
+        description:
+          "Sodiqlik, vaucherlar, marketing va hisobotlar bitta mijoz yozuvida, taklifingiz esa har tong ochiladigan o‘yin ichida. To‘lov faqat vaucher ishlatilganda.",
+      },
+      vouchers: {
+        title: "Vaucherlar: ballaringizni haqiqiy narsaga sarflang — Paylez",
+        description:
+          "Har bir yig‘gan vaucheringiz bitta hamyonga tushadi: siz boradigan do‘konlardagi sovg‘a kartalari va chegirmalar, kassada QR kod bilan ishlatiladi.",
+      },
+      relocate: {
+        title: "Relocate: yangi davlatda hayot bo‘yicha yo‘riqnoma — Paylez",
+        description:
+          "Qayerda hisob ochish, kafolat puli qanday ishlaydi, qaysi klinika sug‘urtangizni oladi va pulingiz vatanda qancha turadi. To‘qqiz mavzu, o‘n to‘rt davlat.",
+      },
+      contact: {
+        title: "Aloqa — Paylez",
+        description:
+          "Ballaringiz, joy e’loni yoki hamkorlik haqida savol bormi? Qaysi ekran va nima bo‘lganini yozing, biz javob qaytaramiz.",
+      },
+      privacy: {
+        title: "Maxfiylik siyosati — Paylez",
+        description:
+          "Paylez shaxsiy ma’lumotlaringizni qanday yig‘adi, ishlatadi va himoya qiladi, GDPR bo‘yicha qanday huquqlaringiz bor va ulardan qanday foydalanasiz.",
+      },
+      terms: {
+        title: "Foydalanish shartlari — Paylez",
+        description:
+          "Paylezdan foydalanish shartlari: hisobingiz, ballaringiz, vaucherlar va ular qanday ishlatilishi hamda hamkor joylar uchun qoidalar.",
+      },
+    },
+  },
+
   nav: {
     home: 'Bosh sahifa',
     learn: 'L-Earn',

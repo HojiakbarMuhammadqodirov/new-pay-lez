@@ -34,6 +34,38 @@
     />
     <title>Paylez — Play &amp; Earn</title>
     <!--
+      The default head, and `src/site/head.ts` overwrites all of it per route.
+
+      Duplicated rather than left to that file because the two readers are
+      different. Google renders JavaScript and sees whichever tags the route
+      resolves to; Facebook, Slack, X and every other unfurler read the HTML as
+      served and run nothing, so without these a link to any page on this site
+      pastes as a bare URL. They are the site-level answer — true of every page,
+      specific to none — which is the most an unfurler can be told without
+      rendering pages on the server.
+
+      Written against `www.pay-lez.com`, matching `SITE_ORIGIN` in `router.ts`:
+      the apex still resolves to the retired Base44 deployment and answers 402,
+      and `new.pay-lez.com` serves this same build from the same nginx root.
+      Keep the two in sync, the way the theme script above is kept in sync with
+      `ThemeProvider`.
+    -->
+    <meta
+      name="description"
+      content="Play quick games, earn points, and spend them on real vouchers at shops in your city."
+    />
+    <link rel="canonical" href="https://www.pay-lez.com/" />
+    <meta property="og:site_name" content="Paylez" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Paylez — Play &amp; Earn" />
+    <meta
+      property="og:description"
+      content="Play quick games, earn points, and spend them on real vouchers at shops in your city."
+    />
+    <meta property="og:url" content="https://www.pay-lez.com/" />
+    <meta property="og:image" content="https://www.pay-lez.com/logo/logo-dark.jpg" />
+    <meta name="twitter:card" content="summary" />
+    <!--
       Resolve the theme before the first paint. React sets the same attribute
       from ThemeProvider, but it only runs after the document has already been
       painted once — without this, a light-theme visitor sees a black flash.

@@ -30,8 +30,11 @@ import { Component, type ErrorInfo, type ReactNode } from 'react';
  * **It clears itself on navigation.** A boundary latches: once `hasError` is
  * set it renders the panel for ever, so without this the whole site would stay
  * broken until a reload even after the visitor moved to a page that works.
- * Listening for `hashchange` is the whole of it, because the hash *is* the
- * router here.
+ * `hashchange` is how every link on the site moves — they all set a hash — and
+ * `popstate` is how Back and Forward do, now that `normalizeAddress` leaves a
+ * real path in the bar: two entries that differ only in their *path* traverse
+ * without touching the fragment, so `hashchange` never fires for them. Both, or
+ * pressing Back out of a broken page keeps the broken page.
  *
  * **The error text is shown, not hidden.** Nothing this app throws carries
  * anything private — these are property accesses on a response shape — and a
@@ -56,10 +59,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   componentDidMount() {
     window.addEventListener('hashchange', this.clear);
+    window.addEventListener('popstate', this.clear);
   }
 
   componentWillUnmount() {
     window.removeEventListener('hashchange', this.clear);
+    window.removeEventListener('popstate', this.clear);
   }
 
   componentDidCatch(error: Error, info: ErrorInfo) {
