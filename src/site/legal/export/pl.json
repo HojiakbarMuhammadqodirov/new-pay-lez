@@ -1,0 +1,978 @@
+{
+  "privacyTitle": "Polityka prywatności",
+  "termsTitle": "Regulamin",
+  "privacyVersion": "Wersja 1.1 · Obowiązuje od 28 sierpnia 2026 · Zgodna z RODO",
+  "termsVersion": "Wersja 1.0 · Obowiązuje od 24 kwietnia 2025",
+  "english": "Ten dokument jest tłumaczeniem. W razie rozbieżności z wersją angielską rozstrzygający jest tekst angielski.",
+  "privacyContents": [
+    ["privacy-1", "Kim jesteśmy"],
+    ["privacy-2", "Jakie dane zbieramy i dlaczego"],
+    ["privacy-3", "Szczególne kategorie danych"],
+    ["privacy-4", "Jak udostępniamy Twoje dane"],
+    ["privacy-5", "Międzynarodowe przekazywanie danych"],
+    ["privacy-6", "Twoje prawa na gruncie RODO"],
+    ["privacy-7", "Pliki cookie i pamięć lokalna"],
+    ["privacy-8", "Bezpieczeństwo danych"],
+    ["privacy-9", "Dane dzieci"],
+    ["privacy-10", "Zmiany w niniejszej Polityce prywatności"],
+    ["privacy-11", "Kontakt i dane administratora"]
+  ],
+  "termsContents": [
+    ["terms-1", "O platformie"],
+    ["terms-2", "Uprawnienie do korzystania i rejestracja konta"],
+    ["terms-3", "Zasady postępowania użytkownika"],
+    ["terms-4", "System punktów i kuponów"],
+    ["terms-5", "Program poleceń"],
+    ["terms-6", "Wizytówki partnerów i treści"],
+    ["terms-7", "Grywalizacja"],
+    ["terms-8", "Międzynarodowe przelewy pieniężne (funkcja nieaktywna)"],
+    ["terms-9", "Własność intelektualna"],
+    ["terms-10", "Wyłączenia i ograniczenie odpowiedzialności"],
+    ["terms-11", "Zawieszenie i zamknięcie konta"],
+    ["terms-12", "Zmiany niniejszego Regulaminu"],
+    ["terms-13", "Prawo właściwe i rozstrzyganie sporów"],
+    ["terms-14", "Kontakt"]
+  ],
+  "privacy": [
+    {
+      "kind": "meta",
+      "rows": [
+        ["Administrator danych", "Paylez Sp. z o.o."],
+        ["Kontakt", "usepaylez@gmail.com"],
+        ["Prawo właściwe", "Rozporządzenie (UE) 2016/679 (RODO) · Ustawa o ochronie danych osobowych"],
+        ["Organ nadzorczy", "Urząd Ochrony Danych Osobowych (UODO) · www.uodo.gov.pl"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-1",
+      "n": "1",
+      "title": "Kim jesteśmy"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez jest prowadzony przez Paylez Sp. z o.o., spółkę zarejestrowaną w Polsce. Udostępniamy przewodnik oraz platformę do wyszukiwania usług dla obcokrajowców, studentów zagranicznych i osób nowo przybyłych do Polski, łącząc ich ze sprawdzonymi lokalnymi usługodawcami."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Występujemy jako administrator wszystkich danych osobowych zbieranych za pośrednictwem naszej platformy, aplikacji mobilnej i strony internetowej (www.pay-lez.com)."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2",
+      "n": "2",
+      "title": "Jakie dane zbieramy i dlaczego"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zbieramy wyłącznie dane niezbędne do świadczenia i ulepszania naszych usług. Poniżej znajduje się pełny opis każdej kategorii przetwarzanych danych, podstawy prawnej ich przetwarzania oraz okresu przechowywania."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-1",
+      "n": "2.1",
+      "title": "Dane tożsamości i uwierzytelniania"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Adres e-mail", "Założenie konta, logowanie, komunikacja", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta + 3 lata"],
+        ["Imię i nazwisko", "Identyfikacja konta", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta + 3 lata"],
+        ["Nazwa wyświetlana", "Personalizacja profilu publicznego", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta"],
+        ["Rola (użytkownik/administrator)", "Kontrola dostępu i uprawnień", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Czas trwania konta"],
+        ["Status uzupełnienia profilu", "Proces wdrożenia użytkownika", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Czas trwania konta"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-2",
+      "n": "2.2",
+      "title": "Dane profilowe"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Kraj i miasto zamieszkania", "Lokalne rekomendacje usług", "Zgoda (art. 6 ust. 1 lit. a)", "Do wycofania zgody + 1 rok"],
+        ["Opis i informacje o pracy", "Personalizacja profilu", "Zgoda (art. 6 ust. 1 lit. a)", "Do wycofania zgody"],
+        ["Znane języki, zainteresowania", "Dostarczanie spersonalizowanych treści", "Zgoda (art. 6 ust. 1 lit. a)", "Do wycofania zgody"],
+        ["Numer WhatsApp", "Opcjonalna funkcja kontaktu", "Zgoda (art. 6 ust. 1 lit. a)", "Do wycofania zgody"],
+        ["Nazwa użytkownika Telegram", "Opcjonalna funkcja kontaktu", "Zgoda (art. 6 ust. 1 lit. a)", "Do wycofania zgody"],
+        ["Ustawienia widoczności profilu", "Kontrola prywatności", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-3",
+      "n": "2.3",
+      "title": "Dane finansowe (nieaktywne — funkcja przyszła)"
+    },
+    {
+      "kind": "notice",
+      "text": "WAŻNA INFORMACJA: Funkcja międzynarodowych przelewów pieniężnych nie jest obecnie uruchomiona. Wymienione poniżej pola danych istnieją w architekturze naszego systemu, ale NIE są przetwarzane żadne transakcje finansowe, NIE przepływają żadne rzeczywiste środki i NIE są na tym etapie aktywnie zbierane żadne dane płatnicze. Niniejsza sekcja dokumentuje wyłącznie zamierzenia dotyczące przyszłego przetwarzania danych. Przed uruchomieniem tej funkcji zaktualizujemy niniejszą Politykę prywatności i uzyskamy odpowiednie zgody."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Gdy funkcja zostanie uruchomiona, przetwarzane będą następujące dane:"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Kwoty transakcji, kursy wymiany, opłaty", "Realizacja przelewów", "Umowa (art. 6 ust. 1 lit. b)", "7 lat (obowiązek prawny)"],
+        ["Dane metody płatności (zamaskowana karta, 4 ostatnie cyfry IBAN)", "Obsługa płatności", "Umowa (art. 6 ust. 1 lit. b)", "7 lat (obowiązek prawny)"],
+        ["Imię i nazwisko odbiorcy, telefon, dane bankowe", "Wykonanie przelewu", "Umowa (art. 6 ust. 1 lit. b)", "7 lat (obowiązek prawny)"],
+        ["Hasz transakcji blockchain", "Weryfikacja przelewu kryptowalutowego", "Umowa (art. 6 ust. 1 lit. b)", "7 lat (obowiązek prawny)"],
+        ["Identyfikator metody płatności Stripe", "Bezpieczna tokenizacja płatności", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania relacji"],
+        ["Salda portfeli EUR i USDT", "Zarządzanie portfelem", "Umowa (art. 6 ust. 1 lit. b)", "7 lat (obowiązek prawny)"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-4",
+      "n": "2.4",
+      "title": "Dane grywalizacyjne i behawioralne"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Odpowiedzi i wyniki w quizach", "Działanie gier i śledzenie postępów", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta"],
+        ["Serie i życia", "Mechanika grywalizacji", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta"],
+        ["Historia wyników (gry: wiedza, flagi, stolice)", "Rankingi i śledzenie postępów", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Czas trwania konta"],
+        ["Postęp poziomu trudności", "Spersonalizowana rozgrywka", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Czas trwania konta"],
+        ["Znaczniki czasu ostatniej gry", "Obliczanie serii i powiadomienia", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Czas trwania konta"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-5",
+      "n": "2.5",
+      "title": "Nagrody, kupony i polecenia"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Kod polecający i tożsamość polecającego", "Obsługa programu poleceń", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta + 2 lata"],
+        ["Zdobyte i wykorzystane punkty", "Śledzenie programu lojalnościowego", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta + 2 lata"],
+        ["Kody kuponów i wysokość rabatów", "Wydawanie i weryfikacja kuponów", "Umowa (art. 6 ust. 1 lit. b)", "2 lata po wygaśnięciu"],
+        ["Status wykorzystania kuponu", "Przeciwdziałanie nadużyciom", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "2 lata po wykorzystaniu"],
+        ["Znaczniki czasu skanowania kodu QR", "Weryfikacja kuponu", "Umowa (art. 6 ust. 1 lit. b)", "2 lata"],
+        ["Informacje o urządzeniu przy skanowaniu QR (user agent)", "Wykrywanie nadużyć i bezpieczeństwo", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "1 rok"],
+        ["Kwoty rachunków przy realizacji kuponu", "Rozliczenia z partnerami i audyt", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "3 lata"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-6",
+      "n": "2.6",
+      "title": "Dane analityczne i dane o interakcjach"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Kliknięcia w usługi partnerów (Mapy, strona, telefon, Instagram)", "Analityka platformy i raporty dla partnerów", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "2 lata (agregowane po 90 dniach)"],
+        ["Język użytkownika w chwili kliknięcia", "Ulepszanie lokalizacji językowej", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "2 lata (agregowane po 90 dniach)"],
+        ["Kraj i miasto interakcji z usługą", "Analityka geograficzna", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "2 lata (agregowane po 90 dniach)"],
+        ["Znaczniki czasu skanów lojalnościowych i odwiedzona usługa", "Raportowanie wyników partnera", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "2 lata"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-7",
+      "n": "2.7",
+      "title": "Wsparcie i treści tworzone przez użytkowników"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Komentarze zwrotne i oceny w gwiazdkach", "Ulepszanie usług", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "3 lata"],
+        ["Kategoria zgłoszenia", "Klasyfikacja wsparcia", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "3 lata"],
+        ["Imię i e-mail w zgłoszeniu", "Odpowiedź wsparcia", "Umowa (art. 6 ust. 1 lit. b)", "3 lata"],
+        ["Rekomendacje firm zgłaszane przez użytkowników", "Ulepszanie treści platformy", "Zgoda (art. 6 ust. 1 lit. a)", "Do wycofania zgody lub 3 lata"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-8",
+      "n": "2.8",
+      "title": "Dane techniczne i dane pozyskiwane automatycznie"
+    },
+    {
+      "kind": "table",
+      "head": ["Rodzaj danych", "Cel", "Podstawa prawna", "Okres przechowywania"],
+      "rows": [
+        ["Adres IP (przetwarzany przez nasze serwery i logi serwera WWW)", "Bezpieczeństwo, przeciwdziałanie nadużyciom, zgodność z prawem", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "90 dni"],
+        ["User agent / informacje o urządzeniu (zapisywane przy skanach QR)", "Bezpieczeństwo i wykrywanie nadużyć", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "1 rok"],
+        ["Tokeny sesji (wydawane i przechowywane przez nas)", "Uwierzytelnianie i zarządzanie sesją", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania sesji"],
+        ["Identyfikator konta Google i zweryfikowany e-mail (tylko przy logowaniu przez Google)", "Uwierzytelnianie", "Umowa (art. 6 ust. 1 lit. b)", "Czas trwania konta"],
+        ["localStorage — wybór motywu i języka", "Personalizacja doświadczenia użytkownika", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Do usunięcia przez użytkownika"],
+        ["localStorage — zalogowana sesja i token sesji", "Utrzymanie zalogowania między wizytami", "Umowa (art. 6 ust. 1 lit. b)", "Do wylogowania lub usunięcia"],
+        ["localStorage — stan postępu w grze", "Zapewnienie, że pytania quizowe się nie powtarzają", "Prawnie uzasadniony interes (art. 6 ust. 1 lit. f)", "Do usunięcia przez użytkownika"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-9",
+      "n": "2.9",
+      "title": "Pomiar ruchu na stronie"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Mierzymy sposób korzystania ze strony własnym oprogramowaniem, działającym na naszych własnych serwerach. Nie korzystamy z Google Analytics ani żadnej innej zewnętrznej usługi analitycznej, nie ustawiamy żadnego pliku cookie analitycznego ani żadnego identyfikatora odwiedzającego. Wizyta jest liczona przy użyciu wartości pochodzącej z połączenia, która zmienia się każdego dnia i nigdy nie jest przechowywana jako identyfikator — co oznacza, że powracający anonimowi odwiedzający są dla nas celowo niemierzalni."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-3",
+      "n": "3",
+      "title": "Szczególne kategorie danych"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Nie zbieramy celowo szczególnych kategorii danych osobowych w rozumieniu art. 9 RODO (w tym danych o zdrowiu, pochodzeniu rasowym lub etnicznym, poglądach politycznych, przekonaniach religijnych ani danych biometrycznych)."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zaznaczamy, że dane o narodowości (kraj zamieszkania) zbierane w profilu mogą w pewnych kontekstach być uznane za wrażliwe etnicznie. Przetwarzamy te dane wyłącznie w celu dostarczania lokalnych rekomendacji usług i nie wykorzystujemy ich do jakiegokolwiek dyskryminującego profilowania. Możesz w każdej chwili usunąć te dane ze swojego profilu."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4",
+      "n": "4",
+      "title": "Jak udostępniamy Twoje dane"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Nie sprzedajemy Twoich danych osobowych. Udostępniamy dane wyłącznie w następujących okolicznościach:"
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4-1",
+      "n": "4.1",
+      "title": "Partnerzy usługowi (firmy z katalogu)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Gdy wchodzisz w interakcję z wizytówką partnera (kliknięcie, wizyta, realizacja kuponu), udostępniamy temu partnerowi zagregowaną i zanonimizowaną analitykę. Dane na poziomie indywidualnym udostępniamy partnerom wyłącznie wtedy, gdy:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wyraźnie wysyłasz zapytanie lub formularz kontaktowy skierowany do tego partnera"
+    },
+    {
+      "kind": "bullet",
+      "text": "Realizacja kuponu wymaga weryfikacji Twojego konta"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wyraziłeś zgodę na przekazanie konkretnemu partnerowi swoich danych kontaktowych"
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4-2",
+      "n": "4.2",
+      "title": "Podmioty przetwarzające (technologia)"
+    },
+    {
+      "kind": "table",
+      "head": ["Podmiot przetwarzający", "Cel", "Lokalizacja", "Zabezpieczenie"],
+      "rows": [
+        ["IONOS SE", "Hosting serwerów, infrastruktura bazy danych i dostarczanie aplikacji", "Frankfurt, Niemcy (EOG)", "Umowa powierzenia przetwarzania"],
+        ["Google Ireland Limited", "Logowanie przez Google — wyłącznie weryfikacja tożsamości, dla użytkowników, którzy je wybiorą", "Irlandia (EOG)", "Umowa powierzenia przetwarzania"],
+        ["Stripe (w przyszłości)", "Obsługa płatności (nieaktywne)", "USA", "Standardowe klauzule umowne (SCC)"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Sami hostujemy naszą aplikację i bazę danych. Uwierzytelnianie, zarządzanie sesjami i wszystkie dane użytkowników są obsługiwane na infrastrukturze, którą prowadzimy, i żaden podmiot trzeci nie przechowuje ani nie przetwarza danych kont w naszym imieniu poza wymienionymi powyżej."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4-3",
+      "n": "4.3",
+      "title": "Wymogi prawne"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możemy ujawnić dane osobowe organom ścigania lub organom nadzorczym (w tym UODO), gdy wymaga tego obowiązujące prawo, orzeczenie sądu, lub w celu ochrony praw platformy bądź jej użytkowników."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-5",
+      "n": "5",
+      "title": "Międzynarodowe przekazywanie danych"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Całe nasze obecne przetwarzanie danych odbywa się na terenie Europejskiego Obszaru Gospodarczego (EOG). Nasze serwery i baza danych są hostowane we Frankfurcie w Niemczech, a jedynym innym aktywnym podmiotem przetwarzającym jest Google Ireland Limited. Obecnie żadne dane osobowe nie są przekazywane poza EOG."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Gdyby w przyszłości dane miały być przekazywane poza EOG (na przykład w razie uruchomienia obsługi płatności opisanej w sekcji 2.3), zapewnimy odpowiednie zabezpieczenia, w tym:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Standardowe klauzule umowne (SCC) zatwierdzone przez Komisję Europejską"
+    },
+    {
+      "kind": "bullet",
+      "text": "Decyzje o odpowiednim stopniu ochrony, tam gdzie mają zastosowanie"
+    },
+    {
+      "kind": "bullet",
+      "text": "Umowy powierzenia przetwarzania ze wszystkimi podmiotami przetwarzającymi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Użytkownicy przebywający w Uzbekistanie: Działamy w oparciu o prawo polskie i unijne jako nasze ramy prawne. Jeżeli w Twojej sytuacji zastosowanie ma prawo uzbeckie, zachęcamy do zasięgnięcia niezależnej porady prawnej."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-6",
+      "n": "6",
+      "title": "Twoje prawa na gruncie RODO"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Jako osobie, której dane dotyczą, przysługują Ci na gruncie RODO następujące prawa. Aby skorzystać z któregokolwiek z nich, skontaktuj się z nami pod adresem usepaylez@gmail.com. Odpowiemy w ciągu 30 dni."
+    },
+    {
+      "kind": "table",
+      "head": ["Prawo", "Co oznacza", "Jak z niego skorzystać"],
+      "rows": [
+        ["Prawo dostępu (art. 15)", "Żądanie kopii wszystkich danych, które o Tobie przechowujemy", "E-mail na usepaylez@gmail.com z tematem: „Żądanie dostępu do danych”"],
+        ["Prawo do sprostowania (art. 16)", "Poprawienie nieprawidłowych lub niekompletnych danych", "Zmiana w ustawieniach aplikacji lub e-mail do nas"],
+        ["Prawo do usunięcia (art. 17)", "Żądanie usunięcia Twoich danych („prawo do bycia zapomnianym”)", "E-mail na usepaylez@gmail.com z tematem: „Żądanie usunięcia danych”"],
+        ["Prawo do ograniczenia przetwarzania (art. 18)", "Ograniczenie sposobu, w jaki wykorzystujemy Twoje dane w określonych sytuacjach", "E-mail na usepaylez@gmail.com"],
+        ["Prawo do przenoszenia danych (art. 20)", "Otrzymanie swoich danych w formacie nadającym się do odczytu maszynowego", "E-mail na usepaylez@gmail.com z tematem: „Żądanie przeniesienia danych”"],
+        ["Prawo do sprzeciwu (art. 21)", "Sprzeciw wobec przetwarzania opartego na prawnie uzasadnionym interesie", "E-mail na usepaylez@gmail.com"],
+        ["Prawo do wycofania zgody", "Wycofanie zgody w dowolnym momencie w przypadku przetwarzania opartego na zgodzie", "Ustawienia aplikacji lub e-mail do nas"],
+        ["Prawo do wniesienia skargi", "Skarga do polskiego organu nadzorczego", "www.uodo.gov.pl"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-7",
+      "n": "7",
+      "title": "Pliki cookie i pamięć lokalna"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Nie używamy plików cookie. Na Twoim urządzeniu przechowujemy przy użyciu localStorage następujące dane:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wybór motywu (jasny/ciemny) — nigdy nie wysyłany na nasze serwery"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wybór języka — aby zachować ustawienie języka między sesjami"
+    },
+    {
+      "kind": "bullet",
+      "text": "Twoją zalogowaną sesję i token sesji — abyś pozostał zalogowany między wizytami"
+    },
+    {
+      "kind": "bullet",
+      "text": "Stan postępu w grze — aby pytania quizowe się nie powtarzały"
+    },
+    {
+      "kind": "bullet",
+      "text": "Informację, czy animacja otwierająca stronę już się odtworzyła"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Żadna z tych wartości nie jest identyfikatorem reklamowym ani śledzącym, żadna nie jest udostępniana podmiotom trzecim, a dwie pierwsze i ostatnia nigdy nie są w ogóle wysyłane na nasze serwery. Wartości sesji są usuwane po wylogowaniu. Możesz w każdej chwili wyczyścić localStorage w ustawieniach przeglądarki lub urządzenia."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Jeżeli w przyszłości wprowadzimy pliki cookie albo jakąkolwiek zewnętrzną technologię analityczną lub reklamową, zaktualizujemy niniejszą politykę i wdrożymy mechanizm zgody na pliki cookie przed ich zastosowaniem."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-8",
+      "n": "8",
+      "title": "Bezpieczeństwo danych"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Stosujemy odpowiednie środki techniczne i organizacyjne w celu ochrony Twoich danych osobowych przed nieuprawnionym dostępem, zmianą, ujawnieniem lub zniszczeniem. Środki te obejmują:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Szyfrowaną transmisję danych (HTTPS/TLS) na wszystkich połączeniach"
+    },
+    {
+      "kind": "bullet",
+      "text": "Hasła przechowywane wyłącznie jako solone skróty scrypt, nigdy w czytelnej postaci"
+    },
+    {
+      "kind": "bullet",
+      "text": "Podpisane, wygasające tokeny sesji, unieważniane przy wylogowaniu"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kontrolę dostępu ograniczającą dostęp do danych wyłącznie do upoważnionych osób"
+    },
+    {
+      "kind": "bullet",
+      "text": "Regularne przeglądy bezpieczeństwa naszej infrastruktury i podmiotów przetwarzających"
+    },
+    {
+      "kind": "bullet",
+      "text": "Zamaskowane przechowywanie wrażliwych identyfikatorów finansowych (tylko 4 ostatnie cyfry karty i IBAN)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "W przypadku naruszenia ochrony danych osobowych, które powoduje ryzyko naruszenia Twoich praw i wolności, powiadomimy właściwy organ nadzorczy w ciągu 72 godzin, a użytkowników, których to dotyczy — bez zbędnej zwłoki, zgodnie z art. 33–34 RODO."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-9",
+      "n": "9",
+      "title": "Dane dzieci"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Nasza platforma nie jest skierowana do dzieci poniżej 16. roku życia. Nie zbieramy świadomie danych osobowych dzieci. Jeżeli sądzisz, że dziecko przekazało nam dane osobowe bez odpowiedniej zgody, skontaktuj się z nami pod adresem usepaylez@gmail.com, a niezwłocznie usuniemy te dane."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-10",
+      "n": "10",
+      "title": "Zmiany w niniejszej Polityce prywatności"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możemy okresowo aktualizować niniejszą Politykę prywatności. Gdy wprowadzimy istotne zmiany, powiadomimy Cię poprzez:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wiadomość e-mail na zarejestrowany adres"
+    },
+    {
+      "kind": "bullet",
+      "text": "Powiadomienie w aplikacji"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wyraźną informację na naszej stronie internetowej"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zaktualizowana polityka wchodzi w życie 30 dni po powiadomieniu, co daje Ci czas na zapoznanie się ze zmianami oraz — tam gdzie podstawą prawną jest zgoda — na jej wycofanie, jeżeli się z nimi nie zgadzasz."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-11",
+      "n": "11",
+      "title": "Kontakt i dane administratora"
+    },
+    {
+      "kind": "meta",
+      "rows": [
+        ["Administrator danych", "Paylez Sp. z o.o."],
+        ["E-mail", "usepaylez@gmail.com"],
+        ["Strona internetowa", "www.pay-lez.com"],
+        ["Organ nadzorczy", "Urząd Ochrony Danych Osobowych (UODO)"],
+        ["Strona UODO", "www.uodo.gov.pl"],
+        ["Adres UODO", "ul. Stawki 2, 00-193 Warszawa, Polska"]
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "kind": "meta",
+      "rows": [
+        ["Operator", "Paylez Sp. z o.o."],
+        ["Kontakt", "usepaylez@gmail.com"],
+        ["Strona internetowa", "www.pay-lez.com"],
+        ["Prawo właściwe", "Prawo polskie · Jurysdykcja: sądy polskie"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Prosimy o uważne zapoznanie się z niniejszym Regulaminem przed rozpoczęciem korzystania z platformy Paylez. Zakładając konto lub korzystając z naszych usług, zgadzasz się być związanym niniejszym Regulaminem. Jeżeli się z nim nie zgadzasz, nie korzystaj z platformy."
+    },
+    {
+      "kind": "section",
+      "id": "terms-1",
+      "n": "1",
+      "title": "O platformie"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez to cyfrowy przewodnik i platforma do wyszukiwania usług prowadzona przez Paylez Sp. z o.o.. Łączymy obcokrajowców, studentów zagranicznych i osoby nowo przybyłe do Polski ze sprawdzonymi lokalnymi usługodawcami w wielu kategoriach, w tym gastronomii, opiece zdrowotnej, legalizacji pobytu, edukacji i usługach stylu życia."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platforma obejmuje:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wyselekcjonowany katalog firm partnerskich i usługodawców"
+    },
+    {
+      "kind": "bullet",
+      "text": "Praktyczne treści przewodnika dotyczące życia w Polsce"
+    },
+    {
+      "kind": "bullet",
+      "text": "System grywalizacji obejmujący edukacyjne mini-gry"
+    },
+    {
+      "kind": "bullet",
+      "text": "Program lojalnościowy oparty na punktach i kuponach"
+    },
+    {
+      "kind": "bullet",
+      "text": "Program poleceń"
+    },
+    {
+      "kind": "bullet",
+      "text": "Funkcje przyszłe, w tym międzynarodowe przelewy pieniężne (obecnie nieaktywne — zob. sekcja 8)"
+    },
+    {
+      "kind": "section",
+      "id": "terms-2",
+      "n": "2",
+      "title": "Uprawnienie do korzystania i rejestracja konta"
+    },
+    {
+      "kind": "section",
+      "id": "terms-2-1",
+      "n": "2.1",
+      "title": "Uprawnienie do korzystania"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możesz korzystać z platformy, jeżeli:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Masz ukończone co najmniej 16 lat"
+    },
+    {
+      "kind": "bullet",
+      "text": "Posiadasz zdolność prawną do zawarcia wiążącej umowy"
+    },
+    {
+      "kind": "bullet",
+      "text": "Nie zostałeś wcześniej zablokowany ani zawieszony na platformie"
+    },
+    {
+      "kind": "section",
+      "id": "terms-2-2",
+      "n": "2.2",
+      "title": "Założenie konta"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Aby uzyskać dostęp do pełnej funkcjonalności platformy, musisz zarejestrować konto. Zobowiązujesz się do:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Podawania dokładnych, kompletnych i aktualnych informacji"
+    },
+    {
+      "kind": "bullet",
+      "text": "Dbania o bezpieczeństwo danych logowania do swojego konta"
+    },
+    {
+      "kind": "bullet",
+      "text": "Niezwłocznego informowania nas o każdym nieuprawnionym dostępie do konta"
+    },
+    {
+      "kind": "bullet",
+      "text": "Przyjęcia odpowiedzialności za wszelką aktywność na Twoim koncie"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zastrzegamy sobie prawo do odmowy rejestracji lub zawieszenia kont według własnego uznania, w tym gdy mamy podstawy sądzić, że podane informacje są fałszywe, wprowadzające w błąd lub naruszają niniejszy Regulamin."
+    },
+    {
+      "kind": "section",
+      "id": "terms-3",
+      "n": "3",
+      "title": "Zasady postępowania użytkownika"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Korzystając z platformy, zobowiązujesz się nie:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wykorzystywać platformy do celów niezgodnych z prawem ani z naruszeniem obowiązującego prawa polskiego lub unijnego"
+    },
+    {
+      "kind": "bullet",
+      "text": "Zakładać fałszywych kont ani podawać się za inną osobę"
+    },
+    {
+      "kind": "bullet",
+      "text": "Podejmować prób uzyskania nieuprawnionego dostępu do jakiejkolwiek części platformy lub jej infrastruktury"
+    },
+    {
+      "kind": "bullet",
+      "text": "Pobierać, kopiować ani powielać treści platformy bez naszej wyraźnej pisemnej zgody"
+    },
+    {
+      "kind": "bullet",
+      "text": "Publikować ani przesyłać treści szkodliwych, obraźliwych, zniesławiających lub oszukańczych"
+    },
+    {
+      "kind": "bullet",
+      "text": "Manipulować systemem punktów, kuponów lub poleceń ani go nadużywać"
+    },
+    {
+      "kind": "bullet",
+      "text": "Zakłócać prawidłowego działania platformy"
+    },
+    {
+      "kind": "bullet",
+      "text": "Korzystać z narzędzi automatycznych do interakcji z platformą bez naszej uprzedniej pisemnej zgody"
+    },
+    {
+      "kind": "section",
+      "id": "terms-4",
+      "n": "4",
+      "title": "System punktów i kuponów"
+    },
+    {
+      "kind": "section",
+      "id": "terms-4-1",
+      "n": "4.1",
+      "title": "Punkty"
+    },
+    {
+      "kind": "paragraph",
+      "text": "System punktów lojalnościowych Paylez pozwala użytkownikom zdobywać punkty poprzez aktywność na platformie, w tym:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Granie w mini-gry i utrzymywanie serii"
+    },
+    {
+      "kind": "bullet",
+      "text": "Odwiedzanie firm partnerskich i interakcję z nimi (wyłącznie partnerzy poziomu 2)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Uzupełnianie profilu i zadań wdrożeniowych"
+    },
+    {
+      "kind": "bullet",
+      "text": "Polecanie platformy nowym użytkownikom"
+    },
+    {
+      "kind": "notice",
+      "text": "WAŻNE: Punkty nie mają wartości pieniężnej i nie mogą być wymieniane na gotówkę. Punkty są wyłącznie mechanizmem lojalnościowym i nie mogą być przenoszone, sprzedawane, darowane ani wykorzystywane poza platformą. Punkty wygasają po 12 miesiącach od daty ich zdobycia, o ile nie zostaną wykorzystane."
+    },
+    {
+      "kind": "section",
+      "id": "terms-4-2",
+      "n": "4.2",
+      "title": "Kupony"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Punkty mogą zostać wymienione na kupony rabatowe ważne w uczestniczących firmach partnerskich. Obowiązują następujące warunki:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kupony są ważne wyłącznie w konkretnej lokalizacji partnera wskazanej na kuponie"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kupony mają datę ważności podaną w chwili wydania — kuponów, które wygasły, nie można zrealizować"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kuponów nie można łączyć z innymi ofertami promocyjnymi, chyba że wyraźnie wskazano inaczej"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wartość rabatu jest finansowana przez firmę partnerską — Paylez nie jest podmiotem udzielającym rabatu"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kuponów nie można sprzedawać, przenosić ani wymieniać na gotówkę"
+    },
+    {
+      "kind": "bullet",
+      "text": "Zastrzegamy sobie prawo do anulowania kuponów w przypadku podejrzenia oszustwa lub nadużycia"
+    },
+    {
+      "kind": "section",
+      "id": "terms-4-3",
+      "n": "4.3",
+      "title": "Platforma jako pośrednik"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez działa jako pośrednik technologiczny między użytkownikami a firmami partnerskimi. Nie jesteśmy stroną jakiejkolwiek transakcji między użytkownikiem a partnerem. Spory dotyczące realizacji kuponów, reklamacje jakości usług i żądania zwrotu środków należy kierować do właściwej firmy partnerskiej. Dołożymy uzasadnionych starań, aby w stosownych przypadkach mediować w sporach, ale nie ponosimy odpowiedzialności za jakość ani wykonanie usług partnera."
+    },
+    {
+      "kind": "section",
+      "id": "terms-5",
+      "n": "5",
+      "title": "Program poleceń"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Użytkownicy mogą polecać platformę nowym użytkownikom przy użyciu osobistego kodu polecającego. Punkty za polecenie są przyznawane, gdy polecony użytkownik:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Zakłada zweryfikowane konto przy użyciu kodu polecającego"
+    },
+    {
+      "kind": "bullet",
+      "text": "Spełnia minimalne wymagania wdrożeniowe określone w aplikacji"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zastrzegamy sobie prawo do zmiany, zawieszenia lub zakończenia programu poleceń w dowolnym momencie. Punkty za polecenie przyznane omyłkowo lub w wyniku działań oszukańczych zostaną cofnięte. Samopolecenia (polecenie siebie przez drugie konto) są surowo zabronione i skutkują zawieszeniem konta."
+    },
+    {
+      "kind": "section",
+      "id": "terms-6",
+      "n": "6",
+      "title": "Wizytówki partnerów i treści"
+    },
+    {
+      "kind": "section",
+      "id": "terms-6-1",
+      "n": "6.1",
+      "title": "Rzetelność informacji partnera"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Wizytówki partnerów na platformie są dostarczane przez firmy zewnętrzne. Choć dokładamy uzasadnionych starań, aby weryfikować informacje o partnerach, nie gwarantujemy ich dokładności, kompletności ani aktualności, w tym godzin otwarcia, cen, oferowanych usług czy danych kontaktowych. Zawsze potwierdzaj szczegóły bezpośrednio u partnera przed wizytą."
+    },
+    {
+      "kind": "section",
+      "id": "terms-6-2",
+      "n": "6.2",
+      "title": "Relacje z partnerami"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Niektórzy partnerzy są prezentowani na różnych poziomach widoczności w zależności od poziomu ich subskrypcji w Paylez. Istnienie płatnego partnerstwa nie wpływa na nasze redakcyjne treści przewodnika ani na nasze standardy bezpieczeństwa użytkowników. Płatne umiejscowienia są wyraźnie oznaczone jako wyróżnione lub sponsorowane."
+    },
+    {
+      "kind": "section",
+      "id": "terms-6-3",
+      "n": "6.3",
+      "title": "Rekomendacje zgłaszane przez użytkowników"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Użytkownicy mogą zgłaszać na platformę rekomendacje firm. Zgłaszając rekomendację, udzielasz nam niewyłącznej, nieodpłatnej licencji na wykorzystanie, publikowanie i wyświetlanie zgłoszonych treści na platformie. Potwierdzasz, że zgłoszenie jest zgodne z Twoją najlepszą wiedzą i nie narusza praw osób trzecich."
+    },
+    {
+      "kind": "section",
+      "id": "terms-7",
+      "n": "7",
+      "title": "Grywalizacja"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platforma obejmuje edukacyjne mini-gry z zakresu geografii, języków i wiedzy ogólnej. Mechanika gier obejmuje:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Systemy punktów i wyników"
+    },
+    {
+      "kind": "bullet",
+      "text": "Śledzenie serii (kolejnych dni aktywności)"
+    },
+    {
+      "kind": "bullet",
+      "text": "System żyć (ograniczona liczba prób na sesję)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Rankingi prezentujące najlepsze wyniki"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zastrzegamy sobie prawo do zmiany, zresetowania lub wycofania dowolnego elementu grywalizacji w dowolnym momencie. Najlepsze wyniki i serie nie stanowią praw majątkowych i mogą zostać skorygowane w przypadku błędu technicznego, nadużycia lub przebudowy platformy."
+    },
+    {
+      "kind": "section",
+      "id": "terms-8",
+      "n": "8",
+      "title": "Międzynarodowe przelewy pieniężne (funkcja nieaktywna)"
+    },
+    {
+      "kind": "notice",
+      "text": "Funkcja międzynarodowych przelewów pieniężnych NIE jest obecnie uruchomiona. W tej chwili za pośrednictwem platformy nie można zainicjować, przetworzyć ani zrealizować żadnych transakcji finansowych. Interfejs istnieje wyłącznie w celach demonstracyjnych i rozwojowych. Korzystając z platformy, przyjmujesz do wiadomości i zgadzasz się, że nie będziesz próbować wykorzystywać tej funkcji do inicjowania rzeczywistych transakcji finansowych. Przed uruchomieniem tej funkcji powiadomimy użytkowników i zaktualizujemy niniejszy Regulamin."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Po uruchomieniu usługi przelewów pieniężnych będą podlegać dodatkowym warunkom, obowiązującym przepisom finansowym oraz wymogom zgodności KYC/AML. Uruchomienie nie nastąpi bez uprzedniego powiadomienia użytkowników i zaktualizowanego Regulaminu."
+    },
+    {
+      "kind": "section",
+      "id": "terms-9",
+      "n": "9",
+      "title": "Własność intelektualna"
+    },
+    {
+      "kind": "section",
+      "id": "terms-9-1",
+      "n": "9.1",
+      "title": "Treści platformy"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Wszystkie treści na platformie — w tym artykuły przewodnika, projekt graficzny, logotypy, oprogramowanie i teksty oryginalne — stanowią własność intelektualną Paylez Sp. z o.o. lub jej licencjodawców. Nie możesz kopiować, powielać, rozpowszechniać ani tworzyć utworów zależnych na podstawie treści platformy bez naszej wyraźnej pisemnej zgody."
+    },
+    {
+      "kind": "section",
+      "id": "terms-9-2",
+      "n": "9.2",
+      "title": "Treści użytkownika"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Zachowujesz własność treści, które zgłaszasz (opinie, rekomendacje, informacje profilowe). Zgłaszając treści, udzielasz Paylez ogólnoświatowej, niewyłącznej, nieodpłatnej licencji na wykorzystanie, wyświetlanie i rozpowszechnianie tych treści wyłącznie w celu prowadzenia i ulepszania platformy. Licencja ta wygasa z chwilą usunięcia przez Ciebie treści lub zamknięcia konta, z zastrzeżeniem wszelkich prawnych wymogów przechowywania."
+    },
+    {
+      "kind": "section",
+      "id": "terms-10",
+      "n": "10",
+      "title": "Wyłączenia i ograniczenie odpowiedzialności"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platforma jest udostępniana „w stanie, w jakim jest” i „w miarę dostępności”. W najszerszym zakresie dozwolonym przez obowiązujące prawo:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Nie gwarantujemy, że platforma będzie działać nieprzerwanie, bezbłędnie ani zawsze bezpiecznie"
+    },
+    {
+      "kind": "bullet",
+      "text": "Nie ponosimy odpowiedzialności za jakość, bezpieczeństwo ani legalność usług świadczonych przez firmy partnerskie"
+    },
+    {
+      "kind": "bullet",
+      "text": "Nie ponosimy odpowiedzialności za jakiekolwiek szkody pośrednie, uboczne lub następcze wynikające z korzystania przez Ciebie z platformy"
+    },
+    {
+      "kind": "bullet",
+      "text": "Nasza łączna odpowiedzialność z tytułu jakiegokolwiek roszczenia wynikającego z niniejszego Regulaminu nie przekroczy kwoty zapłaconej nam przez Ciebie w ciągu 3 miesięcy poprzedzających roszczenie"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Żadne postanowienie niniejszego Regulaminu nie ogranicza naszej odpowiedzialności za śmierć, szkodę na osobie spowodowaną niedbalstwem, oszustwo ani jakiejkolwiek innej odpowiedzialności, której nie można wyłączyć na gruncie prawa polskiego lub unijnego."
+    },
+    {
+      "kind": "section",
+      "id": "terms-11",
+      "n": "11",
+      "title": "Zawieszenie i zamknięcie konta"
+    },
+    {
+      "kind": "section",
+      "id": "terms-11-1",
+      "n": "11.1",
+      "title": "Przez Ciebie"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możesz zamknąć swoje konto w dowolnym momencie, kontaktując się z nami pod adresem usepaylez@gmail.com. Po zamknięciu dane Twojego profilu zostaną usunięte w ciągu 30 dni, z zastrzeżeniem danych, które jesteśmy zobowiązani przechowywać na mocy prawa. Niewykorzystane punkty i niezrealizowane kupony przepadają z chwilą zamknięcia konta."
+    },
+    {
+      "kind": "section",
+      "id": "terms-11-2",
+      "n": "11.2",
+      "title": "Przez nas"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możemy zawiesić lub zamknąć Twoje konto natychmiast i bez uprzedzenia, jeżeli:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Naruszysz którekolwiek postanowienie niniejszego Regulaminu"
+    },
+    {
+      "kind": "bullet",
+      "text": "Podejmiesz działania oszukańcze, w tym manipulację systemem punktów lub poleceń"
+    },
+    {
+      "kind": "bullet",
+      "text": "Podasz fałszywe dane tożsamości"
+    },
+    {
+      "kind": "bullet",
+      "text": "Założysz wiele kont w celu obejścia ograniczeń"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możemy również zawiesić platformę lub określone funkcje w celach konserwacyjnych, zgodności z prawem lub z przyczyn biznesowych, w miarę możliwości z rozsądnym wyprzedzeniem."
+    },
+    {
+      "kind": "section",
+      "id": "terms-12",
+      "n": "12",
+      "title": "Zmiany niniejszego Regulaminu"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Możemy okresowo aktualizować niniejszy Regulamin. O istotnych zmianach powiadomimy Cię poprzez:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Wiadomość e-mail na zarejestrowany adres, co najmniej 14 dni przed wejściem zmiany w życie"
+    },
+    {
+      "kind": "bullet",
+      "text": "Powiadomienie w aplikacji"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Dalsze korzystanie przez Ciebie z platformy po dacie wejścia w życie zaktualizowanego Regulaminu oznacza jego akceptację. Jeżeli nie zgadzasz się na zaktualizowany Regulamin, musisz zaprzestać korzystania z platformy i możesz zamknąć swoje konto."
+    },
+    {
+      "kind": "section",
+      "id": "terms-13",
+      "n": "13",
+      "title": "Prawo właściwe i rozstrzyganie sporów"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Niniejszy Regulamin podlega prawu polskiemu. Wszelkie spory wynikające z niniejszego Regulaminu lub z korzystania przez Ciebie z platformy będą w pierwszej kolejności przedmiotem negocjacji prowadzonych przez strony w dobrej wierze. Jeżeli negocjacje nie przyniosą rezultatu, spory podlegają wyłącznej jurysdykcji właściwych sądów w Polsce."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Jeżeli jesteś konsumentem zamieszkałym w UE, masz również prawo skorzystać z unijnej platformy internetowego rozstrzygania sporów pod adresem: https://ec.europa.eu/consumers/odr"
+    },
+    {
+      "kind": "section",
+      "id": "terms-14",
+      "n": "14",
+      "title": "Kontakt"
+    },
+    {
+      "kind": "meta",
+      "rows": [
+        ["Operator", "Paylez Sp. z o.o."],
+        ["E-mail", "usepaylez@gmail.com"],
+        ["Strona internetowa", "www.pay-lez.com"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "W sprawach dotyczących ochrony danych zapoznaj się z naszą Polityką prywatności."
+    }
+  ]
+}

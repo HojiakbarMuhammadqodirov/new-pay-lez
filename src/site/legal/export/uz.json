@@ -1,0 +1,978 @@
+{
+  "privacyTitle": "Maxfiylik siyosati",
+  "termsTitle": "Foydalanish shartlari",
+  "privacyVersion": "Versiya 1.1 · 2026-yil 28-avgustdan kuchga kiradi · GDPR talablariga muvofiq",
+  "termsVersion": "Versiya 1.0 · 2025-yil 24-apreldan kuchga kiradi",
+  "english": "Ushbu hujjat tarjima. Ingliz tilidagi versiyadan farq qilgan hollarda ingliz tilidagi matn ustuvor hisoblanadi.",
+  "privacyContents": [
+    ["privacy-1", "Biz kimmiz"],
+    ["privacy-2", "Qanday ma’lumotlarni va nima uchun yig‘amiz"],
+    ["privacy-3", "Ma’lumotlarning maxsus toifalari"],
+    ["privacy-4", "Ma’lumotlaringizni qanday ulashamiz"],
+    ["privacy-5", "Ma’lumotlarni xalqaro uzatish"],
+    ["privacy-6", "GDPR bo‘yicha huquqlaringiz"],
+    ["privacy-7", "Cookie fayllar va lokal xotira"],
+    ["privacy-8", "Ma’lumotlar xavfsizligi"],
+    ["privacy-9", "Bolalar ma’lumotlari"],
+    ["privacy-10", "Ushbu Maxfiylik siyosatiga o‘zgartirishlar"],
+    ["privacy-11", "Aloqa va nazoratchi haqida ma’lumot"]
+  ],
+  "termsContents": [
+    ["terms-1", "Platforma haqida"],
+    ["terms-2", "Foydalanish huquqi va hisobni ro‘yxatdan o‘tkazish"],
+    ["terms-3", "Foydalanuvchi xulq-atvori"],
+    ["terms-4", "Ballar va vaucherlar tizimi"],
+    ["terms-5", "Tavsiya dasturi"],
+    ["terms-6", "Hamkor e’lonlari va kontent"],
+    ["terms-7", "Geymifikatsiya"],
+    ["terms-8", "Xalqaro pul o‘tkazmalari (faol bo‘lmagan imkoniyat)"],
+    ["terms-9", "Intellektual mulk"],
+    ["terms-10", "Kafolatlardan voz kechish va javobgarlikni cheklash"],
+    ["terms-11", "Hisobni to‘xtatib turish va yopish"],
+    ["terms-12", "Ushbu Shartlarga o‘zgartirishlar"],
+    ["terms-13", "Amaldagi qonunchilik va nizolarni hal qilish"],
+    ["terms-14", "Aloqa"]
+  ],
+  "privacy": [
+    {
+      "kind": "meta",
+      "rows": [
+        ["Ma’lumotlar nazoratchisi", "Paylez Sp. z o.o."],
+        ["Aloqa", "usepaylez@gmail.com"],
+        ["Amaldagi qonunchilik", "Reglament (Yevropa Ittifoqi) 2016/679 (GDPR) · Polshaning shaxsiy ma’lumotlarni himoya qilish to‘g‘risidagi qonuni"],
+        ["Nazorat organi", "Urząd Ochrony Danych Osobowych (UODO) · www.uodo.gov.pl"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-1",
+      "n": "1",
+      "title": "Biz kimmiz"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez Polshada ro‘yxatdan o‘tgan Paylez Sp. z o.o. kompaniyasi tomonidan boshqariladi. Biz chet elliklar, xalqaro talabalar va Polshaga yangi kelganlar uchun qo‘llanma va xizmatlarni topish platformasini taqdim etamiz hamda ularni ishonchli mahalliy xizmat ko‘rsatuvchilar bilan bog‘laymiz."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz platformamiz, mobil ilovamiz va veb-saytimiz (www.pay-lez.com) orqali yig‘iladigan barcha shaxsiy ma’lumotlar uchun nazoratchi sifatida ish yuritamiz."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2",
+      "n": "2",
+      "title": "Qanday ma’lumotlarni va nima uchun yig‘amiz"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz faqat xizmatlarimizni taqdim etish va yaxshilash uchun zarur bo‘lgan ma’lumotlarni yig‘amiz. Quyida qayta ishlanadigan ma’lumotlarning har bir toifasi, ularni qayta ishlash uchun huquqiy asos va saqlash muddati to‘liq tavsiflangan."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-1",
+      "n": "2.1",
+      "title": "Shaxsni aniqlash va autentifikatsiya ma’lumotlari"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Elektron pochta manzili", "Hisob yaratish, kirish, aloqa", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati + 3 yil"],
+        ["Ism va familiya", "Hisobni aniqlash", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati + 3 yil"],
+        ["Ko‘rsatiladigan ism", "Ommaviy profilni shaxsiylashtirish", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati"],
+        ["Rol (foydalanuvchi/administrator)", "Kirish va ruxsatlarni nazorat qilish", "Qonuniy manfaat (6(1)(f)-modda)", "Hisob amal qilish muddati"],
+        ["Profil to‘ldirilganlik holati", "Platforma bilan tanishtirish jarayoni", "Qonuniy manfaat (6(1)(f)-modda)", "Hisob amal qilish muddati"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-2",
+      "n": "2.2",
+      "title": "Profil ma’lumotlari"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Yashash mamlakati va shahri", "Mahalliy xizmat tavsiyalari", "Rozilik (6(1)(a)-modda)", "Rozilik qaytarilgunga qadar + 1 yil"],
+        ["Tavsif va ish haqida ma’lumot", "Profilni shaxsiylashtirish", "Rozilik (6(1)(a)-modda)", "Rozilik qaytarilgunga qadar"],
+        ["Biladigan tillar, qiziqishlar", "Shaxsiylashtirilgan kontent yetkazish", "Rozilik (6(1)(a)-modda)", "Rozilik qaytarilgunga qadar"],
+        ["WhatsApp raqami", "Ixtiyoriy aloqa imkoniyati", "Rozilik (6(1)(a)-modda)", "Rozilik qaytarilgunga qadar"],
+        ["Telegram foydalanuvchi nomi", "Ixtiyoriy aloqa imkoniyati", "Rozilik (6(1)(a)-modda)", "Rozilik qaytarilgunga qadar"],
+        ["Profil ko‘rinishi sozlamasi", "Maxfiylikni nazorat qilish", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-3",
+      "n": "2.3",
+      "title": "Moliyaviy ma’lumotlar (faol emas — kelajakdagi imkoniyat)"
+    },
+    {
+      "kind": "notice",
+      "text": "MUHIM OGOHLANTIRISH: Xalqaro pul o‘tkazmalari imkoniyati hozirda ishlamaydi. Quyida sanab o‘tilgan ma’lumot maydonlari tizimimiz arxitekturasida mavjud, biroq HECH QANDAY moliyaviy amaliyot qayta ishlanmaydi, HECH QANDAY haqiqiy pul harakatlanmaydi va bu bosqichda HECH QANDAY to‘lov ma’lumoti faol ravishda yig‘ilmaydi. Ushbu bo‘lim faqat kelajakdagi ma’lumotlarni qayta ishlash niyatlarini hujjatlashtiradi. Bu imkoniyatni ishga tushirishdan oldin ushbu Maxfiylik siyosatini yangilaymiz va tegishli roziliklarni olamiz."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Imkoniyat ishga tushganda quyidagi ma’lumotlar qayta ishlanadi:"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Amaliyot summalari, valyuta kurslari, komissiyalar", "O‘tkazmalarni amalga oshirish", "Shartnoma (6(1)(b)-modda)", "7 yil (qonuniy majburiyat)"],
+        ["To‘lov usuli ma’lumotlari (niqoblangan karta, IBAN oxirgi 4 raqami)", "To‘lovlarni qayta ishlash", "Shartnoma (6(1)(b)-modda)", "7 yil (qonuniy majburiyat)"],
+        ["Qabul qiluvchining ismi, telefoni, bank rekvizitlari", "O‘tkazmani bajarish", "Shartnoma (6(1)(b)-modda)", "7 yil (qonuniy majburiyat)"],
+        ["Blokcheyn amaliyoti xeshi", "Kripto o‘tkazmani tekshirish", "Shartnoma (6(1)(b)-modda)", "7 yil (qonuniy majburiyat)"],
+        ["Stripe to‘lov usuli identifikatori", "To‘lovlarni xavfsiz tokenlashtirish", "Shartnoma (6(1)(b)-modda)", "Munosabatlar davomida"],
+        ["EUR va USDT hamyon qoldiqlari", "Hamyonni boshqarish", "Shartnoma (6(1)(b)-modda)", "7 yil (qonuniy majburiyat)"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-4",
+      "n": "2.4",
+      "title": "O‘yin va xulq-atvor ma’lumotlari"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Viktorina javoblari va natijalari", "O‘yinlarning ishlashi va taraqqiyot", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati"],
+        ["Ketma-ketliklar va jonlar", "O‘yin mexanikasi", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati"],
+        ["Natijalar tarixi (bilim, bayroqlar, poytaxtlar o‘yinlari)", "Reytinglar va taraqqiyotni kuzatish", "Qonuniy manfaat (6(1)(f)-modda)", "Hisob amal qilish muddati"],
+        ["Murakkablik darajasidagi o‘sish", "Shaxsiylashtirilgan o‘yin tajribasi", "Qonuniy manfaat (6(1)(f)-modda)", "Hisob amal qilish muddati"],
+        ["Oxirgi o‘yin vaqt belgilari", "Ketma-ketlikni hisoblash va bildirishnomalar", "Qonuniy manfaat (6(1)(f)-modda)", "Hisob amal qilish muddati"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-5",
+      "n": "2.5",
+      "title": "Mukofotlar, vaucherlar va tavsiyalar"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Tavsiya kodi va taklif qilgan shaxs", "Tavsiya dasturini boshqarish", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati + 2 yil"],
+        ["Yig‘ilgan va sarflangan ballar", "Sodiqlik dasturini hisobga olish", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati + 2 yil"],
+        ["Vaucher kodlari va chegirma miqdorlari", "Vaucherlarni chiqarish va tekshirish", "Shartnoma (6(1)(b)-modda)", "Muddati tugagach 2 yil"],
+        ["Vaucherdan foydalanish holati", "Firibgarlikning oldini olish", "Qonuniy manfaat (6(1)(f)-modda)", "Foydalanilgach 2 yil"],
+        ["QR kodni skanerlash vaqt belgilari", "Vaucherni tekshirish", "Shartnoma (6(1)(b)-modda)", "2 yil"],
+        ["QR skanerlashdagi qurilma ma’lumoti (user agent)", "Firibgarlikni aniqlash va xavfsizlik", "Qonuniy manfaat (6(1)(f)-modda)", "1 yil"],
+        ["Vaucherdan foydalanishdagi chek summalari", "Hamkorlar bilan hisob-kitob va audit", "Qonuniy manfaat (6(1)(f)-modda)", "3 yil"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-6",
+      "n": "2.6",
+      "title": "Tahliliy va o‘zaro aloqa ma’lumotlari"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Hamkor xizmatlariga bosishlar (Xaritalar, sayt, telefon, Instagram)", "Platforma tahlili va hamkorlar uchun hisobot", "Qonuniy manfaat (6(1)(f)-modda)", "2 yil (90 kundan so‘ng umumlashtiriladi)"],
+        ["Bosish paytidagi foydalanuvchi tili", "Til moslashuvini yaxshilash", "Qonuniy manfaat (6(1)(f)-modda)", "2 yil (90 kundan so‘ng umumlashtiriladi)"],
+        ["Xizmat bilan aloqa qilingan mamlakat va shahar", "Geografik tahlil", "Qonuniy manfaat (6(1)(f)-modda)", "2 yil (90 kundan so‘ng umumlashtiriladi)"],
+        ["Sodiqlik skanerlari vaqt belgilari va tashrif buyurilgan xizmat", "Hamkor natijalari bo‘yicha hisobot", "Qonuniy manfaat (6(1)(f)-modda)", "2 yil"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-7",
+      "n": "2.7",
+      "title": "Qo‘llab-quvvatlash va foydalanuvchi yaratgan kontent"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["Fikr-mulohazalar va yulduzli baholar", "Xizmatlarni yaxshilash", "Qonuniy manfaat (6(1)(f)-modda)", "3 yil"],
+        ["Murojaat toifasi", "Qo‘llab-quvvatlashni tasniflash", "Qonuniy manfaat (6(1)(f)-modda)", "3 yil"],
+        ["Murojaatdagi ism va elektron pochta", "Qo‘llab-quvvatlash javobi", "Shartnoma (6(1)(b)-modda)", "3 yil"],
+        ["Foydalanuvchilar yuborgan biznes tavsiyalari", "Platforma kontentini yaxshilash", "Rozilik (6(1)(a)-modda)", "Rozilik qaytarilgunga qadar yoki 3 yil"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-8",
+      "n": "2.8",
+      "title": "Texnik va avtomatik olinadigan ma’lumotlar"
+    },
+    {
+      "kind": "table",
+      "head": ["Ma’lumot turi", "Maqsad", "Huquqiy asos", "Saqlash muddati"],
+      "rows": [
+        ["IP manzil (serverlarimiz va veb-server jurnallari tomonidan qayta ishlanadi)", "Xavfsizlik, firibgarlikning oldini olish, qonunga rioya qilish", "Qonuniy manfaat (6(1)(f)-modda)", "90 kun"],
+        ["User agent / qurilma ma’lumoti (QR skanerlashda olinadi)", "Xavfsizlik va firibgarlikni aniqlash", "Qonuniy manfaat (6(1)(f)-modda)", "1 yil"],
+        ["Sessiya tokenlari (biz tomonidan beriladi va saqlanadi)", "Autentifikatsiya va sessiyani boshqarish", "Shartnoma (6(1)(b)-modda)", "Sessiya davomida"],
+        ["Google hisob identifikatori va tasdiqlangan pochta (faqat Google orqali kirsangiz)", "Autentifikatsiya", "Shartnoma (6(1)(b)-modda)", "Hisob amal qilish muddati"],
+        ["localStorage — mavzu va til tanlovi", "Foydalanuvchi tajribasini shaxsiylashtirish", "Qonuniy manfaat (6(1)(f)-modda)", "Foydalanuvchi tozalagunga qadar"],
+        ["localStorage — kirgan sessiya va sessiya tokeni", "Tashriflar orasida tizimda qolish", "Shartnoma (6(1)(b)-modda)", "Chiqish yoki tozalashgacha"],
+        ["localStorage — o‘yin taraqqiyoti holati", "Viktorina savollari takrorlanmasligi uchun", "Qonuniy manfaat (6(1)(f)-modda)", "Foydalanuvchi tozalagunga qadar"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-2-9",
+      "n": "2.9",
+      "title": "Sayt tashriflarini o‘lchash"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Saytdan qanday foydalanilayotganini o‘z serverlarimizda ishlaydigan o‘z dasturiy ta’minotimiz bilan o‘lchaymiz. Biz Google Analytics yoki boshqa har qanday uchinchi tomon tahlil xizmatidan foydalanmaymiz hamda hech qanday tahliliy cookie fayl va hech qanday tashrifchi identifikatorini o‘rnatmaymiz. Tashrif har kuni o‘zgaradigan va hech qachon identifikator sifatida saqlanmaydigan, ulanishdan olingan qiymat yordamida hisoblanadi — bu esa qaytib kelgan anonim tashrifchilar biz uchun ataylab o‘lchab bo‘lmaydigan bo‘lishini anglatadi."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-3",
+      "n": "3",
+      "title": "Ma’lumotlarning maxsus toifalari"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz GDPR 9-moddasida belgilangan shaxsiy ma’lumotlarning maxsus toifalarini (jumladan, sog‘liq, irqiy yoki etnik kelib chiqish, siyosiy qarashlar, diniy e’tiqodlar yoki biometrik ma’lumotlarni) ataylab yig‘maymiz."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Shuni qayd etamizki, profilingizda yig‘iladigan millat ma’lumoti (yashash mamlakati) ayrim kontekstlarda etnik jihatdan nozik deb hisoblanishi mumkin. Biz bu ma’lumotni faqat mahalliy xizmat tavsiyalarini taqdim etish maqsadida qayta ishlaymiz va undan hech qanday kamsituvchi profillashtirish uchun foydalanmaymiz. Siz bu ma’lumotni istalgan vaqtda profilingizdan o‘chirishingiz mumkin."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4",
+      "n": "4",
+      "title": "Ma’lumotlaringizni qanday ulashamiz"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz shaxsiy ma’lumotlaringizni sotmaymiz. Ma’lumotlarni faqat quyidagi hollarda ulashamiz:"
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4-1",
+      "n": "4.1",
+      "title": "Xizmat hamkorlari (katalogdagi bizneslar)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Siz hamkorning e’loni bilan o‘zaro aloqada bo‘lganingizda (bosish, tashrif, vaucherdan foydalanish) biz o‘sha hamkorga umumlashtirilgan va anonimlashtirilgan tahlilni beramiz. Shaxs darajasidagi ma’lumotni hamkorlarga faqat quyidagi hollarda beramiz:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Siz o‘sha hamkorga yo‘naltirilgan so‘rov yoki murojaat shaklini aniq yuborganingizda"
+    },
+    {
+      "kind": "bullet",
+      "text": "Vaucherdan foydalanish hisobingizni tekshirishni talab qilganda"
+    },
+    {
+      "kind": "bullet",
+      "text": "Siz muayyan hamkorga aloqa ma’lumotlaringizni berishga rozilik bildirganingizda"
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4-2",
+      "n": "4.2",
+      "title": "Texnologik quyi qayta ishlovchilar"
+    },
+    {
+      "kind": "table",
+      "head": ["Quyi qayta ishlovchi", "Maqsad", "Joylashuv", "Kafolat"],
+      "rows": [
+        ["IONOS SE", "Server xostingi, ma’lumotlar bazasi infratuzilmasi va ilovani yetkazish", "Frankfurt, Germaniya (YeIH)", "Ma’lumotlarni qayta ishlash shartnomasi"],
+        ["Google Ireland Limited", "Google orqali kirish — faqat shaxsni tasdiqlash, uni tanlagan foydalanuvchilar uchun", "Irlandiya (YeIH)", "Ma’lumotlarni qayta ishlash shartnomasi"],
+        ["Stripe (kelajakda)", "To‘lovlarni qayta ishlash (faol emas)", "AQSh", "Standart shartnoma bandlari (SCC)"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ilovamiz va ma’lumotlar bazamizni o‘zimiz joylashtiramiz. Autentifikatsiya, sessiyalarni boshqarish va barcha foydalanuvchi ma’lumotlari biz boshqaradigan infratuzilmada qayta ishlanadi va yuqorida sanab o‘tilganlardan boshqa hech bir uchinchi tomon hisob ma’lumotlarini bizning nomimizdan saqlamaydi va qayta ishlamaydi."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-4-3",
+      "n": "4.3",
+      "title": "Qonuniy talablar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Amaldagi qonun yoki sud qarori talab qilgan hollarda, yoxud platforma yoki uning foydalanuvchilarining qonuniy huquqlarini himoya qilish maqsadida biz shaxsiy ma’lumotlarni huquqni muhofaza qiluvchi yoki nazorat organlariga (jumladan UODOga) oshkor qilishimiz mumkin."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-5",
+      "n": "5",
+      "title": "Ma’lumotlarni xalqaro uzatish"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Hozirgi barcha ma’lumotlarni qayta ishlashimiz Yevropa Iqtisodiy Hududi (YeIH) doirasida amalga oshiriladi. Serverlarimiz va ma’lumotlar bazamiz Germaniyaning Frankfurt shahrida joylashgan, yagona boshqa faol quyi qayta ishlovchi esa Google Ireland Limited. Hozirda hech qanday shaxsiy ma’lumot YeIH tashqarisiga uzatilmaydi."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Agar kelajakda ma’lumotlar YeIH tashqarisiga uzatiladigan bo‘lsa (masalan, 2.3-bo‘limda tasvirlangan to‘lovlarni qayta ishlash ishga tushirilsa), biz tegishli kafolatlar mavjudligini ta’minlaymiz, jumladan:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Yevropa Komissiyasi tomonidan tasdiqlangan standart shartnoma bandlari (SCC)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Qo‘llaniladigan hollarda adekvatlik to‘g‘risidagi qarorlar"
+    },
+    {
+      "kind": "bullet",
+      "text": "Barcha quyi qayta ishlovchilar bilan ma’lumotlarni qayta ishlash shartnomalari"
+    },
+    {
+      "kind": "paragraph",
+      "text": "O‘zbekistonda joylashgan foydalanuvchilar: Biz Polsha va Yevropa Ittifoqi qonunchiligi doirasida ish yuritamiz. Agar sizning aniq holatingizga O‘zbekiston qonunchiligi tatbiq etilsa, mustaqil yuridik maslahat olishingizni tavsiya qilamiz."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-6",
+      "n": "6",
+      "title": "GDPR bo‘yicha huquqlaringiz"
+    },
+    {
+      "kind": "paragraph",
+      "text": "GDPR bo‘yicha ma’lumotlar subyekti sifatida sizda quyidagi huquqlar mavjud. Ulardan birortasidan foydalanish uchun usepaylez@gmail.com manziliga murojaat qiling. Biz 30 kun ichida javob beramiz."
+    },
+    {
+      "kind": "table",
+      "head": ["Huquq", "Bu nimani anglatadi", "Qanday foydalanish mumkin"],
+      "rows": [
+        ["Kirish huquqi (15-modda)", "Siz haqingizda saqlanadigan barcha ma’lumotlar nusxasini so‘rash", "usepaylez@gmail.com manziliga «Ma’lumotlarga kirish so‘rovi» mavzusida xat"],
+        ["Tuzatish huquqi (16-modda)", "Noaniq yoki to‘liq bo‘lmagan ma’lumotlarni tuzatish", "Ilova sozlamalarida o‘zgartiring yoki bizga yozing"],
+        ["O‘chirish huquqi (17-modda)", "Ma’lumotlaringizni o‘chirishni so‘rash («unutilish huquqi»)", "usepaylez@gmail.com manziliga «O‘chirish so‘rovi» mavzusida xat"],
+        ["Qayta ishlashni cheklash huquqi (18-modda)", "Ayrim hollarda ma’lumotlaringizdan foydalanishimizni cheklash", "usepaylez@gmail.com manziliga xat"],
+        ["Ma’lumotlarni ko‘chirish huquqi (20-modda)", "Ma’lumotlaringizni mashina o‘qiy oladigan formatda olish", "usepaylez@gmail.com manziliga «Ko‘chirish so‘rovi» mavzusida xat"],
+        ["E’tiroz bildirish huquqi (21-modda)", "Qonuniy manfaatga asoslangan qayta ishlashga e’tiroz bildirish", "usepaylez@gmail.com manziliga xat"],
+        ["Rozilikni qaytarib olish huquqi", "Rozilikka asoslangan qayta ishlash uchun rozilikni istalgan vaqtda qaytarib olish", "Ilova sozlamalari yoki bizga xat"],
+        ["Shikoyat berish huquqi", "Polsha nazorat organiga shikoyat qilish", "www.uodo.gov.pl"]
+      ]
+    },
+    {
+      "kind": "section",
+      "id": "privacy-7",
+      "n": "7",
+      "title": "Cookie fayllar va lokal xotira"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz cookie fayllardan foydalanmaymiz. Qurilmangizda localStorage yordamida quyidagilarni saqlaymiz:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Mavzu tanlovi (yorug‘/qorong‘i) — hech qachon serverlarimizga yuborilmaydi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Til tanlovi — til sozlamasini sessiyalar orasida saqlash uchun"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kirgan sessiyangiz va sessiya tokeni — tashriflar orasida tizimda qolishingiz uchun"
+    },
+    {
+      "kind": "bullet",
+      "text": "O‘yin taraqqiyoti holati — viktorina savollari takrorlanmasligi uchun"
+    },
+    {
+      "kind": "bullet",
+      "text": "Saytning ochilish animatsiyasi allaqachon ko‘rsatilgan-ko‘rsatilmagani"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Bularning hech biri reklama yoki kuzatuv identifikatori emas, hech biri uchinchi tomonlarga berilmaydi, dastlabki ikkitasi va oxirgisi esa umuman serverlarimizga yuborilmaydi. Sessiya qiymatlari tizimdan chiqqaningizda o‘chiriladi. Siz localStorage’ni brauzer yoki qurilma sozlamalari orqali istalgan vaqtda tozalashingiz mumkin."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Agar kelajakda cookie fayllarni yoki biror uchinchi tomon tahliliy yoxud reklama texnologiyasini joriy qilsak, ushbu siyosatni yangilaymiz va uni joriy qilishdan oldin cookie roziligi mexanizmini amalga oshiramiz."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-8",
+      "n": "8",
+      "title": "Ma’lumotlar xavfsizligi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Shaxsiy ma’lumotlaringizni ruxsatsiz kirish, o‘zgartirish, oshkor qilish yoki yo‘q qilishdan himoya qilish uchun tegishli texnik va tashkiliy choralarni qo‘llaymiz. Bu choralar quyidagilarni o‘z ichiga oladi:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Barcha ulanishlarda shifrlangan ma’lumot uzatish (HTTPS/TLS)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Parollar faqat tuzlangan scrypt xeshlari sifatida saqlanadi, hech qachon o‘qiladigan ko‘rinishda emas"
+    },
+    {
+      "kind": "bullet",
+      "text": "Imzolangan, muddati tugaydigan sessiya tokenlari, chiqishda bekor qilinadi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ma’lumotlarga kirishni faqat vakolatli xodimlar bilan cheklovchi nazorat"
+    },
+    {
+      "kind": "bullet",
+      "text": "Infratuzilmamiz va quyi qayta ishlovchilarning muntazam xavfsizlik tekshiruvlari"
+    },
+    {
+      "kind": "bullet",
+      "text": "Nozik moliyaviy identifikatorlarni niqoblangan holda saqlash (karta va IBAN uchun faqat oxirgi 4 raqam)"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Huquq va erkinliklaringizga xavf tug‘diradigan shaxsiy ma’lumotlar buzilishi yuz berganda, GDPR 33–34-moddalari talab qilganidek, biz tegishli nazorat organini 72 soat ichida, ta’sir ko‘rgan foydalanuvchilarni esa asossiz kechikishsiz xabardor qilamiz."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-9",
+      "n": "9",
+      "title": "Bolalar ma’lumotlari"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platformamiz 16 yoshga to‘lmagan bolalarga mo‘ljallanmagan. Biz bolalarning shaxsiy ma’lumotlarini bila turib yig‘maymiz. Agar bola bizga tegishli rozilikisiz shaxsiy ma’lumot bergan deb hisoblasangiz, usepaylez@gmail.com manzili orqali biz bilan bog‘laning, biz bu ma’lumotni zudlik bilan o‘chiramiz."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-10",
+      "n": "10",
+      "title": "Ushbu Maxfiylik siyosatiga o‘zgartirishlar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz ushbu Maxfiylik siyosatini vaqti-vaqti bilan yangilashimiz mumkin. Muhim o‘zgartirishlar kiritganimizda sizni quyidagi yo‘llar bilan xabardor qilamiz:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ro‘yxatdan o‘tgan manzilingizga elektron xat"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ilova ichidagi bildirishnoma"
+    },
+    {
+      "kind": "bullet",
+      "text": "Veb-saytimizdagi ko‘zga tashlanadigan e’lon"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Yangilangan siyosat xabardor qilingandan 30 kun o‘tib kuchga kiradi — bu sizga o‘zgartirishlar bilan tanishish va huquqiy asos rozilik bo‘lgan hollarda, agar rozi bo‘lmasangiz, uni qaytarib olish uchun vaqt beradi."
+    },
+    {
+      "kind": "section",
+      "id": "privacy-11",
+      "n": "11",
+      "title": "Aloqa va nazoratchi haqida ma’lumot"
+    },
+    {
+      "kind": "meta",
+      "rows": [
+        ["Ma’lumotlar nazoratchisi", "Paylez Sp. z o.o."],
+        ["Elektron pochta", "usepaylez@gmail.com"],
+        ["Veb-sayt", "www.pay-lez.com"],
+        ["Nazorat organi", "Urząd Ochrony Danych Osobowych (UODO)"],
+        ["UODO sayti", "www.uodo.gov.pl"],
+        ["UODO manzili", "ul. Stawki 2, 00-193 Varshava, Polsha"]
+      ]
+    }
+  ],
+  "terms": [
+    {
+      "kind": "meta",
+      "rows": [
+        ["Operator", "Paylez Sp. z o.o."],
+        ["Aloqa", "usepaylez@gmail.com"],
+        ["Veb-sayt", "www.pay-lez.com"],
+        ["Amaldagi qonunchilik", "Polsha qonunchiligi · Yurisdiksiya: Polsha sudlari"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Iltimos, Paylez platformasidan foydalanishdan oldin ushbu Foydalanish shartlarini diqqat bilan o‘qing. Hisob yaratish yoki xizmatlarimizdan foydalanish orqali siz ushbu Shartlarga rioya qilishga rozilik bildirasiz. Agar rozi bo‘lmasangiz, platformadan foydalanmang."
+    },
+    {
+      "kind": "section",
+      "id": "terms-1",
+      "n": "1",
+      "title": "Platforma haqida"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez — Paylez Sp. z o.o. tomonidan boshqariladigan raqamli qo‘llanma va xizmatlarni topish platformasi. Biz chet elliklar, xalqaro talabalar va Polshaga yangi kelganlarni ovqatlanish, sog‘liqni saqlash, hujjatlarni rasmiylashtirish, ta’lim va maishiy xizmatlar kabi turli toifalardagi ishonchli mahalliy xizmat ko‘rsatuvchilar bilan bog‘laymiz."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platforma quyidagilarni o‘z ichiga oladi:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Saralangan hamkor bizneslar va xizmat ko‘rsatuvchilar katalogi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Polshadagi hayot haqida amaliy qo‘llanma materiallari"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ta’limiy mini-o‘yinlarni o‘z ichiga olgan geymifikatsiya tizimi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ballar va vaucherlarga asoslangan sodiqlik dasturi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Tavsiya dasturi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kelajakdagi imkoniyatlar, jumladan xalqaro pul o‘tkazmalari (hozirda faol emas — 8-bo‘limga qarang)"
+    },
+    {
+      "kind": "section",
+      "id": "terms-2",
+      "n": "2",
+      "title": "Foydalanish huquqi va hisobni ro‘yxatdan o‘tkazish"
+    },
+    {
+      "kind": "section",
+      "id": "terms-2-1",
+      "n": "2.1",
+      "title": "Foydalanish huquqi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Siz platformadan foydalanishingiz mumkin, agar:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Kamida 16 yoshga to‘lgan bo‘lsangiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Majburiy shartnoma tuzishga qonuniy layoqatli bo‘lsangiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ilgari platformadan bloklanmagan yoki chetlatilmagan bo‘lsangiz"
+    },
+    {
+      "kind": "section",
+      "id": "terms-2-2",
+      "n": "2.2",
+      "title": "Hisob yaratish"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platformaning barcha imkoniyatlaridan foydalanish uchun hisob ro‘yxatdan o‘tkazishingiz kerak. Siz quyidagilarga rozilik bildirasiz:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Aniq, to‘liq va dolzarb ma’lumot berish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Hisobingiz kirish ma’lumotlari xavfsizligini ta’minlash"
+    },
+    {
+      "kind": "bullet",
+      "text": "Hisobingizga har qanday ruxsatsiz kirish haqida bizni darhol xabardor qilish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Hisobingiz ostida sodir bo‘ladigan barcha harakatlar uchun javobgarlikni o‘z zimmangizga olish"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz o‘z ixtiyorimizga ko‘ra ro‘yxatdan o‘tkazishni rad etish yoki hisoblarni to‘xtatib turish huquqini saqlab qolamiz, jumladan taqdim etilgan ma’lumot yolg‘on, chalg‘ituvchi yoki ushbu Shartlarni buzadi deb hisoblashga asosimiz bo‘lgan hollarda."
+    },
+    {
+      "kind": "section",
+      "id": "terms-3",
+      "n": "3",
+      "title": "Foydalanuvchi xulq-atvori"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platformadan foydalanish orqali siz quyidagilarni qilmaslikka rozilik bildirasiz:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platformadan noqonuniy maqsadlarda yoki amaldagi Polsha yoxud Yevropa Ittifoqi qonunchiligini buzgan holda foydalanish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Soxta hisoblar yaratish yoki shaxsingiz haqida noto‘g‘ri ma’lumot berish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platformaning biror qismiga yoki uning infratuzilmasiga ruxsatsiz kirishga urinish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platforma kontentini bizning aniq yozma ruxsatimizsiz yig‘ish, nusxalash yoki ko‘paytirish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Zararli, haqoratli, tuhmat qiluvchi yoki firibgar kontent joylashtirish yoxud uzatish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ballar, vaucherlar yoki tavsiya tizimlarini manipulyatsiya qilish yoxud suiiste’mol qilish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platformaning to‘g‘ri ishlashiga xalaqit berish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Bizning oldindan yozma roziligimizsiz platforma bilan ishlash uchun avtomatlashtirilgan vositalardan foydalanish"
+    },
+    {
+      "kind": "section",
+      "id": "terms-4",
+      "n": "4",
+      "title": "Ballar va vaucherlar tizimi"
+    },
+    {
+      "kind": "section",
+      "id": "terms-4-1",
+      "n": "4.1",
+      "title": "Ballar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez sodiqlik ballari tizimi foydalanuvchilarga platformadagi faoliyat orqali ball to‘plash imkonini beradi, jumladan:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Mini-o‘yinlarni o‘ynash va ketma-ketlikni saqlash"
+    },
+    {
+      "kind": "bullet",
+      "text": "Hamkor bizneslarga tashrif buyurish va ular bilan aloqada bo‘lish (faqat 2-daraja hamkorlar)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Profil va tanishtiruv vazifalarini bajarish"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platformaga yangi foydalanuvchilarni tavsiya qilish"
+    },
+    {
+      "kind": "notice",
+      "text": "MUHIM: Ballar pul qiymatiga ega emas va naqd pulga almashtirilmaydi. Ballar faqat sodiqlik mexanizmi bo‘lib, o‘tkazilishi, sotilishi, sovg‘a qilinishi yoki platformadan tashqarida ishlatilishi mumkin emas. Ballar, agar ishlatilmasa, to‘plangan sanadan 12 oy o‘tgach bekor bo‘ladi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-4-2",
+      "n": "4.2",
+      "title": "Vaucherlar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ballar dasturda ishtirok etuvchi hamkor bizneslarda amal qiladigan chegirma vaucherlariga almashtirilishi mumkin. Quyidagi shartlar qo‘llaniladi:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Vaucherlar faqat vaucherda ko‘rsatilgan aniq hamkor manzilida amal qiladi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Vaucherlarning berilish paytida ko‘rsatilgan amal qilish muddati bor — muddati o‘tgan vaucherlardan foydalanib bo‘lmaydi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Aniq ko‘rsatilmagan bo‘lsa, vaucherlarni boshqa aksiyalar bilan birlashtirib bo‘lmaydi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Chegirma qiymati hamkor biznes tomonidan moliyalashtiriladi — Paylez chegirmani beruvchi shaxs emas"
+    },
+    {
+      "kind": "bullet",
+      "text": "Vaucherlarni sotish, o‘tkazish yoki naqd pulga almashtirish mumkin emas"
+    },
+    {
+      "kind": "bullet",
+      "text": "Firibgarlik yoki suiiste’molga shubha qilingan hollarda vaucherlarni bekor qilish huquqini saqlab qolamiz"
+    },
+    {
+      "kind": "section",
+      "id": "terms-4-3",
+      "n": "4.3",
+      "title": "Platforma vositachi sifatida"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Paylez foydalanuvchilar va hamkor bizneslar o‘rtasida texnologik vositachi sifatida ish yuritadi. Biz foydalanuvchi va hamkor o‘rtasidagi biror bitimning tarafi emasmiz. Vaucherdan foydalanish bo‘yicha nizolar, xizmat sifati bo‘yicha shikoyatlar va pulni qaytarish talablari tegishli hamkor biznesga yo‘naltirilishi kerak. Biz o‘rinli hollarda nizolarda vositachilik qilish uchun oqilona sa’y-harakatlarni amalga oshiramiz, biroq hamkor xizmatining sifati yoki bajarilishi uchun javobgarlikni o‘z zimmamizga olmaymiz."
+    },
+    {
+      "kind": "section",
+      "id": "terms-5",
+      "n": "5",
+      "title": "Tavsiya dasturi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Foydalanuvchilar shaxsiy tavsiya kodi yordamida platformaga yangi foydalanuvchilarni taklif qilishlari mumkin. Tavsiya ballari tavsiya qilingan foydalanuvchi quyidagilarni bajarganda beriladi:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Tavsiya kodidan foydalanib tasdiqlangan hisob yaratadi"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ilovada ko‘rsatilgan minimal tanishtiruv talablarini bajaradi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz tavsiya dasturini istalgan vaqtda o‘zgartirish, to‘xtatib turish yoki tugatish huquqini saqlab qolamiz. Xato bilan yoki firibgarlik yo‘li bilan berilgan tavsiya ballari bekor qilinadi. O‘z-o‘zini tavsiya qilish (ikkinchi hisob orqali o‘zingizni taklif qilish) qat’iyan taqiqlanadi va hisobning to‘xtatilishiga olib keladi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-6",
+      "n": "6",
+      "title": "Hamkor e’lonlari va kontent"
+    },
+    {
+      "kind": "section",
+      "id": "terms-6-1",
+      "n": "6.1",
+      "title": "Hamkor ma’lumotlarining aniqligi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platformadagi hamkor e’lonlari uchinchi tomon bizneslar tomonidan taqdim etiladi. Biz hamkor ma’lumotlarini tekshirish uchun oqilona sa’y-harakat qilsak-da, ularning aniqligi, to‘liqligi yoki dolzarbligini, jumladan ish vaqti, narxlar, taklif etilayotgan xizmatlar yoki aloqa ma’lumotlarini kafolatlamaymiz. Tashrifdan oldin tafsilotlarni har doim bevosita hamkordan aniqlang."
+    },
+    {
+      "kind": "section",
+      "id": "terms-6-2",
+      "n": "6.2",
+      "title": "Hamkorlar bilan munosabatlar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ayrim hamkorlar Paylezdagi obuna darajasiga qarab turli ko‘rinish darajalarida taqdim etiladi. Pullik hamkorlikning mavjudligi qo‘llanmadagi tahririy kontentimizga yoki foydalanuvchi xavfsizligi standartlarimizga ta’sir qilmaydi. Pullik joylashtirishlar tavsiya etilgan yoki homiylik qilingan sifatida aniq belgilanadi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-6-3",
+      "n": "6.3",
+      "title": "Foydalanuvchilar yuborgan tavsiyalar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Foydalanuvchilar platformaga biznes tavsiyalarini yuborishlari mumkin. Tavsiya yuborish orqali siz bizga yuborilgan kontentdan platformada foydalanish, uni nashr etish va ko‘rsatish uchun eksklyuziv bo‘lmagan, royaltisiz litsenziya berasiz. Siz yuborilgan ma’lumot bilganingizcha to‘g‘ri ekanini va uchinchi tomon huquqlarini buzmasligini tasdiqlaysiz."
+    },
+    {
+      "kind": "section",
+      "id": "terms-7",
+      "n": "7",
+      "title": "Geymifikatsiya"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platforma geografiya, tillar va umumiy bilimlar bo‘yicha ta’limiy mini-o‘yinlarni o‘z ichiga oladi. O‘yin mexanikasi quyidagilarni qamrab oladi:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ballar va natijalarni hisoblash tizimlari"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ketma-ketlikni kuzatish (ketma-ket faol kunlar)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Jonlar tizimi (sessiyaga cheklangan urinishlar)"
+    },
+    {
+      "kind": "bullet",
+      "text": "Eng yaxshi natijalarni ko‘rsatuvchi reytinglar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz geymifikatsiyaning har qanday elementini istalgan vaqtda o‘zgartirish, qayta tiklash yoki to‘xtatish huquqini saqlab qolamiz. Yuqori natijalar va ketma-ketliklar mulkiy huquq hisoblanmaydi hamda texnik xato, suiiste’mol yoki platformani qayta ishlab chiqish hollarida tuzatilishi mumkin."
+    },
+    {
+      "kind": "section",
+      "id": "terms-8",
+      "n": "8",
+      "title": "Xalqaro pul o‘tkazmalari (faol bo‘lmagan imkoniyat)"
+    },
+    {
+      "kind": "notice",
+      "text": "Xalqaro pul o‘tkazmalari funksiyasi hozirda ISHLAMAYDI. Ayni paytda platforma orqali hech qanday moliyaviy amaliyotni boshlash, qayta ishlash yoki yakunlash mumkin emas. Interfeys faqat namoyish va ishlab chiqish maqsadlarida mavjud. Platformadan foydalanish orqali siz bu imkoniyatdan haqiqiy moliyaviy amaliyotlarni boshlash uchun foydalanishga urinmasligingizni tan olasiz va rozilik bildirasiz. Bu imkoniyatni ishga tushirishdan oldin foydalanuvchilarni xabardor qilamiz va ushbu Shartlarni yangilaymiz."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ishga tushirilgach, pul o‘tkazma xizmatlari qo‘shimcha shartlar, amaldagi moliyaviy qoidalar va KYC/AML talablariga bo‘ysunadi. Ishga tushirish foydalanuvchilarni oldindan xabardor qilmasdan va Foydalanish shartlarini yangilamasdan amalga oshirilmaydi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-9",
+      "n": "9",
+      "title": "Intellektual mulk"
+    },
+    {
+      "kind": "section",
+      "id": "terms-9-1",
+      "n": "9.1",
+      "title": "Platforma kontenti"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platformadagi barcha kontent — jumladan qo‘llanma maqolalari, dizayn, logotiplar, dasturiy ta’minot va original matnlar — Paylez Sp. z o.o. yoki uning litsenziarlarining intellektual mulki hisoblanadi. Siz platforma kontentini bizning aniq yozma ruxsatimizsiz nusxalay, ko‘paytira, tarqata yoki uning asosida hosila asarlar yarata olmaysiz."
+    },
+    {
+      "kind": "section",
+      "id": "terms-9-2",
+      "n": "9.2",
+      "title": "Foydalanuvchi kontenti"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Siz yuborgan kontentga (fikr-mulohaza, tavsiyalar, profil ma’lumotlari) egalik huquqi sizda qoladi. Kontent yuborish orqali siz Paylezga ushbu kontentdan faqat platformani yuritish va yaxshilash maqsadida foydalanish, uni ko‘rsatish va tarqatish uchun butun dunyo bo‘yicha eksklyuziv bo‘lmagan, royaltisiz litsenziya berasiz. Bu litsenziya siz kontentni o‘chirganingizda yoki hisobingizni yopganingizda, har qanday qonuniy saqlash talablarini hisobga olgan holda tugaydi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-10",
+      "n": "10",
+      "title": "Kafolatlardan voz kechish va javobgarlikni cheklash"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Platforma «qanday bo‘lsa, shundayligicha» va «mavjudligiga qarab» taqdim etiladi. Amaldagi qonun ruxsat bergan maksimal darajada:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platforma uzluksiz, xatosiz yoki har doim xavfsiz ishlashini kafolatlamaymiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Hamkor bizneslar ko‘rsatadigan xizmatlarning sifati, xavfsizligi yoki qonuniyligi uchun javobgar emasmiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Platformadan foydalanishingiz natijasida yuzaga keladigan har qanday bilvosita, tasodifiy yoki keyingi zararlar uchun javobgar emasmiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ushbu Shartlardan kelib chiqadigan har qanday da’vo bo‘yicha umumiy javobgarligimiz da’vodan oldingi 3 oy ichida bizga to‘lagan summangizdan oshmaydi"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ushbu Shartlardagi hech narsa o‘lim, e’tiborsizlik oqibatida yetkazilgan shaxsiy jarohat, firibgarlik yoki Polsha yoxud Yevropa Ittifoqi qonunchiligiga ko‘ra istisno qilib bo‘lmaydigan boshqa har qanday javobgarlik uchun javobgarligimizni cheklamaydi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-11",
+      "n": "11",
+      "title": "Hisobni to‘xtatib turish va yopish"
+    },
+    {
+      "kind": "section",
+      "id": "terms-11-1",
+      "n": "11.1",
+      "title": "Siz tomoningizdan"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Siz istalgan vaqtda usepaylez@gmail.com manziliga murojaat qilib hisobingizni yopishingiz mumkin. Yopilgach, profil ma’lumotlaringiz 30 kun ichida o‘chiriladi, qonun bo‘yicha saqlashimiz shart bo‘lgan ma’lumotlar bundan mustasno. Ishlatilmagan ballar va foydalanilmagan vaucherlar hisob yopilishi bilan bekor bo‘ladi."
+    },
+    {
+      "kind": "section",
+      "id": "terms-11-2",
+      "n": "11.2",
+      "title": "Biz tomonimizdan"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Quyidagi hollarda hisobingizni darhol va ogohlantirishsiz to‘xtatib turishimiz yoki yopishimiz mumkin:"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ushbu Shartlarning biror qoidasini buzsangiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Firibgarlik, jumladan ballar yoki tavsiya tizimini manipulyatsiya qilish bilan shug‘ullansangiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Shaxsingiz haqida yolg‘on ma’lumot bersangiz"
+    },
+    {
+      "kind": "bullet",
+      "text": "Cheklovlarni chetlab o‘tish uchun bir nechta hisob yaratsangiz"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Shuningdek, biz platformani yoki ayrim imkoniyatlarni texnik xizmat ko‘rsatish, qonunga rioya qilish yoki biznes sabablariga ko‘ra, iloji bo‘lsa oqilona muddatda oldindan xabardor qilgan holda to‘xtatib turishimiz mumkin."
+    },
+    {
+      "kind": "section",
+      "id": "terms-12",
+      "n": "12",
+      "title": "Ushbu Shartlarga o‘zgartirishlar"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Biz ushbu Shartlarni vaqti-vaqti bilan yangilashimiz mumkin. Muhim o‘zgarishlar haqida sizni quyidagi yo‘llar bilan xabardor qilamiz:"
+    },
+    {
+      "kind": "bullet",
+      "text": "O‘zgarish kuchga kirishidan kamida 14 kun oldin ro‘yxatdan o‘tgan manzilingizga elektron xat"
+    },
+    {
+      "kind": "bullet",
+      "text": "Ilova ichidagi bildirishnoma"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Yangilangan Shartlar kuchga kirgan sanadan keyin platformadan foydalanishda davom etishingiz ularni qabul qilganingizni anglatadi. Agar yangilangan Shartlarga rozi bo‘lmasangiz, platformadan foydalanishni to‘xtatishingiz kerak va hisobingizni yopishingiz mumkin."
+    },
+    {
+      "kind": "section",
+      "id": "terms-13",
+      "n": "13",
+      "title": "Amaldagi qonunchilik va nizolarni hal qilish"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ushbu Shartlar Polsha qonunchiligi bilan tartibga solinadi. Ushbu Shartlardan yoki platformadan foydalanishingizdan kelib chiqadigan har qanday nizo avvalo taraflar o‘rtasidagi vijdonli muzokaralar predmeti bo‘ladi. Muzokaralar natija bermasa, nizolar Polshaning vakolatli sudlarining eksklyuziv yurisdiksiyasiga bo‘ysunadi."
+    },
+    {
+      "kind": "paragraph",
+      "text": "Agar siz Yevropa Ittifoqida yashovchi isteʼmolchi bo‘lsangiz, shuningdek Yevropa Ittifoqi onlayn nizolarni hal qilish platformasidan foydalanish huquqiga egasiz: https://ec.europa.eu/consumers/odr"
+    },
+    {
+      "kind": "section",
+      "id": "terms-14",
+      "n": "14",
+      "title": "Aloqa"
+    },
+    {
+      "kind": "meta",
+      "rows": [
+        ["Operator", "Paylez Sp. z o.o."],
+        ["Elektron pochta", "usepaylez@gmail.com"],
+        ["Veb-sayt", "www.pay-lez.com"]
+      ]
+    },
+    {
+      "kind": "paragraph",
+      "text": "Ma’lumotlarni himoya qilish bo‘yicha savollar uchun Maxfiylik siyosatimizga qarang."
+    }
+  ]
+}
