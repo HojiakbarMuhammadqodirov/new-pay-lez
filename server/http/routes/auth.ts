@@ -218,6 +218,25 @@ export const authRoutes: Route[] = [
         at: ctx.at,
       });
 
+      /*
+       * The guest's points come with them.
+       *
+       * `signUp` has always done this and this route never did, which was fine
+       * while only the web called it — the site has no provisional accounts.
+       * The phone does, and the guest path is its main road: somebody plays the
+       * welcome round, then signs in with Google, and without this the ledger
+       * they earned stays on a `provisional` row nothing can reach again.
+       *
+       * Guarded rather than trusted. `merge` refuses anything that is not
+       * provisional, so a client sending somebody else's id gets a `conflict`
+       * rather than a transfer; merging onto the account already signed in is
+       * skipped rather than treated as an error.
+       */
+      const provisionalId = optStr(ctx.body, 'provisionalId');
+      if (provisionalId && provisionalId !== user.id) {
+        await accounts.merge(ctx.db, provisionalId, user.id, ctx.at);
+      }
+
       const result = await accounts.sessionForUser(ctx.db, {
         user,
         surface: oneOf(ctx.body, 'surface', ['web', 'mobile'] as const, 'web'),
