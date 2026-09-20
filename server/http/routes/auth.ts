@@ -238,6 +238,10 @@ export const authRoutes: Route[] = [
         email: identity.email,
         name: identity.name,
         language: optStr(ctx.body, 'language'),
+        /* Strictly compared, for the reason the sign-up route gives: every
+           truthiness test in JavaScript reads the string "false" as true, and
+           this is a field a client might serialise from a checkbox. */
+        acceptTerms: ctx.body.acceptTerms === true,
         at: ctx.at,
       });
 

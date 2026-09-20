@@ -397,7 +397,15 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
  */
 export async function linkGoogleAccount(
   db: Db,
-  input: { sub: string; email: string; name: string; language?: string; at?: Iso },
+  input: {
+    sub: string;
+    email: string;
+    name: string;
+    language?: string;
+    /** That the terms were actually shown and agreed to. See the record below. */
+    acceptTerms?: boolean;
+    at?: Iso;
+  },
 ): Promise<User> {
   const at = input.at ?? now();
   const email = normalise(input.email);
@@ -470,11 +478,28 @@ export async function linkGoogleAccount(
     );
     await grantRole(db, id, 'consumer', at);
 
-    /* §1.3, same as `signUp`. Signing in with Google is still the moment the
-       account comes into existence, so it is still the moment consent is
-       recorded — with the same policy version, so the two paths cannot drift. */
-    await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
-    await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+    /*
+     * §1.3, and **conditional for the same reason `signUp` is**.
+     *
+     * This wrote both rows unconditionally, on the argument that the account
+     * coming into existence is the moment consent is recorded. That is true
+     * about the moment and false about the consent: signing in with Google
+     * asked nobody anything, so the row was the exact thing `signUp`'s own note
+     * calls worse than no row — the one that would be produced as evidence.
+     *
+     * The caller says whether it asked. On the web the Google button on the
+     * sign-up form is disabled until the box is ticked, exactly like the
+     * password form's submit, so that path always asks. A client that does not
+     * send the flag creates the account and records nothing, and repairs it
+     * later through `POST /v1/me/consents`.
+     *
+     * Only on the create path: an account signing in again has already agreed
+     * or has not, and a row per sign-in would turn evidence into a log.
+     */
+    if (input.acceptTerms === true) {
+      await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
+      await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+    }
 
     await social.codeFor(db, id);
 

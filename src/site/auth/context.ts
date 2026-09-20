@@ -281,7 +281,12 @@ export interface AuthValue {
    *
    * Resolves to the local account, or rejects — callers show the message.
    */
-  signInWithGoogle: (credential: string, language: string) => Promise<Account>;
+  signInWithGoogle: (
+    credential: string,
+    language: string,
+    /** That the terms were shown and ticked — only the sign-up form sends it. */
+    acceptTerms?: boolean,
+  ) => Promise<Account>;
   signOut: () => void;
   /** Answering the individual-or-business question — the legacy path only. */
   setType: (type: AccountType) => void;

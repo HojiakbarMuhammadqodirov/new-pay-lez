@@ -120,10 +120,19 @@ export interface GoogleSignIn {
 export async function exchangeGoogleCredential(
   code: string,
   language: string,
+  /*
+   * Whether this press was the one on the **sign-up** form, where the terms
+   * checkbox sits above it and the button is dead until it is ticked.
+   *
+   * Sent rather than assumed, because the same exchange is how an existing
+   * account signs *in*, and an account signing in again has already agreed or
+   * has not — the server records only on the press that creates one.
+   */
+  acceptTerms = false,
 ): Promise<GoogleSignIn> {
   const result = await call<GoogleSignIn>('/v1/auth/google', {
     method: 'POST',
-    body: { code, language, surface: 'web' },
+    body: { code, language, surface: 'web', acceptTerms },
   });
   setToken(result.token);
   return result;

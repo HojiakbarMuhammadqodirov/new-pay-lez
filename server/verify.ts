@@ -2737,6 +2737,20 @@ async function consentRules(): Promise<void> {
        than a hole: the client records it on the day it grows a screen. */
     await consent.record(c.db, { userId: silent.id, kind: 'terms', granted: true, source: 'api', at: cAt });
     eq('…until the client says otherwise', await consent.has(c.db, silent.id, 'terms'), true);
+
+    /* And the Google path, which is the one that used to record consent it
+       had never asked for — the row `signUp` calls worse than no row, on the
+       only account-creating route that shows nobody a checkbox by itself. */
+    const gAsked = await accounts.linkGoogleAccount(c.db, {
+      sub: 'google-asked', email: 'g-asked@verify.test', name: 'G Asked',
+      acceptTerms: true, at: cAt,
+    });
+    const gSilent = await accounts.linkGoogleAccount(c.db, {
+      sub: 'google-silent', email: 'g-silent@verify.test', name: 'G Silent', at: cAt,
+    });
+    eq('a Google sign-up that asked records it', await consent.has(c.db, gAsked.id, 'terms'), true);
+    eq('…and one that did not, records nothing', await consent.has(c.db, gSilent.id, 'terms'), false);
+    check('…and is an account either way', gSilent.id !== gAsked.id, gSilent.id);
     await c.db.close();
   }
   const w = await world();

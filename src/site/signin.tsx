@@ -383,8 +383,16 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
 
       {/* Also on sign-up: continuing with Google *is* opening an account when
           the address is new, so making somebody fill the form first to reach
-          the shortcut would be the wrong way round. */}
-      <GoogleButton />
+          the shortcut would be the wrong way round.
+
+          It takes the checkbox with it, for the same reason the submit above
+          does. Opening an account is opening an account whichever control does
+          it, and a Google account created without the question having been
+          asked is the one case that used to write a consent record nobody had
+          given. The button is dead until the box is ticked; the *sign-in*
+          form's copy of it is not, because that press is for an account that
+          already exists. */}
+      <GoogleButton acceptTerms={acceptTerms} />
 
       <p className="auth-swap">
         {copy.auth.haveAccount}{' '}

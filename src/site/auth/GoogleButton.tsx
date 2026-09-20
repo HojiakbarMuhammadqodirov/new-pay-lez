@@ -62,7 +62,23 @@ function GoogleMark() {
   );
 }
 
-export function GoogleButton() {
+/**
+ * Continue with Google, on both auth forms.
+ *
+ * `acceptTerms` is how the two presses differ. On the **sign-up** form the
+ * terms checkbox sits above this button, so the prop is passed and the control
+ * is dead until it is ticked — the same rule the password submit follows, and
+ * the reason a Google account created here carries the same consent record a
+ * password account does. On the **sign-in** form it is omitted: that press is
+ * for an account that already exists, which has already agreed or has not, and
+ * asking somebody to re-accept the terms to get back into their own account is
+ * a gate with the wrong door on it.
+ *
+ * Undefined and `false` are deliberately not the same thing. Undefined is "this
+ * form does not ask", which leaves the button live; `false` is "this form asks
+ * and has not been answered", which disables it.
+ */
+export function GoogleButton({ acceptTerms }: { acceptTerms?: boolean }) {
   const copy = useCopy();
   const [language] = useLanguage();
   const { signInWithGoogle } = useAuth();
@@ -72,7 +88,7 @@ export function GoogleButton() {
     setStatus('working');
     try {
       const code = await requestGoogleCode();
-      await signInWithGoogle(code, language);
+      await signInWithGoogle(code, language, acceptTerms === true);
       /* No navigation on success. Signing in changes what `resolveRoute`
          returns for this very route, and pushing a hash here would race it —
          the same reason the password form does not navigate either. */
@@ -88,7 +104,7 @@ export function GoogleButton() {
         error instanceof Error && error.message.includes('google identity') ? 'unreachable' : 'refused',
       );
     }
-  }, [language, signInWithGoogle]);
+  }, [acceptTerms, language, signInWithGoogle]);
 
   if (!googleConfigured()) return null;
 
@@ -102,7 +118,7 @@ export function GoogleButton() {
         type="button"
         className="btn btn-ghost btn-lg auth-google-btn"
         onClick={() => void onClick()}
-        disabled={status === 'working'}
+        disabled={status === 'working' || acceptTerms === false}
       >
         <GoogleMark />
         {status === 'working' ? copy.auth.googleWorking : copy.auth.googleContinue}

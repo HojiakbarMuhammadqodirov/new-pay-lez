@@ -1297,6 +1297,14 @@ Beyond §10:
 | `GET /v1/media/{entity}/{id}` | A venue or guidance-service image, fetched once by the server and served from our own origin. Use it instead of any `base44.app` URL you find on a row |
 | `POST /v1/auth/google` | now also accepts **`provisionalId`**, so a guest's points follow them through Google exactly as they do through sign-up (§8). Previously they were stranded on the provisional row |
 
+`POST /v1/auth/google` takes **`acceptTerms`** as well, and it matters more here
+than on sign-up. This route used to write both consent rows unconditionally —
+Google shows nobody your terms, so that was a record of a question never asked.
+It records only when you send the flag now, and only on the press that creates
+the account. Send `acceptTerms: true` from whichever screen actually shows the
+documents; a "continue with Google" button on a screen that does not show them
+should send nothing, and the account is created just the same.
+
 ### 22. Word Builder has a Russian list
 
 `word_bank` carries `ru` as well as `en` and `pl`. The round is still built from

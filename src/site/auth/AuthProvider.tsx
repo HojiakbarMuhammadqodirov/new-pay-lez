@@ -715,8 +715,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * precisely this state.
    */
   const signInWithGoogle = useCallback(
-    async (credential: string, language: string): Promise<Account> => {
-      const verified = await exchangeGoogleCredential(credential, language);
+    async (credential: string, language: string, acceptTerms = false): Promise<Account> => {
+      const verified = await exchangeGoogleCredential(credential, language, acceptTerms);
       return welcome(adoptSession(verified, null, 'google'));
     },
     [welcome],
