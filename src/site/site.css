@@ -7594,16 +7594,28 @@ button {
 
 .pd-app {
   display: grid;
-  /* 240px open and 74px collapsed: the reference export's own two widths, in
-     its own unit. They are px rather than rem because the rail's contents are
-     a 32px mark, a 17px icon and a 13.5px label — none of which scale with the
-     root size — and the two numbers have to agree with the mock at 1440.
+  /* 280px open and 74px collapsed. They are px rather than rem because the
+     rail's contents are a 17px icon and a 13.5px label — neither of which
+     scales with the root size — and the collapsed width has to agree with the
+     mock at 1440.
+
+     The open width is **not** the reference export's 240, and the reason is
+     that the export is in English. A rail row is an icon, a gap, a label that
+     is told never to wrap, and a count pushed to the far edge by
+     `margin-left: auto` — so the count is the first thing off the end, and
+     `.rail` clips rather than scrolls. 240 leaves about 140px for the label,
+     which fits English's longest at 17 characters and clips Polish's and
+     Uzbek's at 22 ("Kampanie lojalnościowe", "Sodiqlik kampaniyalari") and
+     Russian's at 20 — and that row, Loyalty campaigns, is one of only two that
+     ever carries a count, so the clipping landed exactly where it showed. 280
+     covers 22 characters with room left, which is the measurement this number
+     is answering rather than a width that looked about right.
 
      Declared here rather than beside the rest of the match at the foot of this
      file, and that placement is load-bearing: the phones block below collapses
      the frame to a single column, and a later rule at equal specificity would
      win against it and leave a 240px rail down the side of a 360px screen. */
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 280px minmax(0, 1fr);
   min-height: 100dvh;
   transition: grid-template-columns 260ms var(--ease);
 }
@@ -7712,6 +7724,23 @@ button {
 
 .rail-link svg {
   flex: 0 0 auto;
+}
+
+/* The label, and the one property that keeps the count on screen.
+
+   A flex item's floor is its own content, and `white-space: nowrap` on the row
+   makes that floor the whole string — so a label wider than the track cannot
+   yield, and what gives instead is the count, which `margin-left: auto` has
+   already pushed to the clipped edge. `min-width: 0` lets the label yield.
+
+   The width above is set so this never fires for any label that ships; it is
+   here for the one that does not yet exist. Losing the end of a word somebody
+   can still read from its first fifteen characters is a smaller failure than
+   losing a number that has no other home. */
+.rail-link > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .rail-link:hover {
@@ -30013,6 +30042,9 @@ p.lst-soft {
 }
 
 .ps-seg button {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
   padding: 0.4rem 0.9rem;
   border: 0;
   border-radius: 999px;
@@ -30023,6 +30055,22 @@ p.lst-soft {
   font-weight: 600;
   cursor: pointer;
   transition: background 160ms var(--ease), color 160ms var(--ease);
+}
+
+/* The count inside the pill — the same treatment every other `<i>` on this
+   screen gets (`.ps-table td i`, `.ps-who > i`, `.ps-money i`), and it was the
+   one that was missed. An `<i>` is the element the markup reaches for to hang a
+   secondary figure on, and a browser's default for it is *italic* — so without
+   this the number came out slanted and flush against the word, reading as an
+   accident rather than as a count. The `gap` above is what separates them:
+   there is no whitespace between the two children in the JSX, and adding one
+   there would be a space this rule can see but no designer can. */
+.ps-seg button i {
+  font-style: normal;
+  font-size: 0.78rem;
+  font-weight: 700;
+  opacity: 0.62;
+  font-variant-numeric: tabular-nums;
 }
 
 .ps-seg button[data-on='true'] {
@@ -31523,106 +31571,6 @@ p.lst-soft {
   .pw-eye:active {
     transform: none;
   }
-}
-
-/* ══════════════════════════════════════════════ confirm your email ══
- *
- * The panel on the Play screen and the wallet (`VerifyEmail.tsx`). It is a
- * *panel* rather than a gate because an unverified account is not locked out —
- * it can read, play and browse, and what it cannot do is earn, redeem or appear
- * on the board. So this looks like the other panels on those screens rather
- * than like a barrier: same glass, same kicker, same field kit.
- *
- * It is **not** coloured. The palette has one accent, and this is the fourth
- * place that rule has had to be restated — the field kit's error weight, the
- * console's refusal strip, the stale-rate line — and the answer is the same
- * every time: weight and position carry the urgency, not hue. A panel sitting
- * directly under the points balance, saying the points will not move, does not
- * need to be amber to be read.
- */
-.vfy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: clamp(1rem, 2.6vw, 1.4rem) clamp(1.1rem, 3vw, 1.6rem);
-  margin-bottom: 1.1rem;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border-2);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.vfy-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-fnt);
-}
-
-.vfy-kicker i {
-  display: inline-flex;
-  color: var(--accent-lit);
-}
-
-/* The address is bolded inside the sentence rather than put on a line of its
-   own: what somebody needs to check is that it is *their* address, and a
-   sentence they read anyway is where they will check it. */
-.vfy-line {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-.vfy-line b {
-  font-weight: 700;
-  color: var(--accent-ink);
-}
-
-/*
- * The code and the two actions, on one row where there is room.
- *
- * `flex-end` rather than `center`, so the buttons sit on the field's baseline
- * rather than floating beside its label — the field is two rows tall (a label
- * and a well) and centring would put the press half a line above the well it
- * belongs to.
- */
-.vfy-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-}
-
-/*
- * Six digits wide, and no wider.
- *
- * A full-width well for a six-character code reads as a field that wants a
- * sentence. `ch` is exact here for the same reason it is on the converter's
- * amount: the well is `tabular-nums`, so every digit is one `ch` by
- * definition.
- */
-.vfy-code {
-  flex: 0 0 auto;
-  width: min(11rem, 100%);
-}
-
-.vfy-code input {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.22em;
-}
-
-.vfy-acts {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  flex-wrap: wrap;
 }
 
 /* ══════════════════════════════════════ what the profile is worth ══

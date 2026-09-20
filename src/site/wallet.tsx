@@ -31,7 +31,6 @@ import { useAuth } from './auth/context';
 import { canAfford } from './auth/player';
 import { PATHS } from './router';
 import { CounterCode, VenueMark, VenueSheet } from './venueSheet';
-import { VerifyEmail } from './VerifyEmail';
 
 /**
  * The wallet, for someone who is signed in.
@@ -934,16 +933,6 @@ export function WalletApp() {
                   : wallet.canRedeem}
             </span>
           </div>
-
-          {/*
-            ── confirm your email ──
-
-            Under the balance, which is the figure it is about: the points are
-            real and cannot be spent until the address is proved. Renders
-            nothing for an account that has proved one — see `VerifyEmail.tsx`
-            for why this is a panel rather than a gate.
-          */}
-          <VerifyEmail where="wallet" />
 
           {/* ── the code staff type ── */}
           <CounterCard me={me} />

@@ -148,19 +148,6 @@ async function weeklyPoints(db: Db, since: Iso, where: { city?: string; country?
        FROM points_ledger l JOIN users u ON u.id = l.user_id
       WHERE l.reason = 'game_win' AND l.status = 'committed' AND l.created_at >= $s
         AND u.status = 'active' AND u.deleted_at IS NULL
-        -- An unproved address does not appear on a public list of names.
-        --
-        -- In the WHERE rather than in the shaping below, and that is the
-        -- difference between this and the opt-out: an opted-out player is
-        -- *ranked* and not shown, because everybody counts toward the ranking
-        -- and only the opted-in are listed. An unverified account is not
-        -- counted either — it cannot earn, so in practice it has nothing to
-        -- rank, and an account that earned before this rule existed should not
-        -- be setting the bar other people are measured against.
-        --
-        -- The email-is-null branch is kept in, and has to be: a provisional account
-        -- (1.1) has no address to prove and plays before anybody signs up.
-        AND (u.email IS NULL OR u.email_verified_at IS NOT NULL)
         AND ($city IS NULL OR u.city = $city)
         AND ($country IS NULL OR u.country_code = $country)
       GROUP BY l.user_id, u.display_name, u.display_avatar, u.leaderboard_opt_in

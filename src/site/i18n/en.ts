@@ -142,37 +142,6 @@ export const en = {
      */
     showPassword: 'Show password',
     hidePassword: 'Hide password',
-    /*
-     * ── confirming the address ──
-     *
-     * The panel on the Play screen and the wallet — `VerifyEmail.tsx`, which
-     * carries the reasoning for why it is a panel rather than a gate.
-     *
-     * Two ledes rather than one, and that is the decision worth keeping: a
-     * round that banks nothing and a purchase that will be refused are
-     * different facts, and one sentence covering both is vague about each.
-     *
-     * `tooSoon` is **not** an error copy: a resend inside the cooldown comes
-     * back `sent: false`, because asking again when a message is slow is what
-     * an honest person does.
-     */
-    verify: {
-      kicker: 'Confirm your email',
-      playLede: 'Rounds will not pay until you confirm the address you signed up with —',
-      walletLede: 'You can spend points once you confirm the address you signed up with —',
-      codeLabel: 'The six-digit code we sent you',
-      codePlaceholder: '000000',
-      confirm: 'Confirm',
-      working: 'Checking…',
-      resend: 'Send it again',
-      onItsWay: 'On its way. It expires in a few minutes.',
-      tooSoon: 'One has just gone out — give it a moment before asking again.',
-      /* How many tries are left, because the server kills the code after five
-         and somebody on their fourth ought to know. */
-      wrongWithTries: 'That code is not right. {n} more tries before it expires.',
-      offline: 'We could not reach the server. Try again in a moment.',
-      failed: 'That did not work. Try again in a moment.',
-    },
     passwordPlaceholder: 'Your password',
     submit: 'Sign in',
     /* The credentials are in the bundle either way — see `auth/users.ts`. One
@@ -1434,7 +1403,7 @@ export const en = {
          language of the city on the profile. It is *not* the language the site
          is being read in. The picker this used to label is gone: the choice is
          two cards now, so every card in the grid is one press. */
-      lists: { pl: 'Polish', en: 'English' },
+      lists: { pl: 'Polish', en: 'English', ru: 'Russian' },
       tier: 'Level {n}',
       undo: 'Undo',
       clear: 'Clear',

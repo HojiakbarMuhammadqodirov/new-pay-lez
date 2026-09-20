@@ -147,15 +147,15 @@ export async function loadCapitals(language: LanguageCode): Promise<CapitalBank>
 export type WordRow = [word: string, hint: string, tier: number];
 
 /**
- * Word Builder ships two lists and only two.
+ * The three lists Word Builder ships.
  *
  * It is a *language* game — the thing being learned is the word — so the list is
  * the language you are practising rather than the language you read the site in,
- * and the hints are written in English in both files. A Russian speaker learning
- * Polish wants the Polish list; giving them a Russian one would be giving them
- * nothing to learn.
+ * and the hints are written in English in all three files. Which list somebody
+ * gets is a fact about where they are standing, never about which language they
+ * happen to be reading the site in: see `WORD_LIST_FOR_COUNTRY` below.
  */
-export type WordList = 'en' | 'pl';
+export type WordList = 'en' | 'pl' | 'ru';
 
 /**
  * Which list the **local** Word Builder card practises.
@@ -179,11 +179,17 @@ export type WordList = 'en' | 'pl';
  * branch, for the same reason: English already has a card.
  *
  * **Adding a list is one file and one row.** Drop `data/words.<code>.json`
- * beside the two that are there, widen `WordList`, and name the country here.
+ * beside the three that are there, widen `WordList`, and name the country here.
  * The card renames itself — its label is `copy.games.wordGame.lists[list]`.
  */
 export const WORD_LIST_FOR_COUNTRY: Record<string, WordList> = {
   PL: 'pl',
+  /* Russian rather than Uzbek, because Russian is the language this market
+     actually needs practising: it is what the counter, the clinic and the
+     landlord speak to somebody who has moved to Tashkent, and there is no
+     Uzbek list to offer instead. Uzbekistan took the `null` branch in
+     `wordListFor` until this row existed, so the card was not drawn at all. */
+  UZ: 'ru',
 };
 
 /**
@@ -252,33 +258,28 @@ export const quizBankFor = (countryCode: string | undefined): LocalBank =>
 /**
  * The local list for a profile's country, or **null** when there is not one.
  *
- * Three answers, not two, and the third is the one that was wrong:
+ * Three answers, not two, and the third is the one that keeps the card honest:
  *
  * - A country with a row in the table gets that list.
  * - A country we have **not localised for at all** — including an account with
  *   no city yet — gets `'pl'`. That is a real answer rather than a shrug: this
- *   site is a guide to having moved to Poland and Polish is the one local list
- *   it ships, so somebody who has not told us where they are is offered the
- *   market's language.
+ *   site is a guide to having moved to Poland, so somebody who has not told us
+ *   where they are is offered the market's language.
  * - A country the product **does** know about and has no word list for gets
  *   `null`, and the local Word Builder card is not drawn for them at all.
  *
- * That third case is Uzbekistan, and it was being handed the Polish list. The
- * card's whole promise is "practise the language of the place you have moved
- * to", so offering Polish to somebody in Tashkent is not a fallback, it is the
- * card saying something false — and worse than saying nothing, because a player
- * has no way to tell it is wrong until they are five words in.
+ * That third branch is why the table is the whole rule. Uzbekistan used to take
+ * it — and before that was being handed the Polish list, which was worse. The
+ * card's promise is "practise the language of the place you have moved to", so
+ * offering Polish to somebody in Tashkent is not a fallback, it is the card
+ * saying something false, and a player has no way to tell until they are five
+ * words in. It has a Russian list now and takes the first branch.
  *
  * `LOCAL_COUNTRIES` is what "the product knows about this country" means, and
  * it is the right list rather than a convenient one: a country is in it because
  * a local-knowledge quiz bank was written for it, which is the same act of
- * localising this card would be part of. There is no Russian or Uzbek word
- * list in `data/` — those are hand-delivered exports (`updates/paylez-words-*.json`)
- * and inventing one here would be inventing vocabulary to teach somebody.
- *
- * **Adding the missing list is one file and one row.** Drop
- * `data/words.ru.json` in, widen `WordList`, and add `UZ: 'ru'` to
- * `WORD_LIST_FOR_COUNTRY`. The card comes back on by itself.
+ * localising this card would be part of. The branch is not dead — it is what a
+ * sixth country gets on the day its quiz bank lands and its word list has not.
  */
 export function wordListFor(countryCode: string | undefined): WordList | null {
   const code = (countryCode ?? '').trim().toUpperCase();

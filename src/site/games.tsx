@@ -53,7 +53,6 @@ import { WordBuilder, type ServerWord } from './games/WordBuilder';
 import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
-import { VerifyEmail } from './VerifyEmail';
 import '../components/GlobeHero/ui/flagFont.css';
 
 /**
@@ -2138,18 +2137,6 @@ export function GamesApp() {
             player rather than about the balance, and it was a three-character
             number in a row of three three-character numbers.
           */}
-          {/*
-            ── confirm your email ──
-
-            Above the day's list and below the two gauges, which is where the
-            gate actually bites: the balance panel says what the points are
-            worth and the battery says how many rounds are left, and this says
-            that neither of them is going to move until the address is proved.
-            It renders **nothing** for an account that has proved one, or that
-            has no address to prove — see `VerifyEmail.tsx`.
-          */}
-          <VerifyEmail where="play" />
-
           {/*
             ── today's list ──
 

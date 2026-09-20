@@ -36,6 +36,22 @@ The merge moves the ledger, not a balance, so what arrives in the new account is
 provably the sum of what was earned. Do not try to carry a number across
 yourself.
 
+### Consent is recorded when it is given, and never inferred
+
+`POST /v1/auth/signup` takes an optional `acceptTerms: true`. Send it when the
+person has actually been shown the Terms and the Privacy Policy and agreed, and
+two `consent_records` rows are written with the policy version on them. Send
+nothing and the account is created just the same, with no consent on file — a
+row claiming somebody agreed to a document they were never shown is worse than
+no row, because it is the row that would be produced as evidence.
+
+It is not required, and that is a decision about clients rather than about
+consent: a client already in somebody's hands cannot be taught a new mandatory
+field, and `surface` is self-declared (defaulting to `web`), so there is no
+version of the gate that admits an old build and excludes a script. A client
+that asks later records it with `POST /v1/me/consents`; `GET /v1/me/consents`
+reports all four kinds.
+
 ### The welcome gift is not paid at sign-up
 
 `POST /v1/auth/signup` mints the account and nothing else. The gift is claimed by

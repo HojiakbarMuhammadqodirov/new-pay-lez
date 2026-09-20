@@ -116,16 +116,6 @@ export interface Me {
     profileCompletedAt: string | null;
     onboardedAt: string | null;
     /**
-     * When the address was proved, or `null`.
-     *
-     * A stamp rather than a boolean, matching the two above it. `null` is what
-     * gates earning, redeeming and the board — see `domain/verification.ts` on
-     * the server for the full list and for the three things it deliberately
-     * does not gate (signing in, a scan at a till, and anything an existing
-     * account already has).
-     */
-    emailVerifiedAt: string | null;
-    /**
      * §1.4's standing answer: share my profile with the venues I visit.
      *
      * On by default. It is **not** the per-venue grant — that is
@@ -150,36 +140,6 @@ export interface Me {
 }
 
 export const me = () => call<Me>('/v1/me');
-
-/* ══════════════════════════════════════════════ proving the address ══ */
-
-export interface CodeSent {
-  /** False when the cooldown refused — not an error; see `nextSendAt`. */
-  sent: boolean;
-  nextSendAt: string;
-  expiresAt: string;
-  sends: number;
-  /**
-   * The code itself, and **only** on a server whose email adapter is local.
-   *
-   * It is here so a local checkout can finish a sign-up: the local adapter
-   * logs the message and delivers nowhere, and a flow nobody can complete is a
-   * flow nobody will test. A deployment that is really sending mail never
-   * populates it — a code in a response is a code an attacker can read without
-   * having the address, which defeats the whole mechanism — so the screen must
-   * treat it as an absent field rather than as the way to get the code.
-   */
-  code?: string;
-}
-
-/**
- * Send, or resend, the sign-up code.
- *
- * Needs a session, which exists from the moment sign-up returns: the account
- * asking for its own code is authenticated, so there is no address to
- * enumerate here.
- */
-export const sendCode = () => call<CodeSent>('/v1/auth/verify/send', { method: 'POST' });
 
 /* ══════════════════════════════════════════════ being on the board ══ */
 
@@ -225,15 +185,6 @@ export const patchLanguage = (language: string) =>
  */
 export const setVenueSharingDefault = (on: boolean) =>
   call<Me>('/v1/me', { method: 'PATCH', body: { venueSharingDefault: on } });
-
-export interface CodeConfirmed {
-  verified: boolean;
-  /** True only for the call that actually proved it. A retry is `false`. */
-  granted: boolean;
-}
-
-export const confirmCode = (code: string) =>
-  call<CodeConfirmed>('/v1/auth/verify', { method: 'POST', body: { code } });
 
 /* ═════════════════════════════════════════════════════════════ the tank ══ */
 

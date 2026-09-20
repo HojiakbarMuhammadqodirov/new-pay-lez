@@ -475,7 +475,7 @@ writeFileSync(join(OUT, 'decks.json'), JSON.stringify(decks));
  * length. The two lists are separate and must not drift: a word that is medium on
  * the site and hard on the phone pays differently for the same answer.
  */
-for (const lang of ['en', 'pl']) {
+for (const lang of ['en', 'pl', 'ru']) {
   const words = JSON.parse(
     readFileSync(join(SRC, `paylez-words-${lang}.json`), 'utf8'),
   ).words.map((entry) => [entry.word, entry.hint, entry.tier]);

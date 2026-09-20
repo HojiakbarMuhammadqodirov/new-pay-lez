@@ -1225,6 +1225,84 @@ customer's `@handle`, a voucher code or a reward code and a bill, and the sale
 goes through the gate without the customer's phone. Their shapes are in
 `openapi.json`.
 
+### 18. Rate limits are enforced, and `429` is now an answer you will see
+
+Routes that create things or spend things are counted per hour. Over the line
+the server answers **`429 rate_limited`** with
+`{ retryAfterMinutes: 60, limit: <the hour's allowance> }`.
+
+| Route | Per hour | Counted by |
+| --- | --- | --- |
+| `POST /v1/auth/signup` | 5 | connection |
+| `POST /v1/auth/signin` | 20 | connection |
+| `POST /v1/auth/google` | 20 | connection |
+| `POST /v1/auth/guest` | 10 | connection |
+| `POST /v1/me/password` | 10 | account |
+| `POST /v1/games/sessions` | 200 | account |
+| `POST /v1/games/sessions/{id}/finish` | 200 | account |
+| `POST /v1/daily/check-in` | 10 | account |
+| `POST /v1/gift-cards` | 30 | account |
+
+"By connection" is a daily-rotating hash of the caller, not a device id and not
+anything stored — so a shared café wifi shares an allowance. The game limits sit
+well above what energy allows on any plan; they are there to bound a loop, not a
+player. **A test fixture that signs up six accounts in one run now fails on the
+sixth**, which is the only one of these a suite is likely to hit.
+
+### 19. `POST /v1/auth/signup` — `acceptTerms`, and why it is optional
+
+A new **optional** boolean. Send `acceptTerms: true` when, and only when, the
+person has actually been shown the Terms and the Privacy Policy and has agreed:
+it writes two `consent_records` rows stamped with the policy version, and that
+pair is the evidence that somebody was asked. Send nothing and the account is
+created exactly as before, with no consent on file.
+
+It was briefly **required**, and that was wrong for one reason worth keeping in
+mind when you design anything like it: the field was added to the server and to
+the web form in the same change, while every copy of this app already on a phone
+could not learn it. A gate the shipped client cannot satisfy is a gate that
+breaks sign-up for everybody who has not updated. Narrowing it to "web only"
+does not work either — `surface` is declared by the client and *defaults to
+`web`* when absent, so the exemption would have refused this app too.
+
+So the rule is: the client that asks is the client that records. When the app
+grows a terms screen, either send `acceptTerms: true` at sign-up, or record it
+afterwards with **`POST /v1/me/consents`** `{ kind: "terms", granted: true }`
+and the same for `"privacy"`. `GET /v1/me/consents` reports all four kinds, so
+"has this person agreed?" is answerable without guessing from a signup date.
+
+### 20. A voucher rung can now be capped, and a cap is a `409`
+
+`voucher_tiers` gained two optional caps — a total and a per-person one. Both
+are `null` on every rung that predates them, which is "no cap". When one binds,
+`POST /v1/vouchers` refuses:
+
+| Refusal | Detail |
+| --- | --- |
+| `409 conflict` — "this voucher has all been claimed" | `{ limit, issued }` |
+| `409 conflict` — "you have taken all of these you can" | `{ perUserLimit, yours }` |
+
+`conflict` rather than `budget_exhausted` on purpose: the venue's budget may be
+untouched and full, and it is the rung that is finished. Show the person the
+rung as unavailable rather than telling them the offer has run out of money.
+
+### 21. More new endpoints
+
+Beyond §10:
+
+| Endpoint | What it answers |
+| --- | --- |
+| `GET /v1/daily/tasks` | The day's tasks and whether each is done — the thing the home screen's empty box is for |
+| `GET /v1/partner/venues/{id}/vouchers` | The register of issued vouchers for the partner companion: status, the count against the cap, the validity window, the redemption history. Holder names are withheld unless that customer shared their profile |
+| `GET /v1/media/{entity}/{id}` | A venue or guidance-service image, fetched once by the server and served from our own origin. Use it instead of any `base44.app` URL you find on a row |
+| `POST /v1/auth/google` | now also accepts **`provisionalId`**, so a guest's points follow them through Google exactly as they do through sign-up (§8). Previously they were stranded on the provisional row |
+
+### 22. Word Builder has a Russian list
+
+`word_bank` carries `ru` as well as `en` and `pl`. The round is still built from
+the session's language, so nothing in the request changes — a Russian-speaking
+account simply gets a real round now instead of `404 not_found`.
+
 ### What did **not** change
 
 The gate's *sequence* — `/gate/scan`, `/amount`, `/confirm`, the polling and the

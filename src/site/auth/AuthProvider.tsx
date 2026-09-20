@@ -312,7 +312,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [plan, setPlan] = useState<AuthValue['plan']>(null);
   const [entitlements, setEntitlements] = useState<AuthValue['entitlements']>(null);
   const [memberSince, setMemberSince] = useState<string | null>(null);
-  const [emailVerifiedAt, setEmailVerifiedAt] = useState<string | null>(null);
   const [leaderboardOptIn, setLeaderboardOptIn] = useState<boolean | null>(null);
   const [venueSharingDefault, setVenueSharingDefault] = useState<boolean | null>(null);
   /** The language the *server* has on this account, as of the last `GET /v1/me`. */
@@ -381,7 +380,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPlan(me?.plan ?? null);
     setEntitlements(me?.entitlements ?? null);
     setMemberSince(me?.user.createdAt ?? null);
-    setEmailVerifiedAt(me?.user.emailVerifiedAt ?? null);
     setLeaderboardOptIn(me?.user.leaderboardOptIn ?? null);
     setVenueSharingDefault(me?.user.venueSharingDefault ?? null);
     setServerLanguage(me?.user.language ?? null);
@@ -1057,7 +1055,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plan,
       entitlements,
       memberSince,
-      emailVerifiedAt,
       leaderboardOptIn,
       venueSharingDefault,
       pendingRoute,
@@ -1078,7 +1075,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       plan,
       entitlements,
       memberSince,
-      emailVerifiedAt,
       leaderboardOptIn,
       venueSharingDefault,
       pendingRoute,

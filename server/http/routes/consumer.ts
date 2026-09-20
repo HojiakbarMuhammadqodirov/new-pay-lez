@@ -20,7 +20,6 @@ import * as ledger from '../../domain/ledger.ts';
 import * as notifications from '../../domain/notifications.ts';
 import * as social from '../../domain/social.ts';
 import * as tasks from '../../domain/tasks.ts';
-import * as verification from '../../domain/verification.ts';
 import * as vouchers from '../../domain/vouchers.ts';
 import { CONFIG } from '../../config.ts';
 import { getVenue, trackListing } from '../../domain/venues.ts';
@@ -305,19 +304,13 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/vouchers',
     auth: 'user',
     idempotent: true,
-    handler: async (ctx) => {
-      /* Value leaving the platform, so it is behind a proved address. The gate
-         is at the route rather than in `vouchers.issue`, because that function
-         is also how the till, the demo seed and the fixtures issue one and none
-         of those is a client with an inbox. */
-      await verification.assertVerified(ctx.db, actor(ctx).user.id);
-      return await vouchers.issue(ctx.db, {
+    handler: async (ctx) =>
+      await vouchers.issue(ctx.db, {
         userId: actor(ctx).user.id,
         venueId: str(ctx.body, 'venueId'),
         tierId: str(ctx.body, 'tierId'),
         at: ctx.at,
-      });
-    },
+      }),
   },
   {
     method: 'GET',
@@ -339,9 +332,6 @@ export const consumerRoutes: Route[] = [
     limit: { perHour: CONFIG.limits.giftCardPerHour, by: 'account' },
     handler: async (ctx) => {
       const { user } = actor(ctx);
-      /* Same rule as the voucher ladder above: points leaving as a card with a
-         face value on it. */
-      await verification.assertVerified(ctx.db, user.id);
       const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
       return await vouchers.redeemGiftCard(ctx.db, {
         userId: user.id,
@@ -417,14 +407,7 @@ export const consumerRoutes: Route[] = [
     /* The day key already makes a repeat free; this bounds the *requests*
        rather than the grants, which is the cost the day key does not cover. */
     limit: { perHour: CONFIG.limits.checkInPerHour, by: 'account' },
-    handler: async (ctx) => {
-      /* It grants points. Refused rather than granted-as-nothing, unlike a game
-         round: a round has a reason to be played anyway (it is the product) and
-         a check-in is *only* the grant, so a silent zero would be a button that
-         does nothing. */
-      await verification.assertVerified(ctx.db, actor(ctx).user.id);
-      return await checkin.checkIn(ctx.db, { userId: actor(ctx).user.id, at: ctx.at });
-    },
+    handler: async (ctx) => await checkin.checkIn(ctx.db, { userId: actor(ctx).user.id, at: ctx.at }),
   },
 
   /* ═══════════════════════════════════════════════════════════════ games ══ */

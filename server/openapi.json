@@ -1605,7 +1605,7 @@
     "/v1/auth/signup": {
       "post": {
         "summary": "Create an account",
-        "description": "Records terms and privacy consent with the policy version, mints a referral code, and — if `provisionalId` is sent — folds the guest identity in so points earned before signing up survive.\n\n**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, because an address and a password can be produced in bulk and a gift attached to producing them funds a farm.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "description": "Mints a referral code, and — if `provisionalId` is sent — folds the guest identity in so points earned before signing up survive.\n\nRecords terms and privacy consent with the policy version **when `acceptTerms` is sent**, and not otherwise: a consent row is evidence that somebody was asked, so a client that did not ask writes none. `POST /v1/me/consents` is how it arrives later.\n\n**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, because an address and a password can be produced in bulk and a gift attached to producing them funds a farm.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "postAuthSignup",
         "tags": [
           "auth"
@@ -1641,6 +1641,10 @@
                   "partner": {
                     "type": "boolean",
                     "description": "Grants the partner_owner role. Never grants admin."
+                  },
+                  "acceptTerms": {
+                    "type": "boolean",
+                    "description": "Send `true` only when the person has been shown the Terms and the Privacy Policy and agreed. Optional, and absent is not refused: a required field cannot be added to a client that is already installed."
                   },
                   "referralCode": {
                     "type": "string",
@@ -1800,86 +1804,6 @@
         "responses": {
           "204": {
             "description": "Success"
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/auth/verify/send": {
-      "post": {
-        "summary": "POST /v1/auth/verify/send",
-        "description": "**Access:** Any signed-in account.",
-        "operationId": "postAuthVerifySend",
-        "tags": [
-          "other"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/auth/verify": {
-      "post": {
-        "summary": "POST /v1/auth/verify",
-        "description": "**Access:** Any signed-in account.",
-        "operationId": "postAuthVerify",
-        "tags": [
-          "other"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
           },
           "default": {
             "description": "Error",

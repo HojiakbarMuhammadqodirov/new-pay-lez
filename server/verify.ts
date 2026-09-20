@@ -47,7 +47,6 @@ import * as partners from './domain/partners.ts';
 import * as profiles from './domain/profiles.ts';
 import * as social from './domain/social.ts';
 import * as tasks from './domain/tasks.ts';
-import * as verification from './domain/verification.ts';
 import * as traffic from './domain/traffic.ts';
 import * as vouchers from './domain/vouchers.ts';
 import * as jobs from './jobs.ts';
@@ -207,11 +206,8 @@ async function world(): Promise<World> {
     ]) {
       /* `email_verified_at` is stamped, and that is a statement about what
          these fixtures *are* rather than a convenience: they stand in for real
-         customers who signed up and confirmed a code, and every rule about
-         earning, redeeming and the board is written for that person. The
-         unverified case has a section of its own (`verificationRules`) so it is
-         tested deliberately instead of being the accidental default of every
-         other check in this file. */
+         customers who signed up, and every rule about earning, redeeming and
+         the board is written for that person. */
       await db.run(
         `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, city,
                             status, email_verified_at, created_at, updated_at)
@@ -2712,6 +2708,37 @@ async function scanWithDeal(w: World, dealId: string, at: string): Promise<gate.
 
 async function consentRules(): Promise<void> {
   describe('§1.4 / B9a consent-gated identified profiles');
+
+  /*
+   * ── §1.3: account consent follows the asking, and nothing else ──
+   *
+   * Two rows are written when `acceptTerms` says somebody was asked and said
+   * yes, and **none** when the field is absent. The absence is the half worth
+   * checking: it was a refusal for a while, which broke sign-up for every
+   * client already shipped without the field, and the replacement rule is only
+   * honest while a silent sign-up leaves no row claiming consent it never got.
+   */
+  {
+    const c = await world();
+    const cAt = now();
+    const asked = await accounts.signUp(c.db, {
+      email: 'asked@verify.test', password: 'hunter22', name: 'Asked',
+      acceptTerms: true, at: cAt,
+    });
+    const silent = await accounts.signUp(c.db, {
+      email: 'silent@verify.test', password: 'hunter22', name: 'Silent', at: cAt,
+    });
+    eq('an asked sign-up records the terms', await consent.has(c.db, asked.id, 'terms'), true);
+    eq('…and the privacy policy with it', await consent.has(c.db, asked.id, 'privacy'), true);
+    check('a sign-up that did not ask is not refused', typeof silent.id === 'string', silent.id);
+    eq('…and claims no consent', await consent.has(c.db, silent.id, 'terms'), false);
+    eq('…nor on the privacy policy', await consent.has(c.db, silent.id, 'privacy'), false);
+    /* And it is repairable, which is what makes the absence a state rather
+       than a hole: the client records it on the day it grows a screen. */
+    await consent.record(c.db, { userId: silent.id, kind: 'terms', granted: true, source: 'api', at: cAt });
+    eq('…until the client says otherwise', await consent.has(c.db, silent.id, 'terms'), true);
+    await c.db.close();
+  }
   const w = await world();
   const at = now();
 
@@ -3537,32 +3564,6 @@ async function httpSurface(): Promise<void> {
     return { status: response.status, body: text ? JSON.parse(text) : null };
   };
 
-  /*
-   * Prove an address, over the wire, for an account this section has just
-   * created.
-   *
-   * Earning is gated on a proved address (`games.finish`, `gate.confirm`,
-   * `giftCards.buy`), so every account below that goes on to earn or spend has
-   * to clear the gate first or the assertion under it is measuring the gate
-   * rather than the thing it names. The OTP *rules* — the cooldown, the attempt
-   * cap, the send ceiling — are checked against the domain in their own section;
-   * what this exercises is the pair of routes.
-   *
-   * The code comes back from `issue` because the local email adapter delivers
-   * nowhere and says so (`ports/email.ts`), which is the same door a developer
-   * signing up on their own machine uses. `force` because sign-up has already
-   * sent one and the cooldown is doing its job.
-   */
-  const prove = async (sessionToken: string): Promise<void> => {
-    const me = await call('GET', '/v1/me', { token: sessionToken });
-    const issued = await verification.issue(w.db, {
-      userId: me.body.user.id as string,
-      at: now(),
-      force: true,
-    });
-    await call('POST', '/v1/auth/verify', { token: sessionToken, body: { code: issued.code } });
-  };
-
   const health = await call('GET', '/v1/health');
   eq('health answers', health.status, 200);
 
@@ -3571,7 +3572,6 @@ async function httpSurface(): Promise<void> {
   });
   eq('sign-up succeeds', signup.status, 200);
   const token = signup.body.token as string;
-  await prove(token);
 
   const dupe = await call('POST', '/v1/auth/signup', {
     body: { email: 'http@verify.test', password: 'hunter22', name: 'HTTP', acceptTerms: true },
@@ -3617,7 +3617,6 @@ async function httpSurface(): Promise<void> {
     body: { email: 'daily@verify.test', password: 'hunter22', name: 'Daily', acceptTerms: true },
   });
   const dailyToken = dailySignup.body.token as string;
-  await prove(dailyToken);
 
   /* The claim takes no body, so the only things that can vary between two calls
      are who is asking and what day it is — and the server owns both. */
@@ -4437,7 +4436,6 @@ async function httpSurface(): Promise<void> {
   const spender = await call('POST', '/v1/auth/signup', {
     body: { email: 'spender@verify.test', password: 'hunter22', name: 'Spender', acceptTerms: true },
   });
-  await prove(spender.body.token as string);
   await call('POST', '/v1/me/onboarded', { token: spender.body.token as string });
   const spenderId = (await w.db.get<{ id: string }>(`SELECT id FROM users WHERE email_norm = $e`, {
     e: 'spender@verify.test',
@@ -4947,11 +4945,10 @@ async function profileRules(): Promise<void> {
     },
     at,
   );
-  /* Both set directly, and for the same reason: the only route to `provider_ref`
-     is a verified Google token and the only route to `email_verified_at` is a
-     code out of an inbox, and what is being checked here is the *erasure*
-     rather than either of those flows. `verificationRules` exercises the code
-     path on its own. */
+  /* Both set directly, because what is being checked here is the *erasure* and
+     neither column has a route into it that this fixture could reach: one is
+     written by a verified Google token and the other is not written by anything
+     the server does. Erasure has to clear them whichever put them there. */
   await db.run(
     `UPDATE users SET provider_ref = 'google-sub-12345', email_verified_at = $t WHERE id = $u`,
     { t: at, u: doomed.id },
@@ -5799,190 +5796,6 @@ async function rateRules(): Promise<void> {
 }
 
 /**
- * Proving an address, and what an unproved one costs.
- *
- * The suite's own fixtures are stamped verified, deliberately — they stand in
- * for customers who signed up and confirmed a code, and every other rule here
- * is written for that person. So the *unverified* case gets a section of its
- * own rather than being the accidental default of every check in the file.
- *
- * Nothing here sends mail. `ports/email.ts`'s local adapter logs the code and
- * returns it on `Issued.code`, which is the whole reason that field exists: a
- * flow nobody can complete offline is a flow nobody will test.
- */
-async function verificationRules(): Promise<void> {
-  describe('proving an email address');
-
-  /* `world()` rather than a bare `:memory:`, because one of the checks below
-     plays a real round and a round needs a question bank — which arrives
-     through the import rather than through `seedPlatform`. The fixtures it
-     creates are verified; every account here is made fresh by `signUp` and is
-     therefore not. */
-  const w = await world();
-  const db = w.db;
-  const at = '2026-04-01T09:00:00.000Z';
-
-  const alice = await accounts.signUp(db, {
-    email: 'alice@verify.test',
-    password: 'correct horse',
-    name: 'Alice',
-    at,
-    acceptTerms: true,
-  });
-
-  /* A fresh account is unverified. Not a boolean on the row — a stamp — so
-     "when" is answerable and `null` is the state that gates. */
-  eq('a new account has not proved its address', alice.email_verified_at, null);
-  eq('…so the guard says no', await verification.verified(db, alice.id), false);
-  await throws('…and refuses with `not_verified`', 'not_verified', async () =>
-    await verification.assertVerified(db, alice.id),
-  );
-
-  /* An account with **no address** is not held to a rule about an address. A
-     provisional identity (1.1) plays before anybody signs up, and gating it
-     would make the play-first account unable to play. */
-  const guest = await accounts.provisional(db, 'device-verify-1', at);
-  eq('an account with no address has nothing to prove', await verification.verified(db, guest.id), true);
-
-  /* ── the code ── */
-  const first = await verification.issue(db, { userId: alice.id, at });
-  check('a code is sent', first.sent && typeof first.code === 'string' && first.code.length === 6, first.code);
-  eq('…and it expires when the config says', first.expiresAt, plusMinutes(at, CONFIG.auth.codeMinutes));
-
-  /* The cooldown, and it is not an error: asking again too soon is what an
-     honest person does when a message is slow, so it comes back `sent: false`
-     with a time on it. */
-  const tooSoon = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 0.5) });
-  eq('a resend inside the cooldown is refused rather than sent', tooSoon.sent, false);
-  eq('…and says when', tooSoon.nextSendAt, plusMinutes(at, CONFIG.auth.codeCooldownSeconds / 60));
-  eq('…and does not spend a send', tooSoon.sends, 1);
-
-  /* A wrong code costs an attempt and says how many are left. */
-  await throws('a wrong code is refused', 'validation_failed', async () =>
-    await verification.confirm(db, { userId: alice.id, code: '000000', at }),
-  );
-
-  /* Five wrong answers kills **this code**, whoever is asking and however
-     slowly — which is what makes six digits safe when a per-hour rate limit
-     would give a script all day. */
-  for (let i = 1; i < CONFIG.auth.codeAttempts; i += 1) {
-    await throws(`…attempt ${i + 1} too`, 'validation_failed', async () =>
-      await verification.confirm(db, { userId: alice.id, code: '000001', at }),
-    );
-  }
-  await throws('past the cap the code is dead, not merely wrong', 'cap_reached', async () =>
-    await verification.confirm(db, { userId: alice.id, code: first.code!, at }),
-  );
-
-  /* …including the right one, which is the point: the cap is on the code and
-     not on the guess. A new one is the only way forward. */
-  const second = await verification.issue(db, {
-    userId: alice.id,
-    at: plusMinutes(at, 5),
-    force: true,
-  });
-  check('a fresh code is sent', second.sent);
-  await throws('an expired code is refused, and says so', 'expired', async () =>
-    await verification.confirm(db, {
-      userId: alice.id,
-      code: second.code!,
-      at: plusMinutes(at, 5 + CONFIG.auth.codeMinutes + 1),
-    }),
-  );
-
-  const third = await verification.issue(db, {
-    userId: alice.id,
-    at: plusMinutes(at, 60),
-    force: true,
-  });
-  /* Whitespace and dashes are stripped: a code pasted out of an email arrives
-     with them, and refusing the right code for a space is the most annoying
-     possible failure. */
-  const confirmed = await verification.confirm(db, {
-    userId: alice.id,
-    code: ` ${third.code!.slice(0, 3)}-${third.code!.slice(3)} `,
-    at: plusMinutes(at, 61),
-  });
-  eq('the right code proves it', [confirmed.verified, confirmed.granted], [true, true]);
-  eq('…and the guard now says yes', await verification.verified(db, alice.id), true);
-  /* Idempotent, the same shape `completeOnboarding` uses: a retry and a second
-     device both get `granted: false` rather than an error. */
-  eq('a second confirm is not a second grant',
-    (await verification.confirm(db, { userId: alice.id, code: '999999', at: plusMinutes(at, 62) })).granted,
-    false);
-  await throws('…and a code cannot be asked for again', 'conflict', async () =>
-    await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 120) }),
-  );
-  /* The code row is gone — it has done its one job, and a table of spent
-     credentials has no reader. */
-  eq('the code is spent, not kept',
-    (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM email_verifications WHERE user_id = $u`, { u: alice.id }))?.n,
-    0);
-
-  /* ── the send ceiling ── */
-  const bob = await accounts.signUp(db, {
-    email: 'bob@verify.test',
-    password: 'correct horse',
-    name: 'Bob',
-    at,
-    acceptTerms: true,
-  });
-  for (let i = 0; i < CONFIG.auth.codeSendsPerAddress; i += 1) {
-    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, i * 5), force: true });
-  }
-  await throws('the send ceiling bounds using resend as a way to post mail', 'quota_exceeded', async () =>
-    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, 1000) }),
-  );
-
-  /* ── what it gates ── */
-  const carol = await accounts.signUp(db, {
-    email: 'carol@verify.test',
-    password: 'correct horse',
-    name: 'Carol',
-    at,
-    acceptTerms: true,
-  });
-
-  /* A round is **played** and banks nothing, which is the same shape practice
-     already had — and the reason is the same: taking the game away teaches
-     nobody anything about an email. */
-  const round = await games.startSession(db, {
-    userId: carol.id,
-    gameType: 'flags',
-    language: 'en',
-    at,
-  });
-  eq('an unverified round says up front that it will not pay',
-    [round.paid, round.unpaidReason], [false, 'unverified']);
-  const done = await games.finish(db, { sessionId: round.sessionId, userId: carol.id, at });
-  eq('…and it banks nothing', [done.paid, done.unpaidReason, done.score], [false, 'unverified', 0]);
-  eq('…so the balance has not moved', await ledger.balance(db, carol.id), 0);
-  /* And the tank is untouched, because an unpaid round writes `life_spent = 0`
-     — the same column `energyFor` filters on for a practice round. */
-  eq('…and no energy was taken', done.energyLeft, CONFIG.points.dailyEnergy);
-
-  /* The board. An unproved address does not appear on a public list of names. */
-  await db.run(
-    `INSERT INTO points_ledger (id, user_id, delta, reason, status, created_at)
-     VALUES ('led_unverified', $u, 500, 'game_win', 'committed', $t)`,
-    { u: carol.id, t: at },
-  );
-  await db.run(`UPDATE users SET leaderboard_opt_in = 1 WHERE id = $u`, { u: carol.id });
-  const board = await social.board(db, { scope: 'global', at: plusMinutes(at, 60) });
-  check('an unverified account is not listed on the board',
-    !board.rows.some((row) => row.userId === carol.id),
-    board.rows.map((row) => row.name).join(', '));
-  /* And once proved, it is — with the points it already had. Nothing is
-     retro-actively taken away; the gate is about being *listed*. */
-  await db.run(`UPDATE users SET email_verified_at = $t WHERE id = $u`, { t: at, u: carol.id });
-  const after = await social.board(db, { scope: 'global', at: plusMinutes(at, 60) });
-  check('…and is once it has proved the address',
-    after.rows.some((row) => row.userId === carol.id));
-
-  await db.close();
-}
-
-/**
  * The board's default, and the migration that reaches the rows that predate it.
  *
  * Both halves, because either alone leaves the rule half-applied: the column
@@ -6156,7 +5969,7 @@ async function wordBankRules(): Promise<void> {
   const counts = await w.db.all<{ language: string; n: number }>(
     `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language ORDER BY language`,
   );
-  check('the bank has both lists', counts.length >= 2, JSON.stringify(counts));
+  check('the bank has all three lists', counts.length >= 3, JSON.stringify(counts));
   for (const row of counts) {
     check(`${row.language} has enough words to sustain a round`, row.n > floor,
       `${row.n} words against a floor of ${floor}`);
@@ -6180,7 +5993,7 @@ async function wordBankRules(): Promise<void> {
   /* Every tier is represented in both lists, because the round is a ramp —
      `WORD_RAMP` asks for two tier-1, two tier-2 and one tier-3, and a list
      missing a rung makes the ramp quietly shorter. */
-  for (const language of ['en', 'pl']) {
+  for (const language of ['en', 'pl', 'ru']) {
     const tiers = await w.db.all<{ tier: number; n: number }>(
       `SELECT tier, COUNT(*) AS n FROM word_bank WHERE language = $l GROUP BY tier ORDER BY tier`,
       { l: language },
@@ -7148,7 +6961,6 @@ async function run(): Promise<void> {
   sqliteOnlySql();
   postgresLockdown();
   await rateLimits();
-  await verificationRules();
   await boardDefaultRules();
   await bootOrdering();
   await ledgerRules();

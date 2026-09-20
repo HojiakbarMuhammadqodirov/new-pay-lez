@@ -987,6 +987,12 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
   const wordLists: Array<[string, string]> = [
     ['en', 'paylez-words-en.json'],
     ['pl', 'paylez-words-pl.json'],
+    /* Russian is the list Uzbekistan practises — `wordListFor` on the front end
+       routes `UZ` here rather than to Polish, which is a language nobody in
+       Tashkent is being asked to learn. The round is built from
+       `sessions.language`, so this row is what stops a signed-in Russian reader
+       falling through `not_found` onto the browser's own copy of the bank. */
+    ['ru', 'paylez-words-ru.json'],
   ];
   let wordsFound = 0;
   for (const [language, name] of wordLists) {

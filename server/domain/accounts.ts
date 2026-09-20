@@ -79,7 +79,7 @@ export interface User {
   points_cache: number;
   leaderboard_opt_in: number;
   referral_code: string | null;
-  /** When the address was proved, or null. See `domain/verification.ts`. */
+  /** When the address was proved, or null. Written by the Google exchange. */
   email_verified_at: string | null;
   /** Shares with the venues this account visits, unless switched off (§1.4). */
   venue_sharing_default: number;
@@ -247,16 +247,28 @@ export interface SignUpInput {
   /**
    * That the terms and the privacy policy were actually agreed to.
    *
-   * **Required, and refused when absent.** It used to be neither: sign-up wrote
-   * two `consent_records` rows unconditionally, on the argument that creating
-   * the account *is* the moment consent is recorded — which is true about the
+   * **Recorded when true, and never inferred.** Sign-up used to write two
+   * `consent_records` rows unconditionally, on the argument that creating the
+   * account *is* the moment consent is recorded — which is true about the
    * moment and false about the consent. Nobody had been asked. A row saying
    * somebody agreed to a document on a day they were never shown it is worse
    * than no row, because it is the row that would be produced as evidence.
    *
-   * Optional in the *type* so the field can be absent on the wire and refused
-   * with a message, rather than being a 400 from `bool()` that says
-   * "acceptTerms is required" and nothing about what it is for.
+   * **Absent is not refused, and that is a decision about clients rather than
+   * about consent.** It was refused for a while, and the refusal landed on the
+   * one client that cannot be changed: the Flutter app already on people's
+   * phones does not send this field and cannot be taught to retrospectively.
+   * Nor can the gate be narrowed to the web — `surface` is client-declared and
+   * *defaults to `'web'` when a client says nothing*, so the shipped app would
+   * have been refused by the exemption written to spare it. Refusing therefore
+   * bought no consent at all; it bought a sign-up screen that fails for
+   * everybody who has not updated, and fails for the people least likely to
+   * report it.
+   *
+   * So the asking lives on the surface that can ask — `signin.tsx` keeps the
+   * submit disabled until the box is ticked — and the recording follows the
+   * asking. A client that has not asked gets an account and no consent row,
+   * which is the honest record of what happened.
    */
   acceptTerms?: boolean;
   /* No `deviceFingerprint`. The device belongs to the *session*, and the session
@@ -277,18 +289,6 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     throw new DomainError('validation_failed', 'password is too short', { field: 'password' });
   }
   const name = checkName(input.name);
-  /*
-   * §1.3. Refused before the address is even checked for collisions, because
-   * this is the one refusal that is about the *request* rather than about the
-   * account: an unagreed sign-up should not tell somebody whether an address is
-   * taken either.
-   */
-  if (input.acceptTerms !== true) {
-    throw new DomainError('validation_failed', 'the terms have to be accepted', {
-      field: 'acceptTerms',
-      policyVersion: CONFIG.privacy.policyVersion,
-    });
-  }
   if (await db.get(`SELECT 1 FROM users WHERE email_norm = $e`, { e: email })) {
     throw new DomainError('conflict', 'that address already has an account', { field: 'email' });
   }
@@ -328,18 +328,26 @@ export async function signUp(db: Db, input: SignUpInput): Promise<User> {
     /*
      * §1.3: consent is recorded at account creation with the policy version.
      *
-     * Reached only past the guard above, which is the whole change: these two
-     * rows are now evidence that somebody was asked and said yes, rather than a
-     * side effect of an account existing. `policy_version` and `recorded_at`
+     * **Conditional, and that is the whole of it.** These two rows are evidence
+     * that somebody was asked and said yes, rather than a side effect of an
+     * account existing — so a client that did not ask writes neither, and the
+     * account simply has no consent on file. `policy_version` and `recorded_at`
      * come from `consent.record`, so the *which document* and the *when* are on
      * the row rather than inferred from the account's creation date.
+     *
+     * The absence is reportable and repairable: `GET /v1/me/consents` answers
+     * `granted: false`, and `POST /v1/me/consents` is how it arrives later, on
+     * the day the client grows a screen that asks. That is the whole migration
+     * path for a client that ships on its own schedule.
      *
      * Both kinds, because the form asks about both in one sentence and a
      * checkbox that covered one of two documents would be the same dishonesty
      * one step smaller.
      */
-    await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
-    await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+    if (input.acceptTerms === true) {
+      await consent.record(db, { userId: id, kind: 'terms', granted: true, source: 'signup', at });
+      await consent.record(db, { userId: id, kind: 'privacy', granted: true, source: 'signup', at });
+    }
 
     await social.codeFor(db, id);
 
@@ -419,10 +427,12 @@ export async function linkGoogleAccount(
 
        **And the address is proved by this.** `crypto/google.ts` refuses an
        identity whose `email_verified` claim is false, so arriving here is
-       evidence that this person controls the address — which is exactly what a
-       code sent to it would have established. `COALESCE` rather than a
-       straight set, so an account that proved it with a code keeps the moment
-       it actually did. */
+       evidence that this person controls the address. Nothing reads the column
+       today — the flow that did was postponed until there is a transport to
+       send from — and it is still written, because the evidence exists at this
+       moment and nowhere later: a stamp not taken now is a stamp that would
+       have to be invented afterwards. `COALESCE` so a row that already carries
+       one keeps the moment it actually happened. */
     await db.run(
       `UPDATE users
           SET provider_ref = $s,
@@ -438,12 +448,13 @@ export async function linkGoogleAccount(
   const id = newId('usr');
   await db.tx(async () => {
     await db.run(
-      /* `email_verified_at` is stamped on the way in, and it is not an
-         exception to the rule that every address is proved — it is the rule
-         already satisfied. `crypto/google.ts` throws on an identity whose
-         `email_verified` claim is false, so this row cannot exist unless
-         Google has asserted the address. Sending a code to it would be asking
-         somebody to prove something we have cryptographic evidence of. */
+      /* `email_verified_at` is stamped on the way in. `crypto/google.ts` throws
+         on an identity whose `email_verified` claim is false, so this row
+         cannot exist unless Google has asserted the address — the evidence is
+         cryptographic and it is available exactly here. Nothing reads the
+         column at the moment; it is written anyway for the reason the UPDATE
+         above gives, which is that this is the only moment the fact is known
+         for free. */
       `INSERT INTO users (id, email, email_norm, display_name, password_hash, auth_provider,
                           provider_ref, language, status, email_verified_at, created_at, updated_at)
        VALUES ($i, $e, $n, $d, NULL, 'google', $s, $l, 'active', $t, $t, $t)`,

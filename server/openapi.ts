@@ -891,9 +891,12 @@ const DOCS: Record<string, Doc> = {
   'POST /v1/auth/signup': {
     summary: 'Create an account',
     description:
-      'Records terms and privacy consent with the policy version, mints a referral ' +
-      'code, and — if `provisionalId` is sent — folds the guest identity in so points ' +
-      'earned before signing up survive.\n\n' +
+      'Mints a referral code, and — if `provisionalId` is sent — folds the guest ' +
+      'identity in so points earned before signing up survive.\n\n' +
+      'Records terms and privacy consent with the policy version **when `acceptTerms` ' +
+      'is sent**, and not otherwise: a consent row is evidence that somebody was asked, ' +
+      'so a client that did not ask writes none. `POST /v1/me/consents` is how it ' +
+      'arrives later.\n\n' +
       '**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, ' +
       'because an address and a password can be produced in bulk and a gift attached to ' +
       'producing them funds a farm.',
@@ -911,6 +914,11 @@ const DOCS: Record<string, Doc> = {
           'one of `GET /v1/cities` — those own their country.',
       ),
       partner: bool('Grants the partner_owner role. Never grants admin.'),
+      acceptTerms: bool(
+        'Send `true` only when the person has been shown the Terms and the Privacy ' +
+          'Policy and agreed. Optional, and absent is not refused: a required field ' +
+          'cannot be added to a client that is already installed.',
+      ),
       referralCode: str('The code of whoever invited them.'),
       provisionalId: str('The guest account to merge in.'),
       device: str('A stable device fingerprint. Used for multi-account detection.'),

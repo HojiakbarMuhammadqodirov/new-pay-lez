@@ -3090,7 +3090,7 @@ console.log('\nthe card previews show real game content');
     new Set(PREVIEW.memory.map((card) => card.label)).size === 3
       && PREVIEW.memory.length === 3);
 
-  for (const list of ['en', 'pl'] as const) {
+  for (const list of ['en', 'pl', 'ru'] as const) {
     const rows = dataFile(`words.${list}.json`) as Array<[string, string, number]>;
     const row = PREVIEW.word[list];
     const real = rows.find((entry) => entry[0] === row.word);
@@ -3300,29 +3300,31 @@ console.log('\nthe daily game, and the region rule');
    * ── the region rule ──
    *
    * The local Word Builder promises "practise the language of the place you
-   * moved to". Uzbekistan had no word list and was being handed the **Polish**
-   * one, which is the card saying something false — and worse than saying
-   * nothing, because a player cannot tell until they are five words in.
+   * moved to". Uzbekistan was being handed the **Polish** one, which is the
+   * card saying something false — and worse than saying nothing, because a
+   * player cannot tell until they are five words in. It has a Russian list of
+   * its own now.
    *
-   * Three answers, and the third is the new one: a list where there is one, the
-   * Poland default for a country the product has not localised for at all
-   * (including an account with no city), and *nothing* for a country it has
-   * localised for and has no list for.
+   * Three answers: a list where there is one, the Poland default for a country
+   * the product has not localised for at all (including an account with no
+   * city), and *nothing* for a country it has localised for and has no list
+   * for. No country takes that third branch today — it is what a sixth country
+   * gets on the day its quiz bank lands and its word list has not — so it is
+   * pinned below through `visible(null)`, which is the consequence that
+   * matters rather than the value that produces it.
    */
   check('Poland gets the Polish list', wordListFor('PL') === 'pl');
+  check('Uzbekistan gets the Russian list, not the Polish one', wordListFor('UZ') === 'ru');
+  check('…folded, so `uz` and ` UZ ` are the same country', wordListFor(' uz ') === 'ru');
   check('an unknown country still gets the market default', wordListFor('FR') === 'pl');
   check('…and so does an account with no city yet', wordListFor(undefined) === 'pl');
-  check('Uzbekistan gets no local word list rather than the Polish one',
-    wordListFor('UZ') === null);
-  check('…folded, so `uz` and ` UZ ` are the same country', wordListFor(' uz ') === null);
-
   /* And the card is then not drawn. The filter is `games.tsx`'s and is restated
      here as the property it has to have, because the alternative — a card whose
      `list` is null — is a crash on the Play screen. */
-  const visible = (list: 'en' | 'pl' | null) =>
+  const visible = (list: 'en' | 'pl' | 'ru' | null) =>
     GAMES.filter((game) => game.id !== 'wordLocal' || list !== null);
   check('a player with no local list sees one Word Builder',
-    visible(wordListFor('UZ')).filter((game) => game.kind === 'word').length === 1);
+    visible(null).filter((game) => game.kind === 'word').length === 1);
   check('…and a player with one sees two',
     visible(wordListFor('PL')).filter((game) => game.kind === 'word').length === 2);
 
@@ -3449,7 +3451,7 @@ console.log('\nthe currency is its own setting');
   }
 
   /* 2. Every offered currency has the two things a *price tag* needs, which is
-        why this set is five and not the nineteen `fx.ts` carries: a rounding
+        why this set is seven and not the nineteen `fx.ts` carries: a rounding
         step, so a converted price is not an exchange-rate artefact, and a rate
         read from the one anchored table. */
   for (const code of CURRENCY_ORDER) {
@@ -3472,7 +3474,7 @@ console.log('\nthe currency is its own setting');
   const perCurrency = new Set(
     CURRENCY_ORDER.map((code) => money(amount, CURRENCIES[code], 'price', GROUP_FOR_LANGUAGE.en)),
   );
-  check('…and five currencies write five different prices',
+  check('…and every currency writes a different price',
     perCurrency.size === CURRENCY_ORDER.length, [...perCurrency].join(' | '));
 
   /* 4. Grouping follows the **reader**, not the currency — the rule `fx.ts`
@@ -5162,10 +5164,6 @@ console.log('\nhydration — what the server says an account is');
       id: 'u_server', email: 'kasia@example.com', name: 'Kasia', username: null, language: 'en',
       city: null, countryCode: null, avatar: null, phone: null, occupation: null, birthDate: null,
       birthDateChangesLeft: 2, profileCompletedAt: null, onboardedAt: null, trustTier: 0,
-      /* Proved, because this fixture stands in for an account the mirror is
-         being asked to fold — and the unverified case is not what these checks
-         are about. The server's own suite has a section for it. */
-      emailVerifiedAt: '2026-03-01T09:05:00Z',
       /* On, which is the default — these checks are about the mirror folding a
          server answer, not about §1.4. */
       venueSharingDefault: true,

@@ -68,10 +68,10 @@ export interface Currency {
 /**
  * The currencies the site prices itself in, keyed by ISO code.
  *
- * Five, and **deliberately not the nineteen** `fx.ts` carries. Those are the
+ * Seven, and **deliberately not the nineteen** `fx.ts` carries. Those are the
  * Relocate converter's — anything somebody might want to convert — and these
  * are the ones this product *quotes a price in*, which needs a `step` (what a
- * price tag rounds to) and a grouping decision per currency. Adding a sixth is
+ * price tag rounds to) per currency. Adding an eighth is
  * one row here plus a name in all five dictionaries, and the type makes the
  * second half a build error.
  *
@@ -85,10 +85,22 @@ export const CURRENCIES = {
   UZS: { symbol: FX.UZS.symbol, before: false, group: ' ', rate: FX.UZS.rate, step: 10000, decimals: FX.UZS.decimals },
   RUB: { symbol: FX.RUB.symbol, before: false, group: ' ', rate: FX.RUB.rate, step: 100, decimals: FX.RUB.decimals },
   UAH: { symbol: FX.UAH.symbol, before: false, group: ' ', rate: FX.UAH.rate, step: 50, decimals: FX.UAH.decimals },
+  EUR: { symbol: FX.EUR.symbol, before: true, group: ' ', rate: FX.EUR.rate, step: 5, decimals: FX.EUR.decimals },
+  USD: { symbol: FX.USD.symbol, before: true, group: ',', rate: FX.USD.rate, step: 5, decimals: FX.USD.decimals },
 } as const satisfies Record<string, Currency>;
 
-/** The codes the switcher offers, in the order it offers them. */
-export const CURRENCY_ORDER = ['GBP', 'PLN', 'UZS', 'RUB', 'UAH'] as const;
+/**
+ * The codes the switcher offers, in the order it offers them.
+ *
+ * The five a language defaults to come first, in the language menu's own order,
+ * so the two controls in the header read in the same sequence. `EUR` and `USD`
+ * follow because no language picks them, and a currency nobody's language picks
+ * is exactly the one somebody has to reach for deliberately: a reader in
+ * Tashkent quoted in soum may still think in dollars, and the euro is the unit
+ * every amount in this repository is written in, so choosing it is the one
+ * setting that converts nothing at all.
+ */
+export const CURRENCY_ORDER = ['GBP', 'PLN', 'UZS', 'RUB', 'UAH', 'EUR', 'USD'] as const;
 
 export type CurrencyCode = (typeof CURRENCY_ORDER)[number];
 

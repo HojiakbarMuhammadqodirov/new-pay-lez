@@ -838,15 +838,20 @@ export const PREVIEW = {
   /**
    * One row from each word list, `[word, hint]` out of `words.<list>.json`.
    *
-   * Two different words, because the catalogue now has two Word Builders and a
-   * card should preview the round it will actually deal — the English card
-   * builds an English word and the local card a Polish one. The hints are
-   * English in both files (see `WordList` in `games/banks.ts`), which is what
-   * the real game shows too.
+   * One per list, because the catalogue has two Word Builders and a card should
+   * preview the round it will actually deal — the English card builds an
+   * English word, and the local card builds whichever list the profile's
+   * country routes to. The hints are English in every file (see `WordList` in
+   * `games/banks.ts`), which is what the real game shows too.
+   *
+   * Every pair here has to exist verbatim in its own `data/words.*.json`, and
+   * `npm run verify` reads the real files to prove it: a preview is only worth
+   * more than a decoration while it is the game's own content.
    */
   word: {
     en: { word: 'BREAD', hint: 'You buy this at a bakery' },
     pl: { word: 'KAWA', hint: 'You order this in a café' },
+    ru: { word: 'ХЛЕБ', hint: 'You buy this at a bakery' },
   },
 } as const;
 
