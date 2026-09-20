@@ -49,6 +49,26 @@ const NEVER = '9999-12-31T23:59:59.999Z';
 /** Every language any table in the export carries copy in. */
 const LANGS = ['en', 'pl', 'uz', 'ru', 'uk', 'tr', 'az'] as const;
 
+/**
+ * The word-list languages this importer ships, and the list `main.ts` decides
+ * whether to re-import by.
+ *
+ * Exported because the boot gate cannot be written without it. That gate asks
+ * which banks are too small to sustain a round, and it asked the *table* — a
+ * `GROUP BY language`, which can only ever name a language that already has
+ * rows. A list added after a database was first filled therefore has no rows,
+ * appears in no group, and is starved in the one way the query cannot see. That
+ * is what happened to `ru`, and it is the same trap the quiz banks were fixed
+ * for one gate up: the question is "what can the code ask for", and only the
+ * code knows.
+ *
+ * Russian is here because `wordListFor` routes `UZ` to it — Uzbekistan was
+ * being handed Polish, a language nobody in Tashkent is being asked to learn.
+ * The round is built from `sessions.language`, so without these rows a signed-in
+ * Russian reader falls through `not_found` onto the browser's own copy.
+ */
+export const WORD_LANGUAGES = ['en', 'pl', 'ru'] as const;
+
 export interface ImportSummary {
   counts: Record<string, number>;
   notes: string[];
@@ -984,16 +1004,10 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
    * this runs after it — `INSERT OR REPLACE` on a derived id, so the export
    * wins where the two overlap and the placeholder survives where it does not.
    */
-  const wordLists: Array<[string, string]> = [
-    ['en', 'paylez-words-en.json'],
-    ['pl', 'paylez-words-pl.json'],
-    /* Russian is the list Uzbekistan practises — `wordListFor` on the front end
-       routes `UZ` here rather than to Polish, which is a language nobody in
-       Tashkent is being asked to learn. The round is built from
-       `sessions.language`, so this row is what stops a signed-in Russian reader
-       falling through `not_found` onto the browser's own copy of the bank. */
-    ['ru', 'paylez-words-ru.json'],
-  ];
+  const wordLists: Array<[string, string]> = WORD_LANGUAGES.map((language) => [
+    language,
+    `paylez-words-${language}.json`,
+  ]);
   let wordsFound = 0;
   for (const [language, name] of wordLists) {
     let rows: Array<{ word?: unknown; hint?: unknown; tier?: unknown }> = [];

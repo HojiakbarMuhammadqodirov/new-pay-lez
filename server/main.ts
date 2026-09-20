@@ -20,7 +20,7 @@ import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
 import { openDb as openPgDb } from './db/pg.ts';
-import { importLegacy } from './db/import.ts';
+import { WORD_LANGUAGES, importLegacy } from './db/import.ts';
 import { provisionAdmin } from './domain/accounts.ts';
 import { QUIZZES } from './domain/games.ts';
 import { seedPlatform } from './domain/settings.ts';
@@ -143,12 +143,25 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
    * So the threshold is the arithmetic rather than a number: anything at or
    * under `recentWindow + wordsPerRound` in a language the product ships is a
    * bank that cannot sustain play, and the import is what fills it.
+   *
+   * **And it is asked of the code's list rather than of the table's.** This was
+   * a `GROUP BY language HAVING COUNT(*) <= $floor`, which can only ever name a
+   * language that already has rows — so a list added after this database was
+   * first filled has none, appears in no group, and is starved in the one way
+   * the query cannot see. `ru` was exactly that, which would have made this
+   * deploy ship a card whose words never arrived. `WORD_LANGUAGES` is what the
+   * importer ships, so zero rows now reads as the emptiest bank there is rather
+   * than as no bank at all — the same correction the quiz gate above already
+   * carries, for the same reason.
    */
-  const starved = await db.all<{ language: string; n: number }>(
-    `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language
-      HAVING COUNT(*) <= $floor`,
-    { floor: CONFIG.games.recentWindow + CONFIG.games.wordsPerRound },
+  const counted = await db.all<{ language: string; n: number }>(
+    `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language`,
   );
+  const floor = CONFIG.games.recentWindow + CONFIG.games.wordsPerRound;
+  const starved = WORD_LANGUAGES.map((language) => ({
+    language,
+    n: counted.find((row) => row.language === language)?.n ?? 0,
+  })).filter((row) => row.n <= floor);
 
   if (options.reimport || venues === 0 || missing.length > 0 || short.length > 0 || starved.length > 0) {
     if (!options.quiet && starved.length > 0) {
