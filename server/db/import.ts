@@ -1029,6 +1029,41 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
       wordsFound += 1;
     }
   }
+  /*
+   * The hints, in the reader's language.
+   *
+   * Both exports write every clue in English, which is right for somebody
+   * reading the site in English and was the bug for everybody else: a Russian
+   * reader spelling OFFICE was handed "A place where people work at desks".
+   * `paylez-word-hints.json` maps each English clue to its translations, and
+   * they land in `translations` under the word's own id, so `buildWords` can
+   * pick the reader's and fall back to the column. Keyed by the clue rather than
+   * by the word because the two lists share their clues — KAWA and COFFEE are
+   * both "You order this in a café" — except where a Polish clue would have
+   * spelled the Polish answer, which the file carries as `byWord` overrides.
+   */
+  let hintFile: {
+    hints?: Record<string, Record<string, string>>;
+    byWord?: Record<string, Record<string, string>>;
+  } = {};
+  try {
+    hintFile = JSON.parse(readFileSync(join(banksDir, 'paylez-word-hints.json'), 'utf8'));
+  } catch {
+    hintFile = {};
+  }
+  const words = await db.all<{ id: string; language: string; word: string; hint: string | null }>(
+    `SELECT id, language, word, hint FROM word_bank`,
+  );
+  for (const row of words) {
+    const byHint = row.hint ? hintFile.hints?.[row.hint] ?? {} : {};
+    const override = hintFile.byWord?.[`${row.language}:${row.word.toUpperCase()}`] ?? {};
+    for (const [lang, value] of Object.entries({ ...byHint, ...override })) {
+      if (lang === 'en' || typeof value !== 'string') continue;
+      await putText('word', row.id, 'hint', lang, value);
+      bump('word_hints');
+    }
+  }
+
   if (wordsFound === 0) {
     notes.push(
       `word bank: no words found in ${banksDir}/paylez-words-*.json — the Word ` +

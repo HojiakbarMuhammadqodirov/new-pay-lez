@@ -12714,6 +12714,12 @@ button {
   justify-content: center;
 }
 
+/* In the column a basis is a height — the same trap `.play-deck
+   .play-hero-main` names — so the prompt sizes to its sentence there. */
+.play-deck .play-hero-tasks {
+  flex: 0 0 auto;
+}
+
 /* ── the energy gauge ──────────────────────────────────────────────────────
  *
  * The count, the cap, and when the next one lands — which is the whole economy
@@ -13670,6 +13676,7 @@ button {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+  transition: opacity 260ms var(--ease);
 }
 
 .play-ico {
@@ -13861,6 +13868,7 @@ button {
 
   .play-card,
   .play-card-main,
+  .play-card-head,
   .play-card-tail {
     transition: none;
   }
@@ -13948,6 +13956,27 @@ button {
 @media (hover: hover) {
   .play-card:hover:not(:disabled) .play-prev {
     opacity: 1;
+  }
+
+  /*
+   * The head steps out and the band takes its room.
+   *
+   * The band was inset below the icon row, which left a quiz's question and
+   * four options about 5rem of height on a grid card — so the Poland Quiz's
+   * options ran up into the icon tile. On hover the icon and the daily badge
+   * have nothing left to say (the name is still on the card), so they fade and
+   * the band starts at the card's own padding instead.
+   */
+  .play-card:hover:not(:disabled) .play-card-head {
+    opacity: 0;
+  }
+
+  .play-card:hover:not(:disabled) .play-prev {
+    top: 1.1rem;
+  }
+
+  .play-card-lead:hover:not(:disabled) .play-prev {
+    top: clamp(1.3rem, 3vw, 1.9rem);
   }
 
   .play-card:hover:not(:disabled) .play-prev * {
@@ -31289,58 +31318,42 @@ p.lst-soft {
   }
 }
 
-/* ══════════════════════════════════════════════════════ today's list ══
+/* ══════════════════════════════════════════ the daily tasks, in the card ══
  *
- * The rotating daily-task prompt above the streak row (`TaskList` in
- * `games.tsx`). It replaced an empty box.
+ * The rotating daily-task prompt inside the points card (`PointsTasks` in
+ * `games.tsx`). It was a box of its own under the deck, "Today's list", while
+ * the card above it sat half empty; the prompts are all ways to earn points, so
+ * they live in the panel about points.
  *
  * **The type is fluid and the box is not measured.** These prompts are whole
  * sentences in five languages and they are not the same length in any two of
- * them — the Ukrainian check-in line runs about half again the English one, and
- * the Uzbek invite line longer still. A panel with a fixed height clips the
- * longest; a panel with a fixed font size either sets the longest too small to
- * read on a phone or the shortest too large for the row. So the size is a
- * two-point `clamp` (the form the responsive note in `CLAUDE.md` names: a clamp
- * with a floor stops being fluid, and this one keeps moving all the way down to
- * 320px) and the height is whatever the sentence needs.
+ * them. A fixed height clips the longest; a fixed font size either sets the
+ * longest too small to read on a phone or the shortest too large for the card.
+ * So the size is a two-point `clamp` (the form the responsive note in
+ * `CLAUDE.md` names: a clamp with a floor stops being fluid, and this one keeps
+ * moving all the way down to 320px) and the height is whatever the sentence
+ * needs.
  *
  * `min-height` is set to two lines rather than one, and that is the one measured
- * number here: without it the panel changes height every fifteen seconds as the
+ * number here: without it the card changes height every fifteen seconds as the
  * prompt rotates between a short line and a long one, and a box that resizes on
- * a timer drags the whole page under the cursor. Two lines is what the longest
- * of these needs at phone width, so the panel is still on every rung.
+ * a timer drags the whole page under the cursor.
+ *
+ * A hairline above it rather than a panel around it: it is part of the card,
+ * and a box inside a lit card is a second card.
  */
-.play-tasks {
+.play-hero-tasks {
   position: relative;
+  /* A whole row of the card whether it is laid out as a row that wraps (full
+     width) or as a column (inside the deck) — the prompt spans under the
+     button rather than squeezing beside it. */
+  flex: 1 1 100%;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
-  padding: clamp(1rem, 2.6vw, 1.35rem) clamp(1.1rem, 3vw, 1.6rem);
-  margin-bottom: 1.1rem;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-/* Matched to `.play-energy-kicker` and `.play-run-kicker` rather than given its
-   own treatment: this is the third panel in the same column and a heading that
-   looked different would read as a different kind of thing. */
-.play-tasks-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-fnt);
-}
-
-.play-tasks-kicker i {
-  display: inline-flex;
-  color: var(--accent-lit);
+  min-width: 0;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--border);
 }
 
 /*
@@ -31356,8 +31369,8 @@ p.lst-soft {
   margin: 0;
   min-height: 2.9em;
   min-height: 2lh;
-  font-size: clamp(0.94rem, 0.82rem + 0.55vw, 1.12rem);
-  line-height: 1.45;
+  font-size: clamp(1.02rem, 0.88rem + 0.6vw, 1.25rem);
+  line-height: 1.4;
   font-weight: 600;
   color: var(--text);
   /* No `white-space: nowrap`, no `text-overflow: ellipsis` and no line clamp:

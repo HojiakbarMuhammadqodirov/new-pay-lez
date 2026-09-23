@@ -583,6 +583,10 @@ export const authRoutes: Route[] = [
         /* §1.4 is a *separate* list on purpose: bundling it under "consents"
            is the presentational version of bundling it into the terms. */
         dataSharing: await consent.sharingWith(ctx.db, user.id),
+        /* Venue ids switched off and not back on. Additive: it is what lets a
+           client draw an undecided venue by the account's default and a
+           declined one as off. */
+        sharingWithdrawn: await consent.sharingWithdrawn(ctx.db, user.id),
       };
     },
   },

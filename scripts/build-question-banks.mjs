@@ -475,12 +475,39 @@ writeFileSync(join(OUT, 'decks.json'), JSON.stringify(decks));
  * length. The two lists are separate and must not drift: a word that is medium on
  * the site and hard on the phone pays differently for the same answer.
  */
+/*
+ * The clues, in the reader's language.
+ *
+ * Both exports write every clue in English. `paylez-word-hints.json` translates
+ * them, keyed by the English clue, and each list is written once more per
+ * reading language as `words.<list>.<language>.json` — the same rows in the
+ * same order, so the no-repeat bag keyed on the list means the same word in
+ * every one of them. A clue the file does not carry is a build failure rather
+ * than an English line on a Russian page, which is the bug this exists for.
+ */
+const HINT_LANGUAGES = ['pl', 'ru', 'uz', 'uk'];
+const hintFile = JSON.parse(readFileSync(join(SRC, 'paylez-word-hints.json'), 'utf8'));
+
 for (const lang of ['en', 'pl']) {
-  const words = JSON.parse(
+  const entries = JSON.parse(
     readFileSync(join(SRC, `paylez-words-${lang}.json`), 'utf8'),
-  ).words.map((entry) => [entry.word, entry.hint, entry.tier]);
+  ).words;
+  const words = entries.map((entry) => [entry.word, entry.hint, entry.tier]);
   writeFileSync(join(OUT, `words.${lang}.json`), JSON.stringify(words));
   written.push([`words.${lang}`, Buffer.byteLength(JSON.stringify(words))]);
+
+  for (const reader of HINT_LANGUAGES) {
+    const translated = entries.map((entry) => {
+      const hint =
+        hintFile.byWord?.[`${lang}:${entry.word}`]?.[reader] ?? hintFile.hints?.[entry.hint]?.[reader];
+      if (typeof hint !== 'string' || !hint.trim()) {
+        throw new Error(`paylez-word-hints.json has no ${reader} clue for "${entry.hint}" (${entry.word})`);
+      }
+      return [entry.word, hint, entry.tier];
+    });
+    writeFileSync(join(OUT, `words.${lang}.${reader}.json`), JSON.stringify(translated));
+    written.push([`words.${lang}.${reader}`, Buffer.byteLength(JSON.stringify(translated))]);
+  }
 }
 
 console.log(

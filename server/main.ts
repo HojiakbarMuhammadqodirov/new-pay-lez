@@ -150,7 +150,26 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
     { floor: CONFIG.games.recentWindow + CONFIG.games.wordsPerRound },
   );
 
-  if (options.reimport || venues === 0 || missing.length > 0 || short.length > 0 || starved.length > 0) {
+  /*
+   * **A word bank whose hints have never been translated.** The fourth of the
+   * same shape: `updates/paylez-word-hints.json` arrived after most databases
+   * were filled, and a gate that only asks whether the words are there would
+   * leave every Russian reader on English clues for good. The import writes
+   * them beside the words, so this is one count and the same re-run.
+   */
+  const hintsTranslated =
+    (await db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM translations WHERE entity = 'word' AND field = 'hint'`,
+    ))?.n ?? 0;
+  const untranslated = hintsTranslated === 0;
+
+  if (
+    options.reimport || venues === 0 || missing.length > 0 || short.length > 0 ||
+    starved.length > 0 || untranslated
+  ) {
+    if (!options.quiet && untranslated && venues > 0) {
+      console.log('re-importing: word hints have no translations');
+    }
     if (!options.quiet && starved.length > 0) {
       console.log(
         're-importing: word bank too small to sustain a round in ' +

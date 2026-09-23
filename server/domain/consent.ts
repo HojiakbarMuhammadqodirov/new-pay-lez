@@ -183,14 +183,57 @@ export async function setSharingDefault(db: Db, userId: string, on: boolean): Pr
  * tables would be a revocation with a dozen places to be incomplete.
  */
 export async function revokeSharing(db: Db, userId: string, venueId: string, at: Iso = now()): Promise<boolean> {
-  return (
+  const revoked =
     (await db.run(
       `UPDATE data_sharing_consents SET revoked_at = $t
         WHERE user_id = $u AND venue_id = $v AND revoked_at IS NULL`,
       { t: at, u: userId, v: venueId },
-    )).changes > 0
+    )).changes > 0;
+  if (revoked) return true;
+
+  /*
+   * **A "no" said before any grant existed is still a "no", and it is written
+   * down.** The venue sheet draws the switch *on* for a venue the player has
+   * not decided about yet, because that is what `venue_sharing_default` will
+   * do at their first visit. Switching it off there has no row to revoke — and
+   * returning without writing one would let `grantSharingByDefault` grant it
+   * anyway at the till, overruling the one opinion it must never overrule.
+   *
+   * So the refusal is a row granted and revoked in the same instant. Every
+   * reader of a grant filters on `revoked_at IS NULL` and never sees it;
+   * `grantSharingByDefault` looks for *any* row and does.
+   */
+  const seen = await db.get<{ id: string }>(
+    `SELECT id FROM data_sharing_consents WHERE user_id = $u AND venue_id = $v`,
+    { u: userId, v: venueId },
   );
+  if (seen) return false;
+  await db.run(
+    `INSERT INTO data_sharing_consents
+       (id, user_id, venue_id, scope, granted_at, revoked_at, policy_version)
+     VALUES ($i, $u, $v, 'venue_profile', $t, $t, $p)`,
+    { i: newId('dsc'), u: userId, v: venueId, t: at, p: CONFIG.privacy.policyVersion },
+  );
+  return true;
 }
+
+/**
+ * The venues this account has said no to and not since said yes — a revoked row
+ * with no live one beside it. What the venue sheet needs to tell "switched off"
+ * from "never decided", which the live list alone cannot: both are absent from
+ * it, and only the second follows the account's default.
+ */
+export const sharingWithdrawn = async (db: Db, userId: string) =>
+  (
+    await db.all<{ venue_id: string }>(
+      `SELECT DISTINCT d.venue_id FROM data_sharing_consents d
+        WHERE d.user_id = $u AND d.revoked_at IS NOT NULL
+          AND NOT EXISTS (SELECT 1 FROM data_sharing_consents l
+                           WHERE l.user_id = d.user_id AND l.venue_id = d.venue_id
+                             AND l.revoked_at IS NULL)`,
+      { u: userId },
+    )
+  ).map((row) => row.venue_id);
 
 export const sharingWith = async (db: Db, userId: string) =>
   await db.all<{ venue_id: string; name: string; granted_at: string }>(

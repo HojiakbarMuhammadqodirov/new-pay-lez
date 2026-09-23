@@ -275,8 +275,10 @@ export const WORD_RAMP = [1, 1, 2, 2, 3];
 export async function buildWordRound(
   list: WordList,
   count: number,
+  /** The reader's language, which the clues are written in. */
+  language?: string,
 ): Promise<WordRow[]> {
-  const words = await loadWords(list);
+  const words = await loadWords(list, language);
 
   const byTier = new Map<number, number[]>();
   words.forEach((word, index) => {

@@ -21,7 +21,7 @@ export const en = {
    */
   nav: {
     home: 'Home',
-    learn: 'L-Earn',
+    learn: 'Play & Earn',
     analytics: 'Analytics',
     business: 'Business',
     /* The same route as `learn`, under the word an owner needs. See
@@ -950,7 +950,7 @@ export const en = {
   /* ────────────────────────────────────────────────────────────── games ── */
 
   games: {
-    title: 'Brain Games',
+    title: 'Play & Earn',
     lede: 'Challenge yourself, earn points and convert them into discount vouchers.',
 
     score: 'Score',
@@ -999,8 +999,8 @@ export const en = {
     /*
      * ── today's tasks ──
      *
-     * The rotating prompts above the game cards. The panel used to be an empty
-     * box; what makes it worth having is not that it is full but that every
+     * The rotating prompts inside the "Your points" card. What makes them
+     * worth having is not that the card is full but that every
      * line in it is **true for the account reading it** — the server prices
      * each task from the rule that actually pays it and says whether this
      * player has already had it, so nothing here advertises a bonus that is
@@ -1014,7 +1014,6 @@ export const en = {
      * to 8 points" is the truth.
      */
     tasks: {
-      title: 'Today’s list',
       /* Not a congratulation and not an error — see `openTasks`. An empty list
          means the day is done, which is worth saying in its own words. */
       allDone: 'Everything on today’s list is done. Play on for the points.',
@@ -1026,8 +1025,9 @@ export const en = {
       upTo: 'up to {points} points',
       checkIn: 'Open Paylez today and take your check-in — {reward}',
       playRound: 'Play one round today — {reward}',
-      profile: 'Finish your profile — {reward}',
-      invite: 'Invite a friend — {reward} once they visit a venue',
+      dailyGame: 'Log in every day and play the daily game to get {reward}',
+      profile: 'Complete your profile to get {reward}',
+      invite: 'Invite a friend to get {reward}',
     },
 
     accuracy: 'Accuracy',
@@ -4424,7 +4424,7 @@ export const en = {
     payLede:
       'Points come from playing and from turning up at the venues in your city. They do not expire — they wait for you.',
     payGo: 'Start playing',
-    payProfile: 'Finish your profile first',
+    payProfile: 'Complete profile',
     /* What finishing the profile is worth, above the two buttons rather than
        under them — a reward nobody notices changes nobody's behaviour. `{points}`
        is `PROFILE_BONUS`, which is the server's own `CONFIG.points.profileComplete`,
@@ -4442,7 +4442,6 @@ export const en = {
        of the other games, filled from `GAMES` so the number cannot drift. */
     moreTitle: '{n} more games are waiting',
     moreLede: 'Quizzes, word puzzles, memory and a flight run — all of them pay points, all of them are in L-Earn.',
-    moreGo: 'See the games',
     /**
      * The reel's two arrows, read out rather than shown.
      *

@@ -9,7 +9,7 @@ export const ru: Dictionary = {
 
   nav: {
     home: 'Главная',
-    learn: 'L-Earn',
+    learn: 'Играй и зарабатывай',
     analytics: 'Аналитика',
     business: 'Бизнес',
     /* The same route as `learn`, under the word an owner needs. See
@@ -710,7 +710,7 @@ export const ru: Dictionary = {
   },
 
   games: {
-    title: 'Игры для ума',
+    title: 'Играй и зарабатывай',
     lede: 'Проверьте себя, зарабатывайте баллы и меняйте их на скидочные ваучеры.',
 
     score: 'Счёт',
@@ -733,7 +733,6 @@ export const ru: Dictionary = {
 
     /* ── список на сегодня ── Обоснование — в `en.ts`. */
     tasks: {
-      title: 'Список на сегодня',
       allDone: 'Всё из списка на сегодня выполнено. Играйте дальше — за баллы.',
       loading: 'Загружаем список на сегодня…',
       offline: 'Список на сегодня сейчас недоступен.',
@@ -741,8 +740,9 @@ export const ru: Dictionary = {
       upTo: 'до {points} баллов',
       checkIn: 'Зайдите в Paylez сегодня и отметьтесь — {reward}',
       playRound: 'Сыграйте сегодня один раунд — {reward}',
-      profile: 'Заполните профиль — {reward}',
-      invite: 'Пригласите друга — {reward}, когда он придёт в заведение',
+      dailyGame: 'Заходите каждый день и играйте в игру дня — получите {reward}',
+      profile: 'Заполните профиль — получите {reward}',
+      invite: 'Пригласите друга — получите {reward}',
     },
     accuracy: 'Точность',
 
@@ -3434,7 +3434,7 @@ export const ru: Dictionary = {
     payLede:
       'Баллы приходят из игры и из походов в заведения вашего города. Они не сгорают — они вас ждут.',
     payGo: 'Начать играть',
-    payProfile: 'Сначала заполните профиль',
+    payProfile: 'Заполнить профиль',
     payProfileWorth: 'Заполнение профиля — ещё {points} баллов.',
 
     introTitle: 'Заработайте первые баллы',
@@ -3443,7 +3443,6 @@ export const ru: Dictionary = {
     gameSkip: 'Пропустить вопрос',
     moreTitle: 'Ждёт ещё {n} игр',
     moreLede: 'Викторины, слова, память и полёт — все они приносят баллы и все — в L-Earn.',
-    moreGo: 'Смотреть игры',
     reelPrev: 'Предыдущая игра',
     reelNext: 'Следующая игра',
   },

@@ -1004,16 +1004,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const finishOnboarding = useCallback(
     async (earned: number, goTo?: Route) => {
       /*
-       * Where to go next, set **before** the stamp rather than after it.
+       * Where to go next, set **inside** the stamp, beside the `setAccount`.
        *
        * Both land in the same commit that way, which is the whole point: a
-       * `navigate` beside this call, or a second `setPendingRoute` after it, is
-       * the race `router.ts` warns about — the guard runs against the new
-       * account and the old route and replaces the hash over the top. `Site`
-       * reads this in the one effect that is allowed to navigate.
+       * `navigate` beside this call, or a `setPendingRoute` in a different
+       * commit, is the race `router.ts` warns about — the guard runs against
+       * one account and the other route. `Site` reads this in the one effect
+       * that is allowed to navigate.
+       *
+       * It used to be set up here, before the stamp — which *is* a different
+       * commit on the signed-in path, because the stamp waits for
+       * `completeOnboarding`. `Site` consumed the destination while the account
+       * was still un-onboarded, resolved `profile` to `onboarding`, and the
+       * stamp then sent the player to the landing page. "Complete profile" on
+       * the welcome screen went nowhere near the profile.
        */
-      if (goTo) setPendingRoute(goTo);
-      const stamp = (balance: number | null) =>
+      const stamp = (balance: number | null) => {
+        if (goTo) setPendingRoute(goTo);
         setAccount((live) => {
           if (!live) return live;
           if (live.onboardedAt !== null) return live;
@@ -1032,6 +1039,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           commit(next);
           return next;
         });
+      };
 
       if (!hasToken()) {
         stamp(null);

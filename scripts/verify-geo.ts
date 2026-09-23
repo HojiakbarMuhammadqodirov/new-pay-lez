@@ -5577,6 +5577,40 @@ console.log('\nthe listing, both ways');
   check('…and a script never reaches an href', webAddress('javascript:alert(1)') === null);
 }
 
+console.log('\nWord Builder clues, in the reader\'s language');
+{
+  /*
+   * `npm run banks` writes each list once per reading language, with the clue
+   * translated and the rows untouched. Three things have to stay true and none
+   * of them is a type: every language but English has a file (a missing one is
+   * English clues on that page again, which was the bug); the rows are the same
+   * words in the same order (the no-repeat bag indexes them); and no clue spells
+   * its own answer — which matters for a Polish reader on the Polish list, where
+   * "A car" translated is SAMOCHÓD.
+   */
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../src/site/games/data/${name}`, import.meta.url), 'utf8'),
+    ) as Array<[string, string, number]>;
+  for (const list of ['en', 'pl'] as const) {
+    const base = read(`words.${list}.json`);
+    for (const code of LANGUAGE_ORDER) {
+      if (code === 'en') continue;
+      let rows: Array<[string, string, number]> = [];
+      try {
+        rows = read(`words.${list}.${code}.json`);
+      } catch {
+        rows = [];
+      }
+      check(`the ${list} list has ${code} clues`, rows.length === base.length, `${rows.length}/${base.length}`);
+      check(`…the same words in the same order`,
+        rows.every((row, i) => row[0] === base[i]?.[0] && row[2] === base[i]?.[2]));
+      const leaks = rows.filter(([word, hint]) => hint.toLowerCase().includes(word.toLowerCase()));
+      check(`…and no ${code} clue spells its answer`, leaks.length === 0, leaks.map((r) => r[0]).join(', '));
+    }
+  }
+}
+
 console.log(
   failures === 0 ? '\nAll checks passed.\n' : `\n${failures} check(s) failed.\n`,
 );

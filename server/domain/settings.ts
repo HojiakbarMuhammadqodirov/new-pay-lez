@@ -75,7 +75,7 @@ export async function seedPlatform(db: Db, at: Iso = now()): Promise<void> {
  * "nothing is seeded" rule in `README.md` draws: the plan ladder, the category
  * defaults and the word bank are written on every boot because they are the
  * product's own shape, while a venue, a deal or a gift card is a fact about a
- * business and is only ever written through the partner API. Four prompts on the
+ * business and is only ever written through the partner API. Five prompts on the
  * Play screen are the former — a fresh box with no tasks in it has an empty
  * panel where the nudges go, and there is nothing true for that emptiness to
  * mean.
@@ -95,9 +95,13 @@ const DAILY_TASKS: ReadonlyArray<{ key: string; copyKey: string; reward: string;
   /* First because it is the one that resets every day and the only one a player
      can lose by not doing — the streak is behind it. */
   { key: 'check_in', copyKey: 'checkIn', reward: 'check_in', order: 1 },
-  { key: 'play_round', copyKey: 'playRound', reward: 'play_round', order: 2 },
-  { key: 'profile', copyKey: 'profile', reward: 'profile', order: 3 },
-  { key: 'invite', copyKey: 'invite', reward: 'invite', order: 4 },
+  /* The featured game's once-a-day bonus. The website rotates this, the
+     profile and the invite inside its points card; the other two stay for the
+     phone, which has a check-in button and a round counter to point at. */
+  { key: 'daily_game', copyKey: 'dailyGame', reward: 'daily_game', order: 2 },
+  { key: 'play_round', copyKey: 'playRound', reward: 'play_round', order: 3 },
+  { key: 'profile', copyKey: 'profile', reward: 'profile', order: 4 },
+  { key: 'invite', copyKey: 'invite', reward: 'invite', order: 5 },
 ];
 
 async function seedDailyTasks(db: Db, at: Iso): Promise<void> {

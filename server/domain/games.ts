@@ -378,6 +378,18 @@ export async function startSession(
      * game easier and gains nothing. That is why it needs no trust.
      */
     welcome?: boolean;
+    /**
+     * Which Word Builder list to deal — `en` or `pl` — when it is not the
+     * reader's language.
+     *
+     * The site carries two Word Builder cards, English and the local language,
+     * and both used to be dealt in `language`: a Polish reader pressing the
+     * English card got Polish words, and every other reader got a 404 and the
+     * site's offline fallback. The list is the thing being practised and the
+     * language is what the clue is written in, so they travel separately.
+     * Absent means the old behaviour, which is what the phone still sends.
+     */
+    wordList?: string;
     at?: Iso;
   },
 ): Promise<Round> {
@@ -403,7 +415,9 @@ export async function startSession(
       { u: input.userId },
     );
 
-    const built = await buildRound(db, input.gameType, input.userId, language, input.welcome);
+    const built = await buildRound(
+      db, input.gameType, input.userId, language, input.welcome, input.wordList,
+    );
     const id = newId('gms');
     await db.run(
       `INSERT INTO game_sessions
@@ -451,9 +465,10 @@ async function buildRound(
   userId: string,
   language: string,
   welcome = false,
+  wordList?: string,
 ): Promise<Built> {
   if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language, welcome);
-  if (gameType === 'word_builder') return await buildWords(db, userId, language);
+  if (gameType === 'word_builder') return await buildWords(db, userId, wordList ?? language, language);
   if (gameType === 'memory_match') return buildDeck();
   return { seed: newId('gev'), secret: { kind: 'flight' }, content: { target: CONFIG.games.flightTarget } };
 }
@@ -725,16 +740,30 @@ async function buildQuiz(
   };
 }
 
-async function buildWords(db: Db, userId: string, language: string): Promise<Built> {
+/**
+ * `language` is the **list** — which words are dealt — and `hintLanguage` is
+ * what the clue is written in, which is the reader's. A clue with no
+ * translation in that language falls back to the column's English rather than
+ * to nothing: a hint is half of a word's value, and a blank one is a word
+ * nobody can be helped with.
+ */
+async function buildWords(
+  db: Db,
+  userId: string,
+  language: string,
+  hintLanguage: string = language,
+): Promise<Built> {
   const pick = (window: number) =>
     db.all<{ id: string; word: string; tier: number; hint: string | null }>(
-      `SELECT id, word, tier, hint FROM word_bank
-        WHERE language = $l
-          AND id NOT IN (SELECT item_key FROM game_recent_items
+      `SELECT w.id, w.word, w.tier, COALESCE(t.value, w.hint) AS hint FROM word_bank w
+         LEFT JOIN translations t
+           ON t.entity = 'word' AND t.entity_id = w.id AND t.field = 'hint' AND t.language = $h
+        WHERE w.language = $l
+          AND w.id NOT IN (SELECT item_key FROM game_recent_items
                           WHERE user_id = $u AND game_type = 'word_builder'
                           ORDER BY served_at DESC LIMIT $w)
         ORDER BY RANDOM() LIMIT $n`,
-      { l: language, u: userId, w: window, n: CONFIG.games.wordsPerRound },
+      { l: language, h: hintLanguage, u: userId, w: window, n: CONFIG.games.wordsPerRound },
     );
 
   /*
@@ -1393,6 +1422,11 @@ export async function finish(
            ON CONFLICT (user_id, day) DO UPDATE SET lives_used = daily_counters.lives_used + 1`,
         { u: input.userId, d: dayOf(at) },
       );
+      /* After the upsert and not before it: the upsert holds the
+         (user, day) row until this transaction ends, so two rounds finishing at
+         once for one player queue here and the second one's `alreadyPaid` sees
+         the first one's entry. */
+      await payDailyGame(db, input.userId, session.game_type, at);
     }
 
     /* The streak is what energy actually buys, so practice does not move it —
@@ -1876,6 +1910,70 @@ async function payComeback(db: Db, userId: string, at: Iso): Promise<void> {
     sourceRef: ref,
     at,
   });
+}
+
+/**
+ * The day's featured game, in the order the Play screen rotates it.
+ *
+ * This is `DAILY_POOL` in `src/site/games/rules.ts` — `GAMES` without the local
+ * Word Builder — restated in server game types, because the two programs share
+ * no code. The local quiz is one slot that is two banks: which one a player is
+ * dealt depends on their profile, and either is that day's game. `verify:api`
+ * pins this order, so a reorder here that is not made there fails a check
+ * rather than paying the bonus on the wrong card.
+ */
+export const DAILY_GAME_POOL: ReadonlyArray<ReadonlyArray<GameType>> = [
+  ['flight'],
+  ['memory_match'],
+  ['flags'],
+  ['capitals'],
+  ['brain'],
+  ['poland', 'uzbekistan'],
+  ['word_builder'],
+];
+
+/** Which slot of `DAILY_GAME_POOL` a `YYYY-MM-DD` day posts — `dailyGame`'s rule. */
+export function dailyGameFor(day: string): ReadonlyArray<GameType> {
+  const n = DAILY_GAME_POOL.length;
+  const index = ((Math.floor(Date.parse(day) / 86_400_000) % n) + n) % n;
+  return DAILY_GAME_POOL[index] ?? [];
+}
+
+/**
+ * `CONFIG.earn.dailyGame`, once per day, for finishing the day's featured game.
+ *
+ * **Which day is the player's, and the server does not know their clock.** The
+ * poster rotates on the reader's *local* date, and local dates run from a day
+ * behind UTC to a day ahead of it. So the round counts if it is the featured
+ * game of yesterday, today or tomorrow in UTC — the only three a real clock can
+ * be showing — and the payment is keyed on the **UTC** day it lands, so there
+ * is still exactly one per day whichever of the three it matched.
+ *
+ * Flat and outside the round's own entry, for the reason `payComeback` gives:
+ * a bonus folded into a score is a number nobody can check.
+ */
+async function payDailyGame(db: Db, userId: string, gameType: GameType, at: Iso): Promise<void> {
+  const today = dayOf(at);
+  const base = Date.parse(today);
+  const days = [-1, 0, 1].map((offset) => new Date(base + offset * 86_400_000).toISOString().slice(0, 10));
+  if (!days.some((day) => dailyGameFor(day).includes(gameType))) return;
+
+  const ref = `daily_game:${today}`;
+  if (await ledger.alreadyPaid(db, userId, 'daily_game', ref)) return;
+
+  await ledger.earn(db, {
+    userId,
+    points: CONFIG.earn.dailyGame,
+    reason: 'occasion',
+    sourceKind: 'daily_game',
+    sourceRef: ref,
+    at,
+  });
+}
+
+/** Whether today's daily-game bonus has been paid — what the task list reads. */
+export async function dailyGamePaid(db: Db, userId: string, at: Iso = now()): Promise<boolean> {
+  return await ledger.alreadyPaid(db, userId, 'daily_game', `daily_game:${dayOf(at)}`);
 }
 
 /** "You're 60 from 10% off at Café Bratysławska" — from the real balance. */

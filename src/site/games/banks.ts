@@ -297,8 +297,22 @@ export function wordListFor(countryCode: string | undefined): WordList | null {
   return 'pl';
 }
 
-export const loadWords = (list: WordList) =>
-  load(`./data/words.${list}.json`) as Promise<WordRow[]>;
+/**
+ * One list, with its clues in the reader's language.
+ *
+ * The list is the language being practised; the clue is written in the one
+ * being read — an English clue on a Russian page was a hint half the readers
+ * could not use. `npm run banks` writes `words.<list>.<language>.json` beside
+ * the English-clued `words.<list>.json`, with the rows in the same order, so the
+ * no-repeat bag keyed on the list stays valid whichever language deals from it.
+ * A language with no file falls back to English clues rather than to no round.
+ */
+export const loadWords = (list: WordList, language?: string) => {
+  const translated = `./data/words.${list}.${language}.json`;
+  return load(language && TEXT[translated] ? translated : `./data/words.${list}.json`) as Promise<
+    WordRow[]
+  >;
+};
 
 export interface Deck {
   id: string;

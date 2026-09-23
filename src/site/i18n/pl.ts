@@ -14,7 +14,7 @@ export const pl: Dictionary = {
 
   nav: {
     home: 'Start',
-    learn: 'L-Earn',
+    learn: 'Graj i zarabiaj',
     analytics: 'Analityka',
     business: 'Dla firm',
     /* The same route as `learn`, under the word an owner needs. See
@@ -715,7 +715,7 @@ export const pl: Dictionary = {
   },
 
   games: {
-    title: 'Gry na rozum',
+    title: 'Graj i zarabiaj',
     lede: 'Sprawdź się, zbieraj punkty i zamieniaj je na vouchery rabatowe.',
 
     score: 'Wynik',
@@ -738,7 +738,6 @@ export const pl: Dictionary = {
 
     /* ── dzisiejsza lista ── Zobacz `en.ts` po uzasadnienie. */
     tasks: {
-      title: 'Dzisiejsza lista',
       allDone: 'Wszystko z dzisiejszej listy jest zrobione. Graj dalej po punkty.',
       loading: 'Pobieramy dzisiejszą listę…',
       offline: 'Dzisiejsza lista jest teraz niedostępna.',
@@ -746,8 +745,9 @@ export const pl: Dictionary = {
       upTo: 'do {points} pkt',
       checkIn: 'Wejdź dziś do Paylez i odbierz obecność — {reward}',
       playRound: 'Zagraj dziś jedną rundę — {reward}',
-      profile: 'Uzupełnij profil — {reward}',
-      invite: 'Zaproś znajomego — {reward}, gdy odwiedzi lokal',
+      dailyGame: 'Loguj się codziennie i zagraj w grę dnia, by zdobyć {reward}',
+      profile: 'Uzupełnij profil, by zdobyć {reward}',
+      invite: 'Zaproś znajomego, by zdobyć {reward}',
     },
     accuracy: 'Skuteczność',
 
@@ -3449,7 +3449,7 @@ export const pl: Dictionary = {
     payLede:
       'Punkty biorą się z grania i z pojawiania się w lokalach w Twoim mieście. Nie tracą ważności — czekają na Ciebie.',
     payGo: 'Zacznij grać',
-    payProfile: 'Najpierw uzupełnij profil',
+    payProfile: 'Uzupełnij profil',
     payProfileWorth: 'Uzupełnienie profilu to kolejne {points} punktów.',
 
     introTitle: 'Zdobądź pierwsze punkty',
@@ -3458,7 +3458,6 @@ export const pl: Dictionary = {
     gameSkip: 'Pomiń to pytanie',
     moreTitle: 'Czeka {n} kolejnych gier',
     moreLede: 'Quizy, gry słowne, pamięć i lot — każda z nich daje punkty i wszystkie są w L-Earn.',
-    moreGo: 'Zobacz gry',
     reelPrev: 'Poprzednia gra',
     reelNext: 'Następna gra',
   },

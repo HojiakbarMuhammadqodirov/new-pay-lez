@@ -41,6 +41,7 @@ import { CONFIG } from '../config.ts';
 import type { Db } from '../db/db.ts';
 import * as checkin from './checkin.ts';
 import * as entitlements from './entitlements.ts';
+import { dailyGamePaid } from './games.ts';
 import { now, type Iso } from './time.ts';
 
 /**
@@ -50,7 +51,7 @@ import { now, type Iso } from './time.ts';
  * does not implement is a task with no price — and the honest handling of that
  * is to leave the row out of the answer, which `resolve` below does.
  */
-export type Reward = 'check_in' | 'play_round' | 'profile' | 'invite';
+export type Reward = 'check_in' | 'play_round' | 'daily_game' | 'profile' | 'invite';
 
 export interface Task {
   /** Stable id, for a client that wants to remember which it has shown. */
@@ -132,19 +133,7 @@ export async function tasksFor(db: Db, userId: string, at: Iso = now()): Promise
       )
     : false;
 
-  /* A referral counts when it is **completed**, not when somebody joined: §8.1
-     pays on the invited account's first confirmed scan precisely so the task
-     cannot be finished with a throwaway address. So the task stays on offer to
-     somebody whose invitee has signed up and not yet been to a venue, which is
-     correct — the reward has not been earned. */
-  const invited = needs('invite')
-    ? ((
-        await db.get<{ n: number }>(
-          `SELECT COUNT(*) AS n FROM referrals WHERE referrer_id = $u AND status = 'completed'`,
-          { u: userId },
-        )
-      )?.n ?? 0) > 0
-    : false;
+  const dailyGameDone = needs('daily_game') ? await dailyGamePaid(db, userId, at) : false;
 
   /**
    * The ceiling on one quiz round: five right, the clean-sweep bonus, and the
@@ -172,10 +161,18 @@ export async function tasksFor(db: Db, userId: string, at: Iso = now()): Promise
         };
       case 'play_round':
         return { points: roundCeiling, exact: false, done: playedToday };
+      case 'daily_game':
+        return { points: CONFIG.earn.dailyGame, exact: true, done: dailyGameDone };
       case 'profile':
         return { points: CONFIG.earn.profileComplete, exact: true, done: profileDone };
       case 'invite':
-        return { points: CONFIG.earn.inviteeJoin, exact: true, done: invited };
+        /* Never done: §8.1 pays the referrer for **every** invited friend's
+           first confirmed visit, so a second friend is worth what the first
+           was. It used to hide once one referral had completed, which told a
+           player the offer was over when it was not. Priced from the
+           referrer's own row — the figure this prompt promises is what the
+           person reading it is paid. */
+        return { points: CONFIG.earn.referrerFirstVisit, exact: true, done: false };
       default:
         /* A row naming a rule this file does not implement has no price, and a
            task with no price is not shown. Left out rather than sent with a

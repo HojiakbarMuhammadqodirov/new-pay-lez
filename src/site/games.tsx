@@ -503,10 +503,26 @@ function BatteryLightning() {
 const TASK_ROTATE_MS = 15_000;
 
 /**
- * ── today's list ──
+ * The prompts the web draws, by `copyKey`, in the order the server sends them.
+ *
+ * The server's list is shared with the phone and carries two more — the
+ * check-in and "play a round" — which point at a check-in button and a round
+ * counter this site does not have. A prompt with nothing on the page to act on
+ * is left out here rather than switched off on the server, where it would be
+ * switched off for the phone too.
+ */
+const WEB_TASKS: ReadonlySet<string> = new Set(['dailyGame', 'profile', 'invite']);
+
+/**
+ * ── the daily tasks, inside the points card ──
  *
  * One prompt at a time, out of the tasks this account has **not** already
  * finished, rotating every `TASK_ROTATE_MS`.
+ *
+ * It lived in a box of its own under the deck, titled "Today's list", while the
+ * points card above it sat half empty under its bar. The prompts are all ways
+ * to *earn* points, so they belong in the panel about points, and a second box
+ * saying so was one more thing on the screen to read.
  *
  * Four rules, and each of them was a way this panel could have lied:
  *
@@ -532,11 +548,12 @@ const TASK_ROTATE_MS = 15_000;
  * and a box measured against the shortest of them clips the longest. See the
  * `══ today's list ══` block there.
  */
-function TaskList() {
+function PointsTasks() {
   const copy = useCopy().games;
   const tasks = copy.tasks;
-  const { state } = useApi<DailyTasks>(hasToken() ? DAILY_TASKS_PATH : null);
-  const open = openTasks(state);
+  const signedIn = hasToken();
+  const { state } = useApi<DailyTasks>(signedIn ? DAILY_TASKS_PATH : null);
+  const open = openTasks(state)?.filter((task) => WEB_TASKS.has(task.copyKey)) ?? null;
   const [at, setAt] = useState(0);
 
   /*
@@ -589,14 +606,12 @@ function TaskList() {
     });
   }, [task, tasks]);
 
+  /* No session, no list: with no token `useApi` is never asked and would read
+     as "loading" for ever, which is a spinner that means nothing. */
+  if (!signedIn) return null;
+
   return (
-    <section className="play-tasks" data-reveal>
-      <span className="play-tasks-kicker">
-        <i>
-          <Icon name="check" size={13} strokeWidth={2} />
-        </i>
-        {tasks.title}
-      </span>
+    <div className="play-hero-tasks">
 
       {/*
         The prompt, keyed on the task so a change is a change of element —
@@ -631,7 +646,7 @@ function TaskList() {
           ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -780,6 +795,14 @@ function Round({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
+  const [language] = useLanguage();
+  /* The seconds unit in the reader's language — `Intl` knows all five, the
+     same side `untilNextEnergy` takes. A bare `s` after the figure was the one
+     English letter on a translated screen. */
+  const seconds = useMemo(
+    () => new Intl.NumberFormat(language, { style: 'unit', unit: 'second', unitDisplay: 'narrow' }),
+    [language],
+  );
   const [state, setState] = useState<RoundState>({
     index: 0,
     correct: 0,
@@ -933,7 +956,7 @@ function Round({
           })}
         </span>
         <span className="round-clock" data-low={left <= 3 ? 'true' : undefined}>
-          {copy.timeUp} {left}s
+          {copy.timeUp} {seconds.format(left)}
         </span>
       </div>
 
@@ -1647,7 +1670,11 @@ export function GamesApp() {
     if ((chosen.kind === 'flight' || chosen.kind === 'memory' || chosen.kind === 'word') && hasToken()) {
       setQuestions([]);
       setLoading(true);
-      startRound(serverGame(id), language, practice)
+      /* The Word Builder's list is the card's, not the reader's language — the
+         same pair the component below is handed as `list`. */
+      const wordList =
+        chosen.kind === 'word' ? (id === 'wordLocal' ? localList ?? 'en' : 'en') : undefined;
+      startRound(serverGame(id), language, practice, undefined, wordList)
         .then((round) => {
           setSession(round.sessionId);
           setContent(round.content);
@@ -1980,6 +2007,10 @@ export function GamesApp() {
                 {games.redeemTitle}
                 <Icon name="arrow" size={16} strokeWidth={2.4} />
               </span>
+              {/* Under the press rather than under the bar: the card's figure
+                  and its button are one reading, and the prompts are the
+                  ways to move that figure — the card's last line. */}
+              <PointsTasks />
             </a>
 
             {/*
@@ -2149,18 +2180,6 @@ export function GamesApp() {
             has no address to prove — see `VerifyEmail.tsx`.
           */}
           <VerifyEmail where="play" />
-
-          {/*
-            ── today's list ──
-
-            Above the streak rather than below it, because the two are one
-            reading in sequence: the list says what is worth doing today and the
-            week says what doing it has been worth. It sits under the two
-            panels that decide whether anything is *possible* — the balance and
-            the tank — because a nudge to play a round is noise to somebody
-            whose tank is empty and who has not been told so yet.
-          */}
-          <TaskList />
 
           <StreakRow player={player} />
 

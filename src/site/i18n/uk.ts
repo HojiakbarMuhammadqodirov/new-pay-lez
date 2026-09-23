@@ -14,7 +14,7 @@ export const uk: Dictionary = {
 
   nav: {
     home: 'Головна',
-    learn: 'L-Earn',
+    learn: 'Грай і заробляй',
     analytics: 'Аналітика',
     business: 'Бізнес',
     /* The same route as `learn`, under the word an owner needs. See
@@ -715,7 +715,7 @@ export const uk: Dictionary = {
   },
 
   games: {
-    title: 'Ігри для розуму',
+    title: 'Грай і заробляй',
     lede: 'Перевірте себе, заробляйте бали й обмінюйте їх на знижкові ваучери.',
 
     score: 'Рахунок',
@@ -738,7 +738,6 @@ export const uk: Dictionary = {
 
     /* ── список на сьогодні ── Обґрунтування — у `en.ts`. */
     tasks: {
-      title: 'Список на сьогодні',
       allDone: 'Усе зі списку на сьогодні виконано. Грайте далі — за бали.',
       loading: 'Завантажуємо список на сьогодні…',
       offline: 'Список на сьогодні зараз недоступний.',
@@ -746,8 +745,9 @@ export const uk: Dictionary = {
       upTo: 'до {points} балів',
       checkIn: 'Зайдіть у Paylez сьогодні й відмітьтеся — {reward}',
       playRound: 'Зіграйте сьогодні один раунд — {reward}',
-      profile: 'Заповніть профіль — {reward}',
-      invite: 'Запросіть друга — {reward}, коли він відвідає заклад',
+      dailyGame: 'Заходьте щодня й грайте в гру дня — отримайте {reward}',
+      profile: 'Заповніть профіль — отримайте {reward}',
+      invite: 'Запросіть друга — отримайте {reward}',
     },
     accuracy: 'Точність',
 
@@ -3439,7 +3439,7 @@ export const uk: Dictionary = {
     payLede:
       'Бали приходять із гри та з походів у заклади вашого міста. Вони не згорають — вони на вас чекають.',
     payGo: 'Почати грати',
-    payProfile: 'Спершу заповніть профіль',
+    payProfile: 'Заповнити профіль',
     payProfileWorth: 'Заповнення профілю — ще {points} балів.',
 
     introTitle: 'Заробіть перші бали',
@@ -3448,7 +3448,6 @@ export const uk: Dictionary = {
     gameSkip: 'Пропустити питання',
     moreTitle: 'Чекає ще {n} ігор',
     moreLede: 'Вікторини, слова, памʼять і політ — усі вони дають бали й усі — у L-Earn.',
-    moreGo: 'Переглянути ігри',
     reelPrev: 'Попередня гра',
     reelNext: 'Наступна гра',
   },

@@ -362,6 +362,13 @@ export const startRound = (
   practice?: boolean,
   /** Onboarding only: asks the server for the easier flag pool. */
   welcome?: boolean,
+  /**
+   * Word Builder only: which list the card deals — `en` or `pl` — which is not
+   * the reader's language. Without it the server dealt the list *named by*
+   * the reader's language: Polish words on the English card for a Polish
+   * reader, and no words at all for everybody else.
+   */
+  wordList?: string,
 ) =>
   call<Round>('/v1/games/sessions', {
     method: 'POST',
@@ -385,6 +392,7 @@ export const startRound = (
       gameType,
       ...(practice ? { practice: true } : {}),
       ...(welcome ? { welcome: true } : {}),
+      ...(wordList ? { wordList } : {}),
     },
   });
 

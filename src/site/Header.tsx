@@ -562,10 +562,10 @@ export function Header({ route }: { route: Route }) {
 
         <div className="header-actions">
           <ThemeToggle />
-          {/* Two menus, because they are two settings: what the page is written
-              in and what its prices are in. They used to be one control doing
-              both — see CurrencyMenu. */}
-          <CurrencyMenu />
+          {/* No currency menu here: it lives on the partner dashboard only
+              (`dashboard.tsx`), which is the one screen whose figures are the
+              reader's own money to plan with. Everywhere else the currency
+              follows the language's default — see CurrencyMenu. */}
           <LanguageMenu />
           {account?.type ? (
             <AccountChip />
@@ -631,7 +631,6 @@ export function Header({ route }: { route: Route }) {
                 sheet rather than inline in the header. */}
             <div className="nav-sheet-controls">
               <ThemeToggle />
-              <CurrencyMenu />
               <LanguageMenu />
             </div>
           </nav>

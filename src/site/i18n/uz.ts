@@ -9,7 +9,7 @@ export const uz: Dictionary = {
 
   nav: {
     home: 'Bosh sahifa',
-    learn: 'L-Earn',
+    learn: 'O‘yna va yutib ol',
     analytics: 'Tahlil',
     business: 'Biznes',
     /* The same route as `learn`, under the word an owner needs. See
@@ -710,7 +710,7 @@ export const uz: Dictionary = {
   },
 
   games: {
-    title: 'Aql o‘yinlari',
+    title: 'O‘yna va yutib ol',
     lede: 'O‘zingizni sinang, ball yig‘ing va ularni chegirma vaucherlariga almashtiring.',
 
     score: 'Hisob',
@@ -733,7 +733,6 @@ export const uz: Dictionary = {
 
     /* ── bugungi ro‘yxat ── Sababi `en.ts` da. */
     tasks: {
-      title: 'Bugungi ro‘yxat',
       allDone: 'Bugungi ro‘yxatdagi hammasi bajarildi. Ball uchun o‘ynashda davom eting.',
       loading: 'Bugungi ro‘yxat olinmoqda…',
       offline: 'Bugungi ro‘yxat hozir mavjud emas.',
@@ -741,8 +740,9 @@ export const uz: Dictionary = {
       upTo: '{points} ballgacha',
       checkIn: 'Bugun Paylez’ga kiring va belgilanishni oling — {reward}',
       playRound: 'Bugun bitta raund o‘ynang — {reward}',
-      profile: 'Profilingizni to‘ldiring — {reward}',
-      invite: 'Do‘stingizni taklif qiling — u joyga borganida {reward}',
+      dailyGame: 'Har kuni kiring va kunlik o‘yinni o‘ynang — {reward} oling',
+      profile: 'Profilingizni to‘ldiring — {reward} oling',
+      invite: 'Do‘stingizni taklif qiling — {reward} oling',
     },
     accuracy: 'Aniqlik',
 
@@ -3452,7 +3452,7 @@ export const uz: Dictionary = {
     payLede:
       'Ballar o‘yindan va shahringizdagi joylarga borishdan yig‘iladi. Ularning muddati tugamaydi — ular sizni kutib turadi.',
     payGo: 'O‘ynashni boshlash',
-    payProfile: 'Avval profilingizni to‘ldiring',
+    payProfile: 'Profilni to‘ldirish',
     payProfileWorth: 'Profilni to‘ldirish yana {points} ball beradi.',
 
     introTitle: 'Birinchi ballaringizni yuting',
@@ -3461,7 +3461,6 @@ export const uz: Dictionary = {
     gameSkip: 'Bu savolni o‘tkazib yuborish',
     moreTitle: 'Yana {n} ta o‘yin kutmoqda',
     moreLede: 'Viktorina, so‘z o‘yinlari, xotira va uchish — barchasi ball beradi va barchasi L-Earn’da.',
-    moreGo: 'O‘yinlarni ko‘rish',
     reelPrev: 'Oldingi o‘yin',
     reelNext: 'Keyingi o‘yin',
   },

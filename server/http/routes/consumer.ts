@@ -471,6 +471,13 @@ export const consumerRoutes: Route[] = [
         /* Chooses an easier flag pool for the welcome round and nothing else
            -- see `welcome` on `startSession`. Same strict `=== true`. */
         welcome: ctx.body.welcome === true,
+        /* Which Word Builder list, separately from the reader's language —
+           see `wordList` on `startSession`. Two lower-case letters or nothing:
+           it is matched against `word_bank.language` and never trusted further. */
+        wordList:
+          typeof ctx.body.wordList === 'string' && /^[a-z]{2}$/.test(ctx.body.wordList)
+            ? ctx.body.wordList
+            : undefined,
         at: ctx.at,
       }),
   },

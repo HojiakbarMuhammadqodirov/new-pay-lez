@@ -2940,6 +2940,22 @@ async function sharingDefaultRules(): Promise<void> {
     ))?.n,
     1);
 
+  /* ── a "no" said before the first visit stands too ──
+     The venue sheet draws an undecided venue *on*, because the default will
+     grant it at the till. Switching it off there has no row to revoke, so the
+     refusal is written as one — or the first visit would grant it anyway. */
+  const w3 = await world();
+  eq('switching off an undecided venue is recorded',
+    await consent.revokeSharing(w3.db, w3.customerId, w3.venueId, at), true);
+  eq('…as a withdrawn venue', await consent.sharingWithdrawn(w3.db, w3.customerId), [w3.venueId]);
+  await scan(w3, 3300, plusMinutes(at, 60));
+  eq('…which the first visit does not grant',
+    (await profiles.customerTable(w3.db, w3.venueId, { at: plusMinutes(at, 60) })).rows.length, 0);
+  await consent.grantSharing(w3.db, { userId: w3.customerId, venueId: w3.venueId, at });
+  eq('…and switching it back on leaves nothing withdrawn',
+    await consent.sharingWithdrawn(w3.db, w3.customerId), []);
+  await w3.db.close();
+
   /* ── off means nothing at all ── */
   const w2 = await world();
   await consent.setSharingDefault(w2.db, w2.customerId, false);
@@ -5611,13 +5627,15 @@ async function dailyTaskRules(): Promise<void> {
 
   eq('the profile task quotes what the profile bonus pays', before.profile?.points,
     CONFIG.earn.profileComplete);
-  eq('…and the invite task what an invite pays', before.invite?.points, CONFIG.earn.inviteeJoin);
+  eq('…and the invite task what the inviter is paid', before.invite?.points,
+    CONFIG.earn.referrerFirstVisit);
+  eq('…and the daily game what its bonus pays', before.daily_game?.points, CONFIG.earn.dailyGame);
   /* Today's check-in is the rung of the cycle the player is standing on, not a
      constant — which is the whole reason the amount is not a column. Day one of
      a streak with no milestone on it. */
   eq('…and the check-in what *today* pays', before.check_in?.points,
     checkin.dayValue(1) + (CONFIG.earn.streakMilestones[1] ?? 0));
-  check('the exact rewards say so', [before.profile, before.invite, before.check_in]
+  check('the exact rewards say so', [before.profile, before.invite, before.check_in, before.daily_game]
     .every((task) => task?.exact === true));
   /* A round pays what the round scored, so its figure is a ceiling and the
      client renders "up to". Promising the ceiling is a promise a player can
@@ -5648,17 +5666,44 @@ async function dailyTaskRules(): Promise<void> {
   const after = await byKey(w.customerId);
   check('a finished profile stops being advertised', after.profile?.done === true);
   check('…a taken check-in too', after.check_in?.done === true);
-  check('…and a completed referral', after.invite?.done === true);
-  /* A referral that has *joined* and not yet visited is not completed: §8.1
-     pays on the invitee's first confirmed scan precisely so the task cannot be
-     finished with a throwaway address. */
-  await w.db.run(
-    `INSERT INTO referrals (id, referrer_id, referred_id, code, status, created_at)
-     VALUES ($i, $u, NULL, 'PY2222', 'pending', $t)`,
-    { i: newId('ref'), u: w.ownerId, t: at },
-  );
-  eq('a pending referral leaves the task on offer',
-    (await byKey(w.ownerId)).invite?.done, false);
+  /* An invite pays per friend, so one completed referral does not end the
+     offer — a second friend is worth what the first was. */
+  eq('a completed referral leaves the invite on offer', after.invite?.done, false);
+
+  /*
+   * The daily game: `CONFIG.earn.dailyGame` once a day, for finishing the
+   * featured game of the player's local day — which is one of the three UTC
+   * days around the server's. Capitals is the probe; `posted` finds an instant
+   * where it counts and one where it does not.
+   */
+  const posted = (when: string) =>
+    [-1, 0, 1].some((offset) =>
+      games.dailyGameFor(plusDays(when, offset).slice(0, 10)).includes('capitals'));
+  let on = plusDays(at, 30);
+  while (!posted(on)) on = plusDays(on, 1);
+  let off = plusDays(on, 1);
+  while (posted(off)) off = plusDays(off, 1);
+
+  /* Counted off its own `source_kind` rather than off the balance: a round
+     after a gap also pays the comeback bonus, which is not this rule. */
+  const dailyPaid = async () =>
+    (await w.db.get<{ n: number | null }>(
+      `SELECT SUM(delta) AS n FROM points_ledger WHERE user_id = $u AND source_kind = 'daily_game'`,
+      { u: w.customerId },
+    ))?.n ?? 0;
+  const bonusOf = async (when: string) => {
+    const was = await dailyPaid();
+    const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: when });
+    await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at: when });
+    return (await dailyPaid()) - was;
+  };
+  eq('the day’s featured game pays the daily bonus', await bonusOf(on), CONFIG.earn.dailyGame);
+  eq('…once a day, not once a round', await bonusOf(plusMinutes(on, 5)), 0);
+  check('…and the task says it is done',
+    (await tasks.tasksFor(w.db, w.customerId, on)).find((task) => task.key === 'daily_game')?.done === true);
+  eq('any other game pays no bonus', await bonusOf(off), 0);
+  eq('the order is the Play screen’s rotation', games.DAILY_GAME_POOL.map((slot) => slot.join('|')),
+    ['flight', 'memory_match', 'flags', 'capitals', 'brain', 'poland|uzbekistan', 'word_builder']);
 
   /* A row naming a rule nothing prices has no figure, and a task with no figure
      is left out rather than sent as a zero — "0 points" is a thing the panel
@@ -5676,6 +5721,59 @@ async function dailyTaskRules(): Promise<void> {
   await w.db.run(`UPDATE daily_tasks SET active = 0 WHERE key = 'invite'`);
   check('a deactivated task is not shown',
     !(await tasks.tasksFor(w.db, w.customerId, at)).some((task) => task.key === 'invite'));
+
+  await w.db.close();
+}
+
+/**
+ * Word Builder: the list the card deals, and the clue in the reader's language.
+ *
+ * The two used to be one value — the reader's language — so a Polish reader on
+ * the English card got Polish words and a Russian reader got a 404, while every
+ * clue that did arrive was English. They travel apart now: `wordList` is what is
+ * practised and `language` is what the clue is written in.
+ */
+async function wordListRules(): Promise<void> {
+  describe('Word Builder — the list and the clue');
+
+  const w = await world();
+  const at = now();
+  const deal = async (language: string, wordList?: string) => {
+    const round = await games.startSession(w.db, {
+      userId: w.customerId, gameType: 'word_builder', language, wordList, practice: true, at,
+    });
+    const secret = await w.db.get<{ secret: string }>(
+      `SELECT secret FROM game_sessions WHERE id = $i`, { i: round.sessionId },
+    );
+    return {
+      words: (JSON.parse(secret!.secret) as { words: string[] }).words,
+      hints: (round.content as { words: Array<{ hint: string | null }> }).words.map((x) => x.hint),
+    };
+  };
+  const listOf = async (language: string) =>
+    new Set((await w.db.all<{ word: string }>(
+      `SELECT word FROM word_bank WHERE language = $l`, { l: language },
+    )).map((row) => row.word.toUpperCase()));
+  const english = await listOf('en');
+
+  const ru = await deal('ru', 'en');
+  check('a Russian reader on the English card is dealt English words',
+    ru.words.length > 0 && ru.words.every((word) => english.has(word)), ru.words);
+  check('…with the clues in Russian', ru.hints.every((hint) => /[а-яё]/i.test(hint ?? '')), ru.hints);
+
+  const pl = await deal('pl', 'en');
+  check('a Polish reader on the English card is not dealt Polish words',
+    pl.words.every((word) => english.has(word)), pl.words);
+
+  const en = await deal('en', 'en');
+  const column = new Set((await w.db.all<{ hint: string | null }>(
+    `SELECT hint FROM word_bank WHERE language = 'en'`,
+  )).map((row) => row.hint));
+  check('an English reader keeps the English clues', en.hints.every((hint) => column.has(hint)), en.hints);
+
+  /* The phone sends no `wordList`, and must get what it always got. */
+  const legacy = await deal('en');
+  check('no list means the reader’s language, as before', legacy.words.every((word) => english.has(word)));
 
   await w.db.close();
 }
@@ -7211,6 +7309,7 @@ async function run(): Promise<void> {
   await checkInRules();
   await gameRules();
   await dailyTaskRules();
+  await wordListRules();
   await quizLanguageRules();
   await wordBankRules();
   await mediaRules();

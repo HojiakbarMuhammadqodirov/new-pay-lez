@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useCopy } from '../i18n/context';
+import { useCopy, useLanguage } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { wordPoints, wordRoundPoints } from '../auth/player';
 import { ApiError } from '../api/client';
@@ -197,6 +197,7 @@ export function WordBuilder({
   onQuit: () => void;
 }) {
   const copy = useCopy().games;
+  const [language] = useLanguage();
   const [deck, setDeck] = useState<Puzzle[] | null>(null);
   const [index, setIndex] = useState(0);
 
@@ -303,7 +304,7 @@ export function WordBuilder({
     }
 
     let live = true;
-    buildWordRound(list, count)
+    buildWordRound(list, count, language)
       .then((rows) => {
         if (!live) return;
         /* An empty deck is the same dead end as a failed fetch — `deck` stays
@@ -331,7 +332,7 @@ export function WordBuilder({
     return () => {
       live = false;
     };
-  }, [session, list, count, load]);
+  }, [session, list, count, load, language]);
 
   const built = slots.map((i) => tray[i]?.ch ?? '').join('');
 
