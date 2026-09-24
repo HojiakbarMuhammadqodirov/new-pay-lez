@@ -9,7 +9,7 @@ export const uz: Dictionary = {
 
   nav: {
     home: 'Bosh sahifa',
-    learn: 'O‘yna va yutib ol',
+    learn: 'Yutib ol',
     analytics: 'Tahlil',
     business: 'Biznes',
     /* The same route as `learn`, under the word an owner needs. See
@@ -40,21 +40,6 @@ export const uz: Dictionary = {
     password: 'Parol',
     showPassword: 'Parolni ko‘rsatish',
     hidePassword: 'Parolni yashirish',
-    verify: {
-      kicker: 'Elektron pochtani tasdiqlang',
-      playLede: 'Ro‘yxatdan o‘tgan manzilingizni tasdiqlamaguningizcha raundlar ball bermaydi —',
-      walletLede: 'Ro‘yxatdan o‘tgan manzilingizni tasdiqlaganingizdan keyin ballarni sarflay olasiz —',
-      codeLabel: 'Biz yuborgan olti xonali kod',
-      codePlaceholder: '000000',
-      confirm: 'Tasdiqlash',
-      working: 'Tekshirilmoqda…',
-      resend: 'Qayta yuborish',
-      onItsWay: 'Yuborildi. U bir necha daqiqada eskiradi.',
-      tooSoon: 'Hozir bittasi yuborildi — qayta so‘rashdan oldin bir oz kuting.',
-      wrongWithTries: 'Bu kod to‘g‘ri emas. Yana {n} urinish qoldi.',
-      offline: 'Serverga ulanolmadik. Birozdan keyin qayta urinib ko‘ring.',
-      failed: 'Bajarilmadi. Birozdan keyin qayta urinib ko‘ring.',
-    },
     passwordPlaceholder: 'Parolingiz',
     submit: 'Kirish',
     errors: {
@@ -759,7 +744,7 @@ export const uz: Dictionary = {
     streakAhead: 'hali oldinda',
 
     names: [
-      'Squawk parvozi',
+      'Qushlar parvozi',
       'Juftini top',
       'Bayroqni top',
       'Davlat va poytaxt',
@@ -780,6 +765,7 @@ export const uz: Dictionary = {
     energyFull: 'To‘la — kutadigan narsa yo‘q',
     energyNext: '+1 yana {time}',
     energyCost: 'Har raundga 1 ta',
+    getPro: 'Pro olish',
     loading: 'Tarqatilmoqda…',
     startFailed: 'Bu raundni boshlab bo‘lmadi. Bir ozdan so‘ng qayta urinib ko‘ring.',
 
@@ -796,6 +782,7 @@ export const uz: Dictionary = {
       /* One sample per local bank — the card is a different quiz per country.
          The Uzbekistan row is the export's own, already written in every
          language, so it is transcribed rather than translated. */
+      word: { en: 'Novvoyxonadan olinadi', pl: 'Kafeda buyurtma qilasiz' },
       local: {
         PL: {
           q: 'Polsha valyutasi qaysi?',
@@ -845,13 +832,13 @@ export const uz: Dictionary = {
     boardShowLess: 'Kamroq ko‘rsatish',
 
     flight: {
-      rule: 'Squawk qancha uchsa, shuncha · borgan sari tezlashadi',
+      rule: 'Qush qancha uchsa, shuncha · borgan sari tezlashadi',
       reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza +{points} · parvozda {max} gacha',
       goal: '{target} ta raundni hisobga oladi',
       hint: 'Qanot qoqish uchun ekranga bosing',
       resume: 'Davom ettirish uchun bosing',
       aria: 'Uchish o‘yini. Qanot qoqish uchun maydonga bosing.',
-      crashed: 'Squawk ustunga urildi',
+      crashed: 'Qush ustunga urildi',
       resultScore: 'O‘tilgan darvozalar: {cleared}',
       motionTitle: 'Bu o‘yin harakatlanadi',
       motionBody:
@@ -2653,7 +2640,7 @@ export const uz: Dictionary = {
       eyebrow: 'Mukofot, vaucher, marketing va tahlil — bitta platformada',
       lines: ['Har tashrifni', 'odatga aylantiring.', 'Mijoz sizniki bo‘lsin.'],
       lede: "Sodiqlik, vaucherlar, marketing va hisobotlar bitta mijoz yozuvi ustida — taklifingiz esa minglab odam har tong ochadigan o‘yin ichida turadi. Siz faqat kimdir kirib, vaucherni ishlatganda to‘laysiz.",
-      primary: 'Savdo bilan bog‘lanish',
+      primary: 'Hamkor bo‘lish',
       secondary: 'Panelni ko‘rish',
       stats: [
         'Qayta tashrif o‘sishi',
@@ -2946,7 +2933,7 @@ export const uz: Dictionary = {
             'Tayyor auditoriyalar va kampaniya daromadi',
             'Menejerlar uchun alohida kirishlar',
           ],
-          action: 'Savdo bilan bog‘lanish',
+          action: 'Hamkor bo‘lish',
         },
         {
           name: 'Guruh',
@@ -2958,7 +2945,7 @@ export const uz: Dictionary = {
             'Guruh darajasidagi hisobot va eksportlar',
             'Biriktirilgan menejer',
           ],
-          action: 'Savdo bilan bog‘lanish',
+          action: 'Hamkor bo‘lish',
         },
       ],
       featured: 'Eng ko‘p tanlanadi',
@@ -2968,7 +2955,7 @@ export const uz: Dictionary = {
     cta: {
       title: 'Doimiy mijozlaringiz qanchaligini bilib oling.',
       lede: "Yigirma daqiqalik suhbat, sizning raqamlaringiz va Paylez filiallaringizda ochadigan qayta tashrif daromadining ochiq prognozi. Boshlash uchun shartnoma shart emas.",
-      primary: 'Savdo bilan bog‘lanish',
+      primary: 'Hamkor bo‘lish',
       secondary: 'paylez’ni ko‘rish',
       note: "Bir nechta filialli guruhmisiz? Ishga tushirishda yordam va kassa integratsiyasi haqida so‘rang.",
     },

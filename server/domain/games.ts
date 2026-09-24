@@ -43,7 +43,6 @@ import * as entitlements from './entitlements.ts';
 import * as ledger from './ledger.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
-import * as verification from './verification.ts';
 import { iso, now, secondsBetween, type Iso } from './time.ts';
 
 /**
@@ -322,14 +321,12 @@ export interface Round {
   /**
    * *Why* it banked nothing, when it did.
    *
-   * `null` on a paid round. Additive, so a client that shipped against `paid`
-   * alone keeps working — but the two reasons have different remedies and a
-   * screen showing "practice" for both is a screen a player cannot act on:
-   * `no_energy` comes back on a clock and needs nothing from them,
-   * `unverified` needs a code out of their inbox and will never resolve on its
-   * own. See `domain/verification.ts`.
+   * `null` on a paid round, `no_energy` on a practice one. Additive, so a
+   * client that shipped against `paid` alone keeps working. (It once had a
+   * second value, `unverified`; email verification was removed and nothing
+   * sends it now.)
    */
-  unpaidReason: 'no_energy' | 'unverified' | null;
+  unpaidReason: 'no_energy' | null;
 }
 
 /**
@@ -434,19 +431,13 @@ export async function startSession(
       },
     );
 
-    /* Said at the *start* as well as at the end, and that is the point of
-       carrying the reason: a player who has not proved their address should
-       find out before playing five questions, not on the result card. */
-    const proved = await verification.verified(db, input.userId);
-
     return {
       sessionId: id,
       gameType: input.gameType,
       content: built.content,
       energyLeft: energy.energy,
-      paid: energy.energy > 0 && proved,
-      unpaidReason:
-        energy.energy > 0 ? (proved ? null : 'unverified') : 'no_energy',
+      paid: energy.energy > 0,
+      unpaidReason: energy.energy > 0 ? null : 'no_energy',
     };
   });
 }
@@ -1192,15 +1183,11 @@ export interface Finish {
    */
   paid: boolean;
   /**
-   * *Why* it banked nothing, when it did. `null` on a paid round.
-   *
-   * The same union `Round.unpaidReason` carries and for the same reason:
-   * `no_energy` comes back on a clock and needs nothing from the player,
-   * `unverified` needs a code out of their inbox and will never resolve on its
-   * own. A result card that renders both as "practice" is one a player cannot
-   * act on.
+   * *Why* it banked nothing, when it did: `null` on a paid round,
+   * `no_energy` on a practice one — the same union `Round.unpaidReason`
+   * carries.
    */
-  unpaidReason: 'no_energy' | 'unverified' | null;
+  unpaidReason: 'no_energy' | null;
   /** §7.4's reward connection, computed from the real balance. */
   nearest: { venueId: string; venueName: string; discountPct: number; pointsNeeded: number } | null;
 }
@@ -1253,31 +1240,13 @@ export async function finish(
     if (session.state !== 'active') throw new DomainError('invalid_state', 'session already finished');
 
     /*
-     * Paid or practice, and there are **two** reasons a round can be unpaid.
-     *
-     * The tank, as it was when this round opened — see the note above the
-     * function for why it is asked about `started_at` and not about now.
-     *
-     * And the address. An account that has not proved its email banks nothing
-     * (`domain/verification.ts` for the full list of what that gates and what
-     * it deliberately does not). The round is still *played*, which is the same
-     * decision practice made: taking the game away teaches nobody anything
-     * about an email, and a player who cannot see what the product does has no
-     * reason to prove an address for it.
-     *
-     * The two are reported apart on `unpaidReason`, because "you are out of
-     * energy" and "confirm your email" have different remedies and a screen
-     * that renders both as "practice" is a screen a player cannot act on.
-     * Energy is checked first: it is the ordinary case, and an unverified
-     * player with an empty tank is being told about the one that comes back on
-     * its own.
+     * Paid or practice, decided by the tank as it was when this round opened —
+     * see the note above the function for why it is asked about `started_at`
+     * and not about now.
      */
     const hasEnergy = (await energyFor(db, input.userId, session.started_at)).energy > 0;
-    const proved = await verification.verified(db, input.userId);
-    const paid = hasEnergy && proved;
-    const unpaidReason: 'no_energy' | 'unverified' | null = hasEnergy
-      ? (proved ? null : 'unverified')
-      : 'no_energy';
+    const paid = hasEnergy;
+    const unpaidReason: 'no_energy' | null = hasEnergy ? null : 'no_energy';
 
     /* `created_at` is selected because Memory Match is scored on it. It is the
        server's stamp, written when the event arrived — the client has no clock

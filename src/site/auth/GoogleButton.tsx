@@ -33,6 +33,7 @@
  */
 import { useCallback, useState } from 'react';
 import { useAuth } from './context';
+import type { ChoosableType } from './users';
 import { GoogleCancelled, googleConfigured, requestGoogleCode } from './google';
 import { useCopy, useLanguage } from '../i18n/context';
 
@@ -62,17 +63,28 @@ function GoogleMark() {
   );
 }
 
-export function GoogleButton() {
+export function GoogleButton({
+  asType = null,
+}: {
+  /**
+   * The account type already chosen — by "Become a partner" — for an account
+   * this press *creates*. A Google account arrives with no type and would be
+   * asked "individual or business?" next; this answers it instead. An account
+   * that already has a type keeps it.
+   */
+  asType?: ChoosableType | null;
+} = {}) {
   const copy = useCopy();
   const [language] = useLanguage();
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, setType } = useAuth();
   const [status, setStatus] = useState<Status>('idle');
 
   const onClick = useCallback(async () => {
     setStatus('working');
     try {
       const code = await requestGoogleCode();
-      await signInWithGoogle(code, language);
+      const signedIn = await signInWithGoogle(code, language);
+      if (asType && signedIn.type === null) setType(asType);
       /* No navigation on success. Signing in changes what `resolveRoute`
          returns for this very route, and pushing a hash here would race it —
          the same reason the password form does not navigate either. */
@@ -88,7 +100,7 @@ export function GoogleButton() {
         error instanceof Error && error.message.includes('google identity') ? 'unreachable' : 'refused',
       );
     }
-  }, [language, signInWithGoogle]);
+  }, [language, signInWithGoogle, setType, asType]);
 
   if (!googleConfigured()) return null;
 

@@ -12716,7 +12716,7 @@ button {
 
 /* In the column a basis is a height — the same trap `.play-deck
    .play-hero-main` names — so the prompt sizes to its sentence there. */
-.play-deck .play-hero-tasks {
+.play-deck .play-slider {
   flex: 0 0 auto;
 }
 
@@ -20429,6 +20429,25 @@ button {
 .play-upgrade .sub-buy {
   margin-top: 0;
   font-size: 0.82rem;
+}
+
+/* "Get Pro": the site's primary press, stretched to the card — `.btn` centres
+   its own label, so a full-width one needs nothing more. */
+.play-get-pro {
+  width: 100%;
+  gap: 0.55rem;
+}
+
+/* The arrow in a small ring of the label's own colour, so it follows the press
+   in both themes without a colour of its own. */
+.play-get-pro-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
 }
 
 .sub-foot {
@@ -31318,126 +31337,79 @@ p.lst-soft {
   }
 }
 
-/* ══════════════════════════════════════════ the daily tasks, in the card ══
+/* ══════════════════════════════════════════ the points card's slider ══
  *
- * The rotating daily-task prompt inside the points card (`PointsTasks` in
- * `games.tsx`). It was a box of its own under the deck, "Today's list", while
- * the card above it sat half empty; the prompts are all ways to earn points, so
- * they live in the panel about points.
+ * Three fixed lines about earning, sliding horizontally inside the points card
+ * (`PointsSlider` in `games.tsx`), one every four seconds.
  *
- * **The type is fluid and the box is not measured.** These prompts are whole
- * sentences in five languages and they are not the same length in any two of
- * them. A fixed height clips the longest; a fixed font size either sets the
- * longest too small to read on a phone or the shortest too large for the card.
- * So the size is a two-point `clamp` (the form the responsive note in
- * `CLAUDE.md` names: a clamp with a floor stops being fluid, and this one keeps
- * moving all the way down to 320px) and the height is whatever the sentence
- * needs.
+ * **The view clips and the track moves.** The track's own box is one view
+ * wide and its slides (`flex: 0 0 100%`) overflow it side by side, so
+ * `translateX(-n × 100%)` — a percentage of the track's own box — is exactly
+ * n slides along.
  *
- * `min-height` is set to two lines rather than one, and that is the one measured
- * number here: without it the card changes height every fifteen seconds as the
- * prompt rotates between a short line and a long one, and a box that resizes on
- * a timer drags the whole page under the cursor.
+ * **The height is the tallest slide**, because the slides sit side by side in
+ * one flex line and stretch to it. A card that resized every four seconds as a
+ * short sentence replaced a long one would drag the page under the cursor.
  *
- * A hairline above it rather than a panel around it: it is part of the card,
- * and a box inside a lit card is a second card.
+ * The type is a two-point `clamp` rather than a breakpoint, for the reason the
+ * responsive note in `CLAUDE.md` gives, and it wraps rather than truncating:
+ * half of a sentence is not information.
  */
-.play-hero-tasks {
+.play-slider {
   position: relative;
-  /* A whole row of the card whether it is laid out as a row that wraps (full
-     width) or as a column (inside the deck) — the prompt spans under the
-     button rather than squeezing beside it. */
+  /* A whole row of the card whether it is a wrapping row (full width) or a
+     column (inside the deck). */
   flex: 1 1 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  min-width: 0;
+  gap: 0.7rem;
   padding-top: 0.95rem;
   border-top: 1px solid var(--border);
 }
 
-/*
- * The prompt.
- *
- * `min-height: 2lh` is two lines of *this* element's own line box, so it tracks
- * the clamp above rather than being a pixel figure that stops matching the type
- * the first time the clamp is retuned. Browsers without `lh` fall back to the
- * `em` line before it.
- */
-.play-tasks-line {
-  position: relative;
+.play-slider-view {
+  overflow: hidden;
+}
+
+.play-slider-track {
+  display: flex;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.play-slide {
+  flex: 0 0 100%;
+  min-width: 0;
   margin: 0;
-  min-height: 2.9em;
-  min-height: 2lh;
   font-size: clamp(1.02rem, 0.88rem + 0.6vw, 1.25rem);
   line-height: 1.4;
   font-weight: 600;
   color: var(--text);
-  /* No `white-space: nowrap`, no `text-overflow: ellipsis` and no line clamp:
-     the whole content of this panel is one sentence, and half of a nudge is not
-     a nudge. It wraps, and the box grows. */
   overflow-wrap: anywhere;
 }
 
-/*
- * The transition between prompts.
- *
- * On the `<span>` rather than the `<p>`, because the animation is *arrival*:
- * the span is keyed on the task, so React replaces the element and the keyframe
- * runs once per prompt. Animating the paragraph would animate it once, on
- * mount, and never again — text content cannot be transitioned.
- *
- * A rise and a fade rather than a slide across: the panel is a column of
- * sentences over a live backdrop and horizontal movement in a box this wide
- * reads as a carousel somebody can swipe, which this is not.
- */
-.play-tasks-line > span {
-  display: block;
-  animation: task-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes task-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.4rem);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* One pip per open task. A count and a rotation indicator in the same three
-   pixels — and deliberately not a control: there is nothing behind a prompt to
-   open, and a dot that invites a press and answers nothing is the
-   picture-of-a-control failure this stylesheet has already shipped twice. */
-.play-tasks-pips {
+.play-slider-dots {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 
-.play-tasks-pips i {
-  width: 0.4rem;
-  height: 0.4rem;
+.play-slider-dots i {
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 50%;
   background: rgba(var(--accent-rgb), 0.22);
   transition: background 200ms ease, transform 200ms ease;
 }
 
-.play-tasks-pips i[data-on] {
+.play-slider-dots i[data-on] {
   background: var(--accent);
   transform: scale(1.25);
 }
 
-/* The rise is the only motion here and it is the only thing dropped: the fade
-   stays, because without it a prompt replaces another with no indication that
-   anything changed, which on a timer reads as a rendering fault. */
+/* The slide still changes; it just does not travel. */
 @media (prefers-reduced-motion: reduce) {
-  .play-tasks-line > span {
-    animation: none;
-  }
-
-  .play-tasks-pips i {
+  .play-slider-track,
+  .play-slider-dots i {
     transition: none;
   }
 }
@@ -31615,106 +31587,6 @@ p.lst-soft {
   .pw-eye:active {
     transform: none;
   }
-}
-
-/* ══════════════════════════════════════════════ confirm your email ══
- *
- * The panel on the Play screen and the wallet (`VerifyEmail.tsx`). It is a
- * *panel* rather than a gate because an unverified account is not locked out —
- * it can read, play and browse, and what it cannot do is earn, redeem or appear
- * on the board. So this looks like the other panels on those screens rather
- * than like a barrier: same glass, same kicker, same field kit.
- *
- * It is **not** coloured. The palette has one accent, and this is the fourth
- * place that rule has had to be restated — the field kit's error weight, the
- * console's refusal strip, the stale-rate line — and the answer is the same
- * every time: weight and position carry the urgency, not hue. A panel sitting
- * directly under the points balance, saying the points will not move, does not
- * need to be amber to be read.
- */
-.vfy {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-  padding: clamp(1rem, 2.6vw, 1.4rem) clamp(1.1rem, 3vw, 1.6rem);
-  margin-bottom: 1.1rem;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border-2);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-}
-
-.vfy-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-fnt);
-}
-
-.vfy-kicker i {
-  display: inline-flex;
-  color: var(--accent-lit);
-}
-
-/* The address is bolded inside the sentence rather than put on a line of its
-   own: what somebody needs to check is that it is *their* address, and a
-   sentence they read anyway is where they will check it. */
-.vfy-line {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--text);
-  overflow-wrap: anywhere;
-}
-
-.vfy-line b {
-  font-weight: 700;
-  color: var(--accent-ink);
-}
-
-/*
- * The code and the two actions, on one row where there is room.
- *
- * `flex-end` rather than `center`, so the buttons sit on the field's baseline
- * rather than floating beside its label — the field is two rows tall (a label
- * and a well) and centring would put the press half a line above the well it
- * belongs to.
- */
-.vfy-form {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 0.75rem;
-}
-
-/*
- * Six digits wide, and no wider.
- *
- * A full-width well for a six-character code reads as a field that wants a
- * sentence. `ch` is exact here for the same reason it is on the converter's
- * amount: the well is `tabular-nums`, so every digit is one `ch` by
- * definition.
- */
-.vfy-code {
-  flex: 0 0 auto;
-  width: min(11rem, 100%);
-}
-
-.vfy-code input {
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.22em;
-}
-
-.vfy-acts {
-  display: flex;
-  align-items: center;
-  gap: 0.9rem;
-  flex-wrap: wrap;
 }
 
 /* ══════════════════════════════════════ what the profile is worth ══

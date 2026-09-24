@@ -3046,7 +3046,17 @@ console.log('\nthe card previews show real game content');
     const row = PREVIEW.word[list];
     const real = rows.find((entry) => entry[0] === row.word);
     check(`the ${list} word preview builds a real word`, real !== undefined, row.word);
-    check(`…carrying that word's own hint`, real?.[1] === row.hint, row.hint);
+    /* The clue is the dictionary's, per language, and has to be the clue the
+       round deals for that word in that language — the English file for
+       English, `words.<list>.<code>.json` for the rest. */
+    for (const code of LANGUAGE_ORDER) {
+      const clued = dataFile(code === 'en' ? `words.${list}.json` : `words.${list}.${code}.json`) as Array<
+        [string, string, number]
+      >;
+      const hint = LANGUAGES[code].games.preview.word[list];
+      check(`…with ${code}'s own clue for it`,
+        clued.find((entry) => entry[0] === row.word)?.[1] === hint, hint);
+    }
   }
   /* The two cards must not preview the same word: they are two rows of `GAMES`
      precisely because they deal two different lists, and a catalogue that
@@ -3290,10 +3300,10 @@ console.log('\nthe daily game, and the region rule');
   check('…and Memory Match follows it', GAMES[1].id === 'memory');
   for (const code of LANGUAGE_ORDER) {
     const names = LANGUAGES[code].games.names;
-    /* The flight's name is the one game in the set named after the product's
-       own character, in every language — which is what makes it checkable
-       without a table of eight translations here. */
-    check(`${code}'s first name is the flight's`, /squawk|сквок/i.test(names[0]), names[0]);
+    /* The flight's name is the one game in the set named for birds, in every
+       language — which is what makes it checkable without a table of eight
+       translations here. */
+    check(`${code}'s first name is the flight's`, /bird|птиц|птах|qush|ptak/i.test(names[0]), names[0]);
     /* And the local Word Builder is last, because it is the row the region rule
        removes: a filtered list keeps every other index where it was. */
     check(`${code} still holds a hole for the local list`, names[GAMES.length - 1].includes('{language}'));

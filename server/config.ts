@@ -722,8 +722,6 @@ export const CONFIG = {
     googleSignInPerHour: 20,
     guestPerHour: 10,
     passwordChangePerHour: 10,
-    verifyEmailPerHour: 30,
-    sendCodePerHour: 10,
     gameStartPerHour: 200,
     gameFinishPerHour: 200,
     checkInPerHour: 10,
@@ -739,35 +737,6 @@ export const CONFIG = {
     /** Sign-in attempts per address per window, then a cool-off. */
     signInPerHour: 20,
 
-    /*
-     * ── proving an address ──
-     *
-     * The four numbers behind the sign-up code (`domain/verification.ts`). Each
-     * bounds a different thing, and the second is the one doing the real work.
-     *
-     * `codeMinutes` is ten: long enough to switch to a mail app, find the
-     * message and come back, short enough that a code left in an inbox is not a
-     * standing key to the account.
-     *
-     * `codeAttempts` is **what makes six digits safe**. A million
-     * possibilities is nothing to a script and a per-hour rate limit gives it
-     * all day; five wrong answers per *code* is a one-in-two-hundred-thousand
-     * chance per code, whoever is asking and however slowly.
-     *
-     * `codeCooldownSeconds` bounds the resend button. Ninety seconds, because
-     * the honest reason to press it is that the first one has not arrived —
-     * and somebody who has already waited a minute for a message has spent
-     * most of their patience.
-     *
-     * `codeSendsPerAddress` bounds using the resend button as a way to post
-     * mail to somebody else's address. Ten, and it does **not** reset: an
-     * account that has burned ten codes has a problem an eleventh will not fix,
-     * and support can clear the row.
-     */
-    codeMinutes: 10,
-    codeAttempts: 5,
-    codeCooldownSeconds: 90,
-    codeSendsPerAddress: 10,
     /**
      * The Google OAuth client id, and the audience every ID token must name.
      *

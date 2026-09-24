@@ -12,7 +12,6 @@ import {
   BUSINESS_STATS,
   BUSINESS_TIERS,
   BUSINESS_WHY_ICONS,
-  SALES_EMAIL,
 } from './content';
 import { Icon } from './icons';
 import { fill, group } from './i18n/currency';
@@ -24,6 +23,8 @@ import {
   useMoneyParts,
 } from './i18n/context';
 import { PATHS } from './router';
+import { signUpAs } from './auth/signupIntent';
+import { useAuth } from './auth/context';
 import { lineCap } from './heroLines';
 
 /**
@@ -467,6 +468,31 @@ function PillarVisual({ visual }: { visual: (typeof BUSINESS_PILLARS)[number]['v
 
 /* ─────────────────────────────────────────────────────────────── hero ── */
 
+/**
+ * "Become a partner": straight to the sign-up form as a business, with the
+ * individual-or-business question already answered — see
+ * `auth/signupIntent.ts`. One component for the hero, the two paid pricing
+ * cards and the closing banner, so the four cannot go to four places.
+ *
+ * Only a visitor is sent to sign up. A signed-in account asking for `#/signin`
+ * is redirected before the page mounts, so a preset set for it would sit unread
+ * and ambush a later, ordinary sign-in.
+ */
+function PartnerSignUp({ className, children }: { className: string; children: ReactNode }) {
+  const { account } = useAuth();
+  return (
+    <a
+      href={PATHS.signin}
+      className={className}
+      onClick={() => {
+        if (!account) signUpAs('business');
+      }}
+    >
+      {children}
+    </a>
+  );
+}
+
 function BusinessHero() {
   const copy = useCopy();
   const moneyParts = useMoneyParts();
@@ -503,10 +529,10 @@ function BusinessHero() {
           </p>
 
           <div className="hero-cta" data-reveal>
-            <a href="#business-cta" className="btn btn-solid btn-lg">
+            <PartnerSignUp className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.business.hero.primary}
-            </a>
+            </PartnerSignUp>
             <a href="#business-dashboard" className="btn btn-ghost btn-lg">
               {copy.business.hero.secondary}
             </a>
@@ -823,7 +849,8 @@ function BusinessPricing() {
 
         <div className="tiers">
           {copy.business.pricing.tiers.map((tier, i) => {
-            const { price, featured } = BUSINESS_TIERS[i];
+            const { price, featured, partner } = BUSINESS_TIERS[i];
+            const buttonClass = `btn btn-lg ${featured ? 'btn-solid' : 'btn-ghost'}`;
 
             return (
             <article
@@ -859,12 +886,13 @@ function BusinessPricing() {
                 ))}
               </ul>
 
-              <a
-                href="#business-cta"
-                className={`btn btn-lg ${featured ? 'btn-solid' : 'btn-ghost'}`}
-              >
-                {tier.action}
-              </a>
+              {partner ? (
+                <PartnerSignUp className={buttonClass}>{tier.action}</PartnerSignUp>
+              ) : (
+                <a href="#business-cta" className={buttonClass}>
+                  {tier.action}
+                </a>
+              )}
             </article>
             );
           })}
@@ -890,10 +918,10 @@ function BusinessCta() {
           <h2>{copy.business.cta.title}</h2>
           <p>{copy.business.cta.lede}</p>
           <div className="cta-actions">
-            <a href={`mailto:${SALES_EMAIL}`} className="btn btn-solid btn-lg">
+            <PartnerSignUp className="btn btn-solid btn-lg">
               <Icon name="arrow" size={18} strokeWidth={2.2} />
               {copy.business.cta.primary}
-            </a>
+            </PartnerSignUp>
             <a href={PATHS.landing} className="btn btn-ghost btn-lg">
               {copy.business.cta.secondary}
             </a>

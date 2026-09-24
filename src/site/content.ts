@@ -60,44 +60,33 @@ export const NAV_HREFS: Record<NavKey, string> = {
 };
 
 /**
- * What a visitor and a signed-in player see.
+ * What a visitor sees — nobody signed in.
  *
- * **No Analytics.** It used to be here on the argument that the reporting was
- * part of the pitch, and it read as a public page about numbers nobody outside
- * a venue has. It is a venue owner's tool and now appears only in
- * `NAV_ORDER_BUSINESS`; `resolveRoute` refuses the route to everyone else, so
- * the address bar cannot get anybody there either.
+ * **No Contact** in the header: a visitor reaches it through "Support" in the
+ * footer (`FOOTER_LINKS`). **No Analytics** either: it is a venue owner's tool
+ * and `resolveRoute` refuses the route to everyone else.
  */
-export const NAV_ORDER: NavKey[] = [
-  'home',
-  'learn',
-  'business',
-  'wallet',
-  'contact',
-  'relocate',
-];
+export const NAV_ORDER: NavKey[] = ['home', 'business', 'learn', 'wallet', 'relocate'];
 
 /**
- * What a signed-in venue owner sees.
- *
- * Their own tools first and the consumer site last, which is the order they use
- * it in — an owner opens the header to reach Business and Analytics, not to
- * browse. Relocate is absent rather than reordered: it is a guide for someone
- * who has just moved country, and an operator running a Kraków café is not that
- * reader.
+ * What a signed-in player sees. No Business — an individual has no business
+ * with the page that sells to a venue — and Contact stays in the header.
  */
-export const NAV_ORDER_BUSINESS: NavKey[] = [
-  'business',
-  'analytics',
-  'learn',
-  'home',
-  'wallet',
-  'contact',
-];
+export const NAV_ORDER_INDIVIDUAL: NavKey[] = ['home', 'learn', 'wallet', 'contact', 'relocate'];
 
-/** An individual has no business with the page that sells to a venue. Analytics
- *  is no longer listed here because it is no longer in `NAV_ORDER` at all. */
-export const NAV_HIDDEN_INDIVIDUAL: NavKey[] = ['business'];
+/**
+ * What a signed-in venue owner sees: their own two tools and a way to reach
+ * us, and nothing of the consumer site — an owner opens the header to reach
+ * Business and Analytics, not to browse the player's pages.
+ */
+export const NAV_ORDER_BUSINESS: NavKey[] = ['business', 'analytics', 'contact'];
+
+/**
+ * What an operator sees on the public pages: every consumer page, unchanged
+ * from before the three lists above were split — the console is their tool and
+ * lives on its own frame, so nothing here was asked to move for them.
+ */
+export const NAV_ORDER_ADMIN: NavKey[] = ['home', 'learn', 'business', 'wallet', 'contact', 'relocate'];
 
 /**
  * Labels that change with who is reading, keyed by account type.
@@ -810,6 +799,22 @@ export const GAMES: Array<{
  * files, so "real content" stays true rather than being true on the day it was
  * typed.
  */
+/**
+ * The three slides in the Play screen's "Your points" card, in order.
+ *
+ * Informational and fixed: the figure is filled into `copy.games.tasks[copyKey]`
+ * and nothing about the player's progress is read. `profile` is the same fifty
+ * the profile page promises (`PROFILE_BONUS`).
+ */
+export const POINTS_SLIDES: ReadonlyArray<{
+  copyKey: 'dailyGame' | 'profile' | 'invite';
+  points: number;
+}> = [
+  { copyKey: 'dailyGame', points: 20 },
+  { copyKey: 'profile', points: 50 },
+  { copyKey: 'invite', points: 100 },
+];
+
 export const PREVIEW = {
   /**
    * The flag the Guess the Flag card shows, as the ISO code `flagOf` turns into
@@ -836,17 +841,18 @@ export const PREVIEW = {
   ],
 
   /**
-   * One row from each word list, `[word, hint]` out of `words.<list>.json`.
+   * One word from each list, out of `words.<list>.json`.
    *
    * Two different words, because the catalogue now has two Word Builders and a
    * card should preview the round it will actually deal — the English card
-   * builds an English word and the local card a Polish one. The hints are
-   * English in both files (see `WordList` in `games/banks.ts`), which is what
-   * the real game shows too.
+   * builds an English word and the local card a Polish one. The word is the
+   * list's and is not translated; its clue is, and lives in
+   * `copy.games.preview.word`, which is the clue the round itself deals for it
+   * in the reader's language.
    */
   word: {
-    en: { word: 'BREAD', hint: 'You buy this at a bakery' },
-    pl: { word: 'KAWA', hint: 'You order this in a café' },
+    en: { word: 'BREAD' },
+    pl: { word: 'KAWA' },
   },
 } as const;
 
@@ -1316,10 +1322,12 @@ export const BUSINESS_AUDIENCE_SIZES = [1840, 620, 2310, 480];
  * not have a shelf price, and inventing one would be the only dishonest number
  * on the page.
  */
-export const BUSINESS_TIERS: Array<{ price: number | null; featured?: boolean }> = [
+export const BUSINESS_TIERS: Array<{ price: number | null; featured?: boolean; partner?: boolean }> = [
   { price: 0 },
-  { price: 149, featured: true },
-  { price: null },
+  /* `partner`: the button is "Become a partner" and opens the business
+     sign-up, like the hero's. The free tier keeps its own button. */
+  { price: 149, featured: true, partner: true },
+  { price: null, partner: true },
 ];
 
 /**

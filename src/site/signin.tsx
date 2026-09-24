@@ -5,6 +5,7 @@ import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PATHS } from './router';
 import { useAuth } from './auth/context';
+import { takeSignUpIntent } from './auth/signupIntent';
 import { GoogleButton } from './auth/GoogleButton';
 import { PasswordInput } from './PasswordInput';
 import {
@@ -215,13 +216,20 @@ function TypeChoice({
   );
 }
 
-function SignUp({ onSwap }: { onSwap: () => void }) {
+function SignUp({
+  onSwap,
+  preset = null,
+}: {
+  onSwap: () => void;
+  /** Already answered — by "Become a partner" — so the question is not asked. */
+  preset?: ChoosableType | null;
+}) {
   const copy = useCopy();
   const { signUp } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [type, setType] = useState<ChoosableType | null>(null);
+  const [type, setType] = useState<ChoosableType | null>(preset);
   /* Not pre-checked, and there is no stored preference for it either: an
      agreement remembered from a previous sign-up is an agreement nobody gave
      this time. See the checkbox below. */
@@ -304,18 +312,20 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
         </label>
       </div>
 
-      <div className="field">
-        <span className="field-label">{copy.auth.typeQuestion}</span>
-        <TypeChoice
-          picked={type}
-          label={copy.auth.typeQuestion}
-          onPick={(next) => {
-            setType(next);
-            setError(null);
-          }}
-        />
-        <span className="field-help">{copy.auth.typeNote}</span>
-      </div>
+      {preset === null && (
+        <div className="field">
+          <span className="field-label">{copy.auth.typeQuestion}</span>
+          <TypeChoice
+            picked={type}
+            label={copy.auth.typeQuestion}
+            onPick={(next) => {
+              setType(next);
+              setError(null);
+            }}
+          />
+          <span className="field-help">{copy.auth.typeNote}</span>
+        </div>
+      )}
 
       {/*
         ── the agreement ──
@@ -384,7 +394,7 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
       {/* Also on sign-up: continuing with Google *is* opening an account when
           the address is new, so making somebody fill the form first to reach
           the shortcut would be the wrong way round. */}
-      <GoogleButton />
+      <GoogleButton asType={preset} />
 
       <p className="auth-swap">
         {copy.auth.haveAccount}{' '}
@@ -462,7 +472,10 @@ function ChooseType({ name }: { name: string }) {
 
 export function SignInPage() {
   const { account } = useAuth();
-  const [mode, setMode] = useState<'in' | 'up'>('in');
+  /* Taken once, on mount — see `auth/signupIntent.ts`. A partner sign-up opens
+     on the sign-up form with the account type already chosen. */
+  const [preset] = useState(takeSignUpIntent);
+  const [mode, setMode] = useState<'in' | 'up'>(preset ? 'up' : 'in');
 
   return (
     <main>
@@ -473,7 +486,7 @@ export function SignInPage() {
           ) : mode === 'in' ? (
             <Credentials onSwap={() => setMode('up')} />
           ) : (
-            <SignUp onSwap={() => setMode('in')} />
+            <SignUp onSwap={() => setMode('in')} preset={preset} />
           )}
         </div>
       </section>

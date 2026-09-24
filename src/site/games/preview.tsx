@@ -354,12 +354,14 @@ function Options({ options }: { options: readonly string[] }) {
  */
 function WordPreview({ list }: { list: WordList }) {
   const row = PREVIEW.word[list];
+  /* The clue in the reader's language, the word in the list's. */
+  const hint = useCopy().games.preview.word[list];
   const letters = [...row.word];
   const keys = [...letters.slice(2), ...letters.slice(0, 2)];
 
   return (
     <span className="pv-word">
-      <span className="pv-hint">{row.hint}</span>
+      <span className="pv-hint">{hint}</span>
       <span className="pv-slots">
         {letters.map((letter, i) => (
           <i key={i} style={{ '--p': i } as CSSProperties}>

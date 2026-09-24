@@ -14,7 +14,7 @@ export const pl: Dictionary = {
 
   nav: {
     home: 'Start',
-    learn: 'Graj i zarabiaj',
+    learn: 'Zarabiaj',
     analytics: 'Analityka',
     business: 'Dla firm',
     /* The same route as `learn`, under the word an owner needs. See
@@ -45,21 +45,6 @@ export const pl: Dictionary = {
     password: 'Hasło',
     showPassword: 'Pokaż hasło',
     hidePassword: 'Ukryj hasło',
-    verify: {
-      kicker: 'Potwierdź e-mail',
-      playLede: 'Rundy nie będą punktować, dopóki nie potwierdzisz adresu, którym się zarejestrowałeś —',
-      walletLede: 'Punkty będziesz mógł wydać po potwierdzeniu adresu, którym się zarejestrowałeś —',
-      codeLabel: 'Sześciocyfrowy kod, który wysłaliśmy',
-      codePlaceholder: '000000',
-      confirm: 'Potwierdź',
-      working: 'Sprawdzamy…',
-      resend: 'Wyślij ponownie',
-      onItsWay: 'W drodze. Wygaśnie po kilku minutach.',
-      tooSoon: 'Jeden właśnie poszedł — odczekaj chwilę, zanim poprosisz znowu.',
-      wrongWithTries: 'Ten kod jest nieprawidłowy. Zostało {n} prób.',
-      offline: 'Nie udało się połączyć z serwerem. Spróbuj za chwilę.',
-      failed: 'Nie udało się. Spróbuj za chwilę.',
-    },
     passwordPlaceholder: 'Twoje hasło',
     submit: 'Zaloguj się',
     errors: {
@@ -764,7 +749,7 @@ export const pl: Dictionary = {
     streakAhead: 'jeszcze przed nami',
 
     names: [
-      'Lot Squawka',
+      'Lot ptaków',
       'Znajdź parę',
       'Zgadnij flagę',
       'Kraj i stolica',
@@ -785,6 +770,7 @@ export const pl: Dictionary = {
     energyFull: 'Pełna — nie ma na co czekać',
     energyNext: '+1 za {time}',
     energyCost: '1 na rundę',
+    getPro: 'Przejdź na Pro',
     loading: 'Rozdajemy…',
     startFailed: 'Nie udało się rozpocząć tej rundy. Spróbuj ponownie za chwilę.',
 
@@ -801,6 +787,7 @@ export const pl: Dictionary = {
       /* One sample per local bank — the card is a different quiz per country.
          The Uzbekistan row is the export's own, already written in every
          language, so it is transcribed rather than translated. */
+      word: { en: 'Kupujesz to w piekarni', pl: 'Zamawiasz to w kawiarni' },
       local: {
         PL: {
           q: 'Jaka jest waluta Polski?',
@@ -850,13 +837,13 @@ export const pl: Dictionary = {
     boardShowLess: 'Pokaż mniej',
 
     flight: {
-      rule: 'Leć tak daleko, jak zdoła Squawk · z czasem przyspiesza',
+      rule: 'Leć tak daleko, jak zdoła ptak · z czasem przyspiesza',
       reward: 'Jedno zderzenie kończy grę · +{points} za bramę · do {max} za lot',
       goal: '{target} zalicza rundę',
       hint: 'Dotknij ekranu, aby zamachać skrzydłami',
       resume: 'Dotknij, aby wrócić do gry',
       aria: 'Gra zręcznościowa. Dotknij planszy, aby zamachać skrzydłami.',
-      crashed: 'Squawk zahaczył o słupek',
+      crashed: 'Ptak zahaczył o słupek',
       resultScore: 'Przeleciane bramy: {cleared}',
       motionTitle: 'Ta gra się porusza',
       motionBody:
@@ -2654,7 +2641,7 @@ export const pl: Dictionary = {
       eyebrow: 'Nagrody, vouchery, marketing i analityka w jednej platformie',
       lines: ['Zamień każdą wizytę', 'w nawyk.', 'Miej klientów na własność.'],
       lede: 'Lojalność, vouchery, marketing i raporty na jednym rekordzie klienta — a Twoja oferta siedzi w grze, którą tysiące osób otwierają każdego ranka. Płacisz dopiero wtedy, gdy ktoś wejdzie i zrealizuje voucher.',
-      primary: 'Porozmawiaj z nami',
+      primary: 'Zostań partnerem',
       secondary: 'Zobacz panel',
       stats: ['Wzrost powrotów', 'Koszt do realizacji', 'Od umowy do startu'],
       trust: 'Zaufało nam 500+ lokali · Bez sprzętu · Bez umowy na start',
@@ -2943,7 +2930,7 @@ export const pl: Dictionary = {
             'Gotowe grupy i przychód na kampanię',
             'Osobne logowania dla menedżerów',
           ],
-          action: 'Porozmawiaj z nami',
+          action: 'Zostań partnerem',
         },
         {
           name: 'Grupa',
@@ -2955,7 +2942,7 @@ export const pl: Dictionary = {
             'Raporty i eksporty na poziomie grupy',
             'Wyznaczony opiekun klienta',
           ],
-          action: 'Porozmawiaj z nami',
+          action: 'Zostań partnerem',
         },
       ],
       featured: 'Najczęściej wybierany',
@@ -2965,7 +2952,7 @@ export const pl: Dictionary = {
     cta: {
       title: 'Zobacz, ile są warci Twoi stali klienci.',
       lede: 'Dwudziestominutowa rozmowa, Twoje liczby i prosta prognoza przychodu z powrotów, który Paylez odblokuje w Twoich lokalach. Bez umowy na start.',
-      primary: 'Porozmawiaj z nami',
+      primary: 'Zostań partnerem',
       secondary: 'Poznaj paylez',
       note: 'Grupa wielolokalowa? Zapytaj o wsparcie przy wdrożeniu i integrację z POS.',
     },

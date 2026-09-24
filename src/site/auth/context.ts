@@ -197,19 +197,6 @@ export interface AuthValue {
    */
   memberSince: string | null;
   /**
-   * When this account proved its email address — `null` when it has not, and
-   * `null` when we do not know yet.
-   *
-   * Session state for the same reason `plan` is: it arrives on the one
-   * `GET /v1/me` the provider already makes, and three screens read it. And
-   * `null` covering both "not proved" and "not asked yet" is the safe
-   * direction here, unlike `plan`: the worst a screen does with it is offer
-   * somebody a verification panel they do not need, where the alternative —
-   * assuming verified while a request is in flight — would let a screen promise
-   * points the server is about to refuse.
-   */
-  emailVerifiedAt: string | null;
-  /**
    * Whether this account is listed on the weekly board — `null` when unknown.
    *
    * On by default now (the column's own default, and a one-off migration for

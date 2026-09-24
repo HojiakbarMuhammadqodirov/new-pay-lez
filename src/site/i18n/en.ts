@@ -21,7 +21,7 @@ export const en = {
    */
   nav: {
     home: 'Home',
-    learn: 'Play & Earn',
+    learn: 'Earn',
     analytics: 'Analytics',
     business: 'Business',
     /* The same route as `learn`, under the word an owner needs. See
@@ -74,37 +74,6 @@ export const en = {
      */
     showPassword: 'Show password',
     hidePassword: 'Hide password',
-    /*
-     * ── confirming the address ──
-     *
-     * The panel on the Play screen and the wallet — `VerifyEmail.tsx`, which
-     * carries the reasoning for why it is a panel rather than a gate.
-     *
-     * Two ledes rather than one, and that is the decision worth keeping: a
-     * round that banks nothing and a purchase that will be refused are
-     * different facts, and one sentence covering both is vague about each.
-     *
-     * `tooSoon` is **not** an error copy: a resend inside the cooldown comes
-     * back `sent: false`, because asking again when a message is slow is what
-     * an honest person does.
-     */
-    verify: {
-      kicker: 'Confirm your email',
-      playLede: 'Rounds will not pay until you confirm the address you signed up with —',
-      walletLede: 'You can spend points once you confirm the address you signed up with —',
-      codeLabel: 'The six-digit code we sent you',
-      codePlaceholder: '000000',
-      confirm: 'Confirm',
-      working: 'Checking…',
-      resend: 'Send it again',
-      onItsWay: 'On its way. It expires in a few minutes.',
-      tooSoon: 'One has just gone out — give it a moment before asking again.',
-      /* How many tries are left, because the server kills the code after five
-         and somebody on their fourth ought to know. */
-      wrongWithTries: 'That code is not right. {n} more tries before it expires.',
-      offline: 'We could not reach the server. Try again in a moment.',
-      failed: 'That did not work. Try again in a moment.',
-    },
     passwordPlaceholder: 'Your password',
     submit: 'Sign in',
     /* The credentials are in the bundle either way — see `auth/users.ts`. One
@@ -1100,7 +1069,7 @@ export const en = {
      * unaffected.
      */
     names: [
-      'Squawk’s Flight',
+      'Birds Flight',
       'Memory Match',
       'Guess the Flag',
       'Country & Capital',
@@ -1198,6 +1167,7 @@ export const en = {
        met the cost by running out. Deliberately unitless — the noun is the
        gauge's own heading two lines above. */
     energyCost: '1 per round',
+    getPro: 'Get Pro',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
     /* Only ever shown when the server would not answer *and* the local
@@ -1246,6 +1216,10 @@ export const en = {
        * for the preview, which is the whole rule `PREVIEW` states in
        * `content.ts` — and it is also why this one needed no translator.
        */
+      /* The Word Builder cards' clue, by list, in the reader's language —
+         the same clue the round deals for that word (\`words.<list>.<lang>.json\`).
+         The answer stays in the list's language; only the clue is translated. */
+      word: { en: 'You buy this at a bakery', pl: 'You order this in a café' },
       local: {
         PL: {
           q: 'What is the currency of Poland?',
@@ -1305,13 +1279,13 @@ export const en = {
      * catches a missing key but would say nothing about a missing array entry.
      */
     flight: {
-      rule: 'Fly as far as Squawk can · it speeds up as you go',
+      rule: 'Fly as far as the bird can · it speeds up as you go',
       reward: 'One crash ends it · +{points} a gap · up to {max} a flight',
       goal: '{target} to bank the round',
       hint: 'Tap the screen to flap',
       resume: 'Tap to pick up where you left off',
       aria: 'Flight game. Tap the stage to flap.',
-      crashed: 'Squawk clipped a column',
+      crashed: 'The bird clipped a column',
       resultScore: '{cleared} gaps flown',
       motionTitle: 'This one moves',
       motionBody:
@@ -3443,7 +3417,7 @@ export const en = {
       eyebrow: 'Play-to-earn rewards, vouchers, marketing & analytics in one platform',
       lines: ['Turn every visit', 'into a habit.', 'Own your customers.'],
       lede: 'Loyalty, vouchers, marketing and reporting on a single customer record — with your offer sitting inside a game thousands of people open every morning. You fund it only when someone walks in and redeems.',
-      primary: 'Talk to sales',
+      primary: 'Become a partner',
       secondary: 'See the dashboard',
       stats: ['Repeat visit uplift', 'Cost until redemption', 'From signup to live'],
       trust: 'Trusted by 500+ venues · No hardware to buy · No contract to start',
@@ -3730,7 +3704,7 @@ export const en = {
             'Built audiences and per-campaign revenue',
             'Per-site logins for managers',
           ],
-          action: 'Talk to sales',
+          action: 'Become a partner',
         },
         {
           name: 'Group',
@@ -3742,7 +3716,7 @@ export const en = {
             'Group-level reporting and exports',
             'Named account contact',
           ],
-          action: 'Talk to sales',
+          action: 'Become a partner',
         },
       ],
       featured: 'Most chosen',
@@ -3753,7 +3727,7 @@ export const en = {
     cta: {
       title: 'See what your regulars are worth.',
       lede: 'A 20-minute call, your numbers, and a plain forecast of the repeat revenue Paylez would unlock across your sites. No contract to start.',
-      primary: 'Talk to sales',
+      primary: 'Become a partner',
       secondary: 'Explore paylez',
       note: 'Multi-site group? Ask about rollout support and POS integration.',
     },

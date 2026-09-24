@@ -6,13 +6,12 @@ import {
   useState,
   type CSSProperties,
 } from 'react';
-import { GAMES, type GameId } from './content';
+import { GAMES, POINTS_SLIDES, type GameId } from './content';
 import { useApi } from './api/useApi';
 import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
 import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './api/wallet';
-import { DAILY_TASKS_PATH, openTasks, type DailyTasks } from './api/tasks';
 import { Icon } from './icons';
 import { useCopy, useLanguage, type LanguageCode } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -50,10 +49,8 @@ import {
   type Question,
 } from './games/rounds';
 import { WordBuilder, type ServerWord } from './games/WordBuilder';
-import { SubscribeButton } from './subscribe';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
-import { VerifyEmail } from './VerifyEmail';
 import '../components/GlobeHero/ui/flagFont.css';
 
 /**
@@ -486,96 +483,37 @@ function BatteryLightning() {
  * hand-written initials are thirty-five chances to be wrong in a language
  * nobody on the team reads.
  */
-/* ═══════════════════════════════════════════════════ today's list ══ */
+/* ══════════════════════════════════════════ the points card's slider ══ */
+
+/** How long one slide holds before the next slides in. */
+const SLIDE_MS = 4_000;
 
 /**
- * How long one task prompt holds the panel.
+ * Three ways to earn, as slides inside the "Your points" card.
  *
- * Fifteen seconds is long enough to read a sentence twice and short enough that
- * a player who glanced away sees a different one when they look back, which is
- * the whole reason the panel rotates rather than listing four lines: four
- * nudges stacked up are a wall of small print, and one at a time is a sentence.
+ * **Static on purpose.** These are informational lines, not a progress list:
+ * nothing is fetched and nothing is hidden when it is done, so the card reads
+ * the same whether or not the server answers. The figures are `POINTS_SLIDES`
+ * in `content.ts`; the words are `copy.games.tasks`, one hole for the figure.
  *
- * It is paused while the tab is hidden — a rotation nobody is watching is not a
- * rotation, and coming back to the panel mid-fade is worse than coming back to
- * where it was left.
+ * A horizontal track moved by `transform` — one slide wide per step, looping
+ * to the first after the last — with dots under it for which one is showing.
+ * The track's height is its tallest slide (the slides are flex items side by
+ * side), so the card does not change height as the sentences change length.
+ * Paused while the tab is hidden; under reduced motion the slide still changes
+ * but does not travel (`site.css`).
  */
-const TASK_ROTATE_MS = 15_000;
-
-/**
- * The prompts the web draws, by `copyKey`, in the order the server sends them.
- *
- * The server's list is shared with the phone and carries two more — the
- * check-in and "play a round" — which point at a check-in button and a round
- * counter this site does not have. A prompt with nothing on the page to act on
- * is left out here rather than switched off on the server, where it would be
- * switched off for the phone too.
- */
-const WEB_TASKS: ReadonlySet<string> = new Set(['dailyGame', 'profile', 'invite']);
-
-/**
- * ── the daily tasks, inside the points card ──
- *
- * One prompt at a time, out of the tasks this account has **not** already
- * finished, rotating every `TASK_ROTATE_MS`.
- *
- * It lived in a box of its own under the deck, titled "Today's list", while the
- * points card above it sat half empty under its bar. The prompts are all ways
- * to *earn* points, so they belong in the panel about points, and a second box
- * saying so was one more thing on the screen to read.
- *
- * Four rules, and each of them was a way this panel could have lied:
- *
- * - **Every figure is the server's.** `points` is resolved from the rule that
- *   actually pays it (`domain/tasks.ts`), which matters most for the check-in:
- *   it is worth a different amount on each rung of the seven-day cycle, so a
- *   hard-coded "5 points" would be wrong on four days out of seven and wrong in
- *   the direction that under-sells the streak.
- * - **`exact: false` says "up to".** A game round pays what the round scored.
- *   Promising the ceiling is a promise a player can fail to be given.
- * - **Done means gone.** Every one of these grants is once-only and guarded on
- *   the server, so a panel still offering fifty points for a profile finished
- *   last month is advertising a refusal.
- * - **Three empty states, not one.** "The list is done" is a good day, "we are
- *   loading" is a moment, and "the server did not answer" is neither — and a
- *   panel that renders the third as the first congratulates somebody for a
- *   failed request. `useApi`'s union is what keeps them apart; `openTasks`
- *   returns `null` for the two that are not an answer.
- *
- * The text is sized by `clamp` in `site.css` rather than by a breakpoint, and
- * the box has no fixed height: the prompts are sentences of different lengths in
- * five languages — the Ukrainian check-in line is half again the English one —
- * and a box measured against the shortest of them clips the longest. See the
- * `══ today's list ══` block there.
- */
-function PointsTasks() {
-  const copy = useCopy().games;
-  const tasks = copy.tasks;
-  const signedIn = hasToken();
-  const { state } = useApi<DailyTasks>(signedIn ? DAILY_TASKS_PATH : null);
-  const open = openTasks(state)?.filter((task) => WEB_TASKS.has(task.copyKey)) ?? null;
+function PointsSlider() {
+  const tasks = useCopy().games.tasks;
   const [at, setAt] = useState(0);
+  const count = POINTS_SLIDES.length;
 
-  /*
-   * The rotation.
-   *
-   * Keyed on how many tasks there are rather than on the array, so a reload
-   * that returns the same list does not restart the timer mid-sentence. The
-   * index is taken modulo the length at *read* time as well, because a task
-   * completed between two reads shortens the list under an index that was valid
-   * when it was set.
-   */
-  const count = open?.length ?? 0;
   useEffect(() => {
-    if (count < 2) return;
-    const tick = () => setAt((i) => i + 1);
-    /* Paused while the tab is hidden: a rotation nobody is watching wastes the
-       prompts, and a player returning to the panel should be where they left
-       it rather than four sentences along. */
-    let timer = window.setInterval(tick, TASK_ROTATE_MS);
+    const tick = () => setAt((i) => (i + 1) % count);
+    let timer = window.setInterval(tick, SLIDE_MS);
     const visibility = () => {
       window.clearInterval(timer);
-      if (!document.hidden) timer = window.setInterval(tick, TASK_ROTATE_MS);
+      if (!document.hidden) timer = window.setInterval(tick, SLIDE_MS);
     };
     document.addEventListener('visibilitychange', visibility);
     return () => {
@@ -584,68 +522,27 @@ function PointsTasks() {
     };
   }, [count]);
 
-  const task = count > 0 && open ? open[at % count] : null;
-
-  /*
-   * The sentence.
-   *
-   * `{reward}` is one hole rather than two half sentences, because a price and
-   * the words around it do not sit in the same order in five languages — the
-   * repo's own money rule, applied to points. The prompt is looked up by the
-   * server's `copyKey`, and a key the dictionary does not carry renders
-   * *nothing* rather than the key itself: a lookup that falls through to its own
-   * id is the failure the dashboard's findings panel already shipped once.
-   */
-  const line = useMemo(() => {
-    if (!task) return null;
-    const prompts = tasks as unknown as Record<string, string | undefined>;
-    const prompt = prompts[task.copyKey];
-    if (typeof prompt !== 'string') return null;
-    return fill(prompt, {
-      reward: fill(task.exact ? tasks.exact : tasks.upTo, { points: String(task.points) }),
-    });
-  }, [task, tasks]);
-
-  /* No session, no list: with no token `useApi` is never asked and would read
-     as "loading" for ever, which is a spinner that means nothing. */
-  if (!signedIn) return null;
-
   return (
-    <div className="play-hero-tasks">
-
-      {/*
-        The prompt, keyed on the task so a change is a change of element —
-        which is what lets the CSS animate it in. Animating a text node's
-        content cannot be done; replacing the node can.
-
-        `aria-live="polite"` because the panel changes on a timer with no
-        interaction behind it: a screen reader that is told is told once every
-        fifteen seconds, and one that is not never learns the panel exists.
-      */}
-      <p className="play-tasks-line" aria-live="polite">
-        {line !== null ? (
-          <span key={task?.key ?? at}>{line}</span>
-        ) : state.status === 'loading' ? (
-          <span>{tasks.loading}</span>
-        ) : state.status === 'error' ? (
-          <span>{tasks.offline}</span>
-        ) : (
-          <span>{tasks.allDone}</span>
-        )}
-      </p>
-
-      {/* One pip per open task, so the panel says how many there are without
-          listing them — and so a player can see that it is rotating rather
-          than flickering. Not pressable: there is nothing on the other end of
-          a prompt to open, and a dot that looks like a control and is not is
-          the picture-of-a-control rule. */}
-      {count > 1 && (
-        <div className="play-tasks-pips" aria-hidden>
-          {Array.from({ length: count }, (_, i) => (
-            <i key={i} data-on={i === at % count ? 'true' : undefined} />
+    <div className="play-slider">
+      <div className="play-slider-view" aria-live="polite">
+        <div
+          className="play-slider-track"
+          style={{ transform: `translateX(${-at * 100}%)` }}
+        >
+          {POINTS_SLIDES.map((slide, i) => (
+            <p className="play-slide" key={slide.copyKey} aria-hidden={i !== at}>
+              {fill(tasks[slide.copyKey], {
+                reward: fill(tasks.exact, { points: String(slide.points) }),
+              })}
+            </p>
           ))}
         </div>
-      )}
+      </div>
+      <div className="play-slider-dots" aria-hidden>
+        {POINTS_SLIDES.map((slide, i) => (
+          <i key={slide.copyKey} data-on={i === at ? 'true' : undefined} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -1329,11 +1226,6 @@ function Board() {
 export function GamesApp() {
   const copy = useCopy();
   const games = copy.games;
-  /* The paid plan's own name, from the same dictionary block the pricing
-     cards read, so the button here and the card on the landing page cannot
-     end up calling the plan two different things. Index 1 is Pro — the list
-     is index-aligned with `SUB_PLANS` in `content.ts`. */
-  const upgradeName = copy.subscription.plans[1].name;
   const [language] = useLanguage();
   const { account, entitlements, plan, setPlayer } = useAuth();
 
@@ -2010,7 +1902,7 @@ export function GamesApp() {
               {/* Under the press rather than under the bar: the card's figure
                   and its button are one reading, and the prompts are the
                   ways to move that figure — the card's last line. */}
-              <PointsTasks />
+              <PointsSlider />
             </a>
 
             {/*
@@ -2149,12 +2041,24 @@ export function GamesApp() {
 
               {/* The offer goes where the limit is felt, and only to somebody
                   the limit applies to. A player already on Pro sees nothing
-                  here — the button would be selling them what they have — and
-                  neither does anyone whose plan has not resolved, because
-                  "we do not know yet" is not "you are on free". */}
-              {plan?.code === 'free' && (
+                  here — the button would be selling them what they have.
+                  Hidden only on a plan *known* to be paid: an unresolved plan
+                  (no server answer yet, or none at all) used to hide it too,
+                  which left it missing for every player the server had not
+                  been asked about.
+
+                  It opens the plans section on the landing page rather than
+                  checkout: the tank is where the wish starts, and the plans are
+                  where the terms and the other tier can be compared. An
+                  unprefixed anchor files under `landing` (`ANCHOR_ROUTES`). */}
+              {(plan === null || plan.code === 'free') && (
                 <div className="play-upgrade">
-                  <SubscribeButton planCode="pro" planName={upgradeName} />
+                  <a className="btn btn-solid play-get-pro" href="#subscription">
+                    <span className="play-get-pro-ico" aria-hidden>
+                      <Icon name="arrow" size={13} strokeWidth={2.4} />
+                    </span>
+                    {games.getPro}
+                  </a>
                 </div>
               )}
             </section>
@@ -2169,17 +2073,6 @@ export function GamesApp() {
             player rather than about the balance, and it was a three-character
             number in a row of three three-character numbers.
           */}
-          {/*
-            ── confirm your email ──
-
-            Above the day's list and below the two gauges, which is where the
-            gate actually bites: the balance panel says what the points are
-            worth and the battery says how many rounds are left, and this says
-            that neither of them is going to move until the address is proved.
-            It renders **nothing** for an account that has proved one, or that
-            has no address to prove — see `VerifyEmail.tsx`.
-          */}
-          <VerifyEmail where="play" />
 
           <StreakRow player={player} />
 

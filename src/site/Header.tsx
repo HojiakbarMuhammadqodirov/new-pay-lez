@@ -8,11 +8,12 @@ import {
   type PointerEvent,
 } from 'react';
 import {
-  NAV_HIDDEN_INDIVIDUAL,
   NAV_LABEL_BUSINESS,
   NAV_HREFS,
   NAV_ORDER,
+  NAV_ORDER_ADMIN,
   NAV_ORDER_BUSINESS,
+  NAV_ORDER_INDIVIDUAL,
   type NavKey,
 } from './content';
 import { GLASS_MESH } from './glassMesh';
@@ -495,11 +496,10 @@ export function Header({ route }: { route: Route }) {
   /*
    * Which items, in which order.
    *
-   * Three answers, and the account is the whole of what decides between them.
-   * An owner gets their own tools first and no Relocate (see
-   * `NAV_ORDER_BUSINESS`); an individual loses the two pages that sell to a
-   * venue; signed out, everything shows, because those pages are still the
-   * pitch.
+   * The account is the whole of what decides between them — see the four
+   * `NAV_ORDER*` lists in `content.ts`. An owner gets Business, Analytics and
+   * Contact; a player keeps Contact and loses Business; a visitor gets
+   * Business and not Contact, which lives in the footer's "Support".
    */
   const isOwner = account?.type === 'business';
   const [menuOpen, setMenuOpen] = useState(false);
@@ -531,8 +531,10 @@ export function Header({ route }: { route: Route }) {
     isOwner
       ? NAV_ORDER_BUSINESS
       : account?.type === 'individual'
-        ? NAV_ORDER.filter((key) => !NAV_HIDDEN_INDIVIDUAL.includes(key))
-        : NAV_ORDER;
+        ? NAV_ORDER_INDIVIDUAL
+        : account?.type === 'admin'
+          ? NAV_ORDER_ADMIN
+          : NAV_ORDER;
 
   return (
     <header className="site-header" data-scrolled={scrolled ? 'true' : 'false'}>
