@@ -35,7 +35,7 @@ a whole:
 
 ## Commands
 
-There is no test runner. `npm run verify` is the test suite — 1,069 checks: it
+There is no test runner. `npm run verify` is the test suite — 1,690 checks: it
 exercises the pure maths — atlas parsing, projection round-trips, country
 hit-testing, ribbon geometry invariants, route baking determinism, hero/footer
 framing across five aspect ratios, the rotation accumulator over an hour of
@@ -64,6 +64,19 @@ the output is a fact about the code rather than a dependency of it. Only the URL
 set is checked, not the file — `<lastmod>` is the date of the last commit
 touching each page's own module, read out of git, so it moves on its own and a
 check that failed on that would be one nobody could keep green.
+
+`npm run legal` regenerates `src/site/legal/export/<lang>.json` from the five
+`legal/<lang>.tsx` modules — the Privacy Policy and the Terms are the two
+documents the Flutter app has to reproduce word for word, and they are the two
+written as JSX. It renders each with `renderToStaticMarkup` and walks the markup,
+rather than reading the source, because a reader of the source would have to
+understand `{' '}`, entity escapes and JSX whitespace collapsing — which is to
+say it would have to be a JSX compiler, and React already is one. The walk
+**throws on any element it does not recognise**, so a tag added to `parts.tsx`
+that nobody taught it about fails the generator rather than vanishing quietly out
+of a binding document. Not part of `build`, for the reason `banks` is not, plus
+one of its own: a build that silently regenerated a legal text would make "what
+did the app show on that date" unanswerable.
 
 `npm run server` starts the backend, and `npm run verify:api` is *its* test
 suite — a second one, because it checks a different kind of thing (see
@@ -146,7 +159,7 @@ ever be assignable to the other however identical their public surface.
 
 **Keeping the SQLite driver is deliberate and is what keeps `verify:api`
 honest.** Postgres has no `:memory:`, so a Postgres-only port would have dragged
-all 925 checks onto a live database. They still run offline against a file that
+all 1,191 checks onto a live database. They still run offline against a file that
 is thrown away.
 
 `node:http` and `node:crypto` otherwise, run straight from TypeScript by Node
@@ -157,7 +170,7 @@ the category defaults and the word bank, and nothing else. There is no venue
 catalogue, no offer and no gift-card shelf on any boot; see "nothing is seeded"
 under Conventions for why, and `bootOrdering` in `server/verify.ts` for the
 guard that keeps it true);
-`npm run verify:api` is its test suite — 925 checks, the counterpart of
+`npm run verify:api` is its test suite — 1,191 checks, the counterpart of
 `npm run verify` — and
 it is what checks the rules that are arithmetic rather than rendering — the
 points ledger's FIFO ordering, the budget pool's three states, the amount-capture
@@ -303,6 +316,53 @@ Two things about it are easy to undo by accident and both are checked:
   available — which is the same rule `partnerMetrics.ts` states on the front end,
   enforced here on the money that actually moves.
 
+**Consent follows the asking, and the server never infers it.** Sign-up and the
+Google exchange both take `acceptTerms`, and both write the two `consent_records`
+rows (`terms` and `privacy`, stamped with `CONFIG.privacy.policyVersion`) **only
+when it is true**. Both wrote them unconditionally once, on the argument that the
+account coming into existence is the moment consent is recorded — true about the
+moment and false about the consent, because nobody had been asked. A row saying
+somebody agreed to a document on a day they were never shown it is worse than no
+row, because it is the row that would be produced as evidence.
+
+**Absent is not refused, and that is a rule about clients rather than about
+consent.** It *was* refused for a few days, and the refusal landed on the one
+client that cannot be changed: the Flutter app already on people's phones does
+not send the field. Nor can the gate be narrowed to the web — `surface` is
+client-declared and **defaults to `'web'` when absent**, so the exemption written
+to spare the app would have refused the app. Refusing therefore bought no consent
+at all; it bought a sign-up screen that fails for everybody who has not updated,
+and fails for the people least likely to report it.
+
+So the asking lives on the surface that can ask. On the web the submit *and* the
+Google button on the sign-up form are both dead until the box is ticked
+(`GoogleButton` takes `acceptTerms`; undefined means "this form does not ask" and
+leaves it live, which is how the **sign-in** form's copy stays usable — that
+press is for an account that already exists). A client that has not asked gets an
+account and no consent row, `GET /v1/me/consents` reports it ungranted, and
+`POST /v1/me/consents` is how it arrives later. Google records only on the press
+that *creates* the account: a row per sign-in would turn evidence into a log.
+
+**Email confirmation is built and postponed, and the schema still carries its
+shape.** A full OTP flow — code, expiry, attempt cap, resend cooldown, send
+ceiling, the `ports/email.ts` boundary and a `VerifyEmail` panel — shipped and was
+taken back out in `53edbf7`, because no transport exists: with `PAYLEZ_EMAIL`
+unset the code goes to the server log and nowhere a customer can read it. That
+would have been survivable if the gate were small, and it was not — an
+unconfirmed account could not earn, buy a voucher or a gift card, check in, claim
+the welcome gift, or appear on the leaderboard, and **no existing account is
+backfilled**, so the first restart would have taken all of that from everyone at
+once.
+
+`users.email_verified_at` and the `email_verifications` table are deliberately
+**left in the schema, inert**, so there is no migration to run and none to unrun;
+the Google exchange still stamps the column because that is the one moment the
+fact is known for free. Restoring is code-only — `git show cc3d9d0 -- <path>` for
+the three deleted files, and `53edbf7` names every block. Three things to change
+on the way back: a transport first, a banner rather than a gate (and if a gate is
+ever wanted, on *spending* and never on earning), and a backfill so accounts that
+predate it are not asked for a code for an address they registered months ago.
+
 **The profile's "Status" is `occupation`, and the column cannot be called
 `status`.** `users.status` is the account state — `provisional`, `active`,
 `banned`, `erased` — so the field a person picks from five values (`student`,
@@ -417,6 +477,14 @@ screenshots in `b2b/`, are the original Paylez design prototypes. **Nothing in
 `src/` imports them and Vite does not build them.** They exist so the React
 rebuild can be checked against the source design. Don't edit them to change the
 live site, and don't wire them into the build.
+
+**`b2b/Feedbacks.docx` is not a prototype — it is the review list**, 28 numbered
+notes with a screenshot under most of them, and it is what the recent run of work
+was built from. Read it before assuming a screen is wrong: several notes are
+questions rather than defects, and a few name a screen the note above them is
+actually about. Extract it with `word/document.xml` out of the zip; the images
+are `word/media/` in paragraph order, which is how a note is matched to the
+screen it is complaining about.
 
 Where a prototype and the live site disagree, the live site wins on market and
 palette and the prototype wins on features. `b2b/` is a UK hospitality pitch in
@@ -673,6 +741,16 @@ chosen it stops following. Amounts live as euros in `content.ts` (and in the
 euro figures behind the dictionaries) and are converted on the way out by
 `useMoney` / `useMoneyParts`; a currency symbol typed into a component or a
 dictionary is the bug this arrangement exists to prevent.
+
+**The switcher offers seven, and two of them are nobody's default.** `EUR` and
+`USD` sit after the five a language picks, in that order, because a currency no
+language selects is exactly the one somebody has to reach for by hand: a reader
+in Tashkent quoted in soum may still think in dollars, and the euro is the unit
+every amount in this repository is written in, so choosing it converts nothing at
+all. Both were already in `fx.ts` with a rate and a symbol and already have names
+in all five dictionaries — `relocate.rates.names` is keyed by `FxCode` and covers
+the whole nineteen — so an eighth is a row in `CURRENCIES`, a code in
+`CURRENCY_ORDER` and a `step`, and nothing else.
 
 **And separating them broke a rule that had been true by accident, in five
 places.** `fx.ts` has always said digit grouping belongs to the *reader* and the
@@ -1183,15 +1261,32 @@ ways.
 a country the product has **not** localised for at all — including an account
 with no city yet — gets Polish, which is a real answer because this site is a
 guide to having moved to Poland; and a country it **has** localised for and has
-no word list for gets `null`, and the card is not drawn. That third case is
-Uzbekistan, which was being handed the Polish list — the card's whole promise is
-"practise the language of the place you moved to", so Polish in Tashkent is the
-card saying something false, and worse than saying nothing because a player
-cannot tell until they are five words in. There is no Russian or Uzbek word list
-in `games/data/`: those are hand-delivered exports
-(`updates/paylez-words-*.json`) and inventing one would be inventing vocabulary
-to teach somebody. Adding it is one file and one row — drop `words.ru.json` in,
-widen `WordList`, add `UZ: 'ru'` — and the card comes back on by itself.
+no word list for gets `null`, and the card is not drawn. Uzbekistan used to take
+that third branch, and before that was being handed the Polish list — the card's
+whole promise is "practise the language of the place you moved to", so Polish in
+Tashkent is the card saying something false, and worse than saying nothing
+because a player cannot tell until they are five words in.
+
+**There are three lists now: `en`, `pl` and `ru`, and `UZ` routes to Russian.**
+Russian rather than Uzbek because Russian is what the counter, the clinic and the
+landlord are speaking in Tashkent, and it is the language there is a list for.
+No country takes the `null` branch today; it is what a sixth country gets on the
+day its quiz bank lands and its word list has not, and `npm run verify` pins that
+consequence through `visible(null)` rather than through a country that would have
+to be invented to test it.
+
+Adding a fourth is still one file and one row — drop `updates/paylez-words-<code>.json`
+in, add the code to the loop in `scripts/build-question-banks.mjs`, run
+`npm run banks`, widen `WordList`, name the country in `WORD_LIST_FOR_COUNTRY` —
+plus the hidden tax the type then charges: `copy.games.wordGame.lists` in all
+five dictionaries, a `PREVIEW.word` sample that exists verbatim in the new data
+file, and `WORD_LANGUAGES` in `server/db/import.ts` if the server is to serve it
+too. Every one of those is a build error rather than a discovery.
+
+**The hints are English in all three files**, and that is the rule rather than an
+accident of who wrote them: the thing being learned is the word, and the reader
+may be reading the site in any of five languages. A list whose clues are in the
+language being practised is a list nobody can start.
 
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that
@@ -1564,7 +1659,7 @@ bundled, the flag font copied into `public/`), geometry comes from the
 - **`rowid` does not exist on Postgres, and this suite cannot catch that.** The
   eighth trap and the worst so far, because it was silent here and fatal there:
   `ledger.spend` ordered its FIFO lots by `rowid`, `verify.ts` asserted the same
-  order, all 925 checks were green — and on the live database every spend threw
+  order, every check was green — and on the live database every spend threw
   `42703 column "rowid" does not exist`. A voucher could not be bought, a gift
   card could not be bought, a tier could not be spent on. It stood from the
   Supabase migration until a demo seed run against production hit it.
@@ -1603,6 +1698,20 @@ bundled, the flag font copied into `public/`), geometry comes from the
   SET x = x + 1`** is ambiguous and must qualify the table. And **`GROUP BY` an
   output alias** binds to a *column* of that name if one exists, which silently
   broke the traffic report.
+- **A `GROUP BY` cannot report a row that does not exist, and three boot gates
+  turn on exactly that.** `main.ts` decides whether to re-import by asking what
+  is missing or too small, and the word-bank gate asked
+  `SELECT language, COUNT(*) … GROUP BY language HAVING COUNT(*) <= $floor` — a
+  query that can only ever name a language which already has rows. A list added
+  after a database was first filled has none, appears in no group, and is starved
+  in the one way the query cannot see. `ru` was exactly that, and it would have
+  shipped a card whose words never arrived: the card drawn, the server answering
+  `not_found` for the session's language, every round falling silently through to
+  the browser's own copy of the bank. `WORD_LANGUAGES` in `db/import.ts` is now
+  the list both sides read. **Ask the code what it can request, never the table
+  what it happens to hold** — the quiz-bank gate above it already carries the same
+  correction, for the same reason, and a fourth gate written the easy way will
+  have the same hole.
 - **Three kinds of async bug the type checker cannot see.** The whole server is
   promise-based now, and `tsc` catches only the cases where the value is used.
   It says nothing about a **floating promise** — a statement like `db.tx(…)`
@@ -1687,6 +1796,17 @@ bundled, the flag font copied into `public/`), geometry comes from the
   And `Screen`, `Figure` and `useNum` are the only shared vocabulary — everything
   else a screen needs, it owns.
 
+- **The rail is 280px, and the number is a measurement of the longest label
+  rather than the reference export's width.** The export is in English, where the
+  longest screen name is 17 characters; Polish and Uzbek run to 22 and Russian to
+  20. A rail row is an icon, a label told never to wrap, and a count pushed to the
+  far edge by `margin-left: auto`, and `.rail` clips rather than scrolls — so the
+  **count** is the first thing off the end, and the row it happened on, Loyalty
+  campaigns, is one of only two that ever carries one. 240 left about 140px for a
+  label needing 164. At 280 the badge sits 21px inside the edge at three digits,
+  measured in Chrome at the worst label rather than estimated. `.rail-link > span`
+  also carries `min-width: 0` and an ellipsis, which nothing that ships triggers —
+  it is what a longer label does *instead of* hiding the number beside it.
 - **The frame changed with the screens, and five of those are decisions rather
   than styling.** The rail's 32px logo tile is gone — it was the one piece of
   chrome on the site that carried one, against this file's own "the brand is the

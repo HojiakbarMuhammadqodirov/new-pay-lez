@@ -284,6 +284,54 @@ counter rule. It needs a master key, not a vendor.
    account already — anonymous traffic is *counted*, identified traffic is
    *attributed*, and nothing joins the two.
 
+## Consent is recorded when it is given, and never inferred
+
+`signUp` and `linkGoogleAccount` both take `acceptTerms` and both write the two
+`consent_records` rows — `terms` and `privacy`, stamped with
+`CONFIG.privacy.policyVersion` — **only when it is true**. Both wrote them
+unconditionally once, on the argument that the account coming into existence is
+the moment consent is recorded. That is true about the moment and false about the
+consent: nobody had been asked, and a row saying somebody agreed to a document on
+a day they were never shown it is worse than no row, because it is the row that
+would be produced as evidence. Google is the sharper case — it shows nobody our
+terms — and it records only on the press that *creates* the account, because a
+row per sign-in turns evidence into a log.
+
+**Absent is not refused, and that is a decision about clients.** It was refused
+briefly and the refusal landed on the one client that cannot be changed: the
+shipped phone app does not send the field. The gate cannot be narrowed to the web
+either, because `surface` is client-declared and **defaults to `'web'`** — so the
+exemption written to spare the app would have refused the app. Refusing bought no
+consent; it bought a sign-up that fails for everybody who has not updated.
+
+The asking therefore lives on whichever surface can ask, and the recording
+follows it. A client that has not asked creates the account and writes nothing;
+`GET /v1/me/consents` reports it ungranted and `POST /v1/me/consents` is how it
+arrives later, which is the whole migration path for a client on its own release
+schedule.
+
+## Email confirmation is built, and it is not switched on
+
+A full OTP flow existed for a few days — code, expiry, attempt cap, resend
+cooldown, per-address send ceiling, an `email.ts` port and a panel on the Play and
+Wallet screens — and was removed in `53edbf7`. There is no transport: with
+`PAYLEZ_EMAIL` unset the local adapter logs the code and delivers nowhere, and
+that variable appears in no deployment and in no env example. The gate was also
+far wider than it looked — an unconfirmed account could not earn, buy a voucher or
+gift card, check in, claim the welcome gift, or appear on the leaderboard — and
+nothing backfills an existing account, so a restart would have taken all of that
+from every live user at once.
+
+`users.email_verified_at` and the `email_verifications` table remain in the
+schema, unread, so no migration is owed in either direction, and the Google
+exchange still stamps the column because that is the one moment the fact is free.
+Bringing it back is code only: `git show cc3d9d0 -- <path>` restores the three
+deleted files and `53edbf7` names every block that was cut out of a shared one.
+Do three things differently on the way back — a transport first, a banner rather
+than a gate (and if a gate is ever wanted, on *spending*, never on earning), and a
+backfill so accounts that predate it are not asked to prove an address they
+registered months ago.
+
 ## The two controls that are about the database rather than the rules
 
 Everything above is access control at the route: `auth:` on a `Route`, checked
