@@ -1,10 +1,11 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { ACCOUNT_TYPES } from './content';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
 import { PATHS } from './router';
 import { useAuth } from './auth/context';
+import { clearSignUpIntent, peekSignUpIntent } from './auth/signupIntent';
 import { GoogleButton } from './auth/GoogleButton';
 import { PasswordInput } from './PasswordInput';
 import {
@@ -215,13 +216,20 @@ function TypeChoice({
   );
 }
 
-function SignUp({ onSwap }: { onSwap: () => void }) {
+function SignUp({
+  onSwap,
+  preset = null,
+}: {
+  onSwap: () => void;
+  /** Already answered — by "Become a partner" — so the question is not asked. */
+  preset?: ChoosableType | null;
+}) {
   const copy = useCopy();
   const { signUp } = useAuth();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [type, setType] = useState<ChoosableType | null>(null);
+  const [type, setType] = useState<ChoosableType | null>(preset);
   /* Not pre-checked, and there is no stored preference for it either: an
      agreement remembered from a previous sign-up is an agreement nobody gave
      this time. See the checkbox below. */
@@ -304,18 +312,20 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
         </label>
       </div>
 
-      <div className="field">
-        <span className="field-label">{copy.auth.typeQuestion}</span>
-        <TypeChoice
-          picked={type}
-          label={copy.auth.typeQuestion}
-          onPick={(next) => {
-            setType(next);
-            setError(null);
-          }}
-        />
-        <span className="field-help">{copy.auth.typeNote}</span>
-      </div>
+      {preset === null && (
+        <div className="field">
+          <span className="field-label">{copy.auth.typeQuestion}</span>
+          <TypeChoice
+            picked={type}
+            label={copy.auth.typeQuestion}
+            onPick={(next) => {
+              setType(next);
+              setError(null);
+            }}
+          />
+          <span className="field-help">{copy.auth.typeNote}</span>
+        </div>
+      )}
 
       {/*
         ── the agreement ──
@@ -325,10 +335,15 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
 
         Three things about it are the whole point:
 
-        - It is not pre-checked, and the server refuses a sign-up without it
-          (§1.3 in `domain/accounts.ts`). Two `consent_records` rows used to be
-          written unconditionally at account creation — a consent nobody had
-          given, and the row that would be produced as evidence.
+        - It is not pre-checked, and the server writes the two `consent_records`
+          rows **only when it is true** (§1.3 in `domain/accounts.ts`). They used
+          to be written unconditionally at account creation — a consent nobody
+          had given, and the row that would be produced as evidence. Note what
+          the server does *not* do: it does not refuse a sign-up that omits the
+          field, because the shipped phone app does not send it, and refusing
+          would have bought no consent at all and a broken sign-up for everybody
+          who has not updated. **This gate is the web form's**, which is the
+          surface that can actually ask.
         - The submit is **disabled until it is checked**, so the refusal happens
           where it can point at a control rather than as a message after a
           request.
@@ -385,14 +400,17 @@ function SignUp({ onSwap }: { onSwap: () => void }) {
           the address is new, so making somebody fill the form first to reach
           the shortcut would be the wrong way round.
 
-          It takes the checkbox with it, for the same reason the submit above
-          does. Opening an account is opening an account whichever control does
-          it, and a Google account created without the question having been
-          asked is the one case that used to write a consent record nobody had
-          given. The button is dead until the box is ticked; the *sign-in*
-          form's copy of it is not, because that press is for an account that
-          already exists. */}
-      <GoogleButton acceptTerms={acceptTerms} />
+          It takes both of the form's answers with it. The checkbox, for the
+          same reason the submit above does: opening an account is opening an
+          account whichever control does it, and a Google account created
+          without the question having been asked is the one case that used to
+          write a consent record nobody had given. And `preset`, because
+          "Become a partner" has already answered "individual or business?" —
+          a Google account arrives with no type and would otherwise be asked
+          again on the next screen. The button is dead until the box is ticked;
+          the *sign-in* form's copy of it is not, because that press is for an
+          account that already exists. */}
+      <GoogleButton acceptTerms={acceptTerms} asType={preset} />
 
       <p className="auth-swap">
         {copy.auth.haveAccount}{' '}
@@ -470,7 +488,14 @@ function ChooseType({ name }: { name: string }) {
 
 export function SignInPage() {
   const { account } = useAuth();
-  const [mode, setMode] = useState<'in' | 'up'>('in');
+  /* Read on mount and cleared in the effect below — see `auth/signupIntent.ts`
+     for why those are two calls rather than one. A partner sign-up opens on the
+     sign-up form with the account type already chosen. */
+  const [preset] = useState(peekSignUpIntent);
+  const [mode, setMode] = useState<'in' | 'up'>(preset ? 'up' : 'in');
+  /* Spent now that it has been read into state, so a reload or a later,
+     ordinary visit to this page gets the plain form with the question on it. */
+  useEffect(() => clearSignUpIntent(), []);
 
   return (
     <main>
@@ -481,7 +506,7 @@ export function SignInPage() {
           ) : mode === 'in' ? (
             <Credentials onSwap={() => setMode('up')} />
           ) : (
-            <SignUp onSwap={() => setMode('in')} />
+            <SignUp onSwap={() => setMode('in')} preset={preset} />
           )}
         </div>
       </section>

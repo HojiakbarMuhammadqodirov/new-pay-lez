@@ -3095,7 +3095,17 @@ console.log('\nthe card previews show real game content');
     const row = PREVIEW.word[list];
     const real = rows.find((entry) => entry[0] === row.word);
     check(`the ${list} word preview builds a real word`, real !== undefined, row.word);
-    check(`…carrying that word's own hint`, real?.[1] === row.hint, row.hint);
+    /* The clue is the dictionary's, per language, and has to be the clue the
+       round deals for that word in that language — the English file for
+       English, `words.<list>.<code>.json` for the rest. */
+    for (const code of LANGUAGE_ORDER) {
+      const clued = dataFile(code === 'en' ? `words.${list}.json` : `words.${list}.${code}.json`) as Array<
+        [string, string, number]
+      >;
+      const hint = LANGUAGES[code].games.preview.word[list];
+      check(`…with ${code}'s own clue for it`,
+        clued.find((entry) => entry[0] === row.word)?.[1] === hint, hint);
+    }
   }
   /* The two cards must not preview the same word: they are two rows of `GAMES`
      precisely because they deal two different lists, and a catalogue that
@@ -3341,10 +3351,10 @@ console.log('\nthe daily game, and the region rule');
   check('…and Memory Match follows it', GAMES[1].id === 'memory');
   for (const code of LANGUAGE_ORDER) {
     const names = LANGUAGES[code].games.names;
-    /* The flight's name is the one game in the set named after the product's
-       own character, in every language — which is what makes it checkable
-       without a table of eight translations here. */
-    check(`${code}'s first name is the flight's`, /squawk|сквок/i.test(names[0]), names[0]);
+    /* The flight's name is the one game in the set named for birds, in every
+       language — which is what makes it checkable without a table of eight
+       translations here. */
+    check(`${code}'s first name is the flight's`, /bird|птиц|птах|qush|ptak/i.test(names[0]), names[0]);
     /* And the local Word Builder is last, because it is the row the region rule
        removes: a filtered list keeps every other index where it was. */
     check(`${code} still holds a hole for the local list`, names[GAMES.length - 1].includes('{language}'));
@@ -4526,29 +4536,75 @@ console.log('\nthe partner dashboard');
       return (hi + 0.05) / (lo + 0.05);
     };
 
-    /* The three grounds a light dashboard token lands on. `#ffffff` is the card
+    /* The grounds a light dashboard token lands on. `#ffffff` is the card
        — `--panel-rgb` is `255, 255, 255` and `--pd-glass` is opaque on this
-       screen — and the other two are read from the block like everything else. */
-    const grounds: Array<[string, string]> = [
+       screen — and the surface steps are read from the block like everything
+       else. */
+    const flats: Array<[string, string]> = [
       ['a white card', '#ffffff'],
       ['the surface wash', token('surface')],
       ['the second surface step', token('surface-2')],
     ];
 
-    /* 4.5:1 for text this size (every one of these draws 10–13px), 3:1 for a
-       hairline — WCAG 1.4.11, which governs a text input's outline and the
-       rules of a table dense enough that they carry meaning. */
-    const bars: Array<[string, number]> = [
-      ['text-mut', 4.5],
-      ['text-fnt', 4.5],
-      ['accent-ink', 4.5],
-      ['border', 3],
-      ['border-2', 3],
+    /*
+     * And the fourth ground, which three misses: an **accent chip**.
+     *
+     * `.ps-points` and `.ps-first[data-on='true']` are
+     * `rgba(var(--accent-rgb), 0.14)`, so the accent is composited into the
+     * ground and the ink then lands on a surface tinted toward the ink itself.
+     * That is strictly darker than the flat ground under it, and sizing against
+     * the flats alone is what let `--accent-ink` pass at 4.51:1 and draw the
+     * points figure on a till receipt at **3.79:1**.
+     *
+     * Composited here rather than read, because the chip colour exists nowhere
+     * as a token — it is an `rgba()` in a rule, which is the whole reason a
+     * ground can go unnoticed.
+     */
+    const chip = (ground: string): string => {
+      const accent = /--accent-rgb:\s*(\d+),\s*(\d+),\s*(\d+)/.exec(block);
+      check('the light dashboard names an accent in rgb', accent !== null);
+      const [r, g, b] = accent ? [+accent[1], +accent[2], +accent[3]] : [0, 0, 0];
+      const under = Number.parseInt(ground.slice(1), 16);
+      const mix = (top: number, bottom: number) => Math.round(top * 0.14 + bottom * (1 - 0.14));
+      const hex = (v: number) => v.toString(16).padStart(2, '0');
+      return `#${hex(mix(r, (under >> 16) & 255))}${hex(mix(g, (under >> 8) & 255))}${hex(
+        mix(b, under & 255),
+      )}`;
+    };
+
+    const grounds: Array<[string, string]> = [
+      ...flats,
+      ...flats.map(([where, ground]): [string, string] => [`an accent chip on ${where}`, chip(ground)]),
     ];
 
-    for (const [name, need] of bars) {
+    /*
+     * 4.5:1 for text this size (every one of these draws 10–13px), 3:1 for a
+     * hairline — WCAG 1.4.11, which governs a text input's outline and the rules
+     * of a table dense enough that they carry meaning.
+     *
+     * Each token is checked against the grounds it is **actually drawn on**,
+     * which is the half worth being careful about. Holding everything to every
+     * ground reads as more rigorous and is simply wrong: it failed `--text-fnt`
+     * on an accent chip, and no rule in the sheet ever puts it there — both chip
+     * rules set `color: var(--accent-ink)`. A check that fails on a combination
+     * the product cannot render teaches the next person to widen a token for no
+     * reason, or to delete the check.
+     */
+    const bars: Array<[string, number, Array<[string, string]>]> = [
+      /* Body copy and quiet figures: panels, table cells, wells. Flat. */
+      ['text-mut', 4.5, flats],
+      ['text-fnt', 4.5, flats],
+      /* The ink is the one that lands on both — an eyebrow on a panel, and the
+         figure inside `.ps-points`. */
+      ['accent-ink', 4.5, grounds],
+      /* Hairlines rule a table and outline a field, never the inside of a chip. */
+      ['border', 3, flats],
+      ['border-2', 3, flats],
+    ];
+
+    for (const [name, need, against] of bars) {
       const value = token(name);
-      for (const [where, ground] of grounds) {
+      for (const [where, ground] of against) {
         const got = contrast(value, ground);
         check(
           `--${name} clears ${need}:1 against ${where}`,
@@ -4556,6 +4612,27 @@ console.log('\nthe partner dashboard');
           `${value} on ${ground} is ${got.toFixed(2)}:1`,
         );
       }
+    }
+
+    /*
+     * And the assignment above is only true while the chip rules still draw in
+     * the ink. If one grows its own colour, the ground it composites goes
+     * unchecked again — so the sheet is read for it rather than trusted.
+     */
+    for (const rule of ['.ps-points', ".ps-first[data-on='true']"]) {
+      const open = css.indexOf(`\n${rule} {`);
+      check(`${rule} is still a rule`, open > 0, rule);
+      const body = css.slice(open, css.indexOf('\n}', open));
+      check(
+        `…and still draws its text in the ink`,
+        body.includes('color: var(--accent-ink)'),
+        rule,
+      );
+      check(
+        `…on a 0.14 accent chip, which is the ground composited above`,
+        body.includes('rgba(var(--accent-rgb), 0.14)'),
+        rule,
+      );
     }
 
     /* And the ramp is still a ramp. Three text steps that all clear the bar but
@@ -4593,6 +4670,144 @@ console.log('\nthe partner dashboard');
       "\u2026and so is its text ramp",
       dark.includes('--text-mut: rgba(242, 246, 244, 0.66)') &&
         dark.includes('--text-fnt: rgba(242, 246, 244, 0.44)'),
+    );
+  }
+
+  /*
+   * The two sanctioned hues clear AA on paper (item 25).
+   *
+   * `CLAUDE.md` licenses a warm red and an amber outside the palette, and that
+   * licence is about the palette rather than about contrast -- both draw words
+   * and figures, so both owe 4.5:1. Checked here because they are the two
+   * colours in the sheet nobody thinks of as tokens: they are declared inside
+   * the component that spends them, which is exactly why they were left at the
+   * value dark mode uses.
+   *
+   * **Each is its own ground**, which is the trap this repeats from the accent
+   * chip. A paused card washes itself in the amber at 0.05 and then puts the
+   * amber on it at 0.18, so the ink sits on a surface tinted toward the ink and
+   * a value that clears every flat ground can still fail by a mile.
+   */
+  {
+    const css = readFileSync(new URL('../src/site/site.css', import.meta.url), 'utf8');
+
+    const channel = (v: number): number => {
+      const c = v / 255;
+      return c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const lum = ([r, g, b]: number[]): number =>
+      0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+    const ratio = (a: number[], b: number[]): number => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    const hex = (value: string): number[] => {
+      const n = Number.parseInt(value.slice(1), 16);
+      return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    };
+    const over = (top: number[], alpha: number, ground: number[]): number[] =>
+      top.map((c, i) => c * alpha + ground[i] * (1 - alpha));
+
+    /* The light dashboard's grounds, restated rather than shared: this block
+       reads its own values so a rename in the block above cannot silently stop
+       it checking anything. */
+    const FLATS = ['#ffffff', '#eef1f0', '#e6e9e8'].map(hex);
+
+    /* Read a declaration out of one light-scoped rule. Anchored on the selector
+       so it cannot pick up the dark value of the same property name -- which is
+       the whole point of these being scoped. */
+    const scoped = (selector: string, prop: string): string | null => {
+      const open = css.indexOf(`:root[data-theme='light'] ${selector} {`);
+      if (open < 0) return null;
+      const body = css.slice(open, css.indexOf('\n}', open));
+      /* `\\s` and not `\s`: inside a template literal the single
+         backslash is dropped, so this read `--prop:s*(...)` and matched only
+         because `.trim()` tidied the space it failed to consume. */
+      const hit = new RegExp(`--${prop}:\\s*([^;]+);`).exec(body);
+      return hit ? hit[1].trim() : null;
+    };
+
+    /*
+     * The warm red. One value, three rules -- a custom property does not escape
+     * the selector that declares it, so `.pd-danger`, `.pc-roster` and
+     * `.pl-total` each restate it, and all three have to move together. That is
+     * the failure this checks: two of three darkened reads as a theme bug on
+     * whichever screen kept the old one.
+     */
+    const reds: Array<[string, string]> = [
+      ['.pd-danger', 'danger'],
+      ['.pc-roster', 'pc-risk'],
+      [".pl-total[data-gap='true'] b", 'pl-gap'],
+    ];
+    const seen = new Set<string>();
+    for (const [selector, prop] of reds) {
+      const value = scoped(selector, prop);
+      check(`${selector} scopes its warm red to light`, value !== null, selector);
+      if (!value) continue;
+      seen.add(value);
+      const worst = Math.min(...FLATS.map((ground) => ratio(hex(value), ground)));
+      check(
+        `…and it clears 4.5:1 on paper`,
+        worst >= 4.5 - 0.005,
+        `${value} is ${worst.toFixed(2)}:1 at worst`,
+      );
+    }
+    check('all three warm reds are the same value', seen.size === 1, [...seen].join(', '));
+
+    /*
+     * The amber, against its own tint. `0.05` is the paused card's wash and
+     * `0.18` the pill on it, both read from the sheet rather than restated, so a
+     * chip made stronger fails here instead of on paper.
+     */
+    const amber = scoped(".pl-card[data-live='false']", 'pl-amber-rgb');
+    check('the paused card scopes its amber to light', amber !== null);
+    if (amber) {
+      const ink = amber.split(',').map((one) => Number(one.trim()));
+      check('…as three channels', ink.length === 3 && ink.every(Number.isFinite), amber);
+      /*
+       * Only the alphas that are a **ground behind amber text**, which is a
+       * narrower set than "every amber alpha in the sheet" and the difference
+       * matters: a first pass swept up `0.34` (a border-color) and `0.38` (a
+       * gradient stop) and failed at 3.30:1 against grounds no text is ever
+       * drawn on. A check that fails on a combination the product cannot render
+       * teaches the next person to darken a token for no reason.
+       *
+       * So the pairing is read: a rule that sets `background: rgba(amber, a)`
+       * *and* `color: rgb(amber)` is a chip, and its `a` is a real ground. Today
+       * that is `.pl-pill` at 0.18 and `.pl-chip` at 0.14.
+       */
+      const alphas: number[] = [];
+      for (const body of css.split('}')) {
+        if (!body.includes('color: rgb(var(--pl-amber-rgb))')) continue;
+        const bg = /background:\s*rgba\(var\(--pl-amber-rgb\),\s*(0\.\d+)\)/.exec(body);
+        if (bg) alphas.push(Number(bg[1]));
+      }
+      check('the amber chips are still amber-on-amber', alphas.length >= 2, alphas.join(', '));
+      let worst = Infinity;
+      for (const flat of FLATS) {
+        const card = over(ink, 0.05, flat);
+        worst = Math.min(worst, ratio(ink, card));
+        for (const alpha of alphas) worst = Math.min(worst, ratio(ink, over(ink, alpha, card)));
+      }
+      check(
+        '…and the amber clears 4.5:1 on its own chip',
+        worst >= 4.5 - 0.005,
+        `rgb(${amber}) is ${worst.toFixed(2)}:1 at worst`,
+      );
+    }
+
+    /*
+     * And dark is untouched. Checked as the presence of the originals, because
+     * contrast is directional: the same darkening that fixes paper moves these
+     * toward a near-black ground rather than away from it.
+     */
+    check(
+      "the dark dashboard keeps its own warm red",
+      css.includes('--danger: #d9483b') && css.includes('--pc-risk: #d9483b'),
+    );
+    check(
+      '…and its own amber',
+      css.includes('--pl-amber-rgb: 226, 170, 90'),
     );
   }
 
@@ -5164,6 +5379,10 @@ console.log('\nhydration — what the server says an account is');
       id: 'u_server', email: 'kasia@example.com', name: 'Kasia', username: null, language: 'en',
       city: null, countryCode: null, avatar: null, phone: null, occupation: null, birthDate: null,
       birthDateChangesLeft: 2, profileCompletedAt: null, onboardedAt: null, trustTier: 0,
+      /* Sent, and gating nothing — email verification was removed and the field
+         stays because the phone app maps it. Null is the ordinary value for an
+         address that arrived through the form rather than through Google. */
+      emailVerifiedAt: null,
       /* On, which is the default — these checks are about the mirror folding a
          server answer, not about §1.4. */
       venueSharingDefault: true,
@@ -5417,6 +5636,40 @@ console.log('\nthe listing, both ways');
   check('a web address is followed', webAddress('https://cafe.pl/menu') === 'https://cafe.pl/menu');
   check('…a bare domain gets a scheme', webAddress('cafe.pl') === 'https://cafe.pl');
   check('…and a script never reaches an href', webAddress('javascript:alert(1)') === null);
+}
+
+console.log('\nWord Builder clues, in the reader\'s language');
+{
+  /*
+   * `npm run banks` writes each list once per reading language, with the clue
+   * translated and the rows untouched. Three things have to stay true and none
+   * of them is a type: every language but English has a file (a missing one is
+   * English clues on that page again, which was the bug); the rows are the same
+   * words in the same order (the no-repeat bag indexes them); and no clue spells
+   * its own answer — which matters for a Polish reader on the Polish list, where
+   * "A car" translated is SAMOCHÓD.
+   */
+  const read = (name: string) =>
+    JSON.parse(
+      readFileSync(new URL(`../src/site/games/data/${name}`, import.meta.url), 'utf8'),
+    ) as Array<[string, string, number]>;
+  for (const list of ['en', 'pl'] as const) {
+    const base = read(`words.${list}.json`);
+    for (const code of LANGUAGE_ORDER) {
+      if (code === 'en') continue;
+      let rows: Array<[string, string, number]> = [];
+      try {
+        rows = read(`words.${list}.${code}.json`);
+      } catch {
+        rows = [];
+      }
+      check(`the ${list} list has ${code} clues`, rows.length === base.length, `${rows.length}/${base.length}`);
+      check(`…the same words in the same order`,
+        rows.every((row, i) => row[0] === base[i]?.[0] && row[2] === base[i]?.[2]));
+      const leaks = rows.filter(([word, hint]) => hint.toLowerCase().includes(word.toLowerCase()));
+      check(`…and no ${code} clue spells its answer`, leaks.length === 0, leaks.map((r) => r[0]).join(', '));
+    }
+  }
 }
 
 console.log(

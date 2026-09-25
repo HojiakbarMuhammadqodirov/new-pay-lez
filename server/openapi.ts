@@ -202,6 +202,22 @@ const SCHEMAS: Record<string, Schema> = {
             description: 'Null until `POST /v1/me/onboarded` claims the welcome gift.',
           },
           trustTier: int('0–2. New accounts get lower caps (§13).'),
+          emailVerifiedAt: {
+            type: 'string',
+            nullable: true,
+            description:
+              'When the address was proved, or null. **It gates nothing** — email confirmation ' +
+              'was built and taken back out, so no route asks for it and no client should ' +
+              'branch on it. It is still sent because a field that vanishes breaks a mapper, ' +
+              'and a Google sign-in still stamps it, because that is the one moment the fact ' +
+              'is known for free. Do not draw a "verify your email" prompt from it.',
+          },
+          venueSharingDefault: bool(
+            '§1.4’s standing answer: may a venue I visit be told who I am. **On by default**, ' +
+              'and this is the account-wide setting rather than the per-venue grant — that is ' +
+              '`GET /v1/me/consents`. A boolean because it is one; the column is an integer ' +
+              'only because SQLite has no boolean.',
+          ),
           leaderboardOptIn: bool(),
           referralCode: { type: 'string', nullable: true },
           createdAt: iso('Account age; what "newcomer" targeting is derived from.'),
@@ -1065,10 +1081,29 @@ const DOCS: Record<string, Doc> = {
   'GET /v1/me/consents': {
     summary: 'What this account has consented to',
     description:
-      'Two separate lists. Account consent is the terms; data-sharing is a per-venue, ' +
-      'revocable grant that lets one venue see this customer individually.',
+      'Three separate lists, and the third is the one a toggle needs. `account` is the terms ' +
+      '(`terms`, `privacy`, `marketing`, `analytics`), each with `granted`. `dataSharing` is ' +
+      'the per-venue, revocable grant that lets one venue see this customer individually — ' +
+      'kept separate from the terms on purpose, because bundling them is the presentational ' +
+      'version of bundling the consent. `sharingWithdrawn` is the venue ids switched **off ' +
+      'and not back on**.\n\n' +
+      'Draw a venue’s switch from all three, in this order: a live grant in `dataSharing` is ' +
+      'on; an id in `sharingWithdrawn` is off; anything else takes the account default, ' +
+      '`venueSharingDefault` on `GET /v1/me`, which is **on**. Without the third list a ' +
+      '"no" said before the customer has ever visited that venue reads as undecided, and the ' +
+      'default then grants exactly what they refused.',
     tags: ['me', 'privacy'],
-    response: { type: 'object' },
+    response: {
+      type: 'object',
+      properties: {
+        account: arrayOf({
+          type: 'object',
+          properties: { kind: str(), granted: bool() },
+        }),
+        dataSharing: arrayOf({ type: 'object' }),
+        sharingWithdrawn: arrayOf(str('A venue id this customer has switched sharing off for.')),
+      },
+    },
   },
   'POST /v1/me/sharing/{venueId}': {
     summary: 'Share my profile with this venue',

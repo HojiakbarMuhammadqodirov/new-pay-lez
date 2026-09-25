@@ -10,6 +10,7 @@ import { categoryLabel, initialOf, type AdminVenueRow } from './adminMetrics';
 import { ThemeToggle } from './Header';
 import { Icon } from './icons';
 import { useCopy, useGroupSeparator, useLanguage } from './i18n/context';
+import { day } from './adminFormat';
 import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
@@ -176,14 +177,6 @@ function Down({ result }: { result: ApiResult<unknown> }) {
   );
 }
 
-/** A date, short, in the reader's own locale — the same helper the People tab
- *  keeps, for rows that arrive as ISO rather than as `DD.MM.YYYY`. */
-const day = (iso: string | null, locale: string) =>
-  iso
-    ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: '2-digit' }).format(
-        new Date(iso),
-      )
-    : '—';
 
 /* ────────────────────────────────────────────────────────────── services ── */
 

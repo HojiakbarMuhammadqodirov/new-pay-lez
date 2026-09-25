@@ -646,9 +646,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
            * connected. It was; the account simply was not a partner.
            */
           partner: draft.type === 'business',
-          /* Passed through rather than asserted here: the form asked, the
-             server refuses without it (§1.3), and a client that filled this
-             in on somebody's behalf would be writing the consent row this
+          /* Passed through rather than asserted here: the form asked, and the
+             server writes the consent rows only when this is true (§1.3). It
+             does *not* refuse without it — the shipped phone app cannot send
+             it — so sending `true` on somebody's behalf would not be papering
+             over a rejection, it would be writing the exact consent row this
              whole change exists to stop being written unasked. */
           acceptTerms: draft.acceptTerms,
         })
@@ -1001,16 +1003,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const finishOnboarding = useCallback(
     async (earned: number, goTo?: Route) => {
       /*
-       * Where to go next, set **before** the stamp rather than after it.
+       * Where to go next, set **inside** the stamp, beside the `setAccount`.
        *
        * Both land in the same commit that way, which is the whole point: a
-       * `navigate` beside this call, or a second `setPendingRoute` after it, is
-       * the race `router.ts` warns about — the guard runs against the new
-       * account and the old route and replaces the hash over the top. `Site`
-       * reads this in the one effect that is allowed to navigate.
+       * `navigate` beside this call, or a `setPendingRoute` in a different
+       * commit, is the race `router.ts` warns about — the guard runs against
+       * one account and the other route. `Site` reads this in the one effect
+       * that is allowed to navigate.
+       *
+       * It used to be set up here, before the stamp — which *is* a different
+       * commit on the signed-in path, because the stamp waits for
+       * `completeOnboarding`. `Site` consumed the destination while the account
+       * was still un-onboarded, resolved `profile` to `onboarding`, and the
+       * stamp then sent the player to the landing page. "Complete profile" on
+       * the welcome screen went nowhere near the profile.
        */
-      if (goTo) setPendingRoute(goTo);
-      const stamp = (balance: number | null) =>
+      const stamp = (balance: number | null) => {
+        if (goTo) setPendingRoute(goTo);
         setAccount((live) => {
           if (!live) return live;
           if (live.onboardedAt !== null) return live;
@@ -1029,6 +1038,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           commit(next);
           return next;
         });
+      };
 
       if (!hasToken()) {
         stamp(null);

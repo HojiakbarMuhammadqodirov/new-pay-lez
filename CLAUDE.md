@@ -1283,10 +1283,26 @@ five dictionaries, a `PREVIEW.word` sample that exists verbatim in the new data
 file, and `WORD_LANGUAGES` in `server/db/import.ts` if the server is to serve it
 too. Every one of those is a build error rather than a discovery.
 
-**The hints are English in all three files**, and that is the rule rather than an
-accident of who wrote them: the thing being learned is the word, and the reader
-may be reading the site in any of five languages. A list whose clues are in the
-language being practised is a list nobody can start.
+**The word is the list's and the clue is the reader's.** That is the rule, and it
+replaced the opposite one: the clues were English in all three exports, on the
+argument that the thing being learned is the word — which is true, and which left
+a Russian reader spelling ХЛЕБ under "You buy this at a bakery". A clue is the
+half of the round that has to be *understood* before the word can be produced, so
+it belongs in the language being read. `updates/paylez-word-hints.json` maps each
+English clue to its four translations and `npm run banks` writes
+`words.<list>.<language>.json` beside the English-clued `words.<list>.json`, rows
+in the same order so the no-repeat bag keyed on the list is still valid. A clue
+the file does not carry **fails the generator**, which is what stops an English
+line reappearing on a Russian page one word at a time; the browser and the server
+both fall back to the English column if a whole file is missing, because a round
+in the wrong language still beats no round.
+
+**The `ru` list is the one where the clue and the answer share a language**, and
+it is the thing to remember before extending the hints file. A Russian clue for a
+Russian word must describe it without naming it — "Место, где ты живёшь" for ДОМ,
+never "дом" — and the same trap catches Ukrainian, where the cognate is one letter
+away. An English clue never has to think about this, which is why the first 208
+entries in that file did not.
 
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that

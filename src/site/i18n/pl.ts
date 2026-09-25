@@ -62,12 +62,9 @@ export const pl: Dictionary = {
 
   nav: {
     home: 'Start',
-    learn: 'L-Earn',
+    learn: 'Zarabiaj',
     analytics: 'Analityka',
     business: 'Dla firm',
-    /* The same route as `learn`, under the word an owner needs. See
-       `NAV_LABEL_BUSINESS` in `content.ts`. */
-    games: 'Gry',
     wallet: 'Portfel',
     contact: 'Kontakt',
     relocate: 'Przeprowadzka',
@@ -748,7 +745,7 @@ export const pl: Dictionary = {
   },
 
   games: {
-    title: 'Gry na rozum',
+    title: 'Graj i zarabiaj',
     lede: 'Sprawdź się, zbieraj punkty i zamieniaj je na vouchery rabatowe.',
 
     score: 'Wynik',
@@ -771,7 +768,6 @@ export const pl: Dictionary = {
 
     /* ── dzisiejsza lista ── Zobacz `en.ts` po uzasadnienie. */
     tasks: {
-      title: 'Dzisiejsza lista',
       allDone: 'Wszystko z dzisiejszej listy jest zrobione. Graj dalej po punkty.',
       loading: 'Pobieramy dzisiejszą listę…',
       offline: 'Dzisiejsza lista jest teraz niedostępna.',
@@ -779,8 +775,9 @@ export const pl: Dictionary = {
       upTo: 'do {points} pkt',
       checkIn: 'Wejdź dziś do Paylez i odbierz obecność — {reward}',
       playRound: 'Zagraj dziś jedną rundę — {reward}',
-      profile: 'Uzupełnij profil — {reward}',
-      invite: 'Zaproś znajomego — {reward}, gdy odwiedzi lokal',
+      dailyGame: 'Loguj się codziennie i zagraj w grę dnia, by zdobyć {reward}',
+      profile: 'Uzupełnij profil, by zdobyć {reward}',
+      invite: 'Zaproś znajomego, by zdobyć {reward}',
     },
     accuracy: 'Skuteczność',
 
@@ -797,7 +794,7 @@ export const pl: Dictionary = {
     streakAhead: 'jeszcze przed nami',
 
     names: [
-      'Lot Squawka',
+      'Lot ptaków',
       'Znajdź parę',
       'Zgadnij flagę',
       'Kraj i stolica',
@@ -818,6 +815,7 @@ export const pl: Dictionary = {
     energyFull: 'Pełna — nie ma na co czekać',
     energyNext: '+1 za {time}',
     energyCost: '1 na rundę',
+    getPro: 'Przejdź na Pro',
     loading: 'Rozdajemy…',
     startFailed: 'Nie udało się rozpocząć tej rundy. Spróbuj ponownie za chwilę.',
 
@@ -834,6 +832,7 @@ export const pl: Dictionary = {
       /* One sample per local bank — the card is a different quiz per country.
          The Uzbekistan row is the export's own, already written in every
          language, so it is transcribed rather than translated. */
+      word: { en: 'Kupujesz to w piekarni', pl: 'Zamawiasz to w kawiarni', ru: 'Kupujesz to w piekarni' },
       local: {
         PL: {
           q: 'Jaka jest waluta Polski?',
@@ -883,13 +882,13 @@ export const pl: Dictionary = {
     boardShowLess: 'Pokaż mniej',
 
     flight: {
-      rule: 'Leć tak daleko, jak zdoła Squawk · z czasem przyspiesza',
+      rule: 'Leć tak daleko, jak zdoła ptak · z czasem przyspiesza',
       reward: 'Jedno zderzenie kończy grę · +{points} za bramę · do {max} za lot',
       goal: '{target} zalicza rundę',
       hint: 'Dotknij ekranu, aby zamachać skrzydłami',
       resume: 'Dotknij, aby wrócić do gry',
       aria: 'Gra zręcznościowa. Dotknij planszy, aby zamachać skrzydłami.',
-      crashed: 'Squawk zahaczył o słupek',
+      crashed: 'Ptak zahaczył o słupek',
       resultScore: 'Przeleciane bramy: {cleared}',
       motionTitle: 'Ta gra się porusza',
       motionBody:
@@ -2687,7 +2686,7 @@ export const pl: Dictionary = {
       eyebrow: 'Nagrody, vouchery, marketing i analityka w jednej platformie',
       lines: ['Zamień każdą wizytę', 'w nawyk.', 'Miej klientów na własność.'],
       lede: 'Lojalność, vouchery, marketing i raporty na jednym rekordzie klienta — a Twoja oferta siedzi w grze, którą tysiące osób otwierają każdego ranka. Płacisz dopiero wtedy, gdy ktoś wejdzie i zrealizuje voucher.',
-      primary: 'Porozmawiaj z nami',
+      primary: 'Zostań partnerem',
       secondary: 'Zobacz panel',
       stats: ['Wzrost powrotów', 'Koszt do realizacji', 'Od umowy do startu'],
       trust: 'Zaufało nam 500+ lokali · Bez sprzętu · Bez umowy na start',
@@ -2976,7 +2975,7 @@ export const pl: Dictionary = {
             'Gotowe grupy i przychód na kampanię',
             'Osobne logowania dla menedżerów',
           ],
-          action: 'Porozmawiaj z nami',
+          action: 'Zostań partnerem',
         },
         {
           name: 'Grupa',
@@ -2988,7 +2987,7 @@ export const pl: Dictionary = {
             'Raporty i eksporty na poziomie grupy',
             'Wyznaczony opiekun klienta',
           ],
-          action: 'Porozmawiaj z nami',
+          action: 'Zostań partnerem',
         },
       ],
       featured: 'Najczęściej wybierany',
@@ -2998,7 +2997,7 @@ export const pl: Dictionary = {
     cta: {
       title: 'Zobacz, ile są warci Twoi stali klienci.',
       lede: 'Dwudziestominutowa rozmowa, Twoje liczby i prosta prognoza przychodu z powrotów, który Paylez odblokuje w Twoich lokalach. Bez umowy na start.',
-      primary: 'Porozmawiaj z nami',
+      primary: 'Zostań partnerem',
       secondary: 'Poznaj paylez',
       note: 'Grupa wielolokalowa? Zapytaj o wsparcie przy wdrożeniu i integrację z POS.',
     },
@@ -3482,7 +3481,7 @@ export const pl: Dictionary = {
     payLede:
       'Punkty biorą się z grania i z pojawiania się w lokalach w Twoim mieście. Nie tracą ważności — czekają na Ciebie.',
     payGo: 'Zacznij grać',
-    payProfile: 'Najpierw uzupełnij profil',
+    payProfile: 'Uzupełnij profil',
     payProfileWorth: 'Uzupełnienie profilu to kolejne {points} punktów.',
 
     introTitle: 'Zdobądź pierwsze punkty',
@@ -3491,7 +3490,6 @@ export const pl: Dictionary = {
     gameSkip: 'Pomiń to pytanie',
     moreTitle: 'Czeka {n} kolejnych gier',
     moreLede: 'Quizy, gry słowne, pamięć i lot — każda z nich daje punkty i wszystkie są w L-Earn.',
-    moreGo: 'Zobacz gry',
     reelPrev: 'Poprzednia gra',
     reelNext: 'Następna gra',
   },

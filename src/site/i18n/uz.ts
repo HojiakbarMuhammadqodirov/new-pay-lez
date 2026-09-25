@@ -57,12 +57,9 @@ export const uz: Dictionary = {
 
   nav: {
     home: 'Bosh sahifa',
-    learn: 'L-Earn',
+    learn: 'Yutib ol',
     analytics: 'Tahlil',
     business: 'Biznes',
-    /* The same route as `learn`, under the word an owner needs. See
-       `NAV_LABEL_BUSINESS` in `content.ts`. */
-    games: 'O‘yinlar',
     wallet: 'Hamyon',
     contact: 'Aloqa',
     relocate: 'Ko‘chish',
@@ -743,7 +740,7 @@ export const uz: Dictionary = {
   },
 
   games: {
-    title: 'Aql o‘yinlari',
+    title: 'O‘yna va yutib ol',
     lede: 'O‘zingizni sinang, ball yig‘ing va ularni chegirma vaucherlariga almashtiring.',
 
     score: 'Hisob',
@@ -766,7 +763,6 @@ export const uz: Dictionary = {
 
     /* ── bugungi ro‘yxat ── Sababi `en.ts` da. */
     tasks: {
-      title: 'Bugungi ro‘yxat',
       allDone: 'Bugungi ro‘yxatdagi hammasi bajarildi. Ball uchun o‘ynashda davom eting.',
       loading: 'Bugungi ro‘yxat olinmoqda…',
       offline: 'Bugungi ro‘yxat hozir mavjud emas.',
@@ -774,8 +770,9 @@ export const uz: Dictionary = {
       upTo: '{points} ballgacha',
       checkIn: 'Bugun Paylez’ga kiring va belgilanishni oling — {reward}',
       playRound: 'Bugun bitta raund o‘ynang — {reward}',
-      profile: 'Profilingizni to‘ldiring — {reward}',
-      invite: 'Do‘stingizni taklif qiling — u joyga borganida {reward}',
+      dailyGame: 'Har kuni kiring va kunlik o‘yinni o‘ynang — {reward} oling',
+      profile: 'Profilingizni to‘ldiring — {reward} oling',
+      invite: 'Do‘stingizni taklif qiling — {reward} oling',
     },
     accuracy: 'Aniqlik',
 
@@ -792,7 +789,7 @@ export const uz: Dictionary = {
     streakAhead: 'hali oldinda',
 
     names: [
-      'Squawk parvozi',
+      'Qushlar parvozi',
       'Juftini top',
       'Bayroqni top',
       'Davlat va poytaxt',
@@ -813,6 +810,7 @@ export const uz: Dictionary = {
     energyFull: 'To‘la — kutadigan narsa yo‘q',
     energyNext: '+1 yana {time}',
     energyCost: 'Har raundga 1 ta',
+    getPro: 'Pro olish',
     loading: 'Tarqatilmoqda…',
     startFailed: 'Bu raundni boshlab bo‘lmadi. Bir ozdan so‘ng qayta urinib ko‘ring.',
 
@@ -829,6 +827,7 @@ export const uz: Dictionary = {
       /* One sample per local bank — the card is a different quiz per country.
          The Uzbekistan row is the export's own, already written in every
          language, so it is transcribed rather than translated. */
+      word: { en: 'Novvoyxonadan olinadi', pl: 'Kafeda buyurtma qilasiz', ru: 'Novvoyxonadan olinadi' },
       local: {
         PL: {
           q: 'Polsha valyutasi qaysi?',
@@ -878,13 +877,13 @@ export const uz: Dictionary = {
     boardShowLess: 'Kamroq ko‘rsatish',
 
     flight: {
-      rule: 'Squawk qancha uchsa, shuncha · borgan sari tezlashadi',
+      rule: 'Qush qancha uchsa, shuncha · borgan sari tezlashadi',
       reward: 'Bitta to‘qnashuv o‘yinni tugatadi · har darvoza +{points} · parvozda {max} gacha',
       goal: '{target} ta raundni hisobga oladi',
       hint: 'Qanot qoqish uchun ekranga bosing',
       resume: 'Davom ettirish uchun bosing',
       aria: 'Uchish o‘yini. Qanot qoqish uchun maydonga bosing.',
-      crashed: 'Squawk ustunga urildi',
+      crashed: 'Qush ustunga urildi',
       resultScore: 'O‘tilgan darvozalar: {cleared}',
       motionTitle: 'Bu o‘yin harakatlanadi',
       motionBody:
@@ -2686,7 +2685,7 @@ export const uz: Dictionary = {
       eyebrow: 'Mukofot, vaucher, marketing va tahlil — bitta platformada',
       lines: ['Har tashrifni', 'odatga aylantiring.', 'Mijoz sizniki bo‘lsin.'],
       lede: "Sodiqlik, vaucherlar, marketing va hisobotlar bitta mijoz yozuvi ustida — taklifingiz esa minglab odam har tong ochadigan o‘yin ichida turadi. Siz faqat kimdir kirib, vaucherni ishlatganda to‘laysiz.",
-      primary: 'Savdo bilan bog‘lanish',
+      primary: 'Hamkor bo‘lish',
       secondary: 'Panelni ko‘rish',
       stats: [
         'Qayta tashrif o‘sishi',
@@ -2979,7 +2978,7 @@ export const uz: Dictionary = {
             'Tayyor auditoriyalar va kampaniya daromadi',
             'Menejerlar uchun alohida kirishlar',
           ],
-          action: 'Savdo bilan bog‘lanish',
+          action: 'Hamkor bo‘lish',
         },
         {
           name: 'Guruh',
@@ -2991,7 +2990,7 @@ export const uz: Dictionary = {
             'Guruh darajasidagi hisobot va eksportlar',
             'Biriktirilgan menejer',
           ],
-          action: 'Savdo bilan bog‘lanish',
+          action: 'Hamkor bo‘lish',
         },
       ],
       featured: 'Eng ko‘p tanlanadi',
@@ -3001,7 +3000,7 @@ export const uz: Dictionary = {
     cta: {
       title: 'Doimiy mijozlaringiz qanchaligini bilib oling.',
       lede: "Yigirma daqiqalik suhbat, sizning raqamlaringiz va Paylez filiallaringizda ochadigan qayta tashrif daromadining ochiq prognozi. Boshlash uchun shartnoma shart emas.",
-      primary: 'Savdo bilan bog‘lanish',
+      primary: 'Hamkor bo‘lish',
       secondary: 'paylez’ni ko‘rish',
       note: "Bir nechta filialli guruhmisiz? Ishga tushirishda yordam va kassa integratsiyasi haqida so‘rang.",
     },
@@ -3485,7 +3484,7 @@ export const uz: Dictionary = {
     payLede:
       'Ballar o‘yindan va shahringizdagi joylarga borishdan yig‘iladi. Ularning muddati tugamaydi — ular sizni kutib turadi.',
     payGo: 'O‘ynashni boshlash',
-    payProfile: 'Avval profilingizni to‘ldiring',
+    payProfile: 'Profilni to‘ldirish',
     payProfileWorth: 'Profilni to‘ldirish yana {points} ball beradi.',
 
     introTitle: 'Birinchi ballaringizni yuting',
@@ -3494,7 +3493,6 @@ export const uz: Dictionary = {
     gameSkip: 'Bu savolni o‘tkazib yuborish',
     moreTitle: 'Yana {n} ta o‘yin kutmoqda',
     moreLede: 'Viktorina, so‘z o‘yinlari, xotira va uchish — barchasi ball beradi va barchasi L-Earn’da.',
-    moreGo: 'O‘yinlarni ko‘rish',
     reelPrev: 'Oldingi o‘yin',
     reelNext: 'Keyingi o‘yin',
   },

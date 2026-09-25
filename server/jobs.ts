@@ -92,6 +92,10 @@ export async function runDaily(db: Db, at: Iso = now()): Promise<JobReport> {
   /* Retention is a job rather than a query filter: rows nobody deletes are rows
      that eventually have to be explained to a regulator. */
   detail.trafficPruned = await traffic.prune(db, at);
+  /* Email verification was removed, so every code left in its table is dead —
+     and the rows carry an address, which is a reason to empty the table rather
+     than keep it. The table itself stays until a migration drops it. */
+  detail.codesPruned = (await db.run(`DELETE FROM email_verifications`)).changes;
 
   /* §4.5: recompute the median check, and tell the partner when the source flips
      from the category default to their own tills — the estimate they read every

@@ -8,11 +8,11 @@ import {
   type PointerEvent,
 } from 'react';
 import {
-  NAV_HIDDEN_INDIVIDUAL,
-  NAV_LABEL_BUSINESS,
   NAV_HREFS,
   NAV_ORDER,
+  NAV_ORDER_ADMIN,
   NAV_ORDER_BUSINESS,
+  NAV_ORDER_INDIVIDUAL,
   type NavKey,
 } from './content';
 import { GLASS_MESH } from './glassMesh';
@@ -495,11 +495,10 @@ export function Header({ route }: { route: Route }) {
   /*
    * Which items, in which order.
    *
-   * Three answers, and the account is the whole of what decides between them.
-   * An owner gets their own tools first and no Relocate (see
-   * `NAV_ORDER_BUSINESS`); an individual loses the two pages that sell to a
-   * venue; signed out, everything shows, because those pages are still the
-   * pitch.
+   * The account is the whole of what decides between them — see the four
+   * `NAV_ORDER*` lists in `content.ts`. An owner gets Business, Analytics and
+   * Contact; a player keeps Contact and loses Business; a visitor gets
+   * Business and not Contact, which lives in the footer's "Support".
    */
   const isOwner = account?.type === 'business';
   const [menuOpen, setMenuOpen] = useState(false);
@@ -531,8 +530,10 @@ export function Header({ route }: { route: Route }) {
     isOwner
       ? NAV_ORDER_BUSINESS
       : account?.type === 'individual'
-        ? NAV_ORDER.filter((key) => !NAV_HIDDEN_INDIVIDUAL.includes(key))
-        : NAV_ORDER;
+        ? NAV_ORDER_INDIVIDUAL
+        : account?.type === 'admin'
+          ? NAV_ORDER_ADMIN
+          : NAV_ORDER;
 
   return (
     <header className="site-header" data-scrolled={scrolled ? 'true' : 'false'}>
@@ -550,9 +551,10 @@ export function Header({ route }: { route: Route }) {
             <NavItem
               key={key}
               href={NAV_HREFS[key]}
-              /* An owner reads "Games" where a visitor reads "L-Earn" — same
-                 route, different word for somebody who is not being sold to. */
-              label={copy.nav[(isOwner && NAV_LABEL_BUSINESS[key]) || key]}
+              /* One label per destination. Who is reading decides which
+                 destinations are listed — the four `NAV_ORDER*` tables — and no
+                 longer what any of them is called. */
+              label={copy.nav[key]}
               /* Only the routes can be "current"; `home` is a section anchor,
                  which scrolls rather than navigates. */
               active={NAV_HREFS[key] === PATHS[route]}
@@ -562,10 +564,10 @@ export function Header({ route }: { route: Route }) {
 
         <div className="header-actions">
           <ThemeToggle />
-          {/* Two menus, because they are two settings: what the page is written
-              in and what its prices are in. They used to be one control doing
-              both — see CurrencyMenu. */}
-          <CurrencyMenu />
+          {/* No currency menu here: it lives on the partner dashboard only
+              (`dashboard.tsx`), which is the one screen whose figures are the
+              reader's own money to plan with. Everywhere else the currency
+              follows the language's default — see CurrencyMenu. */}
           <LanguageMenu />
           {account?.type ? (
             <AccountChip />
@@ -610,7 +612,7 @@ export function Header({ route }: { route: Route }) {
                    that would leave the sheet open over the thing it scrolled to. */
                 onClick={() => setMenuOpen(false)}
               >
-                {copy.nav[(isOwner && NAV_LABEL_BUSINESS[key]) || key]}
+                {copy.nav[key]}
               </a>
             ))}
 
@@ -631,7 +633,6 @@ export function Header({ route }: { route: Route }) {
                 sheet rather than inline in the header. */}
             <div className="nav-sheet-controls">
               <ThemeToggle />
-              <CurrencyMenu />
               <LanguageMenu />
             </div>
           </nav>

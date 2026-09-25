@@ -233,6 +233,30 @@ function PoolColumn({
   );
 }
 
+/**
+ * A day written out in full — "16 September".
+ *
+ * Two components on this screen format one, the budget editor and the forecast
+ * banner, and they built the same formatter twice with the same options. That is
+ * the cheap half of the mistake `day` in `adminFormat.ts` made four times over:
+ * the format was identical both times, so the duplication was invisible until
+ * one of them needed changing.
+ *
+ * `month: 'long'` and not `'short'`, and that distinction is deliberate across
+ * this dashboard rather than drift. **Long is prose and short is tabular** — a
+ * sentence has room for September and a chart axis and a table column do not, so
+ * `useDates().tick` in `dashboardScreens.tsx` is short for an axis label while
+ * `full` is long for the tooltip over it. Do not unify them.
+ *
+ * Not `useVenueDates` either, and that is the other distinction worth keeping:
+ * that hook stamps the **venue's** zone, which is right for an instant the till
+ * recorded and wrong here — a forecast date is computed from `new Date()` and a
+ * budget period is a calendar month, neither of which happened anywhere.
+ */
+const dayFormatOf = (language: string) =>
+  new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long' });
+
+
 /* ───────────────────────────────────────────────────────────────── screens ── */
 
 /**
@@ -281,7 +305,7 @@ function BudgetSlab({
   const pool = budget.voucher;
   const dates = useMemo(
     () => ({
-      day: new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long' }),
+      day: dayFormatOf(language),
       month: new Intl.DateTimeFormat(language, { month: 'long' }),
     }),
     [language],
@@ -800,10 +824,7 @@ function Board({ budget, reload }: { budget: BudgetBody; reload: () => void }) {
     () => forecastOf(budget.period, budget.voucher.spent, budget.voucher.available, new Date()),
     [budget.period, budget.voucher.spent, budget.voucher.available],
   );
-  const dayFormat = useMemo(
-    () => new Intl.DateTimeFormat(language, { day: 'numeric', month: 'long' }),
-    [language],
-  );
+  const dayFormat = useMemo(() => dayFormatOf(language), [language]);
 
   return (
     <div className="pd-stack">

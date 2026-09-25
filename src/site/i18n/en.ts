@@ -82,19 +82,16 @@ export const en = {
   },
 
   /*
-   * Keyed, not indexed. A business owner sees these in a different order and
-   * without Relocate (see `NAV_ORDER_BUSINESS` in `content.ts`), and an array
+   * Keyed, not indexed. A business owner sees a different set entirely
+   * — Business, Analytics and Contact (see `NAV_ORDER_BUSINESS` in `content.ts`), and an array
    * cannot survive being reordered — the first swap would caption Business
    * "Wallet".
    */
   nav: {
     home: 'Home',
-    learn: 'L-Earn',
+    learn: 'Earn',
     analytics: 'Analytics',
     business: 'Business',
-    /* The same route as `learn`, under the word an owner needs. See
-       `NAV_LABEL_BUSINESS` in `content.ts`. */
-    games: 'Games',
     /* The page behind this is still `#/vouchers`; "Wallet" is what it is called
        now, because that is what a player opens it to look at. */
     wallet: 'Wallet',
@@ -987,7 +984,7 @@ export const en = {
   /* ────────────────────────────────────────────────────────────── games ── */
 
   games: {
-    title: 'Brain Games',
+    title: 'Play & Earn',
     lede: 'Challenge yourself, earn points and convert them into discount vouchers.',
 
     score: 'Score',
@@ -1036,8 +1033,8 @@ export const en = {
     /*
      * ── today's tasks ──
      *
-     * The rotating prompts above the game cards. The panel used to be an empty
-     * box; what makes it worth having is not that it is full but that every
+     * The rotating prompts inside the "Your points" card. What makes them
+     * worth having is not that the card is full but that every
      * line in it is **true for the account reading it** — the server prices
      * each task from the rule that actually pays it and says whether this
      * player has already had it, so nothing here advertises a bonus that is
@@ -1051,9 +1048,11 @@ export const en = {
      * to 8 points" is the truth.
      */
     tasks: {
-      title: 'Today’s list',
-      /* Not a congratulation and not an error — see `openTasks`. An empty list
-         means the day is done, which is worth saying in its own words. */
+      /* These six — `allDone` through `playRound` — belong to the server-driven
+         task list that the rotating slider replaced. They are kept rather than
+         deleted because the endpoint they describe is still live and still read
+         by the phone, so this is a panel that may well come back; the three the
+         slider actually uses are `dailyGame`, `profile` and `invite` below. */
       allDone: 'Everything on today’s list is done. Play on for the points.',
       loading: 'Getting today’s list…',
       /* The server did not answer. Deliberately not "nothing to do": the panel
@@ -1063,8 +1062,9 @@ export const en = {
       upTo: 'up to {points} points',
       checkIn: 'Open Paylez today and take your check-in — {reward}',
       playRound: 'Play one round today — {reward}',
-      profile: 'Finish your profile — {reward}',
-      invite: 'Invite a friend — {reward} once they visit a venue',
+      dailyGame: 'Log in every day and play the daily game to get {reward}',
+      profile: 'Complete your profile to get {reward}',
+      invite: 'Invite a friend to get {reward}',
     },
 
     accuracy: 'Accuracy',
@@ -1137,7 +1137,7 @@ export const en = {
      * unaffected.
      */
     names: [
-      'Squawk’s Flight',
+      'Birds Flight',
       'Memory Match',
       'Guess the Flag',
       'Country & Capital',
@@ -1235,6 +1235,7 @@ export const en = {
        met the cost by running out. Deliberately unitless — the noun is the
        gauge's own heading two lines above. */
     energyCost: '1 per round',
+    getPro: 'Get Pro',
     /* The banks are fetched on first play; this is the beat before a round. */
     loading: 'Dealing…',
     /* Only ever shown when the server would not answer *and* the local
@@ -1283,6 +1284,10 @@ export const en = {
        * for the preview, which is the whole rule `PREVIEW` states in
        * `content.ts` — and it is also why this one needed no translator.
        */
+      /* The Word Builder cards' clue, by list, in the reader's language —
+         the same clue the round deals for that word (\`words.<list>.<lang>.json\`).
+         The answer stays in the list's language; only the clue is translated. */
+      word: { en: 'You buy this at a bakery', pl: 'You order this in a café', ru: 'You buy this at a bakery' },
       local: {
         PL: {
           q: 'What is the currency of Poland?',
@@ -1342,13 +1347,13 @@ export const en = {
      * catches a missing key but would say nothing about a missing array entry.
      */
     flight: {
-      rule: 'Fly as far as Squawk can · it speeds up as you go',
+      rule: 'Fly as far as the bird can · it speeds up as you go',
       reward: 'One crash ends it · +{points} a gap · up to {max} a flight',
       goal: '{target} to bank the round',
       hint: 'Tap the screen to flap',
       resume: 'Tap to pick up where you left off',
       aria: 'Flight game. Tap the stage to flap.',
-      crashed: 'Squawk clipped a column',
+      crashed: 'The bird clipped a column',
       resultScore: '{cleared} gaps flown',
       motionTitle: 'This one moves',
       motionBody:
@@ -3480,7 +3485,7 @@ export const en = {
       eyebrow: 'Play-to-earn rewards, vouchers, marketing & analytics in one platform',
       lines: ['Turn every visit', 'into a habit.', 'Own your customers.'],
       lede: 'Loyalty, vouchers, marketing and reporting on a single customer record — with your offer sitting inside a game thousands of people open every morning. You fund it only when someone walks in and redeems.',
-      primary: 'Talk to sales',
+      primary: 'Become a partner',
       secondary: 'See the dashboard',
       stats: ['Repeat visit uplift', 'Cost until redemption', 'From signup to live'],
       trust: 'Trusted by 500+ venues · No hardware to buy · No contract to start',
@@ -3767,7 +3772,7 @@ export const en = {
             'Built audiences and per-campaign revenue',
             'Per-site logins for managers',
           ],
-          action: 'Talk to sales',
+          action: 'Become a partner',
         },
         {
           name: 'Group',
@@ -3779,7 +3784,7 @@ export const en = {
             'Group-level reporting and exports',
             'Named account contact',
           ],
-          action: 'Talk to sales',
+          action: 'Become a partner',
         },
       ],
       featured: 'Most chosen',
@@ -3790,7 +3795,7 @@ export const en = {
     cta: {
       title: 'See what your regulars are worth.',
       lede: 'A 20-minute call, your numbers, and a plain forecast of the repeat revenue Paylez would unlock across your sites. No contract to start.',
-      primary: 'Talk to sales',
+      primary: 'Become a partner',
       secondary: 'Explore paylez',
       note: 'Multi-site group? Ask about rollout support and POS integration.',
     },
@@ -4461,7 +4466,7 @@ export const en = {
     payLede:
       'Points come from playing and from turning up at the venues in your city. They do not expire — they wait for you.',
     payGo: 'Start playing',
-    payProfile: 'Finish your profile first',
+    payProfile: 'Complete profile',
     /* What finishing the profile is worth, above the two buttons rather than
        under them — a reward nobody notices changes nobody's behaviour. `{points}`
        is `PROFILE_BONUS`, which is the server's own `CONFIG.points.profileComplete`,
@@ -4479,7 +4484,6 @@ export const en = {
        of the other games, filled from `GAMES` so the number cannot drift. */
     moreTitle: '{n} more games are waiting',
     moreLede: 'Quizzes, word puzzles, memory and a flight run — all of them pay points, all of them are in L-Earn.',
-    moreGo: 'See the games',
     /**
      * The reel's two arrows, read out rather than shown.
      *

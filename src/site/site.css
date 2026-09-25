@@ -12743,6 +12743,12 @@ button {
   justify-content: center;
 }
 
+/* In the column a basis is a height — the same trap `.play-deck
+   .play-hero-main` names — so the prompt sizes to its sentence there. */
+.play-deck .play-slider {
+  flex: 0 0 auto;
+}
+
 /* ── the energy gauge ──────────────────────────────────────────────────────
  *
  * The count, the cap, and when the next one lands — which is the whole economy
@@ -13699,6 +13705,7 @@ button {
   align-items: center;
   gap: 0.6rem;
   flex-wrap: wrap;
+  transition: opacity 260ms var(--ease);
 }
 
 .play-ico {
@@ -13890,6 +13897,7 @@ button {
 
   .play-card,
   .play-card-main,
+  .play-card-head,
   .play-card-tail {
     transition: none;
   }
@@ -13977,6 +13985,27 @@ button {
 @media (hover: hover) {
   .play-card:hover:not(:disabled) .play-prev {
     opacity: 1;
+  }
+
+  /*
+   * The head steps out and the band takes its room.
+   *
+   * The band was inset below the icon row, which left a quiz's question and
+   * four options about 5rem of height on a grid card — so the Poland Quiz's
+   * options ran up into the icon tile. On hover the icon and the daily badge
+   * have nothing left to say (the name is still on the card), so they fade and
+   * the band starts at the card's own padding instead.
+   */
+  .play-card:hover:not(:disabled) .play-card-head {
+    opacity: 0;
+  }
+
+  .play-card:hover:not(:disabled) .play-prev {
+    top: 1.1rem;
+  }
+
+  .play-card-lead:hover:not(:disabled) .play-prev {
+    top: clamp(1.3rem, 3vw, 1.9rem);
   }
 
   .play-card:hover:not(:disabled) .play-prev * {
@@ -20431,6 +20460,25 @@ button {
   font-size: 0.82rem;
 }
 
+/* "Get Pro": the site's primary press, stretched to the card — `.btn` centres
+   its own label, so a full-width one needs nothing more. */
+.play-get-pro {
+  width: 100%;
+  gap: 0.55rem;
+}
+
+/* The arrow in a small ring of the label's own colour, so it follows the press
+   in both themes without a colour of its own. */
+.play-get-pro-ico {
+  display: inline-grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+}
+
 .sub-foot {
   display: grid;
   justify-items: center;
@@ -24953,12 +25001,35 @@ p.lst-soft {
    * 700: a deal's "Free", a status "Live", the sort arrow. All under the 4.5
    * bar, all measured in Chrome.
    *
-   * `#0a775d` is the same hue one step down and clears it on all three grounds
-   * (5.51 / 4.85 / 4.51). The *fill* is untouched, because a fill is a 3:1
-   * question and because the mock's green is the identity of this screen — what
-   * changed is that small text stopped borrowing the fill's number.
+   * `#0a775d` was the same hue one step down and cleared those three (5.51 /
+   * 4.85 / 4.51). The *fill* is untouched, because a fill is a 3:1 question and
+   * because the mock's green is the identity of this screen — what changed is
+   * that small text stopped borrowing the fill's number.
+   *
+   * ── and there is a fourth ground, which is why this is `#08654f` ──
+   *
+   * Three grounds was the wrong count. An accent chip —
+   * `background: rgba(var(--accent-rgb), 0.14)` on `.ps-points` and
+   * `.ps-first[data-on='true']`, the two marks on Scan activity — composites the
+   * accent *into* whatever is behind it, so the ink lands on a ground tinted
+   * toward the ink itself. Over `--surface-2` that is `rgb(199, 218, 213)`, and
+   * `#0a775d` measures **3.79:1** on it: the one place on the light dashboard
+   * still under the bar after the three flat grounds were fixed, and it is the
+   * points figure on a till receipt.
+   *
+   * Lightening the chip cannot fix it and the arithmetic says so plainly. At
+   * alpha 0.05 — a tint too faint to read as a chip at all — the ink still only
+   * reaches 4.24:1, because the flat `--surface-2` under it was itself only
+   * giving 4.51 and any accent laid over it can only take that down. So the
+   * chip keeps its 0.14 and the ink moves.
+   *
+   * `#08654f` is the next step down the same ramp: **4.84:1** on the worst chip
+   * ground and 5.76:1 on the worst flat one, with the hue and the fill both
+   * unchanged. The cost is that every small accented word on this screen is a
+   * shade deeper, which is the same trade the step above already took and is
+   * the direction paper wants.
    */
-  --accent-ink: #0a775d;
+  --accent-ink: #08654f;
   --accent-soft: rgba(var(--accent-rgb), 0.72);
   --on-accent: #ffffff;
 
@@ -27456,6 +27527,44 @@ p.lst-soft {
   color: var(--danger);
 }
 
+/*
+ * The two sanctioned hues clear AA on paper (item 25), and **light only**.
+ *
+ * `CLAUDE.md` licenses exactly two colours outside the palette on this screen --
+ * a warm red for a figure that fell and an amber for a paused campaign -- and
+ * that licence is about the *palette*, not about contrast. Measured on the light
+ * dashboard, `#d9483b` is 4.25:1 on a white card, **3.74:1** on `--surface` and
+ * **3.48:1** on `--surface-2`, and the amber was worse at 3.26:1. Every one of
+ * them is a word or a figure rather than a decoration, so 4.5:1 is the bar.
+ *
+ * `#b53326` is the least dark step of the same hue that clears all three
+ * (4.96:1 at worst). It is the same move the amber already made one block below
+ * -- `CLAUDE.md` says so in its own words, that a highlighter yellow is
+ * illegible on paper and has to come down to where it reads as ink -- applied to
+ * the red, which had been left at the value dark mode uses.
+ *
+ * **Dark keeps the original**, and that is the whole reason these are scoped
+ * rather than edited in place: on near-black the same red is already past 7:1
+ * and taking it darker would move it toward the ground instead of away from it.
+ * Contrast is directional, so a value fixed for one theme is broken for the
+ * other. Item 25's second half is that dark stays untouched.
+ *
+ * The hue is still not the only signal anywhere it appears -- a pill says
+ * "Paused", a button says "Delete", a cell says "never used" -- which is the
+ * condition those exceptions were granted under and is unchanged.
+ */
+:root[data-theme='light'] .pd-danger {
+  --danger: #b53326;
+}
+
+:root[data-theme='light'] .pc-roster {
+  --pc-risk: #b53326;
+}
+
+:root[data-theme='light'] .pl-total[data-gap='true'] b {
+  --pl-gap: #b53326;
+}
+
 .pd-danger:hover:not(:disabled) {
   border-color: var(--danger);
   background: rgba(217, 72, 59, 0.09);
@@ -29879,9 +29988,27 @@ p.lst-soft {
 }
 
 /* On paper the same yellow at the same lightness is a highlighter pen: it has
-   to come down to where it reads as ink on white. */
+   to come down to where it reads as ink on white.
+
+   It had not come down far enough, which is the item 25 correction: `168, 118,
+   34` measures 3.98:1 on a white card and **3.26:1** on `--surface-2`, and what
+   it draws is a pill, a chip and a note rather than a decoration.
+
+   `112, 76, 16` rather than the `138, 95, 24` that clears the *flat* grounds,
+   because this token is its own ground twice over and that is easy to miss: a
+   paused card washes itself in the amber at 0.05, and the pill and chip on it
+   take `rgba(var(--pl-amber-rgb), 0.18)` and `0.14` with `color:
+   rgb(var(--pl-amber-rgb))` on top. So the ink lands on a surface tinted toward
+   the ink, and `138, 95, 24` measures **3.47:1** there while passing every flat
+   ground -- the same fourth-ground mistake the accent chip made, on a different
+   token. Lightening the chips cannot fix it either: at 0.06 alpha, faint enough
+   that the card stops reading as paused, the ink still only reaches 4.03:1.
+   `112, 76, 16` is 4.53:1 against its own chip and 7.69:1 on a white card.
+
+   See the longer note on the warm red above for why both are scoped to light
+   rather than edited in place. */
 :root[data-theme='light'] .pl-card[data-live='false'] {
-  --pl-amber-rgb: 168, 118, 34;
+  --pl-amber-rgb: 112, 76, 16;
 }
 
 /* The hairline `.pd-glass::after` draws along the top edge is the accent, and on
@@ -31258,142 +31385,80 @@ p.lst-soft {
   }
 }
 
-/* ══════════════════════════════════════════════════════ today's list ══
+/* ══════════════════════════════════════════ the points card's slider ══
  *
- * The rotating daily-task prompt above the streak row (`TaskList` in
- * `games.tsx`). It replaced an empty box.
+ * Three fixed lines about earning, sliding horizontally inside the points card
+ * (`PointsSlider` in `games.tsx`). The dwell is `SLIDE_MS` there and nothing
+ * here depends on the number — this file owns the travel, not the timing.
  *
- * **The type is fluid and the box is not measured.** These prompts are whole
- * sentences in five languages and they are not the same length in any two of
- * them — the Ukrainian check-in line runs about half again the English one, and
- * the Uzbek invite line longer still. A panel with a fixed height clips the
- * longest; a panel with a fixed font size either sets the longest too small to
- * read on a phone or the shortest too large for the row. So the size is a
- * two-point `clamp` (the form the responsive note in `CLAUDE.md` names: a clamp
- * with a floor stops being fluid, and this one keeps moving all the way down to
- * 320px) and the height is whatever the sentence needs.
+ * **The view clips and the track moves.** The track's own box is one view
+ * wide and its slides (`flex: 0 0 100%`) overflow it side by side, so
+ * `translateX(-n × 100%)` — a percentage of the track's own box — is exactly
+ * n slides along.
  *
- * `min-height` is set to two lines rather than one, and that is the one measured
- * number here: without it the panel changes height every fifteen seconds as the
- * prompt rotates between a short line and a long one, and a box that resizes on
- * a timer drags the whole page under the cursor. Two lines is what the longest
- * of these needs at phone width, so the panel is still on every rung.
+ * **The height is the tallest slide**, because the slides sit side by side in
+ * one flex line and stretch to it. A card that resized every four seconds as a
+ * short sentence replaced a long one would drag the page under the cursor.
+ *
+ * The type is a two-point `clamp` rather than a breakpoint, for the reason the
+ * responsive note in `CLAUDE.md` gives, and it wraps rather than truncating:
+ * half of a sentence is not information.
  */
-.play-tasks {
+.play-slider {
   position: relative;
+  /* A whole row of the card whether it is a wrapping row (full width) or a
+     column (inside the deck). */
+  flex: 1 1 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  padding: clamp(1rem, 2.6vw, 1.35rem) clamp(1.1rem, 3vw, 1.6rem);
-  margin-bottom: 1.1rem;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--border);
-  background: var(--glass);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  gap: 0.7rem;
+  padding-top: 0.95rem;
+  border-top: 1px solid var(--border);
 }
 
-/* Matched to `.play-energy-kicker` and `.play-run-kicker` rather than given its
-   own treatment: this is the third panel in the same column and a heading that
-   looked different would read as a different kind of thing. */
-.play-tasks-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-  color: var(--text-fnt);
+.play-slider-view {
+  overflow: hidden;
 }
 
-.play-tasks-kicker i {
-  display: inline-flex;
-  color: var(--accent-lit);
+.play-slider-track {
+  display: flex;
+  transition: transform 520ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/*
- * The prompt.
- *
- * `min-height: 2lh` is two lines of *this* element's own line box, so it tracks
- * the clamp above rather than being a pixel figure that stops matching the type
- * the first time the clamp is retuned. Browsers without `lh` fall back to the
- * `em` line before it.
- */
-.play-tasks-line {
-  position: relative;
+.play-slide {
+  flex: 0 0 100%;
+  min-width: 0;
   margin: 0;
-  min-height: 2.9em;
-  min-height: 2lh;
-  font-size: clamp(0.94rem, 0.82rem + 0.55vw, 1.12rem);
-  line-height: 1.45;
+  font-size: clamp(1.02rem, 0.88rem + 0.6vw, 1.25rem);
+  line-height: 1.4;
   font-weight: 600;
   color: var(--text);
-  /* No `white-space: nowrap`, no `text-overflow: ellipsis` and no line clamp:
-     the whole content of this panel is one sentence, and half of a nudge is not
-     a nudge. It wraps, and the box grows. */
   overflow-wrap: anywhere;
 }
 
-/*
- * The transition between prompts.
- *
- * On the `<span>` rather than the `<p>`, because the animation is *arrival*:
- * the span is keyed on the task, so React replaces the element and the keyframe
- * runs once per prompt. Animating the paragraph would animate it once, on
- * mount, and never again — text content cannot be transitioned.
- *
- * A rise and a fade rather than a slide across: the panel is a column of
- * sentences over a live backdrop and horizontal movement in a box this wide
- * reads as a carousel somebody can swipe, which this is not.
- */
-.play-tasks-line > span {
-  display: block;
-  animation: task-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-@keyframes task-in {
-  from {
-    opacity: 0;
-    transform: translateY(0.4rem);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-/* One pip per open task. A count and a rotation indicator in the same three
-   pixels — and deliberately not a control: there is nothing behind a prompt to
-   open, and a dot that invites a press and answers nothing is the
-   picture-of-a-control failure this stylesheet has already shipped twice. */
-.play-tasks-pips {
+.play-slider-dots {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.35rem;
 }
 
-.play-tasks-pips i {
-  width: 0.4rem;
-  height: 0.4rem;
+.play-slider-dots i {
+  width: 0.45rem;
+  height: 0.45rem;
   border-radius: 50%;
   background: rgba(var(--accent-rgb), 0.22);
   transition: background 200ms ease, transform 200ms ease;
 }
 
-.play-tasks-pips i[data-on] {
+.play-slider-dots i[data-on] {
   background: var(--accent);
   transform: scale(1.25);
 }
 
-/* The rise is the only motion here and it is the only thing dropped: the fade
-   stays, because without it a prompt replaces another with no indication that
-   anything changed, which on a timer reads as a rendering fault. */
+/* The slide still changes; it just does not travel. */
 @media (prefers-reduced-motion: reduce) {
-  .play-tasks-line > span {
-    animation: none;
-  }
-
-  .play-tasks-pips i {
+  .play-slider-track,
+  .play-slider-dots i {
     transition: none;
   }
 }

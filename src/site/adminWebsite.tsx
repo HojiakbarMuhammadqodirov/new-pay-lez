@@ -31,6 +31,7 @@ import { ApiError, hasToken, signIn, signOut } from './api/client';
 import { useApi } from './api/useApi';
 import { Icon } from './icons';
 import { useCopy, useCurrency, useGroupSeparator, useLanguage } from './i18n/context';
+import { day } from './adminFormat';
 import { group } from './i18n/currency';
 import { fill } from './i18n/currency';
 import { PasswordInput } from './PasswordInput';
@@ -236,22 +237,6 @@ export function Connect({ onDone, copy }: { onDone: () => void; copy: WebsiteCop
 
 export type WebsiteCopy = ReturnType<typeof useCopy>['admin']['website'];
 
-/**
- * A date, short, in the reader's own locale.
- *
- * The third copy of this, beside `admin.tsx` and `adminPeople.tsx`, and it is
- * the same four options in the same order on purpose: the console has one date
- * format and this tab was printing a raw ISO string instead of it. A shared
- * `adminFormat.ts` — the counterpart of `dashboardFormat.ts` — is the right
- * home for all three and is a move across three files this pass did not make;
- * what it fixes here is the *format*, not the duplication.
- */
-const day = (iso: string | null, locale: string) =>
-  iso
-    ? new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: '2-digit' }).format(
-        new Date(iso),
-      )
-    : '—';
 
 export function AdminWebsite() {
   /* The reader's separator — see `Kpi` in `admin.tsx`. */

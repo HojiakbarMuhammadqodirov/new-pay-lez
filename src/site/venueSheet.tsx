@@ -7,6 +7,7 @@ import { categoryLabel } from './adminMetrics';
 import { ApiError, call } from './api/client';
 import { minorToEuro } from './api/partner';
 import { useApi } from './api/useApi';
+import { useAuth } from './auth/context';
 import {
   clockTime,
   CONSENTS_PATH,
@@ -825,10 +826,28 @@ function ShareSwitch({ venueId, venueName }: { venueId: string; venueName: strin
   const [failed, setFailed] = useState(false);
   const whatId = useId();
 
+  /*
+   * **On by default, for a venue nobody has decided about.** Three readings:
+   * a live grant is on; a venue this account switched off is off; and a venue
+   * it has never touched follows the account's standing answer,
+   * `venueSharingDefault` — on unless it was switched off on the profile — because
+   * that is exactly what the server will do at the first confirmed visit
+   * (`grantSharingByDefault`). Drawing it off there was the switch disagreeing
+   * with what was about to happen.
+   *
+   * Unknown until both answers are in, rather than guessed: a switch that says
+   * "on" to somebody who turned the default off is the one reading it must not
+   * give.
+   */
+  const { venueSharingDefault } = useAuth();
   const read =
-    consents.state.status === 'ready'
-      ? consents.state.data.dataSharing.some((row) => row.venue_id === venueId)
-      : null;
+    consents.state.status !== 'ready'
+      ? null
+      : consents.state.data.dataSharing.some((row) => row.venue_id === venueId)
+        ? true
+        : (consents.state.data.sharingWithdrawn ?? []).includes(venueId)
+          ? false
+          : venueSharingDefault;
   const shared = written ?? read;
 
   const toggle = async () => {

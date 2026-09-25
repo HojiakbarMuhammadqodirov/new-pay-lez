@@ -176,6 +176,10 @@ export const CONFIG = {
         token: the round it accompanies is the one that restarts the habit. */
     comeback: 100,
     comebackEveryDays: 30,
+    /** Finishing the day's featured game, once a day — the "log in every day
+        and play the daily game" prompt on the Play screen. Flat, on top of what
+        the round itself scored, and never on a practice round. */
+    dailyGame: 20,
 
     /*
      * Getting started, once each, the same on every plan.

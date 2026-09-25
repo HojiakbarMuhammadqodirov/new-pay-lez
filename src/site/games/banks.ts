@@ -280,6 +280,18 @@ export const quizBankFor = (countryCode: string | undefined): LocalBank =>
  * a local-knowledge quiz bank was written for it, which is the same act of
  * localising this card would be part of. The branch is not dead — it is what a
  * sixth country gets on the day its quiz bank lands and its word list has not.
+ *
+ * **The file to hand over lives in `updates/`.** A list arrives as
+ * `updates/paylez-words-<code>.json`, *not* as `data/words.<code>.json`, which
+ * is what `npm run banks` generates from it — both halves of this repo named
+ * the generated file for a while, and the difference is an hour spent in the
+ * wrong directory. Its shape is the English export's,
+ * `{ language, words: [{ word, hint, tier }] }` with tier by length, every clue
+ * written in English; `updates/paylez-word-hints.json` is what turns those
+ * clues into the other four reading languages, and `npm run banks` fails rather
+ * than shipping a clue it has no translation for. `en` carries 136 words and
+ * that is near the floor — a round is five and `buildWords` has no language
+ * fallback, so a short list empties for a regular player and stays empty.
  */
 export function wordListFor(countryCode: string | undefined): WordList | null {
   const code = (countryCode ?? '').trim().toUpperCase();
@@ -290,8 +302,22 @@ export function wordListFor(countryCode: string | undefined): WordList | null {
   return 'pl';
 }
 
-export const loadWords = (list: WordList) =>
-  load(`./data/words.${list}.json`) as Promise<WordRow[]>;
+/**
+ * One list, with its clues in the reader's language.
+ *
+ * The list is the language being practised; the clue is written in the one
+ * being read — an English clue on a Russian page was a hint half the readers
+ * could not use. `npm run banks` writes `words.<list>.<language>.json` beside
+ * the English-clued `words.<list>.json`, with the rows in the same order, so the
+ * no-repeat bag keyed on the list stays valid whichever language deals from it.
+ * A language with no file falls back to English clues rather than to no round.
+ */
+export const loadWords = (list: WordList, language?: string) => {
+  const translated = `./data/words.${list}.${language}.json`;
+  return load(language && TEXT[translated] ? translated : `./data/words.${list}.json`) as Promise<
+    WordRow[]
+  >;
+};
 
 export interface Deck {
   id: string;

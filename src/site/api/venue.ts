@@ -291,6 +291,12 @@ export interface Consents {
   account: Array<{ kind: string; granted: boolean }>;
   /** Unrevoked grants only — a venue absent from this list is not shared with. */
   dataSharing: Array<{ venue_id: string; name: string; granted_at: string }>;
+  /**
+   * Venues this account switched off and has not switched back on. Optional
+   * because a server that predates it does not send it — and absent is read as
+   * "none", which draws every unlisted venue by the account's default.
+   */
+  sharingWithdrawn?: string[];
 }
 
 export const CONSENTS_PATH = '/v1/me/consents';

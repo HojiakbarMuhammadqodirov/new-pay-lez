@@ -222,17 +222,19 @@ CREATE TABLE IF NOT EXISTS users (
   -- credential**. It is what sign-in looks up and what a password reset goes to,
   -- so an unproved one is an account somebody may not own, with points in it.
   --
-  -- What it gates is listed in `domain/verification.ts` and is deliberately
-  -- short: earning, redeeming, and being listed on the board. It does not gate
-  -- *signing in* — locking somebody out of an account they just made because a
-  -- code went to spam is worse than the risk — and it does not gate a scan at a
-  -- venue's till, because a venue has verified the person by standing in front
-  -- of them and should not be refused for our sake.
+  -- **It gates nothing today, and the column is kept deliberately.** A full OTP
+  -- flow shipped and was taken back out: with no mail transport configured the
+  -- code went to the server log, and the gate it wore — earning, redeeming and
+  -- the board — would have taken all three from every existing account at the
+  -- first restart, because nothing backfills. `domain/verification.ts` and
+  -- `ports/email.ts` are gone; this column and `email_verifications` stay so
+  -- there is no migration to run and none to unrun. See `server/README.md` for
+  -- the three things to change on the way back.
   --
-  -- Set at sign-up only by confirming a code. A **Google** account is stamped
-  -- immediately: `crypto/google.ts` already refuses an identity whose
-  -- `email_verified` claim is false, so the address arrives proved and asking
-  -- again would be a step that proves nothing.
+  -- Nothing writes it at sign-up any more. A **Google** account is still stamped
+  -- immediately, because that is the one moment the fact is known for free:
+  -- `crypto/google.ts` already refuses an identity whose `email_verified` claim
+  -- is false, so the address arrives proved.
   email_verified_at TEXT,
   -- §13 trust tiers: new accounts get low caps and staff confirmation on
   -- everything; a history of confirmed transactions earns headroom.

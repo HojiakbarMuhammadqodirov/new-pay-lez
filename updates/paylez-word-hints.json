@@ -1,0 +1,2142 @@
+{
+  "_about": "Translations of the Word Builder clues in the paylez-words-*.json exports, keyed by the English clue. Written in this repo rather than delivered with the exports: the lists carry English clues only, and a reader of the site in another language needs the clue in theirs. Read by npm run banks (words.<list>.<lang>.json) and by the server import (translations, entity word). byWord overrides one list's word, keyed <list>:<WORD>, for a clue that would otherwise spell its own answer.",
+  "hints": {
+    "365 days": {
+      "pl": "365 dni",
+      "ru": "365 дней",
+      "uz": "365 kun",
+      "uk": "365 днів"
+    },
+    "A bookshop": {
+      "pl": "Sklep, w którym kupujesz książki",
+      "ru": "Книжный магазин",
+      "uz": "Kitob do‘koni",
+      "uk": "Книгарня"
+    },
+    "A building where people pray": {
+      "pl": "Budynek, w którym ludzie się modlą",
+      "ru": "Здание, где люди молятся",
+      "uz": "Odamlar ibodat qiladigan bino",
+      "uk": "Будівля, де люди моляться"
+    },
+    "A car": {
+      "pl": "Jeździsz nim po mieście, ma cztery koła",
+      "ru": "Машина",
+      "uz": "Mashina",
+      "uk": "Автомобіль"
+    },
+    "A car you pay to ride in": {
+      "pl": "Auto, za którego przejazd płacisz",
+      "ru": "Машина, за поездку в которой платят",
+      "uz": "Pul to‘lab yuriladigan mashina",
+      "uk": "Авто, за поїздку в якому платять"
+    },
+    "A casual way to say hello": {
+      "pl": "Luźny sposób na powitanie",
+      "ru": "Простой способ поздороваться",
+      "uz": "Oddiy salomlashish so‘zi",
+      "uk": "Невимушений спосіб привітатися"
+    },
+    "A clock measures this": {
+      "pl": "Zegar to mierzy",
+      "ru": "Это измеряют часы",
+      "uz": "Soat buni o‘lchaydi",
+      "uk": "Це вимірює годинник"
+    },
+    "A cold sweet treat in summer": {
+      "pl": "Zimny, słodki przysmak latem",
+      "ru": "Холодное сладкое лакомство летом",
+      "uz": "Yozdagi sovuq shirinlik",
+      "uk": "Холодні ласощі влітку"
+    },
+    "A computer": {
+      "pl": "Maszyna do pracy z klawiaturą i ekranem",
+      "ru": "Компьютер",
+      "uz": "Kompyuter",
+      "uk": "Комп’ютер"
+    },
+    "A dish of raw vegetables": {
+      "pl": "Danie z surowych warzyw",
+      "ru": "Блюдо из сырых овощей",
+      "uz": "Xom sabzavotlardan taom",
+      "uk": "Страва із сирих овочів"
+    },
+    "A drink made from fruit": {
+      "pl": "Napój z owoców",
+      "ru": "Напиток из фруктов",
+      "uz": "Mevadan tayyorlangan ichimlik",
+      "uk": "Напій із фруктів"
+    },
+    "A flat you rent or buy": {
+      "pl": "Lokal, który wynajmujesz lub kupujesz",
+      "ru": "Квартира, которую снимают или покупают",
+      "uz": "Ijaraga olinadigan yoki sotib olinadigan kvartira",
+      "uk": "Житло, яке винаймають або купують"
+    },
+    "A government office": {
+      "pl": "Instytucja państwowa, gdzie załatwiasz sprawy",
+      "ru": "Государственное учреждение",
+      "uz": "Davlat idorasi",
+      "uk": "Державна установа"
+    },
+    "A green place to walk in the city": {
+      "pl": "Zielone miejsce na spacer w mieście",
+      "ru": "Зелёное место для прогулок в городе",
+      "uz": "Shahardagi sayr qilinadigan yashil joy",
+      "uk": "Зелене місце для прогулянок у місті"
+    },
+    "A high temperature": {
+      "pl": "Wysoka temperatura ciała",
+      "ru": "Высокая температура",
+      "uz": "Yuqori harorat",
+      "uk": "Висока температура"
+    },
+    "A home inside a larger building": {
+      "pl": "Dom w większym budynku",
+      "ru": "Жильё внутри большого дома",
+      "uz": "Katta bino ichidagi uy",
+      "uk": "Житло у великому будинку"
+    },
+    "A hot drink, not coffee": {
+      "pl": "Gorący napój, ale nie kawa",
+      "ru": "Горячий напиток, но не кофе",
+      "uz": "Issiq ichimlik, qahva emas",
+      "uk": "Гарячий напій, не кава"
+    },
+    "A hot liquid meal, eaten with a spoon": {
+      "pl": "Gorące, płynne danie jedzone łyżką",
+      "ru": "Горячее жидкое блюдо, едят ложкой",
+      "uz": "Qoshiqda yeyiladigan suyuq issiq taom",
+      "uk": "Гаряча рідка страва, яку їдять ложкою"
+    },
+    "A hot meal you eat with a spoon": {
+      "pl": "Gorące danie, które jesz łyżką",
+      "ru": "Горячее блюдо, которое едят ложкой",
+      "uz": "Qoshiq bilan yeyiladigan issiq taom",
+      "uk": "Гаряча страва, яку їдять ложкою"
+    },
+    "A permit to enter a country": {
+      "pl": "Pozwolenie na wjazd do kraju",
+      "ru": "Разрешение на въезд в страну",
+      "uz": "Mamlakatga kirish uchun ruxsatnoma",
+      "uk": "Дозвіл на в’їзд до країни"
+    },
+    "A place where people work at desks": {
+      "pl": "Miejsce, gdzie ludzie pracują przy biurkach",
+      "ru": "Место, где работают за столами",
+      "uz": "Odamlar stol ortida ishlaydigan joy",
+      "uk": "Місце, де працюють за столами"
+    },
+    "A popular cold alcoholic drink": {
+      "pl": "Popularny zimny napój z alkoholem",
+      "ru": "Популярный холодный алкогольный напиток",
+      "uz": "Mashhur sovuq spirtli ichimlik",
+      "uk": "Популярний холодний алкогольний напій"
+    },
+    "A room in a flat": {
+      "pl": "Pomieszczenie w mieszkaniu",
+      "ru": "Помещение в квартире",
+      "uz": "Kvartiradagi xona",
+      "uk": "Кімната у квартирі"
+    },
+    "A signed agreement, e.g. for work": {
+      "pl": "Podpisane porozumienie, np. o pracę",
+      "ru": "Подписанное соглашение, например о работе",
+      "uz": "Imzolangan kelishuv, masalan, ish uchun",
+      "uk": "Підписана угода, напр. про роботу"
+    },
+    "A space inside a flat": {
+      "pl": "Pomieszczenie w mieszkaniu",
+      "ru": "Часть квартиры с четырьмя стенами",
+      "uz": "Kvartira ichidagi joy",
+      "uk": "Приміщення у квартирі"
+    },
+    "A sweet baked treat for dessert": {
+      "pl": "Słodki wypiek na deser",
+      "ru": "Сладкая выпечка на десерт",
+      "uz": "Desertga pishirilgan shirinlik",
+      "uk": "Солодка випічка на десерт"
+    },
+    "After lunch, before evening": {
+      "pl": "Po obiedzie, przed wieczorem",
+      "ru": "После обеда, до вечера",
+      "uz": "Tushlikdan keyin, kechdan oldin",
+      "uk": "Після обіду, до вечора"
+    },
+    "An open place to buy food and goods": {
+      "pl": "Otwarte miejsce z jedzeniem i towarami na sprzedaż",
+      "ru": "Место под открытым небом, где покупают еду и товары",
+      "uz": "Oziq-ovqat va mol sotib olinadigan ochiq joy",
+      "uk": "Відкрите місце, де купують їжу й товари"
+    },
+    "Apples and bananas are these": {
+      "pl": "Jabłka i banany to…",
+      "ru": "Яблоки и бананы — это они",
+      "uz": "Olma va banan — bular",
+      "uk": "Яблука й банани — це…"
+    },
+    "At this moment": {
+      "pl": "W tej chwili",
+      "ru": "В этот момент",
+      "uz": "Ayni damda",
+      "uk": "У цю мить"
+    },
+    "Beef and chicken are types of this": {
+      "pl": "Wołowina i kurczak to jego rodzaje",
+      "ru": "Говядина и курица — его виды",
+      "uz": "Mol va tovuq — buning turlari",
+      "uk": "Яловичина й курятина — його види"
+    },
+    "Call 112 for this": {
+      "pl": "Dzwonisz wtedy pod 112",
+      "ru": "При ней звонят 112",
+      "uz": "Buning uchun 112 ga qo‘ng‘iroq qilinadi",
+      "uk": "У такому разі дзвонять 112"
+    },
+    "Carrots and cabbage are these": {
+      "pl": "Marchew i kapusta to…",
+      "ru": "Морковь и капуста — это они",
+      "uz": "Sabzi va karam — bular",
+      "uk": "Морква й капуста — це…"
+    },
+    "Carrots and potatoes are these": {
+      "pl": "Marchew i kartofle to…",
+      "ru": "Морковь и картофель — это они",
+      "uz": "Sabzi va kartoshka — bular",
+      "uk": "Морква й картопля — це…"
+    },
+    "Cars drive on this": {
+      "pl": "Jeżdżą po niej auta",
+      "ru": "По ней ездят машины",
+      "uz": "Mashinalar bunda yuradi",
+      "uk": "По ній їздять автомобілі"
+    },
+    "Chocolate": {
+      "pl": "Słodki brązowy przysmak z kakao",
+      "ru": "Шоколад",
+      "uz": "Shokolad",
+      "uk": "Шоколад"
+    },
+    "Comes out of the tap": {
+      "pl": "Leci z kranu",
+      "ru": "Течёт из крана",
+      "uz": "Jo‘mrakdan oqadi",
+      "uk": "Тече з крана"
+    },
+    "Costs a lot of money": {
+      "pl": "Kosztuje dużo pieniędzy",
+      "ru": "Стоит много денег",
+      "uz": "Ko‘p pul turadi",
+      "uk": "Коштує багато грошей"
+    },
+    "Famous Polish stuffed dumplings": {
+      "pl": "Słynne polskie danie z ciasta z nadzieniem",
+      "ru": "Знаменитые польские вареники с начинкой",
+      "uz": "Mashhur Polsha chuchvarasi",
+      "uk": "Відомі польські вареники"
+    },
+    "Food between two slices of bread": {
+      "pl": "Jedzenie między dwiema kromkami chleba",
+      "ru": "Еда между двумя ломтиками хлеба",
+      "uz": "Ikki bo‘lak non orasidagi taom",
+      "uk": "Їжа між двома скибками хліба"
+    },
+    "Gives light in a room": {
+      "pl": "Daje światło w pokoju",
+      "ru": "Даёт свет в комнате",
+      "uz": "Xonani yoritadi",
+      "uk": "Дає світло в кімнаті"
+    },
+    "Goes in your coffee": {
+      "pl": "Dolewasz to do kawy",
+      "ru": "Добавляют в кофе",
+      "uz": "Qahvaga qo‘shiladi",
+      "uk": "Його додають у каву"
+    },
+    "Hard to do": {
+      "pl": "Niełatwy do zrobienia",
+      "ru": "Трудно сделать",
+      "uz": "Qilish qiyin",
+      "uk": "Важко зробити"
+    },
+    "Has leaves and a trunk": {
+      "pl": "Ma liście i pień",
+      "ru": "У него есть листья и ствол",
+      "uz": "Barglari va tanasi bor",
+      "uk": "Має листя й стовбур"
+    },
+    "Helps the doctor care for patients": {
+      "pl": "Pomaga lekarzowi opiekować się pacjentami",
+      "ru": "Помогает врачу ухаживать за больными",
+      "uz": "Bemorlarga qarashda shifokorga yordam beradi",
+      "uk": "Допомагає лікареві доглядати пацієнтів"
+    },
+    "Holds your cards and cash": {
+      "pl": "Trzymasz w nim karty i gotówkę",
+      "ru": "В нём лежат карты и наличные",
+      "uz": "Kartalar va naqd pulni saqlaydi",
+      "uk": "У ньому тримають картки й готівку"
+    },
+    "How much something costs": {
+      "pl": "Ile coś kosztuje",
+      "ru": "Сколько что-то стоит",
+      "uz": "Biror narsa qancha turishi",
+      "uk": "Скільки щось коштує"
+    },
+    "It covers the doctor's bill": {
+      "pl": "Pokrywa koszty wizyty u lekarza",
+      "ru": "Оплачивает счёт за врача",
+      "uz": "Shifokor xarajatini qoplaydi",
+      "uk": "Вона покриває рахунок від лікаря"
+    },
+    "It tells you when the bus leaves": {
+      "pl": "Mówi, kiedy odjeżdża autobus",
+      "ru": "Показывает, когда уходит автобус",
+      "uz": "Avtobus qachon jo‘nashini ko‘rsatadi",
+      "uk": "Показує, коли відходить автобус"
+    },
+    "Kraków is one": {
+      "pl": "Kraków to jedno z nich",
+      "ru": "Краков — один из них",
+      "uz": "Krakov — shulardan biri",
+      "uk": "Краків — це…"
+    },
+    "Leaving the car somewhere": {
+      "pl": "Zostawianie auta w jakimś miejscu",
+      "ru": "Оставить машину на стоянке",
+      "uz": "Mashinani biror joyda qoldirish",
+      "uk": "Коли десь залишають авто"
+    },
+    "Lives in water, you can eat it": {
+      "pl": "Żyje w wodzie, można ją zjeść",
+      "ru": "Живёт в воде, её можно есть",
+      "uz": "Suvda yashaydi, uni yeyish mumkin",
+      "uk": "Живе у воді, її можна їсти"
+    },
+    "Made from milk, goes on sandwiches": {
+      "pl": "Robi się go z mleka, kładziesz na kanapki",
+      "ru": "Делают из молока, кладут на бутерброды",
+      "uz": "Sutdan qilinadi, buterbrodga qo‘yiladi",
+      "uk": "Роблять з молока, кладуть на бутерброди"
+    },
+    "Makes your drink sweet": {
+      "pl": "Słodzi twój napój",
+      "ru": "Делает напиток сладким",
+      "uz": "Ichimlikni shirin qiladi",
+      "uk": "Робить напій солодким"
+    },
+    "Money you pay to the government": {
+      "pl": "Pieniądze płacone państwu",
+      "ru": "Деньги, которые платят государству",
+      "uz": "Davlatga to‘lanadigan pul",
+      "uk": "Гроші, які сплачують державі"
+    },
+    "Moving air you can feel": {
+      "pl": "Ruch powietrza, który czujesz",
+      "ru": "Движение воздуха, которое чувствуешь",
+      "uz": "Sezish mumkin bo‘lgan harakatdagi havo",
+      "uk": "Рух повітря, який відчуваєш"
+    },
+    "Not fast, or not taken": {
+      "pl": "Niespieszny albo niezajęty",
+      "ru": "Не быстрый или не занятый",
+      "uz": "Tez emas yoki band emas",
+      "uk": "Не швидкий або не зайнятий"
+    },
+    "Not nothing": {
+      "pl": "Nie nic",
+      "ru": "Хоть что-то",
+      "uz": "«Hech narsa»ning aksi",
+      "uk": "Не ніщо"
+    },
+    "Not open": {
+      "pl": "Nie otwarte",
+      "ru": "Не открыто",
+      "uz": "Ochiq emas",
+      "uk": "Не відчинено"
+    },
+    "Paper with your details on it": {
+      "pl": "Papier z twoimi danymi",
+      "ru": "Бумага с вашими данными",
+      "uz": "Ma’lumotlaringiz yozilgan qog‘oz",
+      "uk": "Папір із твоїми даними"
+    },
+    "Papers with your details on them": {
+      "pl": "Papiery z twoimi danymi",
+      "ru": "Бумаги с вашими данными",
+      "uz": "Ma’lumotlaringiz yozilgan qog‘ozlar",
+      "uk": "Папери з твоїми даними"
+    },
+    "Paying with physical notes and coins": {
+      "pl": "Płacenie banknotami i monetami",
+      "ru": "Оплата купюрами и монетами",
+      "uz": "Qog‘oz pul va tangalar bilan to‘lash",
+      "uk": "Оплата купюрами й монетами"
+    },
+    "Physical notes and coins": {
+      "pl": "Banknoty i monety",
+      "ru": "Купюры и монеты",
+      "uz": "Qog‘oz pul va tangalar",
+      "uk": "Купюри й монети"
+    },
+    "Polish is one": {
+      "pl": "Polski to jeden z nich",
+      "ru": "Польский — один из них",
+      "uz": "Polyak tili — shulardan biri",
+      "uk": "Польська — це…"
+    },
+    "Potatoes": {
+      "pl": "Kartofle",
+      "ru": "Картофель",
+      "uz": "Kartoshka",
+      "uk": "Картопля"
+    },
+    "Powers your lights and phone": {
+      "pl": "Zasila światło i telefon",
+      "ru": "Питает свет и телефон",
+      "uz": "Chiroq va telefonga quvvat beradi",
+      "uk": "Живить світло й телефон"
+    },
+    "Public transport on rails in the city": {
+      "pl": "Komunikacja miejska na szynach",
+      "ru": "Городской транспорт на рельсах",
+      "uz": "Shahardagi relsli jamoat transporti",
+      "uk": "Міський транспорт на рейках"
+    },
+    "Public transport on wheels": {
+      "pl": "Komunikacja miejska na kołach",
+      "ru": "Общественный транспорт на колёсах",
+      "uz": "G‘ildirakli jamoat transporti",
+      "uk": "Громадський транспорт на колесах"
+    },
+    "Sausage": {
+      "pl": "Polska wędlina, często z grilla",
+      "ru": "Колбаса",
+      "uz": "Kolbasa",
+      "uk": "Ковбаса"
+    },
+    "Seven days together": {
+      "pl": "Siedem dni razem",
+      "ru": "Семь дней вместе",
+      "uz": "Yetti kunlik muddat",
+      "uk": "Сім днів разом"
+    },
+    "Shines in the sky on a clear day": {
+      "pl": "Świeci na niebie w pogodny dzień",
+      "ru": "Светит в небе в ясный день",
+      "uz": "Ochiq kunda osmonda porlaydi",
+      "uk": "Світить у небі в ясний день"
+    },
+    "Shows you where places are": {
+      "pl": "Pokazuje, gdzie są miejsca",
+      "ru": "Показывает, где что находится",
+      "uz": "Joylar qayerdaligini ko‘rsatadi",
+      "uk": "Показує, де що розташовано"
+    },
+    "Sixty minutes": {
+      "pl": "Sześćdziesiąt minut",
+      "ru": "Шестьдесят минут",
+      "uz": "Oltmish daqiqa",
+      "uk": "Шістдесят хвилин"
+    },
+    "Someone you like to spend time with": {
+      "pl": "Ktoś, z kim lubisz spędzać czas",
+      "ru": "Тот, с кем приятно проводить время",
+      "uz": "Birga vaqt o‘tkazishni yoqtiradigan odamingiz",
+      "uk": "Той, з ким любиш проводити час"
+    },
+    "Strawberries": {
+      "pl": "Czerwone owoce z pestkami na zewnątrz",
+      "ru": "Клубника",
+      "uz": "Qulupnay",
+      "uk": "Полуниці"
+    },
+    "Sunday": {
+      "pl": "Ostatni dzień tygodnia",
+      "ru": "Воскресенье",
+      "uz": "Yakshanba",
+      "uk": "Неділя"
+    },
+    "Sweet brown bar": {
+      "pl": "Słodka brązowa tabliczka",
+      "ru": "Сладкая коричневая плитка",
+      "uz": "Shirin jigarrang plitka",
+      "uk": "Солодка коричнева плитка"
+    },
+    "Tables, chairs and beds": {
+      "pl": "Stoły, krzesła i łóżka",
+      "ru": "Столы, стулья и кровати",
+      "uz": "Stol, stul va karavotlar",
+      "uk": "Столи, стільці й ліжка"
+    },
+    "The Wisła is one": {
+      "pl": "Wisła jest jedną z nich",
+      "ru": "Висла — одна из них",
+      "uz": "Visla — shulardan biri",
+      "uk": "Вісла — це…"
+    },
+    "The ambulance service": {
+      "pl": "Służba karetek",
+      "ru": "Скорая помощь",
+      "uz": "Tez yordam xizmati",
+      "uk": "Швидка допомога"
+    },
+    "The bill you pay at a restaurant": {
+      "pl": "To, co płacisz w restauracji",
+      "ru": "Счёт, который оплачивают в ресторане",
+      "uz": "Restoranda to‘lanadigan hisob",
+      "uk": "Рахунок, який оплачують у ресторані"
+    },
+    "The building at the airport": {
+      "pl": "Budynek na lotnisku",
+      "ru": "Здание в аэропорту",
+      "uz": "Aeroportdagi bino",
+      "uk": "Будівля в аеропорту"
+    },
+    "The coldest season": {
+      "pl": "Najzimniejsza pora roku",
+      "ru": "Самое холодное время года",
+      "uz": "Eng sovuq fasl",
+      "uk": "Найхолодніша пора року"
+    },
+    "The dark part of the day": {
+      "pl": "Ciemna część doby",
+      "ru": "Тёмное время суток",
+      "uz": "Sutkaning qorong‘i qismi",
+      "uk": "Темна частина доби"
+    },
+    "The day after today": {
+      "pl": "Dzień po dzisiejszym",
+      "ru": "День после сегодняшнего",
+      "uz": "Bugundan keyingi kun",
+      "uk": "День після сьогодні"
+    },
+    "The day before today": {
+      "pl": "Dzień przed dzisiejszym",
+      "ru": "День перед сегодняшним",
+      "uz": "Bugundan oldingi kun",
+      "uk": "День перед сьогодні"
+    },
+    "The early part of the day": {
+      "pl": "Wczesna część dnia",
+      "ru": "Раннее время дня",
+      "uz": "Kunning erta qismi",
+      "uk": "Рання частина дня"
+    },
+    "The end of the day, before night": {
+      "pl": "Koniec dnia, przed nocą",
+      "ru": "Конец дня, перед ночью",
+      "uz": "Kun oxiri, tundan oldin",
+      "uk": "Кінець дня, перед ніччю"
+    },
+    "The evening meal": {
+      "pl": "Posiłek wieczorem",
+      "ru": "Вечерняя еда",
+      "uz": "Kechki ovqat",
+      "uk": "Вечірня трапеза"
+    },
+    "The first meal of the day": {
+      "pl": "Pierwszy posiłek dnia",
+      "ru": "Первая еда за день",
+      "uz": "Kunning birinchi ovqati",
+      "uk": "Перша трапеза дня"
+    },
+    "The machine that sells tickets": {
+      "pl": "Automat, w którym kupujesz przejazd",
+      "ru": "Автомат, продающий билеты",
+      "uz": "Chipta sotadigan apparat",
+      "uk": "Автомат, що продає квитки"
+    },
+    "The main meal in the middle of the day": {
+      "pl": "Główny posiłek w środku dnia",
+      "ru": "Главная еда в середине дня",
+      "uz": "Kun o‘rtasidagi asosiy ovqat",
+      "uk": "Головна трапеза посеред дня"
+    },
+    "The main open space in a town": {
+      "pl": "Główny otwarty plac w mieście",
+      "ru": "Главное открытое место в городе",
+      "uz": "Shahardagi asosiy ochiq maydon",
+      "uk": "Головне відкрите місце в місті"
+    },
+    "The main square of a Polish town": {
+      "pl": "Główny plac polskiego miasta",
+      "ru": "Главная площадь польского города",
+      "uz": "Polsha shahrining asosiy maydoni",
+      "uk": "Головна площа польського міста"
+    },
+    "The meal in the middle of the day": {
+      "pl": "Posiłek w środku dnia",
+      "ru": "Еда в середине дня",
+      "uz": "Kun o‘rtasidagi ovqat",
+      "uk": "Трапеза посеред дня"
+    },
+    "The opposite of bad": {
+      "pl": "Przeciwieństwo słowa „zły”",
+      "ru": "Противоположность плохому",
+      "uz": "«Yomon»ning aksi",
+      "uk": "Протилежне до «поганий»"
+    },
+    "The opposite of big": {
+      "pl": "Przeciwieństwo słowa „duży”",
+      "ru": "Противоположность большому",
+      "uz": "«Katta»ning aksi",
+      "uk": "Протилежне до «великий»"
+    },
+    "The opposite of closed": {
+      "pl": "Przeciwieństwo słowa „zamknięty”",
+      "ru": "Противоположность закрытому",
+      "uz": "«Yopiq»ning aksi",
+      "uk": "Протилежне до «зачинений»"
+    },
+    "The opposite of cold": {
+      "pl": "Przeciwieństwo słowa „zimny”",
+      "ru": "Противоположность холодному",
+      "uz": "«Sovuq»ning aksi",
+      "uk": "Протилежне до «холодний»"
+    },
+    "The opposite of expensive": {
+      "pl": "Przeciwieństwo słowa „drogi”",
+      "ru": "Противоположность дорогому",
+      "uz": "«Qimmat»ning aksi",
+      "uk": "Протилежне до «дорогий»"
+    },
+    "The opposite of fast": {
+      "pl": "Przeciwieństwo słowa „szybki”",
+      "ru": "Противоположность быстрому",
+      "uz": "«Tez»ning aksi",
+      "uk": "Протилежне до «швидкий»"
+    },
+    "The opposite of good": {
+      "pl": "Przeciwieństwo słowa „dobry”",
+      "ru": "Противоположность хорошему",
+      "uz": "«Yaxshi»ning aksi",
+      "uk": "Протилежне до «добрий»"
+    },
+    "The opposite of new": {
+      "pl": "Przeciwieństwo słowa „nowy”",
+      "ru": "Противоположность новому",
+      "uz": "«Yangi»ning aksi",
+      "uk": "Протилежне до «новий»"
+    },
+    "The opposite of night": {
+      "pl": "Przeciwieństwo nocy",
+      "ru": "Противоположность ночи",
+      "uz": "«Tun»ning aksi",
+      "uk": "Протилежне до «ніч»"
+    },
+    "The opposite of no": {
+      "pl": "Przeciwieństwo słowa „nie”",
+      "ru": "Противоположность слову «нет»",
+      "uz": "«Yo‘q»ning aksi",
+      "uk": "Протилежне до «ні»"
+    },
+    "The opposite of old": {
+      "pl": "Przeciwieństwo słowa „stary”",
+      "ru": "Противоположность старому",
+      "uz": "«Eski»ning aksi",
+      "uk": "Протилежне до «старий»"
+    },
+    "The opposite of open": {
+      "pl": "Przeciwieństwo słowa „otwarty”",
+      "ru": "Противоположность открытому",
+      "uz": "«Ochiq»ning aksi",
+      "uk": "Протилежне до «відчинений»"
+    },
+    "The opposite of slow": {
+      "pl": "Przeciwieństwo słowa „wolny”",
+      "ru": "Противоположность медленному",
+      "uz": "«Sekin»ning aksi",
+      "uk": "Протилежне до «повільний»"
+    },
+    "The opposite of small": {
+      "pl": "Przeciwieństwo słowa „mały”",
+      "ru": "Противоположность маленькому",
+      "uz": "«Kichik»ning aksi",
+      "uk": "Протилежне до «малий»"
+    },
+    "The opposite of sugar in cooking": {
+      "pl": "W kuchni przeciwieństwo cukru",
+      "ru": "Противоположность сахару на кухне",
+      "uz": "Oshxonada shakarning aksi",
+      "uk": "Протилежне до цукру в кулінарії"
+    },
+    "The opposite of warm": {
+      "pl": "Przeciwieństwo słowa „ciepły”",
+      "ru": "Противоположность тёплому",
+      "uz": "«Iliq»ning aksi",
+      "uk": "Протилежне до «теплий»"
+    },
+    "The opposite of yes": {
+      "pl": "Przeciwieństwo słowa „tak”",
+      "ru": "Противоположность слову «да»",
+      "uz": "«Ha»ning aksi",
+      "uk": "Протилежне до «так»"
+    },
+    "The people next door": {
+      "pl": "Ludzie mieszkający obok",
+      "ru": "Люди, живущие рядом",
+      "uz": "Yonimizda yashovchi odamlar",
+      "uk": "Люди, що живуть поруч"
+    },
+    "The person living next door": {
+      "pl": "Osoba mieszkająca obok",
+      "ru": "Человек, живущий по соседству",
+      "uz": "Yoningizda yashovchi odam",
+      "uk": "Людина, що живе поруч"
+    },
+    "The place where you live": {
+      "pl": "Miejsce, w którym mieszkasz",
+      "ru": "Место, где вы живёте",
+      "uz": "Siz yashaydigan joy",
+      "uk": "Місце, де ти живеш"
+    },
+    "The room where you cook": {
+      "pl": "Pomieszczenie, w którym gotujesz",
+      "ru": "Комната, где готовят еду",
+      "uz": "Ovqat pishiriladigan xona",
+      "uk": "Кімната, де готують їжу"
+    },
+    "The room with the shower": {
+      "pl": "Pomieszczenie z prysznicem",
+      "ru": "Комната с душем",
+      "uz": "Dush bor xona",
+      "uk": "Кімната з душем"
+    },
+    "The season when flowers bloom": {
+      "pl": "Pora roku, gdy kwitną kwiaty",
+      "ru": "Время года, когда цветут цветы",
+      "uz": "Gullar ochiladigan fasl",
+      "uk": "Пора року, коли цвітуть квіти"
+    },
+    "The season when leaves fall": {
+      "pl": "Pora roku, gdy spadają liście",
+      "ru": "Время года, когда опадают листья",
+      "uz": "Barglar to‘kiladigan fasl",
+      "uk": "Пора року, коли опадає листя"
+    },
+    "The side of a room": {
+      "pl": "Bok pokoju",
+      "ru": "У комнаты их четыре",
+      "uz": "Xonaning yon tomoni",
+      "uk": "Бік кімнати"
+    },
+    "The warmest season": {
+      "pl": "Najcieplejsza pora roku",
+      "ru": "Самое тёплое время года",
+      "uz": "Eng issiq fasl",
+      "uk": "Найтепліша пора року"
+    },
+    "There are twelve of these in a year": {
+      "pl": "Jest ich dwanaście w roku",
+      "ru": "В году их двенадцать",
+      "uz": "Yilda o‘n ikkitasi bor",
+      "uk": "У році їх дванадцять"
+    },
+    "This very day": {
+      "pl": "Właśnie ten dzień",
+      "ru": "Этот самый день",
+      "uz": "Aynan shu kun",
+      "uk": "Саме цей день"
+    },
+    "Thursday": {
+      "pl": "Dzień po środzie",
+      "ru": "Четверг",
+      "uz": "Payshanba",
+      "uk": "Четвер"
+    },
+    "Travels on rails between cities": {
+      "pl": "Jeździ po szynach między miastami",
+      "ru": "Ездит по рельсам между городами",
+      "uz": "Shaharlar orasida relsda yuradi",
+      "uk": "Їздить рейками між містами"
+    },
+    "Water falling from the sky": {
+      "pl": "Woda spadająca z nieba",
+      "ru": "Вода, падающая с неба",
+      "uz": "Osmondan tushadigan suv",
+      "uk": "Вода, що падає з неба"
+    },
+    "Wawel is a famous one": {
+      "pl": "Wawel to słynny przykład",
+      "ru": "Вавель — знаменитый замок",
+      "uz": "Vavel — mashhurlaridan biri",
+      "uk": "Вавель — відомий…"
+    },
+    "What the wifi gives you": {
+      "pl": "To, co daje ci wifi",
+      "ru": "Что даёт вай-фай",
+      "uz": "Wi-Fi sizga beradigan narsa",
+      "uk": "Те, що дає вайфай"
+    },
+    "What you ask": {
+      "pl": "To, co zadajesz",
+      "ru": "То, что задают",
+      "uz": "Siz so‘raydigan narsa",
+      "uk": "Те, що запитують"
+    },
+    "What you ask for in an emergency": {
+      "pl": "O to prosisz w nagłym wypadku",
+      "ru": "То, о чём просят в беде",
+      "uz": "Favqulodda vaziyatda so‘raladigan narsa",
+      "uk": "Те, чого просять у надзвичайній ситуації"
+    },
+    "What you ask for in trouble": {
+      "pl": "O to prosisz w kłopocie",
+      "ru": "То, о чём просят в трудную минуту",
+      "uz": "Qiyin ahvolda so‘raladigan narsa",
+      "uk": "Те, чого просять у біді"
+    },
+    "What you earn for playing": {
+      "pl": "To, co zdobywasz za grę",
+      "ru": "Что получаешь за игру",
+      "uz": "O‘ynaganingiz uchun oladigan narsangiz",
+      "uk": "Те, що отримуєш за гру"
+    },
+    "What you hope for on a day off": {
+      "pl": "Na to liczysz w wolny dzień",
+      "ru": "На что надеешься в выходной",
+      "uz": "Dam olish kuni kutadigan narsangiz",
+      "uk": "На що сподіваєшся у вихідний"
+    },
+    "What you pay at a restaurant": {
+      "pl": "To, co płacisz w restauracji",
+      "ru": "Что оплачивают в ресторане",
+      "uz": "Restoranda to‘laydigan narsangiz",
+      "uk": "Те, що оплачують у ресторані"
+    },
+    "What you say at bedtime": {
+      "pl": "Mówisz to przed snem",
+      "ru": "Что говорят перед сном",
+      "uz": "Uxlashdan oldin aytiladigan so‘z",
+      "uk": "Що кажуть перед сном"
+    },
+    "What you shout in an emergency": {
+      "pl": "To krzyczysz w nagłym wypadku",
+      "ru": "Что кричат в экстренной ситуации",
+      "uz": "Favqulodda vaziyatda baqiradigan so‘zingiz",
+      "uk": "Що кричать у надзвичайній ситуації"
+    },
+    "What you take when sick": {
+      "pl": "Bierzesz to, gdy chorujesz",
+      "ru": "Что принимают при болезни",
+      "uz": "Kasal bo‘lganda ichadigan narsa",
+      "uk": "Що приймають, коли хворієш"
+    },
+    "Where books are borrowed": {
+      "pl": "Tu wypożycza się książki",
+      "ru": "Где берут книги почитать",
+      "uz": "Kitoblar vaqtincha olinadigan joy",
+      "uk": "Де позичають книжки"
+    },
+    "Where bread is baked": {
+      "pl": "Tu piecze się chleb",
+      "ru": "Где пекут хлеб",
+      "uz": "Non yopiladigan joy",
+      "uk": "Де печуть хліб"
+    },
+    "Where planes take off": {
+      "pl": "Stąd startują samoloty",
+      "ru": "Откуда взлетают самолёты",
+      "uz": "Samolyotlar uchadigan joy",
+      "uk": "Звідки злітають літаки"
+    },
+    "Where the doctors are": {
+      "pl": "Tam są lekarze",
+      "ru": "Где работают врачи",
+      "uz": "Shifokorlar ishlaydigan joy",
+      "uk": "Де працюють лікарі"
+    },
+    "Where trains arrive and depart": {
+      "pl": "Tu przyjeżdżają i odjeżdżają pociągi",
+      "ru": "Куда прибывают и откуда уходят поезда",
+      "uz": "Poyezdlar kelib-ketadigan joy",
+      "uk": "Куди прибувають і звідки відходять поїзди"
+    },
+    "Where two streets meet": {
+      "pl": "Tam, gdzie spotykają się dwie ulice",
+      "ru": "Где встречаются две улицы",
+      "uz": "Ikki ko‘cha kesishgan joy",
+      "uk": "Де сходяться дві вулиці"
+    },
+    "Where you buy medicine": {
+      "pl": "Tu kupujesz leki",
+      "ru": "Где покупают лекарства",
+      "uz": "Dori sotib olinadigan joy",
+      "uk": "Де купують ліки"
+    },
+    "Where you go if seriously ill": {
+      "pl": "Tu trafiasz, gdy ciężko chorujesz",
+      "ru": "Куда едут при тяжёлой болезни",
+      "uz": "Og‘ir kasal bo‘lsangiz boradigan joy",
+      "uk": "Куди йдуть, якщо тяжко хворі"
+    },
+    "Where you keep the plates": {
+      "pl": "Tu trzymasz talerze",
+      "ru": "Где хранят тарелки",
+      "uz": "Likopchalar saqlanadigan joy",
+      "uk": "Де тримають тарілки"
+    },
+    "Where you keep your money": {
+      "pl": "Tu trzymasz pieniądze",
+      "ru": "Где хранят деньги",
+      "uz": "Pulingizni saqlaydigan joy",
+      "uk": "Де зберігають гроші"
+    },
+    "Where you leave your car": {
+      "pl": "Tu zostawiasz auto",
+      "ru": "Где оставляют машину",
+      "uz": "Mashinani qoldiradigan joy",
+      "uk": "Де залишають авто"
+    },
+    "Where you sit down to eat": {
+      "pl": "Tu siadasz, żeby zjeść",
+      "ru": "Куда садятся поесть",
+      "uz": "Ovqatlanish uchun o‘tiradigan joy",
+      "uk": "Де сідають поїсти"
+    },
+    "Where you wait for the bus": {
+      "pl": "Tu czekasz na autobus",
+      "ru": "Где ждут автобус",
+      "uz": "Avtobus kutiladigan joy",
+      "uk": "Де чекають на автобус"
+    },
+    "Where you wait for the train": {
+      "pl": "Tu czekasz na pociąg",
+      "ru": "Где ждут поезд",
+      "uz": "Poyezd kutiladigan joy",
+      "uk": "Де чекають на поїзд"
+    },
+    "Where you walk over the road": {
+      "pl": "Tu przechodzisz przez jezdnię",
+      "ru": "Где переходят дорогу",
+      "uz": "Yo‘ldan piyoda o‘tiladigan joy",
+      "uk": "Де переходять дорогу"
+    },
+    "White and cold, falls in winter": {
+      "pl": "Biały i zimny, pada zimą",
+      "ru": "Белый и холодный, падает зимой",
+      "uz": "Oq va sovuq, qishda yog‘adi",
+      "uk": "Білий і холодний, падає взимку"
+    },
+    "White or grey, floats in the sky": {
+      "pl": "Biała lub szara, płynie po niebie",
+      "ru": "Белое или серое, плывёт по небу",
+      "uz": "Oq yoki kulrang, osmonda suzadi",
+      "uk": "Біла чи сіра, пливе небом"
+    },
+    "You add this to make it sweet": {
+      "pl": "Dodajesz to, żeby było słodkie",
+      "ru": "Его добавляют для сладости",
+      "uz": "Shirin qilish uchun qo‘shiladi",
+      "uk": "Його додають, щоб було солодко"
+    },
+    "You buy this at a bakery": {
+      "pl": "Kupujesz to w piekarni",
+      "ru": "Его покупают в пекарне",
+      "uz": "Novvoyxonadan olinadi",
+      "uk": "Це купують у пекарні"
+    },
+    "You call them when there's a crime": {
+      "pl": "Wzywasz ich, gdy dzieje się przestępstwo",
+      "ru": "Их вызывают при преступлении",
+      "uz": "Jinoyat sodir bo‘lganda ularni chaqirasiz",
+      "uk": "Їх викликають, коли стався злочин"
+    },
+    "You collect these in Paylez": {
+      "pl": "Zbierasz je w Paylez",
+      "ru": "Их собирают в Paylez",
+      "uz": "Paylez ilovasida yig‘iladi",
+      "uk": "Їх збирають у Paylez"
+    },
+    "You cross this over a river": {
+      "pl": "Przechodzisz nim nad rzeką",
+      "ru": "По нему переходят реку",
+      "uz": "Daryo ustidan o‘tish joyi",
+      "uk": "Ним переходять через річку"
+    },
+    "You drink this when thirsty": {
+      "pl": "Pijesz to, gdy chce ci się pić",
+      "ru": "Это пьют, когда хочется пить",
+      "uz": "Chanqaganda ichasiz",
+      "uk": "Це п’ють, коли хочеться пити"
+    },
+    "You eat your food off this": {
+      "pl": "Jesz z tego jedzenie",
+      "ru": "С неё едят",
+      "uz": "Ovqatni shundan yeysiz",
+      "uk": "З неї їдять"
+    },
+    "You eat your meals at this": {
+      "pl": "Przy nim jesz posiłki",
+      "ru": "За ним едят",
+      "uz": "Ovqatni shu ortida yeysiz",
+      "uk": "За ним їдять"
+    },
+    "You fry this for breakfast": {
+      "pl": "Smażysz to na śniadanie",
+      "ru": "Его жарят на завтрак",
+      "uz": "Nonushtaga qovuriladi",
+      "uk": "Його смажать на сніданок"
+    },
+    "You go here to buy things": {
+      "pl": "Tu idziesz na zakupy",
+      "ru": "Сюда ходят за покупками",
+      "uz": "Narsa sotib olish uchun boriladigan joy",
+      "uk": "Сюди ходять за покупками"
+    },
+    "You look through this in a wall": {
+      "pl": "Patrzysz przez to w ścianie",
+      "ru": "Оно в стене, через него смотрят наружу",
+      "uz": "Devordagi, u orqali tashqariga qaraladigan narsa",
+      "uk": "Крізь нього дивляться, воно в стіні"
+    },
+    "You look up to see this": {
+      "pl": "Widzisz je, gdy patrzysz w górę",
+      "ru": "Его видно, если поднять голову",
+      "uz": "Buni ko‘rish uchun tepaga qaraysiz",
+      "uk": "Щоб його побачити, дивляться вгору"
+    },
+    "You need one to ride the tram": {
+      "pl": "Potrzebujesz go w tramwaju",
+      "ru": "Нужен, чтобы ехать в трамвае",
+      "uz": "Tramvayda yurish uchun kerak",
+      "uk": "Він потрібен, щоб їхати трамваєм"
+    },
+    "You need this to travel abroad": {
+      "pl": "Potrzebujesz go, by podróżować za granicę",
+      "ru": "Нужен для поездок за границу",
+      "uz": "Chet elga borish uchun kerak",
+      "uk": "Він потрібен для подорожей за кордон"
+    },
+    "You open it in the rain": {
+      "pl": "Otwierasz go w deszczu",
+      "ru": "Его открывают под дождём",
+      "uz": "Yomg‘irda ochasiz",
+      "uk": "Його розкривають під дощем"
+    },
+    "You open these to enter a room": {
+      "pl": "Otwierasz je, by wejść do pokoju",
+      "ru": "Их открывают, чтобы войти в комнату",
+      "uz": "Xonaga kirish uchun ochiladi",
+      "uk": "Їх відчиняють, щоб увійти до кімнати"
+    },
+    "You open this to enter a room": {
+      "pl": "Otwierasz to, by wejść do pokoju",
+      "ru": "Её открывают, чтобы войти в комнату",
+      "uz": "Xonaga kirish uchun ochasiz",
+      "uk": "Їх відчиняють, щоб увійти до кімнати"
+    },
+    "You order this in a café": {
+      "pl": "Zamawiasz to w kawiarni",
+      "ru": "Это заказывают в кафе",
+      "uz": "Kafeda buyurtma qilasiz",
+      "uk": "Це замовляють у кав’ярні"
+    },
+    "You pay this monthly for a flat": {
+      "pl": "Płacisz to co miesiąc za mieszkanie",
+      "ru": "Её платят каждый месяц за квартиру",
+      "uz": "Kvartira uchun har oy to‘lanadi",
+      "uk": "Її щомісяця платять за квартиру"
+    },
+    "You pay with this instead of cash": {
+      "pl": "Płacisz nią zamiast gotówką",
+      "ru": "Ей платят вместо наличных",
+      "uz": "Naqd pul o‘rniga shu bilan to‘laysiz",
+      "uk": "Нею платять замість готівки"
+    },
+    "You pedal this with two wheels": {
+      "pl": "Pedałujesz na nim, ma dwa koła",
+      "ru": "Крутишь его педали, у него два колеса",
+      "uz": "Ikki g‘ildirakli, pedal bosib yuriladi",
+      "uk": "Двоколісний, крутиш педалі"
+    },
+    "You say this to greet someone": {
+      "pl": "Mówisz to na powitanie",
+      "ru": "Так здороваются",
+      "uz": "Salomlashganda aytiladi",
+      "uk": "Так вітаються"
+    },
+    "You say this to say sorry": {
+      "pl": "Mówisz to, gdy chcesz wyrazić skruchę",
+      "ru": "Так извиняются",
+      "uz": "Uzr so‘raganda aytiladi",
+      "uk": "Так просять вибачення"
+    },
+    "You say this to show gratitude": {
+      "pl": "Mówisz to, gdy ktoś ci pomógł",
+      "ru": "Так выражают благодарность",
+      "uz": "Minnatdorlik bildirganda aytiladi",
+      "uk": "Так висловлюють вдячність"
+    },
+    "You say this to thank someone": {
+      "pl": "Mówisz to, gdy ktoś ci pomógł",
+      "ru": "Так благодарят",
+      "uz": "Kimgadir minnatdorchilik bildirganda aytiladi",
+      "uk": "Так дякують"
+    },
+    "You say this when asking politely": {
+      "pl": "Grzeczne słowo, gdy o coś pytasz lub podajesz",
+      "ru": "Так говорят, вежливо прося",
+      "uz": "Xushmuomalalik bilan so‘raganda aytiladi",
+      "uk": "Так кажуть, коли ввічливо просять"
+    },
+    "You see this person when you're ill": {
+      "pl": "Idziesz do tej osoby, gdy chorujesz",
+      "ru": "К нему идут, когда болеют",
+      "uz": "Kasal bo‘lganda bu odamga borasiz",
+      "uk": "До нього йдуть, коли хворіють"
+    },
+    "You sign this before renting": {
+      "pl": "Podpisujesz to przed wynajmem",
+      "ru": "Его подписывают перед арендой",
+      "uz": "Ijaraga olishdan oldin imzolanadi",
+      "uk": "Його підписують перед орендою"
+    },
+    "You sit on this": {
+      "pl": "Siedzisz na tym",
+      "ru": "На нём сидят",
+      "uz": "Ustida o‘tirasiz",
+      "uk": "На ньому сидять"
+    },
+    "You sleep on this": {
+      "pl": "Śpisz na tym",
+      "ru": "На ней спят",
+      "uz": "Ustida uxlaysiz",
+      "uk": "На ньому сплять"
+    },
+    "You spread this on bread": {
+      "pl": "Smarujesz tym chleb",
+      "ru": "Его намазывают на хлеб",
+      "uz": "Nonga surtiladi",
+      "uk": "Його намащують на хліб"
+    },
+    "You spread this on toast": {
+      "pl": "Smarujesz tym tosta",
+      "ru": "Его намазывают на тост",
+      "uz": "Qizartirilgan nonga surtiladi",
+      "uk": "Його намащують на тост"
+    },
+    "You switch this on when it's dark": {
+      "pl": "Włączasz to, gdy jest ciemno",
+      "ru": "Его включают, когда темно",
+      "uz": "Qorong‘ida yoqasiz",
+      "uk": "Його вмикають, коли темно"
+    },
+    "You take this when sick": {
+      "pl": "Bierzesz to, gdy chorujesz",
+      "ru": "Его принимают при болезни",
+      "uz": "Kasal bo‘lganda qabul qilasiz",
+      "uk": "Це приймають, коли хворієш"
+    },
+    "You use this to buy things": {
+      "pl": "Tym płacisz za zakupy",
+      "ru": "На них покупают вещи",
+      "uz": "Narsa sotib olish uchun ishlatiladi",
+      "uk": "Ними платять за покупки"
+    },
+    "You use this to open a lock": {
+      "pl": "Tym otwierasz zamek",
+      "ru": "Им открывают замок",
+      "uz": "Qulfni ochish uchun ishlatiladi",
+      "uk": "Ним відмикають замок"
+    },
+    "You walk down this in a city": {
+      "pl": "Idziesz nią przez miasto",
+      "ru": "По ней гуляют в городе",
+      "uz": "Shaharda uning bo‘ylab yurasiz",
+      "uk": "Нею гуляють у місті"
+    },
+    "You walk on this inside": {
+      "pl": "Chodzisz po tym w domu",
+      "ru": "По нему ходят в помещении",
+      "uz": "Uy ichida ustida yurasiz",
+      "uk": "По ній ходять у приміщенні"
+    },
+    "Your job": {
+      "pl": "Twoje zajęcie zawodowe",
+      "ru": "Ваша работа",
+      "uz": "Ishingiz",
+      "uk": "Твоя робота"
+    },
+    "Your name, written by you": {
+      "pl": "Twoje nazwisko, napisane własną ręką",
+      "ru": "Ваше имя, написанное вашей рукой",
+      "uz": "O‘zingiz yozgan ismingiz",
+      "uk": "Твоє ім’я, написане тобою"
+    },
+    "a bill with a number": {
+      "pl": "Rachunek z numerem",
+      "ru": "Счёт с номером",
+      "uz": "Raqamli hisob-varaq",
+      "uk": "Рахунок із номером"
+    },
+    "a slot at an office": {
+      "pl": "Wyznaczona godzina w urzędzie",
+      "ru": "Время, назначенное в учреждении",
+      "uz": "Idoradagi belgilangan vaqt",
+      "uk": "Призначений час в установі"
+    },
+    "application": {
+      "pl": "Pismo, którym o coś oficjalnie prosisz",
+      "ru": "Заявление",
+      "uz": "Ariza",
+      "uk": "Заява"
+    },
+    "appointment": {
+      "pl": "Umówiona godzina wizyty",
+      "ru": "Запись на приём",
+      "uz": "Qabulga yozilish",
+      "uk": "Запис на прийом"
+    },
+    "government office": {
+      "pl": "Instytucja, w której załatwiasz sprawy z państwem",
+      "ru": "Государственное учреждение",
+      "uz": "Davlat idorasi",
+      "uk": "Державна установа"
+    },
+    "paid up front, returned later": {
+      "pl": "Płacisz z góry, oddają później",
+      "ru": "Платят заранее, потом возвращают",
+      "uz": "Oldindan to‘lanadi, keyin qaytariladi",
+      "uk": "Платять наперед, потім повертають"
+    },
+    "putting your address on record": {
+      "pl": "Zgłoszenie swojego adresu w urzędzie",
+      "ru": "Официальная запись вашего адреса",
+      "uz": "Manzilingizni rasman qayd etish",
+      "uk": "Офіційний запис вашої адреси"
+    },
+    "queue": {
+      "pl": "Ludzie czekający jeden za drugim",
+      "ru": "Очередь",
+      "uz": "Navbat",
+      "uk": "Черга"
+    },
+    "receipt": {
+      "pl": "Dostajesz go przy kasie po zakupach",
+      "ru": "Чек",
+      "uz": "Chek",
+      "uk": "Чек"
+    },
+    "stay, residence": {
+      "pl": "Czas, który spędzasz w danym kraju",
+      "ru": "Пребывание, проживание",
+      "uz": "Yashash, istiqomat",
+      "uk": "Перебування, проживання"
+    },
+    "the housing contract": {
+      "pl": "Umowa najmu mieszkania",
+      "ru": "Договор аренды жилья",
+      "uz": "Uy-joy ijarasi shartnomasi",
+      "uk": "Договір оренди житла"
+    },
+    "what you apply for": {
+      "pl": "O to składasz wniosek",
+      "ru": "То, о чём подают заявление",
+      "uz": "Buning uchun ariza topshiriladi",
+      "uk": "Те, на що подають заяву"
+    },
+    "where you legally live": {
+      "pl": "Miejsce, w którym legalnie mieszkasz",
+      "ru": "Где вы официально живёте",
+      "uz": "Qonuniy yashash joyingiz",
+      "uk": "Де ви офіційно живете"
+    },
+    "who owns the flat": {
+      "pl": "Właściciel wynajmowanego mieszkania",
+      "ru": "Тот, кому принадлежит квартира",
+      "uz": "Kvartira egasi",
+      "uk": "Той, кому належить квартира"
+    },
+    "Orange or apple, in a carton": {
+      "pl": "Pomarańczowy lub jabłkowy, w kartonie",
+      "ru": "Апельсиновый или яблочный, в пакете",
+      "uk": "Апельсиновий або яблучний, у пакеті",
+      "uz": "Apelsinli yoki olmali, paketda"
+    },
+    "It swims, and you can eat it": {
+      "pl": "Pływa, a potem trafia na talerz",
+      "ru": "Плавает, и её можно съесть",
+      "uk": "Плаває, і її можна їсти",
+      "uz": "Suzadi, uni yeyish mumkin"
+    },
+    "Small white grains, boiled": {
+      "pl": "Drobne białe ziarna, gotowane",
+      "ru": "Мелкие белые зёрна, их варят",
+      "uk": "Дрібні білі зерна, варені",
+      "uz": "Mayda oq donalar, qaynatiladi"
+    },
+    "You add this to make it savoury": {
+      "pl": "Dodajesz, żeby nie było mdłe",
+      "ru": "Белая приправа, без неё пресно",
+      "uk": "Її додають, щоб страва не була пресною",
+      "uz": "Taomga maza berish uchun qo‘shiladi"
+    },
+    "It makes you cry when you cut it": {
+      "pl": "Kroisz go i same lecą łzy",
+      "ru": "Режешь его — и текут слёзы",
+      "uk": "Ріжеш його — і течуть сльози",
+      "uz": "Uni to‘g‘raganda ko‘zingdan yosh keladi"
+    },
+    "Bees make this": {
+      "pl": "Robią to pszczoły",
+      "ru": "Его делают пчёлы",
+      "uk": "Це роблять бджоли",
+      "uz": "Asalarilar buni tayyorlaydi"
+    },
+    "Fried or boiled for breakfast": {
+      "pl": "Smażone lub gotowane na śniadanie",
+      "ru": "Жарят или варят на завтрак",
+      "uk": "Смажене або варене на сніданок",
+      "uz": "Nonushtaga qovuriladi yoki qaynatiladi"
+    },
+    "Everything you eat, in one word": {
+      "pl": "Wszystko, co trafia na talerz",
+      "ru": "Всё, что подают на стол, одним словом",
+      "uk": "Усе, що ти їш, одним словом",
+      "uz": "Yeydigan hamma narsa, bir so‘zda"
+    },
+    "You cut bread with it": {
+      "pl": "Kroisz nim chleb",
+      "ru": "Им режут хлеб",
+      "uk": "Ним ріжуть хліб",
+      "uz": "U bilan non to‘g‘rasan"
+    },
+    "The last meal of the day": {
+      "pl": "Ostatni posiłek dnia",
+      "ru": "Последняя трапеза дня",
+      "uk": "Останній прийом їжі за день",
+      "uz": "Kunning oxirgi ovqati"
+    },
+    "Where you live": {
+      "pl": "Miejsce, w którym mieszkasz",
+      "ru": "Место, где ты живёшь",
+      "uk": "Місце, де ти живеш",
+      "uz": "Yashaydigan joying"
+    },
+    "You walk on it indoors": {
+      "pl": "Chodzisz po nim w środku",
+      "ru": "По нему ходят в комнате",
+      "uk": "Те, по чому ходять у приміщенні",
+      "uz": "Xonada uning ustida yurasan"
+    },
+    "You look through it": {
+      "pl": "Patrzysz przez nie na ulicę",
+      "ru": "Через него смотрят на улицу",
+      "uk": "Крізь нього дивляться на вулицю",
+      "uz": "Undan tashqariga qaraysan"
+    },
+    "You eat at it": {
+      "pl": "Siadasz przy nim do obiadu",
+      "ru": "За ним обедают",
+      "uk": "За ним їдять",
+      "uz": "Uning atrofida ovqatlanasan"
+    },
+    "You sit on it": {
+      "pl": "Siedzisz na nim przy biurku",
+      "ru": "На нём сидят",
+      "uk": "На ньому сидять",
+      "uz": "Unda o‘tirasan"
+    },
+    "It opens the door": {
+      "pl": "Otwiera zamek w drzwiach",
+      "ru": "Им открывают дверь",
+      "uk": "Ним відчиняють двері",
+      "uz": "Eshikni ochadi"
+    },
+    "You wash your hands with it": {
+      "pl": "Pieni się w dłoniach pod kranem",
+      "ru": "Пенится в руках под краном",
+      "uk": "З нього піна, і руки стають чистими",
+      "uz": "U bilan qo‘l yuvasan"
+    },
+    "You switch it on when it gets dark": {
+      "pl": "Włączasz, gdy robi się ciemno",
+      "ru": "Его включают, когда темнеет",
+      "uk": "Його вмикають, коли темніє",
+      "uz": "Qorong‘i tushganda uni yoqasan"
+    },
+    "Trees and benches in the city": {
+      "pl": "Drzewa i ławki w mieście",
+      "ru": "Деревья и скамейки в городе",
+      "uk": "Дерева й лавки в місті",
+      "uz": "Shaharda daraxtlar va o‘rindiqlar bor joy"
+    },
+    "It crosses the river": {
+      "pl": "Prowadzi na drugi brzeg",
+      "ru": "По нему переходят реку",
+      "uk": "Ним переходять річку",
+      "uz": "Daryo ustidan o‘tadi"
+    },
+    "Water flowing through a city": {
+      "pl": "Woda płynąca przez miasto",
+      "ru": "Вода, текущая через город",
+      "uk": "Вода, що тече через місто",
+      "uz": "Shahar ichidan oqib o‘tadigan suv"
+    },
+    "You climb it": {
+      "pl": "Wspinasz się na jej szczyt",
+      "ru": "Высокая, на неё трудно подняться",
+      "uk": "На неї піднімаються",
+      "uz": "Baland, unga chiqasan"
+    },
+    "White, and it falls in winter": {
+      "pl": "Biały, pada zimą",
+      "ru": "Белый, падает зимой",
+      "uk": "Білий, падає взимку",
+      "uz": "Oq, qishda yog‘adi"
+    },
+    "The hottest season": {
+      "pl": "Najgorętsza pora roku",
+      "ru": "Самое жаркое время года",
+      "uk": "Найспекотніша пора року",
+      "uz": "Eng issiq fasl"
+    },
+    "Twenty-four hours": {
+      "pl": "Dwadzieścia cztery godziny",
+      "ru": "Двадцать четыре часа",
+      "uk": "Двадцять чотири години",
+      "uz": "Yigirma to‘rt soat"
+    },
+    "When it is dark outside": {
+      "pl": "Pora, gdy na dworze ciemno",
+      "ru": "Когда на улице темно",
+      "uk": "Коли надворі темно",
+      "uz": "Tashqarida qorong‘i bo‘lgan payt"
+    },
+    "Twelve months": {
+      "pl": "Dwanaście miesięcy",
+      "ru": "Двенадцать месяцев",
+      "uk": "Дванадцять місяців",
+      "uz": "O‘n ikki oy"
+    },
+    "What something costs": {
+      "pl": "Ile coś kosztuje",
+      "ru": "Сколько что-то стоит",
+      "uk": "Скільки коштує річ",
+      "uz": "Bir narsa qancha turadi"
+    },
+    "The slip you get after paying": {
+      "pl": "Dostajesz go po zapłaceniu",
+      "ru": "Бумажка, которую дают после оплаты",
+      "uk": "Папірець, який дають після оплати",
+      "uz": "To‘lovdan keyin beriladigan qog‘oz"
+    },
+    "A stamp that lets you enter a country": {
+      "pl": "Wpis w paszporcie, by wjechać",
+      "ru": "Отметка, дающая право въехать в страну",
+      "uk": "Позначка в паспорті, щоб пустили в країну",
+      "uz": "Davlatga kirishga ruxsat beruvchi muhr"
+    },
+    "Where people work at desks": {
+      "pl": "Miejsce pracy przy biurkach",
+      "ru": "Помещение, где работают за столами",
+      "uk": "Місце, де люди працюють за столами",
+      "uz": "Odamlar stol ortida ishlaydigan joy"
+    },
+    "One lesson at school": {
+      "pl": "Jedna lekcja w szkole",
+      "ru": "Одно занятие в школе",
+      "uk": "Одне заняття у школі",
+      "uz": "Maktabdagi bitta dars"
+    },
+    "Russian is one of these": {
+      "pl": "Rosyjski jest jednym z nich",
+      "ru": "Русский — один из них",
+      "uk": "Російська — одна з них",
+      "uz": "Rus tili shulardan biri"
+    },
+    "You see one when you are ill": {
+      "pl": "Idziesz do niego, gdy chorujesz",
+      "ru": "К нему идут, когда заболел",
+      "uk": "До нього йдуть, коли хворієш",
+      "uz": "Kasal bo‘lganda unga borasan"
+    },
+    "The dentist checks these": {
+      "pl": "Dentysta je sprawdza",
+      "ru": "Их проверяет стоматолог",
+      "uk": "Їх перевіряє стоматолог",
+      "uz": "Tish shifokori buni tekshiradi"
+    },
+    "You shake it when you meet someone": {
+      "pl": "Podajesz ją na powitanie",
+      "ru": "Её пожимают при встрече",
+      "uk": "Її тиснуть під час знайомства",
+      "uz": "Uchrashganda uni siqib salomlashasan"
+    },
+    "You walk on these": {
+      "pl": "Chodzisz na nich",
+      "ru": "На них ходят",
+      "uk": "Ними ходять",
+      "uz": "Ular bilan yurasan"
+    },
+    "You see with it": {
+      "pl": "Nim widzisz świat",
+      "ru": "Им смотрят на мир",
+      "uk": "Ним бачиш",
+      "uz": "U bilan ko‘rasan"
+    },
+    "Someone you like spending time with": {
+      "pl": "Ktoś, z kim lubisz spędzać czas",
+      "ru": "Тот, с кем приятно проводить время",
+      "uk": "Той, з ким приємно проводити час",
+      "uz": "Birga vaqt o‘tkazish yoqadigan odam"
+    },
+    "What people call you": {
+      "pl": "Tak się do ciebie zwracają",
+      "ru": "Так тебя называют",
+      "uk": "Так тебе називають люди",
+      "uz": "Odamlar seni shunday chaqiradi"
+    },
+    "Carrots and onions are these": {
+      "pl": "Marchew i cebula to one",
+      "ru": "Морковь и капуста — это они",
+      "uk": "Морква й цибуля належать до них",
+      "uz": "Sabzi va piyoz shulardan"
+    },
+    "Red or green, grows on a tree": {
+      "pl": "Czerwone lub zielone, rośnie na drzewie",
+      "ru": "Красное или зелёное, растёт на дереве",
+      "uk": "Червоне або зелене, росте на дереві",
+      "uz": "Qizil yoki yashil, daraxtda o‘sadi"
+    },
+    "Like an apple, but narrow at the top": {
+      "pl": "Jak jabłko, ale węższa u góry",
+      "ru": "Как яблоко, но сужается кверху",
+      "uk": "Схожа на яблуко, але вужча зверху",
+      "uz": "Olmaga o‘xshash, tepasi ingichka"
+    },
+    "Red, and goes in a salad": {
+      "pl": "Czerwony, do sałatki",
+      "ru": "Красный, кладут в салат",
+      "uk": "Червоний, кладуть у салат",
+      "uz": "Qizil, salatga to‘g‘raladi"
+    },
+    "Long and green, in a salad": {
+      "pl": "Długi i zielony, do sałatki",
+      "ru": "Длинный и зелёный, в салате",
+      "uk": "Довгий і зелений, у салаті",
+      "uz": "Uzun va yashil, salatga solinadi"
+    },
+    "Orange, and rabbits like it": {
+      "pl": "Pomarańczowa, lubią ją króliki",
+      "ru": "Оранжевая, её любят зайцы",
+      "uk": "Оранжева, її люблять кролики",
+      "uz": "To‘q sariq, quyonlar yaxshi ko‘radi"
+    },
+    "A bird you can order roasted": {
+      "pl": "Ptak, którego zamawiasz pieczonego",
+      "ru": "Эту птицу заказывают запечённой",
+      "uk": "Птах, якого замовляють запеченим",
+      "uz": "Qovurib buyurtma qilinadigan parranda"
+    },
+    "Sliced, in a sandwich": {
+      "pl": "W plastrach, na kanapkę",
+      "ru": "Нарезают кружочками, кладут в бутерброд",
+      "uk": "Нарізана скибочками, у бутерброді",
+      "uz": "Bo‘lak-bo‘lak qilib nonga solinadi"
+    },
+    "Sweet, and you dip it in tea": {
+      "pl": "Słodkie, maczasz w herbacie",
+      "ru": "Сладкое, его макают в чай",
+      "uk": "Солодке, його вмочають у чай",
+      "uz": "Shirin, choyga bo‘ktirib yeyiladi"
+    },
+    "Wrapped, and children love it": {
+      "pl": "W papierku, dzieci to uwielbiają",
+      "ru": "В фантике, дети её обожают",
+      "uk": "В обгортці, і діти її люблять",
+      "uz": "O‘ralgan, bolalar yaxshi ko‘radi"
+    },
+    "You put your food on it": {
+      "pl": "Kładziesz na nim jedzenie",
+      "ru": "На неё кладут еду",
+      "uk": "На неї кладуть їжу",
+      "uz": "Ovqatingni unga solasan"
+    },
+    "You drink tea from it": {
+      "pl": "Pijesz z niej herbatę",
+      "ru": "Из неё пьют чай",
+      "uk": "З неї п’ють чай",
+      "uz": "Undan choy ichasan"
+    },
+    "You eat soup with it": {
+      "pl": "Jesz nią zupę",
+      "ru": "Ею едят суп",
+      "uk": "Нею їдять суп",
+      "uz": "U bilan sho‘rva ichasan"
+    },
+    "You eat with it, and it has prongs": {
+      "pl": "Ma zęby, nabijasz na nie jedzenie",
+      "ru": "У неё четыре зубчика, ею едят",
+      "uk": "Має зубці, і нею їдять",
+      "uz": "Tishlari bor, u bilan ovqat yeysan"
+    },
+    "You pour water into it": {
+      "pl": "Nalewasz do niego wodę",
+      "ru": "В него наливают воду",
+      "uk": "У нього наливають воду",
+      "uz": "Unga suv quyasan"
+    },
+    "A flat has several of these": {
+      "pl": "Mieszkanie ma ich kilka",
+      "ru": "В квартире их несколько",
+      "uk": "У квартирі їх кілька",
+      "uz": "Kvartirada bir nechtasi bo‘ladi"
+    },
+    "You open it to come in": {
+      "pl": "Otwierasz je, żeby wejść",
+      "ru": "Её открывают, чтобы войти",
+      "uk": "Її відчиняють, щоб увійти",
+      "uz": "Kirish uchun uni ochasan"
+    },
+    "You sleep in it": {
+      "pl": "Kładziesz się w nim spać",
+      "ru": "На ней спят",
+      "uk": "Меблі, у яких спиш",
+      "uz": "Unda uxlaysan"
+    },
+    "Your head rests on it": {
+      "pl": "Kładziesz na niej głowę",
+      "ru": "На неё кладут голову",
+      "uk": "На ній лежить голова",
+      "uz": "Boshing unda dam oladi"
+    },
+    "It keeps you warm at night": {
+      "pl": "Pod nim ciepło w nocy",
+      "ru": "Под ним тепло ночью",
+      "uk": "Гріє тебе вночі",
+      "uz": "Kechasi seni issiq saqlaydi"
+    },
+    "You clean your teeth with one": {
+      "pl": "Czyścisz nią zęby",
+      "ru": "Ею чистят зубы",
+      "uk": "Нею чистять зуби",
+      "uz": "U bilan tishingni tozalaysan"
+    },
+    "The people who live next door": {
+      "pl": "Mieszkają za ścianą",
+      "ru": "Люди из квартиры рядом",
+      "uk": "Люди, які живуть за стіною",
+      "uz": "Yonma-yon yashaydigan odamlar"
+    },
+    "Everything you wear, in one word": {
+      "pl": "Wszystko, co nosisz, jednym słowem",
+      "ru": "Всё, что носишь, одним словом",
+      "uk": "Усе, що ти носиш, одним словом",
+      "uz": "Kiyadigan hamma narsa, bir so‘zda"
+    },
+    "It has buttons and a collar": {
+      "pl": "Ma guziki i kołnierzyk",
+      "ru": "У неё пуговицы и воротник",
+      "uk": "Має ґудзики й комір",
+      "uz": "Tugmalari va yoqasi bor"
+    },
+    "You wear them on your legs": {
+      "pl": "Nosisz je na nogach",
+      "ru": "Их надевают на ноги",
+      "uk": "Їх носять на ногах",
+      "uz": "Ularni oyoqqa kiyasan"
+    },
+    "One piece, worn by women": {
+      "pl": "Damskie, z jednej części",
+      "ru": "Женская одежда из одной части",
+      "uk": "Жіночий одяг з однієї частини",
+      "uz": "Yaxlit, ayollar kiyadi"
+    },
+    "You put it on when it is cold": {
+      "pl": "Wkładasz ją, gdy zimno",
+      "ru": "Её надевают, когда холодно",
+      "uk": "Її вдягають, коли холодно",
+      "uz": "Sovuqda ustingga kiyasan"
+    },
+    "It keeps your head warm": {
+      "pl": "Grzeje głowę zimą",
+      "ru": "В ней голова не мёрзнет",
+      "uk": "Гріє голову",
+      "uz": "Boshingni issiq saqlaydi"
+    },
+    "Shoes and boots together": {
+      "pl": "Buty i kozaki razem",
+      "ru": "Туфли и сапоги вместе",
+      "uk": "Черевики й чоботи разом",
+      "uz": "Tufli va etiklar birga"
+    },
+    "They go on before your shoes": {
+      "pl": "Wkładasz je przed butami",
+      "ru": "Их надевают перед туфлями",
+      "uk": "Їх вдягають перед взуттям",
+      "uz": "Poyabzaldan oldin kiyiladi"
+    },
+    "You carry your things in it": {
+      "pl": "Nosisz w niej swoje rzeczy",
+      "ru": "В ней носят свои вещи",
+      "uk": "У ній носять речі",
+      "uz": "Narsalaringni unda olib yurasan"
+    },
+    "You pay with it": {
+      "pl": "Tym płacisz",
+      "ru": "Ими платят в магазине",
+      "uk": "Ними платять",
+      "uz": "U bilan to‘lov qilasan"
+    },
+    "You tap it to pay": {
+      "pl": "Przykładasz ją, żeby zapłacić",
+      "ru": "Её прикладывают к терминалу",
+      "uk": "Її прикладають, щоб заплатити",
+      "uz": "To‘lash uchun tegizasan"
+    },
+    "Russian money": {
+      "pl": "Rosyjskie pieniądze",
+      "ru": "Российские деньги",
+      "uk": "Російські гроші",
+      "uz": "Rossiyaning puli"
+    },
+    "Money off the price": {
+      "pl": "Płacisz mniej, niż jest na metce",
+      "ru": "Когда цена становится ниже",
+      "uk": "Коли з ціни щось віднімають",
+      "uz": "Narxdan tushirilgan pul"
+    },
+    "Where you pay in a shop": {
+      "pl": "Tam płacisz w sklepie",
+      "ru": "Место в магазине, где платят",
+      "uk": "Місце, де платиш у магазині",
+      "uz": "Do‘konda to‘lov qiladigan joy"
+    },
+    "Stalls where you buy food": {
+      "pl": "Stragany z jedzeniem",
+      "ru": "Прилавки, где покупают продукты",
+      "uk": "Прилавки, де купують продукти",
+      "uz": "Oziq-ovqat sotiladigan rastalar"
+    },
+    "Where you buy things": {
+      "pl": "Tam kupujesz rzeczy",
+      "ru": "Место, где покупают вещи",
+      "uk": "Там купують речі",
+      "uz": "Narsa sotib oladigan joy"
+    },
+    "It has houses along both sides": {
+      "pl": "Domy stoją po obu jej stronach",
+      "ru": "Дома стоят по обеим сторонам",
+      "uk": "Будинки стоять по обидва боки",
+      "uz": "Ikki tomonida uylar turadi"
+    },
+    "Tashkent is one": {
+      "pl": "Taszkent to jeden z nich",
+      "ru": "Ташкент — один из них",
+      "uk": "Ташкент, наприклад",
+      "uz": "Toshkent shulardan biri"
+    },
+    "Cars drive along it": {
+      "pl": "Jadą po niej samochody",
+      "ru": "По ней едут машины",
+      "uk": "По ній їдуть машини",
+      "uz": "Mashinalar undan yuradi"
+    },
+    "Where you send a parcel": {
+      "pl": "Stamtąd wysyłasz paczkę",
+      "ru": "Оттуда отправляют посылку",
+      "uk": "Звідти надсилають посилку",
+      "uz": "Jo‘natma yuboradigan joy"
+    },
+    "Where a football match is played": {
+      "pl": "Tam grają mecz piłki nożnej",
+      "ru": "Там проходит футбольный матч",
+      "uk": "Там грають футбольний матч",
+      "uz": "Futbol o‘yini bo‘ladigan joy"
+    },
+    "Where the trains arrive": {
+      "pl": "Tam przyjeżdżają pociągi",
+      "ru": "Туда прибывают поезда",
+      "uk": "Туди прибувають поїзди",
+      "uz": "Poyezdlar keladigan joy"
+    },
+    "It stops and people get on": {
+      "pl": "Zatrzymuje się, ludzie wsiadają",
+      "ru": "Останавливается, и люди входят",
+      "uk": "Спиняється, і люди заходять",
+      "uz": "To‘xtaydi, odamlar chiqadi"
+    },
+    "It runs on rails in the street": {
+      "pl": "Jeździ po szynach ulicą",
+      "ru": "Идёт по рельсам вдоль улицы",
+      "uk": "Їде рейками по вулиці",
+      "uz": "Ko‘chada relsda yuradi"
+    },
+    "It runs on rails between cities": {
+      "pl": "Po szynach, między miastami",
+      "ru": "Идёт по рельсам между городами",
+      "uk": "Їде рейками між містами",
+      "uz": "Shaharlar orasida relsda yuradi"
+    },
+    "The railway under the city": {
+      "pl": "Kolej pod miastem",
+      "ru": "Подземная железная дорога в городе",
+      "uk": "Залізниця під містом",
+      "uz": "Shahar ostidagi temir yo‘l"
+    },
+    "You call one to get home late": {
+      "pl": "Zamawiasz je, by wrócić późno",
+      "ru": "Его вызывают, чтобы вернуться поздно",
+      "uk": "Його викликають, щоб доїхати додому пізно",
+      "uz": "Kech qolganda uyga yetish uchun chaqirasan"
+    },
+    "You need one to travel": {
+      "pl": "Bez niego nie pojedziesz",
+      "ru": "Без него не поедешь",
+      "uk": "Без нього не поїдеш",
+      "uz": "Yo‘lga chiqish uchun kerak"
+    },
+    "Four wheels and a steering wheel": {
+      "pl": "Cztery koła i kierownica",
+      "ru": "Четыре колеса и руль",
+      "uk": "Чотири колеса й кермо",
+      "uz": "To‘rt g‘ildirak va rul"
+    },
+    "Uzbekistan is one": {
+      "pl": "Uzbekistan to jeden z nich",
+      "ru": "Узбекистан — одна из них",
+      "uk": "Узбекистан — це одна з них",
+      "uz": "O‘zbekiston shulardan biri"
+    },
+    "The line between two countries": {
+      "pl": "Linia między dwoma krajami",
+      "ru": "Линия между двумя странами",
+      "uk": "Лінія між двома державами",
+      "uz": "Ikki davlat orasidagi chiziq"
+    },
+    "You show it at the border": {
+      "pl": "Pokazujesz go przy wjeździe",
+      "ru": "Его показывают на границе",
+      "uk": "Його показують на кордоні",
+      "uz": "Chegarada uni ko‘rsatasan"
+    },
+    "The bags you travel with": {
+      "pl": "Torby, z którymi podróżujesz",
+      "ru": "Сумки, с которыми едешь",
+      "uk": "Сумки, з якими ти подорожуєш",
+      "uz": "Safarda olib yuradigan sumkalar"
+    },
+    "Rain, sun or snow": {
+      "pl": "Deszcz, słońce albo śnieg",
+      "ru": "Дождь, солнце или снег",
+      "uk": "Дощ, сонце або сніг",
+      "uz": "Yomg‘ir, quyosh yoki qor"
+    },
+    "You open an umbrella for it": {
+      "pl": "Otwierasz przy nim parasol",
+      "ru": "Из-за него раскрывают зонт",
+      "uk": "Через нього розкривають парасольку",
+      "uz": "Uning uchun soyabon ochasan"
+    },
+    "It blows your hat off": {
+      "pl": "Zdmuchuje czapkę z głowy",
+      "ru": "Срывает шапку с головы",
+      "uk": "Здуває капелюха з голови",
+      "uz": "Boshingdagi qalpoqni uchiradi"
+    },
+    "Where you go on Monday morning": {
+      "pl": "Idziesz tam w poniedziałek rano",
+      "ru": "Туда идёшь в понедельник утром",
+      "uk": "Туди йдеш у понеділок зранку",
+      "uz": "Dushanba ertalab boradigan joy"
+    },
+    "Children learn there": {
+      "pl": "Dzieci się tam uczą",
+      "ru": "Там учатся дети",
+      "uk": "Там навчаються діти",
+      "uz": "Bolalar o‘sha yerda o‘qiydi"
+    },
+    "You read it page by page": {
+      "pl": "Czytasz ją strona po stronie",
+      "ru": "Её читают страницу за страницей",
+      "uk": "Її читають сторінка за сторінкою",
+      "uz": "Uni bet-bet o‘qiysan"
+    },
+    "This game is built out of them": {
+      "pl": "Z nich zbudowana jest ta gra",
+      "ru": "Из них состоит эта игра",
+      "uk": "З них складається ця гра",
+      "uz": "Bu o‘yin shulardan tuzilgan"
+    },
+    "It ends with a question mark": {
+      "pl": "Kończy się znakiem zapytania",
+      "ru": "Заканчивается знаком «?»",
+      "uk": "Закінчується знаком питання",
+      "uz": "So‘roq belgisi bilan tugaydi"
+    },
+    "What a question is waiting for": {
+      "pl": "Na to czeka pytanie",
+      "ru": "Его ждёт любой вопрос",
+      "uk": "На це чекає кожне питання",
+      "uz": "Savol shuni kutadi"
+    },
+    "It rings in your pocket": {
+      "pl": "Dzwoni w kieszeni",
+      "ru": "Звонит у тебя в кармане",
+      "uk": "Дзвонить у тебе в кишені",
+      "uz": "Cho‘ntagingda jiringlaydi"
+    },
+    "You wrap it before you give it": {
+      "pl": "Pakujesz, zanim wręczysz",
+      "ru": "Его заворачивают перед вручением",
+      "uk": "Його загортають, перш ніж віддати",
+      "uz": "Berishdan oldin o‘rab qo‘yasan"
+    },
+    "You say it when somebody helps you": {
+      "pl": "Mówisz to, gdy ktoś ci pomoże",
+      "ru": "Так говорят, когда тебе помогли",
+      "uk": "Кажеш це, коли тобі допомогли",
+      "uz": "Kimdir yordam berganda aytasan"
+    },
+    "One person": {
+      "pl": "Jedna osoba",
+      "ru": "Один из людей",
+      "uk": "Одна особа",
+      "uz": "Bitta kishi"
+    },
+    "An adult woman": {
+      "pl": "Dorosła kobieta",
+      "ru": "Взрослая дама",
+      "uk": "Доросла людина, не чоловік",
+      "uz": "Katta yoshli ayol"
+    },
+    "An adult man": {
+      "pl": "Dorosły, a nie kobieta",
+      "ru": "Взрослый человек, а не женщина",
+      "uk": "Доросла людина, не жінка",
+      "uz": "Katta yoshli erkak"
+    },
+    "A young woman": {
+      "pl": "Młoda kobieta",
+      "ru": "Молодая женщина",
+      "uk": "Молода жінка",
+      "uz": "Yosh ayol"
+    },
+    "A young boy": {
+      "pl": "Chłopiec, jeszcze nie dorosły",
+      "ru": "Ребёнок мужского пола",
+      "uk": "Ще не дорослий хлопець",
+      "uz": "Kichkina o‘g‘il bola"
+    },
+    "Parents and children together": {
+      "pl": "Rodzice i dzieci razem",
+      "ru": "Родители и дети вместе",
+      "uk": "Батьки й діти разом",
+      "uz": "Ota-ona va bolalar birga"
+    },
+    "Someone studying at university": {
+      "pl": "Uczy się na uniwersytecie",
+      "ru": "Тот, кто учится в университете",
+      "uk": "Той, хто навчається в університеті",
+      "uz": "Universitetda o‘qiyotgan kishi"
+    },
+    "They stand at the front of the class": {
+      "pl": "Stoi przed klasą",
+      "ru": "Стоит у доски перед классом",
+      "uk": "Стоїть перед класом",
+      "uz": "Sinf oldida turadi"
+    },
+    "It barks and wags its tail": {
+      "pl": "Szczeka i macha ogonem",
+      "ru": "Лает и машет хвостом",
+      "uk": "Гавкає й махає хвостом",
+      "uz": "Vovullaydi va dumini likillatadi"
+    },
+    "You fry it or boil it": {
+      "pl": "Smażysz ją albo gotujesz",
+      "ru": "Её жарят или варят",
+      "uk": "Її смажать або варять",
+      "uz": "Uni qovurasan yoki qaynatasan"
+    },
+    "The food you buy for the week": {
+      "pl": "Zakupy jedzenia na tydzień",
+      "ru": "Еда, которую покупают на неделю",
+      "uk": "Їжа, яку купують на тиждень",
+      "uz": "Bir haftaga olinadigan oziq-ovqat"
+    },
+    "You eat out there": {
+      "pl": "Tam jesz na mieście",
+      "ru": "Там обедают не дома",
+      "uk": "Там їдять не вдома",
+      "uz": "Tashqarida ovqatlanadigan joy"
+    },
+    "Cold and sweet, eaten in summer": {
+      "pl": "Zimne i słodkie, latem",
+      "ru": "Холодное и сладкое, едят летом",
+      "uk": "Холодне й солодке, їдять улітку",
+      "uz": "Sovuq va shirin, yozda yeyiladi"
+    },
+    "You rent one to live in": {
+      "pl": "Wynajmujesz ją, by w niej mieszkać",
+      "ru": "Её снимают, чтобы жить",
+      "uk": "Її винаймають, щоб там жити",
+      "uz": "Yashash uchun ijaraga olasan"
+    },
+    "You climb it to the next floor": {
+      "pl": "Wchodzisz po niej piętro wyżej",
+      "ru": "По ней поднимаются на этаж выше",
+      "uk": "Ними піднімаєшся на поверх вище",
+      "uz": "Yuqori qavatga undan chiqasan"
+    },
+    "You dry yourself with it": {
+      "pl": "Wycierasz się nim po kąpieli",
+      "ru": "Им вытираются после душа",
+      "uk": "Ним витираються після душу",
+      "uz": "U bilan artinasan"
+    },
+    "It keeps the milk cold": {
+      "pl": "W nim mleko się nie psuje",
+      "ru": "В нём молоко не портится",
+      "uk": "Молоко в ньому не псується",
+      "uz": "Sutni sovuq saqlaydi"
+    },
+    "You take it when you are ill": {
+      "pl": "Bierzesz je, gdy chorujesz",
+      "ru": "Его принимают, когда болеешь",
+      "uk": "Його приймають, коли хворієш",
+      "uz": "Kasal bo‘lganda ichasan"
+    },
+    "A thermometer measures it": {
+      "pl": "Mierzy ją termometr",
+      "ru": "Её измеряет градусник",
+      "uk": "Це вимірює термометр",
+      "uz": "Termometr buni o‘lchaydi"
+    },
+    "Where the planes land": {
+      "pl": "Tam lądują samoloty",
+      "ru": "Там садятся самолёты",
+      "uk": "Там сідають літаки",
+      "uz": "Samolyotlar qo‘nadigan joy"
+    },
+    "It says when the train leaves": {
+      "pl": "Tam sprawdzisz, o której odjazd",
+      "ru": "Там указано, когда уходит поезд",
+      "uk": "Тут вказано, коли вирушає поїзд",
+      "uz": "Poyezd qachon jo‘nashini aytadi"
+    },
+    "Going somewhere far away": {
+      "pl": "Wyjazd gdzieś daleko",
+      "ru": "Поездка куда-то далеко",
+      "uk": "Поїздка далеко від дому",
+      "uz": "Uzoq joyga borish"
+    },
+    "You sleep there when travelling": {
+      "pl": "Nocujesz tam w podróży",
+      "ru": "Там спят в чужом городе",
+      "uk": "Там спиш, коли подорожуєш",
+      "uz": "Safarda o‘sha yerda uxlaysan"
+    },
+    "Papers you must not lose": {
+      "pl": "Papiery, których nie wolno zgubić",
+      "ru": "Бумаги, которые нельзя терять",
+      "uk": "Папери, які не можна втратити",
+      "uz": "Yo‘qotmaslik kerak bo‘lgan qog‘ozlar"
+    },
+    "What you are paid each month": {
+      "pl": "Dostajesz to co miesiąc za pracę",
+      "ru": "То, что получают за месяц труда",
+      "uk": "Гроші, які отримуєш щомісяця за роботу",
+      "uz": "Har oy to‘lanadigan pul"
+    },
+    "The person behind the counter": {
+      "pl": "Osoba za ladą",
+      "ru": "Человек за прилавком",
+      "uk": "Людина за прилавком",
+      "uz": "Peshtaxta ortidagi odam"
+    },
+    "The person at the wheel": {
+      "pl": "Siedzi za kierownicą",
+      "ru": "Тот, кто сидит за рулём",
+      "uk": "Той, хто сидить за кермом",
+      "uz": "Rul ortidagi odam"
+    },
+    "They work on a building site": {
+      "pl": "Pracuje na budowie",
+      "ru": "Работает там, где возводят дома",
+      "uk": "Працює на будівництві",
+      "uz": "Qurilishda ishlaydi"
+    },
+    "They turn one language into another": {
+      "pl": "Zamienia jedną mowę na drugą",
+      "ru": "Превращает один язык в другой",
+      "uk": "З однієї мови робить іншу",
+      "uz": "Bir tildan boshqasiga o‘giradi"
+    },
+    "Where you study after school": {
+      "pl": "Uczysz się tam po szkole",
+      "ru": "Там учатся после школы",
+      "uk": "Там навчаються після школи",
+      "uz": "Maktabdan keyin o‘qiydigan joy"
+    },
+    "Where you borrow books": {
+      "pl": "Tam wypożyczasz książki",
+      "ru": "Там книги берут на время",
+      "uk": "Там беруть книжки почитати",
+      "uz": "Kitoblarni vaqtincha olib turadigan joy"
+    },
+    "A task you do to practise": {
+      "pl": "Zadanie dla wprawy",
+      "ru": "Задание для тренировки",
+      "uk": "Завдання, щоб потренуватися",
+      "uz": "O‘rganish uchun bajariladigan topshiriq"
+    },
+    "A screen and a keyboard": {
+      "pl": "Ekran i klawiatura",
+      "ru": "Экран и клавиатура",
+      "uk": "Екран і клавіатура",
+      "uz": "Ekran va klaviatura"
+    },
+    "You connect to it to go online": {
+      "pl": "Łączysz się z nim, by być w sieci",
+      "ru": "К нему подключаются, чтобы выйти в сеть",
+      "uk": "До нього підключаються, щоб бути онлайн",
+      "uz": "Onlayn chiqish uchun unga ulanasan"
+    },
+    "Where you watch a film": {
+      "pl": "Tam oglądasz film na dużym ekranie",
+      "ru": "Там смотрят фильм на большом экране",
+      "uk": "Там дивляться фільм на великому екрані",
+      "uz": "Film ko‘radigan joy"
+    },
+    "The day work starts again": {
+      "pl": "Dzień, w którym znów do pracy",
+      "ru": "День, когда снова на работу",
+      "uk": "День, коли знову починається робота",
+      "uz": "Ish yana boshlanadigan kun"
+    },
+    "The last day of the week": {
+      "pl": "Ostatni dzień tygodnia",
+      "ru": "Последний день недели",
+      "uk": "Останній день тижня",
+      "uz": "Haftaning oxirgi kuni"
+    },
+    "A day to celebrate": {
+      "pl": "Dzień, w którym się świętuje",
+      "ru": "День, когда все отмечают",
+      "uk": "День, коли святкують",
+      "uz": "Nishonlanadigan kun"
+    },
+    "Your mother and father": {
+      "pl": "Mama i tata",
+      "ru": "Мама и папа",
+      "uk": "Твоя мама і твій тато",
+      "uz": "Onang va otang"
+    },
+    "The polite word when you ask": {
+      "pl": "Grzeczne słowo przy prośbie",
+      "ru": "Вежливое слово при просьбе",
+      "uk": "Ввічливе слово, коли просиш",
+      "uz": "So‘raganda aytiladigan xushmuomala so‘z"
+    },
+    "You say it when you bump into someone": {
+      "pl": "Mówisz to, gdy kogoś potrącisz",
+      "ru": "Так говорят, когда толкнули человека",
+      "uk": "Так кажуть, коли когось штовхнули",
+      "uz": "Kimgadir turtinib ketganda aytasan"
+    }
+  },
+  "byWord": {}
+}

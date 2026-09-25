@@ -2060,15 +2060,36 @@ function Deals() {
                             </span>
                           </td>
 
-                          <td data-align="right" data-quiet="true">
-                            {deal.seen === 0 ? '—' : num(deal.seen)}
-                          </td>
-                          <td data-align="right" data-quiet="true">
-                            {deal.opened === 0 ? '—' : num(deal.opened)}
-                          </td>
+                          {/*
+                            A measured zero is a finding and is drawn as one.
+
+                            These five cells all read `x === 0 ? '—'`, which is the
+                            em dash saying the one thing it must not: on this
+                            dashboard a dash means *we are not telling you* —
+                            `.pd-withheld` carries it under a min-cohort floor,
+                            and `useApi`'s error state carries it when the
+                            request failed. `deal.seen` is a `COUNT` over
+                            `deal_events`. The server knows, and it is zero.
+
+                            Which matters most on `claimed`: "0 claims" on a
+                            live offer is the most actionable line on this
+                            screen, and a dash filed it under things the
+                            dashboard declines to say. `data-quiet` already
+                            makes the two funnel columns calm, so a column of
+                            real zeros reads as quiet rather than as noise.
+
+                            The *rate* below keeps its dash, and the funnel
+                            panel in `Detail` keeps its own: a rate over a zero
+                            denominator is undefined rather than zero, and that
+                            panel genuinely cannot tell a stage nobody reached
+                            from one that has not happened. Both say so where
+                            they are.
+                          */}
+                          <td data-align="right" data-quiet="true">{num(deal.seen)}</td>
+                          <td data-align="right" data-quiet="true">{num(deal.opened)}</td>
 
                           <td data-align="right">
-                            <b>{deal.claimed === 0 ? '—' : num(deal.claimed)}</b>
+                            <b>{num(deal.claimed)}</b>
                             {deal.limit > 0 && (
                               <span className="pd-limit">
                                 <i>
@@ -2092,8 +2113,9 @@ function Deals() {
                             <b>{deal.seen === 0 ? '—' : claimRate(deal).toFixed(1) + '%'}</b>
                           </td>
 
+                          {/* Spent nothing is a figure too — see the note above. */}
                           <td data-align="right">
-                            <b>{deal.cost === 0 ? '—' : money(deal.cost, 'exact')}</b>
+                            <b>{money(deal.cost, 'exact')}</b>
                           </td>
 
                           <td>

@@ -33,6 +33,7 @@
  */
 import { useCallback, useState } from 'react';
 import { useAuth } from './context';
+import type { ChoosableType } from './users';
 import { GoogleCancelled, googleConfigured, requestGoogleCode } from './google';
 import { useCopy, useLanguage } from '../i18n/context';
 
@@ -65,10 +66,13 @@ function GoogleMark() {
 /**
  * Continue with Google, on both auth forms.
  *
- * `acceptTerms` is how the two presses differ. On the **sign-up** form the
- * terms checkbox sits above this button, so the prop is passed and the control
- * is dead until it is ticked — the same rule the password submit follows, and
- * the reason a Google account created here carries the same consent record a
+ * Two props, and each answers a question the *press itself* raises, because on
+ * a new address this press opens an account rather than entering one.
+ *
+ * `acceptTerms` is how the two forms differ. On the **sign-up** form the terms
+ * checkbox sits above this button, so the prop is passed and the control is
+ * dead until it is ticked — the same rule the password submit follows, and the
+ * reason a Google account created here carries the same consent record a
  * password account does. On the **sign-in** form it is omitted: that press is
  * for an account that already exists, which has already agreed or has not, and
  * asking somebody to re-accept the terms to get back into their own account is
@@ -77,18 +81,31 @@ function GoogleMark() {
  * Undefined and `false` are deliberately not the same thing. Undefined is "this
  * form does not ask", which leaves the button live; `false` is "this form asks
  * and has not been answered", which disables it.
+ *
+ * `asType` is the account type already chosen — by "Become a partner" — for an
+ * account this press *creates*. A Google account arrives with no type and would
+ * be asked "individual or business?" next; this answers it instead. An account
+ * that already has a type keeps it, which is why the call is guarded on
+ * `type === null` rather than made unconditionally.
  */
-export function GoogleButton({ acceptTerms }: { acceptTerms?: boolean }) {
+export function GoogleButton({
+  acceptTerms,
+  asType = null,
+}: {
+  acceptTerms?: boolean;
+  asType?: ChoosableType | null;
+} = {}) {
   const copy = useCopy();
   const [language] = useLanguage();
-  const { signInWithGoogle } = useAuth();
+  const { signInWithGoogle, setType } = useAuth();
   const [status, setStatus] = useState<Status>('idle');
 
   const onClick = useCallback(async () => {
     setStatus('working');
     try {
       const code = await requestGoogleCode();
-      await signInWithGoogle(code, language, acceptTerms === true);
+      const signedIn = await signInWithGoogle(code, language, acceptTerms === true);
+      if (asType && signedIn.type === null) setType(asType);
       /* No navigation on success. Signing in changes what `resolveRoute`
          returns for this very route, and pushing a hash here would race it —
          the same reason the password form does not navigate either. */
@@ -104,7 +121,7 @@ export function GoogleButton({ acceptTerms }: { acceptTerms?: boolean }) {
         error instanceof Error && error.message.includes('google identity') ? 'unreachable' : 'refused',
       );
     }
-  }, [acceptTerms, language, signInWithGoogle]);
+  }, [acceptTerms, asType, language, signInWithGoogle, setType]);
 
   if (!googleConfigured()) return null;
 

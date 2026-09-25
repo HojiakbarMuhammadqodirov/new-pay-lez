@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Icon } from './icons';
 import { useAuth } from './auth/context';
-import { PATHS } from './router';
 import { matchCities, savePlace, useCities, type City } from './api/profile';
 import { hasToken } from './api/client';
 import { finishRound, sendMove, startRound } from './api/consumer';
@@ -1083,11 +1082,6 @@ function PayoffStep({
             there, and there is no second wording to keep in step.
           */}
           <GameReel label={fill(copy.moreTitle, { n: String(GAMES.length - 1) })} />
-
-          <a className="btn btn-ghost" href={PATHS.learn}>
-            {copy.moreGo}
-            <Icon name="arrow" size={15} />
-          </a>
         </div>
 
         {/*

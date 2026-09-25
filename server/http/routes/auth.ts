@@ -73,6 +73,13 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
          precisely so a client that guesses wrong costs nothing. */
       onboardedAt: user.onboarded_at,
       trustTier: user.trust_tier,
+      /*
+       * When the address was proved, or null. **It gates nothing any more** —
+       * email verification was removed, so no route asks for it. The field
+       * stays because the phone app was built against it and a field that
+       * vanishes breaks a mapper; Google sign-in still stamps it.
+       */
+      emailVerifiedAt: user.email_verified_at,
       /* §1.4's standing answer, as a boolean because it is one. The column is
          an integer for the same reason `leaderboard_opt_in` is — SQLite has no
          boolean — and a client should not have to know that. */
@@ -505,6 +512,10 @@ export const authRoutes: Route[] = [
         /* §1.4 is a *separate* list on purpose: bundling it under "consents"
            is the presentational version of bundling it into the terms. */
         dataSharing: await consent.sharingWith(ctx.db, user.id),
+        /* Venue ids switched off and not back on. Additive: it is what lets a
+           client draw an undecided venue by the account's default and a
+           declined one as off. */
+        sharingWithdrawn: await consent.sharingWithdrawn(ctx.db, user.id),
       };
     },
   },
