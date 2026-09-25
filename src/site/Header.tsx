@@ -237,11 +237,12 @@ export function LanguageMenu() {
  * Tashkent. Tying them meant a visitor who wanted prices in their own money had
  * to read the site in a language they may not speak — and the other way round.
  *
- * The language still supplies the **default** (`CURRENCY_FOR_LANGUAGE`),
- * because it is the one thing a visitor tells us before they tell us anything
- * else and a first visit should not have to choose twice. Once the currency has
- * been chosen it stops following: switching language leaves it alone, which is
- * the whole point.
+ * The language does not supply the default either. It used to; the default is
+ * `DEFAULT_CURRENCY` — the dollar, for everybody — because this menu now lives
+ * only on the partner dashboard, and a guess that only a venue owner can
+ * correct is not a default. See the note on that constant. Once the currency
+ * has been chosen it stops following: switching language leaves it alone, which
+ * is the whole point.
  *
  * ## Two things it deliberately shares and one it does not
  *

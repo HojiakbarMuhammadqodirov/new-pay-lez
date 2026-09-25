@@ -43,13 +43,15 @@ export interface LanguageValue {
    * They used to be one: `CURRENCIES[language]` decided the currency, so
    * somebody who wanted prices in złoty had to read the site in Polish. They
    * were never the same question — a Russian speaker in Kraków is paid in
-   * złoty, an English speaker may be in Tashkent — and the language is now only
-   * the *default*, which is `CURRENCY_FOR_LANGUAGE`.
+   * złoty, an English speaker may be in Tashkent — and the language no longer
+   * decides it at all, not even as a default. That is `DEFAULT_CURRENCY`.
    *
-   * Held here rather than in a provider of its own because the default is a
-   * function of the language and the two have to be read together: a second
-   * context would need this one anyway, and the `[language, currency]` pair is
-   * what every money figure on the site is a function of.
+   * Held here rather than in a provider of its own because the two are read
+   * together on every money figure: a second context would need this one
+   * anyway, and the `[language, currency]` pair is what every amount on the
+   * site is a function of — the currency picks the symbol and the rate, the
+   * language picks the digit grouping (`GROUP_FOR_LANGUAGE`), and those really
+   * are two different questions about one number.
    */
   currency: CurrencyCode;
   setCurrency: (next: CurrencyCode) => void;

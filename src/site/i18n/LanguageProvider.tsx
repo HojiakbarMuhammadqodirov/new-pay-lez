@@ -14,7 +14,7 @@ import {
   type LanguageValue,
 } from './context';
 import {
-  CURRENCY_FOR_LANGUAGE,
+  DEFAULT_CURRENCY,
   isCurrencyCode,
   type CurrencyCode,
 } from './currency';
@@ -135,8 +135,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
       language,
       setLanguage,
       copy: LANGUAGES[language],
-      /* The chosen one, or the language's default while nothing is chosen. */
-      currency: chosen ?? CURRENCY_FOR_LANGUAGE[language],
+      /* The chosen one, or the dollar while nothing is chosen — the language
+         does not decide this any more, and `DEFAULT_CURRENCY` says why. */
+      currency: chosen ?? DEFAULT_CURRENCY,
       setCurrency,
     }),
     [language, setLanguage, chosen, setCurrency],

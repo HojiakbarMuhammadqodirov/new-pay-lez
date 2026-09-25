@@ -12,10 +12,10 @@
  * may not speak, and one who wanted the site in their own language had to
  * accept prices in somebody else's.
  *
- * So the language still supplies the **default** currency — it remains the best
- * single guess, and a first visit should not have to choose twice — and from
- * there the two move independently. `CURRENCY_FOR_LANGUAGE` is that guess;
- * `CURRENCIES` is keyed by the currency itself.
+ * So they are separate settings, and the language does not even supply the
+ * default any more: that is `DEFAULT_CURRENCY` below, one value for everybody,
+ * and the note on it explains what changed. `CURRENCIES` is keyed by the
+ * currency itself.
  *
  * **Every amount in `content.ts` and in the dictionaries is euros.** That is the
  * base unit and nothing else may be written anywhere: a page with a hardcoded
@@ -108,20 +108,35 @@ export const isCurrencyCode = (value: string): value is CurrencyCode =>
   (CURRENCY_ORDER as readonly string[]).includes(value);
 
 /**
- * The currency a language defaults to.
+ * What every amount is priced in until somebody chooses otherwise.
  *
- * Still the best single guess about where somebody is — it is the one thing a
- * visitor tells us before they have told us anything — and it is now only a
- * *default*. Once the currency has been chosen it is chosen, and switching the
- * language does not move it: that is the whole of what separating them means.
+ * **One currency for everybody, and it is the dollar.** This replaced
+ * `CURRENCY_FOR_LANGUAGE`, a table that guessed a currency from the language —
+ * English to pounds, Polish to zloty — on the argument that the language is the
+ * one thing a visitor tells us before they tell us anything else. That argument
+ * was sound while *every* page carried a currency menu, because a wrong guess
+ * cost one press to correct.
+ *
+ * It stopped being sound when the menu moved to the partner dashboard. Only a
+ * venue owner has a dashboard, so for every player and every signed-out visitor
+ * the guess is no longer a default — it is the final answer, permanently, with
+ * no control anywhere to change it. A guess nobody can overrule has to be one
+ * nobody is surprised by, and a reader in Tashkent quoted in roubles because the
+ * site is being read in Russian is exactly the surprise: it is not their money.
+ *
+ * The dollar because it is the currency people convert *from* when they want to
+ * know what a number means, and because it belongs to none of the five
+ * languages, so it reads as a neutral unit rather than as a wrong guess about
+ * where somebody lives. Note what it is not: it is **not** the base unit. Every
+ * amount in `content.ts` and in the dictionaries is still euros, and this is
+ * still a conversion on the way out — see the note at the top of this file.
+ *
+ * Owners can still change it, on the dashboard, and the choice still sticks and
+ * still applies site-wide. Restoring a per-language default means putting the
+ * table back (git has it) *and* putting a menu back where a player can reach it;
+ * doing the first without the second is what this comment exists to prevent.
  */
-export const CURRENCY_FOR_LANGUAGE: Record<LanguageCode, CurrencyCode> = {
-  en: 'GBP',
-  pl: 'PLN',
-  uz: 'UZS',
-  ru: 'RUB',
-  uk: 'UAH',
-};
+export const DEFAULT_CURRENCY: CurrencyCode = 'USD';
 
 /**
  * The thousands separator, **by language** - not by currency.

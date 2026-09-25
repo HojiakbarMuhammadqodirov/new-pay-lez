@@ -23,7 +23,7 @@ export const pl: Dictionary = {
           'Odkrywaj, graj i zgarniaj nagrody. Kilka szybkich pytań dziennie, punkty za każdą rundę i vouchery w sklepach partnerskich w Twoim mieście.',
       },
       learn: {
-        title: 'L-Earn: graj w quizy, zdobywaj prawdziwe vouchery — Paylez',
+        title: 'Play & Earn: graj w quizy, zdobywaj prawdziwe vouchery — Paylez',
         description:
           'Kilka szybkich pytań dziennie. Osiem gier, punkty za każdą rundę i vouchery w sklepach, z których i tak korzystasz. Za darmo, bez danych karty.',
       },
@@ -2486,7 +2486,7 @@ export const pl: Dictionary = {
   learn: {
     back: 'Wróć do paylez',
     hero: {
-      eyebrow: 'L-Earn',
+      eyebrow: 'Play & Earn',
       lines: ['Naucz się czegoś nowego.', 'Zarób coś prawdziwego.'],
       lede: 'Kilka szybkich pytań dziennie. Punkty, które zamieniają się w vouchery w sklepach, z których i tak korzystasz.',
       primary: 'Zacznij grać',
@@ -3489,7 +3489,7 @@ export const pl: Dictionary = {
     introGo: 'Dalej',
     gameSkip: 'Pomiń to pytanie',
     moreTitle: 'Czeka {n} kolejnych gier',
-    moreLede: 'Quizy, gry słowne, pamięć i lot — każda z nich daje punkty i wszystkie są w L-Earn.',
+    moreLede: 'Quizy, gry słowne, pamięć i lot — każda z nich daje punkty i wszystkie są w Play & Earn.',
     reelPrev: 'Poprzednia gra',
     reelNext: 'Następna gra',
   },

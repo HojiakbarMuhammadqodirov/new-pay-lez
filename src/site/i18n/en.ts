@@ -44,7 +44,7 @@ export const en = {
           'Discover, play and get rewarded. Answer a few quick questions a day, earn points, and spend them on real vouchers at partner shops in your city.',
       },
       learn: {
-        title: 'L-Earn: play quiz games, earn real vouchers — Paylez',
+        title: 'Play & Earn: play quiz games, earn real vouchers — Paylez',
         description:
           'A few quick questions a day. Eight games, points for every round, and vouchers at shops you already use. Free to play, no card details needed.',
       },
@@ -3289,7 +3289,7 @@ export const en = {
   learn: {
     back: 'Back to paylez',
     hero: {
-      eyebrow: 'L-Earn',
+      eyebrow: 'Play & Earn',
       lines: ['Learn something new.', 'Earn something real.'],
       lede: 'A few quick questions a day. Points that turn into vouchers at shops you already use.',
       primary: 'Start playing',
@@ -4483,7 +4483,7 @@ export const en = {
     /* The payoff screen's offer of the rest of the product. `{n}` is a count
        of the other games, filled from `GAMES` so the number cannot drift. */
     moreTitle: '{n} more games are waiting',
-    moreLede: 'Quizzes, word puzzles, memory and a flight run — all of them pay points, all of them are in L-Earn.',
+    moreLede: 'Quizzes, word puzzles, memory and a flight run — all of them pay points, all of them are in Play & Earn.',
     /**
      * The reel's two arrows, read out rather than shown.
      *

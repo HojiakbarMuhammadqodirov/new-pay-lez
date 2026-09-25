@@ -18,7 +18,7 @@ export const uz: Dictionary = {
           "Kashf eting, o‘ynang va mukofot oling. Kuniga bir nechta tezkor savol, har raund uchun ball va hamkor do‘konlardagi vaucherlar.",
       },
       learn: {
-        title: "L-Earn: viktorina o‘ynang, haqiqiy vaucher yutib oling — Paylez",
+        title: "Play & Earn: viktorina o‘ynang, haqiqiy vaucher yutib oling — Paylez",
         description:
           "Kuniga bir nechta tezkor savol. Sakkizta o‘yin, har raund uchun ball va siz allaqachon boradigan do‘konlarda vaucherlar. Bepul, karta ma’lumotisiz.",
       },
@@ -2485,7 +2485,7 @@ export const uz: Dictionary = {
   learn: {
     back: 'paylez sahifasiga qaytish',
     hero: {
-      eyebrow: 'L-Earn',
+      eyebrow: 'Play & Earn',
       lines: ['Yangi narsa o‘rganing.', 'Haqiqiy narsa yutib oling.'],
       lede: "Kuniga bir nechta tezkor savol. Siz allaqachon foydalanadigan do‘konlarda vaucherga aylanadigan ballar.",
       primary: "O‘ynashni boshlash",
@@ -3492,7 +3492,7 @@ export const uz: Dictionary = {
     introGo: 'Keyingisi',
     gameSkip: 'Bu savolni o‘tkazib yuborish',
     moreTitle: 'Yana {n} ta o‘yin kutmoqda',
-    moreLede: 'Viktorina, so‘z o‘yinlari, xotira va uchish — barchasi ball beradi va barchasi L-Earn’da.',
+    moreLede: 'Viktorina, so‘z o‘yinlari, xotira va uchish — barchasi ball beradi va barchasi Play & Earn’da.',
     reelPrev: 'Oldingi o‘yin',
     reelNext: 'Keyingi o‘yin',
   },

@@ -43,7 +43,7 @@ import { SCOPES } from '../src/site/api/board';
 import { lineCap, longestLine } from '../src/site/heroLines';
 import { ratesFrom } from '../src/site/api/fx';
 import {
-  CURRENCY_FOR_LANGUAGE,
+  DEFAULT_CURRENCY,
   CURRENCY_ORDER,
   GROUP_FOR_LANGUAGE,
   isCurrencyCode,
@@ -3452,12 +3452,24 @@ console.log('\nthe currency is its own setting');
    * something rather than just "two controls":
    */
 
-  /* 1. Every language still has a default, because it is the one thing a
-        visitor tells us before they tell us anything else. */
+  /* 1. There is **one** default and the language does not pick it.
+        `CURRENCY_FOR_LANGUAGE` guessed per language, which was right while
+        every page carried the menu and wrong once the menu moved to the
+        dashboard: only an owner has one, so for everybody else the guess was
+        final. Pinned as a single value rather than a table, and pinned as USD
+        specifically — the whole reason it is the dollar is that it belongs to
+        none of the five languages, so a change back to a language's own
+        currency should fail here and be read before it is made. */
+  check('there is one default currency for everybody', isCurrencyCode(DEFAULT_CURRENCY), DEFAULT_CURRENCY);
+  check('…and it is one the site can price in', CURRENCIES[DEFAULT_CURRENCY] !== undefined);
+  check('…and it is the dollar, which is nobody’s language', DEFAULT_CURRENCY === 'USD');
+  /* Named in all five, because it is now the currency every reader sees first
+     and an unnamed one would show as a bare code on the Relocate converter. */
   for (const code of LANGUAGE_ORDER) {
-    const fallback = CURRENCY_FOR_LANGUAGE[code];
-    check(`${code} defaults to a currency`, isCurrencyCode(fallback), fallback);
-    check(`…and it is one the site can price in`, CURRENCIES[fallback] !== undefined);
+    check(
+      `${code} names the default currency`,
+      typeof LANGUAGES[code].relocate.rates.names[DEFAULT_CURRENCY] === 'string',
+    );
   }
 
   /* 2. Every offered currency has the two things a *price tag* needs, which is
