@@ -155,18 +155,20 @@ missing and move the four that exist onto the server protocol (`API.md` §5).
 
 **A round is a round.** Roughly a minute of attention is worth roughly the same in
 every game, so a player picks the one they enjoy rather than the one that pays.
-The per-game figures below are the **raw** score, before the one factor under the
-table; do not print any of them as the reward.
+**Every game is now normalised onto one 0–100 `performance` scale**, and the
+points come out of that scale by one formula — see §23, which is the authoritative
+version of everything in this section. The figures below are **performance**, not
+points; do not print any of them as a reward.
 
-| # | Game | `gameType` | What it is | Raw score |
+| # | Game | `gameType` | What it is | Performance (0–100) |
 | --- | --- | --- | --- | --- |
-| 1 | Brain Games | `brain` | 5 questions, 12 s each. **No mistake limit — a quiz cannot be lost** | 1 per correct, **+1** for all five, **+2/+1/0** if the whole round took ≤10 s / ≤15 s / longer |
-| 2 | Guess the Flag | `flags` | 5 questions, 6 s each. `prompt` is an **ISO country code** — build the flag emoji from it (snippet in `API.md` §5) | as above; ceiling 8 |
-| 3 | Country & Capital | `capitals` | 5 questions, 6 s each | as above; ceiling 8 |
-| 4 | Local Quiz | `poland` **or** `uzbekistan` | 5 questions, 8 s each. **One card, two banks** — send the type that matches the country on the player's profile; see below | as above; ceiling 8 |
-| 5 | Squawk's Flight | `flight` | The arcade round. Endless side-scroller, fly through gaps, one crash ends it. 5 gaps decides whether the round was *won* | **half a point** per gap, **capped at 20 points** |
-| 6 | Memory Match | `memory_match` | 6 pairs. **No fail state** — deliberately the accessible one — but it is now **timed** | Elapsed time alone: ≤18 s → 8, ≤23 s → 6, slower → 3 |
-| 7 | Word Builder | `word_builder` | 5 words from scrambled letters | **the word's own tier** (1/2/3), **halved** if that word was hinted, **+1** for all five first-try and hint-free |
+| 1 | Brain Games | `brain` | 5 questions, 12 s each. **No mistake limit — a quiz cannot be lost** | **20 per correct** → 100 at 5/5, plus **+5** (capped into the 100) if all five were answered within 25 s |
+| 2 | Guess the Flag | `flags` | 5 questions, 6 s each. `prompt` is an **ISO country code** — build the flag emoji from it (snippet in `API.md` §5) | as above |
+| 3 | Country & Capital | `capitals` | 5 questions, 6 s each | as above |
+| 4 | Local Quiz | `poland` **or** `uzbekistan` | 5 questions, 8 s each. **One card, two banks** — send the type that matches the country on the player's profile; see below | as above |
+| 5 | Squawk's Flight | `flight` | The arcade round. Endless side-scroller, fly through gaps, one crash ends it. 5 gaps decides whether the round was *won* | `min(100, obstacles × 4)` — **25 obstacles is a perfect round** |
+| 6 | Memory Match | `memory_match` | **6 pairs. No fail state** — deliberately the accessible one — and scored on **moves**, with a 90-second limit | **60** for clearing the board, plus by moves used: ≤10 **+40**, 11–14 **+25**, 15–18 **+12**, 19+ **+0**. Incomplete at 90 s → `pairs / 6 × 50` |
+| 7 | Word Builder | `word_builder` | **3 words** from scrambled letters (it was five) | **33 a word** (all three → 100), **+4** per word solved under 30 s, **−10 per hint**, clamped 0–100 |
 
 **Seven cards, eight `gameType` values.** Row 4 is one game with two question
 banks: `poland` and `uzbekistan` run the identical protocol, score by the
@@ -178,21 +180,33 @@ that stops fitting on a phone. `countryCode` is nullable, so decide what an
 account with no country sees rather than sending `null` into a switch and
 rendering nothing; the site's own answer is the market it is in.
 
-Then the server applies one factor and nothing else:
+Then the server turns that performance into points, by the points rulebook's
+master formula (§4.1) and nothing else:
 
 ```
-score = floor(raw × points_multiplier)
+base  = max(2, round(performance / 100 × 18))       // 2..18
+      × 1.5   if this is the day's featured game    // once per day
+      × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
+      × points_multiplier   1 / 1.25 / 1.75
+      + perfect 10 + first-ever play of that game 25 + personal best 8
+score = max(1, round(that))
 ```
 
 - **`points_multiplier`** (1 / 1.25 / 1.75) is a **game-round rule only**. It is
   not applied to a scan, a first visit, a stamp card or a new category — those
-  have four named entitlements of their own.
-- **A round pays the same whether it is the player's first of the day or their
-  ninth.** There is no daily points cap and no per-game decay curve. A curve did
-  live here — it paid a repeat of the same game 100/60/40/20/0 percent on free —
-  and it is gone, along with the `decay` field on the finish response. Any "worth
-  less this time" copy is dead: delete it rather than leaving it behind a branch
-  that can no longer be true.
+  have four named entitlements of their own. It multiplies the base and **not**
+  the three flat bonuses.
+- **A round is worth much less than the one before it.** The decay curve counts
+  the player's *paid* rounds of the day: the first is worth full, the second 65%,
+  the sixth 12%. This is the thing to draw honestly — it is the difference
+  between "you played badly" and "come back tomorrow", and those are two
+  completely different things for a player to do about it.
+- **`decay` is back on the finish response**, along with `roundToday` and seven
+  other fields that itemise the round. A model that deleted `decay` when it went
+  away needs it again; see §23.
+- **A finished round never pays zero.** The floor of 2 on the base means trying
+  always beats not trying, and the floor of 1 on the total means even a decayed
+  empty round pays something.
 
 Notes that decide whether these feel right:
 
@@ -203,13 +217,22 @@ Notes that decide whether these feel right:
   `content`. Any hearts-remaining row on a quiz screen is dead — delete it, do
   not draw it full. `won` on a quiz now means **all five correct**, and
   `won: false` means "not a clean sweep" rather than "forfeited".
-- **The quiz speed bonus is on the whole round and only on a clean sweep**, timed
-  from the first event the server recorded to the last. There is no duration to
-  report — the same as Memory Match. Draw the timer against
-  `content.speedBands`, which the server sends with `perCorrect` and
-  `perfectBonus` so the numbers on the screen are the ones that will be paid.
-- **A band boundary is inclusive**: the wire field is `throughSeconds` and it is
-  compared with `<=`. Ten seconds exactly is the ten-second band.
+- **The quiz speed credit is on the whole round and is no longer gated on a clean
+  sweep**, timed from the first event the server recorded to the last. There is no
+  duration to report. Draw the timer against `content.speedWithinSeconds` (25) and
+  label it with `content.speedCredit` (+5 *performance*, not points) — and note the
+  credit is **capped into the 100**, so it changes nothing on a 5/5 round and
+  separates a fast four-of-five from a slow one.
+- **A band boundary is inclusive**: `speedWithinSeconds` and `throughMoves` are
+  both compared with `<=`. Twenty-five seconds exactly still earns the credit; ten
+  moves exactly is still Memory Match's top band.
+- **Memory Match is scored on moves now, not on the clock.** A move is one `pair`
+  event; a `peek` is **not** a move, so peeking the first card of a move — which is
+  what a normal client does — costs nothing. Clearing the board is 60 performance,
+  and the moves band on top of it is `content.moveBands`. There is still a clock,
+  and it is a **limit** rather than a rate: `content.limitSeconds` (90), past which
+  an unfinished board scores `pairs / 6 × 50` and `won` is `false`. That is the one
+  number in this game a client has to act on rather than display.
 - **Memory Match: the layout is still secret, but a turned card comes back.**
   You get `{cards, pairs}` and report positions, and the reply carries
   `revealed: [{index, face}, …]` for whatever you just turned. **Render your
@@ -242,18 +265,21 @@ Notes that decide whether these feel right:
     on elapsed time alone and a peek is an event inside that span, so peeking
     can only ever cost. It also means the clock now starts on the first card
     turned rather than on the first pair, which is the reading the player's own
-    stopwatch has been showing all along.
+    stopwatch has been showing all along. Under move-based scoring this matters
+    even less: a peek is not counted at all.
 - The flight is the one game with no answer key. Report `{cleared}` to `/finish`;
-  the server caps the **points**, not the gaps. It pays **half a point a gap**
-  now, so the 20-point ceiling is forty gaps rather than twenty — which is what
-  the client-side speed ramp is there to make earned rather than waited out. The
-  ramp is yours; the price of a gap is the server's.
-- **Halves are real, and the round is floored once at the end.** A hinted word is
-  worth half its tier and a gap half a point. The server carries the exact sum
-  through the plan multiplier and floors the result, so seven gaps is 3.5 and
-  banks 3 on free and **4** on Pro. Do not floor per item locally and then show
-  the total; you will be a point low, and only on paid tiers, which is the
-  hardest kind of mismatch to notice.
+  the server caps the **performance**, not the gaps. It is `min(100, obstacles ×
+  4)`, so **25 obstacles is a perfect round** where the old 20-point ceiling was
+  forty gaps out. The client-side speed ramp is what makes the back half of that
+  earned rather than waited out. The ramp is yours; the price of an obstacle is the
+  server's. A claim the round's own duration could not have produced is still
+  clamped, silently.
+- **There are no halves any more, and the rounding moved.** Both fractional rules
+  are gone — a word is not worth its tier and a gap is not worth half a point — so
+  every performance is a whole number. The one rounding step is at the **end** of
+  the formula and it is a **round**, not a floor, because the published payout
+  table is computed that way: 70% as the featured game is 13 × 1.5 = 19.5 and pays
+  20. Show `score` off the response and do not recompute it.
 - **Hearts became energy, and every finished round costs one — win or lose.**
   Losses only was the rule before, and it bounded nobody: two of the seven games
   cannot be lost. An **abandoned** round still costs nothing, and *starting* one
@@ -264,8 +290,9 @@ Notes that decide whether these feel right:
   to `daily_energy` (4 / 6 / 10). `GET /v1/games/state` returns
   `energy: { energy, max, nextAt }`, and `nextAt` is what an empty tank should
   draw. A countdown to midnight is wrong.
-- **That pair is the whole limiter on a day**, now that there is no points cap
-  and no decay curve. Read together they give its size — 12 rounds a day
+- **That pair is what bounds how many rounds a day holds** — the decay curve is
+  what bounds what they are worth, and the two are different limits rather than
+  two copies of one. Read together they give the day's size — 12 rounds a day
   sustained on free and 16 from a full tank, 24/30 on Pro, 48/58 on Premium. It
   is worth drawing honestly: it is the number a player plans an evening around,
   and it is what a paid plan is actually sold on. **All six of those figures have
@@ -289,12 +316,18 @@ Notes that decide whether these feel right:
   points, the streak, the board — it just no longer buys permission to play. The
   web app already does this: the Play button reads "Practice", the round carries
   a banner saying it pays nothing, and the result card explains its own zero.
-- Word Builder hints are capped per day by `word_hints_per_day` (3 / 6 / 10).
-  Past it the hint event is refused with `entitlement_required`, carrying `limit`
-  and `used`. A hint **halves that word's points** — it used to forfeit a tier
-  bonus and keep a flat base, which charged nothing on the easiest word.
+- **Word Builder is three words a round now, not five**, and `content.words` has
+  three entries — a screen that drew five slots draws two empty ones. A word is
+  worth **33 performance** (all three → 100), `tier` still arrives and no longer
+  prices the word, and hints are capped per day by `word_hints_per_day`
+  (3 / 6 / 10). Past it the hint event is refused with `entitlement_required`,
+  carrying `limit` and `used`. **A hint costs a flat −10 performance**, where it
+  used to halve that word's points — so a fast, solved, three-hint round lands at
+  70 rather than at whatever the tiers happened to be.
 - A round's result comes back with `streak`, `freezes`, `energyLeft` and
-  `balance` — show those from the response, do not recompute them.
+  `balance` — show those from the response, do not recompute them. It now also
+  comes back with **nine fields that itemise the score**, which is what the result
+  screen should draw instead of one number. §23 has them.
 
 **Done when:** all seven play, score identically to the server, and the app holds
 no answer, no deck and no scoring table.
@@ -578,10 +611,16 @@ and they will disagree. Name them differently on screen — "check-in streak" an
 - All seven games play and score identically to the server.
 - Every error code in `API.md` §2 has a message someone at a till can act on.
 - Amounts are integers in minor units, everywhere, with no exceptions.
-- Nothing on screen says points expire, that there is a daily points cap, that a
-  repeat round pays less, that energy comes back at midnight, that a quiz round
-  can be lost or that mistakes are limited, or that a number has been verified.
-  Nothing says "heart" at all.
+- Nothing on screen says points expire, that there is a daily points cap, that
+  energy comes back at midnight, that a quiz round can be lost or that mistakes
+  are limited, or that a number has been verified. Nothing says "heart" at all.
+- **A repeat round does pay less** — the decay curve counts paid rounds of the day
+  (§23) — and the result screen says so from `decay` and `roundToday` rather than
+  from a rule of its own. The old *per-game* version of that copy is still dead:
+  playing a different game does not reset it.
+- **The result screen itemises the round** rather than printing one number:
+  performance, base, featured, decay, plan, and the three flat bonuses. Nine
+  fields arrive for exactly this.
 - No screen offers a free-text `headline`, and no screen refuses a city because
   it is not on `GET /v1/cities`. The profile's "Status" is a five-value picker
   reading `occupation`, and every city and country shown is the one the server
@@ -740,6 +779,13 @@ Three rules travel with the charge, and each of them is a screen:
   means finding out after the round was played.
 
 ### 3. The games — `decay` is **gone**, `capped` always was 0, **every scoring table moved**, and `gameType` gained a value
+
+> **Superseded by §23 on both counts that matter.** `decay` came *back* — it is a
+> field on the finish response again, with a different meaning (rounds of the day,
+> not repeats of one game) — and every scoring table in this section moved again.
+> Read §23 for the current figures. The rest of this section is still accurate and
+> still worth reading: the `mistakesAllowed` removal, `won` meaning a clean sweep,
+> the `uzbekistan` enum value, and the Memory Match `peek` move are all unchanged.
 
 ```diff
   {
@@ -1311,6 +1357,314 @@ should send nothing, and the account is created just the same.
 the session's language, so nothing in the request changes — a Russian-speaking
 account simply gets a real round now instead of `404 not_found`.
 
+### 23. The games — one **0–100 performance scale**, a decay curve, and nine new fields on the finish
+
+This is the largest change to the games since they arrived, and it is worth
+saying plainly what kind of change it is: **nothing about the protocol moved.**
+The same endpoints, the same events, the same secrets, the same `paid` and
+`no_energy`. What moved is the arithmetic between "here is what happened in the
+round" and "here is what it was worth", and the response now shows all of it.
+
+Every game is reduced to one integer — `performance`, 0 to 100 — and one formula
+turns that into points. The formula is the points rulebook's §4.1:
+
+```
+1.  performance          the game's own result, 0..100          (§5, table below)
+2.  base = max(2, round(performance / 100 × 18))                → 2..18
+3.       × 1.5           if this is the day's featured game     (once per day)
+4.       × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
+5.       × points_multiplier   1 / 1.25 / 1.75
+6.       + perfect 10  + first-ever play of that game 25  + personal best 8
+7.  score = max(1, round(step 5 + step 6))
+```
+
+Two things about the order, because both are easy to get wrong and invisible from
+a total. **The flat bonuses are added after the multiplier and are not multiplied
+by it** — a +25 is 25 on Premium. And **there is exactly one rounding step, at the
+end, and it is a round rather than a floor**, because the published payout table
+is computed with round-half-up: 70% as the featured game is 13 × 1.5 = 19.5 and
+the table promises 20.
+
+**23a. The published payout table.** This is what a player is shown, at decay 1,
+before the flat bonuses:
+
+| Performance | Base | As featured | Featured, Premium |
+| --- | --- | --- | --- |
+| **100%** | 18 | 27 | 47 |
+| 90% | 16 | 24 | 42 |
+| 80% | 14 | 21 | 37 |
+| 70% | 13 | 20 | 34 |
+| 60% | 11 | 17 | 29 |
+| 50% | 9 | 14 | 24 |
+| 40% | 7 | 11 | 18 |
+| 25% | 5 | 8 | 13 |
+| **0%** (finished, scored nothing) | **2** | 3 | 5 |
+
+All twenty-seven cells are asserted in `verify:api`. **A finished round never pays
+zero** — that is what the floor of 2 is for, and it is a good line for a result
+card: trying always beats not trying.
+
+**23b. Nine new fields on `POST /v1/games/sessions/{id}/finish`.** All additive —
+a client that ignores every one of them sees the body it saw before.
+
+```diff
+  {
+    "score": 53,
+    "capped": 0,
+    "correct": 5,
+    "answered": 5,
+    "won": true,
+    "streak": 7,
+    "freezes": 2,
+    "energyLeft": 3,
+    "balance": 1246,
+    "paid": true,
+    "unpaidReason": null,
++   "performance": 100,
++   "base": 18,
++   "decay": 1,
++   "roundToday": 1,
++   "featured": false,
++   "featuredMultiplier": 1,
++   "multiplier": 1,
++   "bonusPerfect": 10,
++   "bonusNewGame": 25,
++   "bonusPersonalBest": 0,
++   "welcomeRound": false,
+    "nearest": { … }
+  }
+```
+
+| Field | Type | What it is |
+| --- | --- | --- |
+| `performance` | `int` 0–100 | The round's result on the common scale. 100 is a perfect round in every game |
+| `base` | `int` 2–18 | `max(2, round(performance / 100 × 18))`. `0` on a welcome round |
+| `decay` | `num` | The rung: `1`, `0.65`, `0.45`, `0.3`, `0.2` or `0.12` |
+| `roundToday` | `int` ≥1 | Which **paid** round of the day this was. What `decay` is read from |
+| `featured` | `bool` | Whether the ×1.5 applied. **Once per day**, first paid round of the day's game |
+| `featuredMultiplier` | `num` | The factor `featured` applied: `1.5` when it did, **`1`** when it did not. Print this rather than a hard-coded 1.5 |
+| `multiplier` | `num` | `1`, `1.25` or `1.75`, as it stood when the round was played |
+| `bonusPerfect` | `int` | `10` when `performance` is exactly 100, else `0` |
+| `bonusNewGame` | `int` | `25` the first time this account ever finishes a paid round of this game, else `0` |
+| `bonusPersonalBest` | `int` | `8` for beating their own best in this game, max once per game per day, else `0` |
+| `welcomeRound` | `bool` | The one round that bypasses the formula — see 23f |
+
+**Draw the itemisation, not the total.** `score` is the product of six separate
+decisions, and a card that prints only the total leaves a player unable to tell a
+*bad round* from a *fourth round* — which are two completely different things to
+do about it: play better, or come back tomorrow. `decay: 0.2` is also the honest
+answer to the only support question this formula generates, which is "why was that
+worth 4 when the same round was worth 18 this morning?".
+
+A client that wants to check its own arithmetic:
+
+```dart
+final expected = (base * featuredMultiplier * decay * multiplier
+    + bonusPerfect + bonusNewGame + bonusPersonalBest).round();
+// == score, except on a welcome round
+```
+
+`featuredMultiplier` is `1` when the bonus did not apply, so there is no branch and
+nothing to hard-code. **Do not hold your own `1.5`**: `FEATURED_GAME_BONUS` is on
+the rulebook's §11 list of tunables, and a breakdown row labelled "×1.5" that stops
+matching the sum beside it is worse than one that says only "included".
+
+**23c. `decay` is back, and it does not mean what the old one meant.** §3 above
+told you to delete the field and any "worth less this time" copy. The field is
+back and the copy is needed again — but it is a **different rule**. The old decay
+was *per game*: playing `flags` five times paid 100/60/40/20/0 percent, and
+rotating seven games defeated it entirely. The new one counts the player's **paid
+rounds of the day across all games**, so there is nothing to rotate away from.
+
+`capped` is still sent and is **still always 0**. It is not where decay is
+reported and must not be read as such: `capped` meant points taken off a round
+already scored, and decay is part of scoring it. Delete any "you have hit today's
+limit" copy; there is still no daily points ceiling.
+
+**23d. What each game does to reach its performance.** Every clock here is the
+server's own event stamps and every count is the server's own rows. There is
+nothing new to report and nothing new for a modified client to invent.
+
+| Game | Performance |
+| --- | --- |
+| the five quiz banks | **20 per correct** → 100 at 5/5. **+5** when all five were *answered* within 25 s, **capped into the 100** |
+| `word_builder` | **3 words** at **33** each (all three solved → **100**, not 99). **+4** per word solved under 30 s. **−10 per hint.** Clamped 0–100 |
+| `memory_match` | **60** for clearing the board, plus by **moves**: ≤10 → +40 (100), 11–14 → +25 (85), 15–18 → +12 (72), 19+ → +0 (60). **90-second limit**; incomplete at it → `pairs / 6 × 50` |
+| `flight` | `min(100, obstacles × 4)` — **25 obstacles is a perfect round** |
+
+Five things in that table will bite, in order:
+
+1. **Word Builder is three words, not five.** `content.words` has three entries. A
+   screen with five slots draws two empty ones. No shape catches this.
+2. **Memory Match is scored on moves, not on the clock.** A move is one `pair`
+   event; a **`peek` is not a move**, so peeking the first card of a move costs
+   nothing and a normally-played board reaches the top band in six. Any
+   elapsed-time band UI on this game is dead — but the clock is not gone, it became
+   a **90-second limit** (`content.limitSeconds`). Past it an unfinished board
+   scores proportionally and `won` is `false`, which is the first time this game
+   has had a losing state. A "no fail state" promise on the board is now wrong.
+3. **A hint costs a flat −10 performance**, not half a word's tier. `tier` still
+   arrives on each word and no longer prices it.
+4. **The quiz speed credit is no longer gated on a clean sweep**, is +5
+   *performance* rather than +2/+1/0 points, and the window is 25 s rather than
+   10/15. It is capped into the 100, so it is invisible on a perfect round and is
+   the difference between a fast four-of-five (85) and a slow one (80).
+5. **The flight's ceiling is 25 obstacles**, not forty gaps. It was half a point a
+   gap capped at 20 points; it is 4 performance an obstacle capped at 100.
+
+**23e. `content` on `POST /v1/games/sessions` — three renamed keys and eight new ones.**
+Every game now carries the scale it will be judged on, so no client holds a copy
+of a table this server owns. **These numbers are performance, not points.**
+
+```diff
+  // quizzes
+  "content": {
+    "questions": [ … ],
+-   "perCorrect": 1,
+-   "perfectBonus": 1,
+-   "speedBands": [ { "throughSeconds": 10, "points": 2 }, … ],
++   "performancePerCorrect": 20,
++   "speedCredit": 5,
++   "speedWithinSeconds": 25
+  }
+
+  // word_builder — three entries in `words` now
+  "content": {
+    "words": [ … ],
++   "performancePerWord": 33,
++   "speedCredit": 4,
++   "speedWithinSeconds": 30,
++   "hintPenalty": 10
+  }
+
+  // memory_match
+  "content": {
+    "cards": 12, "pairs": 6,
++   "basePerformance": 60,
++   "moveBands": [ { "throughMoves": 10, "bonus": 40 },
++                  { "throughMoves": 14, "bonus": 25 },
++                  { "throughMoves": 18, "bonus": 12 },
++                  { "throughMoves": null, "bonus": 0 } ],
++   "limitSeconds": 90
+  }
+```
+
+The flight's `content` gained two keys and **`target` did not change meaning**:
+
+```diff
+  // flight
+  "content": {
+    "target": 5,
++   "performancePerObstacle": 4,
++   "perfectObstacles": 25
+  }
+```
+
+`target` is still the **win** threshold — five gaps, what decides `won` — and
+`perfectObstacles` is what a **perfect round** takes. They are two different
+numbers and a label reading one as the other prints a wrong figure with nothing to
+catch it. "Of N obstacles for a perfect round" is `perfectObstacles`, not `target`.
+
+**A required `perCorrect`, `perfectBonus` or `speedBands` throws on decode** at the
+top of every quiz. That is deliberate and is the safer of the two options: the keys
+were **renamed rather than re-meaninged**, because a client that went on reading
+`perCorrect` as points and found a `20` there would print "20 points a question" on
+a round whose absolute ceiling is 18 — a wrong number on every round for ever,
+against a decode error on the first round.
+
+`throughMoves` is **inclusive** (`<=`), exactly as `throughSeconds` was. The last
+band has `throughMoves: null` and pays nothing extra; read the array, do not index
+a fixed length.
+
+**23f. The welcome round still pays fifty, and now says so.** The first finished
+round of an account pays a flat **10 per correct answer** and bypasses the formula
+completely — the onboarding screen promises fifty points and the master formula
+cannot produce fifty from one round of anything. On that round:
+
+- `welcomeRound` is `true`. Branch on this, not on `base == 0`.
+- `base` is `0` and all three bonuses are `0` — the formula did not run.
+- `featured` is `false`.
+- `performance` is still the honest 0–100 figure, so a screen can still say "5/5".
+- `score` is `correct × 10`.
+
+It is once **ever**, decided from the server's own secret *and* from this being the
+account's first finished round, so a client cannot ask for the rate. The second
+round of `flags` is an ordinary formula round — and it does **not** carry the +25
+discovery bonus, because the welcome round was that game's first play.
+
+**23g. `GET /v1/games/state` gained `featuredGame` — the card to draw, and the
+server is the only thing that can name it.**
+
+```diff
+  {
+    "energy": { "energy": 3, "max": 4, "nextAt": "…" },
+    "streak": 7, "longestStreak": 12, "freezes": 2,
+    "answered": 140, "correct": 96,
+    "points": 1246,
+    "dailyWord": { … },
++   "featuredGame": "capitals"
+  }
+```
+
+One `gameType`, or `null` if the rotation genuinely posts nothing. **Draw the hero
+card off this and delete any local derivation.** Two reasons, and the second is the
+one that cannot be worked around client-side:
+
+- The bonus is paid by the server, so the only answer that is *true* is the
+  server's. A client rotation and a server rotation that agree today agree by
+  coincidence.
+- **The local quiz is one slot holding two banks.** `poland` and `uzbekistan` share
+  a rotation slot, and picking between them needs the account's `country_code`.
+  `featuredGame` is already resolved — an Uzbek account is sent `uzbekistan` and
+  never `poland` — so there is nothing left to decide.
+
+It does **not** say whether the bonus is still available today; the poster is the
+same all day. `done` on the `daily_game` task is what answers that, and `featured`
+on the finish is what confirms a round claimed it.
+
+**23h. The featured game: the flat +20 is gone, replaced by ×1.5 inside the round.**
+There used to be a second ledger entry of `+20` for finishing the day's featured
+card, on top of whatever the round scored. It is deleted. The featured game is now
+a ×1.5 on step 3 of the formula, once per day, on the first paid round of an
+eligible game.
+
+Three consequences:
+
+- **One ledger entry per round again.** A wallet screen that expected a paired
+  `daily_game` line beside the `game_win` will not see one. Nothing pays
+  `source_kind: "daily_game"` any more.
+- **It is worth what the round is worth**, from 3 points for an empty round to 27
+  for a perfect one, where the flat +20 paid the same either way. Read `featured`
+  on the response to draw it.
+- **The `daily_game` task became a ceiling.** On `GET /v1/games/tasks` that row now
+  carries `exact: false` and the most a featured round could pay — 37 on free, 44
+  on Pro, 57 on Premium — so render it "up to N", exactly as `play_round` already
+  is. It quoted an exact `20` before. `done` still means the featured bonus has
+  been taken today.
+
+**23i. Practice rounds consume nothing, and "nothing" grew.** A practice round
+(`paid: false`) already banked no points, no streak and no energy. It now also:
+does **not** spend the +25 first-play bonus, does **not** set a personal best, does
+**not** take the featured ×1.5, and does **not** advance the decay curve. Its
+response carries `performance`, `base`, `decay` and `multiplier` honestly — so a
+practice card can say "this would have been worth 14" — and all three bonuses as
+`0`, because none was awarded.
+
+**23j. What this does to a day.** A free player's tank is four rounds, and four
+perfect rounds are now **18 + 12 + 8 + 5 = 43 points** before bonuses, where the
+old tables paid a flat 8 a round for a quiz whatever the order. With the
+perfect-round bonus that is 83, and a first day that discovers four new games adds
+another 100. The shape to build for is: **the first round of the day is the one
+worth drawing attention to, and the fifth is a token.** A "keep playing" prompt
+after the fourth round is now working against the economy rather than with it; a
+"come back tomorrow" one is working with it.
+
+**23k. Fixtures that are now wrong.** Any assertion of a quiz round at 6–8 points,
+a Memory Match board at 3–8, a flight gap at half a point, a Word Builder word at
+its tier, a five-word Word Builder round, an exact `20` on the `daily_game` task,
+or a `daily_game` ledger entry. Also any test that asserted two rounds of the same
+game pay the same — they no longer do, and that is the point.
+
 ### What did **not** change
 
 The gate's *sequence* — `/gate/scan`, `/amount`, `/confirm`, the polling and the
@@ -1346,17 +1700,40 @@ after either of them.
       `/v1/me` and `/v1/gate/…/confirm` from a freshly booted server. Those six
       are the ones whose keys moved.
 - [ ] Any model with a required `expiringSoon`, `pointsCapped`, `phoneVerified`,
-      `decay`, `mistakesAllowed` or `headline` field: make it gone, not optional.
-      A field that is never sent is not a nullable field, it is a field that does
-      not exist.
-- [ ] Every hardcoded scoring figure in the app or its fixtures: all four tables
-      moved (§3). The ones most likely to be sitting in a test are `+5` for a
-      clean quiz sweep, the 40/70/110-second memory bands, and 1 point a gap.
+      `mistakesAllowed` or `headline` field: make it gone, not optional. A field
+      that is never sent is not a nullable field, it is a field that does not
+      exist. **`decay` is the exception and has come back** (§23), with a new
+      meaning — rounds of the day rather than repeats of one game — alongside
+      `performance`, `base`, `roundToday`, `featured`, `multiplier`, the three
+      `bonus*` fields and `welcomeRound`.
+- [ ] Any required `perCorrect`, `perfectBonus` or `speedBands` on a quiz round's
+      `content`: all three are **gone**, renamed to `performancePerCorrect`,
+      `speedCredit` and `speedWithinSeconds` (§23e). They throw on decode.
+- [ ] Every hardcoded scoring figure in the app or its fixtures: **all four tables
+      moved again** (§23), and the figures are now *performance* rather than
+      points. The ones most likely to be sitting in a test are the 8-point quiz
+      ceiling, the 18/23-second memory bands, half a point a gap, and a word's
+      tier. Also any five-word Word Builder round: it is three words now.
+- [ ] Any Memory Match assertion about elapsed-time bands, or about the board
+      having no losing state: it is scored on **moves** now and a board unfinished
+      at 90 seconds comes back `won: false`.
+- [ ] Any client-side derivation of today's featured game — off a day number, off
+      the daily word, off anything. `featuredGame` on `GET /v1/games/state` is the
+      only correct answer, and it is the only one that can resolve the
+      `poland`/`uzbekistan` slot for the account (§23g).
+- [ ] Any hard-coded `1.5` for the featured bonus, or any flight label that reads
+      `content.target` as the perfect-round figure. Use `featuredMultiplier` off the
+      finish and `content.perfectObstacles` off the round.
 - [ ] Any assertion that a quiz round ends, or is `won: false`, after two wrong
       answers. There is no mistake limit; `won` means all five correct.
-- [ ] Any comparison of a locally-totalled score against `score`. Halves are real
-      now, and the server floors once at the end — an app that floors per item is
-      a point low on Pro and Premium and exactly right on free.
+- [ ] Any comparison of a locally-totalled score against `score`. There are no
+      halves any more and the one rounding step is a **round** at the very end, so
+      an app that floors is a point low on the featured and paid-tier cases. The
+      response carries every term (§23b) — check against those or not at all.
+- [ ] Any fixture with a `daily_game` ledger entry or an exact `20` on the
+      `daily_game` task. The flat featured bonus is deleted; it is a ×1.5 inside
+      the round, the task is `exact: false` now, and nothing writes
+      `source_kind: "daily_game"`.
 - [ ] Grep the app for `no_lives`, `livesLeft`, `daily_lives`,
       `life_regen_minutes`, `round_decay` and `resetsAt`. Every hit is a bug, and
       the first of them is the one that fails silently.
@@ -1369,7 +1746,10 @@ after either of them.
       was sent — it comes back canonicalised (§6).
 - [ ] `test/live_test.dart`: the journey now needs `POST /v1/me/onboarded` before
       it can assert a non-zero starting balance, and its game assertions need the
-      new raw scores with no decay factor applied to them.
+      new performance-based figures **with** the decay curve applied — a journey
+      that plays four rounds in a row is playing rounds 1 to 4 of a day and the
+      fourth is worth 30% of the first. Assert `performance` where the point is
+      how the round went, and `score` only where the point is the arithmetic.
 - [ ] Any assertion that energy is unchanged after a **won** round: it is one
       lower. A journey that finishes four rounds on a fresh free account now
       ends on an empty tank — inside one test run nothing regenerates, two

@@ -391,26 +391,33 @@ rather more than five accounts; the limiter is then checked deliberately in
 `rateLimits` rather than tuned to accommodate a caller it was not written about.
 
 **And the flight's score is bounded by the server's clock.** It is the one game
-with no answer key — `flightMaxPoints` bounds what a run can be *worth* and says
-nothing about whether it happened, so a thousand gaps claimed a second after the
-session opened banked the ceiling and read in the ledger like a very good
-player. Columns arrive on a timer in the client, so the honest gap count is
+with no answer key — the 0–100 performance scale bounds what a run can be *worth*
+and says nothing about whether it happened, so a thousand gaps claimed a second
+after the session opened reached a perfect round and read in the ledger like a very
+good player. Columns arrive on a timer in the client, so the honest gap count is
 bounded by the round's own duration, measured from `started_at` to now — two
 stamps this server wrote. `CONFIG.games.flightSecondsPerGap` is that timer and
 `flightGapAllowance` is deliberately generous slack: the bound exists to refuse
 the impossible, not to referee the plausible.
 
-## The economy: energy is the single limiter on a day
+## The economy: energy bounds how many rounds a day holds
 
 The numbers live in `CONFIG.points`, `CONFIG.earn` and `CONFIG.games`
 (`config.ts`), and the per-tier figures in the `PLANS` seed in
 `domain/settings.ts`. Each carries the constraint that set it. The shape is what
 is worth having here, and it is one sentence:
 
-> **Every finished round costs one energy, win or lose, and nothing else bounds
-> a day.** Energy refills one per `energy_regen_minutes` up to `daily_energy`, so
-> a day is `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank:
-> **free 12 sustained and 16 in a burst, Pro 24/30, Premium 48/58.**
+> **Every finished round costs one energy, win or lose, and nothing else decides
+> how many rounds a day holds.** Energy refills one per `energy_regen_minutes` up
+> to `daily_energy`, so a day is `daily_energy + 1440 / energy_regen_minutes`
+> rounds from a full tank: **free 12 sustained and 16 in a burst, Pro 24/30,
+> Premium 48/58.**
+>
+> What those rounds are *worth* is the other limit and it is the decay curve —
+> `CONFIG.games.decayByRound`, 1 / 0.65 / 0.45 / 0.3 / 0.2 / 0.12 over the paid
+> rounds of a day. Two limits rather than two copies of one: **how many, and how
+> much.** A free tank of four perfect rounds is 18 + 12 + 8 + 5 = 43 points before
+> the flat bonuses, where the flat tables paid 8 a round whatever the order.
 
 Both halves of that are recent and both replaced something. Charging a *win* is
 what makes the pool a limiter rather than a decoration — losses only was a tax on
@@ -479,38 +486,94 @@ the tuple against the live constraint on every boot for the same reason
 
 ### What a round pays
 
-Seven games, eight `gameType` values, four scorers, and one rounding step. The
-tables are in `CONFIG.games`; the shape is:
+**One scale and one formula.** Seven games, eight `gameType` values, four scorers —
+and every scorer answers the same question, which is what this round's
+**performance** was as an integer from 0 to 100. Nothing in `domain/games.ts`
+except `roundPoints` knows what a point is. This is the points rulebook's §4.1,
+and the reason for it is that seven games used to carry seven private payout tables
+whose only thing holding them level was somebody having last checked: `poland`
+maxed at 5 for the same five questions `brain` paid 25 for.
 
-| Game | Raw |
+```
+base  = max(2, round(performance / 100 × 18))       → 2..18
+      × 1.5 if this is the day's featured game      (once per day)
+      × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
+      × points_multiplier   1 / 1.25 / 1.75
+      + perfect 10 + first-ever play 25 + personal best 8
+score = max(1, round(that))
+```
+
+Each game's own map onto the scale (rulebook §5), the tables in `CONFIG.games`:
+
+| Game | Performance |
 | --- | --- |
-| `brain`, `flags`, `capitals`, `poland`, `uzbekistan` | 1 per correct answer, **+1** for all five, **+2/+1/0** for a clean sweep in ≤10s / ≤15s / slower. Ceiling 8 |
-| `word_builder` | **the word's own tier** (1/2/3), **halved** if it was hinted, **+1** for solving all five first-try and hint-free |
-| `memory_match` | elapsed time alone: ≤18s → 8, ≤23s → 6, slower → 3 |
-| `flight` | **half a point** per gap cleared, capped at 20. Five gaps decide `won`, not what it pays |
+| `brain`, `flags`, `capitals`, `poland`, `uzbekistan` | **20 a correct answer** → 100 at 5/5, **+5** when all five were answered within 25s, capped into the 100 |
+| `word_builder` | **3 words** at **33** each (a clean sweep is promoted to 100), **+4** per word solved under 30s, **−10 a hint**, clamped 0–100 |
+| `memory_match` | **60** for clearing the board plus an efficiency bonus by **moves**: ≤10 +40, 11–14 +25, 15–18 +12, 19+ +0. A **90-second limit**, past which an incomplete board is `pairs / 6 × 50` |
+| `flight` | `min(100, obstacles × 4)` — 25 obstacles is a perfect round. Five gaps still decide `won`, not what it pays |
 
-Then `score = floor(raw × points_multiplier)` and that is the whole of it.
+Five things about this are load-bearing:
 
-Three things about that are load-bearing:
-
-- **The clock is the server's**, for both the quizzes' speed bonus and Memory
-  Match, read as the span from the first `game_events` row to the last. A client
-  has no clock this server is willing to read, and a reported duration is one a
-  modified client invents.
+- **The flat bonuses are added after the multiplier and are not multiplied by
+  it.** That is the rulebook's order and it is the only one a result card can
+  name: a "+25 for a new game" that quietly pays 44 on Premium is a line nobody
+  can check. `ledger.earn` is therefore handed the finished integer with
+  `multiplierApplied: true`, so it records the plan factor for the audit trail
+  (the GDPR export reads it) without applying it a second time.
+- **There is one rounding step, it is the last one, and it is a `round` rather
+  than a `floor`.** It used to be a floor inside `ledger.earn`, because two
+  scorers returned halves that had to survive to the multiplier; both tables are
+  gone and performance is an integer, so there are no halves left to protect. What
+  replaced the argument is a **published** table (rulebook §4.2) computed with
+  round-half-up: 70% featured is 13 × 1.5 = 19.5 and the table promises 20.
+  `verify.ts` reproduces all twenty-seven of its cells.
+- **The arithmetic is done in integers scaled by a million.** Three of the six
+  decay rungs are not exactly representable as doubles and the last step is a
+  round, so a product landing on a .5 boundary would otherwise be decided by
+  representation dust — and the published table has cells on exactly those
+  boundaries.
+- **Every clock and every count is the server's.** The quizzes' and Word
+  Builder's speed credits read `game_events.created_at`; Memory Match's move count
+  is the `pair` rows and its 90-second deadline is measured from the round's first
+  recorded event. A client has no clock and no counter this server is willing to
+  read.
 - **A band boundary is inclusive, and the field is named for the comparison.**
-  `throughSeconds` is compared with `<=`, so a round finishing on the stroke of
-  ten seconds gets the ten-second band. "Under 10" and "up to 10" are different
-  rules and a field called `under` compared with `<=` is a lie about one of them.
-- **The round is floored once, at the end, after the multiplier.** Two scorers
-  return halves — a hinted word and a flight gap — and `domain/games.ts` carries
-  the exact sum through to `ledger.earn`, which is where it becomes points.
-  Flooring per item throws those halves away one at a time, and the loss only
-  becomes visible on a paid tier: seven gaps is 3.5, which banks 4 on Pro and
-  would bank 3 if the scorer had rounded first. `verify.ts` checks exactly that.
+  `throughMoves` and `speedWithinSeconds` are compared with `<=`. "Under 10" and
+  "up to 10" are different rules and a field called `under` compared with `<=` is
+  a lie about one of them.
 
-The quiz speed bonus is paid **only on a clean sweep**, which is what stops the
-fastest way through a quiz being to answer five questions wrong without reading
-them.
+Two of those maps changed the character of their game and the reasons are worth
+keeping. **Memory Match moved from the clock to moves**, reversing a deliberate
+decision: moves are the one thing a player can optimise away entirely with a
+notepad and a stopwatch cannot be, which is true and is the wrong trade for the
+one game in the set with no fail state — the accessible one, the one somebody
+plays because the quizzes are in a language they are still learning. The clock's
+own hole was cheaper than the notepad anyway: two `pair` events a millisecond
+apart took the top band. The notepad is now worth 100 against 85, which is 18
+points against 15, once, on the one round of the day that pays full. **And a
+`peek` is not a move** — it turns one card and is how the shipped client shows the
+first card of a move, so counting it would charge two moves for one.
+
+**Word Builder's tier stopped pricing the word.** `word_bank.tier` is still the
+only human-set difficulty rating in the product and still decides which words are
+dealt; a scale where a hard word pays more is a scale where the round is worth
+whatever it happened to deal, and "a round is a round" is the rule the common
+scale exists to enforce. A hint is a flat 10 off the round rather than half of
+whatever that word was worth, for the same reason: the same tenth wherever it is
+spent is a decision, where a share of a tier was a lottery.
+
+**The formula needs exactly one thing stored**, `player_game_bests`, and it is
+worth saying what it is not. "Has this player ever finished a paid round of this
+game" is already written in `game_sessions`, so the +25 is derived and honours the
+history of accounts that predate it. Performance is *not* written anywhere — a
+session's `score` is what was banked, which carries the decay, the featured
+multiplier and the plan, and is therefore a different number for two identical
+rounds — so the best performance per game cannot be recovered and needs the table.
+
+**The welcome round bypasses all of it.** §7.3's flat `welcomeRoundPerCorrect`
+(10 × 5 = 50) is what the onboarding screen promises, and the formula's ceiling is
+18 before bonuses. The finish reports it as `welcomeRound: true` with a `base` of
+0, so nothing has to infer it.
 
 ### The six rules this economy used to have and does not
 
@@ -524,16 +587,18 @@ listed rather than simply absent:
   ordering, never its reason.
 - **There is no daily points cap.** `Finish.capped` is kept so a client does not
   break on a missing key, and is always 0.
-- **There is no per-game decay curve.** A round pays `floor(raw ×
-  points_multiplier)` and nothing else, whether it is the first of the day or the
-  tenth. `CONFIG.games.decay`, `decayFor` and the `decay` field on the finish
-  response are gone, and `round_decay` is in `RETIRED_ENTITLEMENTS` so a row
-  seeded by an older build is deleted on boot rather than left as a live tier
-  figure no file mentions. It was written when play was unlimited and it was the
-  only brake there was; once energy became one it stopped reaching, because per
-  *game* its free zero rung was the fifth round of one game and a player rotating
-  the seven never got near it. Two overlapping limiters where only one binds is
-  one more than a player can be told about.
+- **There is no *per-game* decay curve** — and there is a per-*day* one, which is
+  a different rule and is worth keeping the distinction. The old one paid a repeat
+  of the **same game** 100/60/40/20/0 percent on free, and a player rotating the
+  seven never met it: per game, its free zero rung was the fifth round of one game.
+  `round_decay` stays in `RETIRED_ENTITLEMENTS`, because it was a per-tier
+  entitlement and the curve is not one — it is `CONFIG.games.decayByRound`, the
+  same six rungs for everybody, counted over **paid rounds of the day across all
+  games** so there is nothing to rotate away from. `decayFor` and the `decay`
+  field on the finish response are back with that meaning. Energy and the curve are
+  not two overlapping limiters: one bounds how many rounds a day holds and the
+  other what they are worth, which is two facts a result card can state
+  separately.
 - **There is no spend bonus.** A bigger bill does not earn more. The venue
   minimum still decides whether a scan counts as a *visit*, which is upstream in
   `gate.confirm`.

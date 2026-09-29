@@ -427,6 +427,23 @@ export const consumerRoutes: Route[] = [
         correct: state.correct,
         points: await ledger.balance(ctx.db, user.id),
         dailyWord: await games.dailyWord(ctx.db, ctx.language, ctx.at),
+        /*
+         * **Today's featured game, as one `gameType`, resolved for this account.**
+         *
+         * The client had been deciding this itself and in two places by two
+         * different rules — one off the day number modulo the number of cards, one
+         * off the daily word — so two screens could name different games on the
+         * same day and neither matched the game the ×1.5 was actually paid on.
+         * That is a question with one answer and it belongs to whoever pays the
+         * bonus, which is this server.
+         *
+         * The local quiz is the reason it cannot be computed from a rotation alone:
+         * `DAILY_GAME_POOL` holds `['poland', 'uzbekistan']` as **one** slot, and a
+         * client cannot pick between them without knowing the account's country.
+         * `featuredGameFor` resolves it, so an Uzbek account is never told to play
+         * the Poland quiz.
+         */
+        featuredGame: await games.featuredGameFor(ctx.db, user.id, ctx.at),
       };
     },
   },

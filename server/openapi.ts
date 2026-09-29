@@ -249,15 +249,16 @@ const SCHEMAS: Record<string, Schema> = {
           '`team_seats`, `vouchers`, `deep_analytics`, `benchmarks`, `assistant`, ' +
           '`identified_profiles`, `export_csv`.\n\n' +
           'Four keys are **gone**, not renamed in place: `points_expiry_months` (points ' +
-          'never expire on any plan), `round_decay` (the per-game repeat curve is deleted) ' +
-          'and the pair `daily_lives` / `life_regen_minutes`, which became the two energy ' +
-          'keys above. The server deletes retired rows on boot, so a client that still ' +
-          'reads one gets a missing key rather than a stale number. **The energy pair is ' +
-          'the only thing that bounds a day**: every finished round costs one, so a full ' +
-          'tank plus a day of refill is 16 rounds free, 30 on Pro, 58 on Premium. Those ' +
-          'three figures have just moved — the intervals were cut from 240/180/120 while ' +
-          'the ceilings stayed at 4/6/10, so what a plan buys is now almost entirely the ' +
-          'clock.',
+          'never expire on any plan), `round_decay` (the old *per-game* repeat curve; the ' +
+          'decay curve that exists now is per round of the day, is not an entitlement, and ' +
+          'is reported on the finish as `decay`) and the pair `daily_lives` / ' +
+          '`life_regen_minutes`, which became the two energy keys above. The server deletes ' +
+          'retired rows on boot, so a client that still reads one gets a missing key rather ' +
+          'than a stale number. **The energy pair is what bounds how many rounds a day ' +
+          'holds**: every finished round costs one, so a full tank plus a day of refill is ' +
+          '16 rounds free, 30 on Pro, 58 on Premium — while the decay curve is what bounds ' +
+          'what those rounds are worth. Two limits rather than two copies of one: how ' +
+          'many, and how much.',
       },
       venues: arrayOf({ type: 'object' }),
     },
@@ -514,17 +515,30 @@ const SCHEMAS: Record<string, Schema> = {
       content: {
         type: 'object',
         description:
-          'Shape depends on the game. Quizzes: `{questions:[{index,prompt,options}], ' +
-          'perCorrect, perfectBonus, speedBands}` — for `flags`, `prompt` is an ISO ' +
-          'country code and the flag emoji is built from it. Word Builder: ' +
-          '`{words:[{index,length,tier,letters,hint}]}`. Memory Match: `{cards,pairs}` — ' +
-          'the layout stays on the server. Flight: `{target}`.\n\n' +
-          '`mistakesAllowed` is **gone** from the quiz shape: there is no mistake limit ' +
-          'and a quiz cannot be lost, so all five questions are asked however the first ' +
-          'four went. `speedBands` is `[{throughSeconds, points}]` — inclusive ' +
-          'boundaries, compared with `<=`, and paid only on a clean sweep. It is on the ' +
-          'wire so a round timer draws against the server’s own numbers rather than a ' +
-          'hardcoded copy of them.',
+          'Shape depends on the game, and every game now carries **the scale it will be ' +
+          'judged on** so a client never hardcodes a copy of a table this server owns. ' +
+          'Those numbers are `performance` (0–100), not points: what a round *pays* ' +
+          'depends on the featured game, the round of the day, the plan and three ' +
+          'bonuses, none of which is a property of the questions.\n\n' +
+          'Quizzes: `{questions:[{index,prompt,options}], performancePerCorrect, ' +
+          'speedCredit, speedWithinSeconds}` — for `flags`, `prompt` is an ISO country ' +
+          'code and the flag emoji is built from it. Word Builder: ' +
+          '`{words:[{index,length,tier,letters,hint}], performancePerWord, speedCredit, ' +
+          'speedWithinSeconds, hintPenalty}` — **three** words a round, and `tier` is the ' +
+          'bank’s difficulty rating and no longer prices the word. Memory Match: ' +
+          '`{cards, pairs, basePerformance, moveBands, limitSeconds}` — the layout stays ' +
+          'on the server, `moveBands` is `[{throughMoves, bonus}]` with inclusive ' +
+          'boundaries, and `limitSeconds` is the one number here a client has to act on ' +
+          'rather than display. Flight: `{target, performancePerObstacle, ' +
+          'perfectObstacles}` \u2014 **two different numbers**: `target` is 5, the gaps that ' +
+          'decide `won`, and `perfectObstacles` is 25, what a perfect round takes. A label ' +
+          'reading one as the other prints a wrong figure with nothing to catch it.\n\n' +
+          'Two quiz keys were **renamed rather than re-meaninged**: `perCorrect: 1` and ' +
+          '`perfectBonus` became `performancePerCorrect: 20`, and `speedBands` became the ' +
+          '`speedCredit` / `speedWithinSeconds` pair. A client that kept reading ' +
+          '`perCorrect` as points and found a 20 there would print “20 points a question” ' +
+          'on a round whose absolute ceiling is 18. `mistakesAllowed` is still gone: there ' +
+          'is no mistake limit and a quiz cannot be lost.',
       },
       energyLeft: int(
         'Energy in the tank *before* this round is paid for — starting costs nothing, ' +
@@ -728,6 +742,22 @@ const SCHEMAS: Record<string, Schema> = {
       correct: int(),
       points: int('The balance, from the ledger.'),
       dailyWord: { type: 'object', nullable: true, description: 'Today’s shared word, for Word Builder.' },
+      featuredGame: {
+        type: 'string',
+        nullable: true,
+        description:
+          '**Today\u2019s featured game as one `gameType`**, which is the card to draw as the ' +
+          'hero on a Play or Home screen. The \u00d71.5 is paid on the first paid round of ' +
+          'it \u2014 see `featured` on the finish.\n\n' +
+          'Resolved **per account**: the rotation holds `poland` and `uzbekistan` as one ' +
+          'slot, so this is the single bank that account is dealt (by `country_code`, ' +
+          'defaulting to `poland`), and an Uzbek account is never sent the Poland quiz. Do ' +
+          'not compute this client-side from a day number \u2014 that cannot resolve the ' +
+          'local slot, and two screens deriving it independently will disagree with each ' +
+          'other and with the game the bonus is actually paid on.\n\n' +
+          '`null` only if the rotation genuinely posts nothing. It does not say whether the ' +
+          'bonus is still available today \u2014 the `daily_game` task\u2019s `done` does.',
+      },
     },
   },
 
@@ -735,14 +765,88 @@ const SCHEMAS: Record<string, Schema> = {
     type: 'object',
     properties: {
       score: int(
-        '`floor(raw × points_multiplier)`, and that is the whole of it. Computed ' +
-          'server-side from the recorded events; never sent by the client.',
+        'The points banked, and the whole of what the balance moved by. Computed ' +
+          'server-side from the recorded events; never sent by the client.\n\n' +
+          'It is the points rulebook\u2019s master formula (\u00a74.1): ' +
+          '`max(1, round(base \u00d7 featured \u00d7 decay \u00d7 points_multiplier + ' +
+          'bonuses))`, where `base` is `max(2, round(performance / 100 \u00d7 18))`. Every ' +
+          'term is itemised on this response \u2014 see `performance` below \u2014 so a ' +
+          'result screen can show the sum rather than only the answer.',
       ),
       capped: int(
-        '**Always 0, and it always has been.** Nothing trims a round: there is no daily ' +
-          'points ceiling and no per-game decay curve — a round pays the same whether it ' +
-          'is the first of the day or the ninth. The key is kept only so an existing ' +
-          'client does not break on a missing field.',
+        '**Always 0, and it always has been.** Nothing *trims* a round: there is no daily ' +
+          'points ceiling. There is a decay curve again, and it is deliberately not ' +
+          'reported here \u2014 `capped` meant points removed from a round already scored, ' +
+          'and decay is part of scoring it. Read `decay` and `roundToday` instead. The key ' +
+          'is kept only so an existing client does not break on a missing field.',
+      ),
+      performance: int(
+        'The round\u2019s **performance**, 0\u2013100 \u2014 the one scale every game is ' +
+          'reduced to (rulebook \u00a75). 20 a correct answer on a quiz; 33 a word plus ' +
+          'speed credits and minus hints in Word Builder; 60 for clearing a Memory Match ' +
+          'board plus an efficiency bonus by moves; 4 an obstacle in the flight. 100 is a ' +
+          'perfect round in every game, which is what makes them comparable.',
+      ),
+      base: int(
+        '`max(2, round(performance / 100 \u00d7 18))` \u2014 2..18, the multiplicative base ' +
+          'before the featured multiplier, the decay, the plan and the flat bonuses. ' +
+          '**A finished round never pays zero**: 2 is the floor, so trying always beats not ' +
+          'trying. 0 on a welcome round, which bypasses the formula \u2014 see `welcomeRound`.',
+      ),
+      decay: {
+        type: 'number',
+        description:
+          'The decay rung this round landed on: `1`, `0.65`, `0.45`, `0.3`, `0.2` or `0.12` ' +
+          'for the 1st through 6th-or-later **paid** round of the day. This is the main ' +
+          'anti-grind lever and the honest answer to \u201cwhy was that worth 4 when the ' +
+          'same round was worth 18 this morning\u201d \u2014 draw it rather than leaving a ' +
+          'player to guess.',
+      },
+      roundToday: int(
+        'Which paid round of the day this was, 1-based \u2014 what `decay` is read from. ' +
+          'Practice rounds and abandoned rounds do not count, so this is the number of ' +
+          'rounds that actually banked today.',
+      ),
+      featured: bool(
+        'Whether the \u00d71.5 featured-game multiplier applied. **Once per day**, on the ' +
+          'first paid round of the day\u2019s rotating game. This replaced a flat +20 that ' +
+          'used to arrive as a separate ledger entry \u2014 there is one entry per round now. ' +
+          '`featuredGame` on `GET /v1/games/state` names which game that is.',
+      ),
+      featuredMultiplier: {
+        type: 'number',
+        description:
+          'The factor `featured` actually applied: `1.5` when it did, `1` when it did not. ' +
+          'Sent beside the boolean so a breakdown row can print \u201c\u00d71.5\u201d ' +
+          'without holding its own constant \u2014 `FEATURED_GAME_BONUS` is a tunable ' +
+          '(rulebook \u00a711), and a label that stops matching the sum beside it is worse ' +
+          'than one that says only \u201cincluded\u201d. `1` rather than null when it did ' +
+          'not apply, so the chain `base \u00d7 featuredMultiplier \u00d7 decay \u00d7 ' +
+          'multiplier` needs no branch.',
+      },
+      multiplier: {
+        type: 'number',
+        description:
+          'The plan\u2019s `points_multiplier` as it stood when the round was played: `1`, ' +
+          '`1.25` or `1.75`. Applied to the base only \u2014 the three flat bonuses below are ' +
+          'added after it and are **not** multiplied by it.',
+      },
+      bonusPerfect: int(
+        '`10` when `performance` is exactly 100, else `0`. Flat: the same 10 on every plan.',
+      ),
+      bonusNewGame: int(
+        '`25` the first time this player has ever finished a paid round of this game, else ' +
+          '`0`. Once per game, ever \u2014 eight games make 200 points of discovery.',
+      ),
+      bonusPersonalBest: int(
+        '`8` for beating their own best performance in this game, at most once per game per ' +
+          'day, else `0`. The round that *sets* a first record takes `bonusNewGame` instead.',
+      ),
+      welcomeRound: bool(
+        'The one round that does not follow the formula. The first finished round of an ' +
+          'account pays a flat 10 per correct answer \u2014 the fifty points the onboarding ' +
+          'screen promises \u2014 so `base` and all three bonuses are `0` and `featured` is ' +
+          '`false`. `performance` is still the honest figure.',
       ),
       correct: int(),
       answered: int(),
@@ -1411,8 +1515,11 @@ const DOCS: Record<string, Doc> = {
       'buys everything it bought; what it no longer buys is playing at all. Without the ' +
       'flag an empty tank is still the refusal, so a client that has an out-of-energy ' +
       'screen keeps it until it decides to offer practice.\n\n' +
-      'Nothing else refuses or shrinks a round: there is no daily points cap and no ' +
-      'per-game decay curve. Energy is the whole limiter.',
+      'Nothing else **refuses** a round: there is no daily points cap, and energy is the ' +
+      'whole of what bounds how many rounds a day holds. What a round is *worth* is a ' +
+      'separate limit and it does shrink: the decay curve pays the 1st through 6th paid ' +
+      'round of the day 1 / 0.65 / 0.45 / 0.3 / 0.2 / 0.12 of its base. See `decay` and ' +
+      '`roundToday` on the finish.',
     tags: ['games'],
     body: {
       gameType: gameTypeSchema(
@@ -1455,14 +1562,15 @@ const DOCS: Record<string, Doc> = {
       'answer** — no `correct`, no `answer`, and it is neither counted as a pair nor able ' +
       'to enlarge the board at `/finish`. It shares the one `seq` sequence with the pairs, ' +
       'so number the moves of a round, not the kinds. There is no peek allowance and no ' +
-      'peek penalty: the round is priced on elapsed time alone and a peek is an event ' +
-      'inside that span, so peeking can only ever cost. A peek naming a position off the ' +
-      'board — or one already matched — is a `bad_request` and writes nothing.\n\n' +
+      'peek penalty, and **a peek is not a move**: Memory Match is priced on the `pair` ' +
+      'events, so peeking the first card of a move — which is what the shipped client ' +
+      'does — costs nothing. A peek naming a position off the board, or one already ' +
+      'matched, is a `bad_request` and writes nothing.\n\n' +
       'Word Builder hints are metered per day by `word_hints_per_day` (3 free, 6 Pro, 10 ' +
-      'Premium) and are refused rather than quietly stopped revealing. A hint **halves ' +
-      'that word’s points** — it used to forfeit a tier bonus and keep a flat base, which ' +
-      'charged nothing on an easy word and two thirds on a hard one — and it also costs ' +
-      'the round’s clean-sweep bonus.',
+      'Premium) and are refused rather than quietly stopped revealing. A hint costs a flat ' +
+      '**−10 performance** — a tenth of the scale, the same wherever it is spent, where it ' +
+      'used to halve the word’s own points — and it also costs the round the promotion to ' +
+      'a perfect 100.',
     tags: ['games'],
     body: {
       seq: int('0-based, monotonic within the session.'),
@@ -1490,24 +1598,35 @@ const DOCS: Record<string, Doc> = {
       'The score is computed from the events the server recorded — nothing the client ' +
       'totals is trusted. `report` carries `{cleared}` for the flight, which is the one ' +
       'game with no answer key and is clamped instead.\n\n' +
-      'The raw round, before the plan multiplier: a **quiz** pays 1 per correct answer, ' +
-      '+1 for all five, and a round speed bonus of +2/+1/0 for a clean sweep in ≤10 s / ' +
-      '≤15 s / longer — ceiling 8, and no mistake limit, so all five are always asked; ' +
-      '**Word Builder** pays each solved word its own tier (1/2/3), **halved** if that ' +
-      'word was hinted, plus 1 for solving all five first-try and hint-free; **Memory ' +
-      'Match** is scored on *elapsed time alone* — ≤18 s 8, ≤23 s 6, slower 3, timed from ' +
-      'the server’s own event stamps; the **flight** pays half a point per gap and is ' +
-      'capped at 20 points, with 5 gaps deciding whether the round was won.\n\n' +
-      'Two of those tables deal in **halves**, and the round is floored **once**, at the ' +
-      'end, after the multiplier: seven gaps is 3.5, which banks 3 on the free plan and 4 ' +
-      'on Pro. A client that rounds per item and compares totals will be a point low, and ' +
-      'only on a paid tier.\n\n' +
-      'The two timed bands are read as the span from the first recorded event to the ' +
-      'last, and their boundaries are **inclusive** — the wire field is `throughSeconds` ' +
-      'and it is compared with `<=`. There is no duration for a client to report.\n\n' +
-      'Then `score = floor(raw × points_multiplier)`, and that is all — no decay factor, ' +
-      'no daily ceiling, and `capped` is always 0. A round pays the same whether it is ' +
-      'the first of the day or the ninth.\n\n' +
+      '**Every game is normalised onto one 0–100 `performance` scale** (points rulebook ' +
+      '§5), and the points come from that and four facts about the player:\n\n' +
+      '```\n' +
+      'base  = max(2, round(performance / 100 × 18))     // 2..18\n' +
+      '      × 1.5 if this is the day’s featured game    // once per day\n' +
+      '      × decay(roundToday)  1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12\n' +
+      '      × points_multiplier  1 / 1.25 / 1.75\n' +
+      '      + perfect 10 + first-ever play 25 + personal best 8\n' +
+      'score = max(1, round(that))\n' +
+      '```\n\n' +
+      'The flat bonuses are added **after** the multiplier and are not multiplied by it. ' +
+      'Every term is on the response, so the result screen can itemise the round instead ' +
+      'of printing one number: `performance`, `base`, `decay`, `roundToday`, `featured`, ' +
+      '`multiplier`, `bonusPerfect`, `bonusNewGame`, `bonusPersonalBest`.\n\n' +
+      'How each game reaches its performance: a **quiz** is 20 per correct answer — five ' +
+      'of five is 100 — plus a +5 credit, capped into the 100, when all five were answered ' +
+      'within 25 s, and there is no mistake limit so all five are always asked; **Word ' +
+      'Builder** is 3 words at 33 each (a clean sweep is promoted to 100), +4 per word ' +
+      'solved under 30 s, **−10 per hint**; **Memory Match** is 60 for clearing the board ' +
+      'plus an efficiency bonus by **moves used** — ≤10 +40, 11–14 +25, 15–18 +12, 19+ +0 ' +
+      '— with a 90-second limit, past which an incomplete board is `pairs / 6 × 50`; the ' +
+      '**flight** is `min(100, obstacles × 4)`, so 25 obstacles is a perfect round, and 5 ' +
+      'gaps still decides whether the round was *won*.\n\n' +
+      'Every clock here is the **server’s own event stamps** — there is no duration for a ' +
+      'client to report, and a move count is read from the recorded `pair` events rather ' +
+      'than from anything the client totals. Band boundaries are **inclusive**.\n\n' +
+      'There is one rounding step and it is the last one, and it is a **round** rather ' +
+      'than a floor because the published payout table is computed that way: 70% featured ' +
+      'is 13 × 1.5 = 19.5 and pays 20.\n\n' +
       '**This is where the energy is spent**, one per finished round, win or lose. ' +
       '`energyLeft` on the response is therefore one lower than the `energyLeft` the ' +
       'start returned.',

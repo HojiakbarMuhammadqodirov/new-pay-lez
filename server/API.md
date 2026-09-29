@@ -295,11 +295,11 @@ connection never costs the player a question.
 
 | `gameType` | `content` | Event `payload` |
 | --- | --- | --- |
-| `flags` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` — `prompt` is an **ISO country code**; build the flag emoji from it | `{index, choice}` |
-| `capitals`, `brain`, `poland`, `uzbekistan` | `questions[{index, prompt, options}]`, plus `perCorrect`, `perfectBonus`, `speedBands` | `{index, choice}` |
-| `word_builder` | `words[{index, length, tier, letters, hint}]` | `{index, guess}`, or `kind:"hint"` with `{index, position}` |
-| `memory_match` | `{cards, pairs}` — the layout stays on the server | `kind:"peek"` with `{index}` to turn one card, then `{a, b}` to close the move; the reply carries `revealed[{index, face}]` — one entry for a peek, two for a pair |
-| `flight` | `{target}` | none; send `{report:{cleared}}` to `/finish` |
+| `flags` | `questions[{index, prompt, options}]`, plus `performancePerCorrect`, `speedCredit`, `speedWithinSeconds` — `prompt` is an **ISO country code**; build the flag emoji from it | `{index, choice}` |
+| `capitals`, `brain`, `poland`, `uzbekistan` | `questions[{index, prompt, options}]`, plus `performancePerCorrect`, `speedCredit`, `speedWithinSeconds` | `{index, choice}` |
+| `word_builder` | `words[{index, length, tier, letters, hint}]` — **three** words a round — plus `performancePerWord`, `speedCredit`, `speedWithinSeconds`, `hintPenalty` | `{index, guess}`, or `kind:"hint"` with `{index, position}` |
+| `memory_match` | `{cards, pairs, basePerformance, moveBands, limitSeconds}` — the layout stays on the server | `kind:"peek"` with `{index}` to turn one card, then `{a, b}` to close the move; the reply carries `revealed[{index, face}]` — one entry for a peek, two for a pair |
+| `flight` | `{target, performancePerObstacle, perfectObstacles}` — `target` is 5, the gaps that decide `won`; `perfectObstacles` is 25, what a perfect round takes. **Two different numbers** | none; send `{report:{cleared}}` to `/finish` |
 
 **Eight `gameType` values, seven cards.** `poland` and `uzbekistan` are one
 local-knowledge quiz asked about two different countries: same protocol, same
@@ -413,51 +413,91 @@ it reports `cleared` and the server clamps it.
 
 ### What a round pays
 
-The raw round, before the one factor below:
+**Every game is normalised onto one 0–100 `performance` scale** and the points
+come out of that scale by one formula — the points rulebook's §4.1. The per-game
+figures below are performance, not points.
 
-| Game | Raw score |
+| Game | Performance (0–100) |
 | --- | --- |
-| `brain`, `flags`, `capitals`, `poland`, `uzbekistan` | 1 per correct answer, **+1** for all five, and a **round speed bonus** on top of that — ≤10 s → +2, ≤15 s → +1, slower → 0. Ceiling 8. 5 questions, **no mistake limit** |
-| `word_builder` | **the word's own tier** (1 / 2 / 3), **halved** if that word was hinted, **+1** for solving all five first-try and hint-free |
-| `memory_match` | **Elapsed time alone**: ≤18 s → 8, ≤23 s → 6, slower → 3. Timed from the server's own event stamps. No fail state; a finished deck always pays |
-| `flight` | **half a point** per gap cleared, **capped at 20 points**. 5 gaps decides `won`, not what it pays |
+| `brain`, `flags`, `capitals`, `poland`, `uzbekistan` | **20 per correct answer** → 100 at 5/5, plus **+5** when all five were answered within 25 s, **capped into the 100**. 5 questions, **no mistake limit** |
+| `word_builder` | **3 words** at **33** each (all three solved → **100**, not 99), **+4** per word solved under 30 s, **−10 per hint**. Clamped 0–100 |
+| `memory_match` | **60** for clearing the board, plus by **moves used**: ≤10 → +40 (100), 11–14 → +25 (85), 15–18 → +12 (72), 19+ → +0 (60). **90-second limit**, past which an incomplete board is `pairs / 6 × 50` and `won` is `false` |
+| `flight` | `min(100, obstacles × 4)` — **25 obstacles is a perfect round**. 5 gaps decides `won`, not what it pays |
 
-Then `score = floor(raw × points_multiplier)`, and that is the whole of it.
+Then:
 
-Four things about that table decide whether a client agrees with the server:
+```
+base  = max(2, round(performance / 100 × 18))       → 2..18
+      × 1.5 if this is the day's featured game      (once per day)
+      × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
+      × points_multiplier   1 / 1.25 / 1.75
+      + perfect 10 + first-ever play of that game 25 + personal best 8
+score = max(1, round(that))
+```
+
+The finish response carries **every term** — `performance`, `base`, `decay`,
+`roundToday`, `featured`, `featuredMultiplier`, `multiplier`, `bonusPerfect`,
+`bonusNewGame`, `bonusPersonalBest` and `welcomeRound` — so a result screen
+itemises the round instead of printing one number, and a client can check its own
+arithmetic against the server's rather than reimplementing it.
+`featuredMultiplier` is `1.5` or `1`, sent so a breakdown row can print the factor
+without holding its own copy of a tunable.
+
+Six things about this decide whether a client agrees with the server:
 
 - **A quiz cannot be lost, and `won` means all five correct.** The mistake limit
   is gone and so is `mistakesAllowed` on the round's `content`: all five
   questions are asked however the first four went, and the round banks what it
   earned. `won: false` on a quiz means "not a clean sweep", not "forfeited".
-- **The quiz speed bonus is paid only on a clean sweep**, and it is timed on the
-  **whole round** — the span from the first recorded event to the last, off the
-  server's own stamps. Do not send a duration; there is nothing to send. Paying
-  it on any round would make the fastest strategy answering five questions wrong
-  without reading them. The bands travel on `content.speedBands` so a timer can
-  draw against the server's own numbers rather than a hardcoded copy.
-- **A band boundary is inclusive.** The wire field is `throughSeconds` and it is
-  compared with `<=`: a round finishing on the stroke of 10 seconds gets the
-  10-second band, and a board finished on the stroke of 18 gets 8 points.
-- **Raw scores can hold halves, and the round is floored once, at the end.** A
-  hinted word is worth half its tier and a gap is worth half a point. The server
-  carries the exact sum through the multiplier and floors the result — seven gaps
-  is 3.5, which banks 3 on free and 4 on Pro. Do not round per item on the client
-  and then compare; you will be a point low, and only on paid tiers.
+- **The quiz speed credit is no longer gated on a clean sweep**, and it is timed
+  on the **whole round** — the span from the first recorded event to the last, off
+  the server's own stamps. Do not send a duration; there is nothing to send. The
+  old gate is unnecessary because the credit cannot be farmed: five wrong answers
+  in a second is performance 5, and both 5 and 0 floor to the same 2 points.
+- **Memory Match is scored on moves and a `peek` is not a move.** A move is one
+  `pair` event, counted from the server's own rows. Peeking the first card of a
+  move — which is what a normal client does — costs nothing.
+- **A band boundary is inclusive.** `throughMoves` and `speedWithinSeconds` are
+  compared with `<=`: a board cleared on the stroke of 10 moves gets the top band,
+  and a round answered on the stroke of 25 seconds still earns the credit.
+- **There are no halves and the rounding moved.** Every performance is a whole
+  number, so nothing fractional survives into the formula; there is one rounding
+  step, at the end, and it is a **round** rather than a floor because the
+  published payout table is computed that way (70% featured is 13 × 1.5 = 19.5 and
+  pays 20). Show `score` off the response.
+- **The flat bonuses are not multiplied by the plan.** A +25 is 25 on Premium.
 
-**A round pays the same whether it is your first of the day or your tenth.**
-There is no daily points cap and no per-game decay curve — a curve lived here
-that paid a repeat of the same game 100/60/40/20/0 percent on free, and it is
-gone along with the `decay` field on the finish response and the `round_decay`
-entitlement. Energy is the brake now, and it is the only one: two overlapping
-limiters where only one binds is one more than a player can be told about.
+**A round is worth much less than the one before it, on the same day.** The decay
+curve counts the player's *paid* rounds of the day across all games — the first is
+worth full, the second 65%, the sixth 12% — so there is nothing to rotate away
+from. (The *old* per-game curve, which paid a repeat of one game less, is gone;
+`round_decay` is still a retired entitlement, because this curve is the same for
+every tier.) Energy bounds how many rounds a day holds; the curve bounds what they
+are worth.
+
+**The featured game is a ×1.5 on the round, not a flat bonus.** A separate
+`+20` ledger entry with `source_kind: "daily_game"` used to arrive beside the
+round's own; it is deleted. There is one entry per round, and `featured` on the
+response says whether it applied.
+
+**Which game that is, is `featuredGame` on `GET /v1/games/state`** — one
+`gameType`, already resolved for the account. Do not derive it client-side: the
+rotation holds `poland` and `uzbekistan` as **one slot**, so picking between them
+needs the account's country, and a client rotation that agrees with the server's
+today agrees by coincidence.
 
 `capped` is still on the response and is **always 0** — it always was. It is kept
-so an existing client does not break on a missing key, and there is nothing
-behind it to read instead: nothing trims a round.
+so an existing client does not break on a missing key, and it is **not** where
+decay is reported: `capped` meant points trimmed from a round already scored, and
+decay is part of scoring it. There is still no daily points ceiling.
 
-`points_multiplier` (1 / 1.25 / 1.75) applies to **game rounds only**. What a
-visit pays is four named entitlements of its own — see §8.
+`points_multiplier` (1 / 1.25 / 1.75) applies to **game rounds only**, and to the
+base rather than the bonuses. What a visit pays is four named entitlements of its
+own — see §8.
+
+**The welcome round bypasses all of it**: the first finished round of an account
+pays a flat 10 per correct answer (the fifty the onboarding screen promises), and
+comes back with `welcomeRound: true`, `base: 0` and no bonuses.
 
 The flag emoji, from a code:
 

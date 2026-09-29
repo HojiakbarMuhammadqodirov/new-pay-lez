@@ -967,6 +967,42 @@ CREATE TABLE IF NOT EXISTS player_states (
   updated_at    TEXT NOT NULL
 );
 
+-- §4.3 of the points rulebook: the personal-best bonus, and the only thing the
+-- scoring formula needs stored.
+--
+-- Performance is computed from `game_events` at the end of a round and is never
+-- written to a session row, so "the best this player has reached in this game"
+-- cannot be derived from history the way everything else here is — `score` on
+-- `game_sessions` is the points that were *banked*, which carries the decay, the
+-- featured multiplier and the plan, and is therefore a different number in every
+-- round of an identical performance. That is the whole reason this table exists.
+--
+-- The **other** bonus is deliberately not here. "Has this player ever played
+-- this game before" is already written: it is a finished, paid row in
+-- `game_sessions` with this `game_type`, so `games.finish` asks that question of
+-- the sessions rather than keeping a second record of it. Which also means the
+-- first-play bonus honours the history of accounts that predate this table
+-- instead of paying everybody 200 points again.
+--
+-- `bonus_day` is the local day the +8 was last paid for this game, which is how
+-- §9.2's "once per game per day" is enforced. NULL means never paid — a row is
+-- written on the first paid round of a game whether or not a bonus was due,
+-- because the point of the row is the record and not the payment.
+--
+-- No CHECK on `game_type`, following `game_recent_items` beside it: a CHECK on a
+-- game list costs a version-guarded table rebuild every time the list grows
+-- (see `widenGameTypes` in `db/db.ts`), and the enum is already enforced where
+-- it matters — on `game_sessions`, which is the row a round cannot exist
+-- without.
+CREATE TABLE IF NOT EXISTS player_game_bests (
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  game_type  TEXT NOT NULL,
+  best       INTEGER NOT NULL DEFAULT 0,   -- best performance, 0-100
+  bonus_day  TEXT,                         -- YYYY-MM-DD, user-local; NULL = never
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, game_type)
+);
+
 -- §7.3 the daily shared word, same for everyone, keyed to the date.
 CREATE TABLE IF NOT EXISTS daily_words (
   day      TEXT PRIMARY KEY,

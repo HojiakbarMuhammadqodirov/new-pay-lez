@@ -1506,13 +1506,36 @@ async function gameRules(): Promise<void> {
   check('a quiz reply names no cards, because a quiz has no board', replay.revealed === undefined);
 
   const finished = await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
-  /* Five right at one apiece, the clean-sweep bonus, and the speed band on top
-     of it — every event above was submitted at the same instant, so the round
-     took nought seconds and takes the fastest band. That is the quiz ceiling,
-     5 + 1 + 2, and `scoringRules` below walks the bands one at a time. */
-  eq('the score is computed server-side', finished.score,
-    5 * CONFIG.games.quizPerCorrect + CONFIG.games.quizPerfectBonus +
-      CONFIG.games.quizSpeedBands[0].points);
+  /*
+   * Five of five is **performance 100** — 20 an answer — which is the top of the
+   * one scale every game is reduced to. The speed credit is invisible here and
+   * is supposed to be: §5.1 caps the total at 100 and a perfect round is already
+   * there. `scoringRules` below walks each game's own mapping.
+   */
+  eq('performance is computed server-side', finished.performance, 100);
+  eq('…which is 20 an answer, five times', finished.performance,
+    CONFIG.games.quizQuestions * CONFIG.games.quizPerformancePerCorrect);
+  eq('…and a perfect round is the top of the base scale', finished.base,
+    CONFIG.games.maxRoundPoints);
+  eq('the first round of the day is not decayed', finished.decay, 1);
+  eq('…and it says so as a round number', finished.roundToday, 1);
+  eq('a perfect round takes the perfect-round bonus', finished.bonusPerfect,
+    CONFIG.games.perfectRoundBonus);
+  /* This account has never played `capitals` before, so §4.3's discovery bonus
+     lands with it — the largest single line in the formula, once per game ever. */
+  eq('…and the first-ever play of this game takes the new-game bonus',
+    finished.bonusNewGame, CONFIG.games.newGameBonus);
+  eq('…but not a personal best, because there was no record to beat',
+    finished.bonusPersonalBest, 0);
+  /* The whole formula, restated from the itemisation the response carries: a
+     client that adds these up must reach the same integer the ledger did. */
+  eq('the score is the formula, and the response can be added up to prove it',
+    finished.score,
+    Math.round(
+      finished.base * (finished.featured ? CONFIG.games.featuredMultiplier : 1) *
+        finished.decay * finished.multiplier +
+        finished.bonusPerfect + finished.bonusNewGame + finished.bonusPersonalBest,
+    ));
   eq('a clean round is a win', finished.won, true);
   eq('the streak starts at one', finished.streak, 1);
   /* **A win costs energy too, now.** The pool used to be charged by a loss
@@ -1521,7 +1544,30 @@ async function gameRules(): Promise<void> {
      tank is what "every finished round costs one" looks like from outside. */
   eq('a win spends energy like any other round', finished.energyLeft,
     CONFIG.points.dailyEnergy - 1);
-  eq('the balance moved by the score', await ledger.balance(w.db, w.customerId), finished.score);
+  /*
+   * **One entry, and the balance is the round.**
+   *
+   * This used to have to add a flat `CONFIG.earn.dailyGame` on the three days in
+   * seven where `capitals` fell inside the featured window, because the featured
+   * bonus was a second ledger entry of its own. §4.1 step 3 replaced it with a
+   * ×1.5 *inside* the round, so there is exactly one entry again and the balance
+   * is exactly what the round scored — on all seven days, with no window to
+   * recompute here.
+   *
+   * The window itself is still checked, one line down: `featured` on the
+   * response must agree with the rotation, which is the fact the old assertion
+   * was really about.
+   */
+  eq(
+    'the balance moved by the round, and by nothing beside it',
+    await ledger.balance(w.db, w.customerId),
+    finished.score,
+  );
+  eq(
+    'and the ×1.5 is claimed exactly when `capitals` is in the featured window',
+    finished.featured,
+    games.featuredGamesFor(at).has('capitals'),
+  );
 
   /*
    * ── a question with too few answers is never asked ──
@@ -1961,12 +2007,214 @@ async function energyRules(): Promise<void> {
  *   separates "floor once" from "floor twice" — they agree on the free plan and
  *   differ by a point on a paid one, which is the shape this bug always takes.
  */
+/**
+ * The master formula, on its own, with no database anywhere near it.
+ *
+ * `roundPoints` is a pure function of a performance and four facts about the
+ * player, so the arithmetic can be checked exhaustively rather than sampled
+ * through rounds somebody has to play — and the thing most worth checking here
+ * is a **published** table. §4.2 of the points rulebook prints nine performance
+ * levels against three columns, it is what a player is shown in the app and on
+ * the website, and a formula that disagrees with it by a point is a promise
+ * broken in the one place a promise is legible.
+ *
+ * All twenty-seven cells are reproduced. Nine of them land on a .5 boundary and
+ * are the reason `roundPoints` does its arithmetic in scaled integers: 70%
+ * featured is 13 × 1.5 = 19.5 and the table says 20, and whether a float chain
+ * produces 19.5 or 19.499999999999996 is not a thing to reason about per cell.
+ */
+function formulaTable(): void {
+  describe('§4.1 / §4.2 the master formula and its published table');
+
+  const at = (performance: number, opts: { featured?: boolean; multiplier?: number } = {}) =>
+    games.roundPoints({
+      performance,
+      roundToday: 1,
+      featured: opts.featured ?? false,
+      multiplier: opts.multiplier ?? 1,
+    }).score;
+
+  /*
+   * §4.2 verbatim: performance → base, as featured, featured on Premium.
+   *
+   * The table shows the **multiplicative** part only. The flat bonuses of §4.3
+   * are added on top of it, which is why every row here is asked for without
+   * them — `flatBonuses` below is where they are checked.
+   */
+  const PUBLISHED: ReadonlyArray<[number, number, number, number]> = [
+    /* performance, base, featured, featured + Premium */
+    [100, 18, 27, 47],
+    [90, 16, 24, 42],
+    [80, 14, 21, 37],
+    [70, 13, 20, 34],
+    [60, 11, 17, 29],
+    [50, 9, 14, 24],
+    [40, 7, 11, 18],
+    [25, 5, 8, 13],
+    [0, 2, 3, 5],
+  ];
+
+  for (const [performance, base, featured, premium] of PUBLISHED) {
+    eq(`${performance}% pays ${base}`, at(performance), base);
+    eq(`…${featured} as the featured game`, at(performance, { featured: true }), featured);
+    eq(
+      `…and ${premium} featured on Premium`,
+      at(performance, { featured: true, multiplier: 1.75 }),
+      premium,
+    );
+  }
+
+  /* The two ends of step 2, named rather than inferred from the table above: a
+     finished round never pays zero, and 18 is the ceiling on the base. */
+  eq('a round that scored nothing still pays the floor', at(0), CONFIG.games.minRoundPoints);
+  eq('…and a perfect one the ceiling', at(100), CONFIG.games.maxRoundPoints);
+  eq(
+    'the base is the same round-half-up the table is computed with',
+    games.roundPoints({ performance: 25, roundToday: 1, featured: false, multiplier: 1 }).base,
+    5,
+  );
+
+  /*
+   * Pro sits between the two published columns and is checked on its own,
+   * because 1.25 is the multiplier most players who pay for one will have.
+   */
+  eq('a perfect unfeatured round on Pro is 23, not 22', at(100, { multiplier: 1.25 }), 23);
+  eq('…and featured on Pro, 34', at(100, { featured: true, multiplier: 1.25 }), 34);
+
+  /*
+   * ── the decay curve ──
+   *
+   * §4.1 step 4, and the main anti-grind lever: the first round of the day is
+   * worth real points and the sixth is a token. The rungs are checked as rungs
+   * and then as points, because the second is what a player experiences.
+   */
+  const RUNGS: ReadonlyArray<[number, number]> = [
+    [1, 1],
+    [2, 0.65],
+    [3, 0.45],
+    [4, 0.3],
+    [5, 0.2],
+    [6, 0.12],
+  ];
+  for (const [round, rung] of RUNGS) {
+    eq(`round ${round} of the day decays by ${rung}`, games.decayFor(round), rung);
+  }
+  eq('…and a seventh round is worth what the sixth is', games.decayFor(7), games.decayFor(6));
+  eq('…as is a twentieth', games.decayFor(20), games.decayFor(6));
+  /* Clamped rather than trusted at the bottom end: a 0 would index past the
+     start of the table and multiply the round by `undefined`, which reaches the
+     ledger as a NaN delta and reads there as a corrupt schema. */
+  eq('a zeroth round cannot happen and does not produce a NaN', games.decayFor(0), 1);
+
+  const decayed = (roundToday: number) =>
+    games.roundPoints({ performance: 100, roundToday, featured: false, multiplier: 1 }).score;
+  eq('a perfect first round of the day is 18', decayed(1), 18);
+  eq('…the second is 12', decayed(2), 12);
+  eq('…the third 8', decayed(3), 8);
+  eq('…the fourth 5', decayed(4), 5);
+  eq('…the fifth 4', decayed(5), 4);
+  eq('…and the sixth 2', decayed(6), 2);
+  /* The floor of step 7, which is 1 and not the base's 2: decay is allowed to
+     take a round below the floor on the base, and what stops it reaching zero is
+     this. A free player's tenth round of an empty performance is worth 1 point,
+     not nothing — the round was still played. */
+  eq(
+    'decay can take a round under the base floor, but never to zero',
+    games.roundPoints({ performance: 0, roundToday: 6, featured: false, multiplier: 1 }).score,
+    1,
+  );
+
+  /* The whole curve on one day of perfect free play, which is the figure the
+     economy model in §10 is built out of and the one worth being able to quote:
+     a free tank is four rounds and they are 18 + 12 + 8 + 5. */
+  eq(
+    'a free tank of four perfect rounds is 43 points, not 72',
+    [1, 2, 3, 4].reduce((total, round) => total + decayed(round), 0),
+    43,
+  );
+
+  /*
+   * ── §4.3 the three flat bonuses ──
+   *
+   * Added **after** the multiplier and never multiplied by it, which is the one
+   * thing about them that is easy to get wrong and impossible to see from a
+   * total. A +25 that quietly paid 44 on Premium would be a line no result card
+   * could name.
+   */
+  const bonused = (opts: {
+    perfect?: boolean;
+    newGame?: boolean;
+    personalBest?: boolean;
+    multiplier?: number;
+  }) =>
+    games.roundPoints({
+      performance: 100,
+      roundToday: 1,
+      featured: false,
+      multiplier: opts.multiplier ?? 1,
+      ...opts,
+    });
+
+  eq('a perfect round adds a flat 10', bonused({ perfect: true }).score, 28);
+  eq('a first-ever play adds a flat 25', bonused({ newGame: true }).score, 43);
+  eq('a personal best adds a flat 8', bonused({ personalBest: true }).score, 26);
+  eq(
+    'all three at once, on a perfect first round of a new game',
+    bonused({ perfect: true, newGame: true, personalBest: true }).score,
+    18 + 10 + 25 + 8,
+  );
+  eq(
+    'the bonuses are not multiplied by the plan: Premium adds the same 10',
+    bonused({ perfect: true, multiplier: 1.75 }).score,
+    Math.round(18 * 1.75) + 10,
+  );
+  eq(
+    '…which is 10 more than the same round without it, on every plan',
+    bonused({ perfect: true, multiplier: 1.75 }).score - bonused({ multiplier: 1.75 }).score,
+    CONFIG.games.perfectRoundBonus,
+  );
+  /* The bonuses are flat in the other direction too: they do not decay. A
+     first-ever play on somebody's fifth round of the day is still 25, because
+     discovering a game is not a thing that happens less on a busy day. */
+  eq(
+    'a first-ever play is worth 25 whichever round of the day it is',
+    games.roundPoints({ performance: 100, roundToday: 5, featured: false, multiplier: 1, newGame: true })
+      .score -
+      games.roundPoints({ performance: 100, roundToday: 5, featured: false, multiplier: 1 }).score,
+    CONFIG.games.newGameBonus,
+  );
+  /* And the perfect bonus is gated on performance rather than on `won`: exactly
+     100, not "nearly". */
+  eq(
+    '99% is not a perfect round',
+    games.roundPoints({ performance: 99, roundToday: 1, featured: false, multiplier: 1, perfect: true })
+      .bonusPerfect,
+    0,
+  );
+
+  /* A scorer that returned a figure off the scale should not be paid for it.
+     Clamped rather than trusted, in the direction that cannot cost a player
+     anything they earned. */
+  eq('a performance over 100 is clamped to 100', at(400), at(100));
+  eq('…and a negative one to 0', at(-40), at(0));
+
+  /*
+   * The ceiling the task prompts advertise comes out of the same function, which
+   * is the only arrangement that stops the panel quoting a figure the ledger
+   * will not pay.
+   */
+  eq('the advertised round ceiling is a perfect first round plus its bonus',
+    games.roundCeiling({ featured: false, multiplier: 1 }), 28);
+  eq('…and the featured one, 37', games.roundCeiling({ featured: true, multiplier: 1 }), 37);
+  eq('…57 on Premium', games.roundCeiling({ featured: true, multiplier: 1.75 }), 57);
+}
+
 async function scoringRules(): Promise<void> {
-  describe('§7.4 scoring — the four games, band by band');
+  describe('§5 scoring — each game’s own map onto 0–100 performance');
   const w = await world();
   const base = now();
 
-  /** Seconds, which is the unit two of these scorers band on. `plusMinutes` is
+  /** Seconds, which is the unit three of these scorers read. `plusMinutes` is
    *  the module's own shift and carries a fraction of one exactly. */
   const plusSeconds = (at: Iso, seconds: number): Iso => plusMinutes(at, seconds / 60);
 
@@ -1980,6 +2228,18 @@ async function scoringRules(): Promise<void> {
    * its ceiling when each round opens and nothing here is secretly a test about
    * energy — `energyRules` above owns that. It is also short enough never to
    * lapse a streak, so no comeback bonus lands in the middle of a score.
+   *
+   * **The assertions in this section are about `performance`, not `score`**, and
+   * that is the change the formula makes to how this suite has to be written.
+   * What a round *pays* now depends on four things that have nothing to do with
+   * how it was played — which round of the day it is, whether its game is
+   * featured, the plan, and which of three once-only bonuses are still
+   * unclaimed — and three hours apart over two dozen rounds crosses a day
+   * boundary, so pinning points here would be pinning the calendar. `roundPoints`
+   * is checked exhaustively and separately in `formulaTable` above; this section
+   * checks the one thing each game owns, which is the map from a result onto the
+   * common scale. Where the whole chain matters it is asserted from the
+   * itemisation the response now carries.
    */
   let played = 0;
   const nextAt = (): Iso => plusMinutes(base, (played += 1) * 180);
@@ -1991,12 +2251,13 @@ async function scoringRules(): Promise<void> {
       }))!.secret,
     ) as T;
 
-  /* ── the quizzes ── */
+  /* ── the quizzes (§5.1–5.3) ── */
 
   /**
    * Play a quiz. `rights` says which of the five to answer correctly, and the
    * round is stretched so its first and last recorded events are `seconds`
-   * apart — which is the span the speed band reads, off the server's own stamps.
+   * apart — which is the span the speed credit reads, off the server's own
+   * stamps.
    */
   let accepted: boolean[] = [];
   const quiz = async (rights: boolean[], seconds: number, gameType: games.GameType = 'capitals') => {
@@ -2018,7 +2279,7 @@ async function scoringRules(): Promise<void> {
         /* Four options, so any index that is not the answer is a wrong answer
            and one of 0/1 always is. */
         payload: { index, choice: rights[index] ? answer : answer === 0 ? 1 : 0 },
-        /* Only the last event moves: the band is max minus min over the round,
+        /* Only the last event moves: the span is max minus min over the round,
            so the questions in between decide nothing and pinning them to the
            start keeps the fixture readable. */
         at: index === secret.answers.length - 1 ? done : at,
@@ -2028,32 +2289,45 @@ async function scoringRules(): Promise<void> {
   };
 
   const allFive = [true, true, true, true, true];
-  const perCorrect = CONFIG.games.quizPerCorrect;
-  const sweep = CONFIG.games.quizPerfectBonus;
+  const per = CONFIG.games.quizPerformancePerCorrect;
 
   const fast = await quiz(allFive, 4);
-  eq('five right in four seconds is the quiz ceiling', fast.score, 8);
-  eq('…which is 5 + 1 + 2 and nothing else', fast.score, 5 * perCorrect + sweep + 2);
-  eq('and a clean sweep is what `won` now names', fast.won, true);
-
-  eq('exactly ten seconds is still the fast band', (await quiz(allFive, 10)).score, 8);
-  eq('a half-second past it drops to the middle one', (await quiz(allFive, 10.5)).score, 7);
-  eq('exactly fifteen seconds is still the middle band', (await quiz(allFive, 15)).score, 7);
-  eq('past fifteen the clock pays nothing at all', (await quiz(allFive, 16)).score, 6);
-
-  /*
-   * **The speed bonus is a clean-sweep bonus.** Five wrong answers hammered out
-   * in a second is the fastest possible round, and paying it would make not
-   * reading the question the winning strategy in a quiz.
-   */
-  const rushed = await quiz([false, false, false, false, false], 1);
-  eq('five wrong answers in one second pay nothing', rushed.score, 0);
-  eq('…and the fastest possible round is not a win', rushed.won, false);
+  eq('five right is performance 100', fast.performance, 100);
+  eq('…which is 20 an answer', fast.performance, 5 * per);
+  eq('and a clean sweep is what `won` names', fast.won, true);
+  /* The credit is real and it is capped into the 100, so a perfect round cannot
+     see it. That is §5.1's own wording and it is the reason the old clean-sweep
+     gate on the credit could be deleted rather than ported. */
+  eq('the speed credit cannot take a perfect round past the top of the scale',
+    (await quiz(allFive, 4)).performance, 100);
 
   const four = await quiz([true, true, true, true, false], 4);
-  eq('four right pays four, with no sweep bonus', four.score, 4 * perCorrect);
-  eq('…and no speed bonus either, however fast it was', four.score, 4);
+  eq('four right and quick is 85 — 80 plus the speed credit', four.performance, 4 * per + CONFIG.games.quizSpeedCredit);
   eq('four out of five is not a clean sweep', four.won, false);
+  const fourSlow = await quiz([true, true, true, true, false], 40);
+  eq('…and four right slowly is 80, with no credit', fourSlow.performance, 4 * per);
+  eq('exactly twenty-five seconds still earns the credit',
+    (await quiz([true, true, true, true, false], 25)).performance, 4 * per + CONFIG.games.quizSpeedCredit);
+  eq('a half-second past it does not',
+    (await quiz([true, true, true, true, false], 25.5)).performance, 4 * per);
+
+  /*
+   * **The speed credit is no longer gated on a clean sweep, and it cannot be
+   * farmed.** The old gate existed because the fastest way through five
+   * questions is to answer them all wrong without reading them, and under a
+   * per-point table that bought a real bonus. Under one 0–100 scale it buys
+   * nothing at all: performance 5 and performance 0 both floor to the same 2
+   * points, which is what these two lines say.
+   */
+  const rushed = await quiz([false, false, false, false, false], 1);
+  eq('five wrong answers in one second are performance 5, not 0', rushed.performance, CONFIG.games.quizSpeedCredit);
+  eq('…and the fastest possible round is not a win', rushed.won, false);
+  eq('…and it pays the floor', rushed.base, CONFIG.games.minRoundPoints);
+  eq(
+    '…exactly what five wrong answers slowly pay, so rushing buys nothing',
+    rushed.base,
+    (await quiz([false, false, false, false, false], 60)).base,
+  );
 
   /*
    * **A quiz cannot be lost.** It ended after two wrong answers once, which took
@@ -2064,7 +2338,7 @@ async function scoringRules(): Promise<void> {
   const wobbly = await quiz([false, false, false, false, true], 4);
   check('the fifth question is still asked after four mistakes', accepted[4]);
   eq('…all five were recorded', accepted.filter(Boolean).length, 5);
-  eq('…the one right answer still banks', wobbly.score, 1 * perCorrect);
+  eq('…the one right answer still scores', wobbly.performance, 1 * per + CONFIG.games.quizSpeedCredit);
   eq('…the round is complete, not truncated', wobbly.answered, CONFIG.games.quizQuestions);
   eq('…and nothing was forfeited for the four mistakes', wobbly.correct, 1);
 
@@ -2074,8 +2348,7 @@ async function scoringRules(): Promise<void> {
    * one card and picks between them by the country on the player's profile — so
    * a scoring rule that reached either of them and not the other would be a
    * player in Tashkent being paid differently for the same minute. Nothing in
-   * `domain/games.ts` distinguishes them and these three checks are what says
-   * so: the same round pays the same, and each one draws from its own bank.
+   * `domain/games.ts` distinguishes them and these checks are what says so.
    */
   const drawnFrom = async (gameType: string) =>
     await w.db.get<{ own: number; total: number }>(
@@ -2086,8 +2359,9 @@ async function scoringRules(): Promise<void> {
     );
   const uzbekistan = await quiz(allFive, 4, 'uzbekistan');
   const poland = await quiz(allFive, 4, 'poland');
-  eq('the Uzbekistan quiz pays exactly what the Poland one does', uzbekistan.score, poland.score);
-  eq('…and both are the quiz ceiling, on the same rules as the other two', uzbekistan.score, 8);
+  eq('the Uzbekistan quiz scores exactly what the Poland one does',
+    uzbekistan.performance, poland.performance);
+  eq('…and both are 100, on the same map as the other three', uzbekistan.performance, 100);
   eq(
     'the Uzbekistan round is served out of the Uzbekistan bank',
     await drawnFrom('uzbekistan'),
@@ -2099,12 +2373,20 @@ async function scoringRules(): Promise<void> {
     { own: CONFIG.games.quizQuestions, total: CONFIG.games.quizQuestions },
   );
 
-  /* ── memory match ── */
+  /* ── memory match (§5.5) ── */
 
-  /** Play a whole board perfectly, finishing `seconds` after the first move. */
-  const board = async (seconds: number) => {
+  /**
+   * Play a board. `misses` mismatched moves are made first, then `pairs` of the
+   * six are matched; every event lands at one instant unless `lateFrom` says
+   * which move to push past the 90-second limit.
+   *
+   * **A move is a `pair` event**, matched or not, so `misses + pairs` is the move
+   * count the efficiency bands are read from.
+   */
+  const board = async (opts: { misses?: number; pairs?: number; slowTail?: boolean } = {}) => {
     const at = nextAt();
-    const done = plusSeconds(at, seconds);
+    const misses = opts.misses ?? 0;
+    const wanted = opts.pairs ?? CONFIG.games.memoryPairs;
     const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'memory_match',
@@ -2112,172 +2394,148 @@ async function scoringRules(): Promise<void> {
     });
     const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
     /* Every symbol is in the deck twice, so pairing each one's first position
-       with its second is the whole board played without a miss. */
+       with its second is the board played without a miss. */
     const first = new Map<string, number>();
-    let seq = 0;
+    const pairs: Array<[number, number]> = [];
     for (const [index, symbol] of deck.entries()) {
       const opener = first.get(symbol);
       if (opener === undefined) {
         first.set(symbol, index);
         continue;
       }
-      seq += 1;
-      await games.submitEvent(w.db, {
-        sessionId: opened.sessionId,
-        userId: w.customerId,
-        seq,
-        kind: 'pair',
-        payload: { a: opener, b: index },
-        at: seq === 1 ? at : done,
-      });
-    };
-    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
-  };
+      pairs.push([opener, index]);
+    }
+    /* A guaranteed **mismatch**: position 0 and the first position after it
+       holding a different symbol. */
+    const wrong = deck.findIndex((symbol, index) => index > 0 && symbol !== deck[0]);
 
-  /*
-   * **The band is the rate; the pairs found are what it pays on.**
-   *
-   * `partialBoard` plays only some of them, so the two rules can be told apart:
-   * a flat band pays a round that found nothing exactly what it pays a cleared
-   * one, which is what this did before. `correct: 0` on the body was the only
-   * tell and nothing read it — so a client could bank the top band from two
-   * events a millisecond apart, forever, bounded by energy alone.
-   */
-  const partialBoard = async (seconds: number, howMany: number) => {
-    const at = nextAt();
-    const done = plusSeconds(at, seconds);
-    const opened = await games.startSession(w.db, {
-      userId: w.customerId,
-      gameType: 'memory_match',
-      at,
-    });
-    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
-    const first = new Map<string, number>();
     let seq = 0;
-    let played = 0;
-    for (const [index, symbol] of deck.entries()) {
-      const opener = first.get(symbol);
-      if (opener === undefined) {
-        first.set(symbol, index);
-        continue;
-      }
-      if (played >= howMany) continue;
-      played += 1;
-      seq += 1;
+    const send = async (a: number, b: number, when: Iso) =>
       await games.submitEvent(w.db, {
         sessionId: opened.sessionId,
         userId: w.customerId,
-        seq,
+        seq: (seq += 1),
         kind: 'pair',
-        payload: { a: opener, b: index },
-        at: seq === 1 ? at : done,
+        payload: { a, b },
+        at: when,
       });
-    };
-    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: done });
-  };
 
-  /* The hole this closed: fast and empty used to pay what fast and finished
-     does. It is the check that fails without the change. */
-  const empty = await partialBoard(1, 0);
-  eq('a round that found nothing pays nothing', empty.score, 0);
-  eq('…however fast it was', empty.correct, 0);
-
-  const half = await partialBoard(10, 3);
-  eq('half a board at the top band pays half of it', half.score, 4);
-  eq('…and says how many it found', half.correct, 3);
-
-  /* Rounded rather than floored, so a nearly-finished board does not lose its
-     last point to arithmetic: five of six at eight is 6.67. */
-  eq('five of six at the top band rounds up', (await partialBoard(10, 5)).score, 7);
-
-  eq('a board in ten seconds takes the top band', (await board(10)).score, 8);
-  eq('exactly eighteen seconds still does', (await board(18)).score, 8);
-  eq('a half-second past it is the middle band', (await board(18.5)).score, 6);
-  eq('exactly twenty-three seconds is still the middle band', (await board(23)).score, 6);
-  eq('past it the floor band still pays', (await board(24)).score, 3);
-  const slow = await board(300);
-  eq('…and five minutes pays the same floor', slow.score, 3);
-  eq('a finished deck is a win however slow it was', slow.won, true);
-
-  /*
-   * **A flipped pair reveals both cards.**
-   *
-   * The reply used to be `answer: deck[a]` alone, which told a client the face
-   * of the first card and nothing about the second — so a mismatch taught half
-   * of what the player had just looked at, and Memory Match is the one game in
-   * the set that is *entirely* about remembering what you saw. These checks are
-   * what stops that regressing, and the last of them is the one with teeth: what
-   * the secret protects is the cards still face down, and a reply that named a
-   * third position would be handing the board over one move at a time.
-   */
-  const revealRound = async () => {
-    const at = nextAt();
-    const opened = await games.startSession(w.db, {
-      userId: w.customerId,
-      gameType: 'memory_match',
-      at,
-    });
-    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
-    /* A guaranteed **mismatch**: the first position, and the first position
-       after it holding a different symbol. That is the case the old reply was
-       wrong about, so it is the case worth pinning. */
-    const b = deck.findIndex((symbol, index) => index > 0 && symbol !== deck[0]);
-    const move = await games.submitEvent(w.db, {
+    for (let i = 0; i < misses; i += 1) await send(0, wrong, at);
+    /* Past the limit the round is over, so the tail of the board is what an
+       expired one looks like: some pairs found in time and the rest not. */
+    const late = plusSeconds(at, CONFIG.games.memoryLimitSeconds + 5);
+    for (const [index, [a, b]] of pairs.slice(0, wanted).entries()) {
+      await send(a, b, opts.slowTail && index > 0 ? late : at);
+    }
+    return await games.finish(w.db, {
       sessionId: opened.sessionId,
       userId: w.customerId,
-      seq: 0,
-      kind: 'pair',
-      payload: { a: 0, b },
-      at,
+      at: opts.slowTail ? late : at,
     });
-    return { at, opened, deck, b, move };
   };
 
-  const reveal = await revealRound();
-  eq('a mismatched pair is judged a mismatch', reveal.move.correct, false);
-  eq('…and it reveals both cards, not one', reveal.move.revealed, [
-    { index: 0, face: reveal.deck[0] },
-    { index: reveal.b, face: reveal.deck[reveal.b] },
-  ]);
-  eq(
-    '…while `answer` still carries the first card, so nothing reading it breaks',
-    reveal.move.answer,
-    reveal.deck[0],
-  );
-  check(
-    '…and nothing else on the board leaks with it',
-    reveal.move.revealed!.every((card) => card.index === 0 || card.index === reveal.b),
-  );
-  eq(
-    '…so a twelve-card deck gives up exactly two faces a move',
-    reveal.move.revealed!.length,
-    2,
-  );
+  /*
+   * **Scored on moves, not on the clock.** The board was timed here, on the
+   * argument that moves are the one thing a pencil beats and a stopwatch is not —
+   * which is true, and is the wrong trade for the one game in the set with no
+   * fail state. §5.5 prices it on moves and the bands are 10/14/18/over.
+   */
+  const cleared = await board();
+  eq('a board cleared in six moves is a perfect round', cleared.performance, 100);
+  eq('…which is the 60 for finishing plus the top efficiency band',
+    cleared.performance, CONFIG.games.memoryBasePerformance + 40);
+  eq('…and it takes the perfect-round bonus with it',
+    cleared.bonusPerfect, CONFIG.games.perfectRoundBonus);
+  eq('a cleared board is a win', cleared.won, true);
 
-  /* A retry after a dropped response is the *only* thing that can still tell
-     this client what those two cards were, so the duplicate carries them. A
-     reply of `accepted: false` and nothing else leaves two permanent blanks on
-     the board. */
-  const replayed = await games.submitEvent(w.db, {
-    sessionId: reveal.opened.sessionId,
-    userId: w.customerId,
-    seq: 0,
-    kind: 'pair',
-    payload: { a: 0, b: reveal.b },
-    at: reveal.at,
-  });
-  check('a replayed pair is a duplicate rather than a second move', !replayed.accepted);
-  eq('…and it still reveals the same two faces', replayed.revealed, reveal.move.revealed);
+  eq('exactly ten moves is still the top band', (await board({ misses: 4 })).performance, 100);
+  eq('an eleventh move drops to 85', (await board({ misses: 5 })).performance, 85);
+  eq('exactly fourteen moves is still 85', (await board({ misses: 8 })).performance, 85);
+  eq('a fifteenth is 72', (await board({ misses: 9 })).performance, 72);
+  eq('exactly eighteen is still 72', (await board({ misses: 12 })).performance, 72);
+  eq('nineteen or more is the bare 60 for finishing',
+    (await board({ misses: 13 })).performance, CONFIG.games.memoryBasePerformance);
+  eq('…and forty moves is the same 60, because finishing always pays it',
+    (await board({ misses: 34 })).performance, CONFIG.games.memoryBasePerformance);
 
   /*
-   * **The pairs found are distinct pairs, not matching events.**
-   *
-   * The two agree for a client that plays each pair once and come apart the
-   * moment one does not: a move whose response was lost is recorded here, and a
-   * client that puts those cards back down and turns them again submits the same
-   * match under a fresh `seq`. The score is the clock alone so it pays the same
-   * either way — what would be wrong is the count printed beside the time,
-   * seven pairs found on a six-pair board.
+   * **The clock did not go away; it became a limit rather than a rate.** 90
+   * seconds, and a board still incomplete at it scores `pairs / 6 × 50` — half
+   * marks for half a board, and a ceiling of 50 that an expired round cannot get
+   * past however much of the board it found.
+   */
+  const expired = await board({ slowTail: true });
+  eq('a board whose tail lands after 90 seconds is scored on the pairs found in time',
+    expired.performance, Math.round((1 * CONFIG.games.memoryExpiredCeiling) / CONFIG.games.memoryPairs));
+  eq('…and is not a win, because the board was not finished', expired.won, false);
+  eq('…and cannot reach the 60 that completing it pays',
+    expired.performance < CONFIG.games.memoryBasePerformance, true);
+
+  const abandoned = await board({ pairs: 3 });
+  eq('three of six pairs and no more is half the expired ceiling', abandoned.performance, 25);
+  eq('…and says how many it found', abandoned.correct, 3);
+  const nothing = await board({ pairs: 0 });
+  eq('a round that found nothing is performance 0', nothing.performance, 0);
+  eq('…which still pays the floor, because the round was played', nothing.base, CONFIG.games.minRoundPoints);
+  /* Rounded rather than floored, so a nearly-finished board does not lose its
+     last point to arithmetic: five of six is 41.67. */
+  eq('five of six rounds up rather than down', (await board({ pairs: 5 })).performance, 42);
+
+  /*
+   * **A peek is not a move.** It turns one card, carries no verdict, and is how
+   * the shipped client shows the first card of a move — so counting peeks would
+   * charge two moves for what a player experienced as one, and a board played
+   * exactly as the client plays it would never reach the top band. The two rounds
+   * below differ in twelve peeks and nothing else.
+   */
+  const peeked = await (async () => {
+    const at = nextAt();
+    const opened = await games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
+    let seq = 0;
+    for (const [index] of deck.entries()) {
+      await games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq: (seq += 1),
+        kind: 'peek',
+        payload: { index },
+        at,
+      });
+    }
+    const first = new Map<string, number>();
+    for (const [index, symbol] of deck.entries()) {
+      const opener = first.get(symbol);
+      if (opener === undefined) {
+        first.set(symbol, index);
+        continue;
+      }
+      await games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq: (seq += 1),
+        kind: 'pair',
+        payload: { a: opener, b: index },
+        at,
+      });
+    }
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at });
+  })();
+  eq('twelve peeks and six pairs is still a six-move board', peeked.performance, 100);
+  eq('a peek is not a pair', peeked.correct, CONFIG.games.memoryPairs);
+  eq('…and twelve of them do not enlarge a six-pair board', peeked.answered, CONFIG.games.memoryPairs);
+
+  /*
+   * **A pair submitted twice is a second move**, which is the other half of the
+   * distinct-pair rule. The pairs *found* are counted distinctly — seven pairs on
+   * a six-pair board would be a bug in the figure printed beside the moves — and
+   * the move count is the rows, because a client that re-turns two cards under a
+   * fresh `seq` has made a move by the protocol's own definition. Twelve moves
+   * for six pairs is the 11–14 band.
    */
   const doubled = await (async () => {
     const at = nextAt();
@@ -2313,23 +2571,79 @@ async function scoringRules(): Promise<void> {
     };
     return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at });
   })();
-  eq(
-    'a pair submitted twice counts once',
-    doubled.correct,
-    CONFIG.games.memoryPairs,
-  );
+  eq('a pair submitted twice counts once as a pair', doubled.correct, CONFIG.games.memoryPairs);
   eq('…out of the board it was actually dealt', doubled.answered, CONFIG.games.memoryPairs);
+  eq('…and twice as a move, so twelve moves is the second band', doubled.performance, 85);
 
   /*
-   * **One card, turned on its own — `kind:'peek'`.**
-   *
-   * Without it there is no way to learn a face except by naming two positions,
-   * so the first card a player tapped stayed blank until they had committed to a
-   * second: every move made blind, which is a different game rather than this
-   * one with a delay on it. The checks below are the four promises that come
-   * with the move — it turns exactly the card asked for and nothing else, it is
-   * not an answer, it shares one sequence with the pairs, and it refuses a
-   * position that is off the board or already claimed.
+   * **A flipped pair reveals both cards**, and a peek reveals one. The protocol
+   * half of Memory Match, unchanged by the scoring move and pinned here because
+   * what the secret protects is the cards still face down: a reply that named a
+   * third position would be handing the board over one move at a time.
+   */
+  const revealRound = async () => {
+    const at = nextAt();
+    const opened = await games.startSession(w.db, {
+      userId: w.customerId,
+      gameType: 'memory_match',
+      at,
+    });
+    const deck = (await secretOf<{ deck: string[] }>(opened.sessionId)).deck;
+    const b = deck.findIndex((symbol, index) => index > 0 && symbol !== deck[0]);
+    const move = await games.submitEvent(w.db, {
+      sessionId: opened.sessionId,
+      userId: w.customerId,
+      seq: 0,
+      kind: 'pair',
+      payload: { a: 0, b },
+      at,
+    });
+    return { at, opened, deck, b, move };
+  };
+
+  const reveal = await revealRound();
+  eq('a mismatched pair is judged a mismatch', reveal.move.correct, false);
+  eq('…and it reveals both cards, not one', reveal.move.revealed, [
+    { index: 0, face: reveal.deck[0] },
+    { index: reveal.b, face: reveal.deck[reveal.b] },
+  ]);
+  eq(
+    '…while `answer` still carries the first card, so nothing reading it breaks',
+    reveal.move.answer,
+    reveal.deck[0],
+  );
+  check(
+    '…and nothing else on the board leaks with it',
+    reveal.move.revealed!.every((card) => card.index === 0 || card.index === reveal.b),
+  );
+  eq(
+    '…so a twelve-card deck gives up exactly two faces a move',
+    reveal.move.revealed!.length,
+    2,
+  );
+
+  /* A retry after a dropped response is the *only* thing that can still tell
+     this client what those two cards were, so the duplicate carries them. */
+  const replayed = await games.submitEvent(w.db, {
+    sessionId: reveal.opened.sessionId,
+    userId: w.customerId,
+    seq: 0,
+    kind: 'pair',
+    payload: { a: 0, b: reveal.b },
+    at: reveal.at,
+  });
+  check('a replayed pair is a duplicate rather than a second move', !replayed.accepted);
+  eq('…and it still reveals the same two faces', replayed.revealed, reveal.move.revealed);
+  /* Which is also what keeps the move count honest against a dropped response:
+     the duplicate is swallowed by the unique `(session, seq)` and writes no row,
+     so a retry cannot cost a player a band. */
+  await games.finish(w.db, { sessionId: reveal.opened.sessionId, userId: w.customerId, at: reveal.at });
+
+  /*
+   * **One card, turned on its own — `kind:'peek'`.** Four promises come with the
+   * move: it turns exactly the card asked for and nothing else, it is not an
+   * answer, it shares one sequence with the pairs, and it refuses a position
+   * that is off the board or already claimed.
    */
   const openDeck = async () => {
     const at = nextAt();
@@ -2357,26 +2671,21 @@ async function scoringRules(): Promise<void> {
   eq('…and none of the pair move’s legacy `answer` either', turned.answer, undefined);
   check('…and it is recorded, so its number is spent', turned.accepted);
 
-  /* The same argument the pair path makes: a retry after a dropped response is
-     the only thing that will ever tell this client what that card was. */
   const replayedPeek = await move(single.id, 0, 'peek', { index: 3 }, single.at);
   check('a replayed peek is a duplicate rather than a second turn', !replayedPeek.accepted);
   eq('…and it still names the face', replayedPeek.revealed, turned.revealed);
 
   /* One sequence for both kinds, which is what makes `seq` a position in the
-     round rather than a per-kind counter — a client that numbered its peeks and
-     its pairs separately would collide on the second move of every board. */
+     round rather than a per-kind counter. */
   const collided = await move(single.id, 0, 'pair', { a: 0, b: 1 }, single.at);
   check('a pair cannot reuse a peek’s number: the two share one sequence', !collided.accepted);
   check('…while the next number along is free', (await move(single.id, 1, 'pair', { a: 0, b: 1 }, single.at)).accepted);
 
   /*
    * **Refused, not clamped — and a refused peek is one that never happened.**
-   *
-   * This is the precedent the Word Builder hint set when it stopped clamping a
-   * position into range, and the second half is the half with teeth: nothing is
-   * written, so a client asking for a card that is not there has not spent a
-   * number and has not put a row in the round's own clock.
+   * The second half is the half with teeth: nothing is written, so a client
+   * asking for a card that is not there has not spent a number and has not put a
+   * row in the round's own count.
    */
   const stray = await openDeck();
   await throws('a peek past the end of the deck is refused', 'bad_request', async () =>
@@ -2397,7 +2706,7 @@ async function scoringRules(): Promise<void> {
    * A matched card is not face down, so turning it is not a move that exists.
    * The **pair** move still accepts those same two positions, and has to: a
    * client whose response was lost puts the cards back down and turns them
-   * again, which is the case the distinct-pair counting above exists for.
+   * again.
    */
   const locked = await openDeck();
   const twin = locked.deck.findIndex((face, index) => index > 0 && face === locked.deck[0]);
@@ -2418,60 +2727,21 @@ async function scoringRules(): Promise<void> {
     (await move(locked.id, 4, 'pair', { a: 0, b: twin }, locked.at)).accepted,
   );
 
-  /*
-   * **A peek is in the clock and out of the tally, and that pairing is the whole
-   * of why there is no peek counter and no peek penalty.**
-   *
-   * `scoreDeck` prices this game on the span from the first recorded event to
-   * the last and on nothing else. A peek carries no verdict, so it cannot be
-   * counted as a pair or enlarge the board; it is still an event, so it is
-   * inside that span. The three rounds below differ in the peeks alone — same
-   * six pairs, all submitted at one instant — and they are what says a peek can
-   * only ever cost: 8 with none, 8 with twelve that took no time, 6 with twelve
-   * that took nineteen seconds. There is no arrangement of them that pays more.
-   */
-  const clearedBoard = async (gap: number, peeking: boolean) => {
-    const round = await openDeck();
-    const paired = plusSeconds(round.at, gap);
-    let seq = 0;
-    if (peeking) for (const [index, _] of round.deck.entries()) {
-  await move(round.id, seq++, 'peek', { index }, round.at);
-};
-    const first = new Map<string, number>();
-    for (const [index, symbol] of round.deck.entries()) {
-      const opener = first.get(symbol);
-      if (opener === undefined) {
-        first.set(symbol, index);
-        continue;
-      }
-      await move(round.id, seq++, 'pair', { a: opener, b: index }, paired);
-    };
-    return await games.finish(w.db, { sessionId: round.id, userId: w.customerId, at: paired });
-  };
-
-  const bare = await clearedBoard(19, false);
-  eq('six pairs at one instant are a top-band board', bare.score, 8);
-  const quick = await clearedBoard(0, true);
-  eq('…and peeking all twelve cards first does not change that, if it took no time', quick.score, 8);
-  eq('a peek is not a pair', quick.correct, CONFIG.games.memoryPairs);
-  eq('…and twelve of them do not enlarge a six-pair board', quick.answered, CONFIG.games.memoryPairs);
-  const dawdled = await clearedBoard(19, true);
-  eq('…while nineteen seconds spent peeking costs the round a band', dawdled.score, 6);
-  check('so a peek can only ever cost, which is what a counter would be for', dawdled.score < bare.score);
-
-  /* ── word builder ── */
+  /* ── word builder (§5.4) ── */
 
   /*
-   * A five-word bank on a language code nothing else uses.
+   * A planted bank on a language code nothing else uses.
    *
-   * Word Builder is scored per word and `buildWords` draws five at random, so a
-   * round out of the seeded bank is worth whatever tiers it happened to pull —
-   * a fine game and a useless assertion. Five planted words on the site's own
-   * `[1, 1, 2, 2, 3]` ramp make a clean sweep exactly nine, which is the figure
-   * the economy is written down as. (This server does not *impose* that ramp on
-   * a real round; `config.ts` says why, and says it at the point of use.)
+   * Word Builder is scored per word and `buildWords` draws at random, so a round
+   * out of the seeded bank is worth whatever it happened to pull. Three planted
+   * words make the round deterministic — and the round is now **three** words,
+   * not five, which is the rulebook's length and the same 100 either way.
+   *
+   * The tiers are planted with a spread deliberately: the tier used to price the
+   * word and no longer does, so a round of a 1, a 2 and a 3 scoring exactly what
+   * a round of three 1s would is part of what "a round is a round" means now.
    */
-  const RAMP = [1, 1, 2, 2, 3];
+  const RAMP = [1, 2, 3];
   for (const [index, tier] of RAMP.entries()) {
     await w.db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, 'zz', $w, $t, 'planted')
@@ -2481,18 +2751,17 @@ async function scoringRules(): Promise<void> {
   };
 
   /**
-   * Play the planted round. `plan` is handed the tiers in the order they were
-   * drawn and says which words to reveal a letter on, which to get wrong once
-   * before solving, and which to leave unsolved.
+   * Play the planted round. `plan` says which words to reveal a letter on, which
+   * to get wrong once before solving, and which to leave unsolved; `slow` pushes
+   * every solve past the 30-second per-word window.
    */
   const wordRound = async (
-    plan: (tiers: number[]) => { hint?: number[]; fumble?: number[]; skip?: number[] },
+    plan: { hint?: number[]; fumble?: number[]; skip?: number[]; slow?: boolean } = {},
   ) => {
     const at = nextAt();
-    /* Five words in the bank against a no-repeat window of forty: the second
+    /* Three words in the bank against a no-repeat window of forty: the second
        round would find nothing left to ask. Clearing the window is what lets
-       four rounds run against one known ramp — the no-repeat rule itself is
-       `buildQuiz`'s and is not what this block is about. */
+       several rounds run against one known bank. */
     await w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u AND game_type = 'word_builder'`, {
       u: w.customerId,
     });
@@ -2503,8 +2772,10 @@ async function scoringRules(): Promise<void> {
       at,
     });
     const secret = await secretOf<{ words: string[]; tiers: number[] }>(opened.sessionId);
-    const wanted = plan(secret.tiers);
     let seq = 0;
+    /* Each solve a minute after the last when `slow`, which is past the window;
+       otherwise everything at the instant the round opened, which is inside it. */
+    let when = at;
     const send = async (kind: string, payload: Record<string, unknown>) => {
       seq += 1;
       await games.submitEvent(w.db, {
@@ -2513,62 +2784,89 @@ async function scoringRules(): Promise<void> {
         seq,
         kind,
         payload,
-        at,
+        at: when,
       });
     };
     for (const [index, word] of secret.words.entries()) {
-      if (wanted.hint?.includes(index)) await send('hint', { index, position: 0 });
-      if (wanted.fumble?.includes(index)) await send('guess', { index, guess: 'NOTTHEWORD' });
-      if (wanted.skip?.includes(index)) continue;
+      if (plan.slow) when = plusSeconds(at, (index + 1) * 60);
+      if (plan.hint?.includes(index)) await send('hint', { index, position: 0 });
+      if (plan.fumble?.includes(index)) await send('guess', { index, guess: 'NOTTHEWORD' });
+      if (plan.skip?.includes(index)) continue;
       await send('guess', { index, guess: word });
     };
     return {
-      result: await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at }),
+      result: await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at: when }),
+      words: secret.words,
       tiers: secret.tiers,
     };
   };
 
-  const swept = await wordRound(() => ({}));
-  eq('the planted round is the ramp', [...swept.tiers].sort().join(''), '11223');
-  eq('a word is worth its tier: 1+1+2+2+3, plus one for the sweep', swept.result.score, 10);
+  const sweep = await wordRound();
+  eq('a round is three words now, not five', sweep.words.length, CONFIG.games.wordsPerRound);
+  eq('…and three solved is 100, not 99', sweep.result.performance, 100);
+  eq('…so a clean sweep is a perfect round and takes the bonus',
+    sweep.result.bonusPerfect, CONFIG.games.perfectRoundBonus);
+  eq('every word solved is a win', sweep.result.won, true);
+
+  const slowSweep = await wordRound({ slow: true });
+  eq('a slow sweep is still 100, because the promotion is not a speed bonus',
+    slowSweep.result.performance, 100);
 
   /*
-   * **A hint halves that word.** Forfeiting a tier *bonus* and keeping a flat
-   * base was the rule before, and it charged nothing on the easy word and two
-   * thirds on the hard one — the opposite of where somebody reaches for it. The
-   * easy word is where the two rules disagree in a way a floor cannot hide: the
-   * ramp pays 9 clean, 8.5 with the easiest word halved, and 9 under the old
-   * rule, which never charged for a hint on a tier-1 word at all.
+   * **A hint is a flat 10 off, and the order of the clamp is what makes it cost
+   * anything.** Three words at 33 plus three speed credits is 111; capped into
+   * the 100 first and then charged, one hint is 90. Clamped only at the end, the
+   * first hint would have been free.
    */
-  const easyHint = await wordRound((tiers) => ({ hint: [tiers.indexOf(1)] }));
-  eq('a hint on the easiest word costs half of it', easyHint.result.score, 8);
-  const hardHint = await wordRound((tiers) => ({ hint: [tiers.indexOf(3)] }));
-  eq('a hint on the hardest word costs half of that', hardHint.result.score, 7);
-  check(
-    'either way the sweep bonus is refused, because a hint is not a clean round',
-    easyHint.result.score < 9 && hardHint.result.score < 8,
+  const oneHint = await wordRound({ hint: [0] });
+  eq('one hint on a fast sweep costs ten', oneHint.result.performance, 100 - CONFIG.games.wordHintPenalty);
+  eq('…and it is not a perfect round any more', oneHint.result.bonusPerfect, 0);
+  const twoHints = await wordRound({ hint: [0, 1] });
+  eq('two hints cost twenty', twoHints.result.performance, 100 - 2 * CONFIG.games.wordHintPenalty);
+  eq(
+    '…which is the same ten a piece whichever word it was spent on, unlike the halving it replaced',
+    twoHints.result.performance,
+    oneHint.result.performance - CONFIG.games.wordHintPenalty,
   );
 
   /*
    * A wrong attempt is the other half of "clean". It costs the *word* nothing —
-   * the per-word rate is what somebody plays for — and costs the sweep
-   * everything, which is what the bonus is for.
+   * the per-word rate is what somebody plays for — and costs the promotion to
+   * 100, which is what a perfect round is for. Three solved words are 99, and
+   * the three speed credits bring it back to the cap.
    */
-  const fumbled = await wordRound((tiers) => ({ fumble: [tiers.indexOf(2)] }));
-  eq('a wrong attempt still pays the word its tier', fumbled.result.score, 9);
-  eq('…and still takes the sweep bonus away', fumbled.result.score, swept.result.score - 1);
+  const fumbled = await wordRound({ fumble: [1] });
+  eq('a wrong attempt still pays the word', fumbled.result.performance, 100);
+  eq('…but it is not a clean sweep, so nothing was promoted', fumbled.result.correct, 3);
+  const fumbledSlow = await wordRound({ fumble: [1], slow: true });
+  eq(
+    '…and without the speed credits to carry it, a fumbled sweep is 99 rather than 100',
+    fumbledSlow.result.performance,
+    CONFIG.games.wordsPerRound * CONFIG.games.wordPerformancePerWord,
+  );
+  eq('…which is one short of a perfect round', fumbledSlow.result.bonusPerfect, 0);
+
+  const partial = await wordRound({ skip: [2] });
+  eq('two of three words is 66 plus their two speed credits',
+    partial.result.performance,
+    2 * CONFIG.games.wordPerformancePerWord + 2 * CONFIG.games.wordSpeedCredit);
+  eq('…and not a win', partial.result.won, false);
+  const slowPartial = await wordRound({ skip: [2], slow: true });
+  eq('…while two solved slowly is the bare 66', slowPartial.result.performance,
+    2 * CONFIG.games.wordPerformancePerWord);
+
+  /* The floor: hints on a round where nothing was solved cannot take the
+     performance negative, and the round still pays its two points. */
+  const hopeless = await wordRound({ hint: [0, 1, 2], skip: [0, 1, 2] });
+  eq('three hints and nothing solved clamp at 0 rather than going negative',
+    hopeless.result.performance, 0);
+  eq('…and the round still pays the floor', hopeless.result.base, CONFIG.games.minRoundPoints);
 
   /*
    * **A hint for a letter that does not exist is refused, and costs nothing.**
-   *
-   * The position used to be clamped — a request for slot 40 of a four-letter
-   * word passed the allowance check, spent one of the day's three, and answered
-   * the last letter. The client had nowhere to put it and no way to tell that
-   * anything had gone wrong, and the allowance was gone.
-   *
    * Both halves are checked, and the second is the one that matters: refusing
-   * the request is worth little if the refusal happens *after* the hint has
-   * been spent, so the allowance is read before and after and must not move.
+   * the request is worth little if the refusal happens *after* the hint has been
+   * spent, so the allowance is read before and after and must not move.
    */
   {
     const w2 = await world();
@@ -2621,7 +2919,7 @@ async function scoringRules(): Promise<void> {
     await w2.db.close();
   }
 
-  /* ── the flight ── */
+  /* ── the flight (§5.6) ── */
 
   /**
    * Fly a round.
@@ -2646,56 +2944,507 @@ async function scoringRules(): Promise<void> {
     });
   };
 
-  eq('four gaps is two points at half a point each', (await flight(4)).score, 2);
+  const per4 = CONFIG.games.flightPerformancePerObstacle;
+  eq('four obstacles is performance 16', (await flight(4)).performance, 4 * per4);
   eq('…and short of the five-gap target, so not a win', (await flight(4)).won, false);
   const banked = await flight(5);
   eq('five gaps banks the round', banked.won, true);
-  eq('…and pays two and a half, which floors to two', banked.score, 2);
-  eq('seven gaps is three and a half, which floors to three rather than four', (await flight(7)).score, 3);
-  eq('forty gaps reach the ceiling', (await flight(40)).score, CONFIG.games.flightMaxPoints);
-  eq('and a thousand bank the same twenty', (await flight(1000)).score, CONFIG.games.flightMaxPoints);
+  eq('…at performance 20', banked.performance, 5 * per4);
+  eq('twenty-five obstacles is a perfect round', (await flight(25)).performance, 100);
+  eq('…and takes the perfect-round bonus with it',
+    (await flight(25)).bonusPerfect, CONFIG.games.perfectRoundBonus);
+  eq('a thousand reach the same 100 and no more', (await flight(1000)).performance, 100);
 
   /*
    * **A run that could not have happened does not pay for itself.**
    *
-   * The ceiling above bounds what a run is *worth* and says nothing about
-   * whether it was flown. A thousand gaps claimed one second after the session
-   * opened used to bank the full twenty and sit in the ledger looking exactly
-   * like a very good player. Columns arrive on a timer, so the honest gap count
-   * is bounded by the round's own duration — measured here from two stamps the
-   * server wrote.
-   *
-   * The allowance is what the second number tests: it is slack for the columns
-   * already on screen when a run begins, so a *short* honest run is not
-   * clamped, and it is generous on purpose.
+   * The 0–100 scale bounds what a run is *worth* and says nothing about whether
+   * it was flown. A thousand gaps claimed one second after the session opened
+   * used to bank the ceiling and sit in the ledger looking exactly like a very
+   * good player. Columns arrive on a timer, so the honest gap count is bounded by
+   * the round's own duration — measured from two stamps the server wrote. The
+   * rulebook does not ask for this guard; it is kept because nothing replaces it.
    */
-  /* Floored, because the round is floored once at the end like every other:
-     three gaps at half a point is 1.5 and banks 1 on the free plan. */
-  const allowed = Math.floor(CONFIG.games.flightGapAllowance * CONFIG.games.flightPerGap);
+  const allowed = CONFIG.games.flightGapAllowance * per4;
   eq(
-    'a thousand gaps in one second is bounded by the clock, not by the ceiling',
-    (await flight(1000, 1)).score,
+    'a thousand gaps in one second is bounded by the clock, not by the scale',
+    (await flight(1000, 1)).performance,
     allowed,
   );
-  eq('…and the allowance keeps a genuinely short run whole', (await flight(CONFIG.games.flightGapAllowance, 0)).score, allowed);
+  eq('…and the allowance keeps a genuinely short run whole',
+    (await flight(CONFIG.games.flightGapAllowance, 0)).performance, allowed);
+
+  await w.db.close();
+}
+
+/**
+ * The parts of the formula that need a player with a history: the two once-only
+ * bonuses, the featured multiplier's "once per day", the decay curve counting
+ * real rounds, the welcome round's bypass, and what practice does and does not
+ * consume.
+ *
+ * A world of its own rather than sharing `scoringRules`', because every one of
+ * these is a statement about a *sequence* of rounds by one account and the other
+ * section deliberately plays two dozen unrelated ones.
+ */
+async function formulaInPlay(): Promise<void> {
+  describe('§4.1 in play — bonuses, featured, decay and the welcome round');
+
+  /** A perfect quiz round of `gameType`, finished at `at`. */
+  const perfect = async (
+    w: World,
+    gameType: games.GameType,
+    at: Iso,
+    opts: { practice?: boolean; welcome?: boolean; rights?: number } = {},
+  ) => {
+    const opened = await games.startSession(w.db, {
+      userId: w.customerId,
+      gameType,
+      language: 'en',
+      at,
+      practice: opts.practice,
+      welcome: opts.welcome,
+    });
+    const secret = JSON.parse(
+      (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, {
+        i: opened.sessionId,
+      }))!.secret,
+    ) as { answers: number[] };
+    const rights = opts.rights ?? secret.answers.length;
+    for (const [index, answer] of secret.answers.entries()) {
+      await games.submitEvent(w.db, {
+        sessionId: opened.sessionId,
+        userId: w.customerId,
+        seq: index,
+        kind: 'answer',
+        payload: { index, choice: index < rights ? answer : answer === 0 ? 1 : 0 },
+        at,
+      });
+    }
+    return await games.finish(w.db, { sessionId: opened.sessionId, userId: w.customerId, at });
+  };
 
   /*
-   * **The floor is at the end of the round, after the plan multiplier — and it
-   * is the only one.**
+   * ── the decay curve, counting real rounds of a real day ──
    *
-   * Seven gaps is 3.5 exactly. Floored once at the end, Pro banks
-   * `floor(3.5 × 1.25)` = 4; floored in the scorer first, it banks
-   * `floor(3 × 1.25)` = 3. Both are 3 on the free plan, which is why the check
-   * above cannot tell them apart and this one can — a half thrown away per item
-   * is invisible until something multiplies what is left.
+   * One day, four perfect rounds, the free tank. The tank is four and each round
+   * costs one, so this is a free player's whole day at full value — and the
+   * numbers it produces are the ones the economy model is built out of.
+   *
+   * Every round is a *different* game, which is deliberate: the curve counts
+   * rounds and not games, so there is nothing to rotate away from. The old
+   * per-game curve is exactly what a player rotating four cards used to defeat.
    */
-  await entitlements.startSubscription(w.db, {
-    subject: { userId: w.customerId },
-    planCode: 'pro',
-    source: 'stripe',
-    at: plusMinutes(base, (played + 1) * 180),
+  {
+    const w = await world();
+    /* A Monday well clear of a month boundary, so "the day" is unambiguous, and
+       an hour apart so all four land inside it. `flags` is not in the set
+       because it is the welcome round's bank and that is a different test. */
+    const day = '2026-06-08T09:00:00.000Z';
+    const order: games.GameType[] = ['capitals', 'brain', 'poland', 'memory_match'];
+    const rounds: games.Finish[] = [];
+    for (const [index, gameType] of order.entries()) {
+      const at = plusMinutes(day, index * 60);
+      rounds.push(
+        gameType === 'memory_match'
+          ? await (async () => {
+              const opened = await games.startSession(w.db, {
+                userId: w.customerId,
+                gameType,
+                at,
+              });
+              const deck = (
+                JSON.parse(
+                  (await w.db.get<{ secret: string }>(
+                    `SELECT secret FROM game_sessions WHERE id = $i`,
+                    { i: opened.sessionId },
+                  ))!.secret,
+                ) as { deck: string[] }
+              ).deck;
+              const first = new Map<string, number>();
+              let seq = 0;
+              for (const [position, symbol] of deck.entries()) {
+                const opener = first.get(symbol);
+                if (opener === undefined) {
+                  first.set(symbol, position);
+                  continue;
+                }
+                await games.submitEvent(w.db, {
+                  sessionId: opened.sessionId,
+                  userId: w.customerId,
+                  seq: (seq += 1),
+                  kind: 'pair',
+                  payload: { a: opener, b: position },
+                  at,
+                });
+              }
+              return await games.finish(w.db, {
+                sessionId: opened.sessionId,
+                userId: w.customerId,
+                at,
+              });
+            })()
+          : await perfect(w, gameType, at),
+      );
+    }
+
+    eq('four rounds in a day are numbered 1 to 4', rounds.map((r) => r.roundToday), [1, 2, 3, 4]);
+    eq('…and carry the decay rung each one landed on', rounds.map((r) => r.decay), [1, 0.65, 0.45, 0.3]);
+    eq('every one of the four was a perfect round', rounds.map((r) => r.performance), [100, 100, 100, 100]);
+    eq('…so every one takes the perfect bonus', rounds.map((r) => r.bonusPerfect), [10, 10, 10, 10]);
+    /* Four different games, all played for the first time, so all four take the
+       discovery bonus — which is what makes a free player's first day large and
+       every day after it ordinary. */
+    eq('…and all four are first-ever plays', rounds.map((r) => r.bonusNewGame), [25, 25, 25, 25]);
+    eq('…none of them a personal best, because each set its own first record',
+      rounds.map((r) => r.bonusPersonalBest), [0, 0, 0, 0]);
+
+    /* The featured game is whichever of the four happens to be in the window; the
+       multiplicative part is therefore asserted against the response's own
+       `featured` rather than pinned, and the point of the check is the decay. */
+    const expected = rounds.map((round) =>
+      Math.round(
+        round.base * (round.featured ? CONFIG.games.featuredMultiplier : 1) * round.decay +
+          round.bonusPerfect + round.bonusNewGame + round.bonusPersonalBest,
+      ),
+    );
+    eq('the day’s four scores are the formula, round by round', rounds.map((r) => r.score), expected);
+    /* At most one of the four is featured, whichever day this runs on. That is
+       "once per day" as a player experiences it. */
+    eq('and exactly one of them at most claimed the ×1.5',
+      rounds.filter((r) => r.featured).length <= 1, true);
+    await w.db.close();
+  }
+
+  /*
+   * ── the featured ×1.5, once per day ──
+   *
+   * Played against the *actual* featured game for the day rather than hoping one
+   * of a fixed list falls in the window: `featuredGamesFor` is the three-UTC-day
+   * set, and the first playable member of it is the card a player would be shown.
+   */
+  {
+    const w = await world();
+    const day = '2026-06-15T09:00:00.000Z';
+    const featuredQuiz = [...games.featuredGamesFor(day)].find((gameType) =>
+      ['capitals', 'brain', 'poland', 'uzbekistan', 'flags'].includes(gameType),
+    )!;
+    check('the rotation offers a quiz somewhere in its three-day window', Boolean(featuredQuiz));
+
+    const first = await perfect(w, featuredQuiz, day);
+    eq('the first round of the day’s featured game takes the ×1.5', first.featured, true);
+    eq(
+      '…which is a perfect round at 27 before the bonuses, not 18',
+      first.score,
+      Math.round(CONFIG.games.maxRoundPoints * CONFIG.games.featuredMultiplier) +
+        first.bonusPerfect + first.bonusNewGame,
+    );
+
+    const second = await perfect(w, featuredQuiz, plusMinutes(day, 90));
+    eq('a second round of the same game does not take it again', second.featured, false);
+    eq('…and it is the second round of the day, so it decays', second.decay, 0.65);
+
+    eq('…and the factor it applied travels beside the boolean',
+      first.featuredMultiplier, CONFIG.games.featuredMultiplier);
+    eq('…while a round that did not claim it carries a 1, so the chain needs no branch',
+      second.featuredMultiplier, 1);
+    eq(
+      'the whole chain multiplies unconditionally',
+      first.score,
+      Math.round(
+        first.base * first.featuredMultiplier * first.decay * first.multiplier +
+          first.bonusPerfect + first.bonusNewGame + first.bonusPersonalBest,
+      ),
+    );
+
+    /* Tomorrow it comes back — a different game is featured, and this one is not
+       it, so the check is that the *guard* reset rather than that the game did. */
+    const tomorrow = await perfect(w, featuredQuiz, plusMinutes(day, 1440));
+    eq('the guard is per day, so tomorrow it is decided by the rotation again',
+      tomorrow.featured, games.featuredGamesFor(plusMinutes(day, 1440)).has(featuredQuiz));
+    eq('…and tomorrow is a fresh decay curve', tomorrow.decay, 1);
+    eq('…and a fresh round number', tomorrow.roundToday, 1);
+    await w.db.close();
+  }
+
+  /*
+   * ── the personal best, +8, once per game per day ──
+   */
+  {
+    const w = await world();
+    const day = '2026-06-22T09:00:00.000Z';
+
+    /* A bad round first, so there is a record to beat that is not already 100. */
+    const poor = await perfect(w, 'capitals', day, { rights: 1 });
+    eq('a first round of a game sets a record rather than beating one', poor.bonusPersonalBest, 0);
+    eq('…and takes the discovery bonus instead', poor.bonusNewGame, CONFIG.games.newGameBonus);
+
+    const better = await perfect(w, 'capitals', plusMinutes(day, 60), { rights: 3 });
+    eq('a better round beats it and takes the +8', better.bonusPersonalBest,
+      CONFIG.games.personalBestBonus);
+    eq('…and not the discovery bonus a second time', better.bonusNewGame, 0);
+
+    const betterAgain = await perfect(w, 'capitals', plusMinutes(day, 120), { rights: 5 });
+    eq('a second improvement the same day does not pay it twice',
+      betterAgain.bonusPersonalBest, 0);
+    eq('…though the record still moved', betterAgain.performance, 100);
+
+    /* Tomorrow the cap resets — but the record is 100 now, so there is nothing
+       left to beat, which is the honest end state of a capped scale. */
+    const capped = await perfect(w, 'capitals', plusMinutes(day, 1440), { rights: 5 });
+    eq('a round that only equals the record is not a personal best',
+      capped.bonusPersonalBest, 0);
+
+    /* The row is the only storage this formula added, and it holds what it says. */
+    const row = await w.db.get<{ best: number }>(
+      `SELECT best FROM player_game_bests WHERE user_id = $u AND game_type = 'capitals'`,
+      { u: w.customerId },
+    );
+    eq('the stored best is the best performance reached', row?.best, 100);
+    /* A worse round afterwards does not lower it. */
+    await perfect(w, 'capitals', plusMinutes(day, 1500), { rights: 1 });
+    eq(
+      '…and a bad round afterwards does not lower it',
+      (
+        await w.db.get<{ best: number }>(
+          `SELECT best FROM player_game_bests WHERE user_id = $u AND game_type = 'capitals'`,
+          { u: w.customerId },
+        )
+      )?.best,
+      100,
+    );
+    await w.db.close();
+  }
+
+  /*
+   * ── the welcome round bypasses the formula entirely ──
+   *
+   * §7.3: the first finished round of an account pays a flat 10 a correct answer,
+   * because the onboarding screen before it promises fifty points and the master
+   * formula cannot produce fifty from one round of anything. It is gated on the
+   * server's own `secret.welcome` **and** on this being the player's first
+   * finished round, so a client cannot ask for the rate.
+   */
+  {
+    const w = await world();
+    const day = '2026-06-29T09:00:00.000Z';
+
+    const welcome = await perfect(w, 'flags', day, { welcome: true });
+    eq('the welcome round pays ten a correct answer', welcome.score,
+      CONFIG.games.quizQuestions * CONFIG.earn.welcomeRoundPerCorrect);
+    eq('…which is the fifty the onboarding screen promises', welcome.score, 50);
+    eq('…and it says so, rather than leaving a client to infer it', welcome.welcomeRound, true);
+    eq('…the formula did not run, so there is no base', welcome.base, 0);
+    eq('…and none of the three bonuses landed',
+      [welcome.bonusPerfect, welcome.bonusNewGame, welcome.bonusPersonalBest], [0, 0, 0]);
+    eq('…and no featured multiplier either', welcome.featured, false);
+    /* The performance is still reported honestly: the round was played, it was
+       perfect, and a screen that wants to say so can. */
+    eq('…while the performance is still the honest figure', welcome.performance, 100);
+
+    /* The second round is an ordinary one, on the formula, even though it is
+       also started as a welcome round: the first-ever check is what makes the
+       rate once. */
+    const again = await perfect(w, 'flags', plusMinutes(day, 60), { welcome: true });
+    eq('a second welcome round is an ordinary round', again.welcomeRound, false);
+    eq('…priced by the formula', again.base, CONFIG.games.maxRoundPoints);
+    check('…and worth far less than the fifty', again.score < 50, again.score);
+    /*
+     * **The welcome round *is* the first play of its game, so the +25 is spent.**
+     *
+     * A decision the rulebook does not make, and worth stating either way. §4.3
+     * pays 25 the first time somebody plays a game; the welcome round is a real,
+     * paid, finished round of `flags`, so that first time has happened and the
+     * second round is a second play. Paying 25 on it would be paying twice for
+     * one discovery, and the player is not short: the welcome round paid 50 for
+     * that first round where the formula's most generous reading of it would have
+     * been 18 + 10 + 25 = 53 on a featured day and 43 otherwise. Playing all
+     * eight games once is 175 + 50 rather than §4.3's 200.
+     */
+    eq('…and the welcome round spent that game’s discovery bonus, because it was that game’s first play',
+      again.bonusNewGame, 0);
+    /* Another game's is untouched, which is what says the bonus is per game
+       rather than per account. */
+    eq('…while another game’s is still there to be earned',
+      (await perfect(w, 'capitals', plusMinutes(day, 120))).bonusNewGame,
+      CONFIG.games.newGameBonus);
+    await w.db.close();
+  }
+
+  /*
+   * ── practice consumes nothing ──
+   *
+   * The rulebook's addition to a rule that already existed. A practice round
+   * banked nothing before; it must now also not spend the first-play bonus, not
+   * set a personal best, not take the featured ×1.5 and not advance the decay
+   * curve. All four fall out of one column — `life_spent = 0` — which is why they
+   * are checked together.
+   */
+  {
+    const w = await world();
+    const day = '2026-07-06T09:00:00.000Z';
+
+    /* Empty the free tank, then play a fifth round as practice. */
+    for (let i = 0; i < CONFIG.points.dailyEnergy; i += 1) {
+      await perfect(w, 'capitals', plusMinutes(day, i * 5), { rights: 1 });
+    }
+    const practice = await perfect(w, 'brain', plusMinutes(day, 30), { practice: true });
+    eq('a practice round banks nothing', practice.score, 0);
+    eq('…and says so', practice.paid, false);
+    eq('…while still reporting how the round went', practice.performance, 100);
+    eq('…and what it would have been worth', practice.base, CONFIG.games.maxRoundPoints);
+    eq('…but none of the three bonuses, because none was awarded',
+      [practice.bonusPerfect, practice.bonusNewGame, practice.bonusPersonalBest], [0, 0, 0]);
+
+    const bests = await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM player_game_bests WHERE user_id = $u AND game_type = 'brain'`,
+      { u: w.customerId },
+    );
+    eq('a practice round records no personal best', bests?.n, 0);
+
+    /* Tomorrow, with energy back, the same game's first *paid* round still has
+       its discovery bonus: practice did not spend it. */
+    const paidLater = await perfect(w, 'brain', plusMinutes(day, 1440));
+    eq('…and the discovery bonus is still there to be earned', paidLater.bonusNewGame,
+      CONFIG.games.newGameBonus);
+    eq('…on the first round of its day, undecayed', paidLater.roundToday, 1);
+    await w.db.close();
+  }
+}
+
+/**
+ * **Today's featured game as one card**, which is a different question from
+ * "may this round take the ×1.5" and has to be answered separately.
+ *
+ * The honoured set is three UTC days wide, because the poster rotates on the
+ * reader's local date and the server does not know their clock — up to four game
+ * types, which is the right answer for the bonus and useless for a hero card. Two
+ * clients were picking the card themselves and by two different rules, so two
+ * screens could name different games on one day and neither matched the game the
+ * bonus was paid on.
+ */
+async function featuredPoster(): Promise<void> {
+  describe('§4.4 the featured game — one card, resolved per account');
+
+  const w = await world();
+
+  /* Seven consecutive days, which is exactly one full turn of the rotation: the
+     pool has seven slots, so this walks every one of them. */
+  const day = '2026-08-03T09:00:00.000Z';
+  const posted: Array<games.GameType | null> = [];
+  for (let offset = 0; offset < games.DAILY_GAME_POOL.length; offset += 1) {
+    posted.push(await games.featuredGameFor(w.db, w.customerId, plusDays(day, offset)));
+  }
+
+  check('every day of the rotation posts exactly one game', posted.every(Boolean), posted);
+  eq('…and seven days cover the whole pool without repeating',
+    new Set(posted).size, games.DAILY_GAME_POOL.length);
+  check(
+    '…each one a slot of the pool, so the poster cannot name a card the rotation does not',
+    posted.every((gameType, index) =>
+      games.DAILY_GAME_POOL.some((slot) => slot.includes(gameType!)) &&
+      games.dailyGameFor(plusDays(day, index).slice(0, 10)).includes(gameType!)),
+    posted,
+  );
+  check(
+    '…and the game it names is always one the ×1.5 would actually be honoured on',
+    posted.every((gameType, index) =>
+      games.featuredGamesFor(plusDays(day, index)).has(gameType!)),
+    posted,
+  );
+
+  /*
+   * **The local quiz is the one slot a client cannot resolve on its own**, and it
+   * is the reason this is a server field rather than a rotation a client can
+   * compute. `DAILY_GAME_POOL` holds `['poland', 'uzbekistan']` as one slot.
+   */
+  const localDay = (() => {
+    for (let offset = 0; offset < games.DAILY_GAME_POOL.length; offset += 1) {
+      const when = plusDays(day, offset);
+      if (games.dailyGameFor(when.slice(0, 10)).length > 1) return when;
+    }
+    throw new Error('no multi-bank slot in the pool');
+  })();
+
+  await w.db.run(`UPDATE users SET country_code = 'PL' WHERE id = $u`, { u: w.customerId });
+  eq('a Polish account is dealt the Poland bank on the local-quiz day',
+    await games.featuredGameFor(w.db, w.customerId, localDay), 'poland');
+  await w.db.run(`UPDATE users SET country_code = 'UZ' WHERE id = $u`, { u: w.customerId });
+  eq('…and an Uzbek account the Uzbekistan one, never Poland’s',
+    await games.featuredGameFor(w.db, w.customerId, localDay), 'uzbekistan');
+  /* Lower case, because `country_code` is a text column with no CHECK and an
+     import or an older client can have written either case. */
+  await w.db.run(`UPDATE users SET country_code = 'uz' WHERE id = $u`, { u: w.customerId });
+  eq('…however the code was cased', await games.featuredGameFor(w.db, w.customerId, localDay),
+    'uzbekistan');
+  /* An account with no country still gets a card. A blank hero card is worse than
+     the Poland bank, which is the product's own default market. */
+  await w.db.run(`UPDATE users SET country_code = NULL WHERE id = $u`, { u: w.customerId });
+  eq('an account with no country still gets a card, and it is Poland’s',
+    await games.featuredGameFor(w.db, w.customerId, localDay), 'poland');
+  await w.db.run(`UPDATE users SET country_code = 'DE' WHERE id = $u`, { u: w.customerId });
+  eq('…as does a country no bank has been written for',
+    await games.featuredGameFor(w.db, w.customerId, localDay), 'poland');
+
+  /*
+   * **The table is restated in two programs and this is what keeps them level.**
+   *
+   * `QUIZ_BANK_FOR_COUNTRY` in `src/site/games/banks.ts` is the site's copy;
+   * `LOCAL_QUIZ_FOR_COUNTRY` in `domain/games.ts` is this one. They share no code,
+   * so a country added to one and not the other deals an Uzbek bank under a Polish
+   * name — and does it silently. Read from the source, like `postgresLockdown`
+   * reads `rls.pg.sql`, because the site's half is not importable from here.
+   */
+  const banksFile = readFileSync(
+    join(fileURLToPath(new URL('..', import.meta.url)), 'src', 'site', 'games', 'banks.ts'),
+    'utf8',
+  );
+  const table = /QUIZ_BANK_FOR_COUNTRY = \{([\s\S]*?)\}/.exec(banksFile);
+  check('the site’s own bank table is still where this reads it from', Boolean(table));
+  const theirs = Object.fromEntries(
+    [...(table?.[1] ?? '').matchAll(/([A-Z]{2}):\s*'([a-z_]+)'/g)].map((m) => [m[1], m[2]]),
+  );
+  check('…and it has rows', Object.keys(theirs).length > 1, theirs);
+  eq('the two programs deal the same bank for the same country', theirs,
+    { ...games.LOCAL_QUIZ_FOR_COUNTRY });
+
+  await w.db.close();
+}
+
+/**
+ * The flight round carries **two** numbers and they are not the same number.
+ *
+ * `target` is the win threshold and `perfectObstacles` is what a perfect round
+ * takes, and a client reading one as the other prints a wrong figure with nothing
+ * to catch it — which is exactly what happened: five is the number the site has
+ * always shown for banking the round, and 25 is the number \u00a75.6 makes a
+ * perfect one.
+ */
+async function flightRoundShape(): Promise<void> {
+  describe('\u00a75.6 the flight round — the win threshold and the perfect one');
+
+  const w = await world();
+  const round = await games.startSession(w.db, {
+    userId: w.customerId,
+    gameType: 'flight',
+    at: now(),
   });
-  eq('half points survive to the multiplier: 3.5 × 1.25 banks 4, not 3', (await flight(7)).score, 4);
+  const content = round.content as {
+    target: number;
+    performancePerObstacle: number;
+    perfectObstacles: number;
+  };
+
+  eq('the win threshold is still five gaps', content.target, CONFIG.games.flightTarget);
+  eq('…and a perfect round is twenty-five obstacles', content.perfectObstacles, 25);
+  check('…which is not the same number, and both are sent',
+    content.target !== content.perfectObstacles);
+  eq('the rate travels too, as it does for every other game',
+    content.performancePerObstacle, CONFIG.games.flightPerformancePerObstacle);
+  /* Derived from the rate rather than written beside it, which is what stops the
+     two drifting when the rate moves. */
+  eq('…and the perfect figure is that rate, not a second constant',
+    content.perfectObstacles * content.performancePerObstacle, 100);
 
   await w.db.close();
 }
@@ -5699,23 +6448,41 @@ async function dailyTaskRules(): Promise<void> {
     CONFIG.earn.profileComplete);
   eq('…and the invite task what the inviter is paid', before.invite?.points,
     CONFIG.earn.referrerFirstVisit);
-  eq('…and the daily game what its bonus pays', before.daily_game?.points, CONFIG.earn.dailyGame);
+  /*
+   * **The featured-game prompt became a ceiling rather than a promise**, which
+   * is the one thing rulebook §4.1 step 3 changes about this panel.
+   *
+   * It quoted `CONFIG.earn.dailyGame` — a flat 20, exact, paid as its own ledger
+   * entry — and that constant is gone: the featured game is ×1.5 on the round
+   * now, so what it is worth depends on how the round goes, and the only honest
+   * figure a prompt can carry is the most it could be. Both game prompts are
+   * priced by `games.roundCeiling`, which is the same function that prices a real
+   * round, because a panel quoting a figure the ledger will not pay is the one
+   * failure this file exists to prevent.
+   */
+  eq('…and the featured game the most a featured round can pay', before.daily_game?.points,
+    games.roundCeiling({ featured: true, multiplier: 1 }));
+  eq('…which is 37 on the free plan: 27 for a perfect featured round, plus the perfect bonus',
+    before.daily_game?.points, 37);
+  eq('…and it is a ceiling, not a promise, so the panel renders “up to”',
+    before.daily_game?.exact, false);
   /* Today's check-in is the rung of the cycle the player is standing on, not a
      constant — which is the whole reason the amount is not a column. Day one of
      a streak with no milestone on it. */
   eq('…and the check-in what *today* pays', before.check_in?.points,
     checkin.dayValue(1) + (CONFIG.earn.streakMilestones[1] ?? 0));
-  check('the exact rewards say so', [before.profile, before.invite, before.check_in, before.daily_game]
+  check('the exact rewards say so', [before.profile, before.invite, before.check_in]
     .every((task) => task?.exact === true));
   /* A round pays what the round scored, so its figure is a ceiling and the
      client renders "up to". Promising the ceiling is a promise a player can
      fail to be given. */
   eq('a game round is a ceiling, not a promise', before.play_round?.exact, false);
-  check('…and the ceiling is the best a round can do', (before.play_round?.points ?? 0) ===
-    CONFIG.games.quizQuestions * CONFIG.games.quizPerCorrect +
-      CONFIG.games.quizPerfectBonus +
-      CONFIG.games.quizSpeedBands[0].points,
-    before.play_round?.points);
+  eq('…and the ceiling is a perfect first round of the day plus its bonus',
+    before.play_round?.points, games.roundCeiling({ featured: false, multiplier: 1 }));
+  eq('…which is 28: 18 for a perfect round and 10 for it being perfect',
+    before.play_round?.points, 28);
+  check('…and the featured prompt is worth more than the plain one, by the ×1.5',
+    (before.daily_game?.points ?? 0) > (before.play_round?.points ?? 0));
 
   check('nothing is done on a fresh account',
     Object.values(before).every((task) => task.done === false),
@@ -5741,10 +6508,17 @@ async function dailyTaskRules(): Promise<void> {
   eq('a completed referral leaves the invite on offer', after.invite?.done, false);
 
   /*
-   * The daily game: `CONFIG.earn.dailyGame` once a day, for finishing the
-   * featured game of the player's local day — which is one of the three UTC
-   * days around the server's. Capitals is the probe; `posted` finds an instant
-   * where it counts and one where it does not.
+   * The featured game, and whether the prompt knows it has been taken.
+   *
+   * The rotation posts on the player's *local* day, which the server does not
+   * know, so a round counts if its game is featured for yesterday, today or
+   * tomorrow in UTC. Capitals is the probe; `posted` finds an instant where it
+   * counts and one where it does not.
+   *
+   * **`done` is derived from the player's own finished rounds now**, not from a
+   * `daily_game` ledger entry — there is no such entry any more, because the
+   * bonus is a multiplier inside the round. So this asserts on `featured` on the
+   * response and on the prompt, which is what a player can actually see.
    */
   const posted = (when: string) =>
     [-1, 0, 1].some((offset) =>
@@ -5754,24 +6528,21 @@ async function dailyTaskRules(): Promise<void> {
   let off = plusDays(on, 1);
   while (posted(off)) off = plusDays(off, 1);
 
-  /* Counted off its own `source_kind` rather than off the balance: a round
-     after a gap also pays the comeback bonus, which is not this rule. */
-  const dailyPaid = async () =>
-    (await w.db.get<{ n: number | null }>(
-      `SELECT SUM(delta) AS n FROM points_ledger WHERE user_id = $u AND source_kind = 'daily_game'`,
-      { u: w.customerId },
-    ))?.n ?? 0;
-  const bonusOf = async (when: string) => {
-    const was = await dailyPaid();
+  const playCapitals = async (when: string) => {
     const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: when });
-    await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at: when });
-    return (await dailyPaid()) - was;
+    return await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at: when });
   };
-  eq('the day’s featured game pays the daily bonus', await bonusOf(on), CONFIG.earn.dailyGame);
-  eq('…once a day, not once a round', await bonusOf(plusMinutes(on, 5)), 0);
-  check('…and the task says it is done',
-    (await tasks.tasksFor(w.db, w.customerId, on)).find((task) => task.key === 'daily_game')?.done === true);
-  eq('any other game pays no bonus', await bonusOf(off), 0);
+  const prompt = async (when: string) =>
+    (await tasks.tasksFor(w.db, w.customerId, when)).find((task) => task.key === 'daily_game');
+
+  check('the featured prompt is open before the day’s round is played',
+    (await prompt(on))?.done === false);
+  eq('the day’s featured game claims the ×1.5', (await playCapitals(on)).featured, true);
+  check('…and the prompt goes quiet once it has been claimed',
+    (await prompt(on))?.done === true);
+  eq('…once a day, not once a round', (await playCapitals(plusMinutes(on, 5))).featured, false);
+  eq('any other day’s game claims nothing', (await playCapitals(off)).featured, false);
+  check('…and leaves that day’s prompt open', (await prompt(off))?.done === false);
   eq('the order is the Play screen’s rotation', games.DAILY_GAME_POOL.map((slot) => slot.join('|')),
     ['flight', 'memory_match', 'flags', 'capitals', 'brain', 'poland|uzbekistan', 'word_builder']);
 
@@ -7199,7 +7970,11 @@ async function run(): Promise<void> {
   await wordBankRules();
   await mediaRules();
   await rateRules();
+  formulaTable();
   await scoringRules();
+  await formulaInPlay();
+  await featuredPoster();
+  await flightRoundShape();
   await dealRules();
   await consentRules();
   await sharingDefaultRules();

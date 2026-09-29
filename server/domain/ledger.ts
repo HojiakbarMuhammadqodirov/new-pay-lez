@@ -67,6 +67,29 @@ export interface EarnInput {
   venueId?: string | null;
   /** §12a.4. A paid tier's earn multiplier, recorded on the entry. */
   multiplier?: number;
+  /**
+   * `points` already has `multiplier` in it: record the factor, do not apply it.
+   *
+   * One caller passes this and it is `games.finish`. The scoring formula
+   * (rulebook §4.1) multiplies the round's *base* by the plan and then adds the
+   * three flat bonuses on top — a perfect round, a first-ever play, a personal
+   * best — and those bonuses are deliberately **not** multiplied: a "+25 for a
+   * new game" that quietly pays 44 on Premium is a line no result card can name.
+   * So the round arrives here as a finished integer, and the only thing left for
+   * this function to do with the factor is write it down.
+   *
+   * It is written down rather than dropped because `points_ledger.multiplier` is
+   * the audit answer to "why was this round worth more than that one", read by
+   * the GDPR export in `domain/consent.ts`. Passing `multiplier: 1` on a
+   * subscriber's round would make every game entry in that export look like a
+   * free-plan round, which is the kind of quiet wrong answer a data export is
+   * the worst possible place for.
+   *
+   * A flag rather than a second function because everything else `earn` does —
+   * the daily counter, the zero check, the lot, the cache — is identical either
+   * way, and a copy of it that differed in one line is a copy that drifts.
+   */
+  multiplierApplied?: boolean;
   at?: Iso;
 }
 
@@ -152,7 +175,12 @@ export async function gamePointsToday(db: Db, userId: string, day: string): Prom
 export async function earn(db: Db, input: EarnInput): Promise<{ entry: LedgerEntry }> {
   const at = input.at ?? now();
   const multiplier = input.multiplier ?? 1;
-  const points = Math.floor(input.points * multiplier);
+  /* `multiplierApplied` says the caller has already done the multiplication and
+     this is the finished figure — see the field's own note. Everything else
+     below treats `points` identically either way. */
+  const points = input.multiplierApplied
+    ? Math.floor(input.points)
+    : Math.floor(input.points * multiplier);
 
   if (points < 0) throw new DomainError('bad_request', 'earn takes a positive amount');
   /* `points < 0` is false for NaN, and a NaN delta reaches SQLite as a NOT NULL

@@ -19,23 +19,58 @@
  * the client's copy decides what the *animation* says, this one decides what the
  * balance does.
  *
- * **A round's score is `floor(raw × points_multiplier)` and nothing else.** No
- * daily ceiling trims it and no curve shrinks a repeat — a per-game decay curve
- * did the second of those and is gone. **Energy is the single limiter**: every
- * finished round costs one, win or lose, which is twelve rounds a day sustained
- * on the free plan (sixteen from a full tank), 24/30 on Pro and 48/58 on
- * Premium. The curve was written when play was unlimited and it was the only
- * brake there was; once energy became one it stopped reaching, because it was
- * per *game* and a player rotating the seven never got to its zero rung. One
- * rule that can be explained on a result card beats two that overlap. Anything
- * that wants to make a day smaller belongs in `CONFIG.points`.
+ * ## One scale, one formula — the points rulebook §4.1
  *
- * **`raw` is exact and may hold halves; the one floor is the one in
- * `ledger.earn`.** Two of the scorers can end on a half point — a hinted word
- * is worth half its tier, and a gap in the flight is worth half a point — and
- * the whole round is floored once, after the plan multiplier, rather than at
- * each item. Flooring twice is how a player loses a point they earned: two
- * hinted words at 1.5 each are 3, and 1 + 1 is 2.
+ * **Every scorer in this file answers one question: what was this round's
+ * PERFORMANCE, as an integer from 0 to 100?** Nothing here converts a result
+ * into points. `roundPoints` does that, once, from the performance and four
+ * facts about the player: which round of the day it is, whether this is the
+ * day's featured game, what their plan multiplies by, and which of the three
+ * flat bonuses landed.
+ *
+ *     base  = max(2, round(performance / 100 × 18))      // 2..18
+ *           × 1.5 if featured (once per day)
+ *           × decay(roundToday)   1 · 0.65 · 0.45 · 0.3 · 0.2 · 0.12
+ *           × points_multiplier   1 / 1.25 / 1.75
+ *           + perfect 10 + first-ever play 25 + personal best 8
+ *     final = max(1, round(that))
+ *
+ * Seven games used to carry seven private payout tables here, and the only thing
+ * holding them level was somebody having last checked: Poland maxed at 5 for the
+ * same five questions Brain paid 25 for. Under one scale a game can only be
+ * mispriced by mapping its own result onto performance wrongly, which is one
+ * small reviewable function per game, and never by its payout drifting.
+ *
+ * **Energy is still the only thing that bounds how many rounds exist**, and the
+ * decay curve is what bounds what they are worth: one energy per finished round,
+ * refilling on a clock, which is sixteen rounds a day from a full free tank, and
+ * the sixth of them is worth 12% of the first. Those are two different limits
+ * rather than two copies of one — how many, and how much — and a result card can
+ * explain both.
+ *
+ * ## Where the rounding happens, and why it moved
+ *
+ * It used to be a single `floor` inside `ledger.earn`, and this comment used to
+ * argue at length for putting it there: two of the scorers returned **halves** —
+ * a hinted word was worth half its tier, a gap in the flight half a point — so
+ * the round had to stay exact until after the plan multiplier or a player lost
+ * the halves they had earned. That argument is retired with the tables that
+ * caused it. **Every scorer now returns an integer**, so there are no halves
+ * left in a round to protect.
+ *
+ * The rounding point moved to the end of `roundPoints` and became a **round**
+ * rather than a floor, because that is what the rulebook's published payout
+ * table (§4.2) is computed with: 70% featured is 13 × 1.5 = 19.5, and the table
+ * promises 20. Flooring would print 19 beside a number a player was shown.
+ * There is exactly one rounding step and it is the last one — and it is done in
+ * **integer arithmetic scaled by a million**, because three of the decay rungs
+ * are not exactly representable as doubles and a product landing on a .5
+ * boundary would otherwise be decided by representation dust.
+ *
+ * `ledger.earn` is handed the finished integer and told so (`multiplierApplied`),
+ * which is also what keeps the flat bonuses out of the multiplication: the
+ * rulebook adds them after it, and a "+25 for a new game" that quietly paid 44
+ * on Premium would be a line no result card could name.
  */
 import { GAME_TYPES, type Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
@@ -465,7 +500,30 @@ async function buildRound(
   if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language, welcome);
   if (gameType === 'word_builder') return await buildWords(db, userId, wordList ?? language, language);
   if (gameType === 'memory_match') return buildDeck();
-  return { seed: newId('gev'), secret: { kind: 'flight' }, content: { target: CONFIG.games.flightTarget } };
+  return {
+    seed: newId('gev'),
+    secret: { kind: 'flight' },
+    /*
+     * **`target` and `perfectObstacles` are two different numbers and both are
+     * real**, which is worth being explicit about because a client reading one as
+     * the other prints a wrong figure with nothing to catch it.
+     *
+     * `target` is the **win** threshold — five gaps, the number the site's own
+     * screen has always shown — and it decides `won` on the finish and nothing
+     * else. `perfectObstacles` is what a **perfect round** takes: 25, because
+     * performance is `min(100, obstacles × 4)`. Derived from the rate rather than
+     * written beside it, so the two cannot drift.
+     *
+     * The rate travels too, as it does for every other game: the server owns what
+     * an obstacle is worth, and a client holding its own 4 is a second copy of a
+     * table this file owns.
+     */
+    content: {
+      target: CONFIG.games.flightTarget,
+      performancePerObstacle: CONFIG.games.flightPerformancePerObstacle,
+      perfectObstacles: Math.ceil(100 / CONFIG.games.flightPerformancePerObstacle),
+    },
+  };
 }
 
 /**
@@ -721,16 +779,27 @@ async function buildQuiz(
        questions are asked and a quiz cannot be lost.** A key that always said
        "two" is a screen drawing two hearts that never empty.
 
-       `perCorrect` and `speedBands` are on the wire for the same reason: what a
-       question is worth and what the clock is worth are the server's rules, and
-       a client that hardcodes "answer in ten seconds for two points" is a second
-       copy of a table this file owns. The bands are what the round timer draws
-       against; the *timing* is still the server's, off its own event stamps. */
+       The three keys beside the questions are on the wire for the same reason
+       they always were — what an answer is worth and what the clock is worth are
+       the server's rules, and a client hardcoding them is a second copy of a
+       table this file owns — but they are **performance** now rather than points,
+       and they are renamed so that cannot be mistaken. `perCorrect: 1` became
+       `performancePerCorrect: 20`: a client that read the old key as points and
+       kept reading a new one worth twenty would print "20 points a question" on
+       a round that pays eighteen at its absolute best. A renamed key is a decode
+       error on the first round; a re-meaninged one is a wrong number on every
+       round, for ever.
+
+       What a round is *worth* is deliberately not here. Points now depend on the
+       day's featured game, on which round of the day this is, on the plan and on
+       three bonuses, none of which is a property of the questions — so the round
+       carries the scale it will be judged on and the finish carries the
+       arithmetic, itemised. */
     content: {
       questions: questions.map((q) => ({ index: q.index, prompt: q.prompt, options: q.options })),
-      perCorrect: CONFIG.games.quizPerCorrect,
-      perfectBonus: CONFIG.games.quizPerfectBonus,
-      speedBands: CONFIG.games.quizSpeedBands,
+      performancePerCorrect: CONFIG.games.quizPerformancePerCorrect,
+      speedCredit: CONFIG.games.quizSpeedCredit,
+      speedWithinSeconds: CONFIG.games.quizSpeedWithinSeconds,
     },
   };
 }
@@ -795,7 +864,18 @@ async function buildWords(
        what a round in flight is worth. */
     secret: { kind: 'words', words: rows.map((r) => r.word.toUpperCase()), tiers: rows.map((r) => r.tier) },
     /* The client gets the scrambled letters and the length, which is the game;
-       it does not get the word, which is the answer. */
+       it does not get the word, which is the answer.
+       
+       `tier` is still sent and **no longer prices the word**. It is the bank's
+       human-set difficulty rating, it still decides which words are dealt, and a
+       client may well want to draw it — but a scale where a hard word pays more
+       is a scale where the round is worth whatever it happened to deal, which is
+       the thing the common performance scale exists to stop.
+
+       The four scale keys beside the words are the same arrangement the quizzes
+       have: the server owns what a word and a hint are worth, and a client that
+       hardcoded "a hint costs ten" would be a second copy of a table this file
+       owns. They are **performance**, not points. */
     content: {
       words: rows.map((row, index) => ({
         index,
@@ -804,6 +884,10 @@ async function buildWords(
         letters: shuffle([...row.word.toUpperCase()], row.id),
         hint: row.hint,
       })),
+      performancePerWord: CONFIG.games.wordPerformancePerWord,
+      speedCredit: CONFIG.games.wordSpeedCredit,
+      speedWithinSeconds: CONFIG.games.wordSpeedWithinSeconds,
+      hintPenalty: CONFIG.games.wordHintPenalty,
     },
   };
 }
@@ -820,8 +904,21 @@ function buildDeck(): Built {
     seed: deck.join(''),
     secret: { kind: 'deck', deck },
     /* Face down: the client is told how many cards there are and nothing else.
-       Sending the layout and asking the client not to look is not a design. */
-    content: { cards: deck.length, pairs },
+       Sending the layout and asking the client not to look is not a design.
+
+       The scale travels with it, as it does for the quizzes and Word Builder.
+       This game is now scored on **moves** rather than on the clock, and the
+       bands are what lets a board draw "4 moves left in this band" honestly
+       instead of a client's guess at the curve. `limitSeconds` is the one number
+       here a client has to act on rather than merely display: the round ends at
+       it, and a board still incomplete then is scored proportionally. */
+    content: {
+      cards: deck.length,
+      pairs,
+      basePerformance: CONFIG.games.memoryBasePerformance,
+      moveBands: CONFIG.games.memoryMoveBands,
+      limitSeconds: CONFIG.games.memoryLimitSeconds,
+    },
   };
 }
 
@@ -1158,13 +1255,17 @@ export async function submitEvent(
 export interface Finish {
   score: number;
   /**
-   * How many points the daily ceiling trimmed — now always 0, and kept.
+   * How many points the daily ceiling trimmed — **still always 0**, and kept.
    *
-   * There is no daily game ceiling and nothing else shrinks a round either: a
-   * per-game decay curve did for a while, and `decay` travelled on this body to
-   * explain it. Both are gone. The field stays because the app reads this body
-   * and dropping a key is a protocol change for a fact that is simply "nothing
-   * was trimmed" — and it never has been.
+   * There is no daily points ceiling. What there is again is a decay curve, and
+   * it is deliberately *not* reported through this field: `capped` was a number
+   * of points removed from a round that had already been scored, and decay is
+   * part of scoring it. A client that printed "8 points capped" off this key
+   * would be describing something that did not happen. `decay` and `roundToday`
+   * below are where a shrunken round explains itself.
+   *
+   * The field stays because the app reads this body and dropping a key is a
+   * protocol change for a fact that is simply "nothing was trimmed".
    */
   capped: number;
   correct: number;
@@ -1198,16 +1299,84 @@ export interface Finish {
   unpaidReason: 'no_energy' | null;
   /** §7.4's reward connection, computed from the real balance. */
   nearest: { venueId: string; venueName: string; discountPct: number; pointsNeeded: number } | null;
+
+  /* ── rulebook §4.1, itemised: the round's own arithmetic, step by step ──
+   *
+   * Nine fields, and they exist so a result screen can **show the sum rather
+   * than the answer**. `score` is one integer and it is the product of six
+   * separate decisions: how well the round went, whether it was the day's
+   * featured game, how many rounds had already been played today, what the plan
+   * multiplies by, and which of three bonuses landed. A card that prints only
+   * the total leaves a player with no way to tell a bad round from a fourth
+   * round, which are two completely different things to do about it — play
+   * better, or come back tomorrow.
+   *
+   * They are also the honest answer to the support question this formula
+   * generates: "why was that worth 4 when the same round was worth 18 this
+   * morning?" The answer is `decay: 0.2` and it is now on the wire.
+   *
+   * Every one of them is **additive**: a client that ignores all nine sees
+   * exactly the body it saw before.
+   */
+
+  /** The round's performance, 0..100. The one number every game is reduced to. */
+  performance: number;
+  /**
+   * `max(2, round(performance / 100 × 18))` — 2..18, the multiplicative base.
+   *
+   * 0 on a welcome round, which bypasses the formula entirely; `welcomeRound`
+   * says when that is the case.
+   */
+  base: number;
+  /** The decay rung this round landed on: 1, 0.65, 0.45, 0.3, 0.2 or 0.12. */
+  decay: number;
+  /** Which **paid** round of the day this was, 1-based. What `decay` is read from. */
+  roundToday: number;
+  /** Whether the ×1.5 featured multiplier applied. Once per day, first round. */
+  featured: boolean;
+  /**
+   * The factor `featured` actually applied — `CONFIG.games.featuredMultiplier`
+   * when it did, and 1 when it did not.
+   *
+   * Beside the boolean rather than instead of it, and the reason is §11 of the
+   * rulebook: `FEATURED_GAME_BONUS` is on the list of tunables that must not be
+   * hard-coded. A client drawing "×1.5" off a constant of its own prints a figure
+   * that stops matching the arithmetic beside it the day this moves to ×1.4 — and
+   * a breakdown row whose label contradicts its own sum is worse than one that
+   * says only "included", which is what the boolean alone can support.
+   *
+   * 1 rather than null when it did not apply, so a client can multiply
+   * unconditionally: `base × featuredMultiplier × decay × multiplier` is the whole
+   * chain with no branch in it.
+   */
+  featuredMultiplier: number;
+  /** The plan's `points_multiplier` as it stood when the round was played. */
+  multiplier: number;
+  /** +10 for a perfect round (performance 100), or 0. */
+  bonusPerfect: number;
+  /** +25 for the first time this player has ever finished this game, or 0. */
+  bonusNewGame: number;
+  /** +8 for beating their own best in this game, at most once a day, or 0. */
+  bonusPersonalBest: number;
+  /**
+   * The one round that does not follow the formula: the welcome round.
+   *
+   * §7.3 pays the first finished round of an account a flat 10 a correct answer,
+   * because the screen before it promises fifty points and the two numbers have
+   * to be the same promise. `base` is 0 and all three bonuses are 0 on such a
+   * round — the formula did not run — and this flag is what says so, rather than
+   * leaving a client to infer it from a `base` of 0 beside a `score` of 50.
+   */
+  welcomeRound: boolean;
 }
 
 /**
  * Finish a round: score it from the recorded events, then bank it.
  *
- * One ledger entry per session (§7.4), written by `ledger.earn`, which owns the
- * daily cap. The streak is decided by `applyStreak` below, and nothing else in
- * the backend is allowed to decide it — the site's own rule, for the same
- * reason: seven games score seven ways and none of them has any business
- * restating what a streak is.
+ * One ledger entry per session (§7.4), written by `ledger.earn`. The streak is
+ * decided by `applyStreak` below, and nothing else in the backend is allowed to
+ * decide it — the site's own rule, for the same reason: seven games score seven
+ * ways and none of them has any business restating what a streak is.
  *
  * **A round opened on an empty tank banks nothing, and that is decided here from
  * the tank as it stood when the round *started*.** Not as it stands now: energy
@@ -1219,11 +1388,24 @@ export interface Finish {
  * this session has none until the line below writes one.
  *
  * What "banks nothing" means is deliberately total: no ledger entry, no streak
- * movement, no freeze earned or spent, no comeback payment, no day counted, and
- * no energy taken (there is none to take). The session row is still written —
- * the round happened — with `life_spent = 0`, which is the column `energyFor`
- * filters on, so a practice round is invisible to the tank rather than being a
- * spend the tank has to be taught to ignore.
+ * movement, no freeze earned or spent, no comeback payment, no day counted, no
+ * energy taken (there is none to take), **no first-play bonus consumed and no
+ * personal best recorded**. The session row is still written — the round
+ * happened — with `life_spent = 0`, which is the column `energyFor` filters on,
+ * so a practice round is invisible to the tank rather than being a spend the tank
+ * has to be taught to ignore.
+ *
+ * The last two of those are the rulebook's additions and they matter more than
+ * they look. A practice round that spent the +25 would mean a player out of
+ * energy could burn the single largest bonus in the formula on a round that paid
+ * them nothing for it; one that set a personal best would mean the same round
+ * both failed to pay and raised the bar for the next one that would. Practice is
+ * the round that costs nothing, and "nothing" has to include the things that are
+ * spent once.
+ *
+ * The decay curve, the featured multiplier and the three bonuses are all decided
+ * here and applied by `roundPoints` — the itemisation goes back on the response
+ * so the result screen can show the sum rather than the answer.
  */
 export async function finish(
   db: Db,
@@ -1261,9 +1443,11 @@ export async function finish(
     const paid = (await energyFor(db, input.userId, session.started_at)).energy > 0;
     const unpaidReason: 'no_energy' | null = paid ? null : 'no_energy';
 
-    /* `created_at` is selected because Memory Match is scored on it. It is the
-       server's stamp, written when the event arrived — the client has no clock
-       this module is willing to read. */
+    /* `created_at` is selected because three of the four scorers read it —
+       the quizzes for their speed credit, Word Builder for its per-word one, and
+       Memory Match for the 90-second limit. It is the server's stamp, written
+       when the event arrived; the client has no clock this module is willing to
+       read. */
     const events = await db.all<{
       seq: number;
       kind: string;
@@ -1279,11 +1463,13 @@ export async function finish(
     /*
      * The welcome round pays a flat rate per correct answer, and only ever once.
      *
-     * A quiz is a point a question (`quizPerCorrect`), which is right for a game
-     * somebody chose to play and wrong for the one the welcome screen promises
-     * fifty points for. So the first round pays `welcomeRoundPerCorrect` and the
-     * screen's arithmetic holds: five right is fifty, four is forty, none is
-     * nothing.
+     * **It bypasses the formula entirely** — no base, no decay, no featured
+     * multiplier, none of the three bonuses — and that is deliberate rather than
+     * an omission. §7.3 promises the first finished round of an account fifty
+     * points for five right, the onboarding screen before it says so in words,
+     * and the master formula cannot produce fifty from one round of anything. A
+     * round that paid 18 against a promise of 50 would be the first thing this
+     * product ever told somebody that was not true.
      *
      * Two conditions, and the second is the one that matters. `secret.welcome`
      * says the round was *started* as the welcome round — it lives in the
@@ -1301,11 +1487,13 @@ export async function finish(
         { u: input.userId, s: session.id },
       ))?.n ?? 0) === 0;
 
+    /* Each of these answers one question — what was this round's performance,
+       0..100 — and none of them knows what a point is. */
     const scored =
       secret.kind === 'quiz'
-        ? scoreQuiz(events, (secret.answers as number[]).length, firstEver)
+        ? scoreQuiz(events, (secret.answers as number[]).length)
         : secret.kind === 'words'
-          ? scoreWords(events, secret.words as string[], (secret.tiers as number[] | undefined) ?? [])
+          ? scoreWords(events, secret.words as string[], session.started_at)
           : secret.kind === 'deck'
             ? scoreDeck(events, CONFIG.games.memoryPairs)
             : scoreFlight(input.clientReport ?? {}, secondsBetween(session.started_at, at));
@@ -1330,23 +1518,137 @@ export async function finish(
     const ent = await entitlements.entitlementsFor(db, { userId: input.userId }, at);
     const multiplier = entitlements.entNumber(ent, 'points_multiplier', 1);
 
-    /* The raw score goes to the ledger untouched, and the plan multiplier is
-       applied inside `ledger.earn` — one rounding step, `floor(raw ×
-       points_multiplier)`, and that is the whole of what a round pays.
+    /*
+     * ── the four facts the formula needs besides the performance ──
+     *
+     * All four are read **before** anything below is written, which is what
+     * makes them facts about the state this round arrived in rather than about
+     * the state it created. Three of them are derived from rows that already
+     * exist; only the personal best needs storage of its own, because
+     * performance is never written to a session row.
+     */
 
-       **That floor is the only one, and it is deliberately here rather than in
-       the scorers.** Two of them return halves: a hinted word is worth half its
-       tier and a gap in the flight is worth half a point. Rounding each item as
-       it is scored throws those halves away one at a time — two hinted words
-       are 1.5 + 1.5 = 3, and flooring each first gives 2 — so the scorers
-       accumulate exactly and the round is made whole once, after the
-       multiplier, at the moment it becomes an integer number of points in the
-       ledger. Flooring twice is how a player loses a point they earned.
+    /*
+     * Which round of the day this is — the decay curve's only input.
+     *
+     * `daily_counters.lives_used` counts the player's **paid** rounds today and
+     * is upserted a few lines below, *after* scoring, so at this moment it is
+     * the count of rounds that came before this one: `roundToday` is that plus
+     * one. Two consequences follow from it being the paid count rather than a
+     * count of rounds played, and both are the right way round. A practice round
+     * does not push anybody down the curve — it paid nothing, so charging it
+     * against the day would make an empty tank worse than not playing. And an
+     * abandoned round does not either, because nothing writes the counter until
+     * a round is banked.
+     */
+    const roundToday =
+      ((await db.get<{ lives_used: number }>(
+        `SELECT lives_used FROM daily_counters WHERE user_id = $u AND day = $d`,
+        { u: input.userId, d: dayOf(at) },
+      ))?.lives_used ?? 0) + 1;
 
-       Nothing here asks how much has already been played today. A per-game
-       decay curve used to, and it is gone: energy is charged on the way out of
-       this function and is the only thing that bounds a day. A second brake
-       that shrinks the reward is a result card that cannot explain itself. */
+    /*
+     * The featured game's ×1.5, once per day.
+     *
+     * Eligible *and* not already taken: `featuredGamesFor` is the three-UTC-day
+     * window that covers every local date a real clock can be showing (see its
+     * own note), and `featuredTakenToday` asks whether a paid round of any
+     * eligible game has already finished today. A practice round cannot take it,
+     * for the reason practice takes nothing: `featuredTakenToday` filters on
+     * `life_spent > 0`.
+     */
+    const featured =
+      featuredGamesFor(at).has(session.game_type) &&
+      !(await featuredTakenToday(db, input.userId, at, session.id));
+
+    /*
+     * The first-ever play of this game, +25 — **derived, not stored.**
+     *
+     * The rows that answer it are already written: a finished, paid session of
+     * this game type belonging to this player. So there is no column and no
+     * backfill, and the answer honours accounts that predate the bonus rather
+     * than paying a player who has played Guess the Flag two hundred times
+     * another 25 for playing it again. Practice cannot spend it (`life_spent >
+     * 0`), and a practice round cannot claim it either — `paid` gates the whole
+     * question below.
+     *
+     * **The welcome round neither claims it nor is exempt from spending it**,
+     * and the rulebook does not say which way that should go. `!firstEver` is
+     * the first half: a round paying a flat fifty outside the formula does not
+     * also take the formula's bonuses. The second half falls out of the query
+     * rather than being written — the welcome round is a real paid finished round
+     * of `flags`, so the *next* round of `flags` is not a first play. Paying 25
+     * on it would be paying twice for one discovery, and nobody is short: fifty
+     * for that first round is more than the formula's most generous reading of
+     * it, so playing all eight games once is 175 + 50 rather than §4.3's 200.
+     */
+    const newGame =
+      paid &&
+      !firstEver &&
+      ((await db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM game_sessions
+          WHERE user_id = $u AND game_type = $g AND finished_at IS NOT NULL
+            AND life_spent > 0 AND id <> $s`,
+        { u: input.userId, g: session.game_type, s: session.id },
+      ))?.n ?? 0) === 0;
+
+    /*
+     * The personal best, +8, at most once per game per day.
+     *
+     * The one thing this formula needs stored — `player_game_bests` — because
+     * performance is computed from events and never written down, so unlike
+     * "have they played this before" it cannot be recovered from history.
+     *
+     * **A first record is not a personal best.** A player whose row does not
+     * exist yet has nothing to beat, and they are collecting the +25 for the
+     * same round; paying both would be paying twice for one fact. So this needs
+     * a row to already be there *and* a strictly higher performance than it
+     * holds.
+     *
+     * Once per game per day (§9.2) rather than once per round, because five
+     * quizzes that all cap at 100 would otherwise pay the bonus on the way up
+     * every round of a good session. `bonus_day` is the local day it was last
+     * paid for this game.
+     */
+    const best = paid
+      ? await db.get<{ best: number; bonus_day: string | null }>(
+          `SELECT best, bonus_day FROM player_game_bests WHERE user_id = $u AND game_type = $g`,
+          { u: input.userId, g: session.game_type },
+        )
+      : undefined;
+    const personalBest =
+      paid &&
+      !firstEver &&
+      best !== undefined &&
+      scored.performance > best.best &&
+      best.bonus_day !== dayOf(at);
+
+    /*
+     * The round, priced.
+     *
+     * `roundPoints` is the whole of rulebook §4.1 and the only place points are
+     * computed; the welcome round is the documented exception and is computed
+     * beside it rather than through it.
+     *
+     * A **practice** round is priced too, and then banks nothing. That is worth
+     * doing rather than short-circuiting: the response carries the itemisation,
+     * and a practice card that can say "this would have been 14" is the whole
+     * argument for letting an empty tank play at all. The three bonuses are the
+     * exception — they are reported as 0 because none of them was awarded, and a
+     * card offering a +25 that was not paid would be a worse lie than a card
+     * that is quiet about it.
+     */
+    const priced = roundPoints({
+      performance: scored.performance,
+      roundToday,
+      featured,
+      multiplier,
+      perfect: paid,
+      newGame,
+      personalBest,
+    });
+    const welcomeScore = scored.correct * CONFIG.earn.welcomeRoundPerCorrect;
+
     /* A practice round writes no entry at all rather than an entry for zero.
        The ledger is the answer to "where did my points come from", and a row
        saying "nowhere" on every round played after a tank ran dry is noise in
@@ -1354,11 +1656,20 @@ export async function finish(
     const banked = paid
       ? await ledger.earn(db, {
           userId: input.userId,
-          points: scored.score,
+          /* The finished integer, and `earn` is told so. The plan multiplier is
+             inside it — the formula applies it before the flat bonuses and they
+             are deliberately not multiplied — so `earn` must record the factor
+             rather than apply it a second time. The welcome round is the one
+             exception and keeps the old arrangement: a flat figure that `earn`
+             multiplies, which is what it has always done, and which nobody has
+             ever reached anyway (a subscription on your first-ever round is not
+             a state that occurs). */
+          points: firstEver ? welcomeScore : priced.score,
           reason: 'game_win',
           sourceKind: 'game_session',
           sourceRef: session.id,
           multiplier,
+          multiplierApplied: !firstEver,
           at,
         })
       : null;
@@ -1384,6 +1695,10 @@ export async function finish(
            column needs a version-guarded table rebuild against a live database
            and buys nothing a player can see.
 
+           It is also what `featuredTakenToday` and the first-play query read, so
+           it is the single column that makes "practice consumes nothing" true
+           across all three rules rather than in each of them separately.
+
            A practice round writes 0, and that is the whole of how the tank
            learns to ignore it: `energyFor` selects on `life_spent > 0`. There is
            nothing to take from an empty tank, and a round that borrowed against
@@ -1397,18 +1712,44 @@ export async function finish(
        condition, so the two cannot disagree about what a round cost. It answers
        a different question — how much energy went today — and it deliberately
        answers nothing about the tank: a day is a bucket and a refill clock needs
-       an instant. `lives_used` is likewise a historical column name. */
+       an instant. It is also the decay curve's input, read at the top of this
+       function before this line moves it. `lives_used` is a historical column
+       name. */
     if (paid) {
       await db.run(
         `INSERT INTO daily_counters (user_id, day, lives_used) VALUES ($u, $d, 1)
            ON CONFLICT (user_id, day) DO UPDATE SET lives_used = daily_counters.lives_used + 1`,
         { u: input.userId, d: dayOf(at) },
       );
-      /* After the upsert and not before it: the upsert holds the
-         (user, day) row until this transaction ends, so two rounds finishing at
-         once for one player queue here and the second one's `alreadyPaid` sees
-         the first one's entry. */
-      await payDailyGame(db, input.userId, session.game_type, at);
+
+      /*
+       * The record of how well this went, for the next round's +8.
+       *
+       * Written on **every** paid round and not only on an improvement, because
+       * the point of the row is the record rather than the payment: the first
+       * paid round of a game writes it with no bonus due, and every round after
+       * that is measured against it. `GREATEST`-by-CASE rather than a read and a
+       * compare in JavaScript, so two rounds finishing at once for one player
+       * cannot both read the old figure and write the lower of their two.
+       *
+       * `bonus_day` moves only when the bonus was actually paid, which is what
+       * makes "once per game per day" hold across a session of several rounds.
+       */
+      await db.run(
+        `INSERT INTO player_game_bests (user_id, game_type, best, bonus_day, updated_at)
+         VALUES ($u, $g, $p, $bd, $t)
+           ON CONFLICT (user_id, game_type) DO UPDATE
+             SET best = (CASE WHEN player_game_bests.best > $p THEN player_game_bests.best ELSE $p END),
+                 bonus_day = COALESCE($bd, player_game_bests.bonus_day),
+                 updated_at = $t`,
+        {
+          u: input.userId,
+          g: session.game_type,
+          p: scored.performance,
+          bd: personalBest ? dayOf(at) : null,
+          t: at,
+        },
+      );
     }
 
     /* The streak is what energy actually buys, so practice does not move it —
@@ -1435,20 +1776,183 @@ export async function finish(
       paid,
       unpaidReason,
       nearest: await nearestReward(db, input.userId, balance),
+
+      /* The itemisation. On a welcome round the formula did not run, so `base`
+         and the three bonuses are 0 and `welcomeRound` says why; `performance`
+         is still the honest figure, because the round was still played. */
+      performance: scored.performance,
+      base: firstEver ? 0 : priced.base,
+      decay: priced.decay,
+      roundToday,
+      featured: firstEver ? false : featured,
+      featuredMultiplier: !firstEver && featured ? CONFIG.games.featuredMultiplier : 1,
+      multiplier,
+      bonusPerfect: firstEver ? 0 : priced.bonusPerfect,
+      bonusNewGame: firstEver ? 0 : priced.bonusNewGame,
+      bonusPersonalBest: firstEver ? 0 : priced.bonusPersonalBest,
+      welcomeRound: firstEver,
     };
   });
 }
 
+/* ══════════════════════════════════════════════ §4.1 the master formula ══ */
+
+/** What `roundPoints` decided, itemised. The wire shape `Finish` carries. */
+export interface RoundPoints {
+  /** `max(2, round(performance / 100 × 18))`. */
+  base: number;
+  /** The rung `roundToday` landed on. */
+  decay: number;
+  bonusPerfect: number;
+  bonusNewGame: number;
+  bonusPersonalBest: number;
+  /** `max(1, round(base × featured × decay × multiplier + bonuses))`. */
+  score: number;
+}
+
+/**
+ * Which decay rung a round of the day sits on — rulebook §4.1 step 4.
+ *
+ * The table is indexed from 0 for the first round and its **last rung repeats**,
+ * so a tenth round is worth what a sixth is. Clamped at both ends rather than
+ * trusted: a `roundToday` of 0 or a negative is a caller bug, and answering it
+ * with `undefined × base = NaN` would put a NaN in the ledger's `delta` two
+ * frames later, where it reads as a corrupt schema rather than as the arithmetic
+ * mistake it is.
+ */
+export function decayFor(roundToday: number): number {
+  const table = CONFIG.games.decayByRound;
+  const index = Math.min(table.length, Math.max(1, Math.round(roundToday))) - 1;
+  return table[index] ?? 1;
+}
+
+/**
+ * Rulebook §4.1: performance and four facts about the player → points.
+ *
+ * **The whole formula lives here and nowhere else.** `games.finish` gathers the
+ * inputs, `domain/tasks.ts` prices the "up to" figures its prompts advertise off
+ * the same function, and `verify.ts` reproduces every cell of the published
+ * payout table (§4.2) against it. Three callers and one implementation is the
+ * arrangement that stops a task promising a number the ledger will not pay.
+ *
+ * ## The arithmetic is done in integers, and that is not fussiness
+ *
+ * Three of the six decay rungs — 0.65, 0.45 and 0.12 — are not exactly
+ * representable as IEEE doubles, and the formula's last step is a **round**. So
+ * a product that lands on a .5 boundary is decided by which side of it the
+ * representation dust falls on, and the published table has cells on exactly
+ * those boundaries: 70% featured is 13 × 1.5 = 19.5 and the table promises 20.
+ * `Math.round(19.5)` is 20 and `Math.round(19.499999999999996)` is 19, and which
+ * of those a float chain produces is not something to reason about per cell.
+ *
+ * Every factor is therefore taken as **hundredths** and multiplied as an
+ * integer, so `scaled` is the exact numerator over 10^6 and the rounding is one
+ * integer division. The largest value it can reach is 18 × 150 × 100 × 175 =
+ * 47,250,000, comfortably inside a double's exact integer range.
+ *
+ * `Math.round(m × 100)` is how the plan multiplier joins that: it arrives as an
+ * entitlement number rather than a constant, so it cannot be a table lookup, and
+ * 1 / 1.25 / 1.75 are all exact at two decimal places.
+ *
+ * ## Why round rather than floor
+ *
+ * It was a floor, once, in `ledger.earn`, and the argument for it was that two
+ * scorers returned halves that had to survive to the multiplier. Those tables
+ * are gone and performance is an integer, so the halves are gone with them. What
+ * is left is a published table computed with round-half-up, which a floor would
+ * contradict in nine of its twenty-seven cells.
+ */
+export function roundPoints(input: {
+  /** 0..100. Clamped, because a scorer returning 120 should not pay for it. */
+  performance: number;
+  /** 1-based. Which paid round of the day this is. */
+  roundToday: number;
+  featured: boolean;
+  /** `points_multiplier`: 1, 1.25 or 1.75. */
+  multiplier: number;
+  /**
+   * Whether a performance of 100 may take the +10.
+   *
+   * A flag rather than being inferred from `performance === 100`, because a
+   * practice round can be perfect and must still pay nothing: `finish` passes
+   * `paid` here. The other two bonuses are already decided by their callers for
+   * the same reason.
+   */
+  perfect?: boolean;
+  newGame?: boolean;
+  personalBest?: boolean;
+}): RoundPoints {
+  const performance = Math.min(100, Math.max(0, Math.round(input.performance)));
+
+  /* Step 2. `round(performance / 100 × 18)` in integers, then the floor of 2 —
+     "a finished round never pays zero" (§4.2). */
+  const base = Math.max(
+    CONFIG.games.minRoundPoints,
+    Math.floor((performance * CONFIG.games.maxRoundPoints + 50) / 100),
+  );
+
+  const decay = decayFor(input.roundToday);
+
+  const bonusPerfect =
+    input.perfect && performance >= 100 ? CONFIG.games.perfectRoundBonus : 0;
+  const bonusNewGame = input.newGame ? CONFIG.games.newGameBonus : 0;
+  const bonusPersonalBest = input.personalBest ? CONFIG.games.personalBestBonus : 0;
+  const bonuses = bonusPerfect + bonusNewGame + bonusPersonalBest;
+
+  /* Steps 3–5, as hundredths each, so the product is exact. */
+  const featuredHundredths = input.featured
+    ? Math.round(CONFIG.games.featuredMultiplier * 100)
+    : 100;
+  const decayHundredths = Math.round(decay * 100);
+  const planHundredths = Math.round(input.multiplier * 100);
+  const scaled = base * featuredHundredths * decayHundredths * planHundredths;
+
+  /* Steps 6–7: the bonuses join at full scale, and the one rounding step is this
+     integer division. `+ 500_000` is the half that makes it round-half-up. */
+  const score = Math.max(1, Math.floor((scaled + (bonuses + 0.5) * 1_000_000) / 1_000_000));
+
+  return { base, decay, bonusPerfect, bonusNewGame, bonusPersonalBest, score };
+}
+
+/**
+ * The most a round of a given shape can pay, for the prompts that advertise one.
+ *
+ * `domain/tasks.ts` quotes two ceilings — "play a round" and "play today's
+ * featured game" — and both have to come from the formula rather than from a
+ * constant beside it, or the panel promises a figure the ledger will not pay.
+ * A perfect round at the top of the decay curve, plus the perfect-round bonus.
+ *
+ * The other two bonuses are deliberately **out** of it. A ceiling including the
+ * +25 would be right on the one round of a game a player will ever have and
+ * wrong on every round after it, and a prompt that over-promises by 25 points is
+ * worse than one that under-promises by nothing — the figure is already labelled
+ * "up to".
+ */
+export function roundCeiling(input: { featured: boolean; multiplier: number }): number {
+  return roundPoints({
+    performance: 100,
+    roundToday: 1,
+    featured: input.featured,
+    multiplier: input.multiplier,
+    perfect: true,
+  }).score;
+}
+
 interface Scored {
   /**
-   * The **exact** raw score, halves and all.
+   * The round's **performance**, an integer 0..100 — rulebook §5.
    *
-   * Not an integer, on purpose: a hinted word is worth half its tier and a gap
-   * in the flight half a point, and the round is floored once in `finish` after
-   * the plan multiplier. A scorer that rounds its own total is the second floor
-   * that costs a player the halves they earned.
+   * Not points, and not a fraction. Every game maps its own result onto this one
+   * scale and stops there; `roundPoints` is the only thing in this file that
+   * knows what a point is. A scorer that returned points would be a scorer that
+   * had to know about the decay curve, the featured game and the player's plan,
+   * which is how seven games came to have seven private payout tables.
+   *
+   * It was `score`, an exact and possibly fractional raw figure, floored once in
+   * `ledger.earn`. Both halves of that are gone: there is nothing fractional
+   * left to protect, and the rounding is at the end of `roundPoints`.
    */
-  score: number;
+  performance: number;
   correct: number;
   answered: number;
   won: boolean;
@@ -1458,20 +1962,18 @@ interface Scored {
  * How long the round took, in seconds, from the server's own event stamps.
  *
  * `game_events.created_at` is written when the event arrived, so the span is the
- * earliest stamp to the latest. Two games read it — the quizzes for their speed
- * bonus and Memory Match for its whole score — and it is one function because
- * two copies of "how long did that take" would eventually disagree about the
- * empty round.
+ * earliest stamp to the latest. The quizzes read it for their speed credit, and
+ * it is one function because two copies of "how long did that take" would
+ * eventually disagree about the empty round.
  *
  * Earliest and latest **by time** rather than by `seq`, because the client picks
  * the sequence numbers and the server picks the stamps: a round whose first move
  * is submitted last would otherwise measure as a negative duration and take the
- * fastest band.
+ * credit.
  *
  * Fewer than two events is a round with no elapsed time to read, not an instant
- * one, so it is `Infinity` and lands in the slowest band. That is the safe
- * direction: the alternative hands the top band to a round that reported one
- * event.
+ * one, so it is `Infinity` and earns nothing. That is the safe direction: the
+ * alternative hands the credit to a round that reported one event.
  */
 function elapsedSeconds(events: Array<{ created_at: string }>): number {
   const stamps = events.map((e) => Date.parse(e.created_at)).filter((t) => Number.isFinite(t));
@@ -1480,35 +1982,28 @@ function elapsedSeconds(events: Array<{ created_at: string }>): number {
 }
 
 /**
- * Which band a duration lands in. `throughSeconds` is **inclusive** — the field
- * is named for the comparison, so that "up to 10 seconds" and `<= 10` cannot
- * drift apart, and a round finishing on the boundary gets the band it can see it
- * earned.
- */
-function bandFor<T extends { throughSeconds: number | null }>(
-  bands: ReadonlyArray<T>,
-  seconds: number,
-): T {
-  return bands.find((b) => b.throughSeconds !== null && seconds <= b.throughSeconds)
-    ?? bands[bands.length - 1];
-}
-
-/**
- * A quiz: a point a question, one more for taking all five, and the clock on top
- * of that.
+ * A quiz: **20 performance a correct answer**, and 5 more for a fast round.
+ *
+ * Five of five is exactly 100, which is what makes a perfect quiz a perfect
+ * round and pays the +10 with it. §5.1–5.3 of the rulebook; the three quiz banks
+ * share this function because they are three banks of one game to a player, and
+ * a scoring difference between them would be somebody in Tashkent paid
+ * differently from somebody in Kraków for the same minute.
  *
  * **A quiz cannot be lost and there is no mistake cap.** A round used to end
  * after two wrong answers, which took the fifth question away from exactly the
  * player who needed it, and made `won` a statement about how many mistakes were
- * left rather than about how the round went. `won` is a clean sweep now, which
- * is the only distinction still worth drawing — and it is the one both bonuses
- * are paid on.
+ * left rather than about how the round went. `won` is a clean sweep now.
  *
- * **The speed bonus is a clean-sweep bonus too**, and that is the whole of what
- * keeps it honest: timed on the round rather than on a question, the fastest way
- * through five questions is to answer them all wrong without reading them. Five
- * right in ten seconds or under is 5 + 1 + 2 = 8, the ceiling for a quiz; five
- * right at any speed is at least 6; four right is 4, whatever the clock said.
+ * **The speed credit is no longer gated on a clean sweep**, and the gate went
+ * because the thing it defended against stopped existing. It was there because
+ * the fastest way through five questions is to answer them all wrong without
+ * reading them, and under the old per-point table that bought a real bonus.
+ * Under this one it buys nothing: five wrong answers in a second is performance
+ * 5, and `max(2, round(5/100 × 18))` is 2 — exactly what five wrong answers
+ * slowly pays, because the floor of 2 is already there. So the credit now does
+ * only what §5.1 asks of it, which is to separate a fast *partial* round from a
+ * slow one, and the cap at 100 is why it cannot do anything to a perfect one.
  *
  * The clock is the server's — `elapsedSeconds` above says why — so there is
  * nothing here for a client to report and nothing for a modified one to invent.
@@ -1516,29 +2011,26 @@ function bandFor<T extends { throughSeconds: number | null }>(
 function scoreQuiz(
   events: Array<{ correct: number | null; created_at: string }>,
   total: number,
-  /** The welcome round: a flat rate a question and no sweep or speed bonus. */
-  welcomeRate = false,
 ): Scored {
   const answers = events.filter((e) => e.correct !== null);
   const correct = answers.filter((e) => e.correct === 1).length;
-  const wrong = answers.length - correct;
-  const swept = wrong === 0 && correct >= total;
+  const swept = correct >= total && answers.length - correct === 0;
 
-  /* No sweep or speed bonus on the welcome round. The screen before it promises
-     a flat ten a question and nothing else; a bonus nobody was told about is a
-     total that does not match the offer, and the offer is the point of it. */
-  const bonus =
-    swept && !welcomeRate
-      ? CONFIG.games.quizPerfectBonus +
-        bandFor(CONFIG.games.quizSpeedBands, elapsedSeconds(events)).points
-      : 0;
+  /* Every question answered, and the round inside the window. "Answered" and not
+     "answered correctly": §5.1 prices the clock, and the cap above is what stops
+     that being exploitable. */
+  const quick =
+    answers.length >= total &&
+    elapsedSeconds(events) <= CONFIG.games.quizSpeedWithinSeconds;
 
-  const rate = welcomeRate
-    ? CONFIG.earn.welcomeRoundPerCorrect
-    : CONFIG.games.quizPerCorrect;
+  const performance =
+    correct * CONFIG.games.quizPerformancePerCorrect +
+    (quick ? CONFIG.games.quizSpeedCredit : 0);
 
   return {
-    score: correct * rate + bonus,
+    /* Clamped, which is the "total capped at 100" of §5.1: a perfect round is
+       already perfect and the credit cannot take it past the top of the scale. */
+    performance: Math.min(100, performance),
     correct,
     answered: total,
     won: swept,
@@ -1546,128 +2038,213 @@ function scoreQuiz(
 }
 
 /**
- * Word Builder (§7.3): **a word is worth its tier**, halved if it was hinted,
- * plus a bonus for a clean sweep.
+ * Word Builder (§5.4): **33 performance a word**, +4 for a fast one, −10 a hint.
  *
- * **The tier is the bank's, not the scorer's.** `word_bank.tier` is the only
- * difficulty rating in the product that a human set, and it is carried through
- * the round's secret from the row the word came from. This used to recompute it
- * as `ceil(length / 2) - 1` — a guess about a table that already knows the
- * answer. The seeded banks happen to agree with that guess, which is exactly why
- * it survived; the moment a curator calls a four-letter word hard, or a long
- * word easy, the guess pays the wrong bonus and nothing fails loudly.
+ * Three words a round, and all three solved is promoted to **100 rather than
+ * 99** — a clean sweep that cannot reach a perfect round is a rule a player
+ * experiences as a bug, because there is no fourth word to go and find. The
+ * rulebook says to do exactly that.
  *
- * The tier *is* the payment now — 1, 2 or 3 — where it used to be a flat base of
- * 1 plus a bonus of 0/1/2. Same three numbers, one table.
+ * **The word's tier no longer prices it.** `word_bank.tier` is still the only
+ * human-set difficulty rating in the product and still decides which words are
+ * dealt, but a scale where a hard word pays more is a scale where the round is
+ * worth whatever it happened to deal — and "a round is a round" is the rule the
+ * common scale exists to enforce. Difficulty is expressed now by what a player
+ * can do in the time rather than by a multiplier on the word.
  *
- * **A hint halves the word rather than stripping its bonus.** Stripping it
- * priced the reveal backwards: a tier-3 word fell from 3 to 1 and a tier-1 word
- * fell from 1 to 1, so the hint was free where nobody needs it and cost two
- * thirds where everybody does. A half is the same share of whatever the word is
- * worth, which is what makes pressing it a decision rather than a trap — and it
- * is the reason this function returns a fraction and does not round it. Two
- * hinted tier-3 words are 3, and 1.5 floored twice is 2.
+ * **A hint is a flat 10 off**, where it used to halve that word's points. The
+ * halving was priced against the tier, which no longer prices anything; a flat
+ * tenth of a round costs the same wherever it is spent, which is what makes
+ * pressing the button a decision rather than a lottery. Hints are an entitlement
+ * — 3 free, 6 on Pro, 10 on Premium — so the tier buys help, and this is what
+ * stops it also buying points.
  *
- * A **wrong attempt** costs the word nothing and costs the sweep everything:
- * the bonus below is paid only when every word was solved first try and
+ * **The speed credit is per word, not per round**, which is the one place this
+ * game is timed differently from the quizzes and is deliberate: the round is
+ * three separate puzzles, and somebody who solves two instantly and then stares
+ * at the third has earned it on two of them. Each word is measured from the
+ * previous solve — or from the round's own `started_at` for the first one — off
+ * stamps the server wrote. That boundary assumes words are played one at a time,
+ * which is what the client does; a client that interleaved them would measure
+ * shorter spans and collect more credits, and the only way to make a span
+ * shorter is to actually submit the solve sooner, which is the thing being paid
+ * for.
+ *
+ * A **wrong attempt** costs the word nothing and costs the sweep everything: the
+ * promotion to 100 is paid only when every word was solved first try and
  * hint-free. That split is deliberate — the per-word rate is what somebody plays
- * for, and the bonus is what a perfect round is for.
- *
- * There is deliberately no speed bonus. This is the one game in the set where
- * thinking is the activity, and a clock on it turns a puzzle into a typing test;
- * the quizzes carry one because a question you know is answered instantly.
+ * for, and 99 against 100 is what a perfect round is for.
  */
 function scoreWords(
-  events: Array<{ seq: number; kind: string; payload: string; correct: number | null }>,
+  events: Array<{ seq: number; kind: string; payload: string; correct: number | null; created_at: string }>,
   words: string[],
-  tiers: number[],
+  startedAt: string,
 ): Scored {
-  const table = CONFIG.games.wordTierPoints;
-  let score = 0;
+  /** Which word an event belongs to, or `null` if its payload cannot say. */
+  const indexOf = (payload: string): number | null => {
+    try {
+      const n = Number((JSON.parse(payload) as { index?: number }).index);
+      return Number.isInteger(n) ? n : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let performance = 0;
   let solved = 0;
   let clean = true;
+  let hints = 0;
+
+  /* The solves, in the order the server stamped them — which is the order the
+     per-word clocks are measured against, and is not necessarily the order the
+     words were dealt in. */
+  const solves: Array<{ index: number; at: number }> = [];
 
   words.forEach((_, index) => {
-    const mine = events.filter((e) => {
-      try {
-        return Number((JSON.parse(e.payload) as { index?: number }).index) === index;
-      } catch {
-        return false;
-      }
-    });
+    const mine = events.filter((e) => indexOf(e.payload) === index);
     const win = mine.find((e) => e.correct === 1);
+    const hinted = mine.filter((e) => e.kind === 'hint').length;
+    hints += hinted;
+
     if (!win) {
       clean = false;
       return;
     }
     solved += 1;
+    performance += CONFIG.games.wordPerformancePerWord;
 
     const attempts = mine.filter((e) => e.kind !== 'hint');
-    const hinted = mine.some((e) => e.kind === 'hint');
-    const firstTry = attempts.length === 1;
-    if (!firstTry || hinted) clean = false;
+    if (attempts.length !== 1 || hinted > 0) clean = false;
 
-    /* Clamped into the table rather than trusted: the table is the range of
-       tiers this scoring understands, and a bank row outside it — or a session
-       opened before tiers travelled in the secret, which reads as `undefined` —
-       must land on the easiest rung rather than index past the end and pay
-       `NaN`. */
-    const tier = Math.min(table.length, Math.max(1, Math.round(tiers[index] ?? 1)));
-    score += table[tier - 1] * (hinted ? CONFIG.games.wordHintFactor : 1);
+    const at = Date.parse(win.created_at);
+    if (Number.isFinite(at)) solves.push({ index, at });
   });
 
-  if (solved === words.length && clean) score += CONFIG.games.wordPerfectBonus;
-  return { score, correct: solved, answered: words.length, won: solved > 0 };
+  /* The per-word clocks. The first solve is measured from the round opening and
+     each one after it from the solve before, so the seconds a player spent on a
+     word they never solved fall into the next one they did — which is the honest
+     direction: they did spend them. */
+  solves.sort((a, b) => a.at - b.at);
+  let previous = Date.parse(startedAt);
+  for (const solve of solves) {
+    const seconds = Number.isFinite(previous) ? (solve.at - previous) / 1000 : Number.POSITIVE_INFINITY;
+    if (seconds >= 0 && seconds <= CONFIG.games.wordSpeedWithinSeconds) {
+      performance += CONFIG.games.wordSpeedCredit;
+    }
+    previous = solve.at;
+  }
+
+  /* §5.4: "99, rounded to 100 for all three". Only on a clean sweep — every word
+     first try and hint-free — so a fumbled or hinted sweep stays at whatever its
+     own arithmetic says. */
+  if (solved === words.length && clean) {
+    performance = Math.max(performance, 100);
+  }
+
+  /*
+   * **The credits are capped into the 100 before the hints come off, and the
+   * order is the whole of what makes a hint cost anything.**
+   *
+   * Three words at 33 is 99 and three speed credits are 12, so the credit-
+   * inclusive total on a fast round is 111. Clamped once, at the very end, a
+   * single hint would come off the 111 and the clamp would hand back the same
+   * 100 — a free hint on exactly the round where the button is least needed, and
+   * the next two costing 10 each. Capping first is the same rule §5.1 states for
+   * the quiz's own credit ("total capped at 100") and it makes the penalty mean
+   * what it says: a fast sweep with one hint is 90, two is 80, three is 70.
+   *
+   * The floor at 0 is the second clamp and it is the one that keeps the round
+   * payable: three hints on a round where nothing was solved is −30, and the
+   * round's own minimum of 2 points is what a performance of 0 still pays.
+   */
+  performance = Math.min(100, performance) - hints * CONFIG.games.wordHintPenalty;
+
+  return {
+    performance: Math.min(100, Math.max(0, performance)),
+    correct: solved,
+    answered: words.length,
+    won: solved === words.length,
+  };
 }
 
 /**
- * Memory Match: the clock, and nothing else.
+ * Memory Match (§5.5): **60 for clearing the board, and moves buy the rest.**
  *
- * Moves decided it before, through an efficiency curve — and moves are the one
- * thing a player can optimise away entirely by writing the board down, which
- * made the one game in the set with no fail state also the best-paying minute in
- * the product. A stopwatch cannot be beaten with a pencil.
+ * This is the change the rulebook makes that is most worth arguing out loud,
+ * because the rule it replaces was chosen deliberately and for a real reason.
+ * The board was scored on **elapsed time** here, on the argument that moves are
+ * the one thing a player can optimise away entirely by writing the board down,
+ * and a stopwatch cannot be beaten with a pencil. That is true. It is also the
+ * wrong trade: a clock on the one game in the set with no fail state — the
+ * deliberately accessible one, the one somebody plays because the quizzes are in
+ * a language they are still learning — turns it into the least accessible thing
+ * here. And the clock had a hole of its own that was cheaper than the pencil:
+ * two `pair` events a millisecond apart took the top band.
  *
- * The clock is the server's, through `elapsedSeconds` above — a client-reported
- * duration is one a modified client invents, and this game has no answer key to
- * check it against.
+ * Moves price what the game is about, which is remembering what you saw. Six
+ * pairs is six moves played perfectly, so the top band's ten allows four
+ * mistakes; nineteen or more is the whole board turned over by trial and error,
+ * and it still pays the 60 for finishing.
  *
- * Bands rather than a curve so the result screen can name the one you landed in
- * and what the next one was worth, and the last band pays rather than zeroing —
- * finishing is always worth something, which is what keeps the accessible game
- * accessible now that it is timed. Three bands now, at 18/23/over paying 8/6/3,
- * where it was four at 40/70/110/over: a six-pair board is not a forty-second
- * game for anybody paying attention, so almost every finished round used to land
- * in the top band and the clock was decorative.
+ * **The pencil is real and it is bounded**: writing the board down is worth 100
+ * instead of 85, which is 18 points instead of 15 at the top of the decay curve,
+ * for a minute with a notepad, once, on the one round of the day that pays full.
  *
- * The boundaries are **inclusive** — a board finished on the stroke of 18
- * seconds takes the 18-second band. `bandFor` is why, and `throughSeconds` is
- * named so the comparison and the copy cannot drift apart.
+ * **A move is one `pair` event, counted from the rows the server wrote.** Never a
+ * client-reported total: this game has no answer key to check one against. A
+ * `peek` is not a move — it turns one card, carries no verdict, and is how the
+ * shipped client shows the first card of a move — so counting peeks would charge
+ * two moves for what the player experienced as one. Rows rather than distinct
+ * card-pairs, because a client that re-turns the same two cards under a fresh
+ * `seq` has made a second move by the protocol's own definition; the *pairs
+ * found* are still counted distinctly, which is the figure printed beside the
+ * moves.
  *
- * **Peeks are in the clock and out of the tally, and that pairing is the whole
- * of what keeps single-card turns from being free.** A `peek` carries no verdict
- * — `submitEvent` leaves `correct` NULL, because it is not an answer — so the
- * `correct !== 1` line below steps over it and it can neither be counted as a
- * pair nor land in the distinct-pair set. It is still an event, so it is inside
- * the span `elapsedSeconds` measures, and a wider span never pays more. That is
- * why there is no peek counter and no peek penalty: the only input to this score
- * is a duration a peek can lengthen and cannot shorten.
+ * **The 90-second limit is enforced pair by pair**, not on the round's total
+ * span. The deadline is 90 seconds after the round's first recorded event, and a
+ * pair matched after it does not count — which is what lets an expired board be
+ * scored on the pairs actually found in time rather than on whatever arrived
+ * afterwards. Timing from the first *event* rather than from `started_at` is the
+ * forgiving direction on purpose: the seconds somebody spends looking at a
+ * freshly dealt board before touching it are not seconds the limit should eat.
+ *
+ * **Peeks are out of the tally and out of the move count, and a peek still
+ * cannot pay.** A `peek` carries no verdict — `submitEvent` leaves `correct`
+ * NULL, because it is not an answer — so the `correct !== 1` line below steps
+ * over it and it can neither be counted as a pair nor land in the distinct-pair
+ * set. What it can do is start the 90-second clock, since it is the round's first
+ * recorded event, and it can never shorten it. That is the whole of why there is
+ * no peek counter and no peek penalty.
  */
 function scoreDeck(
-  events: Array<{ payload: string; correct: number | null; created_at: string }>,
+  events: Array<{ kind: string; payload: string; correct: number | null; created_at: string }>,
   pairs: number,
 ): Scored {
+  const stamps = events.map((e) => Date.parse(e.created_at)).filter((t) => Number.isFinite(t));
+  /* No events is a round with nothing in it; the deadline is then irrelevant
+     because nothing can be inside or outside it. */
+  const deadline =
+    stamps.length > 0
+      ? Math.min(...stamps) + CONFIG.games.memoryLimitSeconds * 1000
+      : Number.POSITIVE_INFINITY;
+
   /* **Distinct pairs, not matching events.** The two are the same number for a
      client that plays each pair once, and they come apart the moment one does
      not: a move whose *response* was lost has been recorded here, and a client
      that puts those two cards back down and turns them again submits the same
-     match a second time under a fresh `seq`. Counting rows would then report
-     seven pairs found on a six-pair board — which pays the same, because this
-     game is scored on the clock alone, and reads as a bug in the one figure the
-     result card shows beside the time. Normalised because `{a:3,b:7}` and
+     match a second time under a fresh `seq`. Counting rows would report seven
+     pairs found on a six-pair board. Normalised because `{a:3,b:7}` and
      `{a:7,b:3}` are one pair of cards. */
   const seen = new Set<string>();
+  let moves = 0;
   for (const event of events) {
+    const at = Date.parse(event.created_at);
+    /* Past the limit the round is over, so neither the pair nor the move counts.
+       A stamp that will not parse is treated as inside it, which is the
+       forgiving direction for a row this module cannot read. */
+    if (Number.isFinite(at) && at > deadline) continue;
+    /* Every `pair` is a move, matched or not. A `peek` is not. */
+    if (event.kind !== 'peek') moves += 1;
     if (event.correct !== 1) continue;
     try {
       const { a, b } = JSON.parse(event.payload) as { a?: unknown; b?: unknown };
@@ -1678,92 +2255,81 @@ function scoreDeck(
     }
   }
   const matched = seen.size;
-  /* A round with fewer than two events has no elapsed time to read, not a fast
-     one — `elapsedSeconds` returns `Infinity` and `bandFor` lands it on the
-     slowest band, which still pays. A scoring function is the wrong place to
-     reject a session the player has already played. */
-  const band = bandFor(CONFIG.games.memoryBands, elapsedSeconds(events));
+  const complete = pairs > 0 && matched >= pairs;
 
   /*
-   * **The band is the rate; the pairs found are what it is paid on.**
+   * A board that ran out of time scores `pairs / 6 × 50` — half marks for half a
+   * board, and the 50 is the whole of what the limit enforces: an expired round
+   * cannot reach the 60 that completing it pays, however many pairs it found.
    *
-   * It used to be `band.points` flat, and that priced a round on the clock and
-   * on nothing else — so two `pair` events a millisecond apart, matching
-   * nothing, finished in the top band and banked the full eight. `correct: 0`
-   * on the body was the only tell, and nothing read it. A round that found
-   * nothing paid the same as a cleared board, which is not a scoring rule
-   * anybody chose; it is the shape the function happened to have.
-   *
-   * Proportional rather than a threshold, for the same reason the quiz pays per
-   * answer instead of demanding a sweep: a player who finds four pairs of six
-   * has played four pairs' worth of the game, and a cliff at "cleared" would
-   * pay them nothing for it. A cleared board still pays the whole band, which
-   * is the case that has to stay exactly as it was.
-   *
-   * Rounded rather than floored so a nearly-finished board does not lose its
-   * last point to arithmetic — five of six at the top band is 6.67, and 7 is
-   * the honest reading of that.
-   *
-   * The accessibility of this game is untouched: there is still no fail state,
-   * no clock on screen, and the slowest band still pays. What changed is that
-   * it pays for pairs.
+   * Rounded rather than floored so a nearly-finished board does not lose its last
+   * point to arithmetic: five of six is 41.67, and 42 is the honest reading.
    */
-  const score = pairs > 0 ? Math.round((band.points * matched) / pairs) : 0;
+  const performance = complete
+    ? CONFIG.games.memoryBasePerformance + movesBonus(moves)
+    : pairs > 0
+      ? Math.round((matched * CONFIG.games.memoryExpiredCeiling) / pairs)
+      : 0;
 
   return {
-    score,
+    performance: Math.min(100, Math.max(0, performance)),
     correct: matched,
     answered: pairs,
     /* There is no fail state in Memory Match — it is the deliberately accessible
-       one of the set — so a finished deck is always a win. */
-    won: true,
+       one of the set — so a cleared deck is a win. An expired one is not: the
+       board was not finished, and that is the one distinction this game has. */
+    won: complete,
   };
 }
 
 /**
- * The endless flight.
+ * The efficiency bonus for a cleared board, by moves used.
+ *
+ * `throughMoves` is **inclusive** — the field is named for the comparison, so
+ * that "up to 10 moves" and `<= 10` cannot drift apart, and a board finished on
+ * the boundary gets the band it can see it earned. The last rung has no ceiling
+ * and pays nothing extra, because finishing is always worth the 60.
+ */
+function movesBonus(moves: number): number {
+  const bands = CONFIG.games.memoryMoveBands;
+  return (
+    bands.find((band) => band.throughMoves !== null && moves <= band.throughMoves)?.bonus ??
+    bands[bands.length - 1]?.bonus ??
+    0
+  );
+}
+
+/**
+ * The endless flight (§5.6): **4 performance an obstacle**, so 25 is perfect.
  *
  * This one is honestly weaker than the rest and the comment says so: a physics
  * loop has no answer key, so the server cannot recompute the score, only bound
- * it. `flightMaxPoints` is that bound and it is now the whole defence — the
- * points a run can be worth are capped directly, so a client claiming a thousand
- * gaps banks exactly what a good honest run banks, and the claim is still
- * visible in the ledger as an implausible run. Capping the *points* rather than
- * the gaps is the stronger version of the same rule: it does not have to guess
- * how far a real player could fly.
+ * it. The 0..100 scale is now the first of those bounds — a claim of a thousand
+ * gaps reaches exactly the 100 a good honest run reaches — and capping
+ * *performance* rather than points is the stronger version of the old
+ * `flightMaxPoints`: it does not have to guess how far a real player could fly,
+ * only how far a perfect round goes.
  *
  * `flightTarget` decides whether the round was a *win*, not what it pays — five
  * gaps, matching the number the site's own screen shows the player. A win the
  * server and the client disagree about is worse than a hard target.
  *
- * **Half a point a gap**, so the ceiling is forty gaps rather than twenty. The
- * client ramps the scroll speed as a run goes on, which is what makes the far
- * half of that a run rather than a wait — but none of that is simulated here.
- * This function is handed `{cleared}` and clamps it, which is the honest limit
- * of what a server can say about a physics loop it did not run.
- *
- * An odd gap count therefore ends on a half point, and it is **left** there: the
- * round is floored once, in `finish`, after the plan multiplier. Seven gaps is
- * 3.5 and banks 3 on the free plan and 4 on Pro, which is the multiplier doing
- * its job rather than two roundings cancelling it out.
+ * The second bound is the server's own clock and the rulebook does not ask for
+ * it. It is kept because the scale alone says nothing about whether a run could
+ * have *happened*: a client posting 10,000 gaps one second after opening the
+ * session reaches a perfect round and sits in the ledger looking exactly like a
+ * very good player.
  */
 function scoreFlight(report: Record<string, unknown>, elapsed: number): Scored {
   const claimed = Math.max(0, Math.floor(Number(report.cleared) || 0));
   /*
-   * **The second bound, and it is the server's own clock.**
-   *
-   * The ceiling above bounds what a run can be *worth*; it says nothing about
-   * whether the run could have happened. A client posting 10,000 gaps one
-   * second after starting the session banked the ceiling, honestly earned by
-   * nobody, and looked in the ledger exactly like a very good player.
-   *
    * Columns arrive on a **timer**, not on a distance — `interval` in
    * `src/site/flight/config.ts` is 1.75 seconds and the difficulty ramp
    * deliberately does not change it (it spreads the columns further apart in
-   * world units instead, which is what keeps `maxStep` honest). So the number
-   * of gaps a real run can have crossed is bounded by its own duration, and
-   * that duration is measured here from `started_at` to now — two stamps this
-   * server wrote.
+   * world units instead, which is what keeps this honest). So the number of gaps
+   * a real run can have crossed is bounded by its own duration, and that
+   * duration is measured from `started_at` to now — two stamps this server
+   * wrote.
    *
    * `flightGapAllowance` is the slack, and it is deliberately generous: the
    * columns already on screen when a run begins were not waited for, clocks
@@ -1775,7 +2341,7 @@ function scoreFlight(report: Record<string, unknown>, elapsed: number): Scored {
   const cleared = Math.min(claimed, Math.max(0, possible));
   const target = CONFIG.games.flightTarget;
   return {
-    score: Math.min(cleared * CONFIG.games.flightPerGap, CONFIG.games.flightMaxPoints),
+    performance: Math.min(100, cleared * CONFIG.games.flightPerformancePerObstacle),
     correct: Math.min(cleared, target),
     answered: target,
     won: cleared >= target,
@@ -1914,7 +2480,31 @@ export const DAILY_GAME_POOL: ReadonlyArray<ReadonlyArray<GameType>> = [
   ['word_builder'],
 ];
 
-/** Which slot of `DAILY_GAME_POOL` a `YYYY-MM-DD` day posts — `dailyGame`'s rule. */
+/**
+ * Which local-knowledge bank an account is dealt, by the country on its profile.
+ *
+ * `QUIZ_BANK_FOR_COUNTRY` in `src/site/games/banks.ts` is this same table, and it
+ * is restated here rather than shared because the two programs share no code.
+ * `verify:api` reads that file as text and compares the two, so a country added to
+ * one and not the other fails a check rather than dealing an Uzbek bank to a
+ * Polish account.
+ *
+ * **Poland is the fallback for everything, including an account with no country.**
+ * The product's reason for existing is somebody who has just moved to Kraków, the
+ * bank was built around that, and a card with no bank is worse than a card with
+ * the wrong one — this is the same argument the site's own table makes.
+ */
+export const LOCAL_QUIZ_FOR_COUNTRY: Readonly<Record<string, GameType>> = {
+  PL: 'poland',
+  UZ: 'uzbekistan',
+};
+
+/** The bank for a country code, Poland for anything unrecognised or absent. */
+export function localQuizFor(countryCode: string | null | undefined): GameType {
+  return LOCAL_QUIZ_FOR_COUNTRY[(countryCode ?? '').toUpperCase()] ?? 'poland';
+}
+
+/** Which slot of `DAILY_GAME_POOL` a `YYYY-MM-DD` day posts. */
 export function dailyGameFor(day: string): ReadonlyArray<GameType> {
   const n = DAILY_GAME_POOL.length;
   const index = ((Math.floor(Date.parse(day) / 86_400_000) % n) + n) % n;
@@ -1922,40 +2512,127 @@ export function dailyGameFor(day: string): ReadonlyArray<GameType> {
 }
 
 /**
- * `CONFIG.earn.dailyGame`, once per day, for finishing the day's featured game.
+ * Every game type that counts as "today's featured game" for a round at `at`.
  *
  * **Which day is the player's, and the server does not know their clock.** The
  * poster rotates on the reader's *local* date, and local dates run from a day
- * behind UTC to a day ahead of it. So the round counts if it is the featured
- * game of yesterday, today or tomorrow in UTC — the only three a real clock can
- * be showing — and the payment is keyed on the **UTC** day it lands, so there
- * is still exactly one per day whichever of the three it matched.
+ * behind UTC to a day ahead of it. So a round counts if its game is the featured
+ * one for yesterday, today or tomorrow in UTC — the only three a real clock can
+ * be showing — and "once per day" is then keyed on the **UTC** day, so there is
+ * still exactly one multiplied round whichever of the three it matched.
  *
- * Flat and outside the round's own entry, for the reason `payComeback` gives:
- * a bonus folded into a score is a number nobody can check.
+ * It is a set of three slots rather than one, which means up to four game types
+ * are eligible on any given day (the local quiz is one slot holding two banks).
+ * That is the same latitude the flat bonus had and it costs the same thing: a
+ * player who plays yesterday's featured game and then today's gets the ×1.5 on
+ * the first of the two, not on both.
  */
-async function payDailyGame(db: Db, userId: string, gameType: GameType, at: Iso): Promise<void> {
-  const today = dayOf(at);
-  const base = Date.parse(today);
-  const days = [-1, 0, 1].map((offset) => new Date(base + offset * 86_400_000).toISOString().slice(0, 10));
-  if (!days.some((day) => dailyGameFor(day).includes(gameType))) return;
-
-  const ref = `daily_game:${today}`;
-  if (await ledger.alreadyPaid(db, userId, 'daily_game', ref)) return;
-
-  await ledger.earn(db, {
-    userId,
-    points: CONFIG.earn.dailyGame,
-    reason: 'occasion',
-    sourceKind: 'daily_game',
-    sourceRef: ref,
-    at,
-  });
+export function featuredGamesFor(at: Iso): Set<GameType> {
+  const base = Date.parse(dayOf(at));
+  const out = new Set<GameType>();
+  for (const offset of [-1, 0, 1]) {
+    const day = new Date(base + offset * 86_400_000).toISOString().slice(0, 10);
+    for (const gameType of dailyGameFor(day)) out.add(gameType);
+  }
+  return out;
 }
 
-/** Whether today's daily-game bonus has been paid — what the task list reads. */
-export async function dailyGamePaid(db: Db, userId: string, at: Iso = now()): Promise<boolean> {
-  return await ledger.alreadyPaid(db, userId, 'daily_game', `daily_game:${dayOf(at)}`);
+/**
+ * **The one game to put on the poster today**, resolved for this account.
+ *
+ * `featuredGamesFor` below is the set the ×1.5 is *honoured* on — three UTC days
+ * wide, because the poster rotates on the reader's local date and the server does
+ * not know their clock. That set is the right answer to "may this round take the
+ * bonus" and the wrong one to "which card do I draw": it holds up to four game
+ * types, and a hero card cannot name four.
+ *
+ * So this is the server's **own** UTC day, one slot, with the local-quiz slot
+ * resolved to the single bank this account is dealt. Two clients were picking that
+ * card themselves and by two different rules — one off the day number modulo the
+ * number of cards, one off the daily word — so Home and Play could name different
+ * games on the same day and neither matched the game the bonus was paid on. There
+ * is one answer to that question and it belongs to whoever pays the bonus.
+ *
+ * `null` only when the rotation genuinely posts nothing, which `DAILY_GAME_POOL`
+ * cannot currently do; it is in the signature because an empty slot is a data
+ * state and a client that assumed a value would break on it rather than on
+ * nothing.
+ *
+ * It does **not** say whether the bonus is still available — `featuredTakenToday`
+ * answers that, and the `daily_game` task carries it as `done`. The poster is the
+ * same all day whether or not somebody has claimed it.
+ */
+export async function featuredGameFor(
+  db: Db,
+  userId: string,
+  at: Iso = now(),
+): Promise<GameType | null> {
+  const slot = dailyGameFor(dayOf(at));
+  if (slot.length === 0) return null;
+  /* One entry for six of the seven slots; the local quiz is the seventh and is
+     the only one that needs the account at all, so the read is skipped for the
+     others rather than made unconditionally. */
+  if (slot.length === 1) return slot[0];
+
+  const row = await db.get<{ country_code: string | null }>(
+    `SELECT country_code FROM users WHERE id = $u`,
+    { u: userId },
+  );
+  const mine = localQuizFor(row?.country_code);
+  /* Resolved *within the slot*: if the slot ever holds banks this account's
+     country is not one of, the first is still an honest answer and a card the
+     client can draw. */
+  return slot.includes(mine) ? mine : slot[0];
+}
+
+/**
+ * Whether the day's featured ×1.5 has already been taken.
+ *
+ * **Derived rather than stored**, which is the same argument the energy tank and
+ * the balance make: the rows that answer it are already written. A paid round of
+ * an eligible game, finished today, is what taking it looks like — and because
+ * the filter is `life_spent > 0`, a practice round cannot take it, exactly as it
+ * cannot take the first-play bonus or a place on the decay curve.
+ *
+ * It replaced a `ledger.alreadyPaid` lookup against a `daily_game` entry, which
+ * existed because the bonus used to be a ledger row of its own. A multiplier on
+ * the round has no row to look for, and inventing one — a zero-value marker
+ * entry whose only purpose is to be found again — would be a line in the
+ * player's own points history that says nothing about their points.
+ *
+ * `excludeSessionId` is the round being scored: it has no `finished_at` yet at
+ * the moment `finish` asks, so excluding it is belt and braces rather than
+ * load-bearing, and it is what keeps the answer right if this is ever called
+ * after the update.
+ *
+ * Also read by `domain/tasks.ts`, to mark the "today's game" prompt done.
+ */
+export async function featuredTakenToday(
+  db: Db,
+  userId: string,
+  at: Iso = now(),
+  excludeSessionId?: string,
+): Promise<boolean> {
+  const eligible = [...featuredGamesFor(at)];
+  if (eligible.length === 0) return false;
+
+  /* Built inline because the list is this module's own constant tuple, never
+     user input — there is nothing here for a client to reach. */
+  const placeholders = eligible.map((_, i) => `$g${i}`).join(', ');
+  const params: Record<string, string> = { u: userId, d: dayOf(at), s: excludeSessionId ?? '' };
+  eligible.forEach((gameType, i) => {
+    params[`g${i}`] = gameType;
+  });
+
+  const row = await db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM game_sessions
+      WHERE user_id = $u AND finished_at IS NOT NULL AND life_spent > 0
+        AND substr(finished_at, 1, 10) = $d
+        AND game_type IN (${placeholders})
+        AND id <> $s`,
+    params,
+  );
+  return (row?.n ?? 0) > 0;
 }
 
 /** "You're 60 from 10% off at Café Bratysławska" — from the real balance. */

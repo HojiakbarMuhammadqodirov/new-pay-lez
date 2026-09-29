@@ -176,10 +176,25 @@ export const CONFIG = {
         token: the round it accompanies is the one that restarts the habit. */
     comeback: 100,
     comebackEveryDays: 30,
-    /** Finishing the day's featured game, once a day — the "log in every day
-        and play the daily game" prompt on the Play screen. Flat, on top of what
-        the round itself scored, and never on a practice round. */
-    dailyGame: 20,
+    /*
+     * **There is no flat featured-game bonus any more.** `dailyGame: 20` lived
+     * here and was paid by `payDailyGame` as its own ledger entry, once a day,
+     * for finishing the day's featured card. Rulebook §4.1 step 3 replaces it
+     * with `CONFIG.games.featuredMultiplier` — ×1.5 on the round itself — and
+     * the two must not both exist, or the featured card pays twice.
+     *
+     * The shape is the argument, not the amount. A flat 20 was worth the same to
+     * a player who cleared the board and to one who opened the card and answered
+     * nothing, which made the featured game the cheapest 20 points in the
+     * product and made "play it" the whole of the strategy. A multiplier pays
+     * for the round — 27 for a perfect one, 3 for an empty one — and it rides
+     * the decay curve, so it cannot be collected on the ninth round of a day.
+     *
+     * Two readers had to move with it and both are worth knowing about:
+     * `domain/tasks.ts` priced the `daily_game` task off this constant as an
+     * *exact* promise and now quotes the featured ceiling as a "up to" figure
+     * (`exact: false`), and `verify.ts` asserted on the constant directly.
+     */
 
     /*
      * Getting started, once each, the same on every plan.
@@ -204,11 +219,15 @@ export const CONFIG = {
     /**
      * The welcome round, per correct answer.
      *
-     * Ten rather than the quiz's one (`CONFIG.games.quizPerCorrect`), because
-     * this is the round the welcome screen offers fifty points for and the two
-     * numbers have to be the same promise: five right is fifty, four is forty,
-     * none is nothing. Paid with no sweep or speed bonus for the same reason —
-     * a total the offer did not name is a total that contradicts it.
+     * Ten a question, flat, and it **bypasses the master formula entirely** —
+     * no base, no decay, no featured multiplier, none of the three flat bonuses.
+     * That is not an omission: the onboarding screen before this round offers
+     * fifty points, the two numbers have to be the same promise (five right is
+     * fifty, four is forty, none is nothing), and §4.1 cannot produce fifty from
+     * one round of anything. Its ceiling is 18 before bonuses.
+     *
+     * The round is reported with `welcomeRound: true` and a `base` of 0, so a
+     * client can tell the flat round from a formula one rather than inferring it.
      *
      * Read only where `scoreQuiz` is told the round is the welcome one, which
      * `finishSession` decides from the server's own secret **and** from this
@@ -224,9 +243,19 @@ export const CONFIG = {
     birthday: 200,
     anniversary: 200,
 
-    /** Premium's monthly credit. It must stay worth clearly less than the
-        subscription costs, or the plan refunds itself and becomes a coupon. */
-    premiumStipend: 200,
+    /** Premium's monthly credit, and Pro's.
+
+        Both must stay worth clearly less than the subscription costs, or the
+        plan refunds itself and becomes a coupon. At the rulebook's anchor of
+        100 pts = 1 zl these are 10 zl and 3 zl against fees of 19.99 and 8.99 —
+        about half and a third, which is the margin the old value over-protected:
+        200 points was ~2 zl, and a perk nobody can feel is not a perk.
+
+        These are advertised by `plan_entitlements.monthly_stipend` and paid by
+        `jobs.runMonthly`. Before 2026-09-26 the key was read by nothing at all
+        and Premium's 200 was never credited to anybody. */
+    premiumStipend: 1000,
+    proStipend: 300,
   },
 
   /* ──────────────────────────────────────────── §3 the amount-capture gate ── */
@@ -334,18 +363,134 @@ export const CONFIG = {
      *  game. The site's own bag rule is stricter (every item once before any
      *  twice); this is the server-side floor under it. */
     recentWindow: 40,
-
     /*
-     * A round is a round.
+     * ══ the master formula (rulebook §4.1) ══
      *
-     * Roughly a minute of attention is worth roughly the same in every game,
-     * so a player picks the one they enjoy instead of the one that pays. The
-     * old table did the opposite: Poland maxed at 5 for the same five
-     * questions Brain paid 25 for, and Memory Match paid a guaranteed 36 for a
-     * board that cannot be lost.
+     * **Every game is normalised onto one 0–100 performance scale, and the
+     * points are computed from that scale and nothing else.** This is the whole
+     * of what makes "a round is a round" true rather than aspirational: seven
+     * games used to carry seven private payout tables, and the only thing
+     * holding them level was somebody having last checked. Poland maxed at 5 for
+     * the same five questions Brain paid 25 for; Memory Match paid a guaranteed
+     * 36 for a board that cannot be lost. Under one scale a game can only be
+     * mispriced by mapping its own result onto performance wrongly — which is a
+     * single, reviewable function per game (§5 of the rulebook, `scoreQuiz` and
+     * friends in `domain/games.ts`) — and never by its payout drifting away from
+     * the others'.
+     *
+     *   1. the game produces PERFORMANCE, an integer 0..100
+     *   2. base      = max(2, round(performance / 100 × 18))     → 2..18
+     *   3. × 1.5     if this is the day's featured game, once per day
+     *   4. × decay(roundToday)
+     *   5. × points_multiplier (1 / 1.25 / 1.75)
+     *   6. + flat bonuses: perfect 10, first-ever play 25, personal best 8
+     *   7. final = max(1, round(step 5 + step 6))
+     *
+     * **The flat bonuses are added after the multiplier and are not multiplied
+     * by it.** That is the rulebook's order and it is also the only order that
+     * keeps them legible: a "+25 for a new game" that silently pays 44 on
+     * Premium is a number no result card can name, and the three bonuses are
+     * exactly the lines a result card exists to itemise.
+     *
+     * `roundPoints` in `domain/games.ts` is the one implementation, and it does
+     * the arithmetic in **integers scaled by 100** rather than in floats — the
+     * decay rungs are 0.65/0.45/0.3/0.2/0.12 and none of them is exactly
+     * representable as a double, so a product landing on a .5 boundary is a
+     * coin flip on representation dust. The published table in §4.2 of the
+     * rulebook is a promise to players, and `verify:api` reproduces all
+     * twenty-seven of its cells; that check is what stops this drifting.
      */
 
+    /** §4.1 step 2. The most a perfect round can be worth before the featured
+     *  multiplier, the decay, the plan and the flat bonuses. */
+    maxRoundPoints: 18,
+    /**
+     * And the floor under a **finished** round, from the same step.
+     *
+     * "A finished round never pays zero" (§4.2): trying always beats not
+     * trying, and a player who scored nothing at all still spent the energy and
+     * still turned up. Two points is deliberately small enough that farming the
+     * floor is worse than playing — the decay curve takes it to 1 by the third
+     * round of the day — and large enough to be a number on a card.
+     */
+    minRoundPoints: 2,
+
+    /**
+     * §4.1 step 4. The decay curve, by which round of the **day** this is.
+     *
+     * Indexed from 0 for the first round; the last rung repeats for every round
+     * past it, so a tenth round is worth what a sixth is. `roundToday` comes
+     * from `daily_counters.lives_used + 1` — the paid rounds already recorded
+     * today, plus this one — so a practice round does not push a player down
+     * the curve and neither does an abandoned one.
+     *
+     * **This is the anti-grind lever, and it is the one that replaced the
+     * per-game curve that used to live here.** The old one paid a repeat of the
+     * *same* game less, which a player rotating seven games never met at all;
+     * this one counts rounds rather than games, so there is nothing to rotate
+     * away from. Read with energy — which bounds how many rounds exist — it
+     * makes coming back tomorrow worth more than finishing the tank tonight,
+     * and that is the behaviour the product wants: the first round of the day
+     * is worth real points and the sixth is a token.
+     *
+     * A fraction rather than a percentage because step 4 is a multiplication;
+     * `roundPoints` converts each rung to hundredths and multiplies in
+     * integers, so what is written here is documentation and the arithmetic
+     * cannot inherit a float's rounding.
+     */
+    decayByRound: [1, 0.65, 0.45, 0.3, 0.2, 0.12] as readonly number[],
+
+    /**
+     * §4.1 step 3 / §4.4. The day's featured game, ×1.5, **once per day**.
+     *
+     * This replaced a flat `CONFIG.earn.dailyGame: 20` paid as its own ledger
+     * entry, and the replacement is not a re-pricing so much as a change of
+     * shape. A flat bonus is worth the same to a player who cleared the board
+     * and to one who answered nothing, so the featured card was the cheapest 20
+     * points in the product and the way to take it was to open it and finish.
+     * A multiplier pays for the round: 27 for a perfect one, 3 for an empty
+     * one. It also travels with the decay, so the featured bonus cannot be
+     * farmed on the ninth round of a day.
+     *
+     * "Once per day" is derived rather than stored — `featuredTakenToday` in
+     * `domain/games.ts` reads the paid rounds already finished today — which is
+     * the same argument the energy tank and the balance make: the rows that say
+     * it are already written, and a second record of one fact is a second thing
+     * to be wrong.
+     */
+    featuredMultiplier: 1.5,
+
+    /**
+     * §4.3 the three flat bonuses, added after the multiplier.
+     *
+     * **`perfectRoundBonus`** is paid on performance exactly 100, which is a
+     * different statement in every game — five right, three words fast and
+     * hint-free, a board cleared in ten moves, 25 obstacles — and that is the
+     * point of having one scale: "perfect" means one thing on the card.
+     *
+     * **`newGameBonus`** is paid once per game, ever, and eight games make 200
+     * points of lifetime discovery. It is the largest single bonus here on
+     * purpose: the thing it is buying is a player trying the game they would
+     * otherwise never open, and the featured rotation is the other half of that
+     * argument.
+     *
+     * **`personalBestBonus`** is paid at most once per game per day, and only
+     * when there is a previous best to beat — the round that *sets* a first
+     * record takes `newGameBonus` instead, and paying both for one round would
+     * be paying twice for the same fact. It needs the only new storage this
+     * formula asks for (`player_game_bests`), because performance is computed
+     * from events and never written to a session row, so unlike "has this
+     * player played this game before" it cannot be derived from history.
+     */
+    perfectRoundBonus: 10,
+    newGameBonus: 25,
+    personalBestBonus: 8,
+
     /*
+     * ══ §5: each game's own map onto performance ══
+     */
+
+    /**
      * Questions in a quiz round. **There is no mistake cap and a quiz cannot be
      * lost.** All five are asked however the first four went.
      *
@@ -353,7 +498,7 @@ export const CONFIG = {
      * question unreachable for exactly the player who most needed the practice,
      * and it made "won" a statement about how many mistakes somebody had left
      * rather than about how they did. The only distinction left worth drawing
-     * is a clean sweep, and it is the one the two bonuses below are paid on.
+     * is a clean sweep, and `won` is that.
      */
     quizQuestions: 5,
     /**
@@ -363,7 +508,7 @@ export const CONFIG = {
      * A number rather than an assumption, because the assumption was wrong on
      * real data and the symptom was a *question* rather than an error: a row
      * with one distractor renders two buttons, which is a coin flip presented
-     * as a quiz — worth the same point as a question with four options, and
+     * as a quiz — worth the same as a question with four options, and
      * conspicuous to a player in a way no log line noticed. Oceania's 14
      * countries did it to 14 flags and 14 capitals (see `pickDistractors` in
      * `db/import.ts` for the arithmetic that caused it).
@@ -374,151 +519,237 @@ export const CONFIG = {
      * already written.
      */
     quizOptions: 4,
-    quizPerCorrect: 1,
     /**
-     * All five right.
+     * §5.1–5.3. **20 performance a correct answer**, so five of five is exactly
+     * 100 and a perfect quiz is a perfect round.
      *
-     * It was 5, back when four right paid four and five paid ten and the last
-     * question *was* the round. That is too much weight on one answer now that
-     * a mistake costs nothing but the point it was worth: a quiz is a point a
-     * question, and one more for taking all five.
+     * The three quizzes share this line because they are three banks of one
+     * game to a player — same five questions, same four buttons, same minute —
+     * and a scoring difference between them would be somebody in Tashkent paid
+     * differently for the same attention than somebody in Kraków. `poland` and
+     * `uzbekistan` are two banks of one *card* and the same argument applies
+     * twice over.
      */
-    quizPerfectBonus: 1,
+    quizPerformancePerCorrect: 20,
     /**
-     * And how fast — on the **whole round**, not on a question.
+     * §5.1. **+5 performance for a fast round, capped into the 100 with
+     * everything else.**
      *
-     * Paid only on a clean sweep, which is what stops it rewarding five wrong
-     * answers hammered out in two seconds: the fastest way through a quiz has
-     * always been to not read it. Read with the bonus above, a perfect fast
-     * round is 5 + 1 + 2 = 8, and that is the ceiling for a quiz.
+     * On a five-of-five round the cap eats it, which is not an accident: a
+     * perfect round is already perfect, and the credit is there to move the
+     * *partial* rounds — four right and quick is 85 where four right and slow
+     * is 80.
      *
-     * Timed from the first recorded event to the last, off the server's own
-     * stamps, exactly as Memory Match is — the client has no clock this module
-     * is willing to read, and a reported duration is one a modified client
-     * invents.
+     * **It is deliberately not gated on a clean sweep any more**, and the
+     * reason the old gate existed has gone with the old table. It was there
+     * because the fastest way through five questions is to answer them all
+     * wrong without reading them, and under a per-point table that bought a
+     * real bonus. Under this one it buys nothing at all: five wrong answers in
+     * a second is performance 5, and `max(2, round(5/100 × 18))` is 2 — exactly
+     * what five wrong answers slowly pays, because the floor is already there.
+     * A rule that cannot change an outcome is a rule to delete rather than to
+     * keep explaining.
      *
-     * `throughSeconds` is **inclusive**, and the field is named for the
-     * comparison it gets. "Under 10 seconds" and "up to 10 seconds" are
-     * different rules, only one of them can be written with a `<`, and a round
-     * that lands exactly on a boundary and drops to the slower band is the kind
-     * of off-by-one nobody reports — they just feel robbed.
+     * Timed on the **whole round**, from the first event the server stamped to
+     * the last — `elapsedSeconds` in `domain/games.ts`. The client has no clock
+     * this module is willing to read.
+     *
+     * `withinSeconds` is compared with `<=`, and it is named for the
+     * comparison: "under 25 seconds" and "up to 25 seconds" are different
+     * rules, only one of them can be written with a `<`, and a round that lands
+     * exactly on the boundary and silently loses the credit is the kind of
+     * off-by-one nobody reports — they just feel robbed.
      */
-    quizSpeedBands: [
-      { throughSeconds: 10, points: 2 },
-      { throughSeconds: 15, points: 1 },
-      { throughSeconds: null, points: 0 },
-    ] as ReadonlyArray<{ throughSeconds: number | null; points: number }>,
+    quizSpeedCredit: 5,
+    quizSpeedWithinSeconds: 25,
 
-    /*
-     * Word Builder. **A word is worth its tier** — 1, 2 or 3 — read from
-     * `word_bank.tier`, the only difficulty rating in the product a human set,
-     * and one the server used to recompute from the word's length instead.
-     *
-     * One table rather than two that add up to it. A flat base of 1 plus a tier
-     * *bonus* of 0/1/2 was the rule before and it names the same three numbers
-     * by a longer road, but it also made a hint's penalty a subtraction of the
-     * bonus, which is what `wordHintFactor` below replaces.
-     *
-     * The site draws its five words on a `[1, 1, 2, 2, 3]` ramp, so a clean
-     * sweep there is nine, plus the bonus below: ten. **This server does not
-     * impose that ramp** — `buildWords` takes five at random from whatever the
-     * bank holds for the language — so its own rounds land near ten rather than
-     * on it. Imposing it here would need every language's bank to carry two
-     * words at each of tiers 1 and 2 and one at tier 3, and the seeded English
-     * list has exactly one three-or-four-letter word in it; a ramp it cannot
-     * fill returns a four-word round, which is worse than a round worth eight.
-     *
-     * There is deliberately no speed bonus here. Word Builder is the one game
-     * in the set where thinking is the activity, and a clock on it turns a
-     * puzzle into a typing test. The quizzes carry one because a question you
-     * know is answered instantly and a question you are guessing at is not.
-     */
-    wordTierPoints: [1, 2, 3],
     /**
-     * What a hint costs: **half that word's points.**
+     * §5.4 Word Builder. **Three words a round, not five.**
      *
-     * Forfeiting the tier bonus and keeping a flat base was the rule before,
-     * and it priced the reveal backwards — a tier-3 word fell from 3 to 1 while
-     * a tier-1 word fell from 1 to 1, so the hint was free on the easy word and
-     * brutal on the hard one, which is the opposite of where somebody reaches
-     * for it. A half costs the same *share* whatever the word is worth, which
-     * is what makes taking one a decision rather than a trap.
+     * Five was this server's number and three is the rulebook's, and the change
+     * is a shortening of the round rather than a re-pricing of it: three words
+     * at 33 performance each is the same 100 as five at 20 would be. A
+     * three-word round is about forty seconds, which is the length the rest of
+     * the set runs at — a five-word round was the longest minute in the product
+     * and paid no more for it.
      *
-     * It is one of the two fractional terms in the whole scoring — the other is
-     * `flightPerGap` — and the round is floored **once**, at the end, in
-     * `domain/games.ts`. Halving here and rounding here would lose the halves
-     * a player earned on two different words.
+     * **It is also a wire change with no shape to catch it**: `content.words`
+     * simply has three entries. A client that drew five slots draws two empty
+     * ones.
      */
-    wordHintFactor: 0.5,
-    /** Every word solved, first try, no hint. One, matching the quizzes': a
-     *  clean-round bonus is worth having and is not worth a third of the round,
-     *  which is what 3 was against a nine-point ramp. */
-    wordPerfectBonus: 1,
-    wordsPerRound: 5,
+    wordsPerRound: 3,
+    /**
+     * §5.4. 33 performance a word — and three solved words are **100, not 99**.
+     *
+     * `wordsPerRound × wordPerformancePerWord` is 99, and a clean sweep that
+     * cannot reach a perfect round is a rule the player experiences as a bug:
+     * every word solved, no hints, fast, and the card says 99% with no fourth
+     * word to find. `scoreWords` promotes a full sweep to 100 for that reason,
+     * which is exactly what the rulebook says to do ("99, rounded to 100 for
+     * all three").
+     *
+     * The word's **tier** no longer prices it. `word_bank.tier` is still the
+     * only human-set difficulty rating in the product and it still decides
+     * which words are dealt and what the client can say about them — but a
+     * scale where a hard word pays more is a scale where the *round* is worth
+     * whatever it happened to deal, and "a round is a round" is the rule this
+     * whole formula exists to enforce. Difficulty is now expressed by what a
+     * player can do in the time rather than by a multiplier on the word.
+     */
+    wordPerformancePerWord: 33,
+    /**
+     * §5.4. **+4 performance for each word solved inside 30 seconds.**
+     *
+     * Per word rather than per round, which is the one place Word Builder is
+     * timed differently from the quizzes, and it is deliberate: the round is
+     * three separate puzzles and a player who solves two instantly and stares
+     * at the third has earned the credit on two of them. `scoreWords` measures
+     * each word from the previous solve — or from the round's own `started_at`
+     * for the first — off the server's stamps.
+     *
+     * Read with the line above, the ceiling is 99 + 12 clamped to 100, so a
+     * fast sweep is perfect and a slow sweep is still perfect. The credit is
+     * what separates a fast *partial* round from a slow one — one word in 10
+     * seconds is 37 where one word in a minute is 33.
+     */
+    wordSpeedCredit: 4,
+    wordSpeedWithinSeconds: 30,
+    /**
+     * §5.4. **Each hint costs 10 performance.**
+     *
+     * A flat subtraction, where the rule before was halving that word's points
+     * — and the flat version is the one that survives the move to a common
+     * scale. Halving priced the reveal against the word's tier, which no longer
+     * prices anything; 10 off 100 is the same tenth of a round whichever word
+     * it was spent on, which is what makes pressing the button a decision
+     * rather than a lottery.
+     *
+     * Hints are an entitlement, not a currency: `word_hints_per_day` is 3 free,
+     * 6 on Pro, 10 on Premium, so the tier buys **help** and this line is what
+     * stops it also buying points. Three hints on a three-word round is 30 off
+     * — a solved-but-hinted round lands near 70, which is a real score for a
+     * round somebody needed help with.
+     *
+     * The total is clamped into 0..100 afterwards, so hints cannot take a round
+     * negative; the round's own floor of 2 points is what a 0 performance still
+     * pays.
+     */
+    wordHintPenalty: 10,
 
-    /*
-     * Memory Match is scored on time and nothing else.
-     *
-     * Bands rather than a curve, so the result screen can say which one you
-     * landed in and what the next one was worth. The last band has no ceiling
-     * and still pays: finishing is always worth something, which is what keeps
-     * the board approachable now that it is timed.
-     *
-     * Three bands rather than four, and much tighter: 18/23/over paying 8/6/3,
-     * where it was 40/70/110/over paying 12/8/4/2. A six-pair board is not a
-     * forty-second game for anybody paying attention, so the old top band was
-     * where nearly every finished round landed and the clock was decorative.
-     *
-     * `throughSeconds` is **inclusive** — see the note on `quizSpeedBands`
-     * above, which is the same rule and the same reason.
-     *
-     * Timed from the first move to the last, from the timestamps the server
-     * already writes on every event — the client has no clock to borrow, and a
-     * client-reported duration is one a modified client can invent.
+    /**
+     * §5.5 Memory Match. Six pairs, twelve cards.
      */
     memoryPairs: 6,
-    memoryBands: [
-      { throughSeconds: 18, points: 8 },
-      { throughSeconds: 23, points: 6 },
-      { throughSeconds: null, points: 3 },
-    ] as ReadonlyArray<{ throughSeconds: number | null; points: number }>,
-
-    /*
-     * The endless flight. `flightTarget` gaps banks the round; every gap past it
-     * still pays, up to a hard ceiling — one lucky run used to be worth four
-     * days of everything else.
+    /**
+     * §5.5. **Completing the board is 60, and moves buy the rest.**
      *
-     * **Half a point a gap**, not one. It was one, which put the 20-point
-     * ceiling twenty gaps out and made the arcade round the cheapest 20 points
-     * in the product; it is forty gaps now, and the client ramps the scroll
-     * speed as the run goes on, so the far half of that is earned rather than
-     * waited out. The server does not simulate the flight — it is handed
-     * `{cleared}` and clamps it — so the ramp is the client's business and this
-     * number is the only thing here that prices a gap.
+     * This is the change the rulebook makes that is hardest to argue against
+     * and easiest to get wrong, so it is worth stating both halves. Memory
+     * Match was scored on **elapsed time** here, on the argument that moves are
+     * the one thing a player can optimise away entirely by writing the board
+     * down, and a stopwatch cannot be beaten with a pencil. That is true and it
+     * is the wrong trade: a clock on the one game in the set with no fail state
+     * — the deliberately accessible one, the one somebody plays because the
+     * quizzes are in a language they are still learning — turns it into the
+     * least accessible. It also made the cheapest 8 points on offer two `pair`
+     * events a millisecond apart.
      *
-     * An odd gap count therefore ends on a half point. The round is floored
-     * **once, at the end**, so seven gaps is 3.5 and banks 3 — not two floors
-     * taking the same half off twice.
+     * Moves price the thing the game is actually about, which is remembering
+     * what you saw. A six-pair board is six moves played perfectly, so the top
+     * band's ten allows four mistakes; nineteen or more is the whole board
+     * turned over by trial and error and still pays the 60 for finishing.
+     *
+     * **The pencil is real and it is bounded.** A player who writes the board
+     * down reaches 100 instead of 85 — 18 points instead of 15 at decay 1 — and
+     * spends a minute with a notepad to do it, once, on the one round of the
+     * day that pays full. The clock's version of the same exploit was worth
+     * more and needed no notepad.
+     *
+     * **A move is one `pair` event**, counted from `game_events` — the server's
+     * own rows, never a client-reported total. A `peek` is not a move: it turns
+     * one card, it carries no verdict, and it is how the shipped client shows
+     * the first card of a move (see `submitEvent`). Counting peeks would charge
+     * a client one move for turning one card and another for turning the
+     * second, which is two moves for what the player experienced as one.
      */
-    flightPerGap: 0.5,
+    memoryBasePerformance: 60,
+    /**
+     * §5.5. The efficiency bonus on top of the 60, by moves used.
+     *
+     * `throughMoves` is **inclusive** and named for the comparison, the same
+     * rule `quizSpeedWithinSeconds` above carries and for the same reason. The
+     * last rung has no ceiling and pays nothing extra — finishing is always
+     * worth the 60, which is what keeps the board approachable.
+     *
+     * Bands rather than a curve so a result screen can name the one the player
+     * landed in and what the next one was worth. The totals are 100 / 85 / 72 /
+     * 60, and the first of them is why a cleared board in ten moves is a
+     * perfect round and takes the perfect-round bonus with it.
+     */
+    memoryMoveBands: [
+      { throughMoves: 10, bonus: 40 },
+      { throughMoves: 14, bonus: 25 },
+      { throughMoves: 18, bonus: 12 },
+      { throughMoves: null, bonus: 0 },
+    ] as ReadonlyArray<{ throughMoves: number | null; bonus: number }>,
+    /**
+     * §5.5. The 90-second limit, and what an expired board is worth.
+     *
+     * `pairs_found / 6 × 50` — half marks for half a board, and the ceiling of
+     * 50 is the whole of what the limit enforces: a board that ran out of time
+     * cannot reach the 60 that completing it pays, however many pairs were
+     * found. Six of six inside the limit is a completion and takes the bands
+     * above instead.
+     *
+     * **Measured against the server's own stamps, and pair by pair.** The
+     * deadline is 90 seconds after the round's first recorded event, and a pair
+     * matched after it does not count — which is what lets an expired board be
+     * scored on the pairs that were actually found in time rather than on
+     * whatever the client posted afterwards. Timing from the first *event*
+     * rather than from `started_at` is the forgiving direction on purpose: the
+     * seconds a player spends looking at a freshly dealt board before touching
+     * it are not seconds the limit should be eating.
+     */
+    memoryLimitSeconds: 90,
+    memoryExpiredCeiling: 50,
+
+    /**
+     * §5.6 Bird's Flight. **4 performance an obstacle**, so 25 is perfect.
+     *
+     * The one game with no answer key — a physics loop the server did not run —
+     * so the server cannot recompute this, only bound it. The bound is
+     * `flightSecondsPerGap` below and it is the honest limit of what can be
+     * said about a claim: the number of gaps a real run can have crossed is
+     * bounded by how long the session was open.
+     *
+     * `flightTarget` decides whether the round was a **win**, not what it pays:
+     * five gaps, matching the number the site's own screen shows the player. A
+     * win the server and the client disagree about is worse than a hard target.
+     *
+     * The old `flightMaxPoints: 20` ceiling is gone because the 0..100 scale is
+     * the ceiling now: 25 obstacles is 100, and a claim of a thousand is
+     * clamped to the same 100 that a very good honest run reaches. Capping
+     * performance rather than points is the stronger version of the same rule —
+     * it does not have to guess how far a real player could fly, only how far a
+     * perfect round goes.
+     */
+    flightPerformancePerObstacle: 4,
     flightTarget: 5,
-    flightMaxPoints: 20,
     /*
      * The plausibility bound on a claimed run, in seconds per gap.
-     *
-     * The flight is the one game with no answer key — a physics loop the server
-     * did not run — so `flightMaxPoints` was the whole defence and it bounds
-     * only what a run is *worth*. A claim of a thousand gaps one second after
-     * the session opened banked the ceiling and was indistinguishable in the
-     * ledger from a very good player.
      *
      * Columns arrive on a **timer** in the client (`interval` in
      * `src/site/flight/config.ts`), and the difficulty ramp deliberately leaves
      * that timer alone — it spreads the columns further apart in world units
      * instead. So this number is that one, and the gap count a run can honestly
-     * have is bounded by how long the session was open. Change one and the
-     * other has to move with it: a client that spawned faster than this would
-     * have honest runs clamped.
+     * have is bounded by its own duration, measured from two stamps this server
+     * wrote. Change one and the other has to move with it: a client that
+     * spawned faster than this would have honest runs clamped.
+     *
+     * The rulebook does not ask for this guard and it is kept anyway. Without
+     * it a client posting 10,000 gaps one second after opening the session
+     * banks a perfect round and looks in the ledger exactly like a very good
+     * player.
      *
      * The allowance is slack, and generously so. Columns already on screen when
      * a run starts were not waited for, and the bound exists to refuse the
@@ -530,24 +761,6 @@ export const CONFIG = {
     /** Streak freezes: earned one per this many days. The count held is a
      *  plan entitlement (`streak_freezes`); Premium never breaks a streak. */
     freezeEvery: 7,
-
-    /*
-     * **A round pays the same whether it is your first of the day or your
-     * ninth.** There is no per-game decay curve and no daily points cap; a
-     * round's score is `floor(raw × points_multiplier)` and nothing else.
-     *
-     * A curve lived here that paid a repeat of the *same* game 100/60/40/20/0%
-     * on free. It was written when play was unlimited and it was the only brake
-     * there was. Energy is that now — every finished round costs one, which is
-     * twelve rounds a day sustained on free (sixteen from a full tank),
-     * 24/30 on Pro, 48/58 on Premium — and the curve stopped reaching: per
-     * *game*, its free
-     * zero rung was the fifth round of one game, so a player rotating the seven
-     * never got near it, and on Pro and Premium it never bit under any pattern
-     * of play at all. Two overlapping limiters where only one binds is one more
-     * than a player can be told about. If a day needs to be smaller, move
-     * `CONFIG.points` — that is the number this rule is now made of.
-     */
   },
 
   /* ──────────────────────────────────────── §1.3 / B9 privacy thresholds ── */

@@ -205,7 +205,60 @@ export async function runMonthly(db: Db, at: Iso = now()): Promise<JobReport> {
     });
     sent += 1;
   }
-  return { at, ran: ['monthly_summary'], detail: { sent } };
+  const credited = await payMonthlyStipends(db, at);
+  return { at, ran: ['monthly_summary', 'stipend'], detail: { sent, credited } };
+}
+
+/**
+ * The monthly points credit a paid consumer plan advertises (§7.3).
+ *
+ * `plan_entitlements.monthly_stipend` has been served to the app since the plan
+ * table was written, and until now **nothing read it**: `'stipend'` was a legal
+ * `points_ledger.reason` that no code path ever wrote, so Premium advertised a
+ * credit and paid nobody. This is the missing half.
+ *
+ * Keyed on the **calendar month**, not on `subscriptions.renews_at`, and the
+ * difference is deliberate: a renewal date moves when a card fails and retries,
+ * and a bonus that lands twice because a payment was retried is the one kind of
+ * grant a ledger cannot argue its way out of. `stipend:<YYYY-MM>` is a fact
+ * about the month, so `alreadyPaid` makes a second run of this job — or a
+ * restart mid-sweep — cost nothing. The trade is that somebody subscribing on
+ * the 28th is credited for that month in full; at these values that is cheaper
+ * than the alternative failure.
+ *
+ * Trialing accounts are included. They are entitled while the trial runs, and a
+ * trial that pays nothing is a trial of a different product.
+ */
+async function payMonthlyStipends(db: Db, at: Iso): Promise<number> {
+  const month = at.slice(0, 7);
+  const rows = await db.all<{ user_id: string }>(
+    `SELECT DISTINCT user_id FROM subscriptions
+      WHERE user_id IS NOT NULL AND status IN ('trialing', 'active', 'grace')`,
+  );
+
+  let credited = 0;
+  for (const row of rows) {
+    const ent = await entitlements.entitlementsFor(db, { userId: row.user_id }, at);
+    const points = entitlements.entNumber(ent, 'monthly_stipend', 0);
+    if (points <= 0) continue;
+
+    const ref = `stipend:${month}`;
+    if (await ledger.alreadyPaid(db, row.user_id, 'stipend', ref)) continue;
+
+    await ledger.earn(db, {
+      userId: row.user_id,
+      points,
+      /* `occasion` is the sentence a customer reads in their history; `stipend`
+         is the `source_kind` the arithmetic and this job's own idempotency key
+         are built on. Same split as `payComeback`. */
+      reason: 'occasion',
+      sourceKind: 'stipend',
+      sourceRef: ref,
+      at,
+    });
+    credited += 1;
+  }
+  return credited;
 }
 
 /**

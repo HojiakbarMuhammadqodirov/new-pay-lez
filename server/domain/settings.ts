@@ -277,7 +277,7 @@ const PLANS: PlanSeed[] = [
       exclusive_deals: true,
       deal_early_access_hours: 0,
       gift_card_priority: true,
-      monthly_stipend: 0,
+      monthly_stipend: CONFIG.earn.proStipend,
       priority_support: false,
       assistant: true,
     },
@@ -609,10 +609,15 @@ async function seedCategoryDefaults(db: Db): Promise<void> {
  * Polish first, because the product's reason for existing is somebody who has
  * just moved to Kraków — the words are the ones a newcomer meets in a week of
  * ordinary errands, not a dictionary sample. The tier is the spec's own: 1 for
- * three or four letters, 2 for five or six, 3 for seven and up, and it is now
- * what the word is *worth* rather than a bonus on top of a base —
- * `wordTierPoints` in `config.ts` is the table, and a hint halves whatever it
- * says.
+ * three or four letters, 2 for five or six, 3 for seven and up.
+ *
+ * **It no longer prices the word.** It did — the tier *was* the payment, and
+ * before that a bonus on top of a base — and under the points rulebook's common
+ * 0–100 performance scale every word in a round is worth the same 33. A scale
+ * where a hard word pays more is a scale where the round is worth whatever it
+ * happened to deal, and "a round is a round" is the rule the scale exists to
+ * enforce. What the tier still decides is which words are dealt and what a client
+ * can say about them, which is the thing a human curator was rating.
  *
  * The bank exists here rather than in the CSV import because the old database
  * has no word list — the games it shipped were the four quizzes.

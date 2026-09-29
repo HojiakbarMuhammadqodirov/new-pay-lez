@@ -261,7 +261,7 @@ const keys = primaryKeys(source);
 const tables = Object.keys(keys);
 const keyed = tables.filter((t) => keys[t]);
 
-if (tables.length !== 85) throw new Error(`expected 85 tables, parsed ${tables.length}`);
+if (tables.length !== 86) throw new Error(`expected 86 tables, parsed ${tables.length}`);
 
 /* Every table an `INSERT OR REPLACE|IGNORE` actually targets must have a key,
    or the translation in `pg.ts` throws at runtime — which is correct behaviour

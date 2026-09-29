@@ -41,7 +41,7 @@ import { CONFIG } from '../config.ts';
 import type { Db } from '../db/db.ts';
 import * as checkin from './checkin.ts';
 import * as entitlements from './entitlements.ts';
-import { dailyGamePaid } from './games.ts';
+import { featuredTakenToday, roundCeiling } from './games.ts';
 import { now, type Iso } from './time.ts';
 
 /**
@@ -114,13 +114,13 @@ export async function tasksFor(db: Db, userId: string, at: Iso = now()): Promise
      says so at the top and `gate.ts` must not apply it. A ceiling quoted
      without it would under-sell the round to a subscriber, which is the wrong
      direction for the one figure they are paying for. */
-  const multiplier = needs('play_round')
-    ? entitlements.entNumber(
-        await entitlements.entitlementsFor(db, { userId }),
-        'points_multiplier',
-        1,
-      )
-    : 1;
+  const plans = needs('play_round') || needs('daily_game')
+    ? await entitlements.entitlementsFor(db, { userId })
+    : null;
+  const multiplier = plans ? entitlements.entNumber(plans, 'points_multiplier', 1) : 1;
+  /* The featured prompt needs the same multiplier; it is named separately only so
+     the two ceilings below read as the two different rounds they price. */
+  const featuredMultiplier = multiplier;
 
   const profileDone = needs('profile')
     ? Boolean(
@@ -133,20 +133,28 @@ export async function tasksFor(db: Db, userId: string, at: Iso = now()): Promise
       )
     : false;
 
-  const dailyGameDone = needs('daily_game') ? await dailyGamePaid(db, userId, at) : false;
+  const dailyGameDone = needs('daily_game') ? await featuredTakenToday(db, userId, at) : false;
 
   /**
-   * The ceiling on one quiz round: five right, the clean-sweep bonus, and the
-   * fastest speed band, through the plan multiplier and floored once — the same
-   * order `games.finish` applies them in, which is what stops this figure and
-   * the ledger's disagreeing by a point.
+   * The two ceilings these prompts advertise, **computed by the formula itself**.
+   *
+   * `roundCeiling` in `domain/games.ts` is the same function `games.finish`
+   * prices a round with, which is the only arrangement that stops this panel
+   * quoting a figure the ledger will not pay. It was an expression written out
+   * here — five right, the sweep bonus, the fastest speed band, floored once —
+   * and it was correct only because somebody had last checked it against the
+   * scorer; under a formula with a decay curve, a featured multiplier and three
+   * flat bonuses there is no expression short enough to be worth restating.
+   *
+   * Both are a **perfect round at the top of the decay curve**, which is what
+   * "up to" means. Neither includes the first-play or personal-best bonus: those
+   * would be right on one round of a game and wrong on every round after it, and
+   * over-promising by 25 points is worse than a ceiling that is merely a ceiling.
    */
-  const roundCeiling = Math.floor(
-    (CONFIG.games.quizQuestions * CONFIG.games.quizPerCorrect +
-      CONFIG.games.quizPerfectBonus +
-      (CONFIG.games.quizSpeedBands[0]?.points ?? 0)) *
-      multiplier,
-  );
+  const playCeiling = needs('play_round') ? roundCeiling({ featured: false, multiplier }) : 0;
+  const featuredCeiling = needs('daily_game')
+    ? roundCeiling({ featured: true, multiplier: featuredMultiplier })
+    : 0;
 
   const resolve = (reward: string): { points: number; exact: boolean; done: boolean } | null => {
     switch (reward as Reward) {
@@ -160,9 +168,27 @@ export async function tasksFor(db: Db, userId: string, at: Iso = now()): Promise
           done: calendar?.claimedToday ?? false,
         };
       case 'play_round':
-        return { points: roundCeiling, exact: false, done: playedToday };
+        return { points: playCeiling, exact: false, done: playedToday };
       case 'daily_game':
-        return { points: CONFIG.earn.dailyGame, exact: true, done: dailyGameDone };
+        /*
+         * **This became a ceiling rather than a promise**, and the flag is the
+         * whole of the change a client sees.
+         *
+         * It used to be `CONFIG.earn.dailyGame` — a flat 20 paid as its own
+         * ledger entry for finishing the day's featured card, exact, the same
+         * for a perfect round and an empty one. Rulebook §4.1 step 3 replaced
+         * that with ×1.5 on the round itself, so what the featured game is worth
+         * now depends on how the round goes, and the only honest figure a prompt
+         * can carry is the most it could be: a perfect featured round at the top
+         * of the decay curve. `exact: false` is what tells the panel to render
+         * it as "up to", exactly as the "play a round" prompt already is.
+         *
+         * `done` still means the same thing it did — the featured bonus has been
+         * collected today — but it is read off the player's own finished rounds
+         * now rather than off a ledger entry, because there is no longer an entry
+         * to look for. See `featuredTakenToday`.
+         */
+        return { points: featuredCeiling, exact: false, done: dailyGameDone };
       case 'profile':
         return { points: CONFIG.earn.profileComplete, exact: true, done: profileDone };
       case 'invite':
