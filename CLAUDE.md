@@ -33,6 +33,9 @@ a whole:
 - **`src/site/CLAUDE.md`** — the palette at token level. **Read it before
   touching a colour.**
 
+How either half reaches the VPS is **`DEPLOY.md`** — pushing to `main` deploys
+nothing.
+
 ## Commands
 
 There is no test runner. `npm run verify` is the test suite — 1,690 checks: it
