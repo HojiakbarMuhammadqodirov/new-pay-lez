@@ -55,6 +55,18 @@ npm run verify:api          # backend suite
 All three must be clean. A merge in particular can pass `tsc` and the build and
 still fail `verify` — that has happened.
 
+**`verify:api` needs `new-data/`, and a clone does not have it.** It is the
+Base44 export the backend's test database is seeded from, gitignored because it
+holds real people's records, and without it the suite crashes at "the import is
+repeatable". The box carries the same files — copy them once into the repo root:
+
+```
+ssh root@87.106.247.180 'tar -czf - -C /opt/paylez new-data' | tar -xzf -
+```
+
+Treat the folder like the database it came from: not in git, not in a chat, not
+on a shared drive.
+
 ## Front end
 
 The API address and the Google client id are **baked into the bundle at build
