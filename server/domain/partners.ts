@@ -828,7 +828,7 @@ export async function createCampaign(
   const at = input.at ?? now();
   campaigns.validateCampaign(input);
 
-  const ent = await entitlements.entitlementsFor(db, { venueId: input.venueId });
+  const ent = await entitlements.entitlementsFor(db, { venueId: input.venueId }, at);
   const active =
     (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active'`,
@@ -990,7 +990,7 @@ export async function setCampaignStatus(
   if (!campaign) throw new DomainError('not_found', 'campaign not found');
 
   if (input.status === 'active' && campaign.status !== 'active') {
-    const ent = await entitlements.entitlementsFor(db, { venueId: campaign.venue_id });
+    const ent = await entitlements.entitlementsFor(db, { venueId: campaign.venue_id }, at);
     const running =
       (await db.get<{ n: number }>(
         `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active' AND id <> $c`,
