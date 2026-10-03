@@ -1455,6 +1455,29 @@ should send nothing, and the account is created just the same.
 the session's language, so nothing in the request changes — a Russian-speaking
 account simply gets a real round now instead of `404 not_found`.
 
+#### 22a. The 2 000-word bank — four lists, tiles, decoys (2026-10-04)
+
+The bank is `updates/paylez-wordbuilder-all-2000.csv`: **500 words each in
+`en`, `pl`, `uz` and `ru`**. Send `wordList` (`en`/`pl`/`uz`/`ru`) on
+`POST /v1/games/sessions` to choose the list; the clue follows the reader's
+language (the word's own clue on its own list, English otherwise unless the bank
+has the same clue in the reader's language).
+
+Three wire changes on each `content.words[i]`, none of which adds a key:
+
+- **`letters` are tiles, and a tile may be several characters.** Uzbek spells
+  SH, CH, Oʻ and Gʻ as one tile: GOʻSHT arrives as `["T","SH","G","Oʻ",…]`.
+  Draw each entry as one key; never split a word or a tile by character.
+- **`length` counts tiles**, not characters (GOʻSHT is 4). The word is complete
+  when `length` tiles are placed.
+- **`letters` holds 2–3 decoy tiles** beyond the word's own, so
+  `letters.length > length`. Leftover tiles are expected, not an error.
+
+The answer is the placed tiles joined (`guess: "GOʻSHT"`), or `tiles: [...]`.
+The server folds case and every apostrophe (`' ‘ ’ ʻ`) before comparing, and also
+accepts the bank's plain spelling (`GLOWA` for GŁOWA, `ЧЕРНЫЙ` for ЧЁРНЫЙ). A
+hint's `position` is a **tile index**, and its `answer` is the whole tile (`Oʻ`).
+
 ### 23. The games — one **0–100 performance scale**, a decay curve, and nine new fields on the finish
 
 This is the largest change to the games since they arrived, and it is worth

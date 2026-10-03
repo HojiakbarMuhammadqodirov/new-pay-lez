@@ -831,7 +831,7 @@ export const CONFIG = {
     memoryExpiredCeiling: 50,
 
     /**
-     * §5.6 Bird's Flight. **4 performance an obstacle**, so 25 is perfect.
+     * §5.6 Bird flight. **4 performance an obstacle**, so 25 is perfect.
      *
      * The one game with no answer key — a physics loop the server did not run —
      * so the server cannot recompute this, only bound it. The bound is

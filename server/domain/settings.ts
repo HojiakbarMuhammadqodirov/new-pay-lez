@@ -692,7 +692,17 @@ const WORDS: Array<[string, string, string]> = [
  * It is only ever used for a word the export does not carry.
  */
 async function seedWords(db: Db): Promise<void> {
+  /* Only into an **empty** list. The import replaces a language's bank with
+     the CSV's (new ids, `wrd_wb-…`), so writing the placeholder beside it on
+     the next boot would bring back thirty retired words — and one of them
+     sharing a spelling with a CSV word (KAWA) would trip `UNIQUE (language,
+     word)`, which `ON CONFLICT (id)` does not cover, and stop the boot. */
+  const filled = new Set(
+    (await db.all<{ language: string }>(`SELECT DISTINCT language FROM word_bank`))
+      .map((row) => row.language),
+  );
   for (const [language, word, hint] of WORDS) {
+    if (filled.has(language)) continue;
     const tier = word.length <= 4 ? 1 : word.length <= 7 ? 2 : 3;
     await db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, $l, $w, $t, $h)

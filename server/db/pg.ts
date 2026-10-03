@@ -490,6 +490,11 @@ export async function migrate(db: PgDb): Promise<void> {
   /* The team member a confirmation is recorded against (server/TEAM.md). The
      same line is in `db.ts`, for the reason `seq` above gives. */
   await add('transactions', 'confirmed_member_id', 'TEXT');
+  /* The Word Builder bank's tiles, accepted spellings and decoy count. The
+     same lines are in `db.ts`, for the reason `seq` above gives. */
+  await add('word_bank', 'tiles', 'TEXT');
+  await add('word_bank', 'accept', 'TEXT');
+  await add('word_bank', 'decoys', 'INTEGER NOT NULL DEFAULT 0');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',

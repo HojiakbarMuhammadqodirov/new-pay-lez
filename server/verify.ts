@@ -21,7 +21,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate, openDb } from './db/db.ts';
-import { importLegacy } from './db/import.ts';
+import { importLegacy, readWordBank, WORD_BANK_CSV } from './db/import.ts';
 import { boot } from './main.ts';
 import { csvParts, parseCsv } from './db/csv.ts';
 import { CONFIG } from './config.ts';
@@ -7584,7 +7584,32 @@ async function wordListRules(): Promise<void> {
   const ru = await deal('ru', 'en');
   check('a Russian reader on the English card is dealt English words',
     ru.words.length > 0 && ru.words.every((word) => english.has(word)), ru.words);
-  check('…with the clues in Russian', ru.hints.every((hint) => /[а-яё]/i.test(hint ?? '')), ru.hints);
+  /* The 2 000-word bank carries a native clue for each word in its own list
+     only, so a Russian reader on the English card gets Russian where the bank
+     has that clue in Russian (an English clue shared with a Russian word) and
+     the English column otherwise — never a blank. */
+  const englishClues = new Set((await w.db.all<{ hint: string | null }>(
+    `SELECT hint FROM word_bank WHERE language = 'en'`,
+  )).map((row) => row.hint));
+  check('…with each clue in Russian or, failing that, English',
+    ru.hints.every((hint) => /[а-яё]/i.test(hint ?? '') || englishClues.has(hint)), ru.hints);
+  check('…and Russian wherever the bank has the same clue in Russian',
+    ((await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM translations t JOIN word_bank w ON w.id = t.entity_id
+        WHERE t.entity = 'word' AND t.field = 'hint' AND t.language = 'ru' AND w.language = 'en'`,
+    ))?.n ?? 0) > 0);
+
+  /* A reader on their own language's list gets the bank's own clue for each
+     word — `clue_native`, not a translation of the English one. */
+  const native = new Map(readWordBank('updates').map((row) => [row.word + '|' + row.language, row.clueNative]));
+  for (const language of ['pl', 'uz', 'ru']) {
+    const own = await deal(language, language);
+    const secretWords = own.words;
+    check(`a ${language} reader on the ${language} list gets the bank's ${language} clue`,
+      secretWords.length > 0 &&
+        secretWords.every((word, i) => own.hints[i] === native.get(word + '|' + language)),
+      own.hints);
+  }
 
   const pl = await deal('pl', 'en');
   check('a Polish reader on the English card is not dealt Polish words',
@@ -7944,11 +7969,24 @@ async function wordBankRules(): Promise<void> {
   const counts = await w.db.all<{ language: string; n: number }>(
     `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language ORDER BY language`,
   );
-  check('the bank has all three lists', counts.length >= 3, JSON.stringify(counts));
+  check('the bank has all four lists', counts.length >= 4, JSON.stringify(counts));
   for (const row of counts) {
     check(`${row.language} has enough words to sustain a round`, row.n > floor,
       `${row.n} words against a floor of ${floor}`);
   }
+  /* The 2 000-word CSV is the bank: 500 words in each list, and nothing else
+     left behind in those lists — the placeholder and the old JSON lists are
+     replaced, not merged under it. */
+  for (const language of ['en', 'pl', 'uz', 'ru']) {
+    eq(`${language} holds the CSV's 500 words`,
+      counts.find((row) => row.language === language)?.n, 500);
+  }
+  eq('every word in the four lists has its tiles',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM word_bank WHERE language IN ('en','pl','uz','ru') AND tiles IS NULL`,
+    ))?.n, 0);
+  eq('the CSV reads as 2 000 words', readWordBank('updates').length, 2000);
+  check(`the importer names ${WORD_BANK_CSV}`, existsSync(join('updates', WORD_BANK_CSV)));
 
   /*
    * **The tier is the export's, not the word's length.**
@@ -7962,13 +8000,17 @@ async function wordBankRules(): Promise<void> {
   const coffee = await w.db.get<{ tier: number; hint: string | null }>(
     `SELECT tier, hint FROM word_bank WHERE language = 'en' AND word = 'COFFEE'`,
   );
-  eq('a word carries the tier the export gave it', coffee?.tier, 2);
-  check('…and its hint', (coffee?.hint ?? '').length > 0, coffee?.hint ?? '(none)');
+  eq('a word carries the tier the export gave it (Medium → 2)', coffee?.tier, 2);
+  eq('…and its English clue', coffee?.hint, 'A hot dark drink that wakes you up');
+  eq('an Easy word is tier 1',
+    (await w.db.get<{ tier: number }>(`SELECT tier FROM word_bank WHERE language = 'en' AND word = 'BUILD'`))?.tier, 1);
+  eq('a Hard word is tier 3',
+    (await w.db.get<{ tier: number }>(`SELECT tier FROM word_bank WHERE language = 'en' AND word = 'BALANCE'`))?.tier, 3);
 
-  /* Every tier is represented in both lists, because the round is a ramp —
+  /* Every tier is represented in every list, because the round is a ramp —
      `WORD_RAMP` asks for two tier-1, two tier-2 and one tier-3, and a list
      missing a rung makes the ramp quietly shorter. */
-  for (const language of ['en', 'pl', 'ru']) {
+  for (const language of ['en', 'pl', 'uz', 'ru']) {
     const tiers = await w.db.all<{ tier: number; n: number }>(
       `SELECT tier, COUNT(*) AS n FROM word_bank WHERE language = $l GROUP BY tier ORDER BY tier`,
       { l: language },
@@ -7996,6 +8038,74 @@ async function wordBankRules(): Promise<void> {
     }
     if (i === 9) check('ten rounds in a row are all full rounds', true, '10 rounds');
   }
+
+  /*
+   * **Uzbek tiles are letters, not characters.** GOʻSHT is G|Oʻ|SH|T — four
+   * slots — and splitting it by code unit dealt six, one of them a bare ʻ.
+   * The three words below are made the whole of the Uzbek list for one round
+   * (the rest parked under another language code), so the deal is known.
+   */
+  const picked = ['GOʻSHT', 'MUSHUK', 'KOʻCHA'];
+  await w.db.run(
+    `UPDATE word_bank SET language = 'uz_parked'
+      WHERE language = 'uz' AND word NOT IN ($a, $b, $c)`,
+    { a: picked[0], b: picked[1], c: picked[2] },
+  );
+  await w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u`, { u: w.customerId });
+  const uzRound = await games.startSession(w.db, {
+    userId: w.customerId, gameType: 'word_builder', language: 'uz', practice: true, at: plusMinutes(at, 30),
+  });
+  const uzSecret = JSON.parse((await w.db.get<{ secret: string }>(
+    `SELECT secret FROM game_sessions WHERE id = $i`, { i: uzRound.sessionId },
+  ))!.secret) as { words: string[]; tiles: string[][] };
+  const uzWords = (uzRound.content as {
+    words: Array<{ index: number; length: number; letters: string[] }>;
+  }).words;
+  const goshtAt = uzSecret.words.indexOf('GOʻSHT');
+  const gosht = uzWords[goshtAt];
+  eq('GOʻSHT is dealt as four tiles', gosht?.length, 4);
+  eq('…its tiles are G, Oʻ, SH, T', uzSecret.tiles[goshtAt], ['G', 'Oʻ', 'SH', 'T']);
+  check('…every one of them on the rack',
+    ['G', 'Oʻ', 'SH', 'T'].every((tile) => gosht?.letters.includes(tile)), gosht?.letters);
+  eq('…beside the CSV\'s two decoys', gosht?.letters.length, 6);
+  const goshtDecoys = [...(gosht?.letters ?? [])];
+  for (const tile of ['G', 'Oʻ', 'SH', 'T']) goshtDecoys.splice(goshtDecoys.indexOf(tile), 1);
+  check('…drawn from the Uzbek alphabet and never a piece of a real tile',
+    goshtDecoys.length === 2 &&
+      goshtDecoys.every((tile) => games.WORD_ALPHABETS.uz.includes(tile) &&
+        !['G', 'Oʻ', 'SH', 'T'].some((own) => own.includes(tile) || tile.includes(own))),
+    goshtDecoys);
+  check('no rack holds a bare ʻ', uzWords.every((word) => !word.letters.includes('ʻ')), uzWords);
+
+  let uzSeq = 0;
+  const uzSend = async (kind: string, payload: Record<string, unknown>) =>
+    await games.submitEvent(w.db, {
+      sessionId: uzRound.sessionId, userId: w.customerId, seq: ++uzSeq, kind, payload,
+      at: plusMinutes(at, 30),
+    });
+  eq('a hint on slot 2 reveals the whole tile Oʻ',
+    (await uzSend('hint', { index: goshtAt, position: 1 })).answer, 'Oʻ');
+  eq('a hint past the fourth tile is refused, though the word is six characters',
+    await uzSend('hint', { index: goshtAt, position: 4 }).then(() => 'answered', (e: unknown) =>
+      (e as { code?: string }).code), 'bad_request');
+  eq('a wrong spelling is wrong', (await uzSend('guess', { index: goshtAt, guess: 'GOSHT' })).correct, false);
+  eq('the tiles joined are the word', (await uzSend('guess', { index: goshtAt, guess: 'GOʻSHT' })).correct, true);
+  const mushukAt = uzSecret.words.indexOf('MUSHUK');
+  eq('MUSHUK is five tiles', uzWords[mushukAt]?.length, 5);
+  eq('…and is accepted sent as tiles',
+    (await uzSend('guess', { index: mushukAt, tiles: ['M', 'U', 'SH', 'U', 'K'] })).correct, true);
+  const kochaAt = uzSecret.words.indexOf('KOʻCHA');
+  eq('an ASCII apostrophe is the same letter (KO\'CHA)',
+    (await uzSend('guess', { index: kochaAt, guess: 'KO\'CHA' })).correct, true);
+  await w.db.run(`UPDATE word_bank SET language = 'uz' WHERE language = 'uz_parked'`);
+
+  /* `word_accept`: a Polish word typed without its diacritics is accepted. */
+  eq('GŁOWA accepts GLOWA',
+    JSON.parse((await w.db.get<{ accept: string }>(
+      `SELECT accept FROM word_bank WHERE language = 'pl' AND word = 'GŁOWA'`,
+    ))?.accept ?? '[]'), ['GLOWA']);
+  eq('the fold the judge compares by treats ‘ ’ \' and ʻ as one mark',
+    new Set(['GOʻSHT', 'GO\'SHT', 'GO‘SHT', 'GO’SHT', 'goʻsht'].map(games.spellingKey)).size, 1);
 
   await w.db.close();
 }

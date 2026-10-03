@@ -1120,6 +1120,17 @@ CREATE TABLE IF NOT EXISTS word_bank (
   word     TEXT NOT NULL,
   tier     INTEGER NOT NULL,        -- 1 easy (3-4) | 2 medium (5-6) | 3 hard (7+)
   hint     TEXT,
+  -- The tiles the word is built from, as a JSON array: `["G","Oʻ","SH","T"]`.
+  -- One tile is not always one character — Uzbek spells SH, CH, Oʻ and Gʻ as one
+  -- letter each — so the deal and the judge both read this rather than
+  -- splitting `word`. NULL on a row written before the column (the placeholder
+  -- in `seedWords`, the old JSON lists): those split by code point as before.
+  tiles    TEXT,
+  -- Other spellings accepted as the answer, as a JSON array (`["GO'SHT"]`,
+  -- `["GLOWA"]`): the bank's `word_accept`, for a keyboard without the letter.
+  accept   TEXT,
+  -- How many wrong tiles the deal adds beside the word's own (`decoy_letters`).
+  decoys   INTEGER NOT NULL DEFAULT 0,
   UNIQUE (language, word)
 );
 

@@ -15,12 +15,12 @@
  * thing for a screen to say, and every screen that reads one now says it.
  */
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
 import { openDb as openPgDb } from './db/pg.ts';
-import { WORD_LANGUAGES, importLegacy } from './db/import.ts';
+import { WORD_BANK_CSV, WORD_LANGUAGES, importLegacy } from './db/import.ts';
 import { provisionAdmin } from './domain/accounts.ts';
 import { QUIZZES } from './domain/games.ts';
 import { seedPlatform } from './domain/settings.ts';
@@ -176,10 +176,29 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
     ))?.n ?? 0;
   const untranslated = hintsTranslated === 0;
 
+  /*
+   * **A word bank that predates the 2 000-word CSV.** The fifth of the same
+   * shape: a database filled from the old JSON lists holds 136 words per
+   * language, which clears the floor above, so nothing would ever swap it for
+   * the CSV — and its rows have no tiles, so no Uzbek word could be built. Asked
+   * only when the file is there, or a checkout without it would re-import on
+   * every boot to no effect.
+   */
+  const untiled =
+    existsSync(join(options.gamesDir ?? 'updates', WORD_BANK_CSV)) &&
+    ((await db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM word_bank WHERE tiles IS NULL AND language IN (${
+        WORD_LANGUAGES.map((language) => `'${language}'`).join(', ')
+      })`,
+    ))?.n ?? 0) > 0;
+
   if (
     options.reimport || venues === 0 || missing.length > 0 || short.length > 0 ||
-    starved.length > 0 || untranslated
+    starved.length > 0 || untranslated || untiled
   ) {
+    if (!options.quiet && untiled) {
+      console.log(`re-importing: the word bank predates ${WORD_BANK_CSV}`);
+    }
     if (!options.quiet && untranslated && venues > 0) {
       console.log('re-importing: word hints have no translations');
     }

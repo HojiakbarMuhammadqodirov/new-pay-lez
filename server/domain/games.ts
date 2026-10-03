@@ -1064,8 +1064,12 @@ async function buildWords(
   hintLanguage: string = language,
 ): Promise<Built> {
   const pick = (window: number) =>
-    db.all<{ id: string; word: string; tier: number; hint: string | null }>(
-      `SELECT w.id, w.word, w.tier, COALESCE(t.value, w.hint) AS hint FROM word_bank w
+    db.all<{
+      id: string; word: string; tier: number; hint: string | null;
+      tiles: string | null; accept: string | null; decoys: number | null;
+    }>(
+      `SELECT w.id, w.word, w.tier, COALESCE(t.value, w.hint) AS hint,
+              w.tiles, w.accept, w.decoys FROM word_bank w
          LEFT JOIN translations t
            ON t.entity = 'word' AND t.entity_id = w.id AND t.field = 'hint' AND t.language = $h
         WHERE w.language = $l
@@ -1102,13 +1106,33 @@ async function buildWords(
     );
   }
 
+  /* The word as tiles — `["G","Oʻ","SH","T"]` — which is what the slots count
+     and what a hint reveals one of. A row with no `tiles` (the placeholder, an
+     older import) splits by code point, as it always did. */
+  const dealt = rows.map((row) => {
+    const tiles = tilesOf(row.word, row.tiles);
+    return {
+      row,
+      tiles,
+      accept: jsonList(row.accept),
+      letters: shuffle([...tiles, ...decoyTiles(language, tiles, row.decoys ?? 0, row.id)], row.id),
+    };
+  });
+
   return {
     seed: rows.map((r) => r.id).join(','),
     /* The tiers travel with the words because the *bank* owns difficulty and the
        scorer must not re-derive it. Carrying them here rather than re-reading
        `word_bank` at the end also means an edited or deleted row cannot change
-       what a round in flight is worth. */
-    secret: { kind: 'words', words: rows.map((r) => r.word.toUpperCase()), tiers: rows.map((r) => r.tier) },
+       what a round in flight is worth. The tiles and the accepted spellings
+       travel for the same reason: the judge reads the round, not the bank. */
+    secret: {
+      kind: 'words',
+      words: rows.map((r) => r.word.toUpperCase()),
+      tiers: rows.map((r) => r.tier),
+      tiles: dealt.map((d) => d.tiles),
+      accept: dealt.map((d) => d.accept),
+    },
     /* The client gets the scrambled letters and the length, which is the game;
        it does not get the word, which is the answer.
        
@@ -1123,11 +1147,15 @@ async function buildWords(
        hardcoded "a hint costs ten" would be a second copy of a table this file
        owns. They are **performance**, not points. */
     content: {
-      words: rows.map((row, index) => ({
+      /* `length` is in **tiles**, not characters — GOʻSHT is four slots — and
+         `letters` holds the word's tiles plus `decoys` wrong ones, shuffled. A
+         tile may be more than one character; a word is complete when `length`
+         tiles are placed, whatever is left on the rack. */
+      words: dealt.map(({ row, tiles, letters }, index) => ({
         index,
-        length: row.word.length,
+        length: tiles.length,
         tier: row.tier,
-        letters: shuffle([...row.word.toUpperCase()], row.id),
+        letters,
         hint: row.hint,
       })),
       performancePerWord: CONFIG.games.wordPerformancePerWord,
@@ -1334,11 +1362,21 @@ export async function submitEvent(
     } else if (secret.kind === 'words') {
       const words = secret.words as string[];
       const index = Number(input.payload.index);
-      const guess = String(input.payload.guess ?? '').toUpperCase();
+      /* The guess is the tiles joined — a client may send them as `tiles` too.
+         Compared folded (`spellingKey`), against the word and every spelling
+         the bank accepts for it (GO'SHT for GOʻSHT, GLOWA for GŁOWA). */
+      const sentTiles = Array.isArray(input.payload.tiles)
+        ? (input.payload.tiles as unknown[]).map((tile) => String(tile)).join('')
+        : '';
+      const guess = spellingKey(String(input.payload.guess ?? sentTiles));
       if (!Number.isInteger(index) || index < 0 || index >= words.length) {
         throw new DomainError('bad_request', 'no such word');
       }
-      correct = words[index] === guess;
+      const accepted = [words[index], ...((secret.accept as string[][] | undefined)?.[index] ?? [])];
+      correct = guess.length > 0 && accepted.some((form) => spellingKey(form) === guess);
+      /* What a hint position counts: tiles, which for a round opened before
+         tiles existed is the word split by code point. */
+      const tiles = (secret.tiles as string[][] | undefined)?.[index] ?? [...words[index]];
       /* A hint reveals one letter and nothing else — the position asked for, and
          only while the day's allowance holds. Checked before the letter is read
          rather than before the insert, so a hint that is refused is a hint that
@@ -1364,11 +1402,11 @@ export async function submitEvent(
          * step past it.
          */
         const position = Number(input.payload.position ?? 0);
-        if (!Number.isInteger(position) || position < 0 || position >= words[index].length) {
+        if (!Number.isInteger(position) || position < 0 || position >= tiles.length) {
           throw new DomainError('bad_request', 'no such letter');
         }
         await requireHint(db, input.userId, input.sessionId, input.seq, at);
-        answer = words[index][position];
+        answer = tiles[position];
         correct = undefined;
       }
     } else if (secret.kind === 'deck') {
@@ -2871,7 +2909,7 @@ async function payComeback(db: Db, userId: string, at: Iso): Promise<void> {
 /**
  * The day's featured game — rulebook §4.4, **the rulebook's eight, in its own
  * order** (§5.1–§5.8): Guess Flag, Brain Games, Country Quiz, Word Builder,
- * Memory Match, Bird's Flight, 2048, Food Cross. One a day, cycling, so every
+ * Memory Match, Bird flight, 2048, Food Cross. One a day, cycling, so every
  * game is featured once every eight days.
  *
  * **Country Quiz is the local-knowledge slot** — "five questions about one
@@ -3087,6 +3125,63 @@ async function nearestReward(db: Db, userId: string, balance: number) {
  * option order in a question is reproducible when somebody asks why a player
  * says the answer moved.
  */
+/**
+ * The tile alphabets the Word Builder draws decoys from — the tiles the bank's
+ * own words are spelled in, per list. Uzbek's SH, CH, Oʻ and Gʻ are one tile
+ * each (and there is no bare C); NG is left out because the bank spells it N|G.
+ */
+export const WORD_ALPHABETS: Record<string, readonly string[]> = {
+  en: [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'],
+  pl: [...'AĄBCĆDEĘFGHIJKLŁMNŃOÓPRSŚTUWYZŹŻ'],
+  uz: [...'ABDEFGHIJKLMNOPQRSTUVXYZ', 'Oʻ', 'Gʻ', 'SH', 'CH'],
+  ru: [...'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'],
+};
+
+/** A word's tiles: the bank's `tiles` column when it has one, else its code points. */
+export function tilesOf(word: string, stored: string | null | undefined): string[] {
+  const parsed = jsonList(stored ?? null);
+  return parsed.length > 0 ? parsed : [...word.toUpperCase()];
+}
+
+function jsonList(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `count` wrong tiles for a word, drawn from its list's alphabet and keyed to
+ * the word's id, so one word always deals the same rack. A tile that is, is
+ * part of, or contains one of the word's own is never a decoy: an S beside an
+ * SH, or an O beside an Oʻ, is a near-miss that reads as a trick rather than a
+ * wrong letter. A list with no alphabet here deals no decoys.
+ */
+export function decoyTiles(language: string, tiles: string[], count: number, seed: string): string[] {
+  const alphabet = WORD_ALPHABETS[language];
+  if (!alphabet || count <= 0) return [];
+  const pool = alphabet.filter(
+    (letter) => !tiles.some((tile) => tile.includes(letter) || letter.includes(tile)),
+  );
+  return shuffle(pool, `${seed}:decoys`).slice(0, count);
+}
+
+/**
+ * A spelling folded for comparison: NFC, upper case, no spaces, and every
+ * apostrophe-like mark as the Uzbek ʻ — the bank writes Oʻ with U+02BB, and a
+ * keyboard sends ' or ‘ or ’ for it.
+ */
+export function spellingKey(value: string): string {
+  return value
+    .normalize('NFC')
+    .toUpperCase()
+    .replace(/['`\u2018\u2019\u02BB\u02BC\u02BD]/g, '\u02BB')
+    .replace(/\s+/g, '');
+}
+
 export function shuffle<T>(items: T[], seed: string): T[] {
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i += 1) {

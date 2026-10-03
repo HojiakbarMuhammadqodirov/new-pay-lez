@@ -866,6 +866,14 @@ export async function migrate(db: Db): Promise<void> {
      `team_members` table itself needs no line here — it is new, so the
      `CREATE TABLE IF NOT EXISTS` in `schema.sql` reaches existing files. */
   await addColumn(db, 'transactions', 'confirmed_member_id', 'TEXT');
+  /* The Word Builder bank's tiles, accepted spellings and decoy count
+     (`updates/paylez-wordbuilder-all-2000.csv`). NULL / 0 on an older row is
+     the old behaviour — split the word, no decoys — so nothing needs a
+     backfill; the import rewrites the bank, and `main.ts` re-imports a bank
+     that has no tiles yet. The same lines are in `pg.ts`. */
+  await addColumn(db, 'word_bank', 'tiles', 'TEXT');
+  await addColumn(db, 'word_bank', 'accept', 'TEXT');
+  await addColumn(db, 'word_bank', 'decoys', 'INTEGER NOT NULL DEFAULT 0');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an
