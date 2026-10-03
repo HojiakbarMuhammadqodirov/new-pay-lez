@@ -216,14 +216,11 @@ CREATE TABLE IF NOT EXISTS users (
   -- credential**. It is what sign-in looks up and what a password reset goes to,
   -- so an unproved one is an account somebody may not own, with points in it.
   --
-  -- **It gates nothing today, and the column is kept deliberately.** A full OTP
-  -- flow shipped and was taken back out: with no mail transport configured the
-  -- code went to the server log, and the gate it wore — earning, redeeming and
-  -- the board — would have taken all three from every existing account at the
-  -- first restart, because nothing backfills. `domain/verification.ts` and
-  -- `ports/email.ts` are gone; this column and `email_verifications` stay so
-  -- there is no migration to run and none to unrun. See `server/README.md` for
-  -- the three things to change on the way back.
+  -- Stamped by a Google sign-in, by an emailed code (`domain/verification.ts`)
+  -- and by a password reset. It gates **spending only** (a voucher, a gift card),
+  -- only while mail is configured, and only for accounts created after
+  -- `PAYLEZ_VERIFY_SINCE` — the first version gated earning too, on a code that
+  -- went nowhere, and was removed for it. See `server/README.md`.
   --
   -- Nothing writes it at sign-up any more. A **Google** account is still stamped
   -- immediately, because that is the one moment the fact is known for free:
@@ -448,12 +445,12 @@ CREATE TABLE IF NOT EXISTS points_ledger (
   -- version-2 rebuild writes and what `migrate()` asserts this table matches —
   -- so the two cannot drift without the server refusing to boot.
   --
-  -- Fourteen ways up, four ways down. Nothing here says *how much*: that is
-  -- `CONFIG.earn`.
+  -- Fifteen ways up, four ways down. Nothing here says *how much*: that is
+  -- `CONFIG.earn` (and `CONFIG.missions` for a claimed mission).
   reason     TEXT NOT NULL CHECK (reason IN (
                'game_win', 'scan_earn', 'spend_bonus', 'venue_bonus', 'stamp_complete',
                'review', 'referral', 'welcome_bonus', 'profile_bonus', 'check_in',
-               'streak_milestone', 'occasion', 'stipend', 'adjustment',
+               'streak_milestone', 'occasion', 'stipend', 'mission', 'adjustment',
                'voucher_redeem', 'gift_card_redeem', 'expiry', 'reversal')),
   source_ref TEXT,                 -- game session, transaction, referral, voucher…
   source_kind TEXT,
@@ -529,6 +526,14 @@ CREATE TABLE IF NOT EXISTS transactions (
   currency      TEXT NOT NULL DEFAULT 'PLN',
   amount_entered_by TEXT CHECK (amount_entered_by IN ('cashier', 'customer')),
   confirmed_by  TEXT REFERENCES users (id) ON DELETE SET NULL,
+  -- The team member the confirmation is recorded against (server/TEAM.md):
+  -- the staff login that pressed it, or whoever the owner's shared counter
+  -- device named as on shift. NULL when the owner confirmed as themselves.
+  -- No REFERENCES, deliberately: a member row is never deleted (only revoked,
+  -- so "Confirmed by" still reads a year later), leaving a cascade nothing to
+  -- do, and `team_members` is declared below — a forward key would be a third
+  -- one for `scripts/pg-schema.mjs` to lift.
+  confirmed_member_id TEXT,
   -- what the commit granted, for the receipt and for reversal
   points_granted   INTEGER NOT NULL DEFAULT 0,
   discount_minor   INTEGER NOT NULL DEFAULT 0,
@@ -551,6 +556,52 @@ CREATE INDEX IF NOT EXISTS idx_txn_venue ON transactions (venue_id, status, conf
 CREATE INDEX IF NOT EXISTS idx_txn_user ON transactions (user_id, confirmed_at);
 CREATE INDEX IF NOT EXISTS idx_txn_pending ON transactions (venue_id, status);
 
+-- A venue's team: the people who work its counter, and its managers
+-- (server/TEAM.md, `domain/team.ts`). One row per person per venue, created by
+-- the owner with a name, a role and six permission bits, `invited` until a
+-- signed-in account redeems the join code, `active` from then, `revoked` when
+-- removed. Never deleted: `transactions.confirmed_member_id` points here, and
+-- "Confirmed by Marta" has to keep reading that way after Marta leaves.
+--
+-- The permissions are six columns rather than a JSON blob so that "which staff
+-- may redeem" is a WHERE clause and a bad value is a CHECK failure rather than a
+-- string nobody parses. A manager's bits are ignored — the role carries every
+-- counter permission — and are written as all-on so a reader of the raw row is
+-- not misled.
+--
+-- `code_hash` is the join code as HMAC-SHA256 under the server secret, never
+-- the code: six digits hashed without a key are reversed by a loop in under a
+-- second. UNIQUE, because redemption looks a row up *by* it; NULL once used,
+-- revoked or replaced (NULLs do not collide in either engine).
+CREATE TABLE IF NOT EXISTS team_members (
+  id               TEXT PRIMARY KEY,
+  venue_id         TEXT NOT NULL REFERENCES venues (id) ON DELETE CASCADE,
+  user_id          TEXT REFERENCES users (id) ON DELETE SET NULL,   -- NULL until joined
+  name             TEXT NOT NULL,
+  role             TEXT NOT NULL CHECK (role IN ('manager', 'shiftlead', 'cashier', 'custom')),
+  perm_earn        INTEGER NOT NULL DEFAULT 0 CHECK (perm_earn IN (0, 1)),
+  perm_redeem      INTEGER NOT NULL DEFAULT 0 CHECK (perm_redeem IN (0, 1)),
+  perm_scan        INTEGER NOT NULL DEFAULT 0 CHECK (perm_scan IN (0, 1)),
+  perm_running     INTEGER NOT NULL DEFAULT 0 CHECK (perm_running IN (0, 1)),
+  perm_count       INTEGER NOT NULL DEFAULT 0 CHECK (perm_count IN (0, 1)),
+  perm_pause       INTEGER NOT NULL DEFAULT 0 CHECK (perm_pause IN (0, 1)),
+  status           TEXT NOT NULL DEFAULT 'invited'
+                   CHECK (status IN ('invited', 'active', 'revoked')),
+  code_hash        TEXT UNIQUE,
+  code_expires_at  TEXT,
+  on_shift         INTEGER NOT NULL DEFAULT 0,
+  shift_started_at TEXT,
+  invited_by       TEXT REFERENCES users (id) ON DELETE SET NULL,
+  created_at       TEXT NOT NULL,
+  joined_at        TEXT,
+  last_seen_at     TEXT,
+  revoked_at       TEXT,
+  revoked_by       TEXT REFERENCES users (id) ON DELETE SET NULL,
+  updated_at       TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_team_venue ON team_members (venue_id, status);
+CREATE INDEX IF NOT EXISTS idx_team_user ON team_members (user_id, status);
+
 -- §3.2. Dynamic signed QR: single-use nonces, TTL 60–120s. A row is written when
 -- the token is minted and marked used on first successful scan; a replay finds
 -- `used_at` already set.
@@ -563,6 +614,30 @@ CREATE TABLE IF NOT EXISTS qr_nonces (
   used_by    TEXT REFERENCES users (id) ON DELETE SET NULL
 );
 CREATE INDEX IF NOT EXISTS idx_qr_expiry ON qr_nonces (expires_at);
+
+-- The gate the other way round (FLUTTER-BRIEF §3b): a customer's phone shows a
+-- pass for one voucher or reward they hold, with the bill they typed, and the
+-- counter scans it. Signed by the server, single use, short-lived. The pass is
+-- only a *request*: scanning it opens an ordinary PENDING transaction, and the
+-- grant is still the counter's `confirm`. `code` is the six-character fallback a
+-- cashier types when the camera cannot read the screen.
+CREATE TABLE IF NOT EXISTS redemption_passes (
+  id             TEXT PRIMARY KEY,
+  code           TEXT NOT NULL,
+  venue_id       TEXT NOT NULL REFERENCES venues (id) ON DELETE CASCADE,
+  user_id        TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  intent         TEXT NOT NULL CHECK (intent IN ('voucher_redeem', 'reward_redeem')),
+  intent_ref     TEXT NOT NULL,
+  amount_minor   INTEGER NOT NULL,
+  currency       TEXT NOT NULL,
+  issued_at      TEXT NOT NULL,
+  expires_at     TEXT NOT NULL,
+  used_at        TEXT,
+  used_by        TEXT REFERENCES users (id) ON DELETE SET NULL,
+  transaction_id TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pass_code ON redemption_passes (venue_id, code);
+CREATE INDEX IF NOT EXISTS idx_pass_ref ON redemption_passes (intent_ref);
 
 -- §3.3 / C2. The tag never stores the venue id — the server resolves it — so a
 -- tag can be reassigned or revoked instantly by UID.
@@ -793,6 +868,22 @@ CREATE TABLE IF NOT EXISTS venue_visits (
   created_at     TEXT NOT NULL,
   UNIQUE (user_id, venue_id, local_day)
 );
+
+-- Rulebook §7.3 / §9.2: a review left after a confirmed visit. One per person
+-- per venue per `CONFIG.earn.reviewEveryDays`, and the one that is accepted pays
+-- `CONFIG.earn.reviewAfterVisit` once (`domain/occasions.ts`). Kept rather than
+-- only counted because a review is something a person *said*, and the ledger
+-- row that paid for it points here by `source_ref`. Not shown publicly yet:
+-- `venues.rating` / `review_count` are the imported figures and are untouched.
+CREATE TABLE IF NOT EXISTS venue_reviews (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  venue_id   TEXT NOT NULL REFERENCES venues (id) ON DELETE CASCADE,
+  rating     INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  body       TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_venue_reviews_user ON venue_reviews (user_id, venue_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_visits_venue ON venue_visits (venue_id, local_day);
 
 -- B9 "second-visit / cohort retention … needs first-seen tracking per user per
@@ -901,14 +992,14 @@ CREATE TABLE IF NOT EXISTS push_quotas (
 CREATE TABLE IF NOT EXISTS game_sessions (
   id          TEXT PRIMARY KEY,
   user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-  -- Eight types, seven cards: `poland` and `uzbekistan` are one local-knowledge
+  -- Ten types, nine cards: `poland` and `uzbekistan` are one local-knowledge
   -- quiz to the player, chosen by the country on their profile, and two banks
   -- here. `GAME_TYPES` in `db.ts` is the same list in TypeScript and is
   -- reconciled against this constraint on every boot; widening it costs a table
   -- rebuild, because SQLite cannot alter a CHECK in place.
   game_type   TEXT NOT NULL CHECK (game_type IN (
                 'flags', 'capitals', 'brain', 'poland', 'uzbekistan',
-                'word_builder', 'memory_match', 'flight')),
+                'word_builder', 'memory_match', 'flight', 'game_2048', 'food_cross')),
   language    TEXT NOT NULL DEFAULT 'en',
   seed        TEXT NOT NULL,
   secret      TEXT NOT NULL,        -- JSON: answers / target word / deck layout
@@ -1402,6 +1493,94 @@ CREATE TABLE IF NOT EXISTS daily_tasks (
   sort_order INTEGER NOT NULL DEFAULT 0,
   active     INTEGER NOT NULL DEFAULT 1,
   updated_at TEXT NOT NULL
+);
+
+-- ══════════════════════════════════════════ rulebook §8: the missions ══
+--
+-- Four tables, and none of them is a counter. A mission's progress is
+-- *derived* on every read from rows that already exist — finished rounds,
+-- confirmed visits, the ledger, the streak, the profile (`domain/missions.ts`)
+-- — for the same reason the balance and the energy tank are: a counter beside
+-- the record is a second thing that can drift. What is stored is only what
+-- cannot be recovered from anything else.
+
+-- The claim. One row per (person, mission, period), and the primary key *is* the
+-- "once per period" rule: a second claim of the same daily mission on the same
+-- day cannot insert, so two taps racing each other pay once. `period` is the
+-- day (`YYYY-MM-DD`), the Monday that starts the week, or `once` — the same key
+-- the ledger entry carries in `source_ref` as `<mission>:<period>`.
+--
+-- No foreign key on `mission_id`: the catalogue is code, and a seasonal
+-- mission's id carries its campaign's id, whose row an operator may delete
+-- without the claim — and the points it paid — losing their record.
+CREATE TABLE IF NOT EXISTS mission_claims (
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  mission_id TEXT NOT NULL,
+  period     TEXT NOT NULL,
+  points     INTEGER NOT NULL,
+  ledger_id  TEXT REFERENCES points_ledger (id) ON DELETE SET NULL,
+  claimed_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, mission_id, period)
+);
+
+-- Facts a mission needs that no other table writes down. Today there is one
+-- kind: `round` — a paid round's **performance** (0–100), written by
+-- `games.finish`. Performance is computed from a round's events and never
+-- stored on the session (`game_sessions.score` is the points banked, decay and
+-- multiplier included), and "Flawless" and "Quiz master" are questions about
+-- performance on a day or in a week. `player_game_bests` answers the lifetime
+-- form of the question and cannot answer these.
+--
+-- No CHECK on `kind`, like `game_recent_items`: a new kind is a new mission
+-- rather than a new rule about money, and a CHECK here would make each one a
+-- table rebuild.
+CREATE TABLE IF NOT EXISTS mission_events (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  ref        TEXT,                  -- what it is about: a game session id
+  subject    TEXT,                  -- a game type
+  value      INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mission_events_user ON mission_events (user_id, kind, created_at);
+
+-- §8.5 seasonal and §8.6 partner-sponsored missions: authored by an operator
+-- (§12.3), time-boxed, and absent from the response when none is running.
+-- `kind` picks the rule that decides completion (`domain/missions.ts`,
+-- `CAMPAIGN_KINDS`) and `config` holds that rule's parameters as JSON — a
+-- quiet-hours window, a community target, the deal that stands for a menu item.
+-- `venue_id` is required of a partner campaign and ignored on a seasonal one.
+CREATE TABLE IF NOT EXISTS mission_campaigns (
+  id          TEXT PRIMARY KEY,
+  band        TEXT NOT NULL CHECK (band IN ('seasonal', 'partner')),
+  kind        TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  reward      INTEGER,
+  venue_id    TEXT REFERENCES venues (id) ON DELETE CASCADE,
+  config      TEXT NOT NULL DEFAULT '{}',
+  starts_at   TEXT NOT NULL,
+  ends_at     TEXT NOT NULL,
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_by  TEXT REFERENCES users (id) ON DELETE SET NULL,
+  created_at  TEXT NOT NULL,
+  updated_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_mission_campaigns_window ON mission_campaigns (active, ends_at);
+
+-- §8.7 learning modules: how far somebody has got. The modules and their
+-- questions are code (`domain/learning.ts`); the answers are graded on the
+-- server and only the outcome is kept — the best score and when the module was
+-- first passed, which is what the mission reads.
+CREATE TABLE IF NOT EXISTS learning_progress (
+  user_id      TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  module_id    TEXT NOT NULL,
+  attempts     INTEGER NOT NULL DEFAULT 0,
+  best_correct INTEGER NOT NULL DEFAULT 0,
+  completed_at TEXT,
+  updated_at   TEXT NOT NULL,
+  PRIMARY KEY (user_id, module_id)
 );
 
 -- B9 category benchmarks: the cross-venue aggregation job's output, written only

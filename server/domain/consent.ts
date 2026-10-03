@@ -489,6 +489,9 @@ export async function exportUser(db: Db, userId: string): Promise<Record<string,
                                points_granted, discount_minor, opened_at, confirmed_at
                           FROM transactions WHERE user_id = $u ORDER BY opened_at`),
     visits: await many(`SELECT venue_id, local_day, amount_minor, created_at FROM venue_visits WHERE user_id = $u`),
+    /* Rulebook §7.3 reviews: what the person wrote about a place is theirs. */
+    reviews: await many(`SELECT id, venue_id, rating, body, created_at FROM venue_reviews
+                      WHERE user_id = $u ORDER BY created_at`),
     vouchers: await many(`SELECT id, venue_id, discount_pct, points_spent, code, status, issued_at,
                            expires_at, redeemed_at FROM issued_vouchers WHERE user_id = $u`),
     rewards: await many(`SELECT id, venue_id, label, status, earned_at, expires_at, redeemed_at
@@ -503,6 +506,14 @@ export async function exportUser(db: Db, userId: string): Promise<Record<string,
     notifications: await many(`SELECT kind, title, body, delivery, created_at, read_at
                            FROM notifications WHERE user_id = $u ORDER BY created_at`),
     community: await one(`SELECT * FROM community_profiles WHERE user_id = $u`),
+    /* The venue teams this account has been on (server/TEAM.md). The name is
+       the one the owner typed for them, which is data *about* them and so
+       theirs to see. Never the join code: that is a credential, and it is only
+       stored as a keyed hash anyway. */
+    team: await many(`SELECT m.id, m.venue_id, v.name AS venue_name, m.name, m.role, m.status,
+                         m.joined_at, m.last_seen_at, m.revoked_at
+                    FROM team_members m JOIN venues v ON v.id = m.venue_id
+                   WHERE m.user_id = $u ORDER BY m.created_at`),
   };
 }
 
@@ -538,10 +549,28 @@ export async function eraseUser(db: Db, userId: string, at: Iso = now()): Promis
     });
     await db.run(`DELETE FROM community_profiles WHERE user_id = $u`, { u: userId });
     await db.run(`DELETE FROM notifications WHERE user_id = $u`, { u: userId });
+    /* A review's *words* are the person; its rating and date are a venue's
+       history, which the paragraph above keeps for the same reason it keeps
+       visits. The ledger row that paid for it points at the id, so the row
+       stays and only the text goes. */
+    await db.run(`UPDATE venue_reviews SET body = NULL WHERE user_id = $u`, { u: userId });
     await db.run(`DELETE FROM push_tokens WHERE user_id = $u`, { u: userId });
     await db.run(`DELETE FROM device_users WHERE user_id = $u`, { u: userId });
     await db.run(`DELETE FROM sessions WHERE user_id = $u`, { u: userId });
     await db.run(`DELETE FROM friendships WHERE user_id = $u OR friend_id = $u`, { u: userId });
+    /* Team memberships end, and the name the owner typed for this person goes.
+       The rows stay — past transactions name them as the confirming member, and
+       a venue's record of who confirmed what must not start pointing at nothing
+       — but they stop naming anybody. Written here rather than imported from
+       `team.ts`, which imports the partner modules; a cycle through the one
+       module every erasure depends on is not worth one statement. */
+    await db.run(
+      `UPDATE team_members
+          SET name = 'Former team member', status = 'revoked', revoked_at = COALESCE(revoked_at, $t),
+              code_hash = NULL, code_expires_at = NULL, on_shift = 0, shift_started_at = NULL, updated_at = $t
+        WHERE user_id = $u`,
+      { t: at, u: userId },
+    );
     /* Every active sharing grant ends with the account: a venue must not keep
        receiving identified data about somebody who no longer exists. */
     await db.run(

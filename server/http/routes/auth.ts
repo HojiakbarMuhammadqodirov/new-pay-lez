@@ -13,6 +13,7 @@ import * as consent from '../../domain/consent.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as social from '../../domain/social.ts';
+import * as verification from '../../domain/verification.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { actor, bool, oneOf, optStr, str } from '../input.ts';
 import { CONFIG } from '../../config.ts';
@@ -74,12 +75,18 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
       onboardedAt: user.onboarded_at,
       trustTier: user.trust_tier,
       /*
-       * When the address was proved, or null. **It gates nothing any more** —
-       * email verification was removed, so no route asks for it. The field
-       * stays because the phone app was built against it and a field that
-       * vanishes breaks a mapper; Google sign-in still stamps it.
+       * When the address was proved, or null. A Google sign-in stamps it, and
+       * so does a code (`POST /v1/auth/email/verify`, or a password reset).
        */
       emailVerifiedAt: user.email_verified_at,
+      /*
+       * Whether buying a voucher or redeeming a gift card would be refused for
+       * an unproved address right now (`domain/verification.ts`). False for a
+       * proved, Google, address-less or pre-`verifySince` account, and false
+       * for everybody while no mail transport is configured. A client asks for
+       * the code before the spend rather than after the 403.
+       */
+      emailVerificationRequired: await verification.required(ctx.db, user.id),
       /* §1.4's standing answer, as a boolean because it is one. The column is
          an integer for the same reason `leaderboard_opt_in` is — SQLite has no
          boolean — and a client should not have to know that. */
@@ -150,9 +157,23 @@ export const authRoutes: Route[] = [
       });
       ctx.res.setHeader('set-cookie', cookieFor(session.token, 30));
 
+      /*
+       * The first confirmation code, sent here so a client cannot forget to
+       * ask. **A failure does not fail the sign-up**: the account and session
+       * are real, and the code can be re-sent from the app at any time. The
+       * outcome is reported (without the code) so the client can say so.
+       */
+      const verificationSent = await verification
+        .sendCode(ctx.db, { userId: user.id, language: ctx.language, at: ctx.at })
+        .catch((error: unknown) => {
+          console.warn(`sign-up code not sent: ${(error as Error).message}`);
+          return null;
+        });
+
       return {
         token: session.token,
         user: { id: user.id, name: user.display_name, email: user.email },
+        verification: verificationSent,
       };
     },
   },
@@ -249,6 +270,8 @@ export const authRoutes: Route[] = [
            truthiness test in JavaScript reads the string "false" as true, and
            this is a field a client might serialise from a checkbox. */
         acceptTerms: ctx.body.acceptTerms === true,
+        /* Bound only when this call creates the account; see the domain. */
+        referralCode: optStr(ctx.body, 'referralCode'),
         at: ctx.at,
       });
 
@@ -286,6 +309,67 @@ export const authRoutes: Route[] = [
         user: { id: result.user.id, name: result.user.display_name, email: result.user.email },
       };
     },
+  },
+  {
+    /**
+     * Send (or resend) the confirmation code to the signed-in account's own
+     * address. Authenticated, so there is no address to enumerate and no
+     * stranger's inbox to post to. A cooldown refusal is not an error: it
+     * comes back `sent: false` with `nextSendAt`. **The code is never in the
+     * response.**
+     */
+    method: 'POST',
+    pattern: '/v1/auth/email/send-code',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.sendCodePerHour, by: 'account' },
+    handler: async (ctx) =>
+      await verification.sendCode(ctx.db, { userId: actor(ctx).user.id, language: ctx.language, at: ctx.at }),
+  },
+  {
+    /**
+     * Confirm the code: `{ code }` → `{ verified, granted }`. Rate-limited per
+     * account on top of the five-attempt cap per code, which bounds burning
+     * through codes by alternating guesses with resends.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/email/verify',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.verifyEmailPerHour, by: 'account' },
+    handler: async (ctx) =>
+      await verification.confirm(ctx.db, { userId: actor(ctx).user.id, code: str(ctx.body, 'code'), at: ctx.at }),
+  },
+  {
+    /**
+     * Ask for a password-reset code: `{ email }` → always `{ ok: true }`,
+     * whether or not the address has an account, so this cannot be used to
+     * find out which addresses do.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/password/reset-code',
+    auth: 'none',
+    limit: { perHour: CONFIG.limits.resetCodePerHour, by: 'connection' },
+    handler: async (ctx) => {
+      await verification.requestReset(ctx.db, { email: str(ctx.body, 'email'), language: ctx.language, at: ctx.at });
+      return { ok: true };
+    },
+  },
+  {
+    /**
+     * Set a new password with the code: `{ email, code, password }` →
+     * `{ reset: true }`. Every open session is dropped; the client signs in
+     * with the new password. Every code failure reads the same.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/password/reset',
+    auth: 'none',
+    limit: { perHour: CONFIG.limits.resetPasswordPerHour, by: 'connection' },
+    handler: async (ctx) =>
+      await verification.completeReset(ctx.db, {
+        email: str(ctx.body, 'email'),
+        code: str(ctx.body, 'code'),
+        password: str(ctx.body, 'password'),
+        at: ctx.at,
+      }),
   },
   {
     method: 'POST',

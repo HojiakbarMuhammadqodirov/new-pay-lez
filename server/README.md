@@ -310,27 +310,40 @@ follows it. A client that has not asked creates the account and writes nothing;
 arrives later, which is the whole migration path for a client on its own release
 schedule.
 
-## Email confirmation is built, and it is not switched on
+## Email codes: confirmation and password reset
 
-A full OTP flow existed for a few days — code, expiry, attempt cap, resend
-cooldown, per-address send ceiling, an `email.ts` port and a panel on the Play and
-Wallet screens — and was removed in `53edbf7`. There is no transport: with
-`PAYLEZ_EMAIL` unset the local adapter logs the code and delivers nowhere, and
-that variable appears in no deployment and in no env example. The gate was also
-far wider than it looked — an unconfirmed account could not earn, buy a voucher or
-gift card, check in, claim the welcome gift, or appear on the leaderboard — and
-nothing backfills an existing account, so a restart would have taken all of that
-from every live user at once.
+A first OTP flow was removed in `53edbf7` for two reasons: there was no transport
+(the code went to the log and nowhere a customer could read it), and the gate was
+far too wide (an unconfirmed account could not earn, check in, claim the welcome
+gift or appear on the board), so the first restart would have taken all of that
+from every live account at once.
 
-`users.email_verified_at` and the `email_verifications` table remain in the
-schema, unread, so no migration is owed in either direction, and the Google
-exchange still stamps the column because that is the one moment the fact is free.
-Bringing it back is code only: `git show cc3d9d0 -- <path>` restores the three
-deleted files and `53edbf7` names every block that was cut out of a shared one.
-Do three things differently on the way back — a transport first, a banner rather
-than a gate (and if a gate is ever wanted, on *spending*, never on earning), and a
-backfill so accounts that predate it are not asked to prove an address they
-registered months ago.
+It came back (2026-10-03, `domain/verification.ts`, `ports/email.ts`) with the
+three changes that note asked for:
+
+1. **A transport first.** `PAYLEZ_RESEND_KEY` sends through Resend's REST API
+   (one `fetch`, no dependency) from `PAYLEZ_MAIL_FROM`. With no key the local
+   adapter logs the message and keeps it in `email.outbox` for `verify.ts`. **The
+   code is never in an API response**, in either mode.
+2. **A banner, not a gate — and the gate only on spending.** Buying a voucher
+   (`POST /v1/vouchers`) and redeeming a gift card (`POST /v1/gift-cards`) answer
+   `403 not_verified` for an unconfirmed address. Earning, check-in, games,
+   onboarding, the board and the till are untouched. The gate is **off while
+   there is no key** (`PAYLEZ_VERIFY_TO_SPEND=on|off` overrides), so it can never
+   depend on a code that goes nowhere.
+3. **Existing accounts are not asked.** An account created before
+   `PAYLEZ_VERIFY_SINCE` (default `2026-10-03T00:00:00Z`; set it to the deploy
+   time) is never gated. Guests (no address) and Google accounts (stamped at
+   sign-in) are never gated either.
+
+Codes are six digits, HMAC-hashed at rest, valid 10 minutes, five attempts each, a
+60-second resend cooldown and five sends per hour per account. One live code per
+account in `email_verifications` serves both uses, because the code proves one
+thing — whoever holds it reads that inbox — so a password reset also stamps the
+address as proved. The reset routes say nothing about which addresses have
+accounts: `reset-code` always answers `{ ok: true }` and sends in the background,
+and every code failure on `reset` reads the same. Expired codes are pruned by the
+daily job after a day's grace.
 
 ## The two controls that are about the database rather than the rules
 

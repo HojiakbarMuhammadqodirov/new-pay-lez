@@ -22,6 +22,7 @@ import * as entitlements from '../../domain/entitlements.ts';
 import * as gate from '../../domain/gate.ts';
 import * as partners from '../../domain/partners.ts';
 import * as profiles from '../../domain/profiles.ts';
+import * as team from '../../domain/team.ts';
 import * as vouchers from '../../domain/vouchers.ts';
 import { averageCheck, getVenue, venuesOf } from '../../domain/venues.ts';
 import { DomainError } from '../../domain/errors.ts';
@@ -63,6 +64,16 @@ async function mine(ctx: Ctx, param = 'id') {
 }
 
 const entOf = async (ctx: Ctx, venueId: string) => await entitlements.entitlementsFor(ctx.db, { venueId });
+
+/**
+ * The counter's customer card as a staff login may see it: first name and last
+ * initial (server/TEAM.md, GDPR data minimisation). The owner and a manager see
+ * what they always saw — the name the customer shared with this venue.
+ */
+function forCounter(access: team.VenueAccess, lookup: dashboard.CounterLookup): dashboard.CounterLookup {
+  if (access.via !== 'staff') return lookup;
+  return { ...lookup, customer: { ...lookup.customer, name: team.shortName(lookup.customer.name) } };
+}
 
 /** `mine`, for a route addressed by campaign: its venue, with the caller's access to it checked. */
 async function campaignVenue(ctx: Ctx): Promise<string> {
@@ -138,6 +149,27 @@ async function budgetBody(db: Ctx['db'], venue: Awaited<ReturnType<typeof getVen
   };
 }
 
+/**
+ * Who may touch a deal from the partner surface.
+ *
+ * A venue's deal: its staff, as `gate.requireStaff` decides. A deal with **no**
+ * venue — most of the imported platform deals — used to skip the check
+ * entirely (`if (deal.venue_id) …`), which was harmless while `auth: 'partner'`
+ * meant a handful of owners and stopped being harmless when it started to
+ * admit every venue's manager too (server/TEAM.md): any of them could rewrite
+ * or archive a platform deal. Nobody runs a venue-less deal but the platform,
+ * so it is the admin's alone.
+ */
+async function requireDealAccess(ctx: Ctx, venueId: string | null): Promise<void> {
+  if (venueId) {
+    await gate.requireStaff(ctx.db, venueId, actor(ctx).user.id);
+    return;
+  }
+  if (!actor(ctx).roles.includes('admin')) {
+    throw new DomainError('forbidden', 'this deal belongs to no venue you run');
+  }
+}
+
 export const partnerRoutes: Route[] = [
   /* ═════════════════════════════════════════════ B1–B2 venues & profile ══ */
   {
@@ -150,8 +182,15 @@ export const partnerRoutes: Route[] = [
     method: 'POST',
     pattern: '/v1/partner/venues',
     auth: 'partner',
-    handler: async (ctx) =>
-      await partners.createVenue(ctx.db, {
+    handler: async (ctx) => {
+      /* `auth: 'partner'` admits a venue's manager too (server/TEAM.md), and
+         managing somebody else's café is not becoming an owner: creating a
+         venue stays with accounts that hold the owner role. */
+      const { roles } = actor(ctx);
+      if (!roles.includes('partner_owner') && !roles.includes('admin')) {
+        throw new DomainError('forbidden', 'only a venue owner account can add a venue');
+      }
+      return await partners.createVenue(ctx.db, {
         ownerId: actor(ctx).user.id,
         draft: {
           name: str(ctx.body, 'name', { max: 120 }),
@@ -172,7 +211,8 @@ export const partnerRoutes: Route[] = [
            venue row; `GET …/listing` reads the whole listing back. */
         extras: extrasOf(ctx),
         at: ctx.at,
-      }),
+      });
+    },
   },
   {
     method: 'PATCH',
@@ -547,7 +587,7 @@ export const partnerRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       const deal = await deals.getDeal(ctx.db, ctx.params.id);
-      if (deal.venue_id) await gate.requireStaff(ctx.db, deal.venue_id, actor(ctx).user.id);
+      await requireDealAccess(ctx, deal.venue_id);
       return await partners.updateDeal(ctx.db, {
         dealId: deal.id,
         actorId: actor(ctx).user.id,
@@ -569,7 +609,7 @@ export const partnerRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       const deal = await deals.getDeal(ctx.db, ctx.params.id);
-      if (deal.venue_id) await gate.requireStaff(ctx.db, deal.venue_id, actor(ctx).user.id);
+      await requireDealAccess(ctx, deal.venue_id);
       return await partners.publishDeal(ctx.db, {
         dealId: deal.id,
         actorId: actor(ctx).user.id,
@@ -584,7 +624,7 @@ export const partnerRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       const deal = await deals.getDeal(ctx.db, ctx.params.id);
-      if (deal.venue_id) await gate.requireStaff(ctx.db, deal.venue_id, actor(ctx).user.id);
+      await requireDealAccess(ctx, deal.venue_id);
       const status = oneOf(ctx.body, 'status', ['live', 'paused', 'archived'] as const);
       /*
        * Resuming a paused deal puts it back in front of customers, so it is
@@ -613,7 +653,7 @@ export const partnerRoutes: Route[] = [
     auth: 'partner',
     handler: async (ctx) => {
       const deal = await deals.getDeal(ctx.db, ctx.params.id);
-      if (deal.venue_id) await gate.requireStaff(ctx.db, deal.venue_id, actor(ctx).user.id);
+      await requireDealAccess(ctx, deal.venue_id);
       /* An expired deal comes back live through here, so it passes the same
          three gates publishing does — see `deals.extend`. */
       const updated = await deals.extend(ctx.db, deal.id, str(ctx.body, 'validTo'), ctx.at, {
@@ -884,10 +924,14 @@ export const partnerRoutes: Route[] = [
      */
     method: 'POST',
     pattern: '/v1/partner/venues/:id/counter/lookup',
-    auth: 'partner',
+    /* `user`, because a cashier's own login is a counter too (server/TEAM.md):
+       `scan` at this venue, checked before the code is even read, so another
+       venue's owner still gets a 403 rather than learning whether it matched. */
+    auth: 'user',
     handler: async (ctx) => {
-      const venue = await mine(ctx);
-      return await dashboard.counterLookup(ctx.db, venue.id, str(ctx.body, 'code', { max: 64 }), ctx.at);
+      const access = await team.requireCounter(ctx.db, ctx.params.id, actor(ctx).user.id, 'scan', { at: ctx.at });
+      const lookup = await dashboard.counterLookup(ctx.db, ctx.params.id, str(ctx.body, 'code', { max: 64 }), ctx.at);
+      return forCounter(access, lookup);
     },
   },
   {
@@ -898,17 +942,25 @@ export const partnerRoutes: Route[] = [
      */
     method: 'POST',
     pattern: '/v1/partner/venues/:id/counter',
-    auth: 'partner',
+    /* As the lookup: any counter login. The route checks the caller may do
+       *something* at this till before the code is resolved; the gate's own
+       steps then demand `scan` to open, and `earn` or `redeem` to confirm. */
+    auth: 'user',
     idempotent: true,
     handler: async (ctx) => {
-      const venue = await mine(ctx);
-      return await dashboard.counterRecord(ctx.db, {
-        venueId: venue.id,
+      const access = await team.requireCounter(ctx.db, ctx.params.id, actor(ctx).user.id, ['earn', 'redeem'], {
+        at: ctx.at,
+      });
+      const result = await dashboard.counterRecord(ctx.db, {
+        venueId: ctx.params.id,
         actorId: actor(ctx).user.id,
         code: str(ctx.body, 'code', { max: 64 }),
         amountMinor: int(ctx.body, 'amountMinor', { min: 1 }),
+        /* The owner's shared device naming who is on shift. */
+        memberId: optStr(ctx.body, 'memberId') ?? null,
         at: ctx.at,
       });
+      return { ...result, lookup: forCounter(access, result.lookup) };
     },
   },
 

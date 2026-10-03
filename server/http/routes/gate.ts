@@ -21,6 +21,7 @@ import { CONFIG } from '../../config.ts';
 import * as audit from '../../domain/audit.ts';
 import * as fraud from '../../domain/fraud.ts';
 import * as gate from '../../domain/gate.ts';
+import * as team from '../../domain/team.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { actor, int, oneOf, optStr, str } from '../input.ts';
 import type { Route } from '../router.ts';
@@ -43,9 +44,11 @@ export const gateRoutes: Route[] = [
        again rather than guessing. */
     method: 'POST',
     pattern: '/v1/venues/:id/qr',
-    auth: 'partner',
+    /* `user`, not `partner`: a cashier's own login shows the venue's code too
+       (server/TEAM.md). Who may is decided per venue below, from the rows. */
+    auth: 'user',
     handler: async (ctx) => {
-      await gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
+      await team.requireCounter(ctx.db, ctx.params.id, actor(ctx).user.id, 'scan', { at: ctx.at });
       return await gate.mintQr(ctx.db, ctx.params.id, ctx.secret, ctx.at);
     },
   },
@@ -98,7 +101,8 @@ export const gateRoutes: Route[] = [
        opened by staff against the customer's own account. */
     method: 'POST',
     pattern: '/v1/gate/manual',
-    auth: 'partner',
+    /* Staff with `scan` may open one; `openTransaction` checks it per venue. */
+    auth: 'user',
     idempotent: true,
     handler: async (ctx) => {
       const { user } = actor(ctx);
@@ -115,17 +119,61 @@ export const gateRoutes: Route[] = [
     },
   },
   {
+    /* §3b, customer side: a pass for one voucher or reward the caller holds,
+       with the bill they typed. Minting one retires the last for that item. */
+    method: 'POST',
+    pattern: '/v1/gate/passes',
+    auth: 'user',
+    handler: async (ctx) =>
+      await gate.mintPass(ctx.db, {
+        userId: actor(ctx).user.id,
+        intent: oneOf(ctx.body, 'intent', ['voucher_redeem', 'reward_redeem'] as const, 'voucher_redeem'),
+        intentRef: str(ctx.body, 'intentRef'),
+        amountMinor: int(ctx.body, 'amountMinor', { min: 1 }),
+        secret: ctx.secret,
+        at: ctx.at,
+      }),
+  },
+  {
+    /* §3b, counter side: the scanned token, or the six-letter code typed in.
+       Opens the PENDING transaction the counter then confirms as any other. */
+    method: 'POST',
+    pattern: '/v1/gate/passes/scan',
+    auth: 'user',
+    idempotent: true,
+    handler: async (ctx) =>
+      await gate.scanPass(ctx.db, {
+        token: optStr(ctx.body, 'token'),
+        code: optStr(ctx.body, 'code'),
+        venueId: str(ctx.body, 'venueId'),
+        staffId: actor(ctx).user.id,
+        memberId: optStr(ctx.body, 'memberId') ?? null,
+        secret: ctx.secret,
+        at: ctx.at,
+      }),
+  },
+  {
+    /* §3b: the customer's phone watching its own pass. */
+    method: 'GET',
+    pattern: '/v1/gate/passes/:id',
+    auth: 'user',
+    handler: async (ctx) => await gate.passStatus(ctx.db, ctx.params.id, actor(ctx).user.id, ctx.at),
+  },
+  {
     method: 'GET',
     pattern: '/v1/gate/transactions/:id',
     auth: 'user',
     handler: async (ctx) => {
       const txn = await gate.getTransaction(ctx.db, ctx.params.id);
       const { user, roles } = actor(ctx);
-      /* Either party to the transaction may look at it, and nobody else. */
+      /* Either party to the transaction may look at it, and nobody else — "the
+         venue's side" being anybody on its counter, which since the team module
+         includes a cashier's own login. */
       if (txn.user_id !== user.id && !roles.includes('admin')) {
-        await gate.requireStaff(ctx.db, txn.venue_id, user.id);
+        await team.requireCounter(ctx.db, txn.venue_id, user.id, ['earn', 'redeem', 'scan'], { at: ctx.at });
       }
-      return txn;
+      /* "Confirmed by <name>" for the owner's record of it. */
+      return { ...txn, confirmedBy: await team.confirmedByOf(ctx.db, txn.confirmed_member_id ?? null) };
     },
   },
   {
@@ -145,18 +193,25 @@ export const gateRoutes: Route[] = [
   {
     method: 'POST',
     pattern: '/v1/gate/transactions/:id/confirm',
-    auth: 'partner',
+    /* Any signed-in account reaches the handler; `gate.confirm` admits the
+       owner, a manager, or staff holding `earn` (a visit) or `redeem` (a
+       redemption) at *this* venue, and refuses a revoked member on this very
+       request — the check reads the row, inside the commit's transaction. */
+    auth: 'user',
     idempotent: true,
     handler: async (ctx) => {
       const { user } = actor(ctx);
       const receipt = await gate.confirm(ctx.db, {
         transactionId: ctx.params.id,
         cashierId: user.id,
+        /* The shared counter device's "who's on shift". */
+        memberId: optStr(ctx.body, 'memberId') ?? null,
         at: ctx.at,
       });
+      const access = await team.accessTo(ctx.db, receipt.transaction.venue_id, user.id);
       await audit.record(ctx.db, {
         actorId: user.id,
-        actorRole: 'partner_owner',
+        actorRole: access?.via === 'owner' || !access ? 'partner_owner' : access.via,
         action: 'gate.confirm',
         entity: 'transaction',
         entityId: receipt.transaction.id,
@@ -165,6 +220,7 @@ export const gateRoutes: Route[] = [
           amountMinor: receipt.transaction.amount_minor,
           points: receipt.pointsGranted,
           discountMinor: receipt.discountMinor,
+          memberId: receipt.confirmedBy?.memberId ?? null,
         },
         ip: ctx.ip,
         at: ctx.at,
@@ -188,9 +244,10 @@ export const gateRoutes: Route[] = [
     /* The partner app's confirmation queue (§11.1). */
     method: 'GET',
     pattern: '/v1/venues/:id/pending',
-    auth: 'partner',
+    /* The queue a cashier confirms from, so a cashier's login may read it. */
+    auth: 'user',
     handler: async (ctx) => {
-      await gate.requireStaff(ctx.db, ctx.params.id, actor(ctx).user.id);
+      await team.requireCounter(ctx.db, ctx.params.id, actor(ctx).user.id, ['earn', 'redeem'], { at: ctx.at });
       return await gate.pendingAt(ctx.db, ctx.params.id, ctx.at);
     },
   },

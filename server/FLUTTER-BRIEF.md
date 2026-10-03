@@ -146,6 +146,40 @@ in `API.md` §2.
 devices show the same receipt — points, stamp and next-tier line. Every error in
 the table in `API.md` §2 has a message a person at a till can act on.
 
+### §3b. Redeeming the other way round — the customer's pass
+
+For a voucher or earned reward, the customer's phone shows the code and the
+counter scans it. Same gate, same confirm; only the trigger changes direction.
+
+1. The customer opens the voucher, types the bill, and the app calls
+   `POST /v1/gate/passes {intent, intentRef, amountMinor}`. The answer carries
+   `token` (starts `plzpass.` — draw it as a QR), a six-character `code`,
+   `expiresAt` and `ttlSeconds` (600). Minting again for the same item retires
+   the previous pass.
+2. The customer chooses **Show QR** or **Show deal details** (the readable view
+   with the `code`, for a cashier to type).
+3. The counter calls `POST /v1/gate/passes/scan {venueId, token | code, memberId?}`
+   — needs `redeem` at that venue. The answer is `{transaction, pass}`:
+   a PENDING `voucher_redeem`/`reward_redeem` transaction with the customer's
+   amount on it (`amount_entered_by: customer`), and a preview
+   (`title`, `customerName` — first name only, `amountMinor`, `currency`, `code`).
+4. The counter confirms through the ordinary
+   `POST /v1/gate/transactions/{id}/confirm` (or corrects the amount through
+   `/amount` first). `confirmed_member_id` is stamped as for any confirm.
+5. The customer's phone polls `GET /v1/gate/passes/{id}` — `status` is `live`,
+   `scanned`, `used`, `cancelled` or `expired` — and refreshes the wallet on `used`.
+
+Refusals on the scan: a forged or foreign QR `422 invalid_trigger`; not on this
+venue's counter or no `redeem` `403`; a pass for another venue `403`; an unknown
+code at this venue `404`; a used pass `409 already_used`; an expired or retired
+one `409 expired`. A pass is single use: a declined (cancelled) transaction
+burns it, and the customer makes a new one.
+
+The transaction is stored as `trigger_type: manual` with `trigger_ref:
+pass:<id>` — opened by the counter against the customer's account, which is
+what `manual` already meant — so the CHECK on `transactions.trigger_type` did
+not have to change.
+
 ---
 
 ## 2. The games — all seven
@@ -343,7 +377,24 @@ Points, vouchers, stamp cards, rewards, gift cards, and the ledger history —
   venue's ladder. Tiers carry `available` — when a venue's budget is low the top
   tier closes first and the lowest stays open, so **offer the lower tier rather
   than showing an error**.
-- Gift cards: `POST /v1/gift-cards`.
+- Gift cards: `GET /v1/gift-cards` (the shelf) and `POST /v1/gift-cards`
+  `{ stockId }`. **Since 2026-10-03 open to every account** — there is no plan
+  gate and no `403` for one; show the shop to everybody. (`gift_card_priority`
+  is still published, `true` on every plan, for older builds that gate on it.)
+  From 2026-09-30 (rulebook §2.1 / §9.4): `points_cost` is derived at **100 points = 1 zł** of face value and
+  is the only price to print; one card per account per 60 days (`409`,
+  `reason: per_user_cap`, `nextAt`); and a monthly pool — each shelf row carries
+  `left_this_month`, which is the "5 left this month" figure, and `0` means sold
+  out for the month (`409`, `reason: pool_exhausted`) even with `stock` left.
+- **Sharing a deal pays**: `POST /v1/deals/{id}/share` when the share sheet
+  completes — 25 points, at most 3 a day, once per deal. Not paying is not an
+  error: `{ granted: false, reason: 'already_shared' | 'daily_cap' | 'not_live' }`.
+- **A review after a visit pays**: `POST /v1/venues/{id}/reviews`
+  `{ rating: 1..5, body? }` — 25 points, one review per venue per 30 days
+  (`409`, `reason: review_window`, `nextAt`), and only after a confirmed visit
+  (`403`, `reason: no_visit`).
+- **Birthday and anniversary pay 200 each**, once a year, from a server job; an
+  inbox notification says so. Nothing to call.
 - **Points never expire, on any plan.** `expiringSoon` is gone from
   `GET /v1/wallet` — deleted, not emptied — and so is the `points_expiry_months`
   entitlement. Delete the countdown, the warning banner and anything that sorted
@@ -392,7 +443,16 @@ articles, the news feed, the community directory, and 19 currencies.
 
 - **Referrals** `GET /v1/referrals` — the code and the progress. The reward pays
   on the invited person's **first confirmed scan**, not on signup; say so, or
-  the counter looks broken.
+  the counter looks broken. Also carries `link`
+  (`https://www.pay-lez.com/i/<code>`), `people` (`{ name, status:
+  "joined"|"completed", joinedAt, completedAt, pointsAwarded }`, names as first
+  name + last initial), `referredBy` and `canRedeem`. `pointsEarned` is what
+  reached *this* account from the ledger, friend milestone included.
+  An invitee carries a code as `referralCode` on `/v1/auth/signup` **and**
+  `/v1/auth/google` (bound on account creation only), or afterwards with
+  `POST /v1/referrals/redeem {code}` — once, before the first confirmed visit,
+  never its own, never circular; refusals carry `reason`. The public
+  `GET /v1/referrals/codes/:code` names a code's owner for a confirm screen.
 - **Leaderboards** `GET /v1/leaderboard/city` and `/friends`. City listing is
   opt-in: a player who has not opted in still sees their own rank with
   `hidden: true`. Show the toggle where they see the board.
@@ -560,10 +620,12 @@ Spends are not in that legend. A redemption is a real entry and belongs in
 `GET /v1/wallet/history`; a legend that answers "where did points come from" and
 then subtracts a voucher is answering two questions at once and totalling neither.
 
-**The ladder.** A day pays `dailyCheckIn` times a rung of `[1, 1, 1, 2, 2, 2, 4]`
-— 5, 5, 5, 10, 10, 10, 20 at today's figures, 65 for a perfect week and about 280
-a month. The eighth consecutive day is rung one again; a missed day restarts at
-rung one. The whole ladder is on the response, so no client needs the shape.
+**The ladder.** A day pays a **flat 5** (rulebook §7.3) — every rung of the
+seven-rung `ladder` says 5, 35 for a perfect week and about 150 a month. It was a
+5/5/5/10/10/10/20 run-up until 2026-09-30; the week's reward for turning up is the
+streak milestone now, not a bigger seventh day. The eighth consecutive day is
+rung one again; a missed day restarts at rung one. The whole ladder is on the
+response, so no client needs the shape — draw what arrives.
 
 **Milestones pay once in a lifetime**, not once per streak: 7 → 50, 30 → 250,
 100 → 1000, each as its own ledger entry beside the check-in, so a balance that
@@ -600,6 +662,42 @@ one on `GET /v1/games/state` counts days *played*, moves only when a round is
 banked, and is the one with the freezes. They are two rules about two behaviours
 and they will disagree. Name them differently on screen — "check-in streak" and
 "play streak" — or neither number means anything to the person reading it.
+
+## 10. Missions — rulebook §8
+
+`GET /v1/missions` (auth) → `{ bands: [{ key, title, resetsAt, missions: [...] }], unclaimed }`.
+Each mission is `{ id, number, title, description, reward, rewardLabel, progress,
+target, status, autoPaid }`. **Render the bands in the order sent**; `seasonal`
+and `partner` appear only while an operator campaign is live, so a client with a
+fixed list of seven sections is wrong on most days.
+
+- **Progress is the server's.** It is derived from rounds, visits, the ledger and
+  the profile on every read; the phone draws `progress / target` and nothing else.
+  A round counts when it is *paid* — practice rounds move no mission.
+- `status`: `locked` (a campaign kind this build does not know — draw it at half
+  opacity), `open`, `complete` (show Claim), `claimed`. A mission this account
+  can never finish in this build is **omitted, not served locked**: #52–54 (the venue
+  Pass, order-ahead), #46 (turn on notifications — the app has no push yet, and
+  paying for a permission reads as pressure to a store reviewer) and #48 (first
+  review — no review UI) not at all until those features exist. Claiming or
+  reading one that is not served is `404 not_found`. Missions whose reward
+  differs by plan send the viewer's own figure as `rewardLabel`, never the
+  `100 / 150 / 250` range across every plan.
+- **`autoPaid: true` never gets a Claim button.** Its reward *is* an automatic
+  bonus the server pays elsewhere (streak milestones, first visit, onboarding,
+  the welcome round…); the mission is a window onto it and reads `claimed` once
+  the ledger shows the bonus. The one exception is `daily.check_in` (#1): the top
+  "Daily" card claims it through `POST /v1/daily/check-in`, exactly as today.
+- `POST /v1/missions/:id/claim` (no body, send an `Idempotency-Key`) →
+  `{ mission, points, balance }`. **409 `conflict`** if not complete, already
+  claimed this period, or auto-paid. Replace the balance with the one returned.
+- Daily resets at `resetsAt` (UTC midnight, the same boundary as the check-in);
+  weekly on Monday 00:00 UTC. Count down to `resetsAt`, never to a local midnight.
+- Learning (§8.7): `GET /v1/missions/learning/:id` serves the questions without
+  answers; `POST /v1/missions/learning/:id/answers` `{ answers: [optionIndex…] }`
+  grades them and says which were right. All right completes the mission; it is
+  then claimed like any other.
+- Titles and descriptions arrive in English for now.
 
 ## Definition of done, overall
 
@@ -1664,6 +1762,33 @@ a Memory Match board at 3–8, a flight gap at half a point, a Word Builder word
 its tier, a five-word Word Builder round, an exact `20` on the `daily_game` task,
 or a `daily_game` ledger entry. Also any test that asserted two rounds of the same
 game pay the same — they no longer do, and that is the point.
+
+### 24. Email codes — confirmation after sign-up, and "Forgot password?"
+
+Six-digit codes by email (`domain/verification.ts`, `server/README.md` has the
+history). Valid 10 minutes, 5 attempts per code, 60 s resend cooldown, 5 sends an
+hour. **The code is never in a response** — read it from the email (or, against a
+local server with no `PAYLEZ_RESEND_KEY`, from the server log).
+
+| Endpoint | Body → answer |
+| --- | --- |
+| `POST /v1/auth/signup` | unchanged body; the answer gains `verification: { sent, nextSendAt, expiresAt }` or `null` if the mail failed. The first code is already on its way — do not call send-code straight after sign-up |
+| `POST /v1/auth/email/send-code` (auth) | `{}` → `{ sent, nextSendAt, expiresAt }`. `sent: false` is the cooldown, **not an error**: count down to `nextSendAt`. `409 conflict` = already confirmed; `409 quota_exceeded` = five in an hour |
+| `POST /v1/auth/email/verify` (auth) | `{ code }` → `{ verified: true, granted }`. `400 validation_failed` with `attemptsLeft`; `409 expired`; `409 cap_reached` (five wrong — ask for a new code); `404` nothing sent |
+| `POST /v1/auth/password/reset-code` | `{ email }` → **always** `{ ok: true }`, account or not. Say "if that address has an account, a code is on its way" |
+| `POST /v1/auth/password/reset` | `{ email, code, password }` → `{ reset: true }`. Every session is dropped; sign in with the new password. `400` with `field: password` (too short) or `field: code` — every code failure reads the same |
+
+`GET /v1/me` → `user.emailVerifiedAt` (stamp or null) and
+**`user.emailVerificationRequired`**. The second is true only when spending would
+be refused right now: mail is configured, the account has an address, it is not
+confirmed, and it was created after `PAYLEZ_VERIFY_SINCE`. Guests, Google
+accounts and older accounts are never required.
+
+**What it gates: only spending.** `POST /v1/vouchers` and `POST /v1/gift-cards`
+answer **`403 not_verified`** (with `remedy`) for a required account. Nothing
+else — earning, check-in, games, onboarding, the board and the till are
+unaffected. Draw "Confirm your email" as a banner/row, never as a wall, and on a
+`not_verified` open the code screen.
 
 ### What did **not** change
 

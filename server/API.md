@@ -580,7 +580,8 @@ is sold with a free trial** — `trial_days` is 0 on every one of them.
 | `streak_freezes` | 2 | 5 | *uncapped* |
 | `deal_early_access_hours` | 0 | 0 | 24 |
 | `profile_badge` | *(none)* | `star` | `crown` |
-| `exclusive_deals`, `gift_card_priority` | false | true | true |
+| `exclusive_deals` | false | true | true |
+| `gift_card_priority` *(gates nothing since 2026-10-03; gift cards are open to all)* | true | true | true |
 | `monthly_stipend`, `priority_support` | 0 / false | 0 / false | 200 / true |
 
 **What a visit pays is four named keys, not a multiplier.** `scan_points`,
@@ -616,8 +617,9 @@ branching on a locked flag.
 A capacity refusal is a `403 entitlement_required` carrying `entitlement`, `limit`
 and `used` — enough to write "that is your five for today" instead of "something
 went wrong". Three of them reach a consumer client: `assistant_uses_per_day` on
-`POST /v1/assistant/ask`, `word_hints_per_day` on a Word Builder hint event, and
-`gift_card_priority` on priority-only stock.
+`POST /v1/assistant/ask` and `word_hints_per_day` on a Word Builder hint event.
+(`gift_card_priority` used to be a third; gift cards are open to every account
+since 2026-10-03.)
 
 ---
 

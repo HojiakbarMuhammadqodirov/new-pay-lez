@@ -4,7 +4,8 @@
  *
  * Two things live here because they are one screen. The **check-in** is the
  * smallest earning there is: open the app, tap once, take `CONFIG.earn.dailyCheckIn`
- * through a seven-day shape that pays the seventh day four times the first. The
+ * — a flat five a day since the rulebook (§7.3), counted through a seven-rung
+ * shape that is now seven equal rungs (see `checkInCycle` for why it is kept). The
  * **calendar** is the month that check-in sits in, and it is not a list of
  * check-ins — it is every point the account earned that month, grouped by day
  * and by where it came from, because a customer asking "where is this balance

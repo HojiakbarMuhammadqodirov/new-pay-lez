@@ -241,7 +241,10 @@ const PLANS: PlanSeed[] = [
       streak_freezes: 2,
       exclusive_deals: false,
       deal_early_access_hours: 0,
-      gift_card_priority: false,
+      /* True on every plan since 2026-10-03, when gift cards were opened to
+         all accounts. Nothing on the server reads it now; it stays published
+         so an older app build, which gates its shop on it, shows the shop. */
+      gift_card_priority: true,
       monthly_stipend: 0,
       priority_support: false,
       assistant: true,

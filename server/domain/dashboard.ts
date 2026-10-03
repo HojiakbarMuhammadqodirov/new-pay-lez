@@ -51,7 +51,7 @@ import {
   shiftDay,
   type Iso,
 } from './time.ts';
-import { tiersFor } from './vouchers.ts';
+import { partnerTierBand, tiersFor } from './vouchers.ts';
 import { getVenue, type Venue } from './venues.ts';
 
 /* ═══════════════════════════════════════════════════════════════ the window ══ */
@@ -412,11 +412,16 @@ async function tierReachOf(db: Db, venue: Venue, at: Iso): Promise<TierReach | n
     );
     const inBand = new Map(bands.map((row) => [Number(row.band) * TIER_STEP, row.n]));
     const cheaper = index > 0 ? ladder[index - 1].points_cost : 0;
+    /* Nor below the band `setVoucherTiers` enforces (rulebook Principle 2,
+       `CONFIG.vouchers.partnerTierFloorBp`): a suggestion the partner's own
+       save would refuse is the same advice-nobody-can-take as a ladder that
+       inverts. */
+    const floor = partnerTierBand(tier.discount_pct).min;
 
     let more = 0;
     for (
       let lower = Math.floor((points - 1) / TIER_STEP) * TIER_STEP;
-      lower >= TIER_STEP && lower > cheaper;
+      lower >= TIER_STEP && lower > cheaper && lower >= floor;
       lower -= TIER_STEP
     ) {
       more += inBand.get(lower) ?? 0;
@@ -759,6 +764,8 @@ export interface ScanRow {
   discountMinor: number;
   points: number;
   receipt: string;
+  /** "Confirmed by <name>": the team member it is recorded against, or null for the owner (server/TEAM.md). */
+  confirmedBy: string | null;
   site: { venueId: string; name: string; address: string | null; lat: number | null; lng: number | null };
   progress: null | {
     campaignId: string;
@@ -810,6 +817,7 @@ export function receiptOf(transactionId: string): string {
 const SCAN_BASE = `
   SELECT t.id, t.user_id, t.confirmed_at, t.intent, t.amount_minor, t.discount_minor,
          t.points_granted,
+         (SELECT tm.name FROM team_members tm WHERE tm.id = t.confirmed_member_id) AS confirmed_by_name,
          CASE WHEN u.deleted_at IS NULL AND EXISTS (
                 SELECT 1 FROM data_sharing_consents d
                  WHERE d.user_id = t.user_id AND d.venue_id = t.venue_id AND d.revoked_at IS NULL)
@@ -846,6 +854,7 @@ interface ScanSqlRow {
   amount_minor: number | null;
   discount_minor: number;
   points_granted: number;
+  confirmed_by_name: string | null;
   who: string | null;
   avatar: string | null;
   visit_at: string | null;
@@ -905,6 +914,7 @@ export async function scans(
       discountMinor: row.discount_minor,
       points: row.points_granted,
       receipt: receiptOf(row.id),
+      confirmedBy: row.confirmed_by_name,
       site,
       progress: row.visit_at ? await progressOf(db, venue, row, row.visit_at) : null,
     });
@@ -1218,6 +1228,8 @@ export interface CounterResult {
     stamped: boolean;
     visitCounted: boolean;
     rewardEarned: { label: string; code: string } | null;
+    /** The team member the sale is recorded against, or null for the owner (server/TEAM.md). */
+    confirmedBy: { memberId: string; name: string } | null;
   };
 }
 
@@ -1403,7 +1415,15 @@ async function counterCustomer(db: Db, venue: Venue, userId: string): Promise<Co
  */
 export async function counterRecord(
   db: Db,
-  input: { venueId: string; actorId: string; code: string; amountMinor: number; at?: Iso },
+  input: {
+    venueId: string;
+    actorId: string;
+    code: string;
+    amountMinor: number;
+    /** The shared counter device's "who's on shift" — see `gate.confirm`. */
+    memberId?: string | null;
+    at?: Iso;
+  },
 ): Promise<CounterResult> {
   const at = input.at ?? now();
   const lookup = await counterLookup(db, input.venueId, input.code, at);
@@ -1432,7 +1452,12 @@ export async function counterRecord(
       actorId: input.actorId,
       at,
     });
-    receipt = await gate.confirm(db, { transactionId: opened.id, cashierId: input.actorId, at });
+    receipt = await gate.confirm(db, {
+      transactionId: opened.id,
+      cashierId: input.actorId,
+      memberId: input.memberId ?? null,
+      at,
+    });
   } catch (error) {
     try {
       const left = await gate.getTransaction(db, opened.id);
@@ -1476,6 +1501,7 @@ export async function counterRecord(
       stamped: receipt.stamped,
       visitCounted: receipt.visitCounted,
       rewardEarned: receipt.reward ? { label: receipt.reward.label, code: receipt.reward.code } : null,
+      confirmedBy: receipt.confirmedBy,
     },
   };
 }

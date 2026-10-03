@@ -25,6 +25,7 @@ import { CONFIG } from '../config.ts';
 import { DomainError } from '../domain/errors.ts';
 import { resolveSession, rolesOf } from '../domain/accounts.ts';
 import * as limits from '../domain/limits.ts';
+import { managesAnyVenue } from '../domain/team.ts';
 import { now } from '../domain/time.ts';
 import { Router, type Actor, type Ctx, type Route } from './router.ts';
 
@@ -89,11 +90,17 @@ export function createApi(options: ServerOptions) {
         if (found.route.auth === 'admin' && !actor.roles.includes('admin')) {
           throw new DomainError('forbidden', 'admin only');
         }
+        /* A venue's manager is a row in `team_members`, not a role (see
+           `domain/team.ts` for why the global `manager` role was a skeleton
+           key), so the team table is asked — only on the path that would
+           otherwise refuse, so an owner pays nothing for it. This admits the
+           caller to the partner surface; *which* venue they may touch is still
+           `mine()` → `gate.requireStaff`, per request, in the handler. */
         if (
           found.route.auth === 'partner' &&
           !actor.roles.includes('partner_owner') &&
-          !actor.roles.includes('manager') &&
-          !actor.roles.includes('admin')
+          !actor.roles.includes('admin') &&
+          !(await managesAnyVenue(options.db, actor.user.id))
         ) {
           throw new DomainError('forbidden', 'this account owns no venue');
         }
@@ -134,7 +141,7 @@ export function createApi(options: ServerOptions) {
           key:
             found.route.limit.by === 'account' && actor
               ? actor.user.id
-              : limits.connectionKey(secret, ctx.at.slice(0, 10), ctx.ip, String(req.headers['user-agent'] ?? '')),
+              : limits.connectionKey(secret, ctx.at.slice(0, 10), ctx.ip),
           limit: found.route.limit,
           at: ctx.at,
         });
@@ -313,10 +320,9 @@ function cors(req: IncomingMessage, res: ServerResponse, origins: readonly strin
   res.setHeader('access-control-max-age', '600');
 }
 
+/* The last forwarded entry, and only from our own proxy — see `limits.clientAddress`. */
 const ipOf = (req: IncomingMessage): string =>
-  String(req.headers['x-forwarded-for'] ?? '').split(',')[0].trim() ||
-  req.socket.remoteAddress ||
-  '';
+  limits.clientAddress(req.headers['x-forwarded-for'], req.socket.remoteAddress);
 
 /**
  * The reader's language: their account's setting first, the header second.

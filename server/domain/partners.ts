@@ -22,6 +22,7 @@ import * as deals from './deals.ts';
 import * as entitlements from './entitlements.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
+import { partnerTierBand } from './vouchers.ts';
 import { localMonth, now, type Iso } from './time.ts';
 import { getVenue, requireVerified, type Venue } from './venues.ts';
 
@@ -232,7 +233,7 @@ export async function createVenue(
   input: { ownerId: string; draft: VenueDraft; extras?: ListingExtras; at?: Iso },
 ): Promise<Venue> {
   const at = input.at ?? now();
-  const ent = await entitlements.entitlementsFor(db, { userId: input.ownerId });
+  const ent = await entitlements.entitlementsFor(db, { userId: input.ownerId }, at);
   const place = checkPlace(input.draft);
   const extras = checkExtras(input.extras ?? {});
 
@@ -667,6 +668,37 @@ export async function setVoucherTiers(
         });
       }
       /*
+       * Rulebook Principle 2: a point is worth something legible, and a venue
+       * pricing its rung far off the platform ladder makes it worth ten
+       * different things. Before this nothing bounded a rung, and four live
+       * venues sold 5% off for **30 points** against the platform's 300.
+       *
+       * The band is `CONFIG.vouchers.partnerTierFloorBp`..`CeilingBp` of the
+       * ladder's price for the same percentage (`vouchers.partnerTierBand`):
+       * somewhat cheaper is a venue buying custom with a sharper offer, which
+       * is the product working; a tenth of the price is a different currency.
+       * The refusal carries the band so a partner screen can say what *is*
+       * allowed rather than only that this was not.
+       *
+       * Checked on write only. Rungs already stored below the floor are not
+       * rewritten here — an operator reprices those, and a partner editing one
+       * is made to bring it into the band on that edit.
+       */
+      const band = partnerTierBand(tier.discountPct);
+      if (tier.pointsCost < band.min || tier.pointsCost > band.max) {
+        throw new DomainError(
+          'validation_failed',
+          `a ${tier.discountPct}% voucher costs between ${band.min} and ${band.max} points`,
+          {
+            field: 'pointsCost',
+            discountPct: tier.discountPct,
+            minPoints: band.min,
+            maxPoints: band.max,
+            platformPoints: band.platform,
+          },
+        );
+      }
+      /*
        * The caps, written only when they were sent.
        *
        * `COALESCE($sent, …)` would be the compact way and it cannot express
@@ -828,7 +860,11 @@ export async function createCampaign(
   const at = input.at ?? now();
   campaigns.validateCampaign(input);
 
-  const ent = await entitlements.entitlementsFor(db, { venueId: input.venueId });
+  /* The plan *at the moment of the change*, not at the wall clock: judged by
+     today's plan, an action stamped `at` followed a different rule on the 1st
+     of a month than on the 30th (verify's mid-month fixture failed for half
+     of every month). Same in `createVenue` and `setCampaignStatus`. */
+  const ent = await entitlements.entitlementsFor(db, { venueId: input.venueId }, at);
   const active =
     (await db.get<{ n: number }>(
       `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active'`,
@@ -990,7 +1026,7 @@ export async function setCampaignStatus(
   if (!campaign) throw new DomainError('not_found', 'campaign not found');
 
   if (input.status === 'active' && campaign.status !== 'active') {
-    const ent = await entitlements.entitlementsFor(db, { venueId: campaign.venue_id });
+    const ent = await entitlements.entitlementsFor(db, { venueId: campaign.venue_id }, at);
     const running =
       (await db.get<{ n: number }>(
         `SELECT COUNT(*) AS n FROM campaigns WHERE venue_id = $v AND status = 'active' AND id <> $c`,

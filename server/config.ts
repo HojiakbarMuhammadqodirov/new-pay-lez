@@ -37,7 +37,10 @@ export const CONFIG = {
     /*
      * §7.2 Energy. The floor; a plan raises it (`daily_energy`).
      *
-     * **Every finished round costs one, win or lose.** It used to be losses
+     * **Every round costs one, win or lose, charged when it starts** (rulebook
+     * §3 — it was charged at the finish until the rulebook moved it, so that
+     * abandoning a round is no longer a free reroll; see `games.startSession`
+     * and `CONFIG.games.energyRefundWithinSeconds`). It used to be losses
      * only, which made the pool a tax on being bad at quizzes and no bound at
      * all on anybody else: two of the seven games cannot be lost, and a player
      * answering correctly never touched it. Charging both sides is what makes
@@ -103,7 +106,15 @@ export const CONFIG = {
     firstVisitToVenue: 100,
     stampCardComplete: 100,
     newCategory: 25,
+    /*
+     * §7.3 / §9.2. A review left after a confirmed visit, **at most once per
+     * venue per `reviewEveryDays`**. The window is rolling rather than a fixed
+     * grid (unlike `comeback`), because it is keyed per venue and the thing it
+     * bounds is one person re-reviewing one place — a grid would let a review
+     * on the 29th and another on the 31st both pay. Paid by `social.review`.
+     */
     reviewAfterVisit: 25,
+    reviewEveryDays: 30,
 
     /** Bringing people in. Flat on every plan, so nobody subscribes for a day
         and harvests them. */
@@ -124,26 +135,28 @@ export const CONFIG = {
      */
     dailyCheckIn: 5,
     /*
-     * The seven-day cycle, as multiples of `dailyCheckIn`.
+     * The seven-day cycle, as multiples of `dailyCheckIn` — **flat, since the
+     * rulebook (§7.3, §11 `DAILY_CHECKIN 5`)**.
      *
-     * Day 1 is the first day of a streak, day 7 the seventh, and an eighth
-     * consecutive day starts the shape again — `((streak - 1) % 7)`. The run-up
-     * is what makes a calendar worth opening: a flat five every day is a number
-     * nobody plans a week around, and the seventh being worth four ordinary days
-     * is the whole reason the sixth gets claimed.
+     * It was `[1, 1, 1, 2, 2, 2, 4]`: a run-up that paid the seventh day four
+     * times the first, 65 points a week. The rulebook prices opening the app at
+     * a flat 5 a day and puts the whole of a week's reward for turning up into
+     * the *streak milestones* (7 → 50) and the missions (#1 is this same 5), and
+     * §10's "daily habit ≈ 162 a month" is built on the flat figure. A run-up on
+     * top of a milestone on the same seventh day was paying for one habit twice.
      *
-     * Multiples rather than points so the two facts stay separate: this array is
-     * the *shape* of a week and `dailyCheckIn` is what a day is worth. Changing
-     * what turning up pays is one edit; changing how a week builds is the other,
-     * and neither silently does the other's job.
+     * Kept as an array of seven ones rather than deleted, because the shape is
+     * still what `GET /v1/daily` draws as its ladder and `cycleDay` still counts
+     * through it: a client that renders seven rungs keeps rendering seven, each
+     * honestly saying 5. Changing what a day is worth stays one edit
+     * (`dailyCheckIn`), and bringing a run-up back is the other — though the
+     * rulebook would have to change first.
      *
-     * Thirteen base days a week — 65 points, about 280 a month on a streak that
-     * never breaks. That is deliberately under a voucher tier (300 at the lowest
-     * rung): a month of opening the app gets somebody *nearly* to the thing they
-     * want, and the last stretch is a visit. A check-in that buys a voucher on
-     * its own is a loyalty scheme that stopped needing the venue.
+     * Thirty-five a week, ~150 a month on an unbroken streak: comfortably under
+     * the lowest voucher rung (300), so a month of opening the app is half-way
+     * to a reward and the other half is a visit.
      */
-    checkInCycle: [1, 1, 1, 2, 2, 2, 4] as readonly number[],
+    checkInCycle: [1, 1, 1, 1, 1, 1, 1] as readonly number[],
     /*
      * How near the end of a day a live streak is reminded, in hours left.
      *
@@ -239,17 +252,28 @@ export const CONFIG = {
     categoriesPicked: 25,
     firstScanEver: 100,
 
-    /** Occasions. */
+    /** Occasions, once a year each (§7.3). Paid by `occasions.payDue` from the
+        hourly job, keyed `birthday:<year>` / `anniversary:<year>`. */
     birthday: 200,
     anniversary: 200,
+    /**
+     * How many days late an occasion may still be paid.
+     *
+     * The job runs on an interval rather than at midnight, and a restart resets
+     * its phase — so "is today the day" alone would lose the birthday of anyone
+     * whose day fell in a gap. A week of grace makes a missed run cost nothing,
+     * and the `<year>` key is what stops the grace paying twice.
+     */
+    occasionGraceDays: 7,
 
     /** Premium's monthly credit, and Pro's.
 
         Both must stay worth clearly less than the subscription costs, or the
         plan refunds itself and becomes a coupon. At the rulebook's anchor of
-        100 pts = 1 zl these are 10 zl and 3 zl against fees of 19.99 and 8.99 —
-        about half and a third, which is the margin the old value over-protected:
-        200 points was ~2 zl, and a perk nobody can feel is not a perk.
+        100 pts = 1 zl these are 10 zl and 3 zl against fees of 39.99 and 19.99
+        (`domain/settings.ts`) — a quarter and about a sixth, which is the margin
+        the old value over-protected: 200 points was ~2 zl, and a perk nobody can
+        feel is not a perk. Rulebook §7.3 / §11 `MONTHLY_STIPEND`.
 
         These are advertised by `plan_entitlements.monthly_stipend` and paid by
         `jobs.runMonthly`. Before 2026-09-26 the key was read by nothing at all
@@ -263,6 +287,11 @@ export const CONFIG = {
     /** §3.2. 60–120s: long enough to walk to the counter, short enough that a
      *  photographed QR is dead before it can be shared. */
     qrTtlSeconds: 90,
+    /** FLUTTER-BRIEF §3b. A customer's redemption pass. Longer than the venue's
+     *  QR because it is shown while the customer waits to pay, not minted on a
+     *  timer at the till — and it is still single use and bound to one voucher,
+     *  one venue and one amount, so a photograph of it buys nothing. */
+    passTtlSeconds: 600,
     /** How long a PENDING transaction waits for the cashier before it expires.
      *  Nothing is granted while it waits, so this is a cleanup bound, not a
      *  risk one — but a pending row holds a reserve, and a reserve that never
@@ -289,8 +318,34 @@ export const CONFIG = {
       { pct: 10, points: 500, maxDiscountMinor: 2500 },
       { pct: 15, points: 800, maxDiscountMinor: 4000 },
     ],
-    /** How long an issued voucher stays spendable before its reserve is released. */
+    /** How long an issued voucher stays spendable before its reserve is released.
+     *  The fallback only: the plan's `voucher_validity_days` (14 / 30 / 60,
+     *  rulebook §2.1) is what is read. */
     validityDays: 30,
+    /**
+     * How far a venue's own ladder may stray from `defaultTiers`, in basis
+     * points of the platform's price for the same percentage.
+     *
+     * A venue sets its own rungs, and before this nothing bounded them — four
+     * live venues sold 5% off for **30 points**, a tenth of the platform's 300.
+     * The partner pays for the discount, so it is not the platform's money at
+     * stake; it is the *currency's*. Principle 2 is that a point is worth
+     * something legible (~1.2 gr realised on a voucher), and a venue pricing a
+     * rung at a tenth of the ladder makes every other venue's price look like a
+     * rip-off and makes a points balance mean ten different things.
+     *
+     * So a rung may be cheaper than the ladder — a venue buying custom with a
+     * sharper offer is the product working — but not by more than a fifth, and
+     * it may be dearer but not by more than three times, past which it is a
+     * rung nobody will ever reach dressed up as an offer. The price for a
+     * percentage the ladder does not name is interpolated between its rungs
+     * (`vouchers.ladderPrice`).
+     *
+     * Enforced when a rung is **written** (`partners.setVoucherTiers`). Rungs
+     * already stored are not rewritten by a boot — an operator reprices those.
+     */
+    partnerTierFloorBp: 8000,
+    partnerTierCeilingBp: 30000,
     /**
      * §4.4. The tolerance buffer, in basis points of the budget.
      *
@@ -307,6 +362,68 @@ export const CONFIG = {
      *  category default, and the window it is computed over. */
     avgCheckMinSamples: 30,
     avgCheckWindowDays: 30,
+  },
+
+  /* ──────────────────────────────────── rulebook §2.1 / §9.4 gift cards ── */
+  /**
+   * The only Paylez-funded reward, and so the only one bounded three ways.
+   *
+   * Vouchers cost Paylez nothing — a partner pays the discount when it is
+   * spent. A gift card is face value bought by the platform, which is why the
+   * rulebook fences it: paying tiers only, priced so it is never *better* value
+   * than a voucher, and drawn from a pool that cannot outgrow the revenue that
+   * funds it. Each line below is one of those fences, and `vouchers.giftCardShelf`
+   * / `vouchers.redeemGiftCard` are the only readers.
+   */
+  giftCards: {
+    /**
+     * §2.1 `GIFT_CARD_RATE`: **100 points = 1 zł** of face value.
+     *
+     * It was whatever an operator typed into `gift_card_stock.points_cost`, and
+     * the build the rulebook audited priced cards at 50 = 1 zł — which made the
+     * Paylez-funded reward twice as generous as the partner-funded voucher
+     * (~1.2 gr/pt), exactly backwards. The price is now **derived** from the
+     * card's face value on every read and every sale, so a typo on the shelf can
+     * no longer re-price the currency. The stored `points_cost` is ignored.
+     *
+     * Points per one major unit of `anchorCurrency`. A card in another currency
+     * is converted through `exchange_rates` first; a card whose currency has no
+     * rate is not offered at all, because "the same number in a different
+     * currency" is not a price.
+     */
+    pointsPerMajor: 100,
+    anchorCurrency: 'PLN',
+    /*
+     * There is no plan gate any more. §9.4 made gift cards a Pro and Premium
+     * perk, gated on `gift_card_priority`; on 2026-10-03 the owner opened them
+     * to every account (the app no longer sells a tier, so the gate left
+     * nobody able to buy one). The entitlement key is still published, true on
+     * every plan, so an older app build that reads it shows the shop too. The
+     * price and the pool below are unchanged and are now the only fences.
+     */
+    /** §9.4 `PER_USER_CAP`: one card per this many days, rolling, so a handful
+     *  of heavy users cannot take the month's whole pool between them. */
+    perUserEveryDays: 60,
+    /**
+     * §9.4 `POOL_SHARE_OF_REVENUE`: the month's cards, at face value, may not
+     * exceed this share of the month's consumer subscription revenue.
+     *
+     * Revenue is the monthly price of every **paid** consumer subscription live
+     * now (`source <> 'manual'`: an operator-assigned tier is a courtesy, not
+     * income — see `vouchers.giftCardPool`). The spend side is the face value of
+     * every card issued this calendar month. The counter a screen shows ("5 left
+     * this month") is this pool divided by a card's face value, which is why it
+     * is a financial control and not decoration.
+     */
+    poolShareBp: 2000,
+    /**
+     * A fixed monthly budget, in `anchorCurrency` major units, added to the
+     * revenue share above. Since 2026-10-03 nobody pays for a consumer plan,
+     * so the share alone is 0 and every card is sold out; the owner chose a
+     * fixed budget instead. Set `PAYLEZ_GIFT_POOL_MONTHLY=0` to go back to the
+     * revenue share only.
+     */
+    fixedMonthlyMajor: Number(process.env.PAYLEZ_GIFT_POOL_MONTHLY ?? 500),
   },
 
   /* ────────────────────────────────────────── §5 loyalty campaigns ── */
@@ -758,9 +875,216 @@ export const CONFIG = {
     flightSecondsPerGap: 1.75,
     flightGapAllowance: 3,
 
+    /*
+     * ══ §5.7 / §5.8: the two seeded games ══
+     *
+     * **These two are replayed, not reported.** `/start` hands the client a
+     * 32-bit seed, the client plays the round locally, and `/finish` carries the
+     * move list; `domain/engines/` replays it from the same seed and computes the
+     * result, so a client's own claim of a score is never read. The rules an
+     * independent implementation needs are in `server/GAMES-2048-FOODCROSS.md`,
+     * with test vectors.
+     *
+     * Every value below is copied into the round's secret at `/start` and sent
+     * to the client as `content`, so changing one here changes the *next* round
+     * and never a round in flight — a board replayed on different rules from the
+     * ones it was played on is a different board. That is also why the client
+     * must read these off `content` rather than hard-code them.
+     *
+     * `minSecondsPerMove` is §9.3's "minimum round duration", made proportional
+     * to the round: a replay of N moves is refused if the round was open for
+     * less than N × this. Generous on purpose — it exists to refuse a script
+     * posting a solved board a second after `/start`, not to referee a quick
+     * thumb. A 2048 swipe is a flick and ten a second is beyond anybody; a Food
+     * Cross swap waits for its own cascade to land, which is most of a second.
+     */
+    game2048: {
+      size: 4,
+      /** A spawned tile is a 4 one time in this many, else a 2. */
+      fourOneIn: 10,
+      startTiles: 2,
+      /** A bound on the replay's work, not a rule of the game: 2048 takes ~1,000. */
+      maxMoves: 20_000,
+      /** §5.7's table, verbatim. Below the first band the performance is 0. */
+      performanceByTile: [
+        { tile: 64, performance: 20 },
+        { tile: 128, performance: 35 },
+        { tile: 256, performance: 50 },
+        { tile: 512, performance: 65 },
+        { tile: 1024, performance: 85 },
+        { tile: 2048, performance: 100 },
+      ] as ReadonlyArray<{ tile: number; performance: number }>,
+      minSecondsPerMove: 0.1,
+    },
+    foodCross: {
+      rows: 7,
+      cols: 7,
+      kinds: 6,
+      /** §5.8: twenty swaps a round, and 2,000 is performance 100. */
+      moves: 20,
+      target: 2000,
+      /*
+       * The two multipliers §5.8 asks for — "cascades and 4+/5+ matches multiply
+       * score" — and the one base they multiply. A run of L tiles scores
+       * `tilePoints × L × runMultiplier[min(L, 5) - 3]`, so 3 → 30, 4 → 120,
+       * 5 → 250; each cascade step multiplies its own runs by the step number,
+       * capped at `cascadeCap`.
+       *
+       * Tuned by simulation over 400 seeded boards (2026-09-30): a player
+       * choosing swaps **at random** finishes twenty moves on a median of
+       * ~1,650 (performance ~82, p10 ~1,140); a naive greedy player that simply
+       * takes the longest match nearest the bottom reaches 2,000 on 72% of
+       * boards, typically by the fifteenth swap. That is the rulebook's "a
+       * skilled player reaches the target well inside twenty moves", with the
+       * luck of the refill still in it — which is what a match-3 is.
+       */
+      tilePoints: 10,
+      runMultiplier: [1, 3, 5] as readonly number[],
+      cascadeCap: 5,
+      minSecondsPerMove: 0.5,
+    },
+
+    /*
+     * §3: **energy is spent when a round starts**, and one abandoned inside its
+     * first `energyRefundWithinSeconds` gives it back — at most
+     * `energyRefundsPerDay` times a day (§9.2, "one abandoned round per day").
+     * The refund is for the accidental tap; the once-a-day is what stops it
+     * being a way to look at a board and put it back.
+     */
+    energyRefundWithinSeconds: 5,
+    energyRefundsPerDay: 1,
+
+    /*
+     * §9.1 the weekly game cap, by plan code: points from **game rounds** in a
+     * Monday-to-Sunday (UTC) week. A backstop set ~20% above an honest perfect
+     * week (§9.1: ~365 / 507 / 816), so it catches an exploit and never a
+     * player. A plan with no row here takes the free figure. Enforced in
+     * `games.finish`, which trims the round to what is left and reports the
+     * trim as `capped`.
+     */
+    weeklyGameCap: { free: 450, pro: 600, premium: 1000 } as Readonly<Record<string, number>>,
+
     /** Streak freezes: earned one per this many days. The count held is a
      *  plan entitlement (`streak_freezes`); Premium never breaks a streak. */
     freezeEvery: 7,
+  },
+
+  /* ──────────────────────────────────────────── rulebook §8 the missions ── */
+  /**
+   * Every number the mission catalogue pays or counts to, by mission id.
+   *
+   * The catalogue itself — which missions exist, which band, how progress is
+   * derived — is `domain/missions.ts`, because *what* a mission watches is code.
+   * *How much* it pays and *how far* it counts are tunables (§11), so they live
+   * here, and a mission whose reward is missing from `rewards` is served with
+   * `reward: null` rather than with a number somebody forgot to type.
+   *
+   * A mission's reward is **in addition to** the action's own points (§8): the
+   * scan still pays its scan points, the round still pays its round. And it is
+   * **flat on every plan** — §2.2 multiplies game points only, and a mission
+   * that paid Premium 1.75× would be the multiplier leaking into the one-offs
+   * the rulebook deliberately keeps per-plan-by-table instead.
+   *
+   * The missions that *mirror* an existing automatic bonus (the check-in, the
+   * streak milestones, first visit, stamp card, onboarding and the rest) are not
+   * here: they pay what `CONFIG.earn` already pays, through the code that
+   * already pays it, and are shown as `autoPaid`. A reward listed here for one
+   * of them would be the same bonus paid twice.
+   */
+  missions: {
+    rewards: {
+      /* §8.1 daily */
+      'daily.todays_game': 25,
+      'daily.warm_up': 10,
+      'daily.empty_the_tank': 15,
+      'daily.record_a_visit': 20,
+      'daily.flawless': 20,
+      'daily.mix_it_up': 15,
+      'daily.window_shopping': 5,
+      'daily.new_record': 20,
+      'daily.early_bird': 15,
+      'daily.night_owl': 10,
+      'daily.on_a_roll': 10,
+      /* §8.2 weekly */
+      'weekly.five_day_player': 50,
+      'weekly.three_venues': 60,
+      'weekly.full_deck': 80,
+      'weekly.point_hunter': 40,
+      'weekly.regular': 50,
+      'weekly.somewhere_new': 50,
+      'weekly.ten_rounds': 40,
+      'weekly.unbroken': 60,
+      'weekly.cash_it_in': 40,
+      'weekly.weekend_warrior': 40,
+      'weekly.explorer': 55,
+      'weekly.quiz_master': 70,
+      /* §8.3 ongoing — the claimable ones; 25–33 mirror automatic bonuses */
+      'ongoing.city_explorer': 200,
+      'ongoing.local_legend': 250,
+      'ongoing.game_master': 200,
+      'ongoing.collector': 300,
+      'ongoing.high_roller': 750,
+      'ongoing.tier_climber': 100,
+      /* §8.4 one-time — the claimable ones */
+      'once.stay_in_the_loop': 20,
+      'once.show_your_face': 15,
+      'once.try_everything': 200,
+      'once.first_voucher': 50,
+      'once.first_gift_card': 50,
+      'once.join_a_club': 100,
+      'once.use_your_pass': 50,
+      'once.first_order': 75,
+      /* §8.7 learning */
+      'learning.pesel': 60,
+      'learning.umowa_zlecenie': 45,
+      'learning.pharmacy_polish': 40,
+    } as Record<string, number>,
+
+    /**
+     * §8.5 seasonal defaults, by campaign kind. An operator's row may carry its
+     * own `reward`; these fill it when the row does not. Partner-sponsored
+     * campaigns (§8.6) have no default — "partner-set" means the partner sets
+     * it, and a partner campaign created without one is refused. `rainy_day` has
+     * none either: its reward is the game points banked in its window, which is
+     * what "double game points" means once the doubling is a second entry.
+     */
+    campaignRewards: {
+      holiday: 150,
+      launch_week: 100,
+      city_challenge: 200,
+      flash: 50,
+      language_week: 60,
+    } as Record<string, number>,
+
+    /** #10 "Early bird": a scan whose venue-local hour is below this. */
+    earlyBirdBeforeHour: 10,
+    /**
+     * #11 "Night owl": a round finished at or after this hour.
+     *
+     * The server does not know a player's clock — there is no time zone on an
+     * account — so the hour is read in `clockTimezone`, the product's home. A
+     * round at 21:00 in Kraków is 19:00 or 20:00 UTC, the same server day, so
+     * this never pushes a round into a different daily period than the one it
+     * is counted in.
+     */
+    nightOwlFromHour: 21,
+    clockTimezone: 'Europe/Warsaw',
+
+    /* The counts the rulebook names in words. */
+    onARollInARow: 3,
+    mixItUpGames: 2,
+    fiveDayPlayerDays: 5,
+    threeVenuesVenues: 3,
+    pointHunterPoints: 300,
+    regularScans: 5,
+    tenRoundsRounds: 10,
+    explorerCategories: 2,
+    cityExplorerVenues: 10,
+    localLegendVisits: 25,
+    collectorPoints: 5000,
+    highRollerPoints: 20000,
+    /** #59: how long a venue counts as "newly joined", from its verification. */
+    launchWeekDays: 7,
   },
 
   /* ──────────────────────────────────────── §1.3 / B9 privacy thresholds ── */
@@ -939,6 +1263,24 @@ export const CONFIG = {
     gameFinishPerHour: 200,
     checkInPerHour: 10,
     giftCardPerHour: 30,
+    /* A claim is once per mission per period, guarded by its own key; these
+       bound the *requests*, the way `checkInPerHour` does. Sixty is every
+       mission on the screen claimed twice over. */
+    missionClaimPerHour: 60,
+    learningAnswersPerHour: 30,
+    /* Invite codes are `PY` and four digits for most accounts — a space small
+       enough to walk. Redeeming is once per account for good, so ten is a
+       person retyping a misread code; the public lookup names a first name,
+       so sixty per connection is a landing page reloaded, not a directory. */
+    referralRedeemPerHour: 10,
+    referralLookupPerHour: 60,
+    /* Email codes (`domain/verification.ts`). The per-code attempt cap and the
+       hourly send ceiling do the real work; these bound the requests. The two
+       reset routes are unauthenticated, so they key on the connection. */
+    sendCodePerHour: 10,
+    verifyEmailPerHour: 30,
+    resetCodePerHour: 10,
+    resetPasswordPerHour: 20,
   },
 
   /* ─────────────────────────────────────────────────────── sessions ── */
@@ -949,6 +1291,30 @@ export const CONFIG = {
     minPasswordLength: 6,
     /** Sign-in attempts per address per window, then a cool-off. */
     signInPerHour: 20,
+
+    /*
+     * ── email codes (`domain/verification.ts`) ──
+     *
+     * `codeMinutes`: long enough to switch to a mail app and back, short enough
+     * that a code left in an inbox is not a standing key.
+     *
+     * `codeAttempts` is **what makes six digits safe**: five wrong answers per
+     * code is a one-in-two-hundred-thousand chance per code, however slowly.
+     *
+     * `codeCooldownSeconds` bounds the resend button; `codeSendsPerHour` bounds
+     * using it to post mail to somebody else's address.
+     */
+    codeMinutes: 10,
+    codeAttempts: 5,
+    codeCooldownSeconds: 60,
+    codeSendsPerHour: 5,
+    /**
+     * Accounts created before this moment are never gated on a proved address.
+     * They signed up when nobody asked, and taking spending away from them on a
+     * restart is the mistake the first version of this made. Set
+     * `PAYLEZ_VERIFY_SINCE` to the deploy time.
+     */
+    verifySince: process.env.PAYLEZ_VERIFY_SINCE || '2026-10-03T00:00:00.000Z',
     /**
      * The Google OAuth client id, and the audience every ID token must name.
      *

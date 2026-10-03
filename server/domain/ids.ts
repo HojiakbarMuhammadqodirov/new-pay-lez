@@ -21,7 +21,15 @@ export type IdPrefix =
   | 'gev' | 'ref' | 'ntf' | 'ptk' | 'pln' | 'sub' | 'inv' | 'bev'
   | 'aud' | 'frd' | 'mod' | 'bmk' | 'ast' | 'msg' | 'gsv' | 'art'
   | 'nws' | 'cpr' | 'rec' | 'fbk' | 'sev' | 'qzi' | 'wrd'
-  | 'wbs' | 'wbe' | 'ath' | 'rmd' | 'lim' | 'otp';
+  | 'wbs' | 'wbe' | 'ath' | 'rmd' | 'lim' | 'otp'
+  /* rulebook §7.3: a venue review */
+  | 'vrv'
+  /* rulebook §8: a mission event, a mission campaign */
+  | 'mev' | 'mcp'
+  /* a venue's team member (server/TEAM.md) */
+  | 'tmm'
+  /* a redemption pass the customer's phone shows (FLUTTER-BRIEF §3b) */
+  | 'pss';
 
 export const newId = (prefix: IdPrefix): string => `${prefix}_${randomBytes(10).toString('hex')}`;
 

@@ -35,9 +35,11 @@ import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
 import * as ledger from './domain/ledger.ts';
 import * as notifications from './domain/notifications.ts';
+import * as occasions from './domain/occasions.ts';
 import * as rates from './domain/rates.ts';
 import * as social from './domain/social.ts';
 import * as traffic from './domain/traffic.ts';
+import * as verification from './domain/verification.ts';
 import * as vouchers from './domain/vouchers.ts';
 import { refreshAverageCheck } from './domain/venues.ts';
 import * as push from './ports/push.ts';
@@ -74,9 +76,14 @@ export async function runHourly(db: Db, at: Iso = now()): Promise<JobReport> {
      push rather than waiting for the next one — the window it is sent in is
      only an hour or two wide once quiet hours have had their say. */
   detail.streakReminders = await checkin.remind(db, at);
+  /* Rulebook §7.3 birthday and anniversary, 200 each, once a year. Hourly
+     rather than daily because the grace window (`occasionGraceDays`) makes the
+     cadence a matter of promptness, not of correctness — and a birthday bonus
+     that lands at 23:00 is a worse present than one at breakfast. */
+  detail.occasions = await occasions.payDue(db, at);
   detail.push = await push.drain(db);
 
-  return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'check-ins', 'push'], detail };
+  return { at, ran: ['vouchers', 'rewards', 'subscriptions', 'check-ins', 'occasions', 'push'], detail };
 }
 
 /**
@@ -92,10 +99,9 @@ export async function runDaily(db: Db, at: Iso = now()): Promise<JobReport> {
   /* Retention is a job rather than a query filter: rows nobody deletes are rows
      that eventually have to be explained to a regulator. */
   detail.trafficPruned = await traffic.prune(db, at);
-  /* Email verification was removed, so every code left in its table is dead —
-     and the rows carry an address, which is a reason to empty the table rather
-     than keep it. The table itself stays until a migration drops it. */
-  detail.codesPruned = (await db.run(`DELETE FROM email_verifications`)).changes;
+  /* Email codes expired more than a day ago. An expired code is already
+     refused, so this is about the table: the rows carry an address. */
+  detail.codesPruned = await verification.prune(db, at);
 
   /* §4.5: recompute the median check, and tell the partner when the source flips
      from the category default to their own tills — the estimate they read every
