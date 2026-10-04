@@ -7186,6 +7186,49 @@ async function reimportRules(): Promise<void> {
     eq(`balance still derives for ${user.id.slice(0, 8)}`, await ledger.reconcile(db, user.id), 0);
   }
 
+  /* **A live row under its own id holds the export row's unique key.** The
+     first deploy in October looped at boot on Postgres: the live server had
+     opened the month's budget as `bdg_<random>`, the re-import wrote
+     `bdg_legacy_<venue>_<month>` for the same venue and month, and
+     `budgets_venue_id_period_key` refused it. On SQLite the same statement
+     silently replaced the live budget. The live row has to survive, untouched,
+     on both. */
+  const legacy = (await db.get<{ id: string; venue_id: string }>(
+    `SELECT id, venue_id FROM budgets WHERE id LIKE 'bdg_legacy_%' LIMIT 1`,
+  ))!;
+  await db.run(`DELETE FROM budget_movements WHERE budget_id = $b`, { b: legacy.id });
+  await db.run(`DELETE FROM budgets WHERE id = $b`, { b: legacy.id });
+  const live = await budget.budgetFor(db, legacy.venue_id);
+  await db.run(`UPDATE budgets SET total_minor = 123456 WHERE id = $b`, { b: live.id });
+  const link = (await db.get<{ id: string; venue_id: string; kind: string }>(
+    `SELECT id, venue_id, kind FROM venue_links WHERE id LIKE 'lnk_legacy_%' LIMIT 1`,
+  ))!;
+  await db.run(`UPDATE venue_links SET id = 'lnk_live_verify', value = 'https://live.example' WHERE id = $l`, { l: link.id });
+
+  /* Postgres updates a venue in place; SQLite's `OR REPLACE` deletes and
+     re-inserts it, and with foreign keys on that cascades the venue's budgets
+     and links away before the guard is reached — so this would pass with no
+     guard at all. Off for the re-import, SQLite meets the live rows the way
+     the Postgres box does, and only the guard keeps them. */
+  await db.run('PRAGMA foreign_keys = OFF');
+  let reimported = true;
+  try {
+    await db.tx(async () => await importLegacy(db, 'new-data'));
+  } catch (error) {
+    reimported = false;
+    console.error(error);
+  }
+  await db.run('PRAGMA foreign_keys = ON');
+  check('a re-import over live rows that hold its unique keys finishes', reimported);
+  eq('…the live month’s budget keeps its id and its total', (await db.get<{ id: string; total_minor: number }>(
+    `SELECT id, total_minor FROM budgets WHERE venue_id = $v AND id = $b`, { v: legacy.venue_id, b: live.id },
+  )), { id: live.id, total_minor: 123456 });
+  eq('…and no export budget is written beside it', (await db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM budgets WHERE id = $b`, { b: legacy.id }))?.n, 0);
+  eq('…the owner’s link keeps its value', (await db.get<{ value: string }>(
+    `SELECT value FROM venue_links WHERE venue_id = $v AND kind = $k`, { v: link.venue_id, k: link.kind }))?.value,
+    'https://live.example');
+
   await db.close();
 }
 

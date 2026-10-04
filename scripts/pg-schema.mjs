@@ -344,9 +344,10 @@ writeFileSync(
  * SQLite replaces on *any* unique constraint; \`ON CONFLICT\` handles the one it
  * is given. A row colliding on the secondary key with a different primary key
  * now raises a unique violation rather than silently replacing — the safer
- * failure, and one no current statement can reach, because every id that
- * reaches these tables is derived from the same columns the secondary key is
- * built from (see \`db/import.ts\`).
+ * failure. It *is* reachable: the live server writes these tables under ids
+ * of its own, so a re-import meets them on the secondary key (2026-10-05, a
+ * boot loop on \`budgets_venue_id_period_key\`). \`db/import.ts\` therefore
+ * skips an export row whose key a live row already holds (\`takenElsewhere\`).
  */
 export const CONFLICT_TARGETS: Record<string, readonly string[] | undefined> = {
 ${body}

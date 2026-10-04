@@ -152,6 +152,37 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
 
   const file = (name: string) => readCsv(join(dir, `${name}_export.csv`));
 
+  /*
+   * **A live row already holds this one's unique key.** Seven upsert targets
+   * carry a second unique constraint beside the id (`db/conflicts.ts`). The
+   * export's ids are derived, but the live server writes the same tables under
+   * ids of its own — `budgetFor` opens a month's budget, an owner edits a link
+   * or a tier, a referral is redeemed. A re-import then meets that row on the
+   * second key: SQLite's `OR REPLACE` silently deletes the live row, and
+   * Postgres' `ON CONFLICT (id)` raises a unique violation, which at boot is a
+   * server that will not start (2026-10-05: `budgets_venue_id_period_key`, a
+   * restart loop on the first deploy in October). The live row is the newer
+   * truth, so the export's row is skipped.
+   */
+  const takenElsewhere = async (
+    table: string,
+    id: string,
+    key: Record<string, string | number | null>,
+  ): Promise<boolean> => {
+    const columns = Object.keys(key);
+    if (columns.some((column) => key[column] === null)) return false;
+    const row = await db.get<{ id: string }>(
+      `SELECT id FROM ${table} WHERE ${columns.map((column) => `${column} = $k_${column}`).join(' AND ')}
+         AND id <> $k_own LIMIT 1`,
+      {
+        ...Object.fromEntries(columns.map((column) => [`k_${column}`, key[column]])),
+        k_own: id,
+      },
+    );
+    if (row) bump('skipped_live_rows');
+    return row !== undefined;
+  };
+
   /* ─────────────────────────────────────────────── translations, one helper ── */
 
   const putText = async (entity: string, id: string, field: string, lang: string, value: string) => {
@@ -272,6 +303,12 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
 
   for (const row of file('GuidanceCategory')) {
     const id = str(row, 'id');
+    if (
+      await takenElsewhere('guidance_categories', id, {
+        key: str(row, 'key'),
+        country_code: str(row, 'country_code') || 'PL',
+      })
+    ) continue;
     await db.run(
       `INSERT OR REPLACE INTO guidance_categories (id, key, country_code, icon, color, position, active)
        VALUES ($i, $k, $c, $ic, $co, $p, $a)`,
@@ -292,6 +329,12 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
 
   for (const row of file('GuidanceSubcategory')) {
     const id = str(row, 'id');
+    if (
+      await takenElsewhere('guidance_subcategories', id, {
+        key: str(row, 'subcategory_key'),
+        parent_key: str(row, 'parent_category_key'),
+      })
+    ) continue;
     await db.run(
       `INSERT OR REPLACE INTO guidance_subcategories (id, key, parent_key, icon, color, position, active)
        VALUES ($i, $k, $p, $ic, $co, $o, $a)`,
@@ -528,6 +571,7 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     const referred = referredEmail ? await userFor('', referredEmail) : null;
     if (!referrer) continue;
     const status = str(row, 'status') === 'completed' ? 'completed' : 'pending';
+    if (await takenElsewhere('referrals', str(row, 'id'), { referred_id: referred })) continue;
     await db.run(
       `INSERT OR REPLACE INTO referrals
          (id, referrer_id, referred_id, referred_email, code, status, points_awarded,
@@ -652,7 +696,7 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
       ['instagram', 'instagram_link'],
     ] as const) {
       const value = opt(service, key);
-      if (value) {
+      if (value && !(await takenElsewhere('venue_links', `lnk_legacy_${serviceId}_${kind}`, { venue_id: serviceId, kind }))) {
         await db.run(
           `INSERT OR REPLACE INTO venue_links (id, venue_id, kind, value, position)
            VALUES ($i, $v, $k, $va, 0)`,
@@ -679,7 +723,10 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
        a tier that an issued voucher points at cannot be deleted at all, and the
        import that was supposed to be idempotent quietly destroys history. */
     const budgetId = `bdg_legacy_${venueId}_${period}`;
-    await db.run(
+    /* The month's budget the live server already opened wins, and its
+       movements are its own — so neither row below is written. */
+    const liveBudget = await takenElsewhere('budgets', budgetId, { venue_id: venueId, period });
+    if (!liveBudget) await db.run(
       `INSERT OR REPLACE INTO budgets
          (id, venue_id, period, currency, total_minor, loyalty_bp, created_at, updated_at)
        VALUES ($i, $v, $p, $c, $t, $l, $cr, $up)`,
@@ -698,7 +745,7 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
        spend by allocation, and the export gives no split — so it is recorded as
        a voucher debit, which is the allocation the old campaign belonged to. */
     const consumed = Math.round(num(row, 'budget_consumed') * 100);
-    if (consumed > 0) {
+    if (consumed > 0 && !liveBudget) {
       await db.run(
         /* `OR REPLACE`, like the budget above it and for the same reason: the id
            is derived, so a re-import writes this row a second time. A plain
@@ -731,6 +778,9 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
       /* `tier_*_limit` is 0 throughout the export, and a zero cap would mean no
          voucher can ever pay out anything. Zero reads as "unset". */
       const cap = Math.round(num(row, `tier_${pct}_limit`) * 100) || defaults.maxDiscountMinor;
+      if (await takenElsewhere('voucher_tiers', `vtr_legacy_${venueId}_${pct}`, { venue_id: venueId, discount_pct: pct })) {
+        continue;
+      }
       await db.run(
         `INSERT OR REPLACE INTO voucher_tiers
            (id, venue_id, discount_pct, points_cost, max_discount_minor, active, created_at, updated_at)
