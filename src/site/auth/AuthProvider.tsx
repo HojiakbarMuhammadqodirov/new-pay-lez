@@ -13,6 +13,7 @@ import {
 } from './context';
 import { addUser, listUsers, patchUser, replaceUser, toAccount } from './directory';
 import { exchangeGoogleCredential, forgetGoogle } from './google';
+import { forgetReferral } from './referral';
 import {
   awaitsServer,
   foldServer,
@@ -314,6 +315,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [memberSince, setMemberSince] = useState<string | null>(null);
   const [leaderboardOptIn, setLeaderboardOptIn] = useState<boolean | null>(null);
   const [venueSharingDefault, setVenueSharingDefault] = useState<boolean | null>(null);
+  const [emailVerifiedAt, setEmailVerifiedAt] = useState<string | null>(null);
+  const [spendNeedsVerifiedEmail, setSpendNeedsVerifiedEmail] = useState(false);
   /** The language the *server* has on this account, as of the last `GET /v1/me`. */
   const [serverLanguage, setServerLanguage] = useState<string | null>(null);
   /** A one-shot destination for the next navigation. See `pendingRoute`. */
@@ -382,6 +385,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setMemberSince(me?.user.createdAt ?? null);
     setLeaderboardOptIn(me?.user.leaderboardOptIn ?? null);
     setVenueSharingDefault(me?.user.venueSharingDefault ?? null);
+    setEmailVerifiedAt(me?.user.emailVerifiedAt ?? null);
+    setSpendNeedsVerifiedEmail(me?.user.spendNeedsVerifiedEmail === true);
     setServerLanguage(me?.user.language ?? null);
   }, []);
 
@@ -653,6 +658,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
              over a rejection, it would be writing the exact consent row this
              whole change exists to stop being written unasked. */
           acceptTerms: draft.acceptTerms,
+          ...(draft.referralCode ? { referralCode: draft.referralCode } : {}),
         })
       } catch (cause) {
         if (cause instanceof ApiError && cause.status === 0) {
@@ -695,6 +701,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setToken(session.token);
+      /* The account exists, so the invite this browser was holding is spent
+         whether or not it bound — the form checked it before sending. */
+      forgetReferral();
       await welcome(adoptSession(session, draft.type as ChoosableType));
       return { ok: true };
     },
@@ -717,8 +726,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * precisely this state.
    */
   const signInWithGoogle = useCallback(
-    async (credential: string, language: string, acceptTerms = false): Promise<Account> => {
-      const verified = await exchangeGoogleCredential(credential, language, acceptTerms);
+    async (credential: string, language: string, acceptTerms = false, referralCode?: string): Promise<Account> => {
+      const verified = await exchangeGoogleCredential(credential, language, acceptTerms, referralCode);
+      /* Signed in, so an invite this browser was holding has done its job —
+         or was for somebody who turned out to have an account already. */
+      forgetReferral();
       return welcome(adoptSession(verified, null, 'google'));
     },
     [welcome],
@@ -1067,6 +1079,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberSince,
       leaderboardOptIn,
       venueSharingDefault,
+      emailVerifiedAt,
+      spendNeedsVerifiedEmail,
       pendingRoute,
       clearPendingRoute,
       signIn,
@@ -1087,6 +1101,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       memberSince,
       leaderboardOptIn,
       venueSharingDefault,
+      emailVerifiedAt,
+      spendNeedsVerifiedEmail,
       pendingRoute,
       clearPendingRoute,
       signIn,

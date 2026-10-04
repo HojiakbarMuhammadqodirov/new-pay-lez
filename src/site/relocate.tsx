@@ -1,4 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { mediaUrl } from './api/client';
 
 import {
   GUIDE_ICON_FALLBACK,
@@ -1146,7 +1147,9 @@ function RelocateGuide() {
 function GuideMark({ name, logo }: { name: string; logo?: string | null }) {
   const [failed, setFailed] = useState<string | null>(null);
   const first = [...name.trim()][0] ?? '?';
-  const src = logo && logo !== failed ? logo : null;
+  /* Joined to the API's address: see `mediaUrl` for why a bare path drew a letter. */
+  const url = mediaUrl(logo);
+  const src = url && url !== failed ? url : null;
 
   if (src) {
     return (

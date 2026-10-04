@@ -17,8 +17,8 @@
    line that matters, which is the count at the bottom. */
 process.env.PAYLEZ_QUIET = '1';
 
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate, openDb } from './db/db.ts';
 import { importLegacy } from './db/import.ts';
@@ -48,10 +48,20 @@ import * as profiles from './domain/profiles.ts';
 import * as social from './domain/social.ts';
 import * as tasks from './domain/tasks.ts';
 import * as traffic from './domain/traffic.ts';
+import * as verification from './domain/verification.ts';
+import * as merge from './domain/merge2048.ts';
+import * as food from './domain/foodCross.ts';
+import * as ninja from './domain/foodNinja.ts';
 import * as vouchers from './domain/vouchers.ts';
 import * as jobs from './jobs.ts';
 import * as llm from './ports/llm.ts';
 import * as push from './ports/push.ts';
+import * as webpush from './ports/webpush.ts';
+import * as reminders from './domain/reminders.ts';
+import * as giftCards from './domain/giftCards.ts';
+import * as arcade from './domain/arcade.ts';
+import * as notifications from './domain/notifications.ts';
+import { createDecipheriv, createECDH, createHmac, createPublicKey, generateKeyPairSync, randomBytes, verify as verifySignature } from 'node:crypto';
 import { trackListing } from './domain/venues.ts';
 import { seedPlatform } from './domain/settings.ts';
 import { DomainError } from './domain/errors.ts';
@@ -872,6 +882,20 @@ async function voucherCaps(): Promise<void> {
  * asserted "one fewer than before" would pass on a shelf that went to -1, which
  * is the whole failure.
  */
+/**
+ * Real codes behind a shelf row, as the operator would load them. A shelf unit
+ * is a code now (`giftCards.claimCode`), so a fixture that sets `stock` has to
+ * put that many codes behind it or the purchase finds nothing to hand out.
+ */
+async function stockCodes(db: Db, stockId: string, n: number, tag = stockId): Promise<void> {
+  for (let i = 0; i < n; i += 1) {
+    await db.run(
+      `INSERT INTO gift_card_codes (id, stock_id, code, added_at) VALUES ($i, $s, $c, $t)`,
+      { i: newId('gcc'), s: stockId, c: `${tag}-${i}-${Math.random().toString(36).slice(2, 8)}`, t: now() },
+    );
+  }
+}
+
 async function giftCardStock(): Promise<void> {
   describe('§2.2 gift cards -- the shelf cannot oversell');
   const w = await world();
@@ -887,6 +911,7 @@ async function giftCardStock(): Promise<void> {
      VALUES ('gcs_race', 'Race Brand', 'R', 500, 'EUR', 10, 1, 0, 1)
      ON CONFLICT (id) DO NOTHING`,
   );
+  await stockCodes(w.db, 'gcs_race', 1);
   await ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
 
   eq('the shelf starts with one', await left(), 1);
@@ -916,6 +941,7 @@ async function giftCardStock(): Promise<void> {
    * rather than at -3.
    */
   await w.db.run(`UPDATE gift_card_stock SET stock = 1 WHERE id = 'gcs_race'`);
+  await stockCodes(w.db, 'gcs_race', 1, 'second');
   const rush = await Promise.allSettled(
     [0, 1, 2, 3].map(() =>
       vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: 'gcs_race', at }),
@@ -1760,33 +1786,39 @@ async function energyRules(): Promise<void> {
   eq('…and spends exactly the same one', lost.energyLeft, full - 2);
 
   /*
-   * Abandoning. `startSession` closes any round still open for the player, so
-   * opening two in a row abandons the first — and the charge lives in `finish`,
-   * which the abandoned one never reaches.
+   * Abandoning, under rulebook §3: the energy goes when the round **starts**, so
+   * an abandoned round keeps its cost — except an accidental tap, abandoned
+   * within `energyRefundSeconds` of the start, refunded once a day.
    *
-   * This is the fact the whole design of "charge at the end" exists to protect:
-   * a connection that drops before the first question must not cost anything,
-   * because that is the one failure the player did not choose.
+   * Three abandons, in the order that tells them apart: a late one (kept), an
+   * early one (refunded — the day's one), and a second early one (kept).
    */
-  const dropped = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
-  const kept = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  const late = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  eq('a round spends its energy as it starts', late.energyLeft, full - 3);
+  const lateQuit = await games.abandonSession(w.db, {
+    sessionId: late.sessionId, userId: w.customerId, at: plusMinutes(at, 0.2),
+  });
+  eq('a round abandoned after five seconds keeps its cost', [lateQuit.abandoned, lateQuit.refunded, lateQuit.energyLeft], [true, false, full - 3]);
+
+  const tap = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: plusMinutes(at, 0.25) });
+  eq('…the next round spends one more', tap.energyLeft, full - 4);
+  /* Opening another round is the misclick case: the wrong card, then the right one. */
+  const kept = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: plusMinutes(at, 0.27) });
   eq(
     'the first of two starts is abandoned',
-    (await w.db.get<{ state: string }>(`SELECT state FROM game_sessions WHERE id = $i`, {
-      i: dropped.sessionId,
-    }))?.state,
-    'abandoned',
+    (await w.db.get<{ state: string; life_spent: number }>(`SELECT state, life_spent FROM game_sessions WHERE id = $i`, {
+      i: tap.sessionId,
+    })),
+    { state: 'abandoned', life_spent: 0 },
   );
-  eq(
-    'and an abandoned round costs nothing',
-    (await games.energyFor(w.db, w.customerId, at)).energy,
-    full - 2,
-  );
-  eq(
-    'the round that is finished still costs one',
-    (await games.finish(w.db, { sessionId: kept.sessionId, userId: w.customerId, at })).energyLeft,
-    full - 3,
-  );
+  eq('…inside five seconds, so its energy came back for the round that replaced it', kept.energyLeft, full - 4);
+  const second = await games.abandonSession(w.db, {
+    sessionId: kept.sessionId, userId: w.customerId, at: plusMinutes(at, 0.28),
+  });
+  eq('a second quick abandon the same day is not refunded', [second.refunded, second.energyLeft], [false, full - 4]);
+  eq('…and abandoning a closed round again is a no-op', (await games.abandonSession(w.db, {
+    sessionId: kept.sessionId, userId: w.customerId, at: plusMinutes(at, 0.3),
+  })).abandoned, false);
 
   /* Whatever the ceiling leaves after those three, spent, so that the refusal
      below is about an empty tank rather than about the number 3. `daily_energy`
@@ -1924,12 +1956,16 @@ async function energyRules(): Promise<void> {
    * at `max × interval`, which on the free plan is sixteen hours.
    */
   const regen = CONFIG.points.energyRegenMinutes;
+  /* `paidAnyway` above started at the first interval and, under rulebook §3,
+     spent its energy as it started — so the first unit back is already gone,
+     and the tank is one interval behind the empty one. */
   eq('nothing arrives early', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen - 1))).energy, 0);
-  eq('one at the interval', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen))).energy, 1);
-  eq('two at twice it', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2))).energy, 2);
+  eq('the first unit back went on the round that started then', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen))).energy, 0);
+  eq('one at twice the interval', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2))).energy, 1);
+  eq('two at three times it', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 3))).energy, 2);
   eq(
-    'full at the ceiling times it',
-    (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * full))).energy,
+    'full a ceiling of intervals after that round',
+    (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * (full + 1)))).energy,
     full,
   );
   eq(
@@ -3125,7 +3161,12 @@ async function formulaInPlay(): Promise<void> {
    */
   {
     const w = await world();
-    const day = '2026-06-15T09:00:00.000Z';
+    /* The first day from mid-June whose window offers a quiz. A fixed date
+       stopped being one when 2048 and Food Cross lengthened the rotation, and
+       the rule under test is about the featured quiz, not about that date. */
+    const isQuiz = (gameType: string) => ['capitals', 'brain', 'poland', 'uzbekistan', 'flags'].includes(gameType);
+    let day = '2026-06-15T09:00:00.000Z';
+    for (let k = 0; k < 20 && ![...games.featuredGamesFor(day)].some(isQuiz); k += 1) day = plusMinutes(day, 1440);
     const featuredQuiz = [...games.featuredGamesFor(day)].find((gameType) =>
       ['capitals', 'brain', 'poland', 'uzbekistan', 'flags'].includes(gameType),
     )!;
@@ -4117,26 +4158,79 @@ async function socialRules(): Promise<void> {
   const w = await world();
   const at = now();
 
-  const code = await social.codeFor(w.db, w.ownerId);
-  check('a referral code exists', code.length > 0);
-  eq('binding to yourself is refused', (await social.bind(w.db, { code, newUserId: w.ownerId, at })).reason, 'self_referral');
+  /*
+   * The inviter is a third account, not the venue's owner. It was the owner
+   * once, with the scan confirmed at the owner's own till — which is the exact
+   * farm the payout now refuses, and is checked as such further down.
+   */
+  const inviter = await accounts.signUp(w.db, {
+    email: 'inviter@verify.test', password: 'hunter22', name: 'Inviter', acceptTerms: true, at,
+  });
+  const code = await social.codeFor(w.db, inviter.id);
+  check('a new code is PY plus six unambiguous characters', /^PY[A-HJ-NP-Z2-9]{6}$/.test(code), code);
+  eq('binding to yourself is refused', (await social.bind(w.db, { code, newUserId: inviter.id, at })).reason, 'self_referral');
+  eq('an unknown code is refused', (await social.bind(w.db, { code: 'PYNOPE22', newUserId: w.customerId, at })).reason, 'unknown_code');
+  eq('the form check agrees', await social.codeExists(w.db, 'PYNOPE22'), false);
 
-  eq('binding works', (await social.bind(w.db, { code, newUserId: w.customerId, at })).ok, true);
-  eq('and pays nothing yet', await ledger.balance(w.db, w.ownerId), 0);
+  /* Read off a phone and typed back: lower case, a space, a dash. */
+  const typed = ` ${code.slice(0, 4).toLowerCase()} ${code.slice(4, 6)}-${code.slice(6).toLowerCase()} `;
+  eq('the form check folds case and spacing', await social.codeExists(w.db, typed), true);
+  eq('…and so does binding', (await social.bind(w.db, { code: typed, newUserId: w.customerId, at })).ok, true);
+  eq('and pays nothing yet', await ledger.balance(w.db, inviter.id), 0);
+
+  /* Under the venue's minimum spend is not a visit, so it is not the visit the
+     referral waits for. It used to pay. */
+  await scan(w, 1000, at);
+  eq('a scan under the minimum spend pays nothing', await ledger.balance(w.db, inviter.id), 0);
 
   await scan(w, 4000, at);
-  /* Both sides are paid on the invitee's first *confirmed* scan and not at
-     sign-up, so an invite only pays for somebody who actually turned up. The
-     two halves are separate constants now: the referrer is paid for bringing
-     someone who visits, the invitee for joining. */
-  eq('the first confirmed scan pays the referrer', await ledger.balance(w.db, w.ownerId), CONFIG.earn.referrerFirstVisit);
-  eq(
-    'and the bond is completed',
-    (await w.db.get<{ status: string }>(`SELECT status FROM referrals WHERE referred_id = $u`, {
-      u: w.customerId,
-    }))?.status,
-    'completed',
+  /* Both sides are paid on the invitee's first *counted visit* and not at
+     sign-up, so an invite only pays for somebody who actually turned up. */
+  eq('the first counted visit pays the referrer', await ledger.balance(w.db, inviter.id), CONFIG.earn.referrerFirstVisit);
+  const bond = await w.db.get<{ id: string; status: string }>(`SELECT id, status FROM referrals WHERE referred_id = $u`, {
+    u: w.customerId,
+  });
+  eq('and the bond is completed', bond?.status, 'completed');
+  /* The inviter's own share, not what the bond cost both sides together. */
+  const progress = await social.referralProgress(w.db, inviter.id);
+  eq('progress reports what the inviter was paid', [progress.joined, progress.completed, progress.pointsEarned],
+    [1, 1, CONFIG.earn.referrerFirstVisit]);
+
+  /* The farm: an owner's own code, confirmed at the owner's own till. Left
+     pending, so a real visit somewhere else would still pay it. */
+  const sock = await accounts.signUp(w.db, {
+    email: 'sock@verify.test', password: 'hunter22', name: 'Sock', acceptTerms: true, at,
+  });
+  const ownerCode = await social.codeFor(w.db, w.ownerId);
+  await social.bind(w.db, { code: ownerCode, newUserId: sock.id, at });
+  const ownerBefore = await ledger.balance(w.db, w.ownerId);
+  await scan(w, 4000, at, sock.id);
+  eq('an owner is not paid for a referral confirmed at their own till', await ledger.balance(w.db, w.ownerId), ownerBefore);
+  eq('…and the bond stays pending',
+    (await w.db.get<{ status: string }>(`SELECT status FROM referrals WHERE referred_id = $u`, { u: sock.id }))?.status,
+    'pending');
+
+  /* Voiding a paid referral takes both payouts back, by compensating entries. */
+  const customerBefore = await ledger.balance(w.db, w.customerId);
+  const voided = await social.rejectReferral(w.db, { referralId: bond!.id, note: 'verify', at });
+  eq('rejecting a paid referral reverses both payouts', voided.reversed.length, 2);
+  eq('…the inviter is back where they started', await ledger.balance(w.db, inviter.id), 0);
+  eq('…and so is the invitee', await ledger.balance(w.db, w.customerId), customerBefore - CONFIG.earn.inviteeJoin);
+  const after = await social.referralProgress(w.db, inviter.id);
+  eq('…and progress no longer counts it', [after.joined, after.pointsEarned], [0, 0]);
+  await throws('a referral cannot be rejected twice', 'conflict', async () =>
+    await social.rejectReferral(w.db, { referralId: bond!.id, note: 'again', at }),
   );
+
+  /* Google sign-up can be referred too — it could not, on any client. Bound on
+     the press that *creates* the account, and only then. */
+  const viaGoogle = await accounts.linkGoogleAccount(w.db, {
+    sub: 'google-sub-referred', email: 'referred.google@verify.test', name: 'Via Google',
+    referralCode: code.toLowerCase(), at,
+  });
+  eq('a Google sign-up binds the invite',
+    (await w.db.get<{ referrer_id: string }>(`SELECT referrer_id FROM referrals WHERE referred_id = $u`, { u: viaGoogle.id }))?.referrer_id,
+    inviter.id);
 
   /* §8.2: opted **out** means not listed, but still ranked and still shown.
      The opt-out has to be asked for now — the column defaults to on, so the
@@ -4372,32 +4466,34 @@ async function jobRules(): Promise<void> {
   check('the frequent job runs clean', frequent.ran.length === 3);
 
   /*
-   * The verification codes table is emptied, and this is checked because the
-   * row is a *stored email address* rather than a stale record.
-   *
-   * Email confirmation was removed, so every code in there is dead — but the
-   * table stays in the schema so the flow can come back without a migration,
-   * and a table nobody reads is exactly the one that quietly keeps personal
-   * data forever. Seeded with two rows rather than asserting on an empty
-   * table: `changes` on a table that was already empty is 0 either way, so an
-   * empty-table check would pass just as well against a `DELETE` somebody had
-   * deleted.
+   * Dead verification codes are dropped, and this is checked because the row
+   * is a *stored email address* rather than a stale record. One code expired
+   * two days ago and one is live: the first goes, the second must survive — a
+   * prune that took live codes would void every code somebody is about to type
+   * in. Seeded rather than asserted on an empty table, because `changes` on an
+   * empty table is 0 whether or not the job does anything.
    */
   for (const [n, userId] of [w.ownerId, w.customerId].entries()) {
     await w.db.run(
       `INSERT INTO email_verifications (id, user_id, email_norm, code_hash, expires_at, sent_at)
-       VALUES ($i, $u, $e, 'not-a-real-hash', $t, $t)`,
-      { i: `evr_stale_${n}`, u: userId, e: `${userId}@verify.test`, t: at },
+       VALUES ($i, $u, $e, 'not-a-real-hash', $x, $t)`,
+      {
+        i: `evr_${n}`,
+        u: userId,
+        e: `${userId}@verify.test`,
+        x: n === 0 ? plusMinutes(at, -2 * 1440) : plusMinutes(at, 5),
+        t: at,
+      },
     );
   }
 
   const daily = await jobs.runDaily(w.db, at);
   eq('nothing has drifted', daily.detail.reconciledDrift, 0);
-  eq('the nightly job empties the verification codes', daily.detail.codesPruned, 2);
+  eq('the nightly job drops the dead verification code', daily.detail.codesPruned, 1);
   eq(
-    '…leaving no address behind in it',
+    '…and keeps the live one',
     (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM email_verifications`))?.n,
-    0,
+    1,
   );
 
   const weekly = await jobs.runWeekly(w.db, at);
@@ -4457,6 +4553,42 @@ async function httpSurface(): Promise<void> {
   });
   eq('sign-up succeeds', signup.status, 200);
   const token = signup.body.token as string;
+
+  /* The first code goes out with the sign-up itself, and the pair of routes
+     proves it over the wire. The code is readable here only because the local
+     adapter returns it — see `ports/email.ts`. */
+  const firstCode = signup.body.verification as { sent: boolean; code?: string } | null;
+  check('sign-up sends the first code', firstCode?.sent === true && typeof firstCode.code === 'string');
+  const unproved = await call('GET', '/v1/me', { token });
+  eq('…and the account is not proved yet', unproved.body.user.emailVerifiedAt, null);
+  eq('…and says whether that costs anything', unproved.body.user.spendNeedsVerifiedEmail, false);
+  const resend = await call('POST', '/v1/auth/verify/send', { token });
+  eq('a resend inside the cooldown is a 200 that sends nothing', [resend.status, resend.body.sent], [200, false]);
+  const wrongCode = await call('POST', '/v1/auth/verify', {
+    token, body: { code: firstCode?.code === '000000' ? '111111' : '000000' },
+  });
+  eq('a wrong code is a 400 that says how many tries are left',
+    [wrongCode.status, typeof wrongCode.body.error?.attemptsLeft], [400, 'number']);
+  const rightCode = await call('POST', '/v1/auth/verify', { token, body: { code: firstCode?.code } });
+  eq('the right code proves the address', [rightCode.status, rightCode.body.granted], [200, true]);
+  check('…and /v1/me now carries the stamp',
+    typeof (await call('GET', '/v1/me', { token })).body.user.emailVerifiedAt === 'string');
+
+  /* An invite, over the wire: the form's check, then a sign-up that says the
+     code bound — and one with a bad code that still creates the account. */
+  const inviteCode = (await call('GET', '/v1/referrals', { token })).body.code as string;
+  eq('the code check knows a real code',
+    (await call('GET', `/v1/referrals/codes/${inviteCode.toLowerCase()}`)).body.valid, true);
+  eq('…and not an invented one', (await call('GET', '/v1/referrals/codes/PYNOPE22')).body.valid, false);
+  const invited = await call('POST', '/v1/auth/signup', {
+    body: { email: 'invited@verify.test', password: 'hunter22', name: 'Invited', acceptTerms: true, referralCode: inviteCode },
+  });
+  eq('a sign-up with a code says it applied', [invited.status, invited.body.referral?.applied], [200, true]);
+  const misTyped = await call('POST', '/v1/auth/signup', {
+    body: { email: 'mistyped@verify.test', password: 'hunter22', name: 'Mistyped', acceptTerms: true, referralCode: 'PYNOPE22' },
+  });
+  eq('a bad code does not cost the sign-up, and says so', [misTyped.status, misTyped.body.referral?.applied], [200, false]);
+  eq('…and the inviter sees one friend joined', (await call('GET', '/v1/referrals', { token })).body.joined, 1);
 
   const dupe = await call('POST', '/v1/auth/signup', {
     body: { email: 'http@verify.test', password: 'hunter22', name: 'HTTP', acceptTerms: true },
@@ -5002,6 +5134,7 @@ async function httpSurface(): Promise<void> {
      VALUES ('gcs_test', 'Test Brand', 'T', 465, 'EUR', ${giftCost}, 250, 0, 1)
      ON CONFLICT (id) DO NOTHING`,
   );
+  await stockCodes(w.db, 'gcs_test', 3);
 
   const gift = await call('POST', '/v1/gift-cards', {
     token,
@@ -5069,6 +5202,7 @@ async function httpSurface(): Promise<void> {
     '/v1/admin/verifications',
     '/v1/admin/tags',
     '/v1/admin/deals',
+    '/v1/admin/referrals',
   ]) {
 
     const read = await call('GET', path, { token: adminToken });
@@ -6544,7 +6678,8 @@ async function dailyTaskRules(): Promise<void> {
   eq('any other day’s game claims nothing', (await playCapitals(off)).featured, false);
   check('…and leaves that day’s prompt open', (await prompt(off))?.done === false);
   eq('the order is the Play screen’s rotation', games.DAILY_GAME_POOL.map((slot) => slot.join('|')),
-    ['flight', 'memory_match', 'flags', 'capitals', 'brain', 'poland|uzbekistan', 'word_builder']);
+    ['flight', 'memory_match', 'flags', 'capitals', 'brain', 'poland|uzbekistan', 'word_builder', 'merge_2048', 'food_cross', 'food_ninja',
+     'snake', 'cannon_numbers', 'breakout', 'doodle_jump', 'zuma']);
 
   /* A row naming a rule nothing prices has no figure, and a task with no figure
      is left out rather than sent as a zero — "0 points" is a thing the panel
@@ -6652,12 +6787,20 @@ async function mediaRules(): Promise<void> {
   /* `logoPath` is the promise the server makes to the browser: a path on our
      own origin, or a `data:` URL, or nothing. **Never a third-party URL** —
      that is the property the whole feature turns on. */
-  eq('an external address becomes a path on our own origin',
-    media.logoPath('service', 'gsv_1', 'https://base44.app/logo.png'),
-    '/v1/media/service/gsv_1');
-  eq('…and a data URL is passed through, not proxied',
-    media.logoPath('venue', 'ven_1', 'data:image/png;base64,AAA'),
-    'data:image/png;base64,AAA');
+  /* A real 1×1 PNG, so the checks below exercise the byte sniffing rather than
+     a string that merely says it is a picture. */
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+    'base64',
+  );
+  const pngData = `data:image/png;base64,${PNG.toString('base64')}`;
+  check('an external address becomes a path on the API, versioned by what is stored',
+    /^\/v1\/media\/service\/gsv_1\?v=[0-9a-f]{10}$/.test(media.logoPath('service', 'gsv_1', 'https://base44.app/logo.png') ?? ''));
+  check('…and so does an inline picture — no base64 travels in a list any more',
+    /^\/v1\/media\/venue\/ven_1\?v=[0-9a-f]{10}$/.test(media.logoPath('venue', 'ven_1', pngData) ?? ''));
+  check('a replaced logo is a new URL, so a week of immutable cache cannot serve the old one',
+    media.logoPath('service', 'gsv_1', 'https://x/a.png') !== media.logoPath('service', 'gsv_1', 'https://x/b.png'));
+  eq('an inline value that is not a picture is nothing', media.logoPath('venue', 'ven_1', 'data:image/png;base64,AAA'), null);
   eq('nothing stored is nothing sent', media.logoPath('venue', 'ven_1', null), null);
   eq('…and so is blank', media.logoPath('venue', 'ven_1', '   '), null);
   /* The hole this closes. A `file:` source would be an arbitrary read of the
@@ -6666,7 +6809,54 @@ async function mediaRules(): Promise<void> {
   eq('…nor is a bare path', media.logoPath('venue', 'ven_1', '/etc/passwd'), null);
   /* The id goes in a URL, so it is encoded. Every id here is `prefix_hex` and
      could not need it — which is exactly why it would go unnoticed. */
-  eq('the id is encoded', media.logoPath('service', 'a/b', 'https://x/y.png'), '/v1/media/service/a%2Fb');
+  check('the id is encoded', (media.logoPath('service', 'a/b', 'https://x/y.png') ?? '').startsWith('/v1/media/service/a%2Fb?v='));
+
+  /* ── the type is read from the bytes ── */
+  eq('a PNG is a PNG whatever its header said', media.sniff(PNG), 'image/png');
+  eq('…and so are JPEG, GIF and WebP',
+    [media.sniff(Buffer.from([0xff, 0xd8, 0xff, 0xe0])), media.sniff(Buffer.from('GIF89a......')), media.sniff(Buffer.from('RIFF\0\0\0\0WEBPVP8 '))],
+    ['image/jpeg', 'image/gif', 'image/webp']);
+  eq('an SVG or a web page is not a picture, whatever it is labelled',
+    [media.sniff(Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>')), media.sniff(Buffer.from('<!doctype html>'))],
+    [null, null]);
+
+  /* ── files on this server's disk ── */
+  const mediaDir = join(fileURLToPath(new URL('.', import.meta.url)), 'data', `verify-media-${process.pid}`);
+  const config = CONFIG.media as { dir: string };
+  const before = config.dir;
+  config.dir = mediaDir;
+  try {
+    mkdirSync(join(mediaDir, 'service'), { recursive: true });
+    eq('a media: value one level under the directory is a file', media.mediaFile('media:service/gsv_x.webp'), join(resolvePath(mediaDir), 'service', 'gsv_x.webp'));
+    eq('…and nothing that climbs out of it is',
+      [media.mediaFile('media:service/../../etc.webp'), media.mediaFile('media:../x.webp'), media.mediaFile('media:/etc/passwd'), media.mediaFile('media:service/a.svg')],
+      [null, null, null, null]);
+
+    writeFileSync(join(mediaDir, 'service', 'gsv_verify_file.webp'), PNG);
+    writeFileSync(join(mediaDir, 'service', 'gsv_nobody.webp'), PNG);
+    writeFileSync(join(mediaDir, 'service', 'gsv_verify_text.webp'), Buffer.from('not a picture'));
+    for (const id of ['gsv_verify_file', 'gsv_verify_text']) {
+      await w.db.run(
+        `INSERT INTO guidance_services (id, name, country_code, category_key, active, position, image_url, created_at, updated_at)
+         VALUES ($i, 'File Logo', 'PL', 'food', 1, 0, 'https://base44.app/old.png', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')`,
+        { i: id },
+      );
+    }
+    const dry = await media.linkServiceFiles(w.db, { dryRun: true });
+    eq('a dry run reports and writes nothing',
+      [dry.linked, (await w.db.get<{ u: string }>(`SELECT image_url AS u FROM guidance_services WHERE id = 'gsv_verify_file'`))?.u],
+      [['gsv_verify_file'], 'https://base44.app/old.png']);
+    const linked = await media.linkServiceFiles(w.db);
+    eq('linking points the service at its file', linked.linked, ['gsv_verify_file']);
+    eq('…names the file that belongs to nobody, and refuses the one that is not a picture',
+      [linked.unknown, linked.unreadable], [['gsv_nobody.webp'], ['gsv_verify_text.webp']]);
+    eq('…and running it again changes nothing', (await media.linkServiceFiles(w.db)).unchanged, 1);
+    const served = await media.assetFor(w.db, 'service', 'gsv_verify_file');
+    eq('the file is served with the type its bytes say', [served.mime, served.body.equals(PNG)], ['image/png', true]);
+  } finally {
+    config.dir = before;
+    rmSync(mediaDir, { recursive: true, force: true });
+  }
 
   check('only the kinds with a source column are servable',
     media.isEntity('service') && media.isEntity('venue') && !media.isEntity('users'));
@@ -6691,9 +6881,12 @@ async function mediaRules(): Promise<void> {
   await w.db.run(
     `UPDATE guidance_services SET image_url = 'data:image/png;base64,AAA' WHERE id = 'gsv_verify_none'`,
   );
-  await throws('…and so is one whose image the browser already has', 'not_found', async () =>
+  await throws('…and so is one whose inline value is not a picture', 'not_found', async () =>
     await media.assetFor(w.db, 'service', 'gsv_verify_none'),
   );
+  await w.db.run(`UPDATE guidance_services SET image_url = $v WHERE id = 'gsv_verify_none'`, { v: pngData });
+  const inline = await media.assetFor(w.db, 'service', 'gsv_verify_none');
+  eq('an inline picture is served from its own URL, decoded', [inline.mime, inline.body.equals(PNG)], ['image/png', true]);
   await throws('an unknown kind is a 404, not a 500', 'not_found', async () =>
     await media.assetFor(w.db, 'passwords', 'x'),
   );
@@ -7972,6 +8165,12 @@ async function run(): Promise<void> {
   await rateRules();
   formulaTable();
   await scoringRules();
+  await mergeRules();
+  await foodRules();
+  await ninjaRules();
+  await webPushRules();
+  await giftCardEngine();
+  await arcadeRules();
   await formulaInPlay();
   await featuredPoster();
   await flightRoundShape();
@@ -7992,6 +8191,7 @@ async function run(): Promise<void> {
   await jobRules();
   await accountRules();
   await profileRules();
+  await verificationRules();
   await httpSurface();
 
   const ms = Date.now() - started;
@@ -8001,6 +8201,822 @@ async function run(): Promise<void> {
     for (const failure of failures) console.log(`  ✗ ${failure}`);
     process.exitCode = 1;
   }
+}
+
+/**
+ * Proving an address, and the one thing an unproved one costs.
+ *
+ * The suite's own fixtures are stamped verified, deliberately — they stand in
+ * for customers who already have accounts, and every other rule here is
+ * written for that person. So the *unverified* case gets a section of its own
+ * rather than being the accidental default of every check in the file.
+ *
+ * Nothing here sends mail. `ports/email.ts`'s local adapter logs the code and
+ * returns it on `Issued.code`, which is the whole reason that field exists: a
+ * flow nobody can complete offline is a flow nobody will test.
+ */
+async function verificationRules(): Promise<void> {
+  describe('proving an email address');
+
+  const w = await world();
+  const db = w.db;
+  const at = '2026-04-01T09:00:00.000Z';
+  const signUp = async (local: string) =>
+    await accounts.signUp(db, {
+      email: `${local}@verify.test`, password: 'correct horse', name: local, at, acceptTerms: true,
+    });
+
+  const alice = await signUp('alice');
+  eq('a new account has not proved its address', alice.email_verified_at, null);
+  eq('…so the guard says no', await verification.verified(db, alice.id), false);
+
+  /* An account with **no address** is not held to a rule about an address. */
+  const guest = await accounts.provisional(db, 'device-verify-1', at);
+  eq('an account with no address has nothing to prove', await verification.verified(db, guest.id), true);
+
+  /* ── the code ── */
+  const first = await verification.issue(db, { userId: alice.id, at });
+  check('a six-digit code is sent', first.sent && /^\d{6}$/.test(first.code ?? ''), first.code);
+  eq('…and it expires when the config says', first.expiresAt, plusMinutes(at, CONFIG.auth.codeMinutes));
+
+  /* The cooldown, and it is not an error: asking again too soon is what an
+     honest person does when a message is slow. */
+  const tooSoon = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 0.5) });
+  eq('a resend inside the cooldown is refused rather than sent', tooSoon.sent, false);
+  eq('…and says when', tooSoon.nextSendAt, plusMinutes(at, CONFIG.auth.codeCooldownSeconds / 60));
+  eq('…and does not spend a send', tooSoon.sends, 1);
+
+  /* Five wrong answers kills **this code**, including the right answer after
+     it — the cap is on the code, not on the guess. */
+  const wrong = first.code === '000000' ? '111111' : '000000';
+  for (let i = 0; i < CONFIG.auth.codeAttempts; i += 1) {
+    await throws(`wrong code ${i + 1} is refused`, 'validation_failed', async () =>
+      await verification.confirm(db, { userId: alice.id, code: wrong, at }),
+    );
+  }
+  await throws('past the cap the code is dead, not merely wrong', 'cap_reached', async () =>
+    await verification.confirm(db, { userId: alice.id, code: first.code!, at }),
+  );
+
+  const second = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 5), force: true });
+  await throws('an expired code is refused, and says so', 'expired', async () =>
+    await verification.confirm(db, {
+      userId: alice.id, code: second.code!, at: plusMinutes(at, 5 + CONFIG.auth.codeMinutes + 1),
+    }),
+  );
+
+  const third = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 60), force: true });
+  /* Spaces and a dash are stripped: a code pasted out of an email arrives
+     with them. */
+  const confirmed = await verification.confirm(db, {
+    userId: alice.id,
+    code: ` ${third.code!.slice(0, 3)}-${third.code!.slice(3)} `,
+    at: plusMinutes(at, 61),
+  });
+  eq('the right code proves it', [confirmed.verified, confirmed.granted], [true, true]);
+  eq('…and the guard now says yes', await verification.verified(db, alice.id), true);
+  eq('a second confirm is not a second grant',
+    (await verification.confirm(db, { userId: alice.id, code: '999999', at: plusMinutes(at, 62) })).granted,
+    false);
+  await throws('…and a code cannot be asked for again', 'conflict', async () =>
+    await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 120) }),
+  );
+  eq('the code is spent, not kept',
+    (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM email_verifications WHERE user_id = $u`, { u: alice.id }))?.n,
+    0);
+
+  /* ── the send ceiling ── */
+  const bob = await signUp('bob');
+  for (let i = 0; i < CONFIG.auth.codeSendsPerAddress; i += 1) {
+    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, i * 5), force: true });
+  }
+  await throws('the send ceiling bounds using resend as a way to post mail', 'quota_exceeded', async () =>
+    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, 1000) }),
+  );
+
+  /* ── what it gates: spending, and only behind the switch ── */
+  const carol = await signUp('carol');
+  const previous = process.env.PAYLEZ_VERIFY_GATE;
+  try {
+    delete process.env.PAYLEZ_VERIFY_GATE;
+    eq('the spending gate is off unless switched on', verification.spendGateOn(), false);
+    await verification.assertVerifiedToSpend(db, carol.id);
+    check('…so an unverified account may spend while it is off', true);
+
+    process.env.PAYLEZ_VERIFY_GATE = 'on';
+    await throws('switched on, an unverified account may not spend', 'not_verified', async () =>
+      await verification.assertVerifiedToSpend(db, carol.id),
+    );
+    await verification.assertVerifiedToSpend(db, alice.id);
+    check('…a verified one may', true);
+    await verification.assertVerifiedToSpend(db, guest.id);
+    check('…and so may an account with no address', true);
+
+    /* Earning is never gated, switch or no switch: the round pays. */
+    const round = await games.startSession(db, { userId: carol.id, gameType: 'flags', language: 'en', at });
+    eq('an unverified round still pays, with the gate on', [round.paid, round.unpaidReason], [true, null]);
+  } finally {
+    if (previous === undefined) delete process.env.PAYLEZ_VERIFY_GATE;
+    else process.env.PAYLEZ_VERIFY_GATE = previous;
+  }
+
+  /* ── accounts that predate it ── */
+  const legacy = await signUp('legacy');
+  await db.run(`UPDATE schema_meta SET value = '7' WHERE key = 'version'`);
+  await migrate(db);
+  check('the migration treats an existing address as proved',
+    (await accounts.getUser(db, legacy.id)).email_verified_at !== null);
+  eq('…and leaves an account with no address alone',
+    (await accounts.getUser(db, guest.id)).email_verified_at, null);
+  const late = await signUp('late');
+  await migrate(db);
+  eq('…and runs once: an account made after it still has to confirm',
+    (await accounts.getUser(db, late.id)).email_verified_at, null);
+
+  await db.close();
+}
+
+/**
+ * 2048 — the slide, the spawn, and a round played on the server.
+ *
+ * The slide is checked on rows a person can read, because the one rule people
+ * get wrong is the one a test has to pin: a tile merges at most once per move.
+ */
+async function mergeRules(): Promise<void> {
+  describe('2048');
+
+  const row = (values: number[], dir: merge.Direction = 'left') =>
+    merge.slide([...values, ...new Array(12).fill(0)], dir).board.slice(0, 4);
+  eq('two pairs make two tiles, not one', row([2, 2, 2, 2]), [4, 4, 0, 0]);
+  eq('a merged tile does not merge again in the same move', row([2, 2, 4, 0]), [4, 4, 0, 0]);
+  eq('the pair nearest the wall merges first', row([2, 2, 2, 0]), [4, 2, 0, 0]);
+  eq('sliding right mirrors it', row([2, 2, 2, 0], 'right'), [0, 0, 2, 4]);
+  eq('a full row with nothing to merge does not move', merge.slide([2, 4, 8, 16, ...new Array(12).fill(0)], 'left').moved, false);
+  eq('the score is the sum of the merges', merge.slide([2, 2, 4, 4, ...new Array(12).fill(0)], 'left').gained, 12);
+
+  /* Deterministic: same seed, same board — which is what lets the server's
+     placement be checked rather than trusted. */
+  eq('a seed always deals the same board', merge.newBoard('seed-a'), merge.newBoard('seed-a'));
+  eq('an opening board has two tiles', merge.newBoard('seed-a').filter((v) => v > 0).length, 2);
+  eq('a locked board cannot move', merge.canMove([2, 4, 2, 4, 4, 2, 4, 2, 2, 4, 2, 4, 4, 2, 4, 2]), false);
+
+  /* ── a round on the server ── */
+  const w = await world();
+  const at = now();
+  const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'merge_2048', language: 'en', at });
+  const content = round.content as { board: number[]; target: number };
+  eq('the opening board is sent', content.board.filter((v) => v > 0).length, 2);
+  const stored = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: round.sessionId }))!.secret,
+  ) as merge.MergeSecret;
+  check('…and the seed is not', !JSON.stringify(round.content).includes(stored.seed));
+
+  /* The first direction that changes the opening board. */
+  const legal = merge.DIRECTIONS.find((d) => merge.slide(content.board, d).moved)!;
+  const first = await games.submitEvent(w.db, {
+    sessionId: round.sessionId, userId: w.customerId, seq: 0, kind: 'move', payload: { dir: legal, from: 0 }, at,
+  });
+  eq('a move is applied', [first.accepted, first.merge?.moves], [true, 1]);
+  const expected = merge.play(stored, legal)!;
+  eq('…exactly as the engine plays it', first.merge?.board, expected.state.board);
+
+  /* A retry of the same swipe — lost reply, fresh seq — still says from: 0. */
+  const retry = await games.submitEvent(w.db, {
+    sessionId: round.sessionId, userId: w.customerId, seq: 1, kind: 'move', payload: { dir: legal, from: 0 }, at,
+  });
+  eq('a retried move is not applied twice', [retry.accepted, retry.merge?.moves], [false, 1]);
+  eq('…and answers with the current board', retry.merge?.board, expected.state.board);
+
+  await throws('an unknown direction is refused', 'bad_request', async () =>
+    await games.submitEvent(w.db, {
+      sessionId: round.sessionId, userId: w.customerId, seq: 2, kind: 'move', payload: { dir: 'sideways', from: 1 }, at,
+    }),
+  );
+
+  /* Scored on the server's board, never on the finish body: put a 1024 on it. */
+  await w.db.run(`UPDATE game_sessions SET secret = $s WHERE id = $i`, {
+    s: JSON.stringify({ ...expected.state, best: 1024 }),
+    i: round.sessionId,
+  });
+  const done = await games.finish(w.db, {
+    sessionId: round.sessionId, userId: w.customerId, clientReport: { best: 2048 }, at,
+  });
+  eq('1024 performs at 85, whatever the client claims', done.performance, 85);
+  eq('…five of six milestones', [done.correct, done.answered, done.won], [5, 6, false]);
+  check('…and it pays', done.score > 0);
+
+  /* An untouched board made nothing. */
+  const idle = await games.startSession(w.db, { userId: w.customerId, gameType: 'merge_2048', language: 'en', at });
+  eq('a round with no moves performs at 0',
+    (await games.finish(w.db, { sessionId: idle.sessionId, userId: w.customerId, at })).performance, 0);
+
+  await w.db.close();
+}
+
+/**
+ * Food Cross — lines, specials, bombs, and a round played on the server.
+ *
+ * The boards are built by hand on a filler of kinds 3–5 laid diagonally
+ * (`(row + col) % 3 + 3`), which has no line in it and no neighbour equal to
+ * its neighbour, so every line below is one the test put there.
+ */
+async function foodRules(): Promise<void> {
+  describe('Food Cross');
+
+  const filler = (): food.Board =>
+    Array.from({ length: 64 }, (_, i) => ({ t: ((Math.floor(i / 8) + (i % 8)) % 3) + 3, s: food.PLAIN }));
+  const put = (board: food.Board, cells: Array<[number, number]>) => {
+    for (const [index, t] of cells) board[index] = { t, s: food.PLAIN };
+    return board;
+  };
+  /* A source that never makes a line on its own: it cycles the filler kinds. */
+  const calm: food.Rng = (n) => 3 + (n % 3);
+
+  eq('the filler has no line', food.findRuns(filler()).length, 0);
+  eq('a swap that lines nothing up is not a move', food.canSwap(filler(), 0, 1), false);
+  eq('cells that are not neighbours cannot swap', food.adjacent(7, 8), false);
+
+  /* Four in a row, made by the swap at (0,2) ↔ (1,2): a row-clearer where the
+     player moved, and the other three cleared. */
+  const four = put(filler(), [[0, 0], [1, 0], [2, 1], [3, 0], [10, 0]]);
+  const fourPlayed = food.play(four, 2, 10, calm, 0)!;
+  eq('four in a line clears three', fourPlayed.steps[0].cleared, [0, 1, 3]);
+  eq('…and leaves a row-clearer where the move was', fourPlayed.steps[0].board[2], { t: 0, s: food.ROW });
+  eq('…scoring its foods double, at cascade level 1', fourPlayed.steps[0].score, 3 * food.SCORE_PER_FOOD * 2);
+
+  /* Five: a bomb. */
+  const five = put(filler(), [[0, 0], [1, 0], [2, 1], [3, 0], [4, 0], [10, 0]]);
+  const fivePlayed = food.play(five, 2, 10, calm, 0)!;
+  eq('five in a line clears four', fivePlayed.steps[0].cleared, [0, 1, 3, 4]);
+  eq('…and leaves a bomb', fivePlayed.steps[0].board[2].s, food.BOMB);
+
+  /* A bomb swapped with a food clears every food of that kind, and itself. */
+  const bombed = filler();
+  bombed[0] = { t: -1, s: food.BOMB };
+  const kind = bombed[1].t;
+  const ofKind = bombed.filter((piece) => piece.t === kind).length;
+  const bombPlayed = food.play(bombed, 0, 1, calm, 0)!;
+  eq('a bomb clears every food of the kind it was swapped with', bombPlayed.steps[0].cleared.length, ofKind + 1);
+  eq('a bomb swap is a move even without a line', food.canSwap(bombed, 0, 1), true);
+
+  /* A row-clearer caught in a line clears its whole row. */
+  const striped = put(filler(), [[8, 0], [9, 0], [2, 0]]);
+  striped[9] = { t: 0, s: food.ROW };
+  const stripedPlayed = food.play(striped, 2, 10, calm, 0)!;
+  check('a row-clearer in a line clears its row',
+    [8, 9, 10, 11, 12, 13, 14, 15].every((cell) => stripedPlayed.steps[0].cleared.includes(cell)),
+    stripedPlayed.steps[0].cleared);
+
+  /* Deterministic: the same source deals the same board, with a move on it. */
+  const rng = games.foodRng('seed-food');
+  eq('a seed always deals the same board', food.deal(rng, 0).board, food.deal(rng, 0).board);
+  check('a dealt board has no line and a move',
+    food.findRuns(food.deal(rng, 0).board).length === 0 && food.hasMove(food.deal(rng, 0).board));
+
+  /* ── a round on the server ── */
+  const w = await world();
+  const at = now();
+  const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'food_cross', language: 'en', at });
+  const content = round.content as { board: food.Board; moves: number };
+  eq('the board and the move limit are sent', [content.board.length, content.moves], [64, CONFIG.games.foodMoves]);
+  const stored = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: round.sessionId }))!.secret,
+  ) as { seed: string; board: food.Board; draws: number };
+  check('…and the seed is not', !JSON.stringify(round.content).includes(stored.seed));
+
+  let swap: [number, number] = [-1, -1];
+  for (let i = 0; i < 64 && swap[0] < 0; i += 1) {
+    if (i % 8 < 7 && food.canSwap(content.board, i, i + 1)) swap = [i, i + 1];
+    else if (i < 56 && food.canSwap(content.board, i, i + 8)) swap = [i, i + 8];
+  }
+  const first = await games.submitEvent(w.db, {
+    sessionId: round.sessionId, userId: w.customerId, seq: 0, kind: 'swap', payload: { a: swap[0], b: swap[1], from: 0 }, at,
+  });
+  const expected = food.play(stored.board, swap[0], swap[1], games.foodRng(stored.seed), stored.draws)!;
+  eq('a swap is applied', [first.accepted, first.food?.moves, first.food?.movesLeft], [true, 1, CONFIG.games.foodMoves - 1]);
+  eq('…exactly as the engine plays it', first.food?.board, expected.board);
+  eq('…and counts what it cleared and scored', [first.food?.cleared, first.food?.score], [expected.cleared, expected.score]);
+
+  const retry = await games.submitEvent(w.db, {
+    sessionId: round.sessionId, userId: w.customerId, seq: 1, kind: 'swap', payload: { a: swap[0], b: swap[1], from: 0 }, at,
+  });
+  eq('a retried swap is not played twice', [retry.accepted, retry.food?.moves], [false, 1]);
+  await throws('two cells that are not neighbours are refused', 'bad_request', async () =>
+    await games.submitEvent(w.db, {
+      sessionId: round.sessionId, userId: w.customerId, seq: 2, kind: 'swap', payload: { a: 0, b: 9, from: 1 }, at,
+    }),
+  );
+
+  /* Twenty moves and the round is over; scored on what the server cleared. */
+  const after = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: round.sessionId }))!.secret,
+  );
+  await w.db.run(`UPDATE game_sessions SET secret = $s WHERE id = $i`, {
+    s: JSON.stringify({ ...after, moves: CONFIG.games.foodMoves, score: 1500, over: true }),
+    i: round.sessionId,
+  });
+  await throws('a finished board takes no more swaps', 'invalid_state', async () =>
+    await games.submitEvent(w.db, {
+      sessionId: round.sessionId, userId: w.customerId, seq: 3, kind: 'swap',
+      payload: { a: swap[0], b: swap[1], from: CONFIG.games.foodMoves }, at,
+    }),
+  );
+  const done = await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, clientReport: { cleared: 999 }, at });
+  eq('1,500 of 2,000 performs at 75, whatever the client claims', done.performance, 75);
+  eq('…three of five fifths', [done.correct, done.answered, done.won], [3, 5, false]);
+
+  await w.db.close();
+}
+
+/**
+ * Food Ninja — the schedule, and what a slice is believed for.
+ *
+ * Every clock here is passed in, so "in the air" is checked at exact moments:
+ * the round starts at `t0`, and a food launched at `flyer.t` is in play from
+ * then until `flyer.t + airtime`, give or take `ninjaSlackMs`.
+ */
+async function ninjaRules(): Promise<void> {
+  describe('Food Ninja');
+
+  const rng = games.ninjaRng('seed-ninja');
+  const flyers = ninja.schedule(rng);
+  eq('a seed always throws the same round', flyers, ninja.schedule(rng));
+  check('a round throws enough for a perfect score, with room to miss',
+    flyers.length >= 70 && flyers.length <= 130, flyers.length);
+  check('every food lands inside the round', flyers.every((f) => f.t >= 0 && f.t < ninja.DURATION_MS));
+  check('every food peaks inside the field',
+    flyers.every((f) => { const top = ninja.LAUNCH_Y + (f.vy * f.vy) / (2 * ninja.GRAVITY); return top > 0.5 && top < 0.95; }));
+  const early = flyers.filter((f) => f.t < 15_000).length;
+  const late = flyers.filter((f) => f.t >= 45_000).length;
+  check('the last quarter throws more than the first', late > early, `${early} → ${late}`);
+  const first = flyers[0];
+  check('a food is in play between its launch and its fall',
+    ninja.positionAt(first, first.t + 200) !== null && ninja.positionAt(first, first.t + ninja.airtime(first) + 50) === null);
+
+  /* ── a round on the server ── */
+  const w = await world();
+  const t0 = '2026-05-04T10:00:00.000Z';
+  const after = (ms: number) => new Date(Date.parse(t0) + ms).toISOString();
+  const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'food_ninja', language: 'en', at: t0 });
+  const sent = (round.content as { flyers: ninja.Flyer[] }).flyers;
+  const stored = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: round.sessionId }))!.secret,
+  ) as { seed: string };
+  eq('the schedule sent is the seed\'s', sent, ninja.schedule(games.ninjaRng(stored.seed)));
+  check('…and the seed is not sent', !JSON.stringify(round.content).includes(stored.seed));
+
+  const move = (seq: number, kind: string, payload: Record<string, unknown>, at: string) =>
+    games.submitEvent(w.db, { sessionId: round.sessionId, userId: w.customerId, seq, kind, payload, at });
+
+  await throws('nothing is sliced before the round starts', 'invalid_state', async () =>
+    await move(0, 'slice', { ids: [0] }, t0));
+  eq('the start is recorded', (await move(0, 'start', {}, t0)).accepted, true);
+  eq('…once', (await move(1, 'start', {}, after(5000))).accepted, false);
+
+  const a = sent[0];
+  const b = sent[1];
+  const inAir = await move(2, 'slice', { ids: [a.id] }, after(a.t + 300));
+  eq('a food in the air is credited', [inAir.ninja?.credited, inAir.ninja?.sliced], [[a.id], 1]);
+  const twice = await move(3, 'slice', { ids: [a.id] }, after(a.t + 400));
+  eq('…once', twice.ninja?.credited, []);
+  const fallen = await move(4, 'slice', { ids: [b.id] }, after(b.t + ninja.airtime(b) + CONFIG.games.ninjaSlackMs + 500));
+  eq('a food that has already fallen is not', fallen.ninja?.credited, []);
+  const unknown = await move(5, 'slice', { ids: [99_999] }, after(2000));
+  eq('a food that was never thrown is not', unknown.ninja?.credited, []);
+  await throws('more than a swipe can cut is refused', 'bad_request', async () =>
+    await move(6, 'slice', { ids: [1, 2, 3, 4, 5, 6, 7] }, after(3000)));
+  await throws('nothing is sliced after the round', 'invalid_state', async () =>
+    await move(7, 'slice', { ids: [sent[sent.length - 1].id] }, after(ninja.DURATION_MS + CONFIG.games.ninjaSlackMs + 1000)));
+
+  /* Scored on what this server credited, whatever the finish body says. */
+  const done = await games.finish(w.db, {
+    sessionId: round.sessionId, userId: w.customerId, clientReport: { sliced: 80 }, at: after(ninja.DURATION_MS),
+  });
+  eq('one food credited performs at the per-food rate', done.performance, CONFIG.games.ninjaPerformancePerFood);
+  eq('…and is not a win', done.won, false);
+
+  await w.db.close();
+}
+
+/**
+ * Browser push and the daily game reminder.
+ *
+ * The crypto is checked by doing the browser's half: a message encrypted to a
+ * subscription is decrypted with that subscription's private key, and a VAPID
+ * header is verified against its public key. Known-answer vectors would pin
+ * the bytes; this pins the thing that matters, which is that the other end can
+ * read it.
+ */
+async function webPushRules(): Promise<void> {
+  describe('browser push · the daily game reminder');
+
+  /* ── the message, from the browser's side ── */
+  const ua = createECDH('prime256v1');
+  ua.generateKeys();
+  const auth = randomBytes(16);
+  const sub: webpush.WebSubscription = {
+    endpoint: 'https://push.example.test/send/abc',
+    keys: { p256dh: ua.getPublicKey().toString('base64url'), auth: auth.toString('base64url') },
+  };
+  const plain = JSON.stringify({ title: 'Bugungi o‘yin kutmoqda', body: 'x', url: '/l-earn' });
+  const sealed = webpush.encrypt(sub, Buffer.from(plain));
+
+  const hm = (k: Buffer, d: Buffer) => createHmac('sha256', k).update(d).digest();
+  const salt = sealed.subarray(0, 16);
+  const idlen = sealed.readUInt8(20);
+  const asPublic = sealed.subarray(21, 21 + idlen);
+  const shared = ua.computeSecret(asPublic);
+  const ikm = hm(hm(auth, shared), Buffer.concat([Buffer.from('WebPush: info\0'), ua.getPublicKey(), asPublic, Buffer.from([1])]));
+  const prk = hm(salt, ikm);
+  const cek = hm(prk, Buffer.from('Content-Encoding: aes128gcm\0\x01')).subarray(0, 16);
+  const nonce = hm(prk, Buffer.from('Content-Encoding: nonce\0\x01')).subarray(0, 12);
+  const record = sealed.subarray(21 + idlen);
+  const decipher = createDecipheriv('aes-128-gcm', cek, nonce);
+  decipher.setAuthTag(record.subarray(record.length - 16));
+  const opened = Buffer.concat([decipher.update(record.subarray(0, record.length - 16)), decipher.final()]);
+  eq('the header is rs 4096 with a 65-byte key id', [sealed.readUInt32BE(16), idlen], [4096, 65]);
+  eq('the browser can read what was sealed to it', opened.subarray(0, opened.length - 1).toString(), plain);
+  eq('…ending in the last-record delimiter', opened[opened.length - 1], 2);
+  check('two messages never share a salt or a key', !webpush.encrypt(sub, Buffer.from(plain)).equals(sealed));
+
+  /* ── the signature, from the push service's side ── */
+  const pair = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
+  const jwk = pair.publicKey.export({ format: 'jwk' });
+  const keys: webpush.VapidKeys = {
+    publicKey: Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x!, 'base64url'), Buffer.from(jwk.y!, 'base64url')]).toString('base64url'),
+    privateKey: pair.privateKey.export({ format: 'jwk' }).d!,
+    subject: 'mailto:no-reply@pay-lez.com',
+  };
+  const header = webpush.vapidAuthorization(sub.endpoint, keys, 1_800_000_000);
+  const [, jwt, k] = /^vapid t=([^,]+), k=(.+)$/.exec(header) ?? [];
+  const [h, c, sig] = (jwt ?? '').split('.');
+  const claims = JSON.parse(Buffer.from(c ?? '', 'base64url').toString()) as { aud: string; exp: number; sub: string };
+  eq('the token is for the push service’s origin, signed as this server', [claims.aud, claims.sub, k], ['https://push.example.test', keys.subject, keys.publicKey]);
+  check('…expires within the spec’s day', claims.exp - 1_800_000_000 <= 24 * 3600 && claims.exp > 1_800_000_000);
+  check(
+    '…and verifies against the public key the browser subscribed with',
+    verifySignature('sha256', Buffer.from(`${h}.${c}`), { key: createPublicKey({ key: jwk, format: 'jwk' }), dsaEncoding: 'ieee-p1363' }, Buffer.from(sig ?? '', 'base64url')),
+  );
+
+  /* ── what counts as a subscription ── */
+  check('a real subscription parses', webpush.parseSubscription(JSON.stringify(sub)) !== null);
+  eq(
+    'plain http, short keys and not-JSON do not',
+    [
+      webpush.parseSubscription(JSON.stringify({ ...sub, endpoint: 'http://push.example.test/x' })),
+      webpush.parseSubscription(JSON.stringify({ ...sub, keys: { ...sub.keys, auth: 'AAAA' } })),
+      webpush.parseSubscription('token-for-fcm'),
+    ],
+    [null, null, null],
+  );
+  eq('a zone the browser reported is kept, and nonsense is not', [reminders.validZone('Asia/Tashkent'), reminders.validZone('Mars/Base'), reminders.validZone(7)], ['Asia/Tashkent', null, null]);
+
+  /* ── the switch ── */
+  const w = await world();
+  const who = w.customerId;
+  await w.db.run(`UPDATE users SET language = 'uz' WHERE id = $u`, { u: who });
+  eq('the reminder is off until somebody switches it on', await reminders.kindPrefs(w.db, who), { dailyGameReminder: false });
+  await w.db.run(
+    `INSERT INTO push_tokens (id, user_id, platform, token, created_at, timezone) VALUES ($i, $u, 'web', $t, $at, 'Asia/Tashkent')`,
+    { i: newId('ptk'), u: who, t: JSON.stringify(sub), at: '2026-05-04T00:00:00.000Z' },
+  );
+
+  /* 18:00 in Tashkent is 13:00Z. */
+  const day1 = '2026-05-04';
+  eq('switched off, nobody is reminded', (await reminders.dailyGameReminder(w.db, `${day1}T13:00:00.000Z`)).sent, 0);
+  eq('switching it on reads back', await reminders.setKindPrefs(w.db, who, { dailyGameReminder: true }), { dailyGameReminder: true });
+  eq('at 17:59 on the player’s clock it is not yet due', (await reminders.dailyGameReminder(w.db, `${day1}T12:59:00.000Z`)).sent, 0);
+  const due = await reminders.dailyGameReminder(w.db, `${day1}T13:00:00.000Z`);
+  eq('at 18:00 on the player’s clock it goes, queued for the browser', [due.sent, due.pushed], [1, 1]);
+  const row = await w.db.get<{ title: string; source_ref: string; action_url: string }>(
+    `SELECT title, source_ref, action_url FROM notifications WHERE user_id = $u AND kind = 'daily_game'`,
+    { u: who },
+  );
+  eq('…in the reader’s language, filed under their own day, opening Play', [row?.title, row?.source_ref, row?.action_url], [reminders.reminderCopy('uz').title, day1, '/l-earn']);
+  eq('…once a day', (await reminders.dailyGameReminder(w.db, `${day1}T13:01:00.000Z`)).sent, 0);
+
+  const day2 = '2026-05-05';
+  await games.startSession(w.db, { userId: who, gameType: 'food_ninja', language: 'en', at: `${day2}T05:00:00.000Z` });
+  eq('a player who already started a round today is not reminded', (await reminders.dailyGameReminder(w.db, `${day2}T13:00:00.000Z`)).sent, 0);
+  eq('a round yesterday does not count for today', (await reminders.dailyGameReminder(w.db, '2026-05-06T13:00:00.000Z')).sent, 1);
+  eq('past 21:00 a missed reminder waits for tomorrow', (await reminders.dailyGameReminder(w.db, '2026-05-07T16:00:00.000Z')).sent, 0);
+
+  await w.db.run(`UPDATE users SET status = 'banned' WHERE id = $u`, { u: who });
+  eq('a suspended account is not reminded', (await reminders.dailyGameReminder(w.db, '2026-05-08T13:00:00.000Z')).sent, 0);
+  await w.db.run(`UPDATE users SET status = 'active' WHERE id = $u`, { u: who });
+
+  /* ── a browser is pushed its kinds and nothing else ── */
+  const streak = await notifications.notify(w.db, {
+    userId: who, kind: 'streak', title: 't', body: 'b', push: true, at: '2026-05-08T08:00:00.000Z',
+  });
+  eq('a kind the web was not asked for finds no device to go to', [streak.delivery, streak.reason], ['suppressed', 'no_permission']);
+
+  /* ── the drain, live, against a push service that answers ── */
+  const env = { mode: process.env.PAYLEZ_PUSH, pub: process.env.VAPID_PUBLIC_KEY, priv: process.env.VAPID_PRIVATE_KEY };
+  const realFetch = globalThis.fetch;
+  const calls: { url: string; headers: Record<string, string> }[] = [];
+  try {
+    process.env.PAYLEZ_PUSH = 'live';
+    process.env.VAPID_PUBLIC_KEY = keys.publicKey;
+    process.env.VAPID_PRIVATE_KEY = keys.privateKey;
+    eq('the key a browser subscribes with is served only when push is live', push.webPublicKey(), keys.publicKey);
+
+    const goneSub = { ...sub, endpoint: 'https://push.example.test/send/gone' };
+    await w.db.run(
+      `INSERT INTO push_tokens (id, user_id, platform, token, created_at, timezone) VALUES ($i, $u, 'web', $t, $at, 'Asia/Tashkent')`,
+      { i: 'ptk_gone', u: who, t: JSON.stringify(goneSub), at: '2026-05-08T00:00:00.000Z' },
+    );
+    globalThis.fetch = (async (url: string | URL, init?: RequestInit) => {
+      calls.push({ url: String(url), headers: init?.headers as Record<string, string> });
+      return new Response(null, { status: String(url).endsWith('/gone') ? 410 : 201 });
+    }) as typeof fetch;
+
+    /* Earlier rows were written as queued against no server at all. */
+    await w.db.run(`UPDATE notifications SET delivery = 'sent' WHERE delivery = 'queued'`);
+    const live = await reminders.dailyGameReminder(w.db, '2026-05-09T13:00:00.000Z');
+    eq('the next evening’s reminder is queued', live.pushed, 1);
+    const drained = await push.drain(w.db);
+    eq('it is sent to every browser the player subscribed in', [drained.sent, calls.length], [1, 2]);
+    eq(
+      '…encrypted and signed',
+      [calls[0]?.headers['Content-Encoding'], calls[0]?.headers.Authorization?.startsWith('vapid t='), calls[0]?.headers.TTL],
+      ['aes128gcm', true, String(CONFIG.push.ttlSeconds)],
+    );
+    eq(
+      'a subscription the push service says is gone is revoked',
+      (await w.db.get<{ r: string | null }>(`SELECT revoked_at AS r FROM push_tokens WHERE id = 'ptk_gone'`))?.r !== null,
+      true,
+    );
+  } finally {
+    globalThis.fetch = realFetch;
+    if (env.mode === undefined) delete process.env.PAYLEZ_PUSH;
+    else process.env.PAYLEZ_PUSH = env.mode;
+    if (env.pub === undefined) delete process.env.VAPID_PUBLIC_KEY;
+    else process.env.VAPID_PUBLIC_KEY = env.pub;
+    if (env.priv === undefined) delete process.env.VAPID_PRIVATE_KEY;
+    else process.env.VAPID_PRIVATE_KEY = env.priv;
+  }
+  eq('with push local, no key is offered', push.webPublicKey(), null);
+
+  await w.db.close();
+}
+
+/**
+ * The gift-card engine: a shelf per country, real codes behind it, and what an
+ * operator and a player can do to a card once it is bought.
+ */
+async function giftCardEngine(): Promise<void> {
+  describe('gift cards -- codes, the shelf per country, used, cancelled, expired');
+  const w = await world();
+  const admin = w.ownerId;
+  const t0 = '2026-06-01T10:00:00.000Z';
+
+  /* ── describing a card ── */
+  const base: giftCards.StockInput = {
+    brand: 'Allegro',
+    faceMinor: 5000,
+    currency: 'PLN',
+    pointsCost: 300,
+    countryCode: 'PL',
+    kind: 'brand',
+    validityDays: 90,
+    howToUse: 'Enter the code at checkout on allegro.pl.',
+  };
+  await throws('a currency the site cannot write is refused', 'validation_failed', async () =>
+    await giftCards.create(w.db, { ...base, currency: 'XYZ' }, admin, t0));
+  await throws('a venue card without its venue is refused', 'validation_failed', async () =>
+    await giftCards.create(w.db, { ...base, kind: 'venue', countryCode: 'UZ' }, admin, t0));
+  await throws('a logo that is a link elsewhere is refused', 'validation_failed', async () =>
+    await giftCards.create(w.db, { ...base, logo: 'https://example.test/x.png' }, admin, t0));
+  const pl = (await giftCards.create(w.db, base, admin, t0)).id;
+  const uz = (
+    await giftCards.create(
+      w.db,
+      { ...base, brand: 'Choyxona', currency: 'UZS', faceMinor: 10_000_000, countryCode: 'UZ', kind: 'venue', venueId: w.venueId, validityDays: 30 },
+      admin,
+      t0,
+    )
+  ).id;
+  const stockOf = async (id: string) =>
+    Number((await w.db.get<{ s: number }>(`SELECT stock AS s FROM gift_card_stock WHERE id = $i`, { i: id }))?.s);
+  eq('a new card has nothing to sell', await stockOf(pl), 0);
+
+  /* ── codes ── */
+  const loaded = await giftCards.addCodes(w.db, pl, ['AAA-111', ' AAA-222 ', '', 'AAA-111', 'has space'], admin, t0);
+  eq('a paste loads each code once, trims, and refuses what cannot be read at a till', loaded, { added: 2, duplicates: 1, rejected: 1 });
+  eq('…and stock is the codes loaded', await stockOf(pl), 2);
+  eq('loading the same code later is a duplicate, not a second unit',
+    (await giftCards.addCodes(w.db, pl, ['AAA-222', 'AAA-333'], admin, t0)).added, 1);
+  await throws('a brand card’s codes are not generated', 'invalid_state', async () =>
+    await giftCards.generateCodes(w.db, pl, 5, admin, t0));
+  eq('a venue card’s codes are generated', (await giftCards.generateCodes(w.db, uz, 4, admin, t0)).added, 4);
+  check('…in the venue-card shape',
+    (await w.db.all<{ code: string }>(`SELECT code FROM gift_card_codes WHERE stock_id = $s`, { s: uz }))
+      .every((row) => /^UZ-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/.test(row.code)));
+  await throws('…and not loaded by hand', 'invalid_state', async () =>
+    await giftCards.addCodes(w.db, uz, ['X'], admin, t0));
+
+  /* ── the shelf, per country ── */
+  const ids = (rows: { id: string }[]) => rows.map((row) => row.id).sort();
+  eq('Poland sees the Polish shelf', ids(await giftCards.shelf(w.db, 'PL') as { id: string }[]), [pl]);
+  eq('Uzbekistan sees the Uzbek one', ids(await giftCards.shelf(w.db, 'UZ') as { id: string }[]), [uz]);
+  await giftCards.setActive(w.db, uz, false, admin, t0);
+  eq('a paused card leaves the shelf', (await giftCards.shelf(w.db, 'UZ')).length, 0);
+  await giftCards.setActive(w.db, uz, true, admin, t0);
+
+  /* ── buying hands out a real code ── */
+  await ledger.earn(w.db, { userId: w.customerId, points: 3000, reason: 'adjustment', at: t0 });
+  const bought = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 });
+  eq('the buyer gets the first code that was loaded', bought.code, 'AAA-111');
+  eq('…stock is one fewer', await stockOf(pl), 2);
+  const card = await w.db.get<{ expires_at: string; face_minor: number; currency: string }>(
+    `SELECT expires_at, face_minor, currency FROM gift_cards WHERE id = $i`, { i: bought.id });
+  eq('it lasts the validity its shelf row gave it', card?.expires_at, plusDays(t0, 90));
+  eq('…and carries the face value it was bought at', [Number(card?.face_minor), card?.currency], [5000, 'PLN']);
+
+  await giftCards.update(w.db, pl, { faceMinor: 10000, pointsCost: 600 }, admin, t0);
+  const listed = (await giftCards.issued(w.db, { stockId: pl })) as { face_minor: number }[];
+  eq('editing the shelf does not change a card somebody holds', Number(listed[0].face_minor), 5000);
+
+  /* ── used ── */
+  await throws('nobody can mark another person’s card', 'not_found', async () =>
+    await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: admin }));
+  await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: w.customerId, at: t0 });
+  eq('the holder can say it was used', await w.db.get(`SELECT status, used_by FROM gift_cards WHERE id = $i`, { i: bought.id }), { status: 'used', used_by: 'player' });
+  await throws('…once', 'invalid_state', async () =>
+    await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: w.customerId }));
+  await throws('a used card cannot be cancelled for a refund', 'invalid_state', async () =>
+    await giftCards.cancel(w.db, bought.id, admin, t0));
+
+  /* ── cancelled ── */
+  const second = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 });
+  const before = await ledger.balance(w.db, w.customerId);
+  eq('a cancel refunds exactly what the card cost', (await giftCards.cancel(w.db, second.id, admin, t0)).refunded, 600);
+  eq('…as a new ledger entry, so the balance is back', await ledger.balance(w.db, w.customerId), before + 600);
+  await throws('…once', 'invalid_state', async () => await giftCards.cancel(w.db, second.id, admin, t0));
+  const third = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 });
+  check('a cancelled card’s code is burned, never sold again', third.code !== second.code && third.code !== bought.code);
+  eq('…and the stock is what is left unseen', await stockOf(pl), 0);
+  await throws('with every code handed out, the shelf refuses', 'conflict', async () =>
+    await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 }));
+
+  /* ── expired ── */
+  const uzCard = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: uz, at: t0 });
+  eq('nothing expires before its date', await giftCards.expire(w.db, plusDays(t0, 29)), 0);
+  eq('a card past its own validity expires', await giftCards.expire(w.db, plusDays(t0, 31)), 1);
+  eq('…the 30-day one, while the 90-day one bought the same day is still good',
+    [(await w.db.get<{ s: string }>(`SELECT status AS s FROM gift_cards WHERE id = $i`, { i: uzCard.id }))?.s,
+     (await w.db.get<{ s: string }>(`SELECT status AS s FROM gift_cards WHERE id = $i`, { i: third.id }))?.s],
+    ['expired', 'active']);
+
+  /* ── the counter cannot drift past a restart ── */
+  await w.db.run(`UPDATE gift_card_stock SET stock = 99 WHERE id = $i`, { i: uz });
+  await giftCards.reconcileStock(w.db);
+  eq('boot restates stock from the codes nobody holds', await stockOf(uz), 3);
+
+  eq('every operator write is on the audit log',
+    Number((await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log WHERE action LIKE 'gift_card.%'`))?.n) >= 8, true);
+
+  await w.db.close();
+}
+
+/**
+ * The five arcade games. Snake is replayed and Canon Numbers is held, so both
+ * are checked move by move; the three physics games are checked for the one
+ * thing the server can know — that a report cannot name what the level does
+ * not hold, or more than the round's duration allows.
+ */
+async function arcadeRules(): Promise<void> {
+  describe('arcade -- Snake replayed, Canon Numbers held, three games bounded');
+
+  /* ── Snake, as a pure function ── */
+  const list = arcade.snakeFoods(games.arcadeRng('seed-a', 'snake'));
+  eq('a seed always lays the same food', list, arcade.snakeFoods(games.arcadeRng('seed-a', 'snake')));
+  check('…and another seed another', JSON.stringify(list) !== JSON.stringify(arcade.snakeFoods(games.arcadeRng('seed-b', 'snake'))));
+  const straight = arcade.snakeReplay(list, [], 100, 1e9);
+  /* The head starts at column 6 heading right; column 16 is outside. */
+  eq('running straight crashes into the wall on the tenth tick', [straight.dead, straight.ticks], [true, 10]);
+
+  /* A route to the first food: along the row to its column, then up or down. */
+  const route = (state: arcade.SnakeState): Array<[number, number]> => {
+    const head = state.body[0];
+    const fx = state.food % arcade.SNAKE_COLS;
+    const fy = Math.floor(state.food / arcade.SNAKE_COLS);
+    const hx = head % arcade.SNAKE_COLS;
+    const hy = Math.floor(head / arcade.SNAKE_COLS);
+    const turns: Array<[number, number]> = [];
+    if (fx > hx) {
+      if (fy !== hy) turns.push([fx - hx, fy > hy ? 2 : 0]);
+    } else {
+      /* Behind or level with the head: step off the row, double back, then go. */
+      const away = fy >= hy ? 2 : 0;
+      const row = hy + (away === 2 ? 1 : -1);
+      turns.push([0, away], [1, 3]);
+      if (fy !== row) turns.push([1 + (hx - fx), fy > row ? 2 : 0]);
+    }
+    return turns;
+  };
+  const start = arcade.snakeStart(list);
+  const toFirst = route(start);
+  const ate = arcade.snakeReplay(list, toFirst, 60, 1e9);
+  check('steering to the food eats it', ate.eaten >= 1, ate);
+  eq('a replay held to a clock that has not run plays nothing', arcade.snakeReplay(list, toFirst, 60, 0).eaten, 0);
+  eq('turning straight back is ignored, not a crash into the neck', arcade.snakeReplay(list, [[0, 3]], 3, 1e9).dead, false);
+
+  /* ── Snake on the server: the report is turns, never a count ── */
+  const w = await world();
+  const t0 = '2026-05-04T10:00:00.000Z';
+  /* One round a day: the free tank is four, and six rounds at one instant would
+     run it dry before the last. */
+  const day = (k: number, ms = 0) => new Date(Date.parse(t0) + k * 86_400_000 + ms).toISOString();
+  const after = (ms: number) => day(0, ms);
+  const snakeRound = await games.startSession(w.db, { userId: w.customerId, gameType: 'snake', language: 'en', at: t0 });
+  const sent = (snakeRound.content as { foods: number[] }).foods;
+  const seeded = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: snakeRound.sessionId }))!.secret,
+  ) as { seed: string };
+  eq('the food list sent is the seed’s', sent, arcade.snakeFoods(games.arcadeRng(seeded.seed, 'snake')));
+  check('…and the seed is not sent', !JSON.stringify(snakeRound.content).includes(seeded.seed));
+  const path = route(arcade.snakeStart(sent));
+  const snakeDone = await games.finish(w.db, {
+    sessionId: snakeRound.sessionId,
+    userId: w.customerId,
+    clientReport: { turns: path, ticks: 60, eaten: 999 },
+    at: after(60_000),
+  });
+  const expected = arcade.snakeReplay(sent, path, 60, 60_000 + CONFIG.games.snakeSlackMs).eaten;
+  eq('a round is scored on what the replay ate, whatever the report claims', snakeDone.performance, Math.min(100, expected * CONFIG.games.snakePerformancePerFood));
+
+  /* ── Canon Numbers ── */
+  const rngC = games.arcadeRng('seed-c', 'cannon');
+  const opened = arcade.cannonStart('seed-c', rngC);
+  eq('a seed always deals the same opening', opened.board, arcade.cannonStart('seed-c', rngC).board);
+  check('two rows are dealt to start', opened.board.slice(2 * arcade.CANNON_COLS).every((v) => v === 0));
+  const col = opened.board.findIndex((v) => v > 0) % arcade.CANNON_COLS;
+  const lowest = (board: number[]) => {
+    for (let r = arcade.CANNON_ROWS - 1; r >= 0; r -= 1) if (board[r * arcade.CANNON_COLS + col] > 0) return r * arcade.CANNON_COLS + col;
+    return -1;
+  };
+  const shot = arcade.cannonFire(opened, col, rngC);
+  eq('the first ball hits the lowest block in the column', shot.hits[0], lowest(opened.board));
+  check('a shot fires at most its balls', shot.hits.length <= arcade.cannonShots(0));
+  eq('a turn moves on and deals a row', [shot.state.turn, shot.state.spawns], [1, 3]);
+  let longest = opened;
+  for (let i = 0; i < arcade.CANNON_TURNS + 5 && !longest.over; i += 1) longest = arcade.cannonFire(longest, 0, rngC).state;
+  check('a round always ends — by the blocks or by the shot limit', longest.over && longest.turn <= arcade.CANNON_TURNS);
+
+  const cannonRound = await games.startSession(w.db, { userId: w.customerId, gameType: 'cannon_numbers', language: 'en', at: day(1) });
+  const fire = (seq: number, c: number, from: number) =>
+    games.submitEvent(w.db, { sessionId: cannonRound.sessionId, userId: w.customerId, seq, kind: 'fire', payload: { col: c, from }, at: day(1, seq * 1000) });
+  const first = await fire(0, 0, 0);
+  eq('a shot is applied', [first.accepted, first.cannon?.turn], [true, 1]);
+  const retried = await fire(1, 0, 0);
+  eq('a retried shot answers with the board, and is not fired twice', [retried.accepted, retried.cannon?.turn], [false, 1]);
+  await throws('a column off the board is refused', 'bad_request', async () => await fire(2, 9, 1));
+  const cannonDone = await games.finish(w.db, { sessionId: cannonRound.sessionId, userId: w.customerId, at: day(1, 5000) });
+  const held = JSON.parse(
+    (await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: cannonRound.sessionId }))!.secret,
+  ) as arcade.CannonState;
+  eq('it is scored on the blocks this server destroyed', cannonDone.performance, Math.min(100, held.destroyed * CONFIG.games.cannonPerformancePerBlock));
+
+  /* ── the three reported games ── */
+  eq('a report is capped by what exists', arcade.bounded(500, 40, 1000, 4, 4), 40);
+  eq('…and by what the time allows', arcade.bounded(40, 40, 2, 4, 4), 12);
+  eq('…and nonsense is nothing', arcade.bounded('lots', 40, 100, 4, 4), 0);
+
+  const brick = await games.startSession(w.db, { userId: w.customerId, gameType: 'breakout', language: 'en', at: day(2) });
+  const wall = (brick.content as { wall: number[] }).wall;
+  check('the wall is the seed’s and every brick takes one or two hits', wall.length === arcade.BREAKOUT_COLS * arcade.BREAKOUT_ROWS && wall.every((hp) => hp === 1 || hp === 2));
+  const brickDone = await games.finish(w.db, {
+    sessionId: brick.sessionId,
+    userId: w.customerId,
+    clientReport: { broken: [0, 1, 1, 2, 999, -1, 'x'] },
+    at: day(2, 60_000),
+  });
+  eq('Breakout counts real bricks, each once', brickDone.performance, Math.round((3 / wall.length) * 100));
+  const fast = await games.startSession(w.db, { userId: w.customerId, gameType: 'breakout', language: 'en', at: day(3) });
+  const fastDone = await games.finish(w.db, {
+    sessionId: fast.sessionId,
+    userId: w.customerId,
+    clientReport: { broken: wall.map((_, i) => i) },
+    at: day(3, 1000),
+  });
+  eq('…and a whole wall in one second is held to what a second allows', fastDone.performance,
+    Math.round(((1 * CONFIG.games.breakoutBricksPerSecond + CONFIG.games.breakoutAllowance) / wall.length) * 100));
+
+  const doodle = await games.startSession(w.db, { userId: w.customerId, gameType: 'doodle_jump', language: 'en', at: day(4) });
+  eq('Doodle Jump deals the seed’s platforms', (doodle.content as { platforms: number[] }).platforms.length, arcade.DOODLE_PLATFORMS);
+  const doodleDone = await games.finish(w.db, { sessionId: doodle.sessionId, userId: w.customerId, clientReport: { reached: 20 }, at: day(4, 30_000) });
+  eq('…and pays per platform climbed', doodleDone.performance, 20 * CONFIG.games.doodlePerformancePerPlatform);
+
+  const zuma = await games.startSession(w.db, { userId: w.customerId, gameType: 'zuma', language: 'en', at: day(5) });
+  const chain = (zuma.content as { chain: number[] }).chain;
+  check('the chain never arrives with three of a kind touching',
+    chain.every((c, i) => i < 2 || !(chain[i - 1] === c && chain[i - 2] === c)));
+  const zumaDone = await games.finish(w.db, { sessionId: zuma.sessionId, userId: w.customerId, clientReport: { cleared: 30 }, at: day(5, 60_000) });
+  eq('Zuma pays the share of the chain cleared', zumaDone.performance, Math.round((30 / arcade.ZUMA_CHAIN) * 100));
+
+  await w.db.close();
 }
 
 void await run();

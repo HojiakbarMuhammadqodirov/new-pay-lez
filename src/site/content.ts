@@ -587,7 +587,19 @@ export type GameId =
   /** English. */
   | 'word'
   /** The language of wherever the profile says this person lives. */
-  | 'wordLocal';
+  | 'wordLocal'
+  /** 2048. Played on the server — see `server/domain/merge2048.ts`. */
+  | 'merge'
+  /** Food Cross, a match-three. Played on the server — see `server/domain/foodCross.ts`. */
+  | 'food'
+  /** Food Ninja. The server throws the round and checks each slice — see `server/domain/foodNinja.ts`. */
+  | 'ninja'
+  /* The five arcade games — `server/domain/arcade.ts` and `games/arcade.ts`. */
+  | 'snake'
+  | 'cannon'
+  | 'breakout'
+  | 'doodle'
+  | 'zuma';
 
 /**
  * The eight games, in the order the screen shows them and index-aligned with
@@ -644,7 +656,21 @@ export type GameId =
  */
 export const GAMES: Array<{
   id: GameId;
-  kind: 'text' | 'flag' | 'capital' | 'flight' | 'memory' | 'word';
+  kind:
+    | 'text'
+    | 'flag'
+    | 'capital'
+    | 'flight'
+    | 'memory'
+    | 'word'
+    | 'merge'
+    | 'food'
+    | 'ninja'
+    | 'snake'
+    | 'cannon'
+    | 'breakout'
+    | 'doodle'
+    | 'zuma';
   icon: IconName;
   questions: number;
   seconds: number;
@@ -765,7 +791,50 @@ export const GAMES: Array<{
    */
   { id: 'word', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5 },
   { id: 'wordLocal', kind: 'word', icon: 'letters', questions: 5, seconds: 0, perCorrect: 5 },
+  /*
+   * 2048, appended rather than inserted, so every card a player already knows
+   * stays where it was. It sits after `wordLocal`, which is safe because the
+   * grid names a card by its index in `GAMES`, not in the filtered list (see
+   * `visibleGames` in `games.tsx`).
+   *
+   * `questions` is the six milestone tiles, 64 to 2048 (rulebook §5.7) — the
+   * `total` the result card counts `correct` against. No clock (`seconds: 0`) and no
+   * per-anything rate: the round is priced on its largest tile.
+   */
+  { id: 'merge', kind: 'merge', icon: 'grid', questions: 6, seconds: 0, perCorrect: 0 },
+  /*
+   * Food Cross, appended after 2048 for the same reason. `questions` is five
+   * fifths of the 2,000-point target, the `total` the result card counts
+   * `correct` against; twenty swaps, no clock.
+   */
+  { id: 'food', kind: 'food', icon: 'restaurant', questions: 5, seconds: 0, perCorrect: 0 },
+  /*
+   * Food Ninja, appended last. `questions` is five fifths of the 50-food
+   * perfect round; `seconds` is the round's sixty, which the card states.
+   */
+  { id: 'ninja', kind: 'ninja', icon: 'bolt', questions: 5, seconds: 60, perCorrect: 0 },
+  /*
+   * The five arcade games, appended in the order they were asked for, for the
+   * same reason as the three before them: a card a player knows stays put.
+   * `questions` is five fifths of a perfect round in every row, the `total`
+   * the result card counts `correct` against; none has a clock of its own
+   * except where the game is one (none of these is), so `seconds` is 0.
+   */
+  { id: 'snake', kind: 'snake', icon: 'snake', questions: 5, seconds: 0, perCorrect: 0 },
+  { id: 'cannon', kind: 'cannon', icon: 'cannon', questions: 5, seconds: 0, perCorrect: 0 },
+  { id: 'breakout', kind: 'breakout', icon: 'bricks', questions: 5, seconds: 0, perCorrect: 0 },
+  { id: 'doodle', kind: 'doodle', icon: 'jump', questions: 5, seconds: 0, perCorrect: 0 },
+  { id: 'zuma', kind: 'zuma', icon: 'orb', questions: 5, seconds: 0, perCorrect: 0 },
 ];
+
+/**
+ * Food Cross's six foods, by kind (`Piece.t`), and the bomb. Emoji, the same
+ * sanctioned exception the memory cards and the flags are: the thing depicted
+ * *is* its colours. Index-aligned with `copy.games.food.kinds`, which names
+ * them for a screen reader.
+ */
+export const FOODS = ['🍎', '🥐', '🧀', '🍕', '🍩', '🥕'] as const;
+export const FOOD_BOMB = '💣';
 
 /**
  * What the hover previews actually play.
@@ -818,13 +887,24 @@ export const GAMES: Array<{
  * those three server constants and this card starts advertising a figure
  * nothing pays.
  */
+/**
+ * The referral figures, mirroring `CONFIG.earn.inviteeJoin` /
+ * `referrerFirstVisit` (both 100) and `friendMilestoneAt` /
+ * `friendMilestone` on the server — the same kept-level arrangement as the
+ * slides below, with the same cost if one side moves alone. Read by the
+ * sign-up form's code field, the invite card and the third slide.
+ */
+export const INVITE_POINTS = 100;
+export const FRIEND_MILESTONE_AT = 5;
+export const FRIEND_MILESTONE_POINTS = 500;
+
 export const POINTS_SLIDES: ReadonlyArray<{
   copyKey: 'dailyGame' | 'profile' | 'invite';
   points: number;
 }> = [
   { copyKey: 'dailyGame', points: 20 },
   { copyKey: 'profile', points: 50 },
-  { copyKey: 'invite', points: 100 },
+  { copyKey: 'invite', points: INVITE_POINTS },
 ];
 
 export const PREVIEW = {
@@ -876,6 +956,27 @@ export const PREVIEW = {
     pl: { word: 'KAWA' },
     ru: { word: 'ХЛЕБ' },
   },
+  /**
+   * A 2048 board, mid-game: one move from merging the two 2s on the top row.
+   * Fixed for the reason every sample here is — a hover must not deal a new
+   * board each time it is shown.
+   */
+  merge: [0, 2, 2, 4, 0, 0, 4, 8, 2, 0, 16, 32, 0, 4, 64, 128],
+  /**
+   * A 4×4 corner of a Food Cross board, by kind (index into `FOODS`): the
+   * middle column is one swap from three cheeses.
+   */
+  food: [0, 3, 2, 1, 4, 2, 0, 5, 1, 5, 2, 0, 3, 0, 4, 2],
+  /**
+   * Food Ninja's card: three foods mid-flight, by kind (index into `FOODS`)
+   * and where they hang in the card, as fractions of its width and height. The
+   * middle one is drawn sliced — the game's one moment.
+   */
+  ninja: [
+    { kind: 3, x: 0.22, y: 0.62 },
+    { kind: 0, x: 0.5, y: 0.3, sliced: true },
+    { kind: 5, x: 0.78, y: 0.55 },
+  ],
 } as const;
 
 /** The board's two orderings, index-aligned with `copy.games.boardTabs`. */
@@ -923,7 +1024,7 @@ export const ACCOUNT_TYPES: Array<{
 /* Index-aligned with `copy.admin.tabs`. `crown` for the Tiers tab — a plan is
    the one thing on this console that is a *grade* rather than a kind of thing,
    and every other icon here names a kind. */
-export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'people', 'bars', 'send', 'crown'];
+export const ADMIN_TABS: IconName[] = ['briefcase', 'ticket', 'people', 'bars', 'send', 'crown', 'gift'];
 export const ADMIN_VIEW_TABS: IconName[] = ['bars', 'ticket', 'qr', 'gift', 'map'];
 
 /** The nine Dashboard cards, in the original's order. */

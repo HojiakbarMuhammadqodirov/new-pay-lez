@@ -35,6 +35,21 @@
 export const API_BASE: string =
   (import.meta.env?.VITE_API_URL as string | undefined) ?? 'http://127.0.0.1:8787';
 
+/**
+ * A media path the API sent (`/v1/media/…`), as a URL the browser can load.
+ *
+ * The path is relative to the **API**, not to the page. Left relative, an
+ * `<img>` resolves it against the site's own origin — `www.pay-lez.com` — where
+ * nginx answers any unknown path with `index.html`, the picture fails to
+ * decode, and the card falls back to its letter. That was every service logo
+ * on the Relocate page. A `data:` URL or anything already absolute passes
+ * through unchanged.
+ */
+export function mediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  return path.startsWith('/') ? `${API_BASE}${path}` : path;
+}
+
 const TOKEN_KEY = 'paylez-api-token';
 
 /* Wrapped, like `auth/directory.ts` does it: storage throws in a private window

@@ -706,6 +706,19 @@ CREATE INDEX IF NOT EXISTS idx_vouchers_venue ON issued_vouchers (venue_id, stat
 
 -- Gift cards are the other redemption path (§2.2) — points out, no venue budget
 -- involved, stock managed by the platform.
+--
+-- Two kinds, by market. In Poland a card is a **real brand's** code (Allegro,
+-- a supermarket), bought by the operator and loaded into `gift_card_codes`; in
+-- Uzbekistan it is **one venue's** own card, whose codes this server generates.
+-- Either way the code is spent at the brand or the venue, never at our gate.
+--
+-- `face_minor` is hundredths of `currency` whatever the currency — the site's
+-- `faceValue` and `npm run verify` pin that, so a 100 000 so'm card is
+-- 10 000 000 here.
+--
+-- `stock` is the number of codes not yet handed out, and it is the purchase
+-- gate (`stock = stock - 1 WHERE stock > 0`). Loading codes adds to it in the
+-- same transaction, and boot reconciles it against `gift_card_codes`.
 CREATE TABLE IF NOT EXISTS gift_card_stock (
   id            TEXT PRIMARY KEY,
   brand         TEXT NOT NULL,
@@ -715,7 +728,19 @@ CREATE TABLE IF NOT EXISTS gift_card_stock (
   points_cost   INTEGER NOT NULL,
   stock         INTEGER NOT NULL DEFAULT 0,
   priority_only INTEGER NOT NULL DEFAULT 0,   -- §12a.1 "priority gift-card stock"
-  active        INTEGER NOT NULL DEFAULT 1
+  active        INTEGER NOT NULL DEFAULT 1,
+  -- Whose shelf: a player sees the cards for the country on their profile.
+  country_code  TEXT NOT NULL DEFAULT 'PL',
+  kind          TEXT NOT NULL DEFAULT 'brand' CHECK (kind IN ('brand', 'venue')),
+  -- The venue a `venue` card is spent at. Nulled, not cascaded, if the venue
+  -- goes: cards somebody already holds still name the brand on the row.
+  venue_id      TEXT REFERENCES venues (id) ON DELETE SET NULL,
+  -- How long a card bought today stays valid, set per card by the operator.
+  validity_days INTEGER NOT NULL DEFAULT 365,
+  -- Where and how to spend it, shown on the card in the wallet.
+  how_to_use    TEXT NOT NULL DEFAULT '',
+  created_at    TEXT,
+  updated_at    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS gift_cards (
@@ -724,11 +749,40 @@ CREATE TABLE IF NOT EXISTS gift_cards (
   stock_id    TEXT NOT NULL REFERENCES gift_card_stock (id) ON DELETE RESTRICT,
   points_spent INTEGER NOT NULL,
   code        TEXT NOT NULL,
-  status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'used', 'expired')),
+  status      TEXT NOT NULL DEFAULT 'active'
+              CHECK (status IN ('active', 'used', 'expired', 'cancelled')),
   issued_at   TEXT NOT NULL,
   expires_at  TEXT NOT NULL,
-  used_at     TEXT
+  used_at     TEXT,
+  -- What was bought, as it was when it was bought. The shelf row can be edited
+  -- afterwards; the card in somebody's wallet must still say what they paid for.
+  face_minor  INTEGER,
+  currency    TEXT,
+  -- 'player' or 'admin' — who said the code was spent.
+  used_by     TEXT,
+  cancelled_at TEXT,
+  -- The compensating entry that gave the points back, when a card was cancelled.
+  refund_ledger_id TEXT REFERENCES points_ledger (id) ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS idx_gift_cards_stock ON gift_cards (stock_id, status);
+
+-- The codes behind the shelf. One row per code; `card_id` is set the moment one
+-- is handed out and never cleared — a code somebody has seen is spent even if
+-- the card is cancelled, because it may already have been used at the brand.
+CREATE TABLE IF NOT EXISTS gift_card_codes (
+  id        TEXT PRIMARY KEY,
+  stock_id  TEXT NOT NULL REFERENCES gift_card_stock (id) ON DELETE CASCADE,
+  code      TEXT NOT NULL,
+  added_at  TEXT NOT NULL,
+  -- Load order within the card, so "the oldest code goes first" is a fact
+  -- rather than a tie broken by a random id. Not a sequence type, for the
+  -- reason `points_lots.seq` gives.
+  seq       INTEGER NOT NULL DEFAULT 0,
+  card_id   TEXT REFERENCES gift_cards (id) ON DELETE SET NULL,
+  issued_at TEXT,
+  UNIQUE (stock_id, code)
+);
+CREATE INDEX IF NOT EXISTS idx_gift_codes_free ON gift_card_codes (stock_id, card_id);
 
 -- ══════════════════════════════════ 8. loyalty campaigns & stamps (§5) ══
 
@@ -914,7 +968,8 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   -- rebuild, because SQLite cannot alter a CHECK in place.
   game_type   TEXT NOT NULL CHECK (game_type IN (
                 'flags', 'capitals', 'brain', 'poland', 'uzbekistan',
-                'word_builder', 'memory_match', 'flight')),
+                'word_builder', 'memory_match', 'flight', 'merge_2048',
+                'food_cross', 'food_ninja')),
   language    TEXT NOT NULL DEFAULT 'en',
   seed        TEXT NOT NULL,
   secret      TEXT NOT NULL,        -- JSON: answers / target word / deck layout
@@ -926,7 +981,10 @@ CREATE TABLE IF NOT EXISTS game_sessions (
   life_spent  INTEGER NOT NULL DEFAULT 0,
   started_at  TEXT NOT NULL,
   finished_at TEXT,
-  ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL
+  ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL,
+  -- When an abandoned round's energy was given back (rulebook §3: within five
+  -- seconds of the start, once a day). NULL on every round that kept its spend.
+  energy_refunded_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_game ON game_sessions (user_id, started_at);
 
@@ -1109,7 +1167,23 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   platform  TEXT NOT NULL CHECK (platform IN ('fcm', 'apns', 'web')),
   token     TEXT NOT NULL UNIQUE,
   created_at TEXT NOT NULL,
-  revoked_at TEXT
+  revoked_at TEXT,
+  -- The device's own IANA zone, as its browser reported it on subscribing.
+  -- The daily game reminder is due at 18:00 *where the player is*, and a
+  -- browser is the one thing that knows where that is; nullable because the
+  -- phone app's tokens never sent one.
+  timezone  TEXT
+);
+
+-- Per-event switches, beside the per-channel ones above. One row per (user,
+-- kind) the user has ever set; no row is "never asked", which for every kind
+-- here means off — a push nobody switched on is a push nobody gets.
+CREATE TABLE IF NOT EXISTS notification_kind_prefs (
+  user_id    TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+  kind       TEXT NOT NULL,
+  enabled    INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, kind)
 );
 
 -- ═════════════════════════════════════ 13. plans, entitlements, billing (D) ══

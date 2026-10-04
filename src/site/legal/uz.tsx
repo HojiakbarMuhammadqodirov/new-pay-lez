@@ -535,14 +535,13 @@ function termsBody() {
 
       <Section id="terms-5" n="5." title="Tavsiya dasturi">
         <p>
-          Foydalanuvchilar shaxsiy tavsiya kodi yordamida platformaga yangi foydalanuvchilarni taklif
-          qilishlari mumkin. Tavsiya ballari tavsiya qilingan foydalanuvchi quyidagilarni bajarganda
-          beriladi:
+          Foydalanuvchilar shaxsiy tavsiya kodi yoki taklif havolasi yordamida platformaga yangi foydalanuvchilarni taklif qilishlari mumkin. Tavsiya ballari sizga va siz taklif qilgan odamga, u quyidagilarni bajarganda beriladi:
         </p>
         <ul>
-          <li>Tavsiya kodidan foydalanib tasdiqlangan hisob yaratadi</li>
-          <li>Ilovada ko‘rsatilgan minimal tanishtiruv talablarini bajaradi</li>
+          <li>Sizning tavsiya kodingiz yoki taklif havolangiz orqali hisob yaratadi</li>
+          <li>Hamkor joyga birinchi hisobga olinadigan tashrifini amalga oshiradi — o‘sha joyning minimal xarid summasiga mos keladigan tasdiqlangan xarid</li>
         </ul>
+        <p>Siz egalik qiladigan yoki boshqaradigan joyga qilingan tashriflar uchun ballar berilmaydi.</p>
         <p>
           Biz tavsiya dasturini istalgan vaqtda o‘zgartirish, to‘xtatib turish yoki tugatish huquqini
           saqlab qolamiz. Xato bilan yoki firibgarlik yo‘li bilan berilgan tavsiya ballari bekor

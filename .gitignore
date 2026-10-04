@@ -42,3 +42,4 @@ new-data/
 .env
 .env.*
 !.env.example
+logos-out/

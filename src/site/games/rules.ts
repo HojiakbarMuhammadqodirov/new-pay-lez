@@ -32,12 +32,17 @@
  */
 import { GAMES, type GameId } from '../content';
 import {
+  FOOD_MOVES,
+  FOOD_TARGET,
+  NINJA_PERFECT,
   MAX_FLIGHT_POINTS,
+  MERGE_BANDS,
   MEMORY_BANDS,
   QUIZ_PERFECT_BONUS,
   QUIZ_SPEED_BONUS,
 } from '../auth/player';
 import type { LocalCountry, WordList } from './banks';
+import { CANNON_PERFECT, CANNON_TURNS, DOODLE_PERFECT, SNAKE_PERFECT } from './arcade';
 import type { Dictionary } from '../i18n/en';
 import { fill } from '../i18n/currency';
 
@@ -75,6 +80,32 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
       fill(games.wordGame.rule, { words: String(entry.questions) }),
       games.wordGame.reward,
     ];
+  }
+  /* The arcade games state their own rule and what a perfect round is, from
+     the same constants the screens and the server's scale use. */
+  if (entry.kind === 'snake') return [games.snake.rule, fill(games.snake.reward, { n: String(SNAKE_PERFECT) })];
+  if (entry.kind === 'cannon') {
+    return [fill(games.cannon.rule, { turns: String(CANNON_TURNS) }), fill(games.cannon.reward, { n: String(CANNON_PERFECT) })];
+  }
+  if (entry.kind === 'breakout') return [games.breakout.rule, games.breakout.reward];
+  if (entry.kind === 'doodle') return [games.doodle.rule, fill(games.doodle.reward, { n: String(DOODLE_PERFECT) })];
+  if (entry.kind === 'zuma') return [games.zuma.rule, games.zuma.reward];
+  if (entry.kind === 'ninja') {
+    return [
+      fill(games.ninja.rule, { seconds: String(entry.seconds) }),
+      fill(games.ninja.reward, { n: String(NINJA_PERFECT) }),
+    ];
+  }
+  if (entry.kind === 'food') {
+    return [
+      fill(games.food.rule, { moves: String(FOOD_MOVES) }),
+      fill(games.food.reward, { n: String(FOOD_TARGET) }),
+    ];
+  }
+  if (entry.kind === 'merge') {
+    /* The top tile is the target, read from the bands rather than typed, so
+       the card and the scorer cannot name different tiles. */
+    return [games.merge.rule, fill(games.merge.reward, { tile: String(MERGE_BANDS[0].tile) })];
   }
   return [
     fill(games.rule, {

@@ -19,6 +19,14 @@ export const CONFIG = {
     host: process.env.HOST ?? '127.0.0.1',
     /** Where the SQLite file lives. `:memory:` is what the self-test uses. */
     database: process.env.PAYLEZ_DB ?? 'server/data/paylez.db',
+    /**
+     * This API's own public address, for the few answers that must carry an
+     * absolute URL — a logo's `image_url`, which the phone app loads as it is.
+     * Unset, it is read off the request (`x-forwarded-proto` / `host`), which is
+     * right on a laptop and wrong behind a proxy that rewrites `Host` — so the
+     * VPS sets `PAYLEZ_API_URL=https://api.pay-lez.com`.
+     */
+    publicUrl: process.env.PAYLEZ_API_URL ?? '',
     /** The consumer web app's origin, for CORS and cookie scope. */
     origins: (process.env.PAYLEZ_ORIGINS ?? 'http://localhost:5173').split(','),
     /**
@@ -64,6 +72,15 @@ export const CONFIG = {
      * for reasons nobody can count.
      */
     dailyEnergy: 4,
+    /*
+     * Rulebook §3: energy is spent **when a round starts**, so abandoning a
+     * round still costs it — otherwise a player could open rounds and walk away
+     * until the board or the questions looked easy. A round abandoned within
+     * `energyRefundSeconds` of its start gets its energy back, at most
+     * `energyRefundsPerDay` times a day: the accidental tap.
+     */
+    energyRefundSeconds: 5,
+    energyRefundsPerDay: 1,
     /** Minutes to regenerate one energy, on the free plan. Paid plans are
      *  faster (`energy_regen_minutes`): 60 on Pro, 30 on Premium. */
     energyRegenMinutes: 120,
@@ -318,6 +335,35 @@ export const CONFIG = {
     /** When one allocation is this close to empty and the other has surplus,
      *  the dashboard surfaces a rebalance prompt. */
     rebalancePromptBp: 1000,
+  },
+
+  /* ───────────────────────────────────────────────────────── browser push ── */
+  push: {
+    /**
+     * When the daily game reminder is due, in minutes past local midnight —
+     * the *player's* midnight, from the zone their browser reported. 18:00:
+     * late enough that "you have not played today" is true of a day rather
+     * than of a morning, early enough to still be an evening's round.
+     */
+    reminderAtMin: 18 * 60,
+    /**
+     * And the last minute it may still go out. Past this a server that was down
+     * at six does not remind somebody at half past ten; the next day's six
+     * o'clock is the next chance. Equal to the end of quiet hours on purpose.
+     */
+    reminderUntilMin: 21 * 60,
+    /**
+     * How long a push service holds a message for a browser that is offline,
+     * in seconds. A reminder about *today* delivered tomorrow is wrong, so it
+     * dies with the evening.
+     */
+    ttlSeconds: 3 * 3600,
+    /**
+     * The kinds a **browser** is pushed. Only the daily reminder was asked
+     * for on the web; every other kind (the check-in streak, a venue's deal)
+     * still reaches the inbox and the phone app, and never a browser tab.
+     */
+    webKinds: ['daily_game'] as readonly string[],
   },
 
   /* ──────────────────────────────────────────────── §6 / §9 deals & pushes ── */
@@ -734,6 +780,75 @@ export const CONFIG = {
      * perfect round goes.
      */
     flightPerformancePerObstacle: 4,
+    /*
+     * 2048 is scored on the **largest tile** the round made, read through these
+     * bands from the top: the first floor the tile reaches is the performance.
+     * Rulebook §5.7, verbatim. Below 64 the performance is 0 — and the master
+     * formula's `minRoundPoints` still pays a finished round 2.
+     *
+     * There is **no time and no move limit**: a round ends when no swipe can
+     * change the board, or when the player banks it. Energy is what bounds a
+     * day, one per finished round, however long the round took.
+     */
+    mergeTileBands: [
+      { tile: 2048, performance: 100 },
+      { tile: 1024, performance: 85 },
+      { tile: 512, performance: 65 },
+      { tile: 256, performance: 50 },
+      { tile: 128, performance: 35 },
+      { tile: 64, performance: 20 },
+    ],
+    mergeFloorPerformance: 0,
+    /** The tile that wins the round, and the last of the milestones `correct` counts. */
+    mergeTarget: 2048,
+    /*
+     * Food Cross (`domain/foodCross.ts`), rulebook §5.8: twenty swaps a round,
+     * performance = min(100, score ÷ 2,000 × 100). The score is the board's own
+     * — foods × `SCORE_PER_FOOD`, multiplied by cascade level and by 4- and
+     * 5-matches — so the target is reached by playing well, not by clearing a
+     * fixed count.
+     */
+    foodMoves: 20,
+    foodTargetScore: 2000,
+    /*
+     * Food Ninja (`domain/foodNinja.ts`), on the rulebook's one scale the way
+     * the flight is: a fixed rate per food, capped at 100 — so 50 foods sliced
+     * is a perfect round. A round throws about ninety, so the top is reachable
+     * without being the whole schedule.
+     *
+     * The slack is how far either side of a food's real time in the air a slice
+     * is still believed, measured on this server's clock from the round's
+     * `start` event: a request takes time to arrive and a phone's frame can be
+     * late. Generous on purpose, as the flight's allowance is — its job is to
+     * refuse the impossible, not to referee the plausible.
+     */
+    ninjaPerformancePerFood: 2,
+    ninjaSlackMs: 1500,
+    /*
+     * ── the five arcade games (`domain/arcade.ts`) ──
+     *
+     * Each maps onto the rulebook's 0..100 performance like the eight before
+     * them: a count times a rate, capped, or a share of what the level holds.
+     * The `…PerSecond` figures are the plausibility bounds on the three that
+     * are reported rather than replayed — the fastest honest rate, generous on
+     * purpose, plus a fixed allowance — the same arrangement as the flight's.
+     */
+    /** Snake: 4 a food, so 25 is a perfect round. Replayed, not reported. */
+    snakePerformancePerFood: 4,
+    /** How much longer than the round lasted a replay may run, in ms. */
+    snakeSlackMs: 3000,
+    /** Canon Numbers: 4 a block destroyed, so 25 is a perfect round. */
+    cannonPerformancePerBlock: 4,
+    /** Breakout: the share of the wall broken. At most four bricks a second. */
+    breakoutBricksPerSecond: 4,
+    breakoutAllowance: 4,
+    /** Doodle Jump: 2 a platform climbed, so 50 is a perfect round. */
+    doodlePerformancePerPlatform: 2,
+    doodlePlatformsPerSecond: 3,
+    doodleAllowance: 5,
+    /** Zuma: the share of the chain cleared. */
+    zumaBallsPerSecond: 5,
+    zumaAllowance: 6,
     flightTarget: 5,
     /*
      * The plausibility bound on a claimed run, in seconds per gap.
@@ -770,8 +885,12 @@ export const CONFIG = {
     minCohort: 10,
     /** B9. And no cross-venue benchmark over fewer venues than this. */
     minVenues: 5,
-    /** The policy version stamped on new consent records. */
-    policyVersion: '2026-08-07',
+    /** The policy version stamped on new consent records — the date the
+     *  documents a person is shown today take effect. Terms 1.1 (referrals,
+     *  §5) is effective 2026-10-18: §12 promises 14 days' notice of a
+     *  material change, counted from 2026-10-04. Nothing compares this to old
+     *  rows; it says which text a new consent was given to. */
+    policyVersion: '2026-10-18',
   },
 
   /* ───────────────────────────────────────────────── §13 anti-fraud ── */
@@ -896,6 +1015,13 @@ export const CONFIG = {
    * argument `PAYLEZ_LLM_TIMEOUT_MS` makes, at a tenth the stakes.
    */
   media: {
+    /**
+     * Where logo files live on this server's disk — `media:<dir>/<file>` in a
+     * logo column resolves under here. The VPS sets `PAYLEZ_MEDIA_DIR=/var/lib/paylez/media`;
+     * a checkout keeps them beside its SQLite file. Not in the nightly database
+     * backup: see DEPLOY.md.
+     */
+    dir: process.env.PAYLEZ_MEDIA_DIR ?? 'server/data/media',
     maxBytes: 256 * 1024,
     timeoutMs: 4000,
     /**
@@ -935,10 +1061,14 @@ export const CONFIG = {
     googleSignInPerHour: 20,
     guestPerHour: 10,
     passwordChangePerHour: 10,
+    verifyEmailPerHour: 30,
+    sendCodePerHour: 10,
     gameStartPerHour: 200,
     gameFinishPerHour: 200,
     checkInPerHour: 10,
     giftCardPerHour: 30,
+    /** `GET /v1/referrals/codes/:code`, per connection — a form check, not a directory. */
+    referralCheckPerHour: 60,
   },
 
   /* ─────────────────────────────────────────────────────── sessions ── */
@@ -949,6 +1079,36 @@ export const CONFIG = {
     minPasswordLength: 6,
     /** Sign-in attempts per address per window, then a cool-off. */
     signInPerHour: 20,
+
+    /*
+     * ── proving an address ──
+     *
+     * The four numbers behind the sign-up code (`domain/verification.ts`). Each
+     * bounds a different thing, and the second is the one doing the real work.
+     *
+     * `codeMinutes` is ten: long enough to switch to a mail app, find the
+     * message and come back, short enough that a code left in an inbox is not a
+     * standing key to the account.
+     *
+     * `codeAttempts` is **what makes six digits safe**. A million
+     * possibilities is nothing to a script and a per-hour rate limit gives it
+     * all day; five wrong answers per *code* is a one-in-two-hundred-thousand
+     * chance per code, whoever is asking and however slowly.
+     *
+     * `codeCooldownSeconds` bounds the resend button. Ninety seconds, because
+     * the honest reason to press it is that the first one has not arrived —
+     * and somebody who has already waited a minute for a message has spent
+     * most of their patience.
+     *
+     * `codeSendsPerAddress` bounds using the resend button as a way to post
+     * mail to somebody else's address. Ten, and it does **not** reset: an
+     * account that has burned ten codes has a problem an eleventh will not fix,
+     * and support can clear the row.
+     */
+    codeMinutes: 10,
+    codeAttempts: 5,
+    codeCooldownSeconds: 90,
+    codeSendsPerAddress: 10,
     /**
      * The Google OAuth client id, and the audience every ID token must name.
      *

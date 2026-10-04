@@ -78,6 +78,11 @@ import * as entitlements from './entitlements.ts';
 import * as ledger from './ledger.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
+import * as merge from './merge2048.ts';
+import * as food from './foodCross.ts';
+import * as ninja from './foodNinja.ts';
+import * as arcade from './arcade.ts';
+import { createHmac } from 'node:crypto';
 import { iso, now, secondsBetween, type Iso } from './time.ts';
 
 /**
@@ -199,9 +204,12 @@ export interface Energy {
  * both sides is what makes this the limiter rather than a decoration, and it
  * makes the number on screen mean the same thing to everybody: rounds left.
  *
- * A round *abandoned* still costs nothing. The charge is written in `finish`
- * and nowhere else, so a connection that drops mid-round takes nothing with it
- * — which is the one failure the player definitely did not choose.
+ * **The charge is taken when the round starts** (rulebook §3), and a round
+ * abandoned after that still costs it: charging at the finish let a player open
+ * rounds and walk away until the questions or the board looked easy, which is
+ * rerolling for free. The one exception is the accidental tap — a round
+ * abandoned within `energyRefundSeconds` of its start is refunded, at most
+ * `energyRefundsPerDay` a day (`abandonActive`).
  *
  * What makes charging fair is the refill. Energy used to come back at midnight,
  * which is the rule that makes a pool punitive rather than strict: spend it at
@@ -291,10 +299,16 @@ async function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinu
   const full = max * interval;
   const asked = Date.parse(at);
 
-  const rows = await db.all<{ finished_at: string }>(
-    `SELECT finished_at FROM game_sessions
-      WHERE user_id = $u AND life_spent > 0 AND finished_at IS NOT NULL AND finished_at <= $t
-      ORDER BY finished_at DESC LIMIT $n`,
+  /* A spend happened at the round's **start**, which is when the charge is
+     taken (rulebook §3). A round from before that rule was charged at its
+     finish and its row says so in `finished_at` — the `CASE` reads whichever applies,
+     because the charge must be read at the moment it was actually taken. */
+  const rows = await db.all<{ spent_at: string }>(
+    `SELECT CASE WHEN secret LIKE '%"charged":"start"%' THEN started_at ELSE finished_at END AS spent_at
+       FROM game_sessions
+      WHERE user_id = $u AND life_spent > 0
+        AND (CASE WHEN secret LIKE '%"charged":"start"%' THEN started_at ELSE finished_at END) <= $t
+      ORDER BY spent_at DESC LIMIT $n`,
     { u: userId, t: at, n: ENERGY_LOOKBACK },
   );
 
@@ -302,7 +316,7 @@ async function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinu
   const spends: number[] = [];
   let newer = asked;
   for (const row of rows) {
-    const spent = Date.parse(row.finished_at);
+    const spent = Date.parse(row.spent_at);
     if (!Number.isFinite(spent)) continue;
     if (newer - spent >= full) break;
     spends.push(spent);
@@ -341,6 +355,8 @@ export interface Round {
   /** What the client may see. Never the answers. */
   content: unknown;
   energyLeft: number;
+  /** When the next unit of energy arrives, or `null` on a full tank — so a screen's countdown agrees with this one. */
+  energyNextAt: Iso | null;
   /**
    * Whether this round will pay.
    *
@@ -430,6 +446,12 @@ export async function startSession(
   const language = input.language ?? 'en';
 
   return db.tx(async () => {
+    /* A round still open is abandoned first, and **before** the tank is read:
+       if it qualifies for the accidental-tap refund, the energy it gives back is
+       the energy this round may spend. That is the whole of the misclick case —
+       a wrong card pressed, and the right one pressed a second later. */
+    await abandonActive(db, input.userId, at);
+
     const energy = await energyFor(db, input.userId, at);
     if (energy.energy <= 0 && input.practice !== true) {
       /* `nextAt` rather than the midnight this used to quote: energy does not
@@ -443,41 +465,114 @@ export async function startSession(
 
     /* An abandoned round is closed rather than left open: two live sessions of
        the same game is an obvious way to shop for an easier question set. */
-    await db.run(
-      `UPDATE game_sessions SET state = 'abandoned' WHERE user_id = $u AND state = 'active'`,
-      { u: input.userId },
-    );
-
     const built = await buildRound(
       db, input.gameType, input.userId, language, input.welcome, input.wordList,
     );
     const id = newId('gms');
+    const paid = energy.energy > 0;
+    /* **The charge, at the start** (rulebook §3). `life_spent` is what the tank
+       reads, so writing it here is the spend; `charged: "start"` in the secret
+       is how this row says when its spend happened, which the tank and `finish`
+       both need to tell it from a round charged at its finish under the old
+       rule. The secret never leaves the server, so a client cannot claim it. */
     await db.run(
       `INSERT INTO game_sessions
-         (id, user_id, game_type, language, seed, secret, state, started_at)
-       VALUES ($i, $u, $g, $l, $s, $sec, 'active', $t)`,
+         (id, user_id, game_type, language, seed, secret, state, started_at, life_spent)
+       VALUES ($i, $u, $g, $l, $s, $sec, 'active', $t, $ls)`,
       {
         i: id,
         u: input.userId,
         g: input.gameType,
         l: language,
         s: built.seed,
-        sec: JSON.stringify(built.secret),
+        sec: JSON.stringify({ ...(built.secret as Record<string, unknown>), charged: 'start' }),
         t: at,
+        ls: paid ? 1 : 0,
       },
     );
+    const after = paid ? await energyFor(db, input.userId, at) : energy;
 
     return {
       sessionId: id,
       gameType: input.gameType,
       content: built.content,
-      energyLeft: energy.energy,
+      energyLeft: after.energy,
+      energyNextAt: after.nextAt,
       /* Said at the *start* as well as at the end, and that is the point of
          carrying it: a player should find out that this round banks nothing
          before answering five questions, not on the result card. */
       paid: energy.energy > 0,
       unpaidReason: energy.energy > 0 ? null : 'no_energy',
     };
+  });
+}
+
+/**
+ * Close this player's open round, refunding it if it was an accidental tap.
+ *
+ * Rulebook §3: the energy went when the round started and an abandoned round
+ * keeps that cost — **unless** it is abandoned within `energyRefundSeconds` of
+ * its start, and the player has not already had `energyRefundsPerDay` such
+ * refunds today. The refund is `life_spent = 0` with the moment stamped in
+ * `energy_refunded_at`, which is both what gives the tank its unit back and
+ * what counts against tomorrow's allowance being today's.
+ *
+ * Reached two ways: the screen's Quit (`POST /v1/games/sessions/:id/abandon`)
+ * and opening a new round while one is open, which is the misclick it exists
+ * for — the wrong card pressed and the right one a second later.
+ */
+export async function abandonActive(
+  db: Db,
+  userId: string,
+  at: Iso,
+  onlySessionId?: string,
+): Promise<{ abandoned: number; refunded: boolean }> {
+  const open = await db.all<{ id: string; started_at: string; life_spent: number; secret: string }>(
+    `SELECT id, started_at, life_spent, secret FROM game_sessions
+      WHERE user_id = $u AND state = 'active' AND ($s IS NULL OR id = $s)`,
+    { u: userId, s: onlySessionId ?? null },
+  );
+  let refunded = false;
+  for (const session of open) {
+    const early = Date.parse(at) - Date.parse(session.started_at) <= CONFIG.points.energyRefundSeconds * 1000;
+    const charged = session.life_spent > 0 && (JSON.parse(session.secret) as { charged?: string }).charged === 'start';
+    let refund = false;
+    if (early && charged) {
+      const used = await db.get<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM game_sessions
+          WHERE user_id = $u AND energy_refunded_at IS NOT NULL AND substr(energy_refunded_at, 1, 10) = $d`,
+        { u: userId, d: dayOf(at) },
+      );
+      refund = (used?.n ?? 0) < CONFIG.points.energyRefundsPerDay;
+    }
+    await db.run(
+      `UPDATE game_sessions
+          SET state = 'abandoned',
+              life_spent = CASE WHEN $r = 1 THEN 0 ELSE life_spent END,
+              energy_refunded_at = CASE WHEN $r = 1 THEN $t ELSE energy_refunded_at END
+        WHERE id = $i AND state = 'active'`,
+      { r: refund ? 1 : 0, t: at, i: session.id },
+    );
+    refunded = refunded || refund;
+  }
+  return { abandoned: open.length, refunded };
+}
+
+/** The Quit button: close one open round of this player's, refund rule applied. */
+export async function abandonSession(
+  db: Db,
+  input: { sessionId: string; userId: string; at?: Iso },
+): Promise<{ abandoned: boolean; refunded: boolean; energyLeft: number; energyNextAt: Iso | null }> {
+  const at = input.at ?? now();
+  return db.tx(async () => {
+    const session = await db.get<{ user_id: string }>(`SELECT user_id FROM game_sessions WHERE id = $i`, {
+      i: input.sessionId,
+    });
+    if (!session) throw new DomainError('not_found', 'session not found');
+    if (session.user_id !== input.userId) throw new DomainError('forbidden', 'not your session');
+    const closed = await abandonActive(db, input.userId, at, input.sessionId);
+    const energy = await energyFor(db, input.userId, at);
+    return { abandoned: closed.abandoned > 0, refunded: closed.refunded, energyLeft: energy.energy, energyNextAt: energy.nextAt };
   });
 }
 
@@ -500,6 +595,14 @@ async function buildRound(
   if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language, welcome);
   if (gameType === 'word_builder') return await buildWords(db, userId, wordList ?? language, language);
   if (gameType === 'memory_match') return buildDeck();
+  if (gameType === 'merge_2048') return buildMerge();
+  if (gameType === 'food_cross') return buildFood();
+  if (gameType === 'food_ninja') return buildNinja();
+  if (gameType === 'snake') return buildSnake();
+  if (gameType === 'cannon_numbers') return buildCannon();
+  if (gameType === 'breakout') return buildBreakout();
+  if (gameType === 'doodle_jump') return buildDoodle();
+  if (gameType === 'zuma') return buildZuma();
   return {
     seed: newId('gev'),
     secret: { kind: 'flight' },
@@ -922,6 +1025,162 @@ function buildDeck(): Built {
   };
 }
 
+/**
+ * A 2048 board. The seed is the secret — see `merge2048.ts` for why the board
+ * lives here and where the next tile lands is the one thing a client is never
+ * told. The opening board is not secret: it is on the screen.
+ */
+function buildMerge(): Built {
+  const seed = newId('gev');
+  const state = merge.start(seed);
+  return {
+    seed,
+    secret: state,
+    content: {
+      board: state.board,
+      size: merge.SIZE,
+      target: CONFIG.games.mergeTarget,
+      /* The scale travels, as it does for every other game: a card that wrote
+         "1024 pays 80" from its own table would be a second copy of this one. */
+      tileBands: CONFIG.games.mergeTileBands,
+      floorPerformance: CONFIG.games.mergeFloorPerformance,
+    },
+  };
+}
+
+/**
+ * Food Cross's random source: the `n`th draw is an HMAC of the round's seed,
+ * so what falls in next is fixed when the round is dealt and known only here.
+ */
+export const foodRng = (seed: string): food.Rng => (n) =>
+  createHmac('sha256', seed).update(`food:${n}`).digest().readUInt32BE(0);
+
+interface FoodSecret {
+  kind: 'food';
+  seed: string;
+  board: food.Board;
+  draws: number;
+  moves: number;
+  cleared: number;
+  /** The round's score so far — what it is performed on. Absent on a round started before scoring. */
+  score?: number;
+  over: boolean;
+}
+
+/** A Food Cross board. The seed is the secret; the board is on the screen. */
+function buildFood(): Built {
+  const seed = newId('gev');
+  const dealt = food.deal(foodRng(seed), 0);
+  const state: FoodSecret = { kind: 'food', seed, board: dealt.board, draws: dealt.draws, moves: 0, cleared: 0, over: false };
+  return {
+    seed,
+    secret: state,
+    content: {
+      board: state.board,
+      size: food.SIZE,
+      kinds: food.KINDS,
+      moves: CONFIG.games.foodMoves,
+      target: CONFIG.games.foodTargetScore,
+    },
+  };
+}
+
+/** Food Ninja's random source — the same construction as Food Cross's. */
+export const ninjaRng = (seed: string): ninja.Rng => (n) =>
+  createHmac('sha256', seed).update(`ninja:${n}`).digest().readUInt32BE(0);
+
+/**
+ * A Food Ninja round. The schedule goes to the client because it has to be
+ * drawn; what stays here is the seed and, once the round starts, the clock.
+ */
+function buildNinja(): Built {
+  const seed = newId('gev');
+  return {
+    seed,
+    secret: { kind: 'ninja', seed },
+    content: {
+      flyers: ninja.schedule(ninjaRng(seed)),
+      durationMs: ninja.DURATION_MS,
+      gravity: ninja.GRAVITY,
+      perFood: CONFIG.games.ninjaPerformancePerFood,
+      perfectFoods: Math.ceil(100 / CONFIG.games.ninjaPerformancePerFood),
+    },
+  };
+}
+
+/**
+ * The arcade games' random source: the `n`th draw for one of them is an HMAC
+ * of the round's seed and the game's own tag, so two games built from one seed
+ * would still not share a sequence.
+ */
+export const arcadeRng = (seed: string, tag: string): arcade.Rng => (n) =>
+  createHmac('sha256', seed).update(`${tag}:${n}`).digest().readUInt32BE(0);
+
+/** Snake: the food list goes to the client, which has to draw it; the seed stays. */
+function buildSnake(): Built {
+  const seed = newId('gev');
+  return {
+    seed,
+    secret: { kind: 'snake', seed },
+    content: {
+      cols: arcade.SNAKE_COLS,
+      rows: arcade.SNAKE_ROWS,
+      foods: arcade.snakeFoods(arcadeRng(seed, 'snake')),
+      perFood: CONFIG.games.snakePerformancePerFood,
+      perfectFoods: Math.ceil(100 / CONFIG.games.snakePerformancePerFood),
+    },
+  };
+}
+
+/** Canon Numbers: the board is held here; the rows to come are the seed's. */
+function buildCannon(): Built {
+  const seed = newId('gev');
+  const state = arcade.cannonStart(seed, arcadeRng(seed, 'cannon'));
+  return {
+    seed,
+    secret: state,
+    content: {
+      board: state.board,
+      cols: arcade.CANNON_COLS,
+      rows: arcade.CANNON_ROWS,
+      turns: arcade.CANNON_TURNS,
+      perBlock: CONFIG.games.cannonPerformancePerBlock,
+    },
+  };
+}
+
+function buildBreakout(): Built {
+  const seed = newId('gev');
+  return {
+    seed,
+    secret: { kind: 'breakout', seed },
+    content: { cols: arcade.BREAKOUT_COLS, rows: arcade.BREAKOUT_ROWS, wall: arcade.breakoutWall(arcadeRng(seed, 'breakout')) },
+  };
+}
+
+function buildDoodle(): Built {
+  const seed = newId('gev');
+  return {
+    seed,
+    secret: { kind: 'doodle', seed },
+    content: {
+      platforms: arcade.doodlePlatforms(arcadeRng(seed, 'doodle')),
+      perPlatform: CONFIG.games.doodlePerformancePerPlatform,
+      perfectPlatforms: Math.ceil(100 / CONFIG.games.doodlePerformancePerPlatform),
+    },
+  };
+}
+
+function buildZuma(): Built {
+  const seed = newId('gev');
+  const rng = arcadeRng(seed, 'zuma');
+  return {
+    seed,
+    secret: { kind: 'zuma', seed },
+    content: { chain: arcade.zumaChain(rng), shots: arcade.zumaShots(rng), colors: arcade.ZUMA_COLORS },
+  };
+}
+
 /* ══════════════════════════════════════════════ the client reports, we judge ══ */
 
 export interface EventResult {
@@ -965,6 +1224,45 @@ export interface EventResult {
    * breaks in a shop.
    */
   revealed?: Array<{ index: number; face: string }>;
+  /**
+   * The board after a 2048 move, and where the new tile landed. 2048 only.
+   *
+   * The whole board rather than the spawn alone, because the client's slide is a
+   * prediction and this is the fact: a screen that drew its own result and only
+   * added the tile would drift the first time the two disagreed, with nothing to
+   * pull it back.
+   */
+  merge?: {
+    board: number[];
+    spawned: { index: number; value: number } | null;
+    score: number;
+    moves: number;
+    best: number;
+    over: boolean;
+  };
+  /**
+   * The result of a Food Cross swap. Food Cross only.
+   *
+   * `steps` is every stage of the move — what cleared, and the board after the
+   * fall — so the screen can play the cascade out instead of jumping to the end.
+   * The last step's board is `board`.
+   */
+  /** Food Ninja: how many foods the server has credited so far, and which of this swipe's. */
+  ninja?: { sliced: number; credited: number[] };
+  /** Canon Numbers: the board after a shot, which cells each ball hit, and the tally. */
+  cannon?: { board: number[]; hits: number[]; turn: number; destroyed: number; over: boolean };
+  food?: {
+    board: food.Board;
+    steps: food.Step[];
+    gained: number;
+    cleared: number;
+    /** The round's score so far, and `gained` is what this swap added to it. */
+    score: number;
+    moves: number;
+    movesLeft: number;
+    over: boolean;
+    reshuffled: boolean;
+  };
   accepted: boolean;
 }
 
@@ -1072,6 +1370,188 @@ export async function submitEvent(
     if (session.state !== 'active') throw new DomainError('invalid_state', 'session is finished');
 
     const secret = JSON.parse(session.secret) as Record<string, unknown>;
+
+    if (secret.kind === 'ninja') {
+      const flyers = ninja.schedule(ninjaRng(String(secret.seed)));
+      const rows = await db.all<{ kind: string; payload: string; created_at: string }>(
+        `SELECT kind, payload, created_at FROM game_events WHERE session_id = $s ORDER BY seq`,
+        { s: session.id },
+      );
+      const startRow = rows.find((row) => row.kind === 'start');
+      const sliced = new Set<number>();
+      for (const row of rows) {
+        if (row.kind !== 'slice') continue;
+        try {
+          for (const id of (JSON.parse(row.payload) as { ids?: unknown[] }).ids ?? []) sliced.add(Number(id));
+        } catch {
+          /* A row this module cannot read credits nothing. */
+        }
+      }
+      const record = async (kind: string, payload: unknown, correct: boolean | null) => {
+        try {
+          await db.run(
+            `INSERT INTO game_events (id, session_id, seq, kind, payload, correct, created_at)
+             VALUES ($i, $s, $q, $k, $p, $c, $t)`,
+            {
+              i: newId('gev'), s: session.id, q: input.seq, k: kind, p: JSON.stringify(payload),
+              c: correct === null ? null : correct ? 1 : 0, t: at,
+            },
+          );
+          return true;
+        } catch {
+          return false; /* A retried `seq`: already recorded. */
+        }
+      };
+
+      /*
+       * `start` is when the screen's clock started, stamped by this server's.
+       * Every slice is timed from it. Once only — a second start would be a way
+       * to move the clock.
+       */
+      if (input.kind === 'start') {
+        if (startRow) return { ninja: { sliced: sliced.size, credited: [] }, accepted: false };
+        const accepted = await record('start', {}, null);
+        return { ninja: { sliced: sliced.size, credited: [] }, accepted };
+      }
+      if (input.kind !== 'slice') throw new DomainError('bad_request', 'a Food Ninja move is start or slice');
+      if (!startRow) throw new DomainError('invalid_state', 'the round has not started');
+
+      const elapsed = Date.parse(at) - Date.parse(startRow.created_at);
+      const slack = CONFIG.games.ninjaSlackMs;
+      if (elapsed > ninja.DURATION_MS + slack) throw new DomainError('invalid_state', 'the round is over');
+
+      const asked = Array.isArray(input.payload.ids) ? (input.payload.ids as unknown[]).map(Number) : [];
+      if (asked.length === 0 || asked.length > ninja.MAX_PER_SWIPE) {
+        throw new DomainError('bad_request', `a swipe slices 1 to ${ninja.MAX_PER_SWIPE} foods`);
+      }
+      /* Credited: a real food, not already sliced, in the air by this clock. The
+         rest of the swipe is simply not counted — a late packet is not a cheat. */
+      const credited = [...new Set(asked)].filter((id) => {
+        const flyer = flyers[id];
+        if (!flyer || flyer.id !== id || sliced.has(id)) return false;
+        return elapsed >= flyer.t - slack && elapsed <= flyer.t + ninja.airtime(flyer) + slack;
+      });
+      const accepted = await record('slice', { ids: credited }, credited.length > 0);
+      if (!accepted) return { ninja: { sliced: sliced.size, credited: [] }, accepted: false };
+      return { ninja: { sliced: sliced.size + credited.length, credited }, accepted: true };
+    }
+
+    if (secret.kind === 'food') {
+      const state = secret as unknown as FoodSecret;
+      const limit = CONFIG.games.foodMoves;
+      const view = (s: FoodSecret, steps: food.Step[], gained: number, reshuffled: boolean) => ({
+        board: s.board, steps, gained, cleared: s.cleared, score: s.score ?? 0, moves: s.moves,
+        movesLeft: Math.max(0, limit - s.moves), over: s.over, reshuffled,
+      });
+      const a = Number(input.payload.a);
+      const b = Number(input.payload.b);
+      if (!Number.isInteger(a) || !Number.isInteger(b) || !food.adjacent(a, b)) {
+        throw new DomainError('bad_request', 'those two cells are not neighbours');
+      }
+      /* Same rule as 2048: a swap names the board it was made on, so a retry
+         after a lost reply is answered with the current board, not played twice. */
+      if (Number(input.payload.from) !== state.moves) return { food: view(state, [], 0, false), accepted: false };
+      if (state.over) throw new DomainError('invalid_state', 'the round has no moves left');
+
+      const played = food.play(state.board, a, b, foodRng(state.seed), state.draws);
+      if (!played) throw new DomainError('bad_request', 'that swap lines nothing up');
+
+      try {
+        await db.run(
+          `INSERT INTO game_events (id, session_id, seq, kind, payload, correct, created_at)
+           VALUES ($i, $s, $q, $k, $p, NULL, $t)`,
+          { i: newId('gev'), s: session.id, q: input.seq, k: 'swap', p: JSON.stringify({ a, b, from: state.moves }), t: at },
+        );
+      } catch {
+        return { food: view(state, [], 0, false), accepted: false };
+      }
+      const moves = state.moves + 1;
+      const next: FoodSecret = {
+        ...state,
+        board: played.board,
+        draws: played.draws,
+        moves,
+        cleared: state.cleared + played.cleared,
+        score: (state.score ?? 0) + played.score,
+        over: moves >= limit,
+      };
+      await db.run(`UPDATE game_sessions SET secret = $sec WHERE id = $i`, { sec: JSON.stringify(next), i: session.id });
+      return { food: view(next, played.steps, played.score, played.reshuffled), accepted: true };
+    }
+
+    if (secret.kind === 'cannon') {
+      const state = secret as unknown as arcade.CannonState;
+      const view = (s: arcade.CannonState, hits: number[]) => ({
+        board: s.board, hits, turn: s.turn, destroyed: s.destroyed, over: s.over,
+      });
+      const col = Number(input.payload.col);
+      if (!Number.isInteger(col) || col < 0 || col >= arcade.CANNON_COLS) {
+        throw new DomainError('bad_request', 'no such column');
+      }
+      /* `from` names the board the shot was aimed at — 2048's construction. A
+         retried shot is answered with the current board, never applied twice. */
+      if (Number(input.payload.from) !== state.turn) return { cannon: view(state, []), accepted: false };
+      if (state.over) throw new DomainError('invalid_state', 'the round is over');
+      const fired = arcade.cannonFire(state, col, arcadeRng(state.seed, 'cannon'));
+      try {
+        await db.run(
+          `INSERT INTO game_events (id, session_id, seq, kind, payload, correct, created_at)
+           VALUES ($i, $s, $q, $k, $p, NULL, $t)`,
+          { i: newId('gev'), s: session.id, q: input.seq, k: 'fire', p: JSON.stringify({ col, from: state.turn }), t: at },
+        );
+      } catch {
+        return { cannon: view(state, []), accepted: false };
+      }
+      await db.run(`UPDATE game_sessions SET secret = $sec WHERE id = $i`, {
+        sec: JSON.stringify(fired.state),
+        i: session.id,
+      });
+      return { cannon: view(fired.state, fired.hits), accepted: true };
+    }
+
+    if (secret.kind === 'merge') {
+      const state = secret as unknown as merge.MergeSecret;
+      const view = (s: merge.MergeSecret, spawned: { index: number; value: number } | null) => ({
+        board: s.board, spawned, score: s.score, moves: s.moves, best: s.best, over: s.over,
+      });
+      const direction = String(input.payload.dir ?? '') as merge.Direction;
+      if (!merge.DIRECTIONS.includes(direction)) throw new DomainError('bad_request', 'no such direction');
+
+      /*
+       * **A move names the board it was made on**, as `from`: the number of
+       * moves the client had seen applied. That, not `seq`, is what makes a
+       * retry safe here. A client whose reply was lost resends the swipe — under
+       * the same `seq` or a fresh one — and either way it still says
+       * `from: n` while the server is at `n + 1`. Applying it would be a second
+       * swipe nobody made; answering with the current board is what puts that
+       * client back in step.
+       */
+      if (Number(input.payload.from) !== state.moves) return { merge: view(state, null), accepted: false };
+      if (state.over) throw new DomainError('invalid_state', 'the board has no moves left');
+
+      const played = merge.play(state, direction);
+      /* A swipe that changes nothing is not a move in 2048, and the client can
+         see that before sending it — the slide is deterministic. */
+      if (!played) throw new DomainError('bad_request', 'that move changes nothing');
+
+      try {
+        await db.run(
+          `INSERT INTO game_events (id, session_id, seq, kind, payload, correct, created_at)
+           VALUES ($i, $s, $q, $k, $p, NULL, $t)`,
+          { i: newId('gev'), s: session.id, q: input.seq, k: 'move', p: JSON.stringify({ dir: direction, from: state.moves }), t: at },
+        );
+      } catch {
+        /* Same `seq` as a move already recorded under a different board — a
+           client bug rather than a retry, which `from` would have caught. */
+        return { merge: view(state, null), accepted: false };
+      }
+      await db.run(`UPDATE game_sessions SET secret = $sec WHERE id = $i`, {
+        sec: JSON.stringify(played.state),
+        i: session.id,
+      });
+      return { merge: view(played.state, played.spawned), accepted: true };
+    }
+
     let correct: boolean | undefined;
     let answer: number | string | undefined;
     let revealed: EventResult['revealed'];
@@ -1274,6 +1754,8 @@ export interface Finish {
   streak: number;
   freezes: number;
   energyLeft: number;
+  /** When the next unit of energy arrives, or `null` on a full tank. */
+  energyNextAt: Iso | null;
   balance: number;
   /**
    * Whether this round banked anything — the same fact `Round.paid` promised
@@ -1421,8 +1903,9 @@ export async function finish(
       secret: string;
       game_type: GameType;
       started_at: string;
+      life_spent: number;
     }>(
-      `SELECT id, user_id, state, secret, game_type, started_at FROM game_sessions WHERE id = $i`,
+      `SELECT id, user_id, state, secret, game_type, started_at, life_spent FROM game_sessions WHERE id = $i`,
       { i: input.sessionId },
     );
     if (!session) throw new DomainError('not_found', 'session not found');
@@ -1440,7 +1923,13 @@ export async function finish(
      * banks nothing. `unpaidReason` carries the reason so a result card can
      * explain a score of 0 rather than leaving it to be guessed at.
      */
-    const paid = (await energyFor(db, input.userId, session.started_at)).energy > 0;
+    /* A round charged at its start was paid if and only if the start spent
+       energy on it — that decision is already on the row. A round opened
+       before that rule falls back to the old reading: the tank at its start. */
+    const chargedAtStart = (JSON.parse(session.secret) as { charged?: string }).charged === 'start';
+    const paid = chargedAtStart
+      ? session.life_spent > 0
+      : (await energyFor(db, input.userId, session.started_at)).energy > 0;
     const unpaidReason: 'no_energy' | null = paid ? null : 'no_energy';
 
     /* `created_at` is selected because three of the four scorers read it —
@@ -1496,7 +1985,23 @@ export async function finish(
           ? scoreWords(events, secret.words as string[], session.started_at)
           : secret.kind === 'deck'
             ? scoreDeck(events, CONFIG.games.memoryPairs)
-            : scoreFlight(input.clientReport ?? {}, secondsBetween(session.started_at, at));
+            : secret.kind === 'merge'
+              ? scoreMerge(secret as unknown as merge.MergeSecret)
+              : secret.kind === 'food'
+                ? scoreFood(secret as unknown as FoodSecret)
+                : secret.kind === 'ninja'
+                  ? scoreNinja(events)
+                  : secret.kind === 'snake'
+                    ? scoreSnake(secret, input.clientReport ?? {}, secondsBetween(session.started_at, at))
+                    : secret.kind === 'cannon'
+                      ? scoreCannon(secret as unknown as arcade.CannonState)
+                      : secret.kind === 'breakout'
+                        ? scoreBreakout(secret, input.clientReport ?? {}, secondsBetween(session.started_at, at))
+                        : secret.kind === 'doodle'
+                          ? scoreDoodle(input.clientReport ?? {}, secondsBetween(session.started_at, at))
+                          : secret.kind === 'zuma'
+                            ? scoreZuma(input.clientReport ?? {}, secondsBetween(session.started_at, at))
+              : scoreFlight(input.clientReport ?? {}, secondsBetween(session.started_at, at));
 
     /*
      * The plan **as it was when the round was played**, not as it is when the
@@ -1685,13 +2190,12 @@ export async function finish(
         c: scored.correct,
         t: at,
         l: banked?.entry.id ?? null,
-        /* **The energy is spent here, and this row is the record of it.** Every
-           *paid* round costs one, win or lose — which is still why the charge
-           cannot live in `startSession`: a round that is abandoned rather than
-           finished never reaches this line and never costs anything.
-           `energyFor` reconstructs the whole tank from these rows and their
-           `finished_at`, so this column is not bookkeeping beside the truth, it
-           *is* the truth. Its name — `life_spent` — is historical; renaming a
+        /* **This row is the record of the spend**, and for a round opened
+           under rulebook §3 it was already written at the start — writing the
+           same value here changes nothing. For a round opened before that rule
+           this is still where the spend happens. `energyFor` reconstructs the
+           whole tank from these rows, so this column is not bookkeeping beside
+           the truth, it *is* the truth. Its name — `life_spent` — is historical; renaming a
            column needs a version-guarded table rebuild against a live database
            and buys nothing a player can see.
 
@@ -1772,6 +2276,7 @@ export async function finish(
       streak: streak.streak,
       freezes: streak.freezes,
       energyLeft: energy.energy,
+      energyNextAt: energy.nextAt,
       balance,
       paid,
       unpaidReason,
@@ -2320,6 +2825,156 @@ function movesBonus(moves: number): number {
  * session reaches a perfect round and sits in the ledger looking exactly like a
  * very good player.
  */
+/**
+ * 2048, scored on the largest tile — from the board this server played, never
+ * from anything the client says at the finish. A round with no moves made
+ * nothing and performs at 0 (the master formula's floor still applies).
+ *
+ * `answered` is the five milestones from 128 to the target and `correct` how
+ * many were reached, so the lifetime accuracy columns read "got to 512" as
+ * three of five rather than as a figure from another game's scale.
+ */
+function scoreMerge(state: merge.MergeSecret): Scored {
+  const bands = CONFIG.games.mergeTileBands;
+  const best = state.best;
+  const performance =
+    state.moves === 0
+      ? 0
+      : (bands.find((band) => best >= band.tile)?.performance ?? CONFIG.games.mergeFloorPerformance);
+  return {
+    performance,
+    correct: bands.filter((band) => best >= band.tile).length,
+    answered: bands.length,
+    won: best >= CONFIG.games.mergeTarget,
+  };
+}
+
+/**
+ * Food Cross, rulebook §5.8: the score the server's board made, linear against
+ * `foodTargetScore`, capped at 100. No swaps made is 0. `correct` counts the
+ * fifths of the target reached, out of `answered` = 5.
+ */
+function scoreFood(state: FoodSecret): Scored {
+  const target = CONFIG.games.foodTargetScore;
+  const score = state.score ?? 0;
+  const performance = state.moves === 0 ? 0 : Math.min(100, Math.round((score / target) * 100));
+  return {
+    performance,
+    correct: Math.min(5, Math.floor((score / target) * 5)),
+    answered: 5,
+    won: score >= target,
+  };
+}
+
+/**
+ * Food Ninja: the foods this server credited, from the `slice` rows it wrote —
+ * never a total the client sends at the finish. `perFood` performance each,
+ * capped at 100; `correct` is tenths of the perfect round, out of 5.
+ */
+function scoreNinja(events: Array<{ kind: string; payload: string }>): Scored {
+  const sliced = new Set<number>();
+  for (const event of events) {
+    if (event.kind !== 'slice') continue;
+    try {
+      for (const id of (JSON.parse(event.payload) as { ids?: unknown[] }).ids ?? []) sliced.add(Number(id));
+    } catch {
+      /* Unreadable: credits nothing. */
+    }
+  }
+  const per = CONFIG.games.ninjaPerformancePerFood;
+  const perfect = Math.ceil(100 / per);
+  return {
+    performance: Math.min(100, sliced.size * per),
+    correct: Math.min(5, Math.floor((sliced.size / perfect) * 5)),
+    answered: 5,
+    won: sliced.size >= perfect,
+  };
+}
+
+/** A count against the rulebook's scale: `per` performance each, capped at 100. */
+function perUnit(count: number, per: number): Scored {
+  const perfect = Math.ceil(100 / per);
+  return {
+    performance: Math.min(100, count * per),
+    correct: Math.min(5, Math.floor((count / perfect) * 5)),
+    answered: 5,
+    won: count >= perfect,
+  };
+}
+
+/** A share of what the level holds: `done` of `total`, as 0..100. */
+function share(done: number, total: number): Scored {
+  const performance = total === 0 ? 0 : Math.round((done / total) * 100);
+  return {
+    performance,
+    correct: Math.min(5, Math.floor((performance / 100) * 5)),
+    answered: 5,
+    won: total > 0 && done >= total,
+  };
+}
+
+/**
+ * Snake: the reported **turns**, replayed against this round's food list —
+ * never a food count. `turns` is `[tick, dir]` pairs and `ticks` the tick the
+ * round ended on; the replay is held to the round's own duration plus slack.
+ */
+function scoreSnake(secret: Record<string, unknown>, report: Record<string, unknown>, elapsed: number): Scored {
+  const list = arcade.snakeFoods(arcadeRng(String(secret.seed), 'snake'));
+  const raw = Array.isArray(report.turns) ? report.turns : [];
+  const turns: Array<[number, number]> = [];
+  for (const item of raw.slice(0, arcade.SNAKE_MAX_TURNS)) {
+    if (Array.isArray(item) && item.length === 2) turns.push([Number(item[0]), Number(item[1])]);
+  }
+  const played = arcade.snakeReplay(list, turns, Number(report.ticks) || 0, elapsed * 1000 + CONFIG.games.snakeSlackMs);
+  return perUnit(played.eaten, CONFIG.games.snakePerformancePerFood);
+}
+
+/** Canon Numbers: the blocks this server's board destroyed. */
+function scoreCannon(state: arcade.CannonState): Scored {
+  if (state.turn === 0) return { performance: 0, correct: 0, answered: 5, won: false };
+  return perUnit(state.destroyed, CONFIG.games.cannonPerformancePerBlock);
+}
+
+/**
+ * Breakout: the share of this round's wall broken. `broken` names brick ids,
+ * so only bricks the wall has count, each once, and no more than the round's
+ * duration allows.
+ */
+function scoreBreakout(secret: Record<string, unknown>, report: Record<string, unknown>, elapsed: number): Scored {
+  const total = arcade.breakoutWall(arcadeRng(String(secret.seed), 'breakout')).length;
+  const ids = new Set(
+    (Array.isArray(report.broken) ? report.broken : [])
+      .map(Number)
+      .filter((id) => Number.isInteger(id) && id >= 0 && id < total),
+  );
+  const broken = arcade.bounded(ids.size, total, elapsed, CONFIG.games.breakoutBricksPerSecond, CONFIG.games.breakoutAllowance);
+  return share(broken, total);
+}
+
+/** Doodle Jump: the highest platform stood on, bounded by the round's length. */
+function scoreDoodle(report: Record<string, unknown>, elapsed: number): Scored {
+  const reached = arcade.bounded(
+    report.reached,
+    arcade.DOODLE_PLATFORMS,
+    elapsed,
+    CONFIG.games.doodlePlatformsPerSecond,
+    CONFIG.games.doodleAllowance,
+  );
+  return perUnit(reached, CONFIG.games.doodlePerformancePerPlatform);
+}
+
+/** Zuma: the share of the chain cleared, bounded by the round's length. */
+function scoreZuma(report: Record<string, unknown>, elapsed: number): Scored {
+  const cleared = arcade.bounded(
+    report.cleared,
+    arcade.ZUMA_CHAIN,
+    elapsed,
+    CONFIG.games.zumaBallsPerSecond,
+    CONFIG.games.zumaAllowance,
+  );
+  return share(cleared, arcade.ZUMA_CHAIN);
+}
+
 function scoreFlight(report: Record<string, unknown>, elapsed: number): Scored {
   const claimed = Math.max(0, Math.floor(Number(report.cleared) || 0));
   /*
@@ -2478,6 +3133,14 @@ export const DAILY_GAME_POOL: ReadonlyArray<ReadonlyArray<GameType>> = [
   ['brain'],
   ['poland', 'uzbekistan'],
   ['word_builder'],
+  ['merge_2048'],
+  ['food_cross'],
+  ['food_ninja'],
+  ['snake'],
+  ['cannon_numbers'],
+  ['breakout'],
+  ['doodle_jump'],
+  ['zuma'],
 ];
 
 /**

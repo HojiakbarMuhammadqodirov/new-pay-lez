@@ -504,13 +504,13 @@ function termsBody() {
 
       <Section id="terms-5" n="5." title="Referral Programme">
         <p>
-          Users may refer new users to the platform using a personal referral code. Referral points
-          are awarded when the referred user:
+          Users may refer new users to the platform using a personal referral code or invite link. Referral points are awarded to you and the person you invited when they:
         </p>
         <ul>
-          <li>Creates a verified account using the referral code</li>
-          <li>Completes the minimum onboarding requirements specified in the app</li>
+          <li>Create an account with your referral code or invite link</li>
+          <li>Make their first qualifying visit to a partner venue — a confirmed purchase that meets the venue's minimum spend</li>
         </ul>
+        <p>No points are awarded for visits at a venue you own or operate.</p>
         <p>
           We reserve the right to modify, suspend, or terminate the referral programme at any time.
           Referral points awarded in error or through fraudulent activity will be reversed.

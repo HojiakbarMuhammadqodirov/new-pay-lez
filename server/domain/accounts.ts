@@ -404,6 +404,12 @@ export async function linkGoogleAccount(
     language?: string;
     /** That the terms were actually shown and agreed to. See the record below. */
     acceptTerms?: boolean;
+    /**
+     * Whoever invited them — bound only when this press **creates** the
+     * account, exactly as on `signUp`. Google sign-up could not be referred at
+     * all before this, on any client.
+     */
+    referralCode?: string;
     at?: Iso;
   },
 ): Promise<User> {
@@ -502,6 +508,7 @@ export async function linkGoogleAccount(
     }
 
     await social.codeFor(db, id);
+    if (input.referralCode) await social.bind(db, { code: input.referralCode, newUserId: id, at });
 
     /* No welcome grant here either, for the reason `signUp` gives: the gift is
        onboarding's, and the two paths have to agree or one of them is the

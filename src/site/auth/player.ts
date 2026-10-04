@@ -88,8 +88,6 @@ export const MAX_ENERGY = 4;
  */
 export const ENERGY_REGEN_MINUTES = 120;
 
-/** The same interval in milliseconds, which is what every clock here is in. */
-const ENERGY_REGEN_MS = ENERGY_REGEN_MINUTES * 60_000;
 
 /**
  * Streak freezes.
@@ -165,6 +163,13 @@ export interface PlayerState {
    * missing one as zero rather than as a crash.
    */
   freezes?: number;
+  /**
+   * The local day this device last gave back a round's energy for a quit in
+   * its first five seconds (`refundEnergy`) — once a day, as the server allows.
+   * Optional and absent on every state saved before it existed, which reads as
+   * "not used today".
+   */
+  energyRefundDay?: string | null;
   /*
    * There was a `rounds` field here — a per-game tally of what had been played
    * today, read by the decay curve to price a repeat. The curve is gone and so
@@ -444,13 +449,56 @@ export function energyOf(
  * quietly confiscate the three hours somebody had already waited, and the third
  * round of an afternoon would cost strictly more than the first.
  */
-export function spendEnergy(state: PlayerState, now: Date = new Date()): PlayerState {
-  const tank = energyOf(state, now);
+export function spendEnergy(
+  state: PlayerState,
+  now: Date = new Date(),
+  limits: EnergyLimits = { max: MAX_ENERGY, regenMinutes: ENERGY_REGEN_MINUTES },
+): PlayerState {
+  const tank = energyOf(state, now, limits);
   if (tank.count <= 0) return state;
+  const regenMs = Math.max(1, limits.regenMinutes) * 60_000;
   return {
     ...state,
     energy: tank.count - 1,
-    energyAt: tank.nextAt === null ? now.getTime() : tank.nextAt - ENERGY_REGEN_MS,
+    energyAt: tank.nextAt === null ? now.getTime() : tank.nextAt - regenMs,
+  };
+}
+
+/**
+ * A quit inside this window gives the round's energy back — the accidental
+ * tap. The server's `CONFIG.points.energyRefundSeconds`, mirrored for the
+ * rounds played with no server (rulebook §3).
+ */
+export const ENERGY_REFUND_MS = 5_000;
+
+/**
+ * Give one unit back, once per local day.
+ *
+ * The local half of `games.abandonActive`: energy is spent when a round starts,
+ * so a round left in its first five seconds is the one case that gets it back,
+ * and only once a day so the rule cannot be farmed by opening and closing
+ * rounds. The day is recorded on the state; a second quick quit the same day
+ * keeps its cost. A tank already full has nothing to take back.
+ */
+export function refundEnergy(
+  state: PlayerState,
+  now: Date = new Date(),
+  limits: EnergyLimits = { max: MAX_ENERGY, regenMinutes: ENERGY_REGEN_MINUTES },
+): PlayerState {
+  const day = today(now);
+  if (state.energyRefundDay === day) return state;
+  const tank = energyOf(state, now, limits);
+  const max = Math.max(1, Math.floor(limits.max));
+  if (tank.count >= max) return state;
+  const count = tank.count + 1;
+  const regenMs = Math.max(1, limits.regenMinutes) * 60_000;
+  return {
+    ...state,
+    energy: count,
+    /* The clock keeps its phase — the unit being earned is still due when it
+       was — unless the refund filled the tank, which has no clock at all. */
+    energyAt: count >= max ? null : tank.nextAt === null ? now.getTime() : tank.nextAt - regenMs,
+    energyRefundDay: day,
   };
 }
 
@@ -533,8 +581,16 @@ export function awardPoints(
   state: PlayerState,
   result: Award,
   now: Date = new Date(),
+  /**
+   * `charged`: the round's energy was already taken when it started — rulebook
+   * §3, the way the Play screen runs a local round now — so this neither gates
+   * on the tank nor spends again. Without it the old construction holds
+   * (gate and spend here), which is what every check written against this
+   * function exercises.
+   */
+  options: { charged?: boolean } = {},
 ): PlayerState {
-  if (energyOf(state, now).count <= 0) return state;
+  if (!options.charged && energyOf(state, now).count <= 0) return state;
 
   const day = today(now);
   const played = state.lastPlayed;
@@ -591,7 +647,7 @@ export function awardPoints(
    * shut the page for the rest of the day; under `ENERGY_REGEN_MINUTES` it
    * shuts it for four hours.
    */
-  const spent = spendEnergy(state, now);
+  const spent = options.charged ? state : spendEnergy(state, now);
 
   /* The round banks what it scored. Nothing here asks how much has been played
      today — a decay curve used to, and the tally it counted went with it. What
@@ -938,6 +994,72 @@ export function memoryPoints(seconds: number): number {
      pay rather than return nothing. */
   return MEMORY_BANDS[MEMORY_BANDS.length - 1].points;
 }
+
+/**
+ * 2048's bands, mirroring `CONFIG.games.mergeTileBands` on the server: the
+ * largest tile, read from the top, is the round's performance (0..100). Here
+ * only for the offline round and the card's copy — a server round is priced
+ * there, from the board it played.
+ */
+export const MERGE_BANDS = [
+  { tile: 2048, performance: 100 },
+  { tile: 1024, performance: 85 },
+  { tile: 512, performance: 65 },
+  { tile: 256, performance: 50 },
+  { tile: 128, performance: 35 },
+  { tile: 64, performance: 20 },
+] as const;
+export const MERGE_FLOOR_PERFORMANCE = 0;
+
+/**
+ * An offline 2048 round's points: the server's master formula with nothing on
+ * top — `max(2, round(performance / 100 × 18))` — because a local round has no
+ * featured bonus, no plan and no day to decay across. A round with no moves
+ * made nothing.
+ */
+export function mergePoints(best: number, moves: number): number {
+  if (moves === 0) return 0;
+  const performance = MERGE_BANDS.find((band) => best >= band.tile)?.performance ?? MERGE_FLOOR_PERFORMANCE;
+  return Math.max(2, Math.round((performance / 100) * 18));
+}
+
+/** How many of the six milestones (64 → 2048) a tile reached. */
+export const mergeMilestones = (best: number): number => MERGE_BANDS.filter((band) => best >= band.tile).length;
+
+/**
+ * Food Cross's figures, mirroring `CONFIG.games.foodMoves` and
+ * `foodTargetScore` (rulebook §5.8): twenty swaps, and a score of 2,000 is a
+ * perfect round. Here for the offline round and the card's copy; a server
+ * round is priced there, from the board it played.
+ */
+export const FOOD_MOVES = 20;
+export const FOOD_TARGET = 2000;
+
+/** An offline Food Cross round's points: the master formula, nothing on top. */
+export function foodPoints(score: number, moves: number): number {
+  if (moves === 0) return 0;
+  const performance = Math.min(100, Math.round((score / FOOD_TARGET) * 100));
+  return Math.max(2, Math.round((performance / 100) * 18));
+}
+
+/** Fifths of the target reached, out of five — the result card's `correct`. */
+export const foodMilestones = (score: number): number => Math.min(5, Math.floor((score / FOOD_TARGET) * 5));
+
+/**
+ * Food Ninja's rate, mirroring `CONFIG.games.ninjaPerformancePerFood`: two
+ * points of performance a food, so 50 is a perfect round. For the offline round
+ * and the card's copy; a server round is priced from the slices it credited.
+ */
+export const NINJA_PER_FOOD = 2;
+export const NINJA_PERFECT = Math.ceil(100 / NINJA_PER_FOOD);
+
+export function ninjaPoints(sliced: number): number {
+  if (sliced === 0) return 0;
+  return Math.max(2, Math.round((Math.min(100, sliced * NINJA_PER_FOOD) / 100) * 18));
+}
+
+/** Fifths of the perfect round, out of five — the result card's `correct`. */
+export const ninjaMilestones = (sliced: number): number => Math.min(5, Math.floor((sliced / NINJA_PERFECT) * 5));
 
 /*
  * `refillLives` is gone. It restored the whole tank on a new calendar day and

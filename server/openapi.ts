@@ -206,12 +206,17 @@ const SCHEMAS: Record<string, Schema> = {
             type: 'string',
             nullable: true,
             description:
-              'When the address was proved, or null. **It gates nothing** — email confirmation ' +
-              'was built and taken back out, so no route asks for it and no client should ' +
-              'branch on it. It is still sent because a field that vanishes breaks a mapper, ' +
-              'and a Google sign-in still stamps it, because that is the one moment the fact ' +
-              'is known for free. Do not draw a "verify your email" prompt from it.',
+              'When the address was proved, or null. Null on an account **with** an email is ' +
+              'the state to draw a "confirm your email" prompt from (`POST /v1/auth/verify/send`, ' +
+              '`POST /v1/auth/verify`). A Google sign-in is stamped on the way in, and accounts ' +
+              'that existed before confirmation returned were stamped by a migration. An account ' +
+              'with no email (provisional) has nothing to prove.',
           },
+          spendNeedsVerifiedEmail: bool(
+            'Whether a null `emailVerifiedAt` currently blocks spending — buying a venue ' +
+              'voucher or a gift card answers 403 `not_verified` while this is true. Earning ' +
+              'is never blocked. Off until every client can take a code; word the prompt from it.',
+          ),
           venueSharingDefault: bool(
             '§1.4’s standing answer: may a venue I visit be told who I am. **On by default**, ' +
               'and this is the account-wide setting rather than the per-venue grant — that is ' +
@@ -592,10 +597,9 @@ const SCHEMAS: Record<string, Schema> = {
     type: 'object',
     description:
       'The energy pool — what hearts became, and the **only** thing that bounds a day.\n\n' +
-      '**Every finished round costs one, win or lose.** Losses only was the rule before, ' +
-      'and it bounded nobody: two of the seven games cannot be lost. An *abandoned* round ' +
-      'still costs nothing, and starting one costs nothing — the charge is written when ' +
-      'the round is banked.\n\n' +
+      '**Every round costs one when it starts, win or lose** (rulebook §3), so an ' +
+      '*abandoned* round costs one too. The one way back: abandoning within 5 seconds of ' +
+      'the start refunds it, once a day — see `POST /v1/games/sessions/{id}/abandon`.\n\n' +
       'It **does not reset at midnight**: one refills every `energy_regen_minutes` (free ' +
       '120, Pro 60, Premium 30) up to `daily_energy` (4/6/10). From a full tank that is ' +
       '16 rounds in a day free, 30 on Pro, 58 on Premium; 12/24/48 at the sustained rate. ' +
@@ -1019,7 +1023,10 @@ const DOCS: Record<string, Doc> = {
       'arrives later.\n\n' +
       '**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, ' +
       'because an address and a password can be produced in bulk and a gift attached to ' +
-      'producing them funds a farm.',
+      'producing them funds a farm.\n\n' +
+      '**It sends the first email confirmation code.** The response carries `verification` ' +
+      '(the `POST /v1/auth/verify/send` shape), or `null` if the mail could not be sent — ' +
+      'the account is created either way, and the resend button is the remedy.',
     tags: ['auth'],
     body: {
       email: str(), password: str('At least 6 characters.'), name: str(),
@@ -1072,6 +1079,53 @@ const DOCS: Record<string, Doc> = {
       type: 'object',
       properties: { token: str(), userId: str(), provisional: bool() },
     },
+  },
+  'POST /v1/auth/verify/send': {
+    summary: 'Send, or resend, the email confirmation code',
+    description:
+      'Sign-up already sends the first code (its response carries `verification`), so ' +
+      'this is the resend button. A six-digit code, valid for 10 minutes, emailed in the ' +
+      "account's language.\n\n" +
+      'Inside the 90-second cooldown it answers **200 with `sent: false`** and `nextSendAt` ' +
+      'rather than an error — asking again while a message is slow is not a fault. After 10 ' +
+      'codes for one account it answers `quota_exceeded`.',
+    tags: ['auth'],
+    response: {
+      type: 'object',
+      properties: {
+        sent: bool('False when the cooldown refused; nothing was sent.'),
+        nextSendAt: iso('When another send is allowed.'),
+        expiresAt: iso('When the current code stops working.'),
+        sends: int('Codes sent to this account so far, including this one.'),
+        code: str('**Development servers only** (local email adapter). Never present when mail is really sent.'),
+      },
+    },
+    errors: [
+      [409, '`conflict` — the address is already confirmed. `quota_exceeded` — 10 codes have been sent.'],
+      [400, '`validation_failed` — the account has no email address.'],
+    ],
+  },
+  'POST /v1/auth/verify': {
+    summary: 'Confirm the email code',
+    description:
+      'Idempotent: confirming an account that is already proved is `granted: false`, not an ' +
+      'error. Spaces and dashes in the code are ignored. Five wrong answers end that code; ' +
+      'ask for a new one.',
+    tags: ['auth'],
+    body: { code: str('The six digits from the email.') },
+    required: ['code'],
+    response: {
+      type: 'object',
+      properties: {
+        verified: bool(),
+        granted: bool('True only for the call that actually proved it.'),
+      },
+    },
+    errors: [
+      [400, '`validation_failed` — wrong code; `attemptsLeft` says how many tries remain.'],
+      [404, '`not_found` — no code has been sent.'],
+      [409, '`expired` — ask for a new one. `cap_reached` — five wrong answers; ask for a new one. `conflict` — the address changed after the code was sent.'],
+    ],
   },
   'POST /v1/auth/signout': { summary: 'Revoke this session', tags: ['auth'], response: { type: 'object' } },
   'GET /v1/cities': {
@@ -1504,11 +1558,10 @@ const DOCS: Record<string, Doc> = {
   'POST /v1/games/sessions': {
     summary: 'Start a round',
     description:
-      'Refuses with `no_energy` when the tank is empty. **Starting costs nothing and ' +
-      'finishing costs one, win or lose** — so `energyLeft` on this response is what the ' +
-      'player has *before* paying for the round they are about to play, and the refusal ' +
-      'is enforced here because finding out at the end means finding out after the round ' +
-      'was played. An abandoned round costs nothing.\n\n' +
+      'Refuses with `no_energy` when the tank is empty. **Starting costs one, win or ' +
+      'lose** (rulebook §3) — so `energyLeft` on this response is the tank *after* this ' +
+      'round has been paid for, and `energyNextAt` is when the next unit arrives. Any ' +
+      'round the player left open is abandoned first, under the abandon route’s rule.\n\n' +
       'Send `practice: true` to turn that refusal into an **unpaid round** instead: it ' +
       'plays identically and banks nothing — no points, no streak, no energy, no ledger ' +
       'entry — and both this response and the finish carry `paid: false`. Energy still ' +
@@ -1523,7 +1576,7 @@ const DOCS: Record<string, Doc> = {
     tags: ['games'],
     body: {
       gameType: gameTypeSchema(
-        'Eight values, seven cards. `poland` and `uzbekistan` are one ' +
+        'One value per card, except that `poland` and `uzbekistan` are one ' +
           'local-knowledge quiz asked about two different countries — same ' +
           'protocol, same scoring, different bank — so send the one that matches ' +
           'the country on the player’s profile rather than showing both.',
@@ -1636,7 +1689,54 @@ const DOCS: Record<string, Doc> = {
   },
 
   /* ── social ── */
-  'GET /v1/referrals': { summary: 'My code, and how the invites are going', tags: ['social'], response: { type: 'object' } },
+  'GET /v1/referrals': {
+    summary: 'My code, and how the invites are going',
+    description:
+      'The invite link the web shares is `https://www.pay-lez.com/sign-in?ref=<code>`. New codes are ' +
+      '`PY` plus six characters; older `PY####` codes still work. Both people are paid on the ' +
+      "invited friend's **first counted visit** at a partner venue — not at sign-up, not on a scan " +
+      "under the venue's minimum spend, and not at a till the inviter runs.",
+    tags: ['social'],
+    response: {
+      type: 'object',
+      properties: {
+        code: str(),
+        joined: int('Friends who signed up with the code (rejected ones excluded).'),
+        completed: int('…of whom this many made the visit that pays.'),
+        pointsEarned: int("What this account was paid for invites, milestone included, reversals netted. It was the bond's cost to both sides — double the real figure."),
+      },
+    },
+  },
+  'GET /v1/referrals/codes/{code}': {
+    summary: 'Whether an invite code would bind',
+    description:
+      'For a sign-up form to check a typed or linked code before using it — sign-up itself never ' +
+      'refuses a bad code (it reports `referral.applied: false`). Case, spaces and dashes are ignored. ' +
+      'Rate-limited per connection.',
+    tags: ['social'],
+    response: { type: 'object', properties: { valid: bool() } },
+  },
+  'GET /v1/admin/referrals': {
+    summary: 'Referrals, newest first',
+    tags: ['admin'],
+    query: [
+      { name: 'status', description: '`pending`, `completed` or `rejected`.' },
+      { name: 'limit', description: 'Up to 500; default 100.' },
+    ],
+    response: { type: 'object' },
+  },
+  'POST /v1/admin/referrals/{id}/reject': {
+    summary: 'Void a referral',
+    description:
+      'Terms §5: points awarded in error or through fraud are reversed. A pending referral is closed; ' +
+      'a completed one also has both payouts reversed by compensating ledger entries. The five-friend ' +
+      'milestone is not touched — reverse that entry separately if it should go too. Audited.',
+    tags: ['admin'],
+    body: { reason: str('Why. Kept on the reversal entries and the audit row.') },
+    required: ['reason'],
+    response: { type: 'object' },
+    errors: [[409, '`conflict` — already rejected.'], [404, '`not_found` — no such referral.']],
+  },
   'GET /v1/leaderboard/city': {
     summary: 'The city weekly board',
     description:

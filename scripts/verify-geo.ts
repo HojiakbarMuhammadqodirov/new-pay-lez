@@ -39,6 +39,11 @@ import {
 import { listedRoutes, robotsTxt, sitemapXml } from './sitemap';
 import { draw, shuffledRange } from '../src/site/games/bag';
 import { DAILY_POOL, dailyGame, dailyGameIndex } from '../src/site/games/rules';
+import * as arcade from '../src/site/games/arcade';
+import * as board2048 from '../src/site/games/board2048';
+import * as foodBoard from '../src/site/games/foodBoard';
+import * as ninjaField from '../src/site/games/ninjaField';
+import { mergeMilestones, mergePoints } from '../src/site/auth/player';
 import { SCOPES } from '../src/site/api/board';
 import { lineCap, longestLine } from '../src/site/heroLines';
 import { ratesFrom } from '../src/site/api/fx';
@@ -89,7 +94,11 @@ import {
 } from '../src/site/auth/users';
 import {
   awardFlight,
+  awardPoints,
   awardRound,
+  ENERGY_REFUND_MS,
+  refundEnergy,
+  spendEnergy,
   bankableGaps,
   canAfford,
   flightAward,
@@ -1830,6 +1839,30 @@ console.log('\nplaying');
   check('…and still banks what was right', lost.points === 2, `${lost.points} pts`);
   check('a win and a loss cost exactly the same', first.energy === lost.energy);
 
+  /* **Charged at the start, on this side too** (rulebook §3). A round the Play
+     screen builds itself spends its unit when it opens; the finish then banks
+     with `charged` and must not take a second one. */
+  {
+    const opened = spendEnergy(base, day('2026-08-03'));
+    check('opening a round takes the unit', energyOf(opened, day('2026-08-03')).count === MAX_ENERGY - 1);
+    const banked = awardPoints(opened, quizAward(win), day('2026-08-03'), { charged: true });
+    check('…and finishing it takes nothing more', energyOf(banked, day('2026-08-03')).count === MAX_ENERGY - 1);
+    check('…while still paying the round', banked.points === first.points, `${banked.points} pts`);
+    const last = { ...base, energy: 1, energyAt: day('2026-08-03').getTime() };
+    const emptied = spendEnergy(last, day('2026-08-03'));
+    check('a round started on the last unit still pays at the finish, on an empty tank',
+      awardPoints(emptied, quizAward(win), day('2026-08-03'), { charged: true }).points === first.points);
+
+    /* The accidental tap: a quit inside `ENERGY_REFUND_MS` gives it back, once a day. */
+    check('the refund window is five seconds, as on the server', ENERGY_REFUND_MS === 5_000);
+    const back = refundEnergy(opened, day('2026-08-03'));
+    check('a quick quit gives the unit back', energyOf(back, day('2026-08-03')).count === MAX_ENERGY);
+    const again = refundEnergy(spendEnergy(back, day('2026-08-03')), day('2026-08-03'));
+    check('…once a day', energyOf(again, day('2026-08-03')).count === MAX_ENERGY - 1);
+    check('…and again the next day', energyOf(refundEnergy(again, day('2026-08-04')), day('2026-08-04')).count === MAX_ENERGY);
+    check('a full tank has nothing to give back', refundEnergy(base, day('2026-08-03')) === base);
+  }
+
   /*
    * Energy regenerates one at a time on a clock, not all at once at midnight.
    *
@@ -2148,7 +2181,7 @@ console.log('\ncopy that quotes a constant');
    * not move — but the sentences around them still call the pool lives, and
    * `src/site/i18n/` is not this change's to edit. Both checks below are about
    * the numbers and neither reads the noun, so they hold either way; the copy
-   * pass that renames the word has to leave "four hours" and "up to four"
+   * pass that renames the word has to leave "two hours" and "Four on a full tank"
    * where they are, and this is what will say so if it does not.
    *
    * Those two figures are written as **words**, not as holes, and that is
@@ -2172,7 +2205,7 @@ console.log('\ncopy that quotes a constant');
      against a sentence that was quietly reworded. */
   const faq = en.learn.faq.items.map((item) => item.a).join(' ');
   check('…and the English FAQ still quotes both figures',
-    /four hours/.test(faq) && /up to four/.test(faq));
+    /two hours/.test(faq) && /Four on a full tank/.test(faq));
 
   /*
    * The countdown beside the energy count is a **frame around a hole**, and the
@@ -3228,6 +3261,60 @@ console.log('\none sentence, one line — the headline cap');
   check('…and so does whitespace', lineCap(['   ']) === undefined);
 }
 
+console.log('\n2048 slides the way the server does');
+{
+  /* The same cases `mergeRules` in `server/verify.ts` pins on the server's
+     copy. The browser's slide only predicts, but a prediction that merged
+     differently would flash a wrong board before every correction. */
+  const row = (values: number[], dir: board2048.Direction = 'left') =>
+    board2048.slide([...values, ...new Array(12).fill(0)], dir).board.slice(0, 4).join(',');
+  check('two pairs make two tiles, not one', row([2, 2, 2, 2]) === '4,4,0,0', row([2, 2, 2, 2]));
+  check('a merged tile does not merge again in the same move', row([2, 2, 4, 0]) === '4,4,0,0');
+  check('the pair nearest the wall merges first', row([2, 2, 2, 0]) === '4,2,0,0');
+  check('sliding right mirrors it', row([2, 2, 2, 0], 'right') === '0,0,2,4');
+  check('a locked board cannot move',
+    !board2048.canMove([2, 4, 2, 4, 4, 2, 4, 2, 2, 4, 2, 4, 4, 2, 4, 2]));
+  check('a swipe reads its longer axis', board2048.directionForSwipe(-80, 20) === 'left'
+    && board2048.directionForSwipe(5, 60) === 'down' && board2048.directionForSwipe(10, 8) === null);
+  check('an offline 1024 pays the master formula at 85', mergePoints(1024, 10) === 15, String(mergePoints(1024, 10)));
+  check('…an untouched board pays nothing', mergePoints(4, 0) === 0);
+  check('512 is four of six milestones (64 → 2048)', mergeMilestones(512) === 4);
+}
+
+console.log('\nFood Cross plays the way the server does');
+{
+  /* The same hand-built boards `foodRules` in `server/verify.ts` pins. */
+  const filler = (): foodBoard.Board =>
+    Array.from({ length: 64 }, (_, i) => ({ t: ((Math.floor(i / 8) + (i % 8)) % 3) + 3, s: foodBoard.PLAIN }));
+  const put = (board: foodBoard.Board, cells: Array<[number, number]>) => {
+    for (const [index, t] of cells) board[index] = { t, s: foodBoard.PLAIN };
+    return board;
+  };
+  const calm: foodBoard.Rng = (n) => 3 + (n % 3);
+  check('the filler has no line', foodBoard.findRuns(filler()).length === 0);
+  const four = foodBoard.play(put(filler(), [[0, 0], [1, 0], [2, 1], [3, 0], [10, 0]]), 2, 10, calm, 0)!;
+  check('four in a line clears three and leaves a row-clearer',
+    four.steps[0].cleared.join(',') === '0,1,3' && four.steps[0].board[2].s === foodBoard.ROW);
+  const five = foodBoard.play(put(filler(), [[0, 0], [1, 0], [2, 1], [3, 0], [4, 0], [10, 0]]), 2, 10, calm, 0)!;
+  check('five in a line leaves a bomb', five.steps[0].board[2].s === foodBoard.BOMB);
+  check('a swap that lines nothing up is not a move', !foodBoard.canSwap(filler(), 0, 1));
+  const dealt = foodBoard.deal(foodBoard.localRng, 0).board;
+  check('a dealt board has no line and a move', foodBoard.findRuns(dealt).length === 0 && foodBoard.hasMove(dealt));
+}
+
+console.log('\nFood Ninja throws the round the server does');
+{
+  /* A fixed source, so both copies can be compared on one schedule: the server
+     suite pins the same counts against its own copy. */
+  const fixed: ninjaField.Rng = (n) => ((n * 2654435761) >>> 0);
+  const round = ninjaField.schedule(fixed);
+  check('a round throws between 70 and 130 foods', round.length >= 70 && round.length <= 130, String(round.length));
+  check('…all inside the sixty seconds', round.every((f) => f.t >= 0 && f.t < ninjaField.DURATION_MS));
+  check('…each in the air for a while, then gone',
+    round.every((f) => ninjaField.airtime(f) > 600 && ninjaField.positionAt(f, f.t + ninjaField.airtime(f) + 20) === null));
+  check('the same source throws the same round', JSON.stringify(round) === JSON.stringify(ninjaField.schedule(fixed)));
+}
+
 console.log('\nevery game is named in every language');
 {
   /*
@@ -3355,11 +3442,57 @@ console.log('\nthe daily game, and the region rule');
        language — which is what makes it checkable without a table of eight
        translations here. */
     check(`${code}'s first name is the flight's`, /bird|птиц|птах|qush|ptak/i.test(names[0]), names[0]);
-    /* And the local Word Builder is last, because it is the row the region rule
-       removes: a filtered list keeps every other index where it was. */
-    check(`${code} still holds a hole for the local list`, names[GAMES.length - 1].includes('{language}'));
+    /* Found by id: the local Word Builder is no longer the last row. That is
+       safe because the grid names a card by its index in `GAMES`, never in
+       the filtered list — see `visibleGames` in `games.tsx`. */
+    check(`${code} still holds a hole for the local list`,
+      names[GAMES.findIndex((game) => game.id === 'wordLocal')].includes('{language}'));
   }
-  check('the local Word Builder is the last row', GAMES[GAMES.length - 1].id === 'wordLocal');
+  check('the new games are appended after the original rows, in order',
+    GAMES.slice(-9).map((game) => game.id).join(',') === 'wordLocal,merge,food,ninja,snake,cannon,breakout,doodle,zuma',
+    GAMES.slice(-9).map((game) => game.id).join(','));
+  for (const code of LANGUAGE_ORDER) {
+    check(`${code} names every game`, LANGUAGES[code].games.names.length === GAMES.length,
+      `${LANGUAGES[code].games.names.length} names, ${GAMES.length} games`);
+  }
+}
+
+console.log('\nthe arcade games, as the server plays them');
+{
+  /*
+   * Snake is replayed on the server from the turns this screen reports, so a
+   * tick here has to be a tick there. These are the cases `verify:api` pins on
+   * `server/domain/arcade.ts`, written against this copy.
+   */
+  const list = Array.from({ length: arcade.SNAKE_FOOD_LIST }, (_, n) => (n * 37 + 11) % 256);
+  let snake = arcade.snakeStart(list);
+  let ticks = 0;
+  while (!snake.dead && ticks < 100) {
+    snake = arcade.snakeStep(snake, list);
+    ticks += 1;
+  }
+  check('running straight crashes into the wall on the tenth tick', snake.dead && snake.tick === 10, `${snake.tick}`);
+  check('turning straight back is ignored, not a crash', !arcade.snakeStep(arcade.snakeStart(list), list, 3).dead);
+  check('the snake quickens as it eats, to a floor', arcade.snakeTickMs(0) === 140 && arcade.snakeTickMs(100) === 70);
+
+  const rng = (n: number) => (n * 2654435761) >>> 0;
+  const opened = arcade.cannonStart(rng);
+  check('Canon Numbers opens on two rows', opened.board.slice(2 * arcade.CANNON_COLS).every((v) => v === 0) && opened.spawns === 2);
+  const col = opened.board.findIndex((v) => v > 0) % arcade.CANNON_COLS;
+  const fired = arcade.cannonFire(opened, col, rng);
+  check('a volley hits the lowest block in the column first', fired.hits[0] === arcade.cannonHits(opened.board, col, 0)[0]);
+  check('…fires no more than its balls', fired.hits.length <= arcade.cannonShots(0));
+  let round = opened;
+  for (let i = 0; i < 40 && !round.over; i += 1) round = arcade.cannonFire(round, 0, rng).state;
+  check('…and a round always ends', round.over && round.turn <= arcade.CANNON_TURNS);
+
+  const chain = arcade.zumaChain(rng);
+  check('the Zuma chain never arrives with three of a kind touching',
+    chain.length === arcade.ZUMA_CHAIN && chain.every((c, i) => i < 2 || !(chain[i - 1] === c && chain[i - 2] === c)));
+  check('every Doodle Jump gap is one a jump can clear',
+    Array.from({ length: arcade.DOODLE_PLATFORMS }, (_, n) => arcade.doodleGap(n)).every((gap) => gap < 0.32));
+  check('the arcade scale: nothing pays nothing, anything pays at least two, perfect pays eighteen',
+    arcade.arcadePoints(0) === 0 && arcade.arcadePoints(1) === 2 && arcade.arcadePoints(100) === 18);
 }
 
 console.log('\nthe live rate table, over the built-in one');
@@ -4924,7 +5057,18 @@ console.log('\nthe partner dashboard');
       ADMIN_TABS.length === en.admin.tabs.length,
       `${ADMIN_TABS.length} icons, ${en.admin.tabs.length} labels`,
     );
-    check('the Tiers tab is the sixth', en.admin.tabs.length === 6, en.admin.tabs.join(', '));
+    check('the Tiers tab is the sixth', en.admin.tabs[5] === 'Tiers', en.admin.tabs.join(', '));
+    /* Gift cards is appended after it, for the same reason Tiers was: the
+       `tab === n` branches in `admin.tsx` index by position. */
+    check('…and Gift cards the seventh, and last', en.admin.tabs.length === 7 && en.admin.tabs[6] === 'Gift cards', en.admin.tabs.join(', '));
+    check(
+      'the Gift cards icon is not one another tab uses',
+      ADMIN_TABS.filter((icon) => icon === ADMIN_TABS[6]).length === 1,
+      ADMIN_TABS[6],
+    );
+    for (const code of LANGUAGE_ORDER) {
+      check(`${code} names the Gift cards tab`, (LANGUAGES[code].admin.tabs[6] ?? '').trim() !== '');
+    }
     /* Appended, so the four `tab === n` branches in `admin.tsx` still point at
        the screens they were written for. */
     check(

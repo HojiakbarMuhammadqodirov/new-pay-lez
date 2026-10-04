@@ -2,7 +2,7 @@
   "privacyTitle": "Privacy Policy",
   "termsTitle": "Terms of Use",
   "privacyVersion": "Version 1.1 · Effective 28 August 2026 · GDPR compliant",
-  "termsVersion": "Version 1.0 · Effective 24 April 2025",
+  "termsVersion": "Version 1.1 · Effective 18 October 2026",
   "english": "This is the authoritative English version of this document.",
   "privacyContents": [
     ["privacy-1", "Who We Are"],
@@ -724,15 +724,19 @@
     },
     {
       "kind": "paragraph",
-      "text": "Users may refer new users to the platform using a personal referral code. Referral points are awarded when the referred user:"
+      "text": "Users may refer new users to the platform using a personal referral code or invite link. Referral points are awarded to you and the person you invited when they:"
     },
     {
       "kind": "bullet",
-      "text": "Creates a verified account using the referral code"
+      "text": "Create an account with your referral code or invite link"
     },
     {
       "kind": "bullet",
-      "text": "Completes the minimum onboarding requirements specified in the app"
+      "text": "Make their first qualifying visit to a partner venue — a confirmed purchase that meets the venue's minimum spend"
+    },
+    {
+      "kind": "paragraph",
+      "text": "No points are awarded for visits at a venue you own or operate."
     },
     {
       "kind": "paragraph",

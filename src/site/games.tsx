@@ -9,7 +9,7 @@ import {
 import { GAMES, POINTS_SLIDES, type GameId } from './content';
 import { useApi } from './api/useApi';
 import { hasToken } from './api/client';
-import { finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
+import { abandonRound, finishRound, sendMove, startRound, type ServerGameType } from './api/consumer';
 import { SCOPES, type Scope, type Board as ServerBoard } from './api/board';
 import { cheapestCost, GIFT_CARDS_PATH, nextRung, type GiftCardStock } from './api/wallet';
 import { Icon } from './icons';
@@ -18,7 +18,10 @@ import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import {
   awardPoints,
+  ENERGY_REFUND_MS,
   ENERGY_REGEN_MINUTES,
+  refundEnergy,
+  spendEnergy,
   flightAward,
   freezesOf,
   energyOf,
@@ -40,6 +43,16 @@ import {
   type WordList,
 } from './games/banks';
 import { MemoryMatch } from './games/MemoryMatch';
+import { Merge2048 } from './games/Merge2048';
+import { FoodCross } from './games/FoodCross';
+import { FoodNinja } from './games/FoodNinja';
+import { Snake } from './games/Snake';
+import { CannonNumbers } from './games/CannonNumbers';
+import { Breakout } from './games/Breakout';
+import { DoodleJump } from './games/DoodleJump';
+import { Zuma } from './games/Zuma';
+import type { Flyer } from './games/ninjaField';
+import type { Board } from './games/foodBoard';
 import { GamePreview } from './games/preview';
 import { dailyGameIndex, gameName, rulesFor } from './games/rules';
 import {
@@ -49,6 +62,8 @@ import {
   type Question,
 } from './games/rounds';
 import { WordBuilder, type ServerWord } from './games/WordBuilder';
+import { VerifyEmail } from './VerifyEmail';
+import { InviteCard } from './InviteCard';
 import { PATHS } from './router';
 import { useReveal } from './useReveal';
 import '../components/GlobeHero/ui/flagFont.css';
@@ -1094,6 +1109,14 @@ const SERVER_GAME: Record<Exclude<GameId, 'local'>, ServerGameType> = {
   wordLocal: 'word_builder',
   memory: 'memory_match',
   flight: 'flight',
+  merge: 'merge_2048',
+  food: 'food_cross',
+  ninja: 'food_ninja',
+  snake: 'snake',
+  cannon: 'cannon_numbers',
+  breakout: 'breakout',
+  doodle: 'doodle_jump',
+  zuma: 'zuma',
 };
 
 /** What `/v1/games/sessions` sends back for the four quizzes. */
@@ -1261,6 +1284,15 @@ export function GamesApp() {
   );
   const [playing, setPlaying] = useState<GameId | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
+  /* 2048's largest tile, for the result card's line. Set by the round as it ends. */
+  const [mergeBest, setMergeBest] = useState(0);
+  /* Food Cross's score, for the result card's line. */
+  const [foodScore, setFoodScore] = useState(0);
+  /* Food Ninja's foods sliced (the server's count on a server round). */
+  const [ninjaSliced, setNinjaSliced] = useState(0);
+  /* The arcade games' own count for the result card — foods eaten, blocks
+     destroyed, bricks broken, platforms climbed, chain cleared. */
+  const [arcadeCount, setArcadeCount] = useState(0);
   const [loading, setLoading] = useState(false);
   /*
    * Why a press did nothing.
@@ -1280,6 +1312,16 @@ export function GamesApp() {
   const [startError, setStartError] = useState<string | null>(null);
   /* The server round in flight, or null for a locally built one. */
   const [session, setSession] = useState<string | null>(null);
+  /*
+   * A locally built round's charge — rulebook §3 on the no-server path.
+   *
+   * A server round is charged by the server when it starts; a round this page
+   * builds itself (no token, or the server refused) is charged here, at the
+   * same moment, and `bank` and `quitRound` read this to know whether it was
+   * paid and when it began. A ref, not state: nothing renders from it, and the
+   * finish must see the value the start wrote even within the same tick.
+   */
+  const localRound = useRef<{ paid: boolean; at: number } | null>(null);
   /* What the server sent with that session — the words, the board size, the
      flight target. Typed at each call site rather than here, because the three
      games send three different things and a union of all of them would be a
@@ -1511,6 +1553,7 @@ export function GamesApp() {
       /* The four that build their own round need nothing from here. */
       if (chosen.kind !== 'text' && chosen.kind !== 'flag' && chosen.kind !== 'capital') {
         setQuestions([]);
+        beginLocal();
         setPlaying(id);
         setLoading(false);
         return;
@@ -1543,6 +1586,7 @@ export function GamesApp() {
       build
         .then((built) => {
           setQuestions(built);
+          beginLocal();
           setPlaying(id);
         })
         .catch(() => {
@@ -1569,7 +1613,20 @@ export function GamesApp() {
      * the *rate* and the cap — the half a client should not be trusted with —
      * while the client supplies the half it cannot help but supply.
      */
-    if ((chosen.kind === 'flight' || chosen.kind === 'memory' || chosen.kind === 'word') && hasToken()) {
+    if (
+      (chosen.kind === 'flight' ||
+        chosen.kind === 'memory' ||
+        chosen.kind === 'word' ||
+        chosen.kind === 'merge' ||
+        chosen.kind === 'food' ||
+        chosen.kind === 'ninja' ||
+        chosen.kind === 'snake' ||
+        chosen.kind === 'cannon' ||
+        chosen.kind === 'breakout' ||
+        chosen.kind === 'doodle' ||
+        chosen.kind === 'zuma') &&
+      hasToken()
+    ) {
       setQuestions([]);
       setLoading(true);
       /* The Word Builder's list is the card's, not the reader's language — the
@@ -1578,6 +1635,7 @@ export function GamesApp() {
         chosen.kind === 'word' ? (id === 'wordLocal' ? localList ?? 'en' : 'en') : undefined;
       startRound(serverGame(id), language, practice, undefined, wordList)
         .then((round) => {
+          if (round.paid) mirrorEnergy(round.energyLeft, round.energyNextAt);
           setSession(round.sessionId);
           setContent(round.content);
           setPlaying(id);
@@ -1606,6 +1664,7 @@ export function GamesApp() {
       setLoading(true);
       startRound(serverGame(id), language, practice)
         .then((round) => {
+          if (round.paid) mirrorEnergy(round.energyLeft, round.energyNextAt);
           const content = round.content as ServerQuiz;
           setSession(round.sessionId);
           setQuestions(
@@ -1671,8 +1730,18 @@ export function GamesApp() {
    */
   const bank = (award: Award, correct: number) => {
     const now = new Date();
-    const paid = energyOf(player, now, limits).count > 0;
-    const next = awardPoints(player, award, now);
+    const round = localRound.current;
+    localRound.current = null;
+    /* Paid is what the start decided, not what the tank says now: energy only
+       refills, so a round that began on an empty tank could end on a full one,
+       and it was still a practice round. A round with no record of its start
+       (none should exist) falls back to the old construction. */
+    const paid = round ? round.paid : energyOf(player, now, limits).count > 0;
+    const next = round
+      ? round.paid
+        ? awardPoints(player, award, now, { charged: true })
+        : player
+      : awardPoints(player, award, now);
     setPlayer(next);
     setResult({
       won: award.won,
@@ -1744,6 +1813,59 @@ export function GamesApp() {
    * nothing for. The lifetime tallies and `lastPlayed` are left alone for the
    * same reason: they are what the server did not write.
    */
+  /**
+   * Where the local energy clock has to be anchored for `energyOf` to show
+   * exactly the server's tank: `count` now, the next unit at `nextAt`. The
+   * local reading is `held + floor((now − anchor) / interval)`, so an anchor one
+   * interval before `nextAt` makes both agree to the second. A full tank has no
+   * clock to anchor.
+   */
+  const anchorFor = (count: number, nextAt: string | null | undefined): number | null => {
+    if (count >= limits.max || !nextAt) return null;
+    const next = Date.parse(nextAt);
+    return Number.isFinite(next) ? next - limits.regenMinutes * 60_000 : Date.now();
+  };
+
+  /* The tank as the server just reported it — a round's start, its Quit, or its finish. */
+  const mirrorEnergy = (count: number, nextAt: string | null | undefined) =>
+    setPlayer({ ...player, energy: count, energyAt: anchorFor(count, nextAt) });
+
+  /**
+   * Quit. A server round is told it was abandoned: its energy was spent when it
+   * started (rulebook §3) and stays spent, unless this is within five seconds
+   * of the start — once a day — and then the server gives it back. Either way
+   * the gauge is set from the server's answer rather than guessed here.
+   */
+  const quitRound = () => {
+    const open = session;
+    setSession(null);
+    setPlaying(null);
+    if (!open) {
+      /* A local round: its energy went at the start and stays gone — unless
+         this is the accidental tap, which `refundEnergy` gives back once a day,
+         exactly as the server does for its own rounds. */
+      const round = localRound.current;
+      localRound.current = null;
+      if (round?.paid && Date.now() - round.at <= ENERGY_REFUND_MS) {
+        setPlayer(refundEnergy(player, new Date(), limits));
+      }
+      return;
+    }
+    abandonRound(open)
+      .then((closed) => mirrorEnergy(closed.energyLeft, closed.energyNextAt))
+      .catch(() => {
+        /* The next round's start reads the tank again; nothing to repair here. */
+      });
+  };
+
+  /** Open a local round: charge it now if the tank has a unit, or mark it practice. */
+  const beginLocal = () => {
+    const now = new Date();
+    const paid = energyOf(player, now, limits).count > 0;
+    localRound.current = { paid, at: now.getTime() };
+    if (paid) setPlayer(spendEnergy(player, now, limits));
+  };
+
   const bankServer = (id: string, report?: Record<string, unknown>, fallbackCorrect = 0) => {
     setSession(null);
     finishRound(id, report)
@@ -1756,7 +1878,7 @@ export function GamesApp() {
                 streak: done.streak,
                 freezes: done.freezes,
                 energy: done.energyLeft,
-                energyAt: done.energyLeft >= limits.max ? null : Date.now(),
+                energyAt: anchorFor(done.energyLeft, done.energyNextAt),
                 answered: player.answered + done.answered,
                 correct: player.correct + done.correct,
                 lastPlayed: todayLocal(),
@@ -1822,6 +1944,21 @@ export function GamesApp() {
    * `awardPoints` still owns everything that happens to the account, which is
    * why the streak, the lapse and the freeze are not restated in either game.
    */
+  /**
+   * The arcade games the server judges from a **report** — Snake's turns,
+   * Breakout's bricks, Doodle Jump's height, Zuma's chain — rather than from
+   * moves it applied. On a server round the report goes to `/finish` and the
+   * local reckoning is dropped; offline it is the local reckoning that banks.
+   */
+  const finishReported = (points: number, correct: number, won: boolean, report: Record<string, unknown>) => {
+    if (!game) return;
+    if (session) {
+      bankServer(session, report, correct);
+      return;
+    }
+    bank({ game: game.id, points, answered: game.questions, correct, won }, correct);
+  };
+
   const finishScored = (points: number, correct: number, won: boolean) => {
     if (!game) return;
 
@@ -2075,6 +2212,16 @@ export function GamesApp() {
           </div>
 
           {/*
+            ── confirm your email ──
+
+            Under the two gauges, the first thing below the readings a player
+            opens this screen for. It renders **nothing** for an account that
+            has proved its address, or that has no address to prove — see
+            `VerifyEmail.tsx`, including why it is a panel and not a gate.
+          */}
+          <VerifyEmail where="play" />
+
+          {/*
             ── the week, and the slack ──
 
             The streak and the freezes, out of the strip they used to be pills
@@ -2085,6 +2232,15 @@ export function GamesApp() {
           */}
 
           <StreakRow player={player} />
+
+          {/*
+            ── invite friends ──
+
+            Under the week, above the history: something a player can *do*
+            today, where the rotating "invite a friend" line in the points card
+            above only says it pays. See `InviteCard.tsx`.
+          */}
+          <InviteCard />
 
           {/*
             ── the stats strip ──
@@ -2193,6 +2349,22 @@ export function GamesApp() {
                   ? fill(games.flight.resultScore, { cleared: String(result.correct) })
                   : game.kind === 'memory'
                     ? fill(games.memory.resultScore, { pairs: String(result.correct) })
+                    : game.kind === 'merge'
+                      ? fill(games.merge.resultScore, { tile: String(mergeBest) })
+                      : game.kind === 'food'
+                        ? fill(games.food.resultScore, { n: String(foodScore) })
+                        : game.kind === 'ninja'
+                          ? fill(games.ninja.resultScore, { n: String(ninjaSliced) })
+                          : game.kind === 'snake'
+                            ? fill(games.snake.resultScore, { n: String(arcadeCount) })
+                            : game.kind === 'cannon'
+                              ? fill(games.cannon.resultScore, { n: String(arcadeCount) })
+                              : game.kind === 'breakout'
+                                ? fill(games.breakout.resultScore, { n: String(arcadeCount) })
+                                : game.kind === 'doodle'
+                                  ? fill(games.doodle.resultScore, { n: String(arcadeCount) })
+                                  : game.kind === 'zuma'
+                                    ? fill(games.zuma.resultScore, { n: String(arcadeCount) })
                     : game.kind === 'word'
                       ? fill(games.wordGame.resultScore, {
                           solved: String(result.correct),
@@ -2208,7 +2380,7 @@ export function GamesApp() {
               }}
             />
           ) : playing && game && game.kind === 'flight' ? (
-            <FlightGame game={game} onDone={finishFlight} onQuit={() => setPlaying(null)} />
+            <FlightGame game={game} onDone={finishFlight} onQuit={quitRound} />
           ) : playing && game && game.kind === 'memory' ? (
             <MemoryMatch
               pairs={game.questions}
@@ -2218,7 +2390,89 @@ export function GamesApp() {
               session={session ?? undefined}
               serverBoard={(content as { cards: number; pairs: number } | null) ?? undefined}
               onDone={finishScored}
-              onQuit={() => setPlaying(null)}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'snake' ? (
+            <Snake
+              session={session ?? undefined}
+              serverRound={(content as { foods: number[] } | null) ?? undefined}
+              onDone={(points, correct, won, eaten, report) => {
+                setArcadeCount(eaten);
+                finishReported(points, correct, won, report);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'cannon' ? (
+            <CannonNumbers
+              session={session ?? undefined}
+              serverBoard={(content as { board: number[] } | null) ?? undefined}
+              onDone={(points, correct, won, destroyed) => {
+                setArcadeCount(destroyed);
+                finishScored(points, correct, won);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'breakout' ? (
+            <Breakout
+              session={session ?? undefined}
+              serverRound={(content as { wall: number[] } | null) ?? undefined}
+              onDone={(points, correct, won, broken, report) => {
+                setArcadeCount(broken);
+                finishReported(points, correct, won, report);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'doodle' ? (
+            <DoodleJump
+              session={session ?? undefined}
+              serverRound={(content as { platforms: number[] } | null) ?? undefined}
+              onDone={(points, correct, won, reached, report) => {
+                setArcadeCount(reached);
+                finishReported(points, correct, won, report);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'zuma' ? (
+            <Zuma
+              session={session ?? undefined}
+              serverRound={(content as { chain: number[]; shots: number[] } | null) ?? undefined}
+              onDone={(points, correct, won, cleared, report) => {
+                setArcadeCount(cleared);
+                finishReported(points, correct, won, report);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'ninja' ? (
+            <FoodNinja
+              session={session ?? undefined}
+              serverRound={(content as { flyers: Flyer[]; durationMs?: number } | null) ?? undefined}
+              onDone={(points, correct, won, sliced) => {
+                setNinjaSliced(sliced);
+                finishScored(points, correct, won);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'food' ? (
+            <FoodCross
+              session={session ?? undefined}
+              serverBoard={(content as { board: Board; moves?: number } | null) ?? undefined}
+              onDone={(points, correct, won, score) => {
+                setFoodScore(score);
+                finishScored(points, correct, won);
+              }}
+              onQuit={quitRound}
+            />
+          ) : playing && game && game.kind === 'merge' ? (
+            <Merge2048
+              session={session ?? undefined}
+              serverBoard={(content as { board: number[] } | null) ?? undefined}
+              onDone={(points, correct, won, best) => {
+                /* The largest tile is what the result card names; the server's
+                   finish reports the milestone count, not the tile. */
+                setMergeBest(best);
+                finishScored(points, correct, won);
+              }}
+              onQuit={quitRound}
             />
           ) : playing && game && game.kind === 'word' ? (
             <WordBuilder
@@ -2231,7 +2485,7 @@ export function GamesApp() {
               session={session ?? undefined}
               serverWords={(content as { words?: ServerWord[] } | null)?.words}
               onDone={finishScored}
-              onQuit={() => setPlaying(null)}
+              onQuit={quitRound}
             />
           ) : playing && game ? (
             <Round
@@ -2259,7 +2513,7 @@ export function GamesApp() {
                   : undefined
               }
               onDone={finishQuiz}
-              onQuit={() => setPlaying(null)}
+              onQuit={quitRound}
             />
           ) : (
             /*

@@ -68,13 +68,21 @@ export interface WalletVoucher {
 export interface WalletGiftCard {
   id: string;
   code: string;
+  /** `active`, `used`, `expired` or `cancelled` (refunded by an operator). */
   status: string;
   brand: string;
   logo: string | null;
+  /** What the card was bought at — the shelf can change after; this does not. */
   face_minor: number;
   currency: string;
   issued_at: string;
   expires_at: string | null;
+  /* Absent from a server older than the gift-card engine. */
+  used_at?: string | null;
+  kind?: 'brand' | 'venue';
+  how_to_use?: string;
+  /** The venue a `venue` card is spent at. */
+  venue_name?: string | null;
 }
 
 /**
@@ -138,6 +146,12 @@ export interface GiftCardStock {
   points_cost: number;
   stock: number;
   priority_only: number;
+  /* Absent from a server older than the gift-card engine. */
+  country_code?: string;
+  kind?: 'brand' | 'venue';
+  venue_name?: string | null;
+  validity_days?: number;
+  how_to_use?: string;
 }
 
 export const GIFT_CARDS_PATH = '/v1/gift-cards';
@@ -168,10 +182,9 @@ export function faceValue(
 
      Contested, and left as it is on purpose: `decimalsFor` in
      `server/domain/money.ts` says a so'm has no minor unit, which would make a
-     UZS `face_minor` whole so'm, while `npm run verify` pins hundredths here. No
-     code writes gift-card stock yet, so nothing on the server settles it — it is
-     recorded in the beta contract's CHANGELOG rather than decided in a file whose
-     check belongs to somebody else. */
+     UZS `face_minor` whole so'm, while `npm run verify` pins hundredths here.
+     The console's gift-card form is what writes stock now, and it writes
+     hundredths for every currency — `schema.sql` says so on the table. */
   const amount = formatFx(card.face_minor / 100, fx, separator);
   /* No-break space on the trailing form, exactly as `money()` writes it:
      "50 zł" must never break between the number and its unit, and the leading
@@ -206,6 +219,14 @@ export const redeemGiftCard = (stockId: string) =>
     /* The one call here that moves value: a retry must issue one card. */
     idempotencyKey: `gift:${stockId}:${Date.now()}`,
   });
+
+/**
+ * "I've used it." The code is spent at the brand's or the venue's own till,
+ * which this server never sees, so the holder is the one who says so. Moves no
+ * value — the points went when the card was bought.
+ */
+export const markGiftCardUsed = (id: string) =>
+  call<{ ok: true }>(`/v1/wallet/gift-cards/${encodeURIComponent(id)}/used`, { method: 'POST' });
 
 /* ═══════════════════════════════════════════════════════════ the board ══ */
 

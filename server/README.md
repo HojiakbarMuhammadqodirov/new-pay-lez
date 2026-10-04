@@ -310,27 +310,106 @@ follows it. A client that has not asked creates the account and writes nothing;
 arrives later, which is the whole migration path for a client on its own release
 schedule.
 
-## Email confirmation is built, and it is not switched on
+## The five arcade games, and what each one lets the server know
 
-A full OTP flow existed for a few days — code, expiry, attempt cap, resend
-cooldown, per-address send ceiling, an `email.ts` port and a panel on the Play and
-Wallet screens — and was removed in `53edbf7`. There is no transport: with
-`PAYLEZ_EMAIL` unset the local adapter logs the code and delivers nowhere, and
-that variable appears in no deployment and in no env example. The gate was also
-far wider than it looked — an unconfirmed account could not earn, buy a voucher or
-gift card, check in, claim the welcome gift, or appear on the leaderboard — and
-nothing backfills an existing account, so a restart would have taken all of that
-from every live user at once.
+`domain/arcade.ts`: Snake, Canon Numbers, Bounce Ball (`breakout`), Doodle Jump
+and Zuma. They score on the rulebook's single 0..100 scale like the eight before
+them, and they are honest about how much of a score the server can vouch for,
+which is not the same for all five:
 
-`users.email_verified_at` and the `email_verifications` table remain in the
-schema, unread, so no migration is owed in either direction, and the Google
-exchange still stamps the column because that is the one moment the fact is free.
-Bringing it back is code only: `git show cc3d9d0 -- <path>` restores the three
-deleted files and `53edbf7` names every block that was cut out of a shared one.
-Do three things differently on the way back — a transport first, a banner rather
-than a gate (and if a gate is ever wanted, on *spending*, never on earning), and a
-backfill so accounts that predate it are not asked to prove an address they
-registered months ago.
+- **Snake is replayed.** The report is the turns, not a count; the server plays
+  them on the round's own food list with the same step and counts what that
+  game ate, stopping where the ticks would have taken longer than the round
+  lasted (`snakeSlackMs`).
+- **Canon Numbers is held**, 2048's arrangement: the board is in the secret,
+  each `fire` is applied here, the next row comes from the seed, and `from`
+  makes a retry harmless.
+- **Bounce Ball, Doodle Jump and Zuma are bounded.** Continuous physics, so
+  whether a ball touched a brick is the screen's fact. The level is the seed's,
+  so a report can only name what exists, and `arcade.bounded` caps it by the
+  round's duration at the fastest honest rate (`…PerSecond` + `…Allowance` in
+  `CONFIG.games`) — refusing the impossible, not refereeing the plausible.
+
+## Gift cards: real codes, one shelf per country
+
+`domain/giftCards.ts`. A gift card used to be a row with a number on it and a
+code this server made up, which no brand would have honoured. It is now a shelf
+row with **real codes behind it** (`gift_card_codes`), and two kinds by market:
+
+- **Poland — `brand`.** The operator buys codes from the brand (Allegro, a
+  supermarket) and loads them; a player is handed one of those exact codes.
+- **Uzbekistan — `venue`.** One venue's own card; there is no brand to buy
+  from, so the server generates the codes and the venue honours what it is shown.
+
+Five rules:
+
+- **`stock` is the codes nobody holds**, and it stays the race-safe purchase
+  gate (`stock = stock - 1 WHERE stock > 0`, then the oldest free code is bound
+  with a guarded UPDATE). Loading adds to it in the same transaction, and boot
+  restates it from the codes (`reconcileStock`), so a drift dies at restart.
+- **The shelf is per country.** `GET /v1/gift-cards` takes `?country=`, else
+  the signed-in player's `country_code`, else Poland for a profile with none;
+  only an anonymous caller with no parameter sees every country.
+- **A bought card keeps what it was bought at.** `face_minor` and `currency`
+  are copied onto `gift_cards`, so editing the shelf reaches the next buyer and
+  nobody before them. Validity is per shelf row (`validity_days`), counted
+  from the purchase; the daily job marks the passed ones `expired`.
+- **"Used" is somebody's word, because the till is not ours.** The holder says
+  so from the wallet, or an operator from the console.
+- **Cancel refunds and burns.** `status = 'cancelled'` and the points back as a
+  new `adjustment` entry (never an edit of the spend); the code is **not**
+  returned to the pool, because the player has seen it and may have used it.
+
+`face_minor` is hundredths of the card's currency for every currency, so'm
+included — the site's `faceValue` and `npm run verify` pin it.
+
+## Browser push: one reminder, at six on the player's clock
+
+The web gets exactly one push, the daily game reminder (`domain/reminders.ts`),
+and only to somebody who switched it on in their profile. It is due at
+`CONFIG.push.reminderAtMin` (18:00) in the zone the player's **browser**
+reported when it subscribed — not Warsaw, not the server's clock — and is sent by
+`jobs.runEveryMinute`, so it leaves within a minute of six. Four rules:
+
+- **Not on a day they played.** Any round started since their local midnight,
+  paid or practice, cancels it.
+- **Once a day**, guarded by the inbox row itself (`kind = 'daily_game'`,
+  `source_ref` = their local day), the pattern `checkin.remind` uses.
+- **Not late.** Past `reminderUntilMin` (21:00) a missed reminder waits for
+  tomorrow, and the push service drops an undelivered one after three hours.
+- **A browser carries only `CONFIG.push.webKinds`.** `canPush` counts a token
+  only if its platform can carry the kind, so a browser-only user is
+  `no_permission` for a venue's deal rather than queued for a push nothing
+  will show — which would also spend their frequency cap.
+
+The transport is `ports/webpush.ts`: RFC 8291 encryption and RFC 8292 (VAPID)
+signing over `node:crypto` and `fetch`, no dependency. A 404/410 from the
+push service revokes the token. FCM/APNs are still not wired, so in live mode a
+non-web row is marked `failed`, honestly, where the local adapter marks it
+`sent`. `verify:api` decrypts what was encrypted with the subscription's own
+key and verifies the VAPID signature, rather than pinning bytes.
+
+## Email confirmation: codes are live, the spending gate is a switch
+
+Every email sign-up gets a six-digit code (`domain/verification.ts`): valid 10
+minutes, 5 wrong answers per code, a 90-second resend cooldown, 10 sends per
+account in total. `POST /v1/auth/verify/send` resends, `POST /v1/auth/verify`
+confirms, and sign-up sends the first one itself. A Google sign-in arrives
+stamped, because `crypto/google.ts` refuses an unverified Google address.
+
+It is the second version. The first (removed in `53edbf7`) had no transport and
+gated earning, check-in, the welcome gift and the board, with no backfill. This
+one differs in exactly the three ways that removal asked for:
+
+- **A transport.** `ports/email.ts` posts to Resend when `PAYLEZ_EMAIL=live`
+  (`RESEND_API_KEY`, `PAYLEZ_EMAIL_FROM`); the boot refuses `live` without a
+  key and warns when it is not live, because the local adapter only logs.
+- **Earning is never gated.** Only spending — `POST /v1/vouchers` and
+  `POST /v1/gift-cards` — and only while `PAYLEZ_VERIFY_GATE=on`. It is off by
+  default because the Flutter app has no code screen yet; `GET /v1/me` reports
+  it as `spendNeedsVerifiedEmail`.
+- **A backfill.** Schema version 8 stamps every account that already had an
+  address, once, with the moment the migration ran.
 
 ## The two controls that are about the database rather than the rules
 
@@ -407,7 +486,7 @@ The numbers live in `CONFIG.points`, `CONFIG.earn` and `CONFIG.games`
 `domain/settings.ts`. Each carries the constraint that set it. The shape is what
 is worth having here, and it is one sentence:
 
-> **Every finished round costs one energy, win or lose, and nothing else decides
+> **Every round costs one energy when it starts, win or lose, and nothing else decides
 > how many rounds a day holds.** Energy refills one per `energy_regen_minutes` up
 > to `daily_energy`, so a day is `daily_energy + 1440 / energy_regen_minutes`
 > rounds from a full tank: **free 12 sustained and 16 in a burst, Pro 24/30,
@@ -424,8 +503,19 @@ what makes the pool a limiter rather than a decoration — losses only was a tax
 being bad at quizzes, and two of the seven games cannot be lost at all, so it
 bounded the struggling player and nobody else. Refilling on a clock is what makes
 charging fair: spend the tank at nine in the morning and the wait is an hour or
-two, not the rest of the day. A round that is *abandoned* still costs nothing,
-because the charge is written in `games.finish` and nowhere else.
+two, not the rest of the day.
+
+**The charge is taken at the start** (rulebook §3), so an abandoned round costs
+one too — charging at `finish` let a player walk out of every round going badly
+for free. `startSession` writes `life_spent = 1` on the new row and stamps
+`charged: 'start'` into its secret, and `energyAt` reads a spend at
+`started_at` for those rows and at `finished_at` for the ones opened before the
+change, so a round in flight across the deploy is charged once. The one way back
+is `POST /v1/games/sessions/:id/abandon` within `energyRefundSeconds` (5) of
+the start, at most `energyRefundsPerDay` (1) a day — the accidental tap — and
+`energy_refunded_at` is what counts it. A new start first abandons any round the
+player left open, through the same function, so the refund rule cannot be
+dodged by not pressing Quit.
 
 **The clocks have just been cut hard and the ceilings have not moved**:
 `energy_regen_minutes` went 240/180/120 → **120/60/30** while `daily_energy`
@@ -891,7 +981,7 @@ final version to fix one:
 |---|---|---|---|
 | venue | `PATCH …/venues/:id` name, city, category, address, phone, email | `PATCH …/venues/:id` suspend / restore | `DELETE …/venues/:id` |
 | offer | `PATCH …/deals/:id` title, description, terms, `validTo` | `PATCH …/deals/:id` pause / resume | `DELETE …/deals/:id` |
-| gift card | — | — | `DELETE …/gift-cards/:id` |
+| gift card | `PATCH …/gift-cards/:id` name, logo, value, price, validity, how-to | `POST …/gift-cards/:id/active` | `DELETE …/gift-cards/:id` |
 | account | `PATCH …/users/:id` name, city, phone, occupation | `POST …/users/:id/ban` | `DELETE …/users/:id` |
 
 plus `POST …/users/:id/password`, which gives a person their account back, and

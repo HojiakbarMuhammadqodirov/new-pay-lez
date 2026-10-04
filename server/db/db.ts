@@ -307,6 +307,14 @@ export const GAME_TYPES = [
   'word_builder',
   'memory_match',
   'flight',
+  'merge_2048',
+  'food_cross',
+  'food_ninja',
+  'snake',
+  'cannon_numbers',
+  'breakout',
+  'doodle_jump',
+  'zuma',
 ] as const;
 
 /**
@@ -324,8 +332,11 @@ export const GAME_TYPES = [
  * 5 → 6 turned the leaderboard opt-in on by default, and flipped the rows that
  * already existed. A rewrite of existing rows, and one that **must not repeat**
  * — see `optInToTheBoard`.
+ * 6 → 7 counted each voucher rung's issued vouchers — see `countTheRungs`.
+ * 7 → 8 stamped every existing address as proved when email confirmation came
+ * back. Another rewrite that **must not repeat** — see `grandfatherAddresses`.
  */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 const schemaVersion = async (db: Db): Promise<number> => {
   const row = await db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
@@ -615,8 +626,11 @@ const gameCounts = async (db: Db): Promise<{ sessions: number; events: number }>
  * `schema.sql` has the new vocabulary and nothing to rebuild.
  */
 async function widenGameTypes(db: Db): Promise<void> {
-  if (await schemaVersion(db) >= 5) return;
-
+  /* No version guard: the check below is the guard, and it is exact. It used to
+     sit behind "version < 5", which was true once — so the next game added
+     (2048) would have found its type refused by a CHECK nothing would widen.
+     A rebuild only happens when `GAME_TYPES` names a type the live constraint
+     lacks, which makes this safe to run on every boot. */
   const table = await tableSql(db, 'game_sessions');
   if (!table) return;
   const present = new Set(checkedValues(table, 'game_type'));
@@ -630,7 +644,7 @@ async function widenGameTypes(db: Db): Promise<void> {
       const before = await gameCounts(db);
 
       await db.exec(`
-        CREATE TABLE game_sessions_v5 (
+        CREATE TABLE game_sessions_next (
           id          TEXT PRIMARY KEY,
           user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
           game_type   TEXT NOT NULL CHECK (game_type IN (${list})),
@@ -645,17 +659,18 @@ async function widenGameTypes(db: Db): Promise<void> {
           life_spent  INTEGER NOT NULL DEFAULT 0,
           started_at  TEXT NOT NULL,
           finished_at TEXT,
-          ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL
+          ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL,
+          energy_refunded_at TEXT
         )`);
       await db.exec(`
-        INSERT INTO game_sessions_v5
+        INSERT INTO game_sessions_next
           (id, user_id, game_type, language, seed, secret, state, score, answered,
-           correct, life_spent, started_at, finished_at, ledger_id)
+           correct, life_spent, started_at, finished_at, ledger_id, energy_refunded_at)
         SELECT id, user_id, game_type, language, seed, secret, state, score, answered,
-               correct, life_spent, started_at, finished_at, ledger_id
+               correct, life_spent, started_at, finished_at, ledger_id, energy_refunded_at
           FROM game_sessions`);
       await db.exec('DROP TABLE game_sessions');
-      await db.exec('ALTER TABLE game_sessions_v5 RENAME TO game_sessions');
+      await db.exec('ALTER TABLE game_sessions_next RENAME TO game_sessions');
       /* The old table's index went down with it. */
       await db.exec(
         'CREATE INDEX IF NOT EXISTS idx_sessions_game ON game_sessions (user_id, started_at)',
@@ -677,6 +692,57 @@ async function widenGameTypes(db: Db): Promise<void> {
     /* Restored whether the rebuild committed or threw, exactly as version 2
        restores it: the constructor turned them on and every other statement in
        the process assumes they are. */
+    await db.exec('PRAGMA foreign_keys = ON');
+  }
+}
+
+/**
+ * `gift_cards.status` gains 'cancelled' — a card the operator voided and
+ * refunded. A rebuild, because SQLite cannot alter a CHECK; guarded by reading
+ * the live constraint, so it runs once and is safe on every boot after.
+ */
+async function widenGiftCardStatus(db: Db): Promise<void> {
+  const table = await tableSql(db, 'gift_cards');
+  if (!table || checkedValues(table, 'status').includes('cancelled')) return;
+
+  await db.exec('PRAGMA foreign_keys = OFF');
+  try {
+    await db.tx(async () => {
+      const before = (await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM gift_cards'))?.n ?? 0;
+      await db.exec(`
+        CREATE TABLE gift_cards_next (
+          id          TEXT PRIMARY KEY,
+          user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+          stock_id    TEXT NOT NULL REFERENCES gift_card_stock (id) ON DELETE RESTRICT,
+          points_spent INTEGER NOT NULL,
+          code        TEXT NOT NULL,
+          status      TEXT NOT NULL DEFAULT 'active'
+                      CHECK (status IN ('active', 'used', 'expired', 'cancelled')),
+          issued_at   TEXT NOT NULL,
+          expires_at  TEXT NOT NULL,
+          used_at     TEXT,
+          face_minor  INTEGER,
+          currency    TEXT,
+          used_by     TEXT,
+          cancelled_at TEXT,
+          refund_ledger_id TEXT REFERENCES points_ledger (id) ON DELETE SET NULL
+        )`);
+      await db.exec(`
+        INSERT INTO gift_cards_next
+          (id, user_id, stock_id, points_spent, code, status, issued_at, expires_at, used_at,
+           face_minor, currency, used_by, cancelled_at, refund_ledger_id)
+        SELECT id, user_id, stock_id, points_spent, code, status, issued_at, expires_at, used_at,
+               face_minor, currency, used_by, cancelled_at, refund_ledger_id
+          FROM gift_cards`);
+      await db.exec('DROP TABLE gift_cards');
+      await db.exec('ALTER TABLE gift_cards_next RENAME TO gift_cards');
+      await db.exec('CREATE INDEX IF NOT EXISTS idx_gift_cards_stock ON gift_cards (stock_id, status)');
+      const after = (await db.get<{ n: number }>('SELECT COUNT(*) AS n FROM gift_cards'))?.n ?? 0;
+      if (after !== before) throw new Error(`gift card migration lost rows: ${before} → ${after}`);
+      const orphans = await db.all('PRAGMA foreign_key_check');
+      if (orphans.length > 0) throw new Error(`gift card migration left ${orphans.length} broken references`);
+    });
+  } finally {
     await db.exec('PRAGMA foreign_keys = ON');
   }
 }
@@ -790,6 +856,31 @@ async function countTheRungs(db: Db): Promise<void> {
   );
 }
 
+/**
+ * Version 8: accounts that predate email confirmation are treated as proved.
+ *
+ * The confirmation flow came back (`domain/verification.ts`), and without
+ * this every existing customer would be shown "confirm your email" for an
+ * address they registered months ago — and, once `PAYLEZ_VERIFY_GATE` is on,
+ * be unable to spend points they have already earned. That is the mistake the
+ * first version of the flow made and was removed for (`53edbf7`).
+ *
+ * Stamped with **the moment this runs**, not `created_at`: the column then
+ * says when the account was *treated as* proved, and does not pretend a code
+ * was confirmed on a day none was sent. Accounts with no address (provisional)
+ * are left alone — they have nothing to prove and `verified()` already passes
+ * them. Guarded on the version so it runs exactly once: run again later, it
+ * would wave through every account that signed up and never confirmed.
+ */
+async function grandfatherAddresses(db: Db): Promise<void> {
+  if (await schemaVersion(db) >= 8) return;
+  await db.run(
+    `UPDATE users SET email_verified_at = $t
+      WHERE email IS NOT NULL AND email_verified_at IS NULL`,
+    { t: new Date().toISOString() },
+  );
+}
+
 /** Applied once, on an empty file. The schema is idempotent (`IF NOT EXISTS`). */
 export async function migrate(db: Db): Promise<void> {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
@@ -799,6 +890,24 @@ export async function migrate(db: Db): Promise<void> {
   /* Columns added after the first release. See `addColumn` for why the schema
      file alone cannot deliver these. */
   await addColumn(db, 'service_events', 'source', 'TEXT');
+  /* Where a web subscriber is, for the 18:00 reminder. See the column's note. */
+  await addColumn(db, 'push_tokens', 'timezone', 'TEXT');
+  /* The gift-card engine. See the tables' notes in `schema.sql`; the CHECK on
+     `gift_cards.status` gaining 'cancelled' is `widenGiftCardStatus` below,
+     because a CHECK is the one thing `ADD COLUMN` cannot change. */
+  await addColumn(db, 'gift_card_stock', 'country_code', "TEXT NOT NULL DEFAULT 'PL'");
+  await addColumn(db, 'gift_card_stock', 'kind', "TEXT NOT NULL DEFAULT 'brand' CHECK (kind IN ('brand', 'venue'))");
+  await addColumn(db, 'gift_card_stock', 'venue_id', 'TEXT REFERENCES venues (id) ON DELETE SET NULL');
+  await addColumn(db, 'gift_card_stock', 'validity_days', 'INTEGER NOT NULL DEFAULT 365');
+  await addColumn(db, 'gift_card_stock', 'how_to_use', "TEXT NOT NULL DEFAULT ''");
+  await addColumn(db, 'gift_card_stock', 'created_at', 'TEXT');
+  await addColumn(db, 'gift_card_stock', 'updated_at', 'TEXT');
+  await addColumn(db, 'gift_card_codes', 'seq', 'INTEGER NOT NULL DEFAULT 0');
+  await addColumn(db, 'gift_cards', 'face_minor', 'INTEGER');
+  await addColumn(db, 'gift_cards', 'currency', 'TEXT');
+  await addColumn(db, 'gift_cards', 'used_by', 'TEXT');
+  await addColumn(db, 'gift_cards', 'cancelled_at', 'TEXT');
+  await addColumn(db, 'gift_cards', 'refund_ledger_id', 'TEXT REFERENCES points_ledger (id) ON DELETE SET NULL');
   await addColumn(db, 'users', 'phone', 'TEXT');
   /* Nullable because "has not told us" is the state most accounts are in, and
      the *set* one is what pays `CONFIG.earn.birthday`. One correction is
@@ -848,6 +957,9 @@ export async function migrate(db: Db): Promise<void> {
   await addColumn(db, 'voucher_tiers', 'redeem_limit', 'INTEGER');
   await addColumn(db, 'voucher_tiers', 'per_user_limit', 'INTEGER');
   await addColumn(db, 'voucher_tiers', 'issued_count', 'INTEGER NOT NULL DEFAULT 0');
+  /* Rulebook §3's refund stamp. NULL is "kept its spend", which every existing
+     round did. */
+  await addColumn(db, 'game_sessions', 'energy_refunded_at', 'TEXT');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an
@@ -872,10 +984,12 @@ export async function migrate(db: Db): Promise<void> {
   await retireTheHeadline(db);
   await widenGameTypes(db);
   await assertGameTypes(db);
+  await widenGiftCardStatus(db);
   /* Must run **before** the version stamp below, like every other migration
      here, and its own guard reads that stamp. */
   await optInToTheBoard(db);
   await countTheRungs(db);
+  await grandfatherAddresses(db);
 
   await db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)

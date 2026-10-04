@@ -79,13 +79,15 @@ import * as contact from '../../domain/contact.ts';
 import * as deals from '../../domain/deals.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as fraud from '../../domain/fraud.ts';
+import * as giftCards from '../../domain/giftCards.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as partners from '../../domain/partners.ts';
 import * as settings from '../../domain/settings.ts';
+import * as social from '../../domain/social.ts';
 import * as traffic from '../../domain/traffic.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { newId } from '../../domain/ids.ts';
-import { actor, bool, int, oneOf, optStr, qInt, qStr, str } from '../input.ts';
+import { actor, bool, int, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
 /**
@@ -98,6 +100,24 @@ import type { Ctx, Route } from '../router.ts';
  * was wrong.
  */
 const fold = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/** A gift card's fields off a create body. Validation is `giftCards`'s. */
+function stockInput(ctx: Ctx): giftCards.StockInput {
+  const b = ctx.body;
+  return {
+    brand: str(b, 'brand'),
+    logo: typeof b.logo === 'string' ? b.logo : '',
+    faceMinor: int(b, 'faceMinor'),
+    currency: str(b, 'currency'),
+    pointsCost: int(b, 'pointsCost'),
+    priorityOnly: bool(b, 'priorityOnly'),
+    countryCode: str(b, 'countryCode').toUpperCase(),
+    kind: oneOf(b, 'kind', ['brand', 'venue'] as const),
+    venueId: optStr(b, 'venueId') ?? null,
+    validityDays: int(b, 'validityDays'),
+    howToUse: typeof b.howToUse === 'string' ? b.howToUse : '',
+  };
+}
 
 function confirmed(ctx: Ctx, expected: string): void {
   if (fold(optStr(ctx.body, 'confirm') ?? '') !== fold(expected)) {
@@ -346,6 +366,43 @@ export const adminRoutes: Route[] = [
         },
       );
       return { ok: true };
+    },
+  },
+  {
+    /** Referrals, newest first — what an operator reads before voiding one. */
+    method: 'GET',
+    pattern: '/v1/admin/referrals',
+    auth: 'admin',
+    handler: async (ctx) => ({
+      referrals: await social.listReferrals(ctx.db, {
+        status: qStr(ctx, 'status'),
+        limit: qInt(ctx, 'limit', 100),
+      }),
+    }),
+  },
+  {
+    /**
+     * Void a referral (Terms §5: points awarded in error or by fraud are
+     * reversed). A pending bond is closed; a completed one also has both of its
+     * payouts reversed by compensating entries. See `social.rejectReferral`.
+     */
+    method: 'POST',
+    pattern: '/v1/admin/referrals/:id/reject',
+    auth: 'admin',
+    handler: async (ctx) => {
+      const note = str(ctx.body, 'reason', { max: 300 });
+      const result = await social.rejectReferral(ctx.db, { referralId: ctx.params.id, note, at: ctx.at });
+      await audit.record(ctx.db, {
+        actorId: actor(ctx).user.id,
+        actorRole: 'admin',
+        action: 'referral.reject',
+        entity: 'referrals',
+        entityId: ctx.params.id,
+        before: { status: result.previous },
+        after: { status: 'rejected', reversed: result.reversed, reason: note },
+        at: ctx.at,
+      });
+      return result;
     },
   },
   {
@@ -1048,6 +1105,108 @@ export const adminRoutes: Route[] = [
       });
       return { entity: ctx.params.entity, id: ctx.params.id, outcome };
     },
+  },
+  /* ══════════════════════════════════════════════ the gift-card engine ══
+     The console's Gift cards tab. Describing a card, pausing it, loading its
+     codes and voiding one card with a refund — every one audited. The refund is
+     the one write here that reaches the ledger, and it does so the only way the
+     ledger allows: a compensating entry, never an edit (`giftCards.cancel`). */
+  {
+    method: 'GET',
+    pattern: '/v1/admin/gift-cards',
+    auth: 'admin',
+    handler: async (ctx) => await giftCards.adminList(ctx.db),
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/admin/gift-cards',
+    auth: 'admin',
+    handler: async (ctx) =>
+      await giftCards.create(ctx.db, stockInput(ctx), actor(ctx).user.id, ctx.at),
+  },
+  {
+    method: 'PATCH',
+    pattern: '/v1/admin/gift-cards/:id',
+    auth: 'admin',
+    handler: async (ctx) => {
+      const b = ctx.body;
+      const has = (key: string) => b[key] !== undefined && b[key] !== null;
+      await giftCards.update(
+        ctx.db,
+        ctx.params.id,
+        {
+          brand: has('brand') ? str(b, 'brand') : undefined,
+          logo: b.logo === undefined ? undefined : String(b.logo ?? ''),
+          faceMinor: has('faceMinor') ? int(b, 'faceMinor') : undefined,
+          currency: has('currency') ? str(b, 'currency') : undefined,
+          pointsCost: has('pointsCost') ? int(b, 'pointsCost') : undefined,
+          priorityOnly: has('priorityOnly') ? bool(b, 'priorityOnly') : undefined,
+          countryCode: has('countryCode') ? str(b, 'countryCode').toUpperCase() : undefined,
+          venueId: has('venueId') ? str(b, 'venueId') : undefined,
+          validityDays: has('validityDays') ? int(b, 'validityDays') : undefined,
+          howToUse: b.howToUse === undefined ? undefined : String(b.howToUse ?? ''),
+        },
+        actor(ctx).user.id,
+        ctx.at,
+      );
+      return { ok: true };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/admin/gift-cards/:id/active',
+    auth: 'admin',
+    handler: async (ctx) => {
+      await giftCards.setActive(ctx.db, ctx.params.id, bool(ctx.body, 'active'), actor(ctx).user.id, ctx.at);
+      return { ok: true };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/admin/gift-cards/:id/codes',
+    auth: 'admin',
+    /* `{codes: [...]}` loads a brand's real codes; `{generate: n}` makes a venue
+       card's own. Which one a card takes is its kind, and the other is refused
+       by name rather than silently doing the wrong thing. */
+    handler: async (ctx) => {
+      const who = actor(ctx).user.id;
+      if (ctx.body.generate !== undefined) {
+        return await giftCards.generateCodes(ctx.db, ctx.params.id, int(ctx.body, 'generate'), who, ctx.at);
+      }
+      return await giftCards.addCodes(
+        ctx.db,
+        ctx.params.id,
+        list(ctx.body, 'codes', (item) => String(item)),
+        who,
+        ctx.at,
+      );
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/admin/gift-cards/issued',
+    auth: 'admin',
+    handler: async (ctx) =>
+      await giftCards.issued(ctx.db, {
+        stockId: qStr(ctx, 'stockId') ?? null,
+        status: qStr(ctx, 'status') ?? null,
+        limit: qInt(ctx, 'limit', 200),
+      }),
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/admin/gift-cards/issued/:id/used',
+    auth: 'admin',
+    handler: async (ctx) => {
+      await giftCards.markUsed(ctx.db, { cardId: ctx.params.id, by: 'admin', actorId: actor(ctx).user.id, at: ctx.at });
+      return { ok: true };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/admin/gift-cards/issued/:id/cancel',
+    auth: 'admin',
+    handler: async (ctx) => await giftCards.cancel(ctx.db, ctx.params.id, actor(ctx).user.id, ctx.at),
   },
   {
     /**

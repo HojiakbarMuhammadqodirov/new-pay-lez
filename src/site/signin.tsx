@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { ACCOUNT_TYPES } from './content';
+import { ACCOUNT_TYPES, INVITE_POINTS } from './content';
 import { Icon } from './icons';
 import { useCopy } from './i18n/context';
 import { fill } from './i18n/currency';
@@ -7,6 +7,9 @@ import { PATHS } from './router';
 import { useAuth } from './auth/context';
 import { clearSignUpIntent, peekSignUpIntent } from './auth/signupIntent';
 import { GoogleButton } from './auth/GoogleButton';
+import { normalizeReferral, storedReferral } from './auth/referral';
+import { checkReferralCode } from './api/consumer';
+import { ApiError } from './api/client';
 import { PasswordInput } from './PasswordInput';
 import {
   MIN_PASSWORD,
@@ -237,13 +240,56 @@ function SignUp({
   const [error, setError] = useState<SignUpError | null>(null);
   const [busy, setBusy] = useState(false);
 
+  /*
+   * ── the invite code ──
+   *
+   * Prefilled from the link the visitor arrived by (`auth/referral.ts`), and
+   * typeable for the case that link cannot reach — an invite opened in an
+   * in-app browser and finished in Safari.
+   *
+   * **Checked here, because the server will not refuse it.** A sign-up that
+   * failed over a mistyped invite would be the wrong trade, and the phone app
+   * already sends the field, so the server binds a good code and ignores a bad
+   * one. That makes this form the only place a typo can be caught, so it asks
+   * `GET /v1/referrals/codes/:code` as the code settles and holds both buttons
+   * while the answer is "no such code". "Could not ask" holds nothing: the
+   * server makes the final call either way.
+   */
+  const [referral, setReferral] = useState(() => storedReferral() ?? '');
+  const [referralState, setReferralState] = useState<'empty' | 'checking' | 'valid' | 'invalid' | 'unknown'>(
+    'empty',
+  );
+  const referralCode = normalizeReferral(referral);
+  useEffect(() => {
+    if (!referralCode) {
+      setReferralState('empty');
+      return;
+    }
+    setReferralState('checking');
+    let live = true;
+    const timer = window.setTimeout(() => {
+      checkReferralCode(referralCode)
+        .then((answer) => live && setReferralState(answer.valid ? 'valid' : 'invalid'))
+        .catch((cause: unknown) =>
+          live && setReferralState(cause instanceof ApiError && cause.status === 404 ? 'invalid' : 'unknown'),
+        );
+    }, 350);
+    return () => {
+      live = false;
+      window.clearTimeout(timer);
+    };
+  }, [referralCode]);
+  /* What actually travels: nothing for an empty or known-bad field. */
+  const referralToSend = referralState === 'valid' || referralState === 'unknown' ? referralCode : undefined;
+  const referralHolds = referralState === 'invalid' || referralState === 'checking';
+
   const onSubmit = (event: FormEvent) => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || referralHolds) return;
     setBusy(true);
     const normalizedEmail = normalizeEmail(email);
 
-    void signUp({ name, email: normalizedEmail, password, type, acceptTerms })
+    void signUp({ name, email: normalizedEmail, password, type, acceptTerms, referralCode: referralToSend })
       .then((result) => {
         /* Nothing to navigate to here either: an owner resolves to setup and an
            individual to the landing page, both from the account this just
@@ -327,6 +373,25 @@ function SignUp({
         </div>
       )}
 
+      <label className="field">
+        <span className="field-label">{copy.auth.referral.label}</span>
+        <input
+          type="text"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          maxLength={20}
+          placeholder={copy.auth.referral.placeholder}
+          value={referral}
+          onChange={(event) => setReferral(event.target.value)}
+          aria-invalid={referralState === 'invalid' ? true : undefined}
+        />
+        {referralState === 'valid' && (
+          <span className="field-help">{fill(copy.auth.referral.valid, { n: String(INVITE_POINTS) })}</span>
+        )}
+        {referralState === 'invalid' && <span className="field-error">{copy.auth.referral.invalid}</span>}
+      </label>
+
       {/*
         ── the agreement ──
 
@@ -391,7 +456,7 @@ function SignUp({
       <button
         type="submit"
         className="btn btn-solid btn-lg auth-submit"
-        disabled={!acceptTerms}
+        disabled={!acceptTerms || referralHolds}
       >
         {copy.auth.signUpSubmit}
       </button>
@@ -410,7 +475,12 @@ function SignUp({
           again on the next screen. The button is dead until the box is ticked;
           the *sign-in* form's copy of it is not, because that press is for an
           account that already exists. */}
-      <GoogleButton acceptTerms={acceptTerms} asType={preset} />
+      <GoogleButton
+        acceptTerms={acceptTerms}
+        asType={preset}
+        referralCode={referralToSend}
+        disabled={referralHolds}
+      />
 
       <p className="auth-swap">
         {copy.auth.haveAccount}{' '}
@@ -492,7 +562,7 @@ export function SignInPage() {
      for why those are two calls rather than one. A partner sign-up opens on the
      sign-up form with the account type already chosen. */
   const [preset] = useState(peekSignUpIntent);
-  const [mode, setMode] = useState<'in' | 'up'>(preset ? 'up' : 'in');
+  const [mode, setMode] = useState<'in' | 'up'>(() => (preset || storedReferral() ? 'up' : 'in'));
   /* Spent now that it has been read into state, so a reload or a later,
      ordinary visit to this page gets the plain form with the question on it. */
   useEffect(() => clearSignUpIntent(), []);

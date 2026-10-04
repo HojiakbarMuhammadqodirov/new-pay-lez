@@ -494,8 +494,16 @@ export async function confirm(
     /* ── §9.2: a push that brought somebody in ── */
     if (visitCounted) await creditPushVisit(db, txn, at);
 
-    /* ── §8.1: the referral pays on the invited user's *first* confirmed scan ── */
-    await completeReferral(db, txn.user_id, at);
+    /* ── §8.1: the referral pays on the invited user's first *counted visit* ──
+       Behind `visitCounted` like the stamp, the deal claim and the push credit
+       above, and for their reason: a scan under the venue's minimum spend, or a
+       second scan the same day, is not a visit — and was paying 200 points. */
+    if (visitCounted) {
+      await completeReferral(db, txn.user_id, at, {
+        venueOwnerId: venue.owner_user_id,
+        cashierId: input.cashierId,
+      });
+    }
 
     await db.run(
       `UPDATE transactions
@@ -945,12 +953,45 @@ async function creditPushVisit(db: Db, txn: Transaction, at: Iso): Promise<void>
  * account finds nothing to pay — and a *retried* confirm never reaches here at
  * all, because `confirm` refuses a transaction that is no longer pending.
  */
-async function completeReferral(db: Db, userId: string, at: Iso): Promise<void> {
-  const bond = await db.get<{ id: string; referrer_id: string }>(
-    `SELECT id, referrer_id FROM referrals WHERE referred_id = $u AND status = 'pending'`,
+async function completeReferral(
+  db: Db,
+  userId: string,
+  at: Iso,
+  till: { venueOwnerId: string | null; cashierId: string },
+): Promise<void> {
+  const bond = await db.get<{ id: string; referrer_id: string; referrer_status: string; referrer_deleted: string | null }>(
+    `SELECT r.id, r.referrer_id, u.status AS referrer_status, u.deleted_at AS referrer_deleted
+       FROM referrals r JOIN users u ON u.id = r.referrer_id
+      WHERE r.referred_id = $u AND r.status = 'pending'`,
     { u: userId },
   );
   if (!bond) return;
+
+  /*
+   * **Not at the inviter's own till.** The farm this closes: a venue owner signs
+   * up accounts with their own code and confirms a scan for each at their own
+   * counter — 200 points a head, and the milestone at five. The bond is left
+   * *pending* rather than voided, so a real visit somewhere else still pays it.
+   */
+  if (bond.referrer_id === till.venueOwnerId || bond.referrer_id === till.cashierId) return;
+
+  /* Nor to an inviter who is suspended or gone. Pending again, not voided: a
+     suspension can be lifted, and an operator voids with `rejectReferral`. */
+  if (bond.referrer_status !== 'active' || bond.referrer_deleted !== null) return;
+
+  /*
+   * **Claimed before it is paid.** This read the bond, paid both sides, and
+   * then marked it completed — so two scans for the same newcomer confirmed at
+   * once (two venues, one minute) could both read `pending` and both pay, on
+   * Postgres where transactions really do run side by side. The guarded UPDATE
+   * is the claim: exactly one of them changes the row, and only that one pays.
+   */
+  const claimed = await db.run(
+    `UPDATE referrals SET status = 'completed', points_awarded = $p, completed_at = $t
+      WHERE id = $i AND status = 'pending'`,
+    { p: CONFIG.earn.referrerFirstVisit + CONFIG.earn.inviteeJoin, t: at, i: bond.id },
+  );
+  if (claimed.changes !== 1) return;
 
   await ledger.earn(db, {
     userId: bond.referrer_id,
@@ -968,15 +1009,9 @@ async function completeReferral(db: Db, userId: string, at: Iso): Promise<void> 
     sourceRef: bond.id,
     at,
   });
-  /* `points_awarded` is what the bond *cost*, both sides together. It used to be
-     one figure paid twice, so either reading gave the same answer; now that the
-     two sides can differ, the total is the only one that answers the question an
-     operator summing this column is asking. */
-  await db.run(
-    `UPDATE referrals SET status = 'completed', points_awarded = $p, completed_at = $t
-      WHERE id = $i AND status = 'pending'`,
-    { p: CONFIG.earn.referrerFirstVisit + CONFIG.earn.inviteeJoin, t: at, i: bond.id },
-  );
+  /* `points_awarded` (written by the claim above) is what the bond *cost*, both
+     sides together: now that the two sides can differ, the total is the only
+     figure that answers the question an operator summing this column asks. */
 
   /* §8.1's milestone: bringing in five people who each actually turned up is a
      different achievement from bringing in five people, and it is paid once.

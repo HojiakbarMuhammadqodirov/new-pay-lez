@@ -46,7 +46,7 @@ export const en = {
       learn: {
         title: 'Play & Earn: play quiz games, earn real vouchers — Paylez',
         description:
-          'A few quick questions a day. Eight games, points for every round, and vouchers at shops you already use. Free to play, no card details needed.',
+          'A few quick questions a day. Eleven games, points for every round, and vouchers at shops you already use. Free to play, no card details needed.',
       },
       business: {
         title: 'Paylez for business: turn every visit into a habit',
@@ -187,8 +187,48 @@ export const en = {
     googleWorking: 'Signing you in…',
     googleUnreachable:
       'Google sign-in is not reachable right now. Use your email and password below.',
+    googleBlocked:
+      'Your browser blocked the Google window. Press the button again, or allow pop-ups for this site.',
     googleRefused:
       'That Google sign-in could not be completed. Please try again.',
+    /*
+     * ── confirming the address ──
+     *
+     * The panel on the Play screen and the wallet — `VerifyEmail.tsx`, which
+     * carries the reasoning for why it is a panel rather than a gate.
+     *
+     * Two ledes, and the server picks (`spendNeedsVerifiedEmail`): `spendLede`
+     * while spending is gated on a proved address, `lede` while it is not. Both
+     * end where the panel prints the address in bold.
+     *
+     * `tooSoon` is **not** an error copy: a resend inside the cooldown comes
+     * back `sent: false`, because asking again when a message is slow is what
+     * an honest person does.
+     */
+    /* The sign-up form's invite-code field (`signin.tsx`). `{n}` is
+       `INVITE_POINTS`; the condition is in the sentence because the reward is
+       paid on the first counted visit, not at sign-up. */
+    referral: {
+      label: 'Referral code (optional)',
+      placeholder: 'e.g. PY7KQ2MX',
+      valid: 'Code accepted. You will get {n} points after your first visit to a partner venue.',
+      invalid: 'We do not know that code. Check it, or leave the field empty.',
+    },
+    verify: {
+      kicker: 'Confirm your email',
+      lede: 'Confirm the address you signed up with, so we know it is yours. We sent a six-digit code to',
+      spendLede: 'You can play and earn points now. To spend them, confirm the address you signed up with. We sent a six-digit code to',
+      codeLabel: 'The six-digit code we sent you',
+      codePlaceholder: '000000',
+      confirm: 'Confirm',
+      working: 'Checking…',
+      resend: 'Send it again',
+      onItsWay: 'On its way — check your inbox and spam folder. It expires in a few minutes.',
+      tooSoon: 'One has just gone out — give it a moment before asking again.',
+      wrongWithTries: 'That code is not right. {n} more tries before it expires.',
+      offline: 'We could not reach the server. Try again in a moment.',
+      failed: 'That did not work. Try again in a moment.',
+    },
     signUpErrors: {
       terms: 'Please accept the Terms & Conditions and the Privacy Policy.',
       name: 'Tell us your name.',
@@ -249,7 +289,7 @@ export const en = {
       'Accounts',
     ],
     /* Index-aligned with `ADMIN_TABS`. */
-    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages', 'Tiers'],
+    tabs: ['Services', 'Offers', 'People', 'Website', 'Messages', 'Tiers', 'Gift cards'],
 
     /*
      * The Tiers tab — `adminTiers.tsx`, item 23.
@@ -265,6 +305,115 @@ export const en = {
      * the raw value rather than to a blank — the lookup-that-misses failure
      * this console has already had twice.
      */
+    /*
+     * The Gift cards tab — `adminGiftCards.tsx`. Two kinds by market: real
+     * brand codes in Poland, a venue's own generated codes in Uzbekistan.
+     * `usage.columns` ends in an empty string for the actions column.
+     */
+    gifts: {
+      title: 'Gift cards',
+      lede: 'The shelf players buy with points: real brand codes in Poland, a venue’s own card in Uzbekistan. A card sells only while it has codes.',
+      add: 'New gift card',
+      loading: 'Loading gift cards…',
+      none: {
+        title: 'No gift cards yet',
+        body: 'Create one, then load its codes — a card with no codes cannot be sold.',
+      },
+      columns: ['Card', 'Market', 'Face value', 'Price', 'Codes left', 'Bought', 'Valid for', 'State'],
+      countries: {
+        PL: 'Poland',
+        UZ: 'Uzbekistan',
+      },
+      kinds: {
+        brand: 'Brand code',
+        venue: 'Venue card',
+      },
+      live: 'On the shelf',
+      paused: 'Paused',
+      points: '{n} pts',
+      days: '{n} days',
+      codesOf: '{left} of {total}',
+      boughtSplit: '{active} active · {used} used',
+      acts: {
+        edit: 'Edit',
+        codes: 'Codes',
+        pause: 'Pause',
+        resume: 'Put back',
+        usage: 'Who bought it',
+        remove: 'Delete',
+      },
+      created: 'Gift card created. Now load its codes — it cannot be sold without them.',
+      saved: 'Saved. Cards already bought keep the value and price they were bought at.',
+      didPause: 'Taken off the shelf. Its codes are kept.',
+      didResume: 'Back on the shelf.',
+      form: {
+        titleNew: 'New gift card',
+        titleEdit: 'Edit {name}',
+        brand: 'Name',
+        logo: 'Logo',
+        logoChoose: 'Choose a picture',
+        logoReplace: 'Replace picture',
+        logoRemove: 'Remove',
+        country: 'Market',
+        kind: 'Type',
+        kindHelp: 'Brand codes are bought from the brand and loaded here; a venue card’s codes are generated. The type cannot change later.',
+        venue: 'Venue',
+        pickVenue: 'Choose a venue',
+        currency: 'Currency',
+        face: 'Face value',
+        faceHelp: 'What the card is worth at the brand, in its own currency — e.g. 50 or 100000.',
+        points: 'Price in points',
+        validity: 'Valid for (days)',
+        validityHelp: 'Counted from the day a player buys it.',
+        howTo: 'How to use it',
+        howToHelp: 'Shown on the card in the player’s wallet.',
+        priority: 'Paid plans only',
+        priorityHelp: 'Only Pro and Premium players can buy it.',
+        save: 'Save',
+        create: 'Create',
+        cancel: 'Cancel',
+        working: 'Saving…',
+      },
+      codes: {
+        titleBrand: 'Load codes for {name}',
+        titleVenue: 'Generate codes for {name}',
+        paste: 'Codes, one per line',
+        pasteHelp: '{n} codes ready. Or choose a CSV or TXT file — the first column of each line is read. Codes already loaded are skipped.',
+        file: 'Choose a file',
+        load: 'Load codes',
+        count: 'How many codes',
+        countHelp: 'Up to 1000 at a time. Each one is unique, and the venue honours the code it is shown.',
+        generate: 'Generate',
+        working: 'Working…',
+        loaded: '{added} codes loaded · {duplicates} already there · {rejected} unreadable.',
+        generated: '{added} codes generated.',
+        close: 'Close',
+      },
+      usage: {
+        title: 'Bought cards',
+        lede: 'Who bought which card, and what happened to it.',
+        allCards: 'All cards',
+        allStates: 'All states',
+        columns: ['Player', 'Card', 'Code', 'Bought', 'Expires', 'State', ''],
+        none: 'Nobody has bought a gift card yet.',
+        noMatch: 'No card matches these filters.',
+        markUsed: 'Mark used',
+        cancel: 'Cancel and refund',
+        marked: 'Marked as used.',
+        refunded: 'Cancelled — {n} points returned to the player.',
+        cancelTitle: 'Cancel {what}?',
+        cancelBody: 'The player gets their {n} points back. The code is burned and never sold again — they may already have used it at the brand.',
+        cancelYes: 'Cancel and refund',
+        byPlayer: 'by the player',
+        byAdmin: 'by an operator',
+      },
+      states: {
+        active: 'Active',
+        used: 'Used',
+        expired: 'Expired',
+        cancelled: 'Cancelled',
+      },
+    },
     tiers: {
       assignTitle: 'Put an account on a tier',
       assignLede:
@@ -757,6 +906,20 @@ export const en = {
   /* ────────────────────────────────────────────────────────────── wallet ── */
 
   wallet: {
+    /* A bought gift card: the holder says when its code was spent at the brand
+       or the venue — a till this server never sees. */
+    gift: {
+      used: 'I’ve used it',
+      usedWorking: 'Saving…',
+      usedFailed: 'That did not save. Try again in a moment.',
+      howTo: 'How to use it',
+      at: 'At {venue}',
+      states: {
+        used: 'Used',
+        expired: 'Expired',
+        cancelled: 'Cancelled — points returned',
+      },
+    },
     title: 'Your vouchers',
     lede: 'Everything you have earned, and everything you have spent.',
     balance: 'Balance',
@@ -1136,6 +1299,21 @@ export const en = {
      * run through `fill()` at the call site, so the seven without a hole are
      * unaffected.
      */
+    /* The Play screen's invite card (`InviteCard.tsx`). `{link}` in
+       `shareText` is the invite URL; `progress` takes three counts from
+       `GET /v1/referrals`. */
+    inviteCard: {
+      kicker: 'Invite friends',
+      rule: 'Share your link. When a friend signs up with it and makes their first visit to a partner venue, you both get {n} points.',
+      codeLabel: 'Your code',
+      copy: 'Copy link',
+      copied: 'Link copied',
+      share: 'Share',
+      shareText: 'Join me on Paylez — play, earn points and spend them at local places: {link}',
+      progress: '{joined} joined · {visited} visited · {points} points earned',
+      milestone: 'Bring {n} friends who visit and get a {bonus}-point bonus.',
+      unavailable: 'Your invite link could not be loaded. Try again later.',
+    },
     names: [
       'Birds Flight',
       'Memory Match',
@@ -1149,6 +1327,14 @@ export const en = {
       'Local Quiz',
       'Word Builder · English',
       'Word Builder · {language}',
+      '2048',
+      'Food Cross',
+      'Food Ninja',
+      'Snake',
+      'Canon Numbers',
+      'Bounce Ball',
+      'Doodle Jump',
+      'Zuma',
     ],
     /* `{questions}`, `{seconds}`, `{points}` and `{mistakes}` are filled from the
        game's own row, so a rules line never disagrees with the game it labels. */
@@ -1391,6 +1577,113 @@ export const en = {
          the version of this that reads as a bug. */
       serverHint: 'Turn two cards over. Both faces show — remember where they were.',
       resultScore: '{pairs} pairs found',
+    },
+
+    /* 2048 (`games/Merge2048.tsx`). `{tile}` in `reward` is the top band's
+       tile from `MERGE_BANDS`; `resultScore` names the largest tile made. */
+    merge: {
+      rule: 'Swipe to merge equal tiles · no time limit',
+      reward: 'Scored on your biggest tile · reach {tile} for a perfect round',
+      score: 'Score {n}',
+      best: 'Best tile {tile}',
+      moves: '{n} moves',
+      boardLabel: '2048 board. Swipe or use the arrow keys to move the tiles.',
+      hint: 'Swipe, or use the arrow keys. Two equal tiles that meet become one.',
+      over: 'No moves left — banking your round.',
+      failed: 'That move did not reach the server. Try it again.',
+      finish: 'Finish and bank',
+      resultScore: 'Biggest tile: {tile}',
+    },
+
+    /* Food Cross (`games/FoodCross.tsx`). `kinds` is index-aligned with
+       `FOODS` in `content.ts` and names each food for a screen reader. The
+       name itself is the same in every language, like 2048's. */
+    food: {
+      rule: 'Swap neighbours to line up 3 foods · {moves} moves',
+      reward: 'Line up foods to score · cascades and 4- or 5-matches multiply it · {n} is a perfect round',
+      score: 'Score {n}',
+      movesLeft: '{n} moves left',
+      boardLabel: 'Food Cross board. Tap a food and then a neighbour, or drag a food towards a neighbour, to swap them.',
+      hint: 'Tap two neighbours or drag one onto the other. Four in a line makes a striped food, five makes a bomb.',
+      over: 'Out of moves — banking your round.',
+      failed: 'That swap did not reach the server. Try it again.',
+      bomb: 'Bomb',
+      kinds: ['Apple', 'Croissant', 'Cheese', 'Pizza', 'Doughnut', 'Carrot'],
+      resultScore: 'Score: {n}',
+    },
+
+    /* Food Ninja (`games/FoodNinja.tsx`). The name is the same in every language. */
+    /* The five arcade games (`games/Snake.tsx`, `CannonNumbers.tsx`, `Breakout.tsx`,
+       `DoodleJump.tsx`, `Zuma.tsx`). Their names are the same in every language,
+       like 2048's; `breakout` is the game this product calls Bounce Ball. */
+    snake: {
+      rule: 'Eat, grow, and do not hit the wall or yourself',
+      reward: 'Every food counts · {n} is a perfect round',
+      eaten: 'Eaten {n}',
+      fieldLabel: 'Snake board. Use the arrow keys, swipe, or the buttons below to turn.',
+      intro: 'Steer the snake to the food. It grows with every bite and speeds up — the wall and your own tail end the round.',
+      start: 'Start',
+      over: 'Crash — banking your round.',
+      padLabel: 'Direction',
+      dirs: ['Up', 'Right', 'Down', 'Left'],
+      resultScore: '{n} foods eaten',
+    },
+    cannon: {
+      rule: 'Fire up a column to knock blocks down to zero · {turns} volleys',
+      reward: 'Every block destroyed counts · {n} is a perfect round',
+      destroyed: 'Destroyed {n}',
+      turn: 'Volley {n} / {total}',
+      boardLabel: 'Canon Numbers board. Each number is how many hits a block still needs.',
+      fireLabel: 'Fire up column {n}',
+      over: 'Round over — banking your round.',
+      failed: 'That volley did not reach the server. Fire again.',
+      hint: 'Each volley fires {n} balls up a column. Blocks move down after every volley — do not let one reach the bottom.',
+      resultScore: '{n} blocks destroyed',
+    },
+    breakout: {
+      rule: 'Keep the ball up and break the wall · one ball',
+      reward: 'Scored on the share of the wall broken',
+      broken: 'Bricks {n} / {total}',
+      fieldLabel: 'Bounce Ball field. Move the paddle with your finger, the mouse or the arrow keys.',
+      intro: 'Move the paddle to keep the ball in play. Darker bricks take two hits. Miss the ball and the round ends.',
+      start: 'Launch',
+      over: 'Ball lost — banking your round.',
+      cleared: 'Wall cleared — banking your round.',
+      resultScore: '{n} bricks broken',
+    },
+    doodle: {
+      rule: 'Bounce from platform to platform · do not fall',
+      reward: 'Every platform climbed counts · {n} is a perfect round',
+      height: 'Height {n}',
+      fieldLabel: 'Doodle Jump field. Hold to the left or right of the jumper, or use the arrow keys, to steer.',
+      intro: 'The jumper bounces on its own. Steer it onto the next platform up — the gaps grow as you climb.',
+      start: 'Start',
+      over: 'Fell — banking your round.',
+      resultScore: '{n} platforms climbed',
+    },
+    zuma: {
+      rule: 'Shoot into the chain · three of a kind are gone',
+      reward: 'Scored on the share of the chain cleared',
+      cleared: 'Cleared {n} / {total}',
+      fieldLabel: 'Zuma field. Point where to shoot and release to fire into the chain.',
+      intro: 'A chain rolls towards the hole. Shoot balls into it — three or more with the same mark touching disappear.',
+      start: 'Start',
+      over: 'The chain reached the hole — banking your round.',
+      won: 'Chain cleared — banking your round.',
+      swap: 'Swap: {now} ↔ {next}',
+      kinds: ['dot', 'ring', 'bar', 'cross'],
+      resultScore: '{n} balls cleared',
+    },
+    ninja: {
+      rule: 'Swipe through the flying food · {seconds} seconds',
+      reward: 'Every food you slice counts · {n} is a perfect round',
+      sliced: 'Sliced {n}',
+      fieldLabel: 'Food Ninja field. Swipe across the flying food to slice it.',
+      intro: 'Food flies up from the bottom. Swipe through it before it falls.',
+      start: 'Start',
+      over: 'Time — banking your round.',
+      failed: 'Some slices did not reach the server. Your round still counts what did.',
+      resultScore: '{n} foods sliced',
     },
 
     /*
@@ -3373,7 +3666,7 @@ export const en = {
         },
         {
           q: 'How many rounds can I play a day?',
-          a: 'Four on a full tank, and more as it fills. Every finished round spends one energy whether you win or lose, and energy comes back on its own — one every four hours, up to four. Nothing pays less for being repeated: the tenth round of the day is worth exactly what the first was.',
+          a: 'Four on a full tank on the free plan, and more as it fills: energy comes back on its own, one every two hours (faster on Pro and Premium). Each round spends one energy when it starts, win or lose — leave a round in its first five seconds and you get it back, once a day. With an empty tank you can still play for practice. The first round of the day pays the most; later ones pay less.',
         },
         {
           q: 'What is a voucher actually worth?',
@@ -4176,7 +4469,7 @@ export const en = {
     english: 'This is the authoritative English version of this document.',
     loading: 'Fetching the document…',
     privacyVersion: 'Version 1.1 · Effective 28 August 2026 · GDPR compliant',
-    termsVersion: 'Version 1.0 · Effective 24 April 2025',
+    termsVersion: 'Version 1.1 · Effective 18 October 2026',
   },
   /* ──────────────────────────────────────────────────────────── profile ── */
 
@@ -4211,6 +4504,22 @@ export const en = {
      * That is the single thing about this control somebody could get wrong in
      * the direction that matters, so it is said rather than implied.
      */
+    /*
+     * ── the daily game reminder ──
+     *
+     * The one browser push. Four of these are reasons it is not a switch —
+     * see `DailyReminder` in `profile.tsx` — and each is a different thing
+     * for the reader to do, so none of them is a general "unavailable".
+     */
+    reminder: {
+      title: 'Daily game reminder',
+      help: 'One notification in this browser at 6 pm your time — only on a day you have not played yet.',
+      failed: 'That did not save. Try again in a moment.',
+      blocked: 'Notifications are blocked for this site. Allow them in your browser’s settings, then switch this on.',
+      unsupported: 'This browser cannot show notifications. On an iPhone, add paylez to your home screen first.',
+      unavailable: 'Reminders are not switched on yet. Check back soon.',
+      unreachable: 'We could not reach the server. Try again later.',
+    },
     sharing: {
       title: 'Share my profile with the venues I visit',
       help: 'A venue you have actually been to can see your name, your photo and what you have spent there — never your balance, and never a venue you have not visited. Turning this off stops new venues seeing you; the ones that already can are switched off on their own card.',

@@ -109,6 +109,122 @@ export const removeGiftCard = (id: string) =>
     { method: 'DELETE' },
   );
 
+/* ═══════════════════════════════════════════════════════════ gift cards ══ */
+
+/**
+ * One shelf row as the console's Gift cards tab reads it — every row, live or
+ * paused, with what has happened to its codes. The public `/v1/gift-cards` is
+ * filtered to the reader's country and would hide half the shelf from an
+ * operator, which is why this tab and the Offers list both read this one.
+ */
+export interface AdminGiftCard {
+  id: string;
+  brand: string;
+  logo: string;
+  face_minor: number;
+  currency: string;
+  points_cost: number;
+  /** Codes nobody has been handed. */
+  stock: number;
+  priority_only: number;
+  active: number;
+  country_code: string;
+  kind: 'brand' | 'venue';
+  venue_id: string | null;
+  venue_name: string | null;
+  validity_days: number;
+  how_to_use: string;
+  codes_total: number;
+  issued: number;
+  active_cards: number;
+  used_cards: number;
+  expired_cards: number;
+  cancelled_cards: number;
+}
+
+export const ADMIN_GIFT_CARDS_PATH = '/v1/admin/gift-cards';
+
+export interface GiftCardInput {
+  brand: string;
+  logo: string;
+  faceMinor: number;
+  currency: string;
+  pointsCost: number;
+  priorityOnly: boolean;
+  countryCode: string;
+  kind: 'brand' | 'venue';
+  venueId: string | null;
+  validityDays: number;
+  howToUse: string;
+}
+
+export const createGiftCard = (input: GiftCardInput) =>
+  call<{ id: string }>(ADMIN_GIFT_CARDS_PATH, { method: 'POST', body: input });
+
+/** Everything but the kind, which a card keeps for life. */
+export const updateGiftCard = (id: string, patch: Partial<Omit<GiftCardInput, 'kind'>>) =>
+  call<{ ok: true }>(`${ADMIN_GIFT_CARDS_PATH}/${encodeURIComponent(id)}`, { method: 'PATCH', body: patch });
+
+export const setGiftCardActive = (id: string, active: boolean) =>
+  call<{ ok: true }>(`${ADMIN_GIFT_CARDS_PATH}/${encodeURIComponent(id)}/active`, {
+    method: 'POST',
+    body: { active },
+  });
+
+/** A brand's real codes, one per entry. Duplicates are counted, not loaded. */
+export const loadGiftCodes = (id: string, codes: string[]) =>
+  call<{ added: number; duplicates: number; rejected: number }>(
+    `${ADMIN_GIFT_CARDS_PATH}/${encodeURIComponent(id)}/codes`,
+    { method: 'POST', body: { codes } },
+  );
+
+/** A venue card's own codes, made by the server. */
+export const generateGiftCodes = (id: string, count: number) =>
+  call<{ added: number }>(`${ADMIN_GIFT_CARDS_PATH}/${encodeURIComponent(id)}/codes`, {
+    method: 'POST',
+    body: { generate: count },
+  });
+
+/** A card somebody bought, as the usage list shows it. */
+export interface IssuedGiftCard {
+  id: string;
+  code: string;
+  status: 'active' | 'used' | 'expired' | 'cancelled';
+  points_spent: number;
+  issued_at: string;
+  expires_at: string;
+  used_at: string | null;
+  used_by: string | null;
+  cancelled_at: string | null;
+  face_minor: number;
+  currency: string;
+  stock_id: string;
+  brand: string;
+  country_code: string;
+  user_id: string;
+  display_name: string | null;
+  email: string | null;
+}
+
+export const issuedGiftCardsPath = (stockId: string | null, status: string | null) => {
+  const query = new URLSearchParams({ limit: '300' });
+  if (stockId) query.set('stockId', stockId);
+  if (status) query.set('status', status);
+  return `${ADMIN_GIFT_CARDS_PATH}/issued?${query}`;
+};
+
+export const markIssuedUsed = (id: string) =>
+  call<{ ok: true }>(`${ADMIN_GIFT_CARDS_PATH}/issued/${encodeURIComponent(id)}/used`, { method: 'POST' });
+
+/**
+ * Void a card and give its points back. The one console write that reaches the
+ * ledger, and only as a new compensating entry — the code stays burned.
+ */
+export const cancelIssued = (id: string) =>
+  call<{ refunded: number }>(`${ADMIN_GIFT_CARDS_PATH}/issued/${encodeURIComponent(id)}/cancel`, {
+    method: 'POST',
+  });
+
 /* ═══════════════════════════════════════════════════════════════ venues ══ */
 
 /**

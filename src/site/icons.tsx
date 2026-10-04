@@ -69,6 +69,8 @@ const PATHS = {
   /* Memory Match: two cards, each with its pip at a different height — the
      glyph has to say "these two are the same", and two identical rectangles say
      the opposite. */
+  /* 2048's card. Four rounded squares, the board in miniature. */
+  grid: <><rect x="4" y="4" width="7" height="7" rx="1.6" /><rect x="13" y="4" width="7" height="7" rx="1.6" /><rect x="4" y="13" width="7" height="7" rx="1.6" /><rect x="13" y="13" width="7" height="7" rx="1.6" /></>,
   cards: <><rect x="3" y="4" width="8" height="16" rx="2" /><rect x="13" y="4" width="8" height="16" rx="2" /><path d="M7 9.5v.01M17 14.5v.01" /></>,
   /* Word Builder: three tiles off the letter tray. Marked rather than lettered —
      a real glyph inside would be a language this set does not get to choose. */
@@ -113,6 +115,12 @@ const PATHS = {
      second person was given a head and both bodies were closed. */
   people: <><circle cx="6.8" cy="8.2" r="2.9" /><path d="M2 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /><circle cx="17.2" cy="8.2" r="2.9" /><path d="M12.4 20.5v-1.1a3.9 3.9 0 0 1 3.9-3.9h1.8a3.9 3.9 0 0 1 3.9 3.9v1.1" /></>,
   plus: <><path d="M12 5v14M5 12h14" /></>,
+  /* The five arcade cards. Same 24-unit grid and stroke as everything here. */
+  snake: <><path d="M4 18h9a3 3 0 0 0 0-6H9a3 3 0 0 1 0-6h9" /><circle cx="19" cy="6" r="1" /></>,
+  cannon: <><path d="M12 3v10" /><path d="M8 7l4-4 4 4" /><rect x="7" y="13" width="10" height="6" rx="2" /></>,
+  bricks: <><rect x="3" y="4" width="8" height="4" rx="1" /><rect x="13" y="4" width="8" height="4" rx="1" /><rect x="8" y="10" width="8" height="4" rx="1" /><path d="M8 20h8" /><circle cx="12" cy="17" r="1" /></>,
+  jump: <><path d="M5 20h6M13 14h6M6 9h6" /><path d="M16 11V5M13 8l3-3 3 3" /></>,
+  orb: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="3" /></>,
   close: <><path d="M18 6 6 18M6 6l12 12" /></>,
   /* The console's write half (`adminControls.tsx`). Four glyphs, and all four
      are the transport-symbol shapes rather than anything invented: a removal, a

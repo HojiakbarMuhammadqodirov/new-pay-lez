@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import { PREVIEW, type GameId } from '../content';
+import { FOODS, PREVIEW, type GameId } from '../content';
 import { useCopy } from '../i18n/context';
 import { fill } from '../i18n/currency';
 import { flagOf, type LocalCountry, type WordList } from './banks';
@@ -61,6 +61,22 @@ export function GamePreview({
     <span className="play-prev" data-prev={id} aria-hidden>
       {id === 'memory' ? (
         <MemoryPreview />
+      ) : id === 'merge' ? (
+        <MergePreview />
+      ) : id === 'food' ? (
+        <FoodPreview />
+      ) : id === 'ninja' ? (
+        <NinjaPreview />
+      ) : id === 'snake' ? (
+        <SnakePreview />
+      ) : id === 'cannon' ? (
+        <CannonPreview />
+      ) : id === 'breakout' ? (
+        <BreakoutPreview />
+      ) : id === 'doodle' ? (
+        <DoodlePreview />
+      ) : id === 'zuma' ? (
+        <ZumaPreview />
       ) : id === 'flight' ? (
         <FlightPreview />
       ) : id === 'flag' ? (
@@ -110,6 +126,163 @@ function MemoryPreview() {
           </span>
         );
       })}
+    </span>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────── 2048 ── */
+
+/**
+ * The real board's cells (`.mg-cell`, the same `--mg-level` strength ramp),
+ * holding `PREVIEW.merge`. Still, because the game's motion happens only when
+ * somebody swipes — a board that slid on its own would be advertising a game
+ * that plays itself.
+ */
+function MergePreview() {
+  return (
+    <span className="pv-merge">
+      {PREVIEW.merge.map((value, i) => (
+        <span
+          key={i}
+          className="mg-cell"
+          data-value={value || undefined}
+          data-big={value >= 256 ? 'true' : undefined}
+          style={{ '--mg-level': value > 0 ? Math.log2(value) : 0 } as CSSProperties}
+        >
+          {value > 0 ? value : ''}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/* ───────────────────────────────────────────────────────────── food cross ── */
+
+/** A still corner of a Food Cross board in the real board's cells (`.fc-cell`). */
+function FoodPreview() {
+  return (
+    <span className="pv-food">
+      {PREVIEW.food.map((kind, i) => (
+        <span key={i} className="fc-cell">
+          <span>{FOODS[kind]}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/* ───────────────────────────────────────────────────── the arcade games ── */
+
+/*
+ * Five still frames of the five arcade games, drawn the way each game draws
+ * itself: the snake and its food on the grid, a column of numbered blocks over
+ * its cannon, the wall over the paddle, the stair of platforms under the
+ * jumper, and the chain with its four marks. No motion a game does not have,
+ * and nothing to read — the rule of every preview in this file.
+ */
+
+/** A snake turning a corner towards its food, on a 6×4 grid. */
+function SnakePreview() {
+  const body = [9, 10, 11, 17, 23];
+  return (
+    <span className="pv-snake">
+      {Array.from({ length: 24 }, (_, i) => (
+        <i key={i} data-on={body.includes(i) ? 'true' : undefined} data-head={i === 9 ? 'true' : undefined}>
+          {i === 7 ? FOODS[0] : ''}
+        </i>
+      ))}
+    </span>
+  );
+}
+
+/** Three columns of numbered blocks, the middle one under fire. */
+function CannonPreview() {
+  const cells = [3, 0, 2, 1, 4, 0, 0, 2, 1];
+  return (
+    <span className="pv-cannon">
+      {cells.map((n, i) => (
+        <i key={i} data-on={n > 0 ? 'true' : undefined} data-hit={i === 4 ? 'true' : undefined}>
+          {n > 0 ? n : ''}
+        </i>
+      ))}
+      <b aria-hidden>▲</b>
+    </span>
+  );
+}
+
+/** The wall with a gap knocked in it, the ball, the paddle. */
+function BreakoutPreview() {
+  const gone = new Set([2, 3, 10]);
+  return (
+    <span className="pv-brick">
+      <span className="pv-brick-wall">
+        {Array.from({ length: 16 }, (_, i) => (
+          <i key={i} data-gone={gone.has(i) ? 'true' : undefined} data-hard={i < 4 ? 'true' : undefined} />
+        ))}
+      </span>
+      <b className="pv-brick-ball" />
+      <b className="pv-brick-paddle" />
+    </span>
+  );
+}
+
+/** A stair of platforms and the jumper on its way up. */
+function DoodlePreview() {
+  return (
+    <span className="pv-doodle">
+      {[
+        [18, 82],
+        [56, 60],
+        [26, 38],
+        [62, 16],
+      ].map(([x, y], i) => (
+        <i key={i} style={{ left: `${x}%`, top: `${y}%` }} />
+      ))}
+      <b style={{ left: '34%', top: '22%' }} />
+    </span>
+  );
+}
+
+/** A stretch of the chain, three of one mark about to touch. */
+function ZumaPreview() {
+  const chain = [1, 0, 0, 2, 3, 3, 1, 2];
+  return (
+    <span className="pv-zuma">
+      {chain.map((kind, i) => (
+        <i key={i} data-kind={kind} />
+      ))}
+      <b data-kind={0} />
+    </span>
+  );
+}
+
+/* ──────────────────────────────────────────────────────────── food ninja ── */
+
+/**
+ * Three foods in the air and one blade stroke through the middle one, which is
+ * drawn in two halves — the moment the game is about, held still.
+ */
+function NinjaPreview() {
+  return (
+    <span className="pv-ninja">
+      <i className="pv-ninja-blade" />
+      {PREVIEW.ninja.map((food, i) =>
+        'sliced' in food ? (
+          <span
+            key={i}
+            className="pv-ninja-food"
+            data-sliced="true"
+            style={{ left: `${food.x * 100}%`, top: `${food.y * 100}%` }}
+          >
+            <b>{FOODS[food.kind]}</b>
+            <b>{FOODS[food.kind]}</b>
+          </span>
+        ) : (
+          <span key={i} className="pv-ninja-food" style={{ left: `${food.x * 100}%`, top: `${food.y * 100}%` }}>
+            <b>{FOODS[food.kind]}</b>
+          </span>
+        ),
+      )}
     </span>
   );
 }

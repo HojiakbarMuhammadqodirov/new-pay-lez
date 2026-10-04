@@ -41,6 +41,8 @@ export interface SignedIn {
   roles?: string[];
   mode?: string;
   user: { id: string; name: string; email: string | null };
+  /** Whether a sent referral code bound. Absent when none was sent, or from an older server. */
+  referral?: { applied: boolean } | null;
 }
 
 export const signIn = (email: string, password: string) =>
@@ -71,6 +73,8 @@ export interface SignUpDraft {
    * consent nobody had given.
    */
   acceptTerms: boolean;
+  /** Whoever invited them. A code that does not bind does not fail the sign-up. */
+  referralCode?: string;
 }
 
 export const signUp = (draft: SignUpDraft) =>
@@ -115,9 +119,18 @@ export interface Me {
     birthDateChangesLeft: number;
     profileCompletedAt: string | null;
     onboardedAt: string | null;
-    /** When the address was proved, or `null`. Informational — email
-        verification was removed and nothing gates on it. */
+    /**
+     * When the address was proved, or `null`. Null on an account that has an
+     * email is what `VerifyEmail` draws its panel from; a Google sign-in and
+     * every account older than the flow arrive stamped.
+     */
     emailVerifiedAt: string | null;
+    /**
+     * Whether that null currently blocks spending (`PAYLEZ_VERIFY_GATE` on the
+     * server). Optional because a server older than this build does not send
+     * it — and absent reads as "no", which is the true answer from such a server.
+     */
+    spendNeedsVerifiedEmail?: boolean;
     /**
      * §1.4's standing answer: share my profile with the venues I visit.
      *
@@ -175,6 +188,58 @@ export const setLeaderboardOptIn = (on: boolean) =>
  * Its own call rather than part of the profile form, for the same reason the
  * board's switch is: it applies when you flip it, and there is nothing to save.
  */
+/* ═════════════════════════════════════════════════════════ referrals ══ */
+
+/** What `GET /v1/referrals` answers — the inviter's own figures. */
+export interface Referrals {
+  code: string;
+  /** Friends who signed up with the code (voided ones excluded). */
+  joined: number;
+  /** …of whom this many have made the visit that pays. */
+  completed: number;
+  /** What this player was paid for it, milestone included, reversals netted. */
+  pointsEarned: number;
+}
+
+/**
+ * Whether an invite code would bind. Asked by the sign-up form before the code
+ * is used, because the sign-up itself deliberately does not refuse a bad one.
+ */
+export const checkReferralCode = (code: string) =>
+  call<{ valid: boolean }>(`/v1/referrals/codes/${encodeURIComponent(code)}`);
+
+/* ══════════════════════════════════════════════ proving the address ══ */
+
+export interface CodeSent {
+  /** False when the cooldown refused — not an error; see `nextSendAt`. */
+  sent: boolean;
+  nextSendAt: string;
+  expiresAt: string;
+  sends: number;
+  /**
+   * The code itself, and **only** on a server whose email adapter is local.
+   *
+   * It is here so a local checkout can finish a sign-up: the local adapter
+   * logs the message and delivers nowhere. A deployment that is really sending
+   * mail never populates it — a code in a response is a code an attacker can
+   * read without having the address — so the screen treats it as an absent
+   * field rather than as the way to get the code.
+   */
+  code?: string;
+}
+
+/** Send, or resend, the sign-up code. Needs the session sign-up returned. */
+export const sendCode = () => call<CodeSent>('/v1/auth/verify/send', { method: 'POST' });
+
+export interface CodeConfirmed {
+  verified: boolean;
+  /** True only for the call that actually proved it. A retry is `false`. */
+  granted: boolean;
+}
+
+export const confirmCode = (code: string) =>
+  call<CodeConfirmed>('/v1/auth/verify', { method: 'POST', body: { code } });
+
 export const patchLanguage = (language: string) =>
   call<Me>('/v1/me', { method: 'PATCH', body: { language } });
 
@@ -270,7 +335,15 @@ export type ServerGameType =
   | 'uzbekistan'
   | 'word_builder'
   | 'memory_match'
-  | 'flight';
+  | 'flight'
+  | 'merge_2048'
+  | 'food_cross'
+  | 'food_ninja'
+  | 'snake'
+  | 'cannon_numbers'
+  | 'breakout'
+  | 'doodle_jump'
+  | 'zuma';
 
 /**
  * A round, opened.
@@ -289,8 +362,13 @@ export interface Round {
   sessionId: string;
   gameType: ServerGameType;
   content: unknown;
-  /** Before this round is paid for. Energy is charged at `finish`, never here. */
+  /**
+   * The tank **after** this round's charge: energy is spent when a round
+   * starts (rulebook §3), so a paid round has already cost one here.
+   */
   energyLeft: number;
+  /** When the next unit arrives, or `null` on a full tank. Absent from an older server. */
+  energyNextAt?: string | null;
   /**
    * Whether this round will bank anything.
    *
@@ -416,6 +494,8 @@ export interface Finish {
   streak: number;
   freezes: number;
   energyLeft: number;
+  /** When the next unit arrives, or `null` on a full tank. Absent from an older server. */
+  energyNextAt?: string | null;
   balance: number;
   /**
    * Whether the round banked anything — the same promise `Round.paid` made when
@@ -432,6 +512,21 @@ export interface Finish {
     pointsNeeded: number;
   } | null;
 }
+
+/**
+ * The Quit button. The round's energy was spent when it started and stays
+ * spent — unless this lands within five seconds of the start, once a day
+ * (rulebook §3), which is the accidental tap.
+ */
+export interface Abandoned {
+  abandoned: boolean;
+  refunded: boolean;
+  energyLeft: number;
+  energyNextAt: string | null;
+}
+
+export const abandonRound = (sessionId: string) =>
+  call<Abandoned>(`/v1/games/sessions/${sessionId}/abandon`, { method: 'POST' });
 
 export const finishRound = (sessionId: string, report?: Record<string, unknown>) =>
   call<Finish>(`/v1/games/sessions/${sessionId}/finish`, {

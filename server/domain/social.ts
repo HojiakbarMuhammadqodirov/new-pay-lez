@@ -15,6 +15,7 @@
  */
 import type { Db } from '../db/db.ts';
 import { DomainError } from './errors.ts';
+import * as ledger from './ledger.ts';
 import { newId, referralCode } from './ids.ts';
 import { isoWeek, now, plusDays, type Iso } from './time.ts';
 
@@ -41,6 +42,37 @@ export async function codeFor(db: Db, userId: string): Promise<string> {
 }
 
 /**
+ * A code as somebody typed or pasted it, folded to the stored form.
+ *
+ * Stored codes are upper case (`PY7KQ2MX`, and the imported `PY1100`s), and a
+ * code read off a phone screen arrives as `py7kq2mx`, `PY 7KQ2MX` or with a
+ * dash somebody added for legibility. An exact-match lookup refused every one
+ * of those silently.
+ */
+export const normalizeCode = (raw: string): string => raw.replace(/[\s-]/g, '').toUpperCase();
+
+/**
+ * Who a code belongs to, if they can still be credited.
+ *
+ * An erased, deleted or suspended account's code answers nothing: binding a
+ * new player to somebody who can never be paid is a "friend joined" that
+ * leads nowhere, and a suspended account is exactly the one a farm runs on.
+ */
+async function referrerFor(db: Db, raw: string): Promise<{ id: string } | undefined> {
+  const code = normalizeCode(raw);
+  if (!code) return undefined;
+  return await db.get<{ id: string }>(
+    `SELECT id FROM users
+      WHERE referral_code = $c AND status = 'active' AND deleted_at IS NULL`,
+    { c: code },
+  );
+}
+
+/** Whether a code would bind — what the sign-up form asks before it is used. */
+export const codeExists = async (db: Db, raw: string): Promise<boolean> =>
+  Boolean(await referrerFor(db, raw));
+
+/**
  * Bind a new account to whoever invited it.
  *
  * Pending until the first confirmed scan. Self-referral is refused here rather
@@ -52,9 +84,7 @@ export async function bind(
   input: { code: string; newUserId: string; at?: Iso },
 ): Promise<{ ok: boolean; reason?: string }> {
   const at = input.at ?? now();
-  const referrer = await db.get<{ id: string }>(`SELECT id FROM users WHERE referral_code = $c`, {
-    c: input.code,
-  });
+  const referrer = await referrerFor(db, input.code);
   if (!referrer) return { ok: false, reason: 'unknown_code' };
   if (referrer.id === input.newUserId) return { ok: false, reason: 'self_referral' };
 
@@ -66,26 +96,117 @@ export async function bind(
   await db.run(
     `INSERT INTO referrals (id, referrer_id, referred_id, code, status, created_at)
      VALUES ($i, $r, $u, $c, 'pending', $t)`,
-    { i: newId('ref'), r: referrer.id, u: input.newUserId, c: input.code, t: at },
+    { i: newId('ref'), r: referrer.id, u: input.newUserId, c: normalizeCode(input.code), t: at },
   );
   return { ok: true };
 }
 
 /** "2 friends joined · 400 points earned" — the display §8.1 asks for. */
 export async function referralProgress(db: Db, userId: string) {
-  const row = await db.get<{ joined: number; completed: number; points: number | null }>(
+  /* A rejected bond is not a friend who joined: it is one an operator voided. */
+  const row = await db.get<{ joined: number; completed: number }>(
     `SELECT COUNT(*) AS joined,
-            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed,
-            SUM(points_awarded) AS points
-       FROM referrals WHERE referrer_id = $u`,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+       FROM referrals WHERE referrer_id = $u AND status <> 'rejected'`,
+    { u: userId },
+  );
+  /*
+   * What *this person* was paid, read off their own ledger rows.
+   *
+   * It was `SUM(points_awarded)`, and that column is what a bond cost **both
+   * sides together** (see `gate.completeReferral`) — so an inviter was shown
+   * 200 per friend for a 100 they had received, and never the five-friend
+   * milestone at all. Their own rows are the answer: the inviter's share of
+   * each bond they made, plus the milestone, net of any reversal an operator
+   * applied. Their own invitee bonus, if somebody invited *them*, is excluded
+   * by the `referrer_id` join.
+   */
+  const paid = await db.get<{ points: number | null }>(
+    `SELECT SUM(l.delta) AS points FROM points_ledger l
+      WHERE l.user_id = $u AND l.reason = 'referral'
+        AND (l.source_kind = 'friend_milestone'
+             OR (l.source_kind = 'referral'
+                 AND l.source_ref IN (SELECT id FROM referrals WHERE referrer_id = $u)))`,
+    { u: userId },
+  );
+  const reversed = await db.get<{ points: number | null }>(
+    `SELECT SUM(r.delta) AS points FROM points_ledger r
+      WHERE r.user_id = $u AND r.reason = 'reversal'
+        AND r.source_ref IN (
+          SELECT l.id FROM points_ledger l
+           WHERE l.user_id = $u AND l.reason = 'referral'
+             AND (l.source_kind = 'friend_milestone'
+                  OR (l.source_kind = 'referral'
+                      AND l.source_ref IN (SELECT id FROM referrals WHERE referrer_id = $u))))`,
     { u: userId },
   );
   return {
     code: await codeFor(db, userId),
     joined: row?.joined ?? 0,
     completed: row?.completed ?? 0,
-    pointsEarned: row?.points ?? 0,
+    pointsEarned: Math.max(0, (paid?.points ?? 0) + (reversed?.points ?? 0)),
   };
+}
+
+/**
+ * Void a referral, and take back what it paid.
+ *
+ * The Terms promise this ("referral points awarded in error or through
+ * fraudulent activity will be reversed") and `rejected` sat in the schema's
+ * CHECK with nothing ever writing it. A pending bond is simply closed. A
+ * completed one also has its two payouts reversed through `ledger.reverse` —
+ * compensating entries, never edits, so the history still shows what was paid
+ * and when it was taken back.
+ *
+ * The five-friend milestone is **not** reversed here: it was earned by five
+ * bonds together, and whether voiding one of them should claw it back is a
+ * judgement an operator makes with the ledger open, by reversing that entry.
+ */
+export async function rejectReferral(
+  db: Db,
+  input: { referralId: string; note: string; at?: Iso },
+): Promise<{ id: string; previous: 'pending' | 'completed'; reversed: string[] }> {
+  const at = input.at ?? now();
+  return await db.tx(async () => {
+    const bond = await db.get<{ id: string; status: string }>(
+      `SELECT id, status FROM referrals WHERE id = $i`,
+      { i: input.referralId },
+    );
+    if (!bond) throw new DomainError('not_found', 'no such referral');
+    if (bond.status === 'rejected') throw new DomainError('conflict', 'that referral is already rejected');
+
+    const reversed: string[] = [];
+    if (bond.status === 'completed') {
+      const entries = await db.all<{ id: string }>(
+        `SELECT id FROM points_ledger
+          WHERE reason = 'referral' AND source_kind = 'referral' AND source_ref = $b
+            AND id NOT IN (SELECT source_ref FROM points_ledger WHERE reason = 'reversal' AND source_ref IS NOT NULL)`,
+        { b: bond.id },
+      );
+      for (const entry of entries) {
+        await ledger.reverse(db, entry.id, input.note, at);
+        reversed.push(entry.id);
+      }
+    }
+    await db.run(`UPDATE referrals SET status = 'rejected' WHERE id = $i`, { i: bond.id });
+    return { id: bond.id, previous: bond.status as 'pending' | 'completed', reversed };
+  });
+}
+
+/** The operator's list — newest first, both people named. */
+export async function listReferrals(db: Db, input: { status?: string; limit?: number }) {
+  return await db.all(
+    `SELECT r.id, r.status, r.code, r.points_awarded, r.created_at, r.completed_at,
+            r.referrer_id, a.display_name AS referrer_name, a.email AS referrer_email,
+            r.referred_id, b.display_name AS referred_name, b.email AS referred_email
+       FROM referrals r
+       JOIN users a ON a.id = r.referrer_id
+       LEFT JOIN users b ON b.id = r.referred_id
+      WHERE ($s IS NULL OR r.status = $s)
+      ORDER BY r.created_at DESC
+      LIMIT $l`,
+    { s: input.status ?? null, l: Math.min(Math.max(input.limit ?? 100, 1), 500) },
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════ leaderboards ══ */

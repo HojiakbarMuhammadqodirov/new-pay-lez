@@ -39,7 +39,7 @@ END $$;
 
 -- ══════════════════════════════════════════════════ row-level security ══
 --
--- 86 tables, every one of them. RLS with no policy is a closed door: the
+-- 88 tables, every one of them. RLS with no policy is a closed door: the
 -- owner and any role with BYPASSRLS read normally, everybody else — which is
 -- what a published anon key authenticates as — reads nothing.
 --
@@ -87,6 +87,7 @@ ALTER TABLE voucher_tiers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE issued_vouchers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gift_card_stock ENABLE ROW LEVEL SECURITY;
 ALTER TABLE gift_cards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE gift_card_codes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stamp_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE earned_rewards ENABLE ROW LEVEL SECURITY;
@@ -110,6 +111,7 @@ ALTER TABLE friendships ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE notification_prefs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE push_tokens ENABLE ROW LEVEL SECURITY;
+ALTER TABLE notification_kind_prefs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_entitlements ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan_terms ENABLE ROW LEVEL SECURITY;

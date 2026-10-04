@@ -526,13 +526,13 @@ function termsBody() {
 
       <Section id="terms-5" n="5." title="Program poleceń">
         <p>
-          Użytkownicy mogą polecać platformę nowym użytkownikom przy użyciu osobistego kodu
-          polecającego. Punkty za polecenie są przyznawane, gdy polecony użytkownik:
+          Użytkownicy mogą polecać platformę nowym użytkownikom przy użyciu osobistego kodu polecającego lub linku z zaproszeniem. Punkty za polecenie otrzymujesz Ty oraz zaproszona przez Ciebie osoba, gdy ta osoba:
         </p>
         <ul>
-          <li>Zakłada zweryfikowane konto przy użyciu kodu polecającego</li>
-          <li>Spełnia minimalne wymagania wdrożeniowe określone w aplikacji</li>
+          <li>Zakłada konto przy użyciu Twojego kodu polecającego lub linku z zaproszeniem</li>
+          <li>Odbywa pierwszą kwalifikującą się wizytę w lokalu partnerskim — potwierdzony zakup spełniający minimalną kwotę wydatków tego lokalu</li>
         </ul>
+        <p>Punkty nie są przyznawane za wizyty w lokalu, którego jesteś właścicielem lub który prowadzisz.</p>
         <p>
           Zastrzegamy sobie prawo do zmiany, zawieszenia lub zakończenia programu poleceń w dowolnym
           momencie. Punkty za polecenie przyznane omyłkowo lub w wyniku działań oszukańczych zostaną

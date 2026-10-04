@@ -22,8 +22,11 @@
  * - **Not configured** — no `VITE_GOOGLE_CLIENT_ID`. Renders nothing. A button
  *   certain to fail is worse than no button, and this is the normal state of a
  *   local checkout.
- * - **Cancelled** — popup closed or blocked. Silent: the person decided, and
- *   telling them what they just did is noise.
+ * - **Cancelled** — popup closed. Silent: the person decided, and telling
+ *   them what they just did is noise.
+ * - **Blocked** — the browser would not open the popup. Says so, because the
+ *   person did not decide anything; a blocked press that went quiet is what
+ *   made this button read as needing two presses.
  * - **Unreachable** — script or backend down. Says so, and the password form
  *   beside it still works. Google is an alternative way in, so losing it must
  *   not take the door with it.
@@ -31,13 +34,19 @@
  *   what the endpoint returns; the detail is in the server log, because the
  *   difference between "expired" and "wrong audience" only helps a forger.
  */
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from './context';
 import type { ChoosableType } from './users';
-import { GoogleCancelled, googleConfigured, requestGoogleCode } from './google';
+import {
+  GoogleCancelled,
+  GooglePopupBlocked,
+  googleConfigured,
+  loadGoogle,
+  requestGoogleCode,
+} from './google';
 import { useCopy, useLanguage } from '../i18n/context';
 
-type Status = 'idle' | 'working' | 'unreachable' | 'refused';
+type Status = 'idle' | 'working' | 'blocked' | 'unreachable' | 'refused';
 
 /** The Google "G", unaltered. Their mark, their colours, their proportions. */
 function GoogleMark() {
@@ -91,20 +100,37 @@ function GoogleMark() {
 export function GoogleButton({
   acceptTerms,
   asType = null,
+  referralCode,
+  disabled = false,
 }: {
   acceptTerms?: boolean;
   asType?: ChoosableType | null;
+  /** An invite code the sign-up form has checked. Bound only if this press creates the account. */
+  referralCode?: string;
+  /** The form has something to fix first — today, an invite code it knows is wrong. */
+  disabled?: boolean;
 } = {}) {
   const copy = useCopy();
   const [language] = useLanguage();
   const { signInWithGoogle, setType } = useAuth();
   const [status, setStatus] = useState<Status>('idle');
 
+  /* Fetch Google's script as soon as the button is on screen, so the press
+     can open the popup in the same turn as the click — see the header of
+     `google.ts`. A failed preload is not reported here: the press retries
+     the load and reports `unreachable` itself if it fails again. */
+  useEffect(() => {
+    if (googleConfigured()) loadGoogle().catch(() => {});
+  }, []);
+
+  /* `requestGoogleCode()` must be the first thing awaited: it opens the
+     popup synchronously, and anything awaited before it would spend the
+     click's user activation. `setStatus` above it is synchronous. */
   const onClick = useCallback(async () => {
     setStatus('working');
     try {
       const code = await requestGoogleCode();
-      const signedIn = await signInWithGoogle(code, language, acceptTerms === true);
+      const signedIn = await signInWithGoogle(code, language, acceptTerms === true, referralCode);
       if (asType && signedIn.type === null) setType(asType);
       /* No navigation on success. Signing in changes what `resolveRoute`
          returns for this very route, and pushing a hash here would race it —
@@ -115,13 +141,17 @@ export function GoogleButton({
         setStatus('idle');
         return;
       }
+      if (error instanceof GooglePopupBlocked) {
+        setStatus('blocked');
+        return;
+      }
       /* The script not loading and the server refusing are different sentences
          to the reader: one says "try the form below", the other "try again". */
       setStatus(
         error instanceof Error && error.message.includes('google identity') ? 'unreachable' : 'refused',
       );
     }
-  }, [acceptTerms, asType, language, signInWithGoogle, setType]);
+  }, [acceptTerms, asType, language, referralCode, signInWithGoogle, setType]);
 
   if (!googleConfigured()) return null;
 
@@ -135,12 +165,13 @@ export function GoogleButton({
         type="button"
         className="btn btn-ghost btn-lg auth-google-btn"
         onClick={() => void onClick()}
-        disabled={status === 'working' || acceptTerms === false}
+        disabled={status === 'working' || acceptTerms === false || disabled}
       >
         <GoogleMark />
         {status === 'working' ? copy.auth.googleWorking : copy.auth.googleContinue}
       </button>
 
+      {status === 'blocked' && <p className="field-error">{copy.auth.googleBlocked}</p>}
       {status === 'unreachable' && <p className="field-error">{copy.auth.googleUnreachable}</p>}
       {status === 'refused' && <p className="field-error">{copy.auth.googleRefused}</p>}
     </div>

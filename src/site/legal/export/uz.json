@@ -2,7 +2,7 @@
   "privacyTitle": "Maxfiylik siyosati",
   "termsTitle": "Foydalanish shartlari",
   "privacyVersion": "Versiya 1.1 · 2026-yil 28-avgustdan kuchga kiradi · GDPR talablariga muvofiq",
-  "termsVersion": "Versiya 1.0 · 2025-yil 24-apreldan kuchga kiradi",
+  "termsVersion": "Versiya 1.1 · 2026-yil 18-oktabrdan kuchga kiradi",
   "english": "Ushbu hujjat tarjima. Ingliz tilidagi versiyadan farq qilgan hollarda ingliz tilidagi matn ustuvor hisoblanadi.",
   "privacyContents": [
     ["privacy-1", "Biz kimmiz"],
@@ -724,15 +724,19 @@
     },
     {
       "kind": "paragraph",
-      "text": "Foydalanuvchilar shaxsiy tavsiya kodi yordamida platformaga yangi foydalanuvchilarni taklif qilishlari mumkin. Tavsiya ballari tavsiya qilingan foydalanuvchi quyidagilarni bajarganda beriladi:"
+      "text": "Foydalanuvchilar shaxsiy tavsiya kodi yoki taklif havolasi yordamida platformaga yangi foydalanuvchilarni taklif qilishlari mumkin. Tavsiya ballari sizga va siz taklif qilgan odamga, u quyidagilarni bajarganda beriladi:"
     },
     {
       "kind": "bullet",
-      "text": "Tavsiya kodidan foydalanib tasdiqlangan hisob yaratadi"
+      "text": "Sizning tavsiya kodingiz yoki taklif havolangiz orqali hisob yaratadi"
     },
     {
       "kind": "bullet",
-      "text": "Ilovada ko‘rsatilgan minimal tanishtiruv talablarini bajaradi"
+      "text": "Hamkor joyga birinchi hisobga olinadigan tashrifini amalga oshiradi — o‘sha joyning minimal xarid summasiga mos keladigan tasdiqlangan xarid"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Siz egalik qiladigan yoki boshqaradigan joyga qilingan tashriflar uchun ballar berilmaydi."
     },
     {
       "kind": "paragraph",

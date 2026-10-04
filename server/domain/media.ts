@@ -50,7 +50,36 @@
  * The client always has a fallback — the initial on the accent — so a refusal
  * here is a card that looks exactly as it did before this file existed, which
  * is the correct failure mode and the reason none of this needs to be reliable.
+ *
+ * ## Three kinds of stored value, one kind of answer
+ *
+ * A row's image column holds one of three things, and the browser is handed the
+ * same thing for all of them — a path under `/v1/media`, carrying `?v=` a hash
+ * of the stored value, so a replaced logo is a new URL and the week-long
+ * `immutable` cache can never serve the old one:
+ *
+ * - **`media:<dir>/<file>`** — a file on this server's own disk, under
+ *   `CONFIG.media.dir` (the VPS: `/var/lib/paylez/media`). The format every
+ *   service logo is moved to: 256×256 WebP, at most 60 kB
+ *   (`scripts/logos-export.mjs`, then `npm run logos:link` on the box).
+ * - **`data:`** — a picture inline in the column, as the listing form writes
+ *   one. Decoded and served like any other; it used to be passed through to the
+ *   browser inside the JSON, which put 1.6 MB of base64 in the directory's
+ *   list response, twice per logo.
+ * - **`http(s)://`** — somebody else's address (the Base44 import), fetched once
+ *   and kept in `media_assets`.
+ *
+ * ## Why the type is read from the bytes
+ *
+ * Base44 serves its files as `application/octet-stream`, and a type check that
+ * believed the header refused every one of them — 38 of the directory's logos,
+ * reported as missing while the files were sitting there. The header is now a
+ * hint: when it does not name an allowed type, the first bytes decide
+ * (`sniff`). SVG still never passes — it has no magic number here to match.
  */
+import { createHash } from 'node:crypto';
+import { readdir, readFile } from 'node:fs/promises';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { CONFIG } from '../config.ts';
 import type { Db } from '../db/db.ts';
 import { DomainError } from './errors.ts';
@@ -77,6 +106,52 @@ const SOURCES: Record<string, { table: string; column: string }> = {
 
 export const isEntity = (value: string): boolean => value in SOURCES;
 
+/**
+ * The image type a file's first bytes say it is, or null.
+ *
+ * The four `ALLOWED` formats, by their magic numbers. Nothing else is
+ * recognised, so a file whose header lies and whose bytes are an SVG, an HTML
+ * page or anything else is still refused.
+ */
+export function sniff(bytes: Buffer): (typeof ALLOWED)[number] | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 6 && /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString('latin1'))) return 'image/gif';
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP') {
+    return 'image/webp';
+  }
+  return null;
+}
+
+/**
+ * A `media:` value's file, or null when it is not one this server will open.
+ *
+ * One directory level and a plain file name, nothing else: a `..`, a slash too
+ * many or an absolute path would turn a logo column into a way of reading the
+ * box's disk, which is the hole `sourceOf` already closes for `file:` URLs.
+ * The resolved path must still sit inside the media directory.
+ */
+export function mediaFile(stored: string): string | null {
+  const match = /^media:([a-z]+)\/([A-Za-z0-9_-]+\.(?:webp|png|jpe?g|gif))$/.exec(stored.trim());
+  if (!match) return null;
+  const root = resolve(CONFIG.media.dir);
+  const path = resolve(join(root, match[1], match[2]));
+  const inside = relative(root, path);
+  return inside && !inside.startsWith('..') && !isAbsolute(inside) ? path : null;
+}
+
+/** A `data:` value's bytes and type, or null when it is not a picture we serve. */
+function decodeData(stored: string): Asset | null {
+  const match = /^data:([^;,]+)?(;base64)?,(.*)$/s.exec(stored.trim());
+  if (!match || !match[2]) return null;
+  const body = Buffer.from(match[3], 'base64');
+  const mime = sniff(body);
+  if (!mime || body.byteLength === 0 || body.byteLength > CONFIG.media.maxBytes) return null;
+  return { mime, body };
+}
+
 export interface Asset {
   mime: string;
   /** The decoded bytes, ready to write to a response. */
@@ -99,6 +174,17 @@ interface Row {
  * this is the common case and skipping it is what keeps an owner's own upload
  * out of this table entirely.
  */
+/** What the row's image column holds, trimmed, or '' for nothing. */
+async function storedOf(db: Db, entity: string, id: string): Promise<string> {
+  const source = SOURCES[entity];
+  if (!source) return '';
+  const row = await db.get<{ value: string | null }>(
+    `SELECT ${source.column} AS value FROM ${source.table} WHERE id = $i`,
+    { i: id },
+  );
+  return (row?.value ?? '').trim();
+}
+
 async function sourceOf(db: Db, entity: string, id: string): Promise<string | null> {
   const source = SOURCES[entity];
   if (!source) return null;
@@ -176,10 +262,7 @@ async function ingest(db: Db, entity: string, id: string, url: string, at: Iso):
     return await write('refused', 'redirected off http', null, null);
   }
 
-  const mime = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
-  if (!(ALLOWED as readonly string[]).includes(mime)) {
-    return await write('refused', `type ${mime || 'unknown'}`, null, null);
-  }
+  const declaredType = (response.headers.get('content-type') ?? '').split(';')[0].trim().toLowerCase();
 
   /* Checked before the body is read. A host advertising 40 kB and sending
      400 MB is the reason the cap exists at all, so the advertised figure is
@@ -200,6 +283,12 @@ async function ingest(db: Db, entity: string, id: string, url: string, at: Iso):
     return await write('refused', `${buffer.byteLength} bytes`, null, null);
   }
 
+  /* The bytes decide, the header only breaks a tie — see "Why the type is read
+     from the bytes" above. A file that is not one of the four is refused
+     whatever it was labelled. */
+  const mime = sniff(buffer);
+  if (!mime) return await write('refused', `type ${declaredType || 'unknown'}`, null, null);
+
   return await write('ok', null, mime, buffer.toString('base64'));
 }
 
@@ -214,6 +303,28 @@ async function ingest(db: Db, entity: string, id: string, url: string, at: Iso):
  */
 export async function assetFor(db: Db, entity: string, id: string, at: Iso = now()): Promise<Asset> {
   if (!SOURCES[entity]) throw new DomainError('not_found', 'no such media kind');
+
+  /* A file on our own disk, or a picture inline in the column: no fetch and no
+     cache row — the bytes are already here. */
+  const stored = await storedOf(db, entity, id);
+  if (stored.startsWith('media:')) {
+    const path = mediaFile(stored);
+    if (!path) throw new DomainError('not_found', 'nothing to serve');
+    let body: Buffer;
+    try {
+      body = await readFile(path);
+    } catch {
+      throw new DomainError('not_found', 'nothing to serve');
+    }
+    const mime = sniff(body);
+    if (!mime) throw new DomainError('not_found', 'nothing to serve');
+    return { mime, body };
+  }
+  if (stored.startsWith('data:')) {
+    const asset = decodeData(stored);
+    if (!asset) throw new DomainError('not_found', 'nothing to serve');
+    return asset;
+  }
 
   let row = await db.get<Row>(
     `SELECT source_url, mime, bytes, status, detail FROM media_assets
@@ -275,14 +386,74 @@ export async function forget(db: Db, entity: string, id: string): Promise<void> 
  *
  * **The server never hands a browser a third-party URL**, and this is the
  * function that makes that true rather than hoped: a response carries a path on
- * our own origin or it carries nothing. A `data:` URL is passed through
- * untouched, because the browser can already draw one and proxying it would be
- * a round trip to re-serve bytes the response already contains.
+ * our own origin or it carries nothing. It is a **path** — relative to the API,
+ * not to the page — so a client joins it to its API base; the site's
+ * `mediaUrl` does, and resolving it against the site's own origin is exactly
+ * the bug that drew every card's initial (nginx answers an unknown path on
+ * `www` with `index.html`).
+ *
+ * `?v=` is a short hash of the stored value. The response is cached
+ * `immutable` for a week, so the URL has to change when the logo does.
  */
 export function logoPath(entity: string, id: string, stored: string | null | undefined): string | null {
   const value = (stored ?? '').trim();
   if (!value) return null;
-  if (value.startsWith('data:')) return value;
-  if (!/^https?:\/\//i.test(value)) return null;
-  return `/v1/media/${entity}/${encodeURIComponent(id)}`;
+  const servable =
+    /^https?:\/\//i.test(value) || (value.startsWith('data:') && decodeData(value) !== null) || mediaFile(value) !== null;
+  if (!servable) return null;
+  const version = createHash('sha1').update(value).digest('hex').slice(0, 10);
+  return `/v1/media/${entity}/${encodeURIComponent(id)}?v=${version}`;
+}
+
+/**
+ * Point every service whose logo file is on disk at that file.
+ *
+ * The second half of moving the directory's logos onto this server: the files
+ * arrive in `<CONFIG.media.dir>/service/` named `<service id>.webp` (what
+ * `scripts/logos-export.mjs` writes), and this sets each matching row's
+ * `image_url` to `media:service/<file>`. A file named for no service is
+ * reported, not guessed at; a row already pointing at its file is left alone, so
+ * running it twice changes nothing. `dryRun` reports without writing.
+ */
+export async function linkServiceFiles(
+  db: Db,
+  options: { dryRun?: boolean } = {},
+): Promise<{ linked: string[]; unchanged: number; unknown: string[]; unreadable: string[] }> {
+  const dir = join(resolve(CONFIG.media.dir), 'service');
+  let files: string[];
+  try {
+    files = (await readdir(dir)).filter((name) => /^[A-Za-z0-9_-]+\.(?:webp|png|jpe?g|gif)$/.test(name)).sort();
+  } catch {
+    return { linked: [], unchanged: 0, unknown: [], unreadable: [] };
+  }
+  const linked: string[] = [];
+  const unknown: string[] = [];
+  const unreadable: string[] = [];
+  let unchanged = 0;
+  for (const name of files) {
+    const id = name.replace(/\.[a-z]+$/, '');
+    const row = await db.get<{ image_url: string | null }>(`SELECT image_url FROM guidance_services WHERE id = $i`, { i: id });
+    if (!row) {
+      unknown.push(name);
+      continue;
+    }
+    /* A file that is not one of the four formats would be a 404 the moment it
+       was linked, so it is refused here, where somebody is watching. */
+    const body = await readFile(join(dir, name)).catch(() => null);
+    if (!body || !sniff(body) || body.byteLength > CONFIG.media.maxBytes) {
+      unreadable.push(name);
+      continue;
+    }
+    const value = `media:service/${name}`;
+    if (row.image_url === value) {
+      unchanged += 1;
+      continue;
+    }
+    if (!options.dryRun) {
+      await db.run(`UPDATE guidance_services SET image_url = $v WHERE id = $i`, { v: value, i: id });
+      await forget(db, 'service', id);
+    }
+    linked.push(id);
+  }
+  return { linked, unchanged, unknown, unreadable };
 }

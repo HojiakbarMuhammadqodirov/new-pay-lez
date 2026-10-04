@@ -9,10 +9,20 @@
  * self-hosted — the script has to come from Google, and a copy of it would be a
  * copy of a security-sensitive thing that Google updates.
  *
- * So the exception is scoped instead of waived: **the script is fetched lazily,
- * on first use, from the sign-in screen only.** A visitor who never opens
- * `#/sign-in` never makes a request to Google, which is the part of the rule
- * that was actually protecting them. Nothing else in `src/` may import this.
+ * So the exception is scoped instead of waived: **the script is fetched when the
+ * Google button mounts, which is on the sign-in screen only.** A visitor who
+ * never opens `#/sign-in` never makes a request to Google, which is the part of
+ * the rule that was actually protecting them. Nothing else in `src/` may import
+ * this.
+ *
+ * On mount and not on first press, and that is the fix for "it only works the
+ * second time". A popup is only allowed while the browser still counts the
+ * click as the user's gesture. Fetching the script *inside* the press put a
+ * network round trip between the click and `window.open`, so on the first press
+ * the gesture had expired by the time the popup was asked for and the browser
+ * blocked it — every time on iOS, often on Android and slow connections. The
+ * second press found the script cached and opened at once. See
+ * `requestGoogleCode` for the other half.
  *
  * What comes back from Google is an **authorisation code, not a session and not
  * an identity.** It is posted to `POST /v1/auth/google`, which exchanges it —
@@ -129,10 +139,12 @@ export async function exchangeGoogleCredential(
    * has not — the server records only on the press that creates one.
    */
   acceptTerms = false,
+  /* An invite code, bound by the server only if this press creates the account. */
+  referralCode?: string,
 ): Promise<GoogleSignIn> {
   const result = await call<GoogleSignIn>('/v1/auth/google', {
     method: 'POST',
-    body: { code, language, surface: 'web', acceptTerms },
+    body: { code, language, surface: 'web', acceptTerms, ...(referralCode ? { referralCode } : {}) },
   });
   setToken(result.token);
   return result;
@@ -140,6 +152,13 @@ export async function exchangeGoogleCredential(
 
 /** Somebody closed the popup or declined. Not an error worth a message. */
 export class GoogleCancelled extends Error {}
+
+/**
+ * The browser refused to open the popup. Not the person's decision, so unlike
+ * a cancel it is worth a sentence: silence here is exactly what made a blocked
+ * first press look like a button that needs pressing twice.
+ */
+export class GooglePopupBlocked extends Error {}
 
 /**
  * Open Google's account chooser and resolve with an authorisation code.
@@ -156,10 +175,22 @@ export class GoogleCancelled extends Error {}
  * The code is useless in a browser: exchanging it needs the client secret,
  * which lives only on the server. That is the property that makes this safe to
  * run from a public page.
+ *
+ * **Not `async`, on purpose.** When the script is already loaded — the normal
+ * case, since the button preloads it — the popup has to be opened in the same
+ * synchronous turn as the click, and an `async` function would be free to put
+ * an `await` in front of it. A `Promise` executor runs synchronously, so
+ * `requestCode()` below is called inside the click handler's own turn. Only a
+ * press that beats the preload takes the `loadGoogle().then` path, which is the
+ * old behaviour and may be blocked; that case now says so instead of going
+ * quiet.
  */
-export async function requestGoogleCode(): Promise<string> {
-  const gsi = await loadGoogle();
+export function requestGoogleCode(): Promise<string> {
+  const gsi = window.google?.accounts?.oauth2 ? window.google : null;
+  return gsi ? openCodePopup(gsi) : loadGoogle().then(openCodePopup);
+}
 
+function openCodePopup(gsi: Gsi): Promise<string> {
   return new Promise<string>((resolve, reject) => {
     const client = gsi.accounts.oauth2.initCodeClient({
       client_id: GOOGLE_CLIENT_ID,
@@ -173,8 +204,15 @@ export async function requestGoogleCode(): Promise<string> {
         else reject(new GoogleCancelled(response.error ?? 'no code returned'));
       },
       /* Fires when the popup is blocked or dismissed. Without it those cases
-         leave the promise pending forever and the button spins for good. */
-      error_callback: (error) => reject(new GoogleCancelled(error?.type ?? 'dismissed')),
+         leave the promise pending forever and the button spins for good. The
+         two are different outcomes: `popup_closed` is the person deciding,
+         `popup_failed_to_open` is the browser deciding for them. */
+      error_callback: (error) =>
+        reject(
+          error?.type === 'popup_failed_to_open'
+            ? new GooglePopupBlocked(error.type)
+            : new GoogleCancelled(error?.type ?? 'dismissed'),
+        ),
     });
 
     client.requestCode();

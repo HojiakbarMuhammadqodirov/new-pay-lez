@@ -189,6 +189,21 @@ export interface AuthValue {
    */
   entitlements: Record<string, string> | null;
   /**
+   * When this account proved its email address — `null` when it has not, and
+   * `null` when we do not know yet.
+   *
+   * `null` covering both is the safe direction here, unlike `plan`: the worst
+   * a screen does with it is offer a confirmation panel somebody does not need
+   * for the length of one request. See `VerifyEmail.tsx`.
+   */
+  emailVerifiedAt: string | null;
+  /**
+   * Whether an unproved address currently blocks spending. `false` when
+   * unknown, which only changes the panel's wording, never what it lets
+   * somebody press — the server decides that.
+   */
+  spendNeedsVerifiedEmail: boolean;
+  /**
    * When the server opened this account (ISO), or `null` when unknown — the same
    * three `null`s as `plan`. Session state for the same reason: it arrives on the
    * one `GET /v1/me` the provider already makes, and the local directory's own
@@ -286,6 +301,8 @@ export interface AuthValue {
     language: string,
     /** That the terms were shown and ticked — only the sign-up form sends it. */
     acceptTerms?: boolean,
+    /** An invite code — only the sign-up form sends it. */
+    referralCode?: string,
   ) => Promise<Account>;
   signOut: () => void;
   /** Answering the individual-or-business question — the legacy path only. */

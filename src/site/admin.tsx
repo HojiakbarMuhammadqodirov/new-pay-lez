@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 
 import { ADMIN_TABS, BUSINESS_CATEGORIES } from './content';
 import { AdminTiers } from './adminTiers';
+import { AdminGiftCards } from './adminGiftCards';
 import { ServiceAnalytics } from './adminAnalytics';
 import { AdminPeople } from './adminPeople';
 import { AdminMessages } from './adminMessages';
@@ -15,17 +16,17 @@ import { fill } from './i18n/currency';
 import { useAuth } from './auth/context';
 import { Face } from './auth/Avatar';
 import { useApi, type ApiResult } from './api/useApi';
-import { faceValue, GIFT_CARDS_PATH, type GiftCardStock } from './api/wallet';
 import {
   ADMIN_DEALS_PATH,
+  ADMIN_GIFT_CARDS_PATH,
   removeDeal,
-  removeGiftCard,
   removeVenue,
   setDealStatus,
   setVenueStatus,
   updateDeal,
   updateVenue,
   type AdminDeal,
+  type AdminGiftCard,
 } from './api/admin';
 import {
   ConfirmDialog,
@@ -589,10 +590,6 @@ export function AdminPage() {
   /* The console's write half, in every language it presses in. */
   const act = copy.manage;
   const [language] = useLanguage();
-  /* The *reader's* separator. A gift card's face value is in the card's own
-     currency — a Polish card is 50 zl to an operator in London — and the digits
-     are still grouped the reader's way. See GROUP_FOR_LANGUAGE. */
-  const separator = useGroupSeparator();
 
   const { account, signOut } = useAuth();
 
@@ -621,11 +618,15 @@ export function AdminPage() {
      route is live rows only, and a paused offer that cannot be listed cannot be
      resumed. Archived rows never arrive from either. */
   const deals = useApi<AdminDeal[]>(ADMIN_DEALS_PATH);
-  const shelf = useApi<GiftCardStock[]>(GIFT_CARDS_PATH);
+  /* The admin list, not the public `/v1/gift-cards`: that one is filtered to
+     the reader's country, and an operator in Warsaw must still see the Uzbek
+     shelf. Paused rows are dropped here — the Offers list is what is on offer;
+     the Gift cards tab is where a paused card is managed. */
+  const shelf = useApi<AdminGiftCard[]>(ADMIN_GIFT_CARDS_PATH);
 
   const venueRows = venues.state.status === 'ready' ? venues.state.data : [];
   const dealRows = deals.state.status === 'ready' ? deals.state.data : [];
-  const shelfRows = shelf.state.status === 'ready' ? shelf.state.data : [];
+  const shelfRows = shelf.state.status === 'ready' ? shelf.state.data.filter((card) => Number(card.active) === 1) : [];
 
   const open = venueRows.find((venue) => venue.id === openId) ?? null;
 
@@ -667,7 +668,6 @@ export function AdminPage() {
        city rather than not at all. */
     match(deal.copy?.title ?? null, deal.partner_name, deal.city),
   );
-  const shownCards = shelfRows.filter((card) => match(card.brand));
 
 
   /*
@@ -864,66 +864,22 @@ export function AdminPage() {
                     <p>{copy.deals.lede}</p>
                   </div>
 
-                  {deals.state.status === 'error' || shelf.state.status === 'error' ? (
-                    <Down result={deals.state.status === 'error' ? deals : shelf} />
-                  ) : deals.state.status === 'loading' || shelf.state.status === 'loading' ? (
+                  {/* Offers only. Gift cards moved to their own tab, where they
+                      are created, restocked, paused and deleted — one place to
+                      manage a thing rather than two lists that can disagree. */}
+                  {deals.state.status === 'error' ? (
+                    <Down result={deals} />
+                  ) : deals.state.status === 'loading' ? (
                     <p className="adm-empty">{copy.website.loading}</p>
-                  ) : dealRows.length + shelfRows.length === 0 ? (
+                  ) : dealRows.length === 0 ? (
                     <div className="adm-block-empty" data-reveal>
                       <h3>{copy.deals.none.title}</h3>
                       <p>{copy.deals.none.body}</p>
                     </div>
-                  ) : shownDeals.length + shownCards.length === 0 ? (
+                  ) : shownDeals.length === 0 ? (
                     <p className="adm-empty">{copy.noMatch}</p>
                   ) : (
                     <ul className="adm-list">
-                      {shownCards.map((card) => (
-                        <OfferRow
-                          key={card.id}
-                          logo={card.logo || initialOf(card.brand)}
-                          name={card.brand}
-                          kind={copy.deals.kinds.gift}
-                          meta={[
-                            /* The face value in the card's **own** currency, not
-                               the reader's: it is a thing on a shelf, and a
-                               Polish card is 50 zł to an operator in London. The
-                               separator is still the reader's — see `faceValue`. */
-                            faceValue(card, separator),
-                            fill(copy.deals.cost, { n: String(card.points_cost) }),
-                          ]}
-                          side={fill(copy.deals.stock, { n: String(card.stock) })}
-                          lead={
-                            editing && (
-                              /* No pencil. A shelf entry's face value, points
-                                 cost and stock are what somebody bought
-                                 against, and there is no endpoint that edits
-                                 one — so the row gets the bin alone rather than
-                                 a control that would have to be refused. */
-                              <RowActions
-                                busy={write.busy === `card:${card.id}`}
-                                onDelete={() =>
-                                  setDoomed({
-                                    key: `card:${card.id}`,
-                                    what: card.brand,
-                                    body: act.deleteCard,
-                                    run: async () => {
-                                      const result = await removeGiftCard(card.id);
-                                      /* Two outcomes, and the operator is told
-                                         which: a brand nobody has bought from is
-                                         gone, one somebody holds a card from is
-                                         only off the shelf, because the code in
-                                         their wallet still has to name it. */
-                                      return result.outcome === 'deleted'
-                                        ? act.cardRemoved
-                                        : fill(act.cardDelisted, { n: String(result.issued) });
-                                    },
-                                  })
-                                }
-                              />
-                            )
-                          }
-                        />
-                      ))}
                       {shownDeals.map((deal) => (
                         <OfferRow
                           key={deal.id}
@@ -1020,6 +976,15 @@ export function AdminPage() {
                 <AdminTiers
                   write={write}
                   down={(result) => <Down result={result as ApiResult<unknown>} />}
+                />
+              ) : tab === 6 ? (
+                /* The gift-card engine. Handed the shell's `refresh` so a card
+                   created, paused or restocked here is right on the Offers list
+                   and the tiles the moment the operator switches back. */
+                <AdminGiftCards
+                  write={write}
+                  down={(result) => <Down result={result as ApiResult<unknown>} />}
+                  onChanged={refresh}
                 />
               ) : (
                 /* **People is the server's.** It read `auth/directory.ts`

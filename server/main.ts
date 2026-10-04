@@ -27,6 +27,10 @@ import { seedPlatform } from './domain/settings.ts';
 import { createApi } from './http/server.ts';
 import { allRoutes } from './http/routes/index.ts';
 import { startScheduler } from './jobs.ts';
+import * as email from './ports/email.ts';
+import { reconcileStock as reconcileGiftStock } from './domain/giftCards.ts';
+import * as push from './ports/push.ts';
+import { spendGateOn } from './domain/verification.ts';
 import type { Route } from './http/router.ts';
 
 export interface BootOptions {
@@ -71,6 +75,9 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
     console.log(postgres ? 'database: postgres' : `database: sqlite ${file}`);
   }
   await seedPlatform(db);
+  /* The shelf's counter restated from its codes — see `giftCards`. Cheap, and
+     it means a drift can never outlive a restart. */
+  await reconcileGiftStock(db);
 
   const venues = (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM venues`))?.n ?? 0;
 
@@ -248,12 +255,24 @@ function indexRoute(routes: Route[]): Route {
       endpoints: routes.map((route) => `${route.method} ${route.pattern}`).sort(),
       billing: process.env.PAYLEZ_BILLING === 'live' ? 'live' : 'local',
       push: process.env.PAYLEZ_PUSH === 'live' ? 'live' : 'local',
+      email: email.mode(),
     }),
   };
 }
 
 export async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
+
+  /* Refused before anything else starts, for the `PAYLEZ_BILLING` reason: a
+     deployment that asked for real email and has no key would otherwise come
+     up looking healthy and send nobody their sign-up code. */
+  if (email.mode() === 'live' && !email.configured()) {
+    throw new Error('PAYLEZ_EMAIL=live but RESEND_API_KEY is unset — refusing to start.');
+  }
+  /* Same reason: a server that would fail every push should not come up. */
+  if (!push.configured()) {
+    throw new Error('PAYLEZ_PUSH=live but VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are unset — refusing to start.');
+  }
   const { db, routes } = await boot({ reimport: args.has('--reimport') });
 
   if (args.has('--import-only')) {
@@ -270,6 +289,21 @@ export async function main(): Promise<void> {
     );
     console.warn('     Set it before this points at anybody’s data.\n');
   }
+
+  /* Loud for the same reason as the line above: with the local adapter every
+     sign-up code goes to this log and to nobody's inbox. Correct on a laptop,
+     and a support queue on a server. */
+  if (email.mode() === 'local') {
+    console.warn('  ⚠  PAYLEZ_EMAIL is not live — sign-up codes are written to this log, not emailed.');
+  } else {
+    console.log(`email: live via Resend, from ${email.sender()}`);
+  }
+  console.log(
+    push.webPublicKey()
+      ? 'push: live — browsers get the daily game reminder'
+      : 'push: local — notifications go to the inbox; no browser is pushed (PAYLEZ_PUSH)',
+  );
+  console.log(`email confirmation gate on spending: ${spendGateOn() ? 'on' : 'off'} (PAYLEZ_VERIFY_GATE)`);
 
   /* Part C's console is unreachable without this — see `provisionAdmin`. It is
      reported either way, because "the operations console has no way in" is not

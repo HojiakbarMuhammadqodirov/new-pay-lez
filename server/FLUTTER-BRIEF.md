@@ -769,9 +769,10 @@ What a day is, so the screens can say it honestly:
 
 Three rules travel with the charge, and each of them is a screen:
 
-- **Starting costs nothing; finishing costs one.** Do not decrement locally at
-  the start — read `energyLeft` off `/finish`.
-- **An abandoned round costs nothing.** A dropped connection mid-round is the one
+- **Superseded by §29: starting costs one, and finishing costs nothing more.**
+  Read `energyLeft` off the start response.
+- **An abandoned round costs nothing.** *(Superseded by §29 — it costs one, and
+  is refunded only within 5 seconds of the start, once a day.)* A dropped connection mid-round is the one
   failure the player definitely did not choose, so it takes nothing with it. Do
   not "helpfully" post a finish to tidy up a stale session; that is the one thing
   that turns a free failure into a charged one.
@@ -1664,6 +1665,170 @@ a Memory Match board at 3–8, a flight gap at half a point, a Word Builder word
 its tier, a five-word Word Builder round, an exact `20` on the `daily_game` task,
 or a `daily_game` ledger entry. Also any test that asserted two rounds of the same
 game pay the same — they no longer do, and that is the point.
+
+### 24. Email confirmation — two new endpoints, one new field, and a switch that waits for you
+
+Every email sign-up now gets a six-digit code by email, and the
+`POST /v1/auth/signup` response gained `verification` (the shape below, or
+`null` if the mail could not be sent — the account is created either way).
+Google sign-ins are stamped verified and never get a code.
+
+| Call | Notes |
+|---|---|
+| `POST /v1/auth/verify/send` | Resend. Returns `{sent, nextSendAt, expiresAt, sends}`. Inside the 90 s cooldown it is **200 with `sent: false`** — show "wait a moment", not an error. After 10 codes: `409 quota_exceeded`. |
+| `POST /v1/auth/verify` `{code}` | `{verified, granted}`. Spaces and dashes are ignored. Wrong code: `400 validation_failed` with `attemptsLeft`. Then `409 expired` / `409 cap_reached` (5 wrong answers) — both mean "send a new one". |
+| `GET /v1/me` → `user.emailVerifiedAt` | Null on an account with an email = draw the "confirm your email" prompt. Every account older than this change was stamped by a migration. |
+| `GET /v1/me` → `user.spendNeedsVerifiedEmail` | New. While true, `POST /v1/vouchers` and `POST /v1/gift-cards` answer **403 `not_verified`** for an unproved address (`remedy` names the send endpoint). |
+
+**The switch is off, and it is off for you.** The server will not refuse a spend
+until `PAYLEZ_VERIFY_GATE=on`, and that will be turned on only once the app has
+a code screen. Earning — rounds, check-in, the welcome gift, the board — is never
+gated. Until then an app user can confirm on the website.
+
+**Done when:** a code field (`autocomplete`/`textContentType` one-time-code),
+a resend button that respects `sent: false`, the attempts-left message, and a
+`not_verified` 403 on a purchase that opens the code screen instead of a generic
+error.
+
+### 25. Referrals — Google sign-up can carry a code, codes got longer, and the payout got stricter
+
+| Change | What to do |
+|---|---|
+| `POST /v1/auth/google` accepts `referralCode` | Send it on a Google sign-up exactly as on `POST /v1/auth/signup`. Bound only when that press creates the account. |
+| Both sign-up responses gained `referral: { applied }` | `null` when no code was sent. A bad code never fails the sign-up — show "that code was not recognised" if you want to. |
+| `GET /v1/referrals/codes/{code}` (no auth) | `{ valid }` — check a typed code before sign-up. Case, spaces and dashes are ignored everywhere now. |
+| New codes are `PY` + 6 characters (`PY7KQ2MX`) | Old `PY####` codes still work. Do not validate the shape client-side. |
+| `GET /v1/referrals` → `pointsEarned` | Now what *this* account was paid (it was double: both sides of each bond). `joined` excludes voided referrals. |
+| Payout rule | Both sides are paid on the friend's **first counted visit** — not a scan under the venue's minimum spend, and not at a till the inviter runs. |
+
+The web's invite link is `https://www.pay-lez.com/sign-in?ref=<code>`; if the app
+shares a link, use the same shape so it lands in the web form prefilled.
+
+### 26. A ninth game: 2048 (`gameType: "merge_2048"`)
+
+Additive — an app that does not draw the card is unaffected. To add it:
+
+| Step | Shape |
+|---|---|
+| Start | `POST /v1/games/sessions {gameType: "merge_2048"}` → `content: { board: number[16], size: 4, target: 2048, tileBands, floorPerformance }`. `board` is row-major, `0` = empty. |
+| Move | `POST …/events {seq, kind: "move", payload: {dir: "up"|"down"|"left"|"right", from: <moves applied so far>}}` → `{accepted, merge: {board, spawned: {index, value} \| null, score, moves, best, over}}`. Draw `merge.board` — it includes the new tile the server placed. |
+| Retry | A move whose `from` is behind the server's count is **not applied**: `accepted: false` with the current board. So resending a lost move is safe. |
+| Refusals | `400 bad_request` for a swipe that changes nothing (check it locally first — the slide is deterministic) or an unknown `dir`; `409 invalid_state` once `over` is true. |
+| Finish | `POST …/finish` with no report. Scored on the **largest tile** the server's board reached (rulebook §5.7): 2048 = 100, 1024 = 85, 512 = 65, 256 = 50, 128 = 35, 64 = 20, below = 0, no moves = 0. `correct` = milestones reached of `answered` = 6. |
+
+No clock and no move limit: the round ends when `over` is true or the player banks it.
+It joins the daily rotation as the last slot (`DAILY_GAME_POOL`), after Word Builder.
+
+### 27. A tenth game: Food Cross (`gameType: "food_cross"`)
+
+A match-three on an 8×8 board of six foods. Additive, like 2048.
+
+| Step | Shape |
+|---|---|
+| Start | `content: { board: Piece[64], size: 8, kinds: 6, moves: 20, target: 2000 }`. `Piece` is `{ t, s }`: `t` the food 0–5 (−1 for a bomb), `s` 0 plain · 1 clears its row · 2 clears its column · 3 bomb. Row-major. |
+| Swap | `POST …/events {seq, kind: "swap", payload: {a, b, from}}` — `a`, `b` neighbouring cell indices, `from` the moves applied so far. Reply `{accepted, food: {board, steps: [{cleared: number[], score, board}], gained, cleared, score, moves, movesLeft, over, reshuffled}}`. `gained` is this swap's score; `score` the round's. Play `steps` out in order (cleared cells, then the board after the fall); `board` is the final one. |
+| Rules | A swap must line up 3+ of one food, or involve a bomb. 4 in a line leaves a row/column clearer; 5 leaves a bomb; a bomb swapped with a food clears every food of that kind, with another bomb the whole board. A board left with no move is dealt again (`reshuffled`). |
+| Refusals | `400 bad_request` — not neighbours, or the swap lines nothing up (check locally first). `409 invalid_state` — the 20 moves are used. A stale `from` is answered with the current board, not applied. |
+| Finish | No report. Rulebook §5.8: `min(100, score / 2000 × 100)`. A food is 5, × the cascade level, ×2 for a step that made a four, ×3 for a five. `correct` = fifths of 2,000 reached, of `answered` = 5. |
+
+The rules are `server/domain/foodCross.ts`; the app can port them line for line for the legality check.
+
+### 28. An eleventh game: Food Ninja (`gameType: "food_ninja"`)
+
+Sixty seconds of foods thrown up from the bottom; slice them with a swipe. No bombs. Additive.
+
+| Step | Shape |
+|---|---|
+| Start | `content: { flyers: Flyer[], durationMs: 60000, gravity: 1.7, perFood: 2, perfectFoods: 50 }`. `Flyer` is `{ id, kind (0–5), t (launch ms), x, vx, vy }` on a unit field: `x` 0..1, `y` 0 at the bottom. Position at `s` seconds after `t`: `x + vx·s`, `−0.08 + vy·s − ½·1.7·s²`; gone below `y = −0.16`. A food's radius is 0.06 of the field's width. |
+| Clock | `POST …/events {seq, kind: "start", payload: {}}` when the round actually begins. The server times every slice from this. Once only. |
+| Slice | `{seq, kind: "slice", payload: {ids: number[]}}` per swipe, **1–6 ids**. Reply `{accepted, ninja: {sliced, credited}}`. An id is credited once, only while that food is in the air by the server's clock (±1.5 s), and never after the round's 60 s. Ids outside that are simply not credited. |
+| Finish | No report. `min(100, credited × 2)`; `correct` = fifths of 50, of `answered` = 5. |
+
+The server cannot prove a finger crossed a food — the same limit as the flight's `cleared` — but it can refuse every slice of a food that was not in the air, and the score can never exceed the schedule. `server/domain/foodNinja.ts` has the schedule and physics to port.
+
+### 29. Energy is charged when a round **starts** — and Quit has an endpoint
+
+Rulebook §3. This reverses §2's "starting costs nothing; finishing costs one",
+and like §2 it changes no shape a decoder sees, so it reaches you as wrong
+numbers rather than as a failure.
+
+- **`POST /v1/games/sessions` takes the energy.** `energyLeft` on that response
+  is the tank **after** this round's charge (it was "before"). New:
+  `energyNextAt` (ISO, or `null` on a full tank) on the start and the finish.
+  Set the gauge from the start response; do not decrement locally.
+- **An abandoned round costs one.** Quitting no longer saves it.
+- **`POST /v1/games/sessions/{id}/abandon`** (no body) — call it on Quit.
+  Reply `{abandoned, refunded, energyLeft, energyNextAt}`. Within **5 seconds**
+  of the start, **once a day**, the energy comes back (`refunded: true`).
+  Idempotent: a round already closed answers `abandoned: false`.
+- **Starting a round closes any round still open** for that player, under the
+  same rule — so not calling abandon just means the refund window has passed by
+  the time the next start closes it.
+- Practice rounds (`paid: false`) cost nothing and refund nothing, as before.
+- Rounds opened before this deploy are still charged at finish, once.
+
+### 30. Browser push — nothing for the app to do, one thing to know
+
+The website now pushes one thing to browsers: the daily game reminder
+(`kind: "daily_game"`, 18:00 on the player's clock, only if they switched it
+on). The app is untouched — its `fcm`/`apns` tokens and the inbox work as
+before, and `daily_game` rows appear in `GET /v1/notifications` like any
+other. The one change: `canPush` now counts only tokens that can carry the
+kind, so a `web` token never makes a phone-only kind "deliverable" and an
+`fcm` token never makes `daily_game` deliverable. `POST /v1/push-tokens`
+also accepts an optional `timezone`; sending the device's IANA zone is
+harmless and future-proof.
+
+### 31. Gift cards — real codes, a shelf per country, and two new states
+
+All additive, but two behaviours change under existing shapes:
+
+- **`GET /v1/gift-cards` is filtered to the player's country** when called
+  with a token (Poland for a profile with no country). A Tashkent player now
+  sees Uzbek venue cards and no Polish brands. New fields per row:
+  `country_code`, `kind` (`brand` | `venue`), `venue_name`,
+  `validity_days`, `how_to_use`.
+- **`POST /v1/gift-cards` returns a real code** from the operator's stock, and
+  a row with no codes loaded is `409 conflict` "out of stock" even if it was
+  listed — `stock` is now the count of codes left, so show it as such.
+- **`GET /v1/wallet` → `giftCards[]`** gains `kind`, `how_to_use`,
+  `venue_name`, `used_at`, and `face_minor`/`currency` are now what the card
+  was **bought at**. `status` gains `cancelled` (an operator voided it and the
+  points were returned) — treat any status other than `active` as spent.
+- **New: `POST /v1/wallet/gift-cards/{id}/used`** (no body) — the holder's
+  "I've used it". `404` for somebody else's card, `400 invalid_state` for one
+  that is not active.
+
+### 32. Five more games: Snake, Canon Numbers, Bounce Ball, Doodle Jump, Zuma
+
+`gameType` gains `snake`, `cannon_numbers`, `breakout` (shown as "Bounce
+Ball"), `doodle_jump` and `zuma`. All additive; the energy, practice and finish
+rules are the same as every other game. `server/domain/arcade.ts` has every
+rule to port, and the web's `src/site/games/arcade.ts` is a line-for-line copy.
+
+| Game | Start `content` | During | Finish `report` |
+|---|---|---|---|
+| Snake | `{cols: 16, rows: 16, foods: number[512]}` — cell indices; the next food is the next entry not under the snake | nothing | `{turns: [tick, dir][], ticks}` — **replayed** on the server; dir 0 up · 1 right · 2 down · 3 left, applied before that tick's move |
+| Canon Numbers | `{board: number[48], cols: 6, rows: 8, turns: 30}` | `POST …/events {kind: "fire", payload: {col, from}}` → `{cannon: {board, hits, turn, destroyed, over}}` — 2048's `from` rule | none |
+| Bounce Ball | `{cols: 8, rows: 5, wall: number[40]}` — hit points per brick | nothing | `{broken: number[]}` — brick ids |
+| Doodle Jump | `{platforms: number[400]}` — 0..1 across; heights are `doodleHeights` | nothing | `{reached}` — highest platform index + 1 |
+| Zuma | `{chain: number[60], shots: number[300], colors: 4}` | nothing | `{cleared}` — **chain** balls only |
+
+Scoring (0..100 performance): Snake 4 a food, Canon Numbers 4 a block, Doodle
+Jump 2 a platform, Bounce Ball and Zuma the share of the wall / chain. Snake
+cannot be faked (the server plays the turns again, held to the round's own
+duration); Canon Numbers is held server-side; the other three are capped by what
+the level holds and what the round's duration allows — the flight's rule.
+
+### 33. Directory logos — `image_url` is now always our own URL
+
+`GET /v1/guide/services` rows: `image_url` used to be the raw stored value — a
+Base44 address, or a whole `data:` picture inline (100 of them, 1.6 MB of the
+response). It is now **an absolute URL on this API**
+(`https://api.pay-lez.com/v1/media/service/<id>?v=<hash>`) or `null`, and
+`logo` is the same thing as a path. Load either as a normal network image; the
+`?v=` changes when the logo does, so it is safe to cache hard. `null` means the
+service has no logo — draw your placeholder. Nothing else about the row changed.
 
 ### What did **not** change
 

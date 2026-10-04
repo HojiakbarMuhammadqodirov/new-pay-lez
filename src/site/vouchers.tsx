@@ -5,6 +5,7 @@ import { useCopy, useGroupSeparator, useMoneyParts } from './i18n/context';
 import { fill } from './i18n/currency';
 import { initialOf } from './adminMetrics';
 import { useApi } from './api/useApi';
+import { isPicture } from './auth/picture';
 import { cheapestCost, faceValue, GIFT_CARDS_PATH, type GiftCardStock } from './api/wallet';
 import { PATHS } from './router';
 import { useCountUp } from './useReveal';
@@ -348,7 +349,9 @@ function VouchersCatalogue({
               <article className="gift" key={card.id} data-reveal>
                 <div className="gift-top">
                   <span className="pv-logo" aria-hidden>
-                    {card.logo || initialOf(card.brand)}
+                    {/* A picture the console stored, or the initial — never the
+                        stored value as text. */}
+                    {isPicture(card.logo) ? <img className="wal-mark-img" src={card.logo} alt="" /> : initialOf(card.brand)}
                   </span>
                   <span className="gift-left">
                     {card.stock <= 0

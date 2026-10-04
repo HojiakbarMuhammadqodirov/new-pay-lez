@@ -19,6 +19,7 @@ import {
   faceValue,
   GIFT_CARDS_PATH,
   redeemGiftCard,
+  markGiftCardUsed,
   WALLET_PATH,
   type BrowsedDeal,
   type GiftCardStock,
@@ -29,8 +30,10 @@ import {
 } from './api/wallet';
 import { useAuth } from './auth/context';
 import { canAfford } from './auth/player';
+import { isPicture } from './auth/picture';
 import { PATHS } from './router';
 import { CounterCode, VenueMark, VenueSheet } from './venueSheet';
+import { VerifyEmail } from './VerifyEmail';
 
 /**
  * The wallet, for someone who is signed in.
@@ -186,10 +189,13 @@ function BandPill({ text }: { text: string }) {
  * from a partner's CDN would be the third-party runtime request the whole
  * front end is built to avoid.
  */
-function BrandMark({ letter }: { letter: string }) {
+function BrandMark({ letter, picture }: { letter: string; picture?: string | null }) {
+  /* A gift card's logo is a picture the console made from a file — a `data:`
+     URL, never a link elsewhere (`isPicture` is the judgement). Anything else
+     is drawn as the initial, which is what every brand mark here was before. */
   return (
     <span className="pv-logo wal-mark" aria-hidden>
-      {letter}
+      {isPicture(picture) ? <img className="wal-mark-img" src={picture} alt="" /> : letter}
     </span>
   );
 }
@@ -377,34 +383,80 @@ function GiftCardRow({
   texture,
   separator,
   locale,
+  onChanged,
 }: {
   card: WalletGiftCard;
   texture: string;
   separator: string;
   locale: string;
+  /** The wallet's re-read, after "I've used it". */
+  onChanged: () => void;
 }) {
   const copy = useCopy().wallet;
   const spent = card.status !== 'active';
   const until = on(card.expires_at, locale);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const states = copy.gift.states as Record<string, string | undefined>;
+  /* A spent card says what happened to it — used, expired, or cancelled with
+     the points given back — rather than a date that no longer matters. */
+  const pill = spent
+    ? (states[card.status] ?? copy.tabs[1])
+    : until
+      ? fill(copy.valid, { date: until })
+      : copy.tabs[0];
+
+  const used = () => {
+    setBusy(true);
+    setFailed(false);
+    markGiftCardUsed(card.id)
+      .then(onChanged)
+      .catch(() => setFailed(true))
+      .finally(() => setBusy(false));
+  };
 
   return (
     <article className="wcard" data-spent={spent ? 'true' : undefined} data-reveal>
       <div className="wal-band" data-texture={texture}>
         <div className="wal-band-top">
-          <BrandMark letter={card.logo || initialOf(card.brand)} />
-          <BandPill text={until ? fill(copy.valid, { date: until }) : copy.tabs[spent ? 1 : 0]} />
+          <BrandMark letter={initialOf(card.brand)} picture={card.logo} />
+          <BandPill text={pill} />
         </div>
         <span className="wal-fig">{faceValue(card, separator)}</span>
       </div>
 
       <div className="wal-body">
         <b className="wal-name">{card.brand}</b>
+        {card.venue_name && <span className="wal-where">{fill(copy.gift.at, { venue: card.venue_name })}</span>}
+        {/* How to spend it, only while it can be spent — and only when the
+            operator wrote something: a heading over nothing promises a thing
+            the row does not hold. */}
+        {!spent && card.how_to_use && (
+          <p className="wal-howto">
+            <i>{copy.gift.howTo}</i>
+            {card.how_to_use}
+          </p>
+        )}
         <div className="wal-act">
           <span className="wal-code-block">
             <i>{copy.deals.code}</i>
             <b className="wcard-code">{card.code}</b>
           </span>
+          {/* Only an active card can be marked, and the press is the holder
+              saying the code was spent at the brand — a till this server never
+              sees. It moves no value; the points went when it was bought. */}
+          {!spent && (
+            <button type="button" className="btn btn-ghost wal-cta" disabled={busy} onClick={used}>
+              <Icon name="check" size={15} strokeWidth={2.2} />
+              {busy ? copy.gift.usedWorking : copy.gift.used}
+            </button>
+          )}
         </div>
+        {failed && (
+          <span className="field-error" role="alert">
+            {copy.gift.usedFailed}
+          </span>
+        )}
       </div>
     </article>
   );
@@ -842,6 +894,8 @@ export function WalletApp() {
   const balance = purse ? purse.points : (player?.points ?? 0);
 
   const reload = held.reload;
+  /* The shelf too: its `stock` is the codes left, and one just went. */
+  const reloadShelf = shelf.reload;
   const buy = useCallback(
     async (stockId: string) => {
       setBuying(stockId);
@@ -852,13 +906,14 @@ export function WalletApp() {
            it cost — so the answer is re-read rather than patched locally. A
            subtraction here would be this page inventing a balance again. */
         reload();
+        reloadShelf();
       } catch {
         setFailed(true);
       } finally {
         setBuying(null);
       }
     },
-    [reload],
+    [reload, reloadShelf],
   );
 
   const openPlace = useCallback<OpenPlace>((venue, from) => setSheet({ venue, from }), []);
@@ -933,6 +988,15 @@ export function WalletApp() {
                   : wallet.canRedeem}
             </span>
           </div>
+
+          {/*
+            ── confirm your email ──
+
+            Under the balance, which is the figure it is about: this is the page
+            points are spent from. Renders nothing for an account that has
+            proved its address — see `VerifyEmail.tsx`.
+          */}
+          <VerifyEmail where="wallet" />
 
           {/* ── the code staff type ── */}
           <CounterCard me={me} />
@@ -1171,6 +1235,7 @@ export function WalletApp() {
                       texture={textureAt(index + 4)}
                       separator={separator}
                       locale={language}
+                      onChanged={reload}
                     />
                   ))}
                 </div>
@@ -1212,7 +1277,14 @@ export function WalletApp() {
                   <article className="gift" key={card.id} data-reveal>
                     <div className="gift-top">
                       <span className="pv-logo" aria-hidden>
-                        {card.logo || initialOf(card.brand)}
+                        {/* The console stores a picture; anything that is not
+                            one (an older row's letter, an address elsewhere)
+                            is drawn as the initial, never as text. */}
+                        {isPicture(card.logo) ? (
+                          <img className="wal-mark-img" src={card.logo} alt="" />
+                        ) : (
+                          initialOf(card.brand)
+                        )}
                       </span>
                       <span className="gift-left">
                         {out ? wallet.soldOut : fill(wallet.left, { n: String(card.stock) })}
@@ -1223,6 +1295,9 @@ export function WalletApp() {
                         on `faceValue`. The site's own prices convert; a thing on
                         a shelf does not. */}
                     <span className="gift-value">{faceValue(card, separator)}</span>
+                    {card.venue_name && (
+                      <span className="gift-where">{fill(wallet.gift.at, { venue: card.venue_name })}</span>
+                    )}
                     {card.priority_only === 1 && (
                       <span className="gift-where">{wallet.priorityOnly}</span>
                     )}

@@ -173,6 +173,89 @@ has proved itself.
 against it** — the Flutter app already on phones cannot be updated with the
 server, and `server/FLUTTER-BRIEF.md` is where a change it must know about goes.
 
+## Turning on email codes
+
+Sign-up confirmation codes are written to the server log until this is done.
+In `/etc/paylez/paylez.env`:
+
+```
+PAYLEZ_EMAIL=live
+RESEND_API_KEY=re_...
+```
+
+then `systemctl restart paylez`. The boot log says `email: live via Resend`, or
+refuses to start if the key is missing. The `pay-lez.com` domain has to be
+verified in Resend first, or Resend refuses every message (the server logs the
+refusal). `PAYLEZ_VERIFY_GATE=on` is a separate, later step — see
+`server/paylez.env.example`.
+
+## Turning on the daily game reminder (browser push)
+
+Until this is done the profile's "Daily game reminder" says reminders are not
+switched on yet. Generate the key pair **once**, on any machine:
+
+```
+npm run push:keys
+```
+
+and put both lines it prints, plus the switch, in `/etc/paylez/paylez.env`:
+
+```
+PAYLEZ_PUSH=live
+VAPID_PUBLIC_KEY=B...
+VAPID_PRIVATE_KEY=...
+```
+
+then `systemctl restart paylez`. The boot log says
+`push: live — browsers get the daily game reminder`, or refuses to start if a
+key is missing. **Never regenerate the pair** unless the private key leaked:
+every browser is subscribed to the public key, and a new one stops every
+reminder with nothing to say why. The site needs no change — `public/sw.js`
+ships with it. On an iPhone a reminder only works for somebody who added the
+site to the home screen (Apple's rule, iOS 16.4+).
+
+## Service logos on the server's disk
+
+The directory's logos are moved off Base44 and out of the database onto the
+VPS: one 256×256 WebP per service, at most 60 kB, in
+`/var/lib/paylez/media/service/<service id>.webp`, served by the API at
+`/v1/media/service/:id`. Once, in this order:
+
+1. In `/etc/paylez/paylez.env` add both, then `systemctl restart paylez`:
+
+   ```
+   PAYLEZ_MEDIA_DIR=/var/lib/paylez/media
+   PAYLEZ_API_URL=https://api.pay-lez.com
+   ```
+
+   `PAYLEZ_API_URL` is what the phone app's `image_url` is built from; without
+   it the server guesses from the request, which nginx may have rewritten.
+2. On a workstation with ffmpeg, from the repo — this reads the existing logos
+   from the live API and writes `logos-out/service/*.webp` plus a manifest:
+
+   ```
+   npm run logos:export -- --api https://api.pay-lez.com --out logos-out
+   ```
+
+3. Copy them up and link them:
+
+   ```
+   ssh root@87.106.247.180 'mkdir -p /var/lib/paylez/media/service && chown -R paylez:paylez /var/lib/paylez/media'
+   scp logos-out/service/*.webp root@87.106.247.180:/var/lib/paylez/media/service/
+   ssh root@87.106.247.180 'chown -R paylez:paylez /var/lib/paylez/media &&
+     cd /opt/paylez && sudo -u paylez env $(grep -v "^#" /etc/paylez/paylez.env | xargs) npm run logos:link -- --dry-run'
+   ```
+
+   Read the dry run, then run it again without `--dry-run` and with `--yes`.
+   A service with no file keeps its letter. To replace one logo later, overwrite
+   its file and run `logos:link` again — the URL carries a hash of the stored
+   value, so browsers pick the new one up instead of a week-old cache.
+
+**The nightly backup copies the database, not this folder.** Add
+`/var/lib/paylez/media` to whatever copies `/var/backups/paylez` off the box,
+or keep `logos-out/` — the export can always be re-run while the API still
+serves the old logos.
+
 ## Database emergencies
 
 Supabase down or the data damaged: the nightly backup is a working database.

@@ -182,9 +182,15 @@ consent gate on identified customers. **Run it after touching anything under
 `server/domain/`.** (FIFO *ordering*, not expiry: nothing expires, and a spend
 still has to come out of something.)
 
-**Energy is the single limiter on a day, and every finished round costs one.**
-Win or lose — an abandoned round still costs nothing, because the charge is
-written in `games.finish` and nowhere else. It refills one per
+**Energy is the single limiter on a day, and every round costs one when it
+starts.** Win or lose, finished or abandoned — that is rulebook §3, and it
+replaced charging in `games.finish`, which let a player quit any round going
+badly for free. The one way back is an accidental tap: a round abandoned within
+`CONFIG.points.energyRefundSeconds` (5) of its start is refunded, at most
+`energyRefundsPerDay` (1) a day, through `POST /v1/games/sessions/:id/abandon`
+(`games.abandonActive`, which a new start also runs on any round left open).
+Rounds opened before that change carry no `charged: 'start'` in their secret and
+are still charged at finish, so a deploy charges nobody twice. It refills one per
 `energy_regen_minutes` up to `daily_energy`, so a day is
 `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank: free 12
 sustained and 16 in a burst, Pro 24/30, Premium 48/58. Three other brakes have
@@ -346,25 +352,48 @@ account and no consent row, `GET /v1/me/consents` reports it ungranted, and
 `POST /v1/me/consents` is how it arrives later. Google records only on the press
 that *creates* the account: a row per sign-in would turn evidence into a log.
 
-**Email confirmation is built and postponed, and the schema still carries its
-shape.** A full OTP flow — code, expiry, attempt cap, resend cooldown, send
-ceiling, the `ports/email.ts` boundary and a `VerifyEmail` panel — shipped and was
-taken back out in `53edbf7`, because no transport exists: with `PAYLEZ_EMAIL`
-unset the code goes to the server log and nowhere a customer can read it. That
-would have been survivable if the gate were small, and it was not — an
-unconfirmed account could not earn, buy a voucher or a gift card, check in, claim
-the welcome gift, or appear on the leaderboard, and **no existing account is
-backfilled**, so the first restart would have taken all of that from everyone at
-once.
+**A gift card is a real code, and the shelf is per country.**
+`domain/giftCards.ts` and the console's seventh tab (`adminGiftCards.tsx`).
+Poland sells real **brand** codes the operator loads (paste or CSV); Uzbekistan
+sells one **venue's** own card, whose codes the server generates — the kind is
+fixed at creation. `stock` is the codes nobody holds and stays the race-safe
+gate; a purchase binds the oldest free code. A bought card copies its face value
+and currency, so editing the shelf never changes a wallet. "Used" is the
+holder's or the operator's word, because the till is not ours; **cancel refunds
+the points as a new `adjustment` entry and burns the code** — the one console
+write that reaches the ledger, and only by adding to it. The shelf a player sees
+is their profile's country (Poland when unset), and every logo is a `data:`
+picture the console made, drawn through `isPicture` — the old shelf printed
+`card.logo` as text, which would have been a page of base64.
 
-`users.email_verified_at` and the `email_verifications` table are deliberately
-**left in the schema, inert**, so there is no migration to run and none to unrun;
-the Google exchange still stamps the column because that is the one moment the
-fact is known for free. Restoring is code-only — `git show cc3d9d0 -- <path>` for
-the three deleted files, and `53edbf7` names every block. Three things to change
-on the way back: a transport first, a banner rather than a gate (and if a gate is
-ever wanted, on *spending* and never on earning), and a backfill so accounts that
-predate it are not asked for a code for an address they registered months ago.
+**Browsers get one push, the daily game reminder, at six on the player's own
+clock.** `domain/reminders.ts` decides (switched on in the profile, a live web
+subscription, no round started since *their* midnight, once per local day,
+18:00–21:00 in the zone their browser reported); `ports/webpush.ts` sends it
+(RFC 8291 + VAPID over `node:crypto` — no dependency, the `pg` budget again);
+`jobs.runEveryMinute` runs it; `public/sw.js` shows it and has **no `fetch`
+handler on purpose** — a caching worker would be a second stale-bundle problem
+on top of `index.html`'s. `PAYLEZ_PUSH=live` plus `VAPID_PUBLIC_KEY` /
+`VAPID_PRIVATE_KEY` (from `npm run push:keys`, generated **once** — a new pair
+orphans every subscription) turns it on, and the profile's switch says so in
+words while it is off. A browser carries only `CONFIG.push.webKinds`;
+`canPush` counts a token only if its platform can carry the kind.
+
+**Email confirmation is back, and the gate is on spending and behind a
+switch.** The first version (a full OTP flow) shipped with no transport and
+gated earning, check-in, the welcome gift and the board, and was removed in
+`53edbf7`. It returned with the three changes that removal asked for: a real
+transport (`ports/email.ts` → Resend, `PAYLEZ_EMAIL=live` + `RESEND_API_KEY`), a
+**panel rather than a gate** (`VerifyEmail.tsx` on Play and the wallet), and a
+**backfill** (schema version 8 stamps every existing address once). The only
+thing an unproved address can cost is a spend — buying a voucher or a gift card —
+and only while `PAYLEZ_VERIFY_GATE=on`, which stays off until the Flutter app has
+a code screen, because the app shares the API and would otherwise strand
+everybody who signs up on a phone. `GET /v1/me` carries the switch as
+`spendNeedsVerifiedEmail` and the panel picks its sentence from it — "you can
+spend once you confirm" is only said while it is true. Google sign-ins arrive
+stamped and never see a code; an account with no address has nothing to prove.
+The rules and their reasons are in `domain/verification.ts`.
 
 **The profile's "Status" is `occupation`, and the column cannot be called
 `status`.** `users.status` is the account state — `provisional`, `active`,
@@ -845,6 +874,17 @@ card — and `guidance_services` has no such column, so the card no longer claim
 it. Inventing the one attribute the real data lacks is how the directory got
 fictional in the first place.
 
+**A logo is a path on the API, and a path is joined to the API's address.**
+`media.logoPath` turns whatever a logo column holds — a file on this server's
+disk (`media:service/<id>.webp`, the one format the directory stores now:
+256×256 WebP, ≤ 60 kB), an inline `data:` picture, or a Base44 address — into
+`/v1/media/<entity>/<id>?v=<hash>`. Two bugs hid every logo and both are rules
+now: the site must load it through `mediaUrl()` (`api/client.ts`), because a
+bare path resolves against `www`, where nginx answers `index.html`; and the
+server reads an image's type **from its bytes** (`media.sniff`), because Base44
+labels every file `application/octet-stream`. `npm run logos:export` and
+`npm run logos:link` move the existing logos onto the disk (DEPLOY.md).
+
 **And a listing is a card that opens, because the row always held more than the
 list drew.** An expanded subject was a `<ul>` of `<li>`s showing a name, an
 address and a blurb — which was exactly what `GuideService` in `api/guide.ts`
@@ -1112,7 +1152,24 @@ than a record. It exists because the card was already claiming it: the chips wer
 labelled "Saved pairs" and nothing was saved, which is the honesty rule the
 partner dashboard states, failing quietly on a marketing page. Every read is
 wrapped in `try`, because storage throws in a private window with cookies blocked
-and a console that cannot open is worse than one that cannot remember.
+and a console that cannot open is worse than one that cannot remember. And a
+**fifth**, `paylez-referral` (`auth/referral.ts`): the invite code from a
+`/sign-in?ref=` link, kept for 30 days so it survives the visitor wandering off
+before signing up, read into the sign-up form's code field, and dropped the
+moment an account exists. `main.tsx` captures it before the first render and
+takes `ref` out of the address bar, so a copied URL does not forward somebody
+else's invite.
+
+**A referral pays on the invited friend's first *counted* visit, and not at the
+inviter's own till.** `gate.completeReferral` sits behind `visitCounted` like the
+stamp and the deal claim, skips a bond whose inviter owns the venue or is the
+cashier (the owner-farm), skips a suspended or deleted inviter, and *claims* the
+bond with a guarded UPDATE before paying, so two simultaneous scans cannot both
+pay. Codes are `PY` + six characters now (`ids.referralCode`); the 8,999-value
+`PY####` space would have made every sign-up fail at about nine thousand
+accounts. Sign-up never refuses a bad code — the web form checks it first with
+`GET /v1/referrals/codes/:code` — and an operator voids one with
+`POST /v1/admin/referrals/:id/reject`, which reverses what it paid.
 
 **The plan and its entitlements are session state, not a per-screen fetch.**
 `AuthValue` carries `plan` and `entitlements`, filled by one `GET /v1/me` when
@@ -1307,6 +1364,66 @@ never "дом" — and the same trap catches Ukrainian, where the cognate is one
 away. An English clue never has to think about this, which is why the first 208
 entries in that file did not.
 
+**2048 is the ninth game, and the server holds its board.** The quizzes hide
+an answer key and Memory Match a layout; 2048 has neither — the board is in
+plain view — so what stays secret is **where the next tile lands**.
+`server/domain/merge2048.ts` keeps the board in `game_sessions.secret`, applies
+each swipe, and spawns from an HMAC of a seed that never leaves the server; the
+round is scored on the largest tile it made (`CONFIG.games.mergeTileBands`), with
+no clock and no move limit. The browser's `games/board2048.ts` is the same slide
+written again (the two programs share no code) so a swipe moves at once, and the
+server's reply replaces the prediction. Two things are easy to undo: a move
+carries `from`, the move count it was made on, and that — not `seq` — is what
+makes a retried swipe harmless; and the row is **appended** to `GAMES` after
+`wordLocal`, which is safe only because the grid names a card by its index in
+`GAMES`, never in the filtered list. The engine file is `board2048.ts` and not
+`merge2048.ts` because Windows resolves `Merge2048.tsx` and `merge2048.ts` to
+one file. The CHECK on `game_sessions.game_type` now widens whenever
+`GAME_TYPES` names a type the live table lacks, on both engines — it used to be a
+one-off migration, which would have refused the next game on every database that
+already existed.
+
+**Food Cross is the tenth game, built the same way.** A match-three
+(`server/domain/foodCross.ts`, copied line for line to `games/foodBoard.ts` —
+`npm run verify` and `verify:api` pin the same hand-built boards on both):
+twenty swaps, four in a line makes a row/column clearer, five makes a bomb, and
+the round is scored on the board's score against the rulebook's 2,000 (§5.8 —
+five a food, multiplied by cascade level and by 4/5-matches; five rather than ten
+because 300 simulated random rounds averaged 83% at ten). The server keeps the board and
+draws every falling food from an HMAC of the round's seed, and a swap carries
+`from` exactly as a 2048 move does. The reply carries every cascade **step** so
+the screen plays the fall out rather than jumping to the end. One trap was hit
+building it and is worth knowing for the next game: a "still mounted" ref must be
+set **on mount** as well as cleared on unmount, or StrictMode's mount → unmount
+→ mount leaves it reading "gone" and every reply is ignored — the board sat busy
+forever in development and only there.
+
+**Food Ninja is the eleventh, and it is honest about what it cannot check.**
+An action game, like the flight: whether a finger really crossed a food is a fact
+about the screen. So `server/domain/foodNinja.ts` fixes the whole round (which
+foods, when, how high) from a seed, the client draws it, a `start` event stamps
+the server's clock, and every `slice` is credited only for a food in the air by
+that clock, once, at most six a swipe. The score is bounded by the schedule; the
+module's header says so. Scored on the rulebook's single scale — two points of
+performance a food, 50 a perfect round — with no per-game combo bonus, because
+the flat bonuses are the master formula's job. The canvas follows the per-frame
+rule: positions, blade and halves are refs drawn in one rAF loop, and React only
+hears about the count and the whole second.
+
+**Five arcade games came after Food Ninja: Snake, Canon Numbers, Bounce Ball,
+Doodle Jump and Zuma** (`server/domain/arcade.ts`, copied to
+`src/site/games/arcade.ts`; screens in `games/Snake.tsx`, `CannonNumbers.tsx`,
+`Breakout.tsx` — the server and the code call Bounce Ball `breakout` —
+`DoodleJump.tsx`, `Zuma.tsx`). Appended to `GAMES` in that order after `ninja`.
+Each is as checkable as its kind allows and says so: Snake's turns are
+**replayed** by the server (so its step must stay identical on both sides —
+both suites pin the same cases), Canon Numbers' board is **held** like 2048's,
+and the three physics games are **bounded** by the round's duration like the
+flight. Four kinds of Zuma ball on one accent are four *marks* (dot, ring, bar,
+cross) — texture, not hue. All five draw on a canvas in one rAF loop except
+Canon Numbers, which is a DOM grid; `.ar-*` is their shared frame and `.cn-*`
+Canon Numbers' board.
+
 **One function decides what a finished round does to the account.**
 `awardPoints` owns the streak, the 24-hour window, the lapse, and the freeze that
 absorbs one missed day. Eight games score seven different ways — a quiz pays per
@@ -1373,9 +1490,14 @@ unparsable value and a signed-out session all land back on the free figure, whic
 is why the constants stay. `energyOf` derives the
 tank from `energy` + `energyAt` on demand rather than storing a count that would
 be stale the moment the tab was left open — the same construction
-`games.energyFor` uses one repo over, for the same reason. Every finished round
-costs one, win or lose; `spendEnergy` is the only spend, so an abandoned round
-costs nothing. A state saved under the old `lives` / `livesAt` names still reads,
+`games.energyFor` uses one repo over, for the same reason. A server round is
+charged when it starts, and the Play screen mirrors the tank from the server's
+own answers — the start, the Quit (`abandonRound`) and the finish — anchored on
+`energyNextAt` so the two clocks agree to the second. A round played with no
+server (the offline path) follows the same rule locally: `beginLocal` spends
+when it opens, `bank` calls `awardPoints(…, { charged: true })` so nothing is
+taken twice, and a quit inside `ENERGY_REFUND_MS` is `refundEnergy`, once per
+local day (`energyRefundDay`). A state saved under the old `lives` / `livesAt` names still reads,
 and a missing anchor reads as a full tank.
 
 **An empty tank plays; it just does not pay.** `awardPoints` returns the state

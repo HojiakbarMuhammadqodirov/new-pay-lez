@@ -13,6 +13,7 @@ import * as consent from '../../domain/consent.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as social from '../../domain/social.ts';
+import * as verification from '../../domain/verification.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { actor, bool, oneOf, optStr, str } from '../input.ts';
 import { CONFIG } from '../../config.ts';
@@ -74,12 +75,19 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
       onboardedAt: user.onboarded_at,
       trustTier: user.trust_tier,
       /*
-       * When the address was proved, or null. **It gates nothing any more** —
-       * email verification was removed, so no route asks for it. The field
-       * stays because the phone app was built against it and a field that
-       * vanishes breaks a mapper; Google sign-in still stamps it.
+       * When the address was proved, or null. A **stamp rather than a
+       * boolean**, matching `profileCompletedAt` and `onboardedAt` above: the
+       * moment is the fact. Null on an account with an address is what the
+       * web's "confirm your email" panel keys on; see `domain/verification.ts`.
        */
       emailVerifiedAt: user.email_verified_at,
+      /*
+       * Whether that null currently costs anything — `PAYLEZ_VERIFY_GATE`.
+       * Sent so a client can word its banner truthfully: "you can spend once
+       * you confirm" is a promise only while the server is enforcing it.
+       * Additive, so a client that does not read it is unaffected.
+       */
+      spendNeedsVerifiedEmail: verification.spendGateOn(),
       /* §1.4's standing answer, as a boolean because it is one. The column is
          an integer for the same reason `leaderboard_opt_in` is — SQLite has no
          boolean — and a client should not have to know that. */
@@ -101,6 +109,34 @@ async function me(ctx: Ctx, fresh?: accounts.User) {
     ),
   };
 }
+
+/**
+ * Issue a code, in the reader's language.
+ *
+ * A function rather than two copies of one call, because it is reached from
+ * sign-up and from the resend route, and the `language` argument is the part
+ * that would be forgotten in one of them. `ctx.language` is the account's own
+ * setting first and the header second (see `languageOf`), which is the right
+ * order for a message somebody reads in a mail client rather than in this
+ * browser.
+ */
+/**
+ * Whether a referral code sent with a sign-up actually bound.
+ *
+ * Reported rather than refused: a sign-up that failed over a mistyped invite
+ * code would be the wrong trade, and the Flutter app already sends the field
+ * and cannot learn a new refusal retroactively. `null` when no code was sent.
+ * The web form checks the code first (`GET /v1/referrals/codes/:code`), so for
+ * it this is a confirmation rather than news.
+ */
+async function referralOutcome(ctx: Ctx, userId: string, sent: string | undefined) {
+  if (!sent) return null;
+  const bond = await ctx.db.get<{ id: string }>(`SELECT id FROM referrals WHERE referred_id = $u`, { u: userId });
+  return { applied: Boolean(bond) };
+}
+
+const sendCode = async (ctx: Ctx, userId: string) =>
+  await verification.issue(ctx.db, { userId, language: ctx.language, at: ctx.at });
 
 export const authRoutes: Route[] = [
   {
@@ -150,11 +186,80 @@ export const authRoutes: Route[] = [
       });
       ctx.res.setHeader('set-cookie', cookieFor(session.token, 30));
 
+      /*
+       * The first code, sent here rather than left for the client to ask for.
+       *
+       * A client that had to remember to call `/v1/auth/verify/send` after
+       * every sign-up is a client that forgets once. It is the same argument
+       * the session is issued here for: the account exists, so everything the
+       * account needs to exist *with* happens in one request.
+       *
+       * **A failure does not fail the sign-up.** The account is real, the
+       * session is real, and the address is provable at any time from the
+       * verification panel — losing all of that because a mail provider was
+       * down would be trading something that works for something that does
+       * not. `verification` comes back `null` in that case so the client can
+       * offer the resend instead of saying a code is on its way.
+       */
+      const firstCode = await sendCode(ctx, user.id).catch((error: unknown) => {
+        console.warn(`sign-up code not sent: ${(error as Error).message}`);
+        return null;
+      });
+
       return {
         token: session.token,
         user: { id: user.id, name: user.display_name, email: user.email },
+        verification: firstCode,
+        referral: await referralOutcome(ctx, user.id, optStr(ctx.body, 'referralCode')),
       };
     },
+  },
+  {
+    /**
+     * Send (or resend) the sign-up code.
+     *
+     * `auth: 'user'` — the session exists from the moment sign-up returns, so
+     * the account asking for its own code is authenticated. That is what makes
+     * this safe to leave un-throttled by address: the caller is already known,
+     * so there is no address to enumerate and no stranger to post mail on
+     * behalf of.
+     *
+     * Three brakes still, and they answer different things:
+     * `CONFIG.auth.codeCooldownSeconds` bounds the button,
+     * `codeSendsPerAddress` bounds the total, and the route's own `limit`
+     * bounds the requests. The first is not an error — a cooldown refusal comes
+     * back `sent: false` with `nextSendAt`, because asking again too soon is
+     * what an honest person does when a message is slow.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/verify/send',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.sendCodePerHour, by: 'account' },
+    handler: async (ctx) => await sendCode(ctx, actor(ctx).user.id),
+  },
+  {
+    /**
+     * Confirm the code.
+     *
+     * Rate-limited per account on top of the per-code attempt cap, and the two
+     * are not redundant: the cap kills **one code** after five wrong answers,
+     * and this bounds how fast somebody can burn through codes by alternating
+     * guesses with resends.
+     *
+     * Idempotent by construction — a second confirm of an account that is
+     * already verified is `granted: false` rather than an error, the same shape
+     * `POST /v1/me/onboarded` uses.
+     */
+    method: 'POST',
+    pattern: '/v1/auth/verify',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.verifyEmailPerHour, by: 'account' },
+    handler: async (ctx) =>
+      await verification.confirm(ctx.db, {
+        userId: actor(ctx).user.id,
+        code: str(ctx.body, 'code'),
+        at: ctx.at,
+      }),
   },
   {
     method: 'POST',
@@ -249,6 +354,7 @@ export const authRoutes: Route[] = [
            truthiness test in JavaScript reads the string "false" as true, and
            this is a field a client might serialise from a checkbox. */
         acceptTerms: ctx.body.acceptTerms === true,
+        referralCode: optStr(ctx.body, 'referralCode'),
         at: ctx.at,
       });
 
@@ -284,6 +390,7 @@ export const authRoutes: Route[] = [
         roles: result.roles,
         mode: result.session.mode,
         user: { id: result.user.id, name: result.user.display_name, email: result.user.email },
+        referral: await referralOutcome(ctx, result.user.id, optStr(ctx.body, 'referralCode')),
       };
     },
   },

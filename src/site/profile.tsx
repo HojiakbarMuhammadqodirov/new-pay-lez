@@ -22,7 +22,7 @@ import {
   type SharingGrant,
 } from './api/profile';
 import { hasToken } from './api/client';
-import { useAuth, type ProfileResult, type UserProfile } from './auth/context';
+import { useAuth, useIsPlayer, type ProfileResult, type UserProfile } from './auth/context';
 import { AVATAR_PX, toSquareDataUrl } from './imageFile';
 import { Face } from './auth/Avatar';
 import { useCopy, useLanguage } from './i18n/context';
@@ -30,6 +30,15 @@ import { fill } from './i18n/currency';
 import { ENERGY_REGEN_MINUTES, MAX_ENERGY, energyOf, type PlayerState } from './auth/player';
 import { isPicture } from './auth/picture';
 import { setLeaderboardOptIn, setVenueSharingDefault } from './api/consumer';
+import {
+  notificationPrefs,
+  pushPermission,
+  pushSupported,
+  refreshSubscription,
+  setNotificationPrefs,
+  subscribe,
+  webPushKey,
+} from './api/push';
 import {
   BIRTH_DATE_WRITES,
   OCCUPATIONS,
@@ -521,6 +530,7 @@ export function ProfilePage() {
           */}
           <BoardVisibility />
           <VenueSharing />
+          <DailyReminder />
 
           {/*
             The moment it lands, over the page rather than in a rail: on a phone
@@ -680,6 +690,113 @@ function VenueSharing() {
               .catch(() => setFailed(true))
               .finally(() => setBusy(false));
           }}
+        />
+        <i aria-hidden />
+        <span className="visually-hidden">{copy.title}</span>
+      </label>
+    </div>
+  );
+}
+
+/**
+ * "Daily game reminder" — the one browser push this site sends.
+ *
+ * ## Four reasons it may not be a switch, and each one is said
+ *
+ * The browser cannot (no Push API — an iPhone only shows notifications for a
+ * site added to the home screen); the server is not sending (`/v1/push/web-key`
+ * answers `null`); the reader blocked notifications for this site, which a
+ * page cannot ask about again; or the server could not be reached. A switch
+ * that would flip and then do nothing is the picture-of-a-control this site
+ * keeps removing, so each of those is a sentence instead — and the switch
+ * still works in the *off* direction, because somebody who blocked
+ * notifications after turning the reminder on should be able to turn it off.
+ *
+ * ## It applies on the flip, like the two switches above
+ *
+ * On asks the browser for permission, subscribes, sends the subscription and
+ * this browser's time zone, and only then records the preference — so "on"
+ * means a browser exists to remind. A refusal at the browser's prompt leaves it
+ * off and says why. Off only records the preference; the subscription can stay,
+ * because the server sends nothing to somebody who switched it off.
+ */
+function DailyReminder() {
+  const copy = useCopy().profile.reminder;
+  const isPlayer = useIsPlayer();
+  const [on, setOn] = useState<boolean | null>(null);
+  /* `undefined` while asking; `null` is the server's "not sending". */
+  const [key, setKey] = useState<string | null | undefined>(undefined);
+  const [unreachable, setUnreachable] = useState(false);
+  const [permission, setPermission] = useState<NotificationPermission>(() => pushPermission());
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const supported = pushSupported();
+  const signedIn = hasToken();
+
+  useEffect(() => {
+    if (!isPlayer || !signedIn) return;
+    let live = true;
+    Promise.all([notificationPrefs(), webPushKey()])
+      .then(([prefs, web]) => {
+        if (!live) return;
+        setOn(prefs.dailyGameReminder);
+        setKey(web.publicKey);
+      })
+      .catch(() => live && setUnreachable(true));
+    /* A reader who travelled is reminded at six where they are now. */
+    refreshSubscription().catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [isPlayer, signedIn]);
+
+  /* A reminder to play is for somebody who plays, through the server that
+     sends it; an owner's or an operator's profile, or an offline account, has
+     no use for it. */
+  if (!isPlayer || !signedIn) return null;
+
+  const reason = unreachable
+    ? copy.unreachable
+    : !supported
+      ? copy.unsupported
+      : key === null
+        ? copy.unavailable
+        : permission === 'denied'
+          ? copy.blocked
+          : null;
+  const canTurnOn = reason === null && typeof key === 'string';
+
+  const flip = (next: boolean) => {
+    setBusy(true);
+    setFailed(false);
+    const done = next
+      ? subscribe(key as string).then(async (answer) => {
+          setPermission(answer);
+          if (answer !== 'granted') return;
+          setOn((await setNotificationPrefs({ dailyGameReminder: true })).dailyGameReminder);
+        })
+      : setNotificationPrefs({ dailyGameReminder: false }).then((prefs) => setOn(prefs.dailyGameReminder));
+    done.catch(() => setFailed(true)).finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="prof-switch-row" data-reveal>
+      <div>
+        <b>{copy.title}</b>
+        <span className="field-help">{copy.help}</span>
+        {reason && <span className="field-help">{reason}</span>}
+        {failed && (
+          <span className="field-error" role="alert">
+            {copy.failed}
+          </span>
+        )}
+      </div>
+      <label className="prof-switch">
+        <input
+          type="checkbox"
+          checked={on === true}
+          disabled={busy || on === null || (on === false && !canTurnOn)}
+          onChange={(event) => flip(event.target.checked)}
         />
         <i aria-hidden />
         <span className="visually-hidden">{copy.title}</span>

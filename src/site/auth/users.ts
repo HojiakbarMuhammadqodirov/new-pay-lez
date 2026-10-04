@@ -158,6 +158,8 @@ export interface SignUpDraft {
    * client-side checkbox is a courtesy and the consent row is evidence.
    */
   acceptTerms: boolean;
+  /** An invite code, already checked by the form. Optional and never validated here. */
+  referralCode?: string;
 }
 
 /**

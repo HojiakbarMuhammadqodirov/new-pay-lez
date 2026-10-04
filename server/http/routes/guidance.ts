@@ -110,8 +110,22 @@ export const guidanceRoutes: Route[] = [
         `SELECT service_id, kind, value FROM guidance_service_links`,
       );
 
-      return rows.map((row) => ({
+      /* The API's own origin, for the one absolute URL below. */
+      const origin =
+        CONFIG.server.publicUrl.replace(/\/$/, '') ||
+        `${String(ctx.req.headers['x-forwarded-proto'] ?? 'http').split(',')[0].trim()}://${String(ctx.req.headers['x-forwarded-host'] ?? ctx.req.headers.host ?? '')}`;
+      return rows.map((row) => {
+        const logo = media.logoPath('service', row.id, row.image_url);
+        return {
         ...row,
+        /*
+         * `image_url` is the **same picture as `logo`, as an absolute URL on
+         * this API** — never the stored value. Sending the stored value put
+         * 1.6 MB of base64 in this response (100 logos inline, each twice), and
+         * a `media:` value is meaningless outside this server. The phone app
+         * loads `image_url` as it is, which is why it stays a full URL.
+         */
+        image_url: logo ? `${origin}${logo}` : null,
         subcategories: JSON.parse(row.subcategories || '[]') as string[],
         acceptsVouchers: row.accepts_vouchers === 1,
         /*
@@ -134,14 +148,15 @@ export const guidanceRoutes: Route[] = [
          * `refresh` re-reads, and the client is expected to ignore it — the
          * interface in `api/guide.ts` does not declare it.
          */
-        logo: media.logoPath('service', row.id, row.image_url),
+        logo,
         /* A listing that is also a Paylez venue links through to the venue, which
            is where the tiers, stamp cards and deals live. The directory entry is
            the same place at an earlier stage of its relationship with us. */
         venueId: row.venue_id,
         description: copy.get(row.id)?.description ?? null,
         links: links.filter((link) => link.service_id === row.id).map(({ kind, value }) => ({ kind, value })),
-      }));
+        };
+      });
     },
   },
   {

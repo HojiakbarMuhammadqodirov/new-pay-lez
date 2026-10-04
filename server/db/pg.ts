@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
-import type { Db } from './db.ts';
+import { GAME_TYPES, type Db } from './db.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -450,6 +450,20 @@ export async function migrate(db: PgDb): Promise<void> {
     db.exec(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${definition}`);
 
   await add('service_events', 'source', 'TEXT');
+  await add('push_tokens', 'timezone', 'TEXT');
+  await add('gift_card_stock', 'country_code', "TEXT NOT NULL DEFAULT 'PL'");
+  await add('gift_card_stock', 'kind', "TEXT NOT NULL DEFAULT 'brand' CHECK (kind IN ('brand', 'venue'))");
+  await add('gift_card_stock', 'venue_id', 'TEXT REFERENCES venues (id) ON DELETE SET NULL');
+  await add('gift_card_stock', 'validity_days', 'INTEGER NOT NULL DEFAULT 365');
+  await add('gift_card_stock', 'how_to_use', "TEXT NOT NULL DEFAULT ''");
+  await add('gift_card_stock', 'created_at', 'TEXT');
+  await add('gift_card_stock', 'updated_at', 'TEXT');
+  await add('gift_card_codes', 'seq', 'INTEGER NOT NULL DEFAULT 0');
+  await add('gift_cards', 'face_minor', 'INTEGER');
+  await add('gift_cards', 'currency', 'TEXT');
+  await add('gift_cards', 'used_by', 'TEXT');
+  await add('gift_cards', 'cancelled_at', 'TEXT');
+  await add('gift_cards', 'refund_ledger_id', 'TEXT REFERENCES points_ledger (id) ON DELETE SET NULL');
   await add('users', 'phone', 'TEXT');
   await add('users', 'birth_date', 'TEXT');
   await add('users', 'birth_date_set_at', 'TEXT');
@@ -487,6 +501,8 @@ export async function migrate(db: PgDb): Promise<void> {
   await add('voucher_tiers', 'redeem_limit', 'INTEGER');
   await add('voucher_tiers', 'per_user_limit', 'INTEGER');
   await add('voucher_tiers', 'issued_count', 'INTEGER NOT NULL DEFAULT 0');
+  /* Rulebook §3's refund stamp — written in both lists, for the reason above. */
+  await add('game_sessions', 'energy_refunded_at', 'TEXT');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',
@@ -534,6 +550,60 @@ export async function migrate(db: PgDb): Promise<void> {
     );
   }
 
+  /*
+   * **And the third: 7 → 8 stamps existing addresses as proved.** See
+   * `grandfatherAddresses` in `db.ts` for why, and why it is stamped with
+   * now rather than with the account's creation date. Guarded, and this one
+   * must be: run again later and it would wave through every account that
+   * signed up after the flow returned and never confirmed.
+   */
+  if (Number(stored?.value ?? 0) < 8) {
+    await db.run(
+      `UPDATE users SET email_verified_at = $t
+        WHERE email IS NOT NULL AND email_verified_at IS NULL`,
+      { t: new Date().toISOString() },
+    );
+  }
+
+  /*
+   * **The game types, widened when the code knows one the table does not.**
+   *
+   * The CHECK on `game_sessions.game_type` is written inline in
+   * `CREATE TABLE IF NOT EXISTS`, which a live database never re-runs — so a
+   * game added after production was created (2048) would be refused there on
+   * its first round while every check here passed. Postgres can swap a CHECK in
+   * place, so this reads the live definition and replaces it only when a type
+   * from `GAME_TYPES` is missing.
+   */
+  const check = await db.get<{ name: string; def: string }>(
+    `SELECT conname AS name, pg_get_constraintdef(oid) AS def
+       FROM pg_constraint
+      WHERE conrelid = 'game_sessions'::regclass AND contype = 'c'
+        AND pg_get_constraintdef(oid) LIKE '%game_type%'`,
+  );
+  if (check && GAME_TYPES.some((type) => !check.def.includes(`'${type}'`))) {
+    const list = GAME_TYPES.map((type) => `'${type}'`).join(', ');
+    await db.exec(
+      `ALTER TABLE game_sessions DROP CONSTRAINT "${check.name}",
+         ADD CONSTRAINT game_sessions_game_type_check CHECK (game_type IN (${list}))`,
+    );
+  }
+
+  /* `gift_cards.status` gains 'cancelled', swapped in place the same way. */
+  const giftStatus = await db.get<{ name: string; def: string }>(
+    `SELECT conname AS name, pg_get_constraintdef(oid) AS def
+       FROM pg_constraint
+      WHERE conrelid = 'gift_cards'::regclass AND contype = 'c'
+        AND pg_get_constraintdef(oid) LIKE '%status%'`,
+  );
+  if (giftStatus && !giftStatus.def.includes("'cancelled'")) {
+    await db.exec(
+      `ALTER TABLE gift_cards DROP CONSTRAINT "${giftStatus.name}",
+         ADD CONSTRAINT gift_cards_status_check
+           CHECK (status IN ('active', 'used', 'expired', 'cancelled'))`,
+    );
+  }
+
   await db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)
        ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
@@ -542,7 +612,7 @@ export async function migrate(db: PgDb): Promise<void> {
 }
 
 /** Mirrors `SCHEMA_VERSION` in `db.ts`; the two schemas are one schema. */
-const SCHEMA_VERSION = 7;
+const SCHEMA_VERSION = 8;
 
 export async function openDb(connectionString: string): Promise<Db> {
   const db = new PgDb(connectionString);

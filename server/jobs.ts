@@ -33,14 +33,17 @@ import * as campaigns from './domain/campaigns.ts';
 import * as checkin from './domain/checkin.ts';
 import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
+import * as giftCards from './domain/giftCards.ts';
 import * as ledger from './domain/ledger.ts';
 import * as notifications from './domain/notifications.ts';
 import * as rates from './domain/rates.ts';
 import * as social from './domain/social.ts';
 import * as traffic from './domain/traffic.ts';
+import * as verification from './domain/verification.ts';
 import * as vouchers from './domain/vouchers.ts';
 import { refreshAverageCheck } from './domain/venues.ts';
 import * as push from './ports/push.ts';
+import * as reminders from './domain/reminders.ts';
 import { isoWeek, now, type Iso } from './domain/time.ts';
 
 export interface JobReport {
@@ -61,6 +64,21 @@ export async function runFrequent(db: Db, at: Iso = now()): Promise<JobReport> {
   detail.dealPushes = await deals.sendDuePushes(db, at);
 
   return { at, ran: ['pending', 'deals', 'pushes'], detail };
+}
+
+/**
+ * Runs every minute. The daily game reminder and the drain behind it.
+ *
+ * A minute rather than the five-minute cadence above because the reminder has
+ * a time on it — six o'clock on the player's clock — and a five-minute job
+ * delivers it at any point up to 18:05. The query is the switched-on browser
+ * subscribers and nothing else, so running it this often costs nothing.
+ */
+export async function runEveryMinute(db: Db, at: Iso = now()): Promise<JobReport> {
+  const detail: Record<string, unknown> = {};
+  detail.dailyGameReminder = await reminders.dailyGameReminder(db, at);
+  detail.push = await push.drain(db);
+  return { at, ran: ['daily-game-reminder', 'push'], detail };
 }
 
 /** Runs hourly. Everything with money in it. */
@@ -92,10 +110,14 @@ export async function runDaily(db: Db, at: Iso = now()): Promise<JobReport> {
   /* Retention is a job rather than a query filter: rows nobody deletes are rows
      that eventually have to be explained to a regulator. */
   detail.trafficPruned = await traffic.prune(db, at);
-  /* Email verification was removed, so every code left in its table is dead —
-     and the rows carry an address, which is a reason to empty the table rather
-     than keep it. The table itself stays until a migration drops it. */
-  detail.codesPruned = (await db.run(`DELETE FROM email_verifications`)).changes;
+  /* Gift cards past the validity their shelf row gave them. The wallet already
+     reads the date; this is so the status and the console's counts agree. */
+  detail.giftCardsExpired = await giftCards.expire(db, at);
+  /* Spent and expired verification codes. An expired code is already refused,
+     so this is about the table rather than about correctness — but the rows
+     carry an address, and rows nobody deletes are rows that eventually have to
+     be explained to a regulator. Same argument as the line above it. */
+  detail.codesPruned = await verification.prune(db, at);
 
   /* §4.5: recompute the median check, and tell the partner when the source flips
      from the category default to their own tills — the estimate they read every
@@ -270,6 +292,7 @@ async function payMonthlyStipends(db: Db, at: Iso): Promise<number> {
  */
 export function startScheduler(db: Db): () => void {
   const timers = [
+    setInterval(async () => void await runEveryMinute(db), 60_000),
     setInterval(async () => void await runFrequent(db), 5 * 60_000),
     setInterval(async () => void await runHourly(db), 60 * 60_000),
     /* Twelve hours, which is the "at least twice a day" the rate sync has to

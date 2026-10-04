@@ -18,6 +18,7 @@ import * as budget from './budget.ts';
 import * as entitlements from './entitlements.ts';
 import { DomainError } from './errors.ts';
 import { newId, voucherCode } from './ids.ts';
+import * as giftCards from './giftCards.ts';
 import * as ledger from './ledger.ts';
 import { discountCost } from './money.ts';
 import { now, plusDays, type Iso } from './time.ts';
@@ -721,6 +722,9 @@ export async function redeemGiftCard(
       stock: number;
       active: number;
       priority_only: number;
+      face_minor: number;
+      currency: string;
+      validity_days: number;
     }>(`SELECT * FROM gift_card_stock WHERE id = $i`, { i: input.stockId });
     if (!stock || !stock.active) throw new DomainError('not_found', 'gift card not available');
     /* Not the gate -- see the claim below. This is the cheap refusal for the
@@ -766,13 +770,30 @@ export async function redeemGiftCard(
       at,
     });
 
+    /* The code is one the operator loaded (a brand's) or generated (a
+       venue's) — never one made up here, which no brand would honour. The unit
+       claimed above holds the row lock, so this is the only buyer looking. */
+    const free = await giftCards.claimCode(db, stock.id);
     const id = newId('gcd');
-    const code = voucherCode();
+    /* The face value and currency are copied onto the card: the shelf row can
+       be edited later, and the wallet must still say what was bought. */
     await db.run(
-      `INSERT INTO gift_cards (id, user_id, stock_id, points_spent, code, status, issued_at, expires_at)
-       VALUES ($i, $u, $s, $p, $c, 'active', $at, $e)`,
-      { i: id, u: input.userId, s: stock.id, p: stock.points_cost, c: code, at, e: plusDays(at, 365) },
+      `INSERT INTO gift_cards
+         (id, user_id, stock_id, points_spent, code, status, issued_at, expires_at, face_minor, currency)
+       VALUES ($i, $u, $s, $p, $c, 'active', $at, $e, $f, $cur)`,
+      {
+        i: id,
+        u: input.userId,
+        s: stock.id,
+        p: stock.points_cost,
+        c: free.code,
+        at,
+        e: giftCards.expiresAt(at, Number(stock.validity_days) || 365),
+        f: stock.face_minor,
+        cur: stock.currency,
+      },
     );
-    return { id, code, points: stock.points_cost };
+    await giftCards.bindCode(db, free.id, id, at);
+    return { id, code: free.code, points: stock.points_cost };
   });
 }

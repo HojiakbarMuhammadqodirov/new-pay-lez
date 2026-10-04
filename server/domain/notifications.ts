@@ -39,6 +39,11 @@ export interface NotificationInput {
   push?: boolean;
   /** The venue whose clock quiet hours are evaluated in, when pushing. */
   venueId?: string;
+  /**
+   * The recipient's own zone, for a push that is about *their* day rather than
+   * a venue's — the daily game reminder. Ignored when `venueId` is set.
+   */
+  timezone?: string;
   at?: Iso;
 }
 
@@ -64,7 +69,10 @@ export async function notify(db: Db, input: NotificationInput): Promise<Delivery
   let reason: string | undefined;
 
   if (input.push) {
-    const check = await canPush(db, input.userId, mode, input.venueId, at);
+    const check = await canPush(db, input.userId, mode, input.venueId, at, {
+      kind: input.kind,
+      timezone: input.timezone,
+    });
     if (check.ok) delivery = 'queued';
     else {
       delivery = 'suppressed';
@@ -120,9 +128,17 @@ export async function canPush(
   mode: Mode,
   venueId: string | undefined,
   at: Iso = now(),
+  options: { kind?: string; timezone?: string } = {},
 ): Promise<PushCheck> {
+  /* A token only counts if it can carry *this* kind. A browser is pushed the
+     kinds in `CONFIG.push.webKinds` and nothing else, and the phone app every
+     kind but those — so somebody who only allowed notifications in a browser
+     is `no_permission` for a venue's deal rather than `queued` for a push no
+     device will ever show, which would also spend their frequency cap. */
+  const web = options.kind !== undefined && CONFIG.push.webKinds.includes(options.kind);
   const tokens = await db.get<{ n: number }>(
-    `SELECT COUNT(*) AS n FROM push_tokens WHERE user_id = $u AND revoked_at IS NULL`,
+    `SELECT COUNT(*) AS n FROM push_tokens
+      WHERE user_id = $u AND revoked_at IS NULL AND ${web ? "platform = 'web'" : "platform <> 'web'"}`,
     { u: userId },
   );
   if ((tokens?.n ?? 0) === 0) return { ok: false, reason: 'no_permission' };
@@ -140,6 +156,7 @@ export async function canPush(
     (venueId &&
       (await db.get<{ timezone: string }>(`SELECT timezone FROM venues WHERE id = $v`, { v: venueId }))
         ?.timezone) ||
+    options.timezone ||
     'Europe/Warsaw';
   const l = local(at, timezone);
   if (!withinDailyWindow(l.minutes, CONFIG.deals.quietFromMin, CONFIG.deals.quietToMin)) {
@@ -201,8 +218,16 @@ export async function markRead(db: Db, userId: string, ids: string[], at: Iso = 
  * gets what.
  */
 export const pending = async (db: Db, limit = 200) =>
-  await db.all<{ id: string; user_id: string; title: string; body: string; language: string }>(
-    `SELECT n.id, n.user_id, n.title, n.body, n.language FROM notifications n
+  await db.all<{
+    id: string;
+    user_id: string;
+    kind: string;
+    title: string;
+    body: string;
+    language: string;
+    action_url: string | null;
+  }>(
+    `SELECT n.id, n.user_id, n.kind, n.title, n.body, n.language, n.action_url FROM notifications n
       WHERE n.delivery = 'queued' ORDER BY n.created_at LIMIT $l`,
     { l: limit },
   );

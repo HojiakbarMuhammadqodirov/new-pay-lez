@@ -52,6 +52,25 @@ version of the gate that admits an old build and excludes a script. A client
 that asks later records it with `POST /v1/me/consents`; `GET /v1/me/consents`
 reports all four kinds.
 
+### Confirming the email address
+
+Sign-up emails a six-digit code (10 minutes, 5 tries, resend after 90 s, 10
+sends per account) and returns it as `verification` — or `null` if the mail
+failed, which does not fail the sign-up. `POST /v1/auth/verify/send` resends
+(`sent: false` inside the cooldown is not an error); `POST /v1/auth/verify`
+`{code}` confirms. Google sign-ins arrive verified.
+
+Nothing is gated on it except spending — `POST /v1/vouchers` and
+`POST /v1/gift-cards` answer `403 not_verified` — and only while
+`GET /v1/me`'s `user.spendNeedsVerifiedEmail` is true (`PAYLEZ_VERIFY_GATE`).
+
+### Invite codes
+
+`referralCode` on `POST /v1/auth/signup` **and** `POST /v1/auth/google` binds the
+new account to its inviter; the response says `referral: { applied }`, and a bad
+code never fails the sign-up. `GET /v1/referrals/codes/{code}` checks one first.
+Both sides are paid on the friend's first *counted* visit (§8), never at sign-up.
+
 ### The welcome gift is not paid at sign-up
 
 `POST /v1/auth/signup` mints the account and nothing else. The gift is claimed by
@@ -340,16 +359,45 @@ Five things travel with it:
   the span or leaves it be — it can only ever cost. Do not build a local meter
   for a rule that does not exist.
 
+### 2048
+
+`merge_2048` is played move by move like Memory Match, but the server keeps the
+**board** in the session secret and places every new tile from a seed the client
+never sees. A move is `{kind: "move", payload: {dir, from}}`; `from` is the
+move count the client saw, and a move made on a stale board is answered with the
+current board instead of being applied — that is what makes a retry safe. The
+round is scored on the largest tile (`CONFIG.games.mergeTileBands`), has no
+clock and no move limit, and costs one energy when finished, like every round.
+
+### Food Cross
+
+`food_cross` is played like 2048: the server keeps the board and draws every
+food that falls in from a seed the client never sees. A move is
+`{kind: "swap", payload: {a, b, from}}`; the reply carries each cascade step so
+the screen can play it out. Twenty swaps a round, scored on the board's score
+against `CONFIG.games.foodTargetScore` (2,000, rulebook §5.8).
+
+### Food Ninja
+
+`food_ninja` throws a schedule fixed by a server seed and sent whole to the
+client to draw. A `start` event stamps the server's clock; each `slice` event
+names the foods one swipe cut, and each is credited only while that food is in
+the air by that clock. Sixty seconds, no bombs, scored at
+`CONFIG.games.ninjaPerformancePerFood` (2) a food.
+
 ### Energy is the whole of what bounds a day
 
-Hearts became **energy**, and **every finished round costs one, win or lose**. It
+Hearts became **energy**, and **every round costs one when it starts, win or lose**. It
 was losses only, which bounded nobody: two of the seven games cannot be lost, and
 a player who answers correctly never touched the pool. There is nothing else —
 no daily points cap, no per-game decay curve — so the number on the screen means
 one thing, *rounds left*, and it is the only thing a client has to explain.
 
-An **abandoned** round still costs nothing. The charge is written when the round
-is banked, so a connection that drops mid-round takes nothing with it.
+An **abandoned** round costs one too: the charge is taken at the start
+(rulebook §3). `POST /v1/games/sessions/:id/abandon` closes a round the player
+quit, and gives the energy back only when it lands within 5 seconds of the start,
+once a day — `{abandoned, refunded, energyLeft, energyNextAt}`. Starting a new
+round abandons any the player left open, under the same rule.
 
 It is a shared pool across all seven games, and `GET /v1/games/state` returns it
 under `energy` as an **object**:
@@ -732,7 +780,7 @@ a funnel number. Every one writes an `audit_log` row with the actor on it.
 |---|---|---|
 | venue | `PATCH /v1/admin/venues/:id` `{status: live\|suspended}` | `DELETE /v1/admin/venues/:id` `{confirm}` |
 | offer | `PATCH /v1/admin/deals/:id` `{status: live\|paused}` | `DELETE /v1/admin/deals/:id` |
-| gift card | — | `DELETE /v1/admin/gift-cards/:id` |
+| gift card | `POST /v1/admin/gift-cards/:id/active` `{active}` | `DELETE /v1/admin/gift-cards/:id` |
 | account | `POST /v1/admin/users/:id/ban` `{banned}` | `DELETE /v1/admin/users/:id` `{confirm}` |
 
 `POST /v1/admin/users/:id/password` `{password}` is the ninth and the odd one
@@ -766,6 +814,17 @@ Six things a client has to get right:
   card from cannot be dropped; it goes `active = 0` instead, and the response
   says `outcome: "deleted" | "delisted"` with `issued`. They are different
   facts and a client should say which happened.
+- **Gift cards are a small engine of their own** (`domain/giftCards.ts`).
+  `GET`/`POST /v1/admin/gift-cards` list and create; `PATCH …/:id` edits
+  everything but `kind`; `POST …/:id/codes` takes `{codes: [...]}` for a
+  `brand` card (Poland — real codes bought from the brand; duplicates counted,
+  not loaded) or `{generate: n}` for a `venue` card (Uzbekistan — codes made
+  here, `UZ-XXXX-XXXX`), and refuses the other by name. `GET …/issued`
+  (`?stockId&status`) is who bought what; `POST …/issued/:id/used` marks one
+  spent and `POST …/issued/:id/cancel` voids it and **refunds the points** as a
+  new `adjustment` entry — the one admin write that reaches the ledger, and only
+  by adding to it. The code stays burned. `stock` is always the codes nobody
+  has been handed; a purchase takes the oldest one.
 - **An operator's row is refused**, including your own: ban, erase and everything
   else return 403 for an account holding the `admin` role. Banning your own row
   revokes your own session inside the request that did it, and no screen undoes
@@ -846,6 +905,22 @@ archived, ended or capped by then is `cancelled`; one more than an hour late is
 `came_in` counts recipients who were actually pushed and then made a counted visit
 within a week — each person once. Opens count when the app sends the push id back
 on the deal's `open` event.
+
+### The daily game reminder (browser push)
+
+The web's one push. `GET /v1/push/web-key` (no auth) is `{publicKey}` — the
+VAPID key a browser subscribes with — or `{publicKey: null}` while
+`PAYLEZ_PUSH` is not live. A browser registers its subscription with
+`POST /v1/push-tokens {platform: "web", token: JSON.stringify(subscription), timezone}`;
+a web token that is not a valid https subscription is a 400, and posting one
+that already exists moves it to the caller. The switch is
+`GET`/`PATCH /v1/me/notification-prefs {dailyGameReminder}`, **off** until set.
+
+Due at **18:00 on the player's own clock** (the newest web subscription's
+`timezone`), up to 21:00, once per local day, and only on a day the player has
+not started a round. It lands in the inbox as `kind: "daily_game"` like any
+notification. Browsers are pushed this kind and nothing else; a user whose only
+device is a browser is `no_permission` for every other kind.
 
 ### Deal dates
 

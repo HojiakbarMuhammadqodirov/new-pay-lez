@@ -18,15 +18,20 @@ import * as entitlements from '../../domain/entitlements.ts';
 import * as games from '../../domain/games.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as notifications from '../../domain/notifications.ts';
+import * as giftCards from '../../domain/giftCards.ts';
+import * as reminders from '../../domain/reminders.ts';
+import * as push from '../../ports/push.ts';
+import { parseSubscription } from '../../ports/webpush.ts';
 import * as social from '../../domain/social.ts';
 import * as tasks from '../../domain/tasks.ts';
+import * as verification from '../../domain/verification.ts';
 import * as vouchers from '../../domain/vouchers.ts';
 import { CONFIG } from '../../config.ts';
 import { getVenue, trackListing } from '../../domain/venues.ts';
 import { linksOf } from '../../domain/partners.ts';
 import { DomainError } from '../../domain/errors.ts';
 import { FREE_ASSISTANT_USES_PER_DAY } from '../../domain/settings.ts';
-import { actor, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
+import { actor, bool, list, oneOf, optStr, qInt, qStr, str } from '../input.ts';
 import type { Ctx, Route } from '../router.ts';
 
 const viewerOf = (ctx: Ctx) => ({
@@ -283,9 +288,14 @@ export const consumerRoutes: Route[] = [
            one without a request per venue. */
         stampCards: await campaigns.cardsFor(ctx.db, user.id),
         giftCards: await ctx.db.all(
-          `SELECT g.id, g.code, g.status, g.issued_at, g.expires_at, s.brand, s.logo,
-                  s.face_minor, s.currency
+          /* The face value the card was bought at, not the shelf's today —
+             an edit to the shelf must not change what is in somebody's wallet. */
+          `SELECT g.id, g.code, g.status, g.issued_at, g.expires_at, g.used_at, s.brand, s.logo,
+                  COALESCE(g.face_minor, s.face_minor) AS face_minor,
+                  COALESCE(g.currency, s.currency) AS currency,
+                  s.kind, s.how_to_use, v.name AS venue_name
              FROM gift_cards g JOIN gift_card_stock s ON s.id = g.stock_id
+             LEFT JOIN venues v ON v.id = s.venue_id
             WHERE g.user_id = $u ORDER BY g.issued_at DESC`,
           { u: user.id },
         ),
@@ -304,23 +314,50 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/vouchers',
     auth: 'user',
     idempotent: true,
-    handler: async (ctx) =>
-      await vouchers.issue(ctx.db, {
+    handler: async (ctx) => {
+      /* Points leaving the platform, so it is behind a proved address when
+         `PAYLEZ_VERIFY_GATE` is on. At the route rather than in
+         `vouchers.issue`, because that function is also how the till, the
+         demo seed and the fixtures issue one. See `domain/verification.ts`. */
+      await verification.assertVerifiedToSpend(ctx.db, actor(ctx).user.id);
+      return await vouchers.issue(ctx.db, {
         userId: actor(ctx).user.id,
         venueId: str(ctx.body, 'venueId'),
         tierId: str(ctx.body, 'tierId'),
         at: ctx.at,
-      }),
+      });
+    },
   },
   {
     method: 'GET',
     pattern: '/v1/gift-cards',
     auth: 'none',
-    handler: async (ctx) =>
-      await ctx.db.all(
-        `SELECT id, brand, logo, face_minor, currency, points_cost, stock, priority_only
-           FROM gift_card_stock WHERE active = 1 ORDER BY points_cost`,
-      ),
+    /* The shelf for one country: Polish brand cards in Poland, Uzbek venue
+       cards in Uzbekistan. `?country=` wins; otherwise a signed-in player's
+       profile decides, and a profile with no country is Poland — the market this
+       product is in. A visitor with no account and no parameter sees every
+       country, which is what a page describing the shelf wants. */
+    handler: async (ctx) => {
+      const asked = qStr(ctx, 'country')?.toUpperCase() ?? null;
+      const country = asked ?? (ctx.actor ? (ctx.actor.user.country_code ?? 'PL') : null);
+      return await giftCards.shelf(ctx.db, country);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: '/v1/wallet/gift-cards/:id/used',
+    auth: 'user',
+    /* "I've used it" — the code was spent at the brand or the venue, which is
+       a till this server never sees, so the holder is the one who can say. */
+    handler: async (ctx) => {
+      await giftCards.markUsed(ctx.db, {
+        cardId: ctx.params.id,
+        by: 'player',
+        userId: actor(ctx).user.id,
+        at: ctx.at,
+      });
+      return { ok: true };
+    },
   },
   {
     method: 'POST',
@@ -332,6 +369,9 @@ export const consumerRoutes: Route[] = [
     limit: { perHour: CONFIG.limits.giftCardPerHour, by: 'account' },
     handler: async (ctx) => {
       const { user } = actor(ctx);
+      /* Same rule as the voucher ladder above: points leaving as a card with a
+         face value on it. */
+      await verification.assertVerifiedToSpend(ctx.db, user.id);
       const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
       return await vouchers.redeemGiftCard(ctx.db, {
         userId: user.id,
@@ -497,6 +537,16 @@ export const consumerRoutes: Route[] = [
   },
   {
     method: 'POST',
+    pattern: '/v1/games/sessions/:id/abandon',
+    auth: 'user',
+    /* The Quit button. The round's energy was spent when it started (rulebook
+       §3) and stays spent — unless this lands within five seconds of the start,
+       once a day. Idempotent: a round already closed answers `abandoned: false`. */
+    handler: async (ctx) =>
+      await games.abandonSession(ctx.db, { sessionId: ctx.params.id, userId: actor(ctx).user.id, at: ctx.at }),
+  },
+  {
+    method: 'POST',
     pattern: '/v1/games/sessions/:id/finish',
     auth: 'user',
     idempotent: true,
@@ -520,6 +570,21 @@ export const consumerRoutes: Route[] = [
     pattern: '/v1/referrals',
     auth: 'user',
     handler: async (ctx) => await social.referralProgress(ctx.db, actor(ctx).user.id),
+  },
+  {
+    /**
+     * Whether an invite code would bind — the sign-up form's check.
+     *
+     * `auth: 'none'` because it is asked before there is an account. It answers
+     * a boolean and nothing about whose code it is, and it is rate-limited per
+     * connection; with codes of six characters from a 32-letter alphabet, an
+     * hourly allowance of guesses finds nothing.
+     */
+    method: 'GET',
+    pattern: '/v1/referrals/codes/:code',
+    auth: 'none',
+    limit: { perHour: CONFIG.limits.referralCheckPerHour, by: 'connection' },
+    handler: async (ctx) => ({ valid: await social.codeExists(ctx.db, ctx.params.code ?? '') }),
   },
   {
     /**
@@ -601,18 +666,61 @@ export const consumerRoutes: Route[] = [
     auth: 'user',
     handler: async (ctx) => {
       const { user } = actor(ctx);
+      const platform = oneOf(ctx.body, 'platform', ['fcm', 'apns', 'web'] as const);
+      const token = str(ctx.body, 'token');
+      /* A web token is the browser's `PushSubscription` as JSON, and the drain
+         will POST to its endpoint — so it is checked here, where a bad one is
+         the client's mistake, rather than failing quietly every evening. */
+      if (platform === 'web' && !parseSubscription(token)) {
+        throw new DomainError('validation_failed', 'token must be a browser push subscription', { field: 'token' });
+      }
+      /* On conflict the row moves to *this* user: a browser has one
+         subscription per site, and on a shared computer the person who just
+         switched the reminder on is the person it should reach — not whoever
+         subscribed in that browser before them. */
       await ctx.db.run(
-        `INSERT INTO push_tokens (id, user_id, platform, token, created_at)
-         VALUES ($i, $u, $p, $t, $at) ON CONFLICT (token) DO UPDATE SET revoked_at = NULL`,
+        `INSERT INTO push_tokens (id, user_id, platform, token, created_at, timezone)
+         VALUES ($i, $u, $p, $t, $at, $z)
+         ON CONFLICT (token) DO UPDATE
+           SET revoked_at = NULL, user_id = excluded.user_id, created_at = excluded.created_at,
+               timezone = COALESCE(excluded.timezone, push_tokens.timezone)`,
         {
           i: `ptk_${user.id}_${Date.now()}`,
           u: user.id,
-          p: oneOf(ctx.body, 'platform', ['fcm', 'apns', 'web'] as const),
-          t: str(ctx.body, 'token'),
+          p: platform,
+          t: token,
           at: ctx.at,
+          z: reminders.validZone(ctx.body.timezone),
         },
       );
       return { ok: true };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/push/web-key',
+    auth: 'none',
+    /* The VAPID public key a browser subscribes with — public by definition —
+       or `null` while browser push is off on this server, which the site
+       draws as a sentence rather than as a switch that cannot work. */
+    handler: async () => ({ publicKey: push.webPublicKey() }),
+  },
+  {
+    method: 'GET',
+    pattern: '/v1/me/notification-prefs',
+    auth: 'user',
+    handler: async (ctx) => await reminders.kindPrefs(ctx.db, actor(ctx).user.id),
+  },
+  {
+    method: 'PATCH',
+    pattern: '/v1/me/notification-prefs',
+    auth: 'user',
+    handler: async (ctx) => {
+      const patch: Partial<reminders.KindPrefs> = {};
+      if (ctx.body.dailyGameReminder !== undefined) {
+        patch.dailyGameReminder = bool(ctx.body, 'dailyGameReminder');
+      }
+      return await reminders.setKindPrefs(ctx.db, actor(ctx).user.id, patch, ctx.at);
     },
   },
 

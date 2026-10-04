@@ -16496,6 +16496,29 @@ button {
  * ships an image asset, and a brand's logo fetched from its own CDN is the
  * third-party runtime request this front end is built to do without.
  */
+/* A gift card's logo picture, filling the mark it replaces the initial in. */
+.wal-mark-img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+/* "How to use it", on a gift card in the wallet: the operator's own words. */
+.wal-howto {
+  margin: 0.35rem 0 0;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-mut);
+}
+
+.wal-howto > i {
+  display: block;
+  font-style: normal;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .wal-mark {
   position: relative;
   box-shadow:
@@ -22699,6 +22722,105 @@ button {
   justify-content: flex-end;
   gap: 0.8rem;
   margin-top: 0.85rem;
+}
+
+/* ── the Gift cards tab (`adminGiftCards.tsx`) ───────────────────────────
+   Only what the console's kit has no shape for. `.adm-gift*` was grepped
+   first and is free; everything else on that tab is `.adm-table`,
+   `.adm-edit-*`, `.field` and `.logo-pick` doing the jobs they already do. */
+.adm-gift-form .adm-edit-acts {
+  flex-wrap: wrap;
+}
+
+.adm-gift-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+/* The table's logo chip: the card's picture, or its initial on the accent —
+   the wallet's brand mark at row size. */
+.adm-gift-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.9rem;
+  height: 1.9rem;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--solid);
+  color: var(--on-solid);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.adm-gift-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.adm-gift-sub {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  font-style: normal;
+  color: var(--text-fnt);
+}
+
+/* A paused card's state reads as quieter than a live one, by weight and
+   tone rather than by a hue the palette does not have. */
+.adm-gift-state:not([data-on]) {
+  color: var(--text-mut);
+  font-weight: 500;
+}
+
+.adm-gift-acts {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem 0.8rem;
+}
+
+.adm-gift-panel > td {
+  padding-top: 0;
+}
+
+.adm-gift-form-title {
+  margin: 0 0 0.7rem;
+  font-size: 1rem;
+}
+
+.adm-gift-check > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+}
+
+.adm-gift-paste {
+  width: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.85rem;
+}
+
+/* Read off a phone at a till: monospace, never broken across two lines. */
+.adm-gift-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.adm-gift-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin-bottom: 0.8rem;
+}
+
+.adm-gift-filters .field {
+  min-width: 12rem;
 }
 
 /* ── the dialogue ──────────────────────────────────────────────────────── */
@@ -31637,6 +31759,1050 @@ p.lst-soft {
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════ 2048 ══
+ *
+ * The board (`games/Merge2048.tsx`) and its hover miniature. `mg-` was
+ * grepped first and is unused elsewhere.
+ *
+ * **One accent, and a value is its strength.** The original game paints every
+ * value its own colour, which is the "hue per item" this sheet does not do. A
+ * tile here carries `--mg-level` (log2 of its value, set inline) and the fill
+ * is the accent at an alpha that climbs with it; from 256 up (`data-big`) it
+ * is the solid accent with `--on-accent` ink. So a heavier tile *looks*
+ * heavier in both themes, and the number on it says exactly how heavy.
+ */
+.mg-board {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 26rem;
+  margin: 0 auto;
+  padding: 0.5rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  /* A swipe on the board moves tiles, not the page. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* While the server places the new tile — input is held, so say so quietly. */
+.mg-board[data-pending='true'] {
+  cursor: progress;
+}
+
+.mg-cell {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-sm);
+  background: rgba(var(--accent-rgb), 0.05);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  /* Four digits have to fit a phone's tile, so the size steps down with them. */
+  font-size: clamp(1.1rem, 0.6rem + 2.4vw, 1.9rem);
+  line-height: 1;
+}
+
+.mg-cell[data-value] {
+  background: rgba(var(--accent-rgb), calc(0.1 + var(--mg-level) * 0.06));
+}
+
+.mg-cell[data-value='1024'],
+.mg-cell[data-value='2048'],
+.mg-cell[data-value='4096'],
+.mg-cell[data-value='8192'] {
+  font-size: clamp(0.9rem, 0.45rem + 2vw, 1.5rem);
+}
+
+.mg-cell[data-big='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.mg-round .round-top {
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.mg-note {
+  margin: 0.9rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+/* Disabled until the first move (banking an untouched board would spend an
+   energy on nothing) and while a move is in flight — and it has to look it,
+   the way `.auth-submit` and `.onb-actions` do. */
+.mg-acts .btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.mg-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem 1.25rem;
+  margin-top: 1rem;
+}
+
+/* A new tile arrives with a pop — the original's one piece of motion that
+   carries information (where the tile landed). Dropped under reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .mg-cell[data-fresh='true'] {
+    animation: mg-arrive 160ms var(--ease) both;
+  }
+}
+
+@keyframes mg-arrive {
+  from {
+    transform: scale(0.4);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* The card's miniature: the same cells, smaller. */
+.pv-merge {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 9.5rem;
+  margin-inline: auto;
+}
+
+.pv-merge .mg-cell {
+  border-radius: 6px;
+  font-size: 0.7rem;
+}
+
+/* ═══════════════════════════════════════════════════════════ food cross ══
+ *
+ * The board (`games/FoodCross.tsx`) and its hover miniature. `fc-` was
+ * grepped first and is unused elsewhere.
+ *
+ * The foods are emoji — their colours are the exception the root `CLAUDE.md`
+ * sanctions for things that *are* their colours. Everything the board adds is
+ * the accent: the selected ring, and the specials' marks. A striped food carries
+ * stripes **along the line it will clear** (rows for a row-clearer, columns for
+ * a column-clearer), so the mark says what it does rather than only that it is
+ * special.
+ */
+.fc-board {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 0.4rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  /* A drag on the board swaps foods; it does not scroll the page. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* On a phone eight columns are tight, so the board borrows the panel's side
+   padding and closes its gaps: on a 375px screen that takes a food from 27px
+   to about 35px across, which is the difference between tapping one and
+   tapping its neighbour. */
+@media (max-width: 520px) {
+  .fc-board {
+    width: calc(100% + 2.7rem);
+    margin-inline: -1.35rem;
+    gap: 2px;
+    padding: 3px;
+  }
+
+  .fc-cell {
+    border-radius: 6px;
+  }
+}
+
+.fc-board[data-busy='true'] {
+  cursor: progress;
+}
+
+.fc-cell {
+  position: relative;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: rgba(var(--accent-rgb), 0.06);
+  font-size: clamp(1.05rem, 0.4rem + 2.8vw, 1.6rem);
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+  transition:
+    transform 160ms var(--ease),
+    opacity 160ms var(--ease),
+    border-color 160ms var(--ease);
+}
+
+.fc-cell > span {
+  position: relative;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.fc-cell[data-selected='true'] {
+  border-color: var(--accent-lit);
+  background: rgba(var(--accent-rgb), 0.18);
+}
+
+.fc-cell:focus-visible {
+  outline: 2px solid var(--accent-lit);
+  outline-offset: 1px;
+}
+
+/* The specials' marks, in the accent. */
+.fc-cell[data-special]::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 6px;
+  pointer-events: none;
+}
+
+.fc-cell[data-special='row']::after {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(var(--accent-rgb), 0.45) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+.fc-cell[data-special='col']::after {
+  background: repeating-linear-gradient(
+    to right,
+    rgba(var(--accent-rgb), 0.45) 0 2px,
+    transparent 2px 6px
+  );
+}
+
+.fc-cell[data-special='bomb']::after {
+  border: 2px solid var(--accent-lit);
+}
+
+.fc-cell[data-clearing='true'] {
+  transform: scale(0.55);
+  opacity: 0.2;
+}
+
+.fc-round .round-top {
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.fc-note {
+  margin: 0.9rem 0 0;
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-mut);
+}
+
+.fc-round .round-quit {
+  display: block;
+  margin: 0.9rem auto 0;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fc-cell[data-shake='true'] {
+    animation: fc-shake 320ms var(--ease);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fc-cell {
+    transition: none;
+  }
+}
+
+@keyframes fc-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+
+/* The card's miniature: a corner of the real board. */
+.pv-food {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.2rem;
+  width: 100%;
+  max-width: 9rem;
+  margin-inline: auto;
+}
+
+.pv-food .fc-cell {
+  font-size: 1rem;
+  border-radius: 6px;
+  cursor: default;
+}
+
+/* ═══════════════════════════════════════════════════════════ food ninja ══
+ *
+ * The field (`games/FoodNinja.tsx`) and its hover miniature. `nj-` was
+ * grepped first and is unused elsewhere. The canvas draws the foods (emoji) and
+ * the blade (the theme's primary, via `usePalette`); this sheet only frames it.
+ *
+ * 4:5 so a phone held upright gets a field taller than it is wide — foods are
+ * thrown upwards — and capped at 70% of the viewport's height so the clock and
+ * the count above it stay on screen while playing.
+ */
+.nj-field {
+  position: relative;
+  width: 100%;
+  max-width: min(30rem, calc(70svh * 0.8));
+  aspect-ratio: 4 / 5;
+  margin: 0 auto;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+/* On a phone the field borrows the panel's side padding, as the Food Cross
+   board does — a wider field is more room to swipe through. */
+@media (max-width: 520px) {
+  .nj-field {
+    width: calc(100% + 2.7rem);
+    max-width: none;
+    margin-inline: -1.35rem;
+  }
+}
+
+.nj-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* A swipe slices; it does not scroll the page or select text. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: crosshair;
+}
+
+.nj-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: rgba(var(--panel-rgb), 0.55);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.nj-overlay p {
+  margin: 0;
+  max-width: 22rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.nj-round .round-quit {
+  display: block;
+  margin: 0.9rem auto 0;
+}
+
+/* ══ the five arcade games ══════════════════════════════════════════════════
+   `.ar-*` is the frame all five share — a field the canvas fills, an overlay
+   for the start and the end, a direction pad — and `.cn-*` is Canon Numbers'
+   board, the one of the five drawn in the DOM rather than on a canvas. Both
+   prefixes were grepped and free. Everything is the one accent, at alphas. */
+.ar-field {
+  position: relative;
+  width: 100%;
+  margin: 0 auto;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.ar-square {
+  max-width: min(26rem, 62svh);
+  aspect-ratio: 1;
+}
+
+.ar-tall {
+  max-width: min(26rem, calc(66svh * 0.75));
+  aspect-ratio: 3 / 4;
+}
+
+.ar-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* A swipe or a drag steers the game; it does not scroll the page. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ar-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1.5rem;
+  text-align: center;
+  background: rgba(var(--panel-rgb), 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+.ar-overlay p {
+  margin: 0;
+  max-width: 22rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.ar-round .round-quit {
+  display: block;
+  margin: 0.9rem auto 0;
+}
+
+.ar-note {
+  margin: 0.9rem 0 0;
+  text-align: center;
+  color: var(--text-mut);
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.ar-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem 1rem;
+  margin-top: 0.9rem;
+}
+
+.ar-acts .round-quit {
+  margin: 0;
+}
+
+/* The direction pad: a cross of four buttons, each a full tap target. */
+.ar-pad {
+  display: grid;
+  grid-template-columns: repeat(3, var(--tap));
+  grid-template-rows: repeat(2, var(--tap));
+  gap: 0.35rem;
+  justify-content: center;
+  margin-top: 0.9rem;
+}
+
+.ar-pad-btn {
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border-2);
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 1.15rem;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.ar-pad-btn[data-dir='0'] { grid-column: 2; grid-row: 1; }
+.ar-pad-btn[data-dir='3'] { grid-column: 1; grid-row: 2; }
+.ar-pad-btn[data-dir='2'] { grid-column: 2; grid-row: 2; }
+.ar-pad-btn[data-dir='1'] { grid-column: 3; grid-row: 2; }
+
+.ar-pad-btn:active:not(:disabled) {
+  background: rgba(var(--accent-rgb), 0.18);
+}
+
+.ar-pad-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* A keyboard has the arrows; the pad is for a finger. */
+@media (pointer: fine) {
+  .ar-pad {
+    display: none;
+  }
+}
+
+/* Canon Numbers: the board, and a cannon under each column. */
+.cn-board {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.3rem;
+  max-width: min(24rem, 52svh);
+  margin: 0 auto;
+  padding: 0.4rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border-2);
+  background: var(--surface);
+}
+
+.cn-board[data-busy='true'] {
+  cursor: progress;
+}
+
+.cn-cell {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(0.95rem, 0.6rem + 1.6vw, 1.35rem);
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+/* A block's number carried by the accent's strength, 2048's way. */
+.cn-cell[data-value] {
+  background: rgba(var(--accent-rgb), calc(0.14 + var(--cn-level) * 0.07));
+}
+
+/* Two rows from the bottom is the warning, said by weight and a ring. */
+.cn-cell[data-danger='true'] {
+  box-shadow: inset 0 0 0 2px var(--accent-lit);
+}
+
+.cn-cell[data-hit='true'] {
+  transform: scale(0.88);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.cn-guns {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.3rem;
+  max-width: min(24rem, 52svh);
+  margin: 0.4rem auto 0;
+  padding: 0 0.4rem;
+}
+
+.cn-gun {
+  min-height: var(--tap);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--solid);
+  color: var(--on-solid);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.cn-gun:hover:not(:disabled) {
+  background: var(--solid-lit);
+}
+
+.cn-gun:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cn-cell {
+    transition: none;
+  }
+
+  .cn-cell[data-hit='true'] {
+    transform: none;
+  }
+}
+
+/* The five cards' miniatures. */
+.pv-snake,
+.pv-cannon {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  max-width: 9rem;
+  margin-inline: auto;
+}
+
+.pv-snake {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+.pv-snake i,
+.pv-cannon i {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  background: rgba(var(--accent-rgb), 0.06);
+  font-style: normal;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.pv-snake i[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.55);
+}
+
+.pv-snake i[data-head='true'] {
+  background: var(--accent);
+}
+
+.pv-cannon {
+  position: relative;
+  grid-template-columns: repeat(3, 1fr);
+  max-width: 6.5rem;
+  padding-bottom: 1.2rem;
+}
+
+.pv-cannon i {
+  font-family: var(--font-display);
+  font-weight: 800;
+  color: var(--text);
+}
+
+.pv-cannon i[data-on='true'] {
+  background: rgba(var(--accent-rgb), 0.3);
+}
+
+.pv-cannon i[data-hit='true'] {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.pv-cannon b {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  color: var(--accent-lit);
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.pv-brick {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 9rem;
+  aspect-ratio: 4 / 3;
+  margin-inline: auto;
+}
+
+.pv-brick-wall {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2px;
+}
+
+.pv-brick-wall i {
+  height: 0.55rem;
+  border-radius: 2px;
+  background: rgba(var(--accent-rgb), 0.45);
+}
+
+.pv-brick-wall i[data-hard='true'] {
+  background: var(--accent);
+}
+
+.pv-brick-wall i[data-gone='true'] {
+  visibility: hidden;
+}
+
+.pv-brick-ball,
+.pv-brick-paddle {
+  position: absolute;
+  background: var(--accent);
+}
+
+.pv-brick-ball {
+  left: 46%;
+  top: 52%;
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+}
+
+.pv-brick-paddle {
+  left: 34%;
+  bottom: 6%;
+  width: 32%;
+  height: 0.3rem;
+  border-radius: 99px;
+}
+
+.pv-doodle {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 7rem;
+  aspect-ratio: 3 / 4;
+  margin-inline: auto;
+}
+
+.pv-doodle i,
+.pv-doodle b {
+  position: absolute;
+  background: var(--accent);
+}
+
+.pv-doodle i {
+  width: 32%;
+  height: 0.28rem;
+  border-radius: 99px;
+  opacity: 0.8;
+}
+
+.pv-doodle b {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 4px;
+}
+
+.pv-zuma {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  max-width: 10rem;
+  margin-inline: auto;
+  padding-block: 1.2rem;
+}
+
+/* The four marks — a dot, a ring, a bar, a cross — in the ground on the
+   accent, so a kind is a shape rather than a hue. */
+.pv-zuma i,
+.pv-zuma b {
+  position: relative;
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.pv-zuma b {
+  margin-left: 0.5rem;
+  transform: translateY(-0.9rem);
+}
+
+.pv-zuma [data-kind]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+}
+
+.pv-zuma [data-kind='0']::after {
+  width: 0.3rem;
+  height: 0.3rem;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.pv-zuma [data-kind='1']::after {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  border: 2px solid var(--bg);
+  box-sizing: border-box;
+}
+
+.pv-zuma [data-kind='2']::after {
+  width: 0.55rem;
+  height: 2px;
+  background: var(--bg);
+}
+
+.pv-zuma [data-kind='3']::after {
+  width: 0.55rem;
+  height: 0.55rem;
+  background:
+    linear-gradient(45deg, transparent 42%, var(--bg) 42% 58%, transparent 58%),
+    linear-gradient(-45deg, transparent 42%, var(--bg) 42% 58%, transparent 58%);
+}
+
+/* The card's miniature: three foods hanging in the air, the middle one cut. */
+.pv-ninja {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 11rem;
+  aspect-ratio: 4 / 3;
+  margin-inline: auto;
+}
+
+.pv-ninja-food {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.pv-ninja-food[data-sliced='true'] {
+  display: flex;
+}
+
+.pv-ninja-food[data-sliced='true'] b:first-child {
+  clip-path: inset(0 50% 0 0);
+  transform: translate(-3px, 2px) rotate(-12deg);
+}
+
+.pv-ninja-food[data-sliced='true'] b:last-child {
+  clip-path: inset(0 0 0 50%);
+  margin-left: -1.6rem;
+  transform: translate(3px, 2px) rotate(12deg);
+}
+
+.pv-ninja-food b {
+  font-weight: 400;
+}
+
+.pv-ninja-blade {
+  position: absolute;
+  left: 18%;
+  right: 18%;
+  top: 34%;
+  height: 3px;
+  border-radius: 3px;
+  background: var(--accent-lit);
+  transform: rotate(-14deg);
+  opacity: 0.8;
+}
+
+/* ══════════════════════════════════════════════════ invite friends ══
+ *
+ * The Play screen's invite card (`InviteCard.tsx`). The same panel as the
+ * confirmation one below it — glass, a kicker, a line of copy — because it is
+ * the same kind of thing on the same screen. `play-invite` was grepped first:
+ * nothing else on the site uses the name.
+ *
+ * The code is printed in tabular figures inside a well, so a friend reading it
+ * off somebody's phone can tell the characters apart; the two presses sit to
+ * its right where there is room and wrap under it on a phone.
+ */
+.play-invite {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: clamp(1rem, 2.6vw, 1.4rem) clamp(1.1rem, 3vw, 1.6rem);
+  margin-bottom: 1.5rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.play-invite-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.play-invite-kicker i {
+  display: inline-flex;
+  color: var(--accent-lit);
+}
+
+.play-invite-line {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.play-invite-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.play-invite-code {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--r);
+  border: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.play-invite-code-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--text-fnt);
+}
+
+.play-invite-code b {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent-ink);
+}
+
+.play-invite-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.play-invite-progress {
+  margin: 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--text-mut);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ══════════════════════════════════════════════ confirm your email ══
+ *
+ * The panel on the Play screen and the wallet (`VerifyEmail.tsx`). It is a
+ * *panel* rather than a gate because an unverified account is not locked out —
+ * it can read, play, earn and browse, and at most it may be refused a spend.
+ * So this looks like the other panels on those screens rather
+ * than like a barrier: same glass, same kicker, same field kit.
+ *
+ * It is **not** coloured. The palette has one accent, and this is the fourth
+ * place that rule has had to be restated — the field kit's error weight, the
+ * console's refusal strip, the stale-rate line — and the answer is the same
+ * every time: weight and position carry the urgency, not hue. A panel sitting
+ * directly under the points balance, about those points, does not need to be
+ * amber to be read.
+ */
+.vfy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: clamp(1rem, 2.6vw, 1.4rem) clamp(1.1rem, 3vw, 1.6rem);
+  margin-bottom: 1.1rem;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border-2);
+  background: var(--glass);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.vfy-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--text-fnt);
+}
+
+.vfy-kicker i {
+  display: inline-flex;
+  color: var(--accent-lit);
+}
+
+/* The address is bolded inside the sentence rather than put on a line of its
+   own: what somebody needs to check is that it is *their* address, and a
+   sentence they read anyway is where they will check it. */
+.vfy-line {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.vfy-line b {
+  font-weight: 700;
+  color: var(--accent-ink);
+}
+
+/*
+ * The code and the two actions, on one row where there is room.
+ *
+ * `flex-end` rather than `center`, so the buttons sit on the field's baseline
+ * rather than floating beside its label — the field is two rows tall (a label
+ * and a well) and centring would put the press half a line above the well it
+ * belongs to.
+ */
+.vfy-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+/*
+ * Six digits wide, and no wider.
+ *
+ * A full-width well for a six-character code reads as a field that wants a
+ * sentence. `ch` is exact here for the same reason it is on the converter's
+ * amount: the well is `tabular-nums`, so every digit is one `ch` by
+ * definition.
+ */
+.vfy-code {
+  flex: 0 0 auto;
+  width: min(11rem, 100%);
+}
+
+.vfy-code input {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.22em;
+}
+
+.vfy-acts {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  flex-wrap: wrap;
+}
+
 
 /* ══════════════════════════════════════ what the profile is worth ══
  *

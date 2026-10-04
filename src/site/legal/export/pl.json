@@ -2,7 +2,7 @@
   "privacyTitle": "Polityka prywatności",
   "termsTitle": "Regulamin",
   "privacyVersion": "Wersja 1.1 · Obowiązuje od 28 sierpnia 2026 · Zgodna z RODO",
-  "termsVersion": "Wersja 1.0 · Obowiązuje od 24 kwietnia 2025",
+  "termsVersion": "Wersja 1.1 · Obowiązuje od 18 października 2026",
   "english": "Ten dokument jest tłumaczeniem. W razie rozbieżności z wersją angielską rozstrzygający jest tekst angielski.",
   "privacyContents": [
     ["privacy-1", "Kim jesteśmy"],
@@ -724,15 +724,19 @@
     },
     {
       "kind": "paragraph",
-      "text": "Użytkownicy mogą polecać platformę nowym użytkownikom przy użyciu osobistego kodu polecającego. Punkty za polecenie są przyznawane, gdy polecony użytkownik:"
+      "text": "Użytkownicy mogą polecać platformę nowym użytkownikom przy użyciu osobistego kodu polecającego lub linku z zaproszeniem. Punkty za polecenie otrzymujesz Ty oraz zaproszona przez Ciebie osoba, gdy ta osoba:"
     },
     {
       "kind": "bullet",
-      "text": "Zakłada zweryfikowane konto przy użyciu kodu polecającego"
+      "text": "Zakłada konto przy użyciu Twojego kodu polecającego lub linku z zaproszeniem"
     },
     {
       "kind": "bullet",
-      "text": "Spełnia minimalne wymagania wdrożeniowe określone w aplikacji"
+      "text": "Odbywa pierwszą kwalifikującą się wizytę w lokalu partnerskim — potwierdzony zakup spełniający minimalną kwotę wydatków tego lokalu"
+    },
+    {
+      "kind": "paragraph",
+      "text": "Punkty nie są przyznawane za wizyty w lokalu, którego jesteś właścicielem lub który prowadzisz."
     },
     {
       "kind": "paragraph",

@@ -3,7 +3,7 @@
   "info": {
     "title": "Paylez API",
     "version": "1.0.0",
-    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n91 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
+    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n96 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
     "contact": {
       "name": "Paylez backend",
       "url": "https://pay-lez.com"
@@ -287,7 +287,11 @@
               "emailVerifiedAt": {
                 "type": "string",
                 "nullable": true,
-                "description": "When the address was proved, or null. **It gates nothing** — email confirmation was built and taken back out, so no route asks for it and no client should branch on it. It is still sent because a field that vanishes breaks a mapper, and a Google sign-in still stamps it, because that is the one moment the fact is known for free. Do not draw a \"verify your email\" prompt from it."
+                "description": "When the address was proved, or null. Null on an account **with** an email is the state to draw a \"confirm your email\" prompt from (`POST /v1/auth/verify/send`, `POST /v1/auth/verify`). A Google sign-in is stamped on the way in, and accounts that existed before confirmation returned were stamped by a migration. An account with no email (provisional) has nothing to prove."
+              },
+              "spendNeedsVerifiedEmail": {
+                "type": "boolean",
+                "description": "Whether a null `emailVerifiedAt` currently blocks spending — buying a venue voucher or a gift card answers 403 `not_verified` while this is true. Earning is never blocked. Off until every client can take a code; word the prompt from it."
               },
               "venueSharingDefault": {
                 "type": "boolean",
@@ -906,7 +910,15 @@
               "uzbekistan",
               "word_builder",
               "memory_match",
-              "flight"
+              "flight",
+              "merge_2048",
+              "food_cross",
+              "food_ninja",
+              "snake",
+              "cannon_numbers",
+              "breakout",
+              "doodle_jump",
+              "zuma"
             ],
             "description": "Echoed back. `poland` and `uzbekistan` are the same quiz asked about two different countries and score identically — a client shows **one** local-knowledge card and picks between them by the country on the player’s profile, rather than offering both."
           },
@@ -959,7 +971,7 @@
       },
       "Energy": {
         "type": "object",
-        "description": "The energy pool — what hearts became, and the **only** thing that bounds a day.\n\n**Every finished round costs one, win or lose.** Losses only was the rule before, and it bounded nobody: two of the seven games cannot be lost. An *abandoned* round still costs nothing, and starting one costs nothing — the charge is written when the round is banked.\n\nIt **does not reset at midnight**: one refills every `energy_regen_minutes` (free 120, Pro 60, Premium 30) up to `daily_energy` (4/6/10). From a full tank that is 16 rounds in a day free, 30 on Pro, 58 on Premium; 12/24/48 at the sustained rate. All six figures moved when the intervals were cut from 240/180/120; the ceilings did not, so the refill is where a paid plan now argues for itself.",
+        "description": "The energy pool — what hearts became, and the **only** thing that bounds a day.\n\n**Every round costs one when it starts, win or lose** (rulebook §3), so an *abandoned* round costs one too. The one way back: abandoning within 5 seconds of the start refunds it, once a day — see `POST /v1/games/sessions/{id}/abandon`.\n\nIt **does not reset at midnight**: one refills every `energy_regen_minutes` (free 120, Pro 60, Premium 30) up to `daily_energy` (4/6/10). From a full tank that is 16 rounds in a day free, 30 on Pro, 58 on Premium; 12/24/48 at the sustained rate. All six figures moved when the intervals were cut from 240/180/120; the ceilings did not, so the refill is where a paid plan now argues for itself.",
         "properties": {
           "energy": {
             "type": "integer",
@@ -1663,7 +1675,7 @@
     "/v1/auth/signup": {
       "post": {
         "summary": "Create an account",
-        "description": "Mints a referral code, and — if `provisionalId` is sent — folds the guest identity in so points earned before signing up survive.\n\nRecords terms and privacy consent with the policy version **when `acceptTerms` is sent**, and not otherwise: a consent row is evidence that somebody was asked, so a client that did not ask writes none. `POST /v1/me/consents` is how it arrives later.\n\n**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, because an address and a password can be produced in bulk and a gift attached to producing them funds a farm.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "description": "Mints a referral code, and — if `provisionalId` is sent — folds the guest identity in so points earned before signing up survive.\n\nRecords terms and privacy consent with the policy version **when `acceptTerms` is sent**, and not otherwise: a consent row is evidence that somebody was asked, so a client that did not ask writes none. `POST /v1/me/consents` is how it arrives later.\n\n**It does not pay the welcome bonus.** That moved to `POST /v1/me/onboarded`, because an address and a password can be produced in bulk and a gift attached to producing them funds a farm.\n\n**It sends the first email confirmation code.** The response carries `verification` (the `POST /v1/auth/verify/send` shape), or `null` if the mail could not be sent — the account is created either way, and the resend button is the remedy.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "postAuthSignup",
         "tags": [
           "auth"
@@ -1756,6 +1768,202 @@
           },
           "409": {
             "description": "That address already has an account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/verify/send": {
+      "post": {
+        "summary": "Send, or resend, the email confirmation code",
+        "description": "Sign-up already sends the first code (its response carries `verification`), so this is the resend button. A six-digit code, valid for 10 minutes, emailed in the account's language.\n\nInside the 90-second cooldown it answers **200 with `sent: false`** and `nextSendAt` rather than an error — asking again while a message is slow is not a fault. After 10 codes for one account it answers `quota_exceeded`.\n\n**Access:** Any signed-in account.",
+        "operationId": "postAuthVerifySend",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sent": {
+                      "type": "boolean",
+                      "description": "False when the cooldown refused; nothing was sent."
+                    },
+                    "nextSendAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When another send is allowed."
+                    },
+                    "expiresAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "description": "When the current code stops working."
+                    },
+                    "sends": {
+                      "type": "integer",
+                      "description": "Codes sent to this account so far, including this one."
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "**Development servers only** (local email adapter). Never present when mail is really sent."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` — the account has no email address.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the address is already confirmed. `quota_exceeded` — 10 codes have been sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/verify": {
+      "post": {
+        "summary": "Confirm the email code",
+        "description": "Idempotent: confirming an account that is already proved is `granted: false`, not an error. Spaces and dashes in the code are ignored. Five wrong answers end that code; ask for a new one.\n\n**Access:** Any signed-in account.",
+        "operationId": "postAuthVerify",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The six digits from the email."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verified": {
+                      "type": "boolean"
+                    },
+                    "granted": {
+                      "type": "boolean",
+                      "description": "True only for the call that actually proved it."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` — wrong code; `attemptsLeft` says how many tries remain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no code has been sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`expired` — ask for a new one. `cap_reached` — five wrong answers; ask for a new one. `conflict` — the address changed after the code was sent.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3414,6 +3622,56 @@
         }
       }
     },
+    "/v1/wallet/gift-cards/{id}/used": {
+      "post": {
+        "summary": "POST /v1/wallet/gift-cards/:id/used",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postWalletGiftCardsByIdUsed",
+        "tags": [
+          "other"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/daily": {
       "get": {
         "summary": "The daily check-in, the streak, and where this month’s points came from",
@@ -3630,7 +3888,7 @@
     "/v1/games/sessions": {
       "post": {
         "summary": "Start a round",
-        "description": "Refuses with `no_energy` when the tank is empty. **Starting costs nothing and finishing costs one, win or lose** — so `energyLeft` on this response is what the player has *before* paying for the round they are about to play, and the refusal is enforced here because finding out at the end means finding out after the round was played. An abandoned round costs nothing.\n\nSend `practice: true` to turn that refusal into an **unpaid round** instead: it plays identically and banks nothing — no points, no streak, no energy, no ledger entry — and both this response and the finish carry `paid: false`. Energy still buys everything it bought; what it no longer buys is playing at all. Without the flag an empty tank is still the refusal, so a client that has an out-of-energy screen keeps it until it decides to offer practice.\n\nNothing else **refuses** a round: there is no daily points cap, and energy is the whole of what bounds how many rounds a day holds. What a round is *worth* is a separate limit and it does shrink: the decay curve pays the 1st through 6th paid round of the day 1 / 0.65 / 0.45 / 0.3 / 0.2 / 0.12 of its base. See `decay` and `roundToday` on the finish.\n\n**Access:** Any signed-in account.",
+        "description": "Refuses with `no_energy` when the tank is empty. **Starting costs one, win or lose** (rulebook §3) — so `energyLeft` on this response is the tank *after* this round has been paid for, and `energyNextAt` is when the next unit arrives. Any round the player left open is abandoned first, under the abandon route’s rule.\n\nSend `practice: true` to turn that refusal into an **unpaid round** instead: it plays identically and banks nothing — no points, no streak, no energy, no ledger entry — and both this response and the finish carry `paid: false`. Energy still buys everything it bought; what it no longer buys is playing at all. Without the flag an empty tank is still the refusal, so a client that has an out-of-energy screen keeps it until it decides to offer practice.\n\nNothing else **refuses** a round: there is no daily points cap, and energy is the whole of what bounds how many rounds a day holds. What a round is *worth* is a separate limit and it does shrink: the decay curve pays the 1st through 6th paid round of the day 1 / 0.65 / 0.45 / 0.3 / 0.2 / 0.12 of its base. See `decay` and `roundToday` on the finish.\n\n**Access:** Any signed-in account.",
         "operationId": "postGamesSessions",
         "tags": [
           "games"
@@ -3652,9 +3910,17 @@
                       "uzbekistan",
                       "word_builder",
                       "memory_match",
-                      "flight"
+                      "flight",
+                      "merge_2048",
+                      "food_cross",
+                      "food_ninja",
+                      "snake",
+                      "cannon_numbers",
+                      "breakout",
+                      "doodle_jump",
+                      "zuma"
                     ],
-                    "description": "Eight values, seven cards. `poland` and `uzbekistan` are one local-knowledge quiz asked about two different countries — same protocol, same scoring, different bank — so send the one that matches the country on the player’s profile rather than showing both."
+                    "description": "One value per card, except that `poland` and `uzbekistan` are one local-knowledge quiz asked about two different countries — same protocol, same scoring, different bank — so send the one that matches the country on the player’s profile rather than showing both."
                   },
                   "practice": {
                     "type": "boolean",
@@ -3821,6 +4087,56 @@
         }
       }
     },
+    "/v1/games/sessions/{id}/abandon": {
+      "post": {
+        "summary": "POST /v1/games/sessions/:id/abandon",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postGamesSessionsByIdAbandon",
+        "tags": [
+          "other"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/games/sessions/{id}/finish": {
       "post": {
         "summary": "Finish the round and bank it",
@@ -3906,7 +4222,7 @@
     "/v1/referrals": {
       "get": {
         "summary": "My code, and how the invites are going",
-        "description": "**Access:** Any signed-in account.",
+        "description": "The invite link the web shares is `https://www.pay-lez.com/sign-in?ref=<code>`. New codes are `PY` plus six characters; older `PY####` codes still work. Both people are paid on the invited friend's **first counted visit** at a partner venue — not at sign-up, not on a scan under the venue's minimum spend, and not at a till the inviter runs.\n\n**Access:** Any signed-in account.",
         "operationId": "getReferrals",
         "tags": [
           "social"
@@ -3922,7 +4238,24 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object"
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "joined": {
+                      "type": "integer",
+                      "description": "Friends who signed up with the code (rejected ones excluded)."
+                    },
+                    "completed": {
+                      "type": "integer",
+                      "description": "…of whom this many made the visit that pays."
+                    },
+                    "pointsEarned": {
+                      "type": "integer",
+                      "description": "What this account was paid for invites, milestone included, reversals netted. It was the bond's cost to both sides — double the real figure."
+                    }
+                  }
                 }
               }
             }
@@ -3933,6 +4266,53 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/referrals/codes/{code}": {
+      "get": {
+        "summary": "Whether an invite code would bind",
+        "description": "For a sign-up form to check a typed or linked code before using it — sign-up itself never refuses a bad code (it reports `referral.applied: false`). Case, spaces and dashes are ignored. Rate-limited per connection.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "getReferralsCodesByCode",
+        "tags": [
+          "social"
+        ],
+        "parameters": [
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": {
+                      "type": "boolean"
+                    }
+                  }
                 }
               }
             }
@@ -4284,6 +4664,109 @@
                 }
               }
             }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/push/web-key": {
+      "get": {
+        "summary": "GET /v1/push/web-key",
+        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "getPushWebKey",
+        "tags": [
+          "other"
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/notification-prefs": {
+      "get": {
+        "summary": "GET /v1/me/notification-prefs",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "getMeNotificationPrefs",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "PATCH /v1/me/notification-prefs",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "patchMeNotificationPrefs",
+        "tags": [
+          "other"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
           },
           "401": {
             "description": "Not signed in",
@@ -9318,6 +9801,169 @@
         }
       }
     },
+    "/v1/admin/referrals": {
+      "get": {
+        "summary": "Referrals, newest first",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminReferrals",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "description": "`pending`, `completed` or `rejected`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Up to 500; default 100.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/referrals/{id}/reject": {
+      "post": {
+        "summary": "Void a referral",
+        "description": "Terms §5: points awarded in error or through fraud are reversed. A pending referral is closed; a completed one also has both payouts reversed by compensating ledger entries. The five-friend milestone is not touched — reverse that entry separately if it should go too. Audited.\n\n**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminReferralsByIdReject",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "description": "Why. Kept on the reversal entries and the audit row."
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no such referral.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — already rejected.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/ledger/{id}/reverse": {
       "post": {
         "summary": "POST /v1/admin/ledger/:id/reverse",
@@ -10342,11 +10988,377 @@
         }
       }
     },
+    "/v1/admin/gift-cards": {
+      "get": {
+        "summary": "GET /v1/admin/gift-cards",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminGiftCards",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /v1/admin/gift-cards",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminGiftCards",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/admin/gift-cards/{id}": {
+      "patch": {
+        "summary": "PATCH /v1/admin/gift-cards/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "patchAdminGiftCardsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "delete": {
         "summary": "DELETE /v1/admin/gift-cards/:id",
         "description": "**Access:** Admin only. Not part of the mobile surface.",
         "operationId": "deleteAdminGiftCardsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/{id}/active": {
+      "post": {
+        "summary": "POST /v1/admin/gift-cards/:id/active",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminGiftCardsByIdActive",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/{id}/codes": {
+      "post": {
+        "summary": "POST /v1/admin/gift-cards/:id/codes",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminGiftCardsByIdCodes",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/issued": {
+      "get": {
+        "summary": "GET /v1/admin/gift-cards/issued",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminGiftCardsIssued",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/issued/{id}/used": {
+      "post": {
+        "summary": "POST /v1/admin/gift-cards/issued/:id/used",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminGiftCardsIssuedByIdUsed",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/issued/{id}/cancel": {
+      "post": {
+        "summary": "POST /v1/admin/gift-cards/issued/:id/cancel",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminGiftCardsIssuedByIdCancel",
         "tags": [
           "admin"
         ],
