@@ -16692,20 +16692,10 @@ button {
   color: var(--text-fnt);
 }
 
-/* Gift cards are Pro and Premium only (rulebook §9.4): the reason and the one
-   press that changes it, as a short column above the shelf. */
+/* Gift cards are Pro and Premium only (rulebook §9.4): said once, above the
+   shelf rather than under it. */
 .wal-paid {
-  max-width: 24rem;
-  margin: 0 auto 1.5rem;
-  text-align: center;
-}
-
-.wal-paid .wal-rule {
-  margin-top: 0;
-}
-
-.wal-paid .sub-buy {
-  margin-top: 0.75rem;
+  margin: 0 0 1.5rem;
 }
 
 /* ── the codes staff type ──────────────────────────────────────────────────
@@ -20509,39 +20499,6 @@ button {
   font-weight: 700;
   color: var(--text);
   text-align: center;
-}
-
-/* The upgrade offer on the Play screen's energy panel. Separated by a hairline
-   rather than a heading: it is an aside to the gauge above it, not a second
-   thing the panel is about. */
-.play-upgrade {
-  margin-top: 0.9rem;
-  padding-top: 0.9rem;
-  border-top: 1px solid var(--border);
-}
-
-.play-upgrade .sub-buy {
-  margin-top: 0;
-  font-size: 0.82rem;
-}
-
-/* "Get Pro": the site's primary press, stretched to the card — `.btn` centres
-   its own label, so a full-width one needs nothing more. */
-.play-get-pro {
-  width: 100%;
-  gap: 0.55rem;
-}
-
-/* The arrow in a small ring of the label's own colour, so it follows the press
-   in both themes without a colour of its own. */
-.play-get-pro-ico {
-  display: inline-grid;
-  place-items: center;
-  width: 1.45rem;
-  height: 1.45rem;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
 }
 
 .sub-foot {

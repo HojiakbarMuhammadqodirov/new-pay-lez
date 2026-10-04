@@ -34,7 +34,6 @@ import { canAfford } from './auth/player';
 import { isPicture } from './auth/picture';
 import { PATHS } from './router';
 import { CounterCode, VenueMark, VenueSheet } from './venueSheet';
-import { SubscribeButton } from './subscribe';
 import { VerifyEmail } from './VerifyEmail';
 
 /**
@@ -1279,16 +1278,14 @@ export function WalletApp() {
             <p>{wallet.catalogueLede}</p>
           </div>
 
-          {/* Rulebook §9.4: a free account sees the shelf — what it would get —
-              and is told, once and above it, what opens it. */}
+          {/* Rulebook §9.4: a free account sees the shelf and is told, once and
+              above it, who may buy. No upgrade button: plans are granted by an
+              operator, not sold here. */}
           {giftLocked && (
-            <div className="wal-paid" data-reveal>
-              <p className="wal-rule">
-                <Icon name="shield" size={15} />
-                {wallet.paidOnly}
-              </p>
-              <SubscribeButton planCode="pro" planName={copy.subscription.plans[1].name} />
-            </div>
+            <p className="wal-rule wal-paid" data-reveal>
+              <Icon name="shield" size={15} />
+              {wallet.paidOnly}
+            </p>
           )}
 
           {shelf.state.status === 'error' ? (

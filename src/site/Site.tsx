@@ -42,7 +42,6 @@ import {
   Hero,
   Proof,
   SiteFooter,
-  Subscription,
   Value,
   Voices,
 } from './sections';
@@ -506,7 +505,11 @@ function SiteContent() {
           <Guide />
           <Features />
           <Value />
-          <Subscription />
+          {/* No plans-and-prices section: Pro and Premium are not sold on this
+              site — an operator grants them from the console's Tiers tab (the
+              owner's decision, so the app has nothing to sell under Google
+              Play's billing rules). `Subscription` in `sections.tsx` is kept
+              unrendered so selling can come back as one line. */}
           <Voices />
           <FinalCta />
         </main>

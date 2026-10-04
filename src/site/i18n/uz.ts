@@ -757,7 +757,7 @@ export const uz: Dictionary = {
     buying: 'Sotib olinmoqda…',
     buyFailed: 'O‘tmadi va hech narsa yechilmadi. Qaytadan urinib ko‘ring.',
     priorityOnly: 'Faqat pullik tarifda',
-    paidOnly: 'Sovg‘a kartalari — Pro va Premium tariflari mukofoti. Ballaringiz o‘zingizda qoladi — ularni bu yerda sarflash uchun tarifni oshiring.',
+    paidOnly: 'Sovg‘a kartalari Pro va Premium a’zolari uchun. Ballaringiz o‘zingizda qoladi.',
     refused: {
       plan: 'Sovg‘a kartalari — Pro va Premium mukofoti, shuning uchun hech narsa yechilmadi.',
       pool: 'Bu oyning sovg‘a kartalari tugadi. Hech narsa yechilmadi — keyingi oy javon yana to‘ladi.',

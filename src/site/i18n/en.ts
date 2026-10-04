@@ -970,7 +970,7 @@ export const en = {
     priorityOnly: 'On a paid plan only',
     /* Rulebook §9.4: gift cards are a paid-tier reward. Said above the shelf
        to a free account, and as the reason when a purchase is refused. */
-    paidOnly: 'Gift cards are a Pro and Premium reward. Your points stay yours — upgrade to spend them here.',
+    paidOnly: 'Gift cards are for Pro and Premium members. Your points stay yours.',
     refused: {
       plan: 'Gift cards are a Pro and Premium reward, so nothing was charged.',
       pool: 'This month’s gift cards are gone. Nothing was charged — the shelf refills next month.',

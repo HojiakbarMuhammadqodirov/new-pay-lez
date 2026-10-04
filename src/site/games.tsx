@@ -1260,7 +1260,7 @@ export function GamesApp() {
   const copy = useCopy();
   const games = copy.games;
   const [language] = useLanguage();
-  const { account, entitlements, plan, setPlayer } = useAuth();
+  const { account, entitlements, setPlayer } = useAuth();
 
   /*
    * What this account's plan actually buys, with the free figures as the
@@ -2186,28 +2186,6 @@ export function GamesApp() {
               )}
               <p className="play-energy-cost">{games.energyCost}</p>
 
-              {/* The offer goes where the limit is felt, and only to somebody
-                  the limit applies to. A player already on Pro sees nothing
-                  here — the button would be selling them what they have.
-                  Hidden only on a plan *known* to be paid: an unresolved plan
-                  (no server answer yet, or none at all) used to hide it too,
-                  which left it missing for every player the server had not
-                  been asked about.
-
-                  It opens the plans section on the landing page rather than
-                  checkout: the tank is where the wish starts, and the plans are
-                  where the terms and the other tier can be compared. An
-                  unprefixed anchor files under `landing` (`ANCHOR_ROUTES`). */}
-              {(plan === null || plan.code === 'free') && (
-                <div className="play-upgrade">
-                  <a className="btn btn-solid play-get-pro" href="#subscription">
-                    <span className="play-get-pro-ico" aria-hidden>
-                      <Icon name="arrow" size={13} strokeWidth={2.4} />
-                    </span>
-                    {games.getPro}
-                  </a>
-                </div>
-              )}
             </section>
           </div>
 
