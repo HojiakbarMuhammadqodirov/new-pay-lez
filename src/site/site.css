@@ -16692,6 +16692,22 @@ button {
   color: var(--text-fnt);
 }
 
+/* Gift cards are Pro and Premium only (rulebook §9.4): the reason and the one
+   press that changes it, as a short column above the shelf. */
+.wal-paid {
+  max-width: 24rem;
+  margin: 0 auto 1.5rem;
+  text-align: center;
+}
+
+.wal-paid .wal-rule {
+  margin-top: 0;
+}
+
+.wal-paid .sub-buy {
+  margin-top: 0.75rem;
+}
+
 /* ── the codes staff type ──────────────────────────────────────────────────
  *
  * A voucher code, a reward code and the player's `@username` are the three

@@ -714,11 +714,10 @@ export async function partnerVoucherTotals(
  * **Rulebook §2.1 / §9.4 fence it, and every fence is here.** A voucher costs
  * Paylez nothing; a gift card is face value the platform buys. So:
  *
- *   1. **The plan gate is the `gift_card_priority` entitlement.** §9.4 made it
- *      Pro and Premium; on 2026-10-03 the owner opened cards to every account,
- *      which is now `true` on every plan in `settings.ts` rather than a gate
- *      deleted here — so closing it again is one value per plan, not code. The
- *      route resolves it and passes `entitled`.
+ *   1. **Pro and Premium only** — the `gift_card_priority` entitlement, false
+ *      on free (`settings.ts`). The route resolves it and passes `entitled`;
+ *      a free account is refused with `entitlement_required`, which a client
+ *      draws as an upgrade prompt rather than an error.
  *   2. **100 points = 1 zł**, *derived* from the card's face value on every read
  *      and every sale (`giftCardPrice`). `gift_card_stock.points_cost` is no
  *      longer the price: the audited build had cards at 50 = 1 zł there, which

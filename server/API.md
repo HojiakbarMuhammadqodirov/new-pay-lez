@@ -669,8 +669,8 @@ A capacity refusal is a `403 entitlement_required` carrying `entitlement`, `limi
 and `used` — enough to write "that is your five for today" instead of "something
 went wrong". Three of them reach a consumer client: `assistant_uses_per_day` on
 `POST /v1/assistant/ask` and `word_hints_per_day` on a Word Builder hint event.
-(`gift_card_priority` used to be a third; gift cards are open to every account
-since 2026-10-03.)
+The third is a gate rather than a capacity: `gift_card_priority` on
+`POST /v1/gift-cards` — gift cards are Pro and Premium only (rulebook §9.4).
 
 ---
 

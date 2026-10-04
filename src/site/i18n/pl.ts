@@ -762,6 +762,12 @@ export const pl: Dictionary = {
     buying: 'Kupujemy…',
     buyFailed: 'Nie udało się i nic nie zostało pobrane. Spróbuj ponownie.',
     priorityOnly: 'Tylko w planie płatnym',
+    paidOnly: 'Karty podarunkowe to nagroda w planach Pro i Premium. Twoje punkty zostają u Ciebie — przejdź na wyższy plan, żeby je tu wydać.',
+    refused: {
+      plan: 'Karty podarunkowe to nagroda w planach Pro i Premium, więc nic nie zostało pobrane.',
+      pool: 'Karty na ten miesiąc się skończyły. Nic nie zostało pobrane — półka uzupełni się w przyszłym miesiącu.',
+      cap: 'Jedna karta podarunkowa co 60 dni. Nic nie zostało pobrane.',
+    },
     noShelfYet: 'Nie ma jeszcze kart podarunkowych. Punkty zostają — lista wypełni się, gdy dołączą marki.',
 
     atCounter: 'Kod odczytuje się przy kasie. Nic tutaj nie jest wydane, dopóki ktoś go nie zeskanuje.',

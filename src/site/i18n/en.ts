@@ -968,6 +968,14 @@ export const en = {
     buying: 'Buying…',
     buyFailed: 'That did not go through, and nothing was charged. Try again.',
     priorityOnly: 'On a paid plan only',
+    /* Rulebook §9.4: gift cards are a paid-tier reward. Said above the shelf
+       to a free account, and as the reason when a purchase is refused. */
+    paidOnly: 'Gift cards are a Pro and Premium reward. Your points stay yours — upgrade to spend them here.',
+    refused: {
+      plan: 'Gift cards are a Pro and Premium reward, so nothing was charged.',
+      pool: 'This month’s gift cards are gone. Nothing was charged — the shelf refills next month.',
+      cap: 'One gift card every 60 days. Nothing was charged.',
+    },
     noShelfYet: 'No gift cards stocked yet. Points keep — this fills up as brands come on.',
 
     atCounter: 'A code is read at the counter. Nothing here is spent until somebody scans it.',

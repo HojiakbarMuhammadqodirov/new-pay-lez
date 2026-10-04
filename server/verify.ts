@@ -909,7 +909,7 @@ async function stockCodes(db: Db, stockId: string, n: number, tag = stockId): Pr
 }
 
 async function giftCardStock(): Promise<void> {
-  describe('§2.1 / §9.4 gift cards -- open to every account, priced by rule, pooled, and never oversold');
+  describe('§2.1 / §9.4 gift cards -- Pro and Premium only, priced by rule, pooled, and never oversold');
   const w = await world();
   const at = now();
 
@@ -925,10 +925,15 @@ async function giftCardStock(): Promise<void> {
     await ledger.earn(w.db, { userId: id, points: 5000, reason: 'adjustment', at });
     return id;
   };
-  /* What the route calls. There is no plan to read any more: gift cards are
-     open to every account since 2026-10-03. */
+  /* What the route calls: the plan's `gift_card_priority`, read at the
+     instant of the purchase. */
   const buy = async (userId: string, when: Iso = at) =>
-    await vouchers.redeemGiftCard(w.db, { userId, stockId: 'gcs_race', at: when });
+    await vouchers.redeemGiftCard(w.db, {
+      userId,
+      stockId: 'gcs_race',
+      at: when,
+      entitled: entitlements.entBool(await entitlements.entitlementsFor(w.db, { userId }, when), 'gift_card_priority'),
+    });
 
   /* A 10 zł card with one unit, and a stored `points_cost` of 10 that is a lie
      the server must not believe (the audited build priced cards from this
@@ -954,34 +959,28 @@ async function giftCardStock(): Promise<void> {
   eq('the shelf quotes the derived price', shelf.find((c) => c.id === 'gcs_race')?.points_cost, 1000);
   eq('…and leaves off a card nobody can be quoted for', shelf.some((c) => c.id === 'gcs_norate'), false);
 
-  /* ── the fixed monthly budget (2026-10-03) ── */
-  eq('the default fixed budget is 500 zł', (await vouchers.giftCardPool(w.db, at)).budgetMinor, 50_000);
-  eq('…so a card is on the shelf with nobody paying', ((await vouchers.giftCardShelf(w.db, at)).find((c) => c.id === 'gcs_race')?.left_this_month ?? 0) > 0, true);
-  /* The rest of this section measures the revenue share on its own. CONFIG is
-     `as const` at the type level only; zero the fixed part for these checks. */
-  (CONFIG.giftCards as { fixedMonthlyMajor: number }).fixedMonthlyMajor = 0;
+  /* ── no fixed budget: the pool is the revenue share alone ── */
+  eq('the default fixed budget is nothing', CONFIG.giftCards.fixedMonthlyMajor, 0);
   shelf = await vouchers.giftCardShelf(w.db, at);
 
   /* ── the pool, with nobody paying ── */
   eq('no paid subscriptions is an empty pool', (await vouchers.giftCardPool(w.db, at)).budgetMinor, 0);
   eq('…so nothing is left this month', shelf.find((c) => c.id === 'gcs_race')?.left_this_month, 0);
 
-  /* ── no plan gate (2026-10-03) ── */
+  /* ── fence 1: Pro and Premium only ── */
   await ledger.earn(w.db, { userId: w.customerId, points: 5000, reason: 'adjustment', at });
   eq(
-    'every plan publishes gift_card_priority, so older clients show the shop',
+    'the free plan does not carry gift_card_priority',
     entitlements.entBool(await entitlements.entitlementsFor(w.db, { userId: w.customerId }), 'gift_card_priority'),
-    true,
+    false,
   );
-  /* A free account is not refused for its plan. With nobody paying, the pool
-     is what says no -- a conflict about the month, not an entitlement. */
-  await throws('a free account meets the pool, not a plan gate', 'conflict', () => buy(w.customerId));
+  await throws('a free account is refused for its plan', 'entitlement_required', () => buy(w.customerId));
   eq('…and pays nothing for it', await ledger.balance(w.db, w.customerId), 5000);
 
   /* Five Pro subscribers: 5 × 19.99 zł of revenue, a fifth of it is a 19.99 zł
      pool — one 10 zł card and not two. A `manual` (operator-assigned) plan is
      not revenue and must not grow it. */
-  await pro('a'); // revenue only; the free account is the first buyer
+  const a = await pro('a');
   const b = await pro('b');
   const c1 = await pro('c');
   const d1 = await pro('d');
@@ -994,12 +993,11 @@ async function giftCardStock(): Promise<void> {
   shelf = await vouchers.giftCardShelf(w.db, at);
   eq('…which buys one of this card', shelf.find((c) => c.id === 'gcs_race')?.left_this_month, 1);
 
-  /* The free account buys it: the pool is what the paying customers fund,
-     and anyone may draw on it. */
-  const first = await buy(w.customerId);
-  eq('a free account gets a card', typeof first.code, 'string');
+  const first = await buy(a);
+  eq('a Pro account gets a card', typeof first.code, 'string');
   eq('…at the rule’s price', first.points, 1000);
-  eq('…and pays it', await ledger.balance(w.db, w.customerId), 4000);
+  eq('…and pays it', await ledger.balance(w.db, a), 4000);
+  await throws('the free account is still refused, with the pool open', 'entitlement_required', () => buy(w.customerId));
   eq('and the unit is gone', await left(), 0);
 
   await throws('an empty shelf refuses', 'conflict', () => buy(b));
@@ -1012,8 +1010,8 @@ async function giftCardStock(): Promise<void> {
   /* ── fence 3a: one card per user per sixty days ── */
   await w.db.run(`UPDATE gift_card_stock SET stock = 5 WHERE id = 'gcs_race'`);
   await stockCodes(w.db, 'gcs_race', 5, 'more');
-  await throws('a second card inside sixty days is refused', 'conflict', () => buy(w.customerId, plusDays(at, 1)));
-  eq('…and costs nothing', await ledger.balance(w.db, w.customerId), 4000);
+  await throws('a second card inside sixty days is refused', 'conflict', () => buy(a, plusDays(at, 1)));
+  eq('…and costs nothing', await ledger.balance(w.db, a), 4000);
 
   /* ── fence 3b: the month's pool ── */
   eq('the month has 9.99 zł left', (await vouchers.giftCardPool(w.db, at)).remainingMinor, 999);
@@ -1027,7 +1025,7 @@ async function giftCardStock(): Promise<void> {
 
   /* Sixty-one days on, the month's pool is whole again and the first buyer may
      buy again. */
-  const again = await buy(w.customerId, plusDays(at, 61));
+  const again = await buy(a, plusDays(at, 61));
   eq('sixty-one days later the first buyer may buy again', again.points, 1000);
 
   /*
@@ -1061,7 +1059,6 @@ async function giftCardStock(): Promise<void> {
   for (const buyer of [b, c1, d1, e1]) paid += 5000 - (await ledger.balance(w.db, buyer));
   eq('and the points taken are one price', paid, 1000);
 
-  (CONFIG.giftCards as { fixedMonthlyMajor: number }).fixedMonthlyMajor = 500;
   await w.db.close();
 }
 
@@ -6054,10 +6051,19 @@ async function httpSurface(): Promise<void> {
   );
   eq('the shelf quotes the rule’s price, not the row’s', shelfCard?.points_cost, giftCost);
 
-  /* No plan gate, and since 2026-10-03 a fixed monthly budget funds the pool,
-     so a free account with nobody paying can buy a card outright. */
+  /* Rulebook §9.4: Pro and Premium only. A free account is refused for its
+     plan, with the code a client turns into an upgrade prompt. */
+  const refused = await call('POST', '/v1/gift-cards', { token, key: `${key}-free`, body: { stockId: 'gcs_test' } });
+  eq('a free account is refused for its plan', [refused.status, refused.body.error?.code], [403, 'entitlement_required']);
+
+  /* On Pro, and with the month funded — an operator's courtesy plan is not
+     revenue, so the pool gets a fixed budget for this check. */
+  const buyerId = (await call('GET', '/v1/me', { token })).body.user.id as string;
+  await entitlements.startSubscription(w.db, { subject: { userId: buyerId }, planCode: 'pro', source: 'manual', at: now() });
+  const pool = CONFIG.giftCards as { fixedMonthlyMajor: number };
+  pool.fixedMonthlyMajor = 100;
   const gift = await call('POST', '/v1/gift-cards', { token, key, body: { stockId: 'gcs_test' } });
-  eq('a free account buys a gift card from the fixed budget', gift.status, 200);
+  eq('a Pro account buys a gift card', gift.status, 200);
   const again = await call('POST', '/v1/gift-cards', {
     token,
     key,
@@ -6076,6 +6082,7 @@ async function httpSurface(): Promise<void> {
     body: { stockId: 'gcs_zalando' },
   });
   eq('the same key with a different body is a conflict', conflict.status, 409);
+  pool.fixedMonthlyMajor = 0;
 
   const index = await call('GET', '/v1/deals');
   eq('deals are public', index.status, 200);
@@ -10471,6 +10478,10 @@ async function webPushRules(): Promise<void> {
 async function giftCardEngine(): Promise<void> {
   describe('gift cards -- codes, the shelf per country, used, cancelled, expired');
   const w = await world();
+  /* This section is about codes, not the pool (`giftCardStock` above), so it
+     funds the month directly. CONFIG is `as const` at the type level only. */
+  const pool = CONFIG.giftCards as { fixedMonthlyMajor: number };
+  pool.fixedMonthlyMajor = 1000;
   const admin = w.ownerId;
   const t0 = '2026-06-01T10:00:00.000Z';
 
@@ -10590,6 +10601,7 @@ async function giftCardEngine(): Promise<void> {
   eq('every operator write is on the audit log',
     Number((await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log WHERE action LIKE 'gift_card.%'`))?.n) >= 8, true);
 
+  pool.fixedMonthlyMajor = 0;
   await w.db.close();
 }
 

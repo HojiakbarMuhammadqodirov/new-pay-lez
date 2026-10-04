@@ -241,10 +241,11 @@ const PLANS: PlanSeed[] = [
       streak_freezes: 2,
       exclusive_deals: false,
       deal_early_access_hours: 0,
-      /* True on every plan since 2026-10-03, when gift cards were opened to
-         all accounts. Nothing on the server reads it now; it stays published
-         so an older app build, which gates its shop on it, shows the shop. */
-      gift_card_priority: true,
+      /* Rulebook §2.1 / §9.4: a gift card is face value Paylez buys, so it is a
+         paid-tier reward — false here, true on Pro and Premium.
+         `vouchers.redeemGiftCard` refuses on it, and a client draws the shop
+         as an upgrade prompt from the same key. */
+      gift_card_priority: false,
       monthly_stipend: 0,
       priority_support: false,
       assistant: true,

@@ -411,11 +411,10 @@ export const CONFIG = {
     pointsPerMajor: 100,
     anchorCurrency: 'PLN',
     /*
-     * The plan gate is `gift_card_priority`. §9.4 made gift cards a Pro and
-     * Premium perk; on 2026-10-03 the owner opened them to every account (the
-     * app no longer sells a tier, so the gate left nobody able to buy one), and
-     * that is the key set true on every plan in `settings.ts` — the gate in
-     * `vouchers.redeemGiftCard` still reads it, so closing it again is data.
+     * The plan gate is `gift_card_priority`, rulebook §9.4: Pro and Premium
+     * only (`settings.ts`). It was opened to every account on 2026-10-03 and
+     * closed again on the owner's instruction to follow the rulebook; opening
+     * it is one value per plan, not code.
      */
     /** §9.4 `PER_USER_CAP`: one card per this many days, rolling, so a handful
      *  of heavy users cannot take the month's whole pool between them. */
@@ -434,12 +433,12 @@ export const CONFIG = {
     poolShareBp: 2000,
     /**
      * A fixed monthly budget, in `anchorCurrency` major units, added to the
-     * revenue share above. Since 2026-10-03 nobody pays for a consumer plan,
-     * so the share alone is 0 and every card is sold out; the owner chose a
-     * fixed budget instead. Set `PAYLEZ_GIFT_POOL_MONTHLY=0` to go back to the
-     * revenue share only.
+     * revenue share above. **0 by default — the rulebook's pool is the revenue
+     * share alone**, so with no paid consumer subscription every card reads
+     * "sold out this month". `PAYLEZ_GIFT_POOL_MONTHLY` is the way to fund it
+     * on top without a deploy.
      */
-    fixedMonthlyMajor: Number(process.env.PAYLEZ_GIFT_POOL_MONTHLY ?? 500),
+    fixedMonthlyMajor: Number(process.env.PAYLEZ_GIFT_POOL_MONTHLY ?? 0),
   },
 
   /* ────────────────────────────────────────── §5 loyalty campaigns ── */

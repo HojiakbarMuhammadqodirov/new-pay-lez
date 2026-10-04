@@ -28,11 +28,13 @@ import {
   type WalletStampCard,
   type WalletVoucher,
 } from './api/wallet';
+import { ApiError } from './api/client';
 import { useAuth } from './auth/context';
 import { canAfford } from './auth/player';
 import { isPicture } from './auth/picture';
 import { PATHS } from './router';
 import { CounterCode, VenueMark, VenueSheet } from './venueSheet';
+import { SubscribeButton } from './subscribe';
 import { VerifyEmail } from './VerifyEmail';
 
 /**
@@ -849,14 +851,21 @@ export function WalletApp() {
   const wallet = copy.wallet;
   const [language] = useLanguage();
   const separator = useGroupSeparator();
-  const { account } = useAuth();
+  const { account, entitlements } = useAuth();
+  /*
+   * Rulebook §9.4: gift cards are Pro and Premium only. Read off the session's
+   * entitlements, and only a *known* "no" locks the shelf — `null` is "not
+   * answered yet", and a paying customer must not see the upgrade prompt every
+   * time a request is slow. The server refuses either way.
+   */
+  const giftLocked = entitlements !== null && entitlements.gift_card_priority !== 'true';
 
   const [tab, setTab] = useState(0);
   const [category, setCategory] = useState<string | null>(null);
   const [terms, setTerms] = useState<string | null>(null);
   /** The stock id whose purchase is in flight, and how the last one ended. */
   const [buying, setBuying] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<null | 'plan' | 'pool' | 'cap' | 'other'>(null);
   /** The venue open in the sheet, and the control that opened it. */
   const [sheet, setSheet] = useState<{ venue: VenueRef; from: HTMLElement | null } | null>(null);
 
@@ -899,7 +908,7 @@ export function WalletApp() {
   const buy = useCallback(
     async (stockId: string) => {
       setBuying(stockId);
-      setFailed(false);
+      setFailed(null);
       try {
         await redeemGiftCard(stockId);
         /* The server is the record of both halves — the new card and the points
@@ -907,8 +916,20 @@ export function WalletApp() {
            subtraction here would be this page inventing a balance again. */
         reload();
         reloadShelf();
-      } catch {
-        setFailed(true);
+      } catch (error) {
+        /* Three of the server's refusals are rules rather than faults, and
+           each is its own sentence: the plan, the month's pool, the 60 days. */
+        const reason =
+          error instanceof ApiError
+            ? error.code === 'entitlement_required'
+              ? 'plan'
+              : error.detail.reason === 'pool_exhausted'
+                ? 'pool'
+                : error.detail.reason === 'per_user_cap'
+                  ? 'cap'
+                  : 'other'
+            : 'other';
+        setFailed(reason);
       } finally {
         setBuying(null);
       }
@@ -1258,6 +1279,18 @@ export function WalletApp() {
             <p>{wallet.catalogueLede}</p>
           </div>
 
+          {/* Rulebook §9.4: a free account sees the shelf — what it would get —
+              and is told, once and above it, what opens it. */}
+          {giftLocked && (
+            <div className="wal-paid" data-reveal>
+              <p className="wal-rule">
+                <Icon name="shield" size={15} />
+                {wallet.paidOnly}
+              </p>
+              <SubscribeButton planCode="pro" planName={copy.subscription.plans[1].name} />
+            </div>
+          )}
+
           {shelf.state.status === 'error' ? (
             <Down result={shelf} />
           ) : shelf.state.status === 'loading' ? (
@@ -1304,12 +1337,14 @@ export function WalletApp() {
                     <button
                       type="button"
                       className="btn btn-solid gift-buy"
-                      disabled={out || !afford || inFlight}
+                      disabled={out || !afford || inFlight || giftLocked}
                       onClick={() => void buy(card.id)}
                     >
                       {out
                         ? wallet.soldOut
-                        : inFlight
+                        : giftLocked
+                          ? wallet.priorityOnly
+                          : inFlight
                           ? wallet.buying
                           : afford
                             ? `${wallet.redeem} · ${fill(wallet.cost, { n: String(card.points_cost) })}`
@@ -1327,7 +1362,7 @@ export function WalletApp() {
           {failed && (
             <p className="wal-rule" data-reveal>
               <Icon name="shield" size={15} />
-              {wallet.buyFailed}
+              {failed === 'other' ? wallet.buyFailed : wallet.refused[failed]}
             </p>
           )}
 
