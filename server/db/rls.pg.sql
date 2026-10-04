@@ -39,7 +39,7 @@ END $$;
 
 -- ══════════════════════════════════════════════════ row-level security ══
 --
--- 88 tables, every one of them. RLS with no policy is a closed door: the
+-- 95 tables, every one of them. RLS with no policy is a closed door: the
 -- owner and any role with BYPASSRLS read normally, everybody else — which is
 -- what a published anon key authenticates as — reads nothing.
 --
@@ -78,7 +78,9 @@ ALTER TABLE points_ledger ENABLE ROW LEVEL SECURITY;
 ALTER TABLE points_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_counters ENABLE ROW LEVEL SECURITY;
 ALTER TABLE transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE team_members ENABLE ROW LEVEL SECURITY;
 ALTER TABLE qr_nonces ENABLE ROW LEVEL SECURITY;
+ALTER TABLE redemption_passes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE tag_registry ENABLE ROW LEVEL SECURITY;
 ALTER TABLE idempotency_keys ENABLE ROW LEVEL SECURITY;
 ALTER TABLE budgets ENABLE ROW LEVEL SECURITY;
@@ -92,6 +94,7 @@ ALTER TABLE campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE stamp_cards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE earned_rewards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE venue_visits ENABLE ROW LEVEL SECURITY;
+ALTER TABLE venue_reviews ENABLE ROW LEVEL SECURITY;
 ALTER TABLE venue_customers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE hot_deals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE deal_events ENABLE ROW LEVEL SECURITY;
@@ -126,6 +129,10 @@ ALTER TABLE category_defaults ENABLE ROW LEVEL SECURITY;
 ALTER TABLE email_verifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE media_assets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE daily_tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mission_claims ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mission_events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE mission_campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE learning_progress ENABLE ROW LEVEL SECURITY;
 ALTER TABLE benchmarks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assistant_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assistant_messages ENABLE ROW LEVEL SECURITY;

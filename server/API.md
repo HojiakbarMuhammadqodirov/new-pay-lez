@@ -54,15 +54,18 @@ reports all four kinds.
 
 ### Confirming the email address
 
-Sign-up emails a six-digit code (10 minutes, 5 tries, resend after 90 s, 10
-sends per account) and returns it as `verification` — or `null` if the mail
-failed, which does not fail the sign-up. `POST /v1/auth/verify/send` resends
-(`sent: false` inside the cooldown is not an error); `POST /v1/auth/verify`
-`{code}` confirms. Google sign-ins arrive verified.
+Sign-up emails a six-digit code (10 minutes, 5 tries, resend after 60 s, 5
+sends an hour) and reports it as `verification` — or `null` if the mail
+failed, which does not fail the sign-up. The code itself is never in a response.
+`POST /v1/auth/email/send-code` resends (`sent: false` inside the cooldown is
+not an error); `POST /v1/auth/email/verify` `{code}` confirms;
+`POST /v1/auth/password/reset-code` and `/reset` are "Forgot password?". Google
+sign-ins arrive verified.
 
 Nothing is gated on it except spending — `POST /v1/vouchers` and
 `POST /v1/gift-cards` answer `403 not_verified` — and only while
-`GET /v1/me`'s `user.spendNeedsVerifiedEmail` is true (`PAYLEZ_VERIFY_GATE`).
+`GET /v1/me`'s `user.emailVerificationRequired` is true (mail configured, the
+account newer than `PAYLEZ_VERIFY_SINCE`, `PAYLEZ_VERIFY_TO_SPEND` not `off`).
 
 ### Invite codes
 
@@ -628,7 +631,8 @@ is sold with a free trial** — `trial_days` is 0 on every one of them.
 | `streak_freezes` | 2 | 5 | *uncapped* |
 | `deal_early_access_hours` | 0 | 0 | 24 |
 | `profile_badge` | *(none)* | `star` | `crown` |
-| `exclusive_deals`, `gift_card_priority` | false | true | true |
+| `exclusive_deals` | false | true | true |
+| `gift_card_priority` *(gates nothing since 2026-10-03; gift cards are open to all)* | true | true | true |
 | `monthly_stipend`, `priority_support` | 0 / false | 0 / false | 200 / true |
 
 **What a visit pays is four named keys, not a multiplier.** `scan_points`,
@@ -664,8 +668,9 @@ branching on a locked flag.
 A capacity refusal is a `403 entitlement_required` carrying `entitlement`, `limit`
 and `used` — enough to write "that is your five for today" instead of "something
 went wrong". Three of them reach a consumer client: `assistant_uses_per_day` on
-`POST /v1/assistant/ask`, `word_hints_per_day` on a Word Builder hint event, and
-`gift_card_priority` on priority-only stock.
+`POST /v1/assistant/ask` and `word_hints_per_day` on a Word Builder hint event.
+(`gift_card_priority` used to be a third; gift cards are open to every account
+since 2026-10-03.)
 
 ---
 

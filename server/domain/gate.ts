@@ -29,8 +29,9 @@ import * as ledger from './ledger.ts';
 import * as notifications from './notifications.ts';
 import * as vouchers from './vouchers.ts';
 import * as consent from './consent.ts';
+import * as team from './team.ts';
 import { DomainError } from './errors.ts';
-import { newId } from './ids.ts';
+import { newId, shortCode } from './ids.ts';
 import { plausibleAmount } from './money.ts';
 import { open as openToken, seal } from '../crypto/tokens.ts';
 import { verifyTap } from '../crypto/nfc.ts';
@@ -52,6 +53,8 @@ export interface Transaction {
   currency: string;
   amount_entered_by: 'cashier' | 'customer' | null;
   confirmed_by: string | null;
+  /** The team member the confirmation is recorded against (server/TEAM.md); null for the owner. */
+  confirmed_member_id: string | null;
   points_granted: number;
   discount_minor: number;
   stamp_granted: number;
@@ -179,7 +182,9 @@ export type Trigger =
   | { kind: 'qr'; token: string; secret: string }
   | { kind: 'nfc'; piccHex: string; cmacHex: string; masterKey: Buffer }
   /** Partner-initiated at the till, for a customer whose phone is flat. */
-  | { kind: 'manual'; venueId: string; byUserId: string };
+  | { kind: 'manual'; venueId: string; byUserId: string }
+  /** §3b: the counter scanned the customer's pass. See `scanPass`. */
+  | { kind: 'pass'; pass: PassRow; byUserId: string };
 
 /**
  * Step 1–2: validate the trigger and open a PENDING transaction.
@@ -236,10 +241,16 @@ async function openInTransaction(
         at,
       });
       triggerRef = 'nfc';
+    } else if (trigger.kind === 'pass') {
+      /* `scanPass` has already checked the counter's `redeem` at this venue. */
+      venueId = await claimPass(db, trigger.pass, trigger.byUserId, at);
+      triggerRef = `pass:${trigger.pass.id}`;
     } else {
       venueId = trigger.venueId;
       triggerRef = trigger.byUserId;
-      await requireStaff(db, venueId, trigger.byUserId);
+      /* Opening a gate for a customer standing at the till is the counter's
+         "scan": a staff login needs that permission, the owner has it. */
+      await team.requireCounter(db, venueId, trigger.byUserId, 'scan', { customerId: input.userId, at });
     }
 
     const venue = await getVenue(db, venueId);
@@ -274,26 +285,11 @@ async function openInTransaction(
     const entryBy: 'cashier' | 'customer' =
       intent === 'earn' ? venue.amount_entry : 'cashier';
 
-    if (intent === 'voucher_redeem') {
-      const voucher = await db.get<vouchers.IssuedVoucher>(
-        `SELECT * FROM issued_vouchers WHERE id = $i AND user_id = $u`,
-        { i: input.intentRef ?? '', u: input.userId },
-      );
-      if (!voucher) throw new DomainError('not_found', 'voucher not found');
-      if (voucher.status !== 'active') throw new DomainError('already_used', 'voucher is not active');
-      if (voucher.venue_id !== venueId) throw new DomainError('forbidden', 'voucher is for another venue');
-      if (voucher.expires_at <= at) throw new DomainError('expired', 'voucher has expired');
-    }
-
-    if (intent === 'reward_redeem') {
-      const reward = await db.get<campaigns.EarnedReward>(
-        `SELECT * FROM earned_rewards WHERE id = $i AND user_id = $u`,
-        { i: input.intentRef ?? '', u: input.userId },
-      );
-      if (!reward) throw new DomainError('not_found', 'reward not found');
-      if (reward.status !== 'available') throw new DomainError('already_used', 'reward is not available');
-      if (reward.venue_id !== venueId) throw new DomainError('forbidden', 'reward is for another venue');
-      if (reward.expires_at <= at) throw new DomainError('expired', 'reward has expired');
+    if (intent !== 'earn') {
+      const heldAt = await heldVenue(db, intent, input.intentRef ?? '', input.userId, at);
+      if (heldAt !== venueId) {
+        throw new DomainError('forbidden', `${intent === 'voucher_redeem' ? 'voucher' : 'reward'} is for another venue`);
+      }
     }
 
     const id = newId('txn');
@@ -306,7 +302,9 @@ async function openInTransaction(
         i: id,
         v: venueId,
         u: input.userId,
-        tk: trigger.kind,
+        /* A pass is opened by the counter against the customer's account, which
+           is what `manual` already means; `trigger_ref` says which pass. */
+        tk: trigger.kind === 'pass' ? 'manual' : trigger.kind,
         tr: triggerRef,
         in: intent,
         ir: input.intentRef ?? null,
@@ -318,8 +316,305 @@ async function openInTransaction(
         at,
       },
     );
+    if (trigger.kind === 'pass') {
+      /* The bill the customer typed, held on the row the cashier is about to
+         read. A departure from §3.4's "cashier-entered", and a bounded one: it
+         is still only a number on a pending transaction, the cashier confirms
+         against it on their own screen, and corrects it first through
+         `/amount` when the till says otherwise. `amount_entered_by` says so. */
+      await db.run(
+        `UPDATE transactions SET amount_minor = $a, amount_entered_by = 'customer' WHERE id = $i`,
+        { a: trigger.pass.amount_minor, i: id },
+      );
+      await db.run(`UPDATE redemption_passes SET transaction_id = $x WHERE id = $p`, { x: id, p: trigger.pass.id });
+    }
     return await getTransaction(db, id);
   });
+}
+
+/**
+ * Where a held voucher or reward can be spent — after checking it is this
+ * customer's, still usable and in date. The one definition both the gate's
+ * open and the pass's mint use, so the two cannot drift on what "held" means.
+ */
+async function heldVenue(db: Db, intent: Exclude<Intent, 'earn'>, ref: string, userId: string, at: Iso): Promise<string> {
+  if (intent === 'voucher_redeem') {
+    const voucher = await db.get<vouchers.IssuedVoucher>(
+      `SELECT * FROM issued_vouchers WHERE id = $i AND user_id = $u`,
+      { i: ref, u: userId },
+    );
+    if (!voucher) throw new DomainError('not_found', 'voucher not found');
+    if (voucher.status !== 'active') throw new DomainError('already_used', 'voucher is not active');
+    if (voucher.expires_at <= at) throw new DomainError('expired', 'voucher has expired');
+    return voucher.venue_id;
+  }
+  const reward = await db.get<campaigns.EarnedReward>(
+    `SELECT * FROM earned_rewards WHERE id = $i AND user_id = $u`,
+    { i: ref, u: userId },
+  );
+  if (!reward) throw new DomainError('not_found', 'reward not found');
+  if (reward.status !== 'available') throw new DomainError('already_used', 'reward is not available');
+  if (reward.expires_at <= at) throw new DomainError('expired', 'reward has expired');
+  return reward.venue_id;
+}
+
+/* ═══════════════════════════════ §3b the pass: the gate the other way round ══ */
+
+/*
+ * The customer opens a voucher or reward they hold, types the bill, and their
+ * phone shows a QR — or, when the camera cannot read the screen, a six-letter
+ * code. The counter scans (or types) it, and that opens the same PENDING
+ * transaction the venue's own QR would have, with the amount already on it.
+ * The confirm is unchanged and is still the only grant.
+ *
+ * The pass is signed here and stored here, so the phone holds nothing it could
+ * forge: the token names a row, and the row says which voucher, which venue
+ * and how much. Single use (a conditional UPDATE, as `verifyQr`), short-lived,
+ * and one live pass per voucher — making a new one retires the old.
+ */
+
+export interface PassRow {
+  id: string;
+  code: string;
+  venue_id: string;
+  user_id: string;
+  intent: 'voucher_redeem' | 'reward_redeem';
+  intent_ref: string;
+  amount_minor: number;
+  currency: string;
+  issued_at: string;
+  expires_at: string;
+  used_at: string | null;
+  used_by: string | null;
+  transaction_id: string | null;
+}
+
+interface PassPayload {
+  p: string;
+  v: string;
+  exp: number;
+}
+
+/** What a pass token starts with, so a counter's scanner can tell it from any other QR. */
+export const PASS_PREFIX = 'plzpass.';
+
+export interface Pass {
+  id: string;
+  token: string;
+  code: string;
+  venueId: string;
+  intent: PassRow['intent'];
+  intentRef: string;
+  amountMinor: number;
+  currency: string;
+  expiresAt: string;
+  ttlSeconds: number;
+}
+
+export async function mintPass(
+  db: Db,
+  input: {
+    userId: string;
+    intent: PassRow['intent'];
+    intentRef: string;
+    amountMinor: number;
+    secret: string;
+    at?: Iso;
+  },
+): Promise<Pass> {
+  const at = input.at ?? now();
+  return db.tx(async () => {
+    const venueId = await heldVenue(db, input.intent, input.intentRef, input.userId, at);
+    const venue = await getVenue(db, venueId);
+    if (venue.status !== 'live') throw new DomainError('invalid_state', 'venue is not live');
+
+    const check = plausibleAmount(input.amountMinor, venue.max_amount_minor);
+    if (!check.ok) {
+      throw new DomainError('invalid_amount', `amount rejected: ${check.reason}`, {
+        reason: check.reason,
+        ceiling: venue.max_amount_minor,
+      });
+    }
+
+    /* One live pass per voucher: the screen still showing an older amount stops working. */
+    await db.run(
+      `UPDATE redemption_passes SET expires_at = $t
+        WHERE intent_ref = $r AND user_id = $u AND used_at IS NULL AND expires_at > $t`,
+      { t: at, r: input.intentRef, u: input.userId },
+    );
+
+    /* Unique among the venue's live passes, which is all a typed code is looked up in. */
+    let code = shortCode(6);
+    for (let tries = 0; tries < 8; tries += 1) {
+      const clash = await db.get<{ id: string }>(
+        `SELECT id FROM redemption_passes
+          WHERE venue_id = $v AND code = $c AND used_at IS NULL AND expires_at > $t`,
+        { v: venueId, c: code, t: at },
+      );
+      if (!clash) break;
+      code = shortCode(6);
+    }
+
+    const id = newId('pss');
+    const expires = plusMinutes(at, CONFIG.gate.passTtlSeconds / 60);
+    await db.run(
+      `INSERT INTO redemption_passes
+         (id, code, venue_id, user_id, intent, intent_ref, amount_minor, currency, issued_at, expires_at)
+       VALUES ($i, $c, $v, $u, $in, $r, $a, $cur, $t, $e)`,
+      {
+        i: id,
+        c: code,
+        v: venueId,
+        u: input.userId,
+        in: input.intent,
+        r: input.intentRef,
+        a: input.amountMinor,
+        cur: venue.currency,
+        t: at,
+        e: expires,
+      },
+    );
+    const payload: PassPayload = { p: id, v: venueId, exp: Math.floor(new Date(expires).getTime() / 1000) };
+    return {
+      id,
+      token: PASS_PREFIX + seal(input.secret, { ...payload }),
+      code,
+      venueId,
+      intent: input.intent,
+      intentRef: input.intentRef,
+      amountMinor: input.amountMinor,
+      currency: venue.currency,
+      expiresAt: expires,
+      ttlSeconds: CONFIG.gate.passTtlSeconds,
+    };
+  });
+}
+
+/** What the counter is shown before it confirms: whose, what, and for how much. */
+export interface PassPreview {
+  code: string;
+  intent: PassRow['intent'];
+  title: string;
+  customerName: string;
+  amountMinor: number;
+  currency: string;
+}
+
+/**
+ * The counter scans a pass (or types its code) and gets a PENDING transaction.
+ *
+ * Checked in the order that gives away least: the scanner must be on this
+ * venue's counter with `redeem` before anything about the pass is said; then
+ * which venue the pass is for; then whether it is spent or out of date. The
+ * claim itself is inside the open's transaction, so a pass two counters scan
+ * in the same moment opens one transaction, and the second is a replay.
+ */
+export async function scanPass(
+  db: Db,
+  input: {
+    token?: string | null;
+    code?: string | null;
+    venueId: string;
+    staffId: string;
+    memberId?: string | null;
+    secret: string;
+    at?: Iso;
+  },
+): Promise<{ transaction: Transaction; pass: PassPreview }> {
+  const at = input.at ?? now();
+  await team.requireCounter(db, input.venueId, input.staffId, 'redeem', { memberId: input.memberId ?? null, at });
+
+  let row: PassRow | undefined;
+  if (input.token) {
+    const raw = input.token.trim();
+    const payload = raw.startsWith(PASS_PREFIX)
+      ? openToken<PassPayload>(input.secret, raw.slice(PASS_PREFIX.length))
+      : null;
+    if (!payload?.p) throw new DomainError('invalid_trigger', 'this is not a Paylez deal pass');
+    row = await db.get<PassRow>(`SELECT * FROM redemption_passes WHERE id = $i`, { i: payload.p });
+  } else {
+    const code = (input.code ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (!code) throw new DomainError('bad_request', 'send the pass token or its code');
+    row = await db.get<PassRow>(
+      `SELECT * FROM redemption_passes WHERE venue_id = $v AND code = $c ORDER BY issued_at DESC LIMIT 1`,
+      { v: input.venueId, c: code },
+    );
+  }
+  if (!row) throw new DomainError('not_found', 'no deal pass with that code here');
+  if (row.venue_id !== input.venueId) throw new DomainError('forbidden', 'this pass is for another venue');
+  if (row.used_at) throw new DomainError('already_used', 'this pass has already been used');
+  if (row.expires_at <= at) {
+    throw new DomainError('expired', 'this pass has expired; ask the customer to open the deal again');
+  }
+
+  const transaction = await openTransaction(
+    db,
+    { kind: 'pass', pass: row, byUserId: input.staffId },
+    { userId: row.user_id, intent: row.intent, intentRef: row.intent_ref, at },
+  );
+  return { transaction, pass: await previewOf(db, row) };
+}
+
+async function previewOf(db: Db, row: PassRow): Promise<PassPreview> {
+  let title = 'A reward';
+  if (row.intent === 'voucher_redeem') {
+    const v = await db.get<{ discount_pct: number }>(`SELECT discount_pct FROM issued_vouchers WHERE id = $i`, {
+      i: row.intent_ref,
+    });
+    if (v) title = `${v.discount_pct}% off this order`;
+  } else {
+    const r = await db.get<{ label: string }>(`SELECT label FROM earned_rewards WHERE id = $i`, { i: row.intent_ref });
+    if (r?.label) title = r.label;
+  }
+  const user = await db.get<{ display_name: string }>(`SELECT display_name FROM users WHERE id = $i`, {
+    i: row.user_id,
+  });
+  return {
+    code: row.code,
+    intent: row.intent,
+    title,
+    /* First name only: the cashier needs to say it, not to know who it is. */
+    customerName: (user?.display_name ?? '').trim().split(/\s+/)[0] ?? '',
+    amountMinor: row.amount_minor,
+    currency: row.currency,
+  };
+}
+
+/**
+ * What became of a pass, for the customer's own phone — so the screen can say
+ * "the counter is confirming" and then "used" without being refreshed.
+ */
+export async function passStatus(db: Db, passId: string, userId: string, at: Iso = now()) {
+  const row = await db.get<PassRow>(`SELECT * FROM redemption_passes WHERE id = $i AND user_id = $u`, {
+    i: passId,
+    u: userId,
+  });
+  if (!row) throw new DomainError('not_found', 'pass not found');
+  const txn = row.transaction_id ? await getTransaction(db, row.transaction_id) : null;
+  const status =
+    txn?.status === 'committed'
+      ? 'used'
+      : txn?.status === 'pending'
+        ? 'scanned'
+        : txn
+          ? 'cancelled'
+          : row.expires_at <= at
+            ? 'expired'
+            : 'live';
+  return { id: row.id, status, code: row.code, expiresAt: row.expires_at, transaction: txn };
+}
+
+/** Burn a pass inside the open's transaction — the replay defence, as in `verifyQr`. */
+async function claimPass(db: Db, pass: PassRow, byUserId: string, at: Iso): Promise<string> {
+  const claimed = await db.run(
+    `UPDATE redemption_passes SET used_at = $t, used_by = $u
+      WHERE id = $i AND used_at IS NULL AND expires_at > $t`,
+    { t: at, u: byUserId, i: pass.id },
+  );
+  if (claimed.changes === 0) {
+    throw new DomainError('replay_detected', 'this pass has already been used', { venueId: pass.venue_id });
+  }
+  return pass.venue_id;
 }
 
 export async function getTransaction(db: Db, id: string): Promise<Transaction> {
@@ -354,8 +649,11 @@ export async function submitAmount(
     if (txn.status !== 'pending') throw new DomainError('invalid_state', 'transaction is not pending');
 
     const venue = await getVenue(db, txn.venue_id);
-    if (txn.amount_entered_by === 'cashier') await requireStaff(db, venue.id, input.actorId);
-    else if (input.actorId !== txn.user_id) await requireStaff(db, venue.id, input.actorId);
+    /* Typing the bill is part of confirming it, so it needs the same permission
+       the confirm will: `earn` for a visit, `redeem` for a redemption. */
+    if (txn.amount_entered_by === 'cashier' || input.actorId !== txn.user_id) {
+      await team.requireCounter(db, venue.id, input.actorId, permForIntent(txn.intent), { at });
+    }
 
     const check = plausibleAmount(input.amountMinor, venue.max_amount_minor);
     if (!check.ok) {
@@ -391,6 +689,8 @@ export interface Receipt {
   balance: number;
   /** §7.4-style reward connection: the nearest tier this balance now reaches. */
   nextTier: { discountPct: number; pointsNeeded: number } | null;
+  /** "Confirmed by <name>" — the team member it is recorded against, or null for the owner. */
+  confirmedBy: { memberId: string; name: string } | null;
 }
 
 /**
@@ -404,7 +704,19 @@ export interface Receipt {
  */
 export async function confirm(
   db: Db,
-  input: { transactionId: string; cashierId: string; at?: Iso },
+  input: {
+    transactionId: string;
+    cashierId: string;
+    /**
+     * The owner's (or a manager's) shared counter device naming who is on
+     * shift, so the confirmation is recorded against them. Checked in
+     * `team.requireCounter`: an active member of this venue holding the
+     * permission, or the call is refused. A staff login's own confirmations
+     * are always its own and this is ignored for it.
+     */
+    memberId?: string | null;
+    at?: Iso;
+  },
 ): Promise<Receipt> {
   const at = input.at ?? now();
   /* Set inside the transaction, acted on outside it — see the `.catch` below. */
@@ -416,7 +728,14 @@ export async function confirm(
     if (txn.amount_minor === null) throw new DomainError('invalid_state', 'no amount has been entered');
 
     const venue = await getVenue(db, txn.venue_id);
-    await requireStaff(db, venue.id, input.cashierId);
+    /* Inside the transaction, so a member revoked a millisecond ago is refused
+       here rather than after the grant. Who it is recorded against comes back
+       with the answer and is written onto the row below. */
+    const counter = await team.requireCounter(db, venue.id, input.cashierId, permForIntent(txn.intent), {
+      memberId: input.memberId ?? null,
+      customerId: txn.user_id,
+      at,
+    });
 
     if (minutesBetween(txn.opened_at, at) > CONFIG.gate.pendingTtlMinutes) {
       timedOut = true;
@@ -507,12 +826,13 @@ export async function confirm(
 
     await db.run(
       `UPDATE transactions
-          SET status = 'committed', confirmed_at = $t, confirmed_by = $c,
+          SET status = 'committed', confirmed_at = $t, confirmed_by = $c, confirmed_member_id = $cm,
               points_granted = $p, discount_minor = $d, stamp_granted = $s
         WHERE id = $i AND status = 'pending'`,
       {
         t: at,
         c: input.cashierId,
+        cm: counter.memberId,
         p: pointsGranted,
         d: discountMinor,
         s: stamped ? 1 : 0,
@@ -530,6 +850,7 @@ export async function confirm(
       visitCounted,
       balance,
       nextTier: await nearestTier(db, venue.id, balance),
+      confirmedBy: await team.confirmedByOf(db, counter.memberId),
     };
   }).catch(async (error: unknown): Promise<never> => {
     /*
@@ -589,7 +910,9 @@ export async function cancel(
   /* Either side may walk away from a pending gate: the customer changed their
      mind, or the cashier is closing the till. Nothing has been granted, so there
      is nothing to protect and no reason to make it hard. */
-  if (input.actorId !== txn.user_id) await requireStaff(db, txn.venue_id, input.actorId);
+  if (input.actorId !== txn.user_id) {
+    await team.requireCounter(db, txn.venue_id, input.actorId, ['earn', 'redeem', 'scan'], { at });
+  }
 
   await db.run(
     `UPDATE transactions SET status = 'cancelled', cancelled_at = $t, cancel_reason = $r
@@ -1059,28 +1382,27 @@ export async function nearestTier(
 }
 
 /**
- * Who may confirm at this venue.
+ * Who may *run* this venue — the partner dashboard's gate, which every
+ * `auth: 'partner'` route reaches through `mine()`.
  *
- * The owner, or an admin. `manager` is in the role table already (B1
- * future-proofing) and is accepted here so inviting one later is a row rather
- * than a code change — which is exactly what "without schema migration" was
- * asking for.
+ * The owner, an admin, or **this venue's** active manager (`domain/team.ts`).
+ *
+ * It used to accept the global `manager` role from `user_roles` as well — "B1
+ * future-proofing", so inviting one later would be a row rather than a code
+ * change. The row it anticipated would have been a key to *every* venue on the
+ * platform, because nothing tied the role to one. Managers are venue-scoped
+ * rows in `team_members` now and the global role is not read here any more.
+ *
+ * The counter's own acts — scan, confirm, redeem — go through
+ * `team.requireCounter` instead, which also admits staff with the matching
+ * permission and says whom the act is recorded against.
  */
 export async function requireStaff(db: Db, venueId: string, userId: string): Promise<void> {
-  const owner = await db.get<{ owner_user_id: string | null }>(
-    `SELECT owner_user_id FROM venues WHERE id = $v`,
-    { v: venueId },
-  );
-  if (owner?.owner_user_id === userId) return;
-
-  const role = await db.get<{ role: string }>(
-    `SELECT role FROM user_roles WHERE user_id = $u AND role IN ('admin', 'manager')`,
-    { u: userId },
-  );
-  if (role) return;
-
-  throw new DomainError('forbidden', 'only venue staff may confirm at this venue');
+  await team.requireManage(db, venueId, userId);
 }
+
+/** The counter permission a gate intent needs: a visit is `earn`, the two redemptions `redeem`. */
+export const permForIntent = (intent: Intent): team.Perm => (intent === 'earn' ? 'earn' : 'redeem');
 
 /** The pool position a partner app shows beside its confirmation queue. */
 export const budgetSnapshot = async (db: Db, venueId: string, at: Iso = now()) =>

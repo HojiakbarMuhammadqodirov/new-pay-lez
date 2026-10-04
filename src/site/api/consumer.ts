@@ -126,11 +126,12 @@ export interface Me {
      */
     emailVerifiedAt: string | null;
     /**
-     * Whether that null currently blocks spending (`PAYLEZ_VERIFY_GATE` on the
-     * server). Optional because a server older than this build does not send
-     * it — and absent reads as "no", which is the true answer from such a server.
+     * Whether that null would block a spend right now — buying a voucher or a
+     * gift card answers 403 `not_verified` while it is true. Optional because
+     * a server older than this build does not send it, and absent reads as
+     * "no", which is the true answer from such a server.
      */
-    spendNeedsVerifiedEmail?: boolean;
+    emailVerificationRequired?: boolean;
     /**
      * §1.4's standing answer: share my profile with the venues I visit.
      *
@@ -202,11 +203,21 @@ export interface Referrals {
 }
 
 /**
- * Whether an invite code would bind. Asked by the sign-up form before the code
- * is used, because the sign-up itself deliberately does not refuse a bad one.
+ * Who an invite code belongs to — the same public lookup the invite page
+ * reads. A 404 is "no such code", which is how the sign-up form learns a typo;
+ * the sign-up itself deliberately does not refuse a bad one.
  */
+export interface ReferralLookup {
+  code: string;
+  /** "Marta K." — first name and an initial, never an address. */
+  name: string;
+  link: string;
+  inviteeReward: number;
+  referrerReward: number;
+}
+
 export const checkReferralCode = (code: string) =>
-  call<{ valid: boolean }>(`/v1/referrals/codes/${encodeURIComponent(code)}`);
+  call<ReferralLookup>(`/v1/referrals/codes/${encodeURIComponent(code)}`);
 
 /* ══════════════════════════════════════════════ proving the address ══ */
 
@@ -215,21 +226,14 @@ export interface CodeSent {
   sent: boolean;
   nextSendAt: string;
   expiresAt: string;
-  sends: number;
-  /**
-   * The code itself, and **only** on a server whose email adapter is local.
-   *
-   * It is here so a local checkout can finish a sign-up: the local adapter
-   * logs the message and delivers nowhere. A deployment that is really sending
-   * mail never populates it — a code in a response is a code an attacker can
-   * read without having the address — so the screen treats it as an absent
-   * field rather than as the way to get the code.
-   */
-  code?: string;
 }
 
-/** Send, or resend, the sign-up code. Needs the session sign-up returned. */
-export const sendCode = () => call<CodeSent>('/v1/auth/verify/send', { method: 'POST' });
+/**
+ * Send, or resend, the confirmation code to this account's own address. Needs
+ * the session sign-up returned. The code never comes back in a response — a
+ * local server logs it instead.
+ */
+export const sendCode = () => call<CodeSent>('/v1/auth/email/send-code', { method: 'POST' });
 
 export interface CodeConfirmed {
   verified: boolean;
@@ -238,7 +242,7 @@ export interface CodeConfirmed {
 }
 
 export const confirmCode = (code: string) =>
-  call<CodeConfirmed>('/v1/auth/verify', { method: 'POST', body: { code } });
+  call<CodeConfirmed>('/v1/auth/email/verify', { method: 'POST', body: { code } });
 
 export const patchLanguage = (language: string) =>
   call<Me>('/v1/me', { method: 'PATCH', body: { language } });
@@ -336,8 +340,11 @@ export type ServerGameType =
   | 'word_builder'
   | 'memory_match'
   | 'flight'
+  /* The site's own 2048 and Food Cross engines. The server also carries
+     `game_2048` and `food_cross`, the phone's replayed versions, which this
+     site never opens. */
   | 'merge_2048'
-  | 'food_cross'
+  | 'food_cross_live'
   | 'food_ninja'
   | 'snake'
   | 'cannon_numbers'
@@ -519,10 +526,10 @@ export interface Finish {
  * (rulebook §3), which is the accidental tap.
  */
 export interface Abandoned {
-  abandoned: boolean;
+  sessionId: string;
   refunded: boolean;
-  energyLeft: number;
-  energyNextAt: string | null;
+  /** The tank after it. */
+  energy: { energy: number; max: number; nextAt: string | null };
 }
 
 export const abandonRound = (sessionId: string) =>

@@ -15,12 +15,12 @@
  * thing for a screen to say, and every screen that reads one now says it.
  */
 import { existsSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { CONFIG } from './config.ts';
 import { openDb, type Db } from './db/db.ts';
 import { openDb as openPgDb } from './db/pg.ts';
-import { WORD_LANGUAGES, importLegacy } from './db/import.ts';
+import { WORD_BANK_CSV, WORD_LANGUAGES, importLegacy } from './db/import.ts';
 import { provisionAdmin } from './domain/accounts.ts';
 import { QUIZZES } from './domain/games.ts';
 import { seedPlatform } from './domain/settings.ts';
@@ -30,7 +30,7 @@ import { startScheduler } from './jobs.ts';
 import * as email from './ports/email.ts';
 import { reconcileStock as reconcileGiftStock } from './domain/giftCards.ts';
 import * as push from './ports/push.ts';
-import { spendGateOn } from './domain/verification.ts';
+import { gateOn } from './domain/verification.ts';
 import type { Route } from './http/router.ts';
 
 export interface BootOptions {
@@ -183,10 +183,29 @@ export async function boot(options: BootOptions = {}): Promise<{ db: Db; routes:
     ))?.n ?? 0;
   const untranslated = hintsTranslated === 0;
 
+  /*
+   * **A word bank that predates the 2 000-word CSV.** The fifth of the same
+   * shape: a database filled from the old JSON lists holds 136 words per
+   * language, which clears the floor above, so nothing would ever swap it for
+   * the CSV — and its rows have no tiles, so no Uzbek word could be built. Asked
+   * only when the file is there, or a checkout without it would re-import on
+   * every boot to no effect.
+   */
+  const untiled =
+    existsSync(join(options.gamesDir ?? 'updates', WORD_BANK_CSV)) &&
+    ((await db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM word_bank WHERE tiles IS NULL AND language IN (${
+        WORD_LANGUAGES.map((language) => `'${language}'`).join(', ')
+      })`,
+    ))?.n ?? 0) > 0;
+
   if (
     options.reimport || venues === 0 || missing.length > 0 || short.length > 0 ||
-    starved.length > 0 || untranslated
+    starved.length > 0 || untranslated || untiled
   ) {
+    if (!options.quiet && untiled) {
+      console.log(`re-importing: the word bank predates ${WORD_BANK_CSV}`);
+    }
     if (!options.quiet && untranslated && venues > 0) {
       console.log('re-importing: word hints have no translations');
     }
@@ -264,12 +283,7 @@ export async function main(): Promise<void> {
   const args = new Set(process.argv.slice(2));
 
   /* Refused before anything else starts, for the `PAYLEZ_BILLING` reason: a
-     deployment that asked for real email and has no key would otherwise come
-     up looking healthy and send nobody their sign-up code. */
-  if (email.mode() === 'live' && !email.configured()) {
-    throw new Error('PAYLEZ_EMAIL=live but RESEND_API_KEY is unset — refusing to start.');
-  }
-  /* Same reason: a server that would fail every push should not come up. */
+     server that would fail every push should not come up looking healthy. */
   if (!push.configured()) {
     throw new Error('PAYLEZ_PUSH=live but VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY are unset — refusing to start.');
   }
@@ -294,16 +308,16 @@ export async function main(): Promise<void> {
      sign-up code goes to this log and to nobody's inbox. Correct on a laptop,
      and a support queue on a server. */
   if (email.mode() === 'local') {
-    console.warn('  ⚠  PAYLEZ_EMAIL is not live — sign-up codes are written to this log, not emailed.');
+    console.warn('  ⚠  PAYLEZ_RESEND_KEY is unset — email codes are written to this log, not emailed.');
   } else {
-    console.log(`email: live via Resend, from ${email.sender()}`);
+    console.log(`email: live via Resend, from ${email.from()}`);
   }
   console.log(
     push.webPublicKey()
       ? 'push: live — browsers get the daily game reminder'
       : 'push: local — notifications go to the inbox; no browser is pushed (PAYLEZ_PUSH)',
   );
-  console.log(`email confirmation gate on spending: ${spendGateOn() ? 'on' : 'off'} (PAYLEZ_VERIFY_GATE)`);
+  console.log(`email confirmation gate on spending: ${gateOn() ? 'on' : 'off'} (PAYLEZ_VERIFY_TO_SPEND)`);
 
   /* Part C's console is unreachable without this — see `provisionAdmin`. It is
      reported either way, because "the operations console has no way in" is not

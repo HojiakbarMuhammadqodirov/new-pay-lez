@@ -3370,7 +3370,20 @@ console.log('\nthe daily game, and the region rule');
   check('the daily pool leaves out the one card not everybody has',
     !DAILY_POOL.some((game) => game.id === 'wordLocal'),
     DAILY_POOL.map((game) => game.id).join(', '));
-  check('…and contains everything else', DAILY_POOL.length === GAMES.length - 1);
+  /* The server's rotation, slot for slot — the poster is the game the bonus is
+     paid on. Read as text, because the two programs share no code. */
+  {
+    const serverPool = readFileSync(new URL('../server/domain/games.ts', import.meta.url), 'utf8')
+      .match(/DAILY_GAME_POOL[^=]*=\s*\[([\s\S]*?)\n\];/)?.[1] ?? '';
+    const slots = [...serverPool.matchAll(/\[([^\]]*)\]/g)].map((m) => m[1].match(/'([a-z_0-9]+)'/)?.[1]);
+    const asServer: Record<string, string> = {
+      flags: 'flag', brain: 'brain', poland: 'local', word_builder: 'word', memory_match: 'memory',
+      flight: 'flight', game_2048: 'merge', food_cross: 'food',
+    };
+    check('…and is the server’s eight, in its order',
+      JSON.stringify(slots.map((slot) => asServer[slot ?? ''])) === JSON.stringify(DAILY_POOL.map((game) => game.id)),
+      slots.join(', '));
+  }
 
   check('the same day is the same game', dailyGame('2026-03-04') === dailyGame('2026-03-04'));
   check('…and the index points back at it',

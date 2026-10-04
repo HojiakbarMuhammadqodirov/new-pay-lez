@@ -43,6 +43,7 @@ const str = (description?: string): Schema => ({ type: 'string', ...(description
 const int = (description?: string): Schema => ({ type: 'integer', ...(description ? { description } : {}) });
 const bool = (description?: string): Schema => ({ type: 'boolean', ...(description ? { description } : {}) });
 const iso = (description: string): Schema => ({ type: 'string', format: 'date-time', description });
+const obj = (properties: Record<string, Schema>): Schema => ({ type: 'object', properties });
 
 /**
  * The game enum, read from the same tuple the route validates against and the
@@ -206,16 +207,14 @@ const SCHEMAS: Record<string, Schema> = {
             type: 'string',
             nullable: true,
             description:
-              'When the address was proved, or null. Null on an account **with** an email is ' +
-              'the state to draw a "confirm your email" prompt from (`POST /v1/auth/verify/send`, ' +
-              '`POST /v1/auth/verify`). A Google sign-in is stamped on the way in, and accounts ' +
-              'that existed before confirmation returned were stamped by a migration. An account ' +
-              'with no email (provisional) has nothing to prove.',
+              'When the address was proved, or null. Stamped by a Google sign-in, by ' +
+              '`POST /v1/auth/email/verify`, and by a password reset. Null with an `email` ' +
+              'is the state a client offers "confirm your email" for — as a banner, not a block.',
           },
-          spendNeedsVerifiedEmail: bool(
-            'Whether a null `emailVerifiedAt` currently blocks spending — buying a venue ' +
-              'voucher or a gift card answers 403 `not_verified` while this is true. Earning ' +
-              'is never blocked. Off until every client can take a code; word the prompt from it.',
+          emailVerificationRequired: bool(
+            'Whether buying a voucher or redeeming a gift card would be refused with ' +
+              '`403 not_verified` right now. False while the server has no mail transport, ' +
+              'and false for proved, Google, guest and pre-`PAYLEZ_VERIFY_SINCE` accounts.',
           ),
           venueSharingDefault: bool(
             '§1.4’s standing answer: may a venue I visit be told who I am. **On by default**, ' +
@@ -475,6 +474,102 @@ const SCHEMAS: Record<string, Schema> = {
       },
       opened_at: str(),
       confirmed_at: { type: 'string', nullable: true },
+      confirmedBy: {
+        nullable: true,
+        allOf: [ref('ConfirmedBy')],
+        description:
+          'On `GET /v1/gate/transactions/{id}` only. The team member the confirm is recorded ' +
+          'against (server/TEAM.md); null when the owner confirmed as themselves.',
+      },
+    },
+  },
+
+  ConfirmedBy: {
+    type: 'object',
+    description: 'Who on the team confirmed a transaction. The owner reads it as “Confirmed by <name>”.',
+    properties: { memberId: str(), name: str('The member’s name as the owner entered it.') },
+  },
+
+  TeamPerms: {
+    type: 'object',
+    description:
+      'The six counter permissions (server/TEAM.md). Templates: cashier = earn, redeem, scan, ' +
+      'running; shift lead = all six. A manager and the owner hold all six by role.',
+    properties: {
+      earn: bool('Enter the bill and confirm an earning visit.'),
+      redeem: bool('Confirm a voucher or reward redemption.'),
+      scan: bool('Show the venue QR, open a manual transaction, look a customer up.'),
+      running: bool('See what the venue is running.'),
+      count: bool('See today’s customer count and recent customers.'),
+      pause: bool('Pause and resume what is running.'),
+    },
+  },
+
+  TeamMember: {
+    type: 'object',
+    description: 'One row of a venue’s team. The join code is never part of it.',
+    properties: {
+      id: str(),
+      name: str(),
+      role: { type: 'string', enum: ['manager', 'shiftlead', 'cashier', 'custom'] },
+      perms: ref('TeamPerms'),
+      status: { type: 'string', enum: ['invited', 'active', 'revoked'] },
+      joinedAt: { type: 'string', format: 'date-time', nullable: true },
+      lastSeenAt: { type: 'string', format: 'date-time', nullable: true },
+      onShift: bool(),
+      codeExpiresAt: {
+        type: 'string',
+        format: 'date-time',
+        nullable: true,
+        description: 'When the outstanding join code stops working, or null when there is none.',
+      },
+    },
+  },
+
+  Workspace: {
+    type: 'object',
+    description:
+      'One entry of the workspace switcher. `personal` has every other field null; `owner` ' +
+      'carries `role: "owner"` and all six perms.',
+    properties: {
+      kind: { type: 'string', enum: ['personal', 'owner', 'manager', 'staff'] },
+      venueId: { type: 'string', nullable: true },
+      venueName: { type: 'string', nullable: true },
+      memberId: { type: 'string', nullable: true },
+      role: { type: 'string', nullable: true },
+      perms: { nullable: true, allOf: [ref('TeamPerms')] },
+    },
+  },
+
+  Counter: {
+    type: 'object',
+    description:
+      'The staff counter. Each section is filled only when `perms` allows it; the client ' +
+      'draws what arrives and decides nothing.',
+    properties: {
+      venue: { type: 'object', properties: { id: str(), name: str() } },
+      member: { nullable: true, allOf: [ref('TeamMember')], description: 'Null for the owner.' },
+      perms: ref('TeamPerms'),
+      running: arrayOf({
+        type: 'object',
+        properties: {
+          id: str(),
+          kind: { type: 'string', enum: ['deal', 'stampCard', 'voucherTier'] },
+          name: str('English display string from the server.'),
+          sub: str('English display string from the server.'),
+          paused: bool(),
+          canPause: bool(),
+        },
+      }),
+      customersToday: { type: 'integer', nullable: true, description: 'Null without `count`.' },
+      recent: arrayOf({
+        type: 'object',
+        description:
+          'Today’s confirmed customers, newest first, up to 50; empty without `count`. `name` is ' +
+          'first name + last initial, and only for a customer who shares with this venue ' +
+          '(otherwise `Customer` / `?`).',
+        properties: { initials: str(), name: str(), detail: str(), time: iso('The confirm instant.') },
+      }),
     },
   },
 
@@ -494,6 +589,11 @@ const SCHEMAS: Record<string, Schema> = {
       stamped: bool(),
       reward: { nullable: true, allOf: [ref('Reward')] },
       visitCounted: bool('False on a second scan the same day — still a sale, not a second visit.'),
+      confirmedBy: {
+        nullable: true,
+        allOf: [ref('ConfirmedBy')],
+        description: 'The team member this confirm is recorded against; null for the owner.',
+      },
       balance: int(),
       nextTier: {
         nullable: true,
@@ -704,6 +804,24 @@ const SCHEMAS: Record<string, Schema> = {
       monthTotal: int('Everything earned in it. Equal to the sum of `monthSources`, and of `days`.'),
       monthSources: arrayOf(ref('EarnSource')),
       days: arrayOf(ref('CalendarDay')),
+    },
+  },
+
+  /** Rulebook §8 — one mission, as `GET /v1/missions` sends it. */
+  Mission: {
+    type: 'object',
+    required: ['id', 'number', 'title', 'description', 'reward', 'rewardLabel', 'progress', 'target', 'status', 'autoPaid'],
+    properties: {
+      id: str('Stable: `daily.todays_game`, `learning.pesel`, `seasonal.<campaign id>`.'),
+      number: int('The rulebook’s mission number.'),
+      title: str(),
+      description: str(),
+      reward: { ...int('Points a claim pays, or the mirrored bonus pays; null when not a number of points.'), nullable: true },
+      rewardLabel: str('What to print: "25", "streak +1", "1 freeze", "100 / 150 / 250".'),
+      progress: int(),
+      target: int(),
+      status: { type: 'string', enum: ['locked', 'open', 'complete', 'claimed'] },
+      autoPaid: bool('Paid automatically by the bonus it mirrors; never claimed here.'),
     },
   },
 
@@ -1080,52 +1198,56 @@ const DOCS: Record<string, Doc> = {
       properties: { token: str(), userId: str(), provisional: bool() },
     },
   },
-  'POST /v1/auth/verify/send': {
-    summary: 'Send, or resend, the email confirmation code',
+  'POST /v1/auth/email/send-code': {
+    summary: 'Send (or resend) the email confirmation code',
     description:
-      'Sign-up already sends the first code (its response carries `verification`), so ' +
-      'this is the resend button. A six-digit code, valid for 10 minutes, emailed in the ' +
-      "account's language.\n\n" +
-      'Inside the 90-second cooldown it answers **200 with `sent: false`** and `nextSendAt` ' +
-      'rather than an error — asking again while a message is slow is not a fault. After 10 ' +
-      'codes for one account it answers `quota_exceeded`.',
+      'To the signed-in account’s own address. Sign-up already sends the first one. A six-digit ' +
+      'code, valid 10 minutes, 5 attempts. Inside the 60-second cooldown the answer is ' +
+      '`sent: false` with `nextSendAt` — not an error. The code is never in a response.',
     tags: ['auth'],
     response: {
       type: 'object',
-      properties: {
-        sent: bool('False when the cooldown refused; nothing was sent.'),
-        nextSendAt: iso('When another send is allowed.'),
-        expiresAt: iso('When the current code stops working.'),
-        sends: int('Codes sent to this account so far, including this one.'),
-        code: str('**Development servers only** (local email adapter). Never present when mail is really sent.'),
-      },
+      properties: { sent: bool(), nextSendAt: str(), expiresAt: str() },
     },
     errors: [
-      [409, '`conflict` — the address is already confirmed. `quota_exceeded` — 10 codes have been sent.'],
-      [400, '`validation_failed` — the account has no email address.'],
+      [409, '`conflict` — the address is already confirmed.'],
+      [409, '`quota_exceeded` — five codes inside an hour.'],
     ],
   },
-  'POST /v1/auth/verify': {
+  'POST /v1/auth/email/verify': {
     summary: 'Confirm the email code',
-    description:
-      'Idempotent: confirming an account that is already proved is `granted: false`, not an ' +
-      'error. Spaces and dashes in the code are ignored. Five wrong answers end that code; ' +
-      'ask for a new one.',
     tags: ['auth'],
-    body: { code: str('The six digits from the email.') },
+    body: { code: str('Six digits. Spaces and dashes are ignored.') },
     required: ['code'],
-    response: {
-      type: 'object',
-      properties: {
-        verified: bool(),
-        granted: bool('True only for the call that actually proved it.'),
-      },
-    },
+    response: { type: 'object', properties: { verified: bool(), granted: bool('True only for the call that proved it.') } },
     errors: [
-      [400, '`validation_failed` — wrong code; `attemptsLeft` says how many tries remain.'],
+      [400, '`validation_failed` — wrong code; `attemptsLeft` says how many remain.'],
       [404, '`not_found` — no code has been sent.'],
-      [409, '`expired` — ask for a new one. `cap_reached` — five wrong answers; ask for a new one. `conflict` — the address changed after the code was sent.'],
+      [409, '`expired` — ask for a new one.'],
+      [409, '`cap_reached` — five wrong answers; ask for a new one.'],
     ],
+  },
+  'POST /v1/auth/password/reset-code': {
+    summary: 'Email a password-reset code',
+    description:
+      'Always `{ ok: true }`, whether or not the address has an account, so the route cannot ' +
+      'be used to find out which addresses do. The same code rules as confirmation.',
+    tags: ['auth'],
+    body: { email: str() },
+    required: ['email'],
+    response: { type: 'object', properties: { ok: bool() } },
+  },
+  'POST /v1/auth/password/reset': {
+    summary: 'Set a new password with the emailed code',
+    description:
+      'Drops every open session and marks the address as proved. The client then signs in ' +
+      'with the new password. Every code failure (no account, no code, expired, spent, wrong) ' +
+      'answers the same 400.',
+    tags: ['auth'],
+    body: { email: str(), code: str(), password: str() },
+    required: ['email', 'code', 'password'],
+    response: { type: 'object', properties: { reset: bool() } },
+    errors: [[400, '`validation_failed` — `field` is `password` (too short) or `code`.']],
   },
   'POST /v1/auth/signout': { summary: 'Revoke this session', tags: ['auth'], response: { type: 'object' } },
   'GET /v1/cities': {
@@ -1381,14 +1503,66 @@ const DOCS: Record<string, Doc> = {
       [409, '`insufficient_points`, or `budget_exhausted` when the venue has degraded this tier out.'],
     ],
   },
-  'GET /v1/gift-cards': { summary: 'The gift-card catalogue', tags: ['wallet'], response: arrayOf({ type: 'object' }) },
+  'GET /v1/gift-cards': {
+    summary: 'The gift-card catalogue',
+    description:
+      'Rulebook §2.1 / §9.4. `points_cost` is **derived** from the face value at 100 points per ' +
+      'złoty (converted through the rate sheet for other currencies; a card with no rate is not ' +
+      'listed) — the stored column is ignored. `left_this_month` is how many more of that card the ' +
+      'month’s pool (20% of consumer subscription revenue) can still buy, capped by stock.',
+    tags: ['wallet'],
+    response: arrayOf({ type: 'object' }),
+  },
   'POST /v1/gift-cards': {
     summary: 'Redeem points for a gift card',
+    description:
+      'Pro and Premium only, one card per account per 60 days, and only while the month’s pool ' +
+      'covers the card’s face value. The price is the derived one on the shelf.',
     tags: ['wallet'],
     body: { stockId: str() },
     required: ['stockId'],
     response: { type: 'object', properties: { id: str(), code: str(), points: int() } },
-    errors: [[403, '`entitlement_required` on priority-only stock.']],
+    errors: [
+      [403, '`entitlement_required` — gift cards are a Pro and Premium perk.'],
+      [409, '`conflict` — out of stock; `reason: per_user_cap` with `nextAt`; or `reason: pool_exhausted`.'],
+    ],
+  },
+  'POST /v1/deals/{id}/share': {
+    summary: 'Record a share of a deal (pays 25, three a day, once per deal)',
+    description:
+      'Rulebook §7.3. Call when the share sheet completes. Pays `CONFIG.earn.dealShared` at most ' +
+      '`dealSharedPerDay` times a day and once per deal per account. A share that pays nothing ' +
+      'is **not an error**: `granted: false` with `reason` `already_shared`, `daily_cap` or `not_live`.',
+    tags: ['deals'],
+    response: {
+      type: 'object',
+      properties: {
+        granted: bool(),
+        reason: str('Null when it paid.'),
+        points: int(),
+        sharedToday: int(),
+        perDay: int(),
+        balance: int(),
+      },
+    },
+  },
+  'POST /v1/venues/{id}/reviews': {
+    summary: 'Review a venue after a visit (pays 25, one per venue per 30 days)',
+    description:
+      'Rulebook §7.3 / §9.2. Needs a confirmed visit to the venue. Pays `CONFIG.earn.reviewAfterVisit` ' +
+      'with the review; a second review of the same venue inside `reviewEveryDays` is refused.',
+    tags: ['catalogue'],
+    body: { rating: int('1–5.'), body: str('Optional, at most 1000 characters.') },
+    required: ['rating'],
+    response: {
+      type: 'object',
+      properties: { review: { type: 'object' }, points: int(), balance: int() },
+    },
+    errors: [
+      [400, '`validation_failed` — `rating` is not 1–5, or `body` is too long.'],
+      [403, '`forbidden` — `reason: no_visit`.'],
+      [409, '`conflict` — `reason: review_window`, with `nextAt`.'],
+    ],
   },
 
   /* ── the gate ── */
@@ -1436,6 +1610,78 @@ const DOCS: Record<string, Doc> = {
     required: ['venueId', 'userId'],
     response: ref('Transaction'),
   },
+  'POST /v1/gate/passes': {
+    summary: 'A redemption pass: the customer shows it, the counter scans it',
+    description:
+      'For one voucher (`voucher_redeem`) or earned reward (`reward_redeem`) the caller holds, ' +
+      'with the bill they typed. The answer carries a signed `token` (starts `plzpass.`) to draw ' +
+      'as a QR, and a six-character `code` for a cashier to type when the camera cannot read the ' +
+      'screen. Single use, `ttlSeconds` long, and minting a new one for the same item retires the ' +
+      'last. Nothing is granted: the counter still confirms.',
+    tags: ['gate'],
+    body: {
+      intent: { type: 'string', enum: ['voucher_redeem', 'reward_redeem'] },
+      intentRef: str('The voucher or earned-reward id.'),
+      amountMinor: minor('The bill, as the customer typed it'),
+    },
+    required: ['intentRef', 'amountMinor'],
+    response: obj({
+      id: str(),
+      token: str(),
+      code: str(),
+      venueId: str(),
+      intent: str(),
+      intentRef: str(),
+      amountMinor: int(),
+      currency: str(),
+      expiresAt: str(),
+      ttlSeconds: int(),
+    }),
+    errors: [
+      [400, '`invalid_amount` — zero, or above the venue’s ceiling.'],
+      [404, 'Not a voucher or reward this account holds.'],
+      [409, '`already_used` or `expired` — the item cannot be spent.'],
+    ],
+  },
+  'POST /v1/gate/passes/scan': {
+    summary: 'The counter scans (or types) a customer’s pass',
+    description:
+      'Send `token` (the scanned QR) or `code` (typed). Opens a PENDING transaction with the ' +
+      'customer’s amount on it (`amount_entered_by: customer`), which the counter then confirms ' +
+      'through `/v1/gate/transactions/{id}/confirm` — or corrects through `/amount` first. ' +
+      'Needs `redeem` on this venue’s counter.',
+    tags: ['gate', 'partner'],
+    body: {
+      venueId: str('The venue whose counter is scanning.'),
+      token: str(),
+      code: str(),
+      memberId: str('Owner or manager only: who is on shift.'),
+    },
+    required: ['venueId'],
+    response: obj({
+      transaction: ref('Transaction'),
+      pass: obj({
+        code: str(),
+        intent: str(),
+        title: str('What is being redeemed, e.g. “10% off this order”.'),
+        customerName: str('First name only.'),
+        amountMinor: int(),
+        currency: str(),
+      }),
+    }),
+    errors: [
+      [403, 'Not on this venue’s counter with `redeem`, or the pass is for another venue.'],
+      [404, 'No pass with that code at this venue.'],
+      [409, '`already_used` or `expired`.'],
+      [422, '`invalid_trigger` — not a Paylez pass, or the signature does not verify.'],
+    ],
+  },
+  'GET /v1/gate/passes/{id}': {
+    summary: 'What became of my pass',
+    description: '`status` is `live`, `scanned`, `used`, `cancelled` or `expired`. The owner of the pass only.',
+    tags: ['gate'],
+    response: obj({ id: str(), status: str(), code: str(), expiresAt: str(), transaction: ref('Transaction') }),
+  },
   'GET /v1/gate/transactions/{id}': {
     summary: 'Poll a pending transaction',
     description: 'Either party may read it. This is how the customer’s phone sees the cashier confirm.',
@@ -1458,11 +1704,21 @@ const DOCS: Record<string, Doc> = {
     description:
       'Partner-side only, and the only call in the API that grants anything. Points, ' +
       'stamps, the discount, the deal claim and the referral payout all commit together ' +
-      'or none of them do.',
+      'or none of them do.\n\n' +
+      'The venue’s owner, a manager, or an active team member holding `earn` (for an ' +
+      'earning visit) or `redeem` (for a redemption) may confirm; a team member’s confirm ' +
+      'is recorded against them and comes back as `confirmedBy`. The owner’s shared ' +
+      'counter device may name `memberId` to attribute the confirm to whoever is on shift.',
     tags: ['gate', 'partner'],
+    body: {
+      memberId: str(
+        'Owner or manager only: the member to record the confirm against. Must be an active ' +
+          'member of this venue holding the permission, or the confirm is refused.',
+      ),
+    },
     response: ref('Receipt'),
     errors: [
-      [403, 'Only venue staff may confirm.'],
+      [403, 'Not on this venue’s counter, a revoked member, or missing `earn`/`redeem`.'],
       [409, '`expired` — the pending transaction timed out after 15 minutes.'],
     ],
   },
@@ -1529,9 +1785,10 @@ const DOCS: Record<string, Doc> = {
     description:
       '**No body.** The server knows who is asking and what day it is, and a claim that let the ' +
       'client name either is a claim the client can aim.\n\n' +
-      'Pays `CONFIG.earn.dailyCheckIn` through a seven-day shape — three days at the base rate, ' +
-      'three at double, the seventh at quadruple — restarting at rung one on the eighth ' +
-      'consecutive day and at rung one again after a missed day. A streak milestone (7, 30, 100) ' +
+      'Pays `CONFIG.earn.dailyCheckIn` — **a flat 5 every day** (rulebook §7.3). The response ' +
+      'still names a rung of a seven-day cycle (`cycleDay`) so a ladder can be drawn, but every ' +
+      'rung pays the same; it restarts at rung one on the eighth consecutive day and after a ' +
+      'missed day. A streak milestone (7, 30, 100) ' +
       'arrives as **its own ledger entry**, so a balance that jumped by 70 has two rows ' +
       'explaining it rather than one that cannot be checked.\n\n' +
       '**Safe to send twice, and two different guards make it so.** A second *claim* the same ' +
@@ -1543,6 +1800,62 @@ const DOCS: Record<string, Doc> = {
       'There is no way to claim a day that has gone.',
     tags: ['daily'],
     response: ref('DailyCheckIn'),
+  },
+  /* ── rulebook §8: missions (`domain/missions.ts`) ── */
+  'GET /v1/missions': {
+    summary: 'Every mission band, with this account’s progress on each mission',
+    description:
+      'Render the bands **in the order sent**; the seasonal and partner bands are present only ' +
+      'while an operator campaign is live. Progress is derived on the server from rounds, visits, ' +
+      'the ledger and the profile — never compute it on the phone.\n\n' +
+      '`status`: `locked` (the product or plan cannot do it yet), `open`, `complete` (ready to claim), ' +
+      '`claimed`. `autoPaid: true` means the reward *is* an automatic bonus paid elsewhere (check-in, ' +
+      'streak milestones, first visit, onboarding…): show it, never offer a claim button — except ' +
+      '`daily.check_in`, which is claimed through `POST /v1/daily/check-in` (or this API’s claim, ' +
+      'which calls the same thing). `rewardLabel` is what to print where the reward goes.',
+    tags: ['missions'],
+    response: {
+      type: 'object',
+      properties: {
+        bands: arrayOf({
+          type: 'object',
+          properties: {
+            key: { type: 'string', enum: ['daily', 'weekly', 'ongoing', 'once', 'seasonal', 'partner', 'learning'] },
+            title: str(),
+            resetsAt: { ...iso('When this band resets; null for a band that does not.'), nullable: true },
+            missions: arrayOf(ref('Mission')),
+          },
+        }),
+        unclaimed: int('Missions complete and waiting for a tap.'),
+      },
+    },
+  },
+  'POST /v1/missions/{id}/claim': {
+    summary: 'Claim a completed mission',
+    description:
+      'No body. Credits the ledger once per mission per period (`reason: mission`). ' +
+      '**409 `conflict`** when the mission is not complete, is already claimed this period, or is ' +
+      'auto-paid. Send an `Idempotency-Key`.',
+    tags: ['missions'],
+    response: {
+      type: 'object',
+      properties: { mission: ref('Mission'), points: int(), balance: int() },
+    },
+    errors: [[404, 'not_found — no such mission'], [409, 'conflict — not claimable now']],
+  },
+  'GET /v1/missions/learning/{id}': {
+    summary: 'A learning module (§8.7): its questions, without answers',
+    tags: ['missions'],
+  },
+  'POST /v1/missions/learning/{id}/answers': {
+    summary: 'Submit a learning module’s answers; the server grades',
+    description:
+      '`answers` is one option index per question, in order. Every answer right passes the module ' +
+      'and completes its mission, which is then claimed like any other. The reply names the right ' +
+      'answer for each question — this is teaching.',
+    tags: ['missions'],
+    body: { answers: arrayOf(int()) },
+    required: ['answers'],
   },
   'GET /v1/games/state': {
     summary: 'Energy, streak, freezes, accuracy, today’s shared word',
@@ -1692,29 +2005,31 @@ const DOCS: Record<string, Doc> = {
   'GET /v1/referrals': {
     summary: 'My code, and how the invites are going',
     description:
-      'The invite link the web shares is `https://www.pay-lez.com/sign-in?ref=<code>`. New codes are ' +
-      '`PY` plus six characters; older `PY####` codes still work. Both people are paid on the ' +
-      "invited friend's **first counted visit** at a partner venue — not at sign-up, not on a scan " +
-      "under the venue's minimum spend, and not at a till the inviter runs.",
+      '`code`, `link` (`https://www.pay-lez.com/i/<code>`), `joined` (rejected excluded), `completed`, `pointsEarned` ' +
+      '(what reached *this* account, milestone included, reversals netted), the four reward figures, and `people`: ' +
+      '`{ name, status: "joined"|"completed", joinedAt, completedAt, pointsAwarded }`, names as ' +
+      'first name + last initial. `referredBy` and `canRedeem` describe the other direction.',
     tags: ['social'],
-    response: {
-      type: 'object',
-      properties: {
-        code: str(),
-        joined: int('Friends who signed up with the code (rejected ones excluded).'),
-        completed: int('…of whom this many made the visit that pays.'),
-        pointsEarned: int("What this account was paid for invites, milestone included, reversals netted. It was the bond's cost to both sides — double the real figure."),
-      },
-    },
+    response: { type: 'object' },
   },
-  'GET /v1/referrals/codes/{code}': {
-    summary: 'Whether an invite code would bind',
+  'POST /v1/referrals/redeem': {
+    summary: 'Attach an invite code after sign-up',
     description:
-      'For a sign-up form to check a typed or linked code before using it — sign-up itself never ' +
-      'refuses a bad code (it reports `referral.applied: false`). Case, spaces and dashes are ignored. ' +
-      'Rate-limited per connection.',
+      'Once per account, before its first confirmed visit, never its own code, never circular. ' +
+      'Refusals carry `reason`: `unknown_code` (404), `self_referral` (400), `already_referred` ' +
+      '(409), `already_visited` (409), `circular` (409); a guest is 403.',
     tags: ['social'],
-    response: { type: 'object', properties: { valid: bool() } },
+    body: { code: { type: 'string', description: 'The code, or the whole invite link.' } },
+    response: { type: 'object' },
+  },
+  /* Keys are the `{param}` form `pathOf` produces. A `:param` key matches no
+     route and is silently dropped from the spec — both of these were, until
+     the keys were corrected. */
+  'GET /v1/referrals/codes/{code}': {
+    summary: 'Who an invite code belongs to',
+    description: 'Public. `{ code, name, link, inviteeReward, referrerReward }`, or 404.',
+    tags: ['social'],
+    response: { type: 'object' },
   },
   'GET /v1/admin/referrals': {
     summary: 'Referrals, newest first',
@@ -1737,16 +2052,150 @@ const DOCS: Record<string, Doc> = {
     response: { type: 'object' },
     errors: [[409, '`conflict` — already rejected.'], [404, '`not_found` — no such referral.']],
   },
-  'GET /v1/leaderboard/city': {
-    summary: 'The city weekly board',
+  'GET /v1/leaderboard/{scope}': {
+    summary: 'The weekly board: `city`, `country` or `global`',
     description:
       'Everyone is ranked; only opted-in players are listed. If you have not opted in ' +
-      'you still see your own rank, with `hidden: true`.',
+      'you still see your own rank, with `hidden: true`. Any other scope is a 404.',
     tags: ['social'],
-    query: [{ name: 'city', description: 'Defaults to the account’s city.' }],
+    query: [
+      { name: 'city', description: '`city` scope. Defaults to the account’s city.' },
+      { name: 'country', description: '`country` scope. Defaults to the account’s country.' },
+      { name: 'limit', description: 'Default 20.', schema: int() },
+    ],
     response: ref('Board'),
   },
   'GET /v1/leaderboard/friends': { summary: 'The friends board', tags: ['social'], response: ref('Board') },
+
+  /* ── team: Staff and Manager workspaces (server/TEAM.md) ──
+     Every route here is `auth: 'user'`; the venue question — owner, manager,
+     or an active member holding a permission — is answered in the handler, on
+     every request, so a revoked member is refused on the very next call. */
+  'GET /v1/partner/venues/{venueId}/team': {
+    summary: 'The venue’s team',
+    description:
+      'Owner, admin, or this venue’s manager. Revoked members are left out; a manager sees ' +
+      'the whole list but may only change cashiers, shift leads and custom roles.',
+    tags: ['team'],
+    response: { type: 'object', properties: { members: arrayOf(ref('TeamMember')) } },
+    errors: [[403, 'Not the owner or a manager of this venue.']],
+  },
+  'POST /v1/partner/venues/{venueId}/team': {
+    summary: 'Add a team member, and get their join code once',
+    description:
+      '`perms` may be partial: missing keys come from the role’s template. `code` is six ' +
+      'digits, single use, valid for 7 days, stored only as a keyed hash — **it is shown in ' +
+      'this response and never again**; `…/code` re-issues. At most 50 non-revoked members ' +
+      'per venue.',
+    tags: ['team'],
+    body: {
+      name: str(),
+      role: { type: 'string', enum: ['manager', 'shiftlead', 'cashier', 'custom'] },
+      perms: ref('TeamPerms'),
+    },
+    required: ['name', 'role'],
+    response: {
+      type: 'object',
+      properties: { member: ref('TeamMember'), code: str('Six digits. Shown once.') },
+    },
+    errors: [
+      [400, 'An unknown permission key or a non-boolean value.'],
+      [403, 'A manager adding a manager.'],
+      [409, '`cap_reached` — 50 members.'],
+    ],
+  },
+  'PATCH /v1/partner/venues/{venueId}/team/{memberId}': {
+    summary: 'Change a member’s role or permissions',
+    description:
+      'A role change starts from the new role’s template; `perms` then overrides it. A ' +
+      'manager may not edit, promote to, or demote a manager. A member of another venue is ' +
+      '404.',
+    tags: ['team'],
+    body: {
+      role: { type: 'string', enum: ['manager', 'shiftlead', 'cashier', 'custom'] },
+      perms: ref('TeamPerms'),
+    },
+    response: { type: 'object', properties: { member: ref('TeamMember') } },
+  },
+  'DELETE /v1/partner/venues/{venueId}/team/{memberId}': {
+    summary: 'Revoke a member',
+    description:
+      'Immediate: their workspace disappears from `GET /v1/me/workspaces`, their outstanding ' +
+      'code dies, and their next QR, confirm or counter read is a 403. A manager may not ' +
+      'revoke a manager, themselves included.',
+    tags: ['team'],
+  },
+  'POST /v1/partner/venues/{venueId}/team/{memberId}/code': {
+    summary: 'Re-issue a join code',
+    description:
+      'The old code stops working at once. For an active member (a new phone) the old account ' +
+      'stays linked until the new code is redeemed.',
+    tags: ['team'],
+    response: { type: 'object', properties: { code: str('Six digits. Shown once.') } },
+  },
+  'POST /v1/team/join': {
+    summary: 'Join a venue’s team with a code',
+    description:
+      'Any signed-in, non-guest account. Wrong, expired, used and revoked codes are one ' +
+      'answer — `404 not_found` — so a guess learns nothing. Five failures an hour per ' +
+      'account **or** per connection block the next attempt before the code is even looked ' +
+      'at, a right one included.',
+    tags: ['team'],
+    body: { code: str('Six digits.') },
+    required: ['code'],
+    response: { type: 'object', properties: { workspace: ref('Workspace') } },
+    errors: [
+      [403, 'A guest account.'],
+      [404, '`not_found` — no such live code.'],
+      [409, '`conflict` — the venue’s own owner, or already on this team. Costs no attempt.'],
+      [429, '`rate_limited`, with `retryAfterMinutes`.'],
+    ],
+  },
+  'GET /v1/me/workspaces': {
+    summary: 'The workspace switcher',
+    description:
+      '`personal` always first, then owned venues, then active memberships (managers before ' +
+      'staff). A revoked membership is simply absent.',
+    tags: ['team', 'me'],
+    response: { type: 'object', properties: { workspaces: arrayOf(ref('Workspace')) } },
+  },
+  'GET /v1/team/{venueId}/counter': {
+    summary: 'The staff counter',
+    description:
+      'Anybody on this venue’s counter: the owner, a manager, or an active member. Sections ' +
+      'the member’s `perms` do not cover arrive empty or null.',
+    tags: ['team'],
+    query: [
+      {
+        name: 'memberId',
+        description:
+          'Owner or manager only: show the counter as that member would see it — the shared ' +
+          '“Who’s on shift?” device. A staff login naming anybody else is 403.',
+      },
+    ],
+    response: ref('Counter'),
+  },
+  'POST /v1/team/{venueId}/shift': {
+    summary: 'Start or end a shift',
+    description:
+      'A staff login may start or end only its own. The owner’s shared device must name ' +
+      '`memberId` (400 otherwise); a manager’s defaults to themselves. Only an active member ' +
+      'can be on shift.',
+    tags: ['team'],
+    body: { action: { type: 'string', enum: ['start', 'end'] }, memberId: str() },
+    required: ['action'],
+    response: { type: 'object', properties: { member: ref('TeamMember') } },
+  },
+  'POST /v1/team/{venueId}/running/{id}/pause': {
+    summary: 'Pause or resume something the venue is running',
+    description:
+      'Needs `pause`. Runs through the owner’s own functions, so a shift lead resuming a deal ' +
+      'passes exactly the checks the owner would.',
+    tags: ['team'],
+    body: { paused: bool() },
+    required: ['paused'],
+    response: { type: 'object', properties: { item: { type: 'object' } } },
+  },
   'POST /v1/friends': { summary: 'Connect with another player', tags: ['social'], body: { userId: str() }, required: ['userId'], response: { type: 'object' } },
 
   /* ── notifications ── */
@@ -2451,10 +2900,12 @@ export function buildSpec(): Schema {
       { name: 'gate', description: 'The amount-capture gate. The only place a venue’s value is granted.' },
       { name: 'daily', description: 'Turning up — the check-in, the streak, and the month’s earnings by source.' },
       { name: 'games', description: 'Server-scored rounds. The client never holds an answer.' },
+      { name: 'missions', description: 'Missions and their claims (rulebook §8).' },
       { name: 'social', description: 'Referrals and leaderboards.' },
       { name: 'notifications', description: 'Inbox and push registration.' },
       { name: 'assistant', description: 'Grounded search and explanation.' },
       { name: 'partner', description: 'The partner dashboard and its mobile companion.' },
+      { name: 'team', description: 'Staff and Manager workspaces: the team, joining, the counter. See server/TEAM.md.' },
       { name: 'billing', description: 'Plans, subscriptions, receipts.' },
       { name: 'guide', description: 'The relocation guidebook, news, community, exchange rates.' },
       { name: 'admin', description: 'Platform operations. Desktop only.' },
@@ -2477,6 +2928,16 @@ export function buildSpec(): Schema {
 }
 
 function main(): void {
+  /* A documented entry whose key matches no route is dropped from the spec
+     without a sound — written as `:code` instead of `{code}`, or left behind
+     when a route is renamed — and the endpoint quietly degrades to a stub. Two
+     had. Refuse to write rather than publish a spec that has lost them. */
+  const live = new Set(allRoutes.map((route) => `${route.method} ${pathOf(route.pattern).path}`));
+  const orphans = Object.keys(DOCS).filter((key) => !live.has(key));
+  if (orphans.length) {
+    throw new Error(`DOCS entries that match no route (use {param}, not :param): ${orphans.join(', ')}`);
+  }
+
   const spec = buildSpec();
   const out = 'server/openapi.json';
   writeFileSync(out, `${JSON.stringify(spec, null, 2)}\n`, 'utf8');

@@ -570,7 +570,7 @@ export async function languageMix(db: Db, venueId: string, window: Window = {}) 
  * an unconvertible figure means is the caller's decision, and it is never "the
  * same number in a different currency".
  */
-async function convertMinor(db: Db, minor: number, from: string, to: string): Promise<number | null> {
+export async function convertMinor(db: Db, minor: number, from: string, to: string): Promise<number | null> {
   if (from === to || minor === 0) return minor;
   const rows = await db.all<{ code: string; rate: number; decimals: number }>(
     `SELECT code, rate, decimals FROM exchange_rates WHERE code IN ($from, $to)`,

@@ -43,3 +43,6 @@ new-data/
 .env.*
 !.env.example
 logos-out/
+
+# scripts/deploy-server-stage.sh hands its timestamp to the swap script
+.deploy-ts

@@ -474,7 +474,7 @@ export const ENERGY_REFUND_MS = 5_000;
 /**
  * Give one unit back, once per local day.
  *
- * The local half of `games.abandonActive`: energy is spent when a round starts,
+ * The local half of the server's `games.closeRound`: energy is spent when a round starts,
  * so a round left in its first five seconds is the one case that gets it back,
  * and only once a day so the rule cannot be farmed by opening and closing
  * rounds. The day is recorded on the state; a second quick quit the same day

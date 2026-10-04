@@ -7,15 +7,15 @@
  * would have been easy to do the same here. It is the wrong shape. An
  * unverified account is not *locked*: it can play, earn, look at the wallet and
  * the guide. The one thing it may be refused is **spending** — buying a venue
- * voucher or a gift card — and only while the server's `PAYLEZ_VERIFY_GATE` is
- * on (`domain/verification.ts` on the server is the rule). So the honest
+ * voucher or a gift card — and only while the server says so (`domain/verification.ts` on the server
+ * is the rule). So the honest
  * interface is a panel on the two screens where points are earned and spent,
  * not a wall in front of a product somebody has not seen yet.
  *
  * ## Two wordings, chosen by the server
  *
  * "You can spend once you confirm" is a promise only while the server is
- * enforcing it, so `spendNeedsVerifiedEmail` (from `GET /v1/me`) picks the
+ * enforcing it, so `emailVerificationRequired` (from `GET /v1/me`) picks the
  * sentence: `spendLede` when spending is gated, `lede` when it is not. A panel
  * that claimed a restriction the server does not apply would be the first
  * thing on the screen that was not true.
@@ -32,13 +32,8 @@
  *   because the server kills the code after five and somebody on their fourth
  *   ought to know.
  *
- * ## The local code
- *
- * `CodeSent.code` is populated only by a server whose email adapter is local,
- * where the message is logged and delivered nowhere. Shown when it is there,
- * because a development sign-up nobody can finish is a feature nobody will
- * touch — and never presented as the normal way to get a code, because on a
- * real deployment the field is simply absent.
+ * The code never comes back in a response, local server included: a local
+ * server logs it to its console, which is where a development sign-up reads it.
  */
 import { useCallback, useState } from 'react';
 import { confirmCode, sendCode, type CodeSent } from './api/consumer';
@@ -187,8 +182,6 @@ export function VerifyEmail({ where }: { where: 'play' | 'wallet' }) {
       {state.kind === 'sent' && state.sent.sent && (
         <p className="field-help" role="status">
           {copy.onItsWay}
-          {/* Only a server whose mail adapter is local ever sends this. */}
-          {state.sent.code ? <b> {state.sent.code}</b> : null}
         </p>
       )}
       {state.kind === 'error' && (

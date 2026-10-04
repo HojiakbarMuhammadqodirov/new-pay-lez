@@ -21,7 +21,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, wri
 import { join, resolve as resolvePath } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { migrate, openDb } from './db/db.ts';
-import { importLegacy } from './db/import.ts';
+import { importLegacy, readWordBank, WORD_BANK_CSV } from './db/import.ts';
 import { boot } from './main.ts';
 import { csvParts, parseCsv } from './db/csv.ts';
 import { CONFIG } from './config.ts';
@@ -33,6 +33,7 @@ import * as analytics from './domain/analytics.ts';
 import * as assistant from './domain/assistant.ts';
 import * as budget from './domain/budget.ts';
 import * as campaigns from './domain/campaigns.ts';
+import * as limitsDomain from './domain/limits.ts';
 import * as checkin from './domain/checkin.ts';
 import * as consent from './domain/consent.ts';
 import * as dashboard from './domain/dashboard.ts';
@@ -41,7 +42,10 @@ import * as entitlements from './domain/entitlements.ts';
 import * as gate from './domain/gate.ts';
 import * as games from './domain/games.ts';
 import * as ledger from './domain/ledger.ts';
+import * as learning from './domain/learning.ts';
 import * as media from './domain/media.ts';
+import * as missions from './domain/missions.ts';
+import * as occasions from './domain/occasions.ts';
 import * as rates from './domain/rates.ts';
 import * as partners from './domain/partners.ts';
 import * as profiles from './domain/profiles.ts';
@@ -53,7 +57,13 @@ import * as merge from './domain/merge2048.ts';
 import * as food from './domain/foodCross.ts';
 import * as ninja from './domain/foodNinja.ts';
 import * as vouchers from './domain/vouchers.ts';
+import { mulberry32 } from './domain/engines/prng.ts';
+import { ReplayError } from './domain/engines/replay.ts';
+import * as game2048 from './domain/engines/game2048.ts';
+import * as foodCross from './domain/engines/foodcross.ts';
+import * as engineVectors from './domain/engines/vectors.ts';
 import * as jobs from './jobs.ts';
+import * as email from './ports/email.ts';
 import * as llm from './ports/llm.ts';
 import * as push from './ports/push.ts';
 import * as webpush from './ports/webpush.ts';
@@ -720,7 +730,9 @@ async function voucherCaps(): Promise<void> {
   await partners.setVoucherTiers(w.db, {
     venueId: w.venueId,
     actorId: w.ownerId,
-    tiers: [{ discountPct: 10, pointsCost: 100, maxDiscountMinor: 2500, redeemLimit: 2 }],
+    /* 400 — the floor of the band a 10% rung may be priced in (80% of the
+       ladder's 500). It was 100, which `setVoucherTiers` now refuses. */
+    tiers: [{ discountPct: 10, pointsCost: 400, maxDiscountMinor: 2500, redeemLimit: 2 }],
     at,
   });
   eq('a cap is stored', (await rung(10)).redeem_limit, 2);
@@ -739,7 +751,7 @@ async function voucherCaps(): Promise<void> {
      before the check that throws, so this is the rollback being real rather
      than assumed. Off by one here would hand the cap away a voucher at a time. */
   eq('a refused issue leaves the count alone', (await rung(10)).issued_count, 2);
-  eq('and the points are not taken', await ledger.balance(w.db, w.customerId), 800);
+  eq('and the points are not taken', await ledger.balance(w.db, w.customerId), 1000 - 2 * 400);
 
   /* **The race.** Two issues started before either finished. This is the check
      the counting implementation passes on SQLite and fails on Postgres, so what
@@ -763,7 +775,7 @@ async function voucherCaps(): Promise<void> {
   await partners.setVoucherTiers(w2.db, {
     venueId: w2.venueId,
     actorId: w2.ownerId,
-    tiers: [{ discountPct: 5, pointsCost: 50, maxDiscountMinor: 2500, perUserLimit: 1 }],
+    tiers: [{ discountPct: 5, pointsCost: 300, maxDiscountMinor: 2500, perUserLimit: 1 }],
     at: at2,
   });
   const five = (await w2.db.get<{ id: string }>(
@@ -897,7 +909,7 @@ async function stockCodes(db: Db, stockId: string, n: number, tag = stockId): Pr
 }
 
 async function giftCardStock(): Promise<void> {
-  describe('§2.2 gift cards -- the shelf cannot oversell');
+  describe('§2.1 / §9.4 gift cards -- open to every account, priced by rule, pooled, and never oversold');
   const w = await world();
   const at = now();
 
@@ -905,32 +917,118 @@ async function giftCardStock(): Promise<void> {
     (await w.db.get<{ stock: number }>(`SELECT stock FROM gift_card_stock WHERE id = 'gcs_race'`))!
       .stock;
 
-  /* One unit, so the cap and the race are the same test. */
+  /* Buyers on Pro through a payment rail, each with points to spare. Every one
+     of them is also a subscription the §9.4 pool is a share of. */
+  const pro = async (label: string) => {
+    const id = await person(w, label, plusDays(at, -90));
+    await entitlements.startSubscription(w.db, { subject: { userId: id }, planCode: 'pro', source: 'stripe', at });
+    await ledger.earn(w.db, { userId: id, points: 5000, reason: 'adjustment', at });
+    return id;
+  };
+  /* What the route calls. There is no plan to read any more: gift cards are
+     open to every account since 2026-10-03. */
+  const buy = async (userId: string, when: Iso = at) =>
+    await vouchers.redeemGiftCard(w.db, { userId, stockId: 'gcs_race', at: when });
+
+  /* A 10 zł card with one unit, and a stored `points_cost` of 10 that is a lie
+     the server must not believe (the audited build priced cards from this
+     column, at 50 = 1 zł). */
   await w.db.run(
     `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
-     VALUES ('gcs_race', 'Race Brand', 'R', 500, 'EUR', 10, 1, 0, 1)
+     VALUES ('gcs_race', 'Race Brand', 'R', 1000, 'PLN', 10, 1, 0, 1)
      ON CONFLICT (id) DO NOTHING`,
   );
   await stockCodes(w.db, 'gcs_race', 1);
-  await ledger.earn(w.db, { userId: w.customerId, points: 1000, reason: 'adjustment', at });
-
-  eq('the shelf starts with one', await left(), 1);
-  const first = await vouchers.redeemGiftCard(w.db, {
-    userId: w.customerId,
-    stockId: 'gcs_race',
-    at,
-  });
-  eq('buying it issues a card', typeof first.code, 'string');
-  eq('and takes the unit', await left(), 0);
-
-  await throws('an empty shelf refuses', 'conflict', () =>
-    vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: 'gcs_race', at }),
+  /* And one in a currency with no rate: not a price, so not on the shelf. */
+  await w.db.run(
+    `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
+     VALUES ('gcs_norate', 'Nowhere', 'N', 1000, 'XTS', 10, 5, 0, 1)
+     ON CONFLICT (id) DO NOTHING`,
   );
+
+  /* ── fence 2: the price is the rule's ── */
+  eq('100 points buy 1 zł of face value', await vouchers.giftCardPrice(w.db, { face_minor: 1000, currency: 'PLN' }), 1000);
+  eq('…rounded up, never in the buyer’s favour', await vouchers.giftCardPrice(w.db, { face_minor: 1001, currency: 'PLN' }), 1001);
+  eq('a currency with no rate has no price', await vouchers.giftCardPrice(w.db, { face_minor: 1000, currency: 'XTS' }), null);
+  let shelf = await vouchers.giftCardShelf(w.db, at);
+  eq('the shelf quotes the derived price', shelf.find((c) => c.id === 'gcs_race')?.points_cost, 1000);
+  eq('…and leaves off a card nobody can be quoted for', shelf.some((c) => c.id === 'gcs_norate'), false);
+
+  /* ── the fixed monthly budget (2026-10-03) ── */
+  eq('the default fixed budget is 500 zł', (await vouchers.giftCardPool(w.db, at)).budgetMinor, 50_000);
+  eq('…so a card is on the shelf with nobody paying', ((await vouchers.giftCardShelf(w.db, at)).find((c) => c.id === 'gcs_race')?.left_this_month ?? 0) > 0, true);
+  /* The rest of this section measures the revenue share on its own. CONFIG is
+     `as const` at the type level only; zero the fixed part for these checks. */
+  (CONFIG.giftCards as { fixedMonthlyMajor: number }).fixedMonthlyMajor = 0;
+  shelf = await vouchers.giftCardShelf(w.db, at);
+
+  /* ── the pool, with nobody paying ── */
+  eq('no paid subscriptions is an empty pool', (await vouchers.giftCardPool(w.db, at)).budgetMinor, 0);
+  eq('…so nothing is left this month', shelf.find((c) => c.id === 'gcs_race')?.left_this_month, 0);
+
+  /* ── no plan gate (2026-10-03) ── */
+  await ledger.earn(w.db, { userId: w.customerId, points: 5000, reason: 'adjustment', at });
+  eq(
+    'every plan publishes gift_card_priority, so older clients show the shop',
+    entitlements.entBool(await entitlements.entitlementsFor(w.db, { userId: w.customerId }), 'gift_card_priority'),
+    true,
+  );
+  /* A free account is not refused for its plan. With nobody paying, the pool
+     is what says no -- a conflict about the month, not an entitlement. */
+  await throws('a free account meets the pool, not a plan gate', 'conflict', () => buy(w.customerId));
+  eq('…and pays nothing for it', await ledger.balance(w.db, w.customerId), 5000);
+
+  /* Five Pro subscribers: 5 × 19.99 zł of revenue, a fifth of it is a 19.99 zł
+     pool — one 10 zł card and not two. A `manual` (operator-assigned) plan is
+     not revenue and must not grow it. */
+  await pro('a'); // revenue only; the free account is the first buyer
+  const b = await pro('b');
+  const c1 = await pro('c');
+  const d1 = await pro('d');
+  const e1 = await pro('e');
+  const courtesy = await person(w, 'courtesy', plusDays(at, -90));
+  await entitlements.startSubscription(w.db, { subject: { userId: courtesy }, planCode: 'premium', source: 'manual', at });
+  const pool = await vouchers.giftCardPool(w.db, at);
+  eq('revenue is the paid subscriptions only', pool.revenueMinor, 5 * 1999);
+  eq('the pool is a fifth of it', pool.budgetMinor, 1999);
+  shelf = await vouchers.giftCardShelf(w.db, at);
+  eq('…which buys one of this card', shelf.find((c) => c.id === 'gcs_race')?.left_this_month, 1);
+
+  /* The free account buys it: the pool is what the paying customers fund,
+     and anyone may draw on it. */
+  const first = await buy(w.customerId);
+  eq('a free account gets a card', typeof first.code, 'string');
+  eq('…at the rule’s price', first.points, 1000);
+  eq('…and pays it', await ledger.balance(w.db, w.customerId), 4000);
+  eq('and the unit is gone', await left(), 0);
+
+  await throws('an empty shelf refuses', 'conflict', () => buy(b));
   /* The refusal must not go below zero. This is the assertion the old code
      failed: it decremented unconditionally, so a refusal that happened to get
      past the read left the shelf owing a card. */
   eq('and does not go negative', await left(), 0);
-  eq('and takes no points', await ledger.balance(w.db, w.customerId), 990);
+  eq('and takes no points', await ledger.balance(w.db, b), 5000);
+
+  /* ── fence 3a: one card per user per sixty days ── */
+  await w.db.run(`UPDATE gift_card_stock SET stock = 5 WHERE id = 'gcs_race'`);
+  await stockCodes(w.db, 'gcs_race', 5, 'more');
+  await throws('a second card inside sixty days is refused', 'conflict', () => buy(w.customerId, plusDays(at, 1)));
+  eq('…and costs nothing', await ledger.balance(w.db, w.customerId), 4000);
+
+  /* ── fence 3b: the month's pool ── */
+  eq('the month has 9.99 zł left', (await vouchers.giftCardPool(w.db, at)).remainingMinor, 999);
+  await throws('a card the pool cannot cover is sold out for the month', 'conflict', () => buy(b));
+  eq('…with stock still on the shelf', await left(), 5);
+  eq(
+    '…and the shelf says none are left this month',
+    (await vouchers.giftCardShelf(w.db, at)).find((c) => c.id === 'gcs_race')?.left_this_month,
+    0,
+  );
+
+  /* Sixty-one days on, the month's pool is whole again and the first buyer may
+     buy again. */
+  const again = await buy(w.customerId, plusDays(at, 61));
+  eq('sixty-one days later the first buyer may buy again', again.points, 1000);
 
   /*
    * **The race.** Four buyers for one unit, all started before any finished.
@@ -938,15 +1036,15 @@ async function giftCardStock(): Promise<void> {
    * Like the voucher check above, what this really pins on SQLite is the
    * *shape* -- that the guard lives inside the write. The arithmetic is what
    * would survive a move to Postgres: exactly one card, and a shelf at zero
-   * rather than at -3.
+   * rather than at -3. Four *different* buyers, so the per-user cap is not what
+   * stops them, in a month with pool to spare for all four.
    */
+  const raceAt = plusDays(at, 95);
+  for (let n = 0; n < 20; n += 1) await pro(`r${n}`);
   await w.db.run(`UPDATE gift_card_stock SET stock = 1 WHERE id = 'gcs_race'`);
-  await stockCodes(w.db, 'gcs_race', 1, 'second');
-  const rush = await Promise.allSettled(
-    [0, 1, 2, 3].map(() =>
-      vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: 'gcs_race', at }),
-    ),
-  );
+  await stockCodes(w.db, 'gcs_race', 1, 'last');
+  const before = await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM gift_cards WHERE stock_id = 'gcs_race'`);
+  const rush = await Promise.allSettled([b, c1, d1, e1].map((buyer) => buy(buyer, raceAt)));
   eq(
     'four buyers for one unit yield one card',
     rush.filter((one) => one.status === 'fulfilled').length,
@@ -958,8 +1056,182 @@ async function giftCardStock(): Promise<void> {
   const issued = await w.db.get<{ n: number }>(
     `SELECT COUNT(*) AS n FROM gift_cards WHERE stock_id = 'gcs_race'`,
   );
-  eq('two cards exist for the two units sold', Number(issued!.n), 2);
-  eq('and the points taken are the two prices', await ledger.balance(w.db, w.customerId), 980);
+  eq('one more card exists for the one unit sold', Number(issued!.n) - Number(before!.n), 1);
+  let paid = 0;
+  for (const buyer of [b, c1, d1, e1]) paid += 5000 - (await ledger.balance(w.db, buyer));
+  eq('and the points taken are one price', paid, 1000);
+
+  (CONFIG.giftCards as { fixedMonthlyMajor: number }).fixedMonthlyMajor = 500;
+  await w.db.close();
+}
+
+/**
+ * The points rulebook (2026-09-26), §2 / §6 / §7 / §9 — the values this server
+ * pays, pinned to the rulebook's own numbers, and the four earners that had a
+ * figure in `CONFIG.earn` and no code: a deal shared, a review, a birthday and
+ * an anniversary.
+ *
+ * The constants are asserted against literals on purpose. Everywhere else this
+ * suite reads `CONFIG` so a retune does not break it; here the rulebook *is*
+ * the spec, and §10's model is built on these exact figures — a change that
+ * does not also change the rulebook should fail somewhere, and this is where.
+ */
+async function rulebookEconomy(): Promise<void> {
+  describe('the points rulebook — §2 §6 §7 §9 values, shares, reviews and occasions');
+
+  /* ── the numbers ── */
+  eq('§2.1 voucher ladder 300 / 500 / 800 for 5 / 10 / 15%', CONFIG.vouchers.defaultTiers.map((t) => [t.pct, t.points]), [[5, 300], [10, 500], [15, 800]]);
+  eq('…capped at 10 / 25 / 40 zł', CONFIG.vouchers.defaultTiers.map((t) => t.maxDiscountMinor), [1000, 2500, 4000]);
+  eq('§2.1 gift cards at 100 points a złoty', [CONFIG.giftCards.pointsPerMajor, CONFIG.giftCards.anchorCurrency], [100, 'PLN']);
+  eq('§9.4 one card per 60 days, from a pool of 20% of revenue', [CONFIG.giftCards.perUserEveryDays, CONFIG.giftCards.poolShareBp], [60, 2000]);
+  eq('§7.3 daily check-in, flat', [CONFIG.earn.dailyCheckIn, [...new Set(CONFIG.earn.checkInCycle)]], [5, [1]]);
+  eq('§7.3 referral 100 each, friend milestone 500 at 5', [CONFIG.earn.referrerFirstVisit, CONFIG.earn.inviteeJoin, CONFIG.earn.friendMilestone, CONFIG.earn.friendMilestoneAt], [100, 100, 500, 5]);
+  eq('§7.3 deal shared 25, three a day', [CONFIG.earn.dealShared, CONFIG.earn.dealSharedPerDay], [25, 3]);
+  eq('§7.3 review 25, one per venue per 30 days', [CONFIG.earn.reviewAfterVisit, CONFIG.earn.reviewEveryDays], [25, 30]);
+  eq('§7.3 comeback 100 per fixed 30-day window', [CONFIG.earn.comeback, CONFIG.earn.comebackEveryDays], [100, 30]);
+  eq('§7.3 onboarding 50, profile 50, interests 25, first scan 100', [CONFIG.earn.onboarding, CONFIG.earn.profileComplete, CONFIG.earn.categoriesPicked, CONFIG.earn.firstScanEver], [50, 50, 25, 100]);
+  eq('§7.3 birthday and anniversary 200 each', [CONFIG.earn.birthday, CONFIG.earn.anniversary], [200, 200]);
+  eq('§7.3 stipend Pro 300, Premium 1 000', [CONFIG.earn.proStipend, CONFIG.earn.premiumStipend], [300, 1000]);
+  eq('§7.2 streak milestones 7:50 30:250 100:1000', CONFIG.earn.streakMilestones, { 7: 50, 30: 250, 100: 1000 });
+
+  const w = await world();
+  const at = '2026-03-10T09:00:00.000Z';
+
+  /* ── §2.1 the platform ladder and the band a venue may price in ── */
+  eq('the ladder prices its own rungs', [5, 10, 15].map(vouchers.ladderPrice), [300, 500, 800]);
+  eq('…interpolates between them', [vouchers.ladderPrice(7), vouchers.ladderPrice(12)], [380, 620]);
+  eq('…scales below the first', vouchers.ladderPrice(3), 180);
+  eq('…and runs on past the last', vouchers.ladderPrice(20), 1100);
+  eq('a 5% rung may cost 240..900', vouchers.partnerTierBand(5), { platform: 300, min: 240, max: 900 });
+
+  const setFive = async (pointsCost: number) =>
+    await partners.setVoucherTiers(w.db, {
+      venueId: w.venueId,
+      actorId: w.ownerId,
+      tiers: [{ discountPct: 5, pointsCost, maxDiscountMinor: 1000 }],
+      at,
+    });
+  await throws('a 5% voucher for 30 points is refused', 'validation_failed', () => setFive(30));
+  await throws('…and so is one for 1 000', 'validation_failed', () => setFive(1000));
+  try {
+    await setFive(30);
+  } catch (error) {
+    eq('…and the refusal names the band', (error as DomainError).detail, {
+      field: 'pointsCost',
+      discountPct: 5,
+      minPoints: 240,
+      maxPoints: 900,
+      platformPoints: 300,
+    });
+  }
+  await setFive(240);
+  eq('the floor itself is allowed', (await w.db.get<{ p: number }>(
+    `SELECT points_cost AS p FROM voucher_tiers WHERE venue_id = $v AND discount_pct = 5`,
+    { v: w.venueId },
+  ))?.p, 240);
+
+  /* ── §7.3 deal shared ── */
+  /* Four live deals at once needs a plan with room for them. */
+  await entitlements.startSubscription(w.db, { subject: { venueId: w.venueId }, planCode: 'growth', source: 'manual', at });
+  const liveDeal = async (title: string) => {
+    const deal = await partners.createDeal(w.db, {
+      actorId: w.ownerId,
+      draft: { venueId: w.venueId, discountText: '2 for 1', copy: { en: { title, description: title } } },
+      at,
+    });
+    await partners.publishDeal(w.db, { dealId: deal.id, actorId: w.ownerId, at });
+    return deal.id;
+  };
+  const sharer = await person(w, 'sharer', '2026-01-01T00:00:00.000Z');
+  const deals4 = [await liveDeal('One'), await liveDeal('Two'), await liveDeal('Three'), await liveDeal('Four')];
+  const shareAt = '2026-03-10T12:00:00.000Z';
+  const firstShare = await occasions.shareDeal(w.db, { userId: sharer, dealId: deals4[0], at: shareAt });
+  eq('a share pays 25', [firstShare.granted, firstShare.points, firstShare.balance], [true, 25, 25]);
+  const twice = await occasions.shareDeal(w.db, { userId: sharer, dealId: deals4[0], at: shareAt });
+  eq('the same deal twice pays once', [twice.granted, twice.reason, twice.balance], [false, 'already_shared', 25]);
+  await occasions.shareDeal(w.db, { userId: sharer, dealId: deals4[1], at: shareAt });
+  const third = await occasions.shareDeal(w.db, { userId: sharer, dealId: deals4[2], at: shareAt });
+  eq('three different deals in a day all pay', [third.granted, third.sharedToday, third.balance], [true, 3, 75]);
+  const fourth = await occasions.shareDeal(w.db, { userId: sharer, dealId: deals4[3], at: shareAt });
+  eq('the fourth in a day does not', [fourth.granted, fourth.reason, fourth.balance], [false, 'daily_cap', 75]);
+  const tomorrow = await occasions.shareDeal(w.db, { userId: sharer, dealId: deals4[3], at: '2026-03-11T08:00:00.000Z' });
+  eq('…and pays tomorrow', [tomorrow.granted, tomorrow.sharedToday], [true, 1]);
+  const draft = await partners.createDeal(w.db, {
+    actorId: w.ownerId,
+    draft: { venueId: w.venueId, discountText: 'Soon', copy: { en: { title: 'Soon', description: 'Soon' } } },
+    at,
+  });
+  eq('a deal that is not live pays nothing', (await occasions.shareDeal(w.db, { userId: sharer, dealId: draft.id, at: shareAt })).reason, 'not_live');
+  eq(
+    'a share is filed under invites, keyed by the deal',
+    (await w.db.get<{ reason: string; n: number }>(
+      `SELECT reason, COUNT(*) AS n FROM points_ledger WHERE user_id = $u AND source_kind = 'deal_share' GROUP BY reason`,
+      { u: sharer },
+    )),
+    { reason: 'referral', n: 4 },
+  );
+
+  /* ── §7.3 / §9.2 review after a visit ── */
+  const reviewer = await person(w, 'reviewer', '2026-01-01T00:00:00.000Z');
+  await throws('a review needs a visit', 'forbidden', () =>
+    occasions.review(w.db, { userId: reviewer, venueId: w.venueId, rating: 5, at }),
+  );
+  await scanAs(w, reviewer, 4000, '2026-03-09T10:00:00.000Z');
+  const before = await ledger.balance(w.db, reviewer);
+  await throws('a rating is 1..5', 'validation_failed', () =>
+    occasions.review(w.db, { userId: reviewer, venueId: w.venueId, rating: 6, at }),
+  );
+  const reviewed = await occasions.review(w.db, { userId: reviewer, venueId: w.venueId, rating: 5, body: ' Lovely. ', at });
+  eq('a review after a visit pays 25', [reviewed.points, (await ledger.balance(w.db, reviewer)) - before], [25, 25]);
+  eq('…and keeps what was said', [reviewed.review.rating, reviewed.review.body], [5, 'Lovely.']);
+  await throws('a second review inside 30 days is refused', 'conflict', () =>
+    occasions.review(w.db, { userId: reviewer, venueId: w.venueId, rating: 4, at: plusDays(at, 29) }),
+  );
+  const later = await occasions.review(w.db, { userId: reviewer, venueId: w.venueId, rating: 4, at: plusDays(at, 31) });
+  eq('…and allowed, and paid, after it', later.points, 25);
+  eq(
+    'reviews are the ledger’s `review` reason, on the venue',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM points_ledger WHERE user_id = $u AND reason = 'review' AND venue_id = $v`,
+      { u: reviewer, v: w.venueId },
+    ))?.n,
+    2,
+  );
+
+  /* ── §7.3 birthday and anniversary ── */
+  const bday = await person(w, 'bday', '2025-06-01T00:00:00.000Z');
+  await w.db.run(`UPDATE users SET birth_date = '1990-03-10', birth_date_set_at = '2026-01-05T00:00:00.000Z' WHERE id = $u`, { u: bday });
+  const cheat = await person(w, 'cheat', '2025-06-01T00:00:00.000Z');
+  await w.db.run(`UPDATE users SET birth_date = '1990-03-10', birth_date_set_at = '2026-03-10T08:00:00.000Z' WHERE id = $u`, { u: cheat });
+  const leap = await person(w, 'leap', '2025-06-01T00:00:00.000Z');
+  await w.db.run(`UPDATE users SET birth_date = '2000-02-29', birth_date_set_at = '2026-01-05T00:00:00.000Z' WHERE id = $u`, { u: leap });
+  const yearOld = await person(w, 'year-old', '2025-01-01T00:00:00.000Z');
+  await w.db.run(`UPDATE users SET created_at = '2025-03-08T10:00:00.000Z' WHERE id = $u`, { u: yearOld });
+  const newcomer = await person(w, 'newcomer', '2026-01-01T00:00:00.000Z');
+  await w.db.run(`UPDATE users SET created_at = '2026-03-08T10:00:00.000Z' WHERE id = $u`, { u: newcomer });
+
+  await occasions.payDue(w.db, at);
+  const paid = async (userId: string, kind: string, year: number) => await ledger.alreadyPaid(w.db, userId, kind, `${kind}:${year}`);
+  check('a birthday on its day pays', await paid(bday, 'birthday', 2026));
+  eq('…200 points', await ledger.balance(w.db, bday), 200);
+  check('a birthday typed in on the day itself does not', !(await paid(cheat, 'birthday', 2026)));
+  check('a first anniversary two days ago pays, inside the grace', await paid(yearOld, 'anniversary', 2026));
+  check('an account two days old has no anniversary', !(await paid(newcomer, 'anniversary', 2026)));
+  await occasions.payDue(w.db, plusDays(at, 1));
+  eq('a second run pays nothing twice', await ledger.balance(w.db, bday), 200);
+  /* The leap-day birthday, in a common year, on the 28th. */
+  await occasions.payDue(w.db, '2027-02-28T09:00:00.000Z');
+  check('the 29th of February is the 28th in a common year', await paid(leap, 'birthday', 2027));
+  /* A late-December birthday found across the new year, keyed on its own year. */
+  await w.db.run(`UPDATE users SET birth_date = '1990-12-30' WHERE id = $u`, { u: bday });
+  await occasions.payDue(w.db, '2027-01-02T09:00:00.000Z');
+  check('a birthday found after new year is keyed on the year it fell in', await paid(bday, 'birthday', 2026) && !(await paid(bday, 'birthday', 2027)));
+  eq('…so the correction bought nothing', await ledger.balance(w.db, bday), 200);
+  eq(
+    'an occasion leaves an inbox row',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM notifications WHERE user_id = $u AND kind = 'birthday'`, { u: bday }))?.n,
+    1,
+  );
 
   await w.db.close();
 }
@@ -1290,7 +1562,15 @@ async function checkInRules(): Promise<void> {
     eq(`day ${n} counts`, claim.streak, n);
     expected += claim.total;
   }
-  eq('the seventh day pays the milestone with it', expected, CONFIG.earn.dailyCheckIn * 13 + 50);
+  /* Rulebook §7.3 / §11 `DAILY_CHECKIN 5`: **a flat five, every day** — seven
+     days is 35 and the week's reward for turning up is the milestone. This read
+     `dailyCheckIn * 13` while the cycle was the 1/1/1/2/2/2/4 run-up. */
+  eq('the seventh day pays the milestone with it', expected, CONFIG.earn.dailyCheckIn * 7 + 50);
+  check(
+    'every rung of the cycle is the flat daily figure',
+    CONFIG.earn.checkInCycle.every((_, i) => checkin.dayValue(i + 1) === CONFIG.earn.dailyCheckIn),
+  );
+  eq('…which is five', CONFIG.earn.dailyCheckIn, 5);
   eq('…and the balance agrees', await ledger.balance(db, customerId), expected);
   eq('the ledger reconciles', await ledger.reconcile(db, customerId), 0);
 
@@ -1318,7 +1598,8 @@ async function checkInRules(): Promise<void> {
   eq(
     'a rebuilt streak does not pay the milestone twice',
     (await ledger.balance(db, customerId)) - beforeRebuild,
-    CONFIG.earn.dailyCheckIn * 12,
+    /* Days 11–16: six check-ins at the flat figure, and no second milestone. */
+    CONFIG.earn.dailyCheckIn * 6,
   );
   eq('…and the milestone reads as paid', rebuilt.milestones.find((m) => m.day === 7)?.paid, true);
   eq('…and the longest run is remembered', rebuilt.longestStreak, 8);
@@ -1742,7 +2023,7 @@ async function gameRules(): Promise<void> {
  * and an **empty tank refuses the next start** rather than the next finish.
  */
 async function energyRules(): Promise<void> {
-  describe('§7.2 energy — every finished round costs one');
+  describe('§3 energy — every round costs one, charged when it starts');
   const w = await world();
   const at = now();
 
@@ -1786,42 +2067,59 @@ async function energyRules(): Promise<void> {
   eq('…and spends exactly the same one', lost.energyLeft, full - 2);
 
   /*
-   * Abandoning, under rulebook §3: the energy goes when the round **starts**, so
-   * an abandoned round keeps its cost — except an accidental tap, abandoned
-   * within `energyRefundSeconds` of the start, refunded once a day.
+   * **The charge is at the start** (rulebook §3), so the tank drops the moment a
+   * round opens — before a single answer — and a round that is then abandoned
+   * has still been paid for. That is the reroll the rule exists to stop: open
+   * a board, dislike it, back out, open another.
    *
-   * Three abandons, in the order that tells them apart: a late one (kept), an
-   * early one (refunded — the day's one), and a second early one (kept).
+   * The one exception is the accidental tap: abandoned within
+   * `energyRefundWithinSeconds` of its start, the unit comes back — **once a
+   * day**. Both ways of abandoning apply it: the explicit `abandonSession`, and
+   * `startSession` closing a round that is still open.
    */
-  const late = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
-  eq('a round spends its energy as it starts', late.energyLeft, full - 3);
-  const lateQuit = await games.abandonSession(w.db, {
-    sessionId: late.sessionId, userId: w.customerId, at: plusMinutes(at, 0.2),
+  const tapped = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  eq('opening a round spends its energy at once', tapped.energyLeft, full - 3);
+  eq('…and the tank says so before anything is answered',
+    (await games.energyFor(w.db, w.customerId, at)).energy, full - 3);
+  const backedOut = await games.abandonSession(w.db, {
+    sessionId: tapped.sessionId,
+    userId: w.customerId,
+    at: plusMinutes(at, CONFIG.games.energyRefundWithinSeconds / 60),
   });
-  eq('a round abandoned after five seconds keeps its cost', [lateQuit.abandoned, lateQuit.refunded, lateQuit.energyLeft], [true, false, full - 3]);
+  eq('abandoned inside the first five seconds, it is refunded', backedOut.refunded, true);
+  eq('…and the unit is back in the tank', backedOut.energy.energy, full - 2);
+  eq('…which is recorded on the round as no spend at all',
+    (await w.db.get<{ life_spent: number; state: string }>(
+      `SELECT life_spent, state FROM game_sessions WHERE id = $i`, { i: tapped.sessionId }))
+      ?.life_spent, 0);
+  eq('abandoning it again is idempotent: same answer, nothing moves',
+    (await games.abandonSession(w.db, { sessionId: tapped.sessionId, userId: w.customerId, at })).refunded,
+    true);
+  eq('…and the tank did not gain a second unit',
+    (await games.energyFor(w.db, w.customerId, at)).energy, full - 2);
 
-  const tap = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: plusMinutes(at, 0.25) });
-  eq('…the next round spends one more', tap.energyLeft, full - 4);
-  /* Opening another round is the misclick case: the wrong card, then the right one. */
-  const kept = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: plusMinutes(at, 0.27) });
+  /* The second quick abandon of the day, this time by opening another round
+     over it. Quick enough, but the day's one refund is spent. */
+  const dropped = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
+  const kept = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at });
   eq(
     'the first of two starts is abandoned',
-    (await w.db.get<{ state: string; life_spent: number }>(`SELECT state, life_spent FROM game_sessions WHERE id = $i`, {
-      i: tap.sessionId,
-    })),
-    { state: 'abandoned', life_spent: 0 },
+    (await w.db.get<{ state: string }>(`SELECT state FROM game_sessions WHERE id = $i`, {
+      i: dropped.sessionId,
+    }))?.state,
+    'abandoned',
   );
-  eq('…inside five seconds, so its energy came back for the round that replaced it', kept.energyLeft, full - 4);
-  const second = await games.abandonSession(w.db, {
-    sessionId: kept.sessionId, userId: w.customerId, at: plusMinutes(at, 0.28),
-  });
-  eq('a second quick abandon the same day is not refunded', [second.refunded, second.energyLeft], [false, full - 4]);
-  eq('…and abandoning a closed round again is a no-op', (await games.abandonSession(w.db, {
-    sessionId: kept.sessionId, userId: w.customerId, at: plusMinutes(at, 0.3),
-  })).abandoned, false);
+  eq('…and costs its energy, because today’s refund is used', kept.energyLeft, full - 4);
+  eq(
+    'finishing the round that was kept costs nothing further — it paid when it opened',
+    (await games.finish(w.db, { sessionId: kept.sessionId, userId: w.customerId, at })).energyLeft,
+    full - 4,
+  );
+  await throws('a finished round cannot be abandoned', 'invalid_state', async () =>
+    await games.abandonSession(w.db, { sessionId: kept.sessionId, userId: w.customerId, at }));
 
-  /* Whatever the ceiling leaves after those three, spent, so that the refusal
-     below is about an empty tank rather than about the number 3. `daily_energy`
+  /* Whatever the ceiling leaves after those rounds, spent, so that the refusal
+     below is about an empty tank rather than about the number of them. `daily_energy`
      is a plan figure and has already moved once; a fixed count of rounds here
      turns that move into a failure in this file rather than a change in that
      one. */
@@ -1940,13 +2238,26 @@ async function energyRules(): Promise<void> {
 
   /* The flag is opt-in and it is not a way to *avoid* paying: asked for on a
      tank that has something in it, the round pays exactly as it always did. */
+  /* A month on, on a full tank — after every instant the refill checks below
+     read, because this round's charge lands at its own start. */
   const paidAnyway = await games.startSession(w.db, {
     userId: w.customerId,
     gameType: 'capitals',
     practice: true,
-    at: plusMinutes(at, CONFIG.points.energyRegenMinutes),
+    at: plusDays(at, 31),
   });
   eq('practice on a tank with energy in it still pays', paidAnyway.paid, true);
+  eq('…and is charged like any other round', paidAnyway.energyLeft, full - 1);
+
+  /* A round given up after the refund window is simply abandoned: paid for. */
+  const lateAt = plusDays(at, 31);
+  const lateLeave = await games.abandonSession(w.db, {
+    sessionId: paidAnyway.sessionId,
+    userId: w.customerId,
+    at: plusMinutes(lateAt, 0.2),
+  });
+  eq('abandoned after twelve seconds, it is not refunded', lateLeave.refunded, false);
+  eq('…and the tank keeps the spend', lateLeave.energy.energy, full - 1);
 
   /*
    * The refill, which is what pays for charging both sides.
@@ -1956,16 +2267,12 @@ async function energyRules(): Promise<void> {
    * at `max × interval`, which on the free plan is sixteen hours.
    */
   const regen = CONFIG.points.energyRegenMinutes;
-  /* `paidAnyway` above started at the first interval and, under rulebook §3,
-     spent its energy as it started — so the first unit back is already gone,
-     and the tank is one interval behind the empty one. */
   eq('nothing arrives early', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen - 1))).energy, 0);
-  eq('the first unit back went on the round that started then', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen))).energy, 0);
-  eq('one at twice the interval', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2))).energy, 1);
-  eq('two at three times it', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 3))).energy, 2);
+  eq('one at the interval', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen))).energy, 1);
+  eq('two at twice it', (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * 2))).energy, 2);
   eq(
-    'full a ceiling of intervals after that round',
-    (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * (full + 1)))).energy,
+    'full at the ceiling times it',
+    (await games.energyFor(w.db, w.customerId, plusMinutes(at, regen * full))).energy,
     full,
   );
   eq(
@@ -2801,6 +3108,18 @@ async function scoringRules(): Promise<void> {
     await w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u AND game_type = 'word_builder'`, {
       u: w.customerId,
     });
+    /* The same for the day's hint allowance (three on the free plan). These
+       rounds spend six between them, three hours apart from the *wall clock*,
+       so whether they shared a UTC day — and the third round was refused
+       `entitlement_required` — depended on the hour the suite was started.
+       That was this suite's intermittent failure. The allowance is not what this
+       section measures; the rounds before this one are finished, so their hint
+       rows are spent history and nothing reads them again. */
+    await w.db.run(
+      `DELETE FROM game_events WHERE kind = 'hint'
+          AND session_id IN (SELECT id FROM game_sessions WHERE user_id = $u)`,
+      { u: w.customerId },
+    );
     const opened = await games.startSession(w.db, {
       userId: w.customerId,
       gameType: 'word_builder',
@@ -3402,7 +3721,7 @@ async function featuredPoster(): Promise<void> {
   const localDay = (() => {
     for (let offset = 0; offset < games.DAILY_GAME_POOL.length; offset += 1) {
       const when = plusDays(day, offset);
-      if (games.dailyGameFor(when.slice(0, 10)).length > 1) return when;
+      if (games.dailyGameFor(when.slice(0, 10)).includes('poland')) return when;
     }
     throw new Error('no multi-bank slot in the pool');
   })();
@@ -3448,6 +3767,286 @@ async function featuredPoster(): Promise<void> {
   check('…and it has rows', Object.keys(theirs).length > 1, theirs);
   eq('the two programs deal the same bank for the same country', theirs,
     { ...games.LOCAL_QUIZ_FOR_COUNTRY });
+
+  await w.db.close();
+}
+
+/**
+ * §5.7 / §5.8 — 2048 and Food Cross, **replayed** rather than reported.
+ *
+ * Three things are proved here, and they are three because each one fails
+ * differently.
+ *
+ * 1. **The document is the engine.** `GAMES-2048-FOODCROSS.md` is what the Dart
+ *    port is written from, and its vectors are read *out of the document* and
+ *    replayed against `domain/engines/`. They are also compared with what the
+ *    generator produces today, so a config change that alters the boards without
+ *    regenerating the document is a failing check rather than a phone that
+ *    silently disagrees with the server.
+ * 2. **The server scores the replay and nothing else.** A round finished with a
+ *    vector's moves takes that vector's performance whatever the client claims;
+ *    an impossible replay and an implausibly fast one are refused and leave the
+ *    round open.
+ * 3. **The rulebook's guards around them hold**: the weekly game cap (§9.1)
+ *    trims and says so, the rotation is the eight games (§4.4), and the CHECK on
+ *    `game_type` is widened on a database that predates the two games.
+ */
+async function seededGames(): Promise<void> {
+  describe('§5.7 / §5.8 2048 and Food Cross — seeded, replayed, and the document’s vectors');
+
+  /* ── 1. the document ── */
+  const doc = readFileSync(join(fileURLToPath(new URL('.', import.meta.url)), 'GAMES-2048-FOODCROSS.md'), 'utf8');
+  const fence = '```';
+  const block = <T,>(key: string): T[] => {
+    const start = doc.indexOf(`<!-- vectors:${key} -->`);
+    const open = start < 0 ? -1 : doc.indexOf(`${fence}json`, start);
+    const close = open < 0 ? -1 : doc.indexOf(fence, open + 7);
+    check(`the document carries its ${key} vectors`, close > open && open > start && start >= 0);
+    return close > open && open >= 0 ? (JSON.parse(doc.slice(open + 7, close)) as T[]) : [];
+  };
+  const prngs = block<engineVectors.PrngVector>('prng');
+  const twenty48 = block<engineVectors.Vector2048>('game2048');
+  const food = block<engineVectors.VectorFoodCross>('foodCross');
+  const rejected = block<engineVectors.RejectVector>('rejects');
+
+  check('at least six vectors per game', twenty48.length >= 6 && food.length >= 6,
+    { game2048: twenty48.length, foodCross: food.length });
+  eq('the document’s vectors are what the engines generate today — regenerate it if not',
+    JSON.stringify({ prngs, twenty48, food, rejected }),
+    JSON.stringify({
+      prngs: engineVectors.prngVectors(),
+      twenty48: engineVectors.vectors2048(),
+      food: engineVectors.vectorsFoodCross(),
+      rejected: engineVectors.rejectVectors(),
+    }));
+
+  for (const v of prngs) {
+    const rng = mulberry32(v.seed);
+    eq(`mulberry32(${v.seed}) — the first five draws`, [0, 1, 2, 3, 4].map(() => rng.nextU32()), v.u32);
+    eq(`…and pick(n) continuing the stream`, v.picks.map((p) => rng.pick(p.n)), v.picks.map((p) => p.value));
+  }
+
+  for (const v of twenty48) {
+    const r = game2048.replay2048(v.seed, game2048.parseSwipes(v.moves), engineVectors.PARAMS_2048);
+    const label = `2048 seed ${v.seed}, ${v.moves.length} swipes`;
+    eq(`${label}: the opening board`, game2048.start2048(v.seed, engineVectors.PARAMS_2048).board, v.start);
+    eq(`${label}: the final board`, r.board, v.board);
+    eq(`${label}: score, highest tile, over, draws`,
+      [r.score, r.highestTile, r.over, r.draws], [v.score, v.highestTile, v.over, v.draws]);
+    eq(`${label}: performance by §5.7’s table`,
+      game2048.performance2048(r.highestTile, CONFIG.games.game2048.performanceByTile), v.performance);
+  }
+  check('the 2048 vectors reach the upper bands (65 and 85), not only the floor',
+    twenty48.some((v) => v.performance === 65) && twenty48.some((v) => v.performance === 85));
+
+  for (const v of food) {
+    const swaps = foodCross.parseSwaps(v.moves, engineVectors.PARAMS_FOOD);
+    const r = foodCross.replayFoodCross(v.seed, swaps, engineVectors.PARAMS_FOOD);
+    const label = `Food Cross seed ${v.seed}, ${v.moves.length} swaps`;
+    eq(`${label}: the opening board`, foodCross.startFoodCross(v.seed, engineVectors.PARAMS_FOOD).board, v.start);
+    eq(`${label}: the final board`, r.board, v.board);
+    eq(`${label}: score, reshuffles, best cascade, draws`,
+      [r.score, r.reshuffles, r.bestCascade, r.draws], [v.score, v.reshuffles, v.bestCascade, v.draws]);
+    eq(`${label}: performance is min(100, score / 20)`,
+      foodCross.performanceFoodCross(r.score, CONFIG.games.foodCross.target), v.performance);
+  }
+  check('a Food Cross vector reshuffles, so the rule is pinned and not just described',
+    food.some((v) => v.reshuffles > 0));
+  check('…and one reaches the 2,000 target inside twenty swaps', food.some((v) => v.performance === 100));
+
+  for (const v of rejected) {
+    let got: { reason: string; move: number } | null = null;
+    try {
+      if (v.game === 'game_2048') {
+        game2048.replay2048(v.seed, game2048.parseSwipes(v.moves), engineVectors.PARAMS_2048);
+      } else {
+        foodCross.replayFoodCross(
+          v.seed, foodCross.parseSwaps(v.moves, engineVectors.PARAMS_FOOD), engineVectors.PARAMS_FOOD);
+      }
+    } catch (error) {
+      if (error instanceof ReplayError) got = { reason: error.reason, move: error.move };
+    }
+    eq(`${v.game} seed ${v.seed} refuses with ${v.reason} at move ${v.move}`, got,
+      { reason: v.reason, move: v.move });
+  }
+
+  /* ── 2. through the domain ── */
+  const w = await world();
+  const at = now();
+  const secretOf = async (id: string) =>
+    JSON.parse((await w.db.get<{ secret: string }>(`SELECT secret FROM game_sessions WHERE id = $i`, { i: id }))!
+      .secret) as Record<string, unknown>;
+  /* A round's seed is drawn from the CSPRNG, so to finish one with a vector's
+     moves the test puts the vector's seed into the secret — exactly the value
+     the replay reads — and leaves everything else as `/start` wrote it. */
+  const reseed = async (id: string, seed: number) => {
+    const secret = await secretOf(id);
+    await w.db.run(`UPDATE game_sessions SET secret = $s WHERE id = $i`,
+      { s: JSON.stringify({ ...secret, seed }), i: id });
+  };
+  const stateOf = async (id: string) =>
+    (await w.db.get<{ state: string }>(`SELECT state FROM game_sessions WHERE id = $i`, { i: id }))?.state;
+  const refusedWith = async (what: string, reason: string, fn: () => Promise<unknown>) => {
+    const error = await refusal(fn);
+    eq(what, [error?.code, error?.detail.reason], ['bad_request', reason]);
+    return error;
+  };
+
+  const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'game_2048', at });
+  const content = round.content as Record<string, unknown>;
+  const secret = await secretOf(round.sessionId);
+  check('a 2048 round starts with a 32-bit seed',
+    Number.isInteger(content.seed) && (content.seed as number) >= 0 && (content.seed as number) <= 0xffffffff,
+    content.seed);
+  eq('…the same one the server keeps to replay with', secret.seed, content.seed);
+  eq('…and the rules travel with it, from config', [content.size, content.fourOneIn, content.startTiles],
+    [CONFIG.games.game2048.size, CONFIG.games.game2048.fourOneIn, CONFIG.games.game2048.startTiles]);
+  eq('the start spent the energy', round.energyLeft, CONFIG.points.dailyEnergy - 1);
+
+  const best2048 = twenty48.find((v) => v.performance === 85)!;
+  await reseed(round.sessionId, best2048.seed);
+  await refusedWith('a replay finished faster than it can be played is refused (§9.3)', 'too_fast',
+    async () => await games.finish(w.db, {
+      sessionId: round.sessionId,
+      userId: w.customerId,
+      clientReport: { moves: best2048.moves },
+      at: plusMinutes(at, 0.5),
+    }));
+  eq('…and the round is still open to be finished properly', await stateOf(round.sessionId), 'active');
+
+  const played = plusMinutes(at, (best2048.moves.length * CONFIG.games.game2048.minSecondsPerMove) / 60 + 1);
+  const finished2048 = await games.finish(w.db, {
+    sessionId: round.sessionId,
+    userId: w.customerId,
+    /* The claim beside the moves is ignored. */
+    clientReport: { moves: best2048.moves, score: 999999, highestTile: 2048, performance: 100 },
+    at: played,
+  });
+  eq('the server’s replay decides the result, not the claim', finished2048.replay,
+    { moves: best2048.moves.length, score: best2048.score, highestTile: best2048.highestTile });
+  eq('…a 1024 tile is performance 85', finished2048.performance, 85);
+  eq('…priced by the one formula: base round(85% × 18)', finished2048.base, 15);
+  eq('…with the first-play bonus, since this is the first 2048 round', finished2048.bonusNewGame,
+    CONFIG.games.newGameBonus);
+  eq('…and finishing cost nothing further', finished2048.energyLeft, CONFIG.points.dailyEnergy - 1);
+
+  /* An impossible replay: the refusal names the move, and the round stays open. */
+  const bad = rejected.find((v) => v.game === 'game_2048' && v.reason === 'no_change')!;
+  const badRound = await games.startSession(w.db, { userId: w.customerId, gameType: 'game_2048', at: played });
+  await reseed(badRound.sessionId, bad.seed);
+  const refusal2048 = await refusedWith('a swipe that changes nothing refuses the replay', 'no_change',
+    async () => await games.finish(w.db, {
+      sessionId: badRound.sessionId,
+      userId: w.customerId,
+      clientReport: { moves: bad.moves },
+      at: plusMinutes(played, 1),
+    }));
+  eq('…and names the move it could not follow', refusal2048?.detail.move, 0);
+  eq('…leaving the round open', await stateOf(badRound.sessionId), 'active');
+
+  /* Food Cross, to a perfect round. */
+  const foodAt = plusMinutes(played, 2);
+  const cross = await games.startSession(w.db, { userId: w.customerId, gameType: 'food_cross', at: foodAt });
+  const crossContent = cross.content as Record<string, unknown>;
+  eq('a Food Cross round carries its rules', [crossContent.rows, crossContent.cols, crossContent.moves,
+    crossContent.target], [7, 7, 20, 2000]);
+  const perfect = food.find((v) => v.performance === 100)!;
+  await reseed(cross.sessionId, perfect.seed);
+  await refusedWith('twenty-one swaps is more than a round has', 'too_many_moves', async () =>
+    await games.finish(w.db, {
+      sessionId: cross.sessionId,
+      userId: w.customerId,
+      clientReport: { moves: [...perfect.moves, perfect.moves[0]] },
+      at: plusMinutes(foodAt, 5),
+    }));
+  const crossed = await games.finish(w.db, {
+    sessionId: cross.sessionId,
+    userId: w.customerId,
+    clientReport: { moves: perfect.moves },
+    at: plusMinutes(foodAt, 5),
+  });
+  eq('Food Cross replays to the vector’s score', crossed.replay,
+    { moves: perfect.moves.length, score: perfect.score, highestTile: null });
+  eq('…2,000 or more is performance 100 and a win', [crossed.performance, crossed.won], [100, true]);
+  eq('…which takes the perfect-round bonus', crossed.bonusPerfect, CONFIG.games.perfectRoundBonus);
+
+  /* ── 3a. §9.1 the weekly game cap ── */
+  const capWorld = await world();
+  const capAt = now();
+  const cap = CONFIG.games.weeklyGameCap.free;
+  /* Nine short of the cap, already banked from games this week. */
+  await ledger.earn(capWorld.db, {
+    userId: capWorld.customerId,
+    points: cap - 9,
+    reason: 'game_win',
+    sourceKind: 'game_session',
+    sourceRef: 'verify-cap',
+    at: capAt,
+  });
+  const capRound = async (when: string) => {
+    const opened = await games.startSession(capWorld.db, {
+      userId: capWorld.customerId, gameType: 'food_cross', at: when });
+    const s = JSON.parse((await capWorld.db.get<{ secret: string }>(
+      `SELECT secret FROM game_sessions WHERE id = $i`, { i: opened.sessionId }))!.secret);
+    await capWorld.db.run(`UPDATE game_sessions SET secret = $s WHERE id = $i`,
+      { s: JSON.stringify({ ...s, seed: perfect.seed }), i: opened.sessionId });
+    return await games.finish(capWorld.db, {
+      sessionId: opened.sessionId,
+      userId: capWorld.customerId,
+      clientReport: { moves: perfect.moves },
+      at: plusMinutes(when, 1),
+    });
+  };
+  const trimmed = await capRound(capAt);
+  eq('a round that would cross the weekly cap banks only what is left', trimmed.score, 9);
+  check('…and says how much was trimmed', trimmed.capped > 0, trimmed.capped);
+  const spent = await capRound(plusMinutes(capAt, 10));
+  eq('once the cap is reached a round banks nothing', spent.score, 0);
+  check('…all of it reported as capped', spent.capped > 0, spent.capped);
+  eq('the balance is exactly the cap', await ledger.balance(capWorld.db, capWorld.customerId), cap);
+  await capWorld.db.close();
+
+  check('the abandon route is on the surface, so a client can claim the §3 refund',
+    allRoutes.some((r) => r.method === 'POST' && r.pattern === '/v1/games/sessions/:id/abandon'));
+
+  /* ── 3b. §4.4 the rotation is the rulebook's eight ── */
+  eq('eight featured slots', games.DAILY_GAME_POOL.length, 8);
+  check('…2048 and Food Cross among them',
+    games.DAILY_GAME_POOL.some((slot) => slot.includes('game_2048')) &&
+      games.DAILY_GAME_POOL.some((slot) => slot.includes('food_cross')));
+  check('…and capitals, which the rulebook does not list, is not',
+    !games.DAILY_GAME_POOL.some((slot) => slot.includes('capitals')));
+
+  /* ── 3c. the CHECK is widened on a database that predates the two games ── */
+  const old = ['flags', 'capitals', 'brain', 'poland', 'uzbekistan', 'word_builder', 'memory_match', 'flight'];
+  const tableSql = async () =>
+    (await w.db.get<{ sql: string }>(
+      `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'game_sessions'`))!.sql;
+  const narrowed = (await tableSql())
+    .replace(/CHECK \(game_type IN \([\s\S]*?\)\)/, `CHECK (game_type IN (${old.map((t) => `'${t}'`).join(', ')}))`)
+    .replace(/^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?game_sessions/i, 'CREATE TABLE game_sessions_old');
+  await w.db.exec('PRAGMA foreign_keys = OFF');
+  await w.db.exec(`DELETE FROM game_sessions WHERE game_type IN ('game_2048', 'food_cross')`);
+  const sessionsBefore = (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_sessions`))!.n;
+  const eventsBefore = (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events`))!.n;
+  await w.db.exec(narrowed);
+  await w.db.exec('INSERT INTO game_sessions_old SELECT * FROM game_sessions');
+  await w.db.exec('DROP TABLE game_sessions');
+  await w.db.exec('ALTER TABLE game_sessions_old RENAME TO game_sessions');
+  await w.db.exec('PRAGMA foreign_keys = ON');
+  check('the fixture really is an old database', !(await tableSql()).includes('food_cross'));
+
+  await migrate(w.db);
+  const widened = await tableSql();
+  check('booting widens the CHECK to admit both games',
+    widened.includes("'game_2048'") && widened.includes("'food_cross'"));
+  eq('…keeping every session',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_sessions`))!.n, sessionsBefore);
+  eq('…and every move reported in them',
+    (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM game_events`))!.n, eventsBefore);
+  const reopened = await games.startSession(w.db, {
+    userId: w.customerId, gameType: 'food_cross', practice: true, at: plusDays(at, 3) });
+  eq('…so a Food Cross round can be started on it', reopened.gameType, 'food_cross');
 
   await w.db.close();
 }
@@ -4167,14 +4766,14 @@ async function socialRules(): Promise<void> {
     email: 'inviter@verify.test', password: 'hunter22', name: 'Inviter', acceptTerms: true, at,
   });
   const code = await social.codeFor(w.db, inviter.id);
-  check('a new code is PY plus six unambiguous characters', /^PY[A-HJ-NP-Z2-9]{6}$/.test(code), code);
+  check('a new code is PY plus digits', /^PY\d{4,8}$/.test(code), code);
   eq('binding to yourself is refused', (await social.bind(w.db, { code, newUserId: inviter.id, at })).reason, 'self_referral');
   eq('an unknown code is refused', (await social.bind(w.db, { code: 'PYNOPE22', newUserId: w.customerId, at })).reason, 'unknown_code');
-  eq('the form check agrees', await social.codeExists(w.db, 'PYNOPE22'), false);
+  await throws('the form check agrees', 'not_found', async () => await social.lookup(w.db, 'PYNOPE22'));
 
   /* Read off a phone and typed back: lower case, a space, a dash. */
-  const typed = ` ${code.slice(0, 4).toLowerCase()} ${code.slice(4, 6)}-${code.slice(6).toLowerCase()} `;
-  eq('the form check folds case and spacing', await social.codeExists(w.db, typed), true);
+  const typed = ` ${code.slice(0, 2).toLowerCase()} ${code.slice(2, 4)}-${code.slice(4)} `;
+  eq('the form check folds case, spacing and dashes', (await social.lookup(w.db, typed)).code, code);
   eq('…and so does binding', (await social.bind(w.db, { code: typed, newUserId: w.customerId, at })).ok, true);
   eq('and pays nothing yet', await ledger.balance(w.db, inviter.id), 0);
 
@@ -4281,6 +4880,172 @@ async function socialRules(): Promise<void> {
   check('…and still ranks you', noCity.rows.some((r) => r.userId === w.customerId));
   const noCountry = await social.board(w.db, { scope: 'country', country: null, at });
   eq('…and so does a country board', noCountry.scope, 'global');
+
+  await w.db.close();
+}
+
+/**
+ * §7.3 referrals, end to end over HTTP: the link, the people, redeeming a code
+ * after sign-up, every refusal and its `reason`, the payout on the invitee's
+ * first confirmed visit, and the 500 at five.
+ *
+ * `socialRules` above checks the bond in the domain; this is the surface the
+ * phone and the website's `/i/:code` page actually call.
+ */
+async function referralRules(): Promise<void> {
+  describe('§7.3 referrals over HTTP');
+
+  eq('a pasted link normalises to its code', social.normaliseCode(' https://www.pay-lez.com/i/py1234/ '), 'PY1234');
+  eq('lower case and spaces normalise', social.normaliseCode('py 12 34'), 'PY1234');
+  eq('a query string is not part of the code', social.normaliseCode('https://www.pay-lez.com/i/PY1234?utm=x'), 'PY1234');
+  eq('a name is first name + last initial', social.shortName('Marta Anna Kowalska'), 'Marta K.');
+  eq('…a single word stays whole', social.shortName('marta_k'), 'marta_k');
+  eq('…and nothing is nothing', social.shortName('  '), '');
+
+  const w = await world();
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : 0;
+  const call = async (method: string, path: string, options: { token?: string; body?: unknown } = {}) => {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  const signUp = async (email: string, name: string, referralCode?: string) => {
+    const r = await call('POST', '/v1/auth/signup', {
+      body: { email, password: 'hunter22', name, acceptTerms: true, ...(referralCode ? { referralCode } : {}) },
+    });
+    return { token: r.body.token as string, id: r.body.user.id as string };
+  };
+
+  const base = midMonth();
+  try {
+    const amina = await signUp('amina@ref.test', 'Amina Tursunova');
+    const mine = await call('GET', '/v1/referrals', { token: amina.token });
+    eq('GET /v1/referrals answers', mine.status, 200);
+    const code = mine.body.code as string;
+    eq('the link is the website’s /i/<code>', mine.body.link, `https://www.pay-lez.com/i/${code}`);
+    eq('nobody yet', mine.body.people, []);
+    eq('a fresh account can still add a code', mine.body.canRedeem, true);
+    eq('…and was invited by nobody', mine.body.referredBy, null);
+    eq('the reward figures come from config', [mine.body.referrerReward, mine.body.inviteeReward, mine.body.friendMilestoneAt, mine.body.friendMilestone], [CONFIG.earn.referrerFirstVisit, CONFIG.earn.inviteeJoin, CONFIG.earn.friendMilestoneAt, CONFIG.earn.friendMilestone]);
+
+    /* The public lookup the landing page and the app's confirm screen use. */
+    const looked = await call('GET', `/v1/referrals/codes/${code.toLowerCase()}`);
+    eq('the public lookup answers without a session', looked.status, 200);
+    eq('…with a short name, never the email', looked.body.name, 'Amina T.');
+    eq('…and the canonical code', looked.body.code, code);
+    eq('an unknown code is 404', (await call('GET', '/v1/referrals/codes/NOPE00')).status, 404);
+
+    /* Sign-up carries the code — pasted as the whole link, in lower case. */
+    const bek = await signUp('bek@ref.test', 'Bek Karimov', `https://www.pay-lez.com/i/${code.toLowerCase()}`);
+    const afterJoin = await call('GET', '/v1/referrals', { token: amina.token });
+    eq('sign-up with the link binds the invite', afterJoin.body.joined, 1);
+    eq('…and lists the person as joined', afterJoin.body.people.map((p: { name: string; status: string }) => [p.name, p.status]), [['Bek K.', 'joined']]);
+    eq('…with nothing paid yet', afterJoin.body.pointsEarned, 0);
+    const bekView = await call('GET', '/v1/referrals', { token: bek.token });
+    eq('the invitee sees who invited them', bekView.body.referredBy, { name: 'Amina T.', status: 'joined' });
+    eq('…and cannot add a second code', bekView.body.canRedeem, false);
+
+    /* Redeeming after sign-up, and every refusal with its reason. */
+    const cara = await signUp('cara@ref.test', 'Cara');
+    const redeemed = await call('POST', '/v1/referrals/redeem', { token: cara.token, body: { code } });
+    eq('a code can be added after sign-up', redeemed.status, 200);
+    eq('…and names the referrer', redeemed.body.referredBy, { name: 'Amina T.' });
+    const twice = await call('POST', '/v1/referrals/redeem', { token: cara.token, body: { code } });
+    eq('only once per account', [twice.status, twice.body.error?.reason], [409, 'already_referred']);
+    const self = await call('POST', '/v1/referrals/redeem', { token: amina.token, body: { code } });
+    eq('never your own code', [self.status, self.body.error?.reason], [400, 'self_referral']);
+    const bekCode = bekView.body.code as string;
+    const circle = await call('POST', '/v1/referrals/redeem', { token: amina.token, body: { code: bekCode } });
+    eq('never in a circle', [circle.status, circle.body.error?.reason], [409, 'circular']);
+    const unknown = await call('POST', '/v1/referrals/redeem', { token: amina.token, body: { code: 'PY0000000' } });
+    eq('an unknown code is 404', [unknown.status, unknown.body.error?.reason], [404, 'unknown_code']);
+
+    const guest = await call('POST', '/v1/auth/guest', { body: { device: 'ref-verify-device' } });
+    const asGuest = await call('POST', '/v1/referrals/redeem', { token: guest.body.token, body: { code } });
+    eq('a guest carries the code into sign-up instead', asGuest.status, 403);
+
+    /* Before the first confirmed visit only. */
+    const dana = await signUp('dana@ref.test', 'Dana');
+    await scan(w, 4000, base, dana.id);
+    const late = await call('GET', '/v1/referrals', { token: dana.token });
+    eq('after a visit the phone is told not to offer it', late.body.canRedeem, false);
+    const tooLate = await call('POST', '/v1/referrals/redeem', { token: dana.token, body: { code } });
+    eq('…and the server refuses it', [tooLate.status, tooLate.body.error?.reason], [409, 'already_visited']);
+
+    /* The payout: 100 each on the invitee's first confirmed visit. */
+    await scan(w, 4000, base, bek.id);
+    const paid = await call('GET', '/v1/referrals', { token: amina.token });
+    eq('the first visit completes the invite', paid.body.completed, 1);
+    eq('pointsEarned is what reached the referrer, not both sides', paid.body.pointsEarned, CONFIG.earn.referrerFirstVisit);
+    const bekRow = paid.body.people.find((p: { name: string }) => p.name === 'Bek K.');
+    eq('…and the person reads completed, with their share', [bekRow?.status, bekRow?.pointsAwarded, typeof bekRow?.completedAt], ['completed', CONFIG.earn.referrerFirstVisit, 'string']);
+    const bekLedger = await w.db.get<{ n: number }>(
+      `SELECT SUM(delta) AS n FROM points_ledger WHERE user_id = $u AND source_kind = 'referral'`,
+      { u: bek.id },
+    );
+    eq('the invitee is paid on the same visit', bekLedger?.n, CONFIG.earn.inviteeJoin);
+    await scan(w, 4000, plusDays(base, 2), bek.id);
+    eq('a second visit pays nobody again', (await call('GET', '/v1/referrals', { token: amina.token })).body.pointsEarned, CONFIG.earn.referrerFirstVisit);
+
+    /* The friend milestone: 500 at five completed, once. Cara is the second. */
+    await scan(w, 4000, base, cara.id);
+    for (const name of ['Eli', 'Farid', 'Gul']) {
+      const friend = await signUp(`${name.toLowerCase()}@ref.test`, name, code);
+      await scan(w, 4000, base, friend.id);
+    }
+    const five = await call('GET', '/v1/referrals', { token: amina.token });
+    eq('five completed', five.body.completed, 5);
+    eq('the milestone is paid on the fifth, and counted in pointsEarned', five.body.pointsEarned, 5 * CONFIG.earn.referrerFirstVisit + CONFIG.earn.friendMilestone);
+    const hana = await signUp('hana@ref.test', 'Hana', code);
+    await scan(w, 4000, base, hana.id);
+    const six = await call('GET', '/v1/referrals', { token: amina.token });
+    eq('the milestone is paid once', six.body.pointsEarned, 6 * CONFIG.earn.referrerFirstVisit + CONFIG.earn.friendMilestone);
+
+    /* Google sign-up carries a code on the create path, and only there. */
+    const viaGoogle = await accounts.linkGoogleAccount(w.db, { sub: 'g-ref-1', email: 'iris@ref.test', name: 'Iris Novak', referralCode: code });
+    eq('a Google sign-up binds the invite', (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM referrals WHERE referred_id = $u`, { u: viaGoogle.id }))?.n, 1);
+    await accounts.linkGoogleAccount(w.db, { sub: 'g-ref-1', email: 'iris@ref.test', name: 'Iris Novak', referralCode: bekCode });
+    eq('…and signing in again does not rebind it', (await w.db.get<{ referrer_id: string }>(`SELECT referrer_id FROM referrals WHERE referred_id = $u`, { u: viaGoogle.id }))?.referrer_id, amina.id);
+
+    /* The routes declare their limits: the code space is small. */
+    const redeemRoute = allRoutes.find((r) => r.method === 'POST' && r.pattern === '/v1/referrals/redeem');
+    eq('redeeming is bounded per account', redeemRoute?.limit?.by, 'account');
+    const lookupRoute = allRoutes.find((r) => r.method === 'GET' && r.pattern === '/v1/referrals/codes/:code');
+    eq('the public lookup is bounded per connection', lookupRoute?.limit?.by, 'connection');
+  } finally {
+    server.close();
+  }
+
+  /* A full four-digit space widens instead of failing sign-up. */
+  await w.db.tx(async () => {
+    const at = now();
+    for (let n = 1000; n < 10000; n += 1) {
+      await w.db.run(
+        `INSERT INTO users (id, display_name, auth_provider, language, status, referral_code, created_at, updated_at)
+         VALUES ($i, 'Filler', 'provisional', 'en', 'provisional', $c, $t, $t)
+         ON CONFLICT DO NOTHING`,
+        { i: `usr_fill_${n}`, c: `PY${n}`, t: at },
+      );
+    }
+  });
+  const crowded = newId('usr');
+  await w.db.run(
+    `INSERT INTO users (id, display_name, auth_provider, language, status, created_at, updated_at)
+     VALUES ($i, 'Late', 'provisional', 'en', 'provisional', $t, $t)`,
+    { i: crowded, t: now() },
+  );
+  const wide = await social.codeFor(w.db, crowded);
+  check('a full four-digit space still allocates a code', /^PY\d{6,8}$/.test(wide), wide);
 
   await w.db.close();
 }
@@ -4466,32 +5231,28 @@ async function jobRules(): Promise<void> {
   check('the frequent job runs clean', frequent.ran.length === 3);
 
   /*
-   * Dead verification codes are dropped, and this is checked because the row
-   * is a *stored email address* rather than a stale record. One code expired
-   * two days ago and one is live: the first goes, the second must survive — a
-   * prune that took live codes would void every code somebody is about to type
-   * in. Seeded rather than asserted on an empty table, because `changes` on an
-   * empty table is 0 whether or not the job does anything.
+   * Stale email codes are pruned, because the row is a *stored email address*.
+   * One expired two days ago (gone), one expired an hour ago (kept for a day,
+   * so a support conversation about "it said expired" still has it). Seeded
+   * rather than asserting on an empty table: `changes` is 0 on an empty table
+   * either way.
    */
-  for (const [n, userId] of [w.ownerId, w.customerId].entries()) {
+  for (const [n, [userId, expires]] of ([
+    [w.ownerId, plusDays(at, -2)],
+    [w.customerId, plusMinutes(at, -60)],
+  ] as const).entries()) {
     await w.db.run(
       `INSERT INTO email_verifications (id, user_id, email_norm, code_hash, expires_at, sent_at)
-       VALUES ($i, $u, $e, 'not-a-real-hash', $x, $t)`,
-      {
-        i: `evr_${n}`,
-        u: userId,
-        e: `${userId}@verify.test`,
-        x: n === 0 ? plusMinutes(at, -2 * 1440) : plusMinutes(at, 5),
-        t: at,
-      },
+       VALUES ($i, $u, $e, 'not-a-real-hash', $x, $x)`,
+      { i: `evr_stale_${n}`, u: userId, e: `${userId}@verify.test`, x: expires },
     );
   }
 
   const daily = await jobs.runDaily(w.db, at);
   eq('nothing has drifted', daily.detail.reconciledDrift, 0);
-  eq('the nightly job drops the dead verification code', daily.detail.codesPruned, 1);
+  eq('the nightly job prunes codes expired over a day ago', daily.detail.codesPruned, 1);
   eq(
-    '…and keeps the live one',
+    '…and keeps the one that expired an hour ago',
     (await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM email_verifications`))?.n,
     1,
   );
@@ -4511,6 +5272,174 @@ function routerRules(): void {
   eq('a literal segment beats a parameter', router.match('GET', '/v1/venues/mine')?.route.pattern, '/v1/venues/mine');
   eq('and a parameter still matches', router.match('GET', '/v1/venues/abc')?.params.id, 'abc');
   eq('a wrong method does not match', router.match('POST', '/v1/venues/mine'), null);
+}
+
+/* ═════════════════════════════════════════════════════ email codes ══ */
+
+/**
+ * Email OTP: the sign-up confirmation and the password reset
+ * (`domain/verification.ts`). Over HTTP where the property is a route's (the
+ * code never in a response, the reset saying nothing about which addresses
+ * exist), and through the domain with a moved clock for expiry and cooldown.
+ *
+ * Runs on the local mail adapter: the code is read from `email.outbox`, which
+ * is the only place it appears.
+ */
+async function emailCodeRules(): Promise<void> {
+  describe('email codes — confirmation and password reset');
+  const saved = {
+    key: process.env.PAYLEZ_RESEND_KEY,
+    gate: process.env.PAYLEZ_VERIFY_TO_SPEND,
+    quiet: process.env.PAYLEZ_QUIET,
+    since: process.env.PAYLEZ_VERIFY_SINCE,
+  };
+  delete process.env.PAYLEZ_RESEND_KEY;
+  delete process.env.PAYLEZ_VERIFY_TO_SPEND;
+  process.env.PAYLEZ_QUIET = '1';
+
+  const w = await world();
+  const at = now();
+  /* Accounts from yesterday on are "new"; the deploy-time default is a date
+     this machine's clock may not have reached. */
+  process.env.PAYLEZ_VERIFY_SINCE = plusDays(at, -1);
+  const codeFor6 = (to: string): string => email.lastTo(to)?.body.match(/\b(\d{6})\b/)?.[1] ?? '';
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  const seen: string[] = [];
+  const call = async (method: string, path: string, body?: unknown, token?: string) => {
+    const response = await fetch(`${base}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    const text = await response.text();
+    seen.push(text);
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+
+  eq('with no Resend key the mail adapter is local', email.mode(), 'local');
+  check('…and nothing is gated on an address', !verification.gateOn());
+
+  /* ── sign-up sends the first code ── */
+  const signup = await call('POST', '/v1/auth/signup', {
+    email: 'otp@verify.test', password: 'hunter22', name: 'Otp', acceptTerms: true,
+  });
+  eq('sign-up answers', signup.status, 200);
+  eq('…and reports that a code went out', signup.body.verification?.sent, true);
+  const token = signup.body.token as string;
+  const first = codeFor6('otp@verify.test');
+  check('a six-digit code reached the outbox', /^\d{6}$/.test(first));
+  let me = await call('GET', '/v1/me', undefined, token);
+  eq('a new account is unconfirmed', me.body.user.emailVerifiedAt, null);
+  eq('…and not required to confirm while mail is local', me.body.user.emailVerificationRequired, false);
+
+  /* ── the gate, switched on as live mail would switch it ── */
+  process.env.PAYLEZ_VERIFY_TO_SPEND = 'on';
+  me = await call('GET', '/v1/me', undefined, token);
+  eq('with the gate on, a new unconfirmed account is required to confirm', me.body.user.emailVerificationRequired, true);
+  const tier = await w.db.get<{ id: string }>(`SELECT id FROM voucher_tiers WHERE venue_id = $v LIMIT 1`, { v: w.venueId });
+  const voucher = await call('POST', '/v1/vouchers', { venueId: w.venueId, tierId: tier?.id }, token);
+  eq('buying a voucher is refused unconfirmed', [voucher.status, voucher.body.error?.code], [403, 'not_verified']);
+  const card = await call('POST', '/v1/gift-cards', { stockId: 'gcs_none' }, token);
+  eq('…and so is a gift card', [card.status, card.body.error?.code], [403, 'not_verified']);
+  eq('checking in is not gated', (await call('POST', '/v1/daily/check-in', {}, token)).status, 200);
+  eq('a verified fixture account is not required', await verification.required(w.db, w.customerId), false);
+  const old = await accounts.signUp(w.db, { email: 'old@verify.test', password: 'hunter22', name: 'Old', at });
+  await w.db.run(`UPDATE users SET created_at = '2026-01-01T00:00:00.000Z' WHERE id = $u`, { u: old.id });
+  eq('an account from before `verifySince` is never required', await verification.required(w.db, old.id), false);
+  const guest = await accounts.provisional(w.db, 'otp-device', at);
+  eq('…nor is a guest with no address', await verification.required(w.db, guest.id), false);
+
+  /* ── resend and confirm ── */
+  const resend = await call('POST', '/v1/auth/email/send-code', {}, token);
+  eq('a resend inside the cooldown is not an error', resend.status, 200);
+  eq('…it says not sent, and when', [resend.body.sent, typeof resend.body.nextSendAt], [false, 'string']);
+  const wrong = first === '000000' ? '111111' : '000000';
+  const miss = await call('POST', '/v1/auth/email/verify', { code: wrong }, token);
+  eq('a wrong code is a 400 with tries left', [miss.status, miss.body.error?.details?.attemptsLeft ?? miss.body.error?.attemptsLeft], [400, 4]);
+  const ok = await call('POST', '/v1/auth/email/verify', { code: ` ${first.slice(0, 3)} ${first.slice(3)} ` }, token);
+  eq('the right code (with spaces) confirms', [ok.status, ok.body.verified, ok.body.granted], [200, true, true]);
+  me = await call('GET', '/v1/me', undefined, token);
+  check('…stamps the account', typeof me.body.user.emailVerifiedAt === 'string');
+  eq('…and lifts the gate', me.body.user.emailVerificationRequired, false);
+  eq('a second confirm is granted: false, not an error',
+    (await call('POST', '/v1/auth/email/verify', { code: first }, token)).body.granted, false);
+  eq('asking for a code once confirmed is a conflict',
+    (await call('POST', '/v1/auth/email/send-code', {}, token)).status, 409);
+
+  /* ── the clock: expiry, attempts, cooldown, the hourly ceiling ── */
+  const timed = await accounts.signUp(w.db, { email: 'timed@verify.test', password: 'hunter22', name: 'T', at });
+  await verification.sendCode(w.db, { userId: timed.id, at });
+  const timedCode = codeFor6('timed@verify.test');
+  await throws('a code eleven minutes old has expired', 'expired', () =>
+    verification.confirm(w.db, { userId: timed.id, code: timedCode, at: plusMinutes(at, 11) }));
+  eq('a send 30 s later is refused by the cooldown',
+    (await verification.sendCode(w.db, { userId: timed.id, at: plusMinutes(at, 0.5) })).sent, false);
+  let t = at;
+  for (let i = 2; i <= CONFIG.auth.codeSendsPerHour; i += 1) {
+    t = plusMinutes(t, 1.1);
+    await verification.sendCode(w.db, { userId: timed.id, at: t });
+  }
+  await throws('a sixth code inside the hour is refused', 'quota_exceeded', () =>
+    verification.sendCode(w.db, { userId: timed.id, at: plusMinutes(t, 1.1) }));
+  eq('…and allowed again after a quiet hour',
+    (await verification.sendCode(w.db, { userId: timed.id, at: plusMinutes(t, 61) })).sent, true);
+  const live = codeFor6('timed@verify.test');
+  const t2 = plusMinutes(t, 62);
+  const bad = live === '000000' ? '111111' : '000000';
+  for (let i = 0; i < CONFIG.auth.codeAttempts; i += 1) {
+    await throws(`wrong answer ${i + 1}`, 'validation_failed', () =>
+      verification.confirm(w.db, { userId: timed.id, code: bad, at: t2 }));
+  }
+  await throws('after five wrong answers even the right code is refused', 'cap_reached', () =>
+    verification.confirm(w.db, { userId: timed.id, code: live, at: t2 }));
+
+  /* ── password reset ── */
+  const before = email.outbox.length;
+  const stranger = await call('POST', '/v1/auth/password/reset-code', { email: 'nobody@verify.test' });
+  const known = await call('POST', '/v1/auth/password/reset-code', { email: 'OLD@verify.test ' });
+  eq('a reset for an unknown address answers 200 ok', [stranger.status, stranger.body], [200, { ok: true }]);
+  eq('…exactly as one for a real address does', [known.status, known.body], [200, { ok: true }]);
+  eq('…and only the real one gets mail', email.outbox.length - before, 1);
+  const resetCode = codeFor6('old@verify.test');
+  const oldSession = await accounts.createSession(w.db, { userId: old.id, mode: 'consumer', surface: 'mobile', at });
+
+  const short = await call('POST', '/v1/auth/password/reset', { email: 'old@verify.test', code: resetCode, password: '123' });
+  eq('a short new password is refused on the password field', [short.status, short.body.error?.details?.field ?? short.body.error?.field], [400, 'password']);
+  const noSuch = await call('POST', '/v1/auth/password/reset', { email: 'nobody@verify.test', code: '123456', password: 'newpass77' });
+  const wrongCode = await call('POST', '/v1/auth/password/reset', {
+    email: 'old@verify.test', code: resetCode === '000000' ? '111111' : '000000', password: 'newpass77' });
+  eq('a wrong code and an unknown address read the same',
+    [noSuch.status, noSuch.body.error?.message], [wrongCode.status, wrongCode.body.error?.message]);
+  eq('…both a 400', noSuch.status, 400);
+  const reset = await call('POST', '/v1/auth/password/reset', { email: 'old@verify.test', code: resetCode, password: 'newpass77' });
+  eq('the right code resets the password', [reset.status, reset.body], [200, { reset: true }]);
+  eq('…drops every open session', (await call('GET', '/v1/me', undefined, oldSession.token)).status, 401);
+  eq('…signs in with the new password',
+    (await call('POST', '/v1/auth/signin', { email: 'old@verify.test', password: 'newpass77' })).status, 200);
+  eq('…not the old one',
+    (await call('POST', '/v1/auth/signin', { email: 'old@verify.test', password: 'hunter22' })).status, 401);
+  check('…and proves the address', Boolean((await w.db.get<{ v: string | null }>(
+    `SELECT email_verified_at AS v FROM users WHERE id = $u`, { u: old.id }))?.v));
+  eq('a used reset code is spent',
+    (await call('POST', '/v1/auth/password/reset', { email: 'old@verify.test', code: resetCode, password: 'again777' })).status, 400);
+
+  /* ── never in a response ── */
+  const codes = email.outbox.map((m) => m.body.match(/\b(\d{6})\b/)?.[1]).filter(Boolean) as string[];
+  check('no code ever appeared in an HTTP response',
+    codes.length > 0 && !seen.some((text) => codes.some((code) => text.includes(`"${code}"`) || text.includes(`:${code}`))));
+
+  server.close();
+  await w.db.close();
+  for (const [name, value] of [
+    ['PAYLEZ_RESEND_KEY', saved.key], ['PAYLEZ_VERIFY_TO_SPEND', saved.gate], ['PAYLEZ_QUIET', saved.quiet],
+    ['PAYLEZ_VERIFY_SINCE', saved.since],
+  ] as const) {
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
 }
 
 /* ══════════════════════════════════════════════════ the HTTP surface ══ */
@@ -4554,32 +5483,14 @@ async function httpSurface(): Promise<void> {
   eq('sign-up succeeds', signup.status, 200);
   const token = signup.body.token as string;
 
-  /* The first code goes out with the sign-up itself, and the pair of routes
-     proves it over the wire. The code is readable here only because the local
-     adapter returns it — see `ports/email.ts`. */
-  const firstCode = signup.body.verification as { sent: boolean; code?: string } | null;
-  check('sign-up sends the first code', firstCode?.sent === true && typeof firstCode.code === 'string');
-  const unproved = await call('GET', '/v1/me', { token });
-  eq('…and the account is not proved yet', unproved.body.user.emailVerifiedAt, null);
-  eq('…and says whether that costs anything', unproved.body.user.spendNeedsVerifiedEmail, false);
-  const resend = await call('POST', '/v1/auth/verify/send', { token });
-  eq('a resend inside the cooldown is a 200 that sends nothing', [resend.status, resend.body.sent], [200, false]);
-  const wrongCode = await call('POST', '/v1/auth/verify', {
-    token, body: { code: firstCode?.code === '000000' ? '111111' : '000000' },
-  });
-  eq('a wrong code is a 400 that says how many tries are left',
-    [wrongCode.status, typeof wrongCode.body.error?.attemptsLeft], [400, 'number']);
-  const rightCode = await call('POST', '/v1/auth/verify', { token, body: { code: firstCode?.code } });
-  eq('the right code proves the address', [rightCode.status, rightCode.body.granted], [200, true]);
-  check('…and /v1/me now carries the stamp',
-    typeof (await call('GET', '/v1/me', { token })).body.user.emailVerifiedAt === 'string');
+  /* The email code over the wire is checked in its own section above. */
 
   /* An invite, over the wire: the form's check, then a sign-up that says the
      code bound — and one with a bad code that still creates the account. */
   const inviteCode = (await call('GET', '/v1/referrals', { token })).body.code as string;
   eq('the code check knows a real code',
-    (await call('GET', `/v1/referrals/codes/${inviteCode.toLowerCase()}`)).body.valid, true);
-  eq('…and not an invented one', (await call('GET', '/v1/referrals/codes/PYNOPE22')).body.valid, false);
+    (await call('GET', `/v1/referrals/codes/${inviteCode.toLowerCase()}`)).body.code, inviteCode);
+  eq('…and not an invented one', (await call('GET', '/v1/referrals/codes/PYNOPE22')).status, 404);
   const invited = await call('POST', '/v1/auth/signup', {
     body: { email: 'invited@verify.test', password: 'hunter22', name: 'Invited', acceptTerms: true, referralCode: inviteCode },
   });
@@ -5129,19 +6040,24 @@ async function httpSurface(): Promise<void> {
    * is next.
    */
   const giftCost = Math.floor(CONFIG.earn.onboarding / 2);
+  /* Rulebook §2.1: the price is **derived** from the face value at 100 points a
+     złoty, so the card is written in PLN at a face of `giftCost` grosze and the
+     stored `points_cost` is deliberately a wrong number the server must ignore. */
   await w.db.run(
     `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
-     VALUES ('gcs_test', 'Test Brand', 'T', 465, 'EUR', ${giftCost}, 250, 0, 1)
+     VALUES ('gcs_test', 'Test Brand', 'T', ${giftCost}, 'PLN', 1, 250, 0, 1)
      ON CONFLICT (id) DO NOTHING`,
   );
   await stockCodes(w.db, 'gcs_test', 3);
+  const shelfCard = ((await call('GET', '/v1/gift-cards')).body as Array<{ id: string; points_cost: number }>).find(
+    (card) => card.id === 'gcs_test',
+  );
+  eq('the shelf quotes the rule’s price, not the row’s', shelfCard?.points_cost, giftCost);
 
-  const gift = await call('POST', '/v1/gift-cards', {
-    token,
-    key,
-    body: { stockId: 'gcs_test' },
-  });
-  eq('a gift card is redeemable', gift.status, 200);
+  /* No plan gate, and since 2026-10-03 a fixed monthly budget funds the pool,
+     so a free account with nobody paying can buy a card outright. */
+  const gift = await call('POST', '/v1/gift-cards', { token, key, body: { stockId: 'gcs_test' } });
+  eq('a free account buys a gift card from the fixed budget', gift.status, 200);
   const again = await call('POST', '/v1/gift-cards', {
     token,
     key,
@@ -6490,6 +7406,17 @@ function postgresLockdown(): void {
  *     otherwise the cheapest way past a limiter on sign-up is to send a body
  *     that cannot succeed.
  */
+/** A stable documentation-range address per label, standing for one connection. */
+const fakeAddresses = new Map<string, string>();
+function fakeAddress(label: string): string {
+  let address = fakeAddresses.get(label);
+  if (!address) {
+    address = `198.51.100.${fakeAddresses.size + 1}`;
+    fakeAddresses.set(label, address);
+  }
+  return address;
+}
+
 async function rateLimits(): Promise<void> {
   describe('rate limits');
 
@@ -6499,10 +7426,18 @@ async function rateLimits(): Promise<void> {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : 0;
 
-  const signUp = async (email: string, agent: string, body?: Record<string, unknown>) => {
+  /* `agent` names a *connection* here: it is sent as a forwarded address (the
+     suite is a loopback peer, which is what production's nginx is) and as the
+     user-agent — the latter only so the check below can show that changing the
+     header alone no longer buys a fresh bucket. */
+  const signUp = async (email: string, agent: string, body?: Record<string, unknown>, userAgent?: string) => {
     const response = await fetch(`http://127.0.0.1:${port}/v1/auth/signup`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'user-agent': agent },
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': userAgent ?? agent,
+        'x-forwarded-for': fakeAddress(agent),
+      },
       /* `acceptTerms` so these fixtures stand for somebody who was actually
          asked — §1.3. Not because sign-up refuses without it: it deliberately
          does not (see `signUp`, "absent is not refused"), it simply writes no
@@ -6525,7 +7460,12 @@ async function rateLimits(): Promise<void> {
   const over = await signUp('limitover@verify.test', 'suite/one');
   eq('the one past it is refused 429 `rate_limited`', [over.status, over.body.error?.code], [429, 'rate_limited']);
 
-  /* A different agent is a different connection key, so it starts at zero.
+  /* The bypass a reviewer found: the key once hashed the user-agent, so the
+     same address with a new header started at zero. It must not. */
+  const disguised = await signUp('limitdisguised@verify.test', 'suite/one', undefined, 'a-brand-new-agent/9.9');
+  eq('…and a new user-agent from the same address is still refused', disguised.status, 429);
+
+  /* A different address is a different connection key, so it starts at zero.
      This is the property that stops one office locking out a city. */
   const other = await signUp('limitother@verify.test', 'suite/two');
   eq('another connection is unaffected', other.status, 200);
@@ -6542,6 +7482,18 @@ async function rateLimits(): Promise<void> {
     `SELECT COUNT(*) AS n FROM auth_attempts WHERE subject LIKE 'POST /v1/auth/signup|%'`,
   );
   eq('…and it still cost an attempt', counted?.n, ceiling + 2);
+
+  /* Whose address is it (limits.clientAddress). Behind the nginx on the same
+     box the peer is loopback and the proxy *appends* what it saw, so only the
+     last entry is ours; the first is whatever the caller wrote. */
+  eq('the last forwarded entry is the client, from our own proxy',
+    limitsDomain.clientAddress('6.6.6.6, 203.0.113.7', '127.0.0.1'), '203.0.113.7');
+  eq('…on IPv6 loopback too', limitsDomain.clientAddress('203.0.113.7', '::ffff:127.0.0.1'), '203.0.113.7');
+  eq('a direct peer’s forwarded header is ignored', limitsDomain.clientAddress('6.6.6.6', '198.51.100.20'), '198.51.100.20');
+  eq('no header from the proxy: the peer', limitsDomain.clientAddress(undefined, '127.0.0.1'), '127.0.0.1');
+  check('two addresses are two connection keys',
+    limitsDomain.connectionKey(SECRET, '2026-10-01', '203.0.113.7') !==
+      limitsDomain.connectionKey(SECRET, '2026-10-01', '203.0.113.8'));
 
   server.close();
   await db.close();
@@ -6646,8 +7598,9 @@ async function dailyTaskRules(): Promise<void> {
    *
    * The rotation posts on the player's *local* day, which the server does not
    * know, so a round counts if its game is featured for yesterday, today or
-   * tomorrow in UTC. Capitals is the probe; `posted` finds an instant where it
-   * counts and one where it does not.
+   * tomorrow in UTC. Flags is the probe (capitals was, until the rotation became
+   * the rulebook's eight and capitals left it); `posted` finds an instant where
+   * it counts and one where it does not.
    *
    * **`done` is derived from the player's own finished rounds now**, not from a
    * `daily_game` ledger entry — there is no such entry any more, because the
@@ -6656,14 +7609,14 @@ async function dailyTaskRules(): Promise<void> {
    */
   const posted = (when: string) =>
     [-1, 0, 1].some((offset) =>
-      games.dailyGameFor(plusDays(when, offset).slice(0, 10)).includes('capitals'));
+      games.dailyGameFor(plusDays(when, offset).slice(0, 10)).includes('flags'));
   let on = plusDays(at, 30);
   while (!posted(on)) on = plusDays(on, 1);
   let off = plusDays(on, 1);
   while (posted(off)) off = plusDays(off, 1);
 
-  const playCapitals = async (when: string) => {
-    const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'capitals', at: when });
+  const playProbe = async (when: string) => {
+    const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'flags', at: when });
     return await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at: when });
   };
   const prompt = async (when: string) =>
@@ -6671,15 +7624,15 @@ async function dailyTaskRules(): Promise<void> {
 
   check('the featured prompt is open before the day’s round is played',
     (await prompt(on))?.done === false);
-  eq('the day’s featured game claims the ×1.5', (await playCapitals(on)).featured, true);
+  eq('the day’s featured game claims the ×1.5', (await playProbe(on)).featured, true);
   check('…and the prompt goes quiet once it has been claimed',
     (await prompt(on))?.done === true);
-  eq('…once a day, not once a round', (await playCapitals(plusMinutes(on, 5))).featured, false);
-  eq('any other day’s game claims nothing', (await playCapitals(off)).featured, false);
+  eq('…once a day, not once a round', (await playProbe(plusMinutes(on, 5))).featured, false);
+  eq('any other day’s game claims nothing', (await playProbe(off)).featured, false);
   check('…and leaves that day’s prompt open', (await prompt(off))?.done === false);
-  eq('the order is the Play screen’s rotation', games.DAILY_GAME_POOL.map((slot) => slot.join('|')),
-    ['flight', 'memory_match', 'flags', 'capitals', 'brain', 'poland|uzbekistan', 'word_builder', 'merge_2048', 'food_cross', 'food_ninja',
-     'snake', 'cannon_numbers', 'breakout', 'doodle_jump', 'zuma']);
+  eq('the order is the rulebook’s eight (§4.4)', games.DAILY_GAME_POOL.map((slot) => slot.join('|')),
+    ['flags', 'brain', 'poland|uzbekistan', 'word_builder', 'memory_match', 'flight', 'game_2048|merge_2048',
+      'food_cross|food_cross_live']);
 
   /* A row naming a rule nothing prices has no figure, and a task with no figure
      is left out rather than sent as a zero — "0 points" is a thing the panel
@@ -6735,7 +7688,32 @@ async function wordListRules(): Promise<void> {
   const ru = await deal('ru', 'en');
   check('a Russian reader on the English card is dealt English words',
     ru.words.length > 0 && ru.words.every((word) => english.has(word)), ru.words);
-  check('…with the clues in Russian', ru.hints.every((hint) => /[а-яё]/i.test(hint ?? '')), ru.hints);
+  /* The 2 000-word bank carries a native clue for each word in its own list
+     only, so a Russian reader on the English card gets Russian where the bank
+     has that clue in Russian (an English clue shared with a Russian word) and
+     the English column otherwise — never a blank. */
+  const englishClues = new Set((await w.db.all<{ hint: string | null }>(
+    `SELECT hint FROM word_bank WHERE language = 'en'`,
+  )).map((row) => row.hint));
+  check('…with each clue in Russian or, failing that, English',
+    ru.hints.every((hint) => /[а-яё]/i.test(hint ?? '') || englishClues.has(hint)), ru.hints);
+  check('…and Russian wherever the bank has the same clue in Russian',
+    ((await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM translations t JOIN word_bank w ON w.id = t.entity_id
+        WHERE t.entity = 'word' AND t.field = 'hint' AND t.language = 'ru' AND w.language = 'en'`,
+    ))?.n ?? 0) > 0);
+
+  /* A reader on their own language's list gets the bank's own clue for each
+     word — `clue_native`, not a translation of the English one. */
+  const native = new Map(readWordBank('updates').map((row) => [row.word + '|' + row.language, row.clueNative]));
+  for (const language of ['pl', 'uz', 'ru']) {
+    const own = await deal(language, language);
+    const secretWords = own.words;
+    check(`a ${language} reader on the ${language} list gets the bank's ${language} clue`,
+      secretWords.length > 0 &&
+        secretWords.every((word, i) => own.hints[i] === native.get(word + '|' + language)),
+      own.hints);
+  }
 
   const pl = await deal('pl', 'en');
   check('a Polish reader on the English card is not dealt Polish words',
@@ -7153,11 +8131,24 @@ async function wordBankRules(): Promise<void> {
   const counts = await w.db.all<{ language: string; n: number }>(
     `SELECT language, COUNT(*) AS n FROM word_bank GROUP BY language ORDER BY language`,
   );
-  check('the bank has all three lists', counts.length >= 3, JSON.stringify(counts));
+  check('the bank has all four lists', counts.length >= 4, JSON.stringify(counts));
   for (const row of counts) {
     check(`${row.language} has enough words to sustain a round`, row.n > floor,
       `${row.n} words against a floor of ${floor}`);
   }
+  /* The 2 000-word CSV is the bank: 500 words in each list, and nothing else
+     left behind in those lists — the placeholder and the old JSON lists are
+     replaced, not merged under it. */
+  for (const language of ['en', 'pl', 'uz', 'ru']) {
+    eq(`${language} holds the CSV's 500 words`,
+      counts.find((row) => row.language === language)?.n, 500);
+  }
+  eq('every word in the four lists has its tiles',
+    (await w.db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM word_bank WHERE language IN ('en','pl','uz','ru') AND tiles IS NULL`,
+    ))?.n, 0);
+  eq('the CSV reads as 2 000 words', readWordBank('updates').length, 2000);
+  check(`the importer names ${WORD_BANK_CSV}`, existsSync(join('updates', WORD_BANK_CSV)));
 
   /*
    * **The tier is the export's, not the word's length.**
@@ -7171,13 +8162,17 @@ async function wordBankRules(): Promise<void> {
   const coffee = await w.db.get<{ tier: number; hint: string | null }>(
     `SELECT tier, hint FROM word_bank WHERE language = 'en' AND word = 'COFFEE'`,
   );
-  eq('a word carries the tier the export gave it', coffee?.tier, 2);
-  check('…and its hint', (coffee?.hint ?? '').length > 0, coffee?.hint ?? '(none)');
+  eq('a word carries the tier the export gave it (Medium → 2)', coffee?.tier, 2);
+  eq('…and its English clue', coffee?.hint, 'A hot dark drink that wakes you up');
+  eq('an Easy word is tier 1',
+    (await w.db.get<{ tier: number }>(`SELECT tier FROM word_bank WHERE language = 'en' AND word = 'BUILD'`))?.tier, 1);
+  eq('a Hard word is tier 3',
+    (await w.db.get<{ tier: number }>(`SELECT tier FROM word_bank WHERE language = 'en' AND word = 'BALANCE'`))?.tier, 3);
 
-  /* Every tier is represented in both lists, because the round is a ramp —
+  /* Every tier is represented in every list, because the round is a ramp —
      `WORD_RAMP` asks for two tier-1, two tier-2 and one tier-3, and a list
      missing a rung makes the ramp quietly shorter. */
-  for (const language of ['en', 'pl', 'ru']) {
+  for (const language of ['en', 'pl', 'uz', 'ru']) {
     const tiers = await w.db.all<{ tier: number; n: number }>(
       `SELECT tier, COUNT(*) AS n FROM word_bank WHERE language = $l GROUP BY tier ORDER BY tier`,
       { l: language },
@@ -7205,6 +8200,74 @@ async function wordBankRules(): Promise<void> {
     }
     if (i === 9) check('ten rounds in a row are all full rounds', true, '10 rounds');
   }
+
+  /*
+   * **Uzbek tiles are letters, not characters.** GOʻSHT is G|Oʻ|SH|T — four
+   * slots — and splitting it by code unit dealt six, one of them a bare ʻ.
+   * The three words below are made the whole of the Uzbek list for one round
+   * (the rest parked under another language code), so the deal is known.
+   */
+  const picked = ['GOʻSHT', 'MUSHUK', 'KOʻCHA'];
+  await w.db.run(
+    `UPDATE word_bank SET language = 'uz_parked'
+      WHERE language = 'uz' AND word NOT IN ($a, $b, $c)`,
+    { a: picked[0], b: picked[1], c: picked[2] },
+  );
+  await w.db.run(`DELETE FROM game_recent_items WHERE user_id = $u`, { u: w.customerId });
+  const uzRound = await games.startSession(w.db, {
+    userId: w.customerId, gameType: 'word_builder', language: 'uz', practice: true, at: plusMinutes(at, 30),
+  });
+  const uzSecret = JSON.parse((await w.db.get<{ secret: string }>(
+    `SELECT secret FROM game_sessions WHERE id = $i`, { i: uzRound.sessionId },
+  ))!.secret) as { words: string[]; tiles: string[][] };
+  const uzWords = (uzRound.content as {
+    words: Array<{ index: number; length: number; letters: string[] }>;
+  }).words;
+  const goshtAt = uzSecret.words.indexOf('GOʻSHT');
+  const gosht = uzWords[goshtAt];
+  eq('GOʻSHT is dealt as four tiles', gosht?.length, 4);
+  eq('…its tiles are G, Oʻ, SH, T', uzSecret.tiles[goshtAt], ['G', 'Oʻ', 'SH', 'T']);
+  check('…every one of them on the rack',
+    ['G', 'Oʻ', 'SH', 'T'].every((tile) => gosht?.letters.includes(tile)), gosht?.letters);
+  eq('…beside the CSV\'s two decoys', gosht?.letters.length, 6);
+  const goshtDecoys = [...(gosht?.letters ?? [])];
+  for (const tile of ['G', 'Oʻ', 'SH', 'T']) goshtDecoys.splice(goshtDecoys.indexOf(tile), 1);
+  check('…drawn from the Uzbek alphabet and never a piece of a real tile',
+    goshtDecoys.length === 2 &&
+      goshtDecoys.every((tile) => games.WORD_ALPHABETS.uz.includes(tile) &&
+        !['G', 'Oʻ', 'SH', 'T'].some((own) => own.includes(tile) || tile.includes(own))),
+    goshtDecoys);
+  check('no rack holds a bare ʻ', uzWords.every((word) => !word.letters.includes('ʻ')), uzWords);
+
+  let uzSeq = 0;
+  const uzSend = async (kind: string, payload: Record<string, unknown>) =>
+    await games.submitEvent(w.db, {
+      sessionId: uzRound.sessionId, userId: w.customerId, seq: ++uzSeq, kind, payload,
+      at: plusMinutes(at, 30),
+    });
+  eq('a hint on slot 2 reveals the whole tile Oʻ',
+    (await uzSend('hint', { index: goshtAt, position: 1 })).answer, 'Oʻ');
+  eq('a hint past the fourth tile is refused, though the word is six characters',
+    await uzSend('hint', { index: goshtAt, position: 4 }).then(() => 'answered', (e: unknown) =>
+      (e as { code?: string }).code), 'bad_request');
+  eq('a wrong spelling is wrong', (await uzSend('guess', { index: goshtAt, guess: 'GOSHT' })).correct, false);
+  eq('the tiles joined are the word', (await uzSend('guess', { index: goshtAt, guess: 'GOʻSHT' })).correct, true);
+  const mushukAt = uzSecret.words.indexOf('MUSHUK');
+  eq('MUSHUK is five tiles', uzWords[mushukAt]?.length, 5);
+  eq('…and is accepted sent as tiles',
+    (await uzSend('guess', { index: mushukAt, tiles: ['M', 'U', 'SH', 'U', 'K'] })).correct, true);
+  const kochaAt = uzSecret.words.indexOf('KOʻCHA');
+  eq('an ASCII apostrophe is the same letter (KO\'CHA)',
+    (await uzSend('guess', { index: kochaAt, guess: 'KO\'CHA' })).correct, true);
+  await w.db.run(`UPDATE word_bank SET language = 'uz' WHERE language = 'uz_parked'`);
+
+  /* `word_accept`: a Polish word typed without its diacritics is accepted. */
+  eq('GŁOWA accepts GLOWA',
+    JSON.parse((await w.db.get<{ accept: string }>(
+      `SELECT accept FROM word_bank WHERE language = 'pl' AND word = 'GŁOWA'`,
+    ))?.accept ?? '[]'), ['GLOWA']);
+  eq('the fold the judge compares by treats ‘ ’ \' and ʻ as one mark',
+    new Set(['GOʻSHT', 'GO\'SHT', 'GO‘SHT', 'GO’SHT', 'goʻsht'].map(games.spellingKey)).size, 1);
 
   await w.db.close();
 }
@@ -7624,17 +8687,19 @@ async function dashboardLevers(fixture: DashboardWorld): Promise<void> {
   eq('insights are about the venue’s current month', noticed.period, '2026-06');
   /* Fifteen June visits against May's one over the same span; one voucher each. */
   eq('month to date against the same span of the month before', noticed.trend, { visitsPct: 1400, vouchersPct: 0 });
-  /* Balances: two customers past 300, c1 at 235, nine at 130. The cheapest cut
-     that reaches anybody without undercutting the 5% rung is 200. */
-  eq('the tier a lower price would open to more of the regulars', noticed.tierReach, {
-    tierId: fixture.tier10,
-    pct: 10,
-    points: 300,
-    eligible: 12,
-    reached: 2,
-    lower: 200,
-    more: 1,
-  });
+  /* Balances: two customers past 300, c1 at 235, nine at 130. This used to
+     suggest cutting the 10% rung from 300 to 200 — and 200 is now a price
+     `setVoucherTiers` refuses: the band for 10% is 400..1500 (80%..300% of the
+     platform ladder's 500, `CONFIG.vouchers.partnerTierFloorBp`). The fixture's
+     rung is an *imported* legacy price already under that floor, so there is
+     no cut left to advise, and advice the partner's own save would reject is
+     exactly what this finding must not give. */
+  eq('no lower price is advised below the band a partner may set', noticed.tierReach, null);
+  check(
+    '…the cut it used to advise is one the band refuses',
+    200 < vouchers.partnerTierBand(10).min,
+    vouchers.partnerTierBand(10),
+  );
   eq('no deal has been seen enough times to compare', noticed.itemVsPercent, null);
   eq('the one reward earned and not collected', noticed.unusedRewards, { n: 1, amountMinor: 900 });
 
@@ -7669,7 +8734,9 @@ async function dashboardLevers(fixture: DashboardWorld): Promise<void> {
     await partners.setVoucherTiers(d.db, {
       venueId: d.venueId,
       actorId: d.ownerId,
-      tiers: [{ discountPct: 10, pointsCost: 300, maxDiscountMinor: 2500, active }],
+      /* 400, not the fixture's imported 300: an edit must bring a legacy rung
+         into the band, so switching it off and on reprices it to the floor. */
+      tiers: [{ discountPct: 10, pointsCost: 400, maxDiscountMinor: 2500, active }],
       at: T,
     });
   await retire(false);
@@ -8132,6 +9199,701 @@ async function counterRules(): Promise<void> {
   await k.db.close();
 }
 
+/**
+ * Rulebook §8: the mission catalogue.
+ *
+ * What is checked is the part that moves money: a claimed mission credits the
+ * ledger once and only once per period, a mission that is not complete cannot
+ * be claimed, and a mission that mirrors an automatic bonus never pays anything
+ * of its own however it is asked. Plus the shape the app renders — sixty-eight
+ * missions, seven bands, the operator's bands only while a campaign is live.
+ *
+ * Played on a day of the fixture's *current* month (so the venue's seeded
+ * budget is the one a scan draws on) whose featured game is a quiz, because a
+ * quiz can be finished with no events and still be a paid round.
+ */
+async function missionRules(): Promise<void> {
+  describe('missions (rulebook §8)');
+  const w = await world();
+  const month = localMonth(now(), VENUE_TZ);
+
+  let at = `${month}-10T12:00:00.000Z`;
+  for (let day = 10; day <= 25; day += 1) {
+    at = `${month}-${String(day).padStart(2, '0')}T12:00:00.000Z`;
+    const featured = await games.featuredGameFor(w.db, w.customerId, at);
+    if (featured && games.QUIZZES.has(featured)) break;
+  }
+  const featured = (await games.featuredGameFor(w.db, w.customerId, at))!;
+  const day = at.slice(0, 10);
+
+  const view = async (when = at) => await missions.missionsFor(w.db, w.customerId, when);
+  const one = async (id: string, when = at) =>
+    (await view(when)).bands.flatMap((band) => band.missions).find((mission) => mission.id === id);
+  const missionRows = async () =>
+    await w.db.all<{ delta: number; source_ref: string }>(
+      `SELECT delta, source_ref FROM points_ledger WHERE user_id = $u AND reason = 'mission'`,
+      { u: w.customerId },
+    );
+
+  /* ── the shape ── */
+  const fresh = await view();
+  eq('five bands on a quiet day, in the rulebook’s order', fresh.bands.map((band) => band.key),
+    ['daily', 'weekly', 'ongoing', 'once', 'learning']);
+  const numbers = fresh.bands.flatMap((band) => band.missions.map((mission) => mission.number));
+  /* #51 (first gift card) is served to everyone since gift cards were opened
+     to every account on 2026-10-03. #52–54 (the Pass, order-ahead) are not
+     served until those features exist — a row nobody can finish in this build
+     is omitted, never served locked. #46 (turn on notifications) and #48
+     (first review) are the same: the app has no push and no review screen. */
+  eq('…holding every static mission a free account can finish: 1–51 but 46 and 48, 55, 56 and 66–68', numbers,
+    [...Array.from({ length: 51 }, (_, i) => i + 1).filter((n) => n !== 46 && n !== 48), 55, 56, 66, 67, 68]);
+  eq('…the first-gift-card mission among them, open',
+    fresh.bands.flatMap((band) => band.missions).find((mission) => mission.number === 51)?.status, 'open');
+  eq('…with ids that are unique', new Set(fresh.bands.flatMap((b) => b.missions.map((m) => m.id))).size, numbers.length);
+  check('…and not one of them locked',
+    fresh.bands.every((band) => band.missions.every((mission) => mission.status !== 'locked')));
+  await throws('a mission that is not served cannot be claimed — it is a 404, not a 409', 'not_found', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'once.join_a_club', at }));
+  await throws('…nor read one at a time', 'not_found', async () =>
+    await missions.missionFor(w.db, w.customerId, 'once.join_a_club', at));
+  {
+    /* A paid plan serves the same #51; the Pass and order-ahead stay away
+       whatever the plan. A world of its own, so the paid plan cannot leak
+       into the claims below. */
+    const paid = await world();
+    await entitlements.assignPlan(paid.db, {
+      subject: { userId: paid.customerId }, planCode: 'pro', actorId: paid.ownerId, note: 'verify', at,
+    });
+    const served = (await missions.missionsFor(paid.db, paid.customerId, at)).bands
+      .flatMap((band) => band.missions);
+    eq('a paid plan is served the first-gift-card mission too, open',
+      served.find((mission) => mission.number === 51)?.status, 'open');
+    check('…and still no Pass or order-ahead', !served.some((mission) => [52, 53, 54].includes(mission.number)));
+    check('…and no mission names a tier',
+      !served.some((mission) => /\b(Pro|Premium)\b/.test(`${mission.title} ${mission.description}`)));
+    /* A per-plan reward prints the viewer's own figure, not the whole ladder —
+       "100 / 150 / 250" quoted two rewards nobody can buy in this build. */
+    check('…and no reward label quotes a ladder of plans',
+      !served.some((mission) => mission.rewardLabel.includes(' / ')),
+      served.filter((mission) => mission.rewardLabel.includes(' / ')).map((mission) => mission.rewardLabel));
+    const firstVisit = served.find((mission) => mission.number === 45);
+    eq('…the first-visit row reads the viewer’s own plan figure', firstVisit?.rewardLabel, String(firstVisit?.reward));
+  }
+  eq('the daily band resets at the next UTC midnight', fresh.bands[0].resetsAt, `${shiftDay(day, 1)}T00:00:00.000Z`);
+  check('the weekly band resets on a Monday',
+    new Date(fresh.bands[1].resetsAt ?? '').getUTCDay() === 1, fresh.bands[1].resetsAt);
+  eq('nothing but the check-in is waiting on a fresh account', fresh.unclaimed, 1);
+
+  /* ── a claimable daily mission, end to end ── */
+  eq('today’s game starts open', (await one('daily.todays_game'))?.status, 'open');
+  await throws('a mission that is not complete cannot be claimed', 'conflict', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.todays_game', at }));
+
+  const round = await games.startSession(w.db, { userId: w.customerId, gameType: featured, at });
+  const finished = await games.finish(w.db, { sessionId: round.sessionId, userId: w.customerId, at });
+  check('the fixture round is a paid featured round', finished.paid && finished.featured, finished);
+
+  eq('playing the featured game completes today’s game', (await one('daily.todays_game'))?.status, 'complete');
+  eq('…and warm up', (await one('daily.warm_up'))?.status, 'complete');
+  eq('…and counts one towards ten rounds', (await one('weekly.ten_rounds'))?.progress, 1);
+
+  const before = await ledger.balance(w.db, w.customerId);
+  const claimed = await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.todays_game', at });
+  eq('claiming pays the rulebook’s 25', claimed.points, CONFIG.missions.rewards['daily.todays_game']);
+  eq('…into the balance', claimed.balance, before + 25);
+  eq('…and the mission reads claimed', claimed.mission.status, 'claimed');
+  await throws('a second claim the same day is a conflict', 'conflict', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'daily.todays_game', at: plusMinutes(at, 5) }));
+  eq('…and the ledger holds exactly one entry for it', (await missionRows()).map((row) => row.source_ref),
+    [`daily.todays_game:${day}`]);
+  eq('…flat on the plan: the entry carries no multiplier', (await w.db.get<{ multiplier: number }>(
+    `SELECT multiplier FROM points_ledger WHERE user_id = $u AND reason = 'mission'`, { u: w.customerId }))?.multiplier, 1);
+  eq('the balance is still the ledger’s sum', await ledger.reconcile(w.db, w.customerId), 0);
+
+  /* Two claims racing: both read `complete`, one inserts. */
+  const race = await Promise.allSettled([
+    missions.claim(w.db, { userId: w.customerId, missionId: 'daily.warm_up', at }),
+    missions.claim(w.db, { userId: w.customerId, missionId: 'daily.warm_up', at }),
+  ]);
+  eq('two simultaneous claims pay once', race.filter((r) => r.status === 'fulfilled').length, 1);
+
+  eq('tomorrow the daily mission is open again', (await one('daily.todays_game', plusDays(at, 1)))?.status, 'open');
+
+  /* ── an auto-paid mirror never pays ── */
+  eq('finish setup is open before onboarding', (await one('once.finish_setup'))?.status, 'open');
+  check('…and is marked auto-paid', (await one('once.finish_setup'))?.autoPaid === true);
+  await accounts.completeOnboarding(w.db, w.customerId, at);
+  eq('onboarding pays its own bonus and the mission reads claimed', (await one('once.finish_setup'))?.status, 'claimed');
+  const beforeMirror = await ledger.balance(w.db, w.customerId);
+  await throws('claiming an auto-paid mission is refused', 'conflict', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'once.finish_setup', at }));
+  await throws('…even the welcome round it mirrors', 'conflict', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: 'once.first_game', at }));
+  eq('…and moves nothing', await ledger.balance(w.db, w.customerId), beforeMirror);
+  check('…and writes no mission entry for either',
+    !(await missionRows()).some((row) => /^once\.(finish_setup|first_game)/.test(row.source_ref)));
+
+  /* ── the check-in is mission #1, and one grant whichever door it comes in by ── */
+  const checked = await missions.claim(w.db, { userId: w.customerId, missionId: missions.CHECK_IN_ID, at });
+  eq('claiming the check-in mission checks in', checked.points, checkin.dayValue(1));
+  await throws('…and the check-in route cannot pay it again', 'conflict', async () =>
+    await missions.claim(w.db, { userId: w.customerId, missionId: missions.CHECK_IN_ID, at }));
+  eq('…nor can the check-in itself', (await checkin.checkIn(w.db, { userId: w.customerId, at })).granted, false);
+
+  /* ── visits ── */
+  eq('a visit mission is open before the scan', (await one('daily.record_a_visit'))?.status, 'open');
+  await scan(w, 5000, at);
+  eq('a confirmed scan completes record a visit', (await one('daily.record_a_visit'))?.status, 'complete');
+  eq('…and counts one venue of three this week', (await one('weekly.three_venues'))?.progress, 1);
+  eq('…and the first-visit mirror reads claimed off the gate’s own bonus',
+    (await one('once.first_visit'))?.status, 'claimed');
+
+  /* ── learning ── */
+  const pesel = learning.moduleFor('pesel');
+  const wrong = await learning.grade(w.db, { userId: w.customerId, moduleId: 'pesel', answers: [0, 0, 0, 0] });
+  check('a wrong answer does not pass the module', !wrong.passed && !wrong.completed);
+  eq('…and the mission stays open with the best score as progress', [(await one('learning.pesel'))?.status,
+    (await one('learning.pesel'))?.progress], ['open', wrong.correct]);
+  const right = await learning.grade(w.db, {
+    userId: w.customerId, moduleId: 'learning.pesel', answers: pesel.questions.map((q) => q.answer),
+  });
+  check('every answer right passes it', right.passed && right.completed);
+  await learning.grade(w.db, { userId: w.customerId, moduleId: 'pesel', answers: [] });
+  eq('…and a worse attempt afterwards does not un-pass it', (await one('learning.pesel'))?.status, 'complete');
+  eq('a passed module is claimed for its reward',
+    (await missions.claim(w.db, { userId: w.customerId, missionId: 'learning.pesel', at })).points, 60);
+  check('the module served to a client carries no answers',
+    !JSON.stringify(learning.publicModule(pesel)).includes('"answer"'));
+
+  /* ── operator campaigns ── */
+  await throws('a partner mission needs its own reward', 'validation_failed', async () =>
+    await missions.createCampaign(w.db, {
+      id: 'mcp_verify_partner', kind: 'venue_takeover', venueId: w.venueId,
+      startsAt: plusDays(at, -1), endsAt: plusDays(at, 1), actorId: w.ownerId,
+    }));
+  await missions.createCampaign(w.db, {
+    id: 'mcp_verify_holiday', kind: 'holiday', startsAt: plusDays(at, -1), endsAt: plusDays(at, 1), actorId: w.ownerId,
+  });
+  await missions.createCampaign(w.db, {
+    id: 'mcp_verify_takeover', kind: 'venue_takeover', venueId: w.venueId, reward: 120,
+    startsAt: plusDays(at, -1), endsAt: plusDays(at, 1), actorId: w.ownerId,
+  });
+  const withCampaigns = await view();
+  eq('a live campaign brings its band, in order', withCampaigns.bands.map((band) => band.key),
+    ['daily', 'weekly', 'ongoing', 'once', 'seasonal', 'partner', 'learning']);
+  eq('…the rulebook’s numbers present with one of each kind shown, less the five not served',
+    new Set(withCampaigns.bands.flatMap((b) => b.missions.map((m) => m.number))).size, 56);
+  eq('the holiday is complete — a round was played in its window',
+    (await one('seasonal.mcp_verify_holiday'))?.status, 'complete');
+  eq('…and pays the configured default', (await missions.claim(w.db, {
+    userId: w.customerId, missionId: 'seasonal.mcp_verify_holiday', at })).points, CONFIG.missions.campaignRewards.holiday);
+  const takeover = await missions.claim(w.db, { userId: w.customerId, missionId: 'partner.mcp_verify_takeover', at });
+  eq('the partner mission pays the partner’s figure', takeover.points, 120);
+  eq('…recorded against the venue', (await w.db.get<{ venue_id: string }>(
+    `SELECT venue_id FROM points_ledger WHERE source_ref = 'partner.mcp_verify_takeover:campaign'`))?.venue_id, w.venueId);
+  eq('an ended campaign takes its band with it', (await view(plusDays(at, 2))).bands.map((band) => band.key),
+    ['daily', 'weekly', 'ongoing', 'once', 'learning']);
+
+  /* ── the HTTP surface ── */
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  const call = async (method: string, path: string, token?: string) => {
+    const response = await fetch(`${base}${path}`, {
+      method,
+      headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  const signup = await fetch(`${base}/v1/auth/signup`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: 'missions@verify.test', password: 'hunter22', name: 'M', acceptTerms: true }),
+  });
+  const token = ((await signup.json()) as { token: string }).token;
+  const listed = await call('GET', '/v1/missions', token);
+  eq('GET /v1/missions answers', listed.status, 200);
+  check('…with camelCase bands and missions',
+    Array.isArray(listed.body.bands) && typeof listed.body.unclaimed === 'number' &&
+      'resetsAt' in listed.body.bands[0] && 'rewardLabel' in listed.body.bands[0].missions[0]);
+  eq('POST …/claim on an open mission is a 409', (await call('POST', '/v1/missions/daily.warm_up/claim', token)).status, 409);
+  eq('…with the conflict code', (await call('POST', '/v1/missions/daily.warm_up/claim', token)).body.error.code, 'conflict');
+  eq('an unknown mission is a 404', (await call('POST', '/v1/missions/daily.nope/claim', token)).status, 404);
+  eq('the check-in claims through the mission route', (await call('POST', '/v1/missions/daily.check_in/claim', token)).status, 200);
+  eq('…once', (await call('POST', '/v1/missions/daily.check_in/claim', token)).status, 409);
+  const module = await call('GET', '/v1/missions/learning/pharmacy_polish', token);
+  eq('a learning module is served', [module.status, module.body.questions.length], [200, 5]);
+  eq('the campaign console is admin-only', (await call('GET', '/v1/admin/mission-campaigns', token)).status, 403);
+  server.close();
+
+  await w.db.close();
+}
+
+/**
+ * Staff and Manager workspaces (server/TEAM.md) — the security properties, over
+ * HTTP, because every one of them is a property of a route's authorisation and
+ * a domain call would skip exactly the layer under test.
+ *
+ * The route limiter is off (as everywhere in this file); the failed-join limit
+ * is in the domain and is on, which is why each group of wrong guesses below
+ * arrives from its own forwarded address — the connection key hashes it — and the
+ * brute-force group is the only one that fills a bucket.
+ */
+async function teamRules(): Promise<void> {
+  describe('Staff and Manager workspaces (server/TEAM.md)');
+  const w = await world();
+  const at = now();
+
+  /* A real two-word name, so the counter's first-name-and-initial rule has
+     something to cut. */
+  await w.db.run(
+    `UPDATE users SET display_name = 'Amina Kowalska', username = 'amina_team', username_norm = 'amina_team'
+      WHERE id = $u`,
+    { u: w.customerId },
+  );
+
+  const personOf = async (name: string, opts: { status?: string; partner?: boolean } = {}) => {
+    const id = newId('usr');
+    const email = `${id}@team.verify.test`;
+    await w.db.run(
+      `INSERT INTO users (id, email, email_norm, display_name, auth_provider, language, city,
+                          status, email_verified_at, created_at, updated_at)
+       VALUES ($i, $e, $e, $n, 'email', 'en', 'Krakow', $s, $t, $t, $t)`,
+      { i: id, e: email, n: name, s: opts.status ?? 'active', t: at },
+    );
+    await w.db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'consumer', $t)`, { u: id, t: at });
+    if (opts.partner) {
+      await w.db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'partner_owner', $t)`, {
+        u: id,
+        t: at,
+      });
+    }
+    const { token } = await accounts.createSession(w.db, { userId: id, mode: 'consumer', surface: 'mobile' });
+    return { id, token };
+  };
+  const tokenOf = async (userId: string) =>
+    (await accounts.createSession(w.db, { userId, mode: 'consumer', surface: 'mobile' })).token;
+
+  const owner = await tokenOf(w.ownerId);
+  const customer = await tokenOf(w.customerId);
+  const dawid = await personOf('Dawid Nowak');
+  const marta = await personOf('Marta Kowalska');
+  const mona = await personOf('Mona Manager');
+  const stranger = await personOf('Stranger Danger');
+  const late = await personOf('Late Comer');
+  const prober = await personOf('Prober');
+  const guest = await personOf('Guest', { status: 'provisional' });
+  const ownerB = await personOf('Other Owner', { partner: true });
+
+  const venueB = newId('ven');
+  await w.db.run(
+    `INSERT INTO venues (id, owner_user_id, name, category, city, country_code, timezone, currency,
+                         status, verified_at, amount_entry, min_spend_minor, max_amount_minor,
+                         avg_check_minor, avg_check_source, accepts_vouchers, points_per_scan,
+                         scan_cooldown_hours, loyalty_active, created_at, updated_at)
+     VALUES ($i, $o, 'Other Café', 'cafe', 'Krakow', 'PL', $tz, 'PLN',
+             'live', $t, 'cashier', 1500, 100000, 4000, 'category', 1, 5, 24, 1, $t, $t)`,
+    { i: venueB, o: ownerB.id, tz: VENUE_TZ, t: at },
+  );
+
+  const api = createApi({ db: w.db, routes: allRoutes, secret: SECRET, limits: false });
+  const server = await api.listen(0, '127.0.0.1');
+  const address = server.address();
+  const base = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : 0}`;
+  const call = async (
+    method: string,
+    path: string,
+    options: { token?: string; body?: unknown; agent?: string } = {},
+  ) => {
+    const response = await fetch(`${base}${path}`, {
+      method,
+      headers: {
+        'content-type': 'application/json',
+        'user-agent': options.agent ?? 'team-verify',
+        /* The connection is the address (limits.connectionKey); each label gets its own. */
+        'x-forwarded-for': fakeAddress(options.agent ?? 'team-verify'),
+        ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+      },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    });
+    const text = await response.text();
+    return { status: response.status, body: text ? JSON.parse(text) : null };
+  };
+  const team = `/v1/partner/venues/${w.venueId}/team`;
+  const teamB = `/v1/partner/venues/${venueB}/team`;
+  const join = (token: string, code: string, agent: string) =>
+    call('POST', '/v1/team/join', { token, body: { code }, agent });
+
+  /* ── inviting ── */
+  const invite = await call('POST', team, { token: owner, body: { name: 'Dawid Nowak', role: 'cashier' } });
+  eq('the owner invites a cashier', invite.status, 200);
+  check('…and the answer carries a six-digit code', /^\d{6}$/.test(invite.body?.code ?? ''), invite.body);
+  eq('…a member who has not joined yet', invite.body?.member?.status, 'invited');
+  eq('…with the cashier template',
+    invite.body?.member?.perms,
+    { earn: true, redeem: true, scan: true, running: true, count: false, pause: false });
+  const stored = await w.db.get<{ code_hash: string | null }>(`SELECT code_hash FROM team_members WHERE id = $m`, {
+    m: invite.body?.member?.id,
+  });
+  check('the code is stored as a keyed hash, never in the clear',
+    typeof stored?.code_hash === 'string' && stored.code_hash.length === 64 &&
+      !stored.code_hash.includes(invite.body?.code) && stored.code_hash !== invite.body?.code, stored);
+  eq('…and never read back', 'code' in ((await call('GET', team, { token: owner })).body?.members?.[0] ?? {}), false);
+  eq('an unknown permission is refused, not dropped',
+    (await call('POST', team, { token: owner, body: { name: 'X', role: 'custom', perms: { refund: true } } })).status, 400);
+
+  /* ── joining ── */
+  const wrong = await join(dawid.token, invite.body.code === '000000' ? '000001' : '000000', 'ua-wrong');
+  eq('a wrong code is a 404', [wrong.status, wrong.body?.error?.code], [404, 'not_found']);
+  eq('a guest cannot join a team', (await join(guest.token, invite.body.code, 'ua-guest')).status, 403);
+  const joined = await join(dawid.token, invite.body.code, 'ua-dawid');
+  eq('the right code joins', joined.status, 200);
+  eq('…and names the workspace',
+    [joined.body?.workspace?.kind, joined.body?.workspace?.venueId, joined.body?.workspace?.role],
+    ['staff', w.venueId, 'cashier']);
+  const dawidId = joined.body?.workspace?.memberId as string;
+  const reuse = await join(stranger.token, invite.body.code, 'ua-reuse');
+  eq('a used code is the same 404 as a wrong one', [reuse.status, reuse.body?.error?.code], [404, 'not_found']);
+  eq('…and does not move the membership',
+    (await w.db.get<{ user_id: string }>(`SELECT user_id FROM team_members WHERE id = $m`, { m: dawidId }))?.user_id,
+    dawid.id);
+
+  const lead = await call('POST', team, { token: owner, body: { name: 'Marta Kowalska', role: 'shiftlead' } });
+  const martaId = lead.body?.member?.id as string;
+  const reissued = await call('POST', `${team}/${martaId}/code`, { token: owner });
+  eq('a code can be re-issued', reissued.status, 200);
+  eq('…and the old one stops working at once', (await join(marta.token, lead.body.code, 'ua-marta')).status, 404);
+  await w.db.run(`UPDATE team_members SET code_expires_at = $t WHERE id = $m`, { t: plusMinutes(at, -1), m: martaId });
+  eq('an expired code is the same 404', (await join(marta.token, reissued.body.code, 'ua-marta')).status, 404);
+  const fresh = await call('POST', `${team}/${martaId}/code`, { token: owner });
+  check('a new code carries a seven-day expiry',
+    (await call('GET', team, { token: owner })).body.members.find((m: { id: string }) => m.id === martaId)?.codeExpiresAt >
+      plusDays(at, 6.9));
+  eq('…and joins', (await join(marta.token, fresh.body.code, 'ua-marta')).status, 200);
+
+  const ownCode = await call('POST', team, { token: owner, body: { name: 'Me', role: 'cashier' } });
+  eq('the owner cannot join their own venue’s team', (await join(owner, ownCode.body.code, 'ua-owner')).status, 409);
+
+  /* ── the brute-force limit ── */
+  const target = await call('POST', team, { token: owner, body: { name: 'Target', role: 'cashier' } });
+  const guessesOf = (code: string) =>
+    Array.from({ length: 5 }, (_, i) => String((Number(code) + 1 + i) % 1_000_000).padStart(6, '0'));
+  const misses = [];
+  for (const guess of guessesOf(target.body.code)) misses.push((await join(prober.token, guess, 'ua-brute')).status);
+  eq('five wrong guesses are five 404s', misses, [404, 404, 404, 404, 404]);
+  const sixth = await join(prober.token, target.body.code, 'ua-brute');
+  eq('the sixth attempt in an hour is refused even with the right code',
+    [sixth.status, sixth.body?.error?.code], [429, 'rate_limited']);
+  check('…naming the wait', typeof sixth.body?.error?.retryAfterMinutes === 'number' && sixth.body.error.retryAfterMinutes > 0,
+    sixth.body);
+  eq('…per account, from another connection too', (await join(prober.token, target.body.code, 'ua-elsewhere')).status, 429);
+  eq('…and per connection, from another account', (await join(late.token, target.body.code, 'ua-brute')).status, 429);
+  eq('the code itself was not consumed by the refusals', (await join(late.token, target.body.code, 'ua-late')).status, 200);
+
+  /* ── the switcher ── */
+  const spaces = await call('GET', '/v1/me/workspaces', { token: dawid.token });
+  eq('a cashier has Personal first, then the venue',
+    spaces.body?.workspaces?.map((ws: { kind: string }) => ws.kind), ['personal', 'staff']);
+  eq('the owner’s list names the venue they own',
+    (await call('GET', '/v1/me/workspaces', { token: owner })).body?.workspaces?.map((ws: { kind: string; venueId: string | null }) =>
+      [ws.kind, ws.venueId]),
+    [['personal', null], ['owner', w.venueId]]);
+
+  /* ── the counter ── */
+  const cashierView = await call('GET', `/v1/team/${w.venueId}/counter`, { token: dawid.token });
+  eq('a cashier reads their counter', cashierView.status, 200);
+  eq('…as themselves', cashierView.body?.member?.id, dawidId);
+  eq('…without the customer count', [cashierView.body?.customersToday, cashierView.body?.recent], [null, []]);
+  const tier = (cashierView.body?.running ?? []).find((item: { kind: string }) => item.kind === 'voucherTier');
+  check('…but with what is running', tier !== undefined, cashierView.body?.running);
+  eq('…and without a pause control', tier?.canPause, false);
+  eq('a cashier without `pause` cannot pause',
+    (await call('POST', `/v1/team/${w.venueId}/running/${tier?.id}/pause`, { token: dawid.token, body: { paused: true } })).status,
+    403);
+  const paused = await call('POST', `/v1/team/${w.venueId}/running/${tier?.id}/pause`, { token: marta.token, body: { paused: true } });
+  eq('a shift lead can', [paused.status, paused.body?.item?.paused], [200, true]);
+  eq('…and it is paused in the venue’s own table',
+    (await w.db.get<{ active: number }>(`SELECT active FROM voucher_tiers WHERE id = $i`, { i: tier?.id }))?.active, 0);
+  await call('POST', `/v1/team/${w.venueId}/running/${tier?.id}/pause`, { token: marta.token, body: { paused: false } });
+  eq('another venue’s item is not found',
+    (await call('POST', `/v1/team/${venueB}/running/${tier?.id}/pause`, { token: ownerB.token, body: { paused: true } })).status,
+    404);
+
+  /* Resume is not publish. The counter acts only on what it lists — a draft
+     deal the owner has not finished, or a stamp card the owner ended, is not
+     "running", so a shift lead's resume must not bring either to life. */
+  {
+    const draftId = newId('del');
+    await w.db.run(
+      `INSERT INTO hot_deals (id, venue_id, partner_name, city, country_code, status, points_required, created_at, updated_at)
+       VALUES ($i, $v, 'Verify Café', 'Krakow', 'PL', 'draft', 0, $t, $t)`,
+      { i: draftId, v: w.venueId, t: at },
+    );
+    const endedId = newId('cmp');
+    await w.db.run(
+      `INSERT INTO campaigns (id, venue_id, name, visits_required, reward_label, reward_cost_minor, status, created_at, updated_at)
+       VALUES ($i, $v, 'Old card', 5, 'A coffee', 500, 'ended', $t, $t)`,
+      { i: endedId, v: w.venueId, t: at },
+    );
+    eq('a shift lead cannot “resume” a draft deal into publication',
+      (await call('POST', `/v1/team/${w.venueId}/running/${draftId}/pause`, { token: marta.token, body: { paused: false } })).status,
+      404);
+    eq('…it is still a draft',
+      (await w.db.get<{ status: string }>(`SELECT status FROM hot_deals WHERE id = $i`, { i: draftId }))?.status, 'draft');
+    eq('nor revive a stamp card the owner ended',
+      (await call('POST', `/v1/team/${w.venueId}/running/${endedId}/pause`, { token: marta.token, body: { paused: false } })).status,
+      404);
+    eq('…it is still ended',
+      (await w.db.get<{ status: string }>(`SELECT status FROM campaigns WHERE id = $i`, { i: endedId }))?.status, 'ended');
+  }
+
+  /* ── shifts ── */
+  eq('a staff login starts its own shift',
+    (await call('POST', `/v1/team/${w.venueId}/shift`, { token: marta.token, body: { action: 'start' } })).body?.member?.onShift, true);
+  eq('…and not a colleague’s',
+    (await call('POST', `/v1/team/${w.venueId}/shift`, { token: marta.token, body: { action: 'start', memberId: dawidId } })).status,
+    403);
+  eq('the owner’s device must say who',
+    (await call('POST', `/v1/team/${w.venueId}/shift`, { token: owner, body: { action: 'start' } })).status, 400);
+  eq('…and may start anybody’s',
+    (await call('POST', `/v1/team/${w.venueId}/shift`, { token: owner, body: { action: 'start', memberId: dawidId } })).body?.member?.onShift,
+    true);
+
+  /* ── a confirmation, recorded against the member ── */
+  const visit = async (confirmer: string, body: Record<string, unknown> = {}) => {
+    const qr = await call('POST', `/v1/venues/${w.venueId}/qr`, { token: owner });
+    const opened = await call('POST', '/v1/gate/scan', { token: customer, body: { token: qr.body.token } });
+    const txnId = opened.body?.id as string;
+    await call('POST', `/v1/gate/transactions/${txnId}/amount`, { token: owner, body: { amountMinor: 4000 } });
+    return { txnId, confirmed: await call('POST', `/v1/gate/transactions/${txnId}/confirm`, { token: confirmer, body }) };
+  };
+  eq('a cashier with `scan` shows the venue QR',
+    (await call('POST', `/v1/venues/${w.venueId}/qr`, { token: dawid.token })).status, 200);
+  const byDawid = await visit(dawid.token);
+  eq('a cashier with `earn` confirms a visit', byDawid.confirmed.status, 200);
+  eq('…and the receipt says who', byDawid.confirmed.body?.confirmedBy?.name, 'Dawid Nowak');
+  eq('…and so does the row',
+    (await w.db.get<{ confirmed_member_id: string | null }>(`SELECT confirmed_member_id FROM transactions WHERE id = $i`, {
+      i: byDawid.txnId,
+    }))?.confirmed_member_id,
+    dawidId);
+  eq('the owner reads "Confirmed by" on the transaction',
+    (await call('GET', `/v1/gate/transactions/${byDawid.txnId}`, { token: owner })).body?.confirmedBy?.name, 'Dawid Nowak');
+  eq('…and on the till log',
+    (await call('GET', `/v1/partner/venues/${w.venueId}/scans`, { token: owner })).body?.rows?.find(
+      (row: { id: string }) => row.id === byDawid.txnId)?.confirmedBy,
+    'Dawid Nowak');
+
+  const byDevice = await visit(owner, { memberId: martaId });
+  eq('the owner’s shared device attributes to whoever is on shift',
+    [byDevice.confirmed.status, byDevice.confirmed.body?.confirmedBy?.memberId], [200, martaId]);
+  const bMember = await call('POST', teamB, { token: ownerB.token, body: { name: 'B Staff', role: 'cashier' } });
+  const foreign = await visit(owner, { memberId: bMember.body?.member?.id });
+  eq('…but never to another venue’s member', foreign.confirmed.status, 403);
+  await call('POST', `/v1/gate/transactions/${foreign.txnId}/cancel`, { token: owner, body: {} });
+
+  const leadView = await call('GET', `/v1/team/${w.venueId}/counter`, { token: marta.token });
+  check('a shift lead sees the customer count', (leadView.body?.customersToday ?? 0) >= 1, leadView.body);
+  eq('…and names cut to first name and last initial', leadView.body?.recent?.[0]?.name, 'Amina K.');
+  const looked = await call('POST', `/v1/partner/venues/${w.venueId}/counter/lookup`, {
+    token: marta.token,
+    body: { code: '@amina_team' },
+  });
+  eq('…the counter’s customer card too', [looked.status, looked.body?.customer?.name], [200, 'Amina K.']);
+  eq('…while the owner sees the name the customer shared',
+    (await call('POST', `/v1/partner/venues/${w.venueId}/counter/lookup`, { token: owner, body: { code: '@amina_team' } }))
+      .body?.customer?.name,
+    'Amina Kowalska');
+
+  const scanOnly = await call('POST', team, {
+    token: owner,
+    body: { name: 'Scan Only', role: 'custom', perms: { scan: true } },
+  });
+  const scanner = await personOf('Scan Only');
+  await join(scanner.token, scanOnly.body.code, 'ua-scanner');
+  const noEarn = await visit(scanner.token);
+  eq('a member without `earn` cannot confirm a visit', noEarn.confirmed.status, 403);
+  await call('POST', `/v1/gate/transactions/${noEarn.txnId}/cancel`, { token: owner, body: {} });
+
+  /* ── §3b: the customer's pass, scanned at the counter ── */
+  await ledger.earn(w.db, { userId: w.customerId, points: 3000, reason: 'adjustment', at });
+  const passTier = (await w.db.get<{ id: string }>(
+    `SELECT id FROM voucher_tiers WHERE venue_id = $v AND discount_pct = 10`, { v: w.venueId }))!;
+  const held = await vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: passTier.id, at });
+  const mint = (body: Record<string, unknown>, token = customer) =>
+    call('POST', '/v1/gate/passes', { token, body: { intent: 'voucher_redeem', ...body } });
+  const passScan = (token: string, body: Record<string, unknown>) =>
+    call('POST', '/v1/gate/passes/scan', { token, body });
+  const passOf = (id: string, token = customer) => call('GET', `/v1/gate/passes/${id}`, { token });
+
+  const pass = await mint({ intentRef: held.id, amountMinor: 8000 });
+  eq('a customer mints a pass for a voucher they hold', pass.status, 200);
+  check('…a signed token and a six-character code',
+    String(pass.body?.token).startsWith('plzpass.') && /^[A-Z2-9]{6}$/.test(pass.body?.code ?? ''), pass.body);
+  eq('…not for somebody else’s voucher', (await mint({ intentRef: held.id, amountMinor: 8000 }, dawid.token)).status, 404);
+  eq('…nor for an implausible bill', (await mint({ intentRef: held.id, amountMinor: 50_000_000 })).status, 400);
+  eq('a forged pass is refused',
+    (await passScan(dawid.token, { venueId: w.venueId, token: `${String(pass.body.token).slice(0, -3)}xyz` })).status, 422);
+  eq('a member without `redeem` cannot scan one',
+    (await passScan(scanner.token, { venueId: w.venueId, token: pass.body.token })).status, 403);
+  eq('another venue’s counter cannot redeem it',
+    (await passScan(ownerB.token, { venueId: venueB, token: pass.body.token })).status, 403);
+  eq('…nor find it by its code', (await passScan(ownerB.token, { venueId: venueB, code: pass.body.code })).status, 404);
+  eq('…nor scan it in this venue’s name without being on its counter',
+    (await passScan(ownerB.token, { venueId: w.venueId, token: pass.body.token })).status, 403);
+  eq('the phone reads it live', (await passOf(pass.body.id)).body?.status, 'live');
+
+  const scannedPass = await passScan(dawid.token, { venueId: w.venueId, token: pass.body.token });
+  eq('the counter scans it into a pending redemption',
+    [scannedPass.status, scannedPass.body?.transaction?.status, scannedPass.body?.transaction?.intent],
+    [200, 'pending', 'voucher_redeem']);
+  eq('…with the customer’s bill on it', scannedPass.body?.transaction?.amount_minor, 8000);
+  eq('…and shows the cashier what and whose',
+    [scannedPass.body?.pass?.customerName, scannedPass.body?.pass?.title], ['Amina', '10% off this order']);
+  eq('the phone reads it scanned', (await passOf(pass.body.id)).body?.status, 'scanned');
+  eq('…and nobody else can read it', (await passOf(pass.body.id, dawid.token)).status, 404);
+  const replayed = await passScan(marta.token, { venueId: w.venueId, token: pass.body.token });
+  eq('a used pass is refused', [replayed.status, replayed.body?.error?.code], [409, 'already_used']);
+
+  const passConfirmed = await call('POST', `/v1/gate/transactions/${scannedPass.body.transaction.id}/confirm`, {
+    token: dawid.token,
+    body: {},
+  });
+  eq('the confirm redeems it like any other', [passConfirmed.status, passConfirmed.body?.confirmedBy?.name],
+    [200, 'Dawid Nowak']);
+  eq('…with the discount on the customer’s bill', passConfirmed.body?.discountMinor, 800);
+  eq('…the voucher is spent',
+    (await w.db.get<{ status: string }>(`SELECT status FROM issued_vouchers WHERE id = $i`, { i: held.id }))?.status,
+    'redeemed');
+  eq('…and the phone reads used', (await passOf(pass.body.id)).body?.status, 'used');
+  eq('a spent voucher mints no new pass', (await mint({ intentRef: held.id, amountMinor: 8000 })).status, 409);
+
+  const held2 = await vouchers.issue(w.db, { userId: w.customerId, venueId: w.venueId, tierId: passTier.id, at });
+  const firstPass = await mint({ intentRef: held2.id, amountMinor: 3000 });
+  const secondPass = await mint({ intentRef: held2.id, amountMinor: 4000 });
+  eq('a new pass retires the last one',
+    (await passScan(dawid.token, { venueId: w.venueId, token: firstPass.body.token })).body?.error?.code, 'expired');
+  await w.db.run(`UPDATE redemption_passes SET expires_at = $t WHERE id = $i`, {
+    t: plusMinutes(now(), -1),
+    i: secondPass.body.id,
+  });
+  eq('an expired pass is refused',
+    (await passScan(dawid.token, { venueId: w.venueId, token: secondPass.body.token })).body?.error?.code, 'expired');
+  const thirdPass = await mint({ intentRef: held2.id, amountMinor: 4500 });
+  const typed = await passScan(dawid.token, { venueId: w.venueId, code: ` ${String(thirdPass.body.code).toLowerCase()} ` });
+  eq('the code typed by hand opens it too', [typed.status, typed.body?.transaction?.amount_minor], [200, 4500]);
+  await call('POST', `/v1/gate/transactions/${typed.body?.transaction?.id}/cancel`, { token: owner, body: {} });
+  eq('a declined pass reads cancelled on the phone', (await passOf(thirdPass.body.id)).body?.status, 'cancelled');
+
+  /* ── revocation, on the very next request ── */
+  const pending = await (async () => {
+    const qr = await call('POST', `/v1/venues/${w.venueId}/qr`, { token: owner });
+    const opened = await call('POST', '/v1/gate/scan', { token: customer, body: { token: qr.body.token } });
+    await call('POST', `/v1/gate/transactions/${opened.body?.id}/amount`, { token: owner, body: { amountMinor: 4000 } });
+    return opened.body?.id as string;
+  })();
+  eq('the owner revokes a member', (await call('DELETE', `${team}/${dawidId}`, { token: owner })).status, 204);
+  eq('a revoked cashier cannot show the QR', (await call('POST', `/v1/venues/${w.venueId}/qr`, { token: dawid.token })).status, 403);
+  eq('…or confirm', (await call('POST', `/v1/gate/transactions/${pending}/confirm`, { token: dawid.token, body: {} })).status, 403);
+  eq('…or read the counter', (await call('GET', `/v1/team/${w.venueId}/counter`, { token: dawid.token })).status, 403);
+  eq('…and the workspace is gone',
+    (await call('GET', '/v1/me/workspaces', { token: dawid.token })).body?.workspaces?.length, 1);
+  eq('…nor can anyone attribute to them',
+    (await call('POST', `/v1/gate/transactions/${pending}/confirm`, { token: owner, body: { memberId: dawidId } })).status, 403);
+  eq('…while past receipts still name them',
+    (await call('GET', `/v1/gate/transactions/${byDawid.txnId}`, { token: owner })).body?.confirmedBy?.name, 'Dawid Nowak');
+  await call('POST', `/v1/gate/transactions/${pending}/cancel`, { token: owner, body: {} });
+
+  /* ── the manager ── */
+  const mgr = await call('POST', team, { token: owner, body: { name: 'Mona Manager', role: 'manager' } });
+  const monaJoin = await join(mona.token, mgr.body.code, 'ua-mona');
+  eq('a manager joins into a manager workspace', monaJoin.body?.workspace?.kind, 'manager');
+  eq('…with every counter permission', monaJoin.body?.workspace?.perms,
+    { earn: true, redeem: true, scan: true, running: true, count: true, pause: true });
+  eq('a manager reaches the dashboard', (await call('GET', `/v1/partner/venues/${w.venueId}/today`, { token: mona.token })).status, 200);
+  eq('…and the deals', (await call('GET', `/v1/partner/venues/${w.venueId}/deals`, { token: mona.token })).status, 200);
+  eq('…but not the subscription',
+    (await call('GET', `/v1/partner/venues/${w.venueId}/subscription`, { token: mona.token })).status, 403);
+  eq('…nor billing',
+    (await call('POST', '/v1/billing/checkout', { token: mona.token, body: { venueId: w.venueId, planCode: 'pro' } })).status, 403);
+  {
+    /* `POST /v1/billing/cancel` took any `venueId` with no owner check, so any
+       signed-in account could cancel what somebody else's venue pays for. The
+       status alone proves the refusal; the subscription row proves nothing was
+       written on the way to it. */
+    const paying = (await entitlements.activeSubscription(w.db, { venueId: w.venueId }))?.status ?? null;
+    eq('…nor cancelling the venue’s billing',
+      (await call('POST', '/v1/billing/cancel', { token: mona.token, body: { venueId: w.venueId } })).status, 403);
+    eq('a stranger cannot cancel a venue’s billing either',
+      (await call('POST', '/v1/billing/cancel', { token: stranger.token, body: { venueId: w.venueId } })).status, 403);
+    eq('…and the venue’s subscription is exactly as it was',
+      (await entitlements.activeSubscription(w.db, { venueId: w.venueId }))?.status ?? null, paying);
+  }
+  eq('…nor a venue of their own',
+    (await call('POST', '/v1/partner/venues', { token: mona.token, body: { name: 'Mine', category: 'cafe', city: 'Krakow' } })).status,
+    403);
+  eq('…nor another venue’s dashboard', (await call('GET', `/v1/partner/venues/${venueB}/today`, { token: mona.token })).status, 403);
+  {
+    /* A platform deal — no venue — is the admin's alone. The route used to skip
+       its check when `venue_id` was null, and `auth: 'partner'` now admits
+       every venue's manager. */
+    const platformDeal = newId('del');
+    await w.db.run(
+      `INSERT INTO hot_deals (id, venue_id, partner_name, city, country_code, status, points_required, discount_text, created_at, updated_at)
+       VALUES ($i, NULL, 'Platform', 'Krakow', 'PL', 'live', 0, 'original', $t, $t)`,
+      { i: platformDeal, t: at },
+    );
+    eq('…nor edit a platform deal that belongs to no venue',
+      (await call('PATCH', `/v1/partner/deals/${platformDeal}`, { token: mona.token, body: { discountText: 'PWNED' } })).status, 403);
+    eq('…nor take one down',
+      (await call('POST', `/v1/partner/deals/${platformDeal}/status`, { token: mona.token, body: { status: 'archived' } })).status, 403);
+    eq('…and it is untouched',
+      await w.db.get<{ status: string; discount_text: string }>(
+        `SELECT status, discount_text FROM hot_deals WHERE id = $i`, { i: platformDeal }),
+      { status: 'live', discount_text: 'original' });
+  }
+  eq('a manager adds a cashier',
+    (await call('POST', team, { token: mona.token, body: { name: 'New Cashier', role: 'cashier' } })).status, 200);
+  eq('…but not a manager',
+    (await call('POST', team, { token: mona.token, body: { name: 'Second Mgr', role: 'manager' } })).status, 403);
+  eq('…edits a shift lead',
+    (await call('PATCH', `${team}/${martaId}`, { token: mona.token, body: { perms: { pause: false } } })).body?.member?.perms?.pause,
+    false);
+  eq('…but cannot promote one to manager',
+    (await call('PATCH', `${team}/${martaId}`, { token: mona.token, body: { role: 'manager' } })).status, 403);
+  eq('…nor remove a manager, themselves included',
+    (await call('DELETE', `${team}/${monaJoin.body?.workspace?.memberId}`, { token: mona.token })).status, 403);
+
+  /* ── across venues, and below the manager ── */
+  eq('another venue’s owner cannot read this team', (await call('GET', team, { token: ownerB.token })).status, 403);
+  eq('…or add to it', (await call('POST', team, { token: ownerB.token, body: { name: 'Mole', role: 'manager' } })).status, 403);
+  eq('…or reach a member through their own venue’s path',
+    (await call('PATCH', `${teamB}/${martaId}`, { token: ownerB.token, body: { role: 'cashier' } })).status, 404);
+  eq('a staff member cannot manage the team', (await call('GET', team, { token: marta.token })).status, 403);
+  eq('a staff member cannot read another venue’s counter',
+    (await call('GET', `/v1/team/${venueB}/counter`, { token: marta.token })).status, 403);
+  eq('a stranger cannot read this counter',
+    (await call('GET', `/v1/team/${w.venueId}/counter`, { token: stranger.token })).status, 403);
+  await w.db.run(`INSERT INTO user_roles (user_id, role, granted_at) VALUES ($u, 'manager', $t)`, { u: stranger.id, t: at });
+  eq('the old global `manager` role opens no venue any more',
+    (await call('POST', `/v1/venues/${w.venueId}/qr`, { token: stranger.token })).status, 403);
+
+  /* ── GDPR ── */
+  const exported = await consent.exportUser(w.db, marta.id);
+  eq('the export lists the account’s teams',
+    (exported.team as Array<{ venue_id: string; role: string }>).map((row) => [row.venue_id, row.role]),
+    [[w.venueId, 'shiftlead']]);
+  await consent.eraseUser(w.db, marta.id, at);
+  eq('erasure ends the membership and forgets the name',
+    await w.db.get(`SELECT name, status FROM team_members WHERE id = $m`, { m: martaId }),
+    { name: 'Former team member', status: 'revoked' });
+
+  server.close();
+  await w.db.close();
+}
+
 async function run(): Promise<void> {
   const started = Date.now();
 
@@ -8153,6 +9915,7 @@ async function run(): Promise<void> {
   await voucherRules();
   await voucherCaps();
   await giftCardStock();
+  await rulebookEconomy();
   await tierAssignment();
   await campaignRules();
   await checkInRules();
@@ -8174,6 +9937,7 @@ async function run(): Promise<void> {
   await formulaInPlay();
   await featuredPoster();
   await flightRoundShape();
+  await seededGames();
   await dealRules();
   await consentRules();
   await sharingDefaultRules();
@@ -8187,11 +9951,14 @@ async function run(): Promise<void> {
   await entitlementRules();
   await assistantRules();
   await socialRules();
+  await referralRules();
   await trafficRules();
   await jobRules();
   await accountRules();
+  await emailCodeRules();
   await profileRules();
-  await verificationRules();
+  await missionRules();
+  await teamRules();
   await httpSurface();
 
   const ms = Date.now() - started;
@@ -8203,138 +9970,6 @@ async function run(): Promise<void> {
   }
 }
 
-/**
- * Proving an address, and the one thing an unproved one costs.
- *
- * The suite's own fixtures are stamped verified, deliberately — they stand in
- * for customers who already have accounts, and every other rule here is
- * written for that person. So the *unverified* case gets a section of its own
- * rather than being the accidental default of every check in the file.
- *
- * Nothing here sends mail. `ports/email.ts`'s local adapter logs the code and
- * returns it on `Issued.code`, which is the whole reason that field exists: a
- * flow nobody can complete offline is a flow nobody will test.
- */
-async function verificationRules(): Promise<void> {
-  describe('proving an email address');
-
-  const w = await world();
-  const db = w.db;
-  const at = '2026-04-01T09:00:00.000Z';
-  const signUp = async (local: string) =>
-    await accounts.signUp(db, {
-      email: `${local}@verify.test`, password: 'correct horse', name: local, at, acceptTerms: true,
-    });
-
-  const alice = await signUp('alice');
-  eq('a new account has not proved its address', alice.email_verified_at, null);
-  eq('…so the guard says no', await verification.verified(db, alice.id), false);
-
-  /* An account with **no address** is not held to a rule about an address. */
-  const guest = await accounts.provisional(db, 'device-verify-1', at);
-  eq('an account with no address has nothing to prove', await verification.verified(db, guest.id), true);
-
-  /* ── the code ── */
-  const first = await verification.issue(db, { userId: alice.id, at });
-  check('a six-digit code is sent', first.sent && /^\d{6}$/.test(first.code ?? ''), first.code);
-  eq('…and it expires when the config says', first.expiresAt, plusMinutes(at, CONFIG.auth.codeMinutes));
-
-  /* The cooldown, and it is not an error: asking again too soon is what an
-     honest person does when a message is slow. */
-  const tooSoon = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 0.5) });
-  eq('a resend inside the cooldown is refused rather than sent', tooSoon.sent, false);
-  eq('…and says when', tooSoon.nextSendAt, plusMinutes(at, CONFIG.auth.codeCooldownSeconds / 60));
-  eq('…and does not spend a send', tooSoon.sends, 1);
-
-  /* Five wrong answers kills **this code**, including the right answer after
-     it — the cap is on the code, not on the guess. */
-  const wrong = first.code === '000000' ? '111111' : '000000';
-  for (let i = 0; i < CONFIG.auth.codeAttempts; i += 1) {
-    await throws(`wrong code ${i + 1} is refused`, 'validation_failed', async () =>
-      await verification.confirm(db, { userId: alice.id, code: wrong, at }),
-    );
-  }
-  await throws('past the cap the code is dead, not merely wrong', 'cap_reached', async () =>
-    await verification.confirm(db, { userId: alice.id, code: first.code!, at }),
-  );
-
-  const second = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 5), force: true });
-  await throws('an expired code is refused, and says so', 'expired', async () =>
-    await verification.confirm(db, {
-      userId: alice.id, code: second.code!, at: plusMinutes(at, 5 + CONFIG.auth.codeMinutes + 1),
-    }),
-  );
-
-  const third = await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 60), force: true });
-  /* Spaces and a dash are stripped: a code pasted out of an email arrives
-     with them. */
-  const confirmed = await verification.confirm(db, {
-    userId: alice.id,
-    code: ` ${third.code!.slice(0, 3)}-${third.code!.slice(3)} `,
-    at: plusMinutes(at, 61),
-  });
-  eq('the right code proves it', [confirmed.verified, confirmed.granted], [true, true]);
-  eq('…and the guard now says yes', await verification.verified(db, alice.id), true);
-  eq('a second confirm is not a second grant',
-    (await verification.confirm(db, { userId: alice.id, code: '999999', at: plusMinutes(at, 62) })).granted,
-    false);
-  await throws('…and a code cannot be asked for again', 'conflict', async () =>
-    await verification.issue(db, { userId: alice.id, at: plusMinutes(at, 120) }),
-  );
-  eq('the code is spent, not kept',
-    (await db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM email_verifications WHERE user_id = $u`, { u: alice.id }))?.n,
-    0);
-
-  /* ── the send ceiling ── */
-  const bob = await signUp('bob');
-  for (let i = 0; i < CONFIG.auth.codeSendsPerAddress; i += 1) {
-    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, i * 5), force: true });
-  }
-  await throws('the send ceiling bounds using resend as a way to post mail', 'quota_exceeded', async () =>
-    await verification.issue(db, { userId: bob.id, at: plusMinutes(at, 1000) }),
-  );
-
-  /* ── what it gates: spending, and only behind the switch ── */
-  const carol = await signUp('carol');
-  const previous = process.env.PAYLEZ_VERIFY_GATE;
-  try {
-    delete process.env.PAYLEZ_VERIFY_GATE;
-    eq('the spending gate is off unless switched on', verification.spendGateOn(), false);
-    await verification.assertVerifiedToSpend(db, carol.id);
-    check('…so an unverified account may spend while it is off', true);
-
-    process.env.PAYLEZ_VERIFY_GATE = 'on';
-    await throws('switched on, an unverified account may not spend', 'not_verified', async () =>
-      await verification.assertVerifiedToSpend(db, carol.id),
-    );
-    await verification.assertVerifiedToSpend(db, alice.id);
-    check('…a verified one may', true);
-    await verification.assertVerifiedToSpend(db, guest.id);
-    check('…and so may an account with no address', true);
-
-    /* Earning is never gated, switch or no switch: the round pays. */
-    const round = await games.startSession(db, { userId: carol.id, gameType: 'flags', language: 'en', at });
-    eq('an unverified round still pays, with the gate on', [round.paid, round.unpaidReason], [true, null]);
-  } finally {
-    if (previous === undefined) delete process.env.PAYLEZ_VERIFY_GATE;
-    else process.env.PAYLEZ_VERIFY_GATE = previous;
-  }
-
-  /* ── accounts that predate it ── */
-  const legacy = await signUp('legacy');
-  await db.run(`UPDATE schema_meta SET value = '7' WHERE key = 'version'`);
-  await migrate(db);
-  check('the migration treats an existing address as proved',
-    (await accounts.getUser(db, legacy.id)).email_verified_at !== null);
-  eq('…and leaves an account with no address alone',
-    (await accounts.getUser(db, guest.id)).email_verified_at, null);
-  const late = await signUp('late');
-  await migrate(db);
-  eq('…and runs once: an account made after it still has to confirm',
-    (await accounts.getUser(db, late.id)).email_verified_at, null);
-
-  await db.close();
-}
 
 /**
  * 2048 — the slide, the spawn, and a round played on the server.
@@ -8476,7 +10111,7 @@ async function foodRules(): Promise<void> {
   /* ── a round on the server ── */
   const w = await world();
   const at = now();
-  const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'food_cross', language: 'en', at });
+  const round = await games.startSession(w.db, { userId: w.customerId, gameType: 'food_cross_live', language: 'en', at });
   const content = round.content as { board: food.Board; moves: number };
   eq('the board and the move limit are sent', [content.board.length, content.moves], [64, CONFIG.games.foodMoves]);
   const stored = JSON.parse(
@@ -8792,7 +10427,7 @@ async function giftCardEngine(): Promise<void> {
   const uz = (
     await giftCards.create(
       w.db,
-      { ...base, brand: 'Choyxona', currency: 'UZS', faceMinor: 10_000_000, countryCode: 'UZ', kind: 'venue', venueId: w.venueId, validityDays: 30 },
+      { ...base, brand: 'Choyxona', currency: 'UZS', faceMinor: 100_000, countryCode: 'UZ', kind: 'venue', venueId: w.venueId, validityDays: 30 },
       admin,
       t0,
     )
@@ -8825,8 +10460,16 @@ async function giftCardEngine(): Promise<void> {
   await giftCards.setActive(w.db, uz, true, admin, t0);
 
   /* ── buying hands out a real code ── */
-  await ledger.earn(w.db, { userId: w.customerId, points: 3000, reason: 'adjustment', at: t0 });
-  const bought = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 });
+  /* One buyer per card: §9.4 allows one card per person per sixty days, which
+     is checked with the pool in `giftCardStock`; here it would only get in
+     the way of the engine's own rules. */
+  const buyer = async (label: string) => {
+    const id = await person(w, label, plusDays(t0, -30));
+    await ledger.earn(w.db, { userId: id, points: 20_000, reason: 'adjustment', at: t0 });
+    return id;
+  };
+  const holder = await buyer('Holder');
+  const bought = await vouchers.redeemGiftCard(w.db, { userId: holder, stockId: pl, at: t0 });
   eq('the buyer gets the first code that was loaded', bought.code, 'AAA-111');
   eq('…stock is one fewer', await stockOf(pl), 2);
   const card = await w.db.get<{ expires_at: string; face_minor: number; currency: string }>(
@@ -8841,27 +10484,29 @@ async function giftCardEngine(): Promise<void> {
   /* ── used ── */
   await throws('nobody can mark another person’s card', 'not_found', async () =>
     await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: admin }));
-  await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: w.customerId, at: t0 });
+  await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: holder, at: t0 });
   eq('the holder can say it was used', await w.db.get(`SELECT status, used_by FROM gift_cards WHERE id = $i`, { i: bought.id }), { status: 'used', used_by: 'player' });
   await throws('…once', 'invalid_state', async () =>
-    await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: w.customerId }));
+    await giftCards.markUsed(w.db, { cardId: bought.id, by: 'player', userId: holder }));
   await throws('a used card cannot be cancelled for a refund', 'invalid_state', async () =>
     await giftCards.cancel(w.db, bought.id, admin, t0));
 
   /* ── cancelled ── */
-  const second = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 });
-  const before = await ledger.balance(w.db, w.customerId);
-  eq('a cancel refunds exactly what the card cost', (await giftCards.cancel(w.db, second.id, admin, t0)).refunded, 600);
-  eq('…as a new ledger entry, so the balance is back', await ledger.balance(w.db, w.customerId), before + 600);
+  const refunded = await buyer('Refunded');
+  const second = await vouchers.redeemGiftCard(w.db, { userId: refunded, stockId: pl, at: t0 });
+  const before = await ledger.balance(w.db, refunded);
+  /* 100 zł at the rule's 100 points a złoty, whatever `pointsCost` says. */
+  eq('a cancel refunds exactly what the card cost', (await giftCards.cancel(w.db, second.id, admin, t0)).refunded, 10_000);
+  eq('…as a new ledger entry, so the balance is back', await ledger.balance(w.db, refunded), before + 10_000);
   await throws('…once', 'invalid_state', async () => await giftCards.cancel(w.db, second.id, admin, t0));
-  const third = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 });
+  const third = await vouchers.redeemGiftCard(w.db, { userId: await buyer('Third'), stockId: pl, at: t0 });
   check('a cancelled card’s code is burned, never sold again', third.code !== second.code && third.code !== bought.code);
   eq('…and the stock is what is left unseen', await stockOf(pl), 0);
   await throws('with every code handed out, the shelf refuses', 'conflict', async () =>
-    await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: pl, at: t0 }));
+    await vouchers.redeemGiftCard(w.db, { userId: await buyer('Late'), stockId: pl, at: t0 }));
 
   /* ── expired ── */
-  const uzCard = await vouchers.redeemGiftCard(w.db, { userId: w.customerId, stockId: uz, at: t0 });
+  const uzCard = await vouchers.redeemGiftCard(w.db, { userId: await buyer('Tashkent'), stockId: uz, at: t0 });
   eq('nothing expires before its date', await giftCards.expire(w.db, plusDays(t0, 29)), 0);
   eq('a card past its own validity expires', await giftCards.expire(w.db, plusDays(t0, 31)), 1);
   eq('…the 30-day one, while the 90-day one bought the same day is still good',

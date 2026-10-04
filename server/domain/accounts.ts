@@ -405,9 +405,9 @@ export async function linkGoogleAccount(
     /** That the terms were actually shown and agreed to. See the record below. */
     acceptTerms?: boolean;
     /**
-     * Whoever invited them — bound only when this press **creates** the
-     * account, exactly as on `signUp`. Google sign-up could not be referred at
-     * all before this, on any client.
+     * An invite code, bound **on the create path only** — the same as
+     * `signUp`'s. An existing account signing in again with a code in hand
+     * goes through `POST /v1/referrals/redeem`, which says why it refused.
      */
     referralCode?: string;
     at?: Iso;
@@ -508,6 +508,12 @@ export async function linkGoogleAccount(
     }
 
     await social.codeFor(db, id);
+    if (input.referralCode) await social.bind(db, { code: input.referralCode, newUserId: id, at });
+
+    /* The invite, which this path never carried: a friend's link opened the
+       app, the person pressed Google, and the code was dropped on the floor —
+       so the most common way to join was the one way an invite did not work.
+       A refusal is ignored for the reason `signUp` ignores one. */
     if (input.referralCode) await social.bind(db, { code: input.referralCode, newUserId: id, at });
 
     /* No welcome grant here either, for the reason `signUp` gives: the gift is

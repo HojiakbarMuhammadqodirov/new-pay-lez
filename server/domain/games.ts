@@ -42,11 +42,21 @@
  * small reviewable function per game, and never by its payout drifting.
  *
  * **Energy is still the only thing that bounds how many rounds exist**, and the
- * decay curve is what bounds what they are worth: one energy per finished round,
- * refilling on a clock, which is sixteen rounds a day from a full free tank, and
- * the sixth of them is worth 12% of the first. Those are two different limits
+ * decay curve is what bounds what they are worth: one energy per round **started**
+ * (§3), refilling on a clock, which is sixteen rounds a day from a full free tank,
+ * and the sixth of them is worth 12% of the first. Those are two different limits
  * rather than two copies of one — how many, and how much — and a result card can
- * explain both.
+ * explain both. The weekly game cap (§9.1) sits behind both as a backstop.
+ *
+ * ## Two games are replayed rather than judged event by event
+ *
+ * 2048 and Food Cross (§5.7, §5.8) have no answer key to hold back — the whole
+ * board is the game. So the server holds the **seed** instead: `/start` sends it,
+ * the client plays locally, and `/finish` sends the move list, which
+ * `engines/game2048.ts` and `engines/foodcross.ts` replay from that seed. The
+ * result is what the server's replay says, and a move the board did not allow
+ * refuses the whole replay. `server/GAMES-2048-FOODCROSS.md` is the contract the
+ * Dart port is written against.
  *
  * ## Where the rounding happens, and why it moved
  *
@@ -76,6 +86,7 @@ import { GAME_TYPES, type Db } from '../db/db.ts';
 import { CONFIG } from '../config.ts';
 import * as entitlements from './entitlements.ts';
 import * as ledger from './ledger.ts';
+import * as missionEvents from './missionEvents.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
 import * as merge from './merge2048.ts';
@@ -84,6 +95,20 @@ import * as ninja from './foodNinja.ts';
 import * as arcade from './arcade.ts';
 import { createHmac } from 'node:crypto';
 import { iso, now, secondsBetween, type Iso } from './time.ts';
+import { freshSeed } from './engines/prng.ts';
+import { ReplayError } from './engines/replay.ts';
+import {
+  parseSwipes,
+  performance2048,
+  replay2048,
+  type Params2048,
+} from './engines/game2048.ts';
+import {
+  parseSwaps,
+  performanceFoodCross,
+  replayFoodCross,
+  type ParamsFoodCross,
+} from './engines/foodcross.ts';
 
 /**
  * Derived from the tuple in `db/db.ts` rather than written out again here.
@@ -196,20 +221,24 @@ export interface Energy {
 /**
  * How much energy, and when the next one arrives.
  *
- * **Every finished round costs one, win or lose.** It was losses only, and
- * before that nothing at all, and both were the same mistake from opposite
- * ends: a pool charged only on a loss is a tax on being bad at quizzes — two of
- * the seven games cannot be lost, and a player answering correctly never
- * touched it — so it bounded the struggling player and nobody else. Charging
+ * **Every round costs one, win or lose, and it costs it when it starts** (§3).
+ * It was losses only, and before that nothing at all, and both were the same
+ * mistake from opposite ends: a pool charged only on a loss is a tax on being
+ * bad at quizzes, so it bounded the struggling player and nobody else. Charging
  * both sides is what makes this the limiter rather than a decoration, and it
  * makes the number on screen mean the same thing to everybody: rounds left.
  *
- * **The charge is taken when the round starts** (rulebook §3), and a round
- * abandoned after that still costs it: charging at the finish let a player open
- * rounds and walk away until the questions or the board looked easy, which is
- * rerolling for free. The one exception is the accidental tap — a round
- * abandoned within `energyRefundSeconds` of its start is refunded, at most
- * `energyRefundsPerDay` a day (`abandonActive`).
+ * **It used to be charged at the finish, and the rulebook overrides that.** The
+ * argument for the finish was the dropped connection — a round the player did
+ * not choose to lose should cost nothing. The argument against it, which §3
+ * makes and which wins, is that a charge at the finish makes *abandoning* free:
+ * open 2048, dislike the opening board, back out, open it again — a reroll for a
+ * good board at no cost, which on the two seeded games is exactly the exploit a
+ * server-side seed exists to close (§5.8, "cannot be rerolled for an easy
+ * start"). So `startSession` writes the spend, and the dropped connection is
+ * answered narrowly instead of by making every abandonment free: a round given
+ * up inside its first `energyRefundWithinSeconds` is refunded, once a day
+ * (`abandonSession`). That is the accidental tap, and nothing else.
  *
  * What makes charging fair is the refill. Energy used to come back at midnight,
  * which is the rule that makes a pool punitive rather than strict: spend it at
@@ -229,8 +258,9 @@ export interface Energy {
  * the answer a timer would give with none of the moving parts, and it is the
  * house rule one table over: the balance is derived, never stored (§2.1).
  *
- * The record it reads is that column plus the row's `finished_at` — an existing
- * pair that already says energy went and when. Its name is historical and stays
+ * The record it reads is that column plus the row's `started_at` — an existing
+ * pair that already says energy went and when (it was `finished_at` while the
+ * charge was written at the finish; see above). Its name is historical and stays
  * that way: renaming a column needs a version-guarded table rebuild against a
  * live database and buys nothing a player can see. `daily_counters.lives_used`
  * cannot stand in either, for a reason that is not about its name: it is
@@ -299,16 +329,22 @@ async function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinu
   const full = max * interval;
   const asked = Date.parse(at);
 
-  /* A spend happened at the round's **start**, which is when the charge is
-     taken (rulebook §3). A round from before that rule was charged at its
-     finish and its row says so in `finished_at` — the `CASE` reads whichever applies,
-     because the charge must be read at the moment it was actually taken. */
-  const rows = await db.all<{ spent_at: string }>(
-    `SELECT CASE WHEN secret LIKE '%"charged":"start"%' THEN started_at ELSE finished_at END AS spent_at
-       FROM game_sessions
-      WHERE user_id = $u AND life_spent > 0
-        AND (CASE WHEN secret LIKE '%"charged":"start"%' THEN started_at ELSE finished_at END) <= $t
-      ORDER BY spent_at DESC LIMIT $n`,
+  /*
+   * **A spend is dated by `started_at`**, because that is when §3 takes it — and
+   * a spend is any row with `life_spent > 0`, finished or not, since a round
+   * still being played (or abandoned) has already paid.
+   *
+   * Rows from before the charge moved were written at their *finish*; reading
+   * their `started_at` instead dates each of them a round's length earlier,
+   * which can only hand back a few minutes of refill to somebody mid-clock on
+   * the day this shipped. That is the harmless direction, and it keeps one rule
+   * for every row rather than two. A refunded round has `life_spent = 0` and so
+   * is invisible here — refunded means it never happened, to the tank.
+   */
+  const rows = await db.all<{ started_at: string }>(
+    `SELECT started_at FROM game_sessions
+      WHERE user_id = $u AND life_spent > 0 AND started_at <= $t
+      ORDER BY started_at DESC LIMIT $n`,
     { u: userId, t: at, n: ENERGY_LOOKBACK },
   );
 
@@ -316,7 +352,7 @@ async function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinu
   const spends: number[] = [];
   let newer = asked;
   for (const row of rows) {
-    const spent = Date.parse(row.spent_at);
+    const spent = Date.parse(row.started_at);
     if (!Number.isFinite(spent)) continue;
     if (newer - spent >= full) break;
     spends.push(spent);
@@ -328,12 +364,12 @@ async function energyAt(db: Db, userId: string, at: Iso, plan: number, regenMinu
   let mark = spends[0] ?? asked;
   for (const spent of spends) {
     const filled = Math.min(full, credit + (spent - mark));
-    /* A round finished with no whole energy to spend costs nothing at all — it
-       neither borrows against the next refill nor confiscates the progress
-       towards it. The gate refuses to *start* a round on an empty tank, so the
-       only round that lands here is one that began with energy and outlived it,
-       and that player has already waited for the unit they are about to be
-       given. */
+    /* A spend with no whole energy under it costs nothing at all — it neither
+       borrows against the next refill nor confiscates the progress towards it.
+       `startSession` refuses a paid round on an empty tank, so with the charge
+       written at the start this should not occur; it remains the rule for the
+       rows written under the old finish-time charge, where a round that began
+       with energy could be finished after the tank had been spent elsewhere. */
     credit = filled >= interval ? filled - interval : filled;
     mark = spent;
   }
@@ -354,6 +390,11 @@ export interface Round {
   gameType: GameType;
   /** What the client may see. Never the answers. */
   content: unknown;
+  /**
+   * The tank **after** this round's charge — §3 takes the energy at the start,
+   * so this is what is left to start the *next* round with. It was the tank
+   * before the round while the charge lived in `finish`. 0 on a practice round.
+   */
   energyLeft: number;
   /** When the next unit of energy arrives, or `null` on a full tank — so a screen's countdown agrees with this one. */
   energyNextAt: Iso | null;
@@ -384,13 +425,22 @@ export interface Round {
 /**
  * Open a round.
  *
- * Energy is *not* spent here; **finishing** spends it, in `finish`. Charging at
- * the start would take one from a player whose connection dropped before the
- * first question, which is the one failure they definitely did not choose —
- * and it is what keeps "abandoned costs nothing" true without a second rule.
- * What the check at the top does is refuse to *start* a round on an empty tank,
- * and that is the side it has to be enforced from: finding out at the end means
- * finding out after the round was played.
+ * **Energy is spent here**, rulebook §3: "consumed when a round starts, not
+ * when it ends, so abandoning a round still costs it (prevents reroll-farming
+ * for a good board)". The row this inserts carries `life_spent = 1` and its
+ * `started_at` is the instant of the spend — `energyAt` reads exactly that pair
+ * — so the charge and the round are one write and cannot disagree. It used to
+ * be charged in `finish`, on the argument that a dropped connection should cost
+ * nothing; that is now answered by the narrow refund in `abandonSession` (inside
+ * five seconds, once a day) rather than by making every abandonment free. The
+ * check at the top refuses to *start* a round on an empty tank, which is the
+ * side it always had to be enforced from.
+ *
+ * Any round the player still has open is closed first, **through the same
+ * refund rule**: tapping one game and then another inside five seconds is the
+ * commonest accidental tap there is, and it should not cost more because the
+ * client never sent an explicit abandon. That happens before the tank is read,
+ * so a refunded unit is available to the round being opened.
  *
  * The refusal carries `nextAt`, because a gate that only says no is one a player
  * reads as a bug, and a gate that says when is one they wait out.
@@ -446,11 +496,15 @@ export async function startSession(
   const language = input.language ?? 'en';
 
   return db.tx(async () => {
-    /* A round still open is abandoned first, and **before** the tank is read:
-       if it qualifies for the accidental-tap refund, the energy it gives back is
-       the energy this round may spend. That is the whole of the misclick case —
-       a wrong card pressed, and the right one pressed a second later. */
-    await abandonActive(db, input.userId, at);
+    /* An abandoned round is closed rather than left open: two live sessions of
+       the same game is an obvious way to shop for an easier question set. Closed
+       *before* the tank is read, so the refund `closeRound` may grant is energy
+       this start can use. A refused start below rolls all of it back. */
+    const open = await db.all<{ id: string; started_at: string; life_spent: number }>(
+      `SELECT id, started_at, life_spent FROM game_sessions WHERE user_id = $u AND state = 'active'`,
+      { u: input.userId },
+    );
+    for (const round of open) await closeRound(db, input.userId, round, at);
 
     const energy = await energyFor(db, input.userId, at);
     if (energy.energy <= 0 && input.practice !== true) {
@@ -463,18 +517,11 @@ export async function startSession(
       });
     }
 
-    /* An abandoned round is closed rather than left open: two live sessions of
-       the same game is an obvious way to shop for an easier question set. */
+    const paid = energy.energy > 0;
     const built = await buildRound(
       db, input.gameType, input.userId, language, input.welcome, input.wordList,
     );
     const id = newId('gms');
-    const paid = energy.energy > 0;
-    /* **The charge, at the start** (rulebook §3). `life_spent` is what the tank
-       reads, so writing it here is the spend; `charged: "start"` in the secret
-       is how this row says when its spend happened, which the tank and `finish`
-       both need to tell it from a round charged at its finish under the old
-       rule. The secret never leaves the server, so a client cannot claim it. */
     await db.run(
       `INSERT INTO game_sessions
          (id, user_id, game_type, language, seed, secret, state, started_at, life_spent)
@@ -485,8 +532,12 @@ export async function startSession(
         g: input.gameType,
         l: language,
         s: built.seed,
-        sec: JSON.stringify({ ...(built.secret as Record<string, unknown>), charged: 'start' }),
+        /* `charged` marks a round whose energy was taken here. `finish` reads it
+           to tell these rows from ones opened before the charge moved, which it
+           still charges the old way — see `finish`. */
+        sec: JSON.stringify({ ...(built.secret as Record<string, unknown>), charged: true }),
         t: at,
+        /* The spend. A practice round writes 0 and is invisible to the tank. */
         ls: paid ? 1 : 0,
       },
     );
@@ -501,78 +552,132 @@ export async function startSession(
       /* Said at the *start* as well as at the end, and that is the point of
          carrying it: a player should find out that this round banks nothing
          before answering five questions, not on the result card. */
-      paid: energy.energy > 0,
-      unpaidReason: energy.energy > 0 ? null : 'no_energy',
+      paid,
+      unpaidReason: paid ? null : 'no_energy',
     };
   });
 }
 
-/**
- * Close this player's open round, refunding it if it was an accidental tap.
- *
- * Rulebook §3: the energy went when the round started and an abandoned round
- * keeps that cost — **unless** it is abandoned within `energyRefundSeconds` of
- * its start, and the player has not already had `energyRefundsPerDay` such
- * refunds today. The refund is `life_spent = 0` with the moment stamped in
- * `energy_refunded_at`, which is both what gives the tank its unit back and
- * what counts against tomorrow's allowance being today's.
- *
- * Reached two ways: the screen's Quit (`POST /v1/games/sessions/:id/abandon`)
- * and opening a new round while one is open, which is the misclick it exists
- * for — the wrong card pressed and the right one a second later.
- */
-export async function abandonActive(
-  db: Db,
-  userId: string,
-  at: Iso,
-  onlySessionId?: string,
-): Promise<{ abandoned: number; refunded: boolean }> {
-  const open = await db.all<{ id: string; started_at: string; life_spent: number; secret: string }>(
-    `SELECT id, started_at, life_spent, secret FROM game_sessions
-      WHERE user_id = $u AND state = 'active' AND ($s IS NULL OR id = $s)`,
-    { u: userId, s: onlySessionId ?? null },
-  );
-  let refunded = false;
-  for (const session of open) {
-    const early = Date.parse(at) - Date.parse(session.started_at) <= CONFIG.points.energyRefundSeconds * 1000;
-    const charged = session.life_spent > 0 && (JSON.parse(session.secret) as { charged?: string }).charged === 'start';
-    let refund = false;
-    if (early && charged) {
-      const used = await db.get<{ n: number }>(
-        `SELECT COUNT(*) AS n FROM game_sessions
-          WHERE user_id = $u AND energy_refunded_at IS NOT NULL AND substr(energy_refunded_at, 1, 10) = $d`,
-        { u: userId, d: dayOf(at) },
-      );
-      refund = (used?.n ?? 0) < CONFIG.points.energyRefundsPerDay;
-    }
-    await db.run(
-      `UPDATE game_sessions
-          SET state = 'abandoned',
-              life_spent = CASE WHEN $r = 1 THEN 0 ELSE life_spent END,
-              energy_refunded_at = CASE WHEN $r = 1 THEN $t ELSE energy_refunded_at END
-        WHERE id = $i AND state = 'active'`,
-      { r: refund ? 1 : 0, t: at, i: session.id },
-    );
-    refunded = refunded || refund;
-  }
-  return { abandoned: open.length, refunded };
+/* ═══════════════════════════════════════════ §3 abandoning, and the refund ══ */
+
+export interface Abandoned {
+  sessionId: string;
+  /** Whether this abandonment gave the round's energy back. */
+  refunded: boolean;
+  /** The tank after it. */
+  energy: Energy;
 }
 
-/** The Quit button: close one open round of this player's, refund rule applied. */
+/**
+ * How many refunds this player has already had today — counted off the marker
+ * events `closeRound` writes, for the reason every other daily allowance in this
+ * file is counted off rows rather than a counter.
+ */
+async function refundsToday(db: Db, userId: string, at: Iso): Promise<number> {
+  return (
+    (await db.get<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM game_events e
+         JOIN game_sessions s ON s.id = e.session_id
+        WHERE s.user_id = $u AND e.kind = 'energy_refund'
+          AND substr(e.created_at, 1, 10) = $d`,
+      { u: userId, d: dayOf(at) },
+    ))?.n ?? 0
+  );
+}
+
+/**
+ * Close one active round as abandoned, refunding its energy if §3 allows.
+ *
+ * **The refund is for the accidental tap and nothing else**: the round must have
+ * been open for at most `energyRefundWithinSeconds` by the server's clock — its
+ * own `started_at` against the instant of the abandon, never a client's report —
+ * it must have been paid for in the first place, and the player must not have
+ * had one already today (`energyRefundsPerDay`, §9.2). The once-a-day is what
+ * stops "look at the board, put it back" being a free reroll, which is the whole
+ * reason the charge moved to the start.
+ *
+ * A refund is `life_spent` set back to 0 — the tank never saw the spend — and a
+ * marker event, `kind: 'energy_refund'`, which is both the audit trail and what
+ * `refundsToday` counts. Its `seq` is below every seq the session already has, so
+ * it cannot collide with a move the client reported.
+ */
+async function closeRound(
+  db: Db,
+  userId: string,
+  round: { id: string; started_at: string; life_spent: number },
+  at: Iso,
+): Promise<boolean> {
+  const quick = secondsBetween(round.started_at, at) <= CONFIG.games.energyRefundWithinSeconds;
+  const refund =
+    round.life_spent > 0 &&
+    quick &&
+    (await refundsToday(db, userId, at)) < CONFIG.games.energyRefundsPerDay;
+
+  await db.run(
+    `UPDATE game_sessions SET state = 'abandoned', life_spent = $ls WHERE id = $i AND state = 'active'`,
+    { i: round.id, ls: refund ? 0 : round.life_spent },
+  );
+  if (refund) {
+    const low =
+      (await db.get<{ m: number | null }>(
+        `SELECT MIN(seq) AS m FROM game_events WHERE session_id = $s`,
+        { s: round.id },
+      ))?.m ?? 0;
+    await db.run(
+      `INSERT INTO game_events (id, session_id, seq, kind, payload, correct, created_at)
+       VALUES ($i, $s, $q, 'energy_refund', '{}', NULL, $t)`,
+      { i: newId('gev'), s: round.id, q: Math.min(0, low) - 1, t: at },
+    );
+  }
+  return refund;
+}
+
+/**
+ * `POST /v1/games/sessions/:id/abandon` — give up a round, and get its energy
+ * back if it was the accidental tap (§3).
+ *
+ * The client should send this when a player leaves a round they started, and
+ * especially within the first seconds — it is the only way the server learns
+ * the instant they left. Without it the round is closed anyway by the next
+ * `startSession`, which applies the same rule at *that* instant, so a player who
+ * taps one card and then another at once still gets the refund.
+ *
+ * Idempotent on a round already closed: it reports whether that round was
+ * refunded and changes nothing, so a retry after a lost response cannot refund
+ * twice or be told "no" about a refund it was given.
+ */
 export async function abandonSession(
   db: Db,
   input: { sessionId: string; userId: string; at?: Iso },
-): Promise<{ abandoned: boolean; refunded: boolean; energyLeft: number; energyNextAt: Iso | null }> {
+): Promise<Abandoned> {
   const at = input.at ?? now();
   return db.tx(async () => {
-    const session = await db.get<{ user_id: string }>(`SELECT user_id FROM game_sessions WHERE id = $i`, {
-      i: input.sessionId,
-    });
+    const session = await db.get<{
+      id: string;
+      user_id: string;
+      state: string;
+      started_at: string;
+      life_spent: number;
+    }>(
+      `SELECT id, user_id, state, started_at, life_spent FROM game_sessions WHERE id = $i`,
+      { i: input.sessionId },
+    );
     if (!session) throw new DomainError('not_found', 'session not found');
     if (session.user_id !== input.userId) throw new DomainError('forbidden', 'not your session');
-    const closed = await abandonActive(db, input.userId, at, input.sessionId);
-    const energy = await energyFor(db, input.userId, at);
-    return { abandoned: closed.abandoned > 0, refunded: closed.refunded, energyLeft: energy.energy, energyNextAt: energy.nextAt };
+
+    let refunded: boolean;
+    if (session.state === 'active') {
+      refunded = await closeRound(db, input.userId, session, at);
+    } else if (session.state === 'abandoned') {
+      refunded =
+        ((await db.get<{ n: number }>(
+          `SELECT COUNT(*) AS n FROM game_events WHERE session_id = $s AND kind = 'energy_refund'`,
+          { s: session.id },
+        ))?.n ?? 0) > 0;
+    } else {
+      throw new DomainError('invalid_state', 'session is finished');
+    }
+    return { sessionId: session.id, refunded, energy: await energyFor(db, input.userId, at) };
   });
 }
 
@@ -595,8 +700,10 @@ async function buildRound(
   if (QUIZZES.has(gameType)) return await buildQuiz(db, gameType, userId, language, welcome);
   if (gameType === 'word_builder') return await buildWords(db, userId, wordList ?? language, language);
   if (gameType === 'memory_match') return buildDeck();
+  if (gameType === 'game_2048') return buildSeeded('game_2048', params2048());
+  if (gameType === 'food_cross') return buildSeeded('food_cross', paramsFoodCross());
   if (gameType === 'merge_2048') return buildMerge();
-  if (gameType === 'food_cross') return buildFood();
+  if (gameType === 'food_cross_live') return buildFood();
   if (gameType === 'food_ninja') return buildNinja();
   if (gameType === 'snake') return buildSnake();
   if (gameType === 'cannon_numbers') return buildCannon();
@@ -626,6 +733,56 @@ async function buildRound(
       performancePerObstacle: CONFIG.games.flightPerformancePerObstacle,
       perfectObstacles: Math.ceil(100 / CONFIG.games.flightPerformancePerObstacle),
     },
+  };
+}
+
+/** §5.7 — the round's rules, from config, frozen into the secret at `/start`. */
+function params2048(): Params2048 & { performanceByTile: Array<{ tile: number; performance: number }>; minSecondsPerMove: number } {
+  const c = CONFIG.games.game2048;
+  return {
+    size: c.size,
+    fourOneIn: c.fourOneIn,
+    startTiles: c.startTiles,
+    maxMoves: c.maxMoves,
+    performanceByTile: c.performanceByTile.map((band) => ({ ...band })),
+    minSecondsPerMove: c.minSecondsPerMove,
+  };
+}
+
+/** §5.8 — the same, for Food Cross. */
+function paramsFoodCross(): ParamsFoodCross & { minSecondsPerMove: number } {
+  const c = CONFIG.games.foodCross;
+  return {
+    rows: c.rows,
+    cols: c.cols,
+    kinds: c.kinds,
+    moves: c.moves,
+    target: c.target,
+    tilePoints: c.tilePoints,
+    runMultiplier: [...c.runMultiplier],
+    cascadeCap: c.cascadeCap,
+    minSecondsPerMove: c.minSecondsPerMove,
+  };
+}
+
+/**
+ * The two replayed games. **The seed is the whole secret, and it is not secret
+ * from the player** — they need it to draw the board. What it cannot be is
+ * *chosen*: it comes from the platform CSPRNG here, per round, so the only way
+ * to see a different opening board is to start a different round, and starting
+ * one costs energy (§3, §5.8).
+ *
+ * The rules go into the secret as well as the content. `finish` replays with the
+ * copy in the secret, so a tunable edited while a round is in flight cannot
+ * change the board it is replayed on; the content copy is what the client plays
+ * with, and the two are the same object at this instant.
+ */
+function buildSeeded(kind: 'game_2048' | 'food_cross', params: object): Built {
+  const seed = freshSeed();
+  return {
+    seed: String(seed),
+    secret: { kind, seed, params },
+    content: { seed, ...params },
   };
 }
 
@@ -921,8 +1078,12 @@ async function buildWords(
   hintLanguage: string = language,
 ): Promise<Built> {
   const pick = (window: number) =>
-    db.all<{ id: string; word: string; tier: number; hint: string | null }>(
-      `SELECT w.id, w.word, w.tier, COALESCE(t.value, w.hint) AS hint FROM word_bank w
+    db.all<{
+      id: string; word: string; tier: number; hint: string | null;
+      tiles: string | null; accept: string | null; decoys: number | null;
+    }>(
+      `SELECT w.id, w.word, w.tier, COALESCE(t.value, w.hint) AS hint,
+              w.tiles, w.accept, w.decoys FROM word_bank w
          LEFT JOIN translations t
            ON t.entity = 'word' AND t.entity_id = w.id AND t.field = 'hint' AND t.language = $h
         WHERE w.language = $l
@@ -959,13 +1120,33 @@ async function buildWords(
     );
   }
 
+  /* The word as tiles — `["G","Oʻ","SH","T"]` — which is what the slots count
+     and what a hint reveals one of. A row with no `tiles` (the placeholder, an
+     older import) splits by code point, as it always did. */
+  const dealt = rows.map((row) => {
+    const tiles = tilesOf(row.word, row.tiles);
+    return {
+      row,
+      tiles,
+      accept: jsonList(row.accept),
+      letters: shuffle([...tiles, ...decoyTiles(language, tiles, row.decoys ?? 0, row.id)], row.id),
+    };
+  });
+
   return {
     seed: rows.map((r) => r.id).join(','),
     /* The tiers travel with the words because the *bank* owns difficulty and the
        scorer must not re-derive it. Carrying them here rather than re-reading
        `word_bank` at the end also means an edited or deleted row cannot change
-       what a round in flight is worth. */
-    secret: { kind: 'words', words: rows.map((r) => r.word.toUpperCase()), tiers: rows.map((r) => r.tier) },
+       what a round in flight is worth. The tiles and the accepted spellings
+       travel for the same reason: the judge reads the round, not the bank. */
+    secret: {
+      kind: 'words',
+      words: rows.map((r) => r.word.toUpperCase()),
+      tiers: rows.map((r) => r.tier),
+      tiles: dealt.map((d) => d.tiles),
+      accept: dealt.map((d) => d.accept),
+    },
     /* The client gets the scrambled letters and the length, which is the game;
        it does not get the word, which is the answer.
        
@@ -980,11 +1161,15 @@ async function buildWords(
        hardcoded "a hint costs ten" would be a second copy of a table this file
        owns. They are **performance**, not points. */
     content: {
-      words: rows.map((row, index) => ({
+      /* `length` is in **tiles**, not characters — GOʻSHT is four slots — and
+         `letters` holds the word's tiles plus `decoys` wrong ones, shuffled. A
+         tile may be more than one character; a word is complete when `length`
+         tiles are placed, whatever is left on the rack. */
+      words: dealt.map(({ row, tiles, letters }, index) => ({
         index,
-        length: row.word.length,
+        length: tiles.length,
         tier: row.tier,
-        letters: shuffle([...row.word.toUpperCase()], row.id),
+        letters,
         hint: row.hint,
       })),
       performancePerWord: CONFIG.games.wordPerformancePerWord,
@@ -1568,11 +1753,21 @@ export async function submitEvent(
     } else if (secret.kind === 'words') {
       const words = secret.words as string[];
       const index = Number(input.payload.index);
-      const guess = String(input.payload.guess ?? '').toUpperCase();
+      /* The guess is the tiles joined — a client may send them as `tiles` too.
+         Compared folded (`spellingKey`), against the word and every spelling
+         the bank accepts for it (GO'SHT for GOʻSHT, GLOWA for GŁOWA). */
+      const sentTiles = Array.isArray(input.payload.tiles)
+        ? (input.payload.tiles as unknown[]).map((tile) => String(tile)).join('')
+        : '';
+      const guess = spellingKey(String(input.payload.guess ?? sentTiles));
       if (!Number.isInteger(index) || index < 0 || index >= words.length) {
         throw new DomainError('bad_request', 'no such word');
       }
-      correct = words[index] === guess;
+      const accepted = [words[index], ...((secret.accept as string[][] | undefined)?.[index] ?? [])];
+      correct = guess.length > 0 && accepted.some((form) => spellingKey(form) === guess);
+      /* What a hint position counts: tiles, which for a round opened before
+         tiles existed is the word split by code point. */
+      const tiles = (secret.tiles as string[][] | undefined)?.[index] ?? [...words[index]];
       /* A hint reveals one letter and nothing else — the position asked for, and
          only while the day's allowance holds. Checked before the letter is read
          rather than before the insert, so a hint that is refused is a hint that
@@ -1598,11 +1793,11 @@ export async function submitEvent(
          * step past it.
          */
         const position = Number(input.payload.position ?? 0);
-        if (!Number.isInteger(position) || position < 0 || position >= words[index].length) {
+        if (!Number.isInteger(position) || position < 0 || position >= tiles.length) {
           throw new DomainError('bad_request', 'no such letter');
         }
         await requireHint(db, input.userId, input.sessionId, input.seq, at);
-        answer = words[index][position];
+        answer = tiles[position];
         correct = undefined;
       }
     } else if (secret.kind === 'deck') {
@@ -1735,19 +1930,27 @@ export async function submitEvent(
 export interface Finish {
   score: number;
   /**
-   * How many points the daily ceiling trimmed — **still always 0**, and kept.
+   * How many points the **weekly game cap** (§9.1) trimmed off this round, or 0.
    *
-   * There is no daily points ceiling. What there is again is a decay curve, and
-   * it is deliberately *not* reported through this field: `capped` was a number
-   * of points removed from a round that had already been scored, and decay is
-   * part of scoring it. A client that printed "8 points capped" off this key
-   * would be describing something that did not happen. `decay` and `roundToday`
-   * below are where a shrunken round explains itself.
-   *
-   * The field stays because the app reads this body and dropping a key is a
-   * protocol change for a fact that is simply "nothing was trimmed".
+   * It meant a daily ceiling once, then nothing for a while (always 0), and now
+   * it means the one ceiling the rulebook does have: points from game rounds in
+   * a Monday–Sunday UTC week may not pass `CONFIG.games.weeklyGameCap` for the
+   * player's plan (450 / 600 / 1000). `score` is what was banked *after* the
+   * trim, so `score + capped` is what the formula priced. Decay is still not
+   * reported here — it is part of pricing a round, not a trim of one; `decay`
+   * and `roundToday` below are where a shrunken round explains itself.
    */
   capped: number;
+  /**
+   * What the server's **replay** found, for the two seeded games; `null` for
+   * every other game.
+   *
+   * `score` is the game's own score (merge points in 2048, match points in Food
+   * Cross) — not points — and `highestTile` is 2048's, `null` in Food Cross.
+   * Both are the server's figures, computed from the seed and the moves; the
+   * client's board should agree, and if it does not, this is the one to show.
+   */
+  replay: { moves: number; score: number; highestTile: number | null } | null;
   correct: number;
   answered: number;
   won: boolean;
@@ -1905,7 +2108,8 @@ export async function finish(
       started_at: string;
       life_spent: number;
     }>(
-      `SELECT id, user_id, state, secret, game_type, started_at, life_spent FROM game_sessions WHERE id = $i`,
+      `SELECT id, user_id, state, secret, game_type, started_at, life_spent
+         FROM game_sessions WHERE id = $i`,
       { i: input.sessionId },
     );
     if (!session) throw new DomainError('not_found', 'session not found');
@@ -1923,11 +2127,19 @@ export async function finish(
      * banks nothing. `unpaidReason` carries the reason so a result card can
      * explain a score of 0 rather than leaving it to be guessed at.
      */
-    /* A round charged at its start was paid if and only if the start spent
-       energy on it — that decision is already on the row. A round opened
-       before that rule falls back to the old reading: the tank at its start. */
-    const chargedAtStart = (JSON.parse(session.secret) as { charged?: string }).charged === 'start';
-    const paid = chargedAtStart
+    const secret = JSON.parse(session.secret) as Record<string, unknown>;
+    /*
+     * **Two eras of rows.** A round opened since the charge moved to the start
+     * carries `charged: true` in its secret, and whether it pays is simply
+     * whether that start took a unit — `life_spent`, as `startSession` wrote it.
+     * A round opened *before* that (still active across the deploy) was never
+     * charged, so it keeps the old rule: paid if the tank had energy at its
+     * `started_at`, and charged below, here. Without the split, those rounds
+     * would finish unpaid — `life_spent` is 0 on them — through no fault of the
+     * player's.
+     */
+    const charged = secret.charged === true;
+    const paid = charged
       ? session.life_spent > 0
       : (await energyFor(db, input.userId, session.started_at)).energy > 0;
     const unpaidReason: 'no_energy' | null = paid ? null : 'no_energy';
@@ -1947,7 +2159,6 @@ export async function finish(
       `SELECT seq, kind, payload, correct, created_at FROM game_events WHERE session_id = $s ORDER BY seq`,
       { s: session.id },
     );
-    const secret = JSON.parse(session.secret) as Record<string, unknown>;
 
     /*
      * The welcome round pays a flat rate per correct answer, and only ever once.
@@ -1978,8 +2189,14 @@ export async function finish(
 
     /* Each of these answers one question — what was this round's performance,
        0..100 — and none of them knows what a point is. */
-    const scored =
-      secret.kind === 'quiz'
+    const elapsed = secondsBetween(session.started_at, at);
+    const replayed =
+      secret.kind === 'game_2048' || secret.kind === 'food_cross'
+        ? scoreReplay(secret, input.clientReport ?? {}, elapsed)
+        : null;
+    const scored: Scored =
+      replayed ??
+      (secret.kind === 'quiz'
         ? scoreQuiz(events, (secret.answers as number[]).length)
         : secret.kind === 'words'
           ? scoreWords(events, secret.words as string[], session.started_at)
@@ -1992,16 +2209,16 @@ export async function finish(
                 : secret.kind === 'ninja'
                   ? scoreNinja(events)
                   : secret.kind === 'snake'
-                    ? scoreSnake(secret, input.clientReport ?? {}, secondsBetween(session.started_at, at))
+                    ? scoreSnake(secret, input.clientReport ?? {}, elapsed)
                     : secret.kind === 'cannon'
                       ? scoreCannon(secret as unknown as arcade.CannonState)
                       : secret.kind === 'breakout'
-                        ? scoreBreakout(secret, input.clientReport ?? {}, secondsBetween(session.started_at, at))
+                        ? scoreBreakout(secret, input.clientReport ?? {}, elapsed)
                         : secret.kind === 'doodle'
-                          ? scoreDoodle(input.clientReport ?? {}, secondsBetween(session.started_at, at))
+                          ? scoreDoodle(input.clientReport ?? {}, elapsed)
                           : secret.kind === 'zuma'
-                            ? scoreZuma(input.clientReport ?? {}, secondsBetween(session.started_at, at))
-              : scoreFlight(input.clientReport ?? {}, secondsBetween(session.started_at, at));
+                            ? scoreZuma(input.clientReport ?? {}, elapsed)
+              : scoreFlight(input.clientReport ?? {}, elapsed));
 
     /*
      * The plan **as it was when the round was played**, not as it is when the
@@ -2154,10 +2371,25 @@ export async function finish(
     });
     const welcomeScore = scored.correct * CONFIG.earn.welcomeRoundPerCorrect;
 
+    /*
+     * §9.1 the weekly game cap — a backstop, not a lever. The round is priced in
+     * full by the formula above and then trimmed to whatever this week's cap has
+     * left; the trim is reported as `capped` so the result card can say so
+     * rather than show a number that looks wrong. Read before this round's own
+     * entry is written, so it counts only rounds that came before it.
+     */
+    const wanted = firstEver ? welcomeScore : priced.score;
+    const room = paid ? await weeklyGameRoom(db, input.userId, at) : 0;
+    const bankable = paid ? Math.min(wanted, room) : 0;
+    const capped = paid ? wanted - bankable : 0;
+
     /* A practice round writes no entry at all rather than an entry for zero.
        The ledger is the answer to "where did my points come from", and a row
        saying "nowhere" on every round played after a tank ran dry is noise in
        the one place that has to stay readable. */
+    /* A round the weekly cap trimmed to nothing still writes its entry, for 0:
+       `earn` counts it as a play in `daily_counters`, and the ledger row is the
+       honest record that a paid round happened and banked nothing. */
     const banked = paid
       ? await ledger.earn(db, {
           userId: input.userId,
@@ -2169,11 +2401,15 @@ export async function finish(
              multiplies, which is what it has always done, and which nobody has
              ever reached anyway (a subscription on your first-ever round is not
              a state that occurs). */
-          points: firstEver ? welcomeScore : priced.score,
+          points: bankable,
           reason: 'game_win',
           sourceKind: 'game_session',
           sourceRef: session.id,
           multiplier,
+          /* The welcome round's flat figure is multiplied by `earn`, which is why
+             a capped welcome round is still passed as the pre-multiplier figure:
+             the trim can only have reached it on a week that already held 450
+             points of games, which a first-ever round never has. */
           multiplierApplied: !firstEver,
           at,
         })
@@ -2190,24 +2426,24 @@ export async function finish(
         c: scored.correct,
         t: at,
         l: banked?.entry.id ?? null,
-        /* **This row is the record of the spend**, and for a round opened
-           under rulebook §3 it was already written at the start — writing the
-           same value here changes nothing. For a round opened before that rule
-           this is still where the spend happens. `energyFor` reconstructs the
-           whole tank from these rows, so this column is not bookkeeping beside
-           the truth, it *is* the truth. Its name — `life_spent` — is historical; renaming a
-           column needs a version-guarded table rebuild against a live database
-           and buys nothing a player can see.
+        /* **The energy was spent at the start** (§3) and this column is the
+           record of it: `startSession` wrote `life_spent = 1` on a paid round,
+           and it is written back unchanged here. `energyFor` reconstructs the
+           whole tank from these rows and their `started_at`, so this column is
+           not bookkeeping beside the truth, it *is* the truth. Its name is
+           historical; renaming a column needs a version-guarded table rebuild
+           against a live database and buys nothing a player can see.
+
+           The one row still charged here is a round opened before the charge
+           moved (no `charged` in its secret) — the old rule, for the rounds that
+           were in flight across that change and never paid at their start.
 
            It is also what `featuredTakenToday` and the first-play query read, so
            it is the single column that makes "practice consumes nothing" true
-           across all three rules rather than in each of them separately.
-
-           A practice round writes 0, and that is the whole of how the tank
-           learns to ignore it: `energyFor` selects on `life_spent > 0`. There is
-           nothing to take from an empty tank, and a round that borrowed against
-           the next refill would make practice *cost* more than not playing. */
-        ls: paid ? 1 : 0,
+           across all three rules rather than in each of them separately. A
+           practice round carries 0, which is the whole of how the tank learns to
+           ignore it. */
+        ls: charged ? session.life_spent : paid ? 1 : 0,
         i: session.id,
       },
     );
@@ -2254,6 +2490,9 @@ export async function finish(
           t: at,
         },
       );
+      /* Rulebook §8 "Flawless" / "Quiz master" read a round's performance in a
+         period, which nothing above stores. See `domain/missionEvents.ts`. */
+      await missionEvents.record(db, { userId: input.userId, kind: 'round', ref: session.id, subject: session.game_type, value: scored.performance, at });
     }
 
     /* The streak is what energy actually buys, so practice does not move it —
@@ -2269,7 +2508,8 @@ export async function finish(
 
     return {
       score: banked?.entry.delta ?? 0,
-      capped: 0,
+      capped,
+      replay: replayed?.replay ?? null,
       correct: scored.correct,
       answered: scored.answered,
       won: scored.won,
@@ -3004,6 +3244,117 @@ function scoreFlight(report: Record<string, unknown>, elapsed: number): Scored {
 }
 
 /**
+ * The two seeded games: **replay the moves from the seed** and score what the
+ * replay says — §5.7, §5.8 and §9.3.
+ *
+ * The move list is `report.moves` on `/finish`: a string of `U`/`D`/`L`/`R` for
+ * 2048, an array of `[row, col, dir]` for Food Cross (the document has the
+ * exact encoding). Nothing else in `report` is read — a client's own score,
+ * highest tile or "I won" is ignored, because the replay is the fact and the
+ * claim is not.
+ *
+ * Two refusals, both `bad_request`, both leaving the round **active** so a
+ * client can correct itself and finish again (the energy was spent at the start
+ * either way, so there is nothing to gain by it):
+ *
+ * - **An impossible replay** — a malformed move, a 2048 swipe that changes
+ *   nothing, a Food Cross swap that makes no match, or more moves than the round
+ *   allows. The detail names the `move` index and the `reason`, which is what
+ *   makes a divergence between the Dart port and this one debuggable.
+ * - **An implausibly fast one** (§9.3's minimum round duration): N moves in less
+ *   than `N × minSecondsPerMove` seconds since `/start`, by the server's clocks.
+ *   Proportional to the moves rather than a flat floor, because a two-swipe round
+ *   is legitimately short and a two-thousand-swipe one is not.
+ *
+ * An empty move list is legal and scores the opening board — a round given up
+ * without a move — which is the same as any other game finished having done
+ * nothing: the performance is 0 and the round pays the floor.
+ */
+function scoreReplay(
+  secret: Record<string, unknown>,
+  report: Record<string, unknown>,
+  elapsed: number,
+): Scored & { replay: { moves: number; score: number; highestTile: number | null } } {
+  const seed = Number(secret.seed) >>> 0;
+  try {
+    if (secret.kind === 'game_2048') {
+      const params = secret.params as ReturnType<typeof params2048>;
+      const swipes = parseSwipes(report.moves);
+      requirePlausible(swipes.length, params.minSecondsPerMove, elapsed);
+      const result = replay2048(seed, swipes, params);
+      const performance = performance2048(result.highestTile, params.performanceByTile);
+      return {
+        performance,
+        /* No questions in this game, so nothing to add to the accuracy tally
+           `player_states` keeps for the quizzes. */
+        correct: 0,
+        answered: 0,
+        won: performance >= 100,
+        replay: { moves: result.moves, score: result.score, highestTile: result.highestTile },
+      };
+    }
+    const params = secret.params as ReturnType<typeof paramsFoodCross>;
+    const swaps = parseSwaps(report.moves, params);
+    requirePlausible(swaps.length, params.minSecondsPerMove, elapsed);
+    const result = replayFoodCross(seed, swaps, params);
+    const performance = performanceFoodCross(result.score, params.target);
+    return {
+      performance,
+      correct: 0,
+      answered: 0,
+      won: result.score >= params.target,
+      replay: { moves: result.moves, score: result.score, highestTile: null },
+    };
+  } catch (error) {
+    if (error instanceof ReplayError) {
+      throw new DomainError('bad_request', 'the moves do not replay on this board', {
+        reason: error.reason,
+        move: error.move,
+      });
+    }
+    throw error;
+  }
+}
+
+/** §9.3: refuse N moves made faster than `N × perMove` seconds. */
+function requirePlausible(moves: number, perMove: number, elapsed: number): void {
+  const minSeconds = moves * perMove;
+  if (elapsed < minSeconds) {
+    throw new DomainError('bad_request', 'the round was finished faster than it can be played', {
+      reason: 'too_fast',
+      minSeconds,
+      elapsed,
+    });
+  }
+}
+
+/**
+ * §9.1: how many game points this player may still bank this week.
+ *
+ * The week is Monday 00:00 to Sunday 24:00 **UTC** — the same UTC calendar every
+ * other daily rule in this file keys on (`dayOf`). Counted off the ledger's own
+ * `game_win` entries from game sessions, so the cap is whatever was actually
+ * banked, welcome round included; nothing is stored beside it. The cap is the
+ * plan's row in `CONFIG.games.weeklyGameCap`, looked up by the plan's code at
+ * the instant of the round, with the free figure for any plan it does not name.
+ */
+async function weeklyGameRoom(db: Db, userId: string, at: Iso): Promise<number> {
+  const day = new Date(`${dayOf(at)}T00:00:00.000Z`);
+  const monday = iso(new Date(day.getTime() - ((day.getUTCDay() + 6) % 7) * 86_400_000));
+  const plan = await entitlements.planFor(db, { userId }, at);
+  const caps = CONFIG.games.weeklyGameCap;
+  const cap = caps[plan.code] ?? caps.free ?? Number.POSITIVE_INFINITY;
+  const earned =
+    (await db.get<{ n: number | null }>(
+      `SELECT COALESCE(SUM(delta), 0) AS n FROM points_ledger
+        WHERE user_id = $u AND reason = 'game_win' AND source_kind = 'game_session'
+          AND created_at >= $m`,
+      { u: userId, m: monday },
+    ))?.n ?? 0;
+  return Math.max(0, cap - Number(earned));
+}
+
+/**
  * The streak, the lapse, the freeze and the comeback — the one place they are
  * decided.
  *
@@ -3116,31 +3467,36 @@ async function payComeback(db: Db, userId: string, at: Iso): Promise<void> {
 }
 
 /**
- * The day's featured game, in the order the Play screen rotates it.
+ * The day's featured game — rulebook §4.4, **the rulebook's eight, in its own
+ * order** (§5.1–§5.8): Guess Flag, Brain Games, Country Quiz, Word Builder,
+ * Memory Match, Bird flight, 2048, Food Cross. One a day, cycling, so every
+ * game is featured once every eight days.
  *
- * This is `DAILY_POOL` in `src/site/games/rules.ts` — `GAMES` without the local
- * Word Builder — restated in server game types, because the two programs share
- * no code. The local quiz is one slot that is two banks: which one a player is
- * dealt depends on their profile, and either is that day's game. `verify:api`
- * pins this order, so a reorder here that is not made there fails a check
- * rather than paying the bonus on the wrong card.
+ * **Country Quiz is the local-knowledge slot** — "five questions about one
+ * country the player chooses" is the Poland / Uzbekistan bank, and it is one slot
+ * holding two banks because which one a player is dealt depends on their profile
+ * (`featuredGameFor` resolves it). **`capitals` is not one of the eight**, so it
+ * stays playable and is never featured; it was a slot of the seven-game rotation
+ * this replaced, which followed `DAILY_POOL` in `src/site/games/rules.ts`. The
+ * site draws its poster from `featuredGame` on `/v1/games/state` now, so the
+ * server's rotation is the one that decides; the site's own local copy is a
+ * fallback that no longer matches it, and is the site's to update.
+ *
+ * `verify:api` walks a full turn of this list, so a slot added or dropped
+ * changes the length the check walks rather than failing it silently.
  */
 export const DAILY_GAME_POOL: ReadonlyArray<ReadonlyArray<GameType>> = [
-  ['flight'],
-  ['memory_match'],
   ['flags'],
-  ['capitals'],
   ['brain'],
   ['poland', 'uzbekistan'],
   ['word_builder'],
-  ['merge_2048'],
-  ['food_cross'],
-  ['food_ninja'],
-  ['snake'],
-  ['cannon_numbers'],
-  ['breakout'],
-  ['doodle_jump'],
-  ['zuma'],
+  ['memory_match'],
+  ['flight'],
+  /* The site's 2048 and Food Cross are its own engines under their own game
+     types; they share the slot so the day's poster and bonus are the same
+     game on both clients. `featuredGameFor` names the first. */
+  ['game_2048', 'merge_2048'],
+  ['food_cross', 'food_cross_live'],
 ];
 
 /**
@@ -3232,7 +3588,7 @@ export async function featuredGameFor(
 ): Promise<GameType | null> {
   const slot = dailyGameFor(dayOf(at));
   if (slot.length === 0) return null;
-  /* One entry for six of the seven slots; the local quiz is the seventh and is
+  /* One entry for seven of the eight slots; the local quiz is the other and is
      the only one that needs the account at all, so the read is skipped for the
      others rather than made unconditionally. */
   if (slot.length === 1) return slot[0];
@@ -3332,6 +3688,63 @@ async function nearestReward(db: Db, userId: string, balance: number) {
  * option order in a question is reproducible when somebody asks why a player
  * says the answer moved.
  */
+/**
+ * The tile alphabets the Word Builder draws decoys from — the tiles the bank's
+ * own words are spelled in, per list. Uzbek's SH, CH, Oʻ and Gʻ are one tile
+ * each (and there is no bare C); NG is left out because the bank spells it N|G.
+ */
+export const WORD_ALPHABETS: Record<string, readonly string[]> = {
+  en: [...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'],
+  pl: [...'AĄBCĆDEĘFGHIJKLŁMNŃOÓPRSŚTUWYZŹŻ'],
+  uz: [...'ABDEFGHIJKLMNOPQRSTUVXYZ', 'Oʻ', 'Gʻ', 'SH', 'CH'],
+  ru: [...'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ'],
+};
+
+/** A word's tiles: the bank's `tiles` column when it has one, else its code points. */
+export function tilesOf(word: string, stored: string | null | undefined): string[] {
+  const parsed = jsonList(stored ?? null);
+  return parsed.length > 0 ? parsed : [...word.toUpperCase()];
+}
+
+function jsonList(value: string | null): string[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `count` wrong tiles for a word, drawn from its list's alphabet and keyed to
+ * the word's id, so one word always deals the same rack. A tile that is, is
+ * part of, or contains one of the word's own is never a decoy: an S beside an
+ * SH, or an O beside an Oʻ, is a near-miss that reads as a trick rather than a
+ * wrong letter. A list with no alphabet here deals no decoys.
+ */
+export function decoyTiles(language: string, tiles: string[], count: number, seed: string): string[] {
+  const alphabet = WORD_ALPHABETS[language];
+  if (!alphabet || count <= 0) return [];
+  const pool = alphabet.filter(
+    (letter) => !tiles.some((tile) => tile.includes(letter) || letter.includes(tile)),
+  );
+  return shuffle(pool, `${seed}:decoys`).slice(0, count);
+}
+
+/**
+ * A spelling folded for comparison: NFC, upper case, no spaces, and every
+ * apostrophe-like mark as the Uzbek ʻ — the bank writes Oʻ with U+02BB, and a
+ * keyboard sends ' or ‘ or ’ for it.
+ */
+export function spellingKey(value: string): string {
+  return value
+    .normalize('NFC')
+    .toUpperCase()
+    .replace(/['`\u2018\u2019\u02BB\u02BC\u02BD]/g, '\u02BB')
+    .replace(/\s+/g, '');
+}
+
 export function shuffle<T>(items: T[], seed: string): T[] {
   let hash = 2166136261;
   for (let i = 0; i < seed.length; i += 1) {

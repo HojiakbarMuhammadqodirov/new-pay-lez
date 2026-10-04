@@ -241,7 +241,10 @@ const PLANS: PlanSeed[] = [
       streak_freezes: 2,
       exclusive_deals: false,
       deal_early_access_hours: 0,
-      gift_card_priority: false,
+      /* True on every plan since 2026-10-03, when gift cards were opened to
+         all accounts. Nothing on the server reads it now; it stays published
+         so an older app build, which gates its shop on it, shows the shop. */
+      gift_card_priority: true,
       monthly_stipend: 0,
       priority_support: false,
       assistant: true,
@@ -689,7 +692,17 @@ const WORDS: Array<[string, string, string]> = [
  * It is only ever used for a word the export does not carry.
  */
 async function seedWords(db: Db): Promise<void> {
+  /* Only into an **empty** list. The import replaces a language's bank with
+     the CSV's (new ids, `wrd_wb-…`), so writing the placeholder beside it on
+     the next boot would bring back thirty retired words — and one of them
+     sharing a spelling with a CSV word (KAWA) would trip `UNIQUE (language,
+     word)`, which `ON CONFLICT (id)` does not cover, and stop the boot. */
+  const filled = new Set(
+    (await db.all<{ language: string }>(`SELECT DISTINCT language FROM word_bank`))
+      .map((row) => row.language),
+  );
   for (const [language, word, hint] of WORDS) {
+    if (filled.has(language)) continue;
     const tier = word.length <= 4 ? 1 : word.length <= 7 ? 2 : 3;
     await db.run(
       `INSERT INTO word_bank (id, language, word, tier, hint) VALUES ($i, $l, $w, $t, $h)

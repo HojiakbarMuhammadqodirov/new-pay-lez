@@ -66,8 +66,76 @@ const LANGS = ['en', 'pl', 'uz', 'ru', 'uk', 'tr', 'az'] as const;
  * being handed Polish, a language nobody in Tashkent is being asked to learn.
  * The round is built from `sessions.language`, so without these rows a signed-in
  * Russian reader falls through `not_found` onto the browser's own copy.
+ *
+ * Uzbek arrived with the 2 000-word bank (`WORD_BANK_CSV`), 500 words in each
+ * of the four. It is the one list whose tiles are not single characters — SH,
+ * CH, Oʻ and Gʻ are one letter each — which is why `word_bank.tiles` exists.
  */
-export const WORD_LANGUAGES = ['en', 'pl', 'ru'] as const;
+export const WORD_LANGUAGES = ['en', 'pl', 'uz', 'ru'] as const;
+
+/**
+ * The Word Builder bank: one CSV, every language, in `updates/`. It replaces
+ * the old `paylez-words-{en,pl,ru}.json` lists as the source; those are still
+ * read for a language the CSV does not carry (or when it is absent), so a
+ * checkout without it plays on what it had.
+ */
+export const WORD_BANK_CSV = 'paylez-wordbuilder-all-2000.csv';
+
+/** One row of `WORD_BANK_CSV`, as the importer stores it. */
+export interface BankWord {
+  id: string;
+  language: string;
+  word: string;
+  tier: number;
+  tiles: string[];
+  accept: string[];
+  decoys: number;
+  clueEn: string;
+  clueNative: string;
+}
+
+/**
+ * The CSV's rows, read into what `word_bank` stores. Exported so `verify.ts`
+ * can hold the import to the file without re-parsing it its own way.
+ *
+ * `letter_sequence` is the tiles, pipe-separated; `word_accept` is a second
+ * spelling the answer may arrive in (ASCII for a keyboard without Ł or Oʻ); the
+ * difficulty is the tier, Easy / Medium / Hard → 1 / 2 / 3. A row whose tiles do
+ * not spell its word is dropped rather than trusted: it would be a word that can
+ * never be built.
+ */
+export function readWordBank(dir: string): BankWord[] {
+  const tierOf: Record<string, number> = { easy: 1, medium: 2, hard: 3 };
+  const out: BankWord[] = [];
+  for (const row of readCsv(join(dir, WORD_BANK_CSV))) {
+    const language = str(row, 'language').toLowerCase();
+    const word = str(row, 'word').normalize('NFC').toUpperCase();
+    const id = str(row, 'id');
+    if (!id || !word || !/^[a-z]{2}$/.test(language)) continue;
+    const tiles = str(row, 'letter_sequence')
+      .split('|')
+      .map((tile) => tile.trim().normalize('NFC').toUpperCase())
+      .filter(Boolean);
+    if (tiles.join('') !== word) continue;
+    const accept = str(row, 'word_accept')
+      .split('|')
+      .map((form) => form.trim().normalize('NFC').toUpperCase())
+      .filter((form) => form && form !== word);
+    const decoys = Math.min(6, Math.max(0, Math.round(Number(str(row, 'decoy_letters')) || 0)));
+    out.push({
+      id: `wrd_${id.toLowerCase()}`,
+      language,
+      word,
+      tier: tierOf[str(row, 'difficulty').toLowerCase()] ?? 2,
+      tiles,
+      accept,
+      decoys,
+      clueEn: str(row, 'clue_en'),
+      clueNative: str(row, 'clue_native'),
+    });
+  }
+  return out;
+}
 
 export interface ImportSummary {
   counts: Record<string, number>;
@@ -1004,11 +1072,57 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
    * this runs after it — `INSERT OR REPLACE` on a derived id, so the export
    * wins where the two overlap and the placeholder survives where it does not.
    */
-  const wordLists: Array<[string, string]> = WORD_LANGUAGES.map((language) => [
-    language,
-    `paylez-words-${language}.json`,
-  ]);
-  let wordsFound = 0;
+  /*
+   * **The 2 000-word bank** (`WORD_BANK_CSV`) is the source now: 500 words in
+   * each of en, pl, uz and ru, with authored tiers, tiles, accepted spellings,
+   * a decoy count, an English clue and a clue in the word's own language.
+   *
+   * A language the CSV carries is **replaced**, not merged: its old rows (the
+   * JSON lists, the placeholder) are deleted with their clue translations, so
+   * a round never deals a word from a bank that was retired. Nothing points at
+   * a `word_bank` row by key — a round in flight carries its own words in
+   * `game_sessions.secret`, and `game_recent_items` only ever excludes ids — so
+   * a deleted row cannot break a session or a history.
+   */
+  const bank = readWordBank(banksDir);
+  const csvLanguages = new Set(bank.map((row) => row.language));
+  const uncovered = WORD_LANGUAGES.filter((language) => !csvLanguages.has(language));
+  if (uncovered.length > 0) {
+    notes.push(
+      `word bank: ${banksDir}/${WORD_BANK_CSV} has no ${uncovered.join(', ')} words — ` +
+        'those lists fall back to paylez-words-*.json',
+    );
+  }
+  for (const language of csvLanguages) {
+    await db.run(
+      `DELETE FROM translations WHERE entity = 'word' AND entity_id IN
+         (SELECT id FROM word_bank WHERE language = $l)`,
+      { l: language },
+    );
+    await db.run(`DELETE FROM word_bank WHERE language = $l`, { l: language });
+  }
+  for (const row of bank) {
+    await db.run(
+      `INSERT OR REPLACE INTO word_bank (id, language, word, tier, hint, tiles, accept, decoys)
+       VALUES ($i, $l, $w, $t, $h, $tl, $a, $d)`,
+      {
+        i: row.id,
+        l: row.language,
+        w: row.word,
+        t: row.tier,
+        h: row.clueEn || null,
+        tl: JSON.stringify(row.tiles),
+        a: row.accept.length ? JSON.stringify(row.accept) : null,
+        d: row.decoys,
+      },
+    );
+    bump('word_bank');
+  }
+
+  const wordLists: Array<[string, string]> = WORD_LANGUAGES
+    .filter((language) => !csvLanguages.has(language))
+    .map((language) => [language, `paylez-words-${language}.json`]);
+  let wordsFound = bank.length;
   for (const [language, name] of wordLists) {
     let rows: Array<{ word?: unknown; hint?: unknown; tier?: unknown }> = [];
     try {
@@ -1084,9 +1198,43 @@ export async function importLegacy(db: Db, dir: string, gamesDir?: string): Prom
     }
   }
 
+  /*
+   * The CSV's own clues, written after the hints file so they win.
+   *
+   * First, **across the bank**: the four lists were written from one set of
+   * English clues, so a clue a Russian word carries ("The wide space above us"
+   * → "Широкое пространство над нами") is also the Russian for any other word
+   * whose English clue is the same sentence. That gives a Russian reader on the
+   * English card a Russian clue wherever the bank has one, and English where it
+   * has none — the column is the fallback `buildWords` already reads.
+   *
+   * Then **the word's own clue in its own language**, last, so it always wins:
+   * a Polish reader on the Polish list gets the bank's Polish clue, never a
+   * translation of the English one that might spell the answer.
+   */
+  const nativeFor = new Map<string, Map<string, string>>();
+  for (const row of bank) {
+    if (row.language === 'en' || !row.clueEn || !row.clueNative) continue;
+    const byLanguage = nativeFor.get(row.clueEn) ?? new Map<string, string>();
+    if (!byLanguage.has(row.language)) byLanguage.set(row.language, row.clueNative);
+    nativeFor.set(row.clueEn, byLanguage);
+  }
+  for (const row of bank) {
+    for (const [lang, value] of nativeFor.get(row.clueEn) ?? []) {
+      if (lang === row.language) continue;
+      await putText('word', row.id, 'hint', lang, value);
+      bump('word_hints');
+    }
+    if (row.language !== 'en' && row.clueNative) {
+      await putText('word', row.id, 'hint', row.language, row.clueNative);
+      bump('word_hints');
+    }
+  }
+
   if (wordsFound === 0) {
     notes.push(
-      `word bank: no words found in ${banksDir}/paylez-words-*.json — the Word ` +
+      `word bank: no words found in ${banksDir}/${WORD_BANK_CSV} or ` +
+        `${banksDir}/paylez-words-*.json — the Word ` +
         'Builder is running on the thirty-word placeholder in domain/settings.ts, ' +
         'which is fewer words than the no-repeat window, so a second round for ' +
         'any one player comes back short',

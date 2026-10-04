@@ -6,7 +6,7 @@
  * Postgres. Generated from `schema.sql` so a primary key cannot change without
  * this changing with it.
  *
- * 0 of 88 tables have no primary key and are absent: an upsert
+ * 0 of 95 tables have no primary key and are absent: an upsert
  * naming one throws rather than guessing a unique index to overwrite on.
  *
  * **7 upsert targets carry a second unique constraint** and are marked inline
@@ -37,7 +37,9 @@ export const CONFLICT_TARGETS: Record<string, readonly string[] | undefined> = {
   points_lots: ['ledger_id'],
   daily_counters: ['user_id', 'day'],
   transactions: ['id'],
+  team_members: ['id'],
   qr_nonces: ['jti'],
+  redemption_passes: ['id'],
   tag_registry: ['tag_uid'],
   idempotency_keys: ['key', 'user_id', 'endpoint'],
   budgets: ['id'], // also UNIQUE (venue_id, period)
@@ -51,6 +53,7 @@ export const CONFLICT_TARGETS: Record<string, readonly string[] | undefined> = {
   stamp_cards: ['id'], // also UNIQUE (user_id, campaign_id)
   earned_rewards: ['id'],
   venue_visits: ['id'], // also UNIQUE (user_id, venue_id, local_day)
+  venue_reviews: ['id'],
   venue_customers: ['venue_id', 'user_id'],
   hot_deals: ['id'],
   deal_events: ['id'],
@@ -85,6 +88,10 @@ export const CONFLICT_TARGETS: Record<string, readonly string[] | undefined> = {
   email_verifications: ['id'], // also UNIQUE (user_id)
   media_assets: ['id'], // also UNIQUE (entity, entity_id)
   daily_tasks: ['key'],
+  mission_claims: ['user_id', 'mission_id', 'period'],
+  mission_events: ['id'],
+  mission_campaigns: ['id'],
+  learning_progress: ['user_id', 'module_id'],
   benchmarks: ['id'], // also UNIQUE (period, city, category, metric)
   assistant_sessions: ['id'],
   assistant_messages: ['id'], // also UNIQUE (session_id, seq)

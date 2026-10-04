@@ -6598,6 +6598,32 @@ button {
   color: var(--text-fnt);
 }
 
+/* `/i/<code>` — the invite code, set large enough to read across a table,
+   because that is how half of these are passed on. Accent as a mark, so
+   `--accent-ink`, per the palette rule in `src/site/CLAUDE.md`. */
+.invite-code {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--r-md, 14px);
+  border: 1px solid var(--border);
+}
+
+.invite-code span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-mut);
+}
+
+.invite-code strong {
+  font-size: 1.6rem;
+  letter-spacing: 0.04em;
+  color: var(--accent-ink);
+}
+
 /* The `ul`/`li` rules that used to live here styled a printed list of demo
    credentials, which the sign-in form no longer shows — see `auth/users.ts`.
    The class itself stays: it is the muted footnote weight, and the sign-up

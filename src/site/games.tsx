@@ -1110,7 +1110,7 @@ const SERVER_GAME: Record<Exclude<GameId, 'local'>, ServerGameType> = {
   memory: 'memory_match',
   flight: 'flight',
   merge: 'merge_2048',
-  food: 'food_cross',
+  food: 'food_cross_live',
   ninja: 'food_ninja',
   snake: 'snake',
   cannon: 'cannon_numbers',
@@ -1852,7 +1852,7 @@ export function GamesApp() {
       return;
     }
     abandonRound(open)
-      .then((closed) => mirrorEnergy(closed.energyLeft, closed.energyNextAt))
+      .then((closed) => mirrorEnergy(closed.energy.energy, closed.energy.nextAt))
       .catch(() => {
         /* The next round's start reads the tank again; nothing to repair here. */
       });

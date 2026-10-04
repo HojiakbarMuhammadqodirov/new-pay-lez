@@ -74,9 +74,41 @@ export interface Limit {
  * change to it there (a different field, a coarser bucket) must not silently
  * change what this limiter buckets on. The `limit:` prefix keeps the two
  * namespaces apart even when the inputs are identical.
+ *
+ * **The address only — never the user-agent.** It used to hash both, which made
+ * every limit keyed on a connection (sign-up's five an hour, the team join
+ * code's five failures) free to walk past: change the header, get a fresh
+ * bucket, from the same address, with no proxy trickery at all. The agent was
+ * never a defence either way — every copy of the app sends the same Dart one —
+ * so it bought honest callers nothing and bought an attacker everything.
  */
-export const connectionKey = (secret: string, day: string, ip: string, agent: string): string =>
-  createHmac('sha256', `limit:${secret}:${day}`).update(`${ip}\n${agent}`).digest('hex').slice(0, 32);
+export const connectionKey = (secret: string, day: string, ip: string): string =>
+  createHmac('sha256', `limit:${secret}:${day}`).update(ip).digest('hex').slice(0, 32);
+
+const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
+
+/**
+ * The caller's address, as far as this server can honestly know it.
+ *
+ * Production runs behind nginx on the same box (DEPLOY.md: `api.pay-lez.com` →
+ * `127.0.0.1:8787`), so the socket peer is always loopback and the client is in
+ * `X-Forwarded-For`. Which entry matters: a client may send the header itself,
+ * and nginx's `$proxy_add_x_forwarded_for` *appends* the address it saw. The
+ * **last** entry is therefore the one our own proxy wrote; the first is whatever
+ * the caller typed, and reading it (as this server once did) let any script
+ * choose its own bucket for every per-connection limit.
+ *
+ * The header is believed only from a loopback peer — the proxy. A request that
+ * reaches the port directly has no proxy vouching for anything, so its forwarded
+ * header is ignored and the socket address stands.
+ */
+export function clientAddress(forwardedFor: string | string[] | undefined, peer: string | undefined): string {
+  const socket = peer ?? '';
+  if (!LOOPBACK.has(socket)) return socket;
+  const header = Array.isArray(forwardedFor) ? forwardedFor.join(',') : forwardedFor ?? '';
+  const entries = header.split(',').map((part) => part.trim()).filter(Boolean);
+  return entries[entries.length - 1] ?? socket;
+}
 
 /**
  * Count this call, and refuse it if the window is already full.

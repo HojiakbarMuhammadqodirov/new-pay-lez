@@ -386,7 +386,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLeaderboardOptIn(me?.user.leaderboardOptIn ?? null);
     setVenueSharingDefault(me?.user.venueSharingDefault ?? null);
     setEmailVerifiedAt(me?.user.emailVerifiedAt ?? null);
-    setSpendNeedsVerifiedEmail(me?.user.spendNeedsVerifiedEmail === true);
+    setSpendNeedsVerifiedEmail(me?.user.emailVerificationRequired === true);
     setServerLanguage(me?.user.language ?? null);
   }, []);
 

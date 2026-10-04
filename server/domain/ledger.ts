@@ -55,6 +55,9 @@ export type EarnReason =
   | 'streak_milestone'
   | 'occasion'
   | 'stipend'
+  /* A claimed mission (rulebook §8), `source_kind: 'mission'` and
+     `source_ref: '<mission id>:<period>'`. Written only by `missions.claim`. */
+  | 'mission'
   | 'adjustment';
 export type SpendReason = 'voucher_redeem' | 'gift_card_redeem';
 

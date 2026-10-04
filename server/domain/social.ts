@@ -13,13 +13,58 @@
  * user's first confirmed scan (§8.1). Paying at signup is what makes referral
  * farming free.
  */
+import { CONFIG } from '../config.ts';
 import type { Db } from '../db/db.ts';
-import { DomainError } from './errors.ts';
+import { randomInt } from 'node:crypto';
+import { DomainError, type ErrorCode } from './errors.ts';
 import * as ledger from './ledger.ts';
 import { newId, referralCode } from './ids.ts';
 import { isoWeek, now, plusDays, type Iso } from './time.ts';
 
 /* ══════════════════════════════════════════════════════════════ referrals ══ */
+
+/**
+ * Where an invite points. The website answers `/i/:code` with a page that says
+ * who sent it and where to get the app; the phone opens the same URL itself
+ * when it is installed. One constant, so the app's Copy link, the share sheet
+ * and the landing page cannot hand out three different addresses.
+ */
+export const INVITE_BASE = 'https://www.pay-lez.com/i/';
+export const inviteLink = (code: string): string => `${INVITE_BASE}${encodeURIComponent(code)}`;
+
+/**
+ * The code somebody typed, the way it is stored.
+ *
+ * People paste the whole link as often as the code, type it in lower case and
+ * leave a space on the end — and every one of those is the same invite. So a
+ * trailing path segment is taken from a URL, whitespace and any dash somebody
+ * added for legibility go, and the result is
+ * upper-cased; the lookup compares upper case on both sides, because the codes
+ * imported from the old database were never promised to be.
+ */
+export function normaliseCode(raw: unknown): string {
+  let value = String(raw ?? '').trim();
+  value = value.split(/[?#]/)[0].replace(/\/+$/, '');
+  const slash = value.lastIndexOf('/');
+  if (slash >= 0) value = value.slice(slash + 1);
+  return value.replace(/[\s-]+/g, '').toUpperCase();
+}
+
+/**
+ * "Marta K." — how one person is named to another on this surface.
+ *
+ * First word of the display name plus the last word's initial, and never the
+ * email: a referrer already knows who they invited, and a stranger who guesses
+ * a code learns a first name, which is what the landing page is *for*. Empty
+ * when there is no name at all, and the client supplies its own "a friend".
+ */
+export function shortName(displayName: string | null | undefined): string {
+  const parts = String(displayName ?? '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0];
+  const initial = Array.from(parts[parts.length - 1])[0]?.toUpperCase() ?? '';
+  return initial ? `${parts[0]} ${initial}.` : parts[0];
+}
 
 export async function codeFor(db: Db, userId: string): Promise<string> {
   const existing = await db.get<{ referral_code: string | null }>(
@@ -28,12 +73,19 @@ export async function codeFor(db: Db, userId: string): Promise<string> {
   );
   if (existing?.referral_code) return existing.referral_code;
 
-  /* Collisions are possible with a four-digit tail, so it retries rather than
-     trusting randomness — a duplicated code silently attributes somebody's
-     invites to a stranger. */
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    const code = referralCode();
-    const taken = await db.get<{ id: string }>(`SELECT id FROM users WHERE referral_code = $c`, { c: code });
+  /* Collisions are possible, so it retries rather than trusting randomness — a
+     duplicated code silently attributes somebody's invites to a stranger.
+
+     **And it widens.** The old shape is `PY` plus four digits, which is nine
+     thousand codes: by the eight-thousandth account twenty tries at four
+     digits fail about a third of the time, and this runs inside sign-up, so a
+     full space would have been sign-up answering 500. Ten tries at the old
+     width keep new codes looking like the old ones for as long as that is
+     cheap; after that six digits, then eight. Still digits, because somebody
+     reads these aloud across a table. */
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const code = attempt < 10 ? referralCode() : wideCode(attempt < 20 ? 6 : 8);
+    const taken = await db.get<{ id: string }>(`SELECT id FROM users WHERE UPPER(referral_code) = $c`, { c: code });
     if (taken) continue;
     await db.run(`UPDATE users SET referral_code = $c WHERE id = $u`, { c: code, u: userId });
     return code;
@@ -41,110 +93,275 @@ export async function codeFor(db: Db, userId: string): Promise<string> {
   throw new DomainError('internal', 'could not allocate a referral code');
 }
 
-/**
- * A code as somebody typed or pasted it, folded to the stored form.
- *
- * Stored codes are upper case (`PY7KQ2MX`, and the imported `PY1100`s), and a
- * code read off a phone screen arrives as `py7kq2mx`, `PY 7KQ2MX` or with a
- * dash somebody added for legibility. An exact-match lookup refused every one
- * of those silently.
- */
-export const normalizeCode = (raw: string): string => raw.replace(/[\s-]/g, '').toUpperCase();
+const wideCode = (digits: number): string => `PY${randomInt(10 ** (digits - 1), 10 ** digits)}`;
 
 /**
- * Who a code belongs to, if they can still be credited.
- *
- * An erased, deleted or suspended account's code answers nothing: binding a
- * new player to somebody who can never be paid is a "friend joined" that
- * leads nowhere, and a suspended account is exactly the one a farm runs on.
+ * Why a code cannot be attached to an account. Each is a different sentence
+ * on the phone ("this is your own code", "you've already used one"), so each
+ * is its own reason rather than one "invalid".
  */
-async function referrerFor(db: Db, raw: string): Promise<{ id: string } | undefined> {
-  const code = normalizeCode(raw);
+export type BindRefusal =
+  | 'unknown_code'
+  | 'self_referral'
+  | 'already_referred'
+  | 'already_visited'
+  | 'circular';
+
+interface Referrer {
+  id: string;
+  display_name: string;
+  referral_code: string;
+}
+
+/** An active account holding this code, or nothing. */
+async function referrerFor(db: Db, code: string): Promise<Referrer | undefined> {
   if (!code) return undefined;
-  return await db.get<{ id: string }>(
-    `SELECT id FROM users
-      WHERE referral_code = $c AND status = 'active' AND deleted_at IS NULL`,
+  /* `active` only: a guest's code is a code on a row that is about to be
+     merged away, a banned account's invites are not something to pay for, and
+     an erased one is nobody. All three read as "no such code". */
+  return await db.get<Referrer>(
+    `SELECT id, display_name, referral_code FROM users
+      WHERE UPPER(referral_code) = $c AND status = 'active' AND deleted_at IS NULL`,
     { c: code },
   );
 }
 
-/** Whether a code would bind — what the sign-up form asks before it is used. */
-export const codeExists = async (db: Db, raw: string): Promise<boolean> =>
-  Boolean(await referrerFor(db, raw));
+/** Whether this account has ever had a visit confirmed at a counter. */
+async function hasVisited(db: Db, userId: string): Promise<boolean> {
+  /* `confirmed_at`, not `status = 'committed'`: a visit that was confirmed and
+     later reversed still happened, and still spent the moment the reward is
+     tied to. */
+  const row = await db.get<{ id: string }>(
+    `SELECT id FROM transactions WHERE user_id = $u AND confirmed_at IS NOT NULL LIMIT 1`,
+    { u: userId },
+  );
+  return row !== undefined;
+}
 
 /**
- * Bind a new account to whoever invited it.
+ * Whether [userId] may be bound to [referrer], and if not why.
  *
- * Pending until the first confirmed scan. Self-referral is refused here rather
- * than at payout, because a bond that can never pay out is a "2 friends joined"
- * counter that lies to the person reading it.
+ * The rules, and the abuse each one closes:
+ *
+ * - **not yourself** — two accounts' worth of reward for one person;
+ * - **once** — `UNIQUE (referred_id)` says it too, but a refusal with a reason
+ *   beats a constraint violation;
+ * - **before the first confirmed visit** — the reward *is* the first visit.
+ *   A code attached afterwards would pay on the second, which is a visit that
+ *   was going to happen anyway and a bonus for having been asked twice;
+ * - **no cycles** — A invites B, then B's code is attached to A. Both would be
+ *   paid for bringing in the other, which is two people paying each other in
+ *   our points. Walked up the chain rather than checked one level deep,
+ *   because a ring of three is the same trick with one more account.
+ *
+ * Only one level ever *pays*: `gate.completeReferral` rewards the referrer and
+ * the invitee and nobody above them, so there is no chain to farm upward.
+ */
+async function refusalFor(db: Db, userId: string, referrer: Referrer | undefined): Promise<BindRefusal | null> {
+  if (!referrer) return 'unknown_code';
+  if (referrer.id === userId) return 'self_referral';
+
+  const already = await db.get<{ id: string }>(`SELECT id FROM referrals WHERE referred_id = $u`, { u: userId });
+  if (already) return 'already_referred';
+
+  if (await hasVisited(db, userId)) return 'already_visited';
+
+  let cursor = referrer.id;
+  for (let depth = 0; depth < 64; depth += 1) {
+    const up = await db.get<{ referrer_id: string }>(
+      `SELECT referrer_id FROM referrals WHERE referred_id = $u`,
+      { u: cursor },
+    );
+    if (!up) break;
+    if (up.referrer_id === userId) return 'circular';
+    cursor = up.referrer_id;
+  }
+  return null;
+}
+
+/**
+ * Bind an account to whoever invited it.
+ *
+ * Pending until the first confirmed scan. Refused here rather than at payout,
+ * because a bond that can never pay out is a "2 friends joined" counter that
+ * lies to the person reading it.
+ *
+ * Sign-up calls this and ignores a refusal — a mistyped code is not a reason
+ * to refuse somebody an account. `redeem` below is the path that says why.
  */
 export async function bind(
   db: Db,
   input: { code: string; newUserId: string; at?: Iso },
-): Promise<{ ok: boolean; reason?: string }> {
+): Promise<{ ok: boolean; reason?: BindRefusal; referrerName?: string }> {
   const at = input.at ?? now();
-  const referrer = await referrerFor(db, input.code);
-  if (!referrer) return { ok: false, reason: 'unknown_code' };
-  if (referrer.id === input.newUserId) return { ok: false, reason: 'self_referral' };
-
-  const already = await db.get<{ id: string }>(`SELECT id FROM referrals WHERE referred_id = $u`, {
-    u: input.newUserId,
-  });
-  if (already) return { ok: false, reason: 'already_referred' };
+  const referrer = await referrerFor(db, normaliseCode(input.code));
+  const refusal = await refusalFor(db, input.newUserId, referrer);
+  if (refusal || !referrer) return { ok: false, reason: refusal ?? 'unknown_code' };
 
   await db.run(
     `INSERT INTO referrals (id, referrer_id, referred_id, code, status, created_at)
      VALUES ($i, $r, $u, $c, 'pending', $t)`,
-    { i: newId('ref'), r: referrer.id, u: input.newUserId, c: normalizeCode(input.code), t: at },
+    { i: newId('ref'), r: referrer.id, u: input.newUserId, c: referrer.referral_code, t: at },
   );
-  return { ok: true };
+  return { ok: true, referrerName: shortName(referrer.display_name) };
 }
 
-/** "2 friends joined · 400 points earned" — the display §8.1 asks for. */
+/** The refusal as the HTTP layer says it: a status, a sentence, and `reason`. */
+const REFUSALS: Record<BindRefusal, [ErrorCode, string]> = {
+  unknown_code: ['not_found', 'that invite code does not exist'],
+  self_referral: ['invalid_state', 'that is your own invite code'],
+  already_referred: ['already_used', 'an invite code is already on this account'],
+  already_visited: ['conflict', 'invite codes can only be added before your first visit'],
+  circular: ['conflict', 'that invite would go round in a circle'],
+};
+
+/**
+ * `POST /v1/referrals/redeem` — attach a code after sign-up.
+ *
+ * For the person who installed from the store, signed up, and only then found
+ * the message with the code in it. Same rules as sign-up, but a refusal is an
+ * answer here: the person typed something and is waiting to hear what
+ * happened to it. `reason` rides in the error body so the phone can pick the
+ * sentence without parsing one.
+ */
+export async function redeem(
+  db: Db,
+  input: { userId: string; code: string; at?: Iso },
+): Promise<{ referredBy: { name: string }; status: 'joined'; inviteeReward: number; referrerReward: number }> {
+  const user = await db.get<{ status: string }>(`SELECT status FROM users WHERE id = $u`, { u: input.userId });
+  /* A guest is a device, not a person yet. Its bond would sit on a row that
+     `accounts.merge` erases — so the code is carried into sign-up instead,
+     where it lands on the account that will actually visit. */
+  if (!user || user.status !== 'active') {
+    throw new DomainError('forbidden', 'create an account to use an invite code', { reason: 'guest' });
+  }
+
+  const result = await db.tx(async () => await bind(db, { code: input.code, newUserId: input.userId, at: input.at }));
+  if (!result.ok) {
+    const reason = result.reason ?? 'unknown_code';
+    const [code, message] = REFUSALS[reason];
+    throw new DomainError(code, message, { reason, field: 'code' });
+  }
+  return {
+    referredBy: { name: result.referrerName ?? '' },
+    status: 'joined',
+    inviteeReward: CONFIG.earn.inviteeJoin,
+    referrerReward: CONFIG.earn.referrerFirstVisit,
+  };
+}
+
+/**
+ * `GET /v1/referrals/codes/:code` — who a code belongs to, for somebody who is
+ * not signed in yet: the landing page's "Marta K. invited you" and the app's
+ * confirm screen before sign-up. The short name and the offer, nothing else.
+ */
+export async function lookup(db: Db, raw: string) {
+  const referrer = await referrerFor(db, normaliseCode(raw));
+  if (!referrer) throw new DomainError('not_found', 'that invite code does not exist', { field: 'code' });
+  const code = referrer.referral_code;
+  return {
+    code,
+    name: shortName(referrer.display_name),
+    link: inviteLink(code),
+    inviteeReward: CONFIG.earn.inviteeJoin,
+    referrerReward: CONFIG.earn.referrerFirstVisit,
+  };
+}
+
+/**
+ * `GET /v1/referrals` — "2 friends joined · 200 points earned", the people
+ * behind it, and whether this account can still attach a code of its own.
+ */
 export async function referralProgress(db: Db, userId: string) {
-  /* A rejected bond is not a friend who joined: it is one an operator voided. */
-  const row = await db.get<{ joined: number; completed: number }>(
+  const row = await db.get<{ joined: number; completed: number | null }>(
     `SELECT COUNT(*) AS joined,
             SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
        FROM referrals WHERE referrer_id = $u AND status <> 'rejected'`,
     { u: userId },
   );
-  /*
-   * What *this person* was paid, read off their own ledger rows.
-   *
-   * It was `SUM(points_awarded)`, and that column is what a bond cost **both
-   * sides together** (see `gate.completeReferral`) — so an inviter was shown
-   * 200 per friend for a 100 they had received, and never the five-friend
-   * milestone at all. Their own rows are the answer: the inviter's share of
-   * each bond they made, plus the milestone, net of any reversal an operator
-   * applied. Their own invitee bonus, if somebody invited *them*, is excluded
-   * by the `referrer_id` join.
-   */
-  const paid = await db.get<{ points: number | null }>(
-    `SELECT SUM(l.delta) AS points FROM points_ledger l
-      WHERE l.user_id = $u AND l.reason = 'referral'
+
+  /* **What this account was paid, from the ledger.** It used to be
+     `SUM(points_awarded)`, and `points_awarded` is what a bond cost *both
+     sides together* — so a referrer with two completed invites read "400
+     points earned" when 200 had reached them, and the friend milestone, the
+     biggest figure in the whole programme, was not in it at all. The ledger is
+     what was actually paid, reversals included. */
+  const earned = await db.get<{ n: number | null }>(
+    `SELECT SUM(l.delta) AS n
+       FROM points_ledger l
+      WHERE l.user_id = $u AND l.status = 'committed'
         AND (l.source_kind = 'friend_milestone'
              OR (l.source_kind = 'referral'
-                 AND l.source_ref IN (SELECT id FROM referrals WHERE referrer_id = $u)))`,
+                 AND l.source_ref IN (SELECT id FROM referrals WHERE referrer_id = $u)))
+        /* An entry an operator reversed (rejectReferral) was taken back. */
+        AND l.id NOT IN (SELECT source_ref FROM points_ledger
+                          WHERE reason = 'reversal' AND source_ref IS NOT NULL)`,
     { u: userId },
   );
-  const reversed = await db.get<{ points: number | null }>(
-    `SELECT SUM(r.delta) AS points FROM points_ledger r
-      WHERE r.user_id = $u AND r.reason = 'reversal'
-        AND r.source_ref IN (
-          SELECT l.id FROM points_ledger l
-           WHERE l.user_id = $u AND l.reason = 'referral'
-             AND (l.source_kind = 'friend_milestone'
-                  OR (l.source_kind = 'referral'
-                      AND l.source_ref IN (SELECT id FROM referrals WHERE referrer_id = $u))))`,
+
+  /* The people, newest first. A deleted invitee (`referred_id` set null by the
+     cascade) still counts above — they did join — but has nobody to name, so
+     is not listed. */
+  const people = await db.all<{
+    display_name: string | null;
+    status: string;
+    created_at: string;
+    completed_at: string | null;
+    paid: number | null;
+  }>(
+    `SELECT u.display_name, r.status, r.created_at, r.completed_at,
+            (SELECT SUM(l.delta) FROM points_ledger l
+              WHERE l.user_id = $u AND l.source_kind = 'referral' AND l.source_ref = r.id
+                AND l.status = 'committed'
+                AND l.id NOT IN (SELECT source_ref FROM points_ledger
+                                  WHERE reason = 'reversal' AND source_ref IS NOT NULL)) AS paid
+       FROM referrals r
+       JOIN users u ON u.id = r.referred_id
+      WHERE r.referrer_id = $u AND r.status IN ('pending', 'completed')
+      ORDER BY r.created_at DESC
+      LIMIT 200`,
     { u: userId },
   );
+
+  const own = await db.get<{ status: string; referrer_name: string | null }>(
+    `SELECT r.status, u.display_name AS referrer_name
+       FROM referrals r LEFT JOIN users u ON u.id = r.referrer_id
+      WHERE r.referred_id = $u`,
+    { u: userId },
+  );
+  const me = await db.get<{ status: string }>(`SELECT status FROM users WHERE id = $u`, { u: userId });
+
+  const code = await codeFor(db, userId);
   return {
-    code: await codeFor(db, userId),
-    joined: row?.joined ?? 0,
-    completed: row?.completed ?? 0,
-    pointsEarned: Math.max(0, (paid?.points ?? 0) + (reversed?.points ?? 0)),
+    code,
+    link: inviteLink(code),
+    joined: Number(row?.joined ?? 0),
+    completed: Number(row?.completed ?? 0),
+    pointsEarned: Number(earned?.n ?? 0),
+    /* What the invite pays, from config (rulebook §7.3), so the app's share
+       sheet and referral screen print the server's figures instead of either
+       inventing one or saying "points" with no number. */
+    referrerReward: CONFIG.earn.referrerFirstVisit,
+    inviteeReward: CONFIG.earn.inviteeJoin,
+    friendMilestoneAt: CONFIG.earn.friendMilestoneAt,
+    friendMilestone: CONFIG.earn.friendMilestone,
+    people: people.map((p) => ({
+      name: shortName(p.display_name),
+      status: p.status === 'completed' ? ('completed' as const) : ('joined' as const),
+      joinedAt: p.created_at,
+      completedAt: p.completed_at,
+      pointsAwarded: Number(p.paid ?? 0),
+    })),
+    /* The other direction: who invited *this* account, and whether it can
+       still add a code. Decided here so the phone offers "Have an invite
+       code?" exactly when `POST /v1/referrals/redeem` would take one. */
+    referredBy: own
+      ? {
+          name: shortName(own.referrer_name),
+          status: own.status === 'completed' ? ('completed' as const) : ('joined' as const),
+        }
+      : null,
+    canRedeem: !own && me?.status === 'active' && !(await hasVisited(db, userId)),
   };
 }
 

@@ -67,6 +67,8 @@ const SEO_PAGE: Record<Route, SeoPage | null> = {
   'business-setup': null,
   dashboard: null,
   admin: null,
+  /* One person's invite, addressed to one friend. Nothing to index. */
+  invite: null,
 };
 
 /** Upsert one `<meta>`. Keyed on the attribute it is identified by, because

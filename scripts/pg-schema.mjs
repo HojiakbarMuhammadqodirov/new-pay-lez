@@ -261,7 +261,11 @@ const keys = primaryKeys(source);
 const tables = Object.keys(keys);
 const keyed = tables.filter((t) => keys[t]);
 
-if (tables.length !== 88) throw new Error(`expected 88 tables, parsed ${tables.length}`);
+/* 86 + `venue_reviews` (rulebook §7.3) + the missions module's four
+   (`mission_claims`, `mission_events`, `mission_campaigns`, `learning_progress`)
+   + `team_members` (server/TEAM.md) + `redemption_passes` (FLUTTER-BRIEF §3b)
+   + `notification_kind_prefs` (browser push) + `gift_card_codes` (the gift-card engine). */
+if (tables.length !== 95) throw new Error(`expected 95 tables, parsed ${tables.length}`);
 
 /* Every table an `INSERT OR REPLACE|IGNORE` actually targets must have a key,
    or the translation in `pg.ts` throws at runtime — which is correct behaviour

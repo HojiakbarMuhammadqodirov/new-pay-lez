@@ -186,11 +186,11 @@ still has to come out of something.)
 starts.** Win or lose, finished or abandoned — that is rulebook §3, and it
 replaced charging in `games.finish`, which let a player quit any round going
 badly for free. The one way back is an accidental tap: a round abandoned within
-`CONFIG.points.energyRefundSeconds` (5) of its start is refunded, at most
+`CONFIG.games.energyRefundWithinSeconds` (5) of its start is refunded, at most
 `energyRefundsPerDay` (1) a day, through `POST /v1/games/sessions/:id/abandon`
-(`games.abandonActive`, which a new start also runs on any round left open).
-Rounds opened before that change carry no `charged: 'start'` in their secret and
-are still charged at finish, so a deploy charges nobody twice. It refills one per
+(`games.abandonSession` → `closeRound`, which a new start also runs on any round
+left open). Rounds opened before that change carry no `charged: true` in their
+secret and are still charged at finish, so a deploy charges nobody twice. It refills one per
 `energy_regen_minutes` up to `daily_energy`, so a day is
 `daily_energy + 1440 / energy_regen_minutes` rounds from a full tank: free 12
 sustained and 16 in a burst, Pro 24/30, Premium 48/58. Three other brakes have
@@ -379,21 +379,18 @@ orphans every subscription) turns it on, and the profile's switch says so in
 words while it is off. A browser carries only `CONFIG.push.webKinds`;
 `canPush` counts a token only if its platform can carry the kind.
 
-**Email confirmation is back, and the gate is on spending and behind a
-switch.** The first version (a full OTP flow) shipped with no transport and
-gated earning, check-in, the welcome gift and the board, and was removed in
-`53edbf7`. It returned with the three changes that removal asked for: a real
-transport (`ports/email.ts` → Resend, `PAYLEZ_EMAIL=live` + `RESEND_API_KEY`), a
-**panel rather than a gate** (`VerifyEmail.tsx` on Play and the wallet), and a
-**backfill** (schema version 8 stamps every existing address once). The only
-thing an unproved address can cost is a spend — buying a voucher or a gift card —
-and only while `PAYLEZ_VERIFY_GATE=on`, which stays off until the Flutter app has
-a code screen, because the app shares the API and would otherwise strand
-everybody who signs up on a phone. `GET /v1/me` carries the switch as
-`spendNeedsVerifiedEmail` and the panel picks its sentence from it — "you can
-spend once you confirm" is only said while it is true. Google sign-ins arrive
-stamped and never see a code; an account with no address has nothing to prove.
-The rules and their reasons are in `domain/verification.ts`.
+**Email codes are the phone's design, and the website follows it.** Sign-up
+emails a six-digit code; `POST /v1/auth/email/send-code` and
+`POST /v1/auth/email/verify` resend and confirm, and
+`POST /v1/auth/password/reset-code` / `/reset` are "Forgot password?". Mail is
+Resend (`PAYLEZ_RESEND_KEY`, `PAYLEZ_MAIL_FROM`); without a key codes go to the
+server log. The only thing an unproved address can cost is a spend — a voucher
+or a gift card — and `GET /v1/me` carries it as `emailVerificationRequired`:
+true only with mail configured, for an account created after
+`PAYLEZ_VERIFY_SINCE`, and not when `PAYLEZ_VERIFY_TO_SPEND=off`. Older accounts
+are exempt by date rather than stamped by a migration, so there is no schema
+version 8. `VerifyEmail.tsx` on Play and the wallet picks its sentence from that
+field. The rules and their reasons are in `domain/verification.ts`.
 
 **The profile's "Status" is `occupation`, and the column cannot be called
 `status`.** `users.status` is the account state — `provisional`, `active`,
@@ -1165,10 +1162,10 @@ inviter's own till.** `gate.completeReferral` sits behind `visitCounted` like th
 stamp and the deal claim, skips a bond whose inviter owns the venue or is the
 cashier (the owner-farm), skips a suspended or deleted inviter, and *claims* the
 bond with a guarded UPDATE before paying, so two simultaneous scans cannot both
-pay. Codes are `PY` + six characters now (`ids.referralCode`); the 8,999-value
-`PY####` space would have made every sign-up fail at about nine thousand
-accounts. Sign-up never refuses a bad code — the web form checks it first with
-`GET /v1/referrals/codes/:code` — and an operator voids one with
+pay. Codes are `PY` + four digits, and `social.codeFor` widens to six and then
+eight digits as the space fills, so sign-up never runs out; digits because
+somebody reads them aloud across a table. Sign-up never refuses a bad code — the web form checks it first with
+`GET /v1/referrals/codes/:code` (a 404 is "no such code") — and an operator voids one with
 `POST /v1/admin/referrals/:id/reject`, which reverses what it paid.
 
 **The plan and its entitlements are session state, not a per-screen fetch.**

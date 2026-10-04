@@ -146,6 +146,40 @@ in `API.md` §2.
 devices show the same receipt — points, stamp and next-tier line. Every error in
 the table in `API.md` §2 has a message a person at a till can act on.
 
+### §3b. Redeeming the other way round — the customer's pass
+
+For a voucher or earned reward, the customer's phone shows the code and the
+counter scans it. Same gate, same confirm; only the trigger changes direction.
+
+1. The customer opens the voucher, types the bill, and the app calls
+   `POST /v1/gate/passes {intent, intentRef, amountMinor}`. The answer carries
+   `token` (starts `plzpass.` — draw it as a QR), a six-character `code`,
+   `expiresAt` and `ttlSeconds` (600). Minting again for the same item retires
+   the previous pass.
+2. The customer chooses **Show QR** or **Show deal details** (the readable view
+   with the `code`, for a cashier to type).
+3. The counter calls `POST /v1/gate/passes/scan {venueId, token | code, memberId?}`
+   — needs `redeem` at that venue. The answer is `{transaction, pass}`:
+   a PENDING `voucher_redeem`/`reward_redeem` transaction with the customer's
+   amount on it (`amount_entered_by: customer`), and a preview
+   (`title`, `customerName` — first name only, `amountMinor`, `currency`, `code`).
+4. The counter confirms through the ordinary
+   `POST /v1/gate/transactions/{id}/confirm` (or corrects the amount through
+   `/amount` first). `confirmed_member_id` is stamped as for any confirm.
+5. The customer's phone polls `GET /v1/gate/passes/{id}` — `status` is `live`,
+   `scanned`, `used`, `cancelled` or `expired` — and refreshes the wallet on `used`.
+
+Refusals on the scan: a forged or foreign QR `422 invalid_trigger`; not on this
+venue's counter or no `redeem` `403`; a pass for another venue `403`; an unknown
+code at this venue `404`; a used pass `409 already_used`; an expired or retired
+one `409 expired`. A pass is single use: a declined (cancelled) transaction
+burns it, and the customer makes a new one.
+
+The transaction is stored as `trigger_type: manual` with `trigger_ref:
+pass:<id>` — opened by the counter against the customer's account, which is
+what `manual` already meant — so the CHECK on `transactions.trigger_type` did
+not have to change.
+
 ---
 
 ## 2. The games — all seven
@@ -343,7 +377,24 @@ Points, vouchers, stamp cards, rewards, gift cards, and the ledger history —
   venue's ladder. Tiers carry `available` — when a venue's budget is low the top
   tier closes first and the lowest stays open, so **offer the lower tier rather
   than showing an error**.
-- Gift cards: `POST /v1/gift-cards`.
+- Gift cards: `GET /v1/gift-cards` (the shelf) and `POST /v1/gift-cards`
+  `{ stockId }`. **Since 2026-10-03 open to every account** — there is no plan
+  gate and no `403` for one; show the shop to everybody. (`gift_card_priority`
+  is still published, `true` on every plan, for older builds that gate on it.)
+  From 2026-09-30 (rulebook §2.1 / §9.4): `points_cost` is derived at **100 points = 1 zł** of face value and
+  is the only price to print; one card per account per 60 days (`409`,
+  `reason: per_user_cap`, `nextAt`); and a monthly pool — each shelf row carries
+  `left_this_month`, which is the "5 left this month" figure, and `0` means sold
+  out for the month (`409`, `reason: pool_exhausted`) even with `stock` left.
+- **Sharing a deal pays**: `POST /v1/deals/{id}/share` when the share sheet
+  completes — 25 points, at most 3 a day, once per deal. Not paying is not an
+  error: `{ granted: false, reason: 'already_shared' | 'daily_cap' | 'not_live' }`.
+- **A review after a visit pays**: `POST /v1/venues/{id}/reviews`
+  `{ rating: 1..5, body? }` — 25 points, one review per venue per 30 days
+  (`409`, `reason: review_window`, `nextAt`), and only after a confirmed visit
+  (`403`, `reason: no_visit`).
+- **Birthday and anniversary pay 200 each**, once a year, from a server job; an
+  inbox notification says so. Nothing to call.
 - **Points never expire, on any plan.** `expiringSoon` is gone from
   `GET /v1/wallet` — deleted, not emptied — and so is the `points_expiry_months`
   entitlement. Delete the countdown, the warning banner and anything that sorted
@@ -392,7 +443,16 @@ articles, the news feed, the community directory, and 19 currencies.
 
 - **Referrals** `GET /v1/referrals` — the code and the progress. The reward pays
   on the invited person's **first confirmed scan**, not on signup; say so, or
-  the counter looks broken.
+  the counter looks broken. Also carries `link`
+  (`https://www.pay-lez.com/i/<code>`), `people` (`{ name, status:
+  "joined"|"completed", joinedAt, completedAt, pointsAwarded }`, names as first
+  name + last initial), `referredBy` and `canRedeem`. `pointsEarned` is what
+  reached *this* account from the ledger, friend milestone included.
+  An invitee carries a code as `referralCode` on `/v1/auth/signup` **and**
+  `/v1/auth/google` (bound on account creation only), or afterwards with
+  `POST /v1/referrals/redeem {code}` — once, before the first confirmed visit,
+  never its own, never circular; refusals carry `reason`. The public
+  `GET /v1/referrals/codes/:code` names a code's owner for a confirm screen.
 - **Leaderboards** `GET /v1/leaderboard/city` and `/friends`. City listing is
   opt-in: a player who has not opted in still sees their own rank with
   `hidden: true`. Show the toggle where they see the board.
@@ -560,10 +620,12 @@ Spends are not in that legend. A redemption is a real entry and belongs in
 `GET /v1/wallet/history`; a legend that answers "where did points come from" and
 then subtracts a voucher is answering two questions at once and totalling neither.
 
-**The ladder.** A day pays `dailyCheckIn` times a rung of `[1, 1, 1, 2, 2, 2, 4]`
-— 5, 5, 5, 10, 10, 10, 20 at today's figures, 65 for a perfect week and about 280
-a month. The eighth consecutive day is rung one again; a missed day restarts at
-rung one. The whole ladder is on the response, so no client needs the shape.
+**The ladder.** A day pays a **flat 5** (rulebook §7.3) — every rung of the
+seven-rung `ladder` says 5, 35 for a perfect week and about 150 a month. It was a
+5/5/5/10/10/10/20 run-up until 2026-09-30; the week's reward for turning up is the
+streak milestone now, not a bigger seventh day. The eighth consecutive day is
+rung one again; a missed day restarts at rung one. The whole ladder is on the
+response, so no client needs the shape — draw what arrives.
 
 **Milestones pay once in a lifetime**, not once per streak: 7 → 50, 30 → 250,
 100 → 1000, each as its own ledger entry beside the check-in, so a balance that
@@ -600,6 +662,42 @@ one on `GET /v1/games/state` counts days *played*, moves only when a round is
 banked, and is the one with the freezes. They are two rules about two behaviours
 and they will disagree. Name them differently on screen — "check-in streak" and
 "play streak" — or neither number means anything to the person reading it.
+
+## 10. Missions — rulebook §8
+
+`GET /v1/missions` (auth) → `{ bands: [{ key, title, resetsAt, missions: [...] }], unclaimed }`.
+Each mission is `{ id, number, title, description, reward, rewardLabel, progress,
+target, status, autoPaid }`. **Render the bands in the order sent**; `seasonal`
+and `partner` appear only while an operator campaign is live, so a client with a
+fixed list of seven sections is wrong on most days.
+
+- **Progress is the server's.** It is derived from rounds, visits, the ledger and
+  the profile on every read; the phone draws `progress / target` and nothing else.
+  A round counts when it is *paid* — practice rounds move no mission.
+- `status`: `locked` (a campaign kind this build does not know — draw it at half
+  opacity), `open`, `complete` (show Claim), `claimed`. A mission this account
+  can never finish in this build is **omitted, not served locked**: #52–54 (the venue
+  Pass, order-ahead), #46 (turn on notifications — the app has no push yet, and
+  paying for a permission reads as pressure to a store reviewer) and #48 (first
+  review — no review UI) not at all until those features exist. Claiming or
+  reading one that is not served is `404 not_found`. Missions whose reward
+  differs by plan send the viewer's own figure as `rewardLabel`, never the
+  `100 / 150 / 250` range across every plan.
+- **`autoPaid: true` never gets a Claim button.** Its reward *is* an automatic
+  bonus the server pays elsewhere (streak milestones, first visit, onboarding,
+  the welcome round…); the mission is a window onto it and reads `claimed` once
+  the ledger shows the bonus. The one exception is `daily.check_in` (#1): the top
+  "Daily" card claims it through `POST /v1/daily/check-in`, exactly as today.
+- `POST /v1/missions/:id/claim` (no body, send an `Idempotency-Key`) →
+  `{ mission, points, balance }`. **409 `conflict`** if not complete, already
+  claimed this period, or auto-paid. Replace the balance with the one returned.
+- Daily resets at `resetsAt` (UTC midnight, the same boundary as the check-in);
+  weekly on Monday 00:00 UTC. Count down to `resetsAt`, never to a local midnight.
+- Learning (§8.7): `GET /v1/missions/learning/:id` serves the questions without
+  answers; `POST /v1/missions/learning/:id/answers` `{ answers: [optionIndex…] }`
+  grades them and says which were right. All right completes the mission; it is
+  then claimed like any other.
+- Titles and descriptions arrive in English for now.
 
 ## Definition of done, overall
 
@@ -769,9 +867,9 @@ What a day is, so the screens can say it honestly:
 
 Three rules travel with the charge, and each of them is a screen:
 
-- **Superseded by §29: starting costs one, and finishing costs nothing more.**
+- **Superseded by §27: starting costs one, and finishing costs nothing more.**
   Read `energyLeft` off the start response.
-- **An abandoned round costs nothing.** *(Superseded by §29 — it costs one, and
+- **An abandoned round costs nothing.** *(Superseded by §27 — it costs one, and
   is refunded only within 5 seconds of the start, once a day.)* A dropped connection mid-round is the one
   failure the player definitely did not choose, so it takes nothing with it. Do
   not "helpfully" post a finish to tidy up a stale session; that is the one thing
@@ -1358,6 +1456,29 @@ should send nothing, and the account is created just the same.
 the session's language, so nothing in the request changes — a Russian-speaking
 account simply gets a real round now instead of `404 not_found`.
 
+#### 22a. The 2 000-word bank — four lists, tiles, decoys (2026-10-04)
+
+The bank is `updates/paylez-wordbuilder-all-2000.csv`: **500 words each in
+`en`, `pl`, `uz` and `ru`**. Send `wordList` (`en`/`pl`/`uz`/`ru`) on
+`POST /v1/games/sessions` to choose the list; the clue follows the reader's
+language (the word's own clue on its own list, English otherwise unless the bank
+has the same clue in the reader's language).
+
+Three wire changes on each `content.words[i]`, none of which adds a key:
+
+- **`letters` are tiles, and a tile may be several characters.** Uzbek spells
+  SH, CH, Oʻ and Gʻ as one tile: GOʻSHT arrives as `["T","SH","G","Oʻ",…]`.
+  Draw each entry as one key; never split a word or a tile by character.
+- **`length` counts tiles**, not characters (GOʻSHT is 4). The word is complete
+  when `length` tiles are placed.
+- **`letters` holds 2–3 decoy tiles** beyond the word's own, so
+  `letters.length > length`. Leftover tiles are expected, not an error.
+
+The answer is the placed tiles joined (`guess: "GOʻSHT"`), or `tiles: [...]`.
+The server folds case and every apostrophe (`' ‘ ’ ʻ`) before comparing, and also
+accepts the bank's plain spelling (`GLOWA` for GŁOWA, `ЧЕРНЫЙ` for ЧЁРНЫЙ). A
+hint's `position` is a **tile index**, and its `answer` is the whole tile (`Oʻ`).
+
 ### 23. The games — one **0–100 performance scale**, a decay curve, and nine new fields on the finish
 
 This is the largest change to the games since they arrived, and it is worth
@@ -1666,108 +1787,82 @@ its tier, a five-word Word Builder round, an exact `20` on the `daily_game` task
 or a `daily_game` ledger entry. Also any test that asserted two rounds of the same
 game pay the same — they no longer do, and that is the point.
 
-### 24. Email confirmation — two new endpoints, one new field, and a switch that waits for you
+### 24. Email codes — confirmation after sign-up, and "Forgot password?"
 
-Every email sign-up now gets a six-digit code by email, and the
-`POST /v1/auth/signup` response gained `verification` (the shape below, or
-`null` if the mail could not be sent — the account is created either way).
-Google sign-ins are stamped verified and never get a code.
+Six-digit codes by email (`domain/verification.ts`, `server/README.md` has the
+history). Valid 10 minutes, 5 attempts per code, 60 s resend cooldown, 5 sends an
+hour. **The code is never in a response** — read it from the email (or, against a
+local server with no `PAYLEZ_RESEND_KEY`, from the server log).
 
-| Call | Notes |
-|---|---|
-| `POST /v1/auth/verify/send` | Resend. Returns `{sent, nextSendAt, expiresAt, sends}`. Inside the 90 s cooldown it is **200 with `sent: false`** — show "wait a moment", not an error. After 10 codes: `409 quota_exceeded`. |
-| `POST /v1/auth/verify` `{code}` | `{verified, granted}`. Spaces and dashes are ignored. Wrong code: `400 validation_failed` with `attemptsLeft`. Then `409 expired` / `409 cap_reached` (5 wrong answers) — both mean "send a new one". |
-| `GET /v1/me` → `user.emailVerifiedAt` | Null on an account with an email = draw the "confirm your email" prompt. Every account older than this change was stamped by a migration. |
-| `GET /v1/me` → `user.spendNeedsVerifiedEmail` | New. While true, `POST /v1/vouchers` and `POST /v1/gift-cards` answer **403 `not_verified`** for an unproved address (`remedy` names the send endpoint). |
+| Endpoint | Body → answer |
+| --- | --- |
+| `POST /v1/auth/signup` | unchanged body; the answer gains `verification: { sent, nextSendAt, expiresAt }` or `null` if the mail failed. The first code is already on its way — do not call send-code straight after sign-up |
+| `POST /v1/auth/email/send-code` (auth) | `{}` → `{ sent, nextSendAt, expiresAt }`. `sent: false` is the cooldown, **not an error**: count down to `nextSendAt`. `409 conflict` = already confirmed; `409 quota_exceeded` = five in an hour |
+| `POST /v1/auth/email/verify` (auth) | `{ code }` → `{ verified: true, granted }`. `400 validation_failed` with `attemptsLeft`; `409 expired`; `409 cap_reached` (five wrong — ask for a new code); `404` nothing sent |
+| `POST /v1/auth/password/reset-code` | `{ email }` → **always** `{ ok: true }`, account or not. Say "if that address has an account, a code is on its way" |
+| `POST /v1/auth/password/reset` | `{ email, code, password }` → `{ reset: true }`. Every session is dropped; sign in with the new password. `400` with `field: password` (too short) or `field: code` — every code failure reads the same |
 
-**The switch is off, and it is off for you.** The server will not refuse a spend
-until `PAYLEZ_VERIFY_GATE=on`, and that will be turned on only once the app has
-a code screen. Earning — rounds, check-in, the welcome gift, the board — is never
-gated. Until then an app user can confirm on the website.
+`GET /v1/me` → `user.emailVerifiedAt` (stamp or null) and
+**`user.emailVerificationRequired`**. The second is true only when spending would
+be refused right now: mail is configured, the account has an address, it is not
+confirmed, and it was created after `PAYLEZ_VERIFY_SINCE`. Guests, Google
+accounts and older accounts are never required.
 
-**Done when:** a code field (`autocomplete`/`textContentType` one-time-code),
-a resend button that respects `sent: false`, the attempts-left message, and a
-`not_verified` 403 on a purchase that opens the code screen instead of a generic
-error.
+**What it gates: only spending.** `POST /v1/vouchers` and `POST /v1/gift-cards`
+answer **`403 not_verified`** (with `remedy`) for a required account. Nothing
+else — earning, check-in, games, onboarding, the board and the till are
+unaffected. Draw "Confirm your email" as a banner/row, never as a wall, and on a
+`not_verified` open the code screen.
 
-### 25. Referrals — Google sign-up can carry a code, codes got longer, and the payout got stricter
+
+### 25. Referrals — what changed under the referral endpoints above
 
 | Change | What to do |
 |---|---|
 | `POST /v1/auth/google` accepts `referralCode` | Send it on a Google sign-up exactly as on `POST /v1/auth/signup`. Bound only when that press creates the account. |
-| Both sign-up responses gained `referral: { applied }` | `null` when no code was sent. A bad code never fails the sign-up — show "that code was not recognised" if you want to. |
-| `GET /v1/referrals/codes/{code}` (no auth) | `{ valid }` — check a typed code before sign-up. Case, spaces and dashes are ignored everywhere now. |
-| New codes are `PY` + 6 characters (`PY7KQ2MX`) | Old `PY####` codes still work. Do not validate the shape client-side. |
-| `GET /v1/referrals` → `pointsEarned` | Now what *this* account was paid (it was double: both sides of each bond). `joined` excludes voided referrals. |
-| Payout rule | Both sides are paid on the friend's **first counted visit** — not a scan under the venue's minimum spend, and not at a till the inviter runs. |
+| Both sign-up responses gained `referral: { applied }` | `null` when no code was sent. A bad code never fails the sign-up. |
+| `GET /v1/referrals` → `pointsEarned`, `joined` | Net of any payout an operator reversed; `joined` excludes voided referrals. Same fields, truer numbers. |
+| Codes ignore dashes as well as case and spaces | `PY 12-34` is `PY1234`. |
+| Payout rule | Both sides are paid on the friend's **first counted visit** — not a scan under the venue's minimum spend, and not at a till the inviter owns or works. |
+| Operators can void a referral | `POST /v1/admin/referrals/{id}/reject` reverses what it paid with compensating ledger entries. Nothing for the app to call; a balance can go down by a referral payout. |
 
-The web's invite link is `https://www.pay-lez.com/sign-in?ref=<code>`; if the app
-shares a link, use the same shape so it lands in the web form prefilled.
+The website's own share link is `https://www.pay-lez.com/sign-in?ref=<code>`
+(it pre-fills the web sign-up form); `/i/<code>` keeps working for the app.
 
-### 26. A ninth game: 2048 (`gameType: "merge_2048"`)
+### 26. Games the website plays under its own types — leave them alone
 
-Additive — an app that does not draw the card is unaffected. To add it:
+The website keeps its own 2048 and Food Cross engines (2048 with the board held
+on the server, Food Cross on an 8×8 board) under **`merge_2048`** and
+**`food_cross_live`**. The app's `game_2048` and `food_cross` (the replayed
+7×7 engines, `server/GAMES-2048-FOODCROSS.md`) are unchanged. In the daily
+rotation each pair shares one slot — `['game_2048', 'merge_2048']`,
+`['food_cross', 'food_cross_live']` — and `featuredGame` names the first, so the
+app is always told its own type. `GAME_TYPES` also gained `food_ninja` and the
+five in §30; a client that never sends them is unaffected.
 
-| Step | Shape |
-|---|---|
-| Start | `POST /v1/games/sessions {gameType: "merge_2048"}` → `content: { board: number[16], size: 4, target: 2048, tileBands, floorPerformance }`. `board` is row-major, `0` = empty. |
-| Move | `POST …/events {seq, kind: "move", payload: {dir: "up"|"down"|"left"|"right", from: <moves applied so far>}}` → `{accepted, merge: {board, spawned: {index, value} \| null, score, moves, best, over}}`. Draw `merge.board` — it includes the new tile the server placed. |
-| Retry | A move whose `from` is behind the server's count is **not applied**: `accepted: false` with the current board. So resending a lost move is safe. |
-| Refusals | `400 bad_request` for a swipe that changes nothing (check it locally first — the slide is deterministic) or an unknown `dir`; `409 invalid_state` once `over` is true. |
-| Finish | `POST …/finish` with no report. Scored on the **largest tile** the server's board reached (rulebook §5.7): 2048 = 100, 1024 = 85, 512 = 65, 256 = 50, 128 = 35, 64 = 20, below = 0, no moves = 0. `correct` = milestones reached of `answered` = 6. |
+### 27. Energy is charged when a round **starts** — and Quit has an endpoint
 
-No clock and no move limit: the round ends when `over` is true or the player banks it.
-It joins the daily rotation as the last slot (`DAILY_GAME_POOL`), after Word Builder.
-
-### 27. A tenth game: Food Cross (`gameType: "food_cross"`)
-
-A match-three on an 8×8 board of six foods. Additive, like 2048.
-
-| Step | Shape |
-|---|---|
-| Start | `content: { board: Piece[64], size: 8, kinds: 6, moves: 20, target: 2000 }`. `Piece` is `{ t, s }`: `t` the food 0–5 (−1 for a bomb), `s` 0 plain · 1 clears its row · 2 clears its column · 3 bomb. Row-major. |
-| Swap | `POST …/events {seq, kind: "swap", payload: {a, b, from}}` — `a`, `b` neighbouring cell indices, `from` the moves applied so far. Reply `{accepted, food: {board, steps: [{cleared: number[], score, board}], gained, cleared, score, moves, movesLeft, over, reshuffled}}`. `gained` is this swap's score; `score` the round's. Play `steps` out in order (cleared cells, then the board after the fall); `board` is the final one. |
-| Rules | A swap must line up 3+ of one food, or involve a bomb. 4 in a line leaves a row/column clearer; 5 leaves a bomb; a bomb swapped with a food clears every food of that kind, with another bomb the whole board. A board left with no move is dealt again (`reshuffled`). |
-| Refusals | `400 bad_request` — not neighbours, or the swap lines nothing up (check locally first). `409 invalid_state` — the 20 moves are used. A stale `from` is answered with the current board, not applied. |
-| Finish | No report. Rulebook §5.8: `min(100, score / 2000 × 100)`. A food is 5, × the cascade level, ×2 for a step that made a four, ×3 for a five. `correct` = fifths of 2,000 reached, of `answered` = 5. |
-
-The rules are `server/domain/foodCross.ts`; the app can port them line for line for the legality check.
-
-### 28. An eleventh game: Food Ninja (`gameType: "food_ninja"`)
-
-Sixty seconds of foods thrown up from the bottom; slice them with a swipe. No bombs. Additive.
-
-| Step | Shape |
-|---|---|
-| Start | `content: { flyers: Flyer[], durationMs: 60000, gravity: 1.7, perFood: 2, perfectFoods: 50 }`. `Flyer` is `{ id, kind (0–5), t (launch ms), x, vx, vy }` on a unit field: `x` 0..1, `y` 0 at the bottom. Position at `s` seconds after `t`: `x + vx·s`, `−0.08 + vy·s − ½·1.7·s²`; gone below `y = −0.16`. A food's radius is 0.06 of the field's width. |
-| Clock | `POST …/events {seq, kind: "start", payload: {}}` when the round actually begins. The server times every slice from this. Once only. |
-| Slice | `{seq, kind: "slice", payload: {ids: number[]}}` per swipe, **1–6 ids**. Reply `{accepted, ninja: {sliced, credited}}`. An id is credited once, only while that food is in the air by the server's clock (±1.5 s), and never after the round's 60 s. Ids outside that are simply not credited. |
-| Finish | No report. `min(100, credited × 2)`; `correct` = fifths of 50, of `answered` = 5. |
-
-The server cannot prove a finger crossed a food — the same limit as the flight's `cleared` — but it can refuse every slice of a food that was not in the air, and the score can never exceed the schedule. `server/domain/foodNinja.ts` has the schedule and physics to port.
-
-### 29. Energy is charged when a round **starts** — and Quit has an endpoint
-
-Rulebook §3. This reverses §2's "starting costs nothing; finishing costs one",
-and like §2 it changes no shape a decoder sees, so it reaches you as wrong
-numbers rather than as a failure.
+Rulebook §3. This reverses "starting costs nothing; finishing costs one", and it
+changes no shape a decoder sees, so it reaches you as wrong numbers rather than
+as a failure.
 
 - **`POST /v1/games/sessions` takes the energy.** `energyLeft` on that response
-  is the tank **after** this round's charge (it was "before"). New:
-  `energyNextAt` (ISO, or `null` on a full tank) on the start and the finish.
-  Set the gauge from the start response; do not decrement locally.
+  is the tank **after** this round's charge. The start response also carries
+  `energyNextAt` (ISO, or `null` on a full tank). Set the gauge from the start
+  response; do not decrement locally, and do not decrement again at the finish.
 - **An abandoned round costs one.** Quitting no longer saves it.
-- **`POST /v1/games/sessions/{id}/abandon`** (no body) — call it on Quit.
-  Reply `{abandoned, refunded, energyLeft, energyNextAt}`. Within **5 seconds**
-  of the start, **once a day**, the energy comes back (`refunded: true`).
-  Idempotent: a round already closed answers `abandoned: false`.
+- **`POST /v1/games/sessions/{id}/abandon`** (no body) — call it on Quit. Reply
+  `{sessionId, refunded, energy: {energy, max, nextAt}}`. Within **5 seconds** of
+  the start, **once a day**, the energy comes back (`refunded: true`).
+  Idempotent: a repeat on a round already abandoned answers what happened the
+  first time; a finished round is `409 invalid_state`.
 - **Starting a round closes any round still open** for that player, under the
-  same rule — so not calling abandon just means the refund window has passed by
-  the time the next start closes it.
-- Practice rounds (`paid: false`) cost nothing and refund nothing, as before.
+  same rule — so not calling abandon just means the refund window has usually
+  passed by the time the next start closes it.
+- Practice rounds (`paid: false`) cost nothing and refund nothing.
 - Rounds opened before this deploy are still charged at finish, once.
 
-### 30. Browser push — nothing for the app to do, one thing to know
+### 28. Browser push — nothing for the app to do, one thing to know
 
 The website now pushes one thing to browsers: the daily game reminder
 (`kind: "daily_game"`, 18:00 on the player's clock, only if they switched it
@@ -1779,30 +1874,29 @@ kind, so a `web` token never makes a phone-only kind "deliverable" and an
 also accepts an optional `timezone`; sending the device's IANA zone is
 harmless and future-proof.
 
-### 31. Gift cards — real codes, a shelf per country, and two new states
+### 29. Gift cards — real codes, a shelf per country, and two new states
 
-All additive, but two behaviours change under existing shapes:
+All additive; the price, the pool and the 60-day cap are as described above.
 
-- **`GET /v1/gift-cards` is filtered to the player's country** when called
-  with a token (Poland for a profile with no country). A Tashkent player now
-  sees Uzbek venue cards and no Polish brands. New fields per row:
-  `country_code`, `kind` (`brand` | `venue`), `venue_name`,
+- **`GET /v1/gift-cards?country=PL`** narrows the shelf to one country. Without
+  the parameter the shelf is every country, as before. New fields per row:
+  `country_code`, `kind` (`brand` | `venue`), `venue_id`, `venue_name`,
   `validity_days`, `how_to_use`.
-- **`POST /v1/gift-cards` returns a real code** from the operator's stock, and
-  a row with no codes loaded is `409 conflict` "out of stock" even if it was
-  listed — `stock` is now the count of codes left, so show it as such.
+- **`POST /v1/gift-cards` returns a real code** from the operator's stock, and a
+  row with no codes loaded is `409 conflict` "out of stock" — `stock` is now
+  the count of codes left.
 - **`GET /v1/wallet` → `giftCards[]`** gains `kind`, `how_to_use`,
-  `venue_name`, `used_at`, and `face_minor`/`currency` are now what the card
-  was **bought at**. `status` gains `cancelled` (an operator voided it and the
+  `venue_name`, `used_at`, and `face_minor`/`currency` are what the card was
+  **bought at**. `status` gains `cancelled` (an operator voided it and the
   points were returned) — treat any status other than `active` as spent.
 - **New: `POST /v1/wallet/gift-cards/{id}/used`** (no body) — the holder's
   "I've used it". `404` for somebody else's card, `400 invalid_state` for one
   that is not active.
 
-### 32. Five more games: Snake, Canon Numbers, Bounce Ball, Doodle Jump, Zuma
+### 30. Five arcade games the website plays: Snake, Canon Numbers, Bounce Ball, Doodle Jump, Zuma
 
 `gameType` gains `snake`, `cannon_numbers`, `breakout` (shown as "Bounce
-Ball"), `doodle_jump` and `zuma`. All additive; the energy, practice and finish
+Ball"), `doodle_jump` and `zuma`. All additive and **optional for the app** — none of them is in the daily rotation. The energy, practice and finish
 rules are the same as every other game. `server/domain/arcade.ts` has every
 rule to port, and the web's `src/site/games/arcade.ts` is a line-for-line copy.
 
@@ -1820,7 +1914,7 @@ cannot be faked (the server plays the turns again, held to the round's own
 duration); Canon Numbers is held server-side; the other three are capped by what
 the level holds and what the round's duration allows — the flight's rule.
 
-### 33. Directory logos — `image_url` is now always our own URL
+### 31. Directory logos — `image_url` is now always our own URL
 
 `GET /v1/guide/services` rows: `image_url` used to be the raw stored value — a
 Base44 address, or a whole `data:` picture inline (100 of them, 1.6 MB of the

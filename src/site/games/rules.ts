@@ -156,10 +156,15 @@ export function rulesFor(entry: Game, games: Dictionary['games']): [rule: string
  * varies there is the bank behind one card; what varies here is whether the
  * card exists.
  *
- * Derived from `GAMES` rather than listed, so a game added to the table joins
- * the rotation without anybody remembering this exists.
+ * **It is the server's rotation, in the server's order** — rulebook §4.4's
+ * eight, `DAILY_GAME_POOL` in `server/domain/games.ts`: the poster is the game
+ * the ×1.5 is paid on, and a poster the server does not multiply is a promise
+ * the result card then breaks. Listed rather than derived from `GAMES` for
+ * that reason; the arcade games and the local Word Builder are in the grid and
+ * never on the poster. `npm run verify` reads the server's list and compares.
  */
-export const DAILY_POOL = GAMES.filter((game) => game.id !== 'wordLocal');
+const DAILY_IDS: readonly GameId[] = ['flag', 'brain', 'local', 'word', 'memory', 'flight', 'merge', 'food'];
+export const DAILY_POOL = DAILY_IDS.map((id) => GAMES.find((game) => game.id === id)!);
 
 /**
  * Days since the epoch, from a `YYYY-MM-DD` day string.

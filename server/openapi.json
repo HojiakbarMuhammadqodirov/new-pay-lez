@@ -3,7 +3,7 @@
   "info": {
     "title": "Paylez API",
     "version": "1.0.0",
-    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n96 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
+    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n118 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
     "contact": {
       "name": "Paylez backend",
       "url": "https://pay-lez.com"
@@ -57,6 +57,10 @@
       "description": "Server-scored rounds. The client never holds an answer."
     },
     {
+      "name": "missions",
+      "description": "Missions and their claims (rulebook §8)."
+    },
+    {
       "name": "social",
       "description": "Referrals and leaderboards."
     },
@@ -71,6 +75,10 @@
     {
       "name": "partner",
       "description": "The partner dashboard and its mobile companion."
+    },
+    {
+      "name": "team",
+      "description": "Staff and Manager workspaces: the team, joining, the counter. See server/TEAM.md."
     },
     {
       "name": "billing",
@@ -287,11 +295,11 @@
               "emailVerifiedAt": {
                 "type": "string",
                 "nullable": true,
-                "description": "When the address was proved, or null. Null on an account **with** an email is the state to draw a \"confirm your email\" prompt from (`POST /v1/auth/verify/send`, `POST /v1/auth/verify`). A Google sign-in is stamped on the way in, and accounts that existed before confirmation returned were stamped by a migration. An account with no email (provisional) has nothing to prove."
+                "description": "When the address was proved, or null. Stamped by a Google sign-in, by `POST /v1/auth/email/verify`, and by a password reset. Null with an `email` is the state a client offers \"confirm your email\" for — as a banner, not a block."
               },
-              "spendNeedsVerifiedEmail": {
+              "emailVerificationRequired": {
                 "type": "boolean",
-                "description": "Whether a null `emailVerifiedAt` currently blocks spending — buying a venue voucher or a gift card answers 403 `not_verified` while this is true. Earning is never blocked. Off until every client can take a code; word the prompt from it."
+                "description": "Whether buying a voucher or redeeming a gift card would be refused with `403 not_verified` right now. False while the server has no mail transport, and false for proved, Google, guest and pre-`PAYLEZ_VERIFY_SINCE` accounts."
               },
               "venueSharingDefault": {
                 "type": "boolean",
@@ -841,6 +849,238 @@
           "confirmed_at": {
             "type": "string",
             "nullable": true
+          },
+          "confirmedBy": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmedBy"
+              }
+            ],
+            "description": "On `GET /v1/gate/transactions/{id}` only. The team member the confirm is recorded against (server/TEAM.md); null when the owner confirmed as themselves."
+          }
+        }
+      },
+      "ConfirmedBy": {
+        "type": "object",
+        "description": "Who on the team confirmed a transaction. The owner reads it as “Confirmed by <name>”.",
+        "properties": {
+          "memberId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "The member’s name as the owner entered it."
+          }
+        }
+      },
+      "TeamPerms": {
+        "type": "object",
+        "description": "The six counter permissions (server/TEAM.md). Templates: cashier = earn, redeem, scan, running; shift lead = all six. A manager and the owner hold all six by role.",
+        "properties": {
+          "earn": {
+            "type": "boolean",
+            "description": "Enter the bill and confirm an earning visit."
+          },
+          "redeem": {
+            "type": "boolean",
+            "description": "Confirm a voucher or reward redemption."
+          },
+          "scan": {
+            "type": "boolean",
+            "description": "Show the venue QR, open a manual transaction, look a customer up."
+          },
+          "running": {
+            "type": "boolean",
+            "description": "See what the venue is running."
+          },
+          "count": {
+            "type": "boolean",
+            "description": "See today’s customer count and recent customers."
+          },
+          "pause": {
+            "type": "boolean",
+            "description": "Pause and resume what is running."
+          }
+        }
+      },
+      "TeamMember": {
+        "type": "object",
+        "description": "One row of a venue’s team. The join code is never part of it.",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "manager",
+              "shiftlead",
+              "cashier",
+              "custom"
+            ]
+          },
+          "perms": {
+            "$ref": "#/components/schemas/TeamPerms"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "invited",
+              "active",
+              "revoked"
+            ]
+          },
+          "joinedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastSeenAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "onShift": {
+            "type": "boolean"
+          },
+          "codeExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the outstanding join code stops working, or null when there is none."
+          }
+        }
+      },
+      "Workspace": {
+        "type": "object",
+        "description": "One entry of the workspace switcher. `personal` has every other field null; `owner` carries `role: \"owner\"` and all six perms.",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "personal",
+              "owner",
+              "manager",
+              "staff"
+            ]
+          },
+          "venueId": {
+            "type": "string",
+            "nullable": true
+          },
+          "venueName": {
+            "type": "string",
+            "nullable": true
+          },
+          "memberId": {
+            "type": "string",
+            "nullable": true
+          },
+          "role": {
+            "type": "string",
+            "nullable": true
+          },
+          "perms": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TeamPerms"
+              }
+            ]
+          }
+        }
+      },
+      "Counter": {
+        "type": "object",
+        "description": "The staff counter. Each section is filled only when `perms` allows it; the client draws what arrives and decides nothing.",
+        "properties": {
+          "venue": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          "member": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TeamMember"
+              }
+            ],
+            "description": "Null for the owner."
+          },
+          "perms": {
+            "$ref": "#/components/schemas/TeamPerms"
+          },
+          "running": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "deal",
+                    "stampCard",
+                    "voucherTier"
+                  ]
+                },
+                "name": {
+                  "type": "string",
+                  "description": "English display string from the server."
+                },
+                "sub": {
+                  "type": "string",
+                  "description": "English display string from the server."
+                },
+                "paused": {
+                  "type": "boolean"
+                },
+                "canPause": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "customersToday": {
+            "type": "integer",
+            "nullable": true,
+            "description": "Null without `count`."
+          },
+          "recent": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "Today’s confirmed customers, newest first, up to 50; empty without `count`. `name` is first name + last initial, and only for a customer who shares with this venue (otherwise `Customer` / `?`).",
+              "properties": {
+                "initials": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "time": {
+                  "type": "string",
+                  "format": "date-time",
+                  "description": "The confirm instant."
+                }
+              }
+            }
           }
         }
       },
@@ -874,6 +1114,15 @@
           "visitCounted": {
             "type": "boolean",
             "description": "False on a second scan the same day — still a sale, not a second visit."
+          },
+          "confirmedBy": {
+            "nullable": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ConfirmedBy"
+              }
+            ],
+            "description": "The team member this confirm is recorded against; null for the owner."
           },
           "balance": {
             "type": "integer"
@@ -911,8 +1160,10 @@
               "word_builder",
               "memory_match",
               "flight",
-              "merge_2048",
+              "game_2048",
               "food_cross",
+              "merge_2048",
+              "food_cross_live",
               "food_ninja",
               "snake",
               "cannon_numbers",
@@ -1158,6 +1409,65 @@
             "items": {
               "$ref": "#/components/schemas/CalendarDay"
             }
+          }
+        }
+      },
+      "Mission": {
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "title",
+          "description",
+          "reward",
+          "rewardLabel",
+          "progress",
+          "target",
+          "status",
+          "autoPaid"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Stable: `daily.todays_game`, `learning.pesel`, `seasonal.<campaign id>`."
+          },
+          "number": {
+            "type": "integer",
+            "description": "The rulebook’s mission number."
+          },
+          "title": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "reward": {
+            "type": "integer",
+            "description": "Points a claim pays, or the mirrored bonus pays; null when not a number of points.",
+            "nullable": true
+          },
+          "rewardLabel": {
+            "type": "string",
+            "description": "What to print: \"25\", \"streak +1\", \"1 freeze\", \"100 / 150 / 250\"."
+          },
+          "progress": {
+            "type": "integer"
+          },
+          "target": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "locked",
+              "open",
+              "complete",
+              "claimed"
+            ]
+          },
+          "autoPaid": {
+            "type": "boolean",
+            "description": "Paid automatically by the bonus it mirrors; never claimed here."
           }
         }
       },
@@ -1789,202 +2099,6 @@
         }
       }
     },
-    "/v1/auth/verify/send": {
-      "post": {
-        "summary": "Send, or resend, the email confirmation code",
-        "description": "Sign-up already sends the first code (its response carries `verification`), so this is the resend button. A six-digit code, valid for 10 minutes, emailed in the account's language.\n\nInside the 90-second cooldown it answers **200 with `sent: false`** and `nextSendAt` rather than an error — asking again while a message is slow is not a fault. After 10 codes for one account it answers `quota_exceeded`.\n\n**Access:** Any signed-in account.",
-        "operationId": "postAuthVerifySend",
-        "tags": [
-          "auth"
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "sent": {
-                      "type": "boolean",
-                      "description": "False when the cooldown refused; nothing was sent."
-                    },
-                    "nextSendAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "When another send is allowed."
-                    },
-                    "expiresAt": {
-                      "type": "string",
-                      "format": "date-time",
-                      "description": "When the current code stops working."
-                    },
-                    "sends": {
-                      "type": "integer",
-                      "description": "Codes sent to this account so far, including this one."
-                    },
-                    "code": {
-                      "type": "string",
-                      "description": "**Development servers only** (local email adapter). Never present when mail is really sent."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`validation_failed` — the account has no email address.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`conflict` — the address is already confirmed. `quota_exceeded` — 10 codes have been sent.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/auth/verify": {
-      "post": {
-        "summary": "Confirm the email code",
-        "description": "Idempotent: confirming an account that is already proved is `granted: false`, not an error. Spaces and dashes in the code are ignored. Five wrong answers end that code; ask for a new one.\n\n**Access:** Any signed-in account.",
-        "operationId": "postAuthVerify",
-        "tags": [
-          "auth"
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "description": "The six digits from the email."
-                  }
-                },
-                "required": [
-                  "code"
-                ]
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "verified": {
-                      "type": "boolean"
-                    },
-                    "granted": {
-                      "type": "boolean",
-                      "description": "True only for the call that actually proved it."
-                    }
-                  }
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "`validation_failed` — wrong code; `attemptsLeft` says how many tries remain.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "`not_found` — no code has been sent.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "`expired` — ask for a new one. `cap_reached` — five wrong answers; ask for a new one. `conflict` — the address changed after the code was sent.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/auth/signin": {
       "post": {
         "summary": "Sign in",
@@ -2070,6 +2184,307 @@
         "responses": {
           "204": {
             "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/email/send-code": {
+      "post": {
+        "summary": "Send (or resend) the email confirmation code",
+        "description": "To the signed-in account’s own address. Sign-up already sends the first one. A six-digit code, valid 10 minutes, 5 attempts. Inside the 60-second cooldown the answer is `sent: false` with `nextSendAt` — not an error. The code is never in a response.\n\n**Access:** Any signed-in account.",
+        "operationId": "postAuthEmailSendCode",
+        "tags": [
+          "auth"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sent": {
+                      "type": "boolean"
+                    },
+                    "nextSendAt": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`quota_exceeded` — five codes inside an hour.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/email/verify": {
+      "post": {
+        "summary": "Confirm the email code",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postAuthEmailVerify",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "Six digits. Spaces and dashes are ignored."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "verified": {
+                      "type": "boolean"
+                    },
+                    "granted": {
+                      "type": "boolean",
+                      "description": "True only for the call that proved it."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` — wrong code; `attemptsLeft` says how many remain.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no code has been sent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cap_reached` — five wrong answers; ask for a new one.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password/reset-code": {
+      "post": {
+        "summary": "Email a password-reset code",
+        "description": "Always `{ ok: true }`, whether or not the address has an account, so the route cannot be used to find out which addresses do. The same code rules as confirmation.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "postAuthPasswordResetCode",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/password/reset": {
+      "post": {
+        "summary": "Set a new password with the emailed code",
+        "description": "Drops every open session and marks the address as proved. The client then signs in with the new password. Every code failure (no account, no code, expired, spent, wrong) answers the same 400.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "operationId": "postAuthPasswordReset",
+        "tags": [
+          "auth"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "email",
+                  "code",
+                  "password"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "reset": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` — `field` is `password` (too short) or `code`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -3250,6 +3665,223 @@
         }
       }
     },
+    "/v1/deals/{id}/share": {
+      "post": {
+        "summary": "Record a share of a deal (pays 25, three a day, once per deal)",
+        "description": "Rulebook §7.3. Call when the share sheet completes. Pays `CONFIG.earn.dealShared` at most `dealSharedPerDay` times a day and once per deal per account. A share that pays nothing is **not an error**: `granted: false` with `reason` `already_shared`, `daily_cap` or `not_live`.\n\n**Access:** Any signed-in account.",
+        "operationId": "postDealsByIdShare",
+        "tags": [
+          "deals"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "granted": {
+                      "type": "boolean"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "description": "Null when it paid."
+                    },
+                    "points": {
+                      "type": "integer"
+                    },
+                    "sharedToday": {
+                      "type": "integer"
+                    },
+                    "perDay": {
+                      "type": "integer"
+                    },
+                    "balance": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/venues/{id}/reviews": {
+      "post": {
+        "summary": "Review a venue after a visit (pays 25, one per venue per 30 days)",
+        "description": "Rulebook §7.3 / §9.2. Needs a confirmed visit to the venue. Pays `CONFIG.earn.reviewAfterVisit` with the review; a second review of the same venue inside `reviewEveryDays` is refused.\n\n**Access:** Any signed-in account.",
+        "operationId": "postVenuesByIdReviews",
+        "tags": [
+          "catalogue"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rating": {
+                    "type": "integer",
+                    "description": "1–5."
+                  },
+                  "body": {
+                    "type": "string",
+                    "description": "Optional, at most 1000 characters."
+                  }
+                },
+                "required": [
+                  "rating"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "review": {
+                      "type": "object"
+                    },
+                    "points": {
+                      "type": "integer"
+                    },
+                    "balance": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` — `rating` is not 1–5, or `body` is too long.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden` — `reason: no_visit`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — `reason: review_window`, with `nextAt`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/venues/{id}/events": {
       "post": {
         "summary": "POST /v1/venues/:id/events",
@@ -3495,7 +4127,7 @@
     "/v1/gift-cards": {
       "get": {
         "summary": "The gift-card catalogue",
-        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "description": "Rulebook §2.1 / §9.4. `points_cost` is **derived** from the face value at 100 points per złoty (converted through the rate sheet for other currencies; a card with no rate is not listed) — the stored column is ignored. `left_this_month` is how many more of that card the month’s pool (20% of consumer subscription revenue) can still buy, capped by stock.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "getGiftCards",
         "tags": [
           "wallet"
@@ -3528,7 +4160,7 @@
       },
       "post": {
         "summary": "Redeem points for a gift card",
-        "description": "**Access:** Any signed-in account.",
+        "description": "Pro and Premium only, one card per account per 60 days, and only while the month’s pool covers the card’s face value. The price is the derived one on the shelf.\n\n**Access:** Any signed-in account.",
         "operationId": "postGiftCards",
         "tags": [
           "wallet"
@@ -3600,7 +4232,17 @@
             }
           },
           "403": {
-            "description": "`entitlement_required` on priority-only stock.",
+            "description": "`entitlement_required` — gift cards are a Pro and Premium perk.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — out of stock; `reason: per_user_cap` with `nextAt`; or `reason: pool_exhausted`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3783,7 +4425,7 @@
     "/v1/daily/check-in": {
       "post": {
         "summary": "Take today’s check-in",
-        "description": "**No body.** The server knows who is asking and what day it is, and a claim that let the client name either is a claim the client can aim.\n\nPays `CONFIG.earn.dailyCheckIn` through a seven-day shape — three days at the base rate, three at double, the seventh at quadruple — restarting at rung one on the eighth consecutive day and at rung one again after a missed day. A streak milestone (7, 30, 100) arrives as **its own ledger entry**, so a balance that jumped by 70 has two rows explaining it rather than one that cannot be checked.\n\n**Safe to send twice, and two different guards make it so.** A second *claim* the same day — a tab left open overnight, a second device — answers `granted: false` with the day’s real figures rather than failing, because \"already done\" is a success from the caller’s side. A retried *request* carrying the same `Idempotency-Key` is replayed from store and never reaches the domain, which is what hands a phone that lost the first reply the original body rather than a second, truthful-but-different one. Send the key.\n\nThere is no way to claim a day that has gone.\n\n**Access:** Any signed-in account.",
+        "description": "**No body.** The server knows who is asking and what day it is, and a claim that let the client name either is a claim the client can aim.\n\nPays `CONFIG.earn.dailyCheckIn` — **a flat 5 every day** (rulebook §7.3). The response still names a rung of a seven-day cycle (`cycleDay`) so a ladder can be drawn, but every rung pays the same; it restarts at rung one on the eighth consecutive day and after a missed day. A streak milestone (7, 30, 100) arrives as **its own ledger entry**, so a balance that jumped by 70 has two rows explaining it rather than one that cannot be checked.\n\n**Safe to send twice, and two different guards make it so.** A second *claim* the same day — a tab left open overnight, a second device — answers `granted: false` with the day’s real figures rather than failing, because \"already done\" is a success from the caller’s side. A retried *request* carrying the same `Idempotency-Key` is replayed from store and never reaches the domain, which is what hands a phone that lost the first reply the original body rather than a second, truthful-but-different one. Send the key.\n\nThere is no way to claim a day that has gone.\n\n**Access:** Any signed-in account.",
         "operationId": "postDailyCheckIn",
         "tags": [
           "daily"
@@ -3911,8 +4553,10 @@
                       "word_builder",
                       "memory_match",
                       "flight",
-                      "merge_2048",
+                      "game_2048",
                       "food_cross",
+                      "merge_2048",
+                      "food_cross_live",
                       "food_ninja",
                       "snake",
                       "cannon_numbers",
@@ -4087,56 +4731,6 @@
         }
       }
     },
-    "/v1/games/sessions/{id}/abandon": {
-      "post": {
-        "summary": "POST /v1/games/sessions/:id/abandon",
-        "description": "**Access:** Any signed-in account.",
-        "operationId": "postGamesSessionsByIdAbandon",
-        "tags": [
-          "other"
-        ],
-        "parameters": [
-          {
-            "name": "id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "security": [
-          {
-            "bearerAuth": []
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Success"
-          },
-          "401": {
-            "description": "Not signed in",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "default": {
-            "description": "Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/games/sessions/{id}/finish": {
       "post": {
         "summary": "Finish the round and bank it",
@@ -4222,7 +4816,7 @@
     "/v1/referrals": {
       "get": {
         "summary": "My code, and how the invites are going",
-        "description": "The invite link the web shares is `https://www.pay-lez.com/sign-in?ref=<code>`. New codes are `PY` plus six characters; older `PY####` codes still work. Both people are paid on the invited friend's **first counted visit** at a partner venue — not at sign-up, not on a scan under the venue's minimum spend, and not at a till the inviter runs.\n\n**Access:** Any signed-in account.",
+        "description": "`code`, `link` (`https://www.pay-lez.com/i/<code>`), `joined` (rejected excluded), `completed`, `pointsEarned` (what reached *this* account, milestone included, reversals netted), the four reward figures, and `people`: `{ name, status: \"joined\"|\"completed\", joinedAt, completedAt, pointsAwarded }`, names as first name + last initial. `referredBy` and `canRedeem` describe the other direction.\n\n**Access:** Any signed-in account.",
         "operationId": "getReferrals",
         "tags": [
           "social"
@@ -4238,24 +4832,70 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "code": {
-                      "type": "string"
-                    },
-                    "joined": {
-                      "type": "integer",
-                      "description": "Friends who signed up with the code (rejected ones excluded)."
-                    },
-                    "completed": {
-                      "type": "integer",
-                      "description": "…of whom this many made the visit that pays."
-                    },
-                    "pointsEarned": {
-                      "type": "integer",
-                      "description": "What this account was paid for invites, milestone included, reversals netted. It was the bond's cost to both sides — double the real figure."
-                    }
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/referrals/redeem": {
+      "post": {
+        "summary": "Attach an invite code after sign-up",
+        "description": "Once per account, before its first confirmed visit, never its own code, never circular. Refusals carry `reason`: `unknown_code` (404), `self_referral` (400), `already_referred` (409), `already_visited` (409), `circular` (409); a guest is 403.\n\n**Access:** Any signed-in account.",
+        "operationId": "postReferralsRedeem",
+        "tags": [
+          "social"
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "The code, or the whole invite link."
                   }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
                 }
               }
             }
@@ -4285,8 +4925,8 @@
     },
     "/v1/referrals/codes/{code}": {
       "get": {
-        "summary": "Whether an invite code would bind",
-        "description": "For a sign-up form to check a typed or linked code before using it — sign-up itself never refuses a bad code (it reports `referral.applied: false`). Case, spaces and dashes are ignored. Rate-limited per connection.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "summary": "Who an invite code belongs to",
+        "description": "Public. `{ code, name, link, inviteeReward, referrerReward }`, or 404.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "getReferralsCodesByCode",
         "tags": [
           "social"
@@ -4307,12 +4947,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "valid": {
-                      "type": "boolean"
-                    }
-                  }
+                  "type": "object"
                 }
               }
             }
@@ -4332,11 +4967,11 @@
     },
     "/v1/leaderboard/{scope}": {
       "get": {
-        "summary": "GET /v1/leaderboard/:scope",
-        "description": "**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
+        "summary": "The weekly board: `city`, `country` or `global`",
+        "description": "Everyone is ranked; only opted-in players are listed. If you have not opted in you still see your own rank, with `hidden: true`. Any other scope is a 404.\n\n**Access:** Public. A session is still read when one is sent — deals and boards are personalised by it.",
         "operationId": "getLeaderboardByScope",
         "tags": [
-          "other"
+          "social"
         ],
         "parameters": [
           {
@@ -4346,11 +4981,45 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "city",
+            "in": "query",
+            "required": false,
+            "description": "`city` scope. Defaults to the account’s city.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "country",
+            "in": "query",
+            "required": false,
+            "description": "`country` scope. Defaults to the account’s country.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Default 20.",
+            "schema": {
+              "type": "integer"
+            }
           }
         ],
         "responses": {
-          "204": {
-            "description": "Success"
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Board"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -4993,10 +5662,69 @@
         }
       }
     },
+    "/v1/games/sessions/{id}/abandon": {
+      "post": {
+        "summary": "POST /v1/games/sessions/:id/abandon",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "postGamesSessionsByIdAbandon",
+        "tags": [
+          "other"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/venues/{id}/qr": {
       "post": {
         "summary": "Mint a QR for the venue’s screen",
-        "description": "Partner-side. Re-mint before `expiresAt`; the code is single-use.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Partner-side. Re-mint before `expiresAt`; the code is single-use.\n\n**Access:** Any signed-in account.",
         "operationId": "postVenuesByIdQr",
         "tags": [
           "gate",
@@ -5281,7 +6009,7 @@
     "/v1/gate/manual": {
       "post": {
         "summary": "Step 1–2: opened by staff, for a customer with a flat phone",
-        "description": "**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "**Access:** Any signed-in account.",
         "operationId": "postGateManual",
         "tags": [
           "gate",
@@ -5343,6 +6071,379 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Transaction"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/gate/passes": {
+      "post": {
+        "summary": "A redemption pass: the customer shows it, the counter scans it",
+        "description": "For one voucher (`voucher_redeem`) or earned reward (`reward_redeem`) the caller holds, with the bill they typed. The answer carries a signed `token` (starts `plzpass.`) to draw as a QR, and a six-character `code` for a cashier to type when the camera cannot read the screen. Single use, `ttlSeconds` long, and minting a new one for the same item retires the last. Nothing is granted: the counter still confirms.\n\n**Access:** Any signed-in account.",
+        "operationId": "postGatePasses",
+        "tags": [
+          "gate"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "intent": {
+                    "type": "string",
+                    "enum": [
+                      "voucher_redeem",
+                      "reward_redeem"
+                    ]
+                  },
+                  "intentRef": {
+                    "type": "string",
+                    "description": "The voucher or earned-reward id."
+                  },
+                  "amountMinor": {
+                    "type": "integer",
+                    "format": "int64",
+                    "description": "The bill, as the customer typed it **in minor units** (grosze). 14200 is 142,00 zł."
+                  }
+                },
+                "required": [
+                  "intentRef",
+                  "amountMinor"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "token": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "venueId": {
+                      "type": "string"
+                    },
+                    "intent": {
+                      "type": "string"
+                    },
+                    "intentRef": {
+                      "type": "string"
+                    },
+                    "amountMinor": {
+                      "type": "integer"
+                    },
+                    "currency": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "ttlSeconds": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`invalid_amount` — zero, or above the venue’s ceiling.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not a voucher or reward this account holds.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_used` or `expired` — the item cannot be spent.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/gate/passes/scan": {
+      "post": {
+        "summary": "The counter scans (or types) a customer’s pass",
+        "description": "Send `token` (the scanned QR) or `code` (typed). Opens a PENDING transaction with the customer’s amount on it (`amount_entered_by: customer`), which the counter then confirms through `/v1/gate/transactions/{id}/confirm` — or corrects through `/amount` first. Needs `redeem` on this venue’s counter.\n\n**Access:** Any signed-in account.",
+        "operationId": "postGatePassesScan",
+        "tags": [
+          "gate",
+          "partner"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "venueId": {
+                    "type": "string",
+                    "description": "The venue whose counter is scanning."
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  },
+                  "memberId": {
+                    "type": "string",
+                    "description": "Owner or manager only: who is on shift."
+                  }
+                },
+                "required": [
+                  "venueId"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transaction": {
+                      "$ref": "#/components/schemas/Transaction"
+                    },
+                    "pass": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "intent": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string",
+                          "description": "What is being redeemed, e.g. “10% off this order”."
+                        },
+                        "customerName": {
+                          "type": "string",
+                          "description": "First name only."
+                        },
+                        "amountMinor": {
+                          "type": "integer"
+                        },
+                        "currency": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not on this venue’s counter with `redeem`, or the pass is for another venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No pass with that code at this venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`already_used` or `expired`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`invalid_trigger` — not a Paylez pass, or the signature does not verify.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/gate/passes/{id}": {
+      "get": {
+        "summary": "What became of my pass",
+        "description": "`status` is `live`, `scanned`, `used`, `cancelled` or `expired`. The owner of the pass only.\n\n**Access:** Any signed-in account.",
+        "operationId": "getGatePassesById",
+        "tags": [
+          "gate"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "type": "string"
+                    },
+                    "transaction": {
+                      "$ref": "#/components/schemas/Transaction"
+                    }
+                  }
                 }
               }
             }
@@ -5517,7 +6618,7 @@
     "/v1/gate/transactions/{id}/confirm": {
       "post": {
         "summary": "Steps 4–5: the cashier confirms, and everything is granted",
-        "description": "Partner-side only, and the only call in the API that grants anything. Points, stamps, the discount, the deal claim and the referral payout all commit together or none of them do.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Partner-side only, and the only call in the API that grants anything. Points, stamps, the discount, the deal claim and the referral payout all commit together or none of them do.\n\nThe venue’s owner, a manager, or an active team member holding `earn` (for an earning visit) or `redeem` (for a redemption) may confirm; a team member’s confirm is recorded against them and comes back as `confirmedBy`. The owner’s shared counter device may name `memberId` to attribute the confirm to whoever is on shift.\n\n**Access:** Any signed-in account.",
         "operationId": "postGateTransactionsByIdConfirm",
         "tags": [
           "gate",
@@ -5542,6 +6643,22 @@
             }
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "memberId": {
+                    "type": "string",
+                    "description": "Owner or manager only: the member to record the confirm against. Must be an active member of this venue holding the permission, or the confirm is refused."
+                  }
+                }
+              }
+            }
+          }
+        },
         "security": [
           {
             "bearerAuth": []
@@ -5569,7 +6686,7 @@
             }
           },
           "403": {
-            "description": "Only venue staff may confirm.",
+            "description": "Not on this venue’s counter, a revoked member, or missing `earn`/`redeem`.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5676,7 +6793,7 @@
     "/v1/venues/{id}/pending": {
       "get": {
         "summary": "The confirmation queue at this venue",
-        "description": "Only transactions still inside the 15-minute limit — one past it is refused at confirm, so it is not listed. A customer whose earlier scan timed out is not blocked from scanning again.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Only transactions still inside the 15-minute limit — one past it is refused at confirm, so it is not listed. A customer whose earlier scan timed out is not blocked from scanning again.\n\n**Access:** Any signed-in account.",
         "operationId": "getVenuesByIdPending",
         "tags": [
           "gate",
@@ -8780,7 +9897,7 @@
     "/v1/partner/venues/{id}/counter/lookup": {
       "post": {
         "summary": "The counter tool: who a handle or a code belongs to",
-        "description": "A leading `@` is a handle. Otherwise a handle-shaped string is tried as a handle first and then as a code; a voucher (`PLZ-…`) or reward code is matched **at this venue only**, and only while it can still be spent. Every miss — unknown, another venue’s, used, expired, a banned or erased account — is one 404. `name` and `avatar` are null unless the customer shares with this venue. Writes nothing.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "A leading `@` is a handle. Otherwise a handle-shaped string is tried as a handle first and then as a code; a voucher (`PLZ-…`) or reward code is matched **at this venue only**, and only while it can still be spent. Every miss — unknown, another venue’s, used, expired, a banned or erased account — is one 404. `name` and `avatar` are null unless the customer shares with this venue. Writes nothing.\n\n**Access:** Any signed-in account.",
         "operationId": "postPartnerVenuesByIdCounterLookup",
         "tags": [
           "partner"
@@ -8927,7 +10044,7 @@
     "/v1/partner/venues/{id}/counter": {
       "post": {
         "summary": "The counter tool: record a sale for a customer at the till",
-        "description": "Resolves the code as the lookup does, then runs the gate’s own steps with the caller as cashier — so it pays exactly what a QR scan of the same bill pays, and is refused for the same reasons. A failure after the transaction opened cancels it. The receipt never carries the customer’s balance or next tier. Staff cannot record a sale to themselves or to the venue’s owner. Audited as `gate.counter`. Send an `Idempotency-Key` per press.\n\n**Access:** An account with the partner_owner, manager or admin role.",
+        "description": "Resolves the code as the lookup does, then runs the gate’s own steps with the caller as cashier — so it pays exactly what a QR scan of the same bill pays, and is refused for the same reasons. A failure after the transaction opened cancels it. The receipt never carries the customer’s balance or next tier. Staff cannot record a sale to themselves or to the venue’s owner. Audited as `gate.counter`. Send an `Idempotency-Key` per press.\n\n**Access:** Any signed-in account.",
         "operationId": "postPartnerVenuesByIdCounter",
         "tags": [
           "partner"
@@ -12626,6 +13743,1317 @@
               "application/json": {
                 "schema": {
                   "type": "object"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/missions": {
+      "get": {
+        "summary": "Every mission band, with this account’s progress on each mission",
+        "description": "Render the bands **in the order sent**; the seasonal and partner bands are present only while an operator campaign is live. Progress is derived on the server from rounds, visits, the ledger and the profile — never compute it on the phone.\n\n`status`: `locked` (the product or plan cannot do it yet), `open`, `complete` (ready to claim), `claimed`. `autoPaid: true` means the reward *is* an automatic bonus paid elsewhere (check-in, streak milestones, first visit, onboarding…): show it, never offer a claim button — except `daily.check_in`, which is claimed through `POST /v1/daily/check-in` (or this API’s claim, which calls the same thing). `rewardLabel` is what to print where the reward goes.\n\n**Access:** Any signed-in account.",
+        "operationId": "getMissions",
+        "tags": [
+          "missions"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "bands": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "enum": [
+                              "daily",
+                              "weekly",
+                              "ongoing",
+                              "once",
+                              "seasonal",
+                              "partner",
+                              "learning"
+                            ]
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "resetsAt": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "When this band resets; null for a band that does not.",
+                            "nullable": true
+                          },
+                          "missions": {
+                            "type": "array",
+                            "items": {
+                              "$ref": "#/components/schemas/Mission"
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "unclaimed": {
+                      "type": "integer",
+                      "description": "Missions complete and waiting for a tap."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/missions/{id}/claim": {
+      "post": {
+        "summary": "Claim a completed mission",
+        "description": "No body. Credits the ledger once per mission per period (`reason: mission`). **409 `conflict`** when the mission is not complete, is already claimed this period, or is auto-paid. Send an `Idempotency-Key`.\n\n**Access:** Any signed-in account.",
+        "operationId": "postMissionsByIdClaim",
+        "tags": [
+          "missions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "description": "A key you generate per attempt. Retrying with the same key returns the *stored* response instead of doing the work twice. The same key with a different body is a 409.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "mission": {
+                      "$ref": "#/components/schemas/Mission"
+                    },
+                    "points": {
+                      "type": "integer"
+                    },
+                    "balance": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found — no such mission",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "conflict — not claimable now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/missions/learning/{id}": {
+      "get": {
+        "summary": "A learning module (§8.7): its questions, without answers",
+        "description": "**Access:** Any signed-in account.",
+        "operationId": "getMissionsLearningById",
+        "tags": [
+          "missions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/missions/learning/{id}/answers": {
+      "post": {
+        "summary": "Submit a learning module’s answers; the server grades",
+        "description": "`answers` is one option index per question, in order. Every answer right passes the module and completes its mission, which is then claimed like any other. The reply names the right answer for each question — this is teaching.\n\n**Access:** Any signed-in account.",
+        "operationId": "postMissionsLearningByIdAnswers",
+        "tags": [
+          "missions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answers": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer"
+                    }
+                  }
+                },
+                "required": [
+                  "answers"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/mission-campaigns": {
+      "get": {
+        "summary": "GET /v1/admin/mission-campaigns",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminMissionCampaigns",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "POST /v1/admin/mission-campaigns",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "postAdminMissionCampaigns",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/mission-campaigns/{id}": {
+      "patch": {
+        "summary": "PATCH /v1/admin/mission-campaigns/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "patchAdminMissionCampaignsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "DELETE /v1/admin/mission-campaigns/:id",
+        "description": "**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "deleteAdminMissionCampaignsById",
+        "tags": [
+          "admin"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{venueId}/team": {
+      "get": {
+        "summary": "The venue’s team",
+        "description": "Owner, admin, or this venue’s manager. Revoked members are left out; a manager sees the whole list but may only change cashiers, shift leads and custom roles.\n\n**Access:** Any signed-in account.",
+        "operationId": "getPartnerVenuesByVenueIdTeam",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TeamMember"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not the owner or a manager of this venue.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add a team member, and get their join code once",
+        "description": "`perms` may be partial: missing keys come from the role’s template. `code` is six digits, single use, valid for 7 days, stored only as a keyed hash — **it is shown in this response and never again**; `…/code` re-issues. At most 50 non-revoked members per venue.\n\n**Access:** Any signed-in account.",
+        "operationId": "postPartnerVenuesByVenueIdTeam",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "manager",
+                      "shiftlead",
+                      "cashier",
+                      "custom"
+                    ]
+                  },
+                  "perms": {
+                    "$ref": "#/components/schemas/TeamPerms"
+                  }
+                },
+                "required": [
+                  "name",
+                  "role"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/TeamMember"
+                    },
+                    "code": {
+                      "type": "string",
+                      "description": "Six digits. Shown once."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "An unknown permission key or a non-boolean value.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A manager adding a manager.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`cap_reached` — 50 members.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{venueId}/team/{memberId}": {
+      "patch": {
+        "summary": "Change a member’s role or permissions",
+        "description": "A role change starts from the new role’s template; `perms` then overrides it. A manager may not edit, promote to, or demote a manager. A member of another venue is 404.\n\n**Access:** Any signed-in account.",
+        "operationId": "patchPartnerVenuesByVenueIdTeamByMemberId",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "role": {
+                    "type": "string",
+                    "enum": [
+                      "manager",
+                      "shiftlead",
+                      "cashier",
+                      "custom"
+                    ]
+                  },
+                  "perms": {
+                    "$ref": "#/components/schemas/TeamPerms"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/TeamMember"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Revoke a member",
+        "description": "Immediate: their workspace disappears from `GET /v1/me/workspaces`, their outstanding code dies, and their next QR, confirm or counter read is a 403. A manager may not revoke a manager, themselves included.\n\n**Access:** Any signed-in account.",
+        "operationId": "deletePartnerVenuesByVenueIdTeamByMemberId",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/partner/venues/{venueId}/team/{memberId}/code": {
+      "post": {
+        "summary": "Re-issue a join code",
+        "description": "The old code stops working at once. For an active member (a new phone) the old account stays linked until the new code is redeemed.\n\n**Access:** Any signed-in account.",
+        "operationId": "postPartnerVenuesByVenueIdTeamByMemberIdCode",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string",
+                      "description": "Six digits. Shown once."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team/join": {
+      "post": {
+        "summary": "Join a venue’s team with a code",
+        "description": "Any signed-in, non-guest account. Wrong, expired, used and revoked codes are one answer — `404 not_found` — so a guess learns nothing. Five failures an hour per account **or** per connection block the next attempt before the code is even looked at, a right one included.\n\n**Access:** Any signed-in account.",
+        "operationId": "postTeamJoin",
+        "tags": [
+          "team"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string",
+                    "description": "Six digits."
+                  }
+                },
+                "required": [
+                  "code"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workspace": {
+                      "$ref": "#/components/schemas/Workspace"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "A guest account.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found` — no such live code.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`conflict` — the venue’s own owner, or already on this team. Costs no attempt.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "`rate_limited`, with `retryAfterMinutes`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/me/workspaces": {
+      "get": {
+        "summary": "The workspace switcher",
+        "description": "`personal` always first, then owned venues, then active memberships (managers before staff). A revoked membership is simply absent.\n\n**Access:** Any signed-in account.",
+        "operationId": "getMeWorkspaces",
+        "tags": [
+          "team",
+          "me"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "workspaces": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Workspace"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team/{venueId}/counter": {
+      "get": {
+        "summary": "The staff counter",
+        "description": "Anybody on this venue’s counter: the owner, a manager, or an active member. Sections the member’s `perms` do not cover arrive empty or null.\n\n**Access:** Any signed-in account.",
+        "operationId": "getTeamByVenueIdCounter",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "memberId",
+            "in": "query",
+            "required": false,
+            "description": "Owner or manager only: show the counter as that member would see it — the shared “Who’s on shift?” device. A staff login naming anybody else is 403.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Counter"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team/{venueId}/shift": {
+      "post": {
+        "summary": "Start or end a shift",
+        "description": "A staff login may start or end only its own. The owner’s shared device must name `memberId` (400 otherwise); a manager’s defaults to themselves. Only an active member can be on shift.\n\n**Access:** Any signed-in account.",
+        "operationId": "postTeamByVenueIdShift",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "start",
+                      "end"
+                    ]
+                  },
+                  "memberId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "action"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "member": {
+                      "$ref": "#/components/schemas/TeamMember"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/team/{venueId}/running/{id}/pause": {
+      "post": {
+        "summary": "Pause or resume something the venue is running",
+        "description": "Needs `pause`. Runs through the owner’s own functions, so a shift lead resuming a deal passes exactly the checks the owner would.\n\n**Access:** Any signed-in account.",
+        "operationId": "postTeamByVenueIdRunningByIdPause",
+        "tags": [
+          "team"
+        ],
+        "parameters": [
+          {
+            "name": "venueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "paused": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "paused"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "item": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

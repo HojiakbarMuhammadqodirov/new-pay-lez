@@ -258,8 +258,10 @@ async function addColumn(db: Db, table: string, column: string, definition: stri
  * the two disagree, which turns a silent drift into a server that will not
  * start.
  *
- * Fourteen ways up, four ways down. Adding one is a migration, not an edit —
- * see `widenLedgerReasons`.
+ * Fifteen ways up, four ways down. Adding one is a migration, not an edit —
+ * see `widenLedgerReasons`, which rebuilds the table whenever the live CHECK is
+ * missing any value here, and `db/pg.ts`, which does the same on Postgres with
+ * an `ALTER TABLE`. `mission` (rulebook §8) is the most recent.
  */
 export const LEDGER_REASONS = [
   'game_win',
@@ -275,6 +277,7 @@ export const LEDGER_REASONS = [
   'streak_milestone',
   'occasion',
   'stipend',
+  'mission',
   'adjustment',
   'voucher_redeem',
   'gift_card_redeem',
@@ -297,6 +300,12 @@ export const LEDGER_REASONS = [
  * profile — and two entries here, because a question about the Sejm and a
  * question about Samarkand are not interchangeable. They score identically and
  * share every code path; only `quiz_items.bank` tells them apart.
+ *
+ * **Ten entries now, nine cards**: `game_2048` and `food_cross` are the rulebook's
+ * §5.7 and §5.8, the two seeded games the server replays from a move list
+ * (`domain/engines/`). Added at the end so the existing order — which
+ * `schema.sql` repeats — is untouched. `widenGameTypes` is what reaches the
+ * databases that already exist.
  */
 export const GAME_TYPES = [
   'flags',
@@ -307,8 +316,10 @@ export const GAME_TYPES = [
   'word_builder',
   'memory_match',
   'flight',
-  'merge_2048',
+  'game_2048',
   'food_cross',
+  'merge_2048',
+  'food_cross_live',
   'food_ninja',
   'snake',
   'cannon_numbers',
@@ -333,10 +344,8 @@ export const GAME_TYPES = [
  * already existed. A rewrite of existing rows, and one that **must not repeat**
  * — see `optInToTheBoard`.
  * 6 → 7 counted each voucher rung's issued vouchers — see `countTheRungs`.
- * 7 → 8 stamped every existing address as proved when email confirmation came
- * back. Another rewrite that **must not repeat** — see `grandfatherAddresses`.
  */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 7;
 
 const schemaVersion = async (db: Db): Promise<number> => {
   const row = await db.get<{ value: string }>(`SELECT value FROM schema_meta WHERE key = 'version'`);
@@ -392,13 +401,17 @@ const ledgerCounts = async (db: Db): Promise<{ entries: number; lots: number }> 
  * runs before the commit for the same reason — a migration that cannot show its
  * work on a ledger with real rows in it is not one worth running.
  *
- * Guarded twice, so it runs once and never again: on the stored version, and on
- * the constraint already in the file, because a database created fresh from
- * `schema.sql` has the new vocabulary and nothing to rebuild.
+ * **Guarded on the constraint alone, not on the version.** It was guarded on
+ * both — `schemaVersion >= 2` returned early — and that made it a one-shot: the
+ * next reason added (`mission`, rulebook §8) would have reached every database
+ * past version 2 as a CHECK that refuses it, and `assertLedgerReasons` would
+ * then have stopped the server booting. The rebuild is idempotent in the only
+ * way that matters — it writes the *whole* of `LEDGER_REASONS` — so "is any
+ * reason missing from the live constraint" is the complete and sufficient
+ * question, and it is a no-op on every boot where the answer is no, including a
+ * database created fresh from `schema.sql`.
  */
 async function widenLedgerReasons(db: Db): Promise<void> {
-  if (await schemaVersion(db) >= 2) return;
-
   const table = await tableSql(db, 'points_ledger');
   if (!table) return;
   const present = new Set(checkedValues(table, 'reason'));
@@ -599,7 +612,8 @@ const gameCounts = async (db: Db): Promise<{ sessions: number; events: number }>
 });
 
 /**
- * Version 5: the local-knowledge quiz gained a second country.
+ * Widening `game_sessions.game_type`: first for the second local-knowledge quiz
+ * (version 5), then for the rulebook's 2048 and Food Cross.
  *
  * `game_sessions.game_type` carries a CHECK, and a CHECK cannot be altered in
  * place, so admitting `uzbekistan` to it is the documented table rebuild — new
@@ -621,9 +635,24 @@ const gameCounts = async (db: Db): Promise<{ sessions: number; events: number }>
  * A difference throws, which rolls the rebuild back and leaves the original
  * table as it was.
  *
- * Guarded twice so it runs once and never again — on the stored version, and on
- * the constraint already in the file, because a database created fresh from
- * `schema.sql` has the new vocabulary and nothing to rebuild.
+ * **Guarded on the constraint alone, not on the version** — and that changed
+ * when the rulebook's two seeded games (`game_2048`, `food_cross`) were added.
+ * It used to return early at version 5 or later, which was right while
+ * `uzbekistan` was the only widening there would ever be and wrong the moment
+ * there was a second: every database already past 5 — which is every deployed
+ * one — would have skipped the rebuild and then failed `assertGameTypes` on
+ * boot. The constraint is the fact being migrated, so it is the guard: a
+ * database whose CHECK already admits every `GAME_TYPES` value (a fresh file
+ * from `schema.sql`, or one this already ran on) has nothing to rebuild, and
+ * one that does not is rebuilt whatever its version says. That makes the next
+ * game a one-line change to the tuple and `schema.sql`, with no version bump.
+ *
+ * **The new table is the old table's own statement with only the list
+ * replaced**, rather than a column list written out here. The hand-written copy
+ * was correct on the day it was written and would silently drop any column
+ * added to `game_sessions` since — this runs on databases of every age, so it
+ * must not have an opinion about which columns exist. `SELECT *` copies in the
+ * same column order because it is the same statement.
  */
 async function widenGameTypes(db: Db): Promise<void> {
   /* No version guard: the check below is the guard, and it is exact. It used to
@@ -637,38 +666,21 @@ async function widenGameTypes(db: Db): Promise<void> {
   if (GAME_TYPES.every((type) => present.has(type))) return;
 
   const list = GAME_TYPES.map((type) => `'${type}'`).join(', ');
+  const rebuilt = table
+    .replace(/CHECK \(game_type IN \([\s\S]*?\)\)/, `CHECK (game_type IN (${list}))`)
+    .replace(/^CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["`]?game_sessions["`]?/i, 'CREATE TABLE game_sessions_next');
+  if (!rebuilt.startsWith('CREATE TABLE game_sessions_next') || !rebuilt.includes(list)) {
+    throw new Error('game type migration could not rewrite the game_sessions statement');
+  }
 
   await db.exec('PRAGMA foreign_keys = OFF');
   try {
     await db.tx(async () => {
       const before = await gameCounts(db);
 
-      await db.exec(`
-        CREATE TABLE game_sessions_next (
-          id          TEXT PRIMARY KEY,
-          user_id     TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
-          game_type   TEXT NOT NULL CHECK (game_type IN (${list})),
-          language    TEXT NOT NULL DEFAULT 'en',
-          seed        TEXT NOT NULL,
-          secret      TEXT NOT NULL,
-          state       TEXT NOT NULL DEFAULT 'active'
-                      CHECK (state IN ('active', 'finished', 'abandoned', 'invalidated')),
-          score       INTEGER NOT NULL DEFAULT 0,
-          answered    INTEGER NOT NULL DEFAULT 0,
-          correct     INTEGER NOT NULL DEFAULT 0,
-          life_spent  INTEGER NOT NULL DEFAULT 0,
-          started_at  TEXT NOT NULL,
-          finished_at TEXT,
-          ledger_id   TEXT REFERENCES points_ledger (id) ON DELETE SET NULL,
-          energy_refunded_at TEXT
-        )`);
-      await db.exec(`
-        INSERT INTO game_sessions_next
-          (id, user_id, game_type, language, seed, secret, state, score, answered,
-           correct, life_spent, started_at, finished_at, ledger_id, energy_refunded_at)
-        SELECT id, user_id, game_type, language, seed, secret, state, score, answered,
-               correct, life_spent, started_at, finished_at, ledger_id, energy_refunded_at
-          FROM game_sessions`);
+      await db.exec('DROP TABLE IF EXISTS game_sessions_next');
+      await db.exec(rebuilt);
+      await db.exec('INSERT INTO game_sessions_next SELECT * FROM game_sessions');
       await db.exec('DROP TABLE game_sessions');
       await db.exec('ALTER TABLE game_sessions_next RENAME TO game_sessions');
       /* The old table's index went down with it. */
@@ -856,31 +868,6 @@ async function countTheRungs(db: Db): Promise<void> {
   );
 }
 
-/**
- * Version 8: accounts that predate email confirmation are treated as proved.
- *
- * The confirmation flow came back (`domain/verification.ts`), and without
- * this every existing customer would be shown "confirm your email" for an
- * address they registered months ago — and, once `PAYLEZ_VERIFY_GATE` is on,
- * be unable to spend points they have already earned. That is the mistake the
- * first version of the flow made and was removed for (`53edbf7`).
- *
- * Stamped with **the moment this runs**, not `created_at`: the column then
- * says when the account was *treated as* proved, and does not pretend a code
- * was confirmed on a day none was sent. Accounts with no address (provisional)
- * are left alone — they have nothing to prove and `verified()` already passes
- * them. Guarded on the version so it runs exactly once: run again later, it
- * would wave through every account that signed up and never confirmed.
- */
-async function grandfatherAddresses(db: Db): Promise<void> {
-  if (await schemaVersion(db) >= 8) return;
-  await db.run(
-    `UPDATE users SET email_verified_at = $t
-      WHERE email IS NOT NULL AND email_verified_at IS NULL`,
-    { t: new Date().toISOString() },
-  );
-}
-
 /** Applied once, on an empty file. The schema is idempotent (`IF NOT EXISTS`). */
 export async function migrate(db: Db): Promise<void> {
   const sql = readFileSync(join(here, 'schema.sql'), 'utf8');
@@ -957,9 +944,19 @@ export async function migrate(db: Db): Promise<void> {
   await addColumn(db, 'voucher_tiers', 'redeem_limit', 'INTEGER');
   await addColumn(db, 'voucher_tiers', 'per_user_limit', 'INTEGER');
   await addColumn(db, 'voucher_tiers', 'issued_count', 'INTEGER NOT NULL DEFAULT 0');
-  /* Rulebook §3's refund stamp. NULL is "kept its spend", which every existing
-     round did. */
-  await addColumn(db, 'game_sessions', 'energy_refunded_at', 'TEXT');
+  /* Who on the team confirmed a transaction (server/TEAM.md). NULL is right for
+     every row that predates it: the owner confirmed those, as themselves. The
+     `team_members` table itself needs no line here — it is new, so the
+     `CREATE TABLE IF NOT EXISTS` in `schema.sql` reaches existing files. */
+  await addColumn(db, 'transactions', 'confirmed_member_id', 'TEXT');
+  /* The Word Builder bank's tiles, accepted spellings and decoy count
+     (`updates/paylez-wordbuilder-all-2000.csv`). NULL / 0 on an older row is
+     the old behaviour — split the word, no decoys — so nothing needs a
+     backfill; the import rewrites the bank, and `main.ts` re-imports a bank
+     that has no tiles yet. The same lines are in `pg.ts`. */
+  await addColumn(db, 'word_bank', 'tiles', 'TEXT');
+  await addColumn(db, 'word_bank', 'accept', 'TEXT');
+  await addColumn(db, 'word_bank', 'decoys', 'INTEGER NOT NULL DEFAULT 0');
 
   /* The handle's uniqueness, and it lives here rather than as a `UNIQUE` in
      `schema.sql` because `ALTER TABLE … ADD COLUMN` cannot carry one — so an
@@ -989,7 +986,6 @@ export async function migrate(db: Db): Promise<void> {
      here, and its own guard reads that stamp. */
   await optInToTheBoard(db);
   await countTheRungs(db);
-  await grandfatherAddresses(db);
 
   await db.run(
     `INSERT INTO schema_meta (key, value) VALUES ('version', $v)

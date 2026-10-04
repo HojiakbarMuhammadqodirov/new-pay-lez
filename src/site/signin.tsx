@@ -269,7 +269,7 @@ function SignUp({
     let live = true;
     const timer = window.setTimeout(() => {
       checkReferralCode(referralCode)
-        .then((answer) => live && setReferralState(answer.valid ? 'valid' : 'invalid'))
+        .then(() => live && setReferralState('valid'))
         .catch((cause: unknown) =>
           live && setReferralState(cause instanceof ApiError && cause.status === 404 ? 'invalid' : 'unknown'),
         );

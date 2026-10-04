@@ -21,7 +21,17 @@ export type IdPrefix =
   | 'gev' | 'ref' | 'ntf' | 'ptk' | 'pln' | 'sub' | 'inv' | 'bev'
   | 'aud' | 'frd' | 'mod' | 'bmk' | 'ast' | 'msg' | 'gsv' | 'art'
   | 'nws' | 'cpr' | 'rec' | 'fbk' | 'sev' | 'qzi' | 'wrd'
-  | 'wbs' | 'wbe' | 'ath' | 'rmd' | 'lim' | 'otp' | 'gcc';
+  | 'wbs' | 'wbe' | 'ath' | 'rmd' | 'lim' | 'otp'
+  /* rulebook §7.3: a venue review */
+  | 'vrv'
+  /* rulebook §8: a mission event, a mission campaign */
+  | 'mev' | 'mcp'
+  /* a venue's team member (server/TEAM.md) */
+  | 'tmm'
+  /* a redemption pass the customer's phone shows (FLUTTER-BRIEF §3b) */
+  | 'pss'
+  /* a gift card's code (the gift-card engine) */
+  | 'gcc';
 
 export const newId = (prefix: IdPrefix): string => `${prefix}_${randomBytes(10).toString('hex')}`;
 
@@ -42,15 +52,6 @@ export function shortCode(length = 8): string {
 /** `PLZ-9F3K` — the shape the site's wallet already prints. */
 export const voucherCode = (): string => `PLZ-${shortCode(4)}`;
 
-/**
- * `PY7KQ2MX` — a referral code.
- *
- * It was `PY` plus four digits, the old database's shape, and that is 8,999
- * codes in all: guessable by anybody willing to type, and *exhausted* — since
- * `social.codeFor` runs inside sign-up and gives up after twenty collisions,
- * every sign-up would have started failing at around nine thousand accounts.
- * Six characters of `ALPHABET` is about a billion. The `PY` prefix stays so a
- * code still reads as ours, and the old `PY####` codes keep working: they are
- * looked up, never parsed.
- */
-export const referralCode = (): string => `PY${shortCode(6)}`;
+/** `PY1100` — the shape the old database's referral codes are in. `social.codeFor`
+    widens to six and then eight digits as the space fills. */
+export const referralCode = (): string => `PY${randomInt(1000, 9999)}`;

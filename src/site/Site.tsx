@@ -29,6 +29,7 @@ import { ProfilePage } from './profile';
 import { RelocatePage } from './relocate';
 import { PATHS, navigate, resolveRoute, useRoute } from './router';
 import { SignInPage } from './signin';
+import { InvitePage } from './invite';
 import { StreetMap } from './streets/StreetMap';
 import { StubDrift } from './stubs/StubDrift';
 import { VouchersPage } from './vouchers';
@@ -462,6 +463,8 @@ function SiteContent() {
 
       {route === 'signin' ? (
         <SignInPage />
+      ) : route === 'invite' ? (
+        <InvitePage />
       ) : route === 'business-setup' ? (
         <BusinessSetupPage />
       ) : route === 'analytics' ? (

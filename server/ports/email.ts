@@ -1,71 +1,44 @@
 /**
- * The email boundary — one message, and it is the verification code.
+ * The email boundary. One kind of message: a six-digit code.
  *
- * ## What is real here and what is an adapter
+ * ## Two adapters, chosen by whether a key is present
  *
- * Everything that *decides* anything about verification is real and lives in
- * `domain/verification.ts`: the code, its hash, its expiry, the attempt cap,
- * the resend cooldown and the send ceiling. This file is the last hop.
+ * - **live** — `PAYLEZ_RESEND_KEY` is set. One `POST` to Resend's REST API over
+ *   `fetch`, no SDK: the server is dependency-free, and the whole integration is
+ *   one request with a bearer token.
+ * - **local** — no key. The message is logged and kept in {@link outbox}, which
+ *   is how `verify.ts` reads a code without the code ever appearing in an API
+ *   response. A code in a response is a code anybody with the endpoint can read
+ *   without having the inbox, which defeats the whole mechanism.
  *
- * Two adapters, chosen by `PAYLEZ_EMAIL`:
+ * The mode is read at call time rather than at import, so a test can switch it
+ * and a deployment that gains a key on restart needs nothing else.
  *
- * - **`live`** posts to Resend (`RESEND_API_KEY`), from `PAYLEZ_EMAIL_FROM`
- *   (default `Paylez <no-reply@pay-lez.com>`, which needs the `pay-lez.com`
- *   domain verified in the Resend account — an unverified sender domain is
- *   refused by Resend, not by us).
- * - **`local`** (the default) **logs the code** and delivers nowhere. That is
- *   what makes the whole flow — sign up, receive, confirm, be refused after
- *   five wrong answers, be refused again inside the cooldown — exercisable end
- *   to end with no credentials, which is the same trade `ports/push.ts` makes.
+ * ## Why this came back differently
  *
- * **The local adapter is a development tool and the boot says so.** A
- * deployment that leaves `PAYLEZ_EMAIL` unset gets codes in its log and nowhere
- * else, so `main.ts` warns about it; and `live` without a key refuses to start
- * rather than silently logging. That is the `PAYLEZ_BILLING` rule, for the same
- * reason: a boundary that fails open is a boundary nobody notices has failed.
+ * The first version (removed in `53edbf7`) had no transport at all, so on a
+ * live server the code went to the log and nowhere a customer could read it.
+ * That is why `domain/verification.ts` gates **nothing** unless this file is in
+ * live mode: the gate and the transport arrive together or not at all.
  *
- * ## Why Resend, and why over `fetch`
+ * ## Plain text, no HTML
  *
- * One HTTPS POST with a bearer key — no SMTP session, no MIME assembly — and it
- * is called by hand for the reason `ports/stripe.ts` and `ports/llm.ts` are:
- * this server has one runtime dependency and an email SDK would be the second,
- * for a boundary that is a single request.
- *
- * ## Why there is no template engine and no HTML
- *
- * A six-digit code in a plain-text body. HTML mail would need a template, a
- * layout, an inliner and a second copy of every string in five languages — and
- * the thing being delivered is six digits. `subject` and `body` come from the
- * caller so the language is the reader's; this file only sends.
- *
- * ## `contact_messages` is not this
- *
- * `domain/contact.ts` is emphatic that it does **not** send email: a message
- * from the Contact page lands in a table and the console reads it. That is
- * still true and this is not a change of mind — a contact message has a reader
- * (the operator, in a console) and this has none: a verification code nobody
- * receives verifies nothing. One is a record, the other is a message.
+ * Six digits do not need a template, a layout or an inliner. `subject` and
+ * `body` come from the caller in the reader's language; this file only sends.
  */
 import { DomainError } from '../domain/errors.ts';
 
-const RESEND_URL = 'https://api.resend.com/emails';
+export const mode = (): 'local' | 'live' => (process.env.PAYLEZ_RESEND_KEY ? 'live' : 'local');
 
-/** Long enough for a slow provider, short enough that a sign-up is not held. */
-const TIMEOUT_MS = 10_000;
-
-export const mode = (): 'local' | 'live' =>
-  process.env.PAYLEZ_EMAIL === 'live' ? 'live' : 'local';
-
-/** Whether `live` has what it needs. Read by the boot, which refuses without it. */
-export const configured = (): boolean => Boolean(process.env.RESEND_API_KEY);
-
-export const sender = (): string =>
-  process.env.PAYLEZ_EMAIL_FROM?.trim() || 'Paylez <no-reply@pay-lez.com>';
+/**
+ * The sender. It must be an address on a domain verified in Resend (SPF and
+ * DKIM records for `pay-lez.com`), or Resend refuses the message with a 403.
+ */
+export const from = (): string => process.env.PAYLEZ_MAIL_FROM || 'Paylez <no-reply@pay-lez.com>';
 
 export interface Message {
   to: string;
   subject: string;
-  /** Plain text. See the note above on why there is no HTML. */
   body: string;
 }
 
@@ -76,55 +49,51 @@ export interface Sent {
 }
 
 /**
+ * What the local adapter produced, newest last. Bounded so a long-running dev
+ * server does not grow it forever. Read by `verify.ts`; nothing in a route
+ * reads it.
+ */
+export const outbox: Message[] = [];
+
+/** The newest local message to an address, for tests. */
+export const lastTo = (to: string): Message | undefined =>
+  [...outbox].reverse().find((m) => m.to.toLowerCase() === to.toLowerCase());
+
+/**
  * Send one message.
  *
- * **A live failure throws, and has to.** `verification.issue` writes the code
- * row *before* this is called, so a send that silently failed would leave
- * somebody waiting for a message that is not coming. The caller decides what a
- * failure means: sign-up survives it (the account is real either way), the
- * resend button reports it.
- *
- * The local adapter does **not** throw: a local adapter that did would make
- * every sign-up in development fail.
+ * Throws when the live transport refuses, so the caller can say so. The code
+ * row is written before this is called, so a failed send still spent its
+ * cooldown: a failing transport cannot be retried without limit.
  */
 export async function send(message: Message): Promise<Sent> {
-  if (mode() === 'live') {
-    const key = process.env.RESEND_API_KEY;
-    if (!key) throw new DomainError('internal', 'PAYLEZ_EMAIL=live needs RESEND_API_KEY');
-
+  const key = process.env.PAYLEZ_RESEND_KEY;
+  if (key) {
     let response: Response;
     try {
-      response = await fetch(RESEND_URL, {
+      response = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
-        body: JSON.stringify({
-          from: sender(),
-          to: [message.to],
-          subject: message.subject,
-          text: message.body,
-        }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
+        body: JSON.stringify({ from: from(), to: [message.to], subject: message.subject, text: message.body }),
+        signal: AbortSignal.timeout(10_000),
       });
     } catch (error) {
-      throw new DomainError('internal', `email provider unreachable: ${(error as Error).message}`);
+      console.warn(`email: transport unreachable: ${(error as Error).message}`);
+      throw new DomainError('internal', 'the email could not be sent — try again in a minute');
     }
-
     if (!response.ok) {
-      /* Resend answers `{ name, message }`. The message is logged rather than
-         returned: it can name the sender domain and the account's own limits,
-         which are ours to read and nobody else's. The address is not logged —
-         it is personal data and the status says enough to debug from. */
-      const detail = await response.text().catch(() => '');
-      console.warn(`email(live) refused: ${response.status} ${detail.slice(0, 300)}`);
-      throw new DomainError('internal', `email provider refused the message (${response.status})`);
+      /* The provider's body names the cause (an unverified domain, a bad key),
+         and it belongs in the log, not in a response to the person asking. */
+      console.warn(`email: provider refused (${response.status}): ${(await response.text()).slice(0, 300)}`);
+      throw new DomainError('internal', 'the email could not be sent — try again in a minute');
     }
     return { via: 'live', to: message.to };
   }
 
-  /* The code, where a developer can read it. Deliberately the whole body: a
-     log line that said "code sent" would make local sign-up impossible, which
-     is the thing this adapter exists to keep working. */
+  outbox.push(message);
+  if (outbox.length > 200) outbox.splice(0, outbox.length - 200);
   if (process.env.PAYLEZ_QUIET !== '1') {
+    /* The whole body, so a developer can complete a sign-up locally. */
     console.log(`email(local) → ${message.to}: ${message.subject} — ${message.body}`);
   }
   return { via: 'local', to: message.to };

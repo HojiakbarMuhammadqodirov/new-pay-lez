@@ -22,7 +22,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
-import { GAME_TYPES, type Db } from './db.ts';
+import { GAME_TYPES, LEDGER_REASONS, type Db } from './db.ts';
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -501,12 +501,93 @@ export async function migrate(db: PgDb): Promise<void> {
   await add('voucher_tiers', 'redeem_limit', 'INTEGER');
   await add('voucher_tiers', 'per_user_limit', 'INTEGER');
   await add('voucher_tiers', 'issued_count', 'INTEGER NOT NULL DEFAULT 0');
-  /* Rulebook §3's refund stamp — written in both lists, for the reason above. */
-  await add('game_sessions', 'energy_refunded_at', 'TEXT');
+  /* The team member a confirmation is recorded against (server/TEAM.md). The
+     same line is in `db.ts`, for the reason `seq` above gives. */
+  await add('transactions', 'confirmed_member_id', 'TEXT');
+  /* The Word Builder bank's tiles, accepted spellings and decoy count. The
+     same lines are in `db.ts`, for the reason `seq` above gives. */
+  await add('word_bank', 'tiles', 'TEXT');
+  await add('word_bank', 'accept', 'TEXT');
+  await add('word_bank', 'decoys', 'INTEGER NOT NULL DEFAULT 0');
 
   await db.exec(
     'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username_norm ON users (username_norm)',
   );
+
+  /*
+   * **The board's default, which the 5 → 6 migration below never reached.**
+   *
+   * Production was created from a `schema.pg.sql` that still said
+   * `leaderboard_opt_in … DEFAULT 0` (7398e63); the file says 1 now, but
+   * `CREATE TABLE IF NOT EXISTS` does not revisit a live table's defaults, and
+   * the version-6 rewrite below flips only the rows that existed on the day it
+   * ran. No `INSERT INTO users` names the column, so every account created
+   * after that day took the old 0 and was left off the leaderboard — the exact
+   * outcome version 6 was written to undo. Found by migrating a copy of an old
+   * database and diffing it against a fresh one, which is the only place the
+   * two schemas disagree.
+   *
+   * Metadata-only in Postgres and a no-op when already 1, so it runs every
+   * boot. It fixes *new* rows only: accounts already written at 0 cannot be
+   * told apart from people who switched the board off, so re-opting them in is
+   * a product decision, not a migration's.
+   */
+  await db.exec('ALTER TABLE users ALTER COLUMN leaderboard_opt_in SET DEFAULT 1');
+
+  /*
+   * **The ledger's reason CHECK, widened in place when it is missing a value.**
+   *
+   * The note above says the SQLite CHECK rebuilds have nothing to do here, and
+   * for the reasons that existed when production moved that was true. It stops
+   * being true the day a reason is added after the move — `mission`, rulebook §8
+   * — because `CREATE TABLE IF NOT EXISTS` leaves the live table's constraint
+   * exactly as it was, and every claimed mission would then fail at the insert
+   * with `23514 check_violation`, which the HTTP layer can only report as a 500.
+   *
+   * Postgres, unlike SQLite, can replace a CHECK without a rebuild: one
+   * `ALTER TABLE` drops the old constraint and adds the new one, and the add
+   * validates every existing row against a list that is a superset of the old
+   * one. Guarded on the live definition rather than on the version, so it is a
+   * no-op on a database created from `schema.pg.sql` and on every boot after the
+   * first, and it keeps the constraint's own name so nothing else that names it
+   * has to change.
+   */
+  const reasonCheck = await db.get<{ name: string; def: string }>(
+    `SELECT c.conname AS name, pg_get_constraintdef(c.oid) AS def
+       FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+      WHERE t.relname = 'points_ledger' AND c.contype = 'c'
+        AND pg_get_constraintdef(c.oid) LIKE '%reason%'`,
+  );
+  if (reasonCheck && LEDGER_REASONS.some((reason) => !reasonCheck.def.includes(`'${reason}'`))) {
+    const list = LEDGER_REASONS.map((reason) => `'${reason}'`).join(', ');
+    await db.exec(
+      `ALTER TABLE points_ledger DROP CONSTRAINT "${reasonCheck.name}",
+         ADD CONSTRAINT "${reasonCheck.name}" CHECK (reason IN (${list}))`,
+    );
+  }
+
+  /*
+   * **And `game_sessions.game_type`, the same way and for the same reason.**
+   *
+   * Rulebook §5.7 and §5.8 added `game_2048` and `food_cross` after production
+   * moved here, and the live CHECK still lists the eight games it was created
+   * with — so without this every round of either game would be a 500 at the
+   * insert in `startSession`, on production only. Guarded on the live
+   * definition, keeps the constraint's name; see the ledger block above.
+   */
+  const gameCheck = await db.get<{ name: string; def: string }>(
+    `SELECT c.conname AS name, pg_get_constraintdef(c.oid) AS def
+       FROM pg_constraint c JOIN pg_class t ON t.oid = c.conrelid
+      WHERE t.relname = 'game_sessions' AND c.contype = 'c'
+        AND pg_get_constraintdef(c.oid) LIKE '%game_type%'`,
+  );
+  if (gameCheck && GAME_TYPES.some((type) => !gameCheck.def.includes(`'${type}'`))) {
+    const list = GAME_TYPES.map((type) => `'${type}'`).join(', ');
+    await db.exec(
+      `ALTER TABLE game_sessions DROP CONSTRAINT "${gameCheck.name}",
+         ADD CONSTRAINT "${gameCheck.name}" CHECK (game_type IN (${list}))`,
+    );
+  }
 
   /*
    * **The one migration a Postgres database here does have to replay.**
@@ -550,45 +631,6 @@ export async function migrate(db: PgDb): Promise<void> {
     );
   }
 
-  /*
-   * **And the third: 7 → 8 stamps existing addresses as proved.** See
-   * `grandfatherAddresses` in `db.ts` for why, and why it is stamped with
-   * now rather than with the account's creation date. Guarded, and this one
-   * must be: run again later and it would wave through every account that
-   * signed up after the flow returned and never confirmed.
-   */
-  if (Number(stored?.value ?? 0) < 8) {
-    await db.run(
-      `UPDATE users SET email_verified_at = $t
-        WHERE email IS NOT NULL AND email_verified_at IS NULL`,
-      { t: new Date().toISOString() },
-    );
-  }
-
-  /*
-   * **The game types, widened when the code knows one the table does not.**
-   *
-   * The CHECK on `game_sessions.game_type` is written inline in
-   * `CREATE TABLE IF NOT EXISTS`, which a live database never re-runs — so a
-   * game added after production was created (2048) would be refused there on
-   * its first round while every check here passed. Postgres can swap a CHECK in
-   * place, so this reads the live definition and replaces it only when a type
-   * from `GAME_TYPES` is missing.
-   */
-  const check = await db.get<{ name: string; def: string }>(
-    `SELECT conname AS name, pg_get_constraintdef(oid) AS def
-       FROM pg_constraint
-      WHERE conrelid = 'game_sessions'::regclass AND contype = 'c'
-        AND pg_get_constraintdef(oid) LIKE '%game_type%'`,
-  );
-  if (check && GAME_TYPES.some((type) => !check.def.includes(`'${type}'`))) {
-    const list = GAME_TYPES.map((type) => `'${type}'`).join(', ');
-    await db.exec(
-      `ALTER TABLE game_sessions DROP CONSTRAINT "${check.name}",
-         ADD CONSTRAINT game_sessions_game_type_check CHECK (game_type IN (${list}))`,
-    );
-  }
-
   /* `gift_cards.status` gains 'cancelled', swapped in place the same way. */
   const giftStatus = await db.get<{ name: string; def: string }>(
     `SELECT conname AS name, pg_get_constraintdef(oid) AS def
@@ -612,7 +654,7 @@ export async function migrate(db: PgDb): Promise<void> {
 }
 
 /** Mirrors `SCHEMA_VERSION` in `db.ts`; the two schemas are one schema. */
-const SCHEMA_VERSION = 8;
+const SCHEMA_VERSION = 7;
 
 export async function openDb(connectionString: string): Promise<Db> {
   const db = new PgDb(connectionString);

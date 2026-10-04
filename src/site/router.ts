@@ -44,7 +44,10 @@ export type Route =
   | 'onboarding'
   | 'business-setup'
   | 'dashboard'
-  | 'admin';
+  | 'admin'
+  /* `/i/<code>` — a friend's invite to the app. The one route with a parameter
+     in its path; see `inviteCodeFromPath`. */
+  | 'invite';
 
 const ROUTES: Record<string, Route> = {
   '#/l-earn': 'learn',
@@ -61,6 +64,7 @@ const ROUTES: Record<string, Route> = {
   '#/business/setup': 'business-setup',
   '#/dashboard': 'dashboard',
   '#/admin': 'admin',
+  '#/invite': 'invite',
 };
 
 export const PATHS: Record<Route, string> = {
@@ -79,6 +83,7 @@ export const PATHS: Record<Route, string> = {
   'business-setup': '#/business/setup',
   dashboard: '#/dashboard',
   admin: '#/admin',
+  invite: '#/invite',
 };
 
 /*
@@ -141,6 +146,10 @@ export const URL_PATHS: Record<Route, string> = {
   'business-setup': '/business/setup',
   dashboard: '/dashboard',
   admin: '/admin',
+  /* The bare prefix. The real address is `/i/<code>`, which `pathRoute`
+     recognises and `normalizeAddress` leaves alone — rewriting it to `/i`
+     would throw away the only thing the page is about. */
+  invite: '/i',
 };
 
 /** `URL_PATHS` read the other way. Two routes sharing a path would lose one of
@@ -165,7 +174,21 @@ const ROUTE_HASHES: Record<string, Route> = { ...ROUTES, '#top': 'landing' };
 export function pathRoute(pathname: string): Route | null {
   const trimmed =
     pathname.length > 1 && pathname.endsWith('/') ? pathname.slice(0, -1) : pathname;
+  if (inviteCodeFromPath(trimmed) !== null) return 'invite';
   return PATH_ROUTES[trimmed] ?? null;
+}
+
+/**
+ * The invite code in `/i/<code>`, upper-cased, or `null`.
+ *
+ * The phone app shares `https://www.pay-lez.com/i/<code>`: the server builds
+ * the link (`GET /v1/referrals` → `link`), so this page is where every invite
+ * lands for somebody without the app. Codes are short, and letters, digits and
+ * a dash — anything else in the slot is not one of ours.
+ */
+export function inviteCodeFromPath(pathname: string): string | null {
+  const match = /^\/i\/([A-Za-z0-9-]{3,32})\/?$/.exec(pathname);
+  return match ? match[1].toUpperCase() : null;
 }
 
 /** The page a bare section anchor belongs to, or `null` if no prefix claims it.
@@ -247,6 +270,7 @@ export const ANCHOR_ROUTES: Array<[prefix: string, route: Route]> = [
    */
   ['profile-', 'profile'],
   ['welcome-', 'onboarding'],
+  ['invite-', 'invite'],
 ];
 
 /** The route a hash names, section anchors included. Exported for `verify`. */
@@ -329,7 +353,9 @@ export function normalizeAddress(route: Route): void {
      table left `ErrorBoundary`'s `#/` sitting in the bar as `/#/` — the right
      page under a URL that looks like a typo. */
   const keep = hash.startsWith('#/') || ROUTE_HASHES[hash] !== undefined ? '' : hash;
-  const next = `${URL_PATHS[route]}${search}${keep}`;
+  /* An invite's address carries its code; the table only knows the prefix. */
+  const base = route === 'invite' && inviteCodeFromPath(pathname) !== null ? pathname : URL_PATHS[route];
+  const next = `${base}${search}${keep}`;
   if (`${pathname}${search}${hash}` === next) return;
   window.history.replaceState(null, '', next);
 }

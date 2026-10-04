@@ -127,6 +127,21 @@ export const billingRoutes: Route[] = [
       const { user } = actor(ctx);
       const venueId = optStr(ctx.body, 'venueId');
       const subject = venueId ? { venueId } : { userId: user.id };
+
+      /* The same owner check as the checkout above, and it was missing here:
+         any signed-in account could post another venue's id and cancel what
+         that venue pays for. Owner only, not a team manager (server/TEAM.md) —
+         billing is one of the things a manager is never given. Checked before
+         the subscription is looked up, so a stranger gets the same 403 whether
+         or not the venue pays, and learns nothing from the difference. */
+      if (venueId) {
+        const owns = await ctx.db.get(`SELECT 1 FROM venues WHERE id = $v AND owner_user_id = $u`, {
+          v: venueId,
+          u: user.id,
+        });
+        if (!owns) throw new DomainError('forbidden', 'not your venue');
+      }
+
       const subscription = await entitlements.activeSubscription(ctx.db, subject);
       if (!subscription) throw new DomainError('not_found', 'no active subscription');
 

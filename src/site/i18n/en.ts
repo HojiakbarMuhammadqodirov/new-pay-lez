@@ -197,7 +197,7 @@ export const en = {
      * The panel on the Play screen and the wallet — `VerifyEmail.tsx`, which
      * carries the reasoning for why it is a panel rather than a gate.
      *
-     * Two ledes, and the server picks (`spendNeedsVerifiedEmail`): `spendLede`
+     * Two ledes, and the server picks (`emailVerificationRequired`): `spendLede`
      * while spending is gated on a proved address, `lede` while it is not. Both
      * end where the panel prints the address in bold.
      *

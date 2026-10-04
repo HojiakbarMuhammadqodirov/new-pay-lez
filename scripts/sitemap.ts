@@ -65,6 +65,8 @@ export const LISTED: Record<Route, string | null> = {
   'business-setup': null,
   dashboard: null,
   admin: null,
+  /* `/i/<code>` is a message to one person, not a page to be found. */
+  invite: null,
 };
 
 /** The last commit date for one file, as a bare `YYYY-MM-DD`, or `null` if git

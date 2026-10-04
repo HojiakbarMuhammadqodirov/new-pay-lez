@@ -389,27 +389,40 @@ non-web row is marked `failed`, honestly, where the local adapter marks it
 `sent`. `verify:api` decrypts what was encrypted with the subscription's own
 key and verifies the VAPID signature, rather than pinning bytes.
 
-## Email confirmation: codes are live, the spending gate is a switch
+## Email codes: confirmation and password reset
 
-Every email sign-up gets a six-digit code (`domain/verification.ts`): valid 10
-minutes, 5 wrong answers per code, a 90-second resend cooldown, 10 sends per
-account in total. `POST /v1/auth/verify/send` resends, `POST /v1/auth/verify`
-confirms, and sign-up sends the first one itself. A Google sign-in arrives
-stamped, because `crypto/google.ts` refuses an unverified Google address.
+A first OTP flow was removed in `53edbf7` for two reasons: there was no transport
+(the code went to the log and nowhere a customer could read it), and the gate was
+far too wide (an unconfirmed account could not earn, check in, claim the welcome
+gift or appear on the board), so the first restart would have taken all of that
+from every live account at once.
 
-It is the second version. The first (removed in `53edbf7`) had no transport and
-gated earning, check-in, the welcome gift and the board, with no backfill. This
-one differs in exactly the three ways that removal asked for:
+It came back (2026-10-03, `domain/verification.ts`, `ports/email.ts`) with the
+three changes that note asked for:
 
-- **A transport.** `ports/email.ts` posts to Resend when `PAYLEZ_EMAIL=live`
-  (`RESEND_API_KEY`, `PAYLEZ_EMAIL_FROM`); the boot refuses `live` without a
-  key and warns when it is not live, because the local adapter only logs.
-- **Earning is never gated.** Only spending — `POST /v1/vouchers` and
-  `POST /v1/gift-cards` — and only while `PAYLEZ_VERIFY_GATE=on`. It is off by
-  default because the Flutter app has no code screen yet; `GET /v1/me` reports
-  it as `spendNeedsVerifiedEmail`.
-- **A backfill.** Schema version 8 stamps every account that already had an
-  address, once, with the moment the migration ran.
+1. **A transport first.** `PAYLEZ_RESEND_KEY` sends through Resend's REST API
+   (one `fetch`, no dependency) from `PAYLEZ_MAIL_FROM`. With no key the local
+   adapter logs the message and keeps it in `email.outbox` for `verify.ts`. **The
+   code is never in an API response**, in either mode.
+2. **A banner, not a gate — and the gate only on spending.** Buying a voucher
+   (`POST /v1/vouchers`) and redeeming a gift card (`POST /v1/gift-cards`) answer
+   `403 not_verified` for an unconfirmed address. Earning, check-in, games,
+   onboarding, the board and the till are untouched. The gate is **off while
+   there is no key** (`PAYLEZ_VERIFY_TO_SPEND=on|off` overrides), so it can never
+   depend on a code that goes nowhere.
+3. **Existing accounts are not asked.** An account created before
+   `PAYLEZ_VERIFY_SINCE` (default `2026-10-03T00:00:00Z`; set it to the deploy
+   time) is never gated. Guests (no address) and Google accounts (stamped at
+   sign-in) are never gated either.
+
+Codes are six digits, HMAC-hashed at rest, valid 10 minutes, five attempts each, a
+60-second resend cooldown and five sends per hour per account. One live code per
+account in `email_verifications` serves both uses, because the code proves one
+thing — whoever holds it reads that inbox — so a password reset also stamps the
+address as proved. The reset routes say nothing about which addresses have
+accounts: `reset-code` always answers `{ ok: true }` and sends in the background,
+and every code failure on `reset` reads the same. Expired codes are pruned by the
+daily job after a day's grace.
 
 ## The two controls that are about the database rather than the rules
 
@@ -508,14 +521,15 @@ two, not the rest of the day.
 **The charge is taken at the start** (rulebook §3), so an abandoned round costs
 one too — charging at `finish` let a player walk out of every round going badly
 for free. `startSession` writes `life_spent = 1` on the new row and stamps
-`charged: 'start'` into its secret, and `energyAt` reads a spend at
-`started_at` for those rows and at `finished_at` for the ones opened before the
-change, so a round in flight across the deploy is charged once. The one way back
-is `POST /v1/games/sessions/:id/abandon` within `energyRefundSeconds` (5) of
-the start, at most `energyRefundsPerDay` (1) a day — the accidental tap — and
-`energy_refunded_at` is what counts it. A new start first abandons any round the
-player left open, through the same function, so the refund rule cannot be
-dodged by not pressing Quit.
+`charged: true` into its secret; a round opened before the change has no stamp
+and is still charged at `finish`, so a round in flight across the deploy is
+charged once. The one way back is `POST /v1/games/sessions/:id/abandon` within
+`CONFIG.games.energyRefundWithinSeconds` (5) of the start, at most
+`energyRefundsPerDay` (1) a day — the accidental tap. A refund sets
+`life_spent` back to 0 and writes an `energy_refund` game event, which is what
+the daily count reads. A new start first closes any round the player left open
+(`closeRound`), under the same rule, so the refund cannot be dodged by not
+pressing Quit.
 
 **The clocks have just been cut hard and the ceilings have not moved**:
 `energy_regen_minutes` went 240/180/120 → **120/60/30** while `daily_energy`

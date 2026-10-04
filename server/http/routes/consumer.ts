@@ -22,6 +22,7 @@ import * as giftCards from '../../domain/giftCards.ts';
 import * as reminders from '../../domain/reminders.ts';
 import * as push from '../../ports/push.ts';
 import { parseSubscription } from '../../ports/webpush.ts';
+import * as occasions from '../../domain/occasions.ts';
 import * as social from '../../domain/social.ts';
 import * as tasks from '../../domain/tasks.ts';
 import * as verification from '../../domain/verification.ts';
@@ -119,8 +120,15 @@ export const consumerRoutes: Route[] = [
     auth: 'none',
     handler: async (ctx) =>
       await ctx.db.all(
+        /* `points_per_scan`, `currency` and `phone` travel with the listing too.
+           The app's home cards print "N points a visit" and its scan screens the
+           same figure straight off this row; with the column missing, its
+           tolerant reader turned the absence into 0 and every nearby venue said
+           "0 points a visit" against a real server. Additive, so the website
+           (which reads this row as well) is unaffected. */
         `SELECT id, name, category, subcategory, city, address, lat, lng, price_range,
-                image_url, rating, review_count, accepts_vouchers
+                image_url, rating, review_count, accepts_vouchers, points_per_scan,
+                currency, phone
            FROM venues
           WHERE status = 'live' AND deleted_at IS NULL
             AND ($city IS NULL OR city = $city)
@@ -239,6 +247,43 @@ export const consumerRoutes: Route[] = [
   },
   {
     /*
+     * Rulebook §7.3 "Deal shared": 25 points, at most three a day and once per
+     * deal. The client calls this when its share sheet completes; the server
+     * cannot see a share land, which is why the two caps exist. A share that
+     * pays nothing answers 200 with `granted: false` and the reason — sharing
+     * twice is not an error. See `occasions.shareDeal`.
+     */
+    method: 'POST',
+    pattern: '/v1/deals/:id/share',
+    auth: 'user',
+    idempotent: true,
+    handler: async (ctx) =>
+      await occasions.shareDeal(ctx.db, { userId: actor(ctx).user.id, dealId: ctx.params.id, at: ctx.at }),
+  },
+  {
+    /*
+     * Rulebook §7.3 / §9.2 "Review after a visit": 25 points, one review per
+     * venue per 30 days, and only after a confirmed visit (403 `forbidden`,
+     * `reason: 'no_visit'`, otherwise). A second review inside the window is a
+     * 409 naming `nextAt`. Body `{ rating: 1..5, body?: string }`.
+     */
+    method: 'POST',
+    pattern: '/v1/venues/:id/reviews',
+    auth: 'user',
+    idempotent: true,
+    handler: async (ctx) => {
+      const body = (ctx.body ?? {}) as Record<string, unknown>;
+      return await occasions.review(ctx.db, {
+        userId: actor(ctx).user.id,
+        venueId: ctx.params.id,
+        rating: body.rating,
+        body: body.body,
+        at: ctx.at,
+      });
+    },
+  },
+  {
+    /*
      * The same two steps, one level up: the *venue* being seen and opened,
      * rather than one of its offers. `auth: 'none'` for the reason the deal
      * events above are: most impressions happen to somebody who is not signed
@@ -315,11 +360,10 @@ export const consumerRoutes: Route[] = [
     auth: 'user',
     idempotent: true,
     handler: async (ctx) => {
-      /* Points leaving the platform, so it is behind a proved address when
-         `PAYLEZ_VERIFY_GATE` is on. At the route rather than in
-         `vouchers.issue`, because that function is also how the till, the
-         demo seed and the fixtures issue one. See `domain/verification.ts`. */
-      await verification.assertVerifiedToSpend(ctx.db, actor(ctx).user.id);
+      /* Value leaving the platform, so behind a proved address — when mail is
+         live and the account is new enough to have been asked. At the route,
+         not in `vouchers.issue`, which the till and fixtures also call. */
+      await verification.assertVerified(ctx.db, actor(ctx).user.id);
       return await vouchers.issue(ctx.db, {
         userId: actor(ctx).user.id,
         venueId: str(ctx.body, 'venueId'),
@@ -332,16 +376,16 @@ export const consumerRoutes: Route[] = [
     method: 'GET',
     pattern: '/v1/gift-cards',
     auth: 'none',
-    /* The shelf for one country: Polish brand cards in Poland, Uzbek venue
-       cards in Uzbekistan. `?country=` wins; otherwise a signed-in player's
-       profile decides, and a profile with no country is Poland — the market this
-       product is in. A visitor with no account and no parameter sees every
-       country, which is what a page describing the shelf wants. */
-    handler: async (ctx) => {
-      const asked = qStr(ctx, 'country')?.toUpperCase() ?? null;
-      const country = asked ?? (ctx.actor ? (ctx.actor.user.country_code ?? 'PL') : null);
-      return await giftCards.shelf(ctx.db, country);
-    },
+    /* The shelf, priced by rulebook §2.1 (100 pts = 1 zł, derived from the
+       face value — the stored `points_cost` is ignored) and with
+       `left_this_month` from the §9.4 pool. Same row shape as before plus that
+       one field, so a reader of the old array keeps working.
+
+       `?country=` narrows it to one market's cards — Polish brand codes or
+       Uzbek venue cards — which is how the website asks. Without it the shelf
+       is every country's, exactly what the phone app has always been sent. */
+    handler: async (ctx) =>
+      await vouchers.giftCardShelf(ctx.db, ctx.at, { country: qStr(ctx, 'country')?.toUpperCase() ?? null }),
   },
   {
     method: 'POST',
@@ -371,8 +415,12 @@ export const consumerRoutes: Route[] = [
       const { user } = actor(ctx);
       /* Same rule as the voucher ladder above: points leaving as a card with a
          face value on it. */
-      await verification.assertVerifiedToSpend(ctx.db, user.id);
-      const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id });
+      await verification.assertVerified(ctx.db, user.id);
+      /* Rulebook §2.1 and §9.4: gift cards are Paylez-funded and **Pro and
+         Premium only**. Read off the plan's own `gift_card_priority`
+         entitlement, so an operator can widen it from the console's plan
+         editor without a deploy. */
+      const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id }, ctx.at);
       return await vouchers.redeemGiftCard(ctx.db, {
         userId: user.id,
         stockId: str(ctx.body, 'stockId'),
@@ -537,16 +585,6 @@ export const consumerRoutes: Route[] = [
   },
   {
     method: 'POST',
-    pattern: '/v1/games/sessions/:id/abandon',
-    auth: 'user',
-    /* The Quit button. The round's energy was spent when it started (rulebook
-       §3) and stays spent — unless this lands within five seconds of the start,
-       once a day. Idempotent: a round already closed answers `abandoned: false`. */
-    handler: async (ctx) =>
-      await games.abandonSession(ctx.db, { sessionId: ctx.params.id, userId: actor(ctx).user.id, at: ctx.at }),
-  },
-  {
-    method: 'POST',
     pattern: '/v1/games/sessions/:id/finish',
     auth: 'user',
     idempotent: true,
@@ -573,18 +611,31 @@ export const consumerRoutes: Route[] = [
   },
   {
     /**
-     * Whether an invite code would bind — the sign-up form's check.
+     * Attach an invite code after sign-up — once, before the first confirmed
+     * visit, never your own, never in a circle. See `social.redeem`.
      *
-     * `auth: 'none'` because it is asked before there is an account. It answers
-     * a boolean and nothing about whose code it is, and it is rate-limited per
-     * connection; with codes of six characters from a 32-letter alphabet, an
-     * hourly allowance of guesses finds nothing.
+     * Bounded per account because the code space is small enough to walk: a
+     * loop of guesses here would be a loop of strangers' first names.
+     */
+    method: 'POST',
+    pattern: '/v1/referrals/redeem',
+    auth: 'user',
+    limit: { perHour: CONFIG.limits.referralRedeemPerHour, by: 'account' },
+    handler: async (ctx) =>
+      await social.redeem(ctx.db, { userId: actor(ctx).user.id, code: str(ctx.body, 'code'), at: ctx.at }),
+  },
+  {
+    /**
+     * Who a code belongs to — "Marta K. invited you" — for the website's
+     * `/i/:code` page and the app's confirm screen, both of which are shown
+     * before anybody has an account. A short name and the offer; bounded per
+     * connection for the reason `redeem` is bounded at all.
      */
     method: 'GET',
     pattern: '/v1/referrals/codes/:code',
     auth: 'none',
-    limit: { perHour: CONFIG.limits.referralCheckPerHour, by: 'connection' },
-    handler: async (ctx) => ({ valid: await social.codeExists(ctx.db, ctx.params.code ?? '') }),
+    limit: { perHour: CONFIG.limits.referralLookupPerHour, by: 'connection' },
+    handler: async (ctx) => await social.lookup(ctx.db, ctx.params.code),
   },
   {
     /**

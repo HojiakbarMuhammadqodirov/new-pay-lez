@@ -173,22 +173,6 @@ has proved itself.
 against it** — the Flutter app already on phones cannot be updated with the
 server, and `server/FLUTTER-BRIEF.md` is where a change it must know about goes.
 
-## Turning on email codes
-
-Sign-up confirmation codes are written to the server log until this is done.
-In `/etc/paylez/paylez.env`:
-
-```
-PAYLEZ_EMAIL=live
-RESEND_API_KEY=re_...
-```
-
-then `systemctl restart paylez`. The boot log says `email: live via Resend`, or
-refuses to start if the key is missing. The `pay-lez.com` domain has to be
-verified in Resend first, or Resend refuses every message (the server logs the
-refusal). `PAYLEZ_VERIFY_GATE=on` is a separate, later step — see
-`server/paylez.env.example`.
-
 ## Turning on the daily game reminder (browser push)
 
 Until this is done the profile's "Daily game reminder" says reminders are not
@@ -280,3 +264,24 @@ a decision, not an automatic step.
 - nginx config — `/etc/nginx/sites-enabled/paylez`; `nginx -t` before
   `systemctl reload nginx`, always.
 - Stripe products (`npm run stripe:setup`) and the Flutter app, which is its own repo.
+
+## Email codes (sign-up confirmation, password reset)
+
+Off until a key is set: without `PAYLEZ_RESEND_KEY` codes go to the server log,
+and nothing is gated on them. To switch it on, once:
+
+1. Create a Resend account and add the domain `pay-lez.com` (Domains → Add).
+   Put the DNS records it shows (an SPF `TXT`, the DKIM `TXT`/`CNAME`s and the
+   optional `MX` for bounces) at the DNS host, and wait until Resend says
+   *Verified*. Until it does, every send is refused with a 403 in the log.
+2. Create an API key with *Sending access* only.
+3. In `/etc/paylez/paylez.env` set `PAYLEZ_RESEND_KEY=re_…`,
+   `PAYLEZ_MAIL_FROM=Paylez <no-reply@pay-lez.com>` and
+   `PAYLEZ_VERIFY_SINCE=` the current UTC time (accounts older than that are
+   never asked to confirm before spending). Then `systemctl restart paylez`.
+4. Check: sign up with a real address and the code arrives; `journalctl -u
+   paylez | grep email:` shows any provider refusal.
+
+With the key set, buying a voucher and redeeming a gift card need a confirmed
+address for accounts newer than `PAYLEZ_VERIFY_SINCE`. `PAYLEZ_VERIFY_TO_SPEND=off`
+keeps the mail and drops that gate.

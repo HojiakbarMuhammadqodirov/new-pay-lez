@@ -12,16 +12,22 @@ import { adminRoutes } from './admin.ts';
 import { authRoutes } from './auth.ts';
 import { billingRoutes } from './billing.ts';
 import { consumerRoutes } from './consumer.ts';
+import { gameRoutes } from './games.ts';
 import { gateRoutes } from './gate.ts';
 import { guidanceRoutes } from './guidance.ts';
+import { missionRoutes } from './missions.ts';
 import { partnerRoutes } from './partner.ts';
+import { teamRoutes } from './team.ts';
 
 export const allRoutes: Route[] = [
   ...authRoutes,
   ...consumerRoutes,
+  ...gameRoutes,
   ...gateRoutes,
   ...partnerRoutes,
   ...adminRoutes,
   ...billingRoutes,
   ...guidanceRoutes,
+  ...missionRoutes,
+  ...teamRoutes,
 ];
