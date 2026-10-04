@@ -31,6 +31,7 @@
  */
 import type { Db } from '../db/db.ts';
 import * as audit from './audit.ts';
+import * as giftPolicy from './giftPolicy.ts';
 import { DomainError } from './errors.ts';
 import { newId } from './ids.ts';
 import { now, plusDays, plusMonths, type Iso } from './time.ts';
@@ -276,6 +277,12 @@ export async function entitlementsFor(
   );
   const out: Entitlements = {};
   for (const row of rows) out[row.key] = row.value;
+  /* Who may buy a gift card is the operator's policy, not the plan row the
+     boot re-seeds — so the key a client gates its shop on says what
+     `vouchers.redeemGiftCard` will actually do. */
+  if (plan.audience === 'consumer') {
+    out.gift_card_priority = String(giftPolicy.eligible(await giftPolicy.policy(db), plan.code));
+  }
   return out;
 }
 

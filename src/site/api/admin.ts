@@ -144,6 +144,42 @@ export interface AdminGiftCard {
 
 export const ADMIN_GIFT_CARDS_PATH = '/v1/admin/gift-cards';
 
+/**
+ * Who may buy a gift card and how much the platform spends — `giftPolicy.ts`
+ * on the server. Answered with the pool it produces right now.
+ */
+export interface GiftPolicy {
+  mode: 'auto' | 'manual';
+  autoPercent: number;
+  manual: {
+    audience: 'all' | 'paid' | 'premium';
+    budgetKind: 'amount' | 'percent';
+    amountMajor: number;
+    percent: number;
+    from: string | null;
+    until: string | null;
+    repeat: 'monthly' | 'once';
+    perUserEveryDays: number;
+  };
+  updatedAt: string | null;
+}
+
+export interface GiftPool {
+  month: string;
+  currency: string;
+  revenueMinor: number;
+  budgetMinor: number;
+  spentMinor: number;
+  remainingMinor: number;
+  mode: 'auto' | 'manual';
+  open: boolean;
+}
+
+export const GIFT_POLICY_PATH = `${ADMIN_GIFT_CARDS_PATH}/policy`;
+
+export const saveGiftPolicy = (policy: Omit<GiftPolicy, 'updatedAt'>) =>
+  call<{ policy: GiftPolicy; pool: GiftPool }>(GIFT_POLICY_PATH, { method: 'PATCH', body: policy });
+
 export interface GiftCardInput {
   brand: string;
   logo: string;

@@ -69,6 +69,7 @@ import * as push from './ports/push.ts';
 import * as webpush from './ports/webpush.ts';
 import * as reminders from './domain/reminders.ts';
 import * as giftCards from './domain/giftCards.ts';
+import * as giftPolicy from './domain/giftPolicy.ts';
 import * as arcade from './domain/arcade.ts';
 import * as notifications from './domain/notifications.ts';
 import { createDecipheriv, createECDH, createHmac, createPublicKey, generateKeyPairSync, randomBytes, verify as verifySignature } from 'node:crypto';
@@ -908,6 +909,85 @@ async function stockCodes(db: Db, stockId: string, n: number, tag = stockId): Pr
   }
 }
 
+/**
+ * The operator's gift-card policy: automatic (a percentage, Pro and Premium)
+ * and manual (who, how much, when, how often) — each field read by the
+ * purchase, the pool and the entitlement a client gates its shop on.
+ */
+async function giftPolicyRules(): Promise<void> {
+  describe('gift cards -- the operator’s policy, automatic and manual');
+  const w = await world();
+  const at = '2026-06-15T10:00:00.000Z' as Iso;
+  const admin = w.ownerId;
+
+  eq('with nothing stored the policy is the rulebook', (await giftPolicy.policy(w.db)).mode, 'auto');
+  eq('…20 percent', (await giftPolicy.policy(w.db)).autoPercent, 20);
+  await throws('a percentage over 100 is refused', 'validation_failed', async () =>
+    await giftPolicy.setPolicy(w.db, { mode: 'auto', autoPercent: 140 }, admin, at));
+  await throws('a window that ends before it starts is refused', 'validation_failed', async () =>
+    await giftPolicy.setPolicy(w.db, { mode: 'manual', manual: { from: '2026-07-01', until: '2026-06-01' } }, admin, at));
+
+  await w.db.run(
+    `INSERT INTO gift_card_stock (id, brand, logo, face_minor, currency, points_cost, stock, priority_only, active)
+     VALUES ('gcs_pol', 'Policy Brand', 'P', 1000, 'PLN', 1, 50, 0, 1)`,
+  );
+  await stockCodes(w.db, 'gcs_pol', 50);
+  const member = async (label: string, plan: 'free' | 'pro' | 'premium') => {
+    const id = await person(w, label, plusDays(at, -90));
+    if (plan !== 'free') {
+      await entitlements.startSubscription(w.db, { subject: { userId: id }, planCode: plan, source: 'manual', at: plusDays(at, -1) });
+    }
+    await ledger.earn(w.db, { userId: id, points: 50_000, reason: 'adjustment', at: plusDays(at, -1) });
+    return id;
+  };
+  const free = await member('pol-free', 'free');
+  const pro = await member('pol-pro', 'pro');
+  const premium = await member('pol-premium', 'premium');
+  const buy = async (userId: string, when: Iso = at) =>
+    await vouchers.redeemGiftCard(w.db, { userId, stockId: 'gcs_pol', at: when });
+  const shopFor = async (userId: string) =>
+    entitlements.entBool(await entitlements.entitlementsFor(w.db, { userId }, at), 'gift_card_priority');
+
+  /* ── automatic: a percentage of the plans, Pro and Premium only ── */
+  await giftPolicy.setPolicy(w.db, { mode: 'auto', autoPercent: 50 }, admin, at);
+  const auto = await vouchers.giftCardPool(w.db, at);
+  eq('automatic: the budget is the percentage of the granted plans', auto.budgetMinor, Math.floor(auto.revenueMinor / 2));
+  eq('…free cannot buy, Pro and Premium can', [await shopFor(free), await shopFor(pro), await shopFor(premium)], [false, true, true]);
+  await throws('…and the purchase agrees', 'entitlement_required', async () => await buy(free));
+  eq('a Pro member buys', (await buy(pro)).points, 1000);
+  eq('every change is audited', Number((await w.db.get<{ n: number }>(
+    `SELECT COUNT(*) AS n FROM audit_log WHERE action = 'gift_card.policy'`))?.n), 1);
+
+  /* ── manual: everybody, a fixed 30 zł, one week, no per-person limit ── */
+  await giftPolicy.setPolicy(w.db, {
+    mode: 'manual',
+    manual: { audience: 'all', budgetKind: 'amount', amountMajor: 30, from: '2026-06-10', until: '2026-06-16', repeat: 'once', perUserEveryDays: 0 },
+  }, admin, at);
+  eq('manual "everybody" opens the shop to free', await shopFor(free), true);
+  const manual = await vouchers.giftCardPool(w.db, at);
+  eq('…the budget is the amount', manual.budgetMinor, 3000);
+  eq('…counting the card bought earlier in the window', manual.spentMinor, 1000);
+  eq('free buys', (await buy(free)).points, 1000);
+  eq('no per-person limit: the same person buys again', (await buy(free, plusMinutes(at, 1))).points, 1000);
+  await throws('the 30 zł are spent', 'conflict', async () => await buy(premium, plusMinutes(at, 2)));
+  eq('after the window there is no budget at all', (await vouchers.giftCardPool(w.db, '2026-06-17T10:00:00.000Z' as Iso)).budgetMinor, 0);
+
+  /* ── manual: Premium only, a percentage, renewing monthly, 30 days apart ── */
+  await giftPolicy.setPolicy(w.db, {
+    mode: 'manual',
+    manual: { audience: 'premium', budgetKind: 'percent', percent: 100, from: null, until: null, repeat: 'monthly', perUserEveryDays: 30 },
+  }, admin, at);
+  eq('Premium only: Pro is shut out', [await shopFor(pro), await shopFor(premium)], [false, true]);
+  const july = '2026-07-02T10:00:00.000Z' as Iso;
+  const monthly = await vouchers.giftCardPool(w.db, july);
+  eq('…a new month starts with nothing spent', monthly.spentMinor, 0);
+  eq('…and the percentage of the plans as its budget', monthly.budgetMinor, monthly.revenueMinor);
+  eq('Premium buys', (await buy(premium, july)).points, 1000);
+  await throws('…and waits 30 days for the next', 'conflict', async () => await buy(premium, plusDays(july, 29)));
+
+  await w.db.close();
+}
+
 async function giftCardStock(): Promise<void> {
   describe('§2.1 / §9.4 gift cards -- Pro and Premium only, priced by rule, pooled, and never oversold');
   const w = await world();
@@ -925,15 +1005,9 @@ async function giftCardStock(): Promise<void> {
     await ledger.earn(w.db, { userId: id, points: 5000, reason: 'adjustment', at });
     return id;
   };
-  /* What the route calls: the plan's `gift_card_priority`, read at the
-     instant of the purchase. */
+  /* What the route calls; the policy decides who may buy. */
   const buy = async (userId: string, when: Iso = at) =>
-    await vouchers.redeemGiftCard(w.db, {
-      userId,
-      stockId: 'gcs_race',
-      at: when,
-      entitled: entitlements.entBool(await entitlements.entitlementsFor(w.db, { userId }, when), 'gift_card_priority'),
-    });
+    await vouchers.redeemGiftCard(w.db, { userId, stockId: 'gcs_race', at: when });
 
   /* A 10 zł card with one unit, and a stored `points_cost` of 10 that is a lie
      the server must not believe (the audited build priced cards from this
@@ -988,8 +1062,15 @@ async function giftCardStock(): Promise<void> {
   const courtesy = await person(w, 'courtesy', plusDays(at, -90));
   await entitlements.startSubscription(w.db, { subject: { userId: courtesy }, planCode: 'premium', source: 'manual', at });
   const pool = await vouchers.giftCardPool(w.db, at);
-  eq('revenue is the paid subscriptions only', pool.revenueMinor, 5 * 1999);
-  eq('the pool is a fifth of it', pool.budgetMinor, 1999);
+  /* Plans are granted, not sold, so a granted Premium counts at its list price
+     beside the five Pro — the figure the pool is a share of. */
+  const premiumPrice = Number((await w.db.get<{ p: number }>(
+    `SELECT price_minor AS p FROM plans WHERE audience = 'consumer' AND code = 'premium'`))?.p);
+  eq('revenue is every live Pro and Premium at list price, granted ones included', pool.revenueMinor, 5 * 1999 + premiumPrice);
+  eq('the pool is a fifth of it', pool.budgetMinor, Math.floor((5 * 1999 + premiumPrice) / 5));
+  /* The rest of this section was written against a 19.99 zł pool; the
+     courtesy plan goes back to free so the arithmetic below holds. */
+  await w.db.run(`DELETE FROM subscriptions WHERE user_id = $u`, { u: courtesy });
   shelf = await vouchers.giftCardShelf(w.db, at);
   eq('…which buys one of this card', shelf.find((c) => c.id === 'gcs_race')?.left_this_month, 1);
 
@@ -9922,6 +10003,7 @@ async function run(): Promise<void> {
   await voucherRules();
   await voucherCaps();
   await giftCardStock();
+  await giftPolicyRules();
   await rulebookEconomy();
   await tierAssignment();
   await campaignRules();
@@ -10478,10 +10560,13 @@ async function webPushRules(): Promise<void> {
 async function giftCardEngine(): Promise<void> {
   describe('gift cards -- codes, the shelf per country, used, cancelled, expired');
   const w = await world();
-  /* This section is about codes, not the pool (`giftCardStock` above), so it
-     funds the month directly. CONFIG is `as const` at the type level only. */
-  const pool = CONFIG.giftCards as { fixedMonthlyMajor: number };
-  pool.fixedMonthlyMajor = 1000;
+  /* This section is about codes, not who may buy or the pool (`giftCardStock`
+     and `giftPolicyRules` above), so it opens the shelf to everybody with
+     money to spare and no per-person limit. */
+  await giftPolicy.setPolicy(w.db, {
+    mode: 'manual',
+    manual: { audience: 'all', budgetKind: 'amount', amountMajor: 100_000, repeat: 'monthly', perUserEveryDays: 0 },
+  }, w.ownerId);
   const admin = w.ownerId;
   const t0 = '2026-06-01T10:00:00.000Z';
 
@@ -10601,7 +10686,6 @@ async function giftCardEngine(): Promise<void> {
   eq('every operator write is on the audit log',
     Number((await w.db.get<{ n: number }>(`SELECT COUNT(*) AS n FROM audit_log WHERE action LIKE 'gift_card.%'`))?.n) >= 8, true);
 
-  pool.fixedMonthlyMajor = 0;
   await w.db.close();
 }
 

@@ -352,6 +352,21 @@ account and no consent row, `GET /v1/me/consents` reports it ungranted, and
 `POST /v1/me/consents` is how it arrives later. Google records only on the press
 that *creates* the account: a row per sign-in would turn evidence into a log.
 
+**Pro and Premium are granted, never sold, and who may buy a gift card is an
+operator's setting.** Plans are given from the console's Tiers tab — the owner's
+decision, so neither client sells one under Google Play's billing rules — and
+the site draws no price list, no "Get Pro" and no upgrade button; the
+`Subscription` section is kept unrendered in `sections.tsx`. The gift-card
+rules live in `domain/giftPolicy.ts` (one JSON row in `platform_config`, set
+from the Gift cards tab's "Budget and rules"): **automatic** is the rulebook —
+Pro and Premium, 60 days, a monthly budget that is a percentage of the live Pro
+and Premium plans *at list price, granted ones included*, because counting only
+paid plans would make it zero for ever — and **manual** is every criterion by
+hand: who, a fixed amount or a percentage, a date window, monthly or once, days
+between one person's cards. `redeemGiftCard` reads it and `entitlementsFor`
+answers `gift_card_priority` from it, so a client's shop and the purchase
+cannot disagree; the boot's re-seeded plan value for that key is overridden.
+
 **A gift card is a real code, and the shelf is per country.**
 `domain/giftCards.ts` and the console's seventh tab (`adminGiftCards.tsx`).
 Poland sells real **brand** codes the operator loads (paste or CSV); Uzbekistan

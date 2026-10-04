@@ -26,10 +26,11 @@
  * table cell and the code paste box.
  */
 
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 
 import {
   ADMIN_GIFT_CARDS_PATH,
+  GIFT_POLICY_PATH,
   cancelIssued,
   createGiftCard,
   generateGiftCodes,
@@ -37,10 +38,13 @@ import {
   loadGiftCodes,
   markIssuedUsed,
   removeGiftCard,
+  saveGiftPolicy,
   setGiftCardActive,
   updateGiftCard,
   type AdminGiftCard,
   type GiftCardInput,
+  type GiftPolicy,
+  type GiftPool,
   type IssuedGiftCard,
 } from './api/admin';
 import { faceValue } from './api/wallet';
@@ -324,6 +328,206 @@ function CardForm({
   );
 }
 
+/* ───────────────────────────────────────────────── budget and rules ── */
+
+/**
+ * Who may buy a card and how much the platform spends on them — two modes,
+ * the owner's request: **automatic**, where the operator types a percentage
+ * and the server does the arithmetic (the rulebook's Pro and Premium, 60 days,
+ * monthly), and **manual**, where every criterion is the operator's.
+ *
+ * The panel draws the pool the saved policy produces *right now* beside the
+ * form, read back from the server rather than worked out here, so the effect
+ * of a setting is something the operator sees and not something they trust.
+ */
+function PolicyPanel({ write, down }: { write: Write; down: (result: { reload: () => void }) => ReactNode }) {
+  const gifts = useCopy().admin.gifts;
+  const copy = gifts.policy;
+  const separator = useGroupSeparator();
+  const answer = useApi<{ policy: GiftPolicy; pool: GiftPool }>(GIFT_POLICY_PATH);
+  const [draft, setDraft] = useState<GiftPolicy | null>(null);
+
+  /* The form starts from what is saved, once; a re-read after a save resets it. */
+  const saved = answer.state.status === 'ready' ? answer.state.data.policy : null;
+  useEffect(() => {
+    if (saved) setDraft(saved);
+  }, [saved]);
+
+  if (answer.state.status === 'error') return <>{down(answer)}</>;
+  if (answer.state.status === 'loading' || !draft) return <p className="adm-empty">{gifts.loading}</p>;
+  const pool = answer.state.data.pool;
+  const money = (minor: number) => faceValue({ face_minor: minor, currency: pool.currency }, separator);
+
+  const manual = draft.manual;
+  const setManual = <K extends keyof GiftPolicy['manual']>(key: K, value: GiftPolicy['manual'][K]) =>
+    setDraft({ ...draft, manual: { ...manual, [key]: value } });
+  const numberOf = (raw: string) => (raw.trim() === '' ? 0 : Number(raw.replace(',', '.')));
+  const percentOk = (n: number) => Number.isFinite(n) && n >= 0 && n <= 100;
+  const ready =
+    percentOk(draft.autoPercent) &&
+    (draft.mode === 'auto' ||
+      (percentOk(manual.percent) &&
+        Number.isFinite(manual.amountMajor) && manual.amountMajor >= 0 &&
+        Number.isInteger(manual.perUserEveryDays) && manual.perUserEveryDays >= 0 &&
+        !(manual.from && manual.until && manual.until < manual.from)));
+
+  const save = () => {
+    if (!ready) return;
+    const { updatedAt: _updatedAt, ...body } = draft;
+    void _updatedAt;
+    write.run(
+      'gift:policy',
+      async () => {
+        await saveGiftPolicy(body);
+        return copy.saved;
+      },
+      answer.reload,
+    );
+  };
+
+  return (
+    <section className="adm-block" data-reveal>
+      <div className="adm-block-head">
+        <h2>{copy.title}</h2>
+        <p>{copy.lede}</p>
+      </div>
+
+      <form
+        className="adm-edit-form adm-gift-form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          save();
+        }}
+      >
+        <div className="adm-gift-modes" role="radiogroup" aria-label={copy.title}>
+          {(['auto', 'manual'] as const).map((mode) => (
+            <label key={mode} className="adm-gift-mode" data-on={draft.mode === mode ? 'true' : undefined}>
+              <input
+                type="radio"
+                name="gift-policy-mode"
+                checked={draft.mode === mode}
+                onChange={() => setDraft({ ...draft, mode })}
+              />
+              <b>{mode === 'auto' ? copy.autoTitle : copy.manualTitle}</b>
+              <span className="field-help">{mode === 'auto' ? copy.autoHelp : copy.manualHelp}</span>
+            </label>
+          ))}
+        </div>
+
+        {draft.mode === 'auto' ? (
+          <div className="adm-edit-grid">
+            <label className="field">
+              <span className="field-label">{copy.percent}</span>
+              <input
+                inputMode="decimal"
+                value={String(draft.autoPercent)}
+                onChange={(event) => setDraft({ ...draft, autoPercent: numberOf(event.target.value) })}
+              />
+              <span className="field-help">{copy.percentHelp}</span>
+            </label>
+          </div>
+        ) : (
+          <div className="adm-edit-grid">
+            <label className="field">
+              <span className="field-label">{copy.audience}</span>
+              <select value={manual.audience} onChange={(event) => setManual('audience', event.target.value as GiftPolicy['manual']['audience'])}>
+                <option value="all">{copy.all}</option>
+                <option value="paid">{copy.paid}</option>
+                <option value="premium">{copy.premium}</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="field-label">{copy.budget}</span>
+              <select value={manual.budgetKind} onChange={(event) => setManual('budgetKind', event.target.value === 'percent' ? 'percent' : 'amount')}>
+                <option value="amount">{copy.amountKind}</option>
+                <option value="percent">{copy.percentKind}</option>
+              </select>
+            </label>
+
+            {manual.budgetKind === 'amount' ? (
+              <label className="field">
+                <span className="field-label">{copy.amount}</span>
+                <input inputMode="decimal" value={String(manual.amountMajor)} onChange={(event) => setManual('amountMajor', numberOf(event.target.value))} />
+              </label>
+            ) : (
+              <label className="field">
+                <span className="field-label">{copy.percent}</span>
+                <input inputMode="decimal" value={String(manual.percent)} onChange={(event) => setManual('percent', numberOf(event.target.value))} />
+                <span className="field-help">{copy.percentHelp}</span>
+              </label>
+            )}
+
+            <label className="field">
+              <span className="field-label">{copy.repeat}</span>
+              <select value={manual.repeat} onChange={(event) => setManual('repeat', event.target.value === 'once' ? 'once' : 'monthly')}>
+                <option value="monthly">{copy.monthly}</option>
+                <option value="once">{copy.once}</option>
+              </select>
+            </label>
+
+            <label className="field">
+              <span className="field-label">{copy.from}</span>
+              <input type="date" value={manual.from ?? ''} onChange={(event) => setManual('from', event.target.value || null)} />
+              <span className="field-help">{copy.dateHelp}</span>
+            </label>
+
+            <label className="field">
+              <span className="field-label">{copy.until}</span>
+              <input type="date" value={manual.until ?? ''} onChange={(event) => setManual('until', event.target.value || null)} />
+              <span className="field-help">{copy.dateHelp}</span>
+            </label>
+
+            <label className="field">
+              <span className="field-label">{copy.perUser}</span>
+              <input inputMode="numeric" value={String(manual.perUserEveryDays)} onChange={(event) => setManual('perUserEveryDays', Math.floor(numberOf(event.target.value)))} />
+              <span className="field-help">{copy.perUserHelp}</span>
+            </label>
+          </div>
+        )}
+
+        <div className="adm-edit-acts">
+          <button type="submit" className="btn btn-solid" disabled={!ready || write.busy === 'gift:policy'}>
+            <Icon name="check" size={15} strokeWidth={2} />
+            {write.busy === 'gift:policy' ? copy.saving : copy.save}
+          </button>
+        </div>
+      </form>
+
+      {/* What the saved policy produces right now — the server's own figures. */}
+      <div className="adm-gift-now">
+        <h3 className="adm-gift-form-title">{copy.nowTitle}</h3>
+        {!pool.open ? (
+          <p className="adm-empty">{copy.closed}</p>
+        ) : (
+          <dl className="adm-gift-figures">
+            <div>
+              <dt>{copy.period}</dt>
+              <dd>{pool.month}</dd>
+            </div>
+            <div>
+              <dt>{copy.plans}</dt>
+              <dd>{money(pool.revenueMinor)}</dd>
+            </div>
+            <div>
+              <dt>{copy.pool}</dt>
+              <dd>{money(pool.budgetMinor)}</dd>
+            </div>
+            <div>
+              <dt>{copy.spent}</dt>
+              <dd>{money(pool.spentMinor)}</dd>
+            </div>
+            <div>
+              <dt>{copy.left}</dt>
+              <dd>{money(pool.remainingMinor)}</dd>
+            </div>
+          </dl>
+        )}
+      </div>
+    </section>
+  );
+}
+
 /* ────────────────────────────────────────────────────────── the codes ── */
 
 /**
@@ -492,6 +696,8 @@ export function AdminGiftCards({
 
   return (
     <>
+      <PolicyPanel write={write} down={down} />
+
       <section className="adm-block" data-reveal>
         <div className="adm-block-head">
           <h2>{copy.title}</h2>

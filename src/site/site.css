@@ -22791,6 +22791,60 @@ button {
   font-size: 1rem;
 }
 
+/* The gift-card policy: two modes as two pressable cards, then the figures the
+   saved policy produces right now. Tokens only, the console's own kit. */
+.adm-gift-modes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.adm-gift-mode {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 0.55rem;
+  row-gap: 0.25rem;
+  align-items: start;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  cursor: pointer;
+}
+
+.adm-gift-mode[data-on='true'] {
+  border-color: var(--accent-lit);
+  background: rgba(var(--accent-rgb), 0.06);
+}
+
+.adm-gift-mode .field-help {
+  grid-column: 2;
+}
+
+.adm-gift-now {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.adm-gift-figures {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.adm-gift-figures dt {
+  font-size: 0.75rem;
+  color: var(--text-fnt);
+}
+
+.adm-gift-figures dd {
+  margin: 0.2rem 0 0;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .adm-gift-check > span:first-child {
   display: inline-flex;
   align-items: center;

@@ -416,15 +416,11 @@ export const consumerRoutes: Route[] = [
       /* Same rule as the voucher ladder above: points leaving as a card with a
          face value on it. */
       await verification.assertVerified(ctx.db, user.id);
-      /* Rulebook §2.1 and §9.4: gift cards are Paylez-funded and **Pro and
-         Premium only**. Read off the plan's own `gift_card_priority`
-         entitlement, so an operator can widen it from the console's plan
-         editor without a deploy. */
-      const ent = await entitlements.entitlementsFor(ctx.db, { userId: user.id }, ctx.at);
+      /* Who may buy, and the pool, are the operator's gift-card policy
+         (`giftPolicy.ts`), which `redeemGiftCard` reads itself. */
       return await vouchers.redeemGiftCard(ctx.db, {
         userId: user.id,
         stockId: str(ctx.body, 'stockId'),
-        entitled: entitlements.entBool(ent, 'gift_card_priority'),
         at: ctx.at,
       });
     },

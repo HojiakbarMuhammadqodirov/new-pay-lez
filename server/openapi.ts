@@ -2040,6 +2040,27 @@ const DOCS: Record<string, Doc> = {
     ],
     response: { type: 'object' },
   },
+  'GET /v1/admin/gift-cards/policy': {
+    summary: 'The gift-card policy, and the pool it produces now',
+    description:
+      '`{ policy, pool }`. `policy.mode` is `auto` (Pro and Premium, one card per 60 days, a monthly ' +
+      'budget of `autoPercent` of the live Pro and Premium plans at list price) or `manual` ' +
+      '(`manual.audience` all | paid | premium, `budgetKind` amount | percent, `amountMajor` in złoty, ' +
+      '`percent`, `from`/`until` YYYY-MM-DD or null, `repeat` monthly | once, `perUserEveryDays`, 0 = no limit).',
+    tags: ['admin'],
+    response: { type: 'object' },
+  },
+  'PATCH /v1/admin/gift-cards/policy': {
+    summary: 'Set the gift-card policy',
+    description:
+      'The whole policy, in the shape `GET` answers (without `updatedAt`). Applies to the next purchase, ' +
+      'and to `gift_card_priority` in every consumer\'s entitlements. Audited.',
+    tags: ['admin'],
+    body: { mode: str('auto or manual'), autoPercent: int('0–100') },
+    required: ['mode'],
+    response: { type: 'object' },
+    errors: [[400, '`validation_failed` — `field` names the setting that was refused.']],
+  },
   'POST /v1/admin/referrals/{id}/reject': {
     summary: 'Void a referral',
     description:

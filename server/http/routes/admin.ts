@@ -80,6 +80,8 @@ import * as deals from '../../domain/deals.ts';
 import * as entitlements from '../../domain/entitlements.ts';
 import * as fraud from '../../domain/fraud.ts';
 import * as giftCards from '../../domain/giftCards.ts';
+import * as vouchers from '../../domain/vouchers.ts';
+import * as giftPolicy from '../../domain/giftPolicy.ts';
 import * as ledger from '../../domain/ledger.ts';
 import * as partners from '../../domain/partners.ts';
 import * as settings from '../../domain/settings.ts';
@@ -1116,6 +1118,28 @@ export const adminRoutes: Route[] = [
     pattern: '/v1/admin/gift-cards',
     auth: 'admin',
     handler: async (ctx) => await giftCards.adminList(ctx.db),
+  },
+  /* Who may buy a card and how much the platform spends — automatic (a
+     percentage, the rulebook) or manual (every criterion by hand). Answered
+     with the pool it produces right now, so the operator sees the effect of a
+     setting rather than taking it on trust. See `domain/giftPolicy.ts`. */
+  {
+    method: 'GET',
+    pattern: '/v1/admin/gift-cards/policy',
+    auth: 'admin',
+    handler: async (ctx) => ({
+      policy: await giftPolicy.policy(ctx.db),
+      pool: await vouchers.giftCardPool(ctx.db, ctx.at),
+    }),
+  },
+  {
+    method: 'PATCH',
+    pattern: '/v1/admin/gift-cards/policy',
+    auth: 'admin',
+    handler: async (ctx) => ({
+      policy: await giftPolicy.setPolicy(ctx.db, ctx.body, actor(ctx).user.id, ctx.at),
+      pool: await vouchers.giftCardPool(ctx.db, ctx.at),
+    }),
   },
   {
     method: 'POST',

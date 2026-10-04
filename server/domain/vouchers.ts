@@ -19,6 +19,7 @@ import * as entitlements from './entitlements.ts';
 import { DomainError } from './errors.ts';
 import { newId, voucherCode } from './ids.ts';
 import * as giftCards from './giftCards.ts';
+import * as giftPolicy from './giftPolicy.ts';
 import * as ledger from './ledger.ts';
 import { convertMinor } from './analytics.ts';
 import { decimalsFor, discountCost } from './money.ts';
@@ -714,18 +715,17 @@ export async function partnerVoucherTotals(
  * **Rulebook §2.1 / §9.4 fence it, and every fence is here.** A voucher costs
  * Paylez nothing; a gift card is face value the platform buys. So:
  *
- *   1. **Pro and Premium only** — the `gift_card_priority` entitlement, false
- *      on free (`settings.ts`). The route resolves it and passes `entitled`;
- *      a free account is refused with `entitlement_required`, which a client
- *      draws as an upgrade prompt rather than an error.
+ *   1. **Who may buy** is the operator's gift-card policy (`giftPolicy.ts`):
+ *      Pro and Premium in automatic mode (the rulebook), or whoever the manual
+ *      policy names. Anybody else is refused with `entitlement_required`.
  *   2. **100 points = 1 zł**, *derived* from the card's face value on every read
  *      and every sale (`giftCardPrice`). `gift_card_stock.points_cost` is no
  *      longer the price: the audited build had cards at 50 = 1 zł there, which
  *      made the Paylez-funded reward twice as generous as the partner-funded
  *      voucher. The column is left in place and ignored rather than dropped,
  *      because dropping it is a migration and nothing is gained by one.
- *   3. **A monthly pool** of `poolShareBp` of consumer subscription revenue
- *      (`giftCardPool`), and **one card per user per `perUserEveryDays`**.
+ *   3. **A pool** the policy sizes (`giftCardPool`), and **one card per user
+ *      per the policy's days**.
  */
 
 /** A card on the shelf, priced by the rule rather than by the row. */
@@ -781,18 +781,23 @@ export async function giftCardPrice(
 }
 
 export interface GiftCardPool {
-  /** `YYYY-MM`, the calendar month the pool belongs to (UTC). */
+  /** The window's label: `YYYY-MM`, or a manual policy's `from – until`. */
   month: string;
   currency: string;
-  /** Live paid consumer subscriptions, at their monthly list price. */
+  /** Live consumer Pro and Premium plans, at their monthly list price. */
   revenueMinor: number;
-  /** `CONFIG.giftCards.fixedMonthlyMajor`, in minor units. */
+  /** `CONFIG.giftCards.fixedMonthlyMajor`, in minor units (automatic mode only). */
   fixedMinor: number;
-  /** `fixedMinor + revenueMinor × poolShareBp`. */
+  /** What the policy allows for the window. 0 outside a manual window. */
   budgetMinor: number;
-  /** Face value of every card issued this month. */
+  /** Face value of every card issued in the window. */
   spentMinor: number;
   remainingMinor: number;
+  /** The policy that sized it, and whether its window is open now. */
+  mode: 'auto' | 'manual';
+  open: boolean;
+  windowFrom: string;
+  windowUntil: string;
 }
 
 /**
@@ -816,14 +821,15 @@ export interface GiftCardPool {
  * rows that say it are already written.
  */
 export async function giftCardPool(db: Db, at: Iso = now()): Promise<GiftCardPool> {
-  const month = at.slice(0, 7);
   const currency = CONFIG.giftCards.anchorCurrency;
+  const rules = await giftPolicy.policy(db);
+  const window = giftPolicy.windowAt(rules, at);
 
   const plans = await db.all<{ price: number; currency: string; n: number }>(
     `SELECT p.price_minor AS price, p.currency AS currency, COUNT(*) AS n
        FROM subscriptions s JOIN plans p ON p.id = s.plan_id
       WHERE s.user_id IS NOT NULL AND p.audience = 'consumer'
-        AND s.status IN ('active', 'grace') AND s.source <> 'manual'
+        AND s.status IN ('active', 'grace')
         AND p.price_minor > 0
       GROUP BY p.price_minor, p.currency`,
   );
@@ -842,8 +848,8 @@ export async function giftCardPool(db: Db, at: Iso = now()): Promise<GiftCardPoo
     `SELECT COALESCE(g.face_minor, k.face_minor) AS face,
             COALESCE(g.currency, k.currency) AS currency, g.points_spent AS points
        FROM gift_cards g JOIN gift_card_stock k ON k.id = g.stock_id
-      WHERE substr(g.issued_at, 1, 7) = $m AND g.status <> 'cancelled'`,
-    { m: month },
+      WHERE g.issued_at >= $from AND g.issued_at < $until AND g.status <> 'cancelled'`,
+    { from: window.from, until: window.until },
   );
   let spentMinor = 0;
   for (const card of issued) {
@@ -852,16 +858,22 @@ export async function giftCardPool(db: Db, at: Iso = now()): Promise<GiftCardPoo
       face ?? Math.ceil((card.points * 10 ** anchorDecimals()) / CONFIG.giftCards.pointsPerMajor);
   }
 
-  const fixedMinor = Math.max(0, Math.round(CONFIG.giftCards.fixedMonthlyMajor * 10 ** anchorDecimals()));
-  const budgetMinor = fixedMinor + Math.floor((revenueMinor * CONFIG.giftCards.poolShareBp) / 10_000);
+  const minorPerMajor = 10 ** anchorDecimals();
+  const fixedMinor =
+    rules.mode === 'auto' ? Math.max(0, Math.round(CONFIG.giftCards.fixedMonthlyMajor * minorPerMajor)) : 0;
+  const budgetMinor = giftPolicy.budgetMinor(rules, revenueMinor, window, minorPerMajor);
   return {
-    month,
+    month: window.label,
     currency,
     revenueMinor,
     fixedMinor,
     budgetMinor,
     spentMinor,
     remainingMinor: Math.max(0, budgetMinor - spentMinor),
+    mode: rules.mode,
+    open: window.open,
+    windowFrom: window.from,
+    windowUntil: window.until,
   };
 }
 
@@ -901,12 +913,12 @@ export async function giftCardShelf(
 }
 
 /**
- * Buy a card: on a plan that grants it (fence 1), at the derived price, one per
- * `perUserEveryDays`, out of the month's pool.
+ * Buy a card: if the operator's policy lets this plan (fence 1), at the derived
+ * price, one per the policy's days, out of the policy's pool.
  */
 export async function redeemGiftCard(
   db: Db,
-  input: { userId: string; stockId: string; at?: Iso; entitled?: boolean },
+  input: { userId: string; stockId: string; at?: Iso },
 ): Promise<{ id: string; code: string; points: number }> {
   const at = input.at ?? now();
   return db.tx(async () => {
@@ -921,9 +933,10 @@ export async function redeemGiftCard(
     }>(`SELECT * FROM gift_card_stock WHERE id = $i`, { i: input.stockId });
     if (!stock || !stock.active) throw new DomainError('not_found', 'gift card not available');
 
-    /* Fence 1: the plan's `gift_card_priority`, which the route resolves.
-       Absent is a caller that did not ask (a script, a check), not a refusal. */
-    if (input.entitled === false) {
+    /* Fence 1: the operator's policy, against the plan in force now. */
+    const rules = await giftPolicy.policy(db);
+    const plan = await entitlements.planFor(db, { userId: input.userId }, at);
+    if (!giftPolicy.eligible(rules, plan.code)) {
       throw new DomainError('entitlement_required', 'gift cards are not on this plan', {
         entitlement: 'gift_card_priority',
       });
@@ -944,17 +957,20 @@ export async function redeemGiftCard(
     /* Fence 3a, §9.4 `PER_USER_CAP`: one card per `perUserEveryDays`, rolling.
        The refusal names when the next one is possible, so a screen can say so
        instead of guessing. */
-    const since = plusDays(at, -CONFIG.giftCards.perUserEveryDays);
-    const last = await db.get<{ issued_at: string }>(
-      `SELECT issued_at FROM gift_cards WHERE user_id = $u AND issued_at > $s
-        ORDER BY issued_at DESC LIMIT 1`,
-      { u: input.userId, s: since },
-    );
+    const everyDays = giftPolicy.perUserEveryDays(rules);
+    const last =
+      everyDays > 0
+        ? await db.get<{ issued_at: string }>(
+            `SELECT issued_at FROM gift_cards WHERE user_id = $u AND issued_at > $s AND status <> 'cancelled'
+              ORDER BY issued_at DESC LIMIT 1`,
+            { u: input.userId, s: plusDays(at, -everyDays) },
+          )
+        : undefined;
     if (last) {
-      throw new DomainError('conflict', 'one gift card per 60 days', {
+      throw new DomainError('conflict', `one gift card per ${everyDays} days`, {
         reason: 'per_user_cap',
-        everyDays: CONFIG.giftCards.perUserEveryDays,
-        nextAt: plusDays(last.issued_at as Iso, CONFIG.giftCards.perUserEveryDays),
+        everyDays,
+        nextAt: plusDays(last.issued_at as Iso, everyDays),
       });
     }
 

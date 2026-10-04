@@ -378,13 +378,16 @@ Points, vouchers, stamp cards, rewards, gift cards, and the ledger history —
   tier closes first and the lowest stays open, so **offer the lower tier rather
   than showing an error**.
 - Gift cards: `GET /v1/gift-cards` (the shelf) and `POST /v1/gift-cards`
-  `{ stockId }`. **Pro and Premium only (rulebook §9.4)** — `gift_card_priority`
-  in `entitlements` is `false` on free, and a free account's purchase is
-  **`403 entitlement_required`** with `entitlement: "gift_card_priority"`. Show
-  the shelf to everybody (it is what an upgrade buys) and turn the buy button
-  into an upgrade prompt when the key is false. *This reverses the 2026-10-03
-  opening; the owner chose the rulebook.* The month's pool is the revenue share
-  alone by default (`PAYLEZ_GIFT_POOL_MONTHLY` adds a fixed budget, default 0).
+  `{ stockId }`. **Who may buy is set by an operator in the console** — by
+  default the rulebook (§9.4): Pro and Premium only, one card per 60 days, a
+  monthly budget that is a percentage of the live Pro and Premium plans. Read
+  `gift_card_priority` in `entitlements` (`GET /v1/me`): it always says what a
+  purchase will do for *this* account, whatever the operator chose. When it is
+  `false`, show the shelf and disable buying with a sentence ("for Pro and
+  Premium members") — **no upgrade button and no price**: Pro and Premium are
+  granted by an operator and never sold in the app (Google Play billing). A
+  refused purchase is **`403 entitlement_required`**; `per_user_cap` and
+  `pool_exhausted` are as below, with the operator's own number of days.
   From 2026-09-30 (rulebook §2.1 / §9.4): `points_cost` is derived at **100 points = 1 zł** of face value and
   is the only price to print; one card per account per 60 days (`409`,
   `reason: per_user_cap`, `nextAt`); and a monthly pool — each shelf row carries

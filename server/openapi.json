@@ -3,7 +3,7 @@
   "info": {
     "title": "Paylez API",
     "version": "1.0.0",
-    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n118 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
+    "description": "The Paylez backend, built from the two statements of work in `new-data/`.\n\nFour rules run through the whole surface and are worth reading before the endpoints:\n\n1. **The server decides.** Points, discounts and eligibility are computed here. A client displays and requests; it never calculates a reward.\n2. **Money is an integer in minor units.** `amountMinor: 14200` is 142,00 zł. Formatting is the client’s job.\n3. **Nothing of value exists before it is confirmed.** Every earning and redemption passes the same four-step gate; the commit is the only moment anything is granted.\n4. **Send an `Idempotency-Key` on anything that moves value.** A retry then returns the same receipt instead of granting twice.\n\n120 endpoints are documented in full; the rest are listed with their path, method and access level. `GET /v1` returns the live list.",
     "contact": {
       "name": "Paylez backend",
       "url": "https://pay-lez.com"
@@ -12159,6 +12159,131 @@
         "responses": {
           "204": {
             "description": "Success"
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/admin/gift-cards/policy": {
+      "get": {
+        "summary": "The gift-card policy, and the pool it produces now",
+        "description": "`{ policy, pool }`. `policy.mode` is `auto` (Pro and Premium, one card per 60 days, a monthly budget of `autoPercent` of the live Pro and Premium plans at list price) or `manual` (`manual.audience` all | paid | premium, `budgetKind` amount | percent, `amountMajor` in złoty, `percent`, `from`/`until` YYYY-MM-DD or null, `repeat` monthly | once, `perUserEveryDays`, 0 = no limit).\n\n**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "getAdminGiftCardsPolicy",
+        "tags": [
+          "admin"
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Not signed in",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the gift-card policy",
+        "description": "The whole policy, in the shape `GET` answers (without `updatedAt`). Applies to the next purchase, and to `gift_card_priority` in every consumer's entitlements. Audited.\n\n**Access:** Admin only. Not part of the mobile surface.",
+        "operationId": "putAdminGiftCardsPolicy",
+        "tags": [
+          "admin"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "mode": {
+                    "type": "string",
+                    "description": "auto or manual"
+                  },
+                  "autoPercent": {
+                    "type": "integer",
+                    "description": "0–100"
+                  }
+                },
+                "required": [
+                  "mode"
+                ]
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`validation_failed` — `field` names the setting that was refused.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "401": {
             "description": "Not signed in",
