@@ -4512,12 +4512,28 @@ export const en = {
      * for the reader to do, so none of them is a general "unavailable".
      */
     reminder: {
-      title: 'Daily game reminder',
-      help: 'One notification in this browser at 6 pm your time — only on a day you have not played yet.',
+      kinds: {
+        dailyGameReminder: {
+          title: 'Daily game reminder',
+          help: 'One notification in this browser at 6 pm your time — only on a day you have not played yet.',
+        },
+        streakAtRisk: {
+          title: 'Streak about to break',
+          help: 'At 8 pm your time, if you played yesterday, have not played today and have no freeze left to save the streak.',
+        },
+        energyFull: {
+          title: 'Energy is full',
+          help: 'When your tank fills up again after you have played — once per refill, never at night.',
+        },
+        referralReward: {
+          title: 'Referral reward',
+          help: 'When a friend you invited makes their first visit and you are both paid.',
+        },
+      },
       failed: 'That did not save. Try again in a moment.',
       blocked: 'Notifications are blocked for this site. Allow them in your browser’s settings, then switch this on.',
       unsupported: 'This browser cannot show notifications. On an iPhone, add paylez to your home screen first.',
-      unavailable: 'Reminders are not switched on yet. Check back soon.',
+      unavailable: 'Notifications are not switched on yet. Check back soon.',
       unreachable: 'We could not reach the server. Try again later.',
     },
     sharing: {

@@ -1,5 +1,5 @@
 /**
- * Browser push — the daily game reminder's half of it on this side.
+ * Browser push — the four reminders a player can switch on, this side of it.
  *
  * Three facts decide what the profile's switch can honestly be, and each is a
  * different sentence rather than a disabled control:
@@ -16,9 +16,17 @@
  */
 import { call } from './client';
 
+/** One switch per push, by the server's API name (`domain/reminders.ts`). */
 export interface NotificationPrefs {
   dailyGameReminder: boolean;
+  energyFull: boolean;
+  referralReward: boolean;
+  streakAtRisk: boolean;
 }
+
+/** The order the profile lists them in. */
+export const NOTIFICATION_KINDS = ['dailyGameReminder', 'streakAtRisk', 'energyFull', 'referralReward'] as const;
+export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export const notificationPrefs = () => call<NotificationPrefs>('/v1/me/notification-prefs');
 

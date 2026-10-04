@@ -78,7 +78,7 @@ export async function drain(db: Db, limit = 200): Promise<Delivered> {
         const result = sub
           ? await webpush.send(
               sub,
-              { title: row.title, body: row.body, url: row.action_url ?? undefined },
+              { title: row.title, body: row.body, url: row.action_url ?? undefined, kind: row.kind },
               keys,
               CONFIG.push.ttlSeconds,
             )

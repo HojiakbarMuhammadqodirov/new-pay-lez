@@ -768,8 +768,8 @@ export const consumerRoutes: Route[] = [
     auth: 'user',
     handler: async (ctx) => {
       const patch: Partial<reminders.KindPrefs> = {};
-      if (ctx.body.dailyGameReminder !== undefined) {
-        patch.dailyGameReminder = bool(ctx.body, 'dailyGameReminder');
+      for (const key of ['dailyGameReminder', 'energyFull', 'referralReward', 'streakAtRisk'] as const) {
+        if (ctx.body[key] !== undefined) patch[key] = bool(ctx.body, key);
       }
       return await reminders.setKindPrefs(ctx.db, actor(ctx).user.id, patch, ctx.at);
     },

@@ -27,6 +27,7 @@ import * as entitlements from './entitlements.ts';
 import * as fraud from './fraud.ts';
 import * as ledger from './ledger.ts';
 import * as notifications from './notifications.ts';
+import * as reminders from './reminders.ts';
 import * as vouchers from './vouchers.ts';
 import * as consent from './consent.ts';
 import * as team from './team.ts';
@@ -1331,6 +1332,13 @@ async function completeReferral(
     sourceKind: 'referral',
     sourceRef: bond.id,
     at,
+  });
+  /* Both sides are told; each is pushed only if they switched it on. */
+  await reminders.referralReward(db, {
+    userId: bond.referrer_id, points: CONFIG.earn.referrerFirstVisit, invitee: false, referralId: bond.id, at,
+  });
+  await reminders.referralReward(db, {
+    userId, points: CONFIG.earn.inviteeJoin, invitee: true, referralId: bond.id, at,
   });
   /* `points_awarded` (written by the claim above) is what the bond *cost*, both
      sides together: now that the two sides can differ, the total is the only

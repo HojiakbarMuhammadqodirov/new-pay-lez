@@ -78,8 +78,10 @@ export async function runFrequent(db: Db, at: Iso = now()): Promise<JobReport> {
 export async function runEveryMinute(db: Db, at: Iso = now()): Promise<JobReport> {
   const detail: Record<string, unknown> = {};
   detail.dailyGameReminder = await reminders.dailyGameReminder(db, at);
+  detail.energyFull = await reminders.energyFullReminder(db, at);
+  detail.streakAtRisk = await reminders.streakAtRisk(db, at);
   detail.push = await push.drain(db);
-  return { at, ran: ['daily-game-reminder', 'push'], detail };
+  return { at, ran: ['daily-game-reminder', 'energy-full', 'streak-at-risk', 'push'], detail };
 }
 
 /** Runs hourly. Everything with money in it. */

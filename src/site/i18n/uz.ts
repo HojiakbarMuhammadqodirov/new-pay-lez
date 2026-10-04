@@ -3554,8 +3554,24 @@ export const uz: Dictionary = {
   },
   profile: {
     reminder: {
-      title: 'Kunlik o‘yin eslatmasi',
-      help: 'Shu brauzerda sizning vaqtingiz bilan soat 18:00 da bitta bildirishnoma — faqat hali o‘ynamagan kuningiz.',
+      kinds: {
+        dailyGameReminder: {
+          title: 'Kunlik o‘yin eslatmasi',
+          help: 'Shu brauzerda sizning vaqtingiz bilan soat 18:00 da bitta bildirishnoma — faqat hali o‘ynamagan kuningiz.',
+        },
+        streakAtRisk: {
+          title: 'Seriya uzilay deyapti',
+          help: 'Sizning vaqtingiz bilan soat 20:00 da — kecha o‘ynagan, bugun hali o‘ynamagan bo‘lsangiz va seriyani saqlab qoladigan muzlatish qolmagan bo‘lsa.',
+        },
+        energyFull: {
+          title: 'Energiya to‘ldi',
+          help: 'O‘ynaganingizdan keyin energiya yana to‘lganda — har to‘lishda bir marta, kechasi hech qachon.',
+        },
+        referralReward: {
+          title: 'Taklif mukofoti',
+          help: 'Siz taklif qilgan do‘stingiz birinchi marta tashrif buyurib, ikkalangiz ball olganda.',
+        },
+      },
       failed: 'Saqlanmadi. Birozdan keyin qayta urinib ko‘ring.',
       blocked: 'Bu sayt uchun bildirishnomalar bloklangan. Brauzer sozlamalarida ruxsat bering, so‘ng buni yoqing.',
       unsupported: 'Bu brauzer bildirishnoma ko‘rsata olmaydi. iPhone’da avval paylez’ni bosh ekranga qo‘shing.',

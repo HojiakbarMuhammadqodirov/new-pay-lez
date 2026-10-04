@@ -475,11 +475,25 @@ export const CONFIG = {
      */
     ttlSeconds: 3 * 3600,
     /**
-     * The kinds a **browser** is pushed. Only the daily reminder was asked
-     * for on the web; every other kind (the check-in streak, a venue's deal)
-     * still reaches the inbox and the phone app, and never a browser tab.
+     * When the "your streak is about to break" push is due, on the player's
+     * clock. Later than the daily reminder (it is the last call, not the first)
+     * and still inside `reminderUntilMin`, which is the end of quiet hours.
      */
-    webKinds: ['daily_game'] as readonly string[],
+    streakAtMin: 20 * 60,
+    /**
+     * How late after the tank fills the "energy is full" push may still go
+     * out, in minutes. The job runs every minute; this is the slack for a run
+     * that was missed, and past it the moment has gone.
+     */
+    energyFullWithinMin: 15,
+    /**
+     * The kinds a **browser** is pushed — the four a player can switch on in
+     * the profile (`domain/reminders.ts`). Every other kind (the check-in
+     * streak, a venue's deal) still reaches the inbox and the phone app, and
+     * never a browser tab; these four reach the inbox on the phone too, and are
+     * pushed only to a browser.
+     */
+    webKinds: ['daily_game', 'energy_full', 'referral_reward', 'game_streak'] as readonly string[],
   },
 
   /* ──────────────────────────────────────────────── §6 / §9 deals & pushes ── */

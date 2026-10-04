@@ -3551,8 +3551,24 @@ export const pl: Dictionary = {
   },
   profile: {
     reminder: {
-      title: 'Codzienne przypomnienie o grze',
-      help: 'Jedno powiadomienie w tej przeglądarce o 18:00 Twojego czasu — tylko w dniu, w którym jeszcze nie grałeś.',
+      kinds: {
+        dailyGameReminder: {
+          title: 'Codzienne przypomnienie o grze',
+          help: 'Jedno powiadomienie w tej przeglądarce o 18:00 Twojego czasu — tylko w dniu, w którym jeszcze nie grałeś.',
+        },
+        streakAtRisk: {
+          title: 'Seria zaraz się skończy',
+          help: 'O 20:00 Twojego czasu, jeśli grałeś wczoraj, dziś jeszcze nie i nie masz zamrożenia, które uratuje serię.',
+        },
+        energyFull: {
+          title: 'Energia jest pełna',
+          help: 'Gdy po grze Twój zbiornik znowu się zapełni — raz na każde napełnienie, nigdy w nocy.',
+        },
+        referralReward: {
+          title: 'Nagroda za zaproszenie',
+          help: 'Gdy zaproszona przez Ciebie osoba odwiedzi lokal po raz pierwszy i oboje dostaniecie punkty.',
+        },
+      },
       failed: 'Nie udało się zapisać. Spróbuj ponownie za chwilę.',
       blocked: 'Powiadomienia są zablokowane dla tej strony. Zezwól na nie w ustawieniach przeglądarki, a potem włącz tę opcję.',
       unsupported: 'Ta przeglądarka nie może wyświetlać powiadomień. Na iPhonie najpierw dodaj paylez do ekranu głównego.',

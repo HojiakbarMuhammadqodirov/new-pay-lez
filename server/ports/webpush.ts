@@ -173,7 +173,7 @@ export type Sent = 'sent' | 'gone' | 'failed';
 
 export async function send(
   sub: WebSubscription,
-  message: { title: string; body: string; url?: string },
+  message: { title: string; body: string; url?: string; kind?: string },
   keys: VapidKeys,
   ttlSeconds: number,
 ): Promise<Sent> {

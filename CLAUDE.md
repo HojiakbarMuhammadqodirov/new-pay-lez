@@ -366,10 +366,15 @@ is their profile's country (Poland when unset), and every logo is a `data:`
 picture the console made, drawn through `isPicture` — the old shelf printed
 `card.logo` as text, which would have been a page of base64.
 
-**Browsers get one push, the daily game reminder, at six on the player's own
-clock.** `domain/reminders.ts` decides (switched on in the profile, a live web
-subscription, no round started since *their* midnight, once per local day,
-18:00–21:00 in the zone their browser reported); `ports/webpush.ts` sends it
+**Browsers get four pushes, each its own switch in the profile.** The daily
+game reminder (18:00 on the player's clock, only on a day with no round
+started), "your streak is about to break" (20:00, only when it really would —
+played yesterday, not today, no freeze held), "your energy is full" (the minute
+the tank refills after a spend, once per refill), and a referral reward (written
+to the inbox for both sides by `gate.completeReferral`, pushed only to whoever
+switched it on). `domain/reminders.ts` decides each one — a live web
+subscription, once per day or per event, inside quiet hours in the zone the
+browser reported; `ports/webpush.ts` sends it
 (RFC 8291 + VAPID over `node:crypto` — no dependency, the `pg` budget again);
 `jobs.runEveryMinute` runs it; `public/sw.js` shows it and has **no `fetch`
 handler on purpose** — a caching worker would be a second stale-bundle problem

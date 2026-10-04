@@ -1864,11 +1864,15 @@ as a failure.
 
 ### 28. Browser push — nothing for the app to do, one thing to know
 
-The website now pushes one thing to browsers: the daily game reminder
-(`kind: "daily_game"`, 18:00 on the player's clock, only if they switched it
-on). The app is untouched — its `fcm`/`apns` tokens and the inbox work as
-before, and `daily_game` rows appear in `GET /v1/notifications` like any
-other. The one change: `canPush` now counts only tokens that can carry the
+The website pushes four kinds to browsers, each only if the player switched
+it on in the profile: `daily_game` (18:00 on their clock), `game_streak`
+(20:00, when the streak would break tonight), `energy_full` (when the tank
+refills) and `referral_reward` (when an invite pays; this one is written to
+the inbox for both sides whatever the switch says). The app is untouched — its
+`fcm`/`apns` tokens and the inbox work as before, and these rows appear in
+`GET /v1/notifications` like any other. `GET`/`PATCH /v1/me/notification-prefs`
+carries `dailyGameReminder`, `streakAtRisk`, `energyFull`, `referralReward`
+if the app ever wants the same switches. The one change: `canPush` now counts only tokens that can carry the
 kind, so a `web` token never makes a phone-only kind "deliverable" and an
 `fcm` token never makes `daily_game` deliverable. `POST /v1/push-tokens`
 also accepts an optional `timezone`; sending the device's IANA zone is

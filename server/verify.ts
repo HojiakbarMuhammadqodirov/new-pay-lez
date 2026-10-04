@@ -9932,6 +9932,7 @@ async function run(): Promise<void> {
   await foodRules();
   await ninjaRules();
   await webPushRules();
+  await moreReminderRules();
   await giftCardEngine();
   await arcadeRules();
   await formulaInPlay();
@@ -10242,6 +10243,71 @@ async function ninjaRules(): Promise<void> {
  * the bytes; this pins the thing that matters, which is that the other end can
  * read it.
  */
+/**
+ * The three pushes beside the daily reminder: the streak about to break, the
+ * tank full again, and a referral that paid. Each is off until switched on and
+ * each is said once.
+ */
+async function moreReminderRules(): Promise<void> {
+  describe('browser push · streak at risk, energy full, referral reward');
+  const w = await world();
+  const who = w.customerId;
+  await w.db.run(
+    `INSERT INTO push_tokens (id, user_id, platform, token, created_at, timezone) VALUES ($i, $u, 'web', $t, $at, 'Asia/Tashkent')`,
+    {
+      i: newId('ptk'), u: who, at: '2026-05-01T00:00:00.000Z',
+      t: JSON.stringify({ endpoint: 'https://push.example.test/x', keys: { p256dh: 'B'.repeat(87), auth: 'A'.repeat(22) } }),
+    },
+  );
+
+  /* ── the streak: 20:00 in Tashkent is 15:00Z ── */
+  await w.db.run(
+    `INSERT INTO player_states (user_id, streak, longest_streak, freezes, lives, answered, correct, updated_at, last_played)
+     VALUES ($u, 6, 6, 0, 4, 0, 0, '2026-05-03T00:00:00.000Z', '2026-05-03')
+     ON CONFLICT (user_id) DO UPDATE SET streak = 6, freezes = 0, last_played = '2026-05-03'`,
+    { u: who },
+  );
+  eq('switched off, nobody is warned', (await reminders.streakAtRisk(w.db, '2026-05-04T15:00:00.000Z')).sent, 0);
+  await reminders.setKindPrefs(w.db, who, { streakAtRisk: true });
+  eq('at 19:59 on the player’s clock it is not yet due', (await reminders.streakAtRisk(w.db, '2026-05-04T14:59:00.000Z')).sent, 0);
+  eq('at 20:00 it goes', (await reminders.streakAtRisk(w.db, '2026-05-04T15:00:00.000Z')).sent, 1);
+  eq('…naming the streak', (await w.db.get<{ title: string }>(
+    `SELECT title FROM notifications WHERE user_id = $u AND kind = 'game_streak'`, { u: who }))?.title,
+    reminders.streakCopy('en', 6).title);
+  eq('…once a day', (await reminders.streakAtRisk(w.db, '2026-05-04T15:30:00.000Z')).sent, 0);
+  await w.db.run(`UPDATE player_states SET freezes = 1 WHERE user_id = $u`, { u: who });
+  await w.db.run(`DELETE FROM notifications WHERE user_id = $u`, { u: who });
+  eq('a freeze would save it, so it is not "about to break"', (await reminders.streakAtRisk(w.db, '2026-05-04T15:00:00.000Z')).sent, 0);
+  await w.db.run(`UPDATE player_states SET freezes = 0, last_played = '2026-05-04' WHERE user_id = $u`, { u: who });
+  eq('played today, nothing to warn about', (await reminders.streakAtRisk(w.db, '2026-05-04T15:00:00.000Z')).sent, 0);
+  await w.db.run(`UPDATE player_states SET last_played = '2026-05-01' WHERE user_id = $u`, { u: who });
+  eq('already broken, nothing to save', (await reminders.streakAtRisk(w.db, '2026-05-04T15:00:00.000Z')).sent, 0);
+
+  /* ── energy full ── */
+  await reminders.setKindPrefs(w.db, who, { energyFull: true });
+  const spentAt = '2026-05-10T06:00:00.000Z';
+  const round = await games.startSession(w.db, { userId: who, gameType: 'capitals', at: spentAt });
+  await games.abandonSession(w.db, { sessionId: round.sessionId, userId: who, at: plusMinutes(spentAt, 1) });
+  const full = await games.energyFor(w.db, who, plusDays(spentAt, 1));
+  const lastUnit = (await games.energyFor(w.db, who, spentAt)).nextAt!;
+  eq('a tank one short is not full', (await reminders.energyFullReminder(w.db, plusMinutes(lastUnit, -1))).sent, 0);
+  eq('the minute it fills, it goes', (await reminders.energyFullReminder(w.db, plusMinutes(lastUnit, 1))).sent, 1);
+  eq('…once per refill', (await reminders.energyFullReminder(w.db, plusMinutes(lastUnit, 2))).sent, 0);
+  eq('a tank that has simply been full for a day says nothing', (await reminders.energyFullReminder(w.db, plusDays(spentAt, 1))).sent, 0);
+  check('…and the tank really is full then', full.energy === full.max);
+
+  /* ── referral reward: always in the inbox, pushed only when switched on ── */
+  await reminders.referralReward(w.db, { userId: who, points: 100, invitee: false, referralId: 'ref_x', at: '2026-05-11T08:00:00.000Z' });
+  eq('switched off, it is written but not pushed', (await w.db.get<{ delivery: string }>(
+    `SELECT delivery FROM notifications WHERE user_id = $u AND kind = 'referral_reward'`, { u: who }))?.delivery, 'inbox');
+  await reminders.setKindPrefs(w.db, who, { referralReward: true });
+  await reminders.referralReward(w.db, { userId: who, points: 100, invitee: false, referralId: 'ref_y', at: '2026-05-11T08:00:00.000Z' });
+  eq('switched on, it is queued for the browser', (await w.db.get<{ delivery: string }>(
+    `SELECT delivery FROM notifications WHERE user_id = $u AND kind = 'referral_reward' AND source_ref = 'ref_y'`, { u: who }))?.delivery, 'queued');
+
+  await w.db.close();
+}
+
 async function webPushRules(): Promise<void> {
   describe('browser push · the daily game reminder');
 
@@ -10310,7 +10376,8 @@ async function webPushRules(): Promise<void> {
   const w = await world();
   const who = w.customerId;
   await w.db.run(`UPDATE users SET language = 'uz' WHERE id = $u`, { u: who });
-  eq('the reminder is off until somebody switches it on', await reminders.kindPrefs(w.db, who), { dailyGameReminder: false });
+  eq('every reminder is off until somebody switches it on', await reminders.kindPrefs(w.db, who),
+    { dailyGameReminder: false, energyFull: false, referralReward: false, streakAtRisk: false });
   await w.db.run(
     `INSERT INTO push_tokens (id, user_id, platform, token, created_at, timezone) VALUES ($i, $u, 'web', $t, $at, 'Asia/Tashkent')`,
     { i: newId('ptk'), u: who, t: JSON.stringify(sub), at: '2026-05-04T00:00:00.000Z' },
@@ -10319,7 +10386,8 @@ async function webPushRules(): Promise<void> {
   /* 18:00 in Tashkent is 13:00Z. */
   const day1 = '2026-05-04';
   eq('switched off, nobody is reminded', (await reminders.dailyGameReminder(w.db, `${day1}T13:00:00.000Z`)).sent, 0);
-  eq('switching it on reads back', await reminders.setKindPrefs(w.db, who, { dailyGameReminder: true }), { dailyGameReminder: true });
+  eq('switching it on reads back, and switches nothing else', await reminders.setKindPrefs(w.db, who, { dailyGameReminder: true }),
+    { dailyGameReminder: true, energyFull: false, referralReward: false, streakAtRisk: false });
   eq('at 17:59 on the player’s clock it is not yet due', (await reminders.dailyGameReminder(w.db, `${day1}T12:59:00.000Z`)).sent, 0);
   const due = await reminders.dailyGameReminder(w.db, `${day1}T13:00:00.000Z`);
   eq('at 18:00 on the player’s clock it goes, queued for the browser', [due.sent, due.pushed], [1, 1]);
