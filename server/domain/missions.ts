@@ -1264,8 +1264,12 @@ const STATIC: readonly Def[] = [
     band: 'once',
     title: 'First gift card',
     description: 'Claim a gift card',
-    /* Served to everyone: gift cards are open to every account since
-       2026-10-03 (they were a Pro and Premium perk under §9.4). */
+    /* Served only to an account that may buy a gift card. §9.4 makes them a
+       Pro and Premium perk (reverted to that 2026-10-04), and the console's
+       "Budget and rules" can widen it; `entitlementsFor` answers
+       `gift_card_priority` from that policy, so this follows it. A mission
+       nobody on the plan can complete is left out, not sent locked. */
+    shown: async (f) => entitlements.entBool(await f.ent(), 'gift_card_priority'),
     evaluate: async (f) => flag(await f.hasGiftCard()),
   },
   {

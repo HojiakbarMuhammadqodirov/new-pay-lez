@@ -9328,15 +9328,22 @@ async function missionRules(): Promise<void> {
   eq('five bands on a quiet day, in the rulebook’s order', fresh.bands.map((band) => band.key),
     ['daily', 'weekly', 'ongoing', 'once', 'learning']);
   const numbers = fresh.bands.flatMap((band) => band.missions.map((mission) => mission.number));
-  /* #51 (first gift card) is served to everyone since gift cards were opened
-     to every account on 2026-10-03. #52–54 (the Pass, order-ahead) are not
+  /* #51 (first gift card) is served only where `gift_card_priority` is true —
+     Pro and Premium under §9.4, restored 2026-10-04 — so not to this free
+     account. #52–54 (the Pass, order-ahead) are not
      served until those features exist — a row nobody can finish in this build
      is omitted, never served locked. #46 (turn on notifications) and #48
      (first review) are the same: the app has no push and no review screen. */
-  eq('…holding every static mission a free account can finish: 1–51 but 46 and 48, 55, 56 and 66–68', numbers,
-    [...Array.from({ length: 51 }, (_, i) => i + 1).filter((n) => n !== 46 && n !== 48), 55, 56, 66, 67, 68]);
-  eq('…the first-gift-card mission among them, open',
-    fresh.bands.flatMap((band) => band.missions).find((mission) => mission.number === 51)?.status, 'open');
+  eq('…holding every static mission a free account can finish: 1–50 but 46 and 48, 55, 56 and 66–68', numbers,
+    [...Array.from({ length: 50 }, (_, i) => i + 1).filter((n) => n !== 46 && n !== 48), 55, 56, 66, 67, 68]);
+  {
+    /* A granted Pro plan opens the shop, and with it #51. */
+    const proUser = await person(w, 'mission-pro', plusDays(at, -30));
+    await entitlements.startSubscription(w.db, { subject: { userId: proUser }, planCode: 'pro', source: 'manual', at });
+    const proView = await missions.missionsFor(w.db, proUser, at);
+    eq('…and a Pro account is served the first-gift-card mission, open',
+      proView.bands.flatMap((band) => band.missions).find((mission) => mission.number === 51)?.status, 'open');
+  }
   eq('…with ids that are unique', new Set(fresh.bands.flatMap((b) => b.missions.map((m) => m.id))).size, numbers.length);
   check('…and not one of them locked',
     fresh.bands.every((band) => band.missions.every((mission) => mission.status !== 'locked')));
@@ -9469,8 +9476,8 @@ async function missionRules(): Promise<void> {
   const withCampaigns = await view();
   eq('a live campaign brings its band, in order', withCampaigns.bands.map((band) => band.key),
     ['daily', 'weekly', 'ongoing', 'once', 'seasonal', 'partner', 'learning']);
-  eq('…the rulebook’s numbers present with one of each kind shown, less the five not served',
-    new Set(withCampaigns.bands.flatMap((b) => b.missions.map((m) => m.number))).size, 56);
+  eq('…the rulebook’s numbers present with one of each kind shown, less the six not served',
+    new Set(withCampaigns.bands.flatMap((b) => b.missions.map((m) => m.number))).size, 55);
   eq('the holiday is complete — a round was played in its window',
     (await one('seasonal.mcp_verify_holiday'))?.status, 'complete');
   eq('…and pays the configured default', (await missions.claim(w.db, {
